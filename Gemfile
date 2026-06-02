@@ -30,6 +30,11 @@ gem "omniauth-rails_csrf_protection"
 # Rate limiting (prelaunch audit H6 — SSO hub brute-force prevention)
 gem "rack-attack"
 
+# Transactional email (Resend) — delivers magic-link sign-in emails. Activated
+# as the ActionMailer delivery method when RESEND_API_KEY is set; see
+# config/initializers/resend.rb. No-op (falls back to default) without the key.
+gem "resend"
+
 # Pure-Ruby Solana primitives (Borsh encode / PDA derivation / keypair / tx
 # build + partial-sign). Powers the admin in-wallet signing module
 # (app/services/signing/, Admin::SigningController). Same gem turf-monster uses.
