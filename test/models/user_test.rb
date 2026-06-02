@@ -63,33 +63,74 @@ class UserTest < ActiveSupport::TestCase
     auth = google_auth
 
     assert_difference "User.count", 1 do
-      user = User.from_omniauth(auth)
+      user = User.from_omniauth(auth, email_verified: true)
       assert_equal "newgoogle@example.com", user.email
       assert_equal "Google User", user.name
       assert_equal "google_oauth2", user.provider
       assert_equal "123456", user.uid
+      assert user.email_verified_at.present?
     end
   end
 
-  test "from_omniauth links existing user by email" do
+  test "from_omniauth links existing user by email when Google-verified" do
     alex = users(:alex)
     auth = google_auth(email: alex.email, uid: "99999")
 
     assert_no_difference "User.count" do
-      user = User.from_omniauth(auth)
+      user = User.from_omniauth(auth, email_verified: true)
       assert_equal alex.id, user.id
       assert_equal "google_oauth2", user.provider
       assert_equal "99999", user.uid
     end
   end
 
-  test "from_omniauth returns existing OAuth user" do
-    auth = google_auth(email: "oauth@example.com", uid: "55555")
-    original = User.from_omniauth(auth)
+  test "from_omniauth refuses to link an existing email when not Google-verified (OPSEC-005)" do
+    alex = users(:alex)
+    auth = google_auth(email: alex.email, uid: "88888")
 
     assert_no_difference "User.count" do
-      returning = User.from_omniauth(auth)
+      assert_equal :email_not_verified, User.from_omniauth(auth, email_verified: false)
+    end
+    assert_nil alex.reload.provider
+  end
+
+  test "from_omniauth returns existing OAuth user" do
+    auth = google_auth(email: "oauth@example.com", uid: "55555")
+    original = User.from_omniauth(auth, email_verified: true)
+
+    assert_no_difference "User.count" do
+      returning = User.from_omniauth(auth, email_verified: true)
       assert_equal original.id, returning.id
     end
+  end
+
+  # --- wallet + auth-method tests ---
+
+  test "from_solana_wallet finds by solana_address" do
+    user = User.create!(solana_address: "Wa11etAddressBase58Example1111111111111111")
+    assert_equal user.id, User.from_solana_wallet(user.solana_address).id
+    assert_nil User.from_solana_wallet("nope")
+  end
+
+  test "wallet-only user is valid without email and gets a unique slug" do
+    addr = "Wa11etAddrTwo2222222222222222222222222222"
+    user = User.create!(solana_address: addr)
+    assert user.persisted?
+    assert user.solana_connected?
+    assert user.phantom_wallet?
+    # display falls back to the truncated wallet address
+    assert_equal "#{addr[0, 4]}…#{addr[-4, 4]}", user.display_name
+    assert user.slug.present?
+  end
+
+  test "user with no auth method is invalid" do
+    user = User.new(name: "Nobody")
+    assert_not user.valid?
+    assert user.errors[:base].any?
+  end
+
+  test "session_token is set on create" do
+    user = User.create!(email: "tokened@example.com")
+    assert user.session_token.present?
   end
 end

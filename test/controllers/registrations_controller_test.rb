@@ -1,22 +1,31 @@
 require "test_helper"
 
 class RegistrationsControllerTest < ActionDispatch::IntegrationTest
+  include ActiveJob::TestHelper
+
+  setup { ActiveJob::Base.queue_adapter = :test }
+
   test "signup page renders" do
     get signup_path
     assert_response :success
   end
 
-  test "signup with valid info" do
-    assert_difference "User.count", 1 do
-      post signup_path, params: { user: { name: "New User", email: "new@example.com", password: "password", password_confirmation: "password" } }
+  # Passwordless: a signup POST does NOT create-and-log-in by form (that would
+  # skip proof of email ownership). It sends a magic link; the create-or-login
+  # happens only when the recipient clicks it.
+  test "signup sends a magic link without creating an account" do
+    assert_no_difference "User.count" do
+      assert_enqueued_emails 1 do
+        post signup_path, params: { user: { name: "New User", email: "new@example.com" } }
+      end
     end
-    assert_redirected_to root_path
+    assert_redirected_to login_path
   end
 
-  test "signup with mismatched password" do
-    assert_no_difference "User.count" do
-      post signup_path, params: { user: { email: "new@example.com", password: "password", password_confirmation: "wrong" } }
+  test "signup with a malformed email sends nothing" do
+    assert_no_enqueued_emails do
+      post signup_path, params: { user: { email: "nope" } }
     end
-    assert_response :unprocessable_entity
+    assert_redirected_to login_path
   end
 end
