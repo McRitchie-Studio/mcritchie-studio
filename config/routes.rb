@@ -22,6 +22,13 @@ Rails.application.routes.draw do
   namespace :admin do
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
+
+    # In-wallet Phantom signing module (admin-gated). Build + Mason-partial-sign
+    # a turf-vault instruction server-side; the operator's Phantom adds the
+    # second signature + broadcasts. v1 instruction = update_signers.
+    get  "signing/:instruction",       to: "signing#show",  as: :signing
+    post "signing/:instruction/build", to: "signing#build", as: :signing_build
+    post "signing/:instruction/rpc",   to: "signing#rpc",   as: :signing_rpc
   end
 
   # HTML
