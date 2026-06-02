@@ -27,7 +27,12 @@
             <tr class="border-b border-subtle/50">
               <td class="p-3 font-medium text-heading"><%= sr.instruction_name %><div class="text-xs text-muted"><%= sr.program %></div></td>
               <td class="p-3"><%= sr.cluster %></td>
-              <td class="p-3"><%= sr.coordination %></td>
+              <td class="p-3">
+                <%= sr.coordination %>
+                <% if sr.durable_nonce_pubkey.present? %>
+                  <div class="text-xs text-emerald-400" title="Anchored on a durable nonce — does not expire">⏱ non-expiring</div>
+                <% end %>
+              </td>
               <td class="p-3"><%= sr.signers_signed.length %> / <%= sr.threshold %></td>
               <td class="p-3">
                 <span class="px-2 py-0.5 rounded text-xs <%= sr.broadcast? ? 'bg-green-900/40 text-green-300' : (sr.status == 'failed' ? 'bg-red-900/40 text-red-300' : 'bg-surface-alt text-secondary') %>"><%= sr.status_label %></span>

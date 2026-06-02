@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_02_155332) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_02_174949) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -280,6 +280,20 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_155332) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_depth_charts_on_slug", unique: true
     t.index ["team_slug"], name: "index_depth_charts_on_team_slug", unique: true
+  end
+
+  create_table "durable_nonces", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "pubkey", null: false
+    t.string "authority", null: false
+    t.string "cluster", default: "devnet", null: false
+    t.string "status", default: "active", null: false
+    t.string "label"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["cluster", "status"], name: "index_durable_nonces_on_cluster_and_status"
+    t.index ["pubkey"], name: "index_durable_nonces_on_pubkey", unique: true
+    t.index ["slug"], name: "index_durable_nonces_on_slug", unique: true
   end
 
   create_table "error_logs", force: :cascade do |t|
@@ -637,7 +651,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_155332) do
 
   create_table "users", force: :cascade do |t|
     t.string "name"
-    t.string "email"
+    t.string "email", null: false
     t.string "password_digest"
     t.string "provider"
     t.string "uid"
@@ -647,12 +661,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_155332) do
     t.datetime "updated_at", null: false
     t.string "first_name"
     t.string "last_name"
-    t.string "session_token"
-    t.string "solana_address"
-    t.datetime "email_verified_at"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["slug"], name: "index_users_on_slug", unique: true
-    t.index ["solana_address"], name: "index_users_on_solana_address", unique: true
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"

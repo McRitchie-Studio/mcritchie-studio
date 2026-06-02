@@ -34,6 +34,7 @@ module Admin
     def new
       @templates = TEMPLATES.keys
       @clusters  = Signing::IdlRegistry.clusters_for("turf_vault")
+      @nonces    = DurableNonce.active.order(:cluster, :created_at)
     end
 
     def create
@@ -42,7 +43,10 @@ module Admin
 
       blockhash =
         if builder.durable_nonce
-          Signing::Rpc.nonce_value(cluster, builder.durable_nonce.fetch(:pubkey))
+          # Verify the account is an initialized nonce owned by the expected
+          # authority before anchoring on it (guards against a wrong/withdrawn nonce).
+          Signing::Rpc.nonce_value(cluster, builder.durable_nonce.fetch(:pubkey),
+                                   expected_authority: builder.durable_nonce.fetch(:authority))
         else
           Signing::Rpc.latest_blockhash(cluster)
         end
@@ -182,13 +186,22 @@ module Admin
     def build_update_signers
       Signing::SigningRequest.update_signers_keyless(
         cluster: cluster_param,
-        durable_nonce: {
-          pubkey:    params.require(:nonce_pubkey),
-          authority: params.require(:nonce_authority)
-        },
+        durable_nonce: resolve_durable_nonce,
         admin:    params[:admin].presence || Signing::SigningRequest::MASON_CYT,
         cosigner: params[:cosigner].presence || Signing::SigningRequest::ALEX_7ZDJ
       )
+    end
+
+    # Prefer a registered DurableNonce (picked by slug in the form); fall back to
+    # raw pubkey/authority params. The authority should be one of the tx signers
+    # (admin/cosigner) so no extra in-wallet signature is needed.
+    def resolve_durable_nonce
+      if (slug = params[:durable_nonce_slug].presence)
+        nonce = DurableNonce.active.find_by!(slug: slug)
+        { pubkey: nonce.pubkey, authority: nonce.authority }
+      else
+        { pubkey: params.require(:nonce_pubkey), authority: params.require(:nonce_authority) }
+      end
     end
 
     def cluster_param

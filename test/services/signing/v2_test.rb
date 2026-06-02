@@ -66,6 +66,27 @@ class SigningV2Test < ActiveSupport::TestCase
     assert_equal [175, 175, 109, 31, 13, 152, 155, 237].pack("C*").b, sr.instruction_data[0, 8]
   end
 
+  # --- durable nonce: advance prepended + authority is a signer -------------
+
+  test "a durable-nonce request prepends the System advance instruction" do
+    nonce_pubkey = Solana::Keypair.generate.to_base58
+    nonce_value  = Solana::Keypair.generate.to_base58
+    sr = Signing::SigningRequest.update_signers_keyless(
+      cluster: "devnet",
+      durable_nonce: { pubkey: nonce_pubkey, authority: Signing::SigningRequest::MASON_CYT }
+    )
+    assert_equal "multi", sr.coordination
+    assert sr.durable_nonce
+
+    unsigned = sr.build_unsigned_message_base64(blockhash: nonce_value)
+    raw = Base64.strict_decode64(unsigned).b
+    # The System program id (32 zero bytes) is referenced only by the advance
+    # instruction — its presence proves the advance was prepended.
+    assert raw.include?("\x00".b * 32), "expected the System program (advance ix) in the tx"
+    # The nonce authority (Mason) is one of the required signers.
+    assert_includes Signing::Assembler.parse(unsigned)[:signer_pubkeys], Signing::SigningRequest::MASON_CYT
+  end
+
   # --- Assembler round-trip (THE keyless correctness proof) -----------------
 
   test "Assembler reconstructs a fully-signed tx from collected public signatures" do

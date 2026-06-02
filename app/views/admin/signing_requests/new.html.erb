@@ -19,9 +19,19 @@
 
         <%# update_signers (multi-signer, durable nonce) %>
         <div x-show="tpl === 'update_signers'" class="mt-4 space-y-3">
-          <p class="text-xs text-muted">2-of-3 rotation. Both signers sign in their own browsers over a durable nonce.</p>
-          <input name="nonce_pubkey"    class="input-field" placeholder="Durable nonce account pubkey">
-          <input name="nonce_authority" class="input-field" placeholder="Nonce authority pubkey (one of the signers)">
+          <p class="text-xs text-muted">2-of-3 rotation. Both signers sign in their own browsers over a durable nonce — the tx never expires while it waits.</p>
+          <% if @nonces.any? %>
+            <label class="block text-sm text-secondary">Durable nonce</label>
+            <select name="durable_nonce_slug" class="input-field">
+              <% @nonces.each do |n| %>
+                <option value="<%= n.slug %>"><%= n.cluster %> · <%= n.label_or_pubkey %> · auth <%= n.authority[0,4] %>…</option>
+              <% end %>
+            </select>
+          <% else %>
+            <p class="text-xs text-warning">No durable nonce registered yet — run <code>bin/rails "signing:create_nonce_account[devnet,&lt;authority&gt;]"</code>, or enter one below.</p>
+            <input name="nonce_pubkey"    class="input-field" placeholder="Durable nonce account pubkey">
+            <input name="nonce_authority" class="input-field" placeholder="Nonce authority pubkey (one of the signers)">
+          <% end %>
           <input name="admin"    class="input-field" placeholder="Admin signer pubkey (fee payer) — defaults to Mason">
           <input name="cosigner" class="input-field" placeholder="Cosigner pubkey — defaults to Alex 7ZDJ">
         </div>

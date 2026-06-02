@@ -163,10 +163,6 @@ module Signing
     # System AdvanceNonceAccount, and `blockhash` is the nonce account's stored
     # nonce value (so the tx never expires between signers). For `single` /
     # fresh-blockhash, pass a recent blockhash and omit durable_nonce.
-    SYSTEM_PROGRAM_ID    = "11111111111111111111111111111111".freeze
-    RECENT_BLOCKHASHES   = "SysvarRecentB1ockHashes11111111111111111111".freeze
-    ADVANCE_NONCE_IX_TAG = [4, 0, 0, 0].pack("C*").b # u32 LE = 4 (AdvanceNonceAccount)
-
     def build_unsigned_message_base64(blockhash:)
       tx = Solana::Transaction.new
       tx.set_recent_blockhash(blockhash)
@@ -188,16 +184,13 @@ module Signing
 
     # Prepend the System AdvanceNonceAccount instruction (durable-nonce txs MUST
     # advance the nonce as their first instruction; the nonce authority signs it).
+    # Encoder + byte layout come from solana-studio (byte-match tested there).
     def add_advance_nonce_instruction!(tx)
-      tx.add_instruction(
-        program_id: SYSTEM_PROGRAM_ID,
-        accounts: [
-          { pubkey: durable_nonce.fetch(:pubkey),    is_signer: false, is_writable: true },
-          { pubkey: RECENT_BLOCKHASHES,              is_signer: false, is_writable: false },
-          { pubkey: durable_nonce.fetch(:authority), is_signer: true,  is_writable: false }
-        ],
-        data: ADVANCE_NONCE_IX_TAG
+      adv = Solana::SystemProgram.advance_nonce_account(
+        nonce:     durable_nonce.fetch(:pubkey),
+        authority: durable_nonce.fetch(:authority)
       )
+      tx.add_instruction(program_id: adv[:program_id], accounts: adv[:accounts], data: adv[:data])
     end
 
     # ---- Factories ------------------------------------------------------------

@@ -3,11 +3,16 @@
     <h1 class="text-2xl font-extrabold text-heading"><%= @signing_request.title %></h1>
     <%= link_to "← Queue", admin_signing_requests_path, class: "text-secondary text-sm" %>
   </div>
-  <p class="text-secondary text-sm mb-6">
+  <p class="text-secondary text-sm mb-2">
     <%= @signing_request.coordination %> · <%= @signing_request.cluster %> ·
     <%= @signing_request.signers_signed.length %>/<%= @signing_request.threshold %> signed ·
     status <span class="font-medium"><%= @signing_request.status_label %></span>
   </p>
+  <% if @signing_request.durable_nonce_pubkey.present? %>
+    <p class="text-emerald-400 text-sm mb-6">⏱ Anchored on a durable nonce (<code class="text-xs"><%= @signing_request.durable_nonce_pubkey[0,8] %>…</code>) — <strong>does not expire</strong>; signers can sign hours apart.</p>
+  <% else %>
+    <p class="text-muted text-xs mb-6">Recent-blockhash tx — sign + broadcast within ~90s.</p>
+  <% end %>
 
   <div class="card p-6 mb-6">
     <h2 class="font-bold text-heading mb-3">Signers</h2>
