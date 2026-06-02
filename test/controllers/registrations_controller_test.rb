@@ -5,9 +5,12 @@ class RegistrationsControllerTest < ActionDispatch::IntegrationTest
 
   setup { ActiveJob::Base.queue_adapter = :test }
 
-  test "signup page renders" do
+  test "signup page redirects to the unified signin and renders" do
     get signup_path
+    assert_redirected_to "/signin"
+    follow_redirect!
     assert_response :success
+    assert_match "Email Link", response.body
   end
 
   # Passwordless: a signup POST does NOT create-and-log-in by form (that would

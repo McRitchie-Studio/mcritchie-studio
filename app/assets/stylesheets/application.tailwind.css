@@ -81,6 +81,12 @@
   .btn-google:hover {
     @apply bg-gray-50;
   }
+  .btn-neutral {
+    @apply bg-surface-alt text-heading border border-strong;
+  }
+  .btn-neutral:hover {
+    @apply bg-surface;
+  }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }

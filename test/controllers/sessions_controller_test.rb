@@ -1,13 +1,18 @@
 require "test_helper"
 
 class SessionsControllerTest < ActionDispatch::IntegrationTest
-  test "login page renders all three auth methods" do
-    get login_path
+  test "signin page renders all three auth methods" do
+    get signin_path
     assert_response :success
-    assert_select "form[action=?]", magic_link_request_path        # magic-link email
-    assert_select "form[action=?]", "/auth/google_oauth2"          # Google
-    assert_match "studioWalletLogin", response.body                # Solana wallet
+    assert_select "form[action=?]", "/auth/google_oauth2"          # Google (button_to)
+    assert_match "Email Link", response.body                       # magic-link email
+    assert_match "wallet-connect", response.body                   # Solana wallet picker modal
     assert_select "input[type=password]", false                    # passwordless: no password field
+  end
+
+  test "legacy /login redirects to unified /signin" do
+    get login_path
+    assert_redirected_to "/signin"
   end
 
   test "magic-link login signs an existing user in" do

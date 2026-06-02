@@ -1,16 +1,6 @@
-<div class="min-h-[70vh] flex items-center justify-center">
-  <div class="w-full max-w-md">
-    <div class="text-center mb-8">
-      <%= image_tag "logo-icon.svg", class: "w-20 h-20 mx-auto mb-4" %>
-      <h1 class="text-3xl font-extrabold text-heading tracking-tight">McRitchie <span class="text-primary">Studio</span></h1>
-      <p class="text-secondary mt-2">Create your account</p>
-    </div>
-
-    <%= render "shared/auth_methods" %>
-
-    <p class="text-center text-secondary text-sm mt-6">
-      Already have an account?
-      <%= link_to "Log in", login_path, class: "text-primary hover:text-primary-300 font-medium underline underline-offset-2" %>
-    </p>
-  </div>
-</div>
+<%# Same unified card as /signin — create-or-login is one flow. %>
+<%= render "shared/auth_card",
+      subheading:        "Create your account",
+      footer_prompt:     "Already have an account?",
+      footer_link_label: "Log in",
+      footer_link_path:  login_path %>

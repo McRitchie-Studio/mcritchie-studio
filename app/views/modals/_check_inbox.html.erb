@@ -1,0 +1,18 @@
+<%# "Check your inbox" confirmation after a magic-link request. Mounted via the
+    modal host's <template x-if="id==='check-inbox'"> — single root. The sent
+    email rides in props.sentEmail. %>
+<div x-data="{ get email() { var c = $store.modals.current(); return (c && c.props && c.props.sentEmail) || 'your email'; } }"
+     class="text-center">
+  <div class="mx-auto mb-4 w-12 h-12 rounded-full bg-surface-alt flex items-center justify-center">
+    <svg class="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+    </svg>
+  </div>
+  <h3 class="text-heading font-bold text-lg">Check your inbox</h3>
+  <p class="text-secondary text-sm mt-2">
+    We emailed a one-tap sign-in link to <span class="text-heading font-medium" x-text="email"></span>.
+    It expires shortly and can only be used once.
+  </p>
+  <p class="text-muted text-xs mt-3">No email? Check spam, or close this and try again.</p>
+  <button type="button" @click="$store.modals.close()" class="btn btn-neutral btn-lg w-full mt-5">Done</button>
+</div>
