@@ -1,0 +1,82 @@
+<div class="max-w-xl mx-auto px-4 py-8"
+     x-data="signingPage({
+       signer: '<%= @signer %>',
+       messageB64: '<%= @message_base64 %>',
+       unsignedB64: '<%= @unsigned_base64 %>',
+       rpcUrl: '<%= rpc_admin_signing_request_path(@signing_request) %>',
+       submitUrl: '<%= submit_signature_admin_signing_request_path(@signing_request) %>',
+       csrf: '<%= form_authenticity_token %>'
+     })">
+  <h1 class="text-2xl font-extrabold text-heading mb-1"><%= @signing_request.title %></h1>
+  <p class="text-secondary text-sm mb-1">You are signing as:</p>
+  <code class="text-xs text-body break-all block mb-6"><%= @signer %></code>
+
+  <% if @already_signed %>
+    <div class="card p-6 text-green-300">✓ You've already signed this request.</div>
+  <% else %>
+    <div class="card p-6 space-y-4">
+      <button type="button" class="btn btn-secondary w-full" @click="connect()" x-text="connected ? ('Connected: ' + short(pubkey)) : 'Connect Phantom'"></button>
+
+      <template x-if="connected && !matches">
+        <p class="text-red-300 text-sm">Connected wallet <span x-text="short(pubkey)"></span> is not the expected signer. Switch wallets in Phantom.</p>
+      </template>
+
+      <button type="button" class="btn btn-secondary w-full" :disabled="!matches" @click="simulate()">Simulate</button>
+      <pre x-show="simLog" class="text-xs bg-surface-alt p-3 rounded overflow-auto max-h-48 text-body" x-text="simLog"></pre>
+
+      <button type="button" class="btn btn-primary w-full" :disabled="!matches || busy" @click="sign()" x-text="busy ? 'Signing…' : 'Sign'"></button>
+
+      <p x-show="msg" :class="ok ? 'text-green-300' : 'text-red-300'" class="text-sm" x-text="msg"></p>
+    </div>
+  <% end %>
+
+  <p class="mt-4 text-xs text-muted">The server never sees a key — it only receives your public signature. <%= link_to "Back to request", admin_signing_request_path(@signing_request), class: "underline" %>.</p>
+</div>
+
+<script>
+  function signingPage(cfg) {
+    return {
+      connected: false, pubkey: null, busy: false, msg: '', ok: false, simLog: '',
+      get matches() { return this.connected && this.pubkey === cfg.signer; },
+      short(pk) { return pk ? pk.slice(0, 4) + '…' + pk.slice(-4) : ''; },
+      provider() { return window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null); },
+      b64ToBytes(b64) { return Uint8Array.from(atob(b64), c => c.charCodeAt(0)); },
+      bytesToB64(u8) { let s = ''; u8.forEach(b => s += String.fromCharCode(b)); return btoa(s); },
+      async connect() {
+        const p = this.provider();
+        if (!p) { window.open('https://phantom.app/', '_blank'); return; }
+        const res = await p.connect();
+        this.pubkey = res.publicKey.toBase58();
+        this.connected = true;
+        if (!this.matches) { this.msg = 'Wrong wallet — switch to the expected signer.'; this.ok = false; }
+      },
+      async simulate() {
+        this.simLog = 'Simulating…';
+        const body = { jsonrpc: '2.0', id: 1, method: 'simulateTransaction',
+          params: [cfg.unsignedB64, { sigVerify: false, encoding: 'base64', commitment: 'confirmed' }] };
+        const r = await fetch(cfg.rpcUrl, { method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': cfg.csrf }, body: JSON.stringify(body) });
+        const j = await r.json();
+        const v = j.result?.value || j;
+        this.simLog = (v.err ? ('ERROR: ' + JSON.stringify(v.err) + '\n') : 'OK (err: null)\n') + (v.logs || []).join('\n');
+      },
+      async sign() {
+        try {
+          this.busy = true; this.msg = '';
+          const p = this.provider();
+          const messageBytes = this.b64ToBytes(cfg.messageB64);
+          // A raw ed25519 signature over the tx message bytes IS the tx signature.
+          const signed = await p.signMessage(messageBytes);
+          const sigB64 = this.bytesToB64(signed.signature);
+          const r = await fetch(cfg.submitUrl, { method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': cfg.csrf },
+            body: JSON.stringify({ signer: cfg.signer, signature: sigB64 }) });
+          const j = await r.json();
+          if (j.ok) { this.ok = true; this.msg = 'Signed! ' + (j.needed > 0 ? (j.needed + ' more needed.') : 'Threshold met — ready to broadcast.'); }
+          else { this.ok = false; this.msg = j.error || 'Signing failed.'; }
+        } catch (e) { this.ok = false; this.msg = e.message || 'Signing failed.'; }
+        finally { this.busy = false; }
+      }
+    };
+  }
+</script>

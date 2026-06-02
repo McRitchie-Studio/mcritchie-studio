@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_28_061834) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_02_155332) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -459,6 +459,33 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_28_061834) do
     t.index ["year", "league"], name: "index_seasons_on_year_and_league", unique: true
   end
 
+  create_table "signing_requests", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "title"
+    t.string "program", default: "turf_vault", null: false
+    t.string "program_id", null: false
+    t.string "cluster", default: "devnet", null: false
+    t.string "instruction_name", null: false
+    t.jsonb "args", default: {}, null: false
+    t.jsonb "accounts", default: {}, null: false
+    t.string "coordination", default: "multi", null: false
+    t.integer "threshold", default: 1, null: false
+    t.string "expected_signers", default: [], null: false, array: true
+    t.jsonb "collected_signatures", default: {}, null: false
+    t.string "multisig_pubkey"
+    t.string "fee_payer"
+    t.string "durable_nonce_pubkey"
+    t.string "nonce_authority"
+    t.text "unsigned_message_base64"
+    t.string "status", default: "awaiting_signatures", null: false
+    t.string "tx_signature"
+    t.text "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_signing_requests_on_slug", unique: true
+    t.index ["status"], name: "index_signing_requests_on_status"
+  end
+
   create_table "skill_assignments", force: :cascade do |t|
     t.string "agent_slug", null: false
     t.string "skill_slug", null: false
@@ -610,7 +637,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_28_061834) do
 
   create_table "users", force: :cascade do |t|
     t.string "name"
-    t.string "email", null: false
+    t.string "email"
     t.string "password_digest"
     t.string "provider"
     t.string "uid"
@@ -620,8 +647,12 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_28_061834) do
     t.datetime "updated_at", null: false
     t.string "first_name"
     t.string "last_name"
+    t.string "session_token"
+    t.string "solana_address"
+    t.datetime "email_verified_at"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["slug"], name: "index_users_on_slug", unique: true
+    t.index ["solana_address"], name: "index_users_on_solana_address", unique: true
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"

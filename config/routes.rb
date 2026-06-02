@@ -29,6 +29,19 @@ Rails.application.routes.draw do
     get  "signing/:instruction",       to: "signing#show",  as: :signing
     post "signing/:instruction/build", to: "signing#build", as: :signing_build
     post "signing/:instruction/rpc",   to: "signing#rpc",   as: :signing_rpc
+
+    # v2 KEYLESS signing console — server is a pure coordinator (no keys). A
+    # SigningRequest is built unsigned; each member signs in their own browser;
+    # the assembled fully-signed tx is broadcast. Single-signer (initialize) +
+    # multi-signer durable-nonce (update_signers). Supersedes the v1 routes above.
+    resources :signing_requests, only: %i[index new create show], param: :slug do
+      member do
+        get  :sign
+        post :submit_signature
+        post :broadcast
+        post :rpc
+      end
+    end
   end
 
   # HTML

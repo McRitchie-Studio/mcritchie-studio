@@ -36,6 +36,33 @@ module Signing
       false
     end
 
+    # A fresh recent blockhash (base58) — used for SINGLE-signer requests where
+    # the one human signs + broadcasts promptly (no durable nonce needed).
+    def self.latest_blockhash(cluster)
+      body = { jsonrpc: "2.0", id: 1, method: "getLatestBlockhash",
+               params: [{ commitment: "confirmed" }] }.to_json
+      status, raw = forward(cluster, body)
+      bh = (JSON.parse(raw).dig("result", "value", "blockhash") rescue nil)
+      raise "getLatestBlockhash failed (status #{status}): #{raw.to_s[0, 200]}" if bh.blank?
+      bh
+    end
+
+    # The stored durable-nonce value (base58) inside a System NonceAccount. The
+    # nonce account layout is: version(u32) + state(u32) + authority(32) +
+    # stored_hash(32) + fee_calculator(8); the nonce we sign over is the 32-byte
+    # stored_hash at offset 40. Used for MULTI-signer requests so a half-signed
+    # tx never expires between signers.
+    def self.nonce_value(cluster, nonce_pubkey)
+      body = { jsonrpc: "2.0", id: 1, method: "getAccountInfo",
+               params: [nonce_pubkey, { encoding: "base64", commitment: "confirmed" }] }.to_json
+      status, raw = forward(cluster, body)
+      b64 = (JSON.parse(raw).dig("result", "value", "data", 0) rescue nil)
+      raise "getAccountInfo(#{nonce_pubkey}) failed (status #{status})" if b64.blank?
+      data = Base64.decode64(b64).b
+      raise "nonce account too small (#{data.bytesize} bytes)" if data.bytesize < 72
+      Solana::Keypair.encode_base58(data.byteslice(40, 32))
+    end
+
     # Forward a raw JSON-RPC body string to the cluster RPC. Returns
     # [status, body_string]. The API key stays server-side.
     def self.forward(cluster, body)

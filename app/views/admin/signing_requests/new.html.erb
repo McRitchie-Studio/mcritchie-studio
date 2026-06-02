@@ -1,0 +1,49 @@
+<div class="max-w-2xl mx-auto px-4 py-8">
+  <h1 class="text-2xl font-extrabold text-heading mb-1">New Signing Request</h1>
+  <p class="text-secondary text-sm mb-6">Builds the unsigned transaction. No keys touched — each signer signs in their own browser afterwards.</p>
+
+  <%= form_with url: admin_signing_requests_path, method: :post, data: { turbo: false } do %>
+    <div class="card p-6 space-y-5">
+      <div>
+        <label class="block text-sm text-secondary mb-1 font-medium">Cluster</label>
+        <select name="cluster" class="input-field">
+          <% @clusters.each { |c| %><option value="<%= c %>"><%= c %></option><% } %>
+        </select>
+      </div>
+
+      <div x-data="{ tpl: 'update_signers' }">
+        <label class="block text-sm text-secondary mb-1 font-medium">Instruction</label>
+        <select name="template" x-model="tpl" class="input-field">
+          <% @templates.each { |t| %><option value="<%= t %>"><%= t %></option><% } %>
+        </select>
+
+        <%# update_signers (multi-signer, durable nonce) %>
+        <div x-show="tpl === 'update_signers'" class="mt-4 space-y-3">
+          <p class="text-xs text-muted">2-of-3 rotation. Both signers sign in their own browsers over a durable nonce.</p>
+          <input name="nonce_pubkey"    class="input-field" placeholder="Durable nonce account pubkey">
+          <input name="nonce_authority" class="input-field" placeholder="Nonce authority pubkey (one of the signers)">
+          <input name="admin"    class="input-field" placeholder="Admin signer pubkey (fee payer) — defaults to Mason">
+          <input name="cosigner" class="input-field" placeholder="Cosigner pubkey — defaults to Alex 7ZDJ">
+        </div>
+
+        <%# initialize (single signer, fresh blockhash) %>
+        <div x-show="tpl === 'initialize'" class="mt-4 space-y-3">
+          <p class="text-xs text-muted">Bring up a contract. Signed by ONE wallet (the INIT_AUTHORITY).</p>
+          <input name="admin"                class="input-field" placeholder="INIT_AUTHORITY / admin pubkey (signer + fee payer)">
+          <input name="signers[]"            class="input-field" placeholder="Initial signer 1">
+          <input name="signers[]"            class="input-field" placeholder="Initial signer 2">
+          <input name="signers[]"            class="input-field" placeholder="Initial signer 3">
+          <input name="threshold"            class="input-field" placeholder="Threshold (e.g. 2)" type="number" min="1" max="3">
+          <input name="treasury_authority"   class="input-field" placeholder="Treasury authority pubkey">
+          <input name="payout_mint"          class="input-field" placeholder="Payout mint (USDC) pubkey">
+          <input name="second_currency_mint" class="input-field" placeholder="Second currency mint pubkey">
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <%= submit_tag "Build request", class: "btn btn-primary" %>
+        <%= link_to "Cancel", admin_signing_requests_path, class: "btn btn-secondary" %>
+      </div>
+    </div>
+  <% end %>
+</div>
