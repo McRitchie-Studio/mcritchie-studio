@@ -77,7 +77,4 @@ gem "tailwindcss-rails", "~> 2.7"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-# Dev: consume the local engine checkout while the shared-auth work is in
-# flight. Restore `"~> 0.5"` (RubyGems) before merge/deploy once v0.5.x is
-# published.
-gem "studio-engine", path: "../studio-engine"
+gem "studio-engine", "~> 0.5"
