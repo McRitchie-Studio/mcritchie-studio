@@ -17,7 +17,11 @@ module ActiveSupport
 end
 
 class ActionDispatch::IntegrationTest
-  def log_in_as(user, password: "password")
-    post login_path, params: { email: user.email, password: password }
+  # Passwordless: mint + consume a magic-link token (create-or-login). The user
+  # must have an email. In test the cache is :null_store, so MagicLink skips
+  # single-use enforcement and the token consumes cleanly.
+  def log_in_as(user)
+    token = MagicLink.generate(email: user.email)
+    get magic_link_path(token)
   end
 end

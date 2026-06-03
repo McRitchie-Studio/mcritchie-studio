@@ -68,5 +68,55 @@
         <%= yield %>
       </div>
     <% end %>
+
+    <%# Modal host (engine) + the app's modal partials. Powers the Connect-Wallet
+        picker and the "check your inbox" magic-link confirmation. %>
+    <%= render "studio/modals/host" do %>
+      <template x-if="$store.modals.current().id === 'wallet-connect'">
+        <%= render "modals/wallet_connect" %>
+      </template>
+      <template x-if="$store.modals.current().id === 'check-inbox'">
+        <%= render "modals/check_inbox" %>
+      </template>
+    <% end %>
+
+    <%# Shared Solana sign-in + magic-link request. Inline so they're always
+        defined; window.walletProvider comes from the wallet_provider importmap
+        module (loaded before the modal can be opened). %>
+    <script>
+      window.solanaConnectAndVerify = async function (walletName, opts) {
+        opts = opts || {};
+        var provider = walletName ? window.walletProvider.get(walletName) : window.walletProvider.detect();
+        if (!provider) throw new Error('Wallet not available');
+        var resp = await provider.connect();
+        var pubkeyB58 = resp.publicKey.toBase58();
+        var data = await (await fetch('/auth/solana/nonce')).json();
+        var domain = window.location.host;
+        var message = domain + ' wants you to sign in with your Solana account:\n' + pubkeyB58 +
+          '\n\nSign in to McRitchie Studio\n\nNonce: ' + data.nonce;
+        var signed = await provider.signMessage(new TextEncoder().encode(message), 'utf8');
+        var signatureB58 = window.encodeBase58(signed.signature);
+        return await (await fetch('/auth/solana/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+          body: JSON.stringify({ message: message, signature: signatureB58, pubkey: pubkeyB58 })
+        })).json();
+      };
+
+      window.postMagicLink = async function (email) {
+        var body = new URLSearchParams();
+        body.set('email', email || '');
+        var resp = await fetch('/magic_link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json',
+                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+          body: body.toString()
+        });
+        try { return await resp.json(); } catch (e) { return { success: resp.ok }; }
+      };
+
+      // Hook for post-verify UX (e.g. flag a brand-new account). No-op for now.
+      window.handleSolanaVerifySuccess = function (result) {};
+    </script>
   </body>
 </html>
