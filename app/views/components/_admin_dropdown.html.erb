@@ -1,3 +1,9 @@
+<%# Navbar menu dropdown. NOTE: despite the file name, this is now a GENERAL
+    menu shown to everyone (rendered by the engine's components/_user_nav and
+    layouts/_navbar in 3 places, so the partial name stays "admin_dropdown").
+    It links to two hub pages whose full link lists live on the pages themselves:
+      Links       -> /links        (public, everyone)
+      Admin Links -> /admin/links  (gated below on admin?) %>
 <div x-data="{ open: false }" class="relative">
   <button @click="open = !open" class="text-secondary hover:text-heading p-1 rounded-md transition" title="Menu">
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
