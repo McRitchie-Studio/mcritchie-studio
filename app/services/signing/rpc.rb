@@ -38,9 +38,12 @@ module Signing
 
     # A fresh recent blockhash (base58) — used for SINGLE-signer requests where
     # the one human signs + broadcasts promptly (no durable nonce needed).
+    # Commitment "finalized": sendTransaction preflight simulates at a higher
+    # commitment than "confirmed", so a confirmed-only blockhash can fail with
+    # "Blockhash not found" in simulation. Finalized is always recognized.
     def self.latest_blockhash(cluster)
       body = { jsonrpc: "2.0", id: 1, method: "getLatestBlockhash",
-               params: [{ commitment: "confirmed" }] }.to_json
+               params: [{ commitment: "finalized" }] }.to_json
       status, raw = forward(cluster, body)
       bh = (JSON.parse(raw).dig("result", "value", "blockhash") rescue nil)
       raise "getLatestBlockhash failed (status #{status}): #{raw.to_s[0, 200]}" if bh.blank?
