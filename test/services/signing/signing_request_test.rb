@@ -57,32 +57,6 @@ module Signing
       assert_equal "J7b5g9uS5M2Nog1Ly1UATXTDMtXdpXK3JffRAHXGHkK2", metas[2][:pubkey]
     end
 
-    test "build_partial_signed_base64 leaves the expected signer slot empty" do
-      sr = SigningRequest.update_signers(cluster: "devnet")
-      # Mason keypair (the cosigner). Random key whose ADDRESS we force-match by
-      # asserting only the partial-sign behavior, not the address gate (that's
-      # Cosigner's job). Build a request whose cosigner == this random key.
-      mason = Solana::Keypair.generate
-      sr2 = SigningRequest.new(
-        cluster: "devnet",
-        instruction_name: "update_signers",
-        args: { "new_signers" => SigningRequest::NEW_SIGNERS },
-        accounts: {
-          "admin" => mason.to_base58, "cosigner" => SigningRequest::ALEX_7ZDJ, "vault_state" => :pda
-        },
-        expected_signer: SigningRequest::ALEX_7ZDJ,
-        cosigner: mason.to_base58
-      )
-      blockhash = "t3tQMwRTbxhw2oepPuA4e85if6djc9es4nEUo9FTBQK"
-      b64 = sr2.build_partial_signed_base64(cosigner_keypair: mason, blockhash: blockhash)
-      raw = Base64.strict_decode64(b64)
-      nsig = raw.bytes.first
-      assert_equal 2, nsig, "two required signatures (fee payer + Phantom)"
-      sig0 = raw.byteslice(1, 64)
-      sig1 = raw.byteslice(65, 64)
-      refute sig0.bytes.all?(&:zero?), "fee payer (cosigner) slot must be signed"
-      assert sig1.bytes.all?(&:zero?), "Phantom slot must be an empty placeholder"
-    end
   end
 
   class ArgEncoderTest < ActiveSupport::TestCase
@@ -96,31 +70,6 @@ module Signing
     test "unsupported type raises rather than guessing" do
       schema = [{ "name" => "x", "type" => "f64" }]
       assert_raises(ArgEncoder::UnsupportedType) { ArgEncoder.encode(schema, "x" => 1.0) }
-    end
-  end
-
-  class CosignerTest < ActiveSupport::TestCase
-    test "load! raises PubkeyMismatch when key resolves to wrong address" do
-      kp = Solana::Keypair.generate
-      ENV["SOLANA_COSIGNER_KEY"] = Solana::Keypair.encode_base58(kp.to_bytes)
-      assert_raises(Cosigner::PubkeyMismatch) do
-        Cosigner.load!(SigningRequest::MASON_CYT)
-      end
-    ensure
-      ENV.delete("SOLANA_COSIGNER_KEY")
-    end
-
-    test "load! returns keypair when address matches" do
-      kp = Solana::Keypair.generate
-      ENV["SOLANA_COSIGNER_KEY"] = Solana::Keypair.encode_base58(kp.to_bytes)
-      loaded = Cosigner.load!(kp.to_base58)
-      assert_equal kp.to_base58, loaded.to_base58
-    ensure
-      ENV.delete("SOLANA_COSIGNER_KEY")
-    end
-
-    test "read_secret! raises MissingKey when nothing configured" do
-      assert_raises(Cosigner::MissingKey) { Cosigner.read_secret! }
     end
   end
 end

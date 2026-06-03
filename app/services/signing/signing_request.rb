@@ -1,26 +1,26 @@
 module Signing
-  # Describes ONE on-chain instruction to be signed by a human's Phantom key,
-  # and builds + server-partial-signs the transaction for it. Generic by design:
+  # Describes ONE on-chain instruction to be signed by human Phantom key(s), and
+  # builds the UNSIGNED transaction for it (no server key — signers sign in their
+  # own browsers; Signing::Assembler combines the public signatures). Generic:
   #
   #   SigningRequest.new(
   #     cluster:           "devnet",
   #     instruction_name:  "update_signers",
   #     args:              { "new_signers" => [pk1, pk2, pk3] },
   #     accounts:          { "admin" => MASON, "cosigner" => ALEX_7ZDJ, "vault_state" => :pda },
-  #     expected_signer:   ALEX_7ZDJ,   # the Phantom wallet that signs in-browser
-  #     cosigner:          MASON,       # the key the SERVER partial-signs with
-  #     fee_payer:         MASON        # who pays the SOL fee (defaults to cosigner)
+  #     expected_signers:  [MASON, ALEX_7ZDJ],  # the Phantom wallets that sign in-browser
+  #     fee_payer:         MASON                 # who pays the SOL fee (defaults to first signer)
   #   )
   #
   # The instruction data is Borsh-encoded in Ruby (ArgEncoder, IDL-driven), the
   # account metas are resolved from the IDL (PDAs derived here), and the tx is
-  # partial-signed server-side leaving the expected_signer's slot empty for
-  # Phantom. The client fetches a FRESH partial-signed tx (current blockhash)
-  # for both Simulate and Sign — exactly the throwaway server's /build behavior.
+  # built UNSIGNED (all signer slots are zero placeholders) via
+  # build_unsigned_message_base64 — each signer signs that message in their own
+  # Phantom, and the coordinator assembles the collected signatures.
   #
-  # v1 ships two factories: .update_signers (the immediate dogfood) and
-  # .initialize_vault (ready for Phase 3 re-init). Both just populate this
-  # generic object.
+  # Factories: .update_signers (single-signer, the canonical dogfood instruction),
+  # .update_signers_keyless (multi-party over a durable nonce), and
+  # .initialize_vault. All just populate this generic object.
   class SigningRequest
     # --- Known turf-vault pubkeys (devnet rotation) ----------------------------
     ALEX_7ZDJ = "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr".freeze # Alex (human, Phantom)
@@ -36,8 +36,9 @@ module Signing
                 :expected_signer, :cosigner, :fee_payer, :title,
                 :coordination, :threshold, :durable_nonce, :expected_signers
 
-    # v1 params (expected_signer / cosigner / build_partial_signed_base64) are
-    # preserved for back-compat. v2 adds:
+    # Legacy single-signer params (expected_signer / cosigner) are still accepted:
+    # `cosigner` is treated as a signer pubkey and `expected_signers` defaults to
+    # [expected_signer]. Keyless params:
     #   program:         IDL registry key (default "turf_vault")
     #   coordination:    "single" | "multi"  (default inferred from threshold)
     #   threshold:       signatures required (default 1)
@@ -129,29 +130,6 @@ module Signing
       end
       address_bytes, _bump = Solana::Transaction.find_pda(seeds, program_bytes)
       Solana::Keypair.encode_base58(address_bytes)
-    end
-
-    # Build the transaction, partial-sign with the co-signer key, and return the
-    # base64 of the half-signed VersionedTransaction (the expected_signer slot
-    # is a zero placeholder for Phantom). blockhash is fetched fresh from the RPC.
-    #
-    # cosigner_keypair: a Solana::Keypair whose address == self.cosigner
-    #                   (loaded by Signing::Cosigner — never held here).
-    # blockhash:        recent blockhash (base58) from the live RPC.
-    def build_partial_signed_base64(cosigner_keypair:, blockhash:)
-      metas = account_metas
-
-      tx = Solana::Transaction.new
-      tx.set_recent_blockhash(blockhash)
-      # Fee payer MUST be @signers.first. For update_signers that's Mason
-      # (the cosigner). Phantom (expected_signer) is the additional signer.
-      tx.add_signer(cosigner_keypair)
-      tx.add_instruction(
-        program_id: program_id,
-        accounts: metas,
-        data: instruction_data
-      )
-      tx.serialize_partial_base64(additional_signers: [expected_signer])
     end
 
     # v2 KEYLESS build: produce the UNSIGNED transaction (all signer slots are

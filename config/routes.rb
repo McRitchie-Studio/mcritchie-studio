@@ -42,17 +42,10 @@ Rails.application.routes.draw do
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
 
-    # In-wallet Phantom signing module (admin-gated). Build + Mason-partial-sign
-    # a turf-vault instruction server-side; the operator's Phantom adds the
-    # second signature + broadcasts. v1 instruction = update_signers.
-    get  "signing/:instruction",       to: "signing#show",  as: :signing
-    post "signing/:instruction/build", to: "signing#build", as: :signing_build
-    post "signing/:instruction/rpc",   to: "signing#rpc",   as: :signing_rpc
-
-    # v2 KEYLESS signing console — server is a pure coordinator (no keys). A
+    # KEYLESS signing console — server is a pure coordinator (no keys). A
     # SigningRequest is built unsigned; each member signs in their own browser;
     # the assembled fully-signed tx is broadcast. Single-signer (initialize) +
-    # multi-signer durable-nonce (update_signers). Supersedes the v1 routes above.
+    # multi-signer durable-nonce (update_signers).
     resources :signing_requests, only: %i[index new create show], param: :slug do
       member do
         get  :sign

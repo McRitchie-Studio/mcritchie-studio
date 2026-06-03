@@ -1,5 +1,5 @@
 module Admin
-  # v2 admin signing console — a KEYLESS coordinator. The server builds an
+  # Admin signing console — a KEYLESS coordinator. The server builds an
   # unsigned transaction, persists it as a SigningRequest, and serves a per-signer
   # page where each member signs in THEIR OWN browser/Phantom. It only ever holds
   # the unsigned message + the PUBLIC signatures, never a key, and broadcasts the
@@ -10,8 +10,8 @@ module Admin
   #   multi  — N wallets across separate sessions; durable nonce so the half-signed
   #            tx doesn't expire between signers.
   #
-  # Supersedes the v1 Admin::SigningController (server-held Mason cosigner), which
-  # can be retired once this is dogfooded on devnet.
+  # This replaced an earlier server-held-cosigner console (Admin::SigningController
+  # + Signing::Cosigner), retired 2026-06-02 — no signer key ever lives on the server.
   class SigningRequestsController < ApplicationController
     before_action :require_admin
     before_action :load_request, only: %i[show sign submit_signature broadcast rpc]
