@@ -36,9 +36,9 @@ gem "rack-attack"
 gem "resend"
 
 # Pure-Ruby Solana primitives (Borsh encode / PDA derivation / keypair / tx
-# build + partial-sign). Powers the admin in-wallet signing module
-# (app/services/signing/, Admin::SigningController). Same gem turf-monster uses.
-gem "solana-studio", "~> 0.4.3"
+# build + partial-sign). Powers the admin signing console + durable-nonce
+# primitives. Same gem turf-monster uses.
+gem "solana-studio", "~> 0.4.6"
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[ mswin mswin64 mingw x64_mingw jruby ]

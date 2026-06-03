@@ -36,6 +36,60 @@ module Signing
       false
     end
 
+    # A fresh recent blockhash (base58) — used for SINGLE-signer requests where
+    # the one human signs + broadcasts promptly (no durable nonce needed).
+    def self.latest_blockhash(cluster)
+      body = { jsonrpc: "2.0", id: 1, method: "getLatestBlockhash",
+               params: [{ commitment: "confirmed" }] }.to_json
+      status, raw = forward(cluster, body)
+      bh = (JSON.parse(raw).dig("result", "value", "blockhash") rescue nil)
+      raise "getLatestBlockhash failed (status #{status}): #{raw.to_s[0, 200]}" if bh.blank?
+      bh
+    end
+
+    # Raw account data (binary) for a pubkey, or nil if the account doesn't exist.
+    def self.account_data(cluster, pubkey)
+      body = { jsonrpc: "2.0", id: 1, method: "getAccountInfo",
+               params: [pubkey, { encoding: "base64", commitment: "confirmed" }] }.to_json
+      status, raw = forward(cluster, body)
+      b64 = (JSON.parse(raw).dig("result", "value", "data", 0) rescue nil)
+      raise "getAccountInfo(#{pubkey}) failed (status #{status})" if b64.blank?
+      Base64.decode64(b64).b
+    end
+
+    # The stored durable-nonce value (base58) a tx anchored on this account must
+    # use, via the gem's NonceAccount parser. Verifies the account is initialized
+    # and (optionally) owned by the expected authority before trusting it — so a
+    # MULTI-signer half-signed tx never expires between signers.
+    def self.nonce_value(cluster, nonce_pubkey, expected_authority: nil)
+      na = Solana::NonceAccount.parse(account_data(cluster, nonce_pubkey))
+      raise "nonce account #{nonce_pubkey} is not initialized" unless na.initialized?
+      if expected_authority && !na.authority?(expected_authority)
+        raise "nonce account #{nonce_pubkey} authority is #{na.authority}, expected #{expected_authority}"
+      end
+      na.nonce
+    end
+
+    # Minimum lamports for a rent-exempt account of `space` bytes.
+    def self.min_balance_for_rent_exemption(cluster, space)
+      body = { jsonrpc: "2.0", id: 1, method: "getMinimumBalanceForRentExemption", params: [space] }.to_json
+      status, raw = forward(cluster, body)
+      lamports = (JSON.parse(raw)["result"] rescue nil)
+      raise "getMinimumBalanceForRentExemption failed (status #{status})" if lamports.nil?
+      lamports.to_i
+    end
+
+    # Submit a fully-signed base64 tx. Returns the signature, or raises with the
+    # RPC error message.
+    def self.send_transaction(cluster, signed_base64)
+      body = { jsonrpc: "2.0", id: 1, method: "sendTransaction",
+               params: [signed_base64, { encoding: "base64", skipPreflight: false }] }.to_json
+      status, raw = forward(cluster, body)
+      parsed = JSON.parse(raw) rescue {}
+      return parsed["result"] if parsed["result"]
+      raise "sendTransaction failed: #{parsed.dig("error", "message") || "status #{status}"}"
+    end
+
     # Forward a raw JSON-RPC body string to the cluster RPC. Returns
     # [status, body_string]. The API key stays server-side.
     def self.forward(cluster, body)

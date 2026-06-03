@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_02_133311) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_02_174949) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -282,6 +282,20 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_133311) do
     t.index ["team_slug"], name: "index_depth_charts_on_team_slug", unique: true
   end
 
+  create_table "durable_nonces", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "pubkey", null: false
+    t.string "authority", null: false
+    t.string "cluster", default: "devnet", null: false
+    t.string "status", default: "active", null: false
+    t.string "label"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["cluster", "status"], name: "index_durable_nonces_on_cluster_and_status"
+    t.index ["pubkey"], name: "index_durable_nonces_on_pubkey", unique: true
+    t.index ["slug"], name: "index_durable_nonces_on_slug", unique: true
+  end
+
   create_table "error_logs", force: :cascade do |t|
     t.text "message"
     t.text "inspect"
@@ -457,6 +471,33 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_133311) do
     t.index ["league", "active"], name: "index_seasons_on_league_and_active"
     t.index ["slug"], name: "index_seasons_on_slug", unique: true
     t.index ["year", "league"], name: "index_seasons_on_year_and_league", unique: true
+  end
+
+  create_table "signing_requests", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "title"
+    t.string "program", default: "turf_vault", null: false
+    t.string "program_id", null: false
+    t.string "cluster", default: "devnet", null: false
+    t.string "instruction_name", null: false
+    t.jsonb "args", default: {}, null: false
+    t.jsonb "accounts", default: {}, null: false
+    t.string "coordination", default: "multi", null: false
+    t.integer "threshold", default: 1, null: false
+    t.string "expected_signers", default: [], null: false, array: true
+    t.jsonb "collected_signatures", default: {}, null: false
+    t.string "multisig_pubkey"
+    t.string "fee_payer"
+    t.string "durable_nonce_pubkey"
+    t.string "nonce_authority"
+    t.text "unsigned_message_base64"
+    t.string "status", default: "awaiting_signatures", null: false
+    t.string "tx_signature"
+    t.text "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_signing_requests_on_slug", unique: true
+    t.index ["status"], name: "index_signing_requests_on_status"
   end
 
   create_table "skill_assignments", force: :cascade do |t|

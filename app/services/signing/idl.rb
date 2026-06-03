@@ -13,25 +13,22 @@ module Signing
     class UnknownCluster < StandardError; end
     class UnknownInstruction < StandardError; end
 
-    # Cluster => committed IDL path. Mainnet variant is the same IDL with the
-    # mainnet program address patched in (the on-chain surface is identical).
-    PATHS = {
-      "devnet"  => "turf_vault.devnet.json",
-      "mainnet" => "turf_vault.mainnet.json"
-    }.freeze
+    DEFAULT_PROGRAM = "turf_vault".freeze
 
-    def self.for(cluster)
+    def self.for(cluster, program: DEFAULT_PROGRAM)
       @cache ||= {}
-      @cache[cluster.to_s] ||= new(cluster.to_s)
+      @cache["#{program}:#{cluster}"] ||= new(cluster.to_s, program: program.to_s)
     end
 
-    attr_reader :cluster, :raw
+    attr_reader :cluster, :program, :raw
 
-    def initialize(cluster)
-      raise UnknownCluster, "unknown cluster #{cluster.inspect}" unless PATHS.key?(cluster)
+    def initialize(cluster, program: DEFAULT_PROGRAM)
+      filename = IdlRegistry::PROGRAMS.dig(program.to_s, cluster.to_s) or
+        raise UnknownCluster, "no IDL registered for program=#{program.inspect} cluster=#{cluster.inspect}"
 
-      @cluster = cluster
-      path = Rails.root.join("config", "idl", PATHS.fetch(cluster))
+      @program = program.to_s
+      @cluster = cluster.to_s
+      path = Rails.root.join("config", "idl", filename)
       @raw = JSON.parse(File.read(path))
     end
 
