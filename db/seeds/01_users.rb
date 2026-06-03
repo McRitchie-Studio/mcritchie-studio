@@ -17,6 +17,13 @@ users_data.each do |data|
     u.role = data[:role]
   end
 
+  # find_or_create_by!'s block only runs on CREATE, so a pre-existing row keeps
+  # its current role on a re-seed. Enforce the seed's role idempotently — the
+  # seed is the durable source of truth for who is an admin. (alex@mcritchie.studio
+  # was created as the default "viewer" by first login before being seeded; without
+  # this, a re-seed would never promote it.)
+  user.update!(role: data[:role]) if user.role != data[:role]
+
   # Link the wallet idempotently — also backfills an existing row so the account
   # can auth via Solana OR email. Re-runs are no-ops.
   if data[:solana_address].present? && user.solana_address != data[:solana_address]
