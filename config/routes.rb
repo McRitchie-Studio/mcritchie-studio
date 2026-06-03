@@ -10,6 +10,10 @@ Rails.application.routes.draw do
   get "privacy", to: "landing#privacy", as: :privacy
 
   get "dashboard", to: "dashboard#index"
+  # Public link hub — general (non-admin) destinations. The admin counterpart
+  # lives at /admin/links (admin#links, require_admin). Both are surfaced from
+  # the nav dropdown (Admin Links shows only to admins).
+  get "links", to: "links#index", as: :links
   get "toast_test", to: "toast_test#index"
   post "toast_test/flash", to: "toast_test#trigger_flash"
   resources :chat, only: [:index, :create]
@@ -31,6 +35,10 @@ Rails.application.routes.draw do
   # TikTok OAuth handshake (one-time, admin-only) — visit /admin/tiktok/connect
   # to authorize @turfmonstershow and capture refresh_token + open_id.
   namespace :admin do
+    # Admin link hub — gathers every admin/operator destination (incl. the
+    # on-chain Signing Console). admin#links, require_admin. /admin/links.
+    get "links", to: "links#index", as: :links
+
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
 

@@ -1,0 +1,43 @@
+<%#
+  Shared link-hub renderer used by both /links and /admin/links. Locals:
+    title    - String, page heading
+    subtitle - String, sub line (optional)
+    sections - Array of { title:, links: [ { label:, href:, emoji:, desc:, featured:, target: } ] }
+  Passed as explicit locals (never a block), so it is safe in this shared partial.
+%>
+<div class="max-w-5xl mx-auto px-4 py-10">
+  <header class="mb-8">
+    <h1 class="text-3xl font-extrabold text-heading"><%= title %></h1>
+    <% if local_assigns[:subtitle].present? %>
+      <p class="text-secondary mt-1"><%= subtitle %></p>
+    <% end %>
+  </header>
+
+  <div class="space-y-10">
+    <% sections.each do |section| %>
+      <section>
+        <h2 class="text-xs font-mono uppercase tracking-wider text-muted mb-3"><%= section[:title] %></h2>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <% section[:links].each do |link| %>
+            <% box = link[:featured] ? "border-primary/40 bg-primary/5" : "border-subtle bg-surface-alt" %>
+            <%= link_to link[:href], target: link[:target],
+                  class: "group flex items-start gap-3 p-4 border #{box} rounded-xl hover:border-primary/60 transition" do %>
+              <span class="text-2xl leading-none flex-none"><%= link[:emoji] %></span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-2">
+                  <span class="text-heading font-semibold group-hover:text-primary transition truncate"><%= link[:label] %></span>
+                  <% if link[:featured] %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-primary/15 text-primary border border-primary/30 whitespace-nowrap">on-chain</span>
+                  <% end %>
+                </span>
+                <% if link[:desc].present? %>
+                  <span class="block text-secondary text-[13px] mt-0.5 leading-snug"><%= link[:desc] %></span>
+                <% end %>
+              </span>
+            <% end %>
+          <% end %>
+        </div>
+      </section>
+    <% end %>
+  </div>
+</div>
