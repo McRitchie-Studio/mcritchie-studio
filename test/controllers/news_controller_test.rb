@@ -134,7 +134,8 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
   test "moves require login" do
     patch news_path(@new_article.slug, format: :json),
           params: { news: { stage: "reviewed" } }, as: :json
-    assert_response :redirect
+    # Format-aware auth (OPSEC-046): AJAX/JSON gets a clean 401, not an HTML redirect.
+    assert_response :unauthorized
   end
 
   # === JSON requests work without CSRF token ===
@@ -173,7 +174,7 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
   test "reorder requires login" do
     post reorder_news_index_path(format: :json),
          params: { slugs: [@new_article.slug] }, as: :json
-    assert_response :redirect
+    assert_response :unauthorized
   end
 
   # === Review ===

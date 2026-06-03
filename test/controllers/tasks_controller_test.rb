@@ -136,7 +136,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "moves require login" do
     patch task_path(@new_task.slug, format: :json),
           params: { task: { stage: "done" } }, as: :json
-    assert_response :redirect
+    # Format-aware auth (OPSEC-046): AJAX/JSON gets a clean 401, not an HTML redirect.
+    assert_response :unauthorized
   end
 
   # === JSON requests work without CSRF token ===
@@ -177,6 +178,6 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "reorder requires login" do
     post reorder_tasks_path(format: :json),
          params: { slugs: [@new_task.slug] }, as: :json
-    assert_response :redirect
+    assert_response :unauthorized
   end
 end

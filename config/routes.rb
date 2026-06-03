@@ -15,6 +15,17 @@ Rails.application.routes.draw do
   resources :chat, only: [:index, :create]
   resources :schedule, only: [:index]
 
+  # Unified auth — login + signup are one create-or-login flow, so they share a
+  # single canonical page at /signin (sessions#new). Legacy /login + /signup GETs
+  # 301 here, preserving the query string (so ?email= prefill survives). Defined
+  # BEFORE Studio.routes so they win GET recognition; the engine still draws
+  # /login + /signup below, keeping login_path/signup_path helpers + the POST
+  # actions. as: nil avoids a name clash with those engine-named routes.
+  get "signin", to: "sessions#new", as: :signin
+  signin_redirect = ->(_params, req) { req.query_string.present? ? "/signin?#{req.query_string}" : "/signin" }
+  get "login",  to: redirect(&signin_redirect), as: nil
+  get "signup", to: redirect(&signin_redirect), as: nil
+
   Studio.routes(self)
 
   # TikTok OAuth handshake (one-time, admin-only) — visit /admin/tiktok/connect
@@ -22,6 +33,13 @@ Rails.application.routes.draw do
   namespace :admin do
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
+
+    # In-wallet Phantom signing module (admin-gated). Build + Mason-partial-sign
+    # a turf-vault instruction server-side; the operator's Phantom adds the
+    # second signature + broadcasts. v1 instruction = update_signers.
+    get  "signing/:instruction",       to: "signing#show",  as: :signing
+    post "signing/:instruction/build", to: "signing#build", as: :signing_build
+    post "signing/:instruction/rpc",   to: "signing#rpc",   as: :signing_rpc
   end
 
   # HTML
