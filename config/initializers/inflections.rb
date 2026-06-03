@@ -18,3 +18,11 @@
 ActiveSupport::Inflector.inflections(:en) do |inflect|
   inflect.acronym "OAuth"
 end
+
+# studio-engine (>= 0.5.0) ships app/services/google_oauth_validator.rb defining
+# `GoogleOauthValidator` (Zeitwerk's DEFAULT camelization). Our "OAuth" acronym
+# above makes the autoloader instead expect `GoogleOAuthValidator`, so production
+# eager-load crashes with a Zeitwerk::NameError (dev/test don't eager-load, so it
+# only surfaces on a Heroku boot). Pin this one basename back to the engine's
+# casing — surgical, leaves the global acronym intact for everything else.
+Rails.autoloaders.main.inflector.inflect("google_oauth_validator" => "GoogleOauthValidator")
