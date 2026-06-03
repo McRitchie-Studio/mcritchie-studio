@@ -78,6 +78,11 @@ Rails.application.configure do
   # caching is enabled.
   config.action_mailer.perform_caching = false
 
+  # Required by the magic-link mailer: UserMailer#magic_link builds an absolute
+  # URL via magic_link_url(token:), which needs a host. Without this, every
+  # magic-link send raises "Missing host to link to" in production.
+  config.action_mailer.default_url_options = { host: "app.mcritchie.studio", protocol: "https" }
+
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
   # config.action_mailer.raise_delivery_errors = false
