@@ -7,4 +7,10 @@ module BroadcastsHelper
     @contact&.first_name.presence ||
       (@hubspot_export ? "{{ contact.firstname|default:'there' }}".html_safe : "there")
   end
+
+  # A CTA/hero link: the click-tracking URL when sending (mailer sets
+  # @tracked_urls), otherwise the raw destination (preview/export).
+  def broadcast_link(key, raw_url)
+    (@tracked_urls && @tracked_urls[key]) || raw_url
+  end
 end

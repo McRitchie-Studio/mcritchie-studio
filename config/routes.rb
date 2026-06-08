@@ -22,6 +22,10 @@ Rails.application.routes.draw do
   get  "unsubscribe/:token", to: "unsubscribes#show",   as: :unsubscribe
   post "unsubscribe/:token", to: "unsubscribes#create"
 
+  # Email engagement tracking (open pixel + click redirect), keyed by delivery token.
+  get "e/o/:token", to: "email_tracking#open",  as: :email_open
+  get "e/c/:token", to: "email_tracking#click", as: :email_click
+
   get "dashboard", to: "dashboard#index"
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from

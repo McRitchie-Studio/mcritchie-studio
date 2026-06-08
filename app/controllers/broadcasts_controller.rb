@@ -1,6 +1,6 @@
 class BroadcastsController < ApplicationController
-  # TODO: gate behind require_admin once the feature lands; open in dev for now.
-  skip_before_action :require_authentication
+  # Sends real email to the subscriber list — admins only.
+  before_action :require_admin
 
   before_action :load_broadcast, only: %i[edit update preview deliver]
 
@@ -9,22 +9,29 @@ class BroadcastsController < ApplicationController
     @broadcasts = Broadcast.recent
   end
 
-  # GET /broadcasts/:id/edit — the email editor (form + live preview).
+  # GET /broadcasts/:id/edit — the email editor (form + live preview + stats).
   def edit
-    @audiences = audience_counts
+    @audiences  = audience_counts
+    @deliveries = @broadcast.deliveries.includes(:contact).order(clicked_at: :desc, opened_at: :desc, sent_at: :desc)
   end
 
-  # POST /broadcasts/:id/deliver — send this broadcast to an audience via Resend.
+  # POST /broadcasts/:id/deliver — queue this broadcast to an audience. Each
+  # recipient is sent via BroadcastSendJob (async) so the request returns fast
+  # and a late unsubscribe is re-checked at send time.
   def deliver
+    if @broadcast.sent?
+      return redirect_to edit_broadcast_path(@broadcast), alert: "Already sent — duplicate send blocked."
+    end
+
     contacts = audience_scope(params[:audience])
     count = contacts.count
     if count.zero?
       return redirect_to edit_broadcast_path(@broadcast), alert: "No subscribed contacts in that audience."
     end
 
-    contacts.find_each { |c| BroadcastMailer.campaign(@broadcast, c).deliver_now }
-    @broadcast.update(status: "sent", sent_at: Time.current)
-    redirect_to edit_broadcast_path(@broadcast), notice: "Sent to #{count} subscriber#{'s' unless count == 1}."
+    contacts.find_each { |c| BroadcastSendJob.perform_later(@broadcast.id, c.id) }
+    @broadcast.update!(status: "sent", sent_at: Time.current)
+    redirect_to edit_broadcast_path(@broadcast), notice: "Queued to #{count} subscriber#{'s' unless count == 1}."
   end
 
   # PATCH /broadcasts/:id
@@ -65,9 +72,11 @@ class BroadcastsController < ApplicationController
   end
 
   def broadcast_params
+    # `status` is intentionally NOT permitted — it's derived from #deliver, not
+    # hand-editable (so the index "Status" column can't lie).
     params.require(:broadcast).permit(
       :subject, :preview_text, :header, :subheader, :template_key, :target_list,
-      :survivor_url, :turf_totals_url, :status
+      :hero_url, :survivor_url, :turf_totals_url
     )
   end
 end

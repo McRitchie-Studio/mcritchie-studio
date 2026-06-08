@@ -36,6 +36,35 @@
     <% end %>
   </div>
 
+  <!-- ENGAGEMENT -->
+  <% if @broadcast.delivered_count.positive? %>
+    <div class="card p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div class="text-xs font-semibold text-secondary uppercase tracking-wide">Engagement</div>
+        <div class="text-xs text-muted">Opens are approximate (Apple Mail pre-loads images); clicks are exact.</div>
+      </div>
+      <div class="flex gap-8 mb-5">
+        <div><div class="text-2xl font-extrabold text-heading"><%= @broadcast.delivered_count %></div><div class="text-xs text-secondary">Delivered</div></div>
+        <div><div class="text-2xl font-extrabold text-heading"><%= number_to_percentage((@broadcast.open_rate || 0) * 100, precision: 0) %></div><div class="text-xs text-secondary"><%= @broadcast.opened_count %> opened</div></div>
+        <div><div class="text-2xl font-extrabold text-primary"><%= number_to_percentage((@broadcast.click_rate || 0) * 100, precision: 0) %></div><div class="text-xs text-secondary"><%= @broadcast.clicked_count %> clicked</div></div>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="text-secondary border-b border-subtle"><tr>
+          <th class="text-left p-2">Recipient</th><th class="text-left p-2">Opened</th><th class="text-left p-2">Clicked</th>
+        </tr></thead>
+        <tbody>
+          <% @deliveries.each do |d| %>
+            <tr class="border-b border-subtle/50">
+              <td class="p-2 text-heading"><%= d.contact.email %><% if d.contact.first_name.present? %> <span class="text-muted">(<%= d.contact.first_name %>)</span><% end %></td>
+              <td class="p-2 <%= d.opened_at ? 'text-green-300' : 'text-muted' %>"><%= d.opened_at ? "#{d.open_count}×" : "—" %></td>
+              <td class="p-2 <%= d.clicked_at ? 'text-green-300' : 'text-muted' %>"><%= d.clicked_at ? "#{d.click_count}×" : "—" %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+
   <div class="flex flex-col lg:flex-row gap-8">
     <!-- EDITOR FORM -->
     <div class="lg:w-2/5">
@@ -75,6 +104,12 @@
             <%= f.select :template_key, Broadcast::TEMPLATES.map { |k, v| [v, k] }, {}, class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
           </div>
 
+          <div>
+            <%= f.label :hero_url, "Header image link", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :hero_url, placeholder: "https://… (makes the top image clickable)", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            <p class="text-xs text-muted mt-1">Optional. Clicking the header image goes here — click-tracked.</p>
+          </div>
+
           <div class="grid grid-cols-2 gap-3">
             <div>
               <%= f.label :survivor_url, "Survivor URL", class: "block text-xs font-semibold text-secondary mb-1" %>
@@ -86,15 +121,9 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <%= f.label :target_list, "HubSpot list", class: "block text-xs font-semibold text-secondary mb-1" %>
-              <%= f.text_field :target_list, placeholder: "e.g. World Cup Subscribers", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
-            </div>
-            <div>
-              <%= f.label :status, class: "block text-xs font-semibold text-secondary mb-1" %>
-              <%= f.select :status, Broadcast::STATUSES.map { |s| [s.titleize, s] }, {}, class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
-            </div>
+          <div>
+            <%= f.label :target_list, "Audience label", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :target_list, placeholder: "e.g. World Cup Subscribers", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
           </div>
 
           <div class="pt-2">

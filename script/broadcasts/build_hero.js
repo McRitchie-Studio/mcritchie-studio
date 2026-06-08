@@ -52,7 +52,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8">
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 600, height: 232 }, deviceScaleFactor: 2 });
   await p.setContent(html, { waitUntil: 'networkidle' });
-  await p.locator('.hero').screenshot({ path: path.resolve(__dirname, '..', 'public', 'email', 'world_cup_header.png') });
+  await p.locator('.hero').screenshot({ path: path.resolve(__dirname, '..', '..', 'public', 'email', 'world_cup_header.png') });
   await b.close();
   console.log('wrote public/email/world_cup_header.png');
 })();

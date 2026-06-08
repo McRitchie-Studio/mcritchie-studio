@@ -38,11 +38,14 @@
             </td>
           </tr>
 
-          <!-- OPTIONAL HERO IMAGE (per-campaign split graphic) -->
+          <!-- OPTIONAL HERO IMAGE (per-campaign split graphic; clickable when hero_url set) -->
           <% if content_for?(:email_hero_image) %>
+          <% hero_link = broadcast_link(:hero, @broadcast&.hero_url.presence) %>
           <tr>
             <td style="padding:0;font-size:0;line-height:0;">
+              <% if hero_link.present? %><a href="<%= hero_link %>" target="_blank" style="text-decoration:none;"><% end %>
               <img src="<%= yield :email_hero_image %>" width="600" alt="World Cup" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;">
+              <% if hero_link.present? %></a><% end %>
             </td>
           </tr>
           <% end %>
@@ -94,6 +97,11 @@
               <% end %>
             </td>
           </tr>
+
+          <!-- open-tracking pixel (only on actual sends) -->
+          <% if @open_pixel_url %>
+          <tr><td style="font-size:0;line-height:0;height:0;"><img src="<%= @open_pixel_url %>" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;"></td></tr>
+          <% end %>
 
         </table>
 

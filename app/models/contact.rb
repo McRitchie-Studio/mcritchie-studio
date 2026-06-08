@@ -2,6 +2,8 @@
 # manually). Holds the merge fields (first_name) and the unsubscribe state +
 # token. Sending suppresses anyone not `subscribed`.
 class Contact < ApplicationRecord
+  has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
+
   before_validation :normalize_email
   before_validation :ensure_unsubscribe_token, on: :create
 

@@ -2,12 +2,20 @@ class BroadcastMailer < ApplicationMailer
   helper :broadcasts # BroadcastsHelper#broadcast_greeting_name (mailers don't auto-include app helpers)
 
   # Renders a broadcast for ONE contact: personalized greeting, public S3 images,
-  # and a working per-contact unsubscribe link. Delivered via Resend.
-  def campaign(broadcast, contact)
+  # a per-contact unsubscribe link, and (when a delivery is given) the open pixel
+  # + click-tracking links.
+  def campaign(broadcast, contact, delivery = nil)
     @broadcast        = broadcast
     @contact          = contact
     @email_asset_host = Broadcasts::Assets.base_url
     @unsubscribe_url  = unsubscribe_url(token: contact.unsubscribe_token, **url_host_options)
+
+    if delivery
+      @open_pixel_url = email_open_url(token: delivery.token, **url_host_options)
+      @tracked_urls = Broadcast::TRACKED_LINKS.keys.index_with do |key|
+        email_click_url(token: delivery.token, l: key, **url_host_options)
+      end.symbolize_keys
+    end
 
     mail(to: contact.email, subject: @broadcast.subject.presence || "(no subject)") do |format|
       format.html { render template: "broadcasts/#{@broadcast.template_key}", layout: "broadcast_email" }
