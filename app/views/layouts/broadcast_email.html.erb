@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="x-apple-disable-message-reformatting">
+  <title><%= content_for?(:email_title) ? strip_tags(yield(:email_title)) : "McRitchie Studio" %></title>
+  <!--[if mso]>
+  <style>table,td,div,h1,h2,p,a{font-family:Arial,Helvetica,sans-serif !important;}</style>
+  <![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#eef1f4;-webkit-font-smoothing:antialiased;">
+
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#eef1f4;opacity:0;">
+    <%= content_for?(:preheader) ? yield(:preheader) : "A note from McRitchie Studio." %>
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef1f4;">
+    <tr>
+      <td align="center" style="padding:28px 12px;">
+
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(15,23,42,0.08);font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+          <!-- BRAND BAND (solid violet — logo + wordmark) -->
+          <tr>
+            <td style="background-color:#8E82FE;background-image:linear-gradient(180deg,#7064e8 0%,#8E82FE 100%);padding:8px 32px <%= content_for?(:email_hero_image) ? '7px' : '26px' %> 32px;text-align:center;">
+              <img src="<%= @email_asset_host %>/email/studio-logo-white.png" width="26" height="26" alt="McRitchie Studio" style="display:inline-block;vertical-align:middle;border:0;outline:none;text-decoration:none;">
+              <span style="display:inline-block;vertical-align:middle;margin-left:9px;font-size:17px;color:#ffffff;font-weight:700;letter-spacing:0.3px;">McRitchie&nbsp;<span style="font-weight:400;color:#ede9ff;">Studio</span></span>
+              <% unless content_for?(:email_hero_image) %>
+                <% if content_for?(:email_title) %>
+                  <h1 style="margin:16px 0 6px 0;font-size:29px;line-height:1.2;color:#ffffff;font-weight:800;"><%= yield :email_title %></h1>
+                <% end %>
+                <% if content_for?(:email_subtitle) %>
+                  <p style="margin:0;font-size:17px;line-height:1.5;color:#efecff;"><%= yield :email_subtitle %></p>
+                <% end %>
+              <% end %>
+            </td>
+          </tr>
+
+          <!-- OPTIONAL HERO IMAGE (per-campaign split graphic) -->
+          <% if content_for?(:email_hero_image) %>
+          <tr>
+            <td style="padding:0;font-size:0;line-height:0;">
+              <img src="<%= yield :email_hero_image %>" width="600" alt="World Cup" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;">
+            </td>
+          </tr>
+          <% end %>
+
+          <!-- TITLE BAND (navy) — only alongside a hero image -->
+          <% if content_for?(:email_hero_image) && (content_for?(:email_title) || content_for?(:email_subtitle)) %>
+          <tr>
+            <td style="background-color:#0b1220;background-image:linear-gradient(135deg,#0b1220 0%,#141829 60%,#1b1838 100%);padding:22px 32px 24px 32px;text-align:center;">
+              <% if content_for?(:email_title) %>
+                <h1 style="margin:0 0 6px 0;font-size:29px;line-height:1.2;color:#ffffff;font-weight:800;"><%= yield :email_title %></h1>
+              <% end %>
+              <% if content_for?(:email_subtitle) %>
+                <p style="margin:0;font-size:17px;line-height:1.5;color:#efecff;"><%= yield :email_subtitle %></p>
+              <% end %>
+            </td>
+          </tr>
+          <% end %>
+
+          <!-- SWAPPABLE BODY (the copy) -->
+          <tr>
+            <td style="padding:4px 0 8px 0;">
+              <%= yield %>
+            </td>
+          </tr>
+
+          <!-- STANDARD FOOTER -->
+          <tr>
+            <td style="background-color:#0b1220;padding:24px 32px;text-align:center;">
+              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#5fd38d;font-weight:600;">McRitchie&nbsp;Studio</div>
+              <%
+                # Resolve the address + unsubscribe link per render target. HubSpot
+                # export uses its merge tokens; an app send uses the real link;
+                # the in-app preview has neither (shown as a placeholder note).
+                address = unsubscribe_href = nil
+                if @hubspot_export
+                  address          = "{{ site_settings.company_name }} &middot; {{ site_settings.company_street_address_1 }}, {{ site_settings.company_city }}, {{ site_settings.company_state }} {{ site_settings.company_zip }}".html_safe
+                  unsubscribe_href = "{{ unsubscribe_link }}"
+                elsif @unsubscribe_url
+                  address          = ENV.fetch("MAILER_ADDRESS", "McRitchie Studio")
+                  unsubscribe_href = @unsubscribe_url
+                end
+              %>
+              <p style="margin:8px 0 0 0;font-size:12px;line-height:1.6;color:#7c8aa0;">You&rsquo;re receiving this because you joined the McRitchie Studio mailing list.</p>
+              <% if unsubscribe_href %>
+                <p style="margin:6px 0 0 0;font-size:12px;line-height:1.6;color:#7c8aa0;"><%= address %></p>
+                <p style="margin:6px 0 0 0;font-size:12px;line-height:1.6;color:#7c8aa0;"><a href="<%= unsubscribe_href %>" style="color:#9aa6bd;text-decoration:underline;">Unsubscribe</a></p>
+              <% else %>
+                <p style="margin:6px 0 0 0;font-size:12px;line-height:1.6;color:#7c8aa0;"><span style="color:#5b6b82;">[unsubscribe + address footer is added on send]</span></p>
+              <% end %>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

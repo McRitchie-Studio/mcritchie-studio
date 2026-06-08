@@ -164,6 +164,24 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
     t.index ["team_slug"], name: "index_athletes_on_team_slug"
   end
 
+  create_table "broadcasts", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "subject", default: "", null: false
+    t.string "preview_text"
+    t.string "template_key", null: false
+    t.string "status", default: "draft", null: false
+    t.string "target_list"
+    t.string "survivor_url"
+    t.string "turf_totals_url"
+    t.datetime "sent_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "header"
+    t.string "subheader"
+    t.index ["slug"], name: "index_broadcasts_on_slug", unique: true
+    t.index ["status"], name: "index_broadcasts_on_status"
+  end
+
   create_table "coach_rankings", force: :cascade do |t|
     t.string "coach_slug", null: false
     t.string "season_slug", null: false
@@ -196,6 +214,22 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
     t.index ["slug"], name: "index_coaches_on_slug", unique: true
     t.index ["sport"], name: "index_coaches_on_sport"
     t.index ["team_slug"], name: "index_coaches_on_team_slug"
+  end
+
+  create_table "contacts", force: :cascade do |t|
+    t.string "email", null: false
+    t.string "first_name"
+    t.string "last_name"
+    t.string "tags", default: [], null: false, array: true
+    t.boolean "subscribed", default: true, null: false
+    t.datetime "unsubscribed_at"
+    t.string "unsubscribe_token", null: false
+    t.string "source"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "lower((email)::text)", name: "index_contacts_on_lower_email", unique: true
+    t.index ["tags"], name: "index_contacts_on_tags", using: :gin
+    t.index ["unsubscribe_token"], name: "index_contacts_on_unsubscribe_token", unique: true
   end
 
   create_table "contents", force: :cascade do |t|

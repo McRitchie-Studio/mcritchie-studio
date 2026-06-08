@@ -9,6 +9,19 @@ Rails.application.routes.draw do
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
 
+  # Broadcast emails — table view + editor. `preview` renders the email itself
+  # (in the email shell) for the editor's live iframe.
+  resources :broadcasts, only: %i[index edit update] do
+    member do
+      get  :preview
+      post :deliver
+    end
+  end
+
+  # One-click-safe unsubscribe: GET shows an inert confirm page, POST unsubscribes.
+  get  "unsubscribe/:token", to: "unsubscribes#show",   as: :unsubscribe
+  post "unsubscribe/:token", to: "unsubscribes#create"
+
   get "dashboard", to: "dashboard#index"
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from

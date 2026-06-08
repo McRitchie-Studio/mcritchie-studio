@@ -1,0 +1,48 @@
+<div class="max-w-5xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-extrabold text-heading">Broadcasts</h1>
+      <p class="text-secondary text-sm mt-1">Marketing emails composed in Studio. Compose &amp; preview here, then send from HubSpot.</p>
+    </div>
+  </div>
+
+  <% if @broadcasts.empty? %>
+    <div class="card p-8 text-center text-secondary">No broadcasts yet.</div>
+  <% else %>
+    <div class="card overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="text-secondary border-b border-subtle">
+          <tr>
+            <th class="text-left p-3">Subject</th>
+            <th class="text-left p-3">Template</th>
+            <th class="text-left p-3">List</th>
+            <th class="text-left p-3">Status</th>
+            <th class="text-left p-3">Updated</th>
+            <th class="p-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @broadcasts.each do |b| %>
+            <tr class="border-b border-subtle/50">
+              <td class="p-3 font-medium text-heading">
+                <%= b.subject.presence || "(no subject)" %>
+                <% if b.preview_text.present? %>
+                  <div class="text-xs text-muted truncate max-w-xs"><%= b.preview_text %></div>
+                <% end %>
+              </td>
+              <td class="p-3 text-secondary"><%= b.template_label %></td>
+              <td class="p-3 text-secondary"><%= b.target_list.presence || "—" %></td>
+              <td class="p-3">
+                <span class="px-2 py-0.5 rounded text-xs <%= b.sent? ? 'bg-green-900/40 text-green-300' : 'bg-surface-alt text-secondary' %>"><%= b.status_label %></span>
+              </td>
+              <td class="p-3 text-secondary"><%= b.updated_at.strftime("%b %-d, %Y") %></td>
+              <td class="p-3 text-right whitespace-nowrap">
+                <%= link_to "Edit", edit_broadcast_path(b), class: "text-primary underline" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</div>

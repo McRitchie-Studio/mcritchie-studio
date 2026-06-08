@@ -120,6 +120,26 @@ export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "agents" --acc
 
 Alex Bot is the primary admin for routine TurfVault operations. Alex Human is the backup/admin cosigner. Current program IDs and signer set live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
 
+## AWS — S3 + Amazon SES
+
+Two distinct AWS credential sets live in 1Password vault `agents` (account `MWOV5OT5BRHATI4EGMN26C5DPA`):
+
+### App S3 key (Active Storage + `Studio::S3`)
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in each app's `.env` — used by Active Storage (avatars/uploads) and `Studio::S3` (broadcast email images). Buckets `mcritchie-studio-{dev,production}` and `turf-monster-{dev,production}`, region `us-east-2`.
+
+### SES management key (Steffon) — `agent.aws.mcritchie-ses`
+Dedicated least-privilege IAM user `mcritchie-ses` for **Amazon SES**, the email-sending backend that replaces paid Resend for marketing/broadcasts. Inline policy `ses-management` grants SES identity/DKIM management, account/quota, and send — **NOT** admin, **NOT** S3.
+
+- **1Password**: vault `agents`, item `agent.aws.mcritchie-ses`, fields `access key` + `secret access key` (CONCEALED).
+- **Region**: `us-east-2`.
+- **Retrieve (no aws CLI needed — sign via the app's bundled `aws-sigv4`)**:
+  ```bash
+  export AWS_ACCESS_KEY_ID=$(op item get "agent.aws.mcritchie-ses" --vault agents --fields label="access key" --reveal)
+  export AWS_SECRET_ACCESS_KEY=$(op item get "agent.aws.mcritchie-ses" --vault agents --fields label="secret access key" --reveal)
+  ```
+- **Status (2026-06-06)**: key **verified working** (`GetAccount` → 200, `SendingEnabled=true`, `Enforcement=HEALTHY`). Account is in **sandbox** (`ProductionAccessEnabled=false`) — sends only to *verified* addresses until production access is granted. **No identities verified yet.**
+- **Open SES tasks (Steffon)**: verify sending domain(s) + DKIM, request production access, then app `.env` gets `SES_SMTP_*` (or switch to the SDK using this key). Full runbook: [`email-delivery.md`](email-delivery.md).
+
 ## Security Notes
 
 - Never commit `.env` files or credential files
