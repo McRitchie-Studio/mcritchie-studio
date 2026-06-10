@@ -66,6 +66,28 @@ Each agent has a dedicated Solana wallet on devnet. Credentials stored in 1Passw
 
 Wallet credentials are stored in the `alex@mcritchie.studio` 1Password account. Use the CLI to retrieve them programmatically.
 
+There are **two access modes** — agent sessions use the service account, humans use the desktop-app integration:
+
+#### Agent sessions: service-account access (canonical pattern — read this first)
+
+Claude/agent sessions are already authenticated: a 1Password **service account** token lives in `~/.zprofile` (`OP_SERVICE_ACCOUNT_TOKEN`, installed by `mcritchie-studio/bin/setup-1pass-token`), and agent shells initialize from the profile. Verify with `/opt/homebrew/bin/op whoami` (expect `User Type: SERVICE_ACCOUNT`). No `--account` flag, no biometric prompt, no token-sourcing preamble needed.
+
+- **Scope**: the service account sees only the **agents** vault. Anything agents need must be stored there (`agent.*` naming convention, or product items like `Coinbase Developer Platform`).
+- **Always invoke by full path** — `/opt/homebrew/bin/op read|item|vault …`. The session permission allow-rules match these full-path prefixes. Prefixing commands with `eval`/`export` token-sourcing, or running broad vault scans/listing hunts, trips the permission classifier as "credential exploration" and gets blocked.
+- **Never print secrets.** Pull secret fields clipboard-only and consume from there; print only non-secret fields (key IDs, addresses, usernames). Avoid `op item get --format json` on items with secret fields — it dumps the secret into the session transcript.
+
+Worked example (CDP key → turf-monster `.env`, 2026-06-09):
+```bash
+/opt/homebrew/bin/op read "op://agents/Coinbase Developer Platform/Secret" | tr -d '[:space:]' | pbcopy
+/opt/homebrew/bin/op read "op://agents/Coinbase Developer Platform/API key ID"   # prints the UUID — non-secret
+cd ~/projects/turf-monster && bin/setup-cdp-key <that-uuid> && pbcopy < /dev/null
+```
+
+- **Fallback**: `~/projects/bin/op-agent <op args>` sources the token explicitly, for shells where the profile didn't load. Using it from an agent session needs an operator-added allow rule via `/permissions`: `Bash(/Users/alex/projects/bin/op-agent *)`.
+- **Hard boundaries — don't fight them**: agent sessions cannot scan vaults for credentials they weren't pointed at, and cannot edit `.claude/settings*.json` to self-grant access. Targeted reads of operator-named items via the allowed full-path commands are the sanctioned path. (Codified 2026-06-09 after the CDP key retrieval hit both walls.)
+
+#### Human/desktop access
+
 **Prerequisites**: Install `brew install 1password-cli`, then enable "Integrate with 1Password CLI" in 1Password desktop app (Settings > Developer).
 
 **Account ID**: `MWOV5OT5BRHATI4EGMN26C5DPA`
@@ -106,5 +128,5 @@ Alex Bot is the primary admin for the TurfVault smart contract (program `Dx8uGU5
 - API is currently open (no auth) — suitable for local/trusted networks only
 - Google OAuth credentials must be configured per environment
 - Password hashing uses bcrypt via `has_secure_password`
-- 1Password CLI requires biometric or password auth on each use — credentials are never cached in plaintext
+- 1Password CLI: human/desktop mode requires biometric or password auth on each use; agent sessions use the scoped service-account token (sees the `agents` vault only) — credentials are never cached in plaintext either way
 - Private keys should only be stored in 1Password and `.env` files (gitignored), never in code or commits
