@@ -76,14 +76,12 @@ Claude/agent sessions are already authenticated: a 1Password **service account**
 - **Always invoke by full path** — `/opt/homebrew/bin/op read|item|vault …`. The session permission allow-rules match these full-path prefixes. Prefixing commands with `eval`/`export` token-sourcing, or running broad vault scans/listing hunts, trips the permission classifier as "credential exploration" and gets blocked.
 - **Never print secrets.** Pull secret fields clipboard-only and consume from there; print only non-secret fields (key IDs, addresses, usernames). Avoid `op item get --format json` on items with secret fields — it dumps the secret into the session transcript.
 
-Worked example (CDP key → turf-monster `.env`, 2026-06-09):
+Worked example (CDP key → turf-monster `.env`):
 ```bash
-/opt/homebrew/bin/op read "op://agents/Coinbase Developer Platform/Secret" | tr -d '[:space:]' | pbcopy
-/opt/homebrew/bin/op read "op://agents/Coinbase Developer Platform/API key ID"   # prints the UUID — non-secret
-cd ~/projects/turf-monster && bin/setup-cdp-key <that-uuid> && pbcopy < /dev/null
+cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key from 1Password (op://agents/Coinbase Developer Platform) → writes .env, never echoes the secret
 ```
+`bin/setup-cdp-key` defaults to a 1Password pull (PR #144); `--clipboard` (full JSON blob) and `bin/setup-cdp-key <key-id>` (secret in clipboard) remain as first-time/fallback modes.
 
-- **Fallback**: `~/projects/bin/op-agent <op args>` sources the token explicitly, for shells where the profile didn't load. Using it from an agent session needs an operator-added allow rule via `/permissions`: `Bash(/Users/alex/projects/bin/op-agent *)`.
 - **Hard boundaries — don't fight them**: agent sessions cannot scan vaults for credentials they weren't pointed at, and cannot edit `.claude/settings*.json` to self-grant access. Targeted reads of operator-named items via the allowed full-path commands are the sanctioned path. (Codified 2026-06-09 after the CDP key retrieval hit both walls.)
 
 #### Human/desktop access
