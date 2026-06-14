@@ -1,12 +1,25 @@
-# `bin/new-app` Scaffolder Spec (Audit Tier 3 #24)
+# `bin/new-app` Scaffolder Spec (Future Layer)
 
-The 2026-05-17 ecosystem audit recommended building a `bin/new-app` scaffolder so adding a new satellite (Tax Studio, future apps) is a single interactive command instead of a 7-step manual checklist. This file is the spec — concrete enough to execute in a fresh session.
+The current supported registry tool is `mcritchie-studio/bin/register-satellite`.
+Start there before building the larger app generator. The 2026-05-17 ecosystem
+audit recommended a future `bin/new-app` scaffolder so adding a new satellite
+is a single interactive command instead of a manual checklist. This file is the
+future-layer spec.
+
+Active rules live in:
+
+- `mcritchie-studio/docs/agents/modules/app-registry.md`
+- `mcritchie-studio/config/satellites.yml`
+- `studio-engine/docs/NEW_APP_SETUP.md`
+
+Current decision: Tax Studio stays reserved at `3200-3299`. Rolio remains
+unmanaged unless promoted; if promoted, it should use `3300-3399`.
 
 ## What it does
 
-Single interactive script that:
+Future single interactive script that:
 1. Prompts for the new app's identifier, display name, port, Heroku app name, role, description
-2. Adds the satellites.yml entry (using the schema already established in audit Tier 2 #11)
+2. Calls or preserves `bin/register-satellite` validation for the registry entry
 3. Generates the Rails app from a template
 4. Provisions the Heroku app and writes a starter set of config vars
 5. Adds the `RAILS_MASTER_KEY` to 1Password
@@ -17,20 +30,20 @@ End state: operator can answer the prompts, then visit `http://localhost:<port>`
 
 ## Location
 
-`mcritchie-studio/bin/new-app` (alongside `bin/ecosystem-build`, `bin/setup-1pass-token`).
+Future location: `mcritchie-studio/bin/new-app` (alongside `bin/ecosystem-build`, `bin/setup-1pass-token`, and `bin/register-satellite`).
 
 ## Interactive prompts
 
 ```
 $ bin/new-app
-Slug (lowercase, snake_case, will be the GitHub repo name): tax-studio
-Display name: Tax Studio
-Emoji (optional): 📊
-Local dev port: 3003
-Heroku app name (lowercase, hyphen-separated): tax-studio
-Production URL [https://tax.mcritchie.studio]:
+Slug (lowercase, hyphen-separated, will be the GitHub repo name): rolio
+Display name: Rolio
+Emoji (optional):
+Local dev port: 3300
+Heroku app name (lowercase, hyphen-separated): rolio
+Production URL [https://rolio.mcritchie.studio]:
 SSO role for new users [viewer]:
-One-line description: Tax planning workspace
+One-line description: Relationship operating workspace
 Deploy provider [heroku]:
 ```
 
@@ -38,17 +51,17 @@ After prompts, confirm summary and proceed.
 
 ## Steps the script performs
 
-1. **Validate inputs** — slug matches `[a-z][a-z0-9_]*`, port is unused, heroku_app is available (`heroku apps:info --app <name>` returns 404).
-2. **Add to satellites.yml** (status: `planned` initially; flipped to `active` at end of run if everything succeeds).
+1. **Validate inputs** — slug matches `[a-z][a-z0-9-]*`, primary port starts an unused 100-port block, heroku_app is available (`heroku apps:info --app <name>` returns 404).
+2. **Register satellite** — call the same validation used by `bin/register-satellite`; write `status: planned` initially. Flip to `active` only after the repo, env, local stack, and docs are proven.
 3. **Generate Rails app** from template:
    ```bash
    rails new ~/projects/<slug> --skip-test --skip-system-test --database=postgresql --template=mcritchie-studio/bin/templates/satellite.rb
    ```
    Template (also new file, `bin/templates/satellite.rb`) does:
-   - Adds gems: `tailwindcss-rails`, `studio` (pinned to current tag), `sentry-ruby`, `sentry-rails`
+   - Adds gems: `tailwindcss-rails`, `studio-engine` (pinned to the current release series), `sentry-ruby`, `sentry-rails`
    - Generates `config/initializers/studio.rb` with the right `app_name`, `session_key`, `configure_sso_user`
    - Generates `config/initializers/sentry.rb`
-   - Adds `User` model satisfying the engine contract (see `studio/docs/USER_CONTRACT.md`)
+   - Adds `User` model satisfying the engine contract (see `studio-engine/docs/USER_CONTRACT.md`)
    - Adds `_navbar.html.erb` override pointing back at the hub
    - Adds `gem "solana-studio"` only if `--with-solana` flag is set
    - Runs `db:create db:migrate db:seed`
@@ -74,7 +87,7 @@ After prompts, confirm summary and proceed.
    3. Run: heroku domains:add <subdomain>.mcritchie.studio --app <heroku_app>
    4. Wait ~5 min for ACM to provision SSL
    ```
-8. **Flip status: active** in satellites.yml.
+8. **Flip status: active** in satellites.yml only after `bin/ecosystem-build` should manage the app.
 9. **Print final summary** + reminder to add the new app to bin/ecosystem-build's bringup loop (already handled by satellites.yml-driven load).
 
 ## Error handling
@@ -108,4 +121,9 @@ Estimated 4-6 hours of focused work. Most of the complexity is in:
 
 Better to do in one focused session with the time to test on a throwaway slug (`bin/new-app` against `test_studio_temp`) and tear down.
 
-When picking up: start by reading `mcritchie-studio/Gemfile` + `config/initializers/studio.rb` + `app/models/user.rb` to extract what the template needs to generate. Then write `bin/templates/satellite.rb` first (smallest scope, tests by `rails new --template=path/to/it`). Then wrap with `bin/new-app`.
+When picking up: start by reading `bin/register-satellite`,
+`studio-engine/docs/NEW_APP_SETUP.md`, `mcritchie-studio/Gemfile`,
+`config/initializers/studio.rb`, and `app/models/user.rb` to extract what the
+template needs to generate. Then write `bin/templates/satellite.rb` first
+(smallest scope, tests by `rails new --template=path/to/it`). Then wrap with
+`bin/new-app`.

@@ -7,10 +7,14 @@
 #   * bin/ecosystem-build (clone + bundle + bring-up loop)
 #
 # To add a new satellite:
-#   1. Add an entry below
-#   2. Set status: active once the repo exists + Heroku app is provisioned
-#   3. (See ecosystem-audit-2026-05-17.md Tier 3 #24 for the planned
-#      `bin/new-app` scaffolder that automates this)
+#   1. Validate the range and entry:
+#        bin/register-satellite --slug <app> --port <range-start> \
+#          --description "One-line summary" --dry-run
+#   2. Append with --write once the dry run is correct.
+#   3. Keep status: planned until the repo, env, local stack, and docs are
+#      proven. Flip to active only when bin/ecosystem-build should manage it.
+#   4. The future bin/new-app generator should build on this registry contract;
+#      it should not become a second source of truth.
 #
 # Fields:
 #   slug             — Ruby-friendly identifier; matches GitHub repo name

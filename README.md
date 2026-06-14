@@ -64,6 +64,21 @@ bin/agent-worktree up turf-monster task-slug
 
 The launcher creates `~/projects/<repo>/.worktrees/<task-slug>`, assigns a port inside the app's reserved range, isolates Redis/session/database settings, and prints the local URL to review.
 
+## Adding or promoting apps
+
+The managed satellite registry is `config/satellites.yml`. Before adding an app
+to shared automation, validate its range and metadata:
+
+```bash
+cd ~/projects/mcritchie-studio
+bin/register-satellite --list
+bin/register-satellite --slug rolio --port 3300 --description "Relationship operating workspace" --dry-run
+```
+
+Tax Studio remains reserved at `3200-3299`; Rolio stays unmanaged until it is
+promoted, at which point it should use `3300-3399`. See
+[`docs/agents/modules/app-registry.md`](docs/agents/modules/app-registry.md).
+
 ---
 
 ## Single-app dev (when you already have the toolchain)

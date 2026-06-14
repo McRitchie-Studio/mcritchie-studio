@@ -1,0 +1,220 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "uri"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+REGISTRY_PATH = File.join(ROOT, "config", "satellites.yml")
+
+VALID_STATUSES = %w[active planned].freeze
+VALID_DEPLOY_PROVIDERS = %w[heroku fly render other].freeze
+IMPLICIT_APPS = {
+  "mcritchie-studio" => {
+    "slug" => "mcritchie-studio",
+    "display_name" => "McRitchie Studio",
+    "port" => 3000,
+    "status" => "active"
+  }
+}.freeze
+
+def abort_with(message)
+  warn "ERROR: #{message}"
+  exit 1
+end
+
+def registry
+  YAML.load_file(REGISTRY_PATH).fetch("satellites")
+end
+
+def range_start(port)
+  (Integer(port) / 100) * 100
+end
+
+def range_label(port)
+  start = range_start(port)
+  "#{start}-#{start + 99}"
+end
+
+def titleize(slug)
+  slug.split("-").map { |part| part[0].upcase + part[1..].to_s }.join(" ")
+end
+
+def yaml_string(value)
+  value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').then { |escaped| "\"#{escaped}\"" }
+end
+
+def validate_url!(value, field)
+  uri = URI.parse(value.to_s)
+  return if uri.is_a?(URI::HTTP) && uri.host
+
+  abort_with "#{field} must be an http(s) URL"
+rescue URI::InvalidURIError
+  abort_with "#{field} must be an http(s) URL"
+end
+
+def print_registry
+  rows = IMPLICIT_APPS.merge(registry.to_h { |app| [app.fetch("slug"), app] })
+  puts "Managed app registry"
+  puts
+  rows.values.sort_by { |app| Integer(app.fetch("port")) }.each do |app|
+    puts format(
+      "%-18s %-9s %-11s %s",
+      app.fetch("slug"),
+      app.fetch("status", "active"),
+      range_label(app.fetch("port")),
+      app.fetch("display_name")
+    )
+  end
+
+  used_ranges = rows.values.map { |app| range_start(app.fetch("port")) }
+  next_start = (3000..9900).step(100).find { |port| !used_ranges.include?(port) }
+  puts
+  puts "Next open range: #{next_start}-#{next_start + 99}" if next_start
+end
+
+options = {
+  deploy_provider: "heroku",
+  dry_run: true,
+  role: "viewer",
+  status: "planned"
+}
+raw_args = ARGV.dup
+
+parser = OptionParser.new do |opts|
+  opts.banner = <<~TEXT
+    Usage:
+      bin/register-satellite --list
+      bin/register-satellite --slug APP --port 3300 --description "One-line summary" [options] [--write]
+
+    The command validates a new satellite app against config/satellites.yml.
+    It is dry-run by default. Pass --write to append the entry.
+  TEXT
+
+  opts.on("--list", "Print managed apps and the next open range") { options[:list] = true }
+  opts.on("--slug SLUG", "Repo/app slug, e.g. rolio") { |value| options[:slug] = value }
+  opts.on("--display-name NAME", "Human label. Defaults from slug") { |value| options[:display_name] = value }
+  opts.on("--emoji EMOJI", "Optional navbar icon") { |value| options[:emoji] = value }
+  opts.on("--port PORT", Integer, "Primary port. Must start a 100-port block") { |value| options[:port] = value }
+  opts.on("--heroku-app NAME", "Heroku app name. Defaults to slug") { |value| options[:heroku_app] = value }
+  opts.on("--production-url URL", "Production URL. Defaults to https://<slug>.mcritchie.studio") { |value| options[:production_url] = value }
+  opts.on("--role ROLE", "Default SSO role. Defaults to viewer") { |value| options[:role] = value }
+  opts.on("--description TEXT", "One-line summary") { |value| options[:description] = value }
+  opts.on("--deploy-provider NAME", "heroku, fly, render, or other. Defaults to heroku") { |value| options[:deploy_provider] = value }
+  opts.on("--status STATUS", "planned or active. Defaults to planned") { |value| options[:status] = value }
+  opts.on("--write", "Append the entry to config/satellites.yml") { options[:dry_run] = false }
+  opts.on("--dry-run", "Validate and print the entry without writing") { options[:dry_run] = true }
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit
+  end
+end
+
+parser.parse!
+
+if options[:list]
+  print_registry
+  exit 0
+end
+
+if options[:slug].nil?
+  print_registry
+  if raw_args.empty?
+    puts
+    puts "Pass --slug APP --port RANGE_START --description TEXT to validate a new satellite."
+    exit 0
+  end
+
+  abort_with "slug is required"
+end
+
+slug = options.fetch(:slug).to_s.strip
+abort_with "slug must match [a-z][a-z0-9-]*" unless slug.match?(/\A[a-z][a-z0-9-]*\z/)
+
+port = options[:port]
+abort_with "port is required" unless port
+abort_with "port must start a 100-port block, e.g. 3300" unless (port % 100).zero?
+abort_with "port must be 3000 or higher" if port < 3000
+
+display_name = options[:display_name].to_s.strip
+display_name = titleize(slug) if display_name.empty?
+heroku_app = options[:heroku_app].to_s.strip
+heroku_app = slug if heroku_app.empty?
+production_url = options[:production_url].to_s.strip
+production_url = "https://#{slug}.mcritchie.studio" if production_url.empty?
+role = options.fetch(:role).to_s.strip
+description = options[:description].to_s.strip
+deploy_provider = options.fetch(:deploy_provider).to_s.strip
+status = options.fetch(:status).to_s.strip
+emoji = options[:emoji].to_s.strip
+
+abort_with "description is required" if description.empty?
+abort_with "role is required" if role.empty?
+abort_with "status must be one of: #{VALID_STATUSES.join(", ")}" unless VALID_STATUSES.include?(status)
+abort_with "deploy provider must be one of: #{VALID_DEPLOY_PROVIDERS.join(", ")}" unless VALID_DEPLOY_PROVIDERS.include?(deploy_provider)
+validate_url!(production_url, "production-url")
+
+registered_apps = IMPLICIT_APPS.merge(registry.to_h { |app| [app.fetch("slug"), app] })
+abort_with "#{slug} is already registered in #{REGISTRY_PATH}" if registered_apps.key?(slug)
+
+registered_apps.each do |registered_slug, app|
+  registered_port = Integer(app.fetch("port"))
+  if range_start(registered_port) == range_start(port)
+    abort_with "range #{range_label(port)} conflicts with #{registered_slug} (#{range_label(registered_port)})"
+  end
+end
+
+registry.each do |app|
+  abort_with "heroku app #{heroku_app} already belongs to #{app.fetch("slug")}" if app.fetch("heroku_app", nil) == heroku_app
+  abort_with "production URL #{production_url} already belongs to #{app.fetch("slug")}" if app.fetch("production_url", nil) == production_url
+end
+
+entry = {
+  "slug" => slug,
+  "display_name" => display_name,
+  "emoji" => emoji,
+  "port" => port,
+  "heroku_app" => heroku_app,
+  "production_url" => production_url,
+  "role" => role,
+  "description" => description,
+  "deploy_provider" => deploy_provider,
+  "status" => status
+}
+
+lines = [
+  "",
+  "  - slug: #{entry.fetch("slug")}",
+  "    display_name: #{yaml_string(entry.fetch("display_name"))}",
+  "    emoji: #{yaml_string(entry.fetch("emoji"))}",
+  "    port: #{entry.fetch("port")}",
+  "    heroku_app: #{yaml_string(entry.fetch("heroku_app"))}",
+  "    production_url: #{yaml_string(entry.fetch("production_url"))}",
+  "    role: #{yaml_string(entry.fetch("role"))}",
+  "    description: #{yaml_string(entry.fetch("description"))}",
+  "    deploy_provider: #{yaml_string(entry.fetch("deploy_provider"))}",
+  "    status: #{yaml_string(entry.fetch("status"))}"
+]
+
+puts "Satellite: #{display_name} (#{slug})"
+puts "Range: #{range_label(port)}"
+puts "Status: #{status}"
+puts "Mode: #{options[:dry_run] ? "dry-run" : "write"}"
+puts
+puts lines.join("\n")
+
+if options[:dry_run]
+  puts
+  puts "Dry run only. Re-run with --write to append this entry."
+else
+  File.open(REGISTRY_PATH, "a") { |file| file.write("#{lines.join("\n")}\n") }
+  puts
+  puts "Appended to #{REGISTRY_PATH}"
+end
+
+puts
+puts "Next:"
+puts "  - Create or update the app using studio-engine/docs/NEW_APP_SETUP.md"
+puts "  - Keep status planned until the repo, env, and local stack are proven"
+puts "  - Flip status active only when bin/ecosystem-build should manage it"

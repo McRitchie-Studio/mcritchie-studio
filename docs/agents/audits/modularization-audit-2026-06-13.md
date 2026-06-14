@@ -197,11 +197,14 @@ Needs attention:
 
 ### Rolio
 
-Rolio is present locally but not in the McRitchie ecosystem registry. Its `CLAUDE.md` says it runs on port `3020`; its README still says default `3000`.
+Superseded 2026-06-14 by `docs/agents/modules/app-registry.md`.
+
+Rolio is present locally but not in the McRitchie ecosystem registry. The active
+decision is to keep it unmanaged for now.
 
 Decision needed:
 
-- Either add Rolio to the ecosystem registry with an app range, likely `3200-3299`.
+- Either add Rolio to the ecosystem registry with `3300-3399`.
 - Or explicitly document it as outside the managed McRitchie stack for now.
 
 ## Recommended Tranches
@@ -241,7 +244,7 @@ Decision needed:
 
 ## Decisions For Alex
 
-1. Should Rolio join the managed ecosystem now, and should it get the `3200-3299` range?
+1. Should Rolio join the managed ecosystem now, and should it get the `3300-3399` range?
 2. Should historical docs move to `docs/archive/`, or stay in place with strong banners?
 3. Should `studio-engine` own the shared email framework, or should a separate email gem/module exist?
 4. For worktree stacks, should local magic links use a dev-only endpoint, log-only URLs, or a mailcatcher/letter-opener style inbox?

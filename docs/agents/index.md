@@ -24,6 +24,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 | Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
 | Credential item names | `mcritchie-studio/docs/agents/modules/credential-inventory.md` |
 | Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
+| Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
