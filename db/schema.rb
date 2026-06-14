@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_02_174949) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_14_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -538,6 +538,25 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_174949) do
     t.index ["slug"], name: "index_slates_on_slug", unique: true
   end
 
+  create_table "studio_email_deliveries", force: :cascade do |t|
+    t.string "email_key", null: false
+    t.string "to"
+    t.string "mailer", null: false
+    t.string "action", null: false
+    t.jsonb "args", default: [], null: false
+    t.jsonb "kwargs", default: {}, null: false
+    t.boolean "sent", default: false, null: false
+    t.datetime "sent_at"
+    t.text "error"
+    t.bigint "user_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_studio_email_deliveries_on_created_at"
+    t.index ["email_key"], name: "index_studio_email_deliveries_on_email_key"
+    t.index ["sent"], name: "index_studio_email_deliveries_on_sent"
+    t.index ["user_id"], name: "index_studio_email_deliveries_on_user_id"
+  end
+
   create_table "tasks", force: :cascade do |t|
     t.string "title", null: false
     t.string "slug", null: false
@@ -672,4 +691,5 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_02_174949) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "roster_spots", "rosters"
+  add_foreign_key "studio_email_deliveries", "users"
 end

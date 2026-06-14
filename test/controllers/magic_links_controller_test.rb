@@ -5,16 +5,24 @@ class MagicLinksControllerTest < ActionDispatch::IntegrationTest
 
   setup { ActiveJob::Base.queue_adapter = :test }
 
-  test "create enqueues a sign-in email for a well-formed address" do
-    assert_enqueued_emails 1 do
-      post magic_link_request_path, params: { email: "fresh@example.com" }
+  test "create records and enqueues a sign-in email for a well-formed address" do
+    delivery = nil
+    assert_enqueued_with(job: Studio::EmailDeliveryJob) do
+      assert_difference "Studio::EmailDelivery.count", 1 do
+        post magic_link_request_path, params: { email: "fresh@example.com" }
+        delivery = Studio::EmailDelivery.recent.first
+      end
     end
+    assert_equal "UserMailer#magic_link", delivery.email_key
+    assert_equal "fresh@example.com", delivery.to
     assert_redirected_to login_path
   end
 
   test "create sends nothing for a malformed address (no enumeration)" do
-    assert_no_enqueued_emails do
-      post magic_link_request_path, params: { email: "not-an-email" }
+    assert_no_enqueued_jobs only: Studio::EmailDeliveryJob do
+      assert_no_difference "Studio::EmailDelivery.count" do
+        post magic_link_request_path, params: { email: "not-an-email" }
+      end
     end
     assert_redirected_to login_path
   end

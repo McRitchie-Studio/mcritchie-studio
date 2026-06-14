@@ -10,7 +10,7 @@ The workspace is now much easier for future agents to enter. The root entrypoint
 
 The main remaining risk is not app bootstrapping. It is active-vs-historical drift in docs that describe money movement, Solana deployments, and production operations. Turf Monster and Turf Vault have the most urgent drift because stale docs still mention retired wallets, old program versions, devnet-only assumptions, and the removed custodial deposit/withdraw model.
 
-Shared email transport is in place through `studio-engine`, and SES is now the preferred direction with Resend as a fallback. The shared email operating layer is not done yet: durable delivery rows, preview/catalog conventions, resend tooling, and per-app sender identity still live unevenly across apps.
+Shared email transport is in place through `studio-engine`, and SES is now the preferred direction with Resend as a fallback. As of `studio-engine 0.5.3`, shared durable delivery primitives also exist: McRitchie Studio uses `studio_email_deliveries`, while Turf Monster calls the same `Studio::Email.deliver` facade over its existing `email_deliveries` table. Preview/catalog conventions, worker deployment, and per-app sender identity still need follow-up.
 
 No product code should be broadly refactored until the Solana truth reset is finished. Future agents need one canonical deployment source, current app-facing docs, and historical docs clearly archived before touching settlement flows.
 
@@ -142,18 +142,19 @@ Impact: during an incident, an agent could inspect or mutate the wrong Heroku ap
 
 Recommendation: update the runbook around actual Heroku app names, mainnet/devnet split, and current program IDs after the Solana truth reset.
 
-### F4 - Medium - Shared Email Transport Exists, Shared Email Operations Do Not
+### F4 - Medium - Shared Email Operations Are Partially Consolidated
 
-`studio-engine` owns `Studio::MailTransport`, SES support, and Resend fallback. Turf Monster has a stronger app-level delivery model with `EmailDelivery`, a Sidekiq delivery job, resend accounting, and transactional docs.
+`studio-engine` owns `Studio::MailTransport`, SES support, Resend fallback, `Studio::Email.deliver`, and the namespaced `Studio::EmailDelivery` outbox. Turf Monster still has a stronger app-level delivery model with `EmailDelivery`, a Sidekiq delivery job, resend accounting, and transactional docs; its call sites now use the shared facade.
 
-McRitchie Studio still defaults its local sender to `noreply@turfmonster.media` unless overridden, which explains why a McRitchie Studio magic link can appear from a Turf Monster domain.
+McRitchie Studio now defaults to `noreply@mcritchie.studio` when `MAIL_TRANSPORT=ses`; the Resend rollback path still uses `noreply@turfmonster.media` unless `MAILER_FROM` overrides it.
 
-Impact: future apps will copy uneven email patterns. Deliverability, previewing, sender identity, retry behavior, and provider migration will drift.
+Impact: future apps have a clear delivery entry point, but deliverability, previewing, sender identity, worker deployment, and provider migration can still drift.
 
 Recommendation:
 
 - Verify SES sender/domain setup for `mcritchie.studio`.
-- Move shared delivery concepts into `studio-engine` after the SES transport settles.
+- Decide whether Turf Monster should eventually migrate production rows from `email_deliveries` to `studio_email_deliveries`, or keep the app table permanently behind the shared facade.
+- Add shared catalog/preview conventions after the delivery layer is stable.
 - Keep app-specific mail copy/templates in each app.
 - Preserve Resend as a documented fallback, not the primary path.
 
@@ -253,10 +254,11 @@ Goal: support McRitchie Studio, Turf Monster, and the next app with one email pl
 Deliverables:
 
 - Confirm SES sender/domain setup for each app domain.
-- Move durable delivery/logging primitives into `studio-engine` if the abstraction stays clean.
+- Keep durable delivery/logging primitives in `studio-engine`; McRitchie uses the shared table, Turf currently adapts its existing table through the facade.
 - Keep Resend fallback documented and configured as rollback.
 - Add local-first magic-link behavior for worktree stacks.
 - Standardize per-app sender defaults so McRitchie Studio does not default to Turf Monster's domain.
+- Add shared catalog/preview conventions for transactional and marketing email.
 
 ### 3. Engine Auth And Magic Links
 

@@ -1,7 +1,9 @@
 # Email Delivery - SES Primary, Resend Rollback
 
 McRitchie Studio sends transactional email through ActionMailer. Magic-link
-sign-in is currently the critical path.
+sign-in is currently the critical path. Delivery goes through
+`Studio::Email.deliver`, which records a durable `Studio::EmailDelivery` row
+before enqueueing the actual send.
 
 ## Transport Contract
 
@@ -16,7 +18,22 @@ The active transport is chosen by `MAIL_TRANSPORT`:
 Code:
 
 - `config/initializers/studio_mail_transport.rb` calls `Studio::MailTransport.configure!`.
-- `studio-engine` owns `Studio::MailTransport`, the Resend dependency, and the shared `ses:*` Rake tasks.
+- `studio-engine` owns `Studio::MailTransport`, `Studio::Email.deliver`, the
+  `Studio::EmailDelivery` outbox, the Resend dependency, and the shared `ses:*`
+  Rake tasks.
+
+## Durable Outbox
+
+The shared table is `studio_email_deliveries`.
+
+- `sent=false` means the intent was recorded but the mail has not succeeded yet.
+- `error` stores the last delivery failure message.
+- `Studio::EmailDelivery.resend_unsent!` re-enqueues unsent rows after a
+  provider or worker outage.
+
+McRitchie currently uses the Rails `:async` job adapter in production until a
+dedicated worker dyno/job backend is added. The durable row still prevents the
+send intent from disappearing; operator recovery is the resend command above.
 
 ## Credentials
 
@@ -33,12 +50,16 @@ Environment variables:
 - `MAILER_FROM`
 - `RESEND_API_KEY` only for rollback.
 
+If `MAILER_FROM` is not set, McRitchie defaults to `noreply@mcritchie.studio`
+when `MAIL_TRANSPORT=ses` and `noreply@turfmonster.media` for the Resend
+rollback path.
+
 ## Cutover Checklist
 
 1. Confirm SES is out of sandbox in `us-east-2`.
 2. Verify `mcritchie.studio` in SES.
 3. Publish the SES DKIM CNAMEs, SPF, and DMARC records.
-4. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, and `SES_REGION`.
+4. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, and optionally `MAILER_FROM=noreply@mcritchie.studio`.
 5. Set `MAIL_TRANSPORT=ses`.
 6. Smoke test a magic link to `alex@mcritchie.studio`.
 7. Confirm Gmail shows DKIM/SPF/DMARC pass and the message does not land in spam.
@@ -60,6 +81,6 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio is bundled with `studio-engine 0.5.2+`, so the compatibility
-fallback has been removed from the app. Keep future transport changes in
-`studio-engine` unless they are truly app-specific.
+McRitchie Studio is bundled with `studio-engine 0.5.3+`, so transport selection
+and durable delivery primitives live in the engine. Keep future shared email
+changes in `studio-engine` unless they are truly app-specific.
