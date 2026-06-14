@@ -1,7 +1,10 @@
 # Ecosystem Audit Prompt
 
-Paste the block below into a fresh Claude session (any modern Claude Code session
-with Bash + Read tools) to kick off a structural audit of the McRitchie ecosystem.
+> **ARCHIVE-ONLY PROMPT ARTIFACT.** This captured the Claude-era audit kickoff
+> prompt. Current audit sessions should start at `/Users/alex/projects/AGENTS.md`
+> and use `mcritchie-studio/docs/agents/audits/` as the durable record.
+
+Paste the block below into a fresh agent session to kick off a structural audit of the McRitchie ecosystem.
 
 The prompt deliberately asks Claude to **stop and ask questions first** before
 doing the bulk of the audit, so the work is shaped by the operator's priorities

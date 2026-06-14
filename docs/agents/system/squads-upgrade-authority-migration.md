@@ -1,5 +1,11 @@
 # Squads Upgrade-Authority Migration Runbook
 
+> **ARCHIVE-ONLY MIGRATION RECORD.** This captured the 2026-05-23 Squads
+> migration work before the current mainnet program existed. Current authority,
+> signer, deployment, and upgrade rules live in
+> `turf-vault/docs/CURRENT_DEPLOYMENT.md`; key-rotation procedure lives in
+> `turf-vault/docs/KEY_ROTATION.md`.
+
 > **STATUS (2026-05-23): DEVNET COMPLETE ✓ — MAINNET STILL PENDING (no mainnet program yet).**
 >
 > Devnet upgrade authority for turf-vault `Dx8u…GaCT` is the Squads V4 vault
@@ -7,7 +13,7 @@
 > `7nRuVw3VZFC6z85tYVDitPnaUHZCkqLpJRSTBNtPmtZB`, 2-of-3 Alex Bot / Alex /
 > Mason). Migration was done programmatically via the Squads V4 SDK — see
 > `turf-vault/scripts/squad-upgrade.js` for the reusable upgrade tool and
-> `turf-vault/CLAUDE.md` "Deploying an upgrade" for the flow. Since the
+> `turf-vault/docs/CURRENT_DEPLOYMENT.md` for the current upgrade rule. Since the
 > devnet migration, multiple upgrades have shipped through this path
 > (turf-vault v0.13.0 → v0.14.0 → v0.15.0), so the workflow is now
 > rehearsed and reusable.
@@ -181,7 +187,7 @@ solana program write-buffer target/deploy/turf_vault.so   # any signer can do th
 # → submit upgrade IX via Squad UI → cosigner approves → execute
 ```
 
-Update `turf-vault/CLAUDE.md`'s "Build & Deploy" section to reference this runbook rather than the current `anchor deploy --provider.cluster mainnet-beta` (which won't work post-migration).
+Update `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-vault/README.md` after any authority change. Do not update `turf-vault/CLAUDE.md`; it is migration context only.
 
 ## Open questions to resolve before mainnet
 

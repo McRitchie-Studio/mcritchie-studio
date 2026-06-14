@@ -1,5 +1,11 @@
 # McRitchie Studio
 
+> **ARCHIVE-ONLY MIGRATION CONTEXT.** This file is no longer the agent
+> entrypoint or source of truth. Start at `/Users/alex/projects/AGENTS.md`.
+> Current McRitchie Studio docs live in `docs/ECOSYSTEM.md`, `docs/topics/`,
+> and `docs/agents/`. Do not update this file except to remove it after
+> Claude compatibility with generated `AGENTS.md` is verified.
+
 Central task management and orchestration hub for the McRitchie AI agent system (Alex, Mack, Mason, Turf Monster).
 
 > **Part of the McRitchie ecosystem.** See [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) for the 5-repo map. This file is the per-repo index — each topic below loads on demand from `docs/topics/`. Original kitchen-sink CLAUDE.md was split on 2026-05-17 per audit Tier 2 #9.

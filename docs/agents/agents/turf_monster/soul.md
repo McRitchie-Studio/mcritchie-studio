@@ -68,4 +68,4 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — schema work defers to Carl and the migration lane
-- The `nfl-refresh` and `nfl-rebuild` project skills (in `.claude/skills/`) for canonical data flows
+- [`nfl-pipeline.md`](../../../topics/nfl-pipeline.md) and [`nfl-grading.md`](../../../topics/nfl-grading.md) for canonical data flows

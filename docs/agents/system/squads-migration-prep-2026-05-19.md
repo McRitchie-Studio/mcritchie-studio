@@ -2,6 +2,10 @@
 
 **When to read:** You're ready to execute `squads-upgrade-authority-migration.md` and want a precise, copy-pasteable sequence for the devnet rehearsal. This doc is the rehearsal companion to that runbook — the runbook is the authoritative spec; this is the *playable* version.
 
+> **ARCHIVE-ONLY REHEARSAL SNAPSHOT.** This is a 2026-05-19 devnet migration
+> script, not current deployment procedure. Verify current state in
+> `turf-vault/docs/CURRENT_DEPLOYMENT.md` before reusing any command.
+
 > **Dated rehearsal snapshot:** Do not treat wallet addresses or program IDs in
 > this file as current source of truth. Before executing, verify the live signer
 > set and deployment IDs in `turf-vault/docs/CURRENT_DEPLOYMENT.md`, then resolve
@@ -22,7 +26,7 @@ solana config get                # RPC URL should be api.devnet.solana.com
 # Expected: 4AQMNwhyZtsaCLx3Dv9G5a2rXaJ6M221FYQw6sommRWz (your local id.json)
 
 # 2. Funded with at least 1 SOL on devnet (Squad creation + buffer write + execute)
-solana balance                   # need >= 1 SOL; if not, see Devnet SOL Faucet Protocol in turf-vault/CLAUDE.md
+solana balance                   # need >= 1 SOL; use the Solana devnet faucet if needed
 
 # 3. Program exists at the expected ID with you as current upgrade authority
 solana program show Dx8uGU5w7B9NytDSsW4kseGZuqdVVRq1KY1mGXN2GaCT
@@ -182,7 +186,7 @@ solana program close $BUFFER_ADDR --bypass-warning
 
 After devnet success, update the following:
 
-- `turf-vault/CLAUDE.md` — replace `~/.config/solana/id.json` references in the upgrade-authority section with `$SQUAD_VAULT_DEVNET`
+- `turf-vault/docs/CURRENT_DEPLOYMENT.md` — record the current upgrade authority and signer set
 - `mcritchie-studio/docs/agents/system/credentials.md` — add a Squads section
 - `mcritchie-studio/docs/agents/system/squads-upgrade-authority-migration.md` — strike through the "TODO" status, add the actual devnet Squad vault address as a worked example
 - Memory: add a `project-squads-migration-devnet.md` recording the Squad vault PDA + the date

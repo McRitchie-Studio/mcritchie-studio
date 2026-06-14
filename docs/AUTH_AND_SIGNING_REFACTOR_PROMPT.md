@@ -1,12 +1,16 @@
 # Kickoff prompt — shared auth + two-browser multisig console
 
-> Copy the block below into a fresh session. Written 2026-06-02.
+> **ARCHIVE-ONLY PROMPT ARTIFACT.** Written 2026-06-02. Do not use this as the
+> current auth or signing-console plan. Current agent onboarding starts at
+> `/Users/alex/projects/AGENTS.md`; current app auth docs live in
+> `mcritchie-studio/docs/topics/auth-and-sso.md`,
+> `studio-engine/docs/GOOGLE_AUTH_SETUP.md`, and `turf-monster/docs/AUTH.md`.
 
 ---
 
 You're working in the **McRitchie ecosystem** (`~/projects`): `mcritchie-studio` (admin/hub Rails app — "the studio"), `turf-monster` (Solana pick'em Rails app), `studio-engine` (shared Rails **engine gem**, consumed by both via `gem "studio-engine"`, `~> 0.4.x`, published to RubyGems), `solana-studio` (pure-Ruby Solana primitives gem).
 
-**Orient first:** read `mcritchie-studio/docs/ECOSYSTEM.md`, both apps' `CLAUDE.md`, `turf-monster/docs/AUTH.md` + `docs/SIGNUP_FLOWS.md`, and the auto-loaded memory (especially the auth entries + `feedback-secret-handling-discipline`, `reference-phantom-inwallet-signing`, `feedback-prod-config-network-keyed`).
+**Original orientation note (historical):** read `mcritchie-studio/docs/ECOSYSTEM.md`, both apps' then-current agent docs, `turf-monster/docs/AUTH.md` + `docs/SIGNUP_FLOWS.md`, and the auto-loaded memory (especially the auth entries + `feedback-secret-handling-discipline`, `reference-phantom-inwallet-signing`, `feedback-prod-config-network-keyed`).
 
 This is a real multi-repo refactor that touches **turf-monster's LIVE production auth** — **present a sequenced plan before writing code**, and keep turf-monster's ~590-test suite green throughout.
 

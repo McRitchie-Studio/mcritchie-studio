@@ -65,7 +65,7 @@ After prompts, confirm summary and proceed.
 6. **Cross-link docs**:
    - Update `docs/ECOSYSTEM.md` to add the new repo row + per-repo summary entry
    - Update `docs/agents/system/house-burn-down.md` to add the row in The Ecosystem table
-   - Update memory file `~/.claude/projects/-Users-alex-projects/memory/project_mcritchie_ecosystem.md` with the new row
+   - Update `docs/agents/shared/MEMORY.md` if the new app changes agent workflow or ecosystem assumptions
 7. **DNS instructions**: print to stdout:
    ```
    Set up DNS:
