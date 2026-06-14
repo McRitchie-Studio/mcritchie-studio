@@ -1,5 +1,10 @@
 # McRitchie Ecosystem Audit — 2026-05-17
 
+> **ARCHIVE-ONLY AUDIT SNAPSHOT.** This was the May 2026 ecosystem audit that
+> kicked off the agent-doc cleanup. Current orientation lives in
+> `docs/ECOSYSTEM.md`, `docs/agents/index.md`, and the June 2026 audit files in
+> `docs/agents/audits/`.
+
 > **Corrections (added 2026-05-17 during Tier 1 execution):**
 > - **Tier 1 #1 was a no-op.** The audit's claim that "ErrorLog is public by default — no auth check" was wrong. The engine's `ErrorLogsController` already has `before_action :require_admin` (line 2), and `Studio::ErrorHandling` provides `require_authentication` as a global default plus `require_admin` for elevated routes. Neither consumer app overrides this. The Explore subagent missed it during the original survey.
 > - **Tier 1 #4 renamed `draft → pending`, not `draft → new`.** Rails 7 refuses `:new` as an enum value because it would collide with the `Contest.new` constructor scope. `:pending` was chosen as the smallest-change alternative that still moves away from `:draft` (the inconsistent term the audit flagged). Operator approved the substitution during execution.

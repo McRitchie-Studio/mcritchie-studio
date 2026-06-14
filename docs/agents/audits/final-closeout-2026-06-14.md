@@ -58,6 +58,12 @@ it had no commits ahead of `main`. McRitchie Studio's `feat/broadcasts` branch
 was retained as historical source material only; the durable broadcast direction
 was promoted into `docs/agents/modules/email-operations.md`.
 
+Archive follow-up, 2026-06-14: the remaining delete-later `audit needed` docs
+were converted into archive-only context. Turf Monster now has
+`docs/TEST_COVERAGE_STATUS.md` as the current test-coverage orientation, while
+May 2026 security/refactor/test audit snapshots and old McRitchie system audits
+carry archive banners.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
@@ -100,9 +106,10 @@ These are not blockers to maintenance mode, but they should not be forgotten:
 - **Root stray files**: `/Users/alex/projects/dev-stack-smoothing.md` and
   `/Users/alex/projects/bin/clean-artifacts` were removed after their durable
   content was confirmed in tracked McRitchie Studio docs/scripts.
-- **SES stability window**: shared email architecture and playbooks are ready,
-  but production SES should get a real stability window before Resend fallback
-  is removed.
+- **SES production access**: shared email architecture and domain verification
+  are ready, but the SES account is still sandboxed. AWS support access should
+  be completed after the audit cleanup is closed, then production SES needs a
+  real stability window before Resend fallback is removed.
 - **Turf Vault mainnet feature gates**: local tests cover the default
   localnet/devnet build. Mainnet-only `INIT_AUTHORITY`, canonical USDC, and
   canonical USDT checks still need mainnet build/deploy proof when that window

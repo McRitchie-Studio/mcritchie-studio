@@ -16,7 +16,7 @@ Central task management and orchestration hub for the McRitchie AI agent system 
 - **Tests**: `bin/rails test` (~521 runs). See [`docs/topics/testing.md`](docs/topics/testing.md) for invocation gotchas.
 - **Deploy**: `git push heroku main` to `mcritchie-studio` (https://app.mcritchie.studio). See [`docs/topics/deployment.md`](docs/topics/deployment.md).
 - **Recovery**: [`docs/agents/system/house-burn-down.md`](docs/agents/system/house-burn-down.md) — full fresh-Mac protocol.
-- **Current roadmap**: [`docs/agents/system/ecosystem-audit-2026-05-17.md`](docs/agents/system/ecosystem-audit-2026-05-17.md) — tiered audit.
+- **Current roadmap**: [`docs/agents/audits/final-closeout-2026-06-14.md`](docs/agents/audits/final-closeout-2026-06-14.md) and [`docs/agents/audits/broader-ecosystem-audit-2026-06-14.md`](docs/agents/audits/broader-ecosystem-audit-2026-06-14.md). The May 2026 audits are archive-only context.
 
 ## Topic Index
 
