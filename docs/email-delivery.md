@@ -69,12 +69,29 @@ Environment variables:
 - `SES_REGION=us-east-2`
 - `SES_SMTP_USERNAME`
 - `SES_SMTP_PASSWORD`
+- `SES_AWS_ACCESS_KEY_ID` and `SES_AWS_SECRET_ACCESS_KEY` for `ses:*` checks
 - `MAILER_FROM`
 - `RESEND_API_KEY` only for rollback.
 
 If `MAILER_FROM` is not set, McRitchie defaults to `noreply@mcritchie.studio`
 when `MAIL_TRANSPORT=ses` and `noreply@turfmonster.media` for the Resend
 rollback path.
+
+Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
+`AWS_SECRET_ACCESS_KEY` for SES proof. Use the `SES_AWS_*` variables from
+`agent.aws.mcritchie-ses` for account/domain checks.
+
+## Current Production Status
+
+Last checked: 2026-06-14.
+
+- SES account in `us-east-2`: sending enabled, enforcement healthy, still in
+  sandbox (`ProductionAccessEnabled=false`).
+- `mcritchie.studio`: verified for sending, DKIM `SUCCESS`.
+- Persistent production transport: keep Resend active until SES production
+  access is approved and SMTP runtime credentials are staged.
+- Production app adoption: deploy the current `studio-engine` release before
+  proving the shared `Studio::Email.deliver` outbox path on Heroku.
 
 ## Cutover Checklist
 

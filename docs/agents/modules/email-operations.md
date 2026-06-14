@@ -51,9 +51,47 @@ RESEND_API_KEY=...       # rollback only
 LOCAL_EMAIL_CAPTURE=1    # local/worktree proof mode
 ```
 
-SES helper tasks use `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
-`SES_REGION` from the same credential item. Runtime delivery uses the SES SMTP
-username and password.
+SES helper tasks use SES API credentials:
+
+```env
+SES_AWS_ACCESS_KEY_ID=...
+SES_AWS_SECRET_ACCESS_KEY=...
+SES_REGION=us-east-2
+```
+
+The engine falls back to `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for older
+apps, but production should prefer `SES_AWS_*` so an app's S3/ImageCache IAM user
+is not mistaken for the SES verification user. Runtime delivery uses the SES
+SMTP username and password, which are a separate credential pair.
+
+## Current SES Production Proof
+
+Last checked: 2026-06-14.
+
+| Check | Result |
+|-------|--------|
+| SES region | `us-east-2` |
+| SES account sending | `SendingEnabled=true` |
+| SES production access | `ProductionAccessEnabled=false` |
+| SES enforcement | `HEALTHY` |
+| `mcritchie.studio` identity | verified for sending, DKIM `SUCCESS` |
+| `turfmonster.media` identity | verified for sending, DKIM `SUCCESS` |
+
+Conclusion: domain verification is ready, but the account is still in SES
+sandbox. Do not set persistent `MAIL_TRANSPORT=ses` on production web dynos
+until production access is approved; sandbox mode can send only to verified
+recipient identities/domains and would break normal user mail.
+
+Production proof gaps:
+
+1. Store or derive SES SMTP credentials for each runtime environment.
+2. Set `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on Heroku for the
+   shared `ses:*` checks without touching the existing S3 `AWS_*` vars.
+3. Deploy consumer apps with the current `studio-engine` release before proving
+   `Studio::Email.deliver` and the shared local/provider outbox path in
+   production.
+4. Request or confirm SES production access approval, then run a provider smoke
+   test to `alex@mcritchie.studio` and a Turf-approved inbox.
 
 ## Agent Proof Modes
 

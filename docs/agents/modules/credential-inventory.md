@@ -21,7 +21,7 @@ This file names credential locations so agents can ask for or reference the righ
 | `agent.turf.solana` | `agents` | Turf Monster wallet | agent wallet |
 | `agent.managed_wallet` | `agents` | Managed wallet encryption key | Turf Monster managed-wallet flows |
 | `agent.helius` | `agents` | Devnet/mainnet Helius RPC URLs | Solana apps |
-| `agent.aws.mcritchie-ses` | `agents` | Shared SES-scoped AWS credentials, region `us-east-2` | McRitchie, Turf Monster, and future app email delivery |
+| `agent.aws.mcritchie-ses` | `agents` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
 | `Coinbase Developer Platform` | `agents` | CDP API key | Turf Monster CDP ramp |
 | `agent.higgesfield` | `agents` | Higgsfield media generation API | McRitchie Studio content pipeline |
 | `x.api` | `agents` | X/Twitter API credentials | McRitchie Studio news/content |

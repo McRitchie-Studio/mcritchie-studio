@@ -32,6 +32,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 | Tests | `mcritchie-studio/docs/agents/modules/testing.md` |
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
+| Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
 | Final ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
