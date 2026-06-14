@@ -8,7 +8,7 @@ McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monst
 
 > **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the ecosystem.
 
-> **Agent session?** The canonical source for `/Users/alex/projects/AGENTS.md` lives at [`docs/agents/index.md`](docs/agents/index.md). Run `bin/install-agent-docs` after cloning to refresh the generated root file.
+> **Agent session?** Run `bin/install-agent-docs` after cloning or pulling this repo. It refreshes `/Users/alex/projects/AGENTS.md` from the tracked source at [`docs/agents/index.md`](docs/agents/index.md), then prints the next context files to read. Use `bin/install-agent-docs check` to detect drift.
 
 ---
 

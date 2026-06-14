@@ -16,11 +16,45 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECTS_DIR="${PROJECTS_DIR:-$(cd "$ROOT/.." && pwd)}"
 SOURCE="$ROOT/docs/agents/index.md"
 TARGET="$PROJECTS_DIR/AGENTS.md"
+MODE="${1:-install}"
+
+usage() {
+  cat <<USAGE
+Usage: bin/install-agent-docs [install|check]
+
+install  Copy docs/agents/index.md to \$PROJECTS_DIR/AGENTS.md.
+check    Verify \$PROJECTS_DIR/AGENTS.md matches the tracked source.
+USAGE
+}
+
+case "$MODE" in
+  install|check) ;;
+  -h|--help|help) usage; exit 0 ;;
+  *) echo "ERROR: unknown mode: $MODE" >&2; usage >&2; exit 64 ;;
+esac
 
 if [ ! -f "$SOURCE" ]; then
   echo "ERROR: missing source doc: $SOURCE" >&2
   exit 1
 fi
 
+if [ "$MODE" = "check" ]; then
+  if cmp -s "$SOURCE" "$TARGET"; then
+    echo "OK: $TARGET matches $SOURCE"
+    exit 0
+  fi
+
+  echo "ERROR: $TARGET is out of date with $SOURCE" >&2
+  echo "Run: cd $ROOT && bin/install-agent-docs" >&2
+  exit 1
+fi
+
+mkdir -p "$PROJECTS_DIR"
 cp "$SOURCE" "$TARGET"
+
 echo "Installed $TARGET from $SOURCE"
+echo
+echo "Next reads for a fresh agent:"
+echo "  - $TARGET"
+echo "  - $PROJECTS_DIR/mcritchie-studio/docs/ECOSYSTEM.md"
+echo "  - $PROJECTS_DIR/mcritchie-studio/docs/agents/modules/culture.md"
