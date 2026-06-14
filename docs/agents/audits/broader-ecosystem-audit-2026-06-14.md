@@ -361,24 +361,28 @@ Implemented:
 
 Goal: make the next app repeatable.
 
-Suggested implementation:
+Status 2026-06-14: complete for registry direction and first scaffold.
 
-- Keep `tax-studio` reserved at `3200-3299` or remove it deliberately.
-- If Rolio becomes managed, assign `3300-3399` and add it to
-  `config/satellites.yml`.
-- Add a `bin/new-app` or `bin/register-satellite` scaffold only after
-  `NEW_APP_SETUP.md` is executable.
+Implemented:
+
+- Kept `tax-studio` reserved at `3200-3299`.
+- Kept Rolio unmanaged; if promoted, it should move to `3300-3399`.
+- Added `mcritchie-studio/bin/register-satellite` as the dry-run-first registry
+  helper.
+- Added `mcritchie-studio/docs/agents/modules/app-registry.md` as the canonical
+  app registry policy.
+- Reframed the larger `bin/new-app` generator as a future layer over the
+  registry contract.
 
 ## Immediate Next Best Actions
 
-1. Start Tranche 5: managed app registry and new-app repeatability.
-2. Decide whether `tax-studio` remains reserved at `3200-3299`.
-3. Decide whether Rolio should join the managed registry and, if yes, assign a
-   non-conflicting port block.
-4. After registry direction is settled, add a `bin/new-app` or
-   `bin/register-satellite` scaffold.
-5. Separately, rewrite Turf Vault's TypeScript suite against
-   `turf-vault/docs/VERIFICATION_MATRIX.md`.
+1. Do a final audit closeout pass:
+   remaining archive-only docs, delete-later candidates, and recurring drift
+   maintenance.
+
+Status 2026-06-14: the Turf Vault TypeScript suite has been rewritten against
+`turf-vault/docs/VERIFICATION_MATRIX.md`; local proof was `23 passing` against
+an isolated validator on `127.0.0.1:8898`.
 
 ## Notes For Future Agents
 
