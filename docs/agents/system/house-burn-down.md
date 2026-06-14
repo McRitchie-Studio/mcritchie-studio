@@ -245,7 +245,7 @@ After it succeeds, `source ~/.zprofile` (or open a new terminal) to load the exp
 
 The Rails apps read `.env` via Rails' default dotenv (or the `dotenv-rails` gem). Restore each:
 
-**`/Users/alex/projects/mcritchie-studio/.env`** — see `docs/agents/system/credentials.md` for the canonical list. Minimum to boot:
+**`/Users/alex/projects/mcritchie-studio/.env`** — see `docs/agents/modules/credentials.md` for the operating rules and `docs/agents/modules/credential-inventory.md` for item names. Minimum to boot:
 
 ```bash
 RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app mcritchie-studio)
@@ -338,7 +338,7 @@ ruby -Itest test/keypair_test.rb test/borsh_test.rb test/transaction_test.rb
 
 Library only — no server. Only clone locally if editing.
 
-### 6d. studio (gem, no bringup)
+### 6d. studio-engine (gem, no bringup)
 
 ```bash
 cd ~/projects/studio-engine
@@ -362,7 +362,7 @@ anchor build                                 # ~3-5 min on first build
 anchor test                                  # spins up local validator and runs the TS suite
 ```
 
-Already deployed to devnet (program ID `Dx8uGU5w7B9NytDSsW4kseGZuqdVVRq1KY1mGXN2GaCT`).
+Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-monster/docs/SOLANA.md` as the source of truth for program IDs, clusters, and operator keys.
 
 **Gotcha**: `anchor test` will fail with `ts-mocha: command not found` if you skip `yarn install`. The Anchor scaffold's test runner is JS, not Rust.
 
@@ -372,16 +372,9 @@ solana config set --url devnet
 anchor build
 node turf-vault/scripts/squad-upgrade.js   # writes the buffer + proposes the upgrade to the Squad for 2-of-3 cosign
 ```
-See `docs/agents/system/squads-upgrade-authority-migration.md` for the full procedure.
+See `docs/agents/system/squads-upgrade-authority-migration.md` for the historical migration notes, then verify current procedure in the `turf-vault` repo before proposing or approving an upgrade.
 
-**v0.11.0 (2026-05-18) — entry tokens + season schedule:**
-After deploying v0.11.0+ to devnet, the turf-monster Rails seed needs to know about the season. The `bin/rails db:seed` script in turf-monster will:
-1. Set `SeasonConfig.current_season_id = 1` in the DB (always)
-2. Try to create on-chain `Season` PDA (id=1, name "World Cup 2026", schedule `[25, 19, 14, 10, 7]`) — idempotent (skipped if it already exists)
-
-If the seed runs **before** the program is deployed at v0.11.0+, the on-chain step logs a warning and skips. Re-run `bin/rails db:seed` after deploy to complete the bootstrap. Alternatively, operators can use the admin UI at `/admin/seasons` (turf-monster) to mint/manage seasons by hand.
-
-Free entry tokens (introduced v0.10.0) are also operator-driven: `/admin/free_entries` in turf-monster shows per-user owed counts (= `floor(on_chain_seeds / 100) - already_minted`) with per-user + bulk Mint buttons.
+Season bootstrap and free-entry token operations now live with the app that runs them. Use `turf-monster/docs/SOLANA.md`, `turf-monster/docs/AUTH.md`, and the Turf Monster admin UI (`/admin/seasons`, `/admin/free_entries`) for current steps instead of copying version-specific instructions here.
 
 ---
 
@@ -480,7 +473,8 @@ What this protocol installed last successful run:
 ## Appendix D — Cross-references
 
 - `docs/agents/system/bootstrap.md` — first-time setup (one app, simpler)
-- `docs/agents/system/credentials.md` — full env var + 1Password reference
+- `docs/agents/modules/credentials.md` — credential rules and 1Password operating model
+- `docs/agents/modules/credential-inventory.md` — known 1Password item names
 - `docs/agents/system/news-pipeline.md` — News pipeline + X API setup
 - `RUNBOOK.md` (top-level) — production troubleshooting (Heroku deploys, theme cache, SSO, OAuth)
 - `turf-monster/docs/SOLANA.md` — Solana integration deep dive

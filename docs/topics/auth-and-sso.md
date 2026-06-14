@@ -12,21 +12,22 @@ Studio.configure do |config|
   config.session_key = :studio_user_id
   config.sso_logo = "/studio-logo.svg"
   config.welcome_message = ->(user) { "Welcome to McRitchie Studio, #{user.display_name}!" }
-  config.registration_params = [:name, :email, :password, :password_confirmation]
+  config.auth_methods = %i[magic_link google wallet]
+  config.registration_params = [:name, :email]
+  config.magic_link_token_name = "magic_link_mcritchie_v1"
   config.configure_sso_user = ->(user) { user.role = "viewer" }
-  config.theme_logos = %w[logo-icon.svg icon.svg icon.png studio-logo.svg favicon.png]
 end
 ```
 
-**From the engine:** `Studio::ErrorHandling` concern (in ApplicationController), `ErrorLog` model, `Sluggable` concern, auth controllers (sessions, registrations, omniauth_callbacks, error_logs), error log views, generic login/signup views (overridden by app-branded versions).
+**From the engine:** `Studio::ErrorHandling` concern (in ApplicationController), `ErrorLog` model, `Sluggable` concern, passwordless magic-link primitives, auth controllers (sessions, registrations, omniauth_callbacks, error_logs), error log views, generic auth views, local email capture, theme routes, and shared email delivery primitives.
 
-**Overridden locally:** `sessions/new.html.erb` and `registrations/new.html.erb` (branded with logo, uses `btn btn-primary`).
+**Overridden locally:** `sessions/new.html.erb` and `registrations/new.html.erb` render the same unified `/signin` card with magic link, Google, and Solana wallet options.
 
-**Routes:** `Studio.routes(self)` in `config/routes.rb` draws `/login`, `/signup`, `/logout`, `/sso_continue`, `/sso_login`, `/auth/:provider/callback`, `/auth/failure`, `/error_logs`, `/admin/theme` (GET + PATCH), `/admin/theme/regenerate`.
+**Routes:** The app defines canonical `GET /signin` first. Legacy `GET /login` and `GET /signup` redirect there, then `Studio.routes(self)` draws the compatibility auth routes, magic-link request/confirm/consume routes, `/logout`, `/sso_continue`, `/sso_login`, OAuth callbacks, `/error_logs`, local email capture, and `/admin/theme`.
 
 ## SSO Hub Role
 
-This app is the central auth hub for apps that opt into Studio SSO. On login,
+This app is the central auth hub for apps that opt into Studio SSO. On sign-in,
 `set_app_session` stores `sso_*` fields (including `sso_logo`) in the shared
 session. The generic satellite pattern points authenticated navbar links at
 `/sso_login` on each satellite app; SSO-created users on satellite apps get
@@ -37,7 +38,7 @@ Current caveat: Turf Monster intentionally disables cross-app SSO and 404s
 `app.turfmonster.media`. Use direct magic-link login for Turf Monster smoke
 tests until SSO is redesigned and re-enabled.
 
-The McRitchie Studio login page does NOT show "Continue as" because the hub is a
+The McRitchie Studio sign-in page does NOT show "Continue as" because the hub is a
 sender, not a receiver.
 
 **Updating:** After changes to the studio repo, run `bundle update studio-engine` here.

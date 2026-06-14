@@ -19,7 +19,6 @@ User.delete_all
 admin = User.create!(
   name: "Alex Test",
   email: "alex@test.com",
-  password: "pass",
   role: "admin"
 )
 

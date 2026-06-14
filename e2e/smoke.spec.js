@@ -1,15 +1,20 @@
 const { test, expect } = require("@playwright/test");
-const { login } = require("./helpers");
+const { loginWithMagicLink } = require("./helpers");
 
 // ---------------------------------------------------------------------------
 // Page loads
 // ---------------------------------------------------------------------------
 
-test("dashboard loads with agent cards", async ({ page }) => {
+test("landing page loads", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("body")).toContainText("McRitchie Studio");
-  // Seeded agents should appear
-  await expect(page.locator("body")).toContainText("Alex");
+  await expect(page.locator("body")).toContainText("Software For");
+  await expect(page.locator("body")).toContainText("Alex McRitchie");
+});
+
+test("dashboard loads with agent cards", async ({ page }) => {
+  await page.goto("/dashboard");
+  await expect(page.locator("body")).toContainText("Agents");
   await expect(page.locator("body")).toContainText("Mack");
 });
 
@@ -56,19 +61,17 @@ test("usages page loads", async ({ page }) => {
 // Authentication
 // ---------------------------------------------------------------------------
 
-test("login with valid credentials", async ({ page }) => {
-  await login(page, "alex@test.com", "pass");
+test("login with magic link", async ({ page }) => {
+  await loginWithMagicLink(page, "alex@test.com");
   // Username should appear in header
   await expect(page.locator("body")).toContainText("Alex Test");
 });
 
-test("invalid login stays on page with error", async ({ page }) => {
-  await page.goto("/login");
-  await page.fill('input[name="email"]', "alex@test.com");
-  await page.fill('input[name="password"]', "wrong");
-  await page.click('input[type="submit"], button[type="submit"]');
-  // Should stay on login page with error flash
-  await expect(page.locator("body")).toContainText(/invalid|incorrect/i);
+test("malformed magic link request stays on signin", async ({ page }) => {
+  await page.goto("/signin");
+  await page.fill('input[name="email"]', "not-an-email");
+  await page.click('form:has(input[name="email"]) button[type="submit"]');
+  await expect(page).toHaveURL("/signin");
 });
 
 // ---------------------------------------------------------------------------
@@ -78,25 +81,12 @@ test("invalid login stays on page with error", async ({ page }) => {
 test("nav links work without errors", async ({ page }) => {
   await page.goto("/");
 
-  // Dashboard
-  await page.click("text=Dashboard");
-  await expect(page).toHaveURL("/");
-
-  // Agents
-  await page.click("text=Agents");
-  await expect(page).toHaveURL("/agents");
-
-  // Tasks
-  await page.click("text=Tasks");
-  await expect(page).toHaveURL("/tasks");
-
-  // Activity
-  await page.click("text=Activity");
+  await page.getByRole("link", { name: /Meet the Agents/ }).first().click();
   await expect(page).toHaveURL("/activities");
 
-  // Errors
-  await page.click("text=Errors");
-  await expect(page).toHaveURL("/error_logs");
+  await page.goto("/");
+  await page.getByRole("link", { name: /Say Hi/ }).click();
+  await expect(page).toHaveURL("/signin");
 });
 
 // ---------------------------------------------------------------------------

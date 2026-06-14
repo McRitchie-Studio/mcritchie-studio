@@ -1,8 +1,12 @@
 # User Guide
 
+## Landing Page
+
+The root page (`/`) is the public McRitchie Studio landing page. It shows the software/business positioning, Alex profile, contact blocks, and chat widget.
+
 ## Dashboard
 
-The root page (`/`) shows:
+The dashboard (`/dashboard`) shows:
 - **Agent cards** — Status, type, and description for all registered agents
 - **Task pipeline** — Count of tasks in each stage
 - **Recent activity** — Chronological feed of agent actions
@@ -39,7 +43,8 @@ The root page (`/`) shows:
 
 ## Authentication
 
-- Login at `/login` with email/password or Google OAuth
-- Signup at `/signup`
+- Sign in at `/signin` with magic link, Google OAuth, or Solana wallet
+- `/login` and `/signup` redirect to `/signin` for compatibility
+- Magic links use a scanner-safe flow: GET confirms, POST consumes
 - Dashboard and monitoring pages are public
 - Task creation/editing requires login

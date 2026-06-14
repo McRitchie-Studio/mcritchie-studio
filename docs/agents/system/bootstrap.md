@@ -17,8 +17,13 @@ Visit `http://localhost:3000` — dashboard shows the 9 agents (Alex, Avi, Carl,
 
 ## Login
 
-- Email: `alex@mcritchie.studio`
-- Password: `pass`
+McRitchie Studio is passwordless-first.
+
+1. Visit `http://localhost:3000/signin`.
+2. Request a magic link for `alex@mcritchie.studio`.
+3. In normal local development, open the email from the real inbox. In an agent worktree stack, use the printed local inbox at `http://localhost:<port>/_studio/local_emails`.
+
+Legacy `GET /login` and `GET /signup` redirect to `/signin`. The engine still keeps route helpers and POST actions for compatibility.
 
 ## Google OAuth (optional)
 

@@ -17,17 +17,25 @@ class RegistrationsControllerTest < ActionDispatch::IntegrationTest
   # skip proof of email ownership). It sends a magic link; the create-or-login
   # happens only when the recipient clicks it.
   test "signup sends a magic link without creating an account" do
+    delivery = nil
     assert_no_difference "User.count" do
-      assert_enqueued_emails 1 do
-        post signup_path, params: { user: { name: "New User", email: "new@example.com" } }
+      assert_enqueued_with(job: Studio::EmailDeliveryJob) do
+        assert_difference "Studio::EmailDelivery.count", 1 do
+          post signup_path, params: { user: { name: "New User", email: "new@example.com" } }
+          delivery = Studio::EmailDelivery.recent.first
+        end
       end
     end
+    assert_equal "UserMailer#magic_link", delivery.email_key
+    assert_equal "new@example.com", delivery.to
     assert_redirected_to login_path
   end
 
   test "signup with a malformed email sends nothing" do
-    assert_no_enqueued_emails do
-      post signup_path, params: { user: { email: "nope" } }
+    assert_no_enqueued_jobs only: Studio::EmailDeliveryJob do
+      assert_no_difference "Studio::EmailDelivery.count" do
+        post signup_path, params: { user: { email: "nope" } }
+      end
     end
     assert_redirected_to login_path
   end

@@ -78,7 +78,10 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/admin/theme` — Theme editor + styleguide (engine-provided: color editor, logos, tokens, typography, buttons, components)
 - `/error_logs` — Error log index (search with ILIKE, Esc to clear, 500ms loading animation)
 - `/error_logs/:slug` — Error log detail (backtrace, target/parent with copy-to-clipboard console commands, JSON)
-- `/login`, `/signup`, `/logout` — Auth
+- `/signin` — canonical create-or-login auth page
+- `/login`, `/signup` — legacy GET redirects to `/signin`; engine keeps compatibility helpers and POST actions
+- `/magic_link`, `/magic_link/:token` — request, confirm, and consume passwordless sign-in links
+- `/logout` — End session
 
 ## JSON API (`/api/v1/`)
 
