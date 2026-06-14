@@ -9,7 +9,7 @@ Mode: read-heavy architecture and documentation audit. No product-code refactor.
 The ecosystem is in a materially better place than the first pass. `AGENTS.md`
 is the right LLM-neutral entrypoint, `mcritchie-studio` is correctly acting as
 the documentation and bootstrap anchor, the primary apps are clean on `main`,
-shared auth/email primitives now live in `studio-engine 0.5.5`, local email
+shared auth/email primitives now live in `studio-engine 0.5.6`, local email
 capture exists for worktree stacks, and `bin/agent-worktree` can now diagnose
 worktree lifecycle drift without deleting anything.
 
@@ -66,7 +66,7 @@ recovery story.
 
 ### Shared Engine Direction
 
-Both Rails apps consume `studio-engine 0.5.5`.
+Both Rails apps consume `studio-engine 0.5.6`.
 
 The engine is now the right home for:
 
@@ -94,11 +94,15 @@ automation.
 
 ### F1 - High - App `CLAUDE.md` Files Are Now Legacy But Still Too Useful
 
+Status 2026-06-14: resolved for the primary managed repos. App `CLAUDE.md`
+files now carry archive-only banners, and active docs were repointed to neutral
+README/RUNBOOK/topic docs. Rolio remains outside the managed ecosystem registry.
+
 `CLAUDE.md` files are no longer safe canonical context. Examples found:
 
-- `studio-engine/CLAUDE.md` says version `0.4.13`; code is `0.5.5`.
+- `studio-engine/CLAUDE.md` says version `0.4.13`; code is `0.5.6`.
 - `turf-monster/CLAUDE.md` says Studio Engine is locked at `0.5.1`; lockfile is
-  `0.5.5`.
+  `0.5.6`.
 - `mcritchie-studio/CLAUDE.md` includes stale exact test counts and an old
   roadmap pointer.
 - `solana-studio/CLAUDE.md` includes stale test counts.
@@ -117,6 +121,10 @@ or delete-later candidate after current facts are promoted. Active docs should
 link to README/RUNBOOK/topic docs, not `CLAUDE.md`.
 
 ### F2 - High - Turf Auth Docs Still Teach Removed Password Flows
+
+Status 2026-06-14: resolved for active Turf docs. `AUTH.md`,
+`SIGNUP_FLOWS.md`, and the affected workflow docs now describe passwordless
+magic-link, Google, and wallet auth.
 
 The code and routes are passwordless-first, but docs still teach password-era
 concepts:
@@ -137,6 +145,8 @@ magic link, Google OAuth, and Solana wallet. Move password-era diagrams to
 
 ### F3 - High - New-App Setup Has An Executable Gem Name Bug
 
+Status 2026-06-14: resolved in `studio-engine/docs/NEW_APP_SETUP.md`.
+
 `studio-engine/docs/NEW_APP_SETUP.md` tells apps to run:
 
 ```js
@@ -151,6 +161,9 @@ the new-app guide for executable correctness. This should be a small immediate
 cleanup.
 
 ### F4 - High - McRitchie Studio Still Duplicates Engine Session Mechanics
+
+Status 2026-06-14: resolved in `studio-engine 0.5.6`; McRitchie now delegates
+session mechanics to the engine and configures `wallet_address_method`.
 
 `mcritchie-studio/app/controllers/application_controller.rb` duplicates
 `set_app_session`, `clear_app_session`, `set_current_context`, and
@@ -167,6 +180,9 @@ Recommendation: add a small engine-level wallet-address adapter such as
 magic-link tests.
 
 ### F5 - Medium - Shared Email Is Architecturally Ready, Ops Still Need A Playbook
+
+Status 2026-06-14: resolved for documentation/operations. The shared playbook
+is `mcritchie-studio/docs/agents/modules/email-operations.md`.
 
 The code is in the right shape:
 
@@ -221,9 +237,9 @@ exists; the missing piece is making drift impossible to miss.
 
 Current locks:
 
-- McRitchie Studio: `studio-engine 0.5.5`, `solana-studio 0.4.6`
-- Turf Monster: `studio-engine 0.5.5`, `solana-studio 0.4.7`
-- Studio Engine: `0.5.5`
+- McRitchie Studio: `studio-engine 0.5.6`, `solana-studio 0.4.6`
+- Turf Monster: `studio-engine 0.5.6`, `solana-studio 0.4.7`
+- Studio Engine: `0.5.6`
 - Solana Studio: `0.4.7`
 - Turf Vault: `0.25.0` source, mainnet documented at `0.24.0`
 
@@ -272,7 +288,9 @@ or scripts, then delete the root copies with approval.
 
 Goal: make the docs future agents read first accurate enough to act on.
 
-Suggested edits:
+Status 2026-06-14: complete for the first cleanup pass.
+
+Implemented:
 
 - Fix `studio-engine/docs/NEW_APP_SETUP.md` executable gem name.
 - Rewrite `turf-monster/docs/AUTH.md` around passwordless auth.
@@ -286,10 +304,13 @@ Suggested edits:
 
 ### Tranche 2 - Engine Session Refactor
 
-Goal: remove duplicated McRitchie session code now that engine `0.5.5` carries
+Goal: remove duplicated McRitchie session code now that engine `0.5.6` carries
 the generic mechanics.
 
-Suggested implementation:
+Status 2026-06-14: complete. `studio-engine 0.5.6` carries the wallet-address
+adapter, and McRitchie delegates session mechanics back to the engine.
+
+Implemented:
 
 - Add an engine wallet-address helper that supports `wallet_address`,
   `solana_address`, and app config override.
@@ -303,13 +324,17 @@ Suggested implementation:
 Goal: make SES the normal shared path and local inbox the default development
 proof path.
 
-Suggested implementation:
+Status 2026-06-14: complete for documentation/operations. The canonical
+cross-app playbook is `mcritchie-studio/docs/agents/modules/email-operations.md`;
+app-level implementation notes remain in each app's `docs/email-delivery.md`.
 
-- Add one ecosystem SES checklist in McRitchie Studio docs.
-- Add per-app sender-domain rows to the credential inventory.
-- Add a provider smoke command or documented Rails runner for each app.
-- Keep Resend rollback documented until SES has a real stability window.
-- Defer full preview/catalog extraction until the sender-domain cutover is
+Implemented:
+
+- Added one ecosystem SES checklist in McRitchie Studio docs.
+- Added per-app sender-domain rows to the shared email operations matrix.
+- Documented local inbox proof and provider smoke workflow for each app.
+- Kept Resend rollback documented until SES has a real stability window.
+- Deferred full preview/catalog extraction until the sender-domain cutover is
   stable.
 
 ### Tranche 4 - Solana/Vault Verification

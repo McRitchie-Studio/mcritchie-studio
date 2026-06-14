@@ -5,6 +5,10 @@ sign-in is currently the critical path. Delivery goes through
 `Studio::Email.deliver`, which records a durable `Studio::EmailDelivery` row
 before enqueueing the actual send.
 
+Cross-app sender inventory, SES cutover rules, local inbox proof, and rollback
+policy live in [`docs/agents/modules/email-operations.md`](agents/modules/email-operations.md).
+Keep this file focused on McRitchie-specific wiring.
+
 ## Transport Contract
 
 The active transport is chosen by `MAIL_TRANSPORT`:
@@ -57,7 +61,7 @@ send intent from disappearing; operator recovery is the resend command above.
 
 Credential inventory entry:
 
-- `agent.aws.mcritchie-ses` in the `agents` vault: SES-scoped AWS credentials, region `us-east-2`.
+- `agent.aws.mcritchie-ses` in the `agents` vault: shared SES-scoped AWS credentials, region `us-east-2`.
 
 Environment variables:
 
@@ -73,6 +77,10 @@ when `MAIL_TRANSPORT=ses` and `noreply@turfmonster.media` for the Resend
 rollback path.
 
 ## Cutover Checklist
+
+Use the shared checklist in
+[`docs/agents/modules/email-operations.md`](agents/modules/email-operations.md)
+first, then apply the McRitchie-specific values below.
 
 1. Confirm SES is out of sandbox in `us-east-2`.
 2. Verify `mcritchie.studio` in SES.
@@ -99,7 +107,7 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio is bundled with `studio-engine 0.5.5+`, so transport selection,
+McRitchie Studio is bundled with `studio-engine 0.5.6+`, so transport selection,
 durable delivery primitives, and the local agent inbox live in the engine. Keep
 future shared email changes in `studio-engine` unless they are truly
 app-specific.

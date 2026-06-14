@@ -49,7 +49,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 - **Heroku apps**: `mcritchie-studio` → https://app.mcritchie.studio; `turf-monster-mainnet` → https://app.turfmonster.media. `RAILS_MASTER_KEY` shared across apps via Heroku config.
 - **Solana**: devnet via Anza CLI (`release.anza.xyz/stable/install`). Local dev keypair at `~/.config/solana/id.json` — NOT one of the agent vault wallets. Agent wallets (Alex Bot / Mason / Mack / Turf Monster) stay in 1Password.
 - **AWS S3**: per-app buckets (`mcritchie-studio-{dev,production}`, `turf-monster-{dev,production}`) for ImageCache.
-- **AWS SES**: shared transactional email target. `studio-engine` owns transport selection plus `Studio::Email.deliver`; McRitchie uses `studio_email_deliveries`, while Turf routes the same facade into its existing `email_deliveries` table. Credentials are named in `docs/agents/modules/credential-inventory.md`; Resend remains a rollback path while SES is adopted.
+- **AWS SES**: shared transactional email target. `studio-engine` owns transport selection plus `Studio::Email.deliver`; McRitchie uses `studio_email_deliveries`, while Turf routes the same facade into its existing `email_deliveries` table. The cross-app sender matrix, SES checklist, local inbox proof rules, and rollback policy live in `docs/agents/modules/email-operations.md`; credential item names live in `docs/agents/modules/credential-inventory.md`.
 
 ## Recovery in 4 commands
 
