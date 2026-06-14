@@ -1,0 +1,130 @@
+# Final Ecosystem Closeout Audit
+
+Date: 2026-06-14
+Scope: `/Users/alex/projects` primary checkouts, generated root agent docs, and
+high-risk active Markdown surfaces.
+
+## Result
+
+The documentation and agent-operating cleanup is at maintenance mode.
+
+Completed tranches:
+
+1. Active docs trust reset
+2. Engine session refactor
+3. Shared email operations hardening
+4. Solana/Vault verification orientation
+5. Managed app registry
+6. Final drift closeout
+
+The durable source of truth is now:
+
+- `/Users/alex/projects/AGENTS.md` generated from
+  `mcritchie-studio/docs/agents/index.md`
+- `mcritchie-studio/docs/ECOSYSTEM.md`
+- app-owned README/RUNBOOK/topic docs for app-specific behavior
+- `mcritchie-studio/docs/agents/maintenance/delete-later.md` for items that
+  look removable but still need approval or salvage
+
+Do not add root `CLAUDE.md` or `CODEX.md` by default. Codex reads `AGENTS.md`
+natively. Claude should be tested against `AGENTS.md` before adding a thin
+adapter.
+
+## Closeout State
+
+Primary managed repos were clean at closeout check:
+
+- `mcritchie-studio`
+- `turf-monster`
+- `studio-engine`
+- `solana-studio`
+- `turf-vault`
+
+Known local user work:
+
+- `rolio/README.md` is modified. Rolio remains outside the managed ecosystem
+  registry and should not be folded into this cleanup without a product decision.
+
+Known preserved worktrees:
+
+- `turf-vault/.worktrees/grant-seeds-salvage`
+- `mcritchie-studio/.worktrees/broadcasts-salvage`
+
+Those are intentionally not deleted. They require human salvage/drop approval.
+
+## Verification On Record
+
+High-signal proof from this cleanup:
+
+- McRitchie Studio and Turf Monster local `/up` checks returned `200` during the
+  local stack proof.
+- McRitchie Studio and Turf Monster magic-link flows were verified locally; Turf
+  Monster local inbox and McRitchie Studio real delivery both worked.
+- `studio-engine 0.5.6` was published and adopted by both Rails apps.
+- Turf Vault TypeScript tests were rewritten around
+  `turf-vault/docs/VERIFICATION_MATRIX.md`.
+- Latest Turf Vault local proof: `23 passing` against an isolated validator on
+  `127.0.0.1:8898`.
+
+Final closeout checks from this pass:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/install-agent-docs check
+bin/register-satellite --list
+bin/agent-worktree doctor
+```
+
+`bin/install-agent-docs check` passed, and `bin/register-satellite --list`
+reported the expected `3000-3099`, `3100-3199`, and reserved `3200-3299`
+ranges. `bin/agent-worktree doctor` reported only the known
+`mcritchie-studio/.worktrees/broadcasts-salvage` residual state: missing
+`.env.agent-stack`, missing `APP_PORT`, missing Redis DB, and dirty worktree.
+
+## Residual Risk
+
+These are not blockers to maintenance mode, but they should not be forgotten:
+
+- **Claude adapter decision**: keep app `CLAUDE.md` files as archive-only until
+  the next Claude session proves whether generated `AGENTS.md` is enough.
+- **Hidden salvage worktrees**: review/drop the two preserved hidden worktrees
+  before deleting them.
+- **Root stray files**: `/Users/alex/projects/dev-stack-smoothing.md` and
+  `/Users/alex/projects/bin/clean-artifacts` have tracked replacements or
+  promoted guidance, but deletion still needs explicit approval.
+- **SES stability window**: shared email architecture and playbooks are ready,
+  but production SES should get a real stability window before Resend fallback
+  is removed.
+- **Turf Vault mainnet feature gates**: local tests cover the default
+  localnet/devnet build. Mainnet-only `INIT_AUTHORITY`, canonical USDC, and
+  canonical USDT checks still need mainnet build/deploy proof when that window
+  opens.
+- **Turf Vault lint**: `yarn lint` still reports unrelated pre-existing issues
+  in legacy scripts and a hidden salvage worktree. Do not treat that as a
+  regression from the verification rewrite.
+
+## Maintenance Loop
+
+At the end of any meaningful feature:
+
+1. Run `git status --short --branch` in the touched repo and any consumer repo.
+2. Search docs for changed routes, env vars, ports, providers, versions, and
+   workflow names.
+3. Update the canonical owning doc, not a new explanatory note.
+4. Run `bin/install-agent-docs check` from McRitchie Studio if agent docs changed.
+5. If an old file is superseded but not safe to delete, add it to
+   `docs/agents/maintenance/delete-later.md`.
+6. Hand back a URL, screenshot, test summary, commit, or concrete blocker.
+
+Weekly or after several agent sessions:
+
+1. Run `bin/agent-worktree doctor`.
+2. Review the delete-later ledger.
+3. Re-check root stray files under `/Users/alex/projects`.
+4. Promote durable lessons from local memory or chat into McRitchie Studio docs.
+
+## Next Best Action
+
+Ask the user for deletion/salvage decisions on the preserved worktrees and root
+stray files. Otherwise, the ecosystem cleanup can move from audit work to normal
+feature maintenance.

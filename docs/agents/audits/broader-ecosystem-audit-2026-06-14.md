@@ -4,6 +4,11 @@ Date: 2026-06-14
 Scope: `/Users/alex/projects` primary checkouts plus generated root agent docs.
 Mode: read-heavy architecture and documentation audit. No product-code refactor.
 
+Closeout: the final pass is recorded in
+[`final-closeout-2026-06-14.md`](final-closeout-2026-06-14.md). The cleanup is
+now in maintenance mode; remaining items are approval-gated salvage/deletion
+decisions and normal drift maintenance.
+
 ## Executive Summary
 
 The ecosystem is in a materially better place than the first pass. `AGENTS.md`
@@ -376,9 +381,11 @@ Implemented:
 
 ## Immediate Next Best Actions
 
-1. Do a final audit closeout pass:
+1. Maintain the final closeout state:
    remaining archive-only docs, delete-later candidates, and recurring drift
-   maintenance.
+   maintenance are tracked in
+   [`final-closeout-2026-06-14.md`](final-closeout-2026-06-14.md) and
+   [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
 
 Status 2026-06-14: the Turf Vault TypeScript suite has been rewritten against
 `turf-vault/docs/VERIFICATION_MATRIX.md`; local proof was `23 passing` against

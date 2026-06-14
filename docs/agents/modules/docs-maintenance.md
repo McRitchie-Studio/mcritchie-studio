@@ -19,6 +19,34 @@ When finishing a meaningful feature:
 3. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
 4. Prefer deleting stale docs over preserving contradictory context.
 
+## Closeout Checklist
+
+Use this before handing a feature back:
+
+1. Check `git status --short --branch` in every repo you touched.
+2. Run the narrowest meaningful tests or smoke checks yourself.
+3. Run `bin/install-agent-docs check` from McRitchie Studio if
+   `docs/agents/index.md` or generated root guidance changed.
+4. Run `bin/register-satellite --list` after app registry changes.
+5. Run `bin/agent-worktree doctor` after worktree lifecycle changes.
+6. Return an inspectable result: local URL, local inbox URL, screenshot, test
+   summary, commit SHA, or concrete blocker.
+
+## Recurring Drift Maintenance
+
+Do this weekly, or after several agent sessions:
+
+1. Review [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
+2. Check for visible sibling worktrees and hidden `.worktrees/` salvage dirs.
+3. Re-check root stray files under `/Users/alex/projects`.
+4. Search for old ports, domains, provider names, and LLM-specific references
+   in active docs.
+5. Promote durable lessons from local memory or chat into McRitchie Studio docs.
+
+Keep historical audits available when they still explain why a decision was
+made, but add an archive banner or ledger row when they could be mistaken for
+current procedure.
+
 ## Machine-Local Claude Context
 
 Old Claude memory under `/Users/alex/.claude/` can contain useful history, but it is not durable source of truth. Promote durable lessons into `mcritchie-studio/docs/agents/` or the owning repo docs.
