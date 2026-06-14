@@ -12,7 +12,7 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
 
-`rolio` exists locally as a prototype app, but it is not yet in the managed ecosystem registry. If it joins the managed stack, give it the next app range (`3200-3299`) and add it to `config/satellites.yml`.
+`rolio` exists locally as a prototype app, but it is not yet in the managed ecosystem registry. `tax-studio` currently reserves the `3200-3299` range in `config/satellites.yml`; if Rolio joins the managed stack, assign a non-conflicting range first.
 
 ## Dependency graph
 
@@ -31,7 +31,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 |------------|-----------|
 | Setting up a fresh Mac | [`bin/ecosystem-build`](../bin/ecosystem-build) + [`docs/agents/system/house-burn-down.md`](agents/system/house-burn-down.md) |
 | Onboarding to the codebase | [`docs/agents/index.md`](agents/index.md), then the app README/runbook/topic docs for the repo you'll touch |
-| Hardening or modularizing the stack | [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md), then current app runbooks |
+| Hardening or modularizing the stack | [`docs/agents/audits/main-ecosystem-audit-2026-06-13.md`](agents/audits/main-ecosystem-audit-2026-06-13.md), then current app runbooks |
 | Working on Solana | `turf-monster/docs/SOLANA.md` and `turf-vault/docs/CURRENT_DEPLOYMENT.md` |
 | Working on auth | `studio-engine/docs/USER_CONTRACT.md`, `mcritchie-studio/docs/topics/auth-and-sso.md`, and `turf-monster/docs/AUTH.md` |
 
@@ -67,7 +67,7 @@ Full protocol: [`docs/agents/system/house-burn-down.md`](agents/system/house-bur
 
 ## Current audit + roadmap
 
-The current modularization pass is [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
+The current roadmap audit is [`docs/agents/audits/main-ecosystem-audit-2026-06-13.md`](agents/audits/main-ecosystem-audit-2026-06-13.md). The earlier modularization pass remains at [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
 
 ---
 
