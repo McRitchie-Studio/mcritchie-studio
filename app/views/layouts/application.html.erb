@@ -11,7 +11,10 @@
     <% unless Rails.env.production? %>
       <div style="background:#eab308; color:#000; font-size:12px; font-weight:700; padding:2px 12px; position:relative;">
         <%= Rails.env.capitalize %> Environment
-        <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%);">
+        <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%); display:flex; align-items:center; gap:6px;">
+          <span class="rounded" style="font-size:10px; font-weight:700; padding:1px 6px; background:rgba(0,0,0,0.2);">
+            <%= email_delivery_banner_status %>
+          </span>
           <button @click="$store.devMode = !$store.devMode; localStorage.setItem('devMode', $store.devMode)"
                   class="rounded cursor-pointer"
                   style="font-size:10px; font-weight:700; padding:1px 6px;"
