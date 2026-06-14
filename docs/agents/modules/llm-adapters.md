@@ -23,14 +23,15 @@ for this project root.
 
 ## Claude Compatibility Smoke Test
 
-Current status, 2026-06-14: Claude CLI exists at `/Users/alex/.local/bin/claude`,
-but the local CLI was not authenticated during Codex verification:
+Status, 2026-06-14: Claude CLI auth was completed and the read-only smoke test
+passed. Claude correctly identified `/Users/alex/projects/AGENTS.md` as the
+canonical entrypoint, `mcritchie-studio` as the documentation source of truth,
+and the no-root-`CLAUDE.md`/`CODEX.md` adapter policy.
 
-```text
-Not logged in - Please run /login
-```
+Compatibility verdict: no root `CLAUDE.md` adapter is needed.
 
-After Claude auth is available, run this from `/Users/alex/projects`:
+Re-run this from `/Users/alex/projects` after major agent-doc changes or Claude
+CLI upgrades:
 
 ```bash
 claude -p \
