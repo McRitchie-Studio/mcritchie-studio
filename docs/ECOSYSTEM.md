@@ -67,7 +67,7 @@ Full protocol: [`docs/agents/system/house-burn-down.md`](agents/system/house-bur
 
 ## Current audit + roadmap
 
-The current roadmap audit is [`docs/agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md`](agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md). The earlier ecosystem and modularization passes remain at [`docs/agents/audits/main-ecosystem-audit-2026-06-13.md`](agents/audits/main-ecosystem-audit-2026-06-13.md) and [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
+The current roadmap audit is [`docs/agents/audits/broader-ecosystem-audit-2026-06-14.md`](agents/audits/broader-ecosystem-audit-2026-06-14.md). The earlier post-cleanup, ecosystem, and modularization passes remain at [`docs/agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md`](agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md), [`docs/agents/audits/main-ecosystem-audit-2026-06-13.md`](agents/audits/main-ecosystem-audit-2026-06-13.md), and [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
 
 ---
 
