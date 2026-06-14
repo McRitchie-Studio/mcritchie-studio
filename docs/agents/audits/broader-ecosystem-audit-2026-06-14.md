@@ -35,8 +35,8 @@ Primary clean checkouts at audit time:
 
 Primary checkouts with pre-existing local user work:
 
-- `turf-vault`: untracked `docs/SECURITY_AUDIT_2026_05_31.md`,
-  `docs/turf-vault-deploy-cost.html`
+- `turf-vault`: at audit time, untracked `docs/SECURITY_AUDIT_2026_05_31.md`
+  and `docs/turf-vault-deploy-cost.html`; status 2026-06-14: both are tracked.
 - `solana-studio`: modified `README.md`
 - `rolio`: modified `README.md`
 
@@ -204,25 +204,28 @@ provider smoke tests, and rollback. Keep templates app-owned.
 
 ### F6 - Medium - Solana Truth Is Much Better, But Still Too Easy To Copy
 
+Status 2026-06-14: resolved for the first cleanup pass. The security audit is
+tracked, historical docs carry archive banners, `KEY_ROTATION.md` is explicitly
+superseded, Turf Monster's instruction count is aligned with the 22-wrapper
+program surface, and Turf Vault now has `docs/VERIFICATION_MATRIX.md`.
+
 `turf-monster/docs/SOLANA.md` is current in substance and correctly says Turf
 Vault deployment identity is canonical in `turf-vault/docs/CURRENT_DEPLOYMENT.md`.
 Turf Vault README/RUNBOOK also now emphasize the self-custody model.
 
-Remaining issues:
+Original issues found during the audit:
 
-- `turf-monster/docs/SOLANA.md` still says primitives come from
+- `turf-monster/docs/SOLANA.md` said primitives came from
   `solana-studio ~> 0.4.3`; Turf locks `0.4.7`.
-- `turf-vault/docs/MAINNET_LAUNCH.md` and `KEY_ROTATION.md` retain retired
-  signer/program material. Some of this is useful history, but it needs archive
-  treatment.
-- `turf-vault/docs/SECURITY_AUDIT_2026_05_31.md` is untracked locally.
-- Turf Vault has one TypeScript test file, and the README says tests are still
+- `turf-vault/docs/MAINNET_LAUNCH.md` and `KEY_ROTATION.md` retained retired
+  signer/program material.
+- `turf-vault/docs/SECURITY_AUDIT_2026_05_31.md` was untracked locally.
+- Turf Vault had one TypeScript test file, and the README said tests were still
   being realigned from the old deposit/withdraw contract shape.
 
-Recommendation: keep live identity only in `CURRENT_DEPLOYMENT.md`; archive or
-banner old launch/rotation docs; track or deliberately delete the untracked
-security audit; add a Turf Vault test tranche for the current self-custody
-instruction surface.
+Follow-up recommendation: implement the test suite rewrite against
+`turf-vault/docs/VERIFICATION_MATRIX.md` before treating `anchor test` as launch
+evidence.
 
 ### F7 - Medium - Generated Agent Docs Can Drift Silently
 
@@ -342,15 +345,17 @@ Implemented:
 Goal: make the current self-custody program surface safe for future agents to
 touch.
 
-Suggested implementation:
+Status 2026-06-14: complete for documentation/verification orientation.
 
-- Decide whether to track `turf-vault/docs/SECURITY_AUDIT_2026_05_31.md`.
-- Archive/banner `MAINNET_LAUNCH.md`, `KEY_ROTATION.md`, and `v0.16-spec.md` as
+Implemented:
+
+- Confirmed `turf-vault/docs/SECURITY_AUDIT_2026_05_31.md` is tracked.
+- Archived/bannered `MAINNET_LAUNCH.md`, `KEY_ROTATION.md`, and `v0.16-spec.md` as
   historical when they are not current procedure.
-- Build a test matrix for current instructions: initialize, currency registry,
+- Built a test matrix for current instructions: initialize, currency registry,
   create contest, enter via USDC/USDT/token, settle, cancel, close, sweep,
   pause/unpause, user account, username.
-- Keep live program IDs and signer facts centralized in `CURRENT_DEPLOYMENT.md`.
+- Kept live program IDs and signer facts centralized in `CURRENT_DEPLOYMENT.md`.
 
 ### Tranche 5 - Managed App Registry
 
@@ -366,13 +371,14 @@ Suggested implementation:
 
 ## Immediate Next Best Actions
 
-1. Fix `studio-engine/docs/NEW_APP_SETUP.md` (`bundle show studio-engine`) and
-   audit that guide for copy-paste correctness.
-2. Rewrite Turf Monster's active auth docs to remove password-era guidance.
-3. Add a McRitchie docs check so generated root `AGENTS.md` drift is caught
-   before every future audit/session.
-4. Start the engine session-refactor design with the wallet-address adapter.
-5. Decide what to do with the untracked Turf Vault security audit file.
+1. Start Tranche 5: managed app registry and new-app repeatability.
+2. Decide whether `tax-studio` remains reserved at `3200-3299`.
+3. Decide whether Rolio should join the managed registry and, if yes, assign a
+   non-conflicting port block.
+4. After registry direction is settled, add a `bin/new-app` or
+   `bin/register-satellite` scaffold.
+5. Separately, rewrite Turf Vault's TypeScript suite against
+   `turf-vault/docs/VERIFICATION_MATRIX.md`.
 
 ## Notes For Future Agents
 

@@ -41,7 +41,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 - **turf-monster** — Satellite product app. Sports pick'em UI + contest grading + Solana onchain settlement against `turf-vault`. Read: `README.md`, `docs/LOCAL_STACK.md`, and the topic files in `docs/` (`AUTH.md`, `SOLANA.md`, `FORMULAS.md`, `UI_PATTERNS.md`, `world_cup_2026.md`).
 - **studio-engine** — Engine. Provides `Studio::ErrorHandling` concern, ErrorLog model, passwordless auth primitives, theme system (7 role colors → CSS vars), modals, ImageCache, and reusable components. Consumed by mcritchie-studio + turf-monster + future apps. Read: `README.md` and `docs/`.
 - **solana-studio** — Gem. Primitives only: `Solana::Client` (JSON-RPC), `Solana::Borsh`, `Solana::Transaction` (Anchor discriminators + PDA derivation), `Solana::SplToken`, `Solana::Keypair`. Pure Ruby, ed25519 the only external dep. Consumed by turf-monster (which extends `Solana::Keypair` locally for encryption). Read: `README.md` + `RUNBOOK.md`.
-- **turf-vault** — Anchor program. 21 instructions, 2-of-3 multisig on all sensitive ops, Squads upgrade authority. Live devnet/mainnet identity is in `docs/CURRENT_DEPLOYMENT.md`. Read: `README.md`, `RUNBOOK.md`, and `docs/CURRENT_DEPLOYMENT.md`.
+- **turf-vault** — Anchor program. 22 instructions, 2-of-3 multisig on all sensitive ops, Squads upgrade authority. Live devnet/mainnet identity is in `docs/CURRENT_DEPLOYMENT.md`; current proof checklist is in `docs/VERIFICATION_MATRIX.md`. Read: `README.md`, `RUNBOOK.md`, and `docs/CURRENT_DEPLOYMENT.md`.
 
 ## Secret + service surface
 
