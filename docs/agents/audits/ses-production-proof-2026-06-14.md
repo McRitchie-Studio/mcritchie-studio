@@ -28,6 +28,53 @@ The production dynos checked during this proof were still loading
 `studio-engine 0.5.6`. Deploy the consumers with the current engine before
 proving `Studio::Email.deliver` and the shared outbox path on Heroku.
 
+## Sender Convention
+
+Updated 2026-06-14:
+
+| Domain | Transactional sender | Marketing sender |
+|--------|----------------------|------------------|
+| `mcritchie.studio` | `McRitchie Studio <team@mcritchie.studio>` | `Alex McRitchie <alex@mcritchie.studio>` |
+| `turfmonster.media` | `Turf Monster <team@turfmonster.media>` | `Alex from Turf Monster <alex@turfmonster.media>` |
+
+Transactional means auth, security, account, receipt, and contest-result mail.
+Marketing means newsletter, broadcast, or launch-update mail. Avoid `noreply@`
+senders; use `Reply-To` or a monitored support address when a different reply
+path is needed.
+
+## AWS Follow-Up Draft
+
+Use this as the next support-case reply if AWS has not answered the June 11
+details yet:
+
+```text
+Hi AWS team,
+
+Following up on this SES production access request for us-east-2.
+
+We provided the requested sending-process details on June 11. We also finalized
+our sender convention so recipient expectations are clear:
+
+- Turf Monster transactional email: Turf Monster <team@turfmonster.media>
+- Turf Monster newsletter/marketing email: Alex from Turf Monster <alex@turfmonster.media>
+- McRitchie Studio transactional email: McRitchie Studio <team@mcritchie.studio>
+- McRitchie Studio marketing or product-update email: Alex McRitchie <alex@mcritchie.studio>
+
+All sending remains low-volume, event-driven, and permission-based. Auth,
+security, account, receipt, and contest-result mail is sent only to registered
+users in response to user/account activity. Newsletter mail is explicit opt-in
+and includes account-level preferences/unsubscribe handling.
+
+We are keeping Resend as the rollback provider and will cut over to SES only
+after production access is approved and one-off provider smoke tests pass. Our
+initial requested volume remains modest: under 200 messages/day.
+
+Please let us know if you need any additional sender-domain, DNS, content, or
+bounce/complaint workflow details to complete review.
+
+Thank you.
+```
+
 ## Credential Finding
 
 The SES 1Password item is `agent.aws.mcritchie-ses` in the `agents` vault.

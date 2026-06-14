@@ -20,15 +20,16 @@ here.
 
 ## App Matrix
 
-| App | Production app | Local URL | Local inbox | Sender target | Durable outbox |
-|-----|----------------|-----------|-------------|---------------|----------------|
-| McRitchie Studio | `mcritchie-studio` | `http://localhost:3000` | `http://localhost:3000/_studio/local_emails` | `noreply@mcritchie.studio` | `studio_email_deliveries` / `Studio::EmailDelivery` |
-| Turf Monster | `turf-monster-mainnet` | `http://localhost:3100` | `http://localhost:3100/_studio/local_emails` | `noreply@turfmonster.media` | `email_deliveries` / `EmailDelivery` |
-| Future apps | TBD | reserve the app's hundred-block | `http://localhost:<port>/_studio/local_emails` | verified app domain or approved shared sender | prefer `studio_email_deliveries` |
+| App | Production app | Local URL | Local inbox | Transactional sender | Marketing sender | Durable outbox |
+|-----|----------------|-----------|-------------|----------------------|------------------|----------------|
+| McRitchie Studio | `mcritchie-studio` | `http://localhost:3000` | `http://localhost:3000/_studio/local_emails` | `McRitchie Studio <team@mcritchie.studio>` | `Alex McRitchie <alex@mcritchie.studio>` | `studio_email_deliveries` / `Studio::EmailDelivery` |
+| Turf Monster | `turf-monster-mainnet` | `http://localhost:3100` | `http://localhost:3100/_studio/local_emails` | `Turf Monster <team@turfmonster.media>` | `Alex from Turf Monster <alex@turfmonster.media>` | `email_deliveries` / `EmailDelivery` |
+| Future apps | TBD | reserve the app's hundred-block | `http://localhost:<port>/_studio/local_emails` | `App Name <team@app-domain>` | `Alex McRitchie <alex@app-domain>` or app-owned marketer | prefer `studio_email_deliveries` |
 
-McRitchie may still use `noreply@turfmonster.media` on the Resend rollback path
-until `mcritchie.studio` is fully verified in SES. Do not add a future app to
-real provider delivery until its sender domain is recorded in this matrix.
+Transactional auth/security/account emails should use the `team@` convention.
+Marketing, newsletter, or broadcast emails should use an `alex@` sender when the
+copy is intended to feel personal. Do not add a future app to real provider
+delivery until its sender domain is recorded in this matrix.
 
 ## Credential Map
 
@@ -46,7 +47,8 @@ MAIL_TRANSPORT=ses
 SES_REGION=us-east-2
 SES_SMTP_USERNAME=...
 SES_SMTP_PASSWORD=...
-MAILER_FROM=noreply@example.com
+MAILER_FROM="App Name <team@example.com>"
+MARKETING_MAILER_FROM="Alex from App Name <alex@example.com>"
 RESEND_API_KEY=...       # rollback only
 LOCAL_EMAIL_CAPTURE=1    # local/worktree proof mode
 ```
@@ -125,8 +127,9 @@ Run this once per sending domain.
 4. Publish SPF with Amazon SES included.
 5. Publish a DMARC record before production send; `p=none` is acceptable during
    observation, but the record must exist.
-6. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, and
-   `MAILER_FROM` in the app's environment.
+6. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, and the sender
+   env in the app's environment (`MAILER_FROM` for transactional mail, and
+   `MARKETING_MAILER_FROM` where the app sends marketing/newsletter mail).
 7. Keep `RESEND_API_KEY` present during the migration window.
 8. Set `MAIL_TRANSPORT=ses`.
 9. Smoke test a magic link.

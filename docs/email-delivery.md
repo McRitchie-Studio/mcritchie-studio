@@ -73,9 +73,9 @@ Environment variables:
 - `MAILER_FROM`
 - `RESEND_API_KEY` only for rollback.
 
-If `MAILER_FROM` is not set, McRitchie defaults to `noreply@mcritchie.studio`
-when `MAIL_TRANSPORT=ses` and `noreply@turfmonster.media` for the Resend
-rollback path.
+If `MAILER_FROM` is not set, McRitchie defaults to
+`McRitchie Studio <team@mcritchie.studio>` when `MAIL_TRANSPORT=ses` and
+`Turf Monster <team@turfmonster.media>` for the Resend rollback path.
 
 Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
 `AWS_SECRET_ACCESS_KEY` for SES proof. Use the `SES_AWS_*` variables from
@@ -102,7 +102,7 @@ first, then apply the McRitchie-specific values below.
 1. Confirm SES is out of sandbox in `us-east-2`.
 2. Verify `mcritchie.studio` in SES.
 3. Publish the SES DKIM CNAMEs, SPF, and DMARC records.
-4. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, and optionally `MAILER_FROM=noreply@mcritchie.studio`.
+4. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, and optionally `MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`.
 5. Set `MAIL_TRANSPORT=ses`.
 6. Smoke test a magic link to `alex@mcritchie.studio`.
 7. Confirm Gmail shows DKIM/SPF/DMARC pass and the message does not land in spam.

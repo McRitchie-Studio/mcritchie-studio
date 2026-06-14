@@ -146,7 +146,7 @@ Recommendation: update the runbook around actual Heroku app names, mainnet/devne
 
 `studio-engine` owns `Studio::MailTransport`, SES support, Resend fallback, `Studio::Email.deliver`, and the namespaced `Studio::EmailDelivery` outbox. Turf Monster still has a stronger app-level delivery model with `EmailDelivery`, a Sidekiq delivery job, resend accounting, and transactional docs; its call sites now use the shared facade.
 
-McRitchie Studio now defaults to `noreply@mcritchie.studio` when `MAIL_TRANSPORT=ses`; the Resend rollback path still uses `noreply@turfmonster.media` unless `MAILER_FROM` overrides it.
+Current sender conventions are now documented as `team@` for transactional/auth/security mail and `alex@` for marketing/newsletter mail. McRitchie Studio defaults to `McRitchie Studio <team@mcritchie.studio>` when `MAIL_TRANSPORT=ses`; the Resend rollback path uses `Turf Monster <team@turfmonster.media>` unless `MAILER_FROM` overrides it.
 
 Impact: future apps have a clear delivery entry point, but deliverability, previewing, sender identity, worker deployment, and provider migration can still drift.
 

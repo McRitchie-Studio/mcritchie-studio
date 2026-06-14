@@ -19,9 +19,9 @@ Studio.configure do |config|
   # overrides it.
   default_mailer_from =
     if ENV["MAIL_TRANSPORT"].to_s.downcase == "ses"
-      "noreply@mcritchie.studio"
+      "McRitchie Studio <team@mcritchie.studio>"
     else
-      "noreply@turfmonster.media"
+      "Turf Monster <team@turfmonster.media>"
     end
   config.mailer_from = ENV.fetch("MAILER_FROM", default_mailer_from)
 

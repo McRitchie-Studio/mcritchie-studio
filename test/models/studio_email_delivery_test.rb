@@ -6,11 +6,16 @@ class StudioEmailDeliveryTest < ActiveSupport::TestCase
 
   setup do
     ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+    clear_performed_jobs
+    Studio::EmailDelivery.delete_all
     @user = users(:alex)
     Studio.local_email_capture = nil
   end
 
   teardown do
+    clear_enqueued_jobs
+    clear_performed_jobs
     Studio.local_email_capture = nil
   end
 
@@ -43,6 +48,7 @@ class StudioEmailDeliveryTest < ActiveSupport::TestCase
   test "resend_unsent re-enqueues unsent rows" do
     Studio::EmailDelivery.deliver(UserMailer, :magic_link, @user.email, "sent", to: @user.email).update!(sent: true)
     Studio::EmailDelivery.deliver(UserMailer, :magic_link, @user.email, "unsent", to: @user.email)
+    clear_enqueued_jobs
 
     assert_enqueued_jobs 1, only: Studio::EmailDeliveryJob do
       Studio::EmailDelivery.resend_unsent!
