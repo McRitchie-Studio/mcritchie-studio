@@ -54,11 +54,18 @@ Each worktree stack needs its own:
 - Development database via `DATABASE_URL`.
 - Session cookie key.
 - `APP_PORT` so magic links point at the stack.
+- `LOCAL_EMAIL_CAPTURE=1` so mail is recorded locally instead of sent.
 - Ruby PATH guard when the repo requires a non-system Ruby.
 
 Do not let two Sidekiq processes share one Redis DB while pointing at different databases. A job enqueued by one stack can be processed by the other stack and silently mutate the wrong records.
 
-Worktree magic links should be local-first. Prefer a dev-only last-link endpoint, log-only URL, mailcatcher/letter-opener, or another explicit local inbox. Worktree stacks should not email real recipients unless the task is specifically testing real delivery.
+Worktree magic links are local-first through `/_studio/local_emails`. The central launcher writes `LOCAL_EMAIL_CAPTURE=1`, blanks provider mail credentials in `.env.agent-stack`, and prints the inbox URL next to the app URL. Agents should request the magic link in the UI, then open:
+
+```text
+http://localhost:<port>/_studio/local_emails
+```
+
+The inbox shows recent outbox rows and proof links such as magic-link sign-in URLs. Worktree stacks should not email real recipients unless the task is specifically testing real delivery. For provider tests, intentionally set `LOCAL_EMAIL_CAPTURE=0` and restore the needed mail credentials in that stack env.
 
 Callback-heavy flows such as Stripe, Google OAuth, CDP/MoonPay, webhooks, and emailed magic links stay on the primary port unless the provider and local listener are configured for the worktree port.
 

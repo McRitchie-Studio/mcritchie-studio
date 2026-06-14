@@ -199,7 +199,7 @@ The next scale issues are lifecycle and side effects:
 
 - no single cleanup command for stopped/merged/abandoned worktrees
 - no central view of all allocated ports/Redis DBs across apps
-- worktree magic links can still send real email unless the app has local-first delivery tooling
+- worktree magic links can still send real email unless the app has local-first delivery tooling. Status 2026-06-14: local email capture and `/_studio/local_emails` shipped in `studio-engine` v0.5.5; `bin/agent-worktree` now defaults stacks to local capture.
 - stock Redis DB count can become a ceiling before the port plan does
 
 Impact: tens of agents will eventually create stale processes, stale worktrees, and email side effects.

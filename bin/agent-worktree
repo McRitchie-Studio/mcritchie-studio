@@ -213,6 +213,16 @@ def stack_values(app, task, requested_port = nil)
     app.fetch("session_env") => session_key,
     "TM_PORT" => port.to_s,
     "TM_REDIS_DB" => redis_db.to_s
+  }.merge(local_email_values)
+end
+
+def local_email_values
+  {
+    "LOCAL_EMAIL_CAPTURE" => "1",
+    "MAIL_TRANSPORT" => "",
+    "RESEND_API_KEY" => "",
+    "SES_SMTP_USERNAME" => "",
+    "SES_SMTP_PASSWORD" => ""
   }
 end
 
@@ -230,7 +240,7 @@ end
 def load_stack_env(app, task)
   path = stack_env_path(app, task)
   abort "missing #{path}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless File.exist?(path)
-  parse_env(path)
+  local_email_values.merge(parse_env(path))
 end
 
 def command_env(app, values)
@@ -244,6 +254,7 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "repo:     #{app.fetch("repo")}"
   puts "worktree: #{dir}"
   puts "url:      http://localhost:#{values.fetch("APP_PORT")}"
+  puts "email:    http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
   puts "branch:   feat/#{task} (or the type you pass to new)"
   puts "db:       #{values.fetch("DATABASE_URL").sub("postgresql://localhost/", "")}"
   puts "redis:    db #{redis_db}"
@@ -400,7 +411,7 @@ when "new"
   start = ARGV.include?("--start")
   dir = ensure_git_worktree(app, task, type)
   existing = parse_env(stack_env_path(app, task))
-  values = existing.empty? ? stack_values(app, task) : existing
+  values = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
   path = write_stack_env(app, task, values)
   puts "worktree ready: #{dir}"
   puts "stack env:      #{path}"
@@ -429,6 +440,7 @@ when "up"
   code = wait_for_url(values.fetch("APP_PORT"))
   puts
   puts "url: http://localhost:#{values.fetch("APP_PORT")} (/up #{code})"
+  puts "email: http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
 when "status"
   app_name, raw_task = ARGV
   usage unless app_name && raw_task

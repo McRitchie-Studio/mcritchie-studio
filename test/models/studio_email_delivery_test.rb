@@ -7,6 +7,11 @@ class StudioEmailDeliveryTest < ActiveSupport::TestCase
   setup do
     ActiveJob::Base.queue_adapter = :test
     @user = users(:alex)
+    Studio.local_email_capture = nil
+  end
+
+  teardown do
+    Studio.local_email_capture = nil
   end
 
   test "deliver records a durable row and enqueues the shared delivery job" do
@@ -42,5 +47,17 @@ class StudioEmailDeliveryTest < ActiveSupport::TestCase
     assert_enqueued_jobs 1, only: Studio::EmailDeliveryJob do
       Studio::EmailDelivery.resend_unsent!
     end
+  end
+
+  test "local email capture records without enqueueing" do
+    Studio.local_email_capture = true
+
+    assert_no_enqueued_jobs only: Studio::EmailDeliveryJob do
+      assert_difference "Studio::EmailDelivery.count", 1 do
+        Studio::Email.deliver(UserMailer, :magic_link, @user.email, "tok", to: @user.email, user: @user)
+      end
+    end
+
+    assert_not Studio::EmailDelivery.recent.first.sent?
   end
 end

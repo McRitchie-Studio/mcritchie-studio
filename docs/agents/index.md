@@ -65,6 +65,14 @@ bin/agent-worktree up turf-monster task-slug
 
 Return the printed `http://localhost:<port>` URL in the handoff.
 
+For email or auth flows, also return the printed local inbox:
+
+```text
+http://localhost:<port>/_studio/local_emails
+```
+
+Worktree stacks default to `LOCAL_EMAIL_CAPTURE=1`, so magic links and other emails are recorded there instead of sent to real inboxes.
+
 ## LLM Adapters
 
 Do not create root `CLAUDE.md` or `CODEX.md` by default. Codex reads `AGENTS.md` natively. Claude compatibility should be tested with this generated `AGENTS.md` first; add a thin adapter only if a future Claude session proves it is needed.

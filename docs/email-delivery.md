@@ -22,6 +22,24 @@ Code:
   `Studio::EmailDelivery` outbox, the Resend dependency, and the shared `ses:*`
   Rake tasks.
 
+## Local Agent Inbox
+
+In non-production, `studio-engine` exposes a local inbox:
+
+```text
+http://localhost:3000/_studio/local_emails
+```
+
+Worktree stacks launched through `bin/agent-worktree` set `LOCAL_EMAIL_CAPTURE=1`
+and blank provider mail credentials in `.env.agent-stack`. In that mode
+`Studio::Email.deliver` records `studio_email_deliveries` rows but does not
+enqueue or send external mail. Agents should use the inbox URL as the proof
+surface for magic-link/auth work instead of asking the user to check Gmail.
+
+Primary local stacks can opt into the same behavior with `LOCAL_EMAIL_CAPTURE=1`.
+Set `LOCAL_EMAIL_CAPTURE=0` only when the task is explicitly testing SES/Resend
+provider delivery.
+
 ## Durable Outbox
 
 The shared table is `studio_email_deliveries`.
@@ -81,6 +99,7 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio is bundled with `studio-engine 0.5.3+`, so transport selection
-and durable delivery primitives live in the engine. Keep future shared email
-changes in `studio-engine` unless they are truly app-specific.
+McRitchie Studio is bundled with `studio-engine 0.5.5+`, so transport selection,
+durable delivery primitives, and the local agent inbox live in the engine. Keep
+future shared email changes in `studio-engine` unless they are truly
+app-specific.
