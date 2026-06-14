@@ -125,4 +125,4 @@ Platform: Heroku (heroku-24 stack). Required env vars: `RAILS_MASTER_KEY`, `RAIL
 
 ## Development Notes
 
-See [`docs/agents/index.md`](docs/agents/index.md) for agent session context and [`CLAUDE.md`](./CLAUDE.md) only as legacy migration source while the neutral docs are being extracted.
+See [`docs/agents/index.md`](docs/agents/index.md) for agent session context. Legacy LLM-specific files are migration sources only; track their removal in [`docs/agents/maintenance/delete-later.md`](docs/agents/maintenance/delete-later.md).

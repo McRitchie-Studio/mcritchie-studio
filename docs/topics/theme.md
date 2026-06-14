@@ -1,6 +1,6 @@
 # Branding & Theme
 
-> **When to read this:** Editing colors, navbar, stage badges, the button system, or anything visual. Pair with `studio/CLAUDE.md` theme section for engine-level details.
+> **When to read this:** Editing colors, navbar, stage badges, the button system, or anything visual. Pair with `studio-engine/README.md` and `studio-engine/docs/NAVBAR_SETUP.md` for engine-level theme and navbar details.
 
 ## Configuration
 
