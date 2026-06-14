@@ -56,9 +56,11 @@ Recommended direction:
 
 ### 4. Move the stronger magic-link flow upstream
 
+Status 2026-06-14: addressed in `studio-engine` v0.5.4. Engine-drawn magic links now use an inert GET confirmation page plus POST consume, and McRitchie Studio is bundled to that release. Turf Monster still keeps its contest-aware override.
+
 Turf Monster's magic-link flow is stronger than the engine generic flow because it uses an inert GET confirmation page and consumes on POST. That protects links from scanner prefetch.
 
-The engine still draws `GET /magic_link/:token` as a consuming route. McRitchie Studio currently uses the engine route, so it inherits the weaker pattern.
+Before v0.5.4, the engine drew `GET /magic_link/:token` as a consuming route. McRitchie Studio used the engine route, so it inherited the weaker pattern.
 
 Recommended direction:
 

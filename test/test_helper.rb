@@ -22,6 +22,6 @@ class ActionDispatch::IntegrationTest
   # single-use enforcement and the token consumes cleanly.
   def log_in_as(user)
     token = MagicLink.generate(email: user.email)
-    get magic_link_path(token)
+    post magic_link_consume_path(token: token)
   end
 end

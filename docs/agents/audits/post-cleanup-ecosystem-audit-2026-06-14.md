@@ -266,7 +266,7 @@ Goal: avoid copy/paste auth behavior across Rails apps.
 
 Deliverables:
 
-- Upstream scanner-safe magic link confirmation/consumption flow into `studio-engine`.
+- Upstream scanner-safe magic link confirmation/consumption flow into `studio-engine`. Status 2026-06-14: shipped in `studio-engine` v0.5.4 and adopted by McRitchie Studio/Turf Monster.
 - Keep Turf Monster's stricter money-app auth posture unless SSO is explicitly redesigned.
 - Document when apps should opt into hub SSO versus isolated auth.
 

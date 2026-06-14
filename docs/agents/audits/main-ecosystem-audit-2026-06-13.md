@@ -107,6 +107,8 @@ Recommendation:
 
 ### 5. Magic Link Scanner Safety Should Move Upstream
 
+Status 2026-06-14: addressed in `studio-engine` v0.5.4. Engine-drawn magic links now render a scanner-safe GET confirmation page and consume the token only on POST.
+
 Turf Monster has stronger magic-link behavior than the generic engine flow. McRitchie Studio still depends on the engine route. Since link scanners and preview clients can consume one-time links, scanner-safe behavior should be a shared engine feature rather than an app-by-app patch.
 
 Recommendation:
