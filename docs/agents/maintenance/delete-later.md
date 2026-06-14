@@ -1,0 +1,36 @@
+# Delete Later Ledger
+
+This ledger tracks files and directories that look removable once replacement docs, merged PRs, or migration checks are complete. Do not delete from this list without confirming the condition.
+
+| Path | Type | Why it is a candidate | Safe-delete condition | Status |
+|------|------|-----------------------|-----------------------|--------|
+| `/Users/alex/projects/turf-monster-admin-error-logs` | worktree | Visible sibling worktree; branch was behind `origin/main` by 2 and ahead by 91 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-allow-browser-preview-fix` | worktree | Visible sibling worktree; branch was behind `origin/main` by 1 and ahead by 92 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-compliance` | worktree | Visible sibling worktree; branch was ahead by 62 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-cosign-entry-validation` | worktree | Visible sibling worktree; branch was ahead by 135 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-dashboard-dropdown-link` | worktree | Visible sibling worktree; branch was behind `origin/main` by 1 and ahead by 91 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-docs-worktree-stack` | worktree | Visible sibling worktree; branch was behind `origin/main` by 1 and ahead by 91 at first scan. | Promote useful worktree docs into `mcritchie-studio/docs/agents/modules/worktrees.md`; then confirm branch disposition. | audit needed |
+| `/Users/alex/projects/turf-monster-entry-confirmed-spinner` | worktree | Visible sibling worktree; branch was ahead by 140 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-paypal` | worktree | Visible sibling worktree; branch was ahead by 54 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-phantom-signing-order` | worktree | Visible sibling worktree; branch was ahead by 144 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-quest-mailing-list` | worktree | Visible sibling worktree; branch was ahead by 116 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-quest-navbar-cleanup` | worktree | Visible sibling worktree; branch was behind `origin/main` by 1 and ahead by 91 at first scan. | PR/branch disposition confirmed; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-monster-welcome-email` | worktree | Visible sibling worktree; branch was behind `origin/main` by 7 and ahead by 24 at first scan. | Confirm whether email work landed elsewhere; remove with `git worktree remove`. | audit needed |
+| `/Users/alex/projects/turf-vault-grant-seeds` | worktree | Old feature worktree; branch was ahead by 4 with dirty `Cargo.lock` at first scan. | Branch/PR disposition confirmed; dirty `Cargo.lock` reviewed. | audit needed |
+| `/Users/alex/projects/turf-vault-v024-mainnet` | worktree | Old mainnet worktree; branch was ahead by 3 at first scan. | Branch/PR disposition confirmed. | audit needed |
+| `/Users/alex/projects/mcritchie-studio-broadcasts` | worktree | Old feature worktree; branch was behind `origin/main` by 2, ahead by 2, with dirty docs at first scan. | Branch/PR disposition confirmed; `docs/agents/system/email-delivery.md` reviewed. | audit needed |
+| `*/CLAUDE.md` | docs | Legacy LLM-specific context. | Useful facts promoted to neutral docs or app-owned runbooks; Claude behavior with generated `AGENTS.md` tested. | keep for now |
+| `turf-monster/docs/STASH_3_HANDOFF.md` | docs | Handoff-style document likely superseded by shipped work. | Confirm no unique current facts remain. | audit needed |
+| `turf-monster/docs/ONCHAIN_UI_AUDIT_PROMPT.md` | docs | Prompt artifact, not active operational docs. | Current audit needs promoted or archived. | audit needed |
+| `turf-monster/docs/REFACTOR_AUDIT_2026_05_23.md` | docs | Dated audit likely should be archived once still-live findings are promoted. | Cross-check against code and active docs; move to archive or delete. | audit needed |
+| `turf-monster/docs/SECURITY_AUDIT_2026_05_23.md` | docs | Historical security audit; may contain stale production assumptions. | Confirm findings are closed or represented in active security docs. | audit needed |
+| `turf-monster/docs/TESTS_TO_ADD.md` | docs | Backlog-style doc likely overlaps with tests and issue tracking. | Confirm open items remain; convert to issues or delete. | audit needed |
+| `mcritchie-studio/docs/agents/system/ecosystem-audit-prompt.md` | docs | Prompt artifact for Claude-era audit workflow. | Convert into neutral audit playbook or archive. | audit needed |
+| `mcritchie-studio/docs/agents/system/ecosystem-audit-2026-05-17.md` | docs | Historical audit contains stale examples such as old ports/domains. | Promote still-live items into active modules; archive as historical. | audit needed |
+| `mcritchie-studio/docs/agents/system/md-audit-2026-05-23.md` | docs | Historical drift audit. | Promote current drift checks into `modules/docs-maintenance.md`; archive. | audit needed |
+| `/Users/alex/projects/dev-stack-smoothing.md` | root stray file | Root-level implementation brief for isolated worktree stacks. Valuable, but outside durable repo docs. | Live requirements promoted into `mcritchie-studio/docs/agents/modules/worktrees.md` and `mcritchie-studio/bin/agent-worktree`; delete root copy after approval. | pending approval |
+| `/Users/alex/projects/bin/clean-artifacts` | root local script | Useful maintenance script, but duplicated into `mcritchie-studio/bin/clean-artifacts` during cleanup. | Confirm tracked copy works for the desired root layout, then delete root copy after approval. | pending approval |
+| `/Users/alex/projects/turf-monster-cdp` | stray directory | Empty wrapper directory with only `tmp/`; not registered as a git worktree. | Confirm no hidden needed artifacts; delete after approval. | likely removable |
+| `/Users/alex/projects/turf-monster-og-config` | stray directory | Empty wrapper directory with only `tmp/`; not registered as a git worktree. | Confirm no hidden needed artifacts; delete after approval. | likely removable |
+| `/Users/alex/.claude/projects/-Users-alex-projects/memory/*` | local memory | Local Claude memory contains useful historical feedback but should not be the durable source. | Durable lessons promoted into McRitchie Studio docs; keep local memory untouched unless the user asks. | reference only |
+| `/Users/alex/.claude/agents/*.md` | local memory | Character files contain useful role expectations but are Claude-specific. | Neutral role/culture rules promoted into McRitchie Studio docs; keep local files untouched unless the user asks. | reference only |

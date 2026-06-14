@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# clean-artifacts — reclaim disk from regenerable build/runtime artifacts across
+# the McRitchie ecosystem repos, and REPORT anything that needs a decision.
+#
+# Safe by design: it only touches gitignored, regenerable paths:
+#   log/*.log, log/*.log.<n>, tmp/cache, coverage/.
+# It truncates live logs in place and deletes rotated logs + cache output. It
+# does not touch tmp/pids, tmp/sockets, tmp/storage, db/, storage/, .env, or
+# tracked files.
+#
+# Stray root files and extra git worktrees are only listed. They may be open PR
+# worktrees or real docs.
+#
+#   bin/clean-artifacts            # clean + report
+#   bin/clean-artifacts --dry-run  # report only, change nothing
+#
+# No `set -e`: this is a best-effort sweep over paths that may or may not exist.
+set -u
+
+ROOT="${PROJECTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+DRY=false
+[[ "${1:-}" == "--dry-run" ]] && DRY=true
+
+RAILS_REPOS=(turf-monster mcritchie-studio)
+
+human() { [[ -e "$1" ]] && du -sh "$1" 2>/dev/null | cut -f1 || echo 0; }
+run()   { if $DRY; then echo "    [dry-run] $*"; else eval "$@"; fi; }
+
+label=""; $DRY && label=" (dry-run)"
+echo "==> Cleaning regenerable artifacts${label}"
+for repo in "${RAILS_REPOS[@]}"; do
+  dir="$ROOT/$repo"
+  [[ -d "$dir" ]] || continue
+  echo "-- $repo"
+
+  if compgen -G "$dir/log/*.log" > /dev/null; then
+    for f in "$dir"/log/*.log; do run ": > '$f'"; done
+  fi
+  run "find '$dir/log' -type f -name '*.log.[0-9]*' -delete 2>/dev/null || true"
+
+  [[ -d "$dir/tmp/cache" ]] && run "rm -rf '$dir/tmp/cache'/* 2>/dev/null || true"
+  [[ -f "$dir/tmp/brakeman.json" ]] && run "rm -f '$dir/tmp/brakeman.json'"
+  [[ -d "$dir/coverage" ]] && run "rm -rf '$dir/coverage'"
+
+  echo "   log=$(human "$dir/log")  tmp=$(human "$dir/tmp")  coverage=$(human "$dir/coverage")"
+done
+
+echo
+echo "==> Needs your decision (reported, not touched):"
+
+strays=$(find "$ROOT" -maxdepth 1 -type f ! -name '.*' ! -name 'AGENTS.md' 2>/dev/null)
+if [[ -n "$strays" ]]; then
+  echo "-- stray files at projects root:"
+  echo "$strays" | sed 's/^/     /'
+  echo "     (move into a repo's docs/ to version, or delete if one-off)"
+else
+  echo "-- no stray root files."
+fi
+
+echo "-- git worktrees (extra ones may be open-PR or unfinished work):"
+for repo in mcritchie-studio turf-monster turf-vault; do
+  [[ -d "$ROOT/$repo/.git" || -f "$ROOT/$repo/.git" ]] || continue
+  echo "     [$repo]"
+  git -C "$ROOT/$repo" worktree list 2>/dev/null | sed 's/^/       /' || true
+done
+echo "     prune a finished one with: git -C <repo> worktree remove <path>"
+
+echo "-- untracked files in tracked repos (commit or delete intentionally):"
+for repo in turf-monster turf-vault studio-engine solana-studio mcritchie-studio rolio; do
+  d="$ROOT/$repo"; [[ -d "$d/.git" || -f "$d/.git" ]] || continue
+  u=$(git -C "$d" ls-files --others --exclude-standard 2>/dev/null)
+  [[ -n "$u" ]] && echo "$u" | sed "s#^#     $repo/#"
+done
+
+echo
+echo "Done."

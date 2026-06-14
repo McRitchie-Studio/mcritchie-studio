@@ -112,7 +112,10 @@
                      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
           body: body.toString()
         });
-        try { return await resp.json(); } catch (e) { return { success: resp.ok }; }
+        var payload = {};
+        try { payload = await resp.json(); } catch (e) { payload = {}; }
+        if (!resp.ok || payload.success === false) throw new Error(payload.error || 'Magic link request failed');
+        return Object.assign({ success: true }, payload);
       };
 
       // Hook for post-verify UX (e.g. flag a brand-new account). No-op for now.

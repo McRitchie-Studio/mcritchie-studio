@@ -29,9 +29,8 @@
         <div class="relative flex justify-center text-sm"><span class="bg-surface px-3 text-secondary">or</span></div>
       </div>
 
-      <%# 3. Email magic link — no password. Fires window.postMagicLink and opens
-          the "check your inbox" modal optimistically (a first-time sender won't
-          hit the throttle); only genuine network failures surface here. %>
+      <%# 3. Email magic link — no password. Fires window.postMagicLink and only
+          opens the "check your inbox" modal after the server accepts the request. %>
       <form x-data="{
               sending: false,
               error: '',

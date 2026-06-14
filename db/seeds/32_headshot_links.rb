@@ -6,7 +6,7 @@
 #   TEAM_NFL_SUBDOMAIN map in lib/tasks/nfl.rake.
 #
 # DB-only — no S3 traffic. Image upload + caching happens in
-# bin/rails nfl:upload_coach_headshots (called by /nfl-rebuild Step 5).
+# bin/rails nfl:upload_coach_headshots (called during the full NFL rebuild).
 #
 # Idempotent — re-seeds only update rows whose source URL has changed.
 

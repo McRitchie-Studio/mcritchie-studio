@@ -36,13 +36,13 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 
 ## Full rebuild vs plain seed
 
-For a house-burned-down recovery use the `/nfl-rebuild` skill (`.claude/skills/nfl-rebuild/SKILL.md`) — it runs `db:reset`, then `db:seed`, then `nfl:players_seed` (nflverse master CSV identity backbone with cross-ref IDs + S3 headshot caching), then `espn:scrape_depth_charts` (ESPN-driven roster + depth chart truth). The plain `db:seed` alone gets you a working dev DB with the Spotrac star roster but without the long-tail of backups/UDFAs and without the ESPN-current depth chart.
+For a house-burned-down recovery, use `docs/agents/system/house-burn-down.md` and `bin/ecosystem-build`. The full sports-data rebuild runs `db:reset`, then `db:seed`, then `nfl:players_seed` (nflverse master CSV identity backbone with cross-ref IDs + S3 headshot caching), then `espn:scrape_depth_charts` (ESPN-driven roster + depth chart truth). The plain `db:seed` alone gets you a working dev DB with the Spotrac star roster but without the long-tail of backups/UDFAs and without the ESPN-current depth chart.
 
-For weekly in-season refresh use `/nfl-refresh` — non-destructive, just nflverse delta + ESPN scrape.
+For weekly in-season refresh, use the non-destructive nflverse delta + ESPN scrape workflow captured in the recovery docs.
 
 ## Conventions
 
-- Admin: `alex@mcritchie.studio` / `password`
+- Admin: `alex@mcritchie.studio`; sign in by magic link in normal local development.
 - NFL Draft tweets: oldest→newest in array, `.reverse` before seeding so oldest = top of kanban. Deduped by `x_post_id`.
 - College contracts expire `2026-04-01`. NFL star contracts have `annual_value_cents` (bigint).
 - `contract_type` set correctly at creation (no backfill hack needed).

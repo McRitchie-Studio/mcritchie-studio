@@ -5,8 +5,8 @@
 ## Dev Server
 
 - **Port 3000** — `bin/rails server` (default)
-- Turf Monster runs on port 3001
-- Tax Studio runs on port 3003
+- Turf Monster runs on port 3100
+- Tax Studio is planned on port 3200
 
 ## Deployment
 
@@ -34,4 +34,4 @@
 - Montserrat font (Google Fonts CDN)
 - ERB views, import maps, no JS frameworks
 - bcrypt password auth + Google OAuth (OmniAuth)
-- **Studio engine gem** — `gem "studio-engine", git: "https://github.com/amcritchie/studio-engine.git"`
+- **Studio engine gem** — `gem "studio-engine", "~> 0.5"` from RubyGems; release/adoption checklist lives in `studio-engine/docs/RELEASE.md`

@@ -1,0 +1,100 @@
+<style>
+  body.modal-open { overflow: hidden; }
+</style>
+
+<script>
+  (function() {
+    window.StudioModals = window.StudioModals || {};
+    window.StudioModals.holdAtLeast = function(minMs) {
+      var startedAt = Date.now();
+      return {
+        then: function(callback) {
+          var remaining = Math.max(0, minMs - (Date.now() - startedAt));
+          if (remaining === 0) { callback(); return; }
+          setTimeout(callback, remaining);
+        }
+      };
+    };
+
+    document.addEventListener('alpine:init', function() {
+      if (Alpine.store('modals')) return;
+
+      Alpine.store('modals', {
+        stack: [],
+        open: function(id, props, opts) {
+          props = props || {};
+          opts = opts || {};
+
+          if (opts.replace && this.stack.length > 0) {
+            this.stack[this.stack.length - 1] = { id: id, props: props };
+          } else {
+            this.stack.push({ id: id, props: props });
+          }
+
+          this._sync();
+        },
+        close: function() {
+          this.stack.pop();
+          this._sync();
+        },
+        closeAll: function() {
+          this.stack = [];
+          this._sync();
+        },
+        closeAllDismissible: function() {
+          this.stack = this.stack.filter(function(modal) {
+            return modal.props && modal.props.dismissible === false;
+          });
+          this._sync();
+        },
+        isOpen: function(id) {
+          return this.stack.some(function(modal) { return modal.id === id; });
+        },
+        current: function() {
+          return this.stack.length ? this.stack[this.stack.length - 1] : null;
+        },
+        _sync: function() {
+          document.body.classList.toggle('modal-open', this.stack.length > 0);
+        }
+      });
+    });
+
+    function clearStaleModals() {
+      if (!window.Alpine || !Alpine.store) return;
+
+      var modals = Alpine.store('modals');
+      if (modals && typeof modals.closeAllDismissible === 'function') {
+        modals.closeAllDismissible();
+      } else if (modals && typeof modals.closeAll === 'function') {
+        modals.closeAll();
+      }
+    }
+
+    window.addEventListener('pageshow', function(event) {
+      if (event.persisted) clearStaleModals();
+    });
+    document.addEventListener('turbo:before-cache', clearStaleModals);
+  })();
+</script>
+
+<template x-if="$store.modals.current()">
+  <div class="fixed inset-0 z-[120] flex items-center justify-center p-4"
+       style="background:rgba(0,0,0,0.6)"
+       role="dialog"
+       aria-modal="true"
+       @keydown.escape.window="$store.modals.current() && $store.modals.current().props.dismissible !== false && $store.modals.close()"
+       @click.self="$store.modals.current() && $store.modals.current().props.dismissible !== false && $store.modals.close()"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0">
+    <div class="bg-surface rounded-xl border border-subtle shadow-2xl p-6 max-w-sm w-full"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100">
+      <%= yield if block_given? %>
+    </div>
+  </div>
+</template>

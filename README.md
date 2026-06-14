@@ -1,12 +1,14 @@
 # McRitchie Studio
 
-Task management and orchestration hub for the McRitchie AI agent system. Four agents (Alex, Mack, Mason, Turf Monster) run tasks, track usage, and log activities through a web dashboard and JSON API.
+Task management and orchestration hub for the McRitchie AI agent system. McRitchie Studio is also the documentation anchor for the full local development stack: if the machine is wiped, this repo is the first clone and the source of truth for rebuilding the ecosystem.
 
 **Live**: https://app.mcritchie.studio
 
-McRitchie Studio is the **flagship app** of a 5-repo ecosystem ([turf-monster](https://github.com/amcritchie/turf-monster), [studio](https://github.com/amcritchie/studio-engine), [solana-studio](https://github.com/amcritchie/solana-studio), [turf-vault](https://github.com/amcritchie/turf-vault)). Clone this repo first; it carries the scripts that bootstrap everything else.
+McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/amcritchie/turf-monster), [studio-engine](https://github.com/amcritchie/studio-engine), [solana-studio](https://github.com/amcritchie/solana-studio), [turf-vault](https://github.com/amcritchie/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
 
-> **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the whole 5-repo ecosystem.
+> **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the ecosystem.
+
+> **Agent session?** The canonical source for `/Users/alex/projects/AGENTS.md` lives at [`docs/agents/index.md`](docs/agents/index.md). Run `bin/install-agent-docs` after cloning to refresh the generated root file.
 
 ---
 
@@ -31,30 +33,36 @@ bin/ecosystem-build
 # 3. Copy your 1Password service account token (ops_...) to clipboard, then:
 bin/setup-1pass-token
 
-# 4. Second pass — picks up at Phase 4, pulls Heroku key + .env for the flagship,
-#    clones the other 4 repos in Phase 5, bundles + DBs + Anchor + Playwright,
-#    and bounces both Rails servers. On the first time through this fails
-#    halfway because Phase 4 ran BEFORE the siblings existed on disk, so their
-#    .env files weren't populated — see step 5.
-bin/ecosystem-build
-
-# 5. Third pass (cold-boot only) — Phase 4 now sees the freshly-cloned siblings
-#    and writes their .env files. Phase 6 completes db:seed for all apps. You
-#    end at a known-good steady state.
+# 4. Second pass — picks up at Phase 4, pulls Heroku key + .env, clones the
+#    other 4 repos, installs the projects-level AGENTS.md, re-runs secret
+#    restore for newly-cloned siblings, bundles + DBs + Anchor + Playwright,
+#    and bounces the Rails servers.
 bin/ecosystem-build
 ```
 
 ~25–30 min wall time on a fresh machine. On every later run it's ~30 s — the script just walks ✓ checkmarks and re-bounces the servers, and only one invocation is needed because the siblings are already on disk and have populated `.env` files.
 
-> **Why three invocations on cold boot?** `bin/ecosystem-build` runs Phase 4 (secrets / `.env`) *before* Phase 5 (cloning siblings). On the very first time through, Phase 4 only has `mcritchie-studio` to write `.env` for — the sibling repos don't exist yet. Phase 5 clones them, but Phase 6's `db:seed` then fails for the sibling without `RAILS_MASTER_KEY`. The third invocation closes the loop. This is a known wart; the workaround is two extra seconds of CPU.
-
 **Where it puts things** (override with `PROJECTS_DIR=...`):
 - All 5 repos live under `~/projects/`
 - McRitchie Studio at http://localhost:3000
-- Turf Monster at http://localhost:3001
-- Login: `alex@mcritchie.studio` / `password`
+- Turf Monster at http://localhost:3100
+- Login: magic link to `alex@mcritchie.studio`
 
 See [`docs/agents/system/house-burn-down.md`](docs/agents/system/house-burn-down.md) for the full protocol, the 12 gotchas it encodes, and the per-phase fallback steps when something breaks.
+
+## Parallel agent worktrees
+
+Use hidden per-task worktrees when an agent should make branch work without touching a primary checkout:
+
+```bash
+cd ~/projects/mcritchie-studio
+bin/agent-worktree apps
+bin/agent-worktree plan turf-monster task-slug
+bin/agent-worktree new turf-monster task-slug
+bin/agent-worktree up turf-monster task-slug
+```
+
+The launcher creates `~/projects/<repo>/.worktrees/<task-slug>`, assigns a port inside the app's reserved range, isolates Redis/session/database settings, and prints the local URL to review.
 
 ---
 
@@ -117,4 +125,4 @@ Platform: Heroku (heroku-24 stack). Required env vars: `RAILS_MASTER_KEY`, `RAIL
 
 ## Development Notes
 
-See [CLAUDE.md](./CLAUDE.md) for detailed development context including model schemas, route maps, error handling patterns, code conventions, and AI agent instructions.
+See [`docs/agents/index.md`](docs/agents/index.md) for agent session context and [`CLAUDE.md`](./CLAUDE.md) only as legacy migration source while the neutral docs are being extracted.

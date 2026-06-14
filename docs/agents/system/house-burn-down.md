@@ -1,29 +1,29 @@
 # House Burn-Down Recovery Protocol
 
-How to rebuild the entire McRitchie dev environment from a freshly-reset Mac. Covers all 5 repos in the ecosystem.
+How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is the detailed fallback behind `mcritchie-studio/bin/ecosystem-build`; start with the fast path and only drop into manual phases when a script phase fails.
 
-**Time budget**: ~60-90 min on a decent connection. Most of it is unattended (Ruby compile, Solana toolchain install). Active work is ~15 min.
+**Time budget**: ~25-30 min on a fresh machine with Homebrew installed, longer on slow links or when Rust/Anchor dependencies compile cold. Later runs are usually under a minute because the script is idempotent.
 
 ## The Ecosystem
 
 | Repo | Role | Stack | Port |
 |------|------|-------|------|
-| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, SSO hub | Rails 7.2 / Postgres | 3000 |
-| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). SSO satellite of the hub. Solana onchain | Rails 7.2 / Postgres / Redis | 3001 |
-| [`studio`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: auth, SSO, error logging, theme, ImageCache | Ruby gem | — |
+| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, agent docs, recovery scripts | Rails 7.2 / Postgres | 3000 |
+| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain | Rails 7.2 / Postgres / Redis / Sidekiq | 3100 |
+| [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache | Ruby gem | — |
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client (RPC, ed25519, borsh, txns) | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by Turf Monster | Anchor / Rust / Solana | — |
 
 **Dependency graph (build order):**
 
 ```
-studio gem ──┐
-             ├──> mcritchie-studio (flagship)
-             └──> turf-monster ──> solana-studio gem
-                                ──> turf-vault (devnet, already deployed)
+studio-engine gem ──┐
+                    ├──> mcritchie-studio (flagship)
+                    └──> turf-monster ──> solana-studio gem
+                                       ──> turf-vault (devnet + mainnet deployments)
 ```
 
-Both Rails apps `bundle install` the studio + solana-studio gems direct from GitHub — no local clone of the engine repos is required for bringup, only for editing them.
+The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local clones are still part of the rebuild because agents edit, release, and audit those gems.
 
 ---
 
@@ -45,11 +45,11 @@ bin/setup-1pass-token
 
 # 4. Second pass — picks up at Phase 4 with the token now set, restores .env
 #    from Heroku + 1Password, clones the other 4 repos, bundles + DBs + Anchor,
-#    bounces both Rails servers.
+#    installs the root AGENTS.md, bounces both Rails servers.
 bin/ecosystem-build
 ```
 
-That's it. ~25-30 min wall time on a fresh machine; the only thing you actually do is copy the token and run three commands. On every later machine the second pass takes ~30 s — it just walks ✓ checkmarks and re-bounces the servers.
+That's it. The only thing you actually do is copy the token and run the commands above. On every later machine a single pass just walks checkmarks and re-bounces the servers.
 
 **Re-running anytime:** `bin/ecosystem-build` is fully idempotent. Run it after pulling new commits, switching branches, or anytime you want to confirm "everything still works." It will reset both Rails servers to a clean dev state.
 
@@ -70,7 +70,7 @@ You need these *already installed* before this protocol can start:
 - macOS with Xcode Command Line Tools (`xcode-select --install` if missing)
 - Homebrew (`brew --version`)
 - `git` (ships with Xcode CLT)
-- The 5 GitHub repos accessible to your account (HTTPS clone works)
+- The GitHub repos accessible to your account (HTTPS clone works)
 - A 1Password service account token with read access to the `agents` vault (account `alex@mcritchie.studio` / `MWOV5OT5BRHATI4EGMN26C5DPA`)
 
 `bin/ecosystem-build` handles everything else.
@@ -94,10 +94,10 @@ brew update && brew install \
 ```
 
 ~5 min. Installs:
-- **ruby@3.1** — Ruby 3.1.7 with the full stdlib (mise/ruby-build skips `socket` on Darwin 25 — see Gotcha 1)
+- **ruby@3.1** — Ruby 3.1.7 with the full stdlib for McRitchie Studio and ecosystem bootstrap
 - **mise** — version manager for Node (not Ruby — see above)
 - **postgresql@14** — local DB for both Rails apps
-- **redis** — Sidekiq queue for Turf Monster
+- **redis** — Sidekiq queue for Turf Monster and worktree stacks
 - **1password-cli** (`op`) — secret retrieval
 - **gh** — GitHub CLI
 - **imagemagick** — image resizing for studio engine's `ImageCache`
@@ -270,16 +270,16 @@ AWS_SECRET_ACCESS_KEY=...
 **`/Users/alex/projects/turf-monster/.env`** — see `turf-monster/docs/SOLANA.md` for full list. **`RAILS_MASTER_KEY` is not optional** — `db:seed` calls `User#generate_managed_wallet!` which reads `Rails.application.credentials.secret_key_base` to encrypt the wallet. Without the key, seed crashes mid-run with `undefined method '[]' for nil:NilClass`.
 
 ```bash
-RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster)
+RAILS_MASTER_KEY=$(heroku config:get RAILS_MASTER_KEY --app turf-monster-mainnet)
 GOOGLE_CLIENT_ID=...                  # may differ from mcritchie-studio
 GOOGLE_CLIENT_SECRET=...
-SOLANA_ADMIN_KEY=$(op item get "agent.solana" --vault agents --fields "private key")
+SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault agents --fields "private key")
 SOLANA_RPC_URL=https://api.devnet.solana.com   # or paid provider if rate-limited
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
 ```
 
-**Shared `/Users/alex/projects/.env`** (referenced by Turf Monster's CLAUDE.md for AWS) — keep this minimal, only put truly cross-app vars here.
+**Shared `/Users/alex/projects/.env`** — keep this minimal, only put truly cross-app vars here. Prefer app-local `.env` files plus the credential inventory for most secrets.
 
 ### 5c. Heroku CLI login
 
@@ -303,11 +303,11 @@ bin/rails db:create db:migrate db:seed
 bin/rails server                   # port 3000
 ```
 
-Visit http://localhost:3000. Login `alex@mcritchie.studio` / `password`.
+Visit http://localhost:3000 and sign in with a magic link to `alex@mcritchie.studio`.
 
 Seeds load 9 agents (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), 35 skills, sample tasks, 32 NFL + 71 NCAA + 48 FIFA teams, ~2400 active contracts, ~570 PFF-graded athletes. The `db:seed` phase 32 (`32_headshot_links.rb`) makes network calls — safe to let it run, or skip with `SKIP_NETWORK_SEEDS=1` if behind a firewall.
 
-For full NFL data (UDFAs, depth charts, ESPN headshots cached to S3), run the `/nfl-rebuild` claude skill, which chains `db:reset` → `db:seed` → `nfl:players_seed` → `espn:scrape_depth_charts`. Requires AWS creds in `.env`.
+For full NFL data (UDFAs, depth charts, ESPN headshots cached to S3), use the NFL rebuild workflow once it has been promoted into neutral agent docs. The underlying steps are `db:reset` -> `db:seed` -> `nfl:players_seed` -> `espn:scrape_depth_charts`. Requires AWS creds in `.env`.
 
 For the lineup capture (Starter Post X workflow) and Playwright e2e tests:
 ```bash
@@ -321,10 +321,10 @@ npm test                 # 13 e2e smoke tests
 cd ~/projects/turf-monster
 bundle install
 bin/rails db:create db:migrate db:seed
-bin/dev                  # starts web (3001) + Tailwind watcher + Sidekiq worker
+bin/dev                  # starts web (3100) + Tailwind watcher + Sidekiq worker
 ```
 
-Visit http://localhost:3001. Login same admin.
+Visit http://localhost:3100. Login same admin.
 
 `bin/dev` (vs `bin/rails server`) is the right command — it launches the Procfile.dev which includes Sidekiq. If Sidekiq dies, check Redis: `brew services list | grep redis`.
 
@@ -388,7 +388,7 @@ Free entry tokens (introduced v0.10.0) are also operator-driven: `/admin/free_en
 ## Phase 7 — Smoke test the ecosystem
 
 1. **Hub running**: http://localhost:3000 → dashboard renders, can log in
-2. **Satellite running**: http://localhost:3001 → contests list renders
+2. **Satellite running**: http://localhost:3100 → contests list renders
 3. **SSO**: Click "Turf Monster" link in mcritchie-studio admin gear → should land logged-in on turf-monster (requires shared `SECRET_KEY_BASE`, i.e. same `RAILS_MASTER_KEY`)
 4. **Solana keypair**: `solana address` returns your pubkey
 5. **Anchor local test**: `cd ~/projects/turf-vault && anchor test` — all 25 tests pass
@@ -431,20 +431,22 @@ These are the surprises from the last burn-down. Pre-baked into the steps above;
 
 ## Appendix B — What `bin/ecosystem-build` does
 
-Eight phases, executed in order. Each phase: detect current state → install/configure only what's missing → verify. Re-running is safe; on a healthy machine, every phase logs ✓ checkmarks.
+Phases execute in order. Each phase: detect current state → install/configure only what's missing → verify. Re-running is safe; on a healthy machine, every phase logs ✓ checkmarks.
 
 | Phase | Responsibility |
 |-------|----------------|
 | 1. System tools | Homebrew packages (ruby@3.1, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
 | 2. Languages | Node 20 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
-| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for both Rails apps from `heroku config` |
+| 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio`, `solana-studio`, `turf-vault` (skips ones already present) |
+| 5b. Agent docs | Installs `/Users/alex/projects/AGENTS.md` from `mcritchie-studio/docs/agents/index.md` |
+| 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |
 | 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no AWS creds needed. |
 | 6c. NFL headshots (opt-in) | Only runs when `WITH_NFL_HEADSHOTS=1`. Chains `nfl:players_seed` (nflverse master CSV ~24k rows + S3 headshot cache ~1100 athletes) + `nfl:upload_headshots`. ~10-15 min, requires AWS creds in `.env`. Without this, `/nfl-rosters` shows position-labeled placeholder circles instead of player photos. |
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` for both Rails apps; `npx playwright install chromium` (~90 MB cached for e2e tests) |
-| 8. Servers | Always kills + restarts: bounces both Rails apps on :3000 and :3001, curls each to verify HTTP 2xx/3xx |
+| 8. Servers | Always kills + restarts active Rails apps on their registered ports, curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` containing both apps' `.env` contents (raw, faithfully). Heroku-independent fallback for secret recovery. Gitignored, chmod 600. Skipped silently if no `.env` files exist yet. |
 
 If any phase fails, the script prints what to do and exits. Re-running picks up where it left off.

@@ -13,9 +13,10 @@ Studio.configure do |config|
   # minted for one app verify on another (cross-app token confusion).
   config.magic_link_token_name = "magic_link_mcritchie_v1"
 
-  # Verified Resend sending domain (see config/initializers/resend.rb header for
-  # domain-verification steps). Operator sets MAILER_FROM on Heroku.
-  config.mailer_from = ENV.fetch("MAILER_FROM", "noreply@mcritchie.studio")
+  # Verified sending address for the active mail transport. SES is the target;
+  # Resend remains a rollback path. Use mcritchie.studio only after DNS/DKIM is
+  # verified for the selected provider.
+  config.mailer_from = ENV.fetch("MAILER_FROM", "noreply@turfmonster.media")
 
   config.configure_sso_user = ->(user) { user.role = "viewer" }
   config.sso_logo = "/studio-logo.svg"

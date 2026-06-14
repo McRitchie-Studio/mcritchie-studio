@@ -1,0 +1,455 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Central worktree + local stack launcher for the McRitchie ecosystem.
+#
+# The primary checkout stays clean on main. Task branches live under:
+#   /Users/alex/projects/<repo>/.worktrees/<task-slug>
+#
+# Usage:
+#   bin/agent-worktree apps
+#   bin/agent-worktree plan turf-monster docs-stack
+#   bin/agent-worktree new turf-monster docs-stack
+#   bin/agent-worktree up turf-monster docs-stack
+#   bin/agent-worktree status turf-monster docs-stack
+#   bin/agent-worktree down turf-monster docs-stack
+
+require "fileutils"
+require "open3"
+require "shellwords"
+require "socket"
+require "yaml"
+
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { File.expand_path("../..", __dir__) })
+HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
+STACK_ENV = ".env.agent-stack"
+
+ALIASES = {
+  "studio" => "mcritchie-studio",
+  "mcritchie" => "mcritchie-studio",
+  "hub" => "mcritchie-studio",
+  "turf" => "turf-monster",
+  "monster" => "turf-monster"
+}.freeze
+
+APP_OVERRIDES = {
+  "mcritchie-studio" => {
+    "display_name" => "McRitchie Studio",
+    "port" => 3000,
+    "stack" => "rails",
+    "ruby_path" => "/opt/homebrew/opt/ruby@3.1/bin:/opt/homebrew/lib/ruby/gems/3.1.0/bin",
+    "session_env" => "MCRITCHIE_SESSION_KEY",
+    "session_key" => "_studio_session",
+    "sidekiq" => false
+  },
+  "turf-monster" => {
+    "stack" => "tm",
+    "ruby_path" => "/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin",
+    "session_env" => "TM_SESSION_KEY",
+    "session_key" => "_turf_session",
+    "sidekiq" => true
+  }
+}.freeze
+
+def usage
+  warn <<~TEXT
+    bin/agent-worktree - hidden worktrees + isolated local stacks
+
+      apps
+      list [app]
+      plan <app> <task-slug> [type]
+      new <app> <task-slug> [type] [--start]
+      env <app> <task-slug>
+      up <app> <task-slug>
+      status <app> <task-slug>
+      down <app> <task-slug>
+
+    Examples:
+      bin/agent-worktree plan turf-monster button-color
+      bin/agent-worktree new turf-monster button-color
+      bin/agent-worktree up turf-monster button-color
+  TEXT
+  exit 1
+end
+
+def sh(*cmd, chdir: nil, env: {}, allow_fail: false)
+  shown = cmd.shelljoin
+  ok = system(env, *cmd, chdir: chdir)
+  return true if ok
+  return false if allow_fail
+
+  where = chdir ? " in #{chdir}" : ""
+  abort "command failed#{where}: #{shown}"
+end
+
+def capture(*cmd, chdir: nil, env: {})
+  out, err, status = Open3.capture3(env, *cmd, chdir: chdir)
+  abort "command failed: #{cmd.shelljoin}\n#{err}" unless status.success?
+  out
+end
+
+def apps
+  data = {
+    "mcritchie-studio" => {
+      "slug" => "mcritchie-studio",
+      "display_name" => "McRitchie Studio",
+      "port" => 3000,
+      "status" => "active"
+    }
+  }
+
+  satellites_path = File.join(HUB_DIR, "config", "satellites.yml")
+  if File.exist?(satellites_path)
+    YAML.load_file(satellites_path).fetch("satellites", []).each do |satellite|
+      slug = satellite.fetch("slug")
+      data[slug] = satellite.transform_keys(&:to_s)
+    end
+  end
+
+  data.each do |slug, config|
+    override = APP_OVERRIDES.fetch(slug, {})
+    port = Integer(config.fetch("port"))
+    range_start = (port / 100) * 100
+    data[slug] = config.merge(
+      "slug" => slug,
+      "repo" => File.join(PROJECTS_DIR, slug),
+      "primary_port" => port,
+      "range_start" => range_start,
+      "range_end" => range_start + 99,
+      "stack" => override.fetch("stack", "rails"),
+      "ruby_path" => override.fetch("ruby_path", nil),
+      "session_env" => override.fetch("session_env", "#{slug.tr("-", "_").upcase}_SESSION_KEY"),
+      "session_key" => override.fetch("session_key", "_#{slug.tr("-", "_")}_session"),
+      "sidekiq" => override.fetch("sidekiq", false)
+    )
+  end
+end
+
+def app_for(name)
+  slug = ALIASES.fetch(name, name)
+  config = apps[slug]
+  abort "unknown app: #{name}\nRun: bin/agent-worktree apps" unless config
+  abort "repo missing: #{config.fetch("repo")}" unless Dir.exist?(config.fetch("repo"))
+  config
+end
+
+def clean_slug(raw)
+  slug = raw.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-+\z/, "")
+  abort "invalid task slug: #{raw.inspect}" if slug.empty?
+  slug
+end
+
+def worktree_dir(app, task)
+  File.join(app.fetch("repo"), ".worktrees", task)
+end
+
+def stack_env_path(app, task)
+  File.join(worktree_dir(app, task), STACK_ENV)
+end
+
+def existing_stack_envs(app)
+  Dir.glob(File.join(app.fetch("repo"), ".worktrees", "*", STACK_ENV))
+end
+
+def parse_env(path)
+  return {} unless File.exist?(path)
+
+  File.readlines(path, chomp: true).each_with_object({}) do |line, env|
+    next if line.strip.empty? || line.start_with?("#")
+    key, value = line.split("=", 2)
+    env[key] = value.to_s
+  end
+end
+
+def port_listening?(port)
+  system("lsof", "-nP", "-iTCP:#{port}", "-sTCP:LISTEN", out: File::NULL, err: File::NULL)
+end
+
+def allocated_ports(app)
+  existing_stack_envs(app).map { |path| parse_env(path)["APP_PORT"]&.to_i }.compact
+end
+
+def allocated_redis_dbs
+  apps.values.flat_map do |app|
+    existing_stack_envs(app).map do |path|
+      parse_env(path)["REDIS_URL"].to_s.split("/").last&.to_i
+    end
+  end.compact
+end
+
+def allocate_redis_db
+  used = allocated_redis_dbs
+  ((9..15).to_a + (16..255).to_a).each do |db|
+    return db unless used.include?(db)
+  end
+  abort "no free Redis DB found"
+end
+
+def allocate_port(app)
+  used = allocated_ports(app)
+  ((app.fetch("primary_port") + 1)..app.fetch("range_end")).each do |port|
+    next if used.include?(port)
+    next if port_listening?(port)
+
+    return port
+  end
+  abort "no free worktree port in #{app.fetch("range_start")}-#{app.fetch("range_end")}"
+end
+
+def stack_values(app, task, requested_port = nil)
+  port = requested_port || allocate_port(app)
+  redis_db = allocate_redis_db
+  db_name = "#{app.fetch("slug").tr("-", "_")}_development_#{task.tr("-", "_")}"
+  session_key = "#{app.fetch("session_key")}_#{task.tr("-", "_")}"
+
+  {
+    "AGENT_WORKTREE" => "1",
+    "APP_SLUG" => app.fetch("slug"),
+    "TASK_SLUG" => task,
+    "APP_PORT" => port.to_s,
+    "PORT" => port.to_s,
+    "REDIS_URL" => "redis://localhost:6379/#{redis_db}",
+    "DATABASE_URL" => "postgresql://localhost/#{db_name}",
+    app.fetch("session_env") => session_key,
+    "TM_PORT" => port.to_s,
+    "TM_REDIS_DB" => redis_db.to_s
+  }
+end
+
+def write_stack_env(app, task, values)
+  path = stack_env_path(app, task)
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, <<~ENVFILE)
+    # Generated by mcritchie-studio/bin/agent-worktree.
+    # Safe to regenerate; do not commit this file.
+    #{values.map { |key, value| "#{key}=#{value}" }.join("\n")}
+  ENVFILE
+  path
+end
+
+def load_stack_env(app, task)
+  path = stack_env_path(app, task)
+  abort "missing #{path}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless File.exist?(path)
+  parse_env(path)
+end
+
+def command_env(app, values)
+  path_parts = [app["ruby_path"], ENV["PATH"]].compact
+  values.merge("PATH" => path_parts.join(":"))
+end
+
+def print_plan(app, task, values, dir = worktree_dir(app, task))
+  redis_db = values.fetch("REDIS_URL").split("/").last
+  puts "app:      #{app.fetch("display_name", app.fetch("slug"))}"
+  puts "repo:     #{app.fetch("repo")}"
+  puts "worktree: #{dir}"
+  puts "url:      http://localhost:#{values.fetch("APP_PORT")}"
+  puts "branch:   feat/#{task} (or the type you pass to new)"
+  puts "db:       #{values.fetch("DATABASE_URL").sub("postgresql://localhost/", "")}"
+  puts "redis:    db #{redis_db}"
+  puts "session:  #{app.fetch("session_env")}=#{values.fetch(app.fetch("session_env"))}"
+  puts
+  puts "start:    bin/agent-worktree up #{app.fetch("slug")} #{task}"
+  puts "stop:     bin/agent-worktree down #{app.fetch("slug")} #{task}"
+  puts
+  if redis_db.to_i > 15
+    puts "warning: Redis db #{redis_db} exceeds the default local Redis database range."
+    puts "         Increase Redis databases or use a dedicated Redis instance before starting many stacks."
+    puts
+  end
+  puts "callback-heavy flows stay on primary http://localhost:#{app.fetch("primary_port")} unless providers are configured for this port."
+end
+
+def ensure_git_worktree(app, task, type)
+  primary = app.fetch("repo")
+  dir = worktree_dir(app, task)
+  return dir if Dir.exist?(dir)
+
+  FileUtils.mkdir_p(File.dirname(dir))
+  sh("git", "-C", primary, "fetch", "origin", "--quiet")
+
+  base_ref = "origin/main"
+  unless sh("git", "-C", primary, "rev-parse", "--verify", base_ref, allow_fail: true)
+    base_ref = "HEAD"
+  end
+
+  branch = "#{type}/#{task}"
+  sh("git", "-C", primary, "worktree", "add", dir, "-b", branch, base_ref)
+
+  env_source = File.join(primary, ".env")
+  env_target = File.join(dir, ".env")
+  if File.exist?(env_source) && !File.exist?(env_target)
+    FileUtils.cp(env_source, env_target)
+    puts "copied .env"
+  end
+
+  dir
+end
+
+def prepare_rails(dir, app, values)
+  env = command_env(app, values)
+  sh("bin/rails", "db:prepare", chdir: dir, env: env)
+  sh("bin/rails", "tailwindcss:build", chdir: dir, env: env, allow_fail: true)
+end
+
+def start_generic_rails(dir, app, values)
+  prepare_rails(dir, app, values)
+
+  pidfile = File.join(dir, "tmp", "pids", "agent-web.pid")
+  logfile = File.join(dir, "log", "agent-web.log")
+  FileUtils.mkdir_p(File.dirname(pidfile))
+  FileUtils.mkdir_p(File.dirname(logfile))
+
+  if File.exist?(pidfile)
+    pid = File.read(pidfile).strip
+    if !pid.empty? && system("kill", "-0", pid, err: File::NULL)
+      puts "web already running pid #{pid}"
+      return
+    end
+  end
+
+  env = command_env(app, values)
+  pid = Process.spawn(env, "bin/rails", "server", "-p", values.fetch("APP_PORT"),
+                      chdir: dir, in: File::NULL, out: [logfile, "a"], err: [:child, :out])
+  Process.detach(pid)
+  File.write(pidfile, "#{pid}\n")
+  puts "started web pid #{pid}"
+end
+
+def start_tm(dir, app, values)
+  prepare_rails(dir, app, values)
+  sh("bin/tm", "up", "--no-stripe", chdir: dir, env: command_env(app, values))
+end
+
+def wait_for_url(port)
+  url = "http://localhost:#{port}/up"
+  last_code = nil
+  30.times do
+    begin
+      socket = TCPSocket.new("127.0.0.1", port.to_i)
+      socket.close
+      out, = Open3.capture3("curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", url)
+      code = out.strip
+      last_code = code unless code.empty?
+      return code if code == "200"
+    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH
+      # keep polling
+    end
+    sleep 1
+  end
+  last_code || "down"
+end
+
+def stop_generic_rails(dir)
+  pidfile = File.join(dir, "tmp", "pids", "agent-web.pid")
+  unless File.exist?(pidfile)
+    puts "no agent-web pidfile"
+    return
+  end
+
+  pid = File.read(pidfile).strip
+  if !pid.empty? && system("kill", "-0", pid, err: File::NULL)
+    Process.kill("TERM", pid.to_i)
+    puts "stopped web pid #{pid}"
+  else
+    puts "web not running"
+  end
+  FileUtils.rm_f(pidfile)
+end
+
+def list_worktrees(app = nil)
+  selected = app ? [app] : apps.values
+  selected.each do |config|
+    puts "#{config.fetch("slug")}  primary http://localhost:#{config.fetch("primary_port")}  range #{config.fetch("range_start")}-#{config.fetch("range_end")}"
+    root = File.join(config.fetch("repo"), ".worktrees")
+    Dir.glob(File.join(root, "*")).sort.each do |dir|
+      next unless File.directory?(dir)
+
+      env = parse_env(File.join(dir, STACK_ENV))
+      port = env.fetch("APP_PORT", "?")
+      task = File.basename(dir)
+      branch = capture("git", "-C", dir, "branch", "--show-current").strip rescue "?"
+      puts "  #{task.ljust(24)} #{branch.ljust(28)} http://localhost:#{port}"
+    end
+  end
+end
+
+cmd = ARGV.shift || "help"
+
+case cmd
+when "apps"
+  apps.values.sort_by { |app| app.fetch("primary_port") }.each do |app|
+    puts "#{app.fetch("slug").ljust(18)} #{app.fetch("display_name", app.fetch("slug")).ljust(22)} primary #{app.fetch("primary_port")}  range #{app.fetch("range_start")}-#{app.fetch("range_end")}  #{app.fetch("status", "unknown")}"
+  end
+when "list"
+  app = ARGV[0] ? app_for(ARGV[0]) : nil
+  list_worktrees(app)
+when "plan"
+  app_name, raw_task, type = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  values = stack_values(app, task)
+  print_plan(app, task, values)
+when "new"
+  app_name, raw_task, maybe_type, *rest = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
+  start = ARGV.include?("--start")
+  dir = ensure_git_worktree(app, task, type)
+  existing = parse_env(stack_env_path(app, task))
+  values = existing.empty? ? stack_values(app, task) : existing
+  path = write_stack_env(app, task, values)
+  puts "worktree ready: #{dir}"
+  puts "stack env:      #{path}"
+  puts
+  print_plan(app, task, values, dir)
+  if start
+    puts
+    ARGV.replace(["up", app.fetch("slug"), task])
+    exec($PROGRAM_NAME, *ARGV)
+  end
+when "env"
+  app_name, raw_task = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  puts File.read(stack_env_path(app, task))
+when "up"
+  app_name, raw_task = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  dir = worktree_dir(app, task)
+  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+  values = load_stack_env(app, task)
+  app.fetch("stack") == "tm" ? start_tm(dir, app, values) : start_generic_rails(dir, app, values)
+  code = wait_for_url(values.fetch("APP_PORT"))
+  puts
+  puts "url: http://localhost:#{values.fetch("APP_PORT")} (/up #{code})"
+when "status"
+  app_name, raw_task = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  values = load_stack_env(app, task)
+  code = wait_for_url(values.fetch("APP_PORT"))
+  print_plan(app, task, values)
+  puts "status: /up #{code}"
+when "down"
+  app_name, raw_task = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  dir = worktree_dir(app, task)
+  values = load_stack_env(app, task)
+  if app.fetch("stack") == "tm"
+    sh("bin/tm", "down", chdir: dir, env: command_env(app, values))
+  else
+    stop_generic_rails(dir)
+  end
+else
+  usage
+end

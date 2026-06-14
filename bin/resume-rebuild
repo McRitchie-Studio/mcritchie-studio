@@ -1,8 +1,8 @@
 #!/bin/bash
-# Resume /nfl-rebuild from current state. Steps are idempotent.
+# Resume the full NFL rebuild from current state. Steps are idempotent.
 
 set -e
-cd /Users/alex/projects/mcritchie_studio
+cd /Users/alex/projects/mcritchie-studio
 LOG=tmp/resume_rebuild.log
 echo "" > "$LOG"
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }

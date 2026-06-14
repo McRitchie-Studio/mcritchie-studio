@@ -1,6 +1,6 @@
 # Credentials
 
-> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`agent.solana`), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is the canonical reference for what each value is and where it lives.
+> **Restoring credentials on a fresh Mac?** `bin/ecosystem-build` does this automatically: it pulls `RAILS_MASTER_KEY` and other env vars from `heroku config` and `SOLANA_ADMIN_KEY` from 1Password (`agent.alex.solana`), then writes `.env` for both Rails apps. See [house-burn-down.md](house-burn-down.md). This doc is legacy system context while the neutral modules in `docs/agents/modules/` become canonical.
 
 ## Environment Variables
 
@@ -19,8 +19,8 @@ All sensitive credentials are stored as environment variables, never in code.
 
 ## Development Defaults
 
-- Database: `mcritchie-studio_development` (local PostgreSQL, no password)
-- Admin login: `alex@mcritchie.studio` / `password`
+- Database: `mcritchie_studio_development` (local PostgreSQL, no password)
+- Admin login: `alex@mcritchie.studio`; sign in by magic link in normal local development.
 - API: No authentication required (add token auth later)
 
 ## Agent Email Accounts
@@ -56,7 +56,7 @@ Each agent has a dedicated Solana wallet on devnet. Credentials stored in 1Passw
 
 | Agent | Address | Role |
 |-------|---------|------|
-| Alex Bot | `F6f8h5yynbnkgWvU5abQx3RJxJpe8EoQmeFBuNKdKzhZ` | Primary vault admin (signs all onchain ops) |
+| Alex Bot | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Rotated vault admin (signs routine onchain ops) |
 | Alex Human | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
 | Mason | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Agent wallet |
 | Mack | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Agent wallet |
@@ -97,7 +97,7 @@ cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key fr
 **Retrieve a wallet's private key** (items renamed 2026-05-03 to `agent.*` convention):
 ```bash
 # Alex Bot
-op item get "agent.solana" --vault "agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
+op item get "agent.alex.solana" --vault "agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
 # Mason
 op item get "agent.mason.solana" --vault "agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
@@ -111,14 +111,14 @@ op item get "agent.turf.solana" --vault "agents" --account MWOV5OT5BRHATI4EGMN26
 
 **Set as env var (one-liner)**:
 ```bash
-export SOLANA_ADMIN_KEY=$(op item get "agent.solana" --vault "agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")
+export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "agents" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key")
 ```
 
 **Item fields**: Each wallet entry contains `recovery phrase`, `private key` (base58), and `wallet address` (base58 public key).
 
 ### Onchain Admin
 
-Alex Bot is the primary admin for the TurfVault smart contract (program `Dx8uGU5w7B9NytDSsW4kseGZuqdVVRq1KY1mGXN2GaCT`). Alex Human is the backup admin. Both can perform admin actions (create/settle/close contests). The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds Alex Bot's private key.
+Alex Bot is the primary admin for routine TurfVault operations. Alex Human is the backup/admin cosigner. Current program IDs and signer set live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
 
 ## Security Notes
 

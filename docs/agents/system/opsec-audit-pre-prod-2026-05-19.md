@@ -13,6 +13,7 @@
 > - **Pre-mainnet hard prerequisites** — 25 of 26 ✅ shipped (see § 8). Only **OPSEC-025** (external Anchor audit) remains. The Heroku env vars listed in § 8 are all set; `bin/audit-env-check` passes.
 > - **Should-have HIGH-severity items** — 17 of 18 ✅ shipped. Only **OPSEC-028** (mint_entry_token Rails alert) remains, deferred as a post-launch alerting task.
 > - **OPSEC-051–089 backlog** — operational tracking only; non-blocking.
+> - **Post-audit additions (§ 8)** — incident-driven findings appended after 2026-05-19. **OPSEC-090** (2026-06-13): non-prod process can transact on live mainnet when all `SOLANA_*` vars are consistently mainnet — open, dev-safety guard not yet built.
 >
 > Effective verdict today: **GO-pending-external-audit**. The current limiter is OPSEC-025 (the third-party Anchor audit, $20–60k + 4–8 weeks), not the application stack. The original "Go / No-Go" section below is preserved verbatim for traceability.
 
@@ -625,6 +626,42 @@ The Squads runbook already specifies the phased rollout (smoke → capped → un
 
 ---
 
+## 8. Post-Audit Additions (Incident-Driven)
+
+> Findings discovered after the 2026-05-19 audit, appended to keep a single canonical OPSEC tracker. Numbering continues from OPSEC-089. Each entry records the triggering incident.
+
+### OPSEC-090 — Non-prod process can transact on mainnet when all Solana env vars are *consistently* mainnet (no "is this prod?" guard)
+
+- **Severity:** HIGH (real-money loss vector; the triggering incident was recoverable, the class is not always)
+- **File:** `turf-monster/app/services/solana/config.rb` (cluster / mint / program / network selection — `NETWORK`, `mainnet?`, `USDC_MINT`, `PROGRAM_ID`), `turf-monster/app/services/solana/vault.rb` (all tx builders + broadcast: `build_create_contest`, `build_enter_contest`, `cosign_and_broadcast_entry`, `mint_entry_token`, `create_contest_server_funded`, and the private `build_tx` / `build_partial_signed` / `build_partial_unsigned` / `build_tx_unsigned` chokepoints). Adjacent to the OPSEC-039 boot guard at `turf-monster/config/initializers/solana_network_alignment.rb`.
+- **Originating incident:** 2026-06-13. Alex ran a contest-entry/create flow from the **local** turf-monster dev app (`localhost:3100`) while Phantom was pointed at mainnet. At that moment the local app was *also* fully configured for mainnet — `SOLANA_PROGRAM_ID=DaFv…` (live mainnet program), mainnet Helius RPC, mainnet USDC mint `EPjFW…`, and the mainnet admin/payer key `8K81`. A real `CreateContest` executed on mainnet and moved **45 real USDC** into a mainnet prize pool. Recovered separately via `cancel_contest`.
+- **Why existing guards missed it:** The OPSEC-039 genesis-alignment guard (`solana_network_alignment.rb`) only blocks *mixed* clusters — e.g. a mainnet program ID with a devnet RPC. Here all three vars were *consistently* mainnet, so `getGenesisHash` matched the declared `mainnet-beta` and the check passed. OPSEC-039 validates **internal consistency**, not **"a dev/local process has any business touching mainnet at all."** That second question was never asked. This is the pattern-#10 ("Devnet-only-via-config, no defense in depth") failure mode inverted: there is no `Rails.env`-layered gate forcing non-prod processes off mainnet.
+- **Exploit / blast radius:** Any developer (or agent) whose local `.env` points at the live cluster — a stale `.env`, a copy-pasted prod config var, a worktree that inherited the wrong `SOLANA_*` set — can sign and broadcast real-money instructions (`create_contest`, `enter_contest`, `mint_entry_token`, settlement cosigns) against the live program with the live admin key, from a laptop, with zero confirmation prompt. The funds move is silent and indistinguishable from prod traffic in the outbound-request log.
+- **Requested guard:** In **non-production** environments (anything where `Rails.env.production?` is false — local/dev/test, i.e. not the prod Heroku dyno), the app must **HARD-REFUSE** to (a) boot and (b) build or submit any transaction when the resolved cluster is `mainnet-beta`, **UNLESS** an explicit opt-in `ALLOW_LOCAL_MAINNET=true` is set. Default = block. Mirror the OPSEC-039 escape-hatch ergonomics (`SOLANA_SKIP_NETWORK_CHECK`) so the bypass is deliberate, env-var-gated, and loud in logs when active.
+- **Recommended approach (do NOT implement yet — ticket only):**
+  1. **Single predicate on `Solana::Config`** — add `Solana::Config.local_mainnet_blocked?` (true when `!Rails.env.production? && mainnet? && ENV["ALLOW_LOCAL_MAINNET"] != "true"`) plus a `raise_if_local_mainnet!(context)` helper that builds the loud error message. Centralizing the decision in `Config` keeps the boot guard and the runtime guard in lockstep — same rule, one source of truth (avoids the OPSEC-075-class "logic duplicated, drifts" smell).
+  2. **Defense in depth — two enforcement points:**
+     - **Boot-time initializer** (sibling to `solana_network_alignment.rb`, e.g. `config/initializers/solana_local_mainnet_guard.rb`) — fail the process at startup, mirroring OPSEC-039. This catches the common case (dev server / console / Sidekiq booting against a mainnet `.env`) before any traffic. Run inside `config.after_initialize` so `Solana::Config` is loaded, same as OPSEC-039.
+     - **Runtime guard at the tx chokepoint** — call `Solana::Config.raise_if_local_mainnet!` from the lowest common transaction-build/broadcast helpers in `vault.rb` (the private `build_tx*` / `build_partial_*` methods, and/or `cosign_and_broadcast_entry`). This closes the gap where a long-running dev process started on devnet and the operator swapped `.env` to mainnet mid-session without restarting (Sidekiq snapshots `.env` at boot — see the `bin/tm restart` note in turf-monster CLAUDE.md), and it defends against any future code path that bypasses the boot guard.
+  3. **"Is prod?" detection** — `Rails.env.production?` is the reliable, already-load-bearing signal: the prod Heroku dynos run `RAILS_ENV=production`; local/dev/test never do. Do **not** infer "prod" from the presence of mainnet env vars (that's the exact thing this guard exists to catch — circular). Prefer this over a `DYNO`/hostname sniff.
+  4. **Test environment** — enforce in test too (the incident scope is "not the prod dyno"), but expect that any test deliberately exercising mainnet config must set `ALLOW_LOCAL_MAINNET=true`, exactly as OPSEC-039 tests set `SOLANA_SKIP_NETWORK_CHECK`. Default test `NETWORK` is `devnet`, so the common path is unaffected.
+  5. **Error message — loud and prescriptive:** name the offending var set, the resolved cluster, and the one-line opt-in. e.g.:
+     ```
+     Refusing to run a non-production process against MAINNET (OPSEC-090).
+
+       RAILS_ENV         = development
+       SOLANA_NETWORK    = mainnet-beta
+       SOLANA_PROGRAM_ID = DaFv…
+       SOLANA_USDC_MINT  = EPjFW… (real USDC)
+
+     A dev/test process is about to sign real-money instructions with the live admin key.
+     This is almost certainly a stale or copy-pasted .env.
+     To proceed anyway (you are SURE you want local→mainnet): ALLOW_LOCAL_MAINNET=true
+     ```
+- **Verification (post-fix):** (a) `RAILS_ENV=development SOLANA_NETWORK=mainnet-beta bin/rails runner 'true'` must raise at boot; (b) the same with `ALLOW_LOCAL_MAINNET=true` must boot and log the bypass loudly; (c) a unit test asserting `Solana::Config.local_mainnet_blocked?` truth table across the `Rails.env` × `NETWORK` × `ALLOW_LOCAL_MAINNET` matrix; (d) a vault test asserting `build_create_contest` (or the shared `build_tx` helper) raises under dev+mainnet-no-optin. Cross-reference OPSEC-039 (consistency check) and OPSEC-013/OPSEC-020 (the `Rails.env.production?`-layered destructive-op gates this generalizes).
+
+---
+
 ## Patterns Worth Naming
 
 These cross-cut the findings and should drive code review going forward.
@@ -654,7 +691,7 @@ These cross-cut the findings and should drive code review going forward.
 
 ## Acknowledgments
 
-This audit was performed via six parallel investigation agents spanning the Anchor program, Rails controllers, Rails service layer, webhooks/payments, shared gems, and operational envelope. Each agent had ~1500 words of output; this document consolidates and dedupes. Total raw findings ≈ 140; consolidated unique findings = 89 (OPSEC-001 through OPSEC-089).
+This audit was performed via six parallel investigation agents spanning the Anchor program, Rails controllers, Rails service layer, webhooks/payments, shared gems, and operational envelope. Each agent had ~1500 words of output; this document consolidates and dedupes. Total raw findings ≈ 140; consolidated unique findings = 89 (OPSEC-001 through OPSEC-089). Post-audit incident-driven findings are appended in § 8 (OPSEC-090+) and continue the numbering.
 
 **Re-audit cadence:** Re-run quarterly or whenever a new payment processor / new on-chain instruction / new auth method ships. The current audit reflects the state of the code on **2026-05-19**.
 

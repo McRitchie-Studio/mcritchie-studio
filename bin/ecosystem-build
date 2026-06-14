@@ -18,14 +18,11 @@
 # Run from any directory; the script locates itself.
 #
 # Cold-boot invocation count:
-#   On a truly fresh machine you'll run this 3 times in total:
+#   On a truly fresh machine you'll run this 2 times in total:
 #     1st invocation — installs toolchain, bails at Phase 4 (no OP token).
 #     [run bin/setup-1pass-token to install the OP service token]
-#     2nd invocation — Phase 4 writes mcritchie-studio/.env; Phase 5 clones
-#                      siblings; Phase 6 db:seed fails for siblings because
-#                      Phase 4 ran before they existed on disk.
-#     3rd invocation — Phase 4 now sees cloned siblings + writes their .env;
-#                      Phase 6 succeeds; script reaches steady state.
+#     2nd invocation — writes .env files, clones siblings, re-runs the env
+#                      restore for newly-cloned siblings, then seeds and boots.
 #   On every subsequent run, one invocation suffices.
 
 set -uo pipefail   # no -e: phases report their own failures and we keep going where safe
@@ -293,7 +290,7 @@ phase_secrets() {
   fi
 
   # .env files for each Rails app
-  for i in 0 1; do
+  for i in "${!RAILS_APPS[@]}"; do
     local app="${RAILS_APPS[$i]}"
     local heroku_app="${HEROKU_APPS[$i]}"
     local env_path="$PROJECTS_DIR/$app/.env"
@@ -327,7 +324,7 @@ phase_secrets() {
   # functionality. Mapping: env_var_name -> "vault/item/field". Always re-fetched
   # (cheap) so rotated tokens propagate without manual intervention.
   local op_secrets=(
-    "turf-monster|SOLANA_ADMIN_KEY|agents/agent.solana/private key"
+    "turf-monster|SOLANA_ADMIN_KEY|agents/agent.alex.solana/private key"
   )
   for entry in "${op_secrets[@]}"; do
     IFS='|' read -r app var ref <<< "$entry"
@@ -371,6 +368,20 @@ phase_repos() {
       log_ok "$repo" "cloned"
     fi
   done
+}
+
+# ─── Phase 5b: Agent docs ───────────────────────────────────────────────────
+phase_agent_docs() {
+  log_phase "Phase 5b: Agent docs"
+
+  local installer="$PROJECTS_DIR/mcritchie-studio/bin/install-agent-docs"
+  if [ ! -x "$installer" ]; then
+    log_fail "bin/install-agent-docs missing or not executable" "run from mcritchie-studio after pulling latest"
+    return 1
+  fi
+
+  "$installer" >/dev/null
+  log_ok "projects/AGENTS.md" "installed from mcritchie-studio/docs/agents/index.md"
 }
 
 # ─── Phase 6: Bundles + databases ───────────────────────────────────────────
@@ -554,7 +565,7 @@ phase_anchor() {
 phase_servers() {
   log_phase "Phase 8: Rails servers (always reset on build)"
 
-  for i in 0 1; do
+  for i in "${!RAILS_APPS[@]}"; do
     local app="${RAILS_APPS[$i]}"
     local port="${RAILS_PORTS[$i]}"
     local path="$PROJECTS_DIR/$app"
@@ -642,6 +653,8 @@ main() {
   phase_shell_config
   phase_secrets          || { echo; echo "${RED}Stopped at Phase 4.${RESET}"; exit 1; }
   phase_repos            || { echo; echo "${RED}Stopped at Phase 5.${RESET}"; exit 1; }
+  phase_agent_docs       || { echo; echo "${RED}Stopped at Phase 5b.${RESET}"; exit 1; }
+  phase_secrets          || { echo; echo "${RED}Stopped at Phase 5c.${RESET}"; exit 1; }
   phase_bundles_dbs
   phase_nfl_data
   phase_nfl_headshots
@@ -654,9 +667,10 @@ main() {
   echo "${GREEN}${BOLD}  Ecosystem at steady state${RESET}"
   echo "${GREEN}${BOLD}═══════════════════════════════════════════════${RESET}"
   echo
-  echo "  McRitchie Studio:  http://localhost:3000"
-  echo "  Turf Monster:      http://localhost:3001"
-  echo "  Login:             alex@mcritchie.studio / password"
+  for i in "${!RAILS_APPS[@]}"; do
+    printf "  %-18s http://localhost:%s\n" "${RAILS_APPS[$i]}:" "${RAILS_PORTS[$i]}"
+  done
+  echo "  Login:             magic link to alex@mcritchie.studio"
   echo
 }
 

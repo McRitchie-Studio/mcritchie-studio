@@ -21,7 +21,7 @@ Five repos under ~/projects/ (already cloned on this machine):
 | Repo | Role |
 |------|------|
 | mcritchie-studio | Flagship Rails app (port 3000). SSO hub. NFL/News/Content/Task pipelines. Owns the ecosystem recovery scripts. |
-| turf-monster | Rails satellite (port 3001). Sports pick'em with Solana onchain. |
+| turf-monster | Rails satellite (port 3100). Sports pick'em with Solana onchain. |
 | studio | Shared Rails engine (gem). Auth, SSO, error logging, theme, ImageCache. |
 | solana-studio | Ruby gem. Solana RPC + ed25519 + borsh + tx builder. |
 | turf-vault | Anchor/Rust smart contract. Onchain escrow for Turf Monster. |

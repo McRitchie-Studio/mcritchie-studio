@@ -1,52 +1,55 @@
 # McRitchie Ecosystem
 
-Single orientation surface for the 5-repo McRitchie stack. Fresh contributors, fresh Claude sessions, and future-you start here.
+Single orientation surface for the McRitchie stack. Fresh contributors, fresh agent sessions, and future-you start here.
 
 ## The Repos
 
 | Repo | Role | Stack | Port |
 |------|------|-------|------|
-| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, SSO hub. Owns the ecosystem recovery scripts. | Rails 7.2 / Postgres | 3000 |
-| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). SSO satellite. Solana onchain via turf-vault. | Rails 7.2 / Postgres / Redis | 3001 |
-| [`studio`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: auth, SSO, error logging, theme, ImageCache. | Ruby gem | — |
+| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, auth-capable Studio app, and ecosystem recovery scripts. | Rails 7.2 / Postgres | 3000 |
+| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain via turf-vault. | Rails 7.2 / Postgres / Redis / Sidekiq | 3100 |
+| [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache. | Ruby gem | — |
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
+
+`rolio` exists locally as a prototype app, but it is not yet in the managed ecosystem registry. If it joins the managed stack, give it the next app range (`3200-3299`) and add it to `config/satellites.yml`.
 
 ## Dependency graph
 
 ```
-studio gem ──┐
-             ├──> mcritchie-studio (flagship)
-             └──> turf-monster ──> solana-studio gem
-                                ──> turf-vault (devnet, already deployed)
+studio-engine gem ──┐
+                    ├──> mcritchie-studio (flagship)
+                    └──> turf-monster ──> solana-studio gem
+                                       ──> turf-vault (devnet + mainnet deployments)
 ```
 
-Both Rails apps `bundle install` the `studio` + `solana-studio` gems direct from GitHub — no local clone of the engine repos is required for bringup, only for editing them.
+The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local clones are still part of the ecosystem because agents edit, release, and audit those gems.
 
 ## Where to start
 
 | If you're… | Read first |
 |------------|-----------|
 | Setting up a fresh Mac | [`bin/ecosystem-build`](../bin/ecosystem-build) + [`docs/agents/system/house-burn-down.md`](agents/system/house-burn-down.md) |
-| Onboarding to the codebase | [`CLAUDE.md`](../CLAUDE.md) (flagship) and the per-repo CLAUDE.md in any app you'll touch |
-| Hardening for production | [`docs/agents/system/ecosystem-audit-2026-05-17.md`](agents/system/ecosystem-audit-2026-05-17.md) — current audit + tiered roadmap |
-| Working on Solana | `turf-monster/docs/SOLANA.md` and `turf-vault/README.md` |
-| Working on auth/SSO | `studio/CLAUDE.md` (auth section) and `turf-monster/docs/AUTH.md` |
+| Onboarding to the codebase | [`docs/agents/index.md`](agents/index.md), then the app README/runbook/topic docs for the repo you'll touch |
+| Hardening or modularizing the stack | [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md), then current app runbooks |
+| Working on Solana | `turf-monster/docs/SOLANA.md` and `turf-vault/docs/CURRENT_DEPLOYMENT.md` |
+| Working on auth | `studio-engine/docs/USER_CONTRACT.md`, `mcritchie-studio/docs/topics/auth-and-sso.md`, and `turf-monster/docs/AUTH.md` |
 
 ## Per-repo summary
 
-- **mcritchie-studio** — The hub. Hosts the SSO entry point that satellites consume. Runs the NFL data ingest pipeline (Nflverse → Spotrac → ESPN → PFF → depth chart), News pipeline (intake → review → process → refine → conclude), and Content pipeline (idea → hook → script → assets → assembly → posted). Owns `bin/ecosystem-build` and the recovery protocol. Read: `CLAUDE.md` for orientation, `docs/agents/system/house-burn-down.md` for recovery.
-- **turf-monster** — Satellite. Sports pick'em UI + contest grading + Solana onchain settlement against `turf-vault`. Read: `CLAUDE.md` + the topic files in `docs/` (`AUTH.md`, `SOLANA.md`, `FORMULAS.md`, `UI_PATTERNS.md`, `world_cup_2026.md`).
-- **studio** — Engine. Provides `Studio::ErrorHandling` concern, ErrorLog model, SSO contract, theme system (7 role colors → CSS vars), ImageCache, badge component (with shared stage-* palette). Consumed by mcritchie-studio + turf-monster + future apps. Read: `CLAUDE.md`.
-- **solana-studio** — Gem. Primitives only: `Solana::Client` (JSON-RPC), `Solana::Borsh`, `Solana::Transaction` (Anchor discriminators + PDA derivation), `Solana::SplToken`, `Solana::Keypair`. Pure Ruby, ed25519 the only external dep. Consumed by turf-monster (which extends `Solana::Keypair` locally for encryption). Read: `CLAUDE.md` + `README.md`.
-- **turf-vault** — Anchor program. 12 instructions (deposit/withdraw, create/enter/settle/close contest, multisig signer rotation), 4 account structs, 2-of-3 multisig on all sensitive ops. Deployed to devnet at `Dx8uGU5w7B9NytDSsW4kseGZuqdVVRq1KY1mGXN2GaCT`. Read: `README.md` + `RUNBOOK.md`.
+- **mcritchie-studio** — The hub. Runs the NFL data ingest pipeline (Nflverse → Spotrac → ESPN → PFF → depth chart), News pipeline (intake → review → process → refine → conclude), and Content pipeline (idea → hook → script → assets → assembly → posted). Owns `bin/ecosystem-build`, the recovery protocol, and the agent-neutral documentation source.
+- **turf-monster** — Satellite product app. Sports pick'em UI + contest grading + Solana onchain settlement against `turf-vault`. Read: `README.md`, `docs/LOCAL_STACK.md`, and the topic files in `docs/` (`AUTH.md`, `SOLANA.md`, `FORMULAS.md`, `UI_PATTERNS.md`, `world_cup_2026.md`).
+- **studio-engine** — Engine. Provides `Studio::ErrorHandling` concern, ErrorLog model, passwordless auth primitives, theme system (7 role colors → CSS vars), modals, ImageCache, and reusable components. Consumed by mcritchie-studio + turf-monster + future apps. Read: `README.md` and `docs/`.
+- **solana-studio** — Gem. Primitives only: `Solana::Client` (JSON-RPC), `Solana::Borsh`, `Solana::Transaction` (Anchor discriminators + PDA derivation), `Solana::SplToken`, `Solana::Keypair`. Pure Ruby, ed25519 the only external dep. Consumed by turf-monster (which extends `Solana::Keypair` locally for encryption). Read: `README.md` + `RUNBOOK.md`.
+- **turf-vault** — Anchor program. 21 instructions, 2-of-3 multisig on all sensitive ops, Squads upgrade authority. Live devnet/mainnet identity is in `docs/CURRENT_DEPLOYMENT.md`. Read: `README.md`, `RUNBOOK.md`, and `docs/CURRENT_DEPLOYMENT.md`.
 
 ## Secret + service surface
 
 - **1Password account**: `alex@mcritchie.studio` (`MWOV5OT5BRHATI4EGMN26C5DPA`), vault `agents`. Service-account token bootstraps everything else via `bin/setup-1pass-token`.
-- **Heroku apps**: `mcritchie-studio` → https://app.mcritchie.studio; `turf-monster` → https://turf.mcritchie.studio. `RAILS_MASTER_KEY` shared across apps via Heroku config.
+- **Heroku apps**: `mcritchie-studio` → https://app.mcritchie.studio; `turf-monster-mainnet` → https://app.turfmonster.media. `RAILS_MASTER_KEY` shared across apps via Heroku config.
 - **Solana**: devnet via Anza CLI (`release.anza.xyz/stable/install`). Local dev keypair at `~/.config/solana/id.json` — NOT one of the agent vault wallets. Agent wallets (Alex Bot / Mason / Mack / Turf Monster) stay in 1Password.
 - **AWS S3**: per-app buckets (`mcritchie-studio-{dev,production}`, `turf-monster-{dev,production}`) for ImageCache.
+- **AWS SES**: shared transactional email target. Credentials are named in `docs/agents/modules/credential-inventory.md`; Resend remains a rollback path while SES is adopted.
 
 ## Recovery in 4 commands
 
@@ -64,8 +67,8 @@ Full protocol: [`docs/agents/system/house-burn-down.md`](agents/system/house-bur
 
 ## Current audit + roadmap
 
-The 2026-05-17 ecosystem audit at [`docs/agents/system/ecosystem-audit-2026-05-17.md`](agents/system/ecosystem-audit-2026-05-17.md) is the live reference for what's queued. Tiered: Tier 1 (half-day quick wins), Tier 2 (1-3 day cleanups), Tier 3 (week+ architectural / production-readiness). Re-run quarterly or when a new app joins.
+The current modularization pass is [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
 
 ---
 
-*Last updated: 2026-05-17. Update on every Tier merge.*
+*Last updated: 2026-06-13. Update when repos, ports, production URLs, deploy targets, or agent entrypoints change.*

@@ -1,0 +1,39 @@
+# Credential Inventory
+
+This file names credential locations so agents can ask for or reference the right item without searching vaults. It must never contain secret values.
+
+## Vaults
+
+| Vault | Purpose |
+|-------|---------|
+| `agents` | Default agent-readable vault. Service account should have read access. |
+| `Blockchain` / `🧱 Blockchain` | Human-controlled blockchain credentials, if granted. |
+
+## Known Items
+
+| Item | Vault | Purpose | Typical consumer |
+|------|-------|---------|------------------|
+| `agent.heroku` | `agents` | Heroku API key | `bin/ecosystem-build` |
+| `agent.solana` | `agents` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
+| `agent.alex.solana` | `agents` | Rotated Alex Bot/admin wallet | turf-vault and Turf Monster ops |
+| `agent.mason.solana` | `agents` | Mason wallet | multisig / agent wallet |
+| `agent.mack.solana` | `agents` | Mack wallet | agent wallet |
+| `agent.turf.solana` | `agents` | Turf Monster wallet | agent wallet |
+| `agent.managed_wallet` | `agents` | Managed wallet encryption key | Turf Monster managed-wallet flows |
+| `agent.helius` | `agents` | Devnet/mainnet Helius RPC URLs | Solana apps |
+| `agent.aws.mcritchie-ses` | `agents` | SES-scoped AWS credentials, region `us-east-2` | McRitchie email delivery |
+| `Coinbase Developer Platform` | `agents` | CDP API key | Turf Monster CDP ramp |
+| `agent.higgesfield` | `agents` | Higgsfield media generation API | McRitchie Studio content pipeline |
+| `x.api` | `agents` | X/Twitter API credentials | McRitchie Studio news/content |
+
+## Convention
+
+Use `agent.<name>.<service>` for agent-owned identities, and clear product names for third-party integrations where a vendor UI uses that name.
+
+Examples:
+
+- `agent.steffon.aws`
+- `agent.jasper.solana`
+- `Coinbase Developer Platform`
+
+When a credential is shared by every agent, prefer a product/integration item name over pretending one character owns it.

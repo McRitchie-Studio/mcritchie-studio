@@ -4,7 +4,7 @@
 
 ## Three-Layer Pipeline
 
-Three layered services, each authoritative for one slice of state. Run via `/nfl-rebuild` (full) or `/nfl-refresh` (weekly).
+Three layered services, each authoritative for one slice of state. Run the full NFL rebuild workflow for a complete reset, or the weekly NFL refresh workflow for in-season deltas.
 
 ### 1. `Nflverse::SeedPlayers`
 `app/services/nflverse/seed_players.rb`, rake `nfl:players_seed` — identity backbone.
@@ -35,7 +35,7 @@ Behaviors of note:
 
 ## Duplicate-Person Merge
 
-`Athletes::MergeDuplicates` (`app/services/athletes/merge_duplicates.rb`, rake `nfl:merge_duplicate_athletes`) finds Persons via two patterns: suffix variants (`will-anderson` ↔ `will-anderson-jr`) and same-name siblings with distinct slugs (case-insensitive first+last match where one has IDs and one doesn't). Moves contracts, depth_chart_entries, roster_spots, grades, pff_stats, image_caches from duplicate to canonical (dropping conflicts in favor of the canonical row), then deletes duplicate Athlete + Person. Defaults to `DRY_RUN=1`; pass `DRY_RUN=0` to commit. Wired into `/nfl-rebuild` Step 3.5 (after `nfl:players_seed` + before ESPN scrape).
+`Athletes::MergeDuplicates` (`app/services/athletes/merge_duplicates.rb`, rake `nfl:merge_duplicate_athletes`) finds Persons via two patterns: suffix variants (`will-anderson` ↔ `will-anderson-jr`) and same-name siblings with distinct slugs (case-insensitive first+last match where one has IDs and one doesn't). Moves contracts, depth_chart_entries, roster_spots, grades, pff_stats, image_caches from duplicate to canonical (dropping conflicts in favor of the canonical row), then deletes duplicate Athlete + Person. Defaults to `DRY_RUN=1`; pass `DRY_RUN=0` to commit. Wired into the full NFL rebuild workflow after `nfl:players_seed` and before ESPN scrape.
 
 ## Coach Headshot Pipeline
 

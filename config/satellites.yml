@@ -36,9 +36,9 @@ satellites:
   - slug: turf-monster
     display_name: Turf Monster
     emoji: "🏈"
-    port: 3001
-    heroku_app: turf-monster
-    production_url: https://turf.mcritchie.studio
+    port: 3100
+    heroku_app: turf-monster-mainnet
+    production_url: https://app.turfmonster.media
     role: viewer
     description: Sports pick'em — Solana onchain via turf-vault
     deploy_provider: heroku
@@ -47,7 +47,7 @@ satellites:
   - slug: tax-studio
     display_name: Tax Studio
     emoji: "📊"
-    port: 3003
+    port: 3200
     heroku_app: tax-studio
     production_url: https://tax.mcritchie.studio
     role: viewer

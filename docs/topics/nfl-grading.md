@@ -8,7 +8,7 @@
 
 ## Proprietary Pass/Run Grade Pipeline
 
-`Athletes::ComputeProprietaryGrades` (`app/services/athletes/compute_proprietary_grades.rb`, rake `nfl:assign_grades`, runs as Step 5c of `/nfl-rebuild`). Buckets athletes by canonical position (qb / rb / wr_te / ol / dl / lb / db), then runs a **3-tier input cascade** per axis to populate `position_pass_rank/grade` and `position_run_rank/grade` on `AthleteGrade`:
+`Athletes::ComputeProprietaryGrades` (`app/services/athletes/compute_proprietary_grades.rb`, rake `nfl:assign_grades`, runs during the full NFL rebuild workflow). Buckets athletes by canonical position (qb / rb / wr_te / ol / dl / lb / db), then runs a **3-tier input cascade** per axis to populate `position_pass_rank/grade` and `position_run_rank/grade` on `AthleteGrade`:
 
 1. Position-specific PFF input (e.g. `coverage_grade_pff` for LB pass, `pass_block_grade_pff` for OL pass, `pass_rush_grade_pff` for DL pass)
 2. Side-of-ball overall (`offense_grade_pff` or `defense_grade_pff`)

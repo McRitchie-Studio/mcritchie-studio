@@ -1,9 +1,9 @@
 #!/bin/bash
-# /nfl-rebuild with start/end timing per step. Output to tmp/timed_rebuild.log.
+# Full NFL rebuild with start/end timing per step. Output to tmp/timed_rebuild.log.
 # All timestamps in local time.
 
 set -e
-cd /Users/alex/projects/mcritchie_studio
+cd /Users/alex/projects/mcritchie-studio
 
 LOG=tmp/timed_rebuild.log
 echo "" > "$LOG"
@@ -11,7 +11,7 @@ echo "" > "$LOG"
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 
 START_ALL=$(date +%s)
-echo "═══ /nfl-rebuild START $(stamp) ═══" | tee -a "$LOG"
+echo "═══ full NFL rebuild START $(stamp) ═══" | tee -a "$LOG"
 echo "" | tee -a "$LOG"
 
 step() {
@@ -41,5 +41,5 @@ TOTAL=$((END_ALL - START_ALL))
 MIN=$((TOTAL / 60))
 SEC=$((TOTAL % 60))
 
-echo "═══ /nfl-rebuild END $(stamp) ═══" | tee -a "$LOG"
+echo "═══ full NFL rebuild END $(stamp) ═══" | tee -a "$LOG"
 echo "TOTAL: ${TOTAL}s (${MIN}m ${SEC}s)" | tee -a "$LOG"

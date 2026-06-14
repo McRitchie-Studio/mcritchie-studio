@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Install the projects-level agent entrypoint from McRitchie Studio.
+#
+# Source of truth:
+#   mcritchie-studio/docs/agents/index.md
+#
+# Generated local file:
+#   $PROJECTS_DIR/AGENTS.md
+#
+# This keeps the durable docs in GitHub while giving agent sessions a stable
+# first file at the projects root.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECTS_DIR="${PROJECTS_DIR:-$(cd "$ROOT/.." && pwd)}"
+SOURCE="$ROOT/docs/agents/index.md"
+TARGET="$PROJECTS_DIR/AGENTS.md"
+
+if [ ! -f "$SOURCE" ]; then
+  echo "ERROR: missing source doc: $SOURCE" >&2
+  exit 1
+fi
+
+cp "$SOURCE" "$TARGET"
+echo "Installed $TARGET from $SOURCE"

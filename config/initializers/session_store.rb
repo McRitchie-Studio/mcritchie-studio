@@ -4,8 +4,10 @@
 # cross-site POST CSRF while still allowing the top-level OAuth callback
 # navigation. (Adding these flags is also the prerequisite turf-monster's
 # docs/AUTH.md named for safely restoring cross-app SSO later.)
+session_key = Rails.env.production? ? "_studio_session" : ENV.fetch("MCRITCHIE_SESSION_KEY", "_studio_session")
+
 Rails.application.config.session_store :cookie_store,
-  key: "_studio_session",
+  key: session_key,
   domain: (Rails.env.production? ? ".mcritchie.studio" : :all),
   secure: Rails.env.production?,
   httponly: true,
