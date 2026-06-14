@@ -94,7 +94,7 @@ bin/rails news:intake    # Fetch latest Schefter tweet
    op item get zz3uigmkrwjlnnksst33butc4e --vault txqp6ijdo3ujsfhsfzdj5h5dzq --field "Bearer Token" --reveal
    ```
 
-2. **Local .env**: Add to `/Users/alex/projects/.env` (symlinked into all apps):
+2. **Local .env**: Add to the McRitchie Studio app-local `.env`:
    ```
    X_BEARER_TOKEN=<bearer-token-from-1password>
    ```
@@ -129,8 +129,8 @@ X_TOKEN=$(op item get zz3uigmkrwjlnnksst33butc4e \
   --vault txqp6ijdo3ujsfhsfzdj5h5dzq \
   --field "Bearer Token" --reveal)
 
-# Add to shared .env
-echo "X_BEARER_TOKEN=$X_TOKEN" >> /Users/alex/projects/.env
+# Add to app-local .env
+echo "X_BEARER_TOKEN=$X_TOKEN" >> /Users/alex/projects/mcritchie-studio/.env
 ```
 
 Or manually: copy the Bearer Token from 1Password and paste into `.env`.

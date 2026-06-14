@@ -26,6 +26,18 @@ end
 
 ## SSO Hub Role
 
-This app is the central auth hub. On login, `set_app_session` stores `sso_*` fields (including `sso_logo`) in the shared session. Admin gear dropdown has "Turf Monster" and "Tax Studio" links pointing to `/sso_login` on each satellite app for one-click SSO. Login page does NOT show "Continue as" (one-way flow — hub only sends, never receives). SSO-created users on satellite apps get `role = "viewer"` via `configure_sso_user`. Requires shared `SECRET_KEY_BASE`.
+This app is the central auth hub for apps that opt into Studio SSO. On login,
+`set_app_session` stores `sso_*` fields (including `sso_logo`) in the shared
+session. The generic satellite pattern points authenticated navbar links at
+`/sso_login` on each satellite app; SSO-created users on satellite apps get
+`role = "viewer"` via `configure_sso_user`. Requires compatible session secrets.
+
+Current caveat: Turf Monster intentionally disables cross-app SSO and 404s
+`/sso_login` / `/sso_continue` while the money-app cookie stays isolated on
+`app.turfmonster.media`. Use direct magic-link login for Turf Monster smoke
+tests until SSO is redesigned and re-enabled.
+
+The McRitchie Studio login page does NOT show "Continue as" because the hub is a
+sender, not a receiver.
 
 **Updating:** After changes to the studio repo, run `bundle update studio-engine` here.

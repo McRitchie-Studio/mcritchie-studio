@@ -2,7 +2,7 @@
 
 > **When to read this:** A token/key/secret needs to be rotated — scheduled, compromised, or expiring. Each section is a self-contained procedure: where the secret is stored, how to regenerate it at the source, how to push the new value to every consumer, how to verify the rotation succeeded.
 
-The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vault `agents`. Heroku apps are `mcritchie-studio` and `turf-monster`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
+The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`), vault `agents`. Heroku apps are `mcritchie-studio` and `turf-monster-mainnet`. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
 
 ---
 
@@ -53,20 +53,20 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 4. Regenerate: `EDITOR='code --wait' bin/rails credentials:edit` — Rails creates a fresh `master.key` + empty `credentials.yml.enc`.
 5. Paste your scratch-file credentials back into the editor. Save.
 6. Capture the new master key: `cat config/master.key`.
-7. `heroku config:set RAILS_MASTER_KEY=<new_key> --app mcritchie-studio` (or `--app turf-monster`).
+7. `heroku config:set RAILS_MASTER_KEY=<new_key> --app mcritchie-studio` (or `--app turf-monster-mainnet`).
 8. Update the matching 1Password item (recommended naming: `mcritchie.studio/RAILS_MASTER_KEY`, `turf-monster/RAILS_MASTER_KEY`).
 9. Update local `.env`: `sed -i '' '/^RAILS_MASTER_KEY=/d' .env && echo "RAILS_MASTER_KEY=<new_key>" >> .env`.
 10. Commit `config/credentials.yml.enc` to the repo. Push.
 
-**Verify:** App boots locally (`bin/rails server`). `heroku logs --tail --app <app>` after a deploy shows no `:secret_key_base` errors. Sessions / SSO between hub + satellite still works.
+**Verify:** App boots locally (`bin/rails server`). `heroku logs --tail --app <app>` after a deploy shows no `:secret_key_base` errors. Direct login still works in each app.
 
-**Warning:** Rotating breaks the shared SSO between hub and satellite if you forget to update *both* apps in lockstep. Always do both before pushing either.
+**Warning:** Rotating session secrets logs users out. Apps that opt into shared SSO need compatible secrets; Turf Monster currently isolates its money-app cookie and uses direct login.
 
 ---
 
 ## Managed-wallet encryption key (`MANAGED_WALLET_ENCRYPTION_KEY`)
 
-**Store:** 1Password item `agent.managed_wallet` (field `encryption key`) + Heroku config on `turf-monster` + `.env` locally. Shipped as OPSEC-015 (`KeyGenerator`-derived KDF for managed-wallet keypair encryption).
+**Store:** 1Password item `agent.managed_wallet` (field `encryption key`) + Heroku config on `turf-monster-mainnet` + `.env` locally. Shipped as OPSEC-015 (`KeyGenerator`-derived KDF for managed-wallet keypair encryption).
 
 **What it does:** Every managed wallet (`web2_solana_address`) has its Ed25519 secret encrypted at rest with a key derived from `MANAGED_WALLET_ENCRYPTION_KEY` via `ActiveSupport::KeyGenerator`. Rotating the key requires re-encrypting every managed-wallet secret column — a controlled, online operation but disruptive enough to be its own runbook.
 
@@ -77,23 +77,23 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 2. Update 1Password `agent.managed_wallet` → field `encryption key` → paste the new value. Save.
 3. Set the new key on Heroku as `MANAGED_WALLET_ENCRYPTION_KEY_NEW` (NOT yet replacing the live one):
    ```bash
-   heroku config:set MANAGED_WALLET_ENCRYPTION_KEY_NEW=<new_value> --app turf-monster
+   heroku config:set MANAGED_WALLET_ENCRYPTION_KEY_NEW=<new_value> --app turf-monster-mainnet
    ```
 4. Run the reencrypt rake task — this reads each `User.web2_solana_address` row, decrypts with the OLD key, re-encrypts with the NEW key, and writes the row back. Runs in batches with a row-lock per user:
    ```bash
-   heroku run --app turf-monster bin/rails managed_wallets:reencrypt
+   heroku run --app turf-monster-mainnet bin/rails managed_wallets:reencrypt
    ```
    The task is idempotent — safe to re-run if it crashes mid-stream. It tracks progress in `OutboundRequest`-style audit rows.
 5. Promote the new key to primary on Heroku (atomic swap):
    ```bash
-   heroku config:set MANAGED_WALLET_ENCRYPTION_KEY=<new_value> --app turf-monster
-   heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_NEW --app turf-monster
+   heroku config:set MANAGED_WALLET_ENCRYPTION_KEY=<new_value> --app turf-monster-mainnet
+   heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_NEW --app turf-monster-mainnet
    ```
-6. Restart dynos: `heroku ps:restart --app turf-monster`.
+6. Restart dynos: `heroku ps:restart --app turf-monster-mainnet`.
 7. Update dev `.env` files via `bin/ecosystem-build` (re-fetches from Heroku).
 8. Verify a managed-wallet user can sign a transaction (a contest entry, faucet claim, or any flow that exercises `User#solana_keypair`).
 
-**Verify:** `heroku run --app turf-monster bin/rails runner 'puts User.where.not(web2_solana_secret_encrypted: nil).first.solana_keypair.address'` returns the correct base58 address (no decrypt errors). A test contest entry from a managed wallet completes.
+**Verify:** `heroku run --app turf-monster-mainnet bin/rails runner 'puts User.where.not(web2_solana_secret_encrypted: nil).first.solana_keypair.address'` returns the correct base58 address (no decrypt errors). A test contest entry from a managed wallet completes.
 
 **Last rotation (2026-05-20, prod v80):** Reencrypt ran clean against ~all managed-wallet users. Memory ref: `project_managed_wallet_encryption_key`.
 
@@ -101,9 +101,9 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ---
 
-## Solana admin key (`SOLANA_ADMIN_KEY` / `agent.solana`)
+## Solana admin key (`SOLANA_ADMIN_KEY` / `agent.alex.solana`)
 
-**Store:** 1Password item `agent.solana` (field `private key`, base58-encoded Ed25519 secret) + Heroku config on `turf-monster` + `.env` locally.
+**Store:** 1Password item `agent.alex.solana` (field `private key`, base58-encoded Ed25519 secret) + Heroku config on `turf-monster-mainnet` + `.env` locally.
 
 **Symptoms of rotation needed:** Suspected wallet compromise. Routine quarterly hygiene. Adding/removing a multisig signer.
 
@@ -112,8 +112,8 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 2. Get the base58 secret: `cat /tmp/new-admin.json | jq -r '. | map(.) | @json'` (the JSON array IS the secret), then convert with `bin/rails runner "puts Solana::Keypair.from_bytes(JSON.parse(File.read('/tmp/new-admin.json'))).secret_key_base58"`.
 3. Get the public address: `solana-keygen pubkey /tmp/new-admin.json`.
 4. **Before rotating**, run the on-chain `update_signers` instruction to swap the new pubkey into `VaultState.signers`. This requires 2-of-3 cosign. See `turf-vault/CLAUDE.md` for the multisig flow.
-5. Update 1Password `agent.solana` → field `private key` → paste the new base58 secret. Save.
-6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster`.
+5. Update 1Password `agent.alex.solana` -> field `private key` -> paste the new base58 secret. Save.
+6. `heroku config:set SOLANA_ADMIN_KEY=<new_base58> --app turf-monster-mainnet`.
 7. Re-run `bin/ecosystem-build` → Phase 4 re-fetches from 1P and writes to local `.env`.
 8. Securely delete `/tmp/new-admin.json` (it contains the unencrypted secret).
 9. After 24-48h of confirmed normal operation, run `update_signers` again to remove the *old* pubkey from `VaultState.signers`.
@@ -202,14 +202,14 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 ## AWS S3 credentials (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`)
 
-**Store:** Shared `~/projects/.env` + per-app Heroku config + 1Password.
+**Store:** Per-app `.env` files + per-app Heroku config + 1Password.
 
 **Procedure:**
 1. https://console.aws.amazon.com → IAM → Users → the `studio` user → Security credentials → Create access key.
 2. Copy both values.
 3. Update 1Password (recommended item name: `aws.studio`).
-4. `heroku config:set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... --app mcritchie-studio` (repeat for `turf-monster`).
-5. Update `~/projects/.env` (the shared file).
+4. `heroku config:set AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... --app mcritchie-studio` (repeat for `turf-monster-mainnet`).
+5. Update each app-local `.env` that uses S3.
 6. Re-run `bin/ecosystem-build` (writes to per-app `.env` from Heroku).
 7. After 24h of confirmed normal operation, deactivate the old key in IAM.
 
@@ -226,7 +226,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 2. Click "Reset Secret" — confirm.
 3. Copy the new client secret. (Client ID does NOT change on reset.)
 4. Update 1Password.
-5. `heroku config:set GOOGLE_CLIENT_SECRET=... --app mcritchie-studio` (and `--app turf-monster` if they share — currently they have separate OAuth clients).
+5. `heroku config:set GOOGLE_CLIENT_SECRET=... --app mcritchie-studio` (and `--app turf-monster-mainnet` if they share — currently they have separate OAuth clients).
 6. Re-run `bin/ecosystem-build`.
 
 **Verify:** Sign in via Google on each app.

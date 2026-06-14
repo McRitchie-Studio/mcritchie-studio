@@ -49,6 +49,11 @@ This migration moves upgrade authority to a Squads multisig with the same 2-of-3
 - The deployed program ID: `7Hy8GmJWPMdt6bx3VG4BLFnpNX9TBwkPt87W6bkHgr2J` (devnet)
 - A clear maintenance window — once authority transfers, no upgrades possible without 2-of-3 cosign
 
+> **Dated migration snapshot:** Verify current program IDs, Squad vaults, and
+> signer addresses in `turf-vault/docs/CURRENT_DEPLOYMENT.md` before executing
+> any command from this runbook. Resolve private keys through 1Password item
+> names, not copied addresses in this document.
+
 ## Step 1 — Create the Squads multisig
 
 ```bash

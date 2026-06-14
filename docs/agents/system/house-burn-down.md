@@ -321,12 +321,12 @@ npm test                 # 13 e2e smoke tests
 cd ~/projects/turf-monster
 bundle install
 bin/rails db:create db:migrate db:seed
-bin/dev                  # starts web (3100) + Tailwind watcher + Sidekiq worker
+bin/tm up                # starts/adopts web (3100), Sidekiq, Tailwind, Stripe listener
 ```
 
 Visit http://localhost:3100. Login same admin.
 
-`bin/dev` (vs `bin/rails server`) is the right command — it launches the Procfile.dev which includes Sidekiq. If Sidekiq dies, check Redis: `brew services list | grep redis`.
+`bin/tm up` is the agent-friendly command. It runs detached, preflights Redis/Postgres, builds Tailwind once, starts Sidekiq, starts the Stripe listener when available, polls readiness, and prints the review URL. `bin/dev` remains useful for a human interactive terminal with combined logs, but it can self-terminate in background/no-TTY sessions and does not manage the Stripe listener.
 
 ### 6c. solana-studio (gem, no bringup)
 
@@ -359,7 +359,7 @@ cd ~/projects/turf-monster && bundle update studio-engine
 cd ~/projects/turf-vault
 yarn install                                 # TypeScript test deps (ts-mocha, @solana/codecs-*)
 anchor build                                 # ~3-5 min on first build
-anchor test                                  # spins up local validator, runs 40 ts tests (v0.11.0+)
+anchor test                                  # spins up local validator and runs the TS suite
 ```
 
 Already deployed to devnet (program ID `Dx8uGU5w7B9NytDSsW4kseGZuqdVVRq1KY1mGXN2GaCT`).
@@ -389,9 +389,9 @@ Free entry tokens (introduced v0.10.0) are also operator-driven: `/admin/free_en
 
 1. **Hub running**: http://localhost:3000 → dashboard renders, can log in
 2. **Satellite running**: http://localhost:3100 → contests list renders
-3. **SSO**: Click "Turf Monster" link in mcritchie-studio admin gear → should land logged-in on turf-monster (requires shared `SECRET_KEY_BASE`, i.e. same `RAILS_MASTER_KEY`)
+3. **Auth**: request magic links in both apps. Turf Monster currently disables cross-app SSO and 404s `/sso_login` by design.
 4. **Solana keypair**: `solana address` returns your pubkey
-5. **Anchor local test**: `cd ~/projects/turf-vault && anchor test` — all 25 tests pass
+5. **Anchor local test**: `cd ~/projects/turf-vault && anchor test` — suite passes
 
 ---
 
@@ -413,7 +413,7 @@ These are the surprises from the last burn-down. Pre-baked into the steps above;
 
 7. **Public devnet RPC is rate-limited** — `SOLANA_RPC_URL` defaults to public devnet which 429s under load. Use a paid provider (QuickNode, Helius) for serious work.
 
-8. **Sidekiq dies silently without Redis** — Turf Monster's `bin/dev` includes the worker, but it'll just spin if Redis isn't running. Always: `brew services list | grep redis` first.
+8. **Sidekiq dies silently without Redis** — Turf Monster's `bin/tm up` preflights Redis before starting Sidekiq. If running manually, check `brew services list | grep redis` first.
 
 9. **TikTok app is in review** (submitted 2026-05-04) — only sandbox + manual posting paths work until Content Posting API approval. Don't expect API-direct posts to publish.
 
@@ -439,7 +439,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 2. Languages | Node 20 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
 | 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
-| 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio`, `solana-studio`, `turf-vault` (skips ones already present) |
+| 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
 | 5b. Agent docs | Installs `/Users/alex/projects/AGENTS.md` from `mcritchie-studio/docs/agents/index.md` |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |

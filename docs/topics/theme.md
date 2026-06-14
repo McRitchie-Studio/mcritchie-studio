@@ -14,7 +14,7 @@
 
 ## Navbar
 
-Custom navbar in `application.html.erb` (not engine partial). Sticky, scroll-responsive. `sticky top-0 z-50 bg-page` with Alpine `scrolled` state (triggers at 20px). On scroll: logo shrinks `w-8→w-5`, title `text-2xl→text-base`, padding `py-6→py-2`, adds `shadow-lg border-b border-subtle`. All transitions 300ms. Desktop nav: "Meet the Agents 🦞" link. Mobile sub-navbar with same link + gear/moon icons (logged out only). Logged in: renders `_user_nav` with `show_logout_link: true`. Logged out: gear/moon (desktop only) + "Say Hi 👋" button. Admin gear dropdown has: Dashboard, Agents, Tasks, News, Turf Monster (SSO), Tax Studio (SSO), Docs, Theme, Toast Test, Schema, Error Logs.
+Custom navbar in `application.html.erb` (not engine partial). Sticky, scroll-responsive. `sticky top-0 z-50 bg-page` with Alpine `scrolled` state (triggers at 20px). On scroll: logo shrinks `w-8→w-5`, title `text-2xl→text-base`, padding `py-6→py-2`, adds `shadow-lg border-b border-subtle`. All transitions 300ms. Desktop nav: "Meet the Agents 🦞" link. Mobile sub-navbar with same link + gear/moon icons (logged out only). Logged in: renders `_user_nav` with `show_logout_link: true`. Logged out: gear/moon (desktop only) + "Say Hi 👋" button. Admin gear dropdown has: Dashboard, Agents, Tasks, News, Turf Monster (satellite link; SSO disabled in Turf), Tax Studio (SSO/planned), Docs, Theme, Toast Test, Schema, Error Logs.
 
 ## Token Usage Rules
 

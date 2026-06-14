@@ -91,10 +91,10 @@ Seeds load 4 agents with avatars, 9 skills, sample tasks, plus 32 NFL + 71 NCAA 
 
 ```bash
 # Rails tests
-bin/rails test                  # 504 runs, 1322 assertions
+bin/rails test
 
 # Playwright E2E (chromium only — skip @devnet which needs a funded wallet)
-npm test                        # 42 tests
+npm test
 npm run test:headed             # with visible browser
 ```
 

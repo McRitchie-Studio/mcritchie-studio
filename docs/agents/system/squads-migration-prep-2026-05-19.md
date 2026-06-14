@@ -2,6 +2,12 @@
 
 **When to read:** You're ready to execute `squads-upgrade-authority-migration.md` and want a precise, copy-pasteable sequence for the devnet rehearsal. This doc is the rehearsal companion to that runbook — the runbook is the authoritative spec; this is the *playable* version.
 
+> **Dated rehearsal snapshot:** Do not treat wallet addresses or program IDs in
+> this file as current source of truth. Before executing, verify the live signer
+> set and deployment IDs in `turf-vault/docs/CURRENT_DEPLOYMENT.md`, then resolve
+> private keys through McRitchie Studio's credential inventory and 1Password item
+> names.
+
 **Audit ref:** OPSEC-002 in `opsec-audit-pre-prod-2026-05-19.md`. Mainnet-blocking.
 
 ---

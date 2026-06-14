@@ -29,6 +29,10 @@ These changes were committed and pushed before this audit:
 
 The current root `AGENTS.md` matches `mcritchie-studio/docs/agents/index.md`.
 
+## Execution Status
+
+- 2026-06-13: Tranche A docs-trust cleanup started. Fixed volatile README test counts, Turf Monster recovery startup command, active shared-env references, current Turf Heroku app names, engine env guidance, Google OAuth port docs, Turf SSO caveat docs, dated Squads-runbook warnings, and the Turf session-store host comment.
+
 ## Current System Map
 
 | Repo | Role | Local port range | Current read |
@@ -46,7 +50,7 @@ The current root `AGENTS.md` matches `mcritchie-studio/docs/agents/index.md`.
 
 The modular documentation direction is solid, but agents still have to decide which docs are current. McRitchie Studio has roughly 84 Markdown files and Turf Monster has roughly 35. Historical audits, handoffs, setup notes, and active runbooks are close enough together that a future agent can easily over-weight stale context.
 
-Concrete drift found:
+Concrete drift found at audit time:
 
 - `mcritchie-studio/README.md` still includes exact test counts even though `docs/agents/maintenance/docs-maintenance.md` warns against duplicating volatile counts.
 - `mcritchie-studio/docs/agents/system/house-burn-down.md` still references Turf startup via `bin/dev`; Turf's current app workflow prefers `bin/tm up`.
@@ -215,10 +219,10 @@ Once docs and shared engine behavior are clean, define the app-template path.
 
 ## Immediate Follow-Up Candidates
 
-These are small enough to do before the deeper code refactors:
+Status after the first docs-trust cleanup:
 
-- Update McRitchie Studio README test instructions to avoid stale counts.
-- Update the house-burn-down doc to use `bin/tm up` for Turf Monster.
-- Rewrite `studio-engine/docs/ENV_SETUP.md` to match the current per-app env and 1Password strategy.
-- Update Turf Monster session-store comments to mention the current production host strategy.
-- Decide whether Rolio is managed, then document its port range accordingly.
+- Done: Update McRitchie Studio README test instructions to avoid stale counts.
+- Done: Update the house-burn-down doc to use `bin/tm up` for Turf Monster.
+- Done: Rewrite `studio-engine/docs/ENV_SETUP.md` to match the current per-app env and 1Password strategy.
+- Done: Update Turf Monster session-store comments to mention the current production host strategy.
+- Remaining: Decide whether Rolio is managed, then document its port range accordingly.
