@@ -64,6 +64,12 @@ were converted into archive-only context. Turf Monster now has
 May 2026 security/refactor/test audit snapshots and old McRitchie system audits
 carry archive banners.
 
+Prompt/rehearsal follow-up, 2026-06-14: Claude-era prompt artifacts and the
+retired Turf v0.15 devnet rehearsal were removed after durable replacements
+were added: `docs/agents/modules/audit-playbook.md`,
+`turf-monster/docs/SECURITY_REVIEW.md`, current Turf Solana docs, and the
+TurfVault verification matrix.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
