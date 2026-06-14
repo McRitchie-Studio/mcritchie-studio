@@ -27,6 +27,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
+| LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
 | Tests | `mcritchie-studio/docs/agents/modules/testing.md` |
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
@@ -88,4 +89,4 @@ bin/agent-worktree cleanup
 
 ## LLM Adapters
 
-Do not create root `CLAUDE.md` or `CODEX.md` by default. Codex reads `AGENTS.md` natively. Claude compatibility should be tested with this generated `AGENTS.md` first; add a thin adapter only if a future Claude session proves it is needed.
+Do not create root `CLAUDE.md` or `CODEX.md` by default. Codex reads `AGENTS.md` natively. Claude compatibility should be tested with this generated `AGENTS.md` first; add a thin adapter only if a future Claude session proves it is needed. See `mcritchie-studio/docs/agents/modules/llm-adapters.md`.

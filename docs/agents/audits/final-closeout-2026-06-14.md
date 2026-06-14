@@ -92,7 +92,9 @@ ranges. `bin/agent-worktree doctor` reported only the known
 These are not blockers to maintenance mode, but they should not be forgotten:
 
 - **Claude adapter decision**: keep app `CLAUDE.md` files as archive-only until
-  the next Claude session proves whether generated `AGENTS.md` is enough.
+  the next Claude session proves whether generated `AGENTS.md` is enough. Local
+  Codex verification found the Claude CLI installed but unauthenticated; the
+  smoke-test protocol lives in `docs/agents/modules/llm-adapters.md`.
 - **Broadcast branch**: `mcritchie-studio` branch `feat/broadcasts` has useful
   historical product direction, but it is too stale to merge wholesale.
 - **Root stray files**: `/Users/alex/projects/dev-stack-smoothing.md` and
