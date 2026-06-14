@@ -27,6 +27,7 @@ Studio.configure do |config|
 
   config.configure_sso_user = ->(user) { user.role = "viewer" }
   config.sso_logo = "/studio-logo.svg"
+  config.wallet_address_method = :solana_address
   config.theme_logos = [
     { file: "favicon.png",      title: "Favicon" },
     { file: "logo-icon.svg",    title: "Navbar Logo" },

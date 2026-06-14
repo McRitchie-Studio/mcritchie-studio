@@ -56,6 +56,16 @@ class MagicLinksControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "consuming a valid token stores solana address for sso awareness" do
+    user = users(:alex)
+    user.update!(solana_address: "Wa11etAddressBase58Example1111111111111111")
+
+    token = MagicLink.generate(email: user.email)
+    post magic_link_consume_path(token: token)
+
+    assert_equal user.solana_address, session[:sso_wallet]
+  end
+
   test "consuming a valid token for a new email creates the account" do
     assert_difference "User.count", 1 do
       token = MagicLink.generate(email: "brandnew@example.com")
