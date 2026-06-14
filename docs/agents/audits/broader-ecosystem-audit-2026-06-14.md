@@ -6,15 +6,15 @@ Mode: read-heavy architecture and documentation audit. No product-code refactor.
 
 Closeout: the final pass is recorded in
 [`final-closeout-2026-06-14.md`](final-closeout-2026-06-14.md). The cleanup is
-now in maintenance mode; remaining items are approval-gated salvage/deletion
-decisions and normal drift maintenance.
+now in maintenance mode; salvage/deletion decisions are complete, and the
+remaining items are SES production access plus normal drift maintenance.
 
 ## Executive Summary
 
 The ecosystem is in a materially better place than the first pass. `AGENTS.md`
 is the right LLM-neutral entrypoint, `mcritchie-studio` is correctly acting as
 the documentation and bootstrap anchor, the primary apps are clean on `main`,
-shared auth/email primitives now live in `studio-engine 0.5.6`, local email
+shared auth/email primitives now live in `studio-engine 0.5.7`, local email
 capture exists for worktree stacks, and `bin/agent-worktree` can now diagnose
 worktree lifecycle drift without deleting anything.
 
@@ -71,7 +71,7 @@ recovery story.
 
 ### Shared Engine Direction
 
-Both Rails apps consume `studio-engine 0.5.6`.
+Both Rails apps consume `studio-engine 0.5.7`.
 
 The engine is now the right home for:
 
@@ -105,9 +105,9 @@ README/RUNBOOK/topic docs. Rolio remains outside the managed ecosystem registry.
 
 `CLAUDE.md` files are no longer safe canonical context. Examples found:
 
-- `studio-engine/CLAUDE.md` says version `0.4.13`; code is `0.5.6`.
+- `studio-engine/CLAUDE.md` says version `0.4.13`; code is `0.5.7`.
 - `turf-monster/CLAUDE.md` says Studio Engine is locked at `0.5.1`; lockfile is
-  `0.5.6`.
+  `0.5.7`.
 - `mcritchie-studio/CLAUDE.md` includes stale exact test counts and an old
   roadmap pointer.
 - `solana-studio/CLAUDE.md` includes stale test counts.
@@ -167,7 +167,7 @@ cleanup.
 
 ### F4 - High - McRitchie Studio Still Duplicates Engine Session Mechanics
 
-Status 2026-06-14: resolved in `studio-engine 0.5.6`; McRitchie now delegates
+Status 2026-06-14: resolved in `studio-engine 0.5.6+`; McRitchie now delegates
 session mechanics to the engine and configures `wallet_address_method`.
 
 `mcritchie-studio/app/controllers/application_controller.rb` duplicates
@@ -245,9 +245,9 @@ exists; the missing piece is making drift impossible to miss.
 
 Current locks:
 
-- McRitchie Studio: `studio-engine 0.5.6`, `solana-studio 0.4.6`
-- Turf Monster: `studio-engine 0.5.6`, `solana-studio 0.4.7`
-- Studio Engine: `0.5.6`
+- McRitchie Studio: `studio-engine 0.5.7`, `solana-studio 0.4.6`
+- Turf Monster: `studio-engine 0.5.7`, `solana-studio 0.4.7`
+- Studio Engine: `0.5.7`
 - Solana Studio: `0.4.7`
 - Turf Vault: `0.25.0` source, mainnet documented at `0.24.0`
 
@@ -312,10 +312,10 @@ Implemented:
 
 ### Tranche 2 - Engine Session Refactor
 
-Goal: remove duplicated McRitchie session code now that engine `0.5.6` carries
+Goal: remove duplicated McRitchie session code now that engine `0.5.6+` carries
 the generic mechanics.
 
-Status 2026-06-14: complete. `studio-engine 0.5.6` carries the wallet-address
+Status 2026-06-14: complete. `studio-engine 0.5.6+` carries the wallet-address
 adapter, and McRitchie delegates session mechanics back to the engine.
 
 Implemented:

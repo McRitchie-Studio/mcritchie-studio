@@ -133,7 +133,7 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio is bundled with `studio-engine 0.5.6+`, so transport selection,
+McRitchie Studio currently uses `studio-engine 0.5.7`, so transport selection,
 durable delivery primitives, and the local agent inbox live in the engine. Keep
 future shared email changes in `studio-engine` unless they are truly
 app-specific.

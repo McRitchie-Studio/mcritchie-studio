@@ -40,17 +40,17 @@ Primary managed repos were clean at closeout check:
 - `solana-studio`
 - `turf-vault`
 
-Known local user work:
+Latest closeout check: the primary known repos are clean on `main`, including
+`mcritchie-studio`, `turf-monster`, `studio-engine`, `solana-studio`,
+`turf-vault`, and `rolio`.
 
-- `rolio/README.md` is modified. Rolio remains outside the managed ecosystem
-  registry and should not be folded into this cleanup without a product decision.
-
-Known preserved worktrees at closeout:
+Known preserved worktrees at the initial closeout:
 
 - `turf-vault/.worktrees/grant-seeds-salvage`
 - `mcritchie-studio/.worktrees/broadcasts-salvage`
 
-Those are intentionally not deleted. They require human salvage/drop approval.
+Those were intentionally not deleted during the first pass because they required
+human salvage/drop approval.
 
 Salvage/delete follow-up, 2026-06-14: both hidden worktrees were reviewed and
 removed. Turf Vault's local `feat/v0.22-grant-seeds` branch was deleted because
@@ -89,7 +89,10 @@ High-signal proof from this cleanup:
   local stack proof.
 - McRitchie Studio and Turf Monster magic-link flows were verified locally; Turf
   Monster local inbox and McRitchie Studio real delivery both worked.
-- `studio-engine 0.5.6` was published and adopted by both Rails apps.
+- `studio-engine 0.5.7` was published and adopted by both Rails apps.
+- Primary local McRitchie Studio and Turf Monster stacks now send real mail
+  through Resend while worktree stacks default to local capture; both
+  non-production banners show the runtime mail state.
 - Turf Vault TypeScript tests were rewritten around
   `turf-vault/docs/VERIFICATION_MATRIX.md`.
 - Latest Turf Vault local proof: `23 passing` against an isolated validator on
@@ -106,9 +109,8 @@ bin/agent-worktree doctor
 
 `bin/install-agent-docs check` passed, and `bin/register-satellite --list`
 reported the expected `3000-3099`, `3100-3199`, and reserved `3200-3299`
-ranges. `bin/agent-worktree doctor` reported only the known
-`mcritchie-studio/.worktrees/broadcasts-salvage` residual state: missing
-`.env.agent-stack`, missing `APP_PORT`, missing Redis DB, and dirty worktree.
+ranges. The latest `bin/agent-worktree doctor` check reports no worktree
+lifecycle issues.
 
 ## Residual Risk
 
@@ -157,6 +159,6 @@ Weekly or after several agent sessions:
 
 ## Next Best Action
 
-Ask the user for deletion/salvage decisions on the preserved worktrees and root
-stray files. Otherwise, the ecosystem cleanup can move from audit work to normal
-feature maintenance.
+Finish SES production access, run a provider smoke test after AWS approval, and
+keep Resend configured until SES has a stability window. Otherwise, the
+ecosystem cleanup has moved from audit work to normal feature maintenance.
