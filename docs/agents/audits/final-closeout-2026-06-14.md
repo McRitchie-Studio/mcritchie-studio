@@ -75,6 +75,12 @@ after final knowledge-loss review. Durable context now lives in app
 README/RUNBOOK/topic docs, with cross-repo agent policy in `AGENTS.md` generated
 from McRitchie Studio.
 
+Active/archive docs follow-up, 2026-06-14: current onboarding and runbook docs
+were swept for deleted Claude-file references, old port/version patterns, and
+SES/Resend drift. Archive candidates were checked for explicit historical
+boundaries; the remaining cleanup was limited to Turf Monster's active runbook
+and historical test backlog plus SolanaStudio's old security audit banner.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
