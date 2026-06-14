@@ -31,6 +31,30 @@ The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branc
 
 Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
 
+## Lifecycle
+
+Use the launcher as the source of truth for worktree stack state:
+
+```bash
+bin/agent-worktree list
+bin/agent-worktree status turf-monster task-slug
+bin/agent-worktree doctor
+bin/agent-worktree cleanup
+```
+
+- `list` shows task, health, URL, branch, dirty state, merge state, ahead/behind, database, Redis DB, pidfile state, and local inbox URL.
+- `status` shows the detailed state for one generated stack.
+- `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to `origin/main`.
+- `cleanup` is a dry run. It only prints clean merged worktree candidates.
+- `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
+
+Deletion remains manual and approval-gated:
+
+1. Run `bin/agent-worktree down <app> <task-slug>` if the stack is running.
+2. Confirm `bin/agent-worktree doctor <app>` has no dirty or unique-work warnings for the target.
+3. Add or confirm the delete-later ledger entry.
+4. Remove with `git -C /Users/alex/projects/<repo> worktree remove /Users/alex/projects/<repo>/.worktrees/<task-slug>` only after approval.
+
 ## Rules
 
 - Branch from current `origin/main`.

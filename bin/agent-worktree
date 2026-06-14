@@ -12,6 +12,8 @@
 #   bin/agent-worktree new turf-monster docs-stack
 #   bin/agent-worktree up turf-monster docs-stack
 #   bin/agent-worktree status turf-monster docs-stack
+#   bin/agent-worktree doctor
+#   bin/agent-worktree cleanup
 #   bin/agent-worktree down turf-monster docs-stack
 
 require "fileutils"
@@ -62,6 +64,8 @@ def usage
       env <app> <task-slug>
       up <app> <task-slug>
       status <app> <task-slug>
+      doctor [app]
+      cleanup [app] [--write]
       down <app> <task-slug>
 
     Examples:
@@ -83,9 +87,18 @@ def sh(*cmd, chdir: nil, env: {}, allow_fail: false)
 end
 
 def capture(*cmd, chdir: nil, env: {})
-  out, err, status = Open3.capture3(env, *cmd, chdir: chdir)
+  options = {}
+  options[:chdir] = chdir if chdir
+  out, err, status = Open3.capture3(env, *cmd, **options)
   abort "command failed: #{cmd.shelljoin}\n#{err}" unless status.success?
   out
+end
+
+def capture_status(*cmd, chdir: nil, env: {})
+  options = {}
+  options[:chdir] = chdir if chdir
+  out, err, status = Open3.capture3(env, *cmd, **options)
+  [status.success?, out, err]
 end
 
 def apps
@@ -161,8 +174,39 @@ def parse_env(path)
   end
 end
 
+def env_truthy?(value)
+  %w[1 true yes on].include?(value.to_s.strip.downcase)
+end
+
 def port_listening?(port)
   system("lsof", "-nP", "-iTCP:#{port}", "-sTCP:LISTEN", out: File::NULL, err: File::NULL)
+end
+
+def port_pid(port)
+  ok, out, = capture_status("lsof", "-tiTCP:#{port}", "-sTCP:LISTEN")
+  ok ? out.lines.first.to_s.strip : ""
+end
+
+def pid_alive?(pid)
+  !pid.to_s.empty? && system("kill", "-0", pid.to_s, out: File::NULL, err: File::NULL)
+end
+
+def pidfile_state(path)
+  return "missing" unless File.exist?(path)
+
+  pid = File.read(path).strip
+  return "empty" if pid.empty?
+
+  pid_alive?(pid) ? "alive #{pid}" : "stale #{pid}"
+end
+
+def http_code(port)
+  return "?" if port.to_s.empty? || port.to_s == "?"
+
+  out, = Open3.capture3("curl", "-sS", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", "http://localhost:#{port}/up")
+  out.to_s.strip.empty? ? "down" : out.to_s.strip
+rescue StandardError
+  "down"
 end
 
 def allocated_ports(app)
@@ -351,6 +395,117 @@ def wait_for_url(port)
   last_code || "down"
 end
 
+def git_value(dir, *args)
+  ok, out, = capture_status("git", *args, chdir: dir)
+  ok ? out.strip : "?"
+end
+
+def git_success?(dir, *args)
+  ok, = capture_status("git", *args, chdir: dir)
+  ok
+end
+
+def git_dirty?(dir)
+  !git_value(dir, "status", "--porcelain").empty?
+end
+
+def git_branch(dir)
+  git_value(dir, "branch", "--show-current")
+end
+
+def git_head(dir)
+  git_value(dir, "rev-parse", "--short", "HEAD")
+end
+
+def git_ahead_behind(dir)
+  return ["?", "?"] unless git_success?(dir, "rev-parse", "--verify", "origin/main")
+
+  value = git_value(dir, "rev-list", "--left-right", "--count", "origin/main...HEAD")
+  behind, ahead = value.split(/\s+/, 2)
+  [ahead || "?", behind || "?"]
+end
+
+def git_merged_to_main?(dir)
+  return false unless git_success?(dir, "rev-parse", "--verify", "origin/main")
+
+  git_success?(dir, "merge-base", "--is-ancestor", "HEAD", "origin/main")
+end
+
+def db_name_from_url(url)
+  url.to_s.split("/").last.to_s.split("?").first.to_s
+end
+
+def redis_db_from_url(url)
+  url.to_s.split("/").last.to_s.split("?").first.to_s
+end
+
+def database_exists?(db_name)
+  return nil if db_name.empty?
+  return nil unless system("pg_isready", "-q", out: File::NULL, err: File::NULL)
+
+  ok, out, = capture_status("psql", "-Atqc", "SELECT 1 FROM pg_database WHERE datname='#{db_name.gsub("'", "''")}'", "postgres")
+  ok ? out.strip == "1" : nil
+end
+
+def stack_dirs(app)
+  root = File.join(app.fetch("repo"), ".worktrees")
+  Dir.glob(File.join(root, "*")).select { |dir| File.directory?(dir) }.sort
+end
+
+def stack_record(app, dir)
+  env_path = File.join(dir, STACK_ENV)
+  raw_env = parse_env(env_path)
+  values = local_email_values.merge(raw_env)
+  task = File.basename(dir)
+  port = values["APP_PORT"].to_s
+  redis_db = redis_db_from_url(values["REDIS_URL"])
+  db_name = db_name_from_url(values["DATABASE_URL"])
+  pidfile = app.fetch("stack") == "tm" ? File.join(dir, "tmp", "pids", "tm-web.pid") : File.join(dir, "tmp", "pids", "agent-web.pid")
+  sidekiq_pidfile = File.join(dir, "tmp", "pids", "tm-sidekiq.pid")
+  ahead, behind = git_ahead_behind(dir)
+  {
+    app: app,
+    task: task,
+    dir: dir,
+    env_path: env_path,
+    env_exists: File.exist?(env_path),
+    env: values,
+    raw_env: raw_env,
+    port: port,
+    port_pid: port_pid(port),
+    code: http_code(port),
+    redis_db: redis_db,
+    db_name: db_name,
+    db_exists: database_exists?(db_name),
+    branch: git_branch(dir),
+    head: git_head(dir),
+    dirty: git_dirty?(dir),
+    ahead: ahead,
+    behind: behind,
+    merged: git_merged_to_main?(dir),
+    pidfile: pidfile,
+    pidfile_state: pidfile_state(pidfile),
+    sidekiq_pidfile_state: File.exist?(sidekiq_pidfile) ? pidfile_state(sidekiq_pidfile) : "missing"
+  }
+end
+
+def stack_records(app = nil)
+  selected = app ? [app] : apps.values
+  selected.flat_map { |config| stack_dirs(config).map { |dir| stack_record(config, dir) } }
+end
+
+def stack_health(record)
+  return "missing-env" unless record[:env_exists]
+  return "up" if record[:code] == "200"
+  return "port-busy" if !record[:port_pid].empty?
+
+  "down"
+end
+
+def duplicate_values(records, key)
+  records.group_by { |record| record[key].to_s }.select { |value, grouped| !value.empty? && value != "?" && grouped.size > 1 }
+end
+
 def stop_generic_rails(dir)
   pidfile = File.join(dir, "tmp", "pids", "agent-web.pid")
   unless File.exist?(pidfile)
@@ -371,18 +526,128 @@ end
 def list_worktrees(app = nil)
   selected = app ? [app] : apps.values
   selected.each do |config|
+    records = stack_records(config)
     puts "#{config.fetch("slug")}  primary http://localhost:#{config.fetch("primary_port")}  range #{config.fetch("range_start")}-#{config.fetch("range_end")}"
-    root = File.join(config.fetch("repo"), ".worktrees")
-    Dir.glob(File.join(root, "*")).sort.each do |dir|
-      next unless File.directory?(dir)
+    if records.empty?
+      puts "  no worktrees"
+      next
+    end
 
-      env = parse_env(File.join(dir, STACK_ENV))
-      port = env.fetch("APP_PORT", "?")
-      task = File.basename(dir)
-      branch = capture("git", "-C", dir, "branch", "--show-current").strip rescue "?"
-      puts "  #{task.ljust(24)} #{branch.ljust(28)} http://localhost:#{port}"
+    records.each do |record|
+      url = record[:port].empty? ? "missing-port" : "http://localhost:#{record[:port]}"
+      email_url = record[:port].empty? ? "missing-port" : "http://localhost:#{record[:port]}/_studio/local_emails"
+      dirty = record[:dirty] ? "dirty" : "clean"
+      merge = record[:merged] ? "merged" : "unmerged"
+      db = record[:db_exists].nil? ? record[:db_name] : "#{record[:db_name]}:#{record[:db_exists] ? "ok" : "missing"}"
+      puts "  #{record[:task].ljust(24)} #{stack_health(record).ljust(11)} #{url.ljust(23)} #{record[:branch].ljust(28)} #{dirty} #{merge} +#{record[:ahead]}/-#{record[:behind]}"
+      puts "    redis=#{record[:redis_db]} db=#{db} pid=#{record[:pidfile_state]} email=#{email_url}"
     end
   end
+end
+
+def doctor_issues(app = nil)
+  records = stack_records(app)
+  issues = []
+  port_dupes = duplicate_values(records, :port)
+  redis_dupes = duplicate_values(records, :redis_db)
+
+  records.each do |record|
+    app_config = record[:app]
+    label = "#{app_config.fetch("slug")}/#{record[:task]}"
+    issues << [label, "missing #{STACK_ENV}"] unless record[:env_exists]
+
+    port = record[:port].to_i
+    if port.zero?
+      issues << [label, "missing APP_PORT"]
+    elsif port < app_config.fetch("range_start") || port > app_config.fetch("range_end")
+      issues << [label, "APP_PORT #{port} outside #{app_config.fetch("range_start")}-#{app_config.fetch("range_end")}"]
+    end
+
+    if port_dupes.key?(record[:port].to_s)
+      issues << [label, "APP_PORT #{record[:port]} reused by #{port_dupes.fetch(record[:port].to_s).map { |r| r[:task] }.join(", ")}"]
+    end
+
+    if record[:redis_db].empty?
+      issues << [label, "missing REDIS_URL Redis DB"]
+    elsif redis_dupes.key?(record[:redis_db].to_s)
+      issues << [label, "Redis DB #{record[:redis_db]} reused by #{redis_dupes.fetch(record[:redis_db].to_s).map { |r| r[:task] }.join(", ")}"]
+    elsif record[:redis_db].to_i > 15
+      issues << [label, "Redis DB #{record[:redis_db]} exceeds stock Redis database count"]
+    end
+
+    issues << [label, "LOCAL_EMAIL_CAPTURE is not enabled"] unless env_truthy?(record[:env]["LOCAL_EMAIL_CAPTURE"])
+    %w[RESEND_API_KEY SES_SMTP_USERNAME SES_SMTP_PASSWORD].each do |key|
+      issues << [label, "#{key} is present in stack env"] unless record[:env][key].to_s.empty?
+    end
+
+    issues << [label, "dirty worktree"] if record[:dirty]
+    issues << [label, "branch is merged to origin/main and clean; cleanup candidate"] if record[:merged] && !record[:dirty]
+    issues << [label, "port #{record[:port]} listens but /up is #{record[:code]}"] if !record[:port_pid].empty? && record[:code] != "200"
+    issues << [label, "stale web pidfile #{record[:pidfile_state]}"] if record[:pidfile_state].start_with?("stale")
+    issues << [label, "stale sidekiq pidfile #{record[:sidekiq_pidfile_state]}"] if record[:sidekiq_pidfile_state].start_with?("stale")
+    issues << [label, "database #{record[:db_name]} missing"] if record[:db_exists] == false
+  end
+
+  issues
+end
+
+def run_doctor(app = nil)
+  issues = doctor_issues(app)
+  if issues.empty?
+    puts "doctor: no worktree lifecycle issues found"
+    return
+  end
+
+  puts "doctor: #{issues.size} issue(s)"
+  issues.each do |label, message|
+    puts "  - #{label}: #{message}"
+  end
+end
+
+def cleanup_candidates(app = nil)
+  stack_records(app).select { |record| record[:merged] && !record[:dirty] }
+end
+
+def ledger_path
+  File.join(HUB_DIR, "docs", "agents", "maintenance", "delete-later.md")
+end
+
+def cleanup_row(record)
+  path = record[:dir]
+  why = "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in origin/main."
+  condition = "Stop stack if running, then remove with `git -C #{record[:app].fetch("repo")} worktree remove #{path}` after operator approval."
+  "| `#{path}` | worktree | #{why} | #{condition} | pending approval |"
+end
+
+def run_cleanup(app = nil, write: false)
+  candidates = cleanup_candidates(app)
+  if candidates.empty?
+    puts "cleanup: no clean merged worktree candidates"
+    return
+  end
+
+  puts "cleanup candidates:"
+  candidates.each { |record| puts "  - #{record[:app].fetch("slug")}/#{record[:task]} #{record[:dir]}" }
+
+  unless write
+    puts
+    puts "dry run only. Re-run with --write to append candidates to #{ledger_path}."
+    return
+  end
+
+  existing = File.exist?(ledger_path) ? File.read(ledger_path) : ""
+  rows = candidates.map { |record| cleanup_row(record) }.reject { |row| existing.include?(row.split("`")[1].to_s) }
+  if rows.empty?
+    puts "cleanup: candidates already present in #{ledger_path}"
+    return
+  end
+
+  File.open(ledger_path, "a") do |file|
+    file.puts
+    file.puts "<!-- agent-worktree cleanup #{Time.now.strftime("%Y-%m-%d")} -->"
+    rows.each { |row| file.puts row }
+  end
+  puts "wrote #{rows.size} candidate(s) to #{ledger_path}"
 end
 
 cmd = ARGV.shift || "help"
@@ -448,8 +713,22 @@ when "status"
   task = clean_slug(raw_task)
   values = load_stack_env(app, task)
   code = wait_for_url(values.fetch("APP_PORT"))
+  record = stack_record(app, worktree_dir(app, task))
   print_plan(app, task, values)
   puts "status: /up #{code}"
+  puts "health: #{stack_health(record)}"
+  puts "git:    #{record[:branch]} #{record[:head]} #{record[:dirty] ? "dirty" : "clean"} #{record[:merged] ? "merged" : "unmerged"} +#{record[:ahead]}/-#{record[:behind]}"
+  puts "web:    port_pid=#{record[:port_pid].empty? ? "none" : record[:port_pid]} pidfile=#{record[:pidfile_state]}"
+  puts "sidekiq: pidfile=#{record[:sidekiq_pidfile_state]}" if app.fetch("sidekiq")
+  puts "db:     #{record[:db_name]}#{record[:db_exists].nil? ? "" : " #{record[:db_exists] ? "ok" : "missing"}"}"
+  puts "redis:  db #{record[:redis_db]}"
+when "doctor"
+  app = ARGV[0] ? app_for(ARGV[0]) : nil
+  run_doctor(app)
+when "cleanup"
+  write = ARGV.delete("--write")
+  app = ARGV[0] ? app_for(ARGV[0]) : nil
+  run_cleanup(app, write: !!write)
 when "down"
   app_name, raw_task = ARGV
   usage unless app_name && raw_task
