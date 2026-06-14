@@ -8,8 +8,8 @@ The root generated `AGENTS.md` is the intended cross-LLM entrypoint.
 - Codex reads `AGENTS.md` natively.
 - Claude compatibility should be proven against generated `AGENTS.md` before
   adding any adapter.
-- App-level `CLAUDE.md` files are archive-only migration context until the
-  compatibility decision is made.
+- App-level `CLAUDE.md` files were deleted on 2026-06-14 after final review.
+  Current app context lives in README/RUNBOOK/topic docs.
 
 If an adapter becomes necessary, keep it thin. It should point to `AGENTS.md`
 and avoid duplicating project facts:
@@ -51,8 +51,7 @@ Success criteria:
    `docs/agents/modules/culture.md`, or task-relevant modules as next reads.
 5. Does not treat app `CLAUDE.md` files as active truth.
 
-If the smoke test passes, keep the no-adapter policy. After a few successful
-Claude sessions, delete or further archive app-level `CLAUDE.md` files.
+If the smoke test passes, keep the no-adapter policy.
 
 If the smoke test fails because Claude ignores `AGENTS.md`, add the thin root
 `CLAUDE.md` adapter above and re-run the smoke test.

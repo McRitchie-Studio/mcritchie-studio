@@ -70,6 +70,11 @@ were added: `docs/agents/modules/audit-playbook.md`,
 `turf-monster/docs/SECURITY_REVIEW.md`, current Turf Solana docs, and the
 TurfVault verification matrix.
 
+Claude-file follow-up, 2026-06-14: app-level `CLAUDE.md` files were deleted
+after final knowledge-loss review. Durable context now lives in app
+README/RUNBOOK/topic docs, with cross-repo agent policy in `AGENTS.md` generated
+from McRitchie Studio.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
@@ -103,10 +108,10 @@ ranges. `bin/agent-worktree doctor` reported only the known
 
 These are not blockers to maintenance mode, but they should not be forgotten:
 
-- **Claude adapter decision**: resolved for root docs. Claude auth was completed
-  and the read-only smoke test passed against generated `AGENTS.md`; no root
-  `CLAUDE.md` adapter is needed. Keep app `CLAUDE.md` files archive-only until a
-  later deletion pass after a few successful Claude sessions.
+- **Claude adapter decision**: resolved. Claude auth was completed and the
+  read-only smoke test passed against generated `AGENTS.md`; no root
+  `CLAUDE.md` adapter is needed. App-level `CLAUDE.md` files were removed after
+  final review.
 - **Broadcast branch**: `mcritchie-studio` branch `feat/broadcasts` has useful
   historical product direction, but it is too stale to merge wholesale.
 - **Root stray files**: `/Users/alex/projects/dev-stack-smoothing.md` and
