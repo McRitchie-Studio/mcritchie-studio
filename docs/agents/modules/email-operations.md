@@ -104,7 +104,18 @@ Production proof gaps:
 
 ## Agent Proof Modes
 
-Use local capture for normal local development and worktree work:
+Use real provider delivery for primary local stacks:
+
+1. Set `LOCAL_EMAIL_CAPTURE=0`.
+2. Confirm `RESEND_API_KEY` and `RESEND_MAILER_FROM` are present while SES is
+   blocked by sandbox access.
+3. Trigger the app flow.
+4. Verify the latest delivery row is `sent=true` with no error.
+5. Return the app URL tested and the target inbox so the human can check inbox
+   or spam when visual confirmation is needed.
+
+Use local capture for parallel worktree stacks or tasks that should not email
+real recipients:
 
 1. Set `LOCAL_EMAIL_CAPTURE=1`.
 2. Keep provider mail credentials blank in the worktree stack.
