@@ -13,17 +13,12 @@ Studio.configure do |config|
   # minted for one app verify on another (cross-app token confusion).
   config.magic_link_token_name = "magic_link_mcritchie_v1"
 
-  # Verified sending address for the active mail transport. SES is the target and
-  # should use the McRitchie domain once DNS/DKIM is ready. Resend remains a
-  # rollback path through the currently verified Turf domain unless MAILER_FROM
-  # overrides it.
-  default_mailer_from =
-    if ENV["MAIL_TRANSPORT"].to_s.downcase == "ses"
-      "McRitchie Studio <team@mcritchie.studio>"
-    else
-      "Turf Monster <team@turfmonster.media>"
-    end
-  config.mailer_from = ENV.fetch("MAILER_FROM", default_mailer_from)
+  # Verified sending address for the active mail transport. SES uses the
+  # McRitchie domain; Resend fallback uses the shared McRitchie Studio sender so
+  # future apps can send before their own SES setup is complete.
+  config.mailer_from = Studio.mailer_from_for_transport(
+    ses_from: "McRitchie Studio <team@mcritchie.studio>"
+  )
 
   config.configure_sso_user = ->(user) { user.role = "viewer" }
   config.sso_logo = "/studio-logo.svg"

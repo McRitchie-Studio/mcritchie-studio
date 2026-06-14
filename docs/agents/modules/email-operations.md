@@ -49,9 +49,16 @@ SES_SMTP_USERNAME=...
 SES_SMTP_PASSWORD=...
 MAILER_FROM="App Name <team@example.com>"
 MARKETING_MAILER_FROM="Alex from App Name <alex@example.com>"
+RESEND_MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"
 RESEND_API_KEY=...       # rollback only
 LOCAL_EMAIL_CAPTURE=1    # local/worktree proof mode
 ```
+
+`RESEND_MAILER_FROM` is the shared fallback sender for apps that are waiting on
+SES production access or have not completed their own SES setup yet. Keep
+`MAILER_FROM` and `MARKETING_MAILER_FROM` app/domain-specific for the SES target
+state; do not make future apps buy/verify extra Resend domains just to send
+pre-SES auth mail.
 
 SES helper tasks use SES API credentials:
 
@@ -130,7 +137,8 @@ Run this once per sending domain.
 6. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, and the sender
    env in the app's environment (`MAILER_FROM` for transactional mail, and
    `MARKETING_MAILER_FROM` where the app sends marketing/newsletter mail).
-7. Keep `RESEND_API_KEY` present during the migration window.
+7. Keep `RESEND_API_KEY` and `RESEND_MAILER_FROM` present during the migration
+   window.
 8. Set `MAIL_TRANSPORT=ses`.
 9. Smoke test a magic link.
 10. Confirm DKIM/SPF/DMARC pass and delivery does not land in spam.
