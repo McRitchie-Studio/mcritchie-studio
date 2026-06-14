@@ -45,12 +45,18 @@ Known local user work:
 - `rolio/README.md` is modified. Rolio remains outside the managed ecosystem
   registry and should not be folded into this cleanup without a product decision.
 
-Known preserved worktrees:
+Known preserved worktrees at closeout:
 
 - `turf-vault/.worktrees/grant-seeds-salvage`
 - `mcritchie-studio/.worktrees/broadcasts-salvage`
 
 Those are intentionally not deleted. They require human salvage/drop approval.
+
+Salvage/delete follow-up, 2026-06-14: both hidden worktrees were reviewed and
+removed. Turf Vault's local `feat/v0.22-grant-seeds` branch was deleted because
+it had no commits ahead of `main`. McRitchie Studio's `feat/broadcasts` branch
+was retained as historical source material only; the durable broadcast direction
+was promoted into `docs/agents/modules/email-operations.md`.
 
 ## Verification On Record
 
@@ -87,11 +93,11 @@ These are not blockers to maintenance mode, but they should not be forgotten:
 
 - **Claude adapter decision**: keep app `CLAUDE.md` files as archive-only until
   the next Claude session proves whether generated `AGENTS.md` is enough.
-- **Hidden salvage worktrees**: review/drop the two preserved hidden worktrees
-  before deleting them.
+- **Broadcast branch**: `mcritchie-studio` branch `feat/broadcasts` has useful
+  historical product direction, but it is too stale to merge wholesale.
 - **Root stray files**: `/Users/alex/projects/dev-stack-smoothing.md` and
-  `/Users/alex/projects/bin/clean-artifacts` have tracked replacements or
-  promoted guidance, but deletion still needs explicit approval.
+  `/Users/alex/projects/bin/clean-artifacts` were removed after their durable
+  content was confirmed in tracked McRitchie Studio docs/scripts.
 - **SES stability window**: shared email architecture and playbooks are ready,
   but production SES should get a real stability window before Resend fallback
   is removed.

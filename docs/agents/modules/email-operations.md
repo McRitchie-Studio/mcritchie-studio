@@ -102,6 +102,28 @@ bin/rails ses:check
 bin/rails "ses:verify_domain[example.com]"
 ```
 
+## Marketing And Broadcast Email
+
+Transactional email is the active shared surface today. Future marketing or
+broadcast email should reuse the same SES/provider policy, but the product
+model can stay app-owned.
+
+A historical branch, `feat/broadcasts`, contains an old McRitchie Studio
+broadcast prototype: contacts, broadcast drafts, unsubscribe routes, delivery
+tracking, hero assets, and SES helper tasks. Do not merge that branch wholesale;
+it predates the current agent docs, shared engine email outbox, and registry
+tooling. If the broadcast idea comes back, reimplement or cherry-pick narrowly
+on top of current `main`.
+
+Minimum rules for a revived broadcast surface:
+
+1. Keep unsubscribe and privacy behavior in the first implementation.
+2. Use `Studio::Email.deliver` or the current shared transport layer.
+3. Keep real provider delivery explicit; local/worktree proof should still use
+   `LOCAL_EMAIL_CAPTURE=1`.
+4. Keep templates and campaign copy in the owning app.
+5. Add provider smoke proof before sending to a real list.
+
 ## Recovery
 
 If provider delivery fails but the app accepted the send intent, inspect the

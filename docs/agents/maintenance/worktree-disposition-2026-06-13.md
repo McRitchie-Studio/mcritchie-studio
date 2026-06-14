@@ -57,15 +57,24 @@ usable as the clean cross-repo launch point.
 | `/Users/alex/projects/mcritchie-studio/.worktrees/broadcasts-salvage` | `feat/broadcasts` | Dirty; old `mcritchie-studio` snapshot with 2 unique commits and dirty `docs/agents/system/email-delivery.md`. | Preserve for targeted review only. Do not merge wholesale because it predates the current agent docs and tooling. If useful, cherry-pick or reimplement the broadcasts/email concepts into current `main`. |
 | `/Users/alex/projects/turf-vault/.worktrees/grant-seeds-salvage` | `feat/v0.22-grant-seeds` | Dirty `Cargo.lock`; branch `HEAD` is already contained in `origin/main`. | Preserve for historical review only. The dirty lockfile references older package state and should not be promoted without comparing against current `turf_vault` `0.25.0`. |
 
+## Salvage Closeout - 2026-06-14
+
+The two preserved hidden worktrees were reviewed again after the final ecosystem
+closeout.
+
+| Path | Result |
+| --- | --- |
+| `/Users/alex/projects/mcritchie-studio/.worktrees/broadcasts-salvage` | Worktree removed. Do not merge branch `feat/broadcasts` wholesale. The branch still has useful product direction for a future self-owned broadcast system, but it predates the current agent docs and would delete newer tooling if merged directly. The durable direction was promoted into `docs/agents/modules/email-operations.md`; keep branch `feat/broadcasts` / `origin/feat/broadcasts` as historical source material if needed. |
+| `/Users/alex/projects/turf-vault/.worktrees/grant-seeds-salvage` | Worktree removed and local branch `feat/v0.22-grant-seeds` deleted. No durable content remained. The only dirty change was `Cargo.lock` changing `turf_vault` from `0.20.0` to `0.24.0`; current `main` has newer verification and deployment docs. |
+
 ## Result
 
 `/Users/alex/projects` should now contain only primary project directories and
 root-level bootstrap files. New parallel work should use each repo's hidden
 `.worktrees` directory, usually through `mcritchie-studio/bin/agent-worktree`.
 
-Remaining decisions:
+Remaining decision:
 
-1. Decide whether the preserved McRitchie broadcasts work should influence the
-   shared email roadmap.
-2. Decide whether the preserved Turf Vault lockfile has any historical value, or
-   whether that hidden salvage worktree can be removed later.
+1. Decide whether branch `feat/broadcasts` should become a current product
+   feature. If yes, reimplement or cherry-pick narrowly from the branch on top
+   of current `main`; do not merge the old branch wholesale.
