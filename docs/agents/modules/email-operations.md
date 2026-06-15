@@ -125,11 +125,18 @@ real recipients:
 Provider smoke tests are explicit, narrower tasks:
 
 1. Set `LOCAL_EMAIL_CAPTURE=0`.
-2. Confirm `MAIL_TRANSPORT=ses` and SES SMTP env are present.
-3. Send one magic link or transactional email to an approved test inbox.
-4. Confirm the message arrives and provider headers show DKIM/SPF/DMARC pass.
+2. Confirm the intended provider env is present (`RESEND_API_KEY` while SES is
+   sandboxed, or `MAIL_TRANSPORT=ses` plus SES SMTP env after cutover).
+3. Run `bin/rails "email:smoke[approved-test-inbox@example.com]"` from the app.
+4. Confirm the message arrives and provider headers show DKIM/SPF/DMARC pass
+   when proving SES.
 5. Return the exact app URL tested plus whether the provider send landed in inbox
    or spam.
+
+The smoke task sends one direct ActionMailer message through the current
+transport and refuses capture/test/file modes by default. Use
+`EMAIL_SMOKE_ALLOW_NON_EXTERNAL=1` only for explicit capture-mode proof, not for
+provider proof.
 
 Do not ask the user to run terminal commands for these proofs. Ask for approval
 or external access only when the agent cannot perform the check directly.
@@ -160,6 +167,7 @@ Useful app commands:
 ```bash
 bin/rails ses:check
 bin/rails "ses:verify_domain[example.com]"
+bin/rails "email:smoke[approved-test-inbox@example.com]"
 ```
 
 ## Marketing And Broadcast Email

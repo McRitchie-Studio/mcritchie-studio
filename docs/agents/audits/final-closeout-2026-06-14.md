@@ -89,7 +89,8 @@ High-signal proof from this cleanup:
   local stack proof.
 - McRitchie Studio and Turf Monster magic-link flows were verified locally; Turf
   Monster local inbox and McRitchie Studio real delivery both worked.
-- `studio-engine 0.5.8` was published and adopted by both Rails apps.
+- `studio-engine 0.5.9` was published and adopted by both Rails apps, adding the
+  shared `email:smoke` provider proof task.
 - Primary local McRitchie Studio and Turf Monster stacks now send real mail
   through Resend while worktree stacks default to local capture; both
   non-production banners show the runtime mail state.

@@ -113,14 +113,16 @@ first, then apply the McRitchie-specific values below.
 3. Publish the SES DKIM CNAMEs, SPF, and DMARC records.
 4. Stage `SES_SMTP_USERNAME`, `SES_SMTP_PASSWORD`, `SES_REGION`, `MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`, and `RESEND_MAILER_FROM="McRitchie Studio <team@mcritchie.studio>"`.
 5. Set `MAIL_TRANSPORT=ses`.
-6. Smoke test a magic link to `alex@mcritchie.studio`.
-7. Confirm Gmail shows DKIM/SPF/DMARC pass and the message does not land in spam.
+6. Smoke test the provider with `bin/rails "email:smoke[alex@mcritchie.studio]"`.
+7. Smoke test a full magic-link sign-in to `alex@mcritchie.studio`.
+8. Confirm Gmail shows DKIM/SPF/DMARC pass and the message does not land in spam.
 
 Useful checks:
 
 ```bash
 bin/rails ses:check
 bin/rails "ses:verify_domain[mcritchie.studio]"
+bin/rails "email:smoke[alex@mcritchie.studio]"
 ```
 
 ## Rollback
@@ -133,7 +135,7 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio currently uses `studio-engine 0.5.8`, so transport selection,
-durable delivery primitives, and the local agent inbox live in the engine. Keep
-future shared email changes in `studio-engine` unless they are truly
-app-specific.
+McRitchie Studio currently uses `studio-engine 0.5.9`, so transport selection,
+durable delivery primitives, the local agent inbox, and provider smoke testing
+live in the engine. Keep future shared email changes in `studio-engine` unless
+they are truly app-specific.
