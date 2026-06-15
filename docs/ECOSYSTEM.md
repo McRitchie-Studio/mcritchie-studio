@@ -8,18 +8,20 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 |------|------|-------|------|
 | [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, auth-capable Studio app, and ecosystem recovery scripts. | Rails 7.2 / Postgres | 3000 |
 | [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain via turf-vault. | Rails 7.2 / Postgres / Redis / Sidekiq | 3100 |
+| [`chain-ops`](https://github.com/amcritchie/chain-ops) | Planned Solana environment control plane. Starts with localnet validator support. | Rails 7.2 / Postgres | 3300 |
 | [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache. | Ruby gem | — |
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
 
-`rolio` exists locally as a prototype app, but it is not yet in the managed ecosystem registry. `tax-studio` remains reserved at `3200-3299` in `config/satellites.yml`; if Rolio joins the managed stack, assign it `3300-3399` and move its primary port to `3300`.
+`rolio` exists locally as a prototype app, but it is not yet in the managed ecosystem registry. `tax-studio` remains reserved at `3200-3299` and `chain-ops` is planned at `3300-3399` in `config/satellites.yml`; if Rolio joins the managed stack, assign it `3400-3499` and move its primary port to `3400`.
 
 ## Dependency graph
 
 ```
 studio-engine gem ──┐
                     ├──> mcritchie-studio (flagship)
-                    └──> turf-monster ──> solana-studio gem
+                    ├──> chain-ops ───────> solana-studio gem
+                    └──> turf-monster ────> solana-studio gem
                                        ──> turf-vault (devnet + mainnet deployments)
 ```
 
@@ -40,6 +42,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 
 - **mcritchie-studio** — The hub. Runs the NFL data ingest pipeline (Nflverse → Spotrac → ESPN → PFF → depth chart), News pipeline (intake → review → process → refine → conclude), and Content pipeline (idea → hook → script → assets → assembly → posted). Owns `bin/ecosystem-build`, the recovery protocol, and the agent-neutral documentation source.
 - **turf-monster** — Satellite product app. Sports pick'em UI + contest grading + Solana onchain settlement against `turf-vault`. Read: `README.md`, `docs/LOCAL_STACK.md`, and the topic files in `docs/` (`AUTH.md`, `SOLANA.md`, `FORMULAS.md`, `UI_PATTERNS.md`, `world_cup_2026.md`).
+- **chain-ops** — Planned satellite control plane for Solana environments. V1 manages a local `solana-test-validator` and prints the localnet env contract Turf Monster needs for local on-chain work. Read: `README.md`.
 - **studio-engine** — Engine. Provides `Studio::ErrorHandling` concern, ErrorLog model, passwordless auth primitives, theme system (7 role colors → CSS vars), modals, ImageCache, and reusable components. Consumed by mcritchie-studio + turf-monster + future apps. Read: `README.md` and `docs/`.
 - **solana-studio** — Gem. Primitives only: `Solana::Client` (JSON-RPC), `Solana::Borsh`, `Solana::Transaction` (Anchor discriminators + PDA derivation), `Solana::SplToken`, `Solana::Keypair`. Pure Ruby, ed25519 the only external dep. Consumed by turf-monster (which extends `Solana::Keypair` locally for encryption). Read: `README.md` + `RUNBOOK.md`.
 - **turf-vault** — Anchor program. 22 instructions, 2-of-3 multisig on all sensitive ops, Squads upgrade authority. Live devnet/mainnet identity is in `docs/CURRENT_DEPLOYMENT.md`; current proof checklist is in `docs/VERIFICATION_MATRIX.md`. Read: `README.md`, `RUNBOOK.md`, and `docs/CURRENT_DEPLOYMENT.md`.
