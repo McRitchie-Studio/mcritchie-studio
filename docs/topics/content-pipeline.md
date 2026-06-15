@@ -105,10 +105,10 @@ Extracted to `app/views/contents/_tiktok_assembly_card.html.erb`. Autoplay video
 Submitted for review 2026-05-04. Sandbox mode works for the app owner's account. App scopes were initially over-requested (Login Kit + Content Posting API + Share Kit + Data Portability + Webhooks + Local Service API); for production approval should be trimmed to just Login Kit + Content Posting API with scopes user.info.basic + video.upload + video.publish.
 
 ### TikTok app registration
-- Redirect URI: `https://app.mcritchie.studio/admin/tiktok/callback`
-- Terms of Service: `https://app.mcritchie.studio/terms`
-- Privacy Policy: `https://app.mcritchie.studio/privacy`
-- Domain verification: signature file at `public/tiktokHckWWupyGeHg0pg5QM7ApgceP3z1jwB9.txt` (URL prefix verification for `https://app.mcritchie.studio/`)
+- Redirect URI: `https://mcritchie.studio/admin/tiktok/callback` after root-domain launch. Keep `https://app.mcritchie.studio/admin/tiktok/callback` registered as a legacy callback until provider dashboards are fully updated.
+- Terms of Service: `https://mcritchie.studio/terms`
+- Privacy Policy: `https://mcritchie.studio/privacy`
+- Domain verification: signature file at `public/tiktokHckWWupyGeHg0pg5QM7ApgceP3z1jwB9.txt` (URL prefix verification should be updated from `https://app.mcritchie.studio/` to `https://mcritchie.studio/` during launch)
 
 ### Music
 Three options: (A) trending sound — only via human in TikTok Studio/app since TikTok's full library isn't API-accessible; (B) Commercial Music Library — `music_id` param on direct_post, requires TikTok Business account; (C) royalty-free baked in — `LineupGraphic::AssembleVideo` accepts `music_path:` to mux audio at render time. Default user flow uses (A) via the assembly card.

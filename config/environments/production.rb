@@ -83,6 +83,10 @@ Rails.application.configure do
   # magic links and host authorization point at the QA server.
   app_host = ENV.fetch("APP_HOST", "app.mcritchie.studio")
   mailer_host = ENV.fetch("MAILER_HOST", app_host)
+  app_host_aliases = ENV.fetch("APP_HOST_ALIASES", "")
+    .split(",")
+    .map(&:strip)
+    .reject(&:empty?)
 
   # Required by the magic-link mailer: UserMailer#magic_link builds an absolute
   # URL via magic_link_url(token:), which needs a host. Without this, every
@@ -114,7 +118,8 @@ Rails.application.configure do
   config.hosts = [
     app_host,                                                # primary public URL for this deploy target
     ENV.fetch("DYNO_HOST", "mcritchie-studio.herokuapp.com"), # direct Heroku dyno URL (health checks, etc.)
-  ]
+    *app_host_aliases
+  ].uniq
   # /up is the Rails health-check endpoint Heroku polls — Heroku's load balancer
   # may use internal addressing, so exclude it from host authorization to avoid
   # false-positive health-check failures.

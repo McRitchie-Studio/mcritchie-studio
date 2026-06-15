@@ -2,7 +2,7 @@
 
 Task management and orchestration hub for the McRitchie AI agent system. McRitchie Studio is also the documentation anchor for the full local development stack: if the machine is wiped, this repo is the first clone and the source of truth for rebuilding the ecosystem.
 
-**Live**: https://app.mcritchie.studio
+**Live**: https://mcritchie.studio
 
 McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/amcritchie/turf-monster), [studio-engine](https://github.com/amcritchie/studio-engine), [solana-studio](https://github.com/amcritchie/solana-studio), [turf-vault](https://github.com/amcritchie/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
 

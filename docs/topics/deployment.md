@@ -11,10 +11,11 @@
 ## Deployment
 
 - **Heroku app**: `mcritchie-studio`
-- **URL**: https://app.mcritchie.studio
+- **URL**: https://mcritchie.studio
+- **Legacy URL**: https://app.mcritchie.studio
 - **Heroku URL**: https://mcritchie-studio-039470649719.herokuapp.com/
 - **Database**: Heroku Postgres (essential-0)
-- **DNS**: Google Domains — `app` CNAME → Heroku DNS target
+- **DNS**: apex `mcritchie.studio` ALIAS/ANAME → Heroku DNS target; `app` CNAME remains as a legacy alias
 - **Deploy**: `git push heroku main`; the Heroku `release` process runs
   `bin/rails db:migrate` before promotion.
 - **Workers**: keep `worker=1` scaled for Solid Queue mail/auth job durability.
