@@ -23,10 +23,7 @@
             :class="scrolled && 'shadow-lg border-b border-subtle'">
       <% unless Rails.env.production? %>
         <% environment_actions = capture do %>
-          <button @click="$store.devMode = !$store.devMode; localStorage.setItem('devMode', $store.devMode)"
-                  class="rounded cursor-pointer"
-                  style="font-size:10px; font-weight:700; padding:1px 6px;"
-                  :style="$store.devMode ? 'background:rgba(0,0,0,0.4); color:#fff;' : 'background:rgba(0,0,0,0.2); color:#000;'">DEV MODE</button>
+          <%= render "shared/dev_mode_button" %>
           <%= render "shared/email_status_button" %>
         <% end %>
         <%= render "shared/app_banner",
