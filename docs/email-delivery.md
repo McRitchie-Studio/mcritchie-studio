@@ -84,7 +84,10 @@ Newsletter/product-update mail can use
 `MARKETING_MAILER_FROM="Alex McRitchie <alex@mcritchie.studio>"`. Resend
 fallback uses `RESEND_MAILER_FROM="McRitchie Studio
 <team@mcritchie.studio>"`, which is also the shared fallback sender for future
-apps before their SES setup is complete.
+apps before their SES setup is complete. This fallback is valid only while
+`mcritchie.studio` is verified in the Resend account backing `RESEND_API_KEY`.
+An app-level success response does not prove delivery; the provider smoke must
+also show the durable email job completing without a Resend error.
 
 Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
 `AWS_SECRET_ACCESS_KEY` for SES proof. Use the `SES_AWS_*` variables from
@@ -92,11 +95,13 @@ Do not overwrite the app's S3/ImageCache `AWS_ACCESS_KEY_ID` or
 
 ## Current Production Status
 
-Last checked: 2026-06-14.
+Last checked: 2026-06-15.
 
 - SES account in `us-east-2`: sending enabled, enforcement healthy, still in
   sandbox (`ProductionAccessEnabled=false`).
 - `mcritchie.studio`: verified for sending, DKIM `SUCCESS`.
+- Resend fallback domain: `mcritchie.studio` verified in the active Resend
+  account.
 - Persistent production transport: keep Resend active until SES production
   access is approved and SMTP runtime credentials are staged.
 - Production app adoption: deploy the current `studio-engine` release before

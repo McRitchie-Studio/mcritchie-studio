@@ -60,6 +60,12 @@ SES production access or have not completed their own SES setup yet. Keep
 state; do not make future apps buy/verify extra Resend domains just to send
 pre-SES auth mail.
 
+The fallback sender is only valid if its domain is verified in the same Resend
+account as `RESEND_API_KEY`. A successful app response (`{"success":true}` from
+`POST /magic_link`) proves only that the app accepted the send intent; it does
+not prove provider delivery. A provider smoke is complete only when the durable
+outbox job finishes successfully and the provider accepts the message.
+
 SES helper tasks use SES API credentials:
 
 ```env
@@ -75,7 +81,7 @@ SMTP username and password, which are a separate credential pair.
 
 ## Current SES Production Proof
 
-Last checked: 2026-06-14.
+Last checked: 2026-06-15.
 
 | Check | Result |
 |-------|--------|
@@ -85,6 +91,7 @@ Last checked: 2026-06-14.
 | SES enforcement | `HEALTHY` |
 | `mcritchie.studio` identity | verified for sending, DKIM `SUCCESS` |
 | `turfmonster.media` identity | verified for sending, DKIM `SUCCESS` |
+| Resend fallback domain | `mcritchie.studio` verified in the Resend account backing production apps |
 
 Conclusion: domain verification is ready, but the account is still in SES
 sandbox. Do not set persistent `MAIL_TRANSPORT=ses` on production web dynos
@@ -125,18 +132,33 @@ real recipients:
 Provider smoke tests are explicit, narrower tasks:
 
 1. Set `LOCAL_EMAIL_CAPTURE=0`.
-2. Confirm the intended provider env is present (`RESEND_API_KEY` while SES is
-   sandboxed, or `MAIL_TRANSPORT=ses` plus SES SMTP env after cutover).
+2. Confirm the intended provider env is present (`RESEND_API_KEY` plus a
+   verified `RESEND_MAILER_FROM` domain while SES is sandboxed, or
+   `MAIL_TRANSPORT=ses` plus SES SMTP env after cutover).
 3. Run `bin/rails "email:smoke[approved-test-inbox@example.com]"` from the app.
-4. Confirm the message arrives and provider headers show DKIM/SPF/DMARC pass
+4. Confirm the durable outbox job finished with no provider error.
+5. Confirm the message arrives and provider headers show DKIM/SPF/DMARC pass
    when proving SES.
-5. Return the exact app URL tested plus whether the provider send landed in inbox
-   or spam.
+6. Return the exact app URL tested plus whether the provider send landed in
+   inbox or spam.
 
 The smoke task sends one direct ActionMailer message through the current
 transport and refuses capture/test/file modes by default. Use
 `EMAIL_SMOKE_ALLOW_NON_EXTERNAL=1` only for explicit capture-mode proof, not for
 provider proof.
+
+Resend fallback verification, if delivery fails with "domain is not verified":
+
+```bash
+dig +short TXT resend._domainkey.mcritchie.studio
+dig +short MX send.mcritchie.studio
+dig +short TXT send.mcritchie.studio
+```
+
+Those public records must match Resend's domain page. Then trigger verification
+in Resend and wait for the domain status to become `verified` before retrying
+app email. Do not switch fallback senders to an app domain unless that domain is
+also present and verified in the active Resend account.
 
 Do not ask the user to run terminal commands for these proofs. Ask for approval
 or external access only when the agent cannot perform the check directly.
