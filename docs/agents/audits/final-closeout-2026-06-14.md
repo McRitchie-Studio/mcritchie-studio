@@ -155,12 +155,13 @@ These are not blockers to maintenance mode, but they should not be forgotten:
   content was confirmed in tracked McRitchie Studio docs/scripts.
 - **SES production access**: shared email architecture and domain verification
   are ready, and production fallback mail has been proved through the verified
-  `mcritchie.studio` Resend domain, but the SES account is still sandboxed.
-  Live Heroku `ses:check` on 2026-06-15 also proved the apps do not yet have
-  `SES_AWS_ACCESS_KEY_ID` staged, so the task falls back to the S3 IAM user and
-  returns SES `HTTP 403`. Stage the SES-scoped API creds first, then confirm AWS
-  production access, then run a real SES provider smoke window before Resend
-  fallback is removed.
+  `mcritchie.studio` Resend domain, but the SES account is still sandboxed. SES
+  API proof credentials from `agent.aws.mcritchie-ses` are now staged on both
+  Heroku apps as `SES_AWS_*`; live Heroku `ses:check` on 2026-06-15 returns SES
+  `HTTP 200` with `SendingEnabled=true`, `ProductionAccessEnabled=false`, and
+  `Enforcement=HEALTHY`. Confirm AWS production access, stage runtime SES SMTP
+  credentials, then run a real SES provider smoke window before Resend fallback
+  is removed.
 - **Heroku platform drift**: resolved for the active Rails apps on 2026-06-15.
   McRitchie Studio and Turf Monster both run on Heroku-26 with explicit Ruby and
   Node runtime pins.

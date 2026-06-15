@@ -103,25 +103,28 @@ Live production check, 2026-06-15:
 
 - McRitchie Studio and Turf Monster both have `MAIL_TRANSPORT` unset, so live
   mail stays on Resend fallback.
-- `SES_AWS_ACCESS_KEY_ID` is not staged on either Heroku app.
-- `bin/rails ses:check` on both Heroku apps falls back to `AWS_ACCESS_KEY_ID`,
-  which is the `mcritchie-s3` IAM user, and returns `HTTP 403` for
+- `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` are staged on both
+  Heroku apps from `agent.aws.mcritchie-ses`.
+- `bin/rails ses:check` on both Heroku apps now uses
+  `CredentialSource=SES_AWS_ACCESS_KEY_ID` and returns `HTTP 200` for
   `ses:GetAccount` and `ses:ListEmailIdentities`.
-- The next safe production step is to stage SES-scoped API credentials as
-  `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on both apps, then
-  rerun `bin/rails ses:check`. Keep `MAIL_TRANSPORT` unset while AWS production
-  access remains unresolved.
+- `GetAccount` reports `SendingEnabled=true`,
+  `ProductionAccessEnabled=false`, and `Enforcement=HEALTHY`.
+- A direct SES v2 identity-list proof with the same credentials reports both
+  `mcritchie.studio` and `turfmonster.media` as `VerificationStatus=SUCCESS`
+  and `SendingEnabled=true`. The currently released helper may display those
+  identity-list rows as `pending` because it reads the older
+  `VerifiedForSendingStatus` field instead of `VerificationStatus`.
+- Keep `MAIL_TRANSPORT` unset while AWS production access remains unresolved.
 
 Production proof gaps:
 
-1. Stage `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on Heroku for
-   the shared `ses:*` checks without touching the existing S3 `AWS_*` vars.
-2. Store or derive SES SMTP credentials for each runtime environment.
-3. Keep consumer apps on the current `studio-engine` release before proofing a
+1. Store or derive SES SMTP credentials for each runtime environment.
+2. Keep consumer apps on the current `studio-engine` release before proofing a
    provider cutover. Turf Monster release `v93` proved the shared mail boot path
    through Resend fallback; the remaining production proof is SES after sandbox
    removal and SMTP credential staging.
-4. Request or confirm SES production access approval, then run a provider smoke
+3. Request or confirm SES production access approval, then run a provider smoke
    test to `alex@mcritchie.studio` and a Turf-approved inbox.
 
 ## Agent Proof Modes

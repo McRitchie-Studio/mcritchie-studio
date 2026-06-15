@@ -130,18 +130,15 @@ real satellite, assign the next range (`3300-3399`), give it a primary port
 
 ## Recommended Next Moves
 
-1. Stage `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` from
-   `agent.aws.mcritchie-ses` on both Heroku apps, then rerun
-   `bin/rails ses:check` so production proof tasks stop using the S3 IAM user.
-2. Finish SES production access, stage SMTP creds, then run provider smoke and
+1. Finish SES production access, stage SMTP creds, then run provider smoke and
    real magic-link smoke for both domains. Keep `MAIL_TRANSPORT` unset until
    that smoke passes.
-3. Plan a dedicated frontend dependency window for the residual
+2. Plan a dedicated frontend dependency window for the residual
    Tailwind/Browserslist warning. Both apps currently use
    `tailwindcss-rails 2.7.9` through `studio-engine 0.5.9`; RubyGems currently
    lists `tailwindcss-rails 4.4.0`, so this is a major-version visual/build
    upgrade rather than a patch bump.
-4. Clean merged worktrees when Mr. McRitchie approves deletion:
+3. Clean merged worktrees when Mr. McRitchie approves deletion:
    `mcritchie-studio/agent-isolation-policy` and
    `turf-monster/cdp-phantom-create-hardening`.
 
@@ -178,10 +175,18 @@ Results:
   buildpacks ordered correctly, web and worker dynos up, `/up` `200`. Focused
   CDP/contest/vault tests passed for the hardening commit:
   `148 runs, 647 assertions, 0 failures`.
-- Final docket proof, 2026-06-15: live Heroku `ses:check` on both apps returns
-  SES `HTTP 403` because `SES_AWS_ACCESS_KEY_ID` is absent and the task falls
-  back to the S3 IAM user. `MAIL_TRANSPORT` is unset on both apps, so Resend
+- SES proof credential follow-up, 2026-06-15: `SES_AWS_ACCESS_KEY_ID` /
+  `SES_AWS_SECRET_ACCESS_KEY` are staged on both Heroku apps from
+  `agent.aws.mcritchie-ses`. Live Heroku `ses:check` on both apps now uses
+  `CredentialSource=SES_AWS_ACCESS_KEY_ID` and returns `HTTP 200` from SES with
+  `SendingEnabled=true`, `ProductionAccessEnabled=false`, and
+  `Enforcement=HEALTHY`. `MAIL_TRANSPORT` is unset on both apps, so Resend
   fallback remains active.
+- SES identity proof, 2026-06-15: a direct SES v2 identity-list call with the
+  same credentials reports `mcritchie.studio` and `turfmonster.media` as
+  `VerificationStatus=SUCCESS` and `SendingEnabled=true`. The current released
+  helper can still render those list rows as `pending` because it reads the
+  older `VerifiedForSendingStatus` field.
 - Tailwind proof, 2026-06-15: both apps are on `tailwindcss-rails 2.7.9`
   through `studio-engine 0.5.9`; RubyGems lists `4.4.0`, making the residual
   Browserslist warning a deliberate major-version upgrade window.
