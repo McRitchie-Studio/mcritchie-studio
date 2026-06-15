@@ -58,7 +58,9 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     assert_match "🏈", response.body
     assert_match /&quot;slug&quot;: &quot;buffalo-bills&quot;/, response.body
     assert_match /&quot;mascot&quot;: &quot;Bills&quot;/, response.body
+    assert_match /&quot;logo_url&quot;: null/, response.body
     assert_match /&quot;home_arena&quot;/, response.body
+    assert_match "not set", response.body
   end
 
   test "admin can sort teams by team sport and league" do
