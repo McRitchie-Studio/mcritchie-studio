@@ -9,13 +9,14 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
     )
   end
 
-  test "buckets weeks beginning Monday" do
-    assert_equal Date.new(2026, 6, 8), Github::BuilderWeeklyAggregator.week_start_for(Date.new(2026, 6, 14))
-    assert_equal Date.new(2026, 6, 15), Github::BuilderWeeklyAggregator.week_start_for(Date.new(2026, 6, 15))
+  test "buckets weeks beginning Saturday" do
+    assert_equal Date.new(2026, 6, 13), Github::BuilderWeeklyAggregator.week_start_for(Date.new(2026, 6, 14))
+    assert_equal Date.new(2026, 6, 13), Github::BuilderWeeklyAggregator.week_start_for(Date.new(2026, 6, 19))
+    assert_equal Date.new(2026, 6, 20), Github::BuilderWeeklyAggregator.week_start_for(Date.new(2026, 6, 20))
   end
 
   test "calculates baseline and builder multiple from prior 90 days" do
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     9.times do |index|
       create_observation(@builder.github_login, committed_at: week_start - 10.days - index.days)
     end
@@ -31,7 +32,7 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
   end
 
   test "sets builder multiple to nil when baseline is zero" do
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     create_observation(@builder.github_login, committed_at: week_start)
 
     Github::BuilderWeeklyAggregator.new.aggregate!(start_date: week_start, end_date: week_start + 6.days)
@@ -42,7 +43,7 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
   end
 
   test "counts all, non-merge, bot-adjusted commits and active repos" do
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     create_observation(@builder.github_login, committed_at: week_start - 2.days)
     create_observation(@builder.github_login, committed_at: week_start, repo_full_name: "owner/one")
     create_observation(@builder.github_login, committed_at: week_start + 1.day, repo_full_name: "owner/two", is_merge: true)
@@ -58,7 +59,7 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
   end
 
   test "caches builder commit counts by explicit weekly range" do
-    week_start = Date.new(2026, 6, 8)
+    week_start = Date.new(2026, 6, 6)
     create_observation(@builder.github_login, committed_at: week_start - 7.days)
     first_commit = create_observation(@builder.github_login, committed_at: week_start + 1.day, repo_full_name: "owner/one")
     second_commit = create_observation(@builder.github_login, committed_at: week_start + 2.days, repo_full_name: "owner/two", is_bot: true)
@@ -70,8 +71,8 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
       tracked_github_builder: @builder,
       github_commit_range: range
     )
-    assert_equal Date.new(2026, 6, 14), range.week_end_date
-    assert_equal "Jun 8 - Jun 14", range.label
+    assert_equal Date.new(2026, 6, 12), range.week_end_date
+    assert_equal "Jun 12, 2026", range.label
     assert_equal 2, cache.commits_count
     assert_equal 2, cache.non_merge_commits_count
     assert_equal 1, cache.bot_adjusted_commits_count
@@ -81,7 +82,7 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
   end
 
   test "dedupes overlapping observations with the same sha for a builder" do
-    week_start = Date.new(2026, 6, 8)
+    week_start = Date.new(2026, 6, 6)
     duplicate_sha = SecureRandom.hex(20)
     create_observation(
       @builder.github_login,

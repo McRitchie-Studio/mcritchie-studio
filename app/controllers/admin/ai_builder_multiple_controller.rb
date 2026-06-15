@@ -5,7 +5,7 @@ module Admin
     def index
       @limit = [[params.fetch(:limit, 26).to_i, 1].max, 52].min
       @builder_limit = [[params.fetch(:builder_limit, 100).to_i, 1].max, 1_000].min
-      @index_weeks = GithubBuilderIndexWeek.recent.limit(@limit).to_a
+      @index_weeks = report_index_weeks.first(@limit)
       @chart_weeks = @index_weeks.reverse
       @latest_week = @index_weeks.first&.week_start_date
       @observed_through_date = GithubCommitObservation.maximum(:committed_at)&.to_date
@@ -65,15 +65,10 @@ module Admin
       return [] unless @builder_metrics_week
 
       GithubCommitRange
-        .where(week_start_date: first_monday_of_year(@builder_metrics_week)..@builder_metrics_week)
+        .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..@builder_metrics_week)
         .recent
         .to_a
-    end
-
-    def first_monday_of_year(date)
-      current = Date.new(date.year, 1, 1)
-      current += 1.day until current.monday?
-      current
+        .select { |range| range.week_start_date.saturday? }
     end
 
     def commit_log_rows
@@ -98,25 +93,21 @@ module Admin
     end
 
     def overview_summary
-      total_index_weeks = GithubBuilderIndexWeek.count
-      complete_index_scope = GithubBuilderIndexWeek
-        .where.not(ai_builder_multiple: nil)
-        .where.not(control_builder_multiple: nil)
-        .where.not(difficulty_adjusted_ai_builder_multiple: nil)
-      complete_index_weeks = complete_index_scope.count
-      latest_complete_week = complete_index_scope.recent.first
+      total_index_weeks = report_index_weeks.size
+      complete_index_weeks = report_index_weeks.count(&:complete?)
+      latest_complete_week = report_index_weeks.find(&:complete?)
 
       {
         active_builders_count: TrackedGithubBuilder.active.count,
         active_repos_count: TrackedGithubBuilderRepo.active.count,
         commit_observations_count: GithubCommitObservation.count,
-        weekly_metrics_count: GithubBuilderWeeklyMetric.count,
+        weekly_metrics_count: report_weekly_metrics_count,
         index_weeks_count: total_index_weeks,
         complete_index_weeks_count: complete_index_weeks,
         incomplete_index_weeks_count: total_index_weeks - complete_index_weeks,
         latest_complete_week_start_date: latest_complete_week&.week_start_date,
         latest_observed_commit_at: GithubCommitObservation.maximum(:committed_at),
-        last_index_update_at: GithubBuilderIndexWeek.maximum(:updated_at)
+        last_index_update_at: report_index_weeks.filter_map(&:updated_at).max
       }
     end
 
@@ -150,6 +141,21 @@ module Admin
       TrackedGithubBuilder.active.includes(:tracked_github_builder_repos).to_a.sort_by do |builder|
         [-recent_totals.fetch(builder.id, 0).to_i, builder.cohort, builder.github_login]
       end
+    end
+
+    def report_index_weeks
+      @report_index_weeks ||= GithubBuilderIndexWeek
+        .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..)
+        .recent
+        .to_a
+        .select { |week| week.week_start_date.saturday? }
+    end
+
+    def report_weekly_metrics_count
+      GithubBuilderWeeklyMetric
+        .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..)
+        .pluck(:week_start_date)
+        .count(&:saturday?)
     end
 
     def index_week_json(week)

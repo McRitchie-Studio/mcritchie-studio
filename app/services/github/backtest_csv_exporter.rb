@@ -84,9 +84,11 @@ module Github
       CSV.open(path, "w") do |csv|
         csv << WEEKLY_COLUMNS
         GithubBuilderWeeklyMetric
-          .where(week_start_date: start_date.beginning_of_week(:monday)..end_date.beginning_of_week(:monday))
+          .where(week_start_date: report_week_range(start_date, end_date))
           .order(:week_start_date, :cohort, :github_login)
           .each do |metric|
+            next unless report_week?(metric.week_start_date)
+
             csv << WEEKLY_COLUMNS.map { |column| metric.public_send(column) }
           end
       end
@@ -100,12 +102,14 @@ module Github
         GithubBuilderCommitRangeCache
           .joins(:github_commit_range)
           .where(github_commit_ranges: {
-            week_start_date: start_date.beginning_of_week(:monday)..end_date.beginning_of_week(:monday)
+            week_start_date: report_week_range(start_date, end_date)
           })
           .order("github_commit_ranges.week_start_date ASC", :cohort, :github_login)
           .includes(:github_commit_range)
           .each do |cache|
             range = cache.github_commit_range
+            next unless report_week?(range.week_start_date)
+
             csv << [
               range.week_start_date,
               range.week_end_date,
@@ -132,9 +136,11 @@ module Github
       CSV.open(path, "w") do |csv|
         csv << INDEX_COLUMNS
         GithubBuilderIndexWeek
-          .where(week_start_date: start_date.beginning_of_week(:monday)..end_date.beginning_of_week(:monday))
+          .where(week_start_date: report_week_range(start_date, end_date))
           .order(:week_start_date)
           .each do |week|
+            next unless report_week?(week.week_start_date)
+
             csv << INDEX_COLUMNS.map { |column| week.public_send(column) }
           end
       end
@@ -163,6 +169,15 @@ module Github
 
     def parse_date(value)
       value.is_a?(Date) ? value : Date.parse(value.to_s)
+    end
+
+    def report_week_range(start_date, end_date)
+      Github::BuilderWeeklyAggregator.week_start_for(start_date)..Github::BuilderWeeklyAggregator.week_start_for(end_date)
+    end
+
+    def report_week?(week_start_date)
+      week_start_date.to_date.saturday? &&
+        week_start_date >= Github::BuilderWeeklyAggregator::REPORT_START_DATE
     end
   end
 end

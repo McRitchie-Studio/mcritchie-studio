@@ -6,9 +6,9 @@ a builder-activity index, not a productivity measure.
 ## Metric
 
 - **Builder Weekly Commits** — public commits attributed to a tracked GitHub
-  login during a Monday-starting week.
-- **Commit Range** — the explicit Monday-Sunday period used for the displayed
-  weekly commit log, for example `Jun 8 - Jun 14`.
+  login during a Saturday-Friday UTC week.
+- **Commit Range** — the explicit Saturday-Friday UTC period used for the
+  displayed weekly commit log. Dashboard headers show the Friday end date.
 - **Builder Baseline** — average weekly non-merge commits over the prior 90
   days before that week.
 - **Builder Multiple** — non-merge weekly commits divided by that builder's
@@ -39,7 +39,7 @@ later.
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
 ```bash
-GITHUB_TOKEN=github_pat_... bin/rails github:ai_builder_multiple:backtest START=2025-06-01 END=2026-06-01
+GITHUB_TOKEN=github_pat_... bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12
 ```
 
 Do not print or commit the token. Store long-lived credentials in 1Password.
@@ -47,7 +47,7 @@ Do not print or commit the token. Store long-lived credentials in 1Password.
 ## Running A Backtest
 
 ```bash
-bin/rails github:ai_builder_multiple:backtest START=2025-06-01 END=2026-06-01
+bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12
 ```
 
 Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` to fetch a targeted
@@ -63,7 +63,7 @@ control-candidate pool:
 
 ```bash
 bin/rails github:ai_builder_multiple:import_paulmillr_active_users MAX=910
-bin/rails github:ai_builder_multiple:backtest START=2026-01-05 END=2026-06-14 SKIP_FETCH=1
+bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12 SKIP_FETCH=1
 ```
 
 The runner fetches a 90-day warmup before `START` so the first target week can
@@ -72,8 +72,8 @@ do not duplicate commit observations.
 
 The aggregator also writes `GithubCommitRange` rows and
 `GithubBuilderCommitRangeCache` rows. These are the dashboard-facing weekly
-commit log: one cached builder/range row per tracked builder per Monday-Sunday
-period, including zero-commit weeks.
+commit log: one cached builder/range row per tracked builder per
+Saturday-Friday UTC period, including zero-commit weeks.
 
 CSV exports are written to:
 

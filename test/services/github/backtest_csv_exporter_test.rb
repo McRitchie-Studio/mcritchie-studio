@@ -11,7 +11,7 @@ class Github::BacktestCsvExporterTest < ActiveSupport::TestCase
   end
 
   test "exports weekly metrics, range caches, index weeks, and commit observation sample" do
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     builder = TrackedGithubBuilder.create!(
       github_login: "builder",
       cohort: "ai_builder",

@@ -20,10 +20,10 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     body = JSON.parse(response.body)
     assert_equal "Public GitHub commit pace and builder activity only; this does not measure true productivity.", body.dig("data", "caveat")
-    assert_equal "2026-06-01", body.dig("data", "latest_week_start_date")
+    assert_equal "2026-06-06", body.dig("data", "latest_week_start_date")
     assert_equal 1, body.dig("data", "index_weeks").size
     assert_equal 1, body.dig("data", "latest_builder_weekly_metrics").size
-    assert_equal "Jun 1 - Jun 7", body.dig("data", "commit_log", "ranges", 0, "label")
+    assert_equal "Jun 12, 2026", body.dig("data", "commit_log", "ranges", 0, "label")
     builder_row = body.dig("data", "commit_log", "rows").find { |row| row["github_login"] == "builder" }
     assert_equal 2, builder_row.dig("ranges", 0, "commits_count")
   end
@@ -40,7 +40,8 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "Weekly Commit Log"
     assert_select "h2", "Latest Full Builder Weekly Metrics"
     assert_select "h2", "Tracked Builders"
-    assert_select "th", "Jun 1 - Jun 7 commits"
+    assert_select "th", "Jun 12"
+    assert_no_match "Jun 6 - Jun 12", response.body
     assert_select "p", /does not measure true productivity/
     assert_select "a[href=?]", "#commit-log", "Commit Log"
     assert_select "a[href=?]", "#tracked-builders", "Tracked Builders"
@@ -77,7 +78,7 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
   private
 
   def create_backtest_snapshot
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     builder = TrackedGithubBuilder.create!(github_login: "builder", cohort: "ai_builder", active: true)
     builder.tracked_github_builder_repos.create!(repo_full_name: "example/repo", active: true)
     GithubCommitObservation.create!(

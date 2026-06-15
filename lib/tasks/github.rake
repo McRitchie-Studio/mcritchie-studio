@@ -1,12 +1,12 @@
 namespace :github do
   namespace :ai_builder_multiple do
-    desc "Run the AI Builder Multiple backtest. START=2025-06-01 END=2026-06-01 [MIN_COHORT_SIZE=5] [LOGIN=github_login] [SKIP_FETCH=1]"
+    desc "Run the AI Builder Multiple backtest. START=2021-07-24 END=2026-06-12 [MIN_COHORT_SIZE=5] [LOGIN=github_login] [SKIP_FETCH=1]"
     task backtest: :environment do
       start_date = ENV.fetch("START") do
-        abort "START is required, for example START=2025-06-01"
+        abort "START is required, for example START=2021-07-24"
       end
       end_date = ENV.fetch("END") do
-        abort "END is required, for example END=2026-06-01"
+        abort "END is required, for example END=2026-06-12"
       end
 
       minimum_cohort_size = ENV.fetch("MIN_COHORT_SIZE", Github::BuilderIndexCalculator::DEFAULT_MINIMUM_COHORT_SIZE).to_i

@@ -3,6 +3,9 @@ require "bigdecimal"
 module Github
   class BuilderWeeklyAggregator
     BASELINE_DAYS = 90
+    REPORT_START_DATE = Date.new(2021, 7, 24)
+    WEEK_START_WDAY = 6 # Saturday, using Ruby Date#wday.
+    WEEK_LENGTH_DAYS = 7
 
     def aggregate!(start_date:, end_date:)
       start_date = parse_date(start_date)
@@ -23,7 +26,8 @@ module Github
     end
 
     def self.week_start_for(value)
-      value.to_date.beginning_of_week(:monday)
+      date = value.to_date
+      date - ((date.wday - WEEK_START_WDAY) % WEEK_LENGTH_DAYS)
     end
 
     def self.week_starts_between(start_date, end_date)
@@ -40,7 +44,7 @@ module Github
     private
 
     def upsert_metric(builder, week_start, end_date, observations)
-      target_end = [week_start + 7, end_date + 1].min
+      target_end = [week_start + WEEK_LENGTH_DAYS, end_date + 1].min
       target = select_between(observations, week_start, target_end)
       baseline = select_between(observations, week_start - BASELINE_DAYS, week_start)
 
@@ -108,8 +112,8 @@ module Github
     end
 
     def observations_for(builder, start_date, end_date)
-      start_time = start_date.beginning_of_day
-      end_time = end_date.end_of_day
+      start_time = utc_start_of_day(start_date)
+      end_time = utc_end_of_day(end_date)
 
       GithubCommitObservation.for_login(builder.github_login)
         .where(
@@ -124,9 +128,17 @@ module Github
 
     def select_between(observations, start_date, end_date)
       observations.select do |observation|
-        observed_date = observation.observed_at.to_date
+        observed_date = observation.observed_at.in_time_zone("UTC").to_date
         observed_date >= start_date && observed_date < end_date
       end
+    end
+
+    def utc_start_of_day(date)
+      Time.utc(date.year, date.month, date.day)
+    end
+
+    def utc_end_of_day(date)
+      utc_start_of_day(date) + 1.day - 1.second
     end
 
     def weekly_average(count)

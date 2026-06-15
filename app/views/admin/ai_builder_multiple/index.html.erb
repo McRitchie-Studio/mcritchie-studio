@@ -187,13 +187,13 @@
         <div>
           <h2 class="text-lg font-bold text-heading">Weekly Commit Log</h2>
           <p class="text-sm text-secondary">
-            Monday-Sunday public commit counts cached by builder for each metric range.
+            Saturday-Friday UTC public commit counts cached by builder for each metric range.
           </p>
         </div>
         <% if @commit_log_ranges.any? %>
           <span class="text-xs text-muted whitespace-nowrap">
             Top <%= ai_count(@commit_log_rows.size) %> of <%= ai_count(@overview[:active_builders_count]) %> active ·
-            <%= @commit_log_ranges.last.display_label %> through <%= @commit_log_ranges.first.display_label %>
+            <%= ai_date(@commit_log_ranges.last.week_end_date) %> through <%= ai_date(@commit_log_ranges.first.week_end_date) %>
           </span>
         <% end %>
       </div>
@@ -208,8 +208,7 @@
               <th class="text-left py-3 px-4 min-w-28">Cohort</th>
               <% @commit_log_ranges.each do |range| %>
                 <th class="text-right py-3 px-3 min-w-24">
-                  <span class="block normal-case tracking-normal text-secondary"><%= range.display_label %></span>
-                  <span class="block text-[10px] text-muted mt-0.5">commits</span>
+                  <span class="block normal-case tracking-normal text-secondary" title="<%= range.display_label %>"><%= ai_short_date(range.week_end_date) %></span>
                 </th>
               <% end %>
             </tr>
