@@ -29,6 +29,7 @@ Examples:
 ## Parallel Ports
 
 Worktree and temporary stacks use the app's next port in its range.
+Ports are allocated by the worktree launcher, not guessed by the agent.
 
 Examples:
 
@@ -46,6 +47,11 @@ bin/agent-worktree up turf-monster task-slug
 ```
 
 Keep callback-heavy flows on the primary stack unless the external provider has been configured for the alternate port.
+
+For parallel work, primary ports (`3000`, `3100`, `3200`) are stable review and
+callback lanes. Worktree ports (`3001+`, `3101+`, `3201+`) are isolated desks
+for agents to build, test, and hand back URLs without moving another agent's
+ground.
 
 ## Known Callback Commands
 

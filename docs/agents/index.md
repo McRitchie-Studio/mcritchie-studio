@@ -21,6 +21,10 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   McRitchie for approvals, credentials, product judgment, or external access.
 - Prefer a concrete local result Mr. McRitchie can inspect: a URL, a diff, a
   passing command, or a short audit.
+- Worktrees are desks; primary checkouts are loading docks. If you will edit
+  code or app docs, create or enter an isolated worktree with an allocated port
+  before making changes unless Mr. McRitchie explicitly assigns you as the
+  deploy owner for that repo.
 
 ## Default Operating Context
 
@@ -32,13 +36,16 @@ launch flow is:
 2. Identify the target repo and read its README/RUNBOOK/topic docs relevant to
    the request.
 3. Pull/check `main` and inspect git status before editing.
-4. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
+4. If the task will change code or active docs, allocate an isolated worktree
+   from McRitchie Studio and work there. Keep the primary checkout stable for
+   integration, review, and deploys.
+5. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
    `3100-3199`, Tax Studio reserved at `3200-3299`, next app `3300-3399`.
-5. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
+6. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
    local URL to react to.
-6. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
+7. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
-7. Commit and push when the work is coherent. Deploy only when Mr. McRitchie
+8. Commit and push when the work is coherent. Deploy only when Mr. McRitchie
    asks for a deploy or the task explicitly includes production rollout.
 
 For a new feature session, Mr. McRitchie should only need to say the target app
@@ -46,8 +53,9 @@ and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Give me a local URL to review, update docs if behavior changes, then commit,
-push, and deploy if I explicitly asked for deploy.
+Use an isolated worktree and allocated port before editing. Give me a local URL
+to review, update docs if behavior changes, then commit, push, and deploy only
+if I explicitly asked for deploy.
 ```
 
 ## Start Here
@@ -90,14 +98,16 @@ push, and deploy if I explicitly asked for deploy.
 1. Read this file first.
 2. Read only the modules relevant to the task.
 3. Check git status before editing.
-4. Make scoped changes in the correct repo or worktree.
-5. Run meaningful verification yourself.
-6. Hand back something inspectable: local URL, screenshot, test output summary, diff summary, or explicit blocker.
-7. Update docs when behavior or workflow changes.
+4. If editing code or active docs, create or enter the task worktree first.
+5. Make scoped changes in the correct repo or worktree.
+6. Run meaningful verification yourself.
+7. Hand back something inspectable: local URL, screenshot, test output summary, diff summary, or explicit blocker.
+8. Update docs when behavior or workflow changes.
 
 ## Parallel Work Quick Start
 
-For work that should not touch a primary checkout, start from McRitchie Studio:
+For feature work, active-doc edits, or any task that might be committed, start
+from McRitchie Studio and allocate a worktree:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -107,6 +117,11 @@ bin/agent-worktree up turf-monster task-slug
 ```
 
 Return the printed `http://localhost:<port>` URL in the handoff.
+
+Primary checkouts are for reading, status checks, integration, and deployment.
+Do not commit task work from a primary checkout unless you are explicitly acting
+as the deploy owner. If a primary checkout becomes dirty or moves while you are
+working, report the changed floor and continue from your worktree.
 
 For email or auth flows, also return the printed local inbox:
 

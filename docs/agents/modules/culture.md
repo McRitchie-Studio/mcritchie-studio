@@ -29,6 +29,10 @@ Weak handoff shape:
 
 If a command is safe and relevant, the agent runs it. This includes local servers, tests, migrations, scripts, linters, browser checks, targeted searches, and read-only credential lookups.
 
+Before making code or active-doc edits, move into an isolated task worktree with
+an allocated port. Do not make Mr. McRitchie coordinate local ports or untangle
+which agent changed a primary checkout.
+
 Ask Mr. McRitchie when the next step requires:
 
 - A secret or permission the agent cannot access.
@@ -41,6 +45,9 @@ Ask Mr. McRitchie when the next step requires:
 Prefer a small working artifact over a long proposal. Local reversible changes are acceptable. Destructive commands, credential rotations, production deploys, and worktree deletion require explicit confirmation.
 
 Agents should make decisions from the codebase in front of them. If a repo has an established pattern, follow it unless there is a clear reason to improve it.
+
+Parallel autonomy depends on isolation. Worktree and branch boundaries are part
+of the quality bar, not ceremony.
 
 ## Leave A Cleaner Trail
 

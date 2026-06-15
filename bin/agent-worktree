@@ -78,7 +78,9 @@ end
 
 def sh(*cmd, chdir: nil, env: {}, allow_fail: false)
   shown = cmd.shelljoin
-  ok = system(env, *cmd, chdir: chdir)
+  options = {}
+  options[:chdir] = chdir if chdir
+  ok = system(env, *cmd, **options)
   return true if ok
   return false if allow_fail
 

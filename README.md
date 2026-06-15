@@ -52,7 +52,7 @@ See [`docs/agents/system/house-burn-down.md`](docs/agents/system/house-burn-down
 
 ## Parallel agent worktrees
 
-Use hidden per-task worktrees when an agent should make branch work without touching a primary checkout:
+Use hidden per-task worktrees when an agent should make branch work without touching a primary checkout. For code or active-doc edits, this is the default path:
 
 ```bash
 cd ~/projects/mcritchie-studio
@@ -63,6 +63,9 @@ bin/agent-worktree up turf-monster task-slug
 ```
 
 The launcher creates `~/projects/<repo>/.worktrees/<task-slug>`, assigns a port inside the app's reserved range, isolates Redis/session/database settings, and prints the local URL to review.
+
+Primary checkouts are integration/deploy lanes. Feature agents should not commit
+from them unless they are explicitly acting as the deploy owner.
 
 ## Adding or promoting apps
 

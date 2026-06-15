@@ -1,6 +1,8 @@
 # Worktrees
 
 Parallel agents should use git worktrees rather than sharing one checkout.
+The default for any code or active-doc edit is to work in an isolated worktree
+with an allocated port.
 
 ## Current Direction
 
@@ -14,6 +16,32 @@ Preferred layout:
 ```
 
 Do not include an agent id in the path. Tasks can transfer between agents, and multiple agents may collaborate on one branch.
+
+Think of worktrees as desks and primary checkouts as loading docks. Agents do
+feature work at desks. The primary checkout stays stable for reading,
+integration, final merge, and deploy.
+
+## Startup Rule
+
+When a new agent session starts actual implementation work:
+
+1. Identify the target app and a task slug.
+2. Inspect the primary checkout only for status and context.
+3. Run `bin/agent-worktree plan <app> <task-slug>`.
+4. Run `bin/agent-worktree new <app> <task-slug>`.
+5. Run `bin/agent-worktree up <app> <task-slug>` when a browser or local URL is
+   needed.
+6. Make edits only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
+7. Return the branch, worktree path, URL, tests, and merge/deploy recommendation
+   in the handoff.
+
+Exceptions:
+
+- Pure read-only audit or exploration can stay in the primary checkout.
+- The explicit deploy owner may use the primary checkout for integration,
+  version bumps, deploy commits, and production rollout.
+- Emergency fixes can use the fastest safe path, but the handoff must say why
+  the worktree path was skipped.
 
 ## Launcher
 
@@ -59,9 +87,27 @@ Deletion remains manual and approval-gated:
 
 - Branch from current `origin/main`.
 - One task branch per worktree.
-- Never commit task work on the primary `main` checkout.
+- Never commit task work on the primary `main` checkout unless you are the
+  explicit deploy owner for that repo.
+- If the primary checkout is dirty, ahead, or moves while you are working, treat
+  it as shared-floor drift. Do not fold those changes into your task silently.
+  Report it and continue from the isolated worktree.
 - Do not remove a worktree until its branch/PR status is known.
 - Log stale worktrees in [`../maintenance/delete-later.md`](../maintenance/delete-later.md) before deleting them.
+
+## Handoff Contract
+
+A feature-agent handoff should include:
+
+- App, task slug, branch, and worktree path.
+- Local review URL and local inbox URL when a server was started.
+- Tests/checks run and their result.
+- Files or behavior changed at a high level.
+- Whether the branch is ready for review, needs another agent, or needs deploy
+  owner integration.
+
+Do not leave Mr. McRitchie with "run these commands." Start the stack, prove the
+URL, and name any blocker that truly needs owner action.
 
 ## Ports
 
