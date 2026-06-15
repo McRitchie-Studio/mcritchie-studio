@@ -65,6 +65,35 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     refute_includes ranges.map { |range| range["week_start_date"] }, "2025-11-22"
   end
 
+  test "index includes latest cached range even before index rows are calculated" do
+    log_in_as(@admin)
+    create_backtest_snapshot
+    builder = TrackedGithubBuilder.find_by!(github_login: "builder")
+    current_range = GithubCommitRange.for_week_start(Date.new(2026, 6, 13))
+    GithubBuilderCommitRangeCache.create!(
+      tracked_github_builder: builder,
+      github_commit_range: current_range,
+      github_login: builder.github_login,
+      cohort: builder.cohort,
+      commits_count: 4,
+      non_merge_commits_count: 4,
+      bot_adjusted_commits_count: 4,
+      active_repos_count: 1,
+      commit_shas: ["def456"],
+      cached_at: Time.current
+    )
+
+    get admin_ai_builder_multiple_path(format: :json)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "2026-06-13", body.dig("data", "commit_log", "ranges", 0, "week_start_date")
+    assert_equal "Jun 19, 2026", body.dig("data", "commit_log", "ranges", 0, "label")
+    builder_row = body.dig("data", "commit_log", "rows").find { |row| row["github_login"] == "builder" }
+    assert_equal 4, builder_row.dig("ranges", 0, "commits_count")
+    assert_equal true, builder_row.dig("ranges", 0, "cached")
+  end
+
   test "commit history renders the full cached range table" do
     log_in_as(@admin)
     create_commit_cache_history(weeks: 10)

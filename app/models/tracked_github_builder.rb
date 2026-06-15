@@ -22,20 +22,20 @@ class TrackedGithubBuilder < ApplicationRecord
     display_name.presence || github_login
   end
 
-  def current_week_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
-    fetch_commits_for_window(Github::CommitFetchWindows.current_week(today: today), fetcher: fetcher)
+  def current_week_commits(fetcher: Github::CommitFetcher.new, aggregator: Github::BuilderWeeklyAggregator.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.current_week(today: today), fetcher: fetcher, aggregator: aggregator)
   end
 
-  def last_week_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
-    fetch_commits_for_window(Github::CommitFetchWindows.last_week(today: today), fetcher: fetcher)
+  def last_week_commits(fetcher: Github::CommitFetcher.new, aggregator: Github::BuilderWeeklyAggregator.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.last_week(today: today), fetcher: fetcher, aggregator: aggregator)
   end
 
-  def last_year_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
-    fetch_commits_for_window(Github::CommitFetchWindows.last_year(today: today), fetcher: fetcher)
+  def last_year_commits(fetcher: Github::CommitFetcher.new, aggregator: Github::BuilderWeeklyAggregator.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.last_year(today: today), fetcher: fetcher, aggregator: aggregator)
   end
 
-  def last_five_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
-    fetch_commits_for_window(Github::CommitFetchWindows.last_five_years(today: today), fetcher: fetcher)
+  def last_five_commits(fetcher: Github::CommitFetcher.new, aggregator: Github::BuilderWeeklyAggregator.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.last_five_years(today: today), fetcher: fetcher, aggregator: aggregator)
   end
   alias_method :last_five_years_commits, :last_five_commits
 
@@ -64,8 +64,10 @@ class TrackedGithubBuilder < ApplicationRecord
 
   private
 
-  def fetch_commits_for_window(window, fetcher:)
-    fetcher.fetch_for_builder(builder: self, start_date: window.begin, end_date: window.end)
+  def fetch_commits_for_window(window, fetcher:, aggregator:)
+    result = fetcher.fetch_for_builder(builder: self, start_date: window.begin, end_date: window.end)
+    aggregator.aggregate!(start_date: window.begin, end_date: window.end, github_logins: github_login)
+    result
   end
 
   def normalize_github_login

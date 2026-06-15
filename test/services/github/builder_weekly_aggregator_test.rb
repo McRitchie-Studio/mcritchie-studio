@@ -110,6 +110,42 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
     assert_equal 1, cache.active_repos_count
   end
 
+  test "can aggregate a targeted builder without refreshing every active builder" do
+    other_builder = TrackedGithubBuilder.create!(
+      github_login: "other-builder",
+      cohort: "control_builder",
+      display_name: "Other Builder"
+    )
+    week_start = Date.new(2026, 6, 6)
+    create_observation(@builder.github_login, committed_at: week_start)
+    create_observation(other_builder.github_login, committed_at: week_start)
+
+    Github::BuilderWeeklyAggregator.new.aggregate!(
+      start_date: week_start,
+      end_date: week_start + 6.days,
+      github_logins: @builder.github_login.upcase
+    )
+
+    assert GithubBuilderWeeklyMetric.exists?(
+      github_login: @builder.github_login,
+      week_start_date: week_start
+    )
+    refute GithubBuilderWeeklyMetric.exists?(
+      github_login: other_builder.github_login,
+      week_start_date: week_start
+    )
+
+    range = GithubCommitRange.find_by!(week_start_date: week_start)
+    assert GithubBuilderCommitRangeCache.exists?(
+      tracked_github_builder: @builder,
+      github_commit_range: range
+    )
+    refute GithubBuilderCommitRangeCache.exists?(
+      tracked_github_builder: other_builder,
+      github_commit_range: range
+    )
+  end
+
   private
 
   def create_observation(github_login, committed_at:, repo_full_name: "owner/repo", is_merge: false, is_bot: false, source_strategy: "repo_scoped", sha: SecureRandom.hex(20))

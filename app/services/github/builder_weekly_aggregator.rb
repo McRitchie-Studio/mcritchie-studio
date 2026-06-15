@@ -7,13 +7,15 @@ module Github
     WEEK_START_WDAY = 6 # Saturday, using Ruby Date#wday.
     WEEK_LENGTH_DAYS = 7
 
-    def aggregate!(start_date:, end_date:)
+    def aggregate!(start_date:, end_date:, github_logins: nil)
       start_date = parse_date(start_date)
       end_date = parse_date(end_date)
       weeks = self.class.week_starts_between(start_date, end_date)
       count = 0
+      builder_scope = TrackedGithubBuilder.active
+      builder_scope = builder_scope.where(github_login: normalize_logins(github_logins)) if github_logins.present?
 
-      TrackedGithubBuilder.active.find_each do |builder|
+      builder_scope.find_each do |builder|
         observations = observations_for(builder, weeks.first - BASELINE_DAYS, end_date)
 
         weeks.each do |week_start|
@@ -159,6 +161,12 @@ module Github
 
     def parse_date(value)
       value.is_a?(Date) ? value : Date.parse(value.to_s)
+    end
+
+    def normalize_logins(logins)
+      Array(logins).flat_map { |login| login.to_s.split(",") }
+        .map { |login| login.strip.downcase }
+        .reject(&:blank?)
     end
 
     def dedupe_observations(observations)

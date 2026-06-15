@@ -77,7 +77,10 @@ TrackedGithubBuilder.last_week_commits("amcritchie")
 
 The fetch windows use the same Saturday-Friday UTC calendar as the dashboard.
 `last_five_commits` is the five-year report window, starting `2021-07-24` and
-ending at the latest complete Friday.
+ending at the latest complete Friday. Each helper stores raw commit
+observations and refreshes that builder's `GithubBuilderWeeklyMetric` plus
+`GithubBuilderCommitRangeCache` rows for the requested window, so the dashboard
+commit log can show the result immediately.
 
 Two task shortcuts fetch common windows and then recalculate metrics/index rows
 and CSV exports for that window:

@@ -87,14 +87,25 @@ module Admin
     end
 
     def commit_log_ranges(limit:)
-      return [] unless @builder_metrics_week
+      end_week = commit_log_end_week
+      return [] unless end_week
 
       ranges = GithubCommitRange
-        .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..@builder_metrics_week)
+        .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..end_week)
         .recent
         .to_a
         .select { |range| range.week_start_date.saturday? }
       limit.present? ? ranges.first(limit) : ranges
+    end
+
+    def commit_log_end_week
+      [@builder_metrics_week, latest_cached_range_week_start].compact.max
+    end
+
+    def latest_cached_range_week_start
+      GithubCommitRange
+        .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..)
+        .maximum(:week_start_date)
     end
 
     def commit_log_rows
