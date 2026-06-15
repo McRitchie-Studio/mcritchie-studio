@@ -1,0 +1,32 @@
+<%
+  status = email_delivery_banner_status
+  sends_email = status.include?("EMAIL SEND true")
+  transport = status.split("·").last.to_s.strip.downcase
+  provider_label = case transport
+                   when "ses" then "SES"
+                   when "resend" then "Resend"
+                   else "?"
+                   end
+  provider_style = case transport
+                   when "ses"
+                     "background:#232f3e; color:#ff9900"
+                   when "resend"
+                     "background:#000000; color:#ffffff"
+                   else
+                     "background:#e5e7eb; color:#111827"
+                   end
+  status_icon = sends_email ? "✅" : "❌"
+  title = "Email sending #{sends_email ? "enabled" : "disabled"} via #{transport.presence || "unknown"}"
+%>
+
+<%= link_to "/_studio/local_emails",
+            class: "inline-flex items-center font-semibold rounded px-3 py-1 whitespace-nowrap gap-2",
+            style: "background:#ffffff; color:#92400e; text-decoration:none;",
+            title: title,
+            "aria-label": title do %>
+  <span>Email</span>
+  <span aria-hidden="true"><%= status_icon %></span>
+  <span aria-hidden="true"
+        class="inline-flex items-center rounded px-1.5 leading-5"
+        style="<%= provider_style %>; font-size:10px; font-weight:800; min-width:20px; justify-content:center;"><%= provider_label %></span>
+<% end %>
