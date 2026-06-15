@@ -60,7 +60,8 @@ Current Heroku-generated fallback URLs:
 Provision each QA app once with `bin/qa-server provision <app> --yes`. The
 helper creates the Heroku app, attaches the app-owned QA addons, sets non-secret
 registry config, copies required secret values from the app's local `.env` or
-process env without printing values, and adds the custom Heroku domain.
+process env without printing values, adds the custom Heroku domain, and enables
+Heroku Automated Certificate Management for HTTPS.
 
 After `provision`, run `bin/qa-server status <app>` and create the required DNS
 `CNAME` for each QA hostname to the Heroku DNS target that status reports. The
