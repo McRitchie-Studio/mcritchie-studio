@@ -23,10 +23,10 @@ through Resend on the verified `mcritchie.studio` domain.
 | App | Heroku app | Current safe transport | Notes |
 |-----|------------|------------------------|-------|
 | McRitchie Studio | `mcritchie-studio` | Resend fallback | `MAIL_TRANSPORT` remains unset or non-SES while SES is sandboxed. |
-| Turf Monster | `turf-monster-mainnet` | Resend fallback | Release `v92` proved `transport=Resend from=McRitchie Studio <team@mcritchie.studio>` on Heroku-26. |
+| Turf Monster | `turf-monster-mainnet` | Resend fallback | Release `v93` proved `transport=Resend from=McRitchie Studio <team@mcritchie.studio>` on Heroku-26. |
 
 Updated 2026-06-14: consumer deploys now run `studio-engine 0.5.9`. Turf
-Monster release `v92` re-proved the shared mail boot path and successful
+Monster release `v93` re-proved the shared mail boot path and successful
 production fallback posture during the Heroku-26 rebuild. Keep Resend configured
 until SES has production access and a stability window.
 

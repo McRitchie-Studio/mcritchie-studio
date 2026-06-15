@@ -61,7 +61,7 @@ Stale active docs were corrected:
   `studio-engine` release before shared mail proof. The current state is
   `studio-engine 0.5.9` adopted, with McRitchie production now using Solid
   Queue for durable jobs.
-- Turf email docs now point at release `v92` for the current Resend fallback
+- Turf email docs now point at release `v93` for the current Resend fallback
   and Heroku-26 production proof.
 - Turf runbook contest lifecycle language now matches the actual `pending`,
   `open`, `settled` app statuses and the derived lock model.
@@ -99,13 +99,14 @@ production/presetup fallback.
 
 McRitchie Studio is pinned to Ruby `3.3.11` and Node `22.x`, deploys with
 `heroku/nodejs` before `heroku/ruby`, and is live on Heroku-26 at release
-`v58` / commit `4a5c265`. Web and `worker=1` dynos are up, and
+`v59` / commit `bc38c5b`. Web and `worker=1` dynos are up, and
 `https://app.mcritchie.studio/up` returns `200`.
 
-Turf Monster was rebuilt with an empty operational commit so the uncommitted
-wallet/CDP local WIP stayed untouched. Release `v92` / commit `84ba917` is live
-on Heroku-26 with `heroku/nodejs` before `heroku/ruby`, Node `22.22.3`, Ruby
-`3.3.11`, web and Sidekiq worker dynos up, and
+Turf Monster first received an empty operational rebuild to apply Heroku-26
+without folding uncommitted local WIP into the stack migration. Steffon's
+follow-up hardening commit was then tested and deployed. Release `v93` / commit
+`37ca6ea` is live on Heroku-26 with `heroku/nodejs` before `heroku/ruby`, Node
+`22.22.3`, Ruby `3.3.11`, web and Sidekiq worker dynos up, and
 `https://app.turfmonster.media/up` returns `200`.
 
 The only remaining platform-adjacent warning is the familiar
@@ -163,11 +164,11 @@ Results:
 - McRitchie Studio sessions test: `4 runs, 14 assertions, 0 failures`.
 - McRitchie Studio Solid Queue follow-up: full Rails suite passed after moving
   production to Solid Queue: `577 runs, 1591 assertions, 0 failures, 4 skips`.
-- McRitchie Studio Heroku platform follow-up: release `v58` on Heroku-26,
+- McRitchie Studio Heroku platform follow-up: release `v59` on Heroku-26,
   Node/Ruby buildpacks ordered correctly, web and worker dynos up, `/up` `200`.
-- Turf Monster Heroku platform follow-up: release `v92` on Heroku-26, Node/Ruby
-  buildpacks ordered correctly, web and worker dynos up, `/up` `200`. The local
-  checkout still contains uncommitted wallet/CDP/contest WIP that was not part
-  of this operational rebuild.
+- Turf Monster Heroku platform follow-up: release `v93` on Heroku-26, Node/Ruby
+  buildpacks ordered correctly, web and worker dynos up, `/up` `200`. Focused
+  CDP/contest/vault tests passed for the hardening commit:
+  `148 runs, 647 assertions, 0 failures`.
 - Stale-string scan found the old OmniAuth GET guidance only in historical
   audit files, not active runtime docs.
