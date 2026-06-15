@@ -1,0 +1,134 @@
+<% content_for(:title, "Dashboard — Admin") %>
+
+<div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+  <header>
+    <h1 class="text-heading text-2xl font-bold mb-1">Admin Dashboard</h1>
+    <p class="text-muted text-sm">Users, request logs, and operator shortcuts.</p>
+  </header>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <%= render "quick_link", url: "#admin-users", label: "Users",
+          subtitle: "#{@user_count} total / #{@admin_count} admin", icon: "👥" %>
+    <%= render "quick_link", url: "#request-logs", label: "Request Logs",
+          subtitle: "#{@request_log_count} captured", icon: "🚨" %>
+    <%= render "quick_link", url: admin_signing_requests_path, label: "Signing Console",
+          subtitle: "keyless queue", icon: "⛓️" %>
+    <%= render "quick_link", url: admin_links_path, label: "Admin Links",
+          subtitle: "all destinations", icon: "✨" %>
+  </div>
+
+  <section id="admin-users" class="card overflow-hidden">
+    <div class="px-4 py-4 border-b border-subtle flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-heading text-lg font-semibold">Users</h2>
+        <p class="text-xs text-muted">Newest accounts first</p>
+      </div>
+      <span class="text-xs text-muted">Showing <%= @users.size %> of <%= @user_count %></span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table id="admin-users-table" class="w-full min-w-[760px] text-sm">
+        <thead class="bg-surface-alt text-muted text-xs uppercase tracking-wide">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold">User</th>
+            <th class="px-4 py-3 text-left font-semibold">Role</th>
+            <th class="px-4 py-3 text-left font-semibold">Auth</th>
+            <th class="px-4 py-3 text-left font-semibold">Created</th>
+            <th class="px-4 py-3 text-left font-semibold">Updated</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-subtle">
+          <% @users.each do |user| %>
+            <tr class="hover:bg-surface-alt/60 transition">
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-3">
+                  <%= render "components/avatar", user: user, size: "nav" %>
+                  <div class="min-w-0">
+                    <div class="font-semibold text-heading truncate"><%= user.display_name %></div>
+                    <div class="text-xs text-muted truncate">
+                      <%= user.email.presence || user.truncated_solana || "No email or wallet" %>
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center px-2 py-1 rounded text-[11px] font-bold uppercase <%= user.admin? ? 'bg-primary/15 text-primary' : 'bg-surface-alt text-secondary' %>">
+                  <%= user.role %>
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap gap-1.5">
+                  <% if user.email.present? %>
+                    <span class="px-2 py-0.5 rounded bg-surface-alt text-xs text-secondary">email</span>
+                  <% end %>
+                  <% if user.google_connected? %>
+                    <span class="px-2 py-0.5 rounded bg-surface-alt text-xs text-secondary">google</span>
+                  <% end %>
+                  <% if user.solana_connected? %>
+                    <span class="px-2 py-0.5 rounded bg-surface-alt text-xs text-secondary">wallet</span>
+                  <% end %>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-muted whitespace-nowrap"><%= time_ago_in_words(user.created_at) %> ago</td>
+              <td class="px-4 py-3 text-muted whitespace-nowrap"><%= time_ago_in_words(user.updated_at) %> ago</td>
+            </tr>
+          <% end %>
+          <% if @users.empty? %>
+            <tr>
+              <td colspan="5" class="px-4 py-10 text-center text-muted">No users yet.</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="request-logs" class="card overflow-hidden">
+    <div class="px-4 py-4 border-b border-subtle flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-heading text-lg font-semibold">Request Logs</h2>
+        <p class="text-xs text-muted">Recent captured request and application errors</p>
+      </div>
+      <%= link_to "View all", error_logs_path, class: "text-xs text-primary hover:underline" %>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table id="request-logs-table" class="w-full min-w-[820px] text-sm">
+        <thead class="bg-surface-alt text-muted text-xs uppercase tracking-wide">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold">When</th>
+            <th class="px-4 py-3 text-left font-semibold">Message</th>
+            <th class="px-4 py-3 text-left font-semibold">Target</th>
+            <th class="px-4 py-3 text-left font-semibold">Parent</th>
+            <th class="px-4 py-3 text-right font-semibold">Open</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-subtle">
+          <% @request_logs.each do |log| %>
+            <tr class="hover:bg-surface-alt/60 transition">
+              <td class="px-4 py-3 text-muted whitespace-nowrap"><%= time_ago_in_words(log.created_at) %> ago</td>
+              <td class="px-4 py-3">
+                <div class="font-medium text-heading truncate max-w-[26rem]"><%= log.message.presence || log.inspect_field %></div>
+                <div class="text-xs text-muted font-mono"><%= log.slug %></div>
+              </td>
+              <td class="px-4 py-3 text-muted">
+                <%= [log.target_type, log.target_name].compact_blank.join(" / ").presence || "—" %>
+              </td>
+              <td class="px-4 py-3 text-muted">
+                <%= [log.parent_type, log.parent_name].compact_blank.join(" / ").presence || "—" %>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <%= link_to "Open", error_log_path(log), class: "text-primary hover:underline" %>
+              </td>
+            </tr>
+          <% end %>
+          <% if @request_logs.empty? %>
+            <tr>
+              <td colspan="5" class="px-4 py-10 text-center text-muted">No request logs captured.</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

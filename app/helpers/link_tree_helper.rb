@@ -43,6 +43,7 @@ module LinkTreeHelper
           desc: "Keyless multisig — build, sign in your own Phantom, broadcast. Durable-nonce ready." },
       ] },
       { title: "Site", links: [
+        { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", desc: "Users + request logs" },
         { label: "Theme", href: admin_theme_path, emoji: "🎨", desc: "Palette + dark mode" },
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", desc: "DB schema browser" },
       ] },
