@@ -31,8 +31,9 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 | | `51_contents.rb` | 4 content items across stages |
 | | `52_tasks.rb` | 8 sample tasks |
 | | `53_activities.rb` | 6 sample activities |
+| | `54_ai_builder_multiple_candidates.rb` | 10 editable public GitHub builder seed candidates, 5 AI builders and 5 control builders, with optional repo scopes. All rows are marked in notes as seed candidates. |
 
-**Totals:** 151 teams, ~2741 people, ~2566 athletes, ~2740 contracts (103 college, ~2535 active, 102 draft). All idempotent via `find_or_create_by!`.
+**Totals:** 151 teams, ~2741 people, ~2566 athletes, ~2740 contracts (103 college, ~2535 active, 102 draft), plus 10 AI Builder Multiple seed candidates. All idempotent via `find_or_create_by!`.
 
 ## Full rebuild vs plain seed
 
@@ -44,5 +45,6 @@ For weekly in-season refresh, use the non-destructive nflverse delta + ESPN scra
 
 - Admin: `alex@mcritchie.studio`; sign in by magic link in normal local development.
 - NFL Draft tweets: oldest→newest in array, `.reverse` before seeding so oldest = top of kanban. Deduped by `x_post_id`.
+- AI Builder Multiple seed candidates are placeholders for public GitHub commit pace analysis. Review cohort, repo scope, and active status before treating results as meaningful.
 - College contracts expire `2026-04-01`. NFL star contracts have `annual_value_cents` (bigint).
 - `contract_type` set correctly at creation (no backfill hack needed).

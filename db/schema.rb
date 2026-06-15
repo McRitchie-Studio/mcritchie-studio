@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_15_000000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_15_001000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -329,6 +329,58 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_000000) do
     t.index ["home_team_slug"], name: "index_games_on_home_team_slug"
     t.index ["slate_slug"], name: "index_games_on_slate_slug"
     t.index ["slug"], name: "index_games_on_slug", unique: true
+  end
+
+  create_table "github_builder_index_weeks", force: :cascade do |t|
+    t.date "week_start_date", null: false
+    t.decimal "ai_builder_multiple", precision: 12, scale: 4
+    t.decimal "control_builder_multiple", precision: 12, scale: 4
+    t.decimal "difficulty_adjusted_ai_builder_multiple", precision: 12, scale: 4
+    t.integer "ai_builder_count", default: 0, null: false
+    t.integer "control_builder_count", default: 0, null: false
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["week_start_date"], name: "index_github_builder_index_weeks_on_week_start_date", unique: true
+  end
+
+  create_table "github_builder_weekly_metrics", force: :cascade do |t|
+    t.string "github_login", null: false
+    t.string "cohort", null: false
+    t.date "week_start_date", null: false
+    t.integer "commits_count", default: 0, null: false
+    t.integer "non_merge_commits_count", default: 0, null: false
+    t.integer "bot_adjusted_commits_count", default: 0, null: false
+    t.integer "active_repos_count", default: 0, null: false
+    t.decimal "trailing_90d_avg_weekly_commits", precision: 12, scale: 4
+    t.decimal "builder_multiple", precision: 12, scale: 4
+    t.decimal "bot_adjusted_builder_multiple", precision: 12, scale: 4
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_login", "week_start_date"], name: "index_builder_weekly_metrics_on_login_week", unique: true
+    t.index ["week_start_date", "cohort"], name: "idx_on_week_start_date_cohort_0406de51f1"
+  end
+
+  create_table "github_commit_observations", force: :cascade do |t|
+    t.string "github_login", null: false
+    t.string "repo_full_name", null: false
+    t.string "sha", null: false
+    t.string "author_login"
+    t.string "committer_login"
+    t.datetime "authored_at"
+    t.datetime "committed_at"
+    t.text "message"
+    t.string "html_url"
+    t.boolean "is_merge", default: false, null: false
+    t.boolean "is_bot", default: false, null: false
+    t.string "source_strategy", null: false
+    t.jsonb "raw_payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_login", "authored_at"], name: "idx_on_github_login_authored_at_00ca1cd94c"
+    t.index ["github_login", "committed_at"], name: "idx_on_github_login_committed_at_810ec88674"
+    t.index ["repo_full_name", "sha", "github_login"], name: "index_commit_observations_on_repo_sha_login", unique: true
+    t.index ["source_strategy"], name: "index_github_commit_observations_on_source_strategy"
   end
 
   create_table "image_caches", force: :cascade do |t|
@@ -769,6 +821,31 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_000000) do
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
   end
 
+  create_table "tracked_github_builder_repos", force: :cascade do |t|
+    t.bigint "tracked_github_builder_id", null: false
+    t.string "repo_full_name", null: false
+    t.string "repo_category"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["repo_full_name"], name: "index_tracked_github_builder_repos_on_repo_full_name"
+    t.index ["tracked_github_builder_id", "repo_full_name"], name: "index_builder_repos_on_builder_and_repo", unique: true
+    t.index ["tracked_github_builder_id"], name: "index_builder_repos_on_builder_id"
+  end
+
+  create_table "tracked_github_builders", force: :cascade do |t|
+    t.string "github_login", null: false
+    t.string "display_name"
+    t.string "cohort", null: false
+    t.string "category"
+    t.text "notes"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["cohort", "active"], name: "index_tracked_github_builders_on_cohort_and_active"
+    t.index ["github_login"], name: "index_tracked_github_builders_on_github_login", unique: true
+  end
+
   create_table "usages", force: :cascade do |t|
     t.string "agent_slug"
     t.date "period_date", null: false
@@ -819,4 +896,5 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_000000) do
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "studio_email_deliveries", "users"
+  add_foreign_key "tracked_github_builder_repos", "tracked_github_builders"
 end
