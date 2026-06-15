@@ -109,6 +109,11 @@ rescue JSON::ParserError
   nil
 end
 
+def refresh_heroku_app_info(app)
+  HEROKU_APP_INFO_CACHE.delete(app)
+  heroku_app_info(app)
+end
+
 def heroku_web_url(config)
   app_info = heroku_app_info(config.fetch("heroku_app"))
   app_info&.dig("app", "web_url").to_s.delete_suffix("/").then do |url|
@@ -262,6 +267,20 @@ def addon_present?(addons, addon)
   end
 end
 
+def ensure_acm(config)
+  app = config.fetch("heroku_app")
+  app_info = heroku_app_info(app)
+  abort "cannot enable ACM before Heroku app exists: #{app}" unless app_info
+
+  if app_info.dig("app", "acm")
+    puts "ACM enabled: #{app}"
+    return
+  end
+
+  sh("heroku", "certs:auto:enable", "--app", app)
+  refresh_heroku_app_info(app)
+end
+
 def run_list
   qa_environments.each do |slug, config|
     puts "#{slug.ljust(18)} #{config.fetch("display_name").ljust(24)} qa #{config.fetch("heroku_app").ljust(24)} #{qa_url(config)}"
@@ -290,6 +309,7 @@ def print_plan(config)
   domains.each do |domain|
     puts "  heroku domains:add #{domain} --app #{app}"
   end
+  puts "  heroku certs:auto:enable --app #{app}"
   puts
   puts "Set config vars without printing values:"
   (config.fetch("required_config", {}).keys + config.fetch("derived_config", {}).keys).each do |key|
@@ -357,6 +377,8 @@ def run_provision(app_name, assume_yes:)
       existing_domains = heroku_domains(app)
     end
   end
+
+  ensure_acm(config) unless custom_domains(config).empty?
 
   heroku_domains(app).each do |domain|
     next unless custom_domains(config).include?(domain_hostname(domain))
