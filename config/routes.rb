@@ -35,6 +35,8 @@ Rails.application.routes.draw do
   # TikTok OAuth handshake (one-time, admin-only) — visit /admin/tiktok/connect
   # to authorize @turfmonstershow and capture refresh_token + open_id.
   namespace :admin do
+    get "dashboard", to: "dashboard#show", as: :dashboard
+
     # Admin link hub — gathers every admin/operator destination (incl. the
     # on-chain Signing Console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links

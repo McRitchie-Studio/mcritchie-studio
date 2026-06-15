@@ -26,6 +26,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     get admin_links_path
     assert_response :success
     assert_select "h1", "Admin Links"
+    assert_select "a[href=?]", admin_dashboard_path
     assert_match "Signing Console", response.body
     assert_select "a[href=?]", admin_signing_requests_path
   end

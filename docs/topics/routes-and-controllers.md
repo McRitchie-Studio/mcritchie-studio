@@ -75,6 +75,7 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/activities` — Activity feed
 - `/usages` — Usage table
 - `/toast_test` — Toast notification test page (all variants, server-side flash test)
+- `/admin/dashboard` — Admin dashboard with four quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin JSON endpoint for latest AI Builder Multiple index weeks and the latest builder weekly commit pace metrics. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.
 - `/admin/theme` — Theme editor + styleguide (engine-provided: color editor, logos, tokens, typography, buttons, components)
 - `/error_logs` — Error log index (search with ILIKE, Esc to clear, 500ms loading animation)

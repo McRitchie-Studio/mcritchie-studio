@@ -1,0 +1,10 @@
+<%# locals: (url:, label:, subtitle:, icon:) %>
+<%= link_to url, class: "card hover:bg-surface-alt transition p-4 flex items-center gap-3 min-h-24" do %>
+  <span class="w-10 h-10 rounded bg-primary/10 text-primary flex items-center justify-center text-xl flex-shrink-0">
+    <%= icon %>
+  </span>
+  <span class="min-w-0">
+    <span class="block text-sm font-semibold text-heading truncate"><%= label %></span>
+    <span class="block text-[11px] text-muted leading-snug mt-0.5"><%= subtitle %></span>
+  </span>
+<% end %>
