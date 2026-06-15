@@ -65,7 +65,15 @@ class TrackedGithubBuilder < ApplicationRecord
   private
 
   def fetch_commits_for_window(window, fetcher:, aggregator:)
-    result = fetcher.fetch_for_builder(builder: self, start_date: window.begin, end_date: window.end)
+    segment_cache = lambda do |segment_start, segment_end|
+      aggregator.aggregate!(start_date: segment_start, end_date: segment_end, github_logins: github_login)
+    end
+    result = fetcher.fetch_for_builder(
+      builder: self,
+      start_date: window.begin,
+      end_date: window.end,
+      after_segment: segment_cache
+    )
     aggregator.aggregate!(start_date: window.begin, end_date: window.end, github_logins: github_login)
     result
   end

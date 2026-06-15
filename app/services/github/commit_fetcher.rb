@@ -15,16 +15,16 @@ module Github
       @search_range_days = [search_range_days, 1].max
     end
 
-    def fetch_for_builder(builder:, start_date:, end_date:)
+    def fetch_for_builder(builder:, start_date:, end_date:, after_segment: nil)
       start_date = parse_date(start_date)
       end_date = parse_date(end_date)
       repos = builder.active_repos.to_a
 
       if repos.any?
-        repo_result = fetch_repo_scoped(builder, repos, start_date, end_date)
+        repo_result = fetch_repo_scoped(builder, repos, start_date, end_date, after_segment: after_segment)
         return repo_result unless repo_scope_sparse?(builder, start_date, end_date)
 
-        search_result = fetch_search_scoped(builder, start_date, end_date)
+        search_result = fetch_search_scoped(builder, start_date, end_date, after_segment: after_segment)
         {
           strategy: "repo_scoped_with_search_supplement",
           stored: repo_result[:stored].to_i + search_result[:stored].to_i,
@@ -32,13 +32,13 @@ module Github
           search: search_result
         }
       else
-        fetch_search_scoped(builder, start_date, end_date)
+        fetch_search_scoped(builder, start_date, end_date, after_segment: after_segment)
       end
     end
 
     private
 
-    def fetch_repo_scoped(builder, repos, start_date, end_date)
+    def fetch_repo_scoped(builder, repos, start_date, end_date, after_segment:)
       stored = 0
 
       repos.each do |tracked_repo|
@@ -65,13 +65,15 @@ module Github
             source_strategy: "repo_scoped"
           )
         end
+
+        after_segment&.call(start_date, end_date)
       end
 
       @logger&.info("GitHub commit fetch repo_scoped login=#{builder.github_login} stored=#{stored}")
       { strategy: "repo_scoped", stored: stored }
     end
 
-    def fetch_search_scoped(builder, start_date, end_date)
+    def fetch_search_scoped(builder, start_date, end_date, after_segment:)
       stored = 0
 
       search_date_ranges(start_date, end_date).each do |range_start, range_end|
@@ -94,6 +96,8 @@ module Github
             )
           end
         end
+
+        after_segment&.call(range_start, range_end)
       end
 
       @logger&.info("GitHub commit fetch search login=#{builder.github_login} stored=#{stored}")

@@ -2,14 +2,14 @@ require "test_helper"
 
 class TrackedGithubBuilderTest < ActiveSupport::TestCase
   FakeFetcher = Struct.new(:calls) do
-    def fetch_for_builder(builder:, start_date:, end_date:)
+    def fetch_for_builder(builder:, start_date:, end_date:, after_segment: nil)
       calls << { builder: builder, start_date: start_date, end_date: end_date }
       { strategy: "fake", stored: 1 }
     end
   end
 
   StoringFetcher = Struct.new(:calls, :sha, :committed_at) do
-    def fetch_for_builder(builder:, start_date:, end_date:)
+    def fetch_for_builder(builder:, start_date:, end_date:, after_segment: nil)
       calls << { builder: builder, start_date: start_date, end_date: end_date }
       GithubCommitObservation.create!(
         github_login: builder.github_login,
@@ -26,6 +26,33 @@ class TrackedGithubBuilderTest < ActiveSupport::TestCase
         source_strategy: "search",
         raw_payload: {}
       )
+      { strategy: "search", stored: 1 }
+    end
+  end
+
+  SegmentCachingFetcher = Struct.new(:cache_counts, :sha, :committed_at) do
+    def fetch_for_builder(builder:, start_date:, end_date:, after_segment: nil)
+      GithubCommitObservation.create!(
+        github_login: builder.github_login,
+        repo_full_name: "example/segment-cache",
+        sha: sha,
+        author_login: builder.github_login,
+        committer_login: builder.github_login,
+        authored_at: committed_at,
+        committed_at: committed_at,
+        message: "Cache segment before the full run exits",
+        html_url: "https://github.com/example/segment-cache/commit/#{sha}",
+        is_merge: false,
+        is_bot: false,
+        source_strategy: "search",
+        raw_payload: {}
+      )
+      after_segment&.call(start_date, end_date)
+      range = GithubCommitRange.for_week_start(start_date)
+      cache_counts << GithubBuilderCommitRangeCache.find_by!(
+        tracked_github_builder: builder,
+        github_commit_range: range
+      ).commits_count
       { strategy: "search", stored: 1 }
     end
   end
@@ -88,5 +115,14 @@ class TrackedGithubBuilderTest < ActiveSupport::TestCase
       week_start_date: Date.new(2026, 6, 13)
     )
     assert_equal 1, metric.commits_count
+  end
+
+  test "commit window helpers publish segment cache before final aggregation" do
+    builder = TrackedGithubBuilder.create!(github_login: "segment-cache-builder", cohort: "ai_builder")
+    fetcher = SegmentCachingFetcher.new([], "segment123", Time.utc(2026, 6, 14, 12))
+
+    builder.current_week_commits(fetcher: fetcher, today: Date.new(2026, 6, 15))
+
+    assert_equal [1], fetcher.cache_counts
   end
 end

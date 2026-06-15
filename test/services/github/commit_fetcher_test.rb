@@ -110,4 +110,33 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
     assert_includes client.calls.first[:params][:q], "author:search-builder"
     assert_includes client.calls.first[:params][:q], "author-date:2026-06-01..2026-06-07"
   end
+
+  test "calls segment callback after each search date range" do
+    builder = TrackedGithubBuilder.create!(github_login: "segment-builder", cohort: "ai_builder")
+    payload = {
+      "sha" => "segment123",
+      "html_url" => "https://github.com/owner/repo/commit/segment123",
+      "repository" => { "full_name" => "owner/repo" },
+      "author" => { "login" => "segment-builder" },
+      "commit" => {
+        "author" => { "name" => "Segment Builder", "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "name" => "Segment Builder", "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Segment callback commit"
+      }
+    }
+    client = FakeClient.new([payload], [])
+    segments = []
+
+    Github::CommitFetcher.new(client: client, logger: nil, search_range_days: 7).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 14),
+      after_segment: ->(range_start, range_end) { segments << [range_start, range_end] }
+    )
+
+    assert_equal [
+      [Date.new(2026, 6, 1), Date.new(2026, 6, 7)],
+      [Date.new(2026, 6, 8), Date.new(2026, 6, 14)]
+    ], segments
+  end
 end
