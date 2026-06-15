@@ -1,4 +1,5 @@
 seed_note = "Seed candidate only. Public GitHub activity placeholder; verify cohort, repos, and relevance before using in analysis."
+research_note = "Research candidate from public GitHub repo commit sampling. Verify cohort, repos, and relevance before publishing analysis."
 
 builders = [
   {
@@ -42,6 +43,78 @@ builders = [
     repos: ["PrefectHQ/fastmcp"]
   },
   {
+    github_login: "MagMueller",
+    display_name: "Research candidate: Magnus Mueller",
+    cohort: "ai_builder",
+    category: "browser_agent",
+    notes: research_note,
+    repos: ["browser-use/browser-use"]
+  },
+  {
+    github_login: "greysonlalonde",
+    display_name: "Research candidate: Greyson Lalonde",
+    cohort: "ai_builder",
+    category: "multi_agent_framework",
+    notes: research_note,
+    repos: ["crewAIInc/crewAI"]
+  },
+  {
+    github_login: "mdrxy",
+    display_name: "Research candidate: LangChain maintainer",
+    cohort: "ai_builder",
+    category: "agent_framework",
+    notes: research_note,
+    repos: ["langchain-ai/langchain", "langchain-ai/langgraph"]
+  },
+  {
+    github_login: "ryan-crabbe-berri",
+    display_name: "Research candidate: LiteLLM maintainer",
+    cohort: "ai_builder",
+    category: "ai_gateway",
+    notes: research_note,
+    repos: ["BerriAI/litellm"]
+  },
+  {
+    github_login: "sayakpaul",
+    display_name: "Research candidate: Sayak Paul",
+    cohort: "ai_builder",
+    category: "generative_ai_tooling",
+    notes: research_note,
+    repos: ["huggingface/diffusers"]
+  },
+  {
+    github_login: "dhiltgen",
+    display_name: "Research candidate: Ollama maintainer",
+    cohort: "ai_builder",
+    category: "local_ai_runtime",
+    notes: research_note,
+    repos: ["ollama/ollama"]
+  },
+  {
+    github_login: "sestinj",
+    display_name: "Research candidate: Continue maintainer",
+    cohort: "ai_builder",
+    category: "coding_agent",
+    notes: research_note,
+    repos: ["continuedev/continue"]
+  },
+  {
+    github_login: "tofarr",
+    display_name: "Research candidate: OpenHands maintainer",
+    cohort: "ai_builder",
+    category: "coding_agent",
+    notes: research_note,
+    repos: ["OpenHands/OpenHands"]
+  },
+  {
+    github_login: "logan-markewich",
+    display_name: "Research candidate: LlamaIndex maintainer",
+    cohort: "ai_builder",
+    category: "agent_framework",
+    notes: research_note,
+    repos: ["run-llama/llama_index"]
+  },
+  {
     github_login: "amcritchie",
     display_name: "Monitor account: amcritchie",
     cohort: "ai_builder",
@@ -56,6 +129,62 @@ builders = [
     category: "framework",
     notes: seed_note,
     repos: ["rails/rails"]
+  },
+  {
+    github_login: "sapphi-red",
+    display_name: "Research candidate: Vite maintainer",
+    cohort: "control_builder",
+    category: "frontend_tooling",
+    notes: research_note,
+    repos: ["vitejs/vite"]
+  },
+  {
+    github_login: "hsbt",
+    display_name: "Research candidate: Ruby maintainer",
+    cohort: "control_builder",
+    category: "language_runtime",
+    notes: research_note,
+    repos: ["ruby/ruby"]
+  },
+  {
+    github_login: "byroot",
+    display_name: "Research candidate: Rails/Ruby maintainer",
+    cohort: "control_builder",
+    category: "framework",
+    notes: research_note,
+    repos: ["rails/rails", "ruby/ruby"]
+  },
+  {
+    github_login: "fatkodima",
+    display_name: "Research candidate: Rails maintainer",
+    cohort: "control_builder",
+    category: "framework",
+    notes: research_note,
+    repos: ["rails/rails"]
+  },
+  {
+    github_login: "jasnell",
+    display_name: "Research candidate: Node.js maintainer",
+    cohort: "control_builder",
+    category: "runtime",
+    notes: research_note,
+    repos: ["nodejs/node"]
+  },
+  {
+    github_login: "rafaelfranca",
+    display_name: "Research candidate: Rails maintainer",
+    cohort: "control_builder",
+    category: "framework",
+    notes: research_note,
+    repos: ["rails/rails"]
+  },
+  {
+    github_login: "trivikr",
+    display_name: "Research candidate: Node.js maintainer",
+    cohort: "control_builder",
+    category: "runtime",
+    notes: research_note,
+    repos: ["nodejs/node"]
   },
   {
     github_login: "tenderlove",
