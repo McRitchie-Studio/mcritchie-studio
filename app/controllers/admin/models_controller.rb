@@ -111,6 +111,7 @@ module Admin
     def team_record_json(team)
       JSON.pretty_generate(
         team.attributes.merge(
+          "mascot" => team.mascot,
           "home_arena" => team.home_arena&.attributes
         )
       )

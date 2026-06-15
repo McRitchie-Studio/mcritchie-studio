@@ -57,6 +57,7 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     assert_match "Highmark Stadium", response.body
     assert_match "🏈", response.body
     assert_match /&quot;slug&quot;: &quot;buffalo-bills&quot;/, response.body
+    assert_match /&quot;mascot&quot;: &quot;Bills&quot;/, response.body
     assert_match /&quot;home_arena&quot;/, response.body
   end
 

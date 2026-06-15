@@ -39,4 +39,11 @@ class TeamTest < ActiveSupport::TestCase
 
     assert_equal arenas(:highmark_stadium), team.home_arena
   end
+
+  test "stores mascot when it can be derived" do
+    team = Team.create!(name: "Denver Broncos", location: "Denver")
+
+    assert_equal "Broncos", team.reload[:mascot]
+    assert_equal "Broncos", team.mascot
+  end
 end

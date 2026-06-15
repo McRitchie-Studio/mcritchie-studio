@@ -15,6 +15,8 @@ class Team < ApplicationRecord
 
   validates :name, presence: true
 
+  before_validation :set_default_mascot, if: -> { self[:mascot].blank? && name.present? }
+
   scope :nfl, -> { where(league: "nfl") }
   scope :ncaa, -> { where(league: "ncaa") }
   scope :fifa, -> { where(league: "fifa") }
@@ -28,11 +30,22 @@ class Team < ApplicationRecord
   # Team nickname derived from name - location.
   # e.g. "Los Angeles Rams" - "Los Angeles" => "Rams"; "San Francisco 49ers" - "San Francisco" => "49ers"
   def mascot
-    return name if location.blank?
-    name.sub(/\A#{Regexp.escape(location)}\s*/, "").strip
+    self[:mascot].presence || derived_mascot
   end
 
   def name_slug
     name.parameterize
+  end
+
+  private
+
+  def set_default_mascot
+    self[:mascot] = derived_mascot
+  end
+
+  def derived_mascot
+    return name if location.blank?
+
+    name.sub(/\A#{Regexp.escape(location)}\s*/, "").strip.presence || name
   end
 end

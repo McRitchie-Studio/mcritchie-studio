@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_15_002001) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_15_002002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -817,6 +817,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002001) do
     t.string "hashtag2"
     t.string "x_handle"
     t.string "home_arena_slug"
+    t.string "mascot"
     t.index ["home_arena_slug"], name: "index_teams_on_home_arena_slug"
     t.index ["slug"], name: "index_teams_on_slug", unique: true
     t.index ["sport", "league"], name: "index_teams_on_sport_and_league"
