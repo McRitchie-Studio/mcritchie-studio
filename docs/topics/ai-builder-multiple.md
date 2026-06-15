@@ -145,6 +145,13 @@ Inspect the latest dashboard at:
 /admin/ai_builder_multiple
 ```
 
+The dashboard commit log loads the latest 9 cached Saturday-Friday UTC ranges
+by default. The full five-year commit cache table is available at:
+
+```text
+/admin/ai_builder_multiple/commit_history
+```
+
 The same latest index data is also available as JSON:
 
 ```text

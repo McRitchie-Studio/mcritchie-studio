@@ -1,6 +1,7 @@
 module Admin
   class AiBuilderMultipleController < ApplicationController
     before_action :require_admin
+    DEFAULT_COMMIT_LOG_RANGE_LIMIT = 9
 
     def index
       @limit = [[params.fetch(:limit, 26).to_i, 1].max, 52].min
@@ -13,8 +14,14 @@ module Admin
       @builder_metrics_week = representative_metrics_week
       @builder_metrics = @builder_metrics_week ? GithubBuilderWeeklyMetric.for_week(@builder_metrics_week).order(:cohort, :github_login).to_a : []
       @metrics_boundary_week_excluded = @builder_metrics_week.present? && @latest_week.present? && @builder_metrics_week != @latest_week
-      @commit_log_ranges = commit_log_ranges
+      @commit_log_ranges = commit_log_ranges(limit: DEFAULT_COMMIT_LOG_RANGE_LIMIT)
       @commit_log_rows = commit_log_rows
+      @commit_log_title = "Weekly Commit Log"
+      @commit_log_description = "Last #{DEFAULT_COMMIT_LOG_RANGE_LIMIT} cached Saturday-Friday UTC public commit counts by builder."
+      @commit_log_action = {
+        label: "Full 5-Year History",
+        path: admin_ai_builder_multiple_commit_history_path(builder_limit: 1_000)
+      }
       @tracked_builder_summary = tracked_builder_summary
       @overview = overview_summary
       @builder_rollups = builder_rollups
@@ -24,6 +31,24 @@ module Admin
         format.html
         format.json { render json: { data: json_payload } }
       end
+    end
+
+    def commit_history
+      @builder_limit = [[params.fetch(:builder_limit, 1_000).to_i, 1].max, 1_000].min
+      @index_weeks = report_index_weeks
+      @latest_week = @index_weeks.first&.week_start_date
+      @observed_through_date = GithubCommitObservation.maximum(:committed_at)&.to_date
+      @builder_metrics_week = representative_metrics_week
+      @commit_log_ranges = commit_log_ranges(limit: nil)
+      @commit_log_rows = commit_log_rows
+      @tracked_builder_summary = tracked_builder_summary
+      @overview = overview_summary
+      @commit_log_title = "Full Commit Cache History"
+      @commit_log_description = "All cached Saturday-Friday UTC public commit counts since July 24, 2021."
+      @commit_log_action = {
+        label: "Back To Dashboard",
+        path: admin_ai_builder_multiple_path(builder_limit: @builder_limit, anchor: "commit-log")
+      }
     end
 
     private
@@ -61,14 +86,15 @@ module Admin
       @observed_through_date < @latest_week + 6.days
     end
 
-    def commit_log_ranges
+    def commit_log_ranges(limit:)
       return [] unless @builder_metrics_week
 
-      GithubCommitRange
+      ranges = GithubCommitRange
         .where(week_start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE..@builder_metrics_week)
         .recent
         .to_a
         .select { |range| range.week_start_date.saturday? }
+      limit.present? ? ranges.first(limit) : ranges
     end
 
     def commit_log_rows

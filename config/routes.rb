@@ -60,6 +60,7 @@ Rails.application.routes.draw do
     # on-chain Signing Console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links
     get "ai_builder_multiple", to: "ai_builder_multiple#index"
+    get "ai_builder_multiple/commit_history", to: "ai_builder_multiple#commit_history", as: :ai_builder_multiple_commit_history
 
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback

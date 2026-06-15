@@ -1,0 +1,31 @@
+<% content_for :title, "AI Builder Multiple Commit History" %>
+
+<section class="space-y-6">
+  <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <div class="flex items-center gap-3 mb-2">
+        <%= link_to "Admin", admin_links_path, class: "text-secondary hover:text-heading text-sm font-medium transition" %>
+        <span class="text-muted text-sm">/</span>
+        <%= link_to "AI Builder Multiple", admin_ai_builder_multiple_path, class: "text-secondary hover:text-heading text-sm font-medium transition" %>
+        <span class="text-muted text-sm">/</span>
+        <span class="text-muted text-sm">Commit History</span>
+      </div>
+      <h1 class="text-3xl font-extrabold text-heading">AI Builder Commit Cache History</h1>
+      <p class="text-secondary mt-2 max-w-3xl">
+        Full five-year Saturday-Friday UTC commit cache table for tracked builders. This is public GitHub builder activity, not true productivity.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <%= link_to "Dashboard", admin_ai_builder_multiple_path(builder_limit: @builder_limit, anchor: "commit-log"), class: "btn btn-outline btn-sm" %>
+      <%= link_to "Tracked Builders", admin_ai_builder_multiple_path(builder_limit: @builder_limit, anchor: "tracked-builders"), class: "btn btn-outline btn-sm" %>
+    </div>
+  </header>
+
+  <%= render "commit_log_table",
+        title: @commit_log_title,
+        description: @commit_log_description,
+        action: @commit_log_action,
+        ranges: @commit_log_ranges,
+        rows: @commit_log_rows,
+        overview: @overview %>
+</section>

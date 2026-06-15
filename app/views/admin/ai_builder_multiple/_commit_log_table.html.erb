@@ -1,0 +1,71 @@
+<section id="commit-log" class="card overflow-hidden scroll-mt-28">
+  <div class="p-5 border-b border-subtle">
+    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div>
+        <h2 class="text-lg font-bold text-heading"><%= title %></h2>
+        <p class="text-sm text-secondary"><%= description %></p>
+      </div>
+      <div class="flex flex-col items-start gap-2 md:items-end">
+        <% if action.present? %>
+          <%= link_to action.fetch(:label), action.fetch(:path), class: "btn btn-outline btn-sm whitespace-nowrap" %>
+        <% end %>
+        <% if ranges.any? %>
+          <span class="text-xs text-muted whitespace-nowrap">
+            Top <%= ai_count(rows.size) %> of <%= ai_count(overview[:active_builders_count]) %> active ·
+            <%= ai_date(ranges.last.week_end_date) %> through <%= ai_date(ranges.first.week_end_date) %>
+          </span>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <% if ranges.any? && rows.any? %>
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-max text-sm">
+        <thead>
+          <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
+            <th class="sticky left-0 z-10 bg-surface-alt text-left py-3 px-4 min-w-56">Builder</th>
+            <th class="text-left py-3 px-4 min-w-28">Cohort</th>
+            <% ranges.each do |range| %>
+              <th class="text-right py-3 px-3 min-w-24" title="<%= range.display_label %>">
+                <%= ai_commit_week_header(range) %>
+              </th>
+            <% end %>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-subtle">
+          <% rows.each do |row| %>
+            <% builder = row[:builder] %>
+            <tr class="hover:bg-surface-alt/60 transition">
+              <td class="sticky left-0 z-10 bg-surface py-3 px-4 font-semibold text-heading">
+                <div class="min-w-0">
+                  <p class="truncate"><%= builder.display_label %></p>
+                  <%= link_to "@#{builder.github_login}",
+                        "https://github.com/#{builder.github_login}",
+                        target: "_blank",
+                        rel: "noopener",
+                        class: "text-xs text-primary hover:text-heading transition" %>
+                </div>
+              </td>
+              <td class="py-3 px-4 text-secondary"><%= builder.cohort.humanize %></td>
+              <% ranges.each do |range| %>
+                <% cache = row[:caches_by_range_id][range.id] %>
+                <% count = cache&.commits_count %>
+                <td class="py-3 px-3 text-right <%= count.to_i.positive? ? "font-semibold text-heading" : "text-muted" %>"
+                    title="<%= cache ? "#{ai_count(cache.non_merge_commits_count)} non-merge, #{ai_count(cache.bot_adjusted_commits_count)} bot-adjusted, #{ai_count(cache.active_repos_count)} active repos" : "No cached row" %>">
+                  <%= cache ? ai_count(count) : "—" %>
+                </td>
+              <% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="p-5">
+      <div class="empty-state">
+        <p class="text-secondary">Run the backtest to cache weekly commit ranges.</p>
+      </div>
+    </div>
+  <% end %>
+</section>

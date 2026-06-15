@@ -19,6 +19,16 @@ module Admin::AiBuilderMultipleHelper
     value.present? ? value.to_date.strftime("%b %-d") : "—"
   end
 
+  def ai_commit_week_header(range)
+    date = range.week_end_date.to_date
+    safe_join(
+      [
+        content_tag(:span, ai_short_date(date), class: "block normal-case tracking-normal text-secondary"),
+        (content_tag(:span, date.year, class: "block text-[10px] text-muted mt-0.5") unless date.year == Time.now.utc.year)
+      ].compact
+    )
+  end
+
   def ai_coverage_percent(count, minimum)
     return 0 if minimum.to_i <= 0
 

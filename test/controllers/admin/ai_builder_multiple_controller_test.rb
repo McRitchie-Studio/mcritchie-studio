@@ -45,9 +45,41 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_select "p", /does not measure true productivity/
     assert_select "a[href=?]", "#commit-log", "Commit Log"
     assert_select "a[href=?]", "#tracked-builders", "Tracked Builders"
+    assert_select "a[href=?]", admin_ai_builder_multiple_commit_history_path(builder_limit: 1_000), "Full 5-Year History"
     assert_select "a[href=?]", "https://github.com/builder", "@builder"
     assert_select "a[href=?]", "https://github.com/example/repo", "example/repo"
     assert_select "a[href=?]", admin_ai_builder_multiple_path(format: :json), "JSON"
+  end
+
+  test "index starts with the latest nine commit ranges" do
+    log_in_as(@admin)
+    create_commit_cache_history(weeks: 10)
+
+    get admin_ai_builder_multiple_path(format: :json)
+
+    assert_response :success
+    ranges = JSON.parse(response.body).dig("data", "commit_log", "ranges")
+    assert_equal 9, ranges.size
+    assert_equal "2026-01-24", ranges.first["week_start_date"]
+    assert_equal "2025-11-29", ranges.last["week_start_date"]
+    refute_includes ranges.map { |range| range["week_start_date"] }, "2025-11-22"
+  end
+
+  test "commit history renders the full cached range table" do
+    log_in_as(@admin)
+    create_commit_cache_history(weeks: 10)
+
+    travel_to Time.utc(2026, 6, 15) do
+      get admin_ai_builder_multiple_commit_history_path
+    end
+
+    assert_response :success
+    assert_select "h1", "AI Builder Commit Cache History"
+    assert_select "h2", "Full Commit Cache History"
+    assert_select "a[href=?]", admin_ai_builder_multiple_path(builder_limit: 1_000, anchor: "commit-log"), "Back To Dashboard"
+    assert_select "th", "Jan 30"
+    assert_select "th", /2025/
+    assert_match "Nov 28, 2025", response.body
   end
 
   test "index limits commit log rows by recent activity" do
@@ -125,5 +157,46 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
       cached_at: Time.current
     )
     week_start
+  end
+
+  def create_commit_cache_history(weeks:)
+    builder = TrackedGithubBuilder.create!(github_login: "history-builder", cohort: "ai_builder", active: true)
+    first_week = Date.new(2025, 11, 22)
+
+    weeks.times do |index|
+      week_start = first_week + index.weeks
+      GithubBuilderIndexWeek.create!(
+        week_start_date: week_start,
+        ai_builder_multiple: 2,
+        control_builder_multiple: 1,
+        difficulty_adjusted_ai_builder_multiple: 2,
+        ai_builder_count: 5,
+        control_builder_count: 5
+      )
+      GithubBuilderWeeklyMetric.create!(
+        github_login: builder.github_login,
+        cohort: builder.cohort,
+        week_start_date: week_start,
+        commits_count: index + 1,
+        non_merge_commits_count: index + 1,
+        bot_adjusted_commits_count: index + 1,
+        active_repos_count: 1,
+        trailing_90d_avg_weekly_commits: 1,
+        builder_multiple: index + 1,
+        bot_adjusted_builder_multiple: index + 1
+      )
+      GithubBuilderCommitRangeCache.create!(
+        tracked_github_builder: builder,
+        github_commit_range: GithubCommitRange.for_week_start(week_start),
+        github_login: builder.github_login,
+        cohort: builder.cohort,
+        commits_count: index + 1,
+        non_merge_commits_count: index + 1,
+        bot_adjusted_commits_count: index + 1,
+        active_repos_count: 1,
+        commit_shas: [],
+        cached_at: Time.current
+      )
+    end
   end
 end
