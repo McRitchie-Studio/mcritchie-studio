@@ -14,7 +14,7 @@ module Github
       @logger = logger
     end
 
-    def run!(start_date:, end_date:, github_logins: nil)
+    def run!(start_date:, end_date:, github_logins: nil, skip_fetch: false)
       start_date = parse_date(start_date)
       end_date = parse_date(end_date)
       fetch_start_date = start_date - BASELINE_WARMUP_DAYS
@@ -22,21 +22,23 @@ module Github
       builder_scope = TrackedGithubBuilder.active.order(:cohort, :github_login)
       builder_scope = builder_scope.where(github_login: normalize_logins(github_logins)) if github_logins.present?
 
-      builder_scope.find_each do |builder|
-        @logger&.info("AI Builder Multiple fetching login=#{builder.github_login}")
-        begin
-          fetch_results[builder.github_login] = @fetcher.fetch_for_builder(
-            builder: builder,
-            start_date: fetch_start_date,
-            end_date: end_date
-          )
-        rescue Github::Client::HttpError => e
-          @logger&.warn("AI Builder Multiple fetch failed login=#{builder.github_login} error=#{e.class}: #{e.message}")
-          fetch_results[builder.github_login] = {
-            strategy: "failed",
-            stored: 0,
-            error: e.message
-          }
+      unless skip_fetch
+        builder_scope.find_each do |builder|
+          @logger&.info("AI Builder Multiple fetching login=#{builder.github_login}")
+          begin
+            fetch_results[builder.github_login] = @fetcher.fetch_for_builder(
+              builder: builder,
+              start_date: fetch_start_date,
+              end_date: end_date
+            )
+          rescue Github::Client::HttpError => e
+            @logger&.warn("AI Builder Multiple fetch failed login=#{builder.github_login} error=#{e.class}: #{e.message}")
+            fetch_results[builder.github_login] = {
+              strategy: "failed",
+              stored: 0,
+              error: e.message
+            }
+          end
         end
       end
 
@@ -48,6 +50,7 @@ module Github
         start_date: start_date,
         end_date: end_date,
         fetch_start_date: fetch_start_date,
+        fetch_skipped: skip_fetch,
         fetch_results: fetch_results,
         weekly_metrics_count: weekly_metrics_count,
         index_weeks_count: index_weeks_count,

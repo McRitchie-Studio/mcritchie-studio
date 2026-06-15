@@ -49,6 +49,31 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", admin_ai_builder_multiple_path(format: :json), "JSON"
   end
 
+  test "index limits commit log rows by recent activity" do
+    log_in_as(@admin)
+    week_start = create_backtest_snapshot
+    low_activity_builder = TrackedGithubBuilder.create!(
+      github_login: "quiet-builder",
+      cohort: "control_builder",
+      active: true
+    )
+    GithubBuilderCommitRangeCache.create!(
+      tracked_github_builder: low_activity_builder,
+      github_commit_range: GithubCommitRange.for_week_start(week_start),
+      github_login: low_activity_builder.github_login,
+      cohort: low_activity_builder.cohort,
+      commits_count: 0,
+      cached_at: Time.current
+    )
+
+    get admin_ai_builder_multiple_path(format: :json, builder_limit: 1)
+
+    assert_response :success
+    rows = JSON.parse(response.body).dig("data", "commit_log", "rows")
+    assert_equal 1, rows.size
+    assert_equal "builder", rows.first["github_login"]
+  end
+
   private
 
   def create_backtest_snapshot

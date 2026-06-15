@@ -54,6 +54,18 @@ Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` to fetch a targeted
 builder subset while still recalculating weekly metrics and index rows from all
 stored observations.
 
+Use `SKIP_FETCH=1` to run the regression from stored observations only. This is
+useful after importing a large control-candidate list, because users without
+repo scopes would otherwise require broad GitHub commit search.
+
+Paul Miller's historic active GitHub users list can be imported as a large
+control-candidate pool:
+
+```bash
+bin/rails github:ai_builder_multiple:import_paulmillr_active_users MAX=910
+bin/rails github:ai_builder_multiple:backtest START=2026-01-05 END=2026-06-14 SKIP_FETCH=1
+```
+
 The runner fetches a 90-day warmup before `START` so the first target week can
 have baseline context. Weekly metrics and index weeks are upserted, so reruns
 do not duplicate commit observations.

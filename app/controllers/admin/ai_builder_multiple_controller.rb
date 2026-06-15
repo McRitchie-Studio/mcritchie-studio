@@ -4,6 +4,7 @@ module Admin
 
     def index
       @limit = [[params.fetch(:limit, 26).to_i, 1].max, 52].min
+      @builder_limit = [[params.fetch(:builder_limit, 100).to_i, 1].max, 1_000].min
       @index_weeks = GithubBuilderIndexWeek.recent.limit(@limit).to_a
       @chart_weeks = @index_weeks.reverse
       @latest_week = @index_weeks.first&.week_start_date
@@ -81,8 +82,12 @@ module Admin
       caches = GithubBuilderCommitRangeCache
         .where(github_commit_range_id: @commit_log_ranges.map(&:id))
         .index_by { |cache| [cache.tracked_github_builder_id, cache.github_commit_range_id] }
+      recent_totals = GithubBuilderCommitRangeCache
+        .where(github_commit_range_id: @commit_log_ranges.map(&:id))
+        .group(:tracked_github_builder_id)
+        .sum(:commits_count)
 
-      TrackedGithubBuilder.active.order(:cohort, :github_login).map do |builder|
+      ranked_active_builders(recent_totals).first(@builder_limit).map do |builder|
         {
           builder: builder,
           caches_by_range_id: @commit_log_ranges.to_h do |range|
@@ -116,9 +121,17 @@ module Admin
     end
 
     def builder_rollups
+      recent_totals = if @commit_log_ranges.present?
+        GithubBuilderCommitRangeCache
+          .where(github_commit_range_id: @commit_log_ranges.map(&:id))
+          .group(:tracked_github_builder_id)
+          .sum(:commits_count)
+      else
+        {}
+      end
       latest_metrics_by_login = @builder_metrics.index_by(&:github_login)
 
-      TrackedGithubBuilder.active.includes(:tracked_github_builder_repos).order(:cohort, :github_login).map do |builder|
+      ranked_active_builders(recent_totals).first(@builder_limit).map do |builder|
         observations = GithubCommitObservation.for_login(builder.github_login)
         metrics = GithubBuilderWeeklyMetric.where(github_login: builder.github_login)
         {
@@ -130,6 +143,12 @@ module Admin
           complete_metric_weeks_count: metrics.complete.count,
           latest_commit_at: observations.maximum(:committed_at)
         }
+      end
+    end
+
+    def ranked_active_builders(recent_totals)
+      TrackedGithubBuilder.active.includes(:tracked_github_builder_repos).to_a.sort_by do |builder|
+        [-recent_totals.fetch(builder.id, 0).to_i, builder.cohort, builder.github_login]
       end
     end
 

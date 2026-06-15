@@ -58,6 +58,21 @@ class Github::BacktestRunnerTest < ActiveSupport::TestCase
     assert_equal 1, result[:index_weeks_count]
   end
 
+  test "can skip fetching and only recalculate stored observations" do
+    TrackedGithubBuilder.create!(github_login: "skip-fetch", cohort: "ai_builder")
+    fetcher = FakeFetcher.new([], [])
+
+    result = runner(fetcher: fetcher).run!(
+      start_date: Date.new(2026, 1, 5),
+      end_date: Date.new(2026, 1, 11),
+      skip_fetch: true
+    )
+
+    assert_empty fetcher.calls
+    assert result[:fetch_skipped]
+    assert_equal 1, result[:weekly_metrics_count]
+  end
+
   private
 
   def runner(fetcher:)

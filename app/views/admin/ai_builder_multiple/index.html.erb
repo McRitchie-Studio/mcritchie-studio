@@ -192,6 +192,7 @@
         </div>
         <% if @commit_log_ranges.any? %>
           <span class="text-xs text-muted whitespace-nowrap">
+            Top <%= ai_count(@commit_log_rows.size) %> of <%= ai_count(@overview[:active_builders_count]) %> active ·
             <%= @commit_log_ranges.last.display_label %> through <%= @commit_log_ranges.first.display_label %>
           </span>
         <% end %>
@@ -305,7 +306,9 @@
           <h2 class="text-lg font-bold text-heading">Tracked Builders</h2>
           <p class="text-sm text-secondary mt-1">GitHub accounts and repo scopes used for this benchmark run.</p>
         </div>
-        <span class="text-xs text-muted whitespace-nowrap"><%= ai_count(@builder_rollups.size) %> active</span>
+        <span class="text-xs text-muted whitespace-nowrap">
+          Top <%= ai_count(@builder_rollups.size) %> of <%= ai_count(@overview[:active_builders_count]) %> active
+        </span>
       </div>
       <div class="mt-4 space-y-3">
         <% @builder_rollups.each do |row| %>
