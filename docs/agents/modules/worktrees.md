@@ -32,8 +32,11 @@ When a new agent session starts actual implementation work:
 5. Run `bin/agent-worktree up <app> <task-slug>` when a browser or local URL is
    needed.
 6. Make edits only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
-7. Return the branch, worktree path, URL, tests, and merge/deploy recommendation
-   in the handoff.
+7. Commit coherent work on the feature branch.
+8. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
+   packet.
+9. Return the branch, worktree path, URL, tests, and PR/QA recommendation in
+   the handoff. Do not merge to `main` unless assigned the QA/Release lane.
 
 Exceptions:
 
@@ -53,11 +56,14 @@ bin/agent-worktree apps
 bin/agent-worktree plan turf-monster docs-stack
 bin/agent-worktree new turf-monster docs-stack
 bin/agent-worktree up turf-monster docs-stack
+bin/agent-worktree finish turf-monster docs-stack
 ```
 
 The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from current `origin/main`, copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
 
 Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
+Use `bin/agent-worktree finish <app> <task-slug>` when the work is committed
+and ready for PR/QA handoff.
 
 ## Lifecycle
 
@@ -66,12 +72,17 @@ Use the launcher as the source of truth for worktree stack state:
 ```bash
 bin/agent-worktree list
 bin/agent-worktree status turf-monster task-slug
+bin/agent-worktree finish turf-monster task-slug
 bin/agent-worktree doctor
 bin/agent-worktree cleanup
 ```
 
 - `list` shows task, health, URL, branch, dirty state, merge state, ahead/behind, database, Redis DB, pidfile state, and local inbox URL.
 - `status` shows the detailed state for one generated stack.
+- `finish` prints a feature graduation packet and PR body. It blocks dirty
+  worktrees, branches with no commits ahead of `origin/main`, stale branches
+  behind `origin/main`, and already-merged branches. Add `--push` to push the
+  branch, or `--push --pr` to create a draft PR through `gh` when available.
 - `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to `origin/main`.
 - `cleanup` is a dry run. It only prints clean merged worktree candidates.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
@@ -89,6 +100,10 @@ Deletion remains manual and approval-gated:
 - One task branch per worktree.
 - Never commit task work on the primary `main` checkout unless you are the
   explicit deploy owner for that repo.
+- A feature branch is the backup and collaboration unit. `main` is the reviewed
+  integration lane, not a place to rush code so it is not lost.
+- Feature agents push their branch and open/prepare a PR. Avi or the designated
+  release conductor owns merging to `main`.
 - If the primary checkout is dirty, ahead, or moves while you are working, treat
   it as shared-floor drift. Do not fold those changes into your task silently.
   Report it and continue from the isolated worktree.
@@ -103,8 +118,9 @@ A feature-agent handoff should include:
 - Local review URL and local inbox URL when a server was started.
 - Tests/checks run and their result.
 - Files or behavior changed at a high level.
-- Whether the branch is ready for review, needs another agent, or needs deploy
-  owner integration.
+- The `bin/agent-worktree finish` result.
+- Whether the branch is ready for Avi review, needs another agent, or needs
+  release-conductor integration.
 
 Do not leave Mr. McRitchie with "run these commands." Start the stack, prove the
 URL, and name any blocker that truly needs owner action.

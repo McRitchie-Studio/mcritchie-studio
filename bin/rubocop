@@ -4,5 +4,6 @@ require "bundler/setup"
 
 # explicit rubocop config increases performance slightly while avoiding config confusion.
 ARGV.unshift("--config", File.expand_path("../.rubocop.yml", __dir__))
+ARGV.unshift("--cache-root", File.expand_path("../tmp/rubocop_cache", __dir__))
 
 load Gem.bin_path("rubocop", "rubocop")

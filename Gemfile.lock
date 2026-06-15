@@ -132,7 +132,6 @@ GEM
     ed25519 (1.4.0)
     erb (4.0.4.1)
       cgi (>= 0.3.3)
-    error_highlight (0.7.0)
     erubi (1.13.1)
     et-orbi (1.4.0)
       tzinfo
@@ -442,7 +441,6 @@ DEPENDENCIES
   capybara
   debug
   dotenv-rails
-  error_highlight (>= 0.4.0)
   image_processing (~> 1.2)
   importmap-rails
   omniauth

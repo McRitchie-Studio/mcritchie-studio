@@ -78,10 +78,16 @@ Rails.application.configure do
   # caching is enabled.
   config.action_mailer.perform_caching = false
 
+  # APP_HOST is the canonical public hostname for this deployment. Production
+  # defaults to the public app host; QA/staging apps set APP_HOST explicitly so
+  # magic links and host authorization point at the QA server.
+  app_host = ENV.fetch("APP_HOST", "app.mcritchie.studio")
+  mailer_host = ENV.fetch("MAILER_HOST", app_host)
+
   # Required by the magic-link mailer: UserMailer#magic_link builds an absolute
   # URL via magic_link_url(token:), which needs a host. Without this, every
   # magic-link send raises "Missing host to link to" in production.
-  config.action_mailer.default_url_options = { host: "app.mcritchie.studio", protocol: "https" }
+  config.action_mailer.default_url_options = { host: mailer_host, protocol: "https" }
 
   # Ignore bad email addresses and do not raise email delivery errors.
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
@@ -106,8 +112,8 @@ Rails.application.configure do
   # replay against the dyno's direct *.herokuapp.com URL (bypassing CDN/WAF
   # allowlists). Especially critical here since this app is the SSO hub.
   config.hosts = [
-    "app.mcritchie.studio",            # primary prod URL
-    "mcritchie-studio.herokuapp.com",  # direct Heroku dyno URL (health checks, etc.)
+    app_host,                                                # primary public URL for this deploy target
+    ENV.fetch("DYNO_HOST", "mcritchie-studio.herokuapp.com"), # direct Heroku dyno URL (health checks, etc.)
   ]
   # /up is the Rails health-check endpoint Heroku polls — Heroku's load balancer
   # may use internal addressing, so exclude it from host authorization to avoid

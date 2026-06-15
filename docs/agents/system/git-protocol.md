@@ -8,50 +8,62 @@ When multiple agent instances share a codebase, naïve git workflows produce: br
 
 ## Worktrees, not shared checkouts
 
-Every agent instance gets its own git worktree — an independent working directory sharing the underlying `.git` database. A branch can only be checked out in one worktree at a time; git enforces this for us.
+Every implementation task gets its own hidden git worktree -- an independent
+working directory sharing the underlying `.git` database. A branch can only be
+checked out in one worktree at a time; git enforces this for us.
 
 ```
-~/projects/<repo>                          # lead worktree (Alex, manual)
-~/projects/<repo>.work/<role>-<instance>   # per-agent worktrees
-~/projects/<repo>.work/carl-001
-~/projects/<repo>.work/shannon-005
+~/projects/<repo>                          # primary checkout, integration/deploy
+~/projects/<repo>/.worktrees/<task-slug>   # per-task worktrees
+~/projects/turf-monster/.worktrees/new-contest-card
+~/projects/mcritchie-studio/.worktrees/parallel-agent-devops
 ```
 
 Create:
 ```
-git worktree add ../<repo>.work/<role>-<instance> -b <role>-<instance>/<feature-slug> origin/main
+cd ~/projects/mcritchie-studio
+bin/agent-worktree new <app> <task-slug>
 ```
 
-Remove when done:
+Graduate when done:
 ```
-git worktree remove ../<repo>.work/<role>-<instance>
+bin/agent-worktree finish <app> <task-slug> --push --pr
 ```
 
-Each worktree shares the host database by default. If two backend agents need to migrate concurrently, see `exclusive-lanes.md` (the `backend_migration` lane prevents this from breaking).
+Remove only after the PR is merged or intentionally abandoned:
+```
+bin/agent-worktree cleanup --write
+```
 
 ## Branch naming
 
-`<role>-<instance>/<feature-slug>`
+Default branch naming is `<type>/<task-slug>`, where type is usually `feat`.
+The task slug is the stable collaboration unit; do not include an agent id in
+the branch unless the task itself requires it.
 
 Examples:
-- `carl-001/agent-page-banner`
-- `shannon-005/dark-mode-cards`
-- `jasper-002/usdc-vault-refactor`
-- `steffon-001/heroku-buildpack-bump`
+- `feat/agent-page-banner`
+- `feat/dark-mode-cards`
+- `fix/usdc-vault-refactor`
+- `chore/heroku-buildpack-bump`
 
-A pre-commit hook validates the prefix matches the executing agent's identity. The lead `main` branch and agentless personal branches are exempt.
+Feature agents push only their own branch. `main` is not a backup target.
 
 ## PR ownership
 
 | Step | Owner | Meaning |
 |---|---|---|
-| Branch + PR opened | Dev | From their own worktree, against `origin/main` |
-| Spec-adherence review | Avi (PO) | "This matches the ticket" |
-| QA pass | Steffon | "Tests green, acceptance criteria met, no regression" |
-| Merge | Avi | Only after spec ✓ AND QA ✓ |
-| Release tag | Avi | Avi is accountable to Alex for throughput and quality |
+| Branch pushed + PR opened | Feature agent | From the task worktree, against `origin/main` |
+| PR intake + merge safety | Avi | "This matches the ticket and does not drop another branch's work" |
+| QA pass when warranted | Steffon | "Tests green, acceptance criteria met, no regression" |
+| Merge | Avi or release conductor | Only after PR review and required QA |
+| Release/deploy/gem publish | Release conductor | Only with explicit production/release approval |
 
-Two approvers, either can block. Disagreement between Avi and Steffon escalates to Alex.
+Avi can merge low-risk docs/tooling/copy PRs alone. Risky code, migrations,
+auth, payments, email, Solana, provider config, or deployment changes get
+Steffon QA. Disagreement between Avi and Steffon escalates to Alex the
+orchestrator, and to Mr. McRitchie when product or external-account judgment is
+needed.
 
 ## Send-back format (rejected PR)
 
@@ -76,8 +88,9 @@ A rejection is a teaching moment, not a punishment. Be specific about what *woul
 4. **Re-read a file before Edit** when in a shared worktree. Files mutate under you.
 5. **Pre-commit hooks always run.** Never `--no-verify`. If a hook fails, investigate. Don't work around.
 6. **Your branch is your responsibility.** Never push to another agent's branch.
-7. **Rebase, don't merge, when `main` advances.** Before opening a PR, `git fetch origin && git rebase origin/main`. Keep history linear.
+7. **Rebase, don't merge, when `main` advances.** Before opening a PR, fetch and rebase on `origin/main`. Keep history linear.
 8. **One in-flight branch per agent instance.** If you need to start something else, finish or abandon the current branch first.
+9. **Do not delete review evidence early.** Keep the branch and worktree until Avi confirms the PR is merged or intentionally abandoned.
 
 ## When in doubt
 

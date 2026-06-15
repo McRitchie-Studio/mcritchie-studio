@@ -13,10 +13,14 @@ Lanes are about *correctness*, not resource limits.
 | Lane | Flag | What triggers it | Concurrency |
 |---|---|---|---|
 | `backend_migration` | `tasks.requires_migration = true` | Any task that adds/modifies/removes a Rails migration, or modifies `db/schema.rb` | One Dev at a time |
+| `release_train` | `tasks.requires_release_conductor = true` | Gem publish, consumer lockfile adoption, production deploy, provider config, or env-var rollout | One conductor at a time per affected repo/app set |
 
-That's it. **Don't add lanes pre-emptively.** Add a lane only after a class of conflict has bitten twice.
+Don't add lanes pre-emptively. Add a lane only after a class of conflict has
+bitten twice, or when an action has irreversible production/provider effects.
 
-Candidates that *may* become lanes later: Gemfile.lock changes, studio-engine version bumps, shared seed file changes, asset pipeline config. Wait for them to actually hurt before formalizing.
+Candidates that *may* become lanes later: shared seed file changes, asset
+pipeline config, cross-app fixture/data contracts. Wait for them to actually
+hurt before formalizing.
 
 ## How `backend_migration` works
 
@@ -65,6 +69,29 @@ Any Carl *instance* can hold the lane at a given time. Captaincy is about author
 ## Migration batching
 
 When several upcoming tickets each need small schema changes, Avi (with Carl's input) batches them into one migration task. Three small column adds in one migration is better than three sequential migration tickets each fighting the lane.
+
+## Release train lane
+
+The `release_train` lane exists because shared releases can otherwise overwrite
+or strand other agents' work. Typical examples:
+
+- `studio-engine` version bump and RubyGems publish
+- consumer app `Gemfile.lock` updates after a gem release
+- Heroku deploys and post-deploy migrations
+- SES/Resend/provider env-var changes
+- callback URL or domain configuration changes
+
+The conductor must:
+
+1. Pull latest `main` in every affected repo.
+2. Confirm no feature agent is relying on an unpublished local path or branch.
+3. Run the release checks for the shared artifact.
+4. Publish/deploy only with explicit approval.
+5. Update consumers and verify local/production URLs.
+6. Report the commit SHAs, release version, deploy target, and verification.
+
+Feature agents can recommend entering the lane, but they do not run release
+actions unless Mr. McRitchie assigns that lane to the session.
 
 ## Adding a new lane
 
