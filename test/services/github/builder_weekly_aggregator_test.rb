@@ -57,6 +57,29 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
     assert_equal 2, metric.active_repos_count
   end
 
+  test "caches builder commit counts by explicit weekly range" do
+    week_start = Date.new(2026, 6, 8)
+    create_observation(@builder.github_login, committed_at: week_start - 7.days)
+    first_commit = create_observation(@builder.github_login, committed_at: week_start + 1.day, repo_full_name: "owner/one")
+    second_commit = create_observation(@builder.github_login, committed_at: week_start + 2.days, repo_full_name: "owner/two", is_bot: true)
+
+    Github::BuilderWeeklyAggregator.new.aggregate!(start_date: week_start, end_date: week_start + 6.days)
+
+    range = GithubCommitRange.find_by!(week_start_date: week_start)
+    cache = GithubBuilderCommitRangeCache.find_by!(
+      tracked_github_builder: @builder,
+      github_commit_range: range
+    )
+    assert_equal Date.new(2026, 6, 14), range.week_end_date
+    assert_equal "Jun 8 - Jun 14", range.label
+    assert_equal 2, cache.commits_count
+    assert_equal 2, cache.non_merge_commits_count
+    assert_equal 1, cache.bot_adjusted_commits_count
+    assert_equal 2, cache.active_repos_count
+    assert_equal [first_commit.sha, second_commit.sha], cache.commit_shas
+    assert_not_nil cache.cached_at
+  end
+
   private
 
   def create_observation(github_login, committed_at:, repo_full_name: "owner/repo", is_merge: false, is_bot: false)

@@ -28,6 +28,23 @@ module Github
       notes
     ].freeze
 
+    RANGE_CACHE_COLUMNS = %w[
+      week_start_date
+      week_end_date
+      label
+      github_login
+      cohort
+      commits_count
+      non_merge_commits_count
+      bot_adjusted_commits_count
+      active_repos_count
+      trailing_90d_avg_weekly_commits
+      builder_multiple
+      bot_adjusted_builder_multiple
+      commit_shas
+      cached_at
+    ].freeze
+
     SAMPLE_COLUMNS = %w[
       github_login
       repo_full_name
@@ -54,6 +71,7 @@ module Github
 
       {
         weekly_metrics: export_weekly_metrics(start_date, end_date),
+        range_caches: export_range_caches(start_date, end_date),
         index_weeks: export_index_weeks(start_date, end_date),
         commit_observations_sample: export_commit_sample(start_date, end_date, sample_limit)
       }
@@ -70,6 +88,40 @@ module Github
           .order(:week_start_date, :cohort, :github_login)
           .each do |metric|
             csv << WEEKLY_COLUMNS.map { |column| metric.public_send(column) }
+          end
+      end
+      path
+    end
+
+    def export_range_caches(start_date, end_date)
+      path = @output_dir.join("github_builder_commit_range_caches.csv")
+      CSV.open(path, "w") do |csv|
+        csv << RANGE_CACHE_COLUMNS
+        GithubBuilderCommitRangeCache
+          .joins(:github_commit_range)
+          .where(github_commit_ranges: {
+            week_start_date: start_date.beginning_of_week(:monday)..end_date.beginning_of_week(:monday)
+          })
+          .order("github_commit_ranges.week_start_date ASC", :cohort, :github_login)
+          .includes(:github_commit_range)
+          .each do |cache|
+            range = cache.github_commit_range
+            csv << [
+              range.week_start_date,
+              range.week_end_date,
+              range.display_label,
+              cache.github_login,
+              cache.cohort,
+              cache.commits_count,
+              cache.non_merge_commits_count,
+              cache.bot_adjusted_commits_count,
+              cache.active_repos_count,
+              cache.trailing_90d_avg_weekly_commits,
+              cache.builder_multiple,
+              cache.bot_adjusted_builder_multiple,
+              cache.commit_shas.join(" "),
+              cache.cached_at
+            ]
           end
       end
       path

@@ -23,6 +23,9 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_equal "2026-06-01", body.dig("data", "latest_week_start_date")
     assert_equal 1, body.dig("data", "index_weeks").size
     assert_equal 1, body.dig("data", "latest_builder_weekly_metrics").size
+    assert_equal "Jun 1 - Jun 7", body.dig("data", "commit_log", "ranges", 0, "label")
+    builder_row = body.dig("data", "commit_log", "rows").find { |row| row["github_login"] == "builder" }
+    assert_equal 2, builder_row.dig("ranges", 0, "commits_count")
   end
 
   test "index renders dashboard html" do
@@ -34,9 +37,12 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "AI Builder Multiple"
     assert_select "h2", "Published Multiples"
+    assert_select "h2", "Weekly Commit Log"
     assert_select "h2", "Latest Full Builder Weekly Metrics"
     assert_select "h2", "Tracked Builders"
+    assert_select "th", "Jun 1 - Jun 7 commits"
     assert_select "p", /does not measure true productivity/
+    assert_select "a[href=?]", "#commit-log", "Commit Log"
     assert_select "a[href=?]", "#tracked-builders", "Tracked Builders"
     assert_select "a[href=?]", "https://github.com/builder", "@builder"
     assert_select "a[href=?]", "https://github.com/example/repo", "example/repo"
@@ -75,6 +81,22 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
       trailing_90d_avg_weekly_commits: 1,
       builder_multiple: 2,
       bot_adjusted_builder_multiple: 2
+    )
+    range = GithubCommitRange.for_week_start(week_start)
+    GithubBuilderCommitRangeCache.create!(
+      tracked_github_builder: builder,
+      github_commit_range: range,
+      github_login: "builder",
+      cohort: "ai_builder",
+      commits_count: 2,
+      non_merge_commits_count: 2,
+      bot_adjusted_commits_count: 2,
+      active_repos_count: 1,
+      trailing_90d_avg_weekly_commits: 1,
+      builder_multiple: 2,
+      bot_adjusted_builder_multiple: 2,
+      commit_shas: ["abc123"],
+      cached_at: Time.current
     )
     week_start
   end

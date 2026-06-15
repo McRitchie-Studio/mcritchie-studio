@@ -7,6 +7,8 @@ a builder-activity index, not a productivity measure.
 
 - **Builder Weekly Commits** — public commits attributed to a tracked GitHub
   login during a Monday-starting week.
+- **Commit Range** — the explicit Monday-Sunday period used for the displayed
+  weekly commit log, for example `Jun 8 - Jun 14`.
 - **Builder Baseline** — average weekly non-merge commits over the prior 90
   days before that week.
 - **Builder Multiple** — non-merge weekly commits divided by that builder's
@@ -46,6 +48,11 @@ The runner fetches a 90-day warmup before `START` so the first target week can
 have baseline context. Weekly metrics and index weeks are upserted, so reruns
 do not duplicate commit observations.
 
+The aggregator also writes `GithubCommitRange` rows and
+`GithubBuilderCommitRangeCache` rows. These are the dashboard-facing weekly
+commit log: one cached builder/range row per tracked builder per Monday-Sunday
+period, including zero-commit weeks.
+
 CSV exports are written to:
 
 ```text
@@ -55,6 +62,7 @@ tmp/ai_builder_multiple/
 The files are:
 
 - `github_builder_weekly_metrics.csv`
+- `github_builder_commit_range_caches.csv`
 - `github_builder_index_weeks.csv`
 - `github_commit_observations_sample.csv`
 

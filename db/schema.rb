@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_15_162000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -397,6 +397,29 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
     t.index ["slug"], name: "index_games_on_slug", unique: true
   end
 
+  create_table "github_builder_commit_range_caches", force: :cascade do |t|
+    t.bigint "tracked_github_builder_id", null: false
+    t.bigint "github_commit_range_id", null: false
+    t.string "github_login", null: false
+    t.string "cohort", null: false
+    t.integer "commits_count", default: 0, null: false
+    t.integer "non_merge_commits_count", default: 0, null: false
+    t.integer "bot_adjusted_commits_count", default: 0, null: false
+    t.integer "active_repos_count", default: 0, null: false
+    t.decimal "trailing_90d_avg_weekly_commits", precision: 12, scale: 4
+    t.decimal "builder_multiple", precision: 12, scale: 4
+    t.decimal "bot_adjusted_builder_multiple", precision: 12, scale: 4
+    t.jsonb "commit_shas", default: [], null: false
+    t.datetime "cached_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_commit_range_id", "cohort"], name: "idx_builder_range_caches_on_range_cohort"
+    t.index ["github_commit_range_id"], name: "index_builder_range_caches_on_range_id"
+    t.index ["github_login", "github_commit_range_id"], name: "idx_builder_range_caches_on_login_range"
+    t.index ["tracked_github_builder_id", "github_commit_range_id"], name: "idx_builder_range_caches_on_builder_range", unique: true
+    t.index ["tracked_github_builder_id"], name: "index_builder_range_caches_on_builder_id"
+  end
+
   create_table "github_builder_index_weeks", force: :cascade do |t|
     t.date "week_start_date", null: false
     t.decimal "ai_builder_multiple", precision: 12, scale: 4
@@ -447,6 +470,16 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
     t.index ["github_login", "committed_at"], name: "idx_on_github_login_committed_at_810ec88674"
     t.index ["repo_full_name", "sha", "github_login"], name: "index_commit_observations_on_repo_sha_login", unique: true
     t.index ["source_strategy"], name: "index_github_commit_observations_on_source_strategy"
+  end
+
+  create_table "github_commit_ranges", force: :cascade do |t|
+    t.date "week_start_date", null: false
+    t.date "week_end_date", null: false
+    t.string "label", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["week_end_date"], name: "index_github_commit_ranges_on_week_end_date"
+    t.index ["week_start_date"], name: "index_github_commit_ranges_on_week_start_date", unique: true
   end
 
   create_table "image_caches", force: :cascade do |t|
@@ -962,6 +995,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
+  add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
+  add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "roster_spots", "rosters"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

@@ -2,6 +2,7 @@ class TrackedGithubBuilder < ApplicationRecord
   COHORTS = %w[ai_builder control_builder].freeze
 
   has_many :tracked_github_builder_repos, dependent: :destroy
+  has_many :github_builder_commit_range_caches, dependent: :destroy
 
   scope :active, -> { where(active: true) }
   scope :ai_builders, -> { where(cohort: "ai_builder") }

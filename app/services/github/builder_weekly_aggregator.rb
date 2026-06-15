@@ -51,6 +51,10 @@ module Github
 
       baseline_avg = weekly_average(baseline_non_merge_count)
       bot_baseline_avg = weekly_average(baseline_bot_adjusted_count)
+      active_repos_count = target.map(&:repo_full_name).uniq.size
+      trailing_average = decimal(baseline_avg)
+      builder_multiple = multiple(non_merge_count, baseline_avg)
+      bot_adjusted_builder_multiple = multiple(bot_adjusted_count, bot_baseline_avg)
 
       metric = GithubBuilderWeeklyMetric.find_or_initialize_by(
         github_login: builder.github_login,
@@ -61,12 +65,46 @@ module Github
         commits_count: target.size,
         non_merge_commits_count: non_merge_count,
         bot_adjusted_commits_count: bot_adjusted_count,
-        active_repos_count: target.map(&:repo_full_name).uniq.size,
-        trailing_90d_avg_weekly_commits: decimal(baseline_avg),
-        builder_multiple: multiple(non_merge_count, baseline_avg),
-        bot_adjusted_builder_multiple: multiple(bot_adjusted_count, bot_baseline_avg)
+        active_repos_count: active_repos_count,
+        trailing_90d_avg_weekly_commits: trailing_average,
+        builder_multiple: builder_multiple,
+        bot_adjusted_builder_multiple: bot_adjusted_builder_multiple
       )
       metric.save!
+
+      upsert_range_cache(
+        builder: builder,
+        week_start: week_start,
+        target: target,
+        non_merge_count: non_merge_count,
+        bot_adjusted_count: bot_adjusted_count,
+        active_repos_count: active_repos_count,
+        trailing_average: trailing_average,
+        builder_multiple: builder_multiple,
+        bot_adjusted_builder_multiple: bot_adjusted_builder_multiple
+      )
+    end
+
+    def upsert_range_cache(builder:, week_start:, target:, non_merge_count:, bot_adjusted_count:, active_repos_count:, trailing_average:, builder_multiple:, bot_adjusted_builder_multiple:)
+      range = GithubCommitRange.for_week_start(week_start)
+      cache = GithubBuilderCommitRangeCache.find_or_initialize_by(
+        tracked_github_builder: builder,
+        github_commit_range: range
+      )
+      cache.assign_attributes(
+        github_login: builder.github_login,
+        cohort: builder.cohort,
+        commits_count: target.size,
+        non_merge_commits_count: non_merge_count,
+        bot_adjusted_commits_count: bot_adjusted_count,
+        active_repos_count: active_repos_count,
+        trailing_90d_avg_weekly_commits: trailing_average,
+        builder_multiple: builder_multiple,
+        bot_adjusted_builder_multiple: bot_adjusted_builder_multiple,
+        commit_shas: target.sort_by { |observation| [observation.observed_at, observation.sha] }.map(&:sha),
+        cached_at: Time.current
+      )
+      cache.save!
     end
 
     def observations_for(builder, start_date, end_date)

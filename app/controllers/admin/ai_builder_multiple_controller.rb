@@ -12,6 +12,8 @@ module Admin
       @builder_metrics_week = representative_metrics_week
       @builder_metrics = @builder_metrics_week ? GithubBuilderWeeklyMetric.for_week(@builder_metrics_week).order(:cohort, :github_login).to_a : []
       @metrics_boundary_week_excluded = @builder_metrics_week.present? && @latest_week.present? && @builder_metrics_week != @latest_week
+      @commit_log_ranges = commit_log_ranges
+      @commit_log_rows = commit_log_rows
       @tracked_builder_summary = tracked_builder_summary
       @overview = overview_summary
       @builder_rollups = builder_rollups
@@ -32,7 +34,8 @@ module Admin
         tracked_builders: @tracked_builder_summary,
         overview: @overview,
         index_weeks: @index_weeks.map { |week| index_week_json(week) },
-        latest_builder_weekly_metrics: @latest_metrics.map { |metric| metric_json(metric) }
+        latest_builder_weekly_metrics: @latest_metrics.map { |metric| metric_json(metric) },
+        commit_log: commit_log_json
       }
     end
 
@@ -55,6 +58,38 @@ module Admin
       return false unless @latest_week && @observed_through_date
 
       @observed_through_date < @latest_week + 6.days
+    end
+
+    def commit_log_ranges
+      return [] unless @builder_metrics_week
+
+      GithubCommitRange
+        .where(week_start_date: first_monday_of_year(@builder_metrics_week)..@builder_metrics_week)
+        .recent
+        .to_a
+    end
+
+    def first_monday_of_year(date)
+      current = Date.new(date.year, 1, 1)
+      current += 1.day until current.monday?
+      current
+    end
+
+    def commit_log_rows
+      return [] if @commit_log_ranges.blank?
+
+      caches = GithubBuilderCommitRangeCache
+        .where(github_commit_range_id: @commit_log_ranges.map(&:id))
+        .index_by { |cache| [cache.tracked_github_builder_id, cache.github_commit_range_id] }
+
+      TrackedGithubBuilder.active.order(:cohort, :github_login).map do |builder|
+        {
+          builder: builder,
+          caches_by_range_id: @commit_log_ranges.to_h do |range|
+            [range.id, caches[[builder.id, range.id]]]
+          end
+        }
+      end
     end
 
     def overview_summary
@@ -123,6 +158,38 @@ module Admin
         trailing_90d_avg_weekly_commits: metric.trailing_90d_avg_weekly_commits,
         builder_multiple: metric.builder_multiple,
         bot_adjusted_builder_multiple: metric.bot_adjusted_builder_multiple
+      }
+    end
+
+    def commit_log_json
+      {
+        ranges: @commit_log_ranges.map do |range|
+          {
+            id: range.id,
+            week_start_date: range.week_start_date,
+            week_end_date: range.week_end_date,
+            label: range.display_label
+          }
+        end,
+        rows: @commit_log_rows.map do |row|
+          builder = row[:builder]
+          {
+            github_login: builder.github_login,
+            display_name: builder.display_label,
+            cohort: builder.cohort,
+            ranges: @commit_log_ranges.map do |range|
+              cache = row[:caches_by_range_id][range.id]
+              {
+                range_id: range.id,
+                commits_count: cache&.commits_count,
+                non_merge_commits_count: cache&.non_merge_commits_count,
+                bot_adjusted_commits_count: cache&.bot_adjusted_commits_count,
+                active_repos_count: cache&.active_repos_count,
+                cached: cache.present?
+              }
+            end
+          }
+        end
       }
     end
   end
