@@ -42,6 +42,14 @@ builders = [
     repos: ["PrefectHQ/fastmcp"]
   },
   {
+    github_login: "amcritchie",
+    display_name: "Monitor account: amcritchie",
+    cohort: "ai_builder",
+    category: "studio_operator",
+    notes: "Owner-requested monitor account. Public GitHub activity only; review whether to include in cohort analysis before publishing.",
+    repos: []
+  },
+  {
     github_login: "dhh",
     display_name: "Seed candidate: David Heinemeier Hansson",
     cohort: "control_builder",
@@ -94,7 +102,7 @@ builders.each do |data|
   )
   builder.save!
 
-  data[:repos].each do |repo_full_name|
+  data.fetch(:repos, []).each do |repo_full_name|
     builder.tracked_github_builder_repos.find_or_create_by!(repo_full_name: repo_full_name) do |repo|
       repo.repo_category = data[:category]
       repo.active = true

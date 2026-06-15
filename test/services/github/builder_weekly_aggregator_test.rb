@@ -80,13 +80,42 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
     assert_not_nil cache.cached_at
   end
 
+  test "dedupes overlapping observations with the same sha for a builder" do
+    week_start = Date.new(2026, 6, 8)
+    duplicate_sha = SecureRandom.hex(20)
+    create_observation(
+      @builder.github_login,
+      committed_at: week_start,
+      repo_full_name: "owner/search-repo",
+      source_strategy: "search",
+      sha: duplicate_sha
+    )
+    create_observation(
+      @builder.github_login,
+      committed_at: week_start,
+      repo_full_name: "owner/source-repo",
+      source_strategy: "repo_scoped",
+      sha: duplicate_sha
+    )
+
+    Github::BuilderWeeklyAggregator.new.aggregate!(start_date: week_start, end_date: week_start + 6.days)
+
+    cache = GithubBuilderCommitRangeCache.joins(:github_commit_range).find_by!(
+      github_login: @builder.github_login,
+      github_commit_ranges: { week_start_date: week_start }
+    )
+    assert_equal 1, cache.commits_count
+    assert_equal [duplicate_sha], cache.commit_shas
+    assert_equal 1, cache.active_repos_count
+  end
+
   private
 
-  def create_observation(github_login, committed_at:, repo_full_name: "owner/repo", is_merge: false, is_bot: false)
+  def create_observation(github_login, committed_at:, repo_full_name: "owner/repo", is_merge: false, is_bot: false, source_strategy: "repo_scoped", sha: SecureRandom.hex(20))
     GithubCommitObservation.create!(
       github_login: github_login,
       repo_full_name: repo_full_name,
-      sha: SecureRandom.hex(20),
+      sha: sha,
       author_login: github_login,
       committer_login: github_login,
       authored_at: committed_at,
@@ -95,7 +124,7 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
       html_url: "https://github.com/#{repo_full_name}/commit/#{SecureRandom.hex(20)}",
       is_merge: is_merge,
       is_bot: is_bot,
-      source_strategy: "repo_scoped",
+      source_strategy: source_strategy,
       raw_payload: {}
     )
   end

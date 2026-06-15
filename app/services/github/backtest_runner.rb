@@ -14,19 +14,30 @@ module Github
       @logger = logger
     end
 
-    def run!(start_date:, end_date:)
+    def run!(start_date:, end_date:, github_logins: nil)
       start_date = parse_date(start_date)
       end_date = parse_date(end_date)
       fetch_start_date = start_date - BASELINE_WARMUP_DAYS
       fetch_results = {}
+      builder_scope = TrackedGithubBuilder.active.order(:cohort, :github_login)
+      builder_scope = builder_scope.where(github_login: normalize_logins(github_logins)) if github_logins.present?
 
-      TrackedGithubBuilder.active.order(:cohort, :github_login).find_each do |builder|
+      builder_scope.find_each do |builder|
         @logger&.info("AI Builder Multiple fetching login=#{builder.github_login}")
-        fetch_results[builder.github_login] = @fetcher.fetch_for_builder(
-          builder: builder,
-          start_date: fetch_start_date,
-          end_date: end_date
-        )
+        begin
+          fetch_results[builder.github_login] = @fetcher.fetch_for_builder(
+            builder: builder,
+            start_date: fetch_start_date,
+            end_date: end_date
+          )
+        rescue Github::Client::HttpError => e
+          @logger&.warn("AI Builder Multiple fetch failed login=#{builder.github_login} error=#{e.class}: #{e.message}")
+          fetch_results[builder.github_login] = {
+            strategy: "failed",
+            stored: 0,
+            error: e.message
+          }
+        end
       end
 
       weekly_metrics_count = @aggregator.aggregate!(start_date: start_date, end_date: end_date)
@@ -48,6 +59,12 @@ module Github
 
     def parse_date(value)
       value.is_a?(Date) ? value : Date.parse(value.to_s)
+    end
+
+    def normalize_logins(logins)
+      Array(logins).flat_map { |login| login.to_s.split(",") }
+        .map { |login| login.strip.downcase }
+        .reject(&:blank?)
     end
   end
 end

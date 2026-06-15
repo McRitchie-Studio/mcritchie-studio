@@ -119,6 +119,7 @@ module Github
         )
         .to_a
         .select(&:observed_at)
+        .then { |observations| dedupe_observations(observations) }
     end
 
     def select_between(observations, start_date, end_date)
@@ -146,6 +147,16 @@ module Github
 
     def parse_date(value)
       value.is_a?(Date) ? value : Date.parse(value.to_s)
+    end
+
+    def dedupe_observations(observations)
+      observations
+        .sort_by { |observation| [observation.sha, source_priority(observation.source_strategy), observation.id || 0] }
+        .uniq(&:sha)
+    end
+
+    def source_priority(source_strategy)
+      source_strategy == "repo_scoped" ? 0 : 1
     end
   end
 end

@@ -21,14 +21,20 @@ a builder-activity index, not a productivity measure.
 
 Bot-adjusted commit pace is also stored. It excludes obvious bot commits and
 merge commits from both the weekly count and its internal 90-day baseline.
+When the same commit SHA appears from overlapping GitHub API strategies or
+repository aliases, the weekly aggregator counts it once for that builder.
 
 ## Data Source
 
 The v0 source is GitHub's public API through `Github::Client`.
 `Github::CommitFetcher` uses repo-scoped commit listing when a tracked builder
 has active repos, and falls back to commit search when no repos are attached.
-This keeps the adapter replaceable by GH Archive, BigQuery, or another public
-commit source later.
+If the repo-scoped result is too sparse for the requested window, the fetcher
+can supplement with commit search so a narrow repo list does not make a builder
+look inactive. `GITHUB_REPO_SCOPE_MIN_OBSERVATIONS` controls that threshold,
+and `GITHUB_SEARCH_RANGE_DAYS` controls the search date-window size. This keeps
+the adapter replaceable by GH Archive, BigQuery, or another public commit source
+later.
 
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
@@ -43,6 +49,10 @@ Do not print or commit the token. Store long-lived credentials in 1Password.
 ```bash
 bin/rails github:ai_builder_multiple:backtest START=2025-06-01 END=2026-06-01
 ```
+
+Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` to fetch a targeted
+builder subset while still recalculating weekly metrics and index rows from all
+stored observations.
 
 The runner fetches a 90-day warmup before `START` so the first target week can
 have baseline context. Weekly metrics and index weeks are upserted, so reruns

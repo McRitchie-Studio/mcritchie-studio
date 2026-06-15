@@ -4,7 +4,7 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
   FakeClient = Struct.new(:payloads, :calls) do
     def paginate(path, params:, headers: {})
       calls << { path: path, params: params, headers: headers }
-      payloads
+      payloads.is_a?(Hash) ? Array(payloads.fetch(path, [])) : payloads
     end
   end
 
@@ -24,7 +24,7 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
       }
     }
     client = FakeClient.new([payload], [])
-    fetcher = Github::CommitFetcher.new(client: client, logger: nil)
+    fetcher = Github::CommitFetcher.new(client: client, logger: nil, repo_scope_min_observations: 0)
 
     2.times do
       fetcher.fetch_for_builder(builder: builder, start_date: Date.new(2026, 6, 1), end_date: Date.new(2026, 6, 7))
@@ -33,6 +33,55 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
     assert_equal 1, GithubCommitObservation.where(github_login: "repo-builder", repo_full_name: "owner/repo", sha: "abc123").count
     assert client.calls.all? { |call| call[:path] == "/repos/owner/repo/commits" }
     assert_equal %i[author committer author committer], client.calls.map { |call| call[:params].keys.first }
+  end
+
+  test "supplements sparse repo-scoped results with commit search" do
+    builder = TrackedGithubBuilder.create!(github_login: "sparse-builder", cohort: "ai_builder")
+    builder.tracked_github_builder_repos.create!(repo_full_name: "owner/repo")
+    repo_payload = {
+      "sha" => "repo123",
+      "html_url" => "https://github.com/owner/repo/commit/repo123",
+      "author" => { "login" => "sparse-builder" },
+      "commit" => {
+        "author" => { "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Repo scoped commit"
+      }
+    }
+    search_payload = {
+      "sha" => "search123",
+      "html_url" => "https://github.com/other/repo/commit/search123",
+      "repository" => { "full_name" => "other/repo" },
+      "author" => { "login" => "sparse-builder" },
+      "commit" => {
+        "author" => { "date" => "2026-06-02T12:00:00Z" },
+        "committer" => { "date" => "2026-06-02T12:00:00Z" },
+        "message" => "Search supplement commit"
+      }
+    }
+    client = FakeClient.new(
+      {
+        "/repos/owner/repo/commits" => [repo_payload],
+        "/search/commits" => [search_payload]
+      },
+      []
+    )
+
+    result = Github::CommitFetcher.new(
+      client: client,
+      logger: nil,
+      repo_scope_min_observations: 2
+    ).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 7)
+    )
+
+    assert_equal "repo_scoped_with_search_supplement", result[:strategy]
+    assert_equal 1, GithubCommitObservation.where(github_login: "sparse-builder", source_strategy: "repo_scoped").count
+    assert_equal 1, GithubCommitObservation.where(github_login: "sparse-builder", source_strategy: "search").count
+    assert client.calls.any? { |call| call[:path] == "/repos/owner/repo/commits" }
+    assert client.calls.any? { |call| call[:path] == "/search/commits" }
   end
 
   test "falls back to search strategy when no repos are attached" do

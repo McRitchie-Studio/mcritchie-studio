@@ -3,10 +3,16 @@ module Github
     SEARCH_ACCEPT_HEADER = {
       "Accept" => "application/vnd.github+json"
     }.freeze
+    DEFAULT_REPO_SCOPE_MIN_OBSERVATIONS = 25
+    DEFAULT_SEARCH_RANGE_DAYS = 31
 
-    def initialize(client: Github::Client.new, logger: Rails.logger)
+    def initialize(client: Github::Client.new, logger: Rails.logger,
+      repo_scope_min_observations: ENV.fetch("GITHUB_REPO_SCOPE_MIN_OBSERVATIONS", DEFAULT_REPO_SCOPE_MIN_OBSERVATIONS).to_i,
+      search_range_days: ENV.fetch("GITHUB_SEARCH_RANGE_DAYS", DEFAULT_SEARCH_RANGE_DAYS).to_i)
       @client = client
       @logger = logger
+      @repo_scope_min_observations = repo_scope_min_observations
+      @search_range_days = [search_range_days, 1].max
     end
 
     def fetch_for_builder(builder:, start_date:, end_date:)
@@ -15,7 +21,16 @@ module Github
       repos = builder.active_repos.to_a
 
       if repos.any?
-        fetch_repo_scoped(builder, repos, start_date, end_date)
+        repo_result = fetch_repo_scoped(builder, repos, start_date, end_date)
+        return repo_result unless repo_scope_sparse?(builder, start_date, end_date)
+
+        search_result = fetch_search_scoped(builder, start_date, end_date)
+        {
+          strategy: "repo_scoped_with_search_supplement",
+          stored: repo_result[:stored].to_i + search_result[:stored].to_i,
+          repo_scoped: repo_result,
+          search: search_result
+        }
       else
         fetch_search_scoped(builder, start_date, end_date)
       end
@@ -104,11 +119,39 @@ module Github
         html_url: payload["html_url"],
         is_merge: Github::CommitClassifier.merge?(payload),
         is_bot: Github::CommitClassifier.bot?(payload),
-        source_strategy: source_strategy,
+        source_strategy: observation.new_record? ? source_strategy : preferred_source_strategy(observation.source_strategy, source_strategy),
         raw_payload: payload
       )
       observation.save!
       true
+    end
+
+    def repo_scope_sparse?(builder, start_date, end_date)
+      return false if @repo_scope_min_observations <= 0
+
+      observation_count = GithubCommitObservation.for_login(builder.github_login)
+        .where(
+          "(committed_at >= ? AND committed_at <= ?) OR " \
+          "(committed_at IS NULL AND authored_at >= ? AND authored_at <= ?)",
+          start_date.beginning_of_day, end_date.end_of_day,
+          start_date.beginning_of_day, end_date.end_of_day
+        )
+        .count
+
+      sparse = observation_count < @repo_scope_min_observations
+      if sparse
+        @logger&.info(
+          "GitHub commit fetch repo scope sparse login=#{builder.github_login} " \
+          "observations=#{observation_count} threshold=#{@repo_scope_min_observations}; supplementing with search"
+        )
+      end
+      sparse
+    end
+
+    def preferred_source_strategy(existing_strategy, new_strategy)
+      return "repo_scoped" if existing_strategy == "repo_scoped"
+
+      new_strategy
     end
 
     def search_query(github_login, role, range_start, range_end)
@@ -120,7 +163,7 @@ module Github
       ranges = []
       current = start_date
       while current <= end_date
-        range_end = [current + 6, end_date].min
+        range_end = [current + @search_range_days - 1, end_date].min
         ranges << [current, range_end]
         current = range_end + 1
       end
