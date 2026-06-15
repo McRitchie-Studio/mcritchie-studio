@@ -104,8 +104,9 @@ Last checked: 2026-06-15.
   account.
 - Persistent production transport: keep Resend active until SES production
   access is approved and SMTP runtime credentials are staged.
-- Production app adoption: deploy the current `studio-engine` release before
-  proving the shared `Studio::Email.deliver` outbox path on Heroku.
+- Production app adoption: `studio-engine 0.5.9` is adopted. McRitchie Studio
+  records durable `Studio::EmailDelivery` rows, but production still uses the
+  Rails `:async` job adapter until a dedicated worker backend is added.
 
 ## Cutover Checklist
 

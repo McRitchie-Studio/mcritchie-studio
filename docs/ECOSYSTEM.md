@@ -31,7 +31,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 |------------|-----------|
 | Setting up a fresh Mac | [`bin/ecosystem-build`](../bin/ecosystem-build) + [`docs/agents/system/house-burn-down.md`](agents/system/house-burn-down.md) |
 | Onboarding to the codebase | [`docs/agents/index.md`](agents/index.md), then the app README/runbook/topic docs for the repo you'll touch |
-| Hardening or modularizing the stack | [`docs/agents/audits/final-closeout-2026-06-14.md`](agents/audits/final-closeout-2026-06-14.md), then the current app runbooks |
+| Hardening or modularizing the stack | [`docs/agents/audits/fresh-final-audit-2026-06-15.md`](agents/audits/fresh-final-audit-2026-06-15.md), then the current app runbooks |
 | Adding or promoting an app | [`docs/agents/modules/app-registry.md`](agents/modules/app-registry.md), `bin/register-satellite --list`, then `studio-engine/docs/NEW_APP_SETUP.md` |
 | Working on Solana | `turf-monster/docs/SOLANA.md` and `turf-vault/docs/CURRENT_DEPLOYMENT.md` |
 | Working on auth | `studio-engine/docs/USER_CONTRACT.md`, `mcritchie-studio/docs/topics/auth-and-sso.md`, and `turf-monster/docs/AUTH.md` |
@@ -68,8 +68,8 @@ Full protocol: [`docs/agents/system/house-burn-down.md`](agents/system/house-bur
 
 ## Current audit + roadmap
 
-The current closeout audit is [`docs/agents/audits/final-closeout-2026-06-14.md`](agents/audits/final-closeout-2026-06-14.md). The broader roadmap audit is [`docs/agents/audits/broader-ecosystem-audit-2026-06-14.md`](agents/audits/broader-ecosystem-audit-2026-06-14.md). The earlier post-cleanup, ecosystem, and modularization passes remain at [`docs/agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md`](agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md), [`docs/agents/audits/main-ecosystem-audit-2026-06-13.md`](agents/audits/main-ecosystem-audit-2026-06-13.md), and [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
+The current final audit is [`docs/agents/audits/fresh-final-audit-2026-06-15.md`](agents/audits/fresh-final-audit-2026-06-15.md). The prior closeout audit is [`docs/agents/audits/final-closeout-2026-06-14.md`](agents/audits/final-closeout-2026-06-14.md), and the broader roadmap audit is [`docs/agents/audits/broader-ecosystem-audit-2026-06-14.md`](agents/audits/broader-ecosystem-audit-2026-06-14.md). The earlier post-cleanup, ecosystem, and modularization passes remain at [`docs/agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md`](agents/audits/post-cleanup-ecosystem-audit-2026-06-14.md), [`docs/agents/audits/main-ecosystem-audit-2026-06-13.md`](agents/audits/main-ecosystem-audit-2026-06-13.md), and [`docs/agents/audits/modularization-audit-2026-06-13.md`](agents/audits/modularization-audit-2026-06-13.md). Older audits under `docs/agents/system/` are historical snapshots unless their findings have been promoted into active modules or app runbooks.
 
 ---
 
-*Last updated: 2026-06-14. Update when repos, ports, production URLs, deploy targets, or agent entrypoints change.*
+*Last updated: 2026-06-15. Update when repos, ports, production URLs, deploy targets, or agent entrypoints change.*

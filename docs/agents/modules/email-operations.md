@@ -103,9 +103,10 @@ Production proof gaps:
 1. Store or derive SES SMTP credentials for each runtime environment.
 2. Set `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on Heroku for the
    shared `ses:*` checks without touching the existing S3 `AWS_*` vars.
-3. Deploy consumer apps with the current `studio-engine` release before proving
-   `Studio::Email.deliver` and the shared local/provider outbox path in
-   production.
+3. Keep consumer apps on the current `studio-engine` release before proofing a
+   provider cutover. Turf Monster release `v90` proved the shared mail boot path
+   through Resend fallback; the remaining production proof is SES after sandbox
+   removal and SMTP credential staging.
 4. Request or confirm SES production access approval, then run a provider smoke
    test to `alex@mcritchie.studio` and a Turf-approved inbox.
 
