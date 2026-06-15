@@ -96,6 +96,22 @@ Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` while testing. The full
 five-year task across the large control pool can require broad GitHub commit
 search for builders without repo scopes.
 
+For the large control-candidate pool, run the five-year history in resumable
+batches. The batch task skips builders that already have a complete
+Saturday-Friday cache for the five-year window and prints progress after each
+GitHub search date segment:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=3 \
+GITHUB_RATE_LIMIT_PAUSE_SECONDS=180 \
+GITHUB_RATE_LIMIT_RETRIES=5 \
+bin/rails github:ai_builder_multiple:fetch_last_five_years_batch BATCH_SIZE=10
+```
+
+Use `START_AFTER=github_login` to continue from a known login, `COHORT=ai_builder`
+or `COHORT=control_builder` to limit the batch, and `SKIP_COMPLETE=false` to
+force a refresh of already-complete builders.
+
 Rate-limit and pacing knobs:
 
 ```bash

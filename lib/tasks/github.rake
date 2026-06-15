@@ -74,6 +74,39 @@ namespace :github do
       run_fetch_window.call("last five years", Github::CommitFetchWindows.last_five_years(today: parse_today.call))
     end
 
+    desc "Fetch the next batch of tracked builder five-year commit history. [BATCH_SIZE=10] [START_AFTER=github_login] [COHORT=ai_builder|control_builder] [LOGIN=github_login] [SKIP_COMPLETE=true]"
+    task fetch_last_five_years_batch: :environment do
+      batch_size = ENV.fetch("BATCH_SIZE", ENV.fetch("LIMIT", Github::BuilderHistoryBatchRunner::DEFAULT_BATCH_SIZE)).to_i
+      runner = Github::BuilderHistoryBatchRunner.new(reporter: ->(message) { puts message })
+      result = runner.run!(
+        today: parse_today.call,
+        batch_size: batch_size,
+        cohort: ENV["COHORT"].presence,
+        start_after: ENV["START_AFTER"].presence,
+        github_logins: ENV["LOGIN"].presence || ENV["LOGINS"].presence,
+        skip_complete: ENV.fetch("SKIP_COMPLETE", "true")
+      )
+
+      puts "AI Builder Multiple five-year batch complete"
+      puts "  window: #{result[:window_start]} to #{result[:window_end]}"
+      puts "  weeks per builder: #{result[:week_count]}"
+      puts "  selected builders: #{result[:selected_logins].join(", ")}"
+      puts "  next START_AFTER: #{result[:next_start_after] || "(none)"}"
+      puts "  remaining eligible after batch: #{result[:remaining_after_batch]}"
+      puts "  pacing:"
+      puts "    GITHUB_REQUEST_PAUSE_SECONDS=#{ENV.fetch("GITHUB_REQUEST_PAUSE_SECONDS", 0)}"
+      puts "    GITHUB_BUILDER_PAUSE_SECONDS=#{ENV.fetch("GITHUB_BUILDER_PAUSE_SECONDS", 0)}"
+      puts "    GITHUB_RATE_LIMIT_PAUSE_SECONDS=#{ENV.fetch("GITHUB_RATE_LIMIT_PAUSE_SECONDS", 60)}"
+      puts "    GITHUB_RATE_LIMIT_RETRIES=#{ENV.fetch("GITHUB_RATE_LIMIT_RETRIES", 1)}"
+      result[:results].each do |login, builder_result|
+        puts(
+          "  #{login}: strategy=#{builder_result[:strategy]} stored=#{builder_result[:stored]} " \
+          "cache_rows=#{builder_result[:cache_rows] || 0} commits=#{builder_result[:total_cached_commits] || 0} " \
+          "complete=#{builder_result[:complete] || false} elapsed=#{builder_result[:elapsed_seconds]}s"
+        )
+      end
+    end
+
     desc "Import Paul Miller's historic active GitHub users gist as control candidates. [MAX=910] [ACTIVE=true]"
     task import_paulmillr_active_users: :environment do
       importer = Github::PaulMillrActiveUsersImporter.new
