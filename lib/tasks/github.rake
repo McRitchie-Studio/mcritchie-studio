@@ -76,6 +76,7 @@ namespace :github do
 
     desc "Fetch the next batch of tracked builder five-year commit history. [BATCH_SIZE=10] [START_AFTER=github_login] [COHORT=ai_builder|control_builder] [LOGIN=github_login] [SKIP_COMPLETE=true]"
     task fetch_last_five_years_batch: :environment do
+      $stdout.sync = true
       batch_size = ENV.fetch("BATCH_SIZE", ENV.fetch("LIMIT", Github::BuilderHistoryBatchRunner::DEFAULT_BATCH_SIZE)).to_i
       runner = Github::BuilderHistoryBatchRunner.new(reporter: ->(message) { puts message })
       result = runner.run!(
