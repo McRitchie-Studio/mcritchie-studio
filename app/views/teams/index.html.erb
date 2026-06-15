@@ -44,7 +44,7 @@
       <% @teams.each do |team| %>
         <div class="card p-4"
              data-team-card
-             data-name="<%= "#{team.name} #{team.short_name} #{team.location}".downcase %>"
+             data-name="<%= "#{team.name} #{team.short_name} #{team.location} #{team.home_arena&.name}".downcase %>"
              data-league="<%= team.league %>">
           <div class="flex items-center gap-2 mb-2">
             <% if team.color_primary.present? %>
@@ -73,6 +73,9 @@
                 <span class="text-xs text-secondary"><%= team.conference %><%= " #{team.division}" if team.division.present? %></span>
               <% end %>
             </div>
+          <% end %>
+          <% if team.home_arena.present? %>
+            <p class="text-xs text-muted mt-1 truncate"><%= team.home_arena.name %></p>
           <% end %>
           <% if team.people.any? %>
             <div class="mt-2 pt-2 border-t border-subtle">

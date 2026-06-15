@@ -10,6 +10,7 @@ Dir[Rails.root.join("db/seeds/*.rb")].sort.each { |f| load f }
 
 puts "\nSeed complete!"
 puts "  Teams: #{Team.count} (NFL: #{Team.nfl.count}, NCAA: #{Team.ncaa.count}, FIFA: #{Team.fifa.count})"
+puts "  Arenas: #{Arena.count}"
 puts "  People: #{Person.count} (Athletes: #{Person.where(athlete: true).count})"
 puts "  Athletes: #{Athlete.count}"
 puts "  Contracts: #{Contract.count} (college: #{Contract.where(contract_type: 'college').count}, active: #{Contract.where(contract_type: 'active').count}, draft: #{Contract.where(contract_type: 'draft_pick').count}, mock: #{Contract.where(contract_type: 'mock_pick').count})"

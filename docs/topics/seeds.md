@@ -12,8 +12,9 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 | | `02_agents.rb` | 9 agents with avatars (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason). Avatar PNGs at `/public/agents/<slug>.png` — the 5 new agents (Avi/Carl/Shannon/Jasper/Steffon) still need PNG files added. |
 | | `03_skills.rb` | 35 skills + 40 assignments. Skill assignments are sync-style (destroys non-desired rows) so re-seeding cleans up role changes — e.g. Mason's 2026-05-23 move from Infrastructure → Marketing dropped the old infra skills. |
 | 2. Leagues | `10_teams_nfl.rb` | 32 NFL teams (sport/league/conference/division) |
-| | `11_teams_ncaa.rb` | 71 NCAA teams (schools from 2025 draft picks) |
+| | `11_teams_ncaa.rb` | 75 NCAA teams (schools from 2025 draft picks) |
 | | `12_teams_fifa.rb` | 48 FIFA World Cup 2026 teams (sport/league/group) |
+| | `14_arenas.rb` | 38 NFL schedule venues from Turf Monster's cached 2026 schedule. Links all 32 NFL teams to `home_arena_slug`; neutral/international venues remain arena records without home teams. |
 | | `15_seasons.rb` | 3 seasons (1 active) |
 | | `16_slates.rb` | 29 slates across seasons |
 | 3. People | `20_coaches_nfl.rb` | 128 NFL coaches (HC + coordinators) |
@@ -33,7 +34,7 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 | | `53_activities.rb` | 6 sample activities |
 | | `54_ai_builder_multiple_candidates.rb` | 10 editable public GitHub builder seed candidates, 5 AI builders and 5 control builders, with optional repo scopes. All rows are marked in notes as seed candidates. |
 
-**Totals:** 151 teams, ~2741 people, ~2566 athletes, ~2740 contracts (103 college, ~2535 active, 102 draft), plus 10 AI Builder Multiple seed candidates. All idempotent via `find_or_create_by!`.
+**Totals:** 155 teams, 38 arenas, ~3000 people, ~2800 athletes, ~2800 contracts, plus 10 AI Builder Multiple seed candidates. All idempotent via `find_or_create_by!`.
 
 ## Full rebuild vs plain seed
 

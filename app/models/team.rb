@@ -1,6 +1,8 @@
 class Team < ApplicationRecord
   include Sluggable
 
+  belongs_to :home_arena, class_name: "Arena", foreign_key: :home_arena_slug, primary_key: :slug, optional: true
+
   has_many :contracts, foreign_key: :team_slug, primary_key: :slug
   has_many :people, through: :contracts
   has_many :rosters, foreign_key: :team_slug, primary_key: :slug
