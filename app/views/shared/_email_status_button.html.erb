@@ -2,19 +2,33 @@
   status = email_delivery_banner_status
   sends_email = status.include?("EMAIL SEND true")
   transport = status.split("·").last.to_s.strip.downcase
-  provider_icon = case transport
+  delivery_method = defined?(ActionMailer) ? ActionMailer::Base.delivery_method.to_s.downcase : ""
+  connector = if defined?(Studio) && Studio.respond_to?(:ses_transport_ready?) && Studio.ses_transport_ready?
+                "ses"
+              elsif delivery_method == "resend"
+                "resend"
+              elsif %w[ses resend].include?(transport)
+                transport
+              end
+  provider_icon = case connector
                   when "ses" then "ses-favicon.png"
                   when "resend" then "resend-favicon.png"
                   end
+  connector_label = connector ? connector.titleize : "Unknown"
+  email_state = sends_email ? "Sending" : "Captured"
   status_icon = sends_email ? "✅" : "❌"
-  title = "Email sending #{sends_email ? "enabled" : "disabled"} via #{transport.presence || "unknown"}"
+  title = "Connector: #{connector_label} · Emails: #{email_state}"
 %>
 
 <%= link_to "/_studio/local_emails",
-            class: "inline-flex items-center font-semibold rounded px-3 py-1 whitespace-nowrap gap-2",
-            style: "background:#ffffff; color:#be185d; text-decoration:none;",
+            class: "group relative inline-flex items-center font-semibold rounded px-3 py-1 whitespace-nowrap gap-2 transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/90",
+            style: "background:#ffffff; color:#be185d; text-decoration:none; position:relative; transition:transform 150ms ease, box-shadow 150ms ease;",
             title: title,
-            "aria-label": title do %>
+            "aria-label": title,
+            onmouseover: "this.style.transform='translateY(-1px)'; this.style.boxShadow='0 8px 18px rgba(0,0,0,0.18)'; this.querySelector('[data-email-status-tooltip]').style.opacity='1';",
+            onmouseout: "this.style.transform=''; this.style.boxShadow=''; this.querySelector('[data-email-status-tooltip]').style.opacity='0';",
+            onfocus: "this.style.transform='translateY(-1px)'; this.style.boxShadow='0 8px 18px rgba(0,0,0,0.18)'; this.querySelector('[data-email-status-tooltip]').style.opacity='1';",
+            onblur: "this.style.transform=''; this.style.boxShadow=''; this.querySelector('[data-email-status-tooltip]').style.opacity='0';" do %>
   <span>Email</span>
   <span aria-hidden="true"><%= status_icon %></span>
   <% if provider_icon.present? %>
@@ -28,4 +42,9 @@
   <% else %>
     <span aria-hidden="true">❓</span>
   <% end %>
+  <span data-email-status-tooltip
+        class="pointer-events-none absolute right-0 top-full z-[140] mt-2 w-max max-w-[260px] rounded bg-white px-3 py-2 text-xs font-semibold text-slate-900 opacity-0 shadow-lg ring-1 ring-black/10 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+        style="position:absolute; right:0; top:100%; z-index:140; margin-top:8px; max-width:260px; width:max-content; border-radius:4px; background:#ffffff; color:#111827; padding:8px 12px; font-size:12px; font-weight:700; line-height:1.2; opacity:0; pointer-events:none; box-shadow:0 8px 18px rgba(0,0,0,0.18); transition:opacity 150ms ease;">
+    <%= title %>
+  </span>
 <% end %>
