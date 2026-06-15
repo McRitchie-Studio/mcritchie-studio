@@ -14,6 +14,33 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 - Do not hand the user terminal chores. Run safe commands yourself; ask the user for approvals, credentials, product judgment, or external access.
 - Prefer a concrete local result the user can inspect: a URL, a diff, a passing command, or a short audit.
 
+## Default Operating Context
+
+Assume Alex starts agent sessions from `/Users/alex/projects`, and that a plain
+feature request should be enough context to begin. The default launch flow is:
+
+1. Read this file, then `mcritchie-studio/docs/ECOSYSTEM.md`.
+2. Identify the target repo and read its README/RUNBOOK/topic docs relevant to
+   the request.
+3. Pull/check `main` and inspect git status before editing.
+4. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
+   `3100-3199`, Tax Studio reserved at `3200-3299`, next app `3300-3399`.
+5. Build the feature, run the meaningful tests/checks, and give Alex a local
+   URL to react to.
+6. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
+   operations change, update the owning active docs in the same pass.
+7. Commit and push when the work is coherent. Deploy only when Alex asks for a
+   deploy or the task explicitly includes production rollout.
+
+For a new feature session, Alex should only need to say the target app and the
+feature. A good prompt is:
+
+```text
+Work from /Users/alex/projects. Build this feature in <app>: <feature>.
+Give me a local URL to review, update docs if behavior changes, then commit,
+push, and deploy if I explicitly asked for deploy.
+```
+
 ## Start Here
 
 | Need | Read |
@@ -34,6 +61,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
 | Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
+| Fresh final audit | `mcritchie-studio/docs/agents/audits/fresh-final-audit-2026-06-15.md` |
 | Final ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
