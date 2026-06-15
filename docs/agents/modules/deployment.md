@@ -5,11 +5,61 @@ Deployment details remain app-owned, but cross-repo agents should know where to 
 ## McRitchie Studio
 
 Production app: `mcritchie-studio`
+Canonical URL: `https://mcritchie.studio`
+Legacy app URL: `https://app.mcritchie.studio`
 
 ```bash
 git push heroku main
 heroku run bin/rails db:migrate --app mcritchie-studio
 ```
+
+### Root-Domain Launch Cutover
+
+`mcritchie.studio` is the canonical McRitchie Studio app host. The previous
+Squarespace site is archived at `https://v1.mcritchie.studio`; the old Rails app
+host `https://app.mcritchie.studio` remains a legacy alias.
+
+Heroku domains for `mcritchie-studio`:
+
+| Hostname | DNS type | Target |
+|----------|----------|--------|
+| `mcritchie.studio` | ALIAS / ANAME at apex | `human-gooseberry-dpwdkczq4dpjxe0n7qconbut.herokudns.com` |
+| `www.mcritchie.studio` | CNAME | `philosophical-anenome-txijca9objmowkzw87zmm2e8.herokudns.com` |
+| `app.mcritchie.studio` | CNAME | `dry-newt-78qhw9kfd1r0nqnu4fybesw3.herokudns.com` |
+
+Squarespace archive DNS:
+
+| Hostname | DNS type | Target |
+|----------|----------|--------|
+| `v1.mcritchie.studio` | CNAME | `ext-cust.squarespace.com` |
+
+Production Heroku config for the cutover:
+
+```bash
+heroku config:set \
+  APP_HOST=mcritchie.studio \
+  MAILER_HOST=mcritchie.studio \
+  APP_HOST_ALIASES=app.mcritchie.studio,www.mcritchie.studio,mcritchie-studio-039470649719.herokuapp.com \
+  DYNO_HOST=mcritchie-studio-039470649719.herokuapp.com \
+  --app mcritchie-studio
+```
+
+DNS cutover in Squarespace:
+
+1. Add `v1` CNAME -> `ext-cust.squarespace.com` and attach
+   `v1.mcritchie.studio` to the Squarespace site before moving the apex.
+2. Replace the four apex `A` records currently pointing at Squarespace with an
+   apex `ALIAS`/`ANAME` to Heroku:
+   `human-gooseberry-dpwdkczq4dpjxe0n7qconbut.herokudns.com`.
+3. Change `www` from Squarespace to the Heroku CNAME target if `www` should
+   launch Rails alongside the apex. Remove `www.mcritchie.studio` from
+   `APP_HOST_ALIASES` if `www` intentionally stays on Squarespace.
+4. Run `heroku certs:auto --app mcritchie-studio` until ACM shows issued certs
+   for every Heroku-hosted hostname.
+5. Verify:
+   `curl -I https://mcritchie.studio/up`,
+   `curl -I https://app.mcritchie.studio/up`, and
+   `curl -I https://v1.mcritchie.studio`.
 
 ## Turf Monster
 
