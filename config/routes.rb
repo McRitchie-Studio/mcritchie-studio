@@ -36,6 +36,8 @@ Rails.application.routes.draw do
   # to authorize @turfmonstershow and capture refresh_token + open_id.
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard
+    get "models", to: "models#index", as: :models
+    get "models/:key", to: "models#show", as: :model
 
     # Admin link hub — gathers every admin/operator destination (incl. the
     # on-chain Signing Console). admin#links, require_admin. /admin/links.

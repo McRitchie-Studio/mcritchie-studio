@@ -26,6 +26,7 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", "Admin Dashboard"
     assert_select "a[href=?]", "#admin-users"
     assert_select "a[href=?]", "#request-logs"
+    assert_select "a[href=?]", admin_models_path
     assert_select "a[href=?]", admin_signing_requests_path
     assert_select "a[href=?]", admin_links_path
     assert_select "table#admin-users-table"
