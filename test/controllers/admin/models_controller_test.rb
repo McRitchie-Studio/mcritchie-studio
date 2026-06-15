@@ -49,8 +49,31 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Teams"
     assert_select "table#models-teams-table"
+    assert_select "a[href*=?]", "sort=team"
+    assert_select "a[href*=?]", "sort=sport"
+    assert_select "a[href*=?]", "sort=league"
+    assert_select "button[data-team-json-trigger=?]", "buffalo-bills"
     assert_match "Buffalo Bills", response.body
     assert_match "Highmark Stadium", response.body
+    assert_match "🏈", response.body
+    assert_match /&quot;slug&quot;: &quot;buffalo-bills&quot;/, response.body
+    assert_match /&quot;home_arena&quot;/, response.body
+  end
+
+  test "admin can sort teams by team sport and league" do
+    log_in_as @admin
+
+    get admin_model_path("teams", sort: "league", direction: "asc")
+    assert_response :success
+    assert_operator response.body.index("Argentina"), :<, response.body.index("Buffalo Bills")
+
+    get admin_model_path("teams", sort: "sport", direction: "asc")
+    assert_response :success
+    assert_operator response.body.index("Buffalo Bills"), :<, response.body.index("Argentina")
+
+    get admin_model_path("teams", sort: "team", direction: "desc")
+    assert_response :success
+    assert_operator response.body.index("United States"), :<, response.body.index("Miami Dolphins")
   end
 
   test "admin can browse arenas model page" do
