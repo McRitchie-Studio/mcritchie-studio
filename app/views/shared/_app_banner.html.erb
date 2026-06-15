@@ -1,0 +1,30 @@
+<%
+  tone = local_assigns.fetch(:tone, :environment).to_sym
+  density = local_assigns.fetch(:density, :normal).to_sym
+  message = local_assigns.fetch(:message)
+  actions = local_assigns[:actions]
+
+  tones = {
+    environment: {
+      background: "#eab308",
+      color: "#000000",
+      shadow: "none"
+    }
+  }
+
+  density_styles = {
+    compact: "font-size:12px; font-weight:700; padding:2px 12px;",
+    normal: "font-size:14px; font-weight:700; padding:8px 16px;"
+  }
+
+  style = tones.fetch(tone)
+%>
+
+<div class="w-full" style="background:<%= style.fetch(:background) %>; color:<%= style.fetch(:color) %>; box-shadow:<%= style.fetch(:shadow) %>;">
+  <div class="max-w-7xl mx-auto flex items-center justify-between gap-3" style="<%= density_styles.fetch(density) %>">
+    <span class="min-w-0 truncate"><%= message %></span>
+    <% if actions.present? %>
+      <div class="shrink-0 flex items-center gap-2"><%= actions %></div>
+    <% end %>
+  </div>
+</div>

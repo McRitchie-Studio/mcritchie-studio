@@ -8,23 +8,28 @@
 
   <body x-data class="bg-page text-body min-h-screen" :class="{ 'dev-mode': $store.devMode }">
     <%= render "layouts/studio/flash" %>
-    <% unless Rails.env.production? %>
-      <div style="background:#eab308; color:#000; font-size:12px; font-weight:700; padding:2px 12px; position:relative;">
-        <%= Rails.env.capitalize %> Environment
-        <span style="position:absolute; right:8px; top:50%; transform:translateY(-50%); display:flex; align-items:center; gap:6px;">
-          <span class="rounded" style="font-size:10px; font-weight:700; padding:1px 6px; background:rgba(0,0,0,0.2);">
-            <%= email_delivery_banner_status %>
-          </span>
+    <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
+            class="sticky top-0 z-50 bg-page transition-shadow duration-300"
+            :class="scrolled && 'shadow-lg border-b border-subtle'">
+      <% unless Rails.env.production? %>
+        <% environment_actions = capture do %>
+          <%= link_to email_delivery_banner_status,
+                      "/_studio/local_emails",
+                      class: "rounded",
+                      style: "font-size:10px; font-weight:700; padding:1px 6px; background:rgba(0,0,0,0.2); color:#000; text-decoration:none; cursor:pointer;",
+                      title: "Open captured emails",
+                      "aria-label": "Open captured emails" %>
           <button @click="$store.devMode = !$store.devMode; localStorage.setItem('devMode', $store.devMode)"
                   class="rounded cursor-pointer"
                   style="font-size:10px; font-weight:700; padding:1px 6px;"
                   :style="$store.devMode ? 'background:rgba(0,0,0,0.4); color:#fff;' : 'background:rgba(0,0,0,0.2); color:#000;'">DEV MODE</button>
-        </span>
-      </div>
-    <% end %>
-    <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
-            class="sticky top-0 z-50 bg-page transition-shadow duration-300"
-            :class="scrolled && 'shadow-lg border-b border-subtle'">
+        <% end %>
+        <%= render "shared/app_banner",
+                   tone: :environment,
+                   density: :compact,
+                   message: "#{Rails.env.capitalize} Environment",
+                   actions: environment_actions %>
+      <% end %>
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
            :class="scrolled ? 'py-2' : 'py-6'">
         <div class="flex items-center justify-between">
