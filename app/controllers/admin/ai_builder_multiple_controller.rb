@@ -47,7 +47,7 @@ module Admin
       @commit_log_description = "All cached Saturday-Friday UTC public commit counts since July 24, 2021."
       @commit_log_action = {
         label: "Back To Dashboard",
-        path: admin_ai_builder_multiple_path(builder_limit: @builder_limit, anchor: "commit-log")
+        path: admin_ai_builder_multiple_path
       }
     end
 

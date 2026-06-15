@@ -76,7 +76,8 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "AI Builder Commit Cache History"
     assert_select "h2", "Full Commit Cache History"
-    assert_select "a[href=?]", admin_ai_builder_multiple_path(builder_limit: 1_000, anchor: "commit-log"), "Back To Dashboard"
+    assert_select "a[href=?]", admin_ai_builder_multiple_path, "Dashboard"
+    assert_select "a[href=?]", admin_ai_builder_multiple_path, "Back To Dashboard"
     assert_select "th", "Jan 30"
     assert_select "th", /2025/
     assert_match "Nov 28, 2025", response.body
