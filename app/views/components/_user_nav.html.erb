@@ -16,7 +16,7 @@
         <% end %>
         <div class="flex items-center gap-2 ml-auto self-end">
           <%= raw extra_icons_html %>
-          <%= render "components/admin_dropdown" %>
+          <%= render "components/link_sidebar_trigger" %>
           <%= render "components/theme_toggle_morph" %>
         </div>
         <button type="button"
@@ -130,7 +130,7 @@
       <%= render "components/avatar", user: current_user, size: "nav" %>
     </button>
   <% else %>
-    <%= render "components/admin_dropdown" %>
+    <%= render "components/link_sidebar_trigger" %>
     <%= render "components/theme_toggle_morph" %>
     <div class="flex items-center gap-3 ml-auto">
       <%= link_to "Log in", login_path, class: "text-heading hover:text-primary text-sm font-semibold transition" %>
