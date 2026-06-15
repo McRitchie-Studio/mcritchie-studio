@@ -1,5 +1,9 @@
 {
+  "name": "mcritchie-studio",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
