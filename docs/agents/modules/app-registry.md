@@ -14,11 +14,12 @@ in `config/satellites.yml`.
 | McRitchie Studio | implicit active hub | 3000 | 3000-3099 | Bootstrap/docs anchor |
 | Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
-| Rolio | unmanaged candidate | 3020 today | 3300-3399 if promoted | Do not add until the product decision is explicit |
+| Chain Ops | planned satellite | 3300 | 3300-3399 | Solana environment control plane; v1 localnet utility |
+| Rolio | unmanaged candidate | 3020 today | 3400-3499 if promoted | Do not add until the product decision is explicit |
 
-Do not reuse `3200-3299` for Rolio while Tax Studio remains planned. If Rolio
-joins the managed stack, move it to `3300` as its primary port and add it to
-`config/satellites.yml`.
+Do not reuse `3200-3299` or `3300-3399` for Rolio while Tax Studio and Chain Ops
+remain planned. If Rolio joins the managed stack, move it to `3400` as its
+primary port and add it to `config/satellites.yml`.
 
 ## Lifecycle Status
 

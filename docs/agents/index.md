@@ -96,6 +96,7 @@ or deploy unless I explicitly assigned that lane.
 |------|------|------------|
 | `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
 | `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
+| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3300 |
 | `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
 | `solana-studio` | Ruby Solana primitives | none |
 | `turf-vault` | Anchor smart contract | none |
