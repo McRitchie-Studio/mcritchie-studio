@@ -1,25 +1,4 @@
-<% sections = [
-  { title: "On-chain", links: [
-    { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", featured: true,
-      desc: "Keyless multisig — build, sign in your own Phantom, broadcast. Durable-nonce ready." },
-  ] },
-  { title: "Site", links: [
-    { label: "Theme",  href: admin_theme_path,  emoji: "🎨", desc: "Palette + dark mode" },
-    { label: "Schema", href: admin_schema_path, emoji: "🗂️", desc: "DB schema browser" },
-  ] },
-  { title: "Ops", links: [
-    { label: "Error logs",     href: "/error_logs",             emoji: "🚨", desc: "Captured errors" },
-    { label: "Toast test",     href: "/toast_test",             emoji: "🔔", desc: "Notification harness" },
-    { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", desc: "OAuth handshake" },
-  ] },
-  { title: "Data", links: [
-    { label: "News workflow", href: "/news/workflow",     emoji: "🛠️", desc: "Intake → conclude board" },
-    { label: "Merge people",  href: "/people/merge",      emoji: "🔀", desc: "Resolve duplicate people" },
-    { label: "Duplicates",    href: "/people/duplicates", emoji: "👥", desc: "Duplicate candidates" },
-  ] },
-] %>
-
 <%= render "components/link_hub",
       title: "Admin Links",
       subtitle: "Operator + admin destinations.",
-      sections: sections %>
+      sections: admin_link_sections %>
