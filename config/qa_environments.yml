@@ -1,0 +1,67 @@
+# QA environment registry for stable review servers.
+#
+# These are intentionally separate from config/satellites.yml:
+# satellites.yml describes products; this file describes deploy targets used by
+# Avi/Steffon/release-conductor sessions before production rollout.
+#
+# Apps listed here may not exist yet on Heroku. Use:
+#   bin/qa-server list
+#   bin/qa-server plan <app>
+#   bin/qa-server status <app>
+#
+# Never put secret values in this file. Put secret names/purposes here and pull
+# values through 1Password/Heroku during approved provisioning.
+
+qa_environments:
+  mcritchie-studio:
+    display_name: McRitchie Studio QA
+    repo: mcritchie-studio
+    heroku_app: mcritchie-studio-qa
+    qa_url: https://mcritchie-studio-qa.herokuapp.com
+    production_app: mcritchie-studio
+    production_url: https://app.mcritchie.studio
+    deploy_provider: heroku
+    dynos:
+      web: 1
+      worker: 1
+    safety_profile: hub-qa
+    required_config:
+      APP_HOST: mcritchie-studio-qa.herokuapp.com
+      MAILER_HOST: mcritchie-studio-qa.herokuapp.com
+      DYNO_HOST: mcritchie-studio-qa.herokuapp.com
+      QA_ENV: "true"
+      MAIL_TRANSPORT: resend
+      RESEND_MAILER_FROM: "McRitchie QA <team@mcritchie.studio>"
+    required_secrets:
+      - RAILS_MASTER_KEY
+      - RESEND_API_KEY
+
+  turf-monster:
+    display_name: Turf Monster QA
+    repo: turf-monster
+    heroku_app: turf-monster-qa
+    qa_url: https://turf-monster-qa.herokuapp.com
+    production_app: turf-monster-mainnet
+    production_url: https://app.turfmonster.media
+    deploy_provider: heroku
+    dynos:
+      web: 1
+      worker: 1
+    safety_profile: devnet-no-real-money
+    required_config:
+      APP_HOST: turf-monster-qa.herokuapp.com
+      MAILER_HOST: turf-monster-qa.herokuapp.com
+      DYNO_HOST: turf-monster-qa.herokuapp.com
+      QA_ENV: "true"
+      MAIL_TRANSPORT: resend
+      RESEND_MAILER_FROM: "Turf Monster QA <team@mcritchie.studio>"
+      PAYMENT_PROVIDER: none
+      ENABLE_CDP_RAMP: "false"
+      SOLANA_NETWORK: devnet
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+    required_secrets:
+      - RAILS_MASTER_KEY
+      - RESEND_API_KEY
+      - MANAGED_WALLET_ENCRYPTION_KEY
+      - SOLANA_ADMIN_KEY
+      - EXPECTED_IDL_HASH

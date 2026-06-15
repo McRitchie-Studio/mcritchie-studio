@@ -13,7 +13,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECTS_DIR="${PROJECTS_DIR:-$(cd "$ROOT/.." && pwd)}"
+default_projects_dir() {
+  local candidate
+  candidate="$(cd "$ROOT/.." && pwd)"
+  if [ "$(basename "$candidate")" = ".worktrees" ]; then
+    cd "$candidate/../.." && pwd
+  else
+    printf '%s\n' "$candidate"
+  fi
+}
+PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
 SOURCE="$ROOT/docs/agents/index.md"
 TARGET="$PROJECTS_DIR/AGENTS.md"
 MODE="${1:-install}"

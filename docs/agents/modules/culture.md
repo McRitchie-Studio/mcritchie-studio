@@ -49,6 +49,10 @@ Agents should make decisions from the codebase in front of them. If a repo has a
 Parallel autonomy depends on isolation. Worktree and branch boundaries are part
 of the quality bar, not ceremony.
 
+Pushing a feature branch is how agents preserve work. Merging to `main` is how
+Avi or the release conductor integrates reviewed work. Do not collapse those two
+steps just to feel safer about code loss.
+
 ## Leave A Cleaner Trail
 
 When code behavior, setup, ports, credentials, or workflows change, update the doc a future agent would read first. If a stale file cannot be deleted yet, add it to `docs/agents/maintenance/delete-later.md`.

@@ -12,6 +12,7 @@
 #   bin/agent-worktree new turf-monster docs-stack
 #   bin/agent-worktree up turf-monster docs-stack
 #   bin/agent-worktree status turf-monster docs-stack
+#   bin/agent-worktree finish turf-monster docs-stack
 #   bin/agent-worktree doctor
 #   bin/agent-worktree cleanup
 #   bin/agent-worktree down turf-monster docs-stack
@@ -22,7 +23,14 @@ require "shellwords"
 require "socket"
 require "yaml"
 
-PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { File.expand_path("../..", __dir__) })
+def default_projects_dir
+  candidate = File.expand_path("../..", __dir__)
+  return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
+
+  candidate
+end
+
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
 
@@ -64,6 +72,7 @@ def usage
       env <app> <task-slug>
       up <app> <task-slug>
       status <app> <task-slug>
+      finish <app> <task-slug> [--push] [--pr]
       doctor [app]
       cleanup [app] [--write]
       down <app> <task-slug>
@@ -419,6 +428,10 @@ def git_head(dir)
   git_value(dir, "rev-parse", "--short", "HEAD")
 end
 
+def git_commit_subject(dir)
+  git_value(dir, "log", "-1", "--pretty=%s")
+end
+
 def git_ahead_behind(dir)
   return ["?", "?"] unless git_success?(dir, "rev-parse", "--verify", "origin/main")
 
@@ -431,6 +444,35 @@ def git_merged_to_main?(dir)
   return false unless git_success?(dir, "rev-parse", "--verify", "origin/main")
 
   git_success?(dir, "merge-base", "--is-ancestor", "HEAD", "origin/main")
+end
+
+def github_repo_slug(dir)
+  remote = git_value(dir, "remote", "get-url", "origin")
+  case remote
+  when %r{\Agit@github\.com:(.+?)(?:\.git)?\z}
+    Regexp.last_match(1).delete_suffix(".git")
+  when %r{\Ahttps://github\.com/(.+?)(?:\.git)?\z}
+    Regexp.last_match(1).delete_suffix(".git")
+  end
+end
+
+def github_compare_url(record)
+  repo = github_repo_slug(record[:dir])
+  return nil unless repo
+
+  branch = record[:branch]
+  "https://github.com/#{repo}/compare/main...#{branch}?expand=1"
+end
+
+def command_available?(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+    path = File.join(dir, name)
+    File.file?(path) && File.executable?(path)
+  end
+end
+
+def human_title(slug)
+  slug.split("-").map(&:capitalize).join(" ")
 end
 
 def db_name_from_url(url)
@@ -481,6 +523,7 @@ def stack_record(app, dir)
     db_exists: database_exists?(db_name),
     branch: git_branch(dir),
     head: git_head(dir),
+    commit_subject: git_commit_subject(dir),
     dirty: git_dirty?(dir),
     ahead: ahead,
     behind: behind,
@@ -652,6 +695,94 @@ def run_cleanup(app = nil, write: false)
   puts "wrote #{rows.size} candidate(s) to #{ledger_path}"
 end
 
+def graduation_blockers(record)
+  blockers = []
+  branch = record[:branch]
+
+  blockers << "missing #{STACK_ENV}" unless record[:env_exists]
+  blockers << "worktree has uncommitted changes; commit or intentionally revert them before QA handoff" if record[:dirty]
+  blockers << "branch is #{branch.inspect}; feature work must not graduate from main/master" if %w[main master].include?(branch)
+  blockers << "branch has no commits ahead of origin/main" if record[:ahead].to_s == "0"
+  blockers << "branch is #{record[:behind]} commit(s) behind origin/main; rebase before PR" unless %w[0 ?].include?(record[:behind].to_s)
+  blockers << "branch is already contained in origin/main; use cleanup instead of finish" if record[:merged]
+
+  blockers
+end
+
+def pr_body(record)
+  url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"
+  email_url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"
+  <<~BODY
+    ## Summary
+    - 
+
+    ## Local Proof
+    - App: #{record[:app].fetch("display_name", record[:app].fetch("slug"))}
+    - Task: #{record[:task]}
+    - Worktree: `#{record[:dir]}`
+    - Review URL: #{url}
+    - Local inbox: #{email_url}
+    - Stack health: #{stack_health(record)} (/up #{record[:code]})
+
+    ## Verification
+    - 
+
+    ## QA Notes
+    - Avi: verify scope/spec match and merge safety.
+    - Steffon: run QA/deploy checks when risk warrants.
+    - Do not delete this branch/worktree until the PR is merged or intentionally abandoned.
+  BODY
+end
+
+def run_finish(app, task, push: false, pr: false)
+  dir = worktree_dir(app, task)
+  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+  load_stack_env(app, task)
+
+  fetch_ok, _fetch_out, fetch_err = capture_status("git", "fetch", "origin", "--quiet", chdir: dir)
+  warn "warning: git fetch failed; using local origin/main state: #{fetch_err.lines.first.to_s.strip}" unless fetch_ok
+  record = stack_record(app, dir)
+  compare_url = github_compare_url(record)
+  blockers = graduation_blockers(record)
+
+  puts "feature graduation packet"
+  puts "app:      #{app.fetch("display_name", app.fetch("slug"))}"
+  puts "task:     #{task}"
+  puts "branch:   #{record[:branch]}"
+  puts "head:     #{record[:head]} #{record[:commit_subject]}"
+  puts "worktree: #{dir}"
+  puts "url:      #{record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"}"
+  puts "email:    #{record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"}"
+  puts "health:   #{stack_health(record)} (/up #{record[:code]})"
+  puts "git:      #{record[:dirty] ? "dirty" : "clean"} #{record[:merged] ? "merged" : "unmerged"} +#{record[:ahead]}/-#{record[:behind]}"
+  puts "compare:  #{compare_url || "unknown remote"}"
+  puts
+
+  if blockers.any?
+    puts "not ready for QA:"
+    blockers.each { |blocker| puts "  - #{blocker}" }
+    exit 1
+  end
+
+  if push || pr
+    sh("git", "push", "-u", "origin", record[:branch], chdir: dir)
+    puts "pushed:   #{record[:branch]}"
+  end
+
+  if pr
+    abort "gh CLI is not available; pushed branch, then open #{compare_url}" unless command_available?("gh")
+
+    title = human_title(task)
+    body = pr_body(record)
+    sh("gh", "pr", "create", "--draft", "--base", "main", "--head", record[:branch],
+       "--title", title, "--body", body, chdir: dir)
+  else
+    puts "ready for QA. Open a draft PR with this body:"
+    puts
+    puts pr_body(record)
+  end
+end
+
 cmd = ARGV.shift || "help"
 
 case cmd
@@ -724,6 +855,14 @@ when "status"
   puts "sidekiq: pidfile=#{record[:sidekiq_pidfile_state]}" if app.fetch("sidekiq")
   puts "db:     #{record[:db_name]}#{record[:db_exists].nil? ? "" : " #{record[:db_exists] ? "ok" : "missing"}"}"
   puts "redis:  db #{record[:redis_db]}"
+when "finish"
+  push = ARGV.delete("--push")
+  pr = ARGV.delete("--pr")
+  app_name, raw_task = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  run_finish(app, task, push: !!push, pr: !!pr)
 when "doctor"
   app = ARGV[0] ? app_for(ARGV[0]) : nil
   run_doctor(app)

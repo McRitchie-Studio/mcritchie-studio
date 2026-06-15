@@ -58,3 +58,14 @@ satellites:
     description: Tax planning workspace
     deploy_provider: heroku
     status: planned
+
+  - slug: chain-ops
+    display_name: "Chain Ops"
+    emoji: "⛓️"
+    port: 3300
+    heroku_app: "chain-ops"
+    production_url: "https://chain.mcritchie.studio"
+    role: "admin"
+    description: "Solana environment control plane for localnet, QA, and future node operations"
+    deploy_provider: "heroku"
+    status: "planned"
