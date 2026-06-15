@@ -57,9 +57,17 @@ The shared table is `studio_email_deliveries`.
 - `Studio::EmailDelivery.resend_unsent!` re-enqueues unsent rows after a
   provider or worker outage.
 
-McRitchie currently uses the Rails `:async` job adapter in production until a
-dedicated worker dyno/job backend is added. The durable row still prevents the
-send intent from disappearing; operator recovery is the resend command above.
+Production enqueues mail through Solid Queue. The queue tables live in the
+primary Postgres database so Heroku release migrations create and migrate them
+with the rest of the app. Keep one `worker` dyno scaled for normal delivery:
+
+```bash
+heroku ps:scale worker=1 --app mcritchie-studio
+```
+
+If a provider or worker outage interrupts sends, the durable row still prevents
+the send intent from disappearing; operator recovery is the resend command
+above.
 
 ## Credentials
 
@@ -105,8 +113,8 @@ Last checked: 2026-06-15.
 - Persistent production transport: keep Resend active until SES production
   access is approved and SMTP runtime credentials are staged.
 - Production app adoption: `studio-engine 0.5.9` is adopted. McRitchie Studio
-  records durable `Studio::EmailDelivery` rows, but production still uses the
-  Rails `:async` job adapter until a dedicated worker backend is added.
+  records durable `Studio::EmailDelivery` rows and uses Solid Queue for
+  production job durability.
 
 ## Cutover Checklist
 

@@ -458,6 +458,7 @@ DEPENDENCIES
   sentry-rails
   sentry-ruby
   solana-studio (~> 0.4.6)
+  solid_queue (~> 1.4)
   sprockets-rails
   stimulus-rails
   studio-engine (~> 0.5)

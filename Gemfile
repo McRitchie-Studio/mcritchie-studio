@@ -6,6 +6,8 @@ gem "rails", "~> 7.2.3"
 gem "sprockets-rails"
 # Use postgresql as the database for Active Record
 gem "pg", "~> 1.1"
+# Durable Active Job backend for production worker dynos.
+gem "solid_queue", "~> 1.4"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]

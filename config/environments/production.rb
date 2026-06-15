@@ -70,9 +70,9 @@ Rails.application.configure do
   # Use a different cache store in production.
   # config.cache_store = :mem_cache_store
 
-  # Background jobs via solid_queue (requires worker dyno).
-  # Keep :async to run jobs in web process threads until worker dyno is added.
-  config.active_job.queue_adapter = :async
+  # Background jobs run through Solid Queue so enqueued mail/auth work survives
+  # web dyno restarts. Keep at least one worker dyno scaled in production.
+  config.active_job.queue_adapter = :solid_queue
 
   # Disable caching for Action Mailer templates even if Action Controller
   # caching is enabled.

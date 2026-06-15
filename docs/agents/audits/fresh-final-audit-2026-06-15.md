@@ -59,8 +59,8 @@ Stale active docs were corrected:
 
 - McRitchie email docs no longer say consumer apps still need the current
   `studio-engine` release before shared mail proof. The current state is
-  `studio-engine 0.5.9` adopted, with McRitchie production still using
-  `:async` jobs until a worker backend is added.
+  `studio-engine 0.5.9` adopted, with McRitchie production now using Solid
+  Queue for durable jobs.
 - Turf email docs now point at release `v90` for the current Resend fallback
   production proof.
 - Turf runbook contest lifecycle language now matches the actual `pending`,
@@ -72,16 +72,15 @@ Stale active docs were corrected:
 
 ## Findings
 
-### 1. McRitchie production email durability is not yet worker-grade
+### 1. McRitchie production email durability is now worker-grade
 
-McRitchie Studio records durable `Studio::EmailDelivery` rows, but production
-still uses Rails `:async` jobs. A dyno restart can drop an enqueued send even
-though the intent row remains recoverable via `Studio::EmailDelivery.resend_unsent!`.
+McRitchie Studio records durable `Studio::EmailDelivery` rows and production
+now uses Solid Queue backed by the primary Postgres database. A `worker` dyno
+runs `bin/jobs`, so enqueued mail/auth work survives web dyno restarts.
 
-Decision: move McRitchie Studio to a durable production job backend before
-using it for heavier broadcasts, product updates, or any auth flow where manual
-replay is an unacceptable recovery path. Solid Queue or Sidekiq are both viable;
-Turf already runs Sidekiq.
+Operator check: keep at least one `worker` dyno scaled on Heroku. If a provider
+outage leaves unsent email rows behind, replay them with
+`Studio::EmailDelivery.resend_unsent!`.
 
 ### 2. SES is architecturally ready but still externally blocked
 
@@ -121,8 +120,8 @@ real satellite, assign the next range (`3300-3399`), give it a primary port
 
 ## Recommended Next Moves
 
-1. Add a durable job backend to McRitchie Studio production and prove a
-   magic-link send survives process restart/replay.
+1. Deploy McRitchie Studio's Solid Queue release, confirm `worker=1`, and prove
+   a magic-link send completes through the durable worker path.
 2. Finish SES production access, stage SMTP creds, then run provider smoke and
    real magic-link smoke for both domains.
 3. Run a small platform hygiene window: Heroku-26 readiness plus
@@ -153,5 +152,7 @@ Results:
   `3100-3199`, planned `3200-3299`, next open `3300-3399`.
 - Turf Monster OAuth/reference tests: `14 runs, 53 assertions, 0 failures`.
 - McRitchie Studio sessions test: `4 runs, 14 assertions, 0 failures`.
+- McRitchie Studio Solid Queue follow-up: full Rails suite passed after moving
+  production to Solid Queue: `577 runs, 1591 assertions, 0 failures, 4 skips`.
 - Stale-string scan found the old OmniAuth GET guidance only in historical
   audit files, not active runtime docs.

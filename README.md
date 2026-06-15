@@ -126,10 +126,14 @@ npm run test:headed             # with visible browser
 
 ```bash
 git push heroku main
-heroku run bin/rails db:migrate --app mcritchie-studio
+heroku ps:scale worker=1 --app mcritchie-studio
 ```
 
-Platform: Heroku (heroku-24 stack). Required env vars: `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES=true`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+Platform: Heroku (heroku-24 stack). The `release` process runs
+`bin/rails db:migrate` before each deploy is promoted. Keep one `worker` dyno
+scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
+`RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES=true`, `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`.
 
 ## Architecture
 
