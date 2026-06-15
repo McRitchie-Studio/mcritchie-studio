@@ -4,6 +4,10 @@
 require "open3"
 require "shellwords"
 require "yaml"
+require "digest"
+require "json"
+require "net/http"
+require "uri"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
 
@@ -17,6 +21,7 @@ end
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
 HUB_DIR = SCRIPT_ROOT
 QA_CONFIG = File.join(HUB_DIR, "config", "qa_environments.yml")
+HEROKU_APP_INFO_CACHE = {}
 
 def usage
   warn <<~TEXT
@@ -24,12 +29,14 @@ def usage
 
       list
       plan [app]
+      provision <app> [--yes]
       status [app]
       deploy <app> [git-ref] [--yes]
 
     Examples:
       bin/qa-server list
       bin/qa-server plan turf-monster
+      bin/qa-server provision turf-monster --yes
       bin/qa-server status mcritchie-studio
       bin/qa-server deploy turf-monster origin/main --yes
   TEXT
@@ -50,6 +57,13 @@ def sh(*cmd, chdir: nil)
   abort "command failed#{chdir ? " in #{chdir}" : ""}: #{cmd.shelljoin}" unless ok
 end
 
+def json_capture(*cmd)
+  ok, out, err = capture_status(*cmd)
+  abort "command failed: #{cmd.shelljoin}\n#{err}" unless ok
+
+  JSON.parse(out)
+end
+
 def qa_environments
   abort "missing QA registry: #{QA_CONFIG}" unless File.exist?(QA_CONFIG)
 
@@ -67,50 +81,290 @@ def repo_path(config)
   File.join(PROJECTS_DIR, config.fetch("repo"))
 end
 
+def heroku_domain_hint(config)
+  config.fetch("heroku_domain") { "#{config.fetch("heroku_app")}.herokuapp.com" }
+end
+
+def qa_url(config)
+  config.fetch("qa_url")
+end
+
+def qa_host(config)
+  URI(qa_url(config)).host
+end
+
+def heroku_app_info(app)
+  return HEROKU_APP_INFO_CACHE[app] if HEROKU_APP_INFO_CACHE.key?(app)
+
+  ok, out, err = capture_status("heroku", "apps:info", "--json", "--app", app)
+  unless ok
+    message = [out, err].join("\n")
+    return nil if message.match?(/Couldn't find|not found/i)
+
+    abort "could not read Heroku app info for #{app}: #{message.lines.first.to_s.strip}"
+  end
+
+  HEROKU_APP_INFO_CACHE[app] = JSON.parse(out)
+rescue JSON::ParserError
+  nil
+end
+
+def heroku_web_url(config)
+  app_info = heroku_app_info(config.fetch("heroku_app"))
+  app_info&.dig("app", "web_url").to_s.delete_suffix("/").then do |url|
+    url.empty? ? "https://#{heroku_domain_hint(config)}" : url
+  end
+end
+
+def heroku_host(config)
+  URI(heroku_web_url(config)).host
+end
+
+def custom_domains(config)
+  Array(config.fetch("custom_domains", []))
+end
+
+def addon_family(addon)
+  addon.to_s.split(":", 2).first
+end
+
 def heroku_app_exists?(app)
-  ok, = capture_status("heroku", "apps:info", "--app", app)
-  ok
+  !heroku_app_info(app).nil?
 end
 
 def health_code(url)
   ok, out, = capture_status("curl", "-sS", "-o", "/dev/null", "-m", "8", "-w", "%{http_code}", "#{url}/up")
-  ok ? out.strip : "down"
+  code = out.to_s.strip
+  return code unless code.empty?
+
+  ok ? "unknown" : "down"
+end
+
+def load_env_file(path)
+  return {} unless File.exist?(path)
+
+  File.readlines(path, chomp: true).each_with_object({}) do |line, env|
+    stripped = line.strip
+    next if stripped.empty? || stripped.start_with?("#")
+
+    stripped = stripped.delete_prefix("export ").strip
+    key, value = stripped.split("=", 2)
+    next if key.to_s.empty? || value.nil?
+
+    env[key] = normalize_env_value(value)
+  end
+end
+
+def normalize_env_value(value)
+  value = value.to_s.strip
+  if (value.start_with?('"') && value.end_with?('"')) || (value.start_with?("'") && value.end_with?("'"))
+    value[1...-1]
+  else
+    value
+  end
+end
+
+def config_vars_from_registry(config)
+  config.fetch("required_config", {}).each_with_object({}) do |(key, value), vars|
+    vars[key] = render_config_value(config, value)
+  end.merge(derived_config_vars(config))
+end
+
+def render_config_value(config, value)
+  value.to_s
+       .gsub("${HEROKU_HOST}", heroku_host(config))
+       .gsub("${QA_HOST}", qa_host(config))
+end
+
+def derived_config_vars(config)
+  config.fetch("derived_config", {}).each_with_object({}) do |(key, spec), vars|
+    vars[key] = derive_config_value(config, spec)
+  end
+end
+
+def derive_config_value(config, spec)
+  case spec.to_s
+  when /\Asha256:(.+)\z/
+    path = File.join(repo_path(config), Regexp.last_match(1))
+    abort "derived config source missing: #{path}" unless File.exist?(path)
+
+    Digest::SHA256.file(path).hexdigest
+  else
+    abort "unsupported derived config spec for #{config.fetch("slug")}: #{spec.inspect}"
+  end
+end
+
+def secret_values_from_local_env(config)
+  repo_env = load_env_file(File.join(repo_path(config), ".env"))
+  config.fetch("required_secrets", []).each_with_object({}) do |key, values|
+    value = repo_env[key] || ENV[key]
+    values[key] = value.to_s unless value.to_s.empty?
+  end
+end
+
+def heroku_token
+  ok, out, err = capture_status("heroku", "auth:token")
+  abort "could not read Heroku auth token: #{err}" unless ok
+
+  token = out.lines.map(&:strip).reject(&:empty?).last
+  abort "Heroku auth token was blank. Run heroku login first." if token.to_s.empty?
+
+  token
+end
+
+def heroku_patch_config_vars(app, vars)
+  uri = URI("https://api.heroku.com/apps/#{app}/config-vars")
+  request = Net::HTTP::Patch.new(uri)
+  request["Accept"] = "application/vnd.heroku+json; version=3"
+  request["Authorization"] = "Bearer #{heroku_token}"
+  request["Content-Type"] = "application/json"
+  request.body = vars.to_json
+
+  response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+    http.request(request)
+  end
+
+  return if response.is_a?(Net::HTTPSuccess)
+
+  abort "Heroku config update failed for #{app}: HTTP #{response.code} #{response.body}"
+end
+
+def heroku_domains(app)
+  json_capture("heroku", "domains", "--json", "--app", app)
+rescue JSON::ParserError
+  []
+end
+
+def domain_hostname(domain)
+  domain.fetch("hostname", domain.fetch("domain", "unknown"))
+end
+
+def domain_dns_target(domain)
+  domain["cname"] || domain["dns_target"] || domain["cname_target"] || "pending"
+end
+
+def domain_status(domain)
+  domain["cname_status"] || domain["status"] || "unknown"
+end
+
+def heroku_addons(app)
+  json_capture("heroku", "addons", "--json", "--app", app)
+rescue JSON::ParserError
+  []
+end
+
+def addon_present?(addons, addon)
+  family = addon_family(addon)
+  addons.any? do |installed|
+    plan_name = installed.dig("plan", "name").to_s
+    addon_name = installed["name"].to_s
+    plan_name == addon || addon_name == addon || addon_family(plan_name) == family
+  end
 end
 
 def run_list
   qa_environments.each do |slug, config|
-    puts "#{slug.ljust(18)} #{config.fetch("display_name").ljust(24)} qa #{config.fetch("heroku_app").ljust(24)} prod #{config.fetch("production_app")}"
+    puts "#{slug.ljust(18)} #{config.fetch("display_name").ljust(24)} qa #{config.fetch("heroku_app").ljust(24)} #{qa_url(config)}"
   end
 end
 
 def print_plan(config)
   app = config.fetch("heroku_app")
+  domains = custom_domains(config)
   puts "#{config.fetch("display_name")} provisioning plan"
   puts
   puts "target app: #{app}"
-  puts "QA URL:     #{config.fetch("qa_url")}"
+  puts "QA URL:     #{qa_url(config)}"
+  puts "Heroku URL: assigned by Heroku on create; status shows the actual host"
   puts "prod app:   #{config.fetch("production_app")}"
   puts "safety:     #{config.fetch("safety_profile")}"
   puts
   puts "Create once, after approval:"
-  puts "  heroku create #{app}"
-  puts "  heroku addons:create heroku-postgresql:essential-0 --app #{app}"
-  puts "  heroku addons:create heroku-redis:mini --app #{app}" if config.fetch("slug") == "turf-monster"
+  puts "  bin/qa-server provision #{config.fetch("slug")} --yes"
   puts
-  puts "Set non-secret config:"
-  config.fetch("required_config", {}).each do |key, value|
-    puts "  heroku config:set #{key}=#{Shellwords.escape(value.to_s)} --app #{app}"
+  puts "Provision will create:"
+  puts "  heroku create #{app} --no-remote"
+  config.fetch("addons", []).each do |addon|
+    puts "  heroku addons:create #{addon} --app #{app} --wait"
+  end
+  domains.each do |domain|
+    puts "  heroku domains:add #{domain} --app #{app}"
   end
   puts
-  puts "Set secrets from 1Password or copied safe QA values:"
+  puts "Set config vars without printing values:"
+  (config.fetch("required_config", {}).keys + config.fetch("derived_config", {}).keys).each do |key|
+    source = config.fetch("derived_config", {}).key?(key) ? "derived" : "registry"
+    puts "  #{key} (#{source})"
+  end
   config.fetch("required_secrets", []).each do |key|
-    puts "  heroku config:set #{key}=<from-1password-or-qa-secret> --app #{app}"
+    puts "  #{key} (local .env / process env)"
+  end
+  unless domains.empty?
+    puts
+    puts "After domain add, create CNAME records to the Heroku DNS targets reported by status."
   end
   puts
   puts "Scale after first deploy:"
   config.fetch("dynos", {}).each do |process, count|
     puts "  heroku ps:scale #{process}=#{count} --app #{app}"
   end
+end
+
+def run_provision(app_name, assume_yes:)
+  usage unless app_name
+
+  config = qa_for(app_name)
+  app = config.fetch("heroku_app")
+  repo = repo_path(config)
+  abort "missing repo: #{repo}" unless Dir.exist?(repo)
+
+  unless assume_yes
+    abort "Provisioning writes Heroku apps/addons/domains/config. Re-run with --yes after reviewing: #{app_name}"
+  end
+
+  derived_config_vars(config)
+  secret_vars = secret_values_from_local_env(config)
+  missing_secrets = config.fetch("required_secrets", []) - secret_vars.keys
+  abort "missing required local secret values for #{app_name}: #{missing_secrets.join(", ")}" unless missing_secrets.empty?
+
+  if heroku_app_exists?(app)
+    puts "Heroku app exists: #{app}"
+  else
+    sh("heroku", "create", app, "--no-remote")
+  end
+
+  registry_vars = config_vars_from_registry(config)
+
+  installed_addons = heroku_addons(app)
+  config.fetch("addons", []).each do |addon|
+    if addon_present?(installed_addons, addon)
+      puts "Addon exists for #{addon_family(addon)}"
+    else
+      sh("heroku", "addons:create", addon, "--app", app, "--wait")
+      installed_addons = heroku_addons(app)
+    end
+  end
+
+  heroku_patch_config_vars(app, registry_vars.merge(secret_vars))
+  puts "Config vars set for #{app}: #{(registry_vars.keys + secret_vars.keys).sort.join(", ")}"
+
+  existing_domains = heroku_domains(app)
+  custom_domains(config).each do |domain|
+    if existing_domains.any? { |candidate| domain_hostname(candidate) == domain }
+      puts "Domain exists: #{domain}"
+    else
+      sh("heroku", "domains:add", domain, "--app", app, "--json")
+      existing_domains = heroku_domains(app)
+    end
+  end
+
+  heroku_domains(app).each do |domain|
+    next unless custom_domains(config).include?(domain_hostname(domain))
+
+    puts "DNS: #{domain_hostname(domain)} CNAME #{domain_dns_target(domain)} (#{domain_status(domain)})"
+  end
+
+  puts "Provisioned #{app_name}. Deploy with: bin/qa-server deploy #{app_name} origin/main --yes"
 end
 
 def run_plan(app_name = nil)
@@ -126,10 +380,18 @@ def run_status(app_name = nil)
   selected.each do |slug, config|
     app = config.fetch("heroku_app")
     exists = heroku_app_exists?(app)
-    code = exists ? health_code(config.fetch("qa_url")) : "missing-app"
-    puts "#{slug.ljust(18)} #{app.ljust(24)} #{exists ? "exists" : "missing"} /up #{code} #{config.fetch("qa_url")}"
+    heroku_url = exists ? heroku_web_url(config) : "missing-app"
+    heroku_code = exists ? health_code(heroku_url) : "missing-app"
+    qa_code = exists ? health_code(qa_url(config)) : "missing-app"
+    puts "#{slug.ljust(18)} #{app.ljust(24)} #{exists ? "exists" : "missing"} heroku /up #{heroku_code} qa /up #{qa_code} #{qa_url(config)}"
+    puts "  heroku #{heroku_url}" if exists
     next unless exists
 
+    heroku_domains(app).each do |domain|
+      next unless custom_domains(config).include?(domain_hostname(domain))
+
+      puts "  domain #{domain_hostname(domain)} -> #{domain_dns_target(domain)} (#{domain_status(domain)})"
+    end
     system("heroku", "ps", "--app", app)
   end
 end
@@ -151,9 +413,16 @@ def run_deploy(app_name, ref, assume_yes:)
   end
 
   puts "Deploying #{app_name} #{sha} to #{app}"
-  sh("git", "push", "https://git.heroku.com/#{app}.git", "+#{sha}:main", chdir: repo)
-  code = health_code(config.fetch("qa_url"))
-  puts "QA URL: #{config.fetch("qa_url")} (/up #{code})"
+  sh("git", "push", "https://git.heroku.com/#{app}.git", "+#{sha}:refs/heads/main", chdir: repo)
+  config.fetch("dynos", {}).each do |process, count|
+    sh("heroku", "ps:scale", "#{process}=#{count}", "--app", app)
+  end
+
+  heroku_url = heroku_web_url(config)
+  heroku_code = health_code(heroku_url)
+  qa_code = health_code(qa_url(config))
+  puts "Heroku URL: #{heroku_url} (/up #{heroku_code})"
+  puts "QA URL: #{qa_url(config)} (/up #{qa_code})"
 end
 
 cmd = ARGV.shift || "help"
@@ -163,6 +432,9 @@ when "list"
   run_list
 when "plan"
   run_plan(ARGV[0])
+when "provision"
+  assume_yes = ARGV.delete("--yes")
+  run_provision(ARGV[0], assume_yes: !!assume_yes)
 when "status"
   run_status(ARGV[0])
 when "deploy"

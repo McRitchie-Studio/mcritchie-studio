@@ -125,15 +125,20 @@ The intended cycle is:
 
 1. Feature agent opens a PR.
 2. Avi reviews and merges when ready.
-3. Avi or Steffon deploys the merged `main` ref to the app's QA server with
+3. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
+   reports `missing-app`.
+4. Avi or Steffon deploys the merged `main` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/main --yes`.
-4. Mr. McRitchie reviews the QA URL.
-5. Production deploy happens only after Mr. McRitchie explicitly approves it.
+5. Mr. McRitchie reviews the QA URL.
+6. Production deploy happens only after Mr. McRitchie explicitly approves it.
 
 QA servers are tracked in `config/qa_environments.yml` and operated through
 `bin/qa-server`. A QA deploy is allowed for the QA conductor lane, but it must
 target the QA Heroku app, never the production app. Turf Monster QA must stay on
-devnet with `PAYMENT_PROVIDER=none`.
+devnet with `PAYMENT_PROVIDER=none`. The intended stable review URLs are
+`https://qa.mcritchie.studio` and `https://qa.turfmonster.media`; use
+`bin/qa-server status <app>` to confirm the Heroku app, DNS target, and `/up`
+checks before asking Mr. McRitchie to review.
 
 ## Code Loss Prevention
 
