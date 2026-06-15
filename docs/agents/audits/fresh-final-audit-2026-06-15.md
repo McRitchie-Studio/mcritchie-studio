@@ -61,8 +61,8 @@ Stale active docs were corrected:
   `studio-engine` release before shared mail proof. The current state is
   `studio-engine 0.5.9` adopted, with McRitchie production now using Solid
   Queue for durable jobs.
-- Turf email docs now point at release `v90` for the current Resend fallback
-  production proof.
+- Turf email docs now point at release `v92` for the current Resend fallback
+  and Heroku-26 production proof.
 - Turf runbook contest lifecycle language now matches the actual `pending`,
   `open`, `settled` app statuses and the derived lock model.
 - Studio Engine release docs now use `0.5.9` as the current consumer adoption
@@ -95,15 +95,24 @@ Both SES domains are verified with DKIM success. The blocker is SES production
 access in `us-east-2`; until AWS removes sandbox mode, Resend remains the
 production/presetup fallback.
 
-### 3. Platform hygiene remains a planned maintenance item
+### 3. Heroku platform hygiene is complete for the active apps
 
-Turf Monster release `v90` is healthy on Heroku-24 with Node `22.x`. The build
-logs still leave two routine follow-ups:
+McRitchie Studio is pinned to Ruby `3.3.11` and Node `22.x`, deploys with
+`heroku/nodejs` before `heroku/ruby`, and is live on Heroku-26 at release
+`v58` / commit `4a5c265`. Web and `worker=1` dynos are up, and
+`https://app.mcritchie.studio/up` returns `200`.
 
-- Heroku-26 readiness window.
-- Browserslist/caniuse-lite refresh during frontend dependency maintenance.
+Turf Monster was rebuilt with an empty operational commit so the uncommitted
+wallet/CDP local WIP stayed untouched. Release `v92` / commit `84ba917` is live
+on Heroku-26 with `heroku/nodejs` before `heroku/ruby`, Node `22.22.3`, Ruby
+`3.3.11`, web and Sidekiq worker dynos up, and
+`https://app.turfmonster.media/up` returns `200`.
 
-Neither blocks the current production baseline.
+The only remaining platform-adjacent warning is the familiar
+Browserslist/caniuse-lite notice emitted by the current Tailwind build chain.
+`npx update-browserslist-db@latest` was run, so treat the residual warning as a
+future `tailwindcss-rails` major-version maintenance item rather than a
+Heroku-26 blocker.
 
 ### 4. Active docs are now cleaner than historical docs
 
@@ -124,8 +133,8 @@ real satellite, assign the next range (`3300-3399`), give it a primary port
    a magic-link send completes through the durable worker path.
 2. Finish SES production access, stage SMTP creds, then run provider smoke and
    real magic-link smoke for both domains.
-3. Run a small platform hygiene window: Heroku-26 readiness plus
-   Browserslist/caniuse-lite refresh.
+3. Plan a dedicated frontend dependency window for the residual
+   Tailwind/Browserslist warning.
 
 ## Verification For This Pass
 
@@ -154,5 +163,11 @@ Results:
 - McRitchie Studio sessions test: `4 runs, 14 assertions, 0 failures`.
 - McRitchie Studio Solid Queue follow-up: full Rails suite passed after moving
   production to Solid Queue: `577 runs, 1591 assertions, 0 failures, 4 skips`.
+- McRitchie Studio Heroku platform follow-up: release `v58` on Heroku-26,
+  Node/Ruby buildpacks ordered correctly, web and worker dynos up, `/up` `200`.
+- Turf Monster Heroku platform follow-up: release `v92` on Heroku-26, Node/Ruby
+  buildpacks ordered correctly, web and worker dynos up, `/up` `200`. The local
+  checkout still contains uncommitted wallet/CDP/contest WIP that was not part
+  of this operational rebuild.
 - Stale-string scan found the old OmniAuth GET guidance only in historical
   audit files, not active runtime docs.

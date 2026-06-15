@@ -30,7 +30,7 @@
 
 ## Tech Stack
 
-- Ruby 3.1 / Rails 7.2 / PostgreSQL
+- Ruby 3.3.11 / Node 22.x / Rails 7.2 / PostgreSQL
 - Tailwind CSS via `tailwindcss-rails` gem (compiled with `@apply` support, not CDN)
 - Alpine.js via CDN for interactivity
 - Montserrat font (Google Fonts CDN)

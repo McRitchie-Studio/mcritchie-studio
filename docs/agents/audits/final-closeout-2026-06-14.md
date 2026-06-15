@@ -89,6 +89,14 @@ remain enabled. Production mail uses the verified Resend fallback sender
 pending. The Heroku Node build pin was moved from Node 20 to Node 22 across
 Turf Monster, CI, and McRitchie Studio's recovery docs/scripts.
 
+Heroku platform follow-up, 2026-06-15: both active Rails apps are now on
+Heroku-26. McRitchie Studio release `v58` at commit `4a5c265` pins Ruby
+`3.3.11`, Node `22.x`, and buildpacks `heroku/nodejs` then `heroku/ruby`; web
+and Solid Queue worker dynos are up. Turf Monster release `v92` at commit
+`84ba917` was an empty operational rebuild of the committed baseline so the
+local uncommitted wallet/CDP/contest WIP stayed untouched; web and Sidekiq
+worker dynos are up. Both production `/up` checks returned `200`.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
@@ -102,9 +110,9 @@ High-signal proof from this cleanup:
 - Primary local McRitchie Studio and Turf Monster stacks now send real mail
   through Resend while worktree stacks default to local capture; both
   non-production banners show the runtime mail state.
-- Turf Monster production release `v90` built with Node `22.22.3`, with
+- Turf Monster production release `v92` built with Node `22.22.3`, with
   buildpacks ordered `heroku/nodejs` then `heroku/ruby`; the previous Node 20
-  EOL build warning is gone.
+  EOL build warning is gone and the app is now on Heroku-26.
 - Turf Monster production release output confirms
   `transport=Resend from=McRitchie Studio <team@mcritchie.studio>` and Solana
   `mainnet-beta` alignment.
@@ -149,12 +157,14 @@ These are not blockers to maintenance mode, but they should not be forgotten:
   support access should be completed after the audit cleanup is closed, then
   production SES needs a real stability window before Resend fallback is
   removed.
-- **Heroku platform drift**: Turf Monster is healthy on Heroku-24, but Heroku
-  now advertises Heroku-26 as available. Treat stack migration as a planned
-  platform audit item, not a deployment blocker.
+- **Heroku platform drift**: resolved for the active Rails apps on 2026-06-15.
+  McRitchie Studio and Turf Monster both run on Heroku-26 with explicit Ruby and
+  Node runtime pins.
 - **Browserslist freshness**: asset precompile reports the usual
-  `caniuse-lite` freshness warning. This is not blocking production, but should
-  be swept during routine frontend dependency maintenance.
+  `caniuse-lite` freshness warning even after `npx update-browserslist-db@latest`.
+  This appears tied to the current `tailwindcss-rails 2.7.9` build chain. Do not
+  treat it as a production blocker; handle it during a deliberate Tailwind
+  dependency upgrade window.
 - **Turf Vault mainnet feature gates**: local tests cover the default
   localnet/devnet build. Mainnet-only `INIT_AUTHORITY`, canonical USDC, and
   canonical USDT checks still need mainnet build/deploy proof when that window

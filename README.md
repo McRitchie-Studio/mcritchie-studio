@@ -83,7 +83,7 @@ promoted, at which point it should use `3300-3399`. See
 
 ## Single-app dev (when you already have the toolchain)
 
-If your machine already has Ruby 3.1.7, Postgres 14, and an `.env` in place:
+If your machine already has Ruby 3.3.11, Postgres 14, and an `.env` in place:
 
 ```bash
 git clone https://github.com/amcritchie/mcritchie-studio.git
@@ -97,7 +97,7 @@ Seeds load 4 agents with avatars, 9 skills, sample tasks, plus 32 NFL + 71 NCAA 
 
 ## Prerequisites (single-app path)
 
-- Ruby **3.1.7** (use `brew install ruby@3.1` — not mise/rbenv; see [house-burn-down.md gotcha 1](docs/agents/system/house-burn-down.md))
+- Ruby **3.3.11** (use Homebrew Ruby and match `.ruby-version`; see [house-burn-down.md gotcha 1](docs/agents/system/house-burn-down.md))
 - PostgreSQL 14+
 - Node.js **22.x** (keeps local dev, CI, and Heroku aligned; `turf-vault` needs at least Node 20.18.0)
 - Bundler 2.4+ (`gem install bundler`)
@@ -129,7 +129,7 @@ git push heroku main
 heroku ps:scale worker=1 --app mcritchie-studio
 ```
 
-Platform: Heroku (heroku-24 stack). The `release` process runs
+Platform: Heroku (heroku-26 stack). The `release` process runs
 `bin/rails db:migrate` before each deploy is promoted. Keep one `worker` dyno
 scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
 `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES=true`, `GOOGLE_CLIENT_ID`,
