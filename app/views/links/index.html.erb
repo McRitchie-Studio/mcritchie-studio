@@ -1,28 +1,4 @@
-<% sections = [
-  { title: "Studio", links: [
-    { label: "Dashboard", href: "/dashboard", emoji: "📊", desc: "Overview + activity" },
-    { label: "Agents",    href: "/agents",    emoji: "🦞", desc: "Meet the McRitchie agents" },
-    { label: "Tasks",     href: "/tasks",     emoji: "✅", desc: "Task board" },
-    { label: "News",      href: "/news",      emoji: "📰", desc: "News pipeline" },
-    { label: "Content",   href: "/contents",  emoji: "🎬", desc: "Content pipeline" },
-  ] },
-  { title: "NFL", links: [
-    { label: "NFL Hub",     href: nfl_hub_path,            emoji: "🏈", desc: "Rankings + grades" },
-    { label: "2026 Season", href: games_season_path(2026), emoji: "📅", desc: "Schedule + results" },
-  ] },
-  { title: "Directory", links: [
-    { label: "Teams",  href: "/teams",  emoji: "🛡️", desc: "All teams" },
-    { label: "People", href: "/people", emoji: "👤", desc: "Players + staff" },
-    { label: "Docs",   href: "/docs",   emoji: "📚", desc: "Documentation" },
-  ] },
-] %>
-
-<% if defined?(Satellite) && Satellite.active.any? %>
-  <% sections << { title: "Apps", links: Satellite.active.map { |s|
-       { label: s.display_name, href: s.url_for(logged_in: logged_in?), emoji: (s.emoji.presence || "🛰️"), target: "_blank" } } } %>
-<% end %>
-
 <%= render "components/link_hub",
       title: "Links",
       subtitle: "Jump to anywhere in McRitchie Studio.",
-      sections: sections %>
+      sections: public_link_sections %>

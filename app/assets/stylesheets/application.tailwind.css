@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 /* Theme CSS custom properties are now engine-generated via studio_theme_css_tag */
+[x-cloak] { display: none !important; }
+
+.studio-link-sidebar-layer { z-index: 10000; }
 
 @layer components {
   .card {
