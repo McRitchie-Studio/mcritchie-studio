@@ -14,7 +14,9 @@
 
 ## Navbar
 
-Custom navbar in `application.html.erb` (not engine partial). Sticky, scroll-responsive. `sticky top-0 z-50 bg-page` with Alpine `scrolled` state (triggers at 20px). On scroll: logo shrinks `w-8→w-5`, title `text-2xl→text-base`, padding `py-6→py-2`, adds `shadow-lg border-b border-subtle`. All transitions 300ms. Desktop nav: "Meet the Agents 🦞" link. Mobile sub-navbar with same link + gear/moon icons (logged out only). Logged in: renders `_user_nav` with `show_logout_link: true`. Logged out: gear/moon (desktop only) + "Say Hi 👋" button. Admin gear dropdown has: Dashboard, Agents, Tasks, News, Turf Monster (satellite link; SSO disabled in Turf), Tax Studio (SSO/planned), Docs, Theme, Toast Test, Schema, Error Logs.
+Custom navbar in `application.html.erb` (not engine partial). Sticky, scroll-responsive. `sticky top-0 z-50 bg-page` with Alpine `scrolled` state (triggers at 20px). On scroll: logo shrinks `w-8→w-5`, title `text-2xl→text-base`, padding `py-6→py-2`, adds `shadow-lg border-b border-subtle`. All transitions 300ms. Desktop nav: "Meet the Agents 🦞" link. Mobile sub-navbar has the same link and the gear/moon icons for logged-out visitors. Logged in: renders the app-level `_user_nav` override with `show_logout_link: true`.
+
+The gear, username, and profile image all toggle the fixed link sidebar (`components/_link_sidebar.html.erb`). The sidebar is full width on mobile, a right rail on desktop, and uses `.studio-link-sidebar-layer` so it sits above page content. Its public and admin trees come from `LinkTreeHelper`: `/links` and `/admin/links` render those same sections, while the sidebar combines public links with admin sections only when `admin?` is true.
 
 ## Token Usage Rules
 
