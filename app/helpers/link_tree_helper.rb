@@ -53,6 +53,7 @@ module LinkTreeHelper
         { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", desc: "OAuth handshake" },
       ] },
       { title: "Data", links: [
+        { label: "AI Builder Multiple", href: admin_ai_builder_multiple_path, emoji: "📈", desc: "GitHub public commit pace backtest" },
         { label: "News workflow", href: workflow_news_index_path, emoji: "🛠️", desc: "Intake → conclude board" },
         { label: "Merge people", href: merge_people_path, emoji: "🔀", desc: "Resolve duplicate people" },
         { label: "Duplicates", href: duplicates_people_path, emoji: "👥", desc: "Duplicate candidates" },

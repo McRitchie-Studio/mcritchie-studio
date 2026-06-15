@@ -1,0 +1,278 @@
+<% content_for :title, "AI Builder Multiple" %>
+
+<% chart_max = ai_chart_max(@chart_weeks) %>
+<% complete_weeks = @index_weeks.select(&:complete?) %>
+<% latest_index_week = @index_weeks.first %>
+
+<section class="space-y-6">
+  <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <div class="flex items-center gap-3 mb-2">
+        <%= link_to "Admin", admin_links_path, class: "text-secondary hover:text-heading text-sm font-medium transition" %>
+        <span class="text-muted text-sm">/</span>
+        <span class="text-muted text-sm">AI Builder Multiple</span>
+      </div>
+      <h1 class="text-3xl font-extrabold text-heading">AI Builder Multiple</h1>
+      <p class="text-secondary mt-2 max-w-3xl">
+        Public GitHub commit pace backtest for tracked AI builders against prolific non-AI open-source controls.
+        This is builder activity and public build velocity only; it does not measure true productivity.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <%= link_to "JSON", admin_ai_builder_multiple_path(format: :json), class: "btn btn-neutral btn-sm" %>
+    </div>
+  </header>
+
+  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+    <div class="card p-4">
+      <p class="label-upper">Tracked Builders</p>
+      <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:active_builders_count]) %></p>
+      <p class="text-xs text-muted mt-1">
+        AI <%= @tracked_builder_summary["ai_builder"].to_i %> / Control <%= @tracked_builder_summary["control_builder"].to_i %>
+      </p>
+    </div>
+    <div class="card p-4">
+      <p class="label-upper">Tracked Repos</p>
+      <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:active_repos_count]) %></p>
+      <p class="text-xs text-muted mt-1">Repo-scoped fetch preferred</p>
+    </div>
+    <div class="card p-4">
+      <p class="label-upper">Commit Observations</p>
+      <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:commit_observations_count]) %></p>
+      <p class="text-xs text-muted mt-1">Latest <%= ai_date(@overview[:latest_observed_commit_at]) %></p>
+    </div>
+    <div class="card p-4">
+      <p class="label-upper">Weekly Rows</p>
+      <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:weekly_metrics_count]) %></p>
+      <p class="text-xs text-muted mt-1">Builder-week metrics</p>
+    </div>
+    <div class="card p-4">
+      <p class="label-upper">Index Weeks</p>
+      <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:index_weeks_count]) %></p>
+      <p class="text-xs text-muted mt-1"><%= ai_count(@overview[:complete_index_weeks_count]) %> complete</p>
+    </div>
+    <div class="card p-4">
+      <p class="label-upper">Latest Week</p>
+      <p class="text-2xl font-bold text-heading mt-2"><%= ai_short_date(@latest_week) %></p>
+      <p class="text-xs text-muted mt-1">Updated <%= ai_date(@overview[:last_index_update_at]) %></p>
+    </div>
+  </div>
+
+  <div class="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
+    <section class="card p-5">
+      <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-5">
+        <div>
+          <h2 class="text-lg font-bold text-heading">Published Multiples</h2>
+          <p class="text-sm text-secondary">Recent weekly medians appear once both cohorts meet the minimum cohort size.</p>
+        </div>
+        <div class="flex items-center gap-4 text-xs text-muted">
+          <span class="inline-flex items-center gap-1"><span class="w-3 h-0.5 bg-emerald-400"></span>AI</span>
+          <span class="inline-flex items-center gap-1"><span class="w-3 h-0.5 bg-sky-400"></span>Control</span>
+          <span class="inline-flex items-center gap-1"><span class="w-3 h-0.5 bg-amber-400"></span>Adjusted</span>
+        </div>
+      </div>
+
+      <% if complete_weeks.any? %>
+        <div class="relative h-72">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="w-full h-full overflow-visible">
+            <line x1="0" y1="96" x2="100" y2="96" stroke="currentColor" class="text-muted/30" stroke-width="0.4" />
+            <line x1="0" y1="52" x2="100" y2="52" stroke="currentColor" class="text-muted/15" stroke-width="0.3" />
+            <line x1="0" y1="8" x2="100" y2="8" stroke="currentColor" class="text-muted/15" stroke-width="0.3" />
+            <polyline points="<%= ai_polyline_points(@chart_weeks, :ai_builder_multiple, chart_max) %>" fill="none" stroke="#34d399" stroke-width="1.7" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
+            <polyline points="<%= ai_polyline_points(@chart_weeks, :control_builder_multiple, chart_max) %>" fill="none" stroke="#38bdf8" stroke-width="1.7" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
+            <polyline points="<%= ai_polyline_points(@chart_weeks, :difficulty_adjusted_ai_builder_multiple, chart_max) %>" fill="none" stroke="#f59e0b" stroke-width="1.7" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+      <% else %>
+        <div class="h-72 rounded-lg border border-subtle bg-surface-alt flex items-center justify-center text-center px-6">
+          <div>
+            <p class="text-heading font-semibold">No complete index weeks yet</p>
+            <p class="text-sm text-secondary mt-1">Weeks are stored with notes until AI and control cohorts each have at least <%= @minimum_cohort_size %> builders with a baseline.</p>
+          </div>
+        </div>
+      <% end %>
+
+      <% if @chart_weeks.any? %>
+        <div class="mt-4 flex justify-between text-[11px] text-muted font-mono">
+          <span><%= ai_short_date(@chart_weeks.first.week_start_date) %></span>
+          <span><%= ai_short_date(@chart_weeks.last.week_start_date) %></span>
+        </div>
+      <% end %>
+    </section>
+
+    <aside class="card p-5">
+      <h2 class="text-lg font-bold text-heading">Latest Index Week</h2>
+      <% if latest_index_week.present? %>
+        <div class="grid grid-cols-3 gap-3 mt-4">
+          <div class="bg-surface-alt rounded-lg p-3">
+            <p class="label-upper">AI</p>
+            <p class="text-xl font-bold text-heading mt-2"><%= ai_multiple(latest_index_week.ai_builder_multiple) %></p>
+          </div>
+          <div class="bg-surface-alt rounded-lg p-3">
+            <p class="label-upper">Control</p>
+            <p class="text-xl font-bold text-heading mt-2"><%= ai_multiple(latest_index_week.control_builder_multiple) %></p>
+          </div>
+          <div class="bg-surface-alt rounded-lg p-3">
+            <p class="label-upper">Adjusted</p>
+            <p class="text-xl font-bold text-heading mt-2"><%= ai_multiple(latest_index_week.difficulty_adjusted_ai_builder_multiple) %></p>
+          </div>
+        </div>
+        <div class="mt-4 space-y-3">
+          <div>
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span class="text-secondary">AI cohort coverage</span>
+              <span class="text-muted"><%= latest_index_week.ai_builder_count %>/<%= @minimum_cohort_size %></span>
+            </div>
+            <div class="h-2 bg-surface-alt rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-400" style="width: <%= ai_coverage_percent(latest_index_week.ai_builder_count, @minimum_cohort_size) %>%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span class="text-secondary">Control cohort coverage</span>
+              <span class="text-muted"><%= latest_index_week.control_builder_count %>/<%= @minimum_cohort_size %></span>
+            </div>
+            <div class="h-2 bg-surface-alt rounded-full overflow-hidden">
+              <div class="h-full bg-sky-400" style="width: <%= ai_coverage_percent(latest_index_week.control_builder_count, @minimum_cohort_size) %>%"></div>
+            </div>
+          </div>
+        </div>
+        <% if latest_index_week.notes.present? %>
+          <div class="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+            <p class="text-xs font-semibold text-heading mb-1">Incomplete note</p>
+            <p class="text-sm text-secondary"><%= latest_index_week.notes %></p>
+          </div>
+        <% end %>
+      <% else %>
+        <div class="empty-state mt-4">
+          <p class="text-secondary">Run the backtest to create index weeks.</p>
+        </div>
+      <% end %>
+    </aside>
+  </div>
+
+  <section class="card p-5">
+    <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-5">
+      <div>
+        <h2 class="text-lg font-bold text-heading">Cohort Coverage</h2>
+        <p class="text-sm text-secondary">Each week needs <%= @minimum_cohort_size %> AI builders and <%= @minimum_cohort_size %> controls with non-zero trailing baselines.</p>
+      </div>
+      <span class="text-xs text-muted"><%= @limit %> recent weeks</span>
+    </div>
+
+    <% if @chart_weeks.any? %>
+      <div class="h-44 flex items-end gap-1 overflow-x-auto pb-2">
+        <% @chart_weeks.each do |week| %>
+          <div class="min-w-5 flex-1 flex flex-col items-center justify-end gap-1" title="<%= week.week_start_date %>: AI <%= week.ai_builder_count %>, Control <%= week.control_builder_count %>">
+            <div class="w-full flex items-end justify-center gap-0.5 h-32">
+              <div class="w-2 rounded-t bg-emerald-400" style="height: <%= ai_coverage_percent(week.ai_builder_count, @minimum_cohort_size) %>%"></div>
+              <div class="w-2 rounded-t bg-sky-400" style="height: <%= ai_coverage_percent(week.control_builder_count, @minimum_cohort_size) %>%"></div>
+            </div>
+            <span class="text-[10px] text-muted font-mono whitespace-nowrap"><%= week.week_start_date.strftime("%m/%d") %></span>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="empty-state">
+        <p class="text-secondary">No weekly index rows yet.</p>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+    <div class="card overflow-hidden">
+      <div class="p-5 border-b border-subtle">
+        <h2 class="text-lg font-bold text-heading">Latest Builder Weekly Metrics</h2>
+        <p class="text-sm text-secondary">Commit pace rows for <%= ai_date(@latest_week) %>.</p>
+      </div>
+      <% if @latest_metrics.any? %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
+                <th class="text-left py-3 px-4">Builder</th>
+                <th class="text-left py-3 px-4">Cohort</th>
+                <th class="text-right py-3 px-4">Commits</th>
+                <th class="text-right py-3 px-4">Non-Merge</th>
+                <th class="text-right py-3 px-4">Bot Adj.</th>
+                <th class="text-right py-3 px-4">Baseline</th>
+                <th class="text-right py-3 px-4">Multiple</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-subtle">
+              <% @latest_metrics.each do |metric| %>
+                <tr class="hover:bg-surface-alt/60 transition">
+                  <td class="py-3 px-4 font-semibold text-heading"><%= metric.github_login %></td>
+                  <td class="py-3 px-4 text-secondary"><%= metric.cohort.humanize %></td>
+                  <td class="py-3 px-4 text-right text-heading"><%= ai_count(metric.commits_count) %></td>
+                  <td class="py-3 px-4 text-right text-heading"><%= ai_count(metric.non_merge_commits_count) %></td>
+                  <td class="py-3 px-4 text-right text-heading"><%= ai_count(metric.bot_adjusted_commits_count) %></td>
+                  <td class="py-3 px-4 text-right text-secondary"><%= ai_decimal(metric.trailing_90d_avg_weekly_commits) %></td>
+                  <td class="py-3 px-4 text-right font-semibold text-heading"><%= ai_multiple(metric.builder_multiple) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="p-5">
+          <div class="empty-state">
+            <p class="text-secondary">No builder weekly metrics for the latest week yet.</p>
+          </div>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="card p-5">
+      <h2 class="text-lg font-bold text-heading">Builder Backtest Progress</h2>
+      <div class="mt-4 space-y-3">
+        <% @builder_rollups.each do |row| %>
+          <% builder = row[:builder] %>
+          <% metric = row[:latest_metric] %>
+          <div class="rounded-lg border border-subtle bg-surface-alt p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="font-semibold text-heading truncate"><%= builder.display_label %></p>
+                <p class="text-xs text-muted"><%= builder.github_login %> · <%= builder.cohort.humanize %></p>
+              </div>
+              <span class="text-xs font-mono text-secondary whitespace-nowrap"><%= ai_multiple(metric&.builder_multiple) %></span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 mt-3 text-center">
+              <div>
+                <p class="text-sm font-bold text-heading"><%= ai_count(row[:observations_count]) %></p>
+                <p class="text-[10px] text-muted uppercase">Commits</p>
+              </div>
+              <div>
+                <p class="text-sm font-bold text-heading"><%= ai_count(row[:metric_weeks_count]) %></p>
+                <p class="text-[10px] text-muted uppercase">Weeks</p>
+              </div>
+              <div>
+                <p class="text-sm font-bold text-heading"><%= ai_count(row[:complete_metric_weeks_count]) %></p>
+                <p class="text-[10px] text-muted uppercase">Complete</p>
+              </div>
+              <div>
+                <p class="text-sm font-bold text-heading"><%= ai_count(row[:active_repos_count]) %></p>
+                <p class="text-[10px] text-muted uppercase">Repos</p>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="card p-5">
+    <h2 class="text-lg font-bold text-heading">CSV Exports</h2>
+    <p class="text-sm text-secondary mt-1">
+      Backtest exports are written under <code class="text-xs text-muted">tmp/ai_builder_multiple/</code>.
+      Methodology notes live in <code class="text-xs text-muted">docs/topics/ai-builder-multiple.md</code>.
+    </p>
+    <div class="grid gap-3 md:grid-cols-3 mt-4">
+      <% ["github_builder_weekly_metrics.csv", "github_builder_index_weeks.csv", "github_commit_observations_sample.csv"].each do |filename| %>
+        <div class="rounded-lg bg-surface-alt border border-subtle p-3">
+          <p class="text-sm font-semibold text-heading"><%= filename %></p>
+        </div>
+      <% end %>
+    </div>
+  </section>
+</section>

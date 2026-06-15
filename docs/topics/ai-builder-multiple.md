@@ -58,10 +58,16 @@ The files are:
 - `github_builder_index_weeks.csv`
 - `github_commit_observations_sample.csv`
 
-Inspect the latest JSON output at:
+Inspect the latest dashboard at:
 
 ```text
 /admin/ai_builder_multiple
+```
+
+The same latest index data is also available as JSON:
+
+```text
+/admin/ai_builder_multiple.json
 ```
 
 ## Caveats

@@ -13,8 +13,43 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
 
   test "index returns latest index data and builder metrics" do
     log_in_as(@admin)
+    week_start = create_backtest_snapshot
+
+    get admin_ai_builder_multiple_path(format: :json)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal "Public GitHub commit pace and builder activity only; this does not measure true productivity.", body.dig("data", "caveat")
+    assert_equal "2026-06-01", body.dig("data", "latest_week_start_date")
+    assert_equal 1, body.dig("data", "index_weeks").size
+    assert_equal 1, body.dig("data", "latest_builder_weekly_metrics").size
+  end
+
+  test "index renders dashboard html" do
+    log_in_as(@admin)
+    create_backtest_snapshot
+
+    get admin_ai_builder_multiple_path
+
+    assert_response :success
+    assert_select "h1", "AI Builder Multiple"
+    assert_select "h2", "Published Multiples"
+    assert_select "p", /does not measure true productivity/
+    assert_select "a[href=?]", admin_ai_builder_multiple_path(format: :json), "JSON"
+  end
+
+  private
+
+  def create_backtest_snapshot
     week_start = Date.new(2026, 6, 1)
     TrackedGithubBuilder.create!(github_login: "builder", cohort: "ai_builder", active: true)
+    GithubCommitObservation.create!(
+      github_login: "builder",
+      repo_full_name: "example/repo",
+      sha: "abc123",
+      committed_at: week_start.to_time,
+      source_strategy: "repo_scoped"
+    )
     GithubBuilderIndexWeek.create!(
       week_start_date: week_start,
       ai_builder_multiple: 2,
@@ -35,14 +70,6 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
       builder_multiple: 2,
       bot_adjusted_builder_multiple: 2
     )
-
-    get admin_ai_builder_multiple_path(format: :json)
-
-    assert_response :success
-    body = JSON.parse(response.body)
-    assert_equal "Public GitHub commit pace and builder activity only; this does not measure true productivity.", body.dig("data", "caveat")
-    assert_equal "2026-06-01", body.dig("data", "latest_week_start_date")
-    assert_equal 1, body.dig("data", "index_weeks").size
-    assert_equal 1, body.dig("data", "latest_builder_weekly_metrics").size
+    week_start
   end
 end
