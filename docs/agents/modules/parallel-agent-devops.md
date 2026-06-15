@@ -117,6 +117,24 @@ Rules:
   included production rollout.
 - The conductor reports production URLs and verification results before cleanup.
 
+## QA Deployment
+
+QA deployment sits between PR merge and production deploy.
+
+The intended cycle is:
+
+1. Feature agent opens a PR.
+2. Avi reviews and merges when ready.
+3. Avi or Steffon deploys the merged `main` ref to the app's QA server with
+   `bin/qa-server deploy <app> origin/main --yes`.
+4. Mr. McRitchie reviews the QA URL.
+5. Production deploy happens only after Mr. McRitchie explicitly approves it.
+
+QA servers are tracked in `config/qa_environments.yml` and operated through
+`bin/qa-server`. A QA deploy is allowed for the QA conductor lane, but it must
+target the QA Heroku app, never the production app. Turf Monster QA must stay on
+devnet with `PAYMENT_PROVIDER=none`.
+
 ## Code Loss Prevention
 
 - A pushed feature branch preserves work. Merging to `main` is an integration
@@ -144,6 +162,8 @@ Known future ceilings:
   problem.
 - Shared dependency release trains, especially `studio-engine`, need a single
   conductor and should not be merged casually by feature agents.
+- Stable QA servers should absorb release-candidate review so `main` can be
+  ahead of production without forcing production deploys.
 - Callback-heavy provider flows should stay on primary ports unless each
   provider is configured for worktree callback URLs.
 

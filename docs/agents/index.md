@@ -144,6 +144,10 @@ Feature work graduates through PR/QA, not direct `main` pushes. Use
 ready for Avi review. Keep the worktree and branch until Avi confirms the PR was
 merged or intentionally abandoned.
 
+QA servers, once provisioned, are operated with `mcritchie-studio/bin/qa-server`.
+They are release-candidate targets for Mr. McRitchie review before production;
+production deploy remains separately approval-gated.
+
 Before reusing or deleting worktrees, inspect lifecycle state:
 
 ```bash

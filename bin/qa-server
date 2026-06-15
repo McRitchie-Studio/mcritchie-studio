@@ -1,0 +1,175 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "open3"
+require "shellwords"
+require "yaml"
+
+SCRIPT_ROOT = File.expand_path("..", __dir__)
+
+def default_projects_dir
+  candidate = File.expand_path("..", SCRIPT_ROOT)
+  return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
+
+  candidate
+end
+
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
+HUB_DIR = SCRIPT_ROOT
+QA_CONFIG = File.join(HUB_DIR, "config", "qa_environments.yml")
+
+def usage
+  warn <<~TEXT
+    bin/qa-server - stable QA server conductor helper
+
+      list
+      plan [app]
+      status [app]
+      deploy <app> [git-ref] [--yes]
+
+    Examples:
+      bin/qa-server list
+      bin/qa-server plan turf-monster
+      bin/qa-server status mcritchie-studio
+      bin/qa-server deploy turf-monster origin/main --yes
+  TEXT
+  exit 1
+end
+
+def capture_status(*cmd, chdir: nil)
+  options = {}
+  options[:chdir] = chdir if chdir
+  out, err, status = Open3.capture3(*cmd, **options)
+  [status.success?, out, err]
+end
+
+def sh(*cmd, chdir: nil)
+  options = {}
+  options[:chdir] = chdir if chdir
+  ok = system(*cmd, **options)
+  abort "command failed#{chdir ? " in #{chdir}" : ""}: #{cmd.shelljoin}" unless ok
+end
+
+def qa_environments
+  abort "missing QA registry: #{QA_CONFIG}" unless File.exist?(QA_CONFIG)
+
+  YAML.load_file(QA_CONFIG).fetch("qa_environments")
+end
+
+def qa_for(name)
+  config = qa_environments.fetch(name, nil)
+  abort "unknown QA app: #{name}\nRun: bin/qa-server list" unless config
+
+  config.merge("slug" => name)
+end
+
+def repo_path(config)
+  File.join(PROJECTS_DIR, config.fetch("repo"))
+end
+
+def heroku_app_exists?(app)
+  ok, = capture_status("heroku", "apps:info", "--app", app)
+  ok
+end
+
+def health_code(url)
+  ok, out, = capture_status("curl", "-sS", "-o", "/dev/null", "-m", "8", "-w", "%{http_code}", "#{url}/up")
+  ok ? out.strip : "down"
+end
+
+def run_list
+  qa_environments.each do |slug, config|
+    puts "#{slug.ljust(18)} #{config.fetch("display_name").ljust(24)} qa #{config.fetch("heroku_app").ljust(24)} prod #{config.fetch("production_app")}"
+  end
+end
+
+def print_plan(config)
+  app = config.fetch("heroku_app")
+  puts "#{config.fetch("display_name")} provisioning plan"
+  puts
+  puts "target app: #{app}"
+  puts "QA URL:     #{config.fetch("qa_url")}"
+  puts "prod app:   #{config.fetch("production_app")}"
+  puts "safety:     #{config.fetch("safety_profile")}"
+  puts
+  puts "Create once, after approval:"
+  puts "  heroku create #{app}"
+  puts "  heroku addons:create heroku-postgresql:essential-0 --app #{app}"
+  puts "  heroku addons:create heroku-redis:mini --app #{app}" if config.fetch("slug") == "turf-monster"
+  puts
+  puts "Set non-secret config:"
+  config.fetch("required_config", {}).each do |key, value|
+    puts "  heroku config:set #{key}=#{Shellwords.escape(value.to_s)} --app #{app}"
+  end
+  puts
+  puts "Set secrets from 1Password or copied safe QA values:"
+  config.fetch("required_secrets", []).each do |key|
+    puts "  heroku config:set #{key}=<from-1password-or-qa-secret> --app #{app}"
+  end
+  puts
+  puts "Scale after first deploy:"
+  config.fetch("dynos", {}).each do |process, count|
+    puts "  heroku ps:scale #{process}=#{count} --app #{app}"
+  end
+end
+
+def run_plan(app_name = nil)
+  selected = app_name ? { app_name => qa_for(app_name) } : qa_environments
+  selected.each do |slug, config|
+    print_plan(config.merge("slug" => slug))
+    puts
+  end
+end
+
+def run_status(app_name = nil)
+  selected = app_name ? { app_name => qa_for(app_name) } : qa_environments
+  selected.each do |slug, config|
+    app = config.fetch("heroku_app")
+    exists = heroku_app_exists?(app)
+    code = exists ? health_code(config.fetch("qa_url")) : "missing-app"
+    puts "#{slug.ljust(18)} #{app.ljust(24)} #{exists ? "exists" : "missing"} /up #{code} #{config.fetch("qa_url")}"
+    next unless exists
+
+    system("heroku", "ps", "--app", app)
+  end
+end
+
+def run_deploy(app_name, ref, assume_yes:)
+  config = qa_for(app_name)
+  app = config.fetch("heroku_app")
+  repo = repo_path(config)
+  abort "missing repo: #{repo}" unless Dir.exist?(repo)
+  abort "QA app #{app} does not exist yet. Run: bin/qa-server plan #{app_name}" unless heroku_app_exists?(app)
+
+  ref ||= "origin/main"
+  ok, sha, err = capture_status("git", "rev-parse", "--verify", ref, chdir: repo)
+  abort "could not resolve #{ref.inspect} in #{repo}: #{err}" unless ok
+  sha = sha.strip
+
+  unless assume_yes
+    abort "QA deploy is an external write. Re-run with --yes after reviewing: #{app_name} #{sha}"
+  end
+
+  puts "Deploying #{app_name} #{sha} to #{app}"
+  sh("git", "push", "https://git.heroku.com/#{app}.git", "+#{sha}:main", chdir: repo)
+  code = health_code(config.fetch("qa_url"))
+  puts "QA URL: #{config.fetch("qa_url")} (/up #{code})"
+end
+
+cmd = ARGV.shift || "help"
+
+case cmd
+when "list"
+  run_list
+when "plan"
+  run_plan(ARGV[0])
+when "status"
+  run_status(ARGV[0])
+when "deploy"
+  assume_yes = ARGV.delete("--yes")
+  app_name, ref = ARGV
+  usage unless app_name
+  run_deploy(app_name, ref, assume_yes: !!assume_yes)
+else
+  usage
+end
