@@ -46,6 +46,7 @@ buffalo_bills:
   league: nfl
   conference: AFC
   division: East
+  home_arena_slug: highmark-stadium
 
 miami_dolphins:
   name: Miami Dolphins

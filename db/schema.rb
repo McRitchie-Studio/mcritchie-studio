@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_15_001000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_15_002001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -74,6 +74,20 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_001000) do
     t.integer "position", default: 0
     t.index ["slug"], name: "index_agents_on_slug", unique: true
     t.index ["status"], name: "index_agents_on_status"
+  end
+
+  create_table "arenas", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "name", null: false
+    t.string "address"
+    t.string "location"
+    t.string "city"
+    t.string "state"
+    t.string "country"
+    t.string "timezone"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_arenas_on_slug", unique: true
   end
 
   create_table "athlete_grades", force: :cascade do |t|
@@ -802,6 +816,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_001000) do
     t.string "hashtag"
     t.string "hashtag2"
     t.string "x_handle"
+    t.string "home_arena_slug"
+    t.index ["home_arena_slug"], name: "index_teams_on_home_arena_slug"
     t.index ["slug"], name: "index_teams_on_slug", unique: true
     t.index ["sport", "league"], name: "index_teams_on_sport_and_league"
   end

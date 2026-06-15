@@ -1,0 +1,9 @@
+highmark_stadium:
+  slug: highmark-stadium
+  name: Highmark Stadium
+  address: 1 Bills Drive
+  location: Orchard Park, NY
+  city: Orchard Park
+  state: NY
+  country: USA
+  timezone: America/New_York

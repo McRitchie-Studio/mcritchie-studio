@@ -33,4 +33,10 @@ class TeamTest < ActiveSupport::TestCase
     team = teams(:argentina)
     assert_includes team.people, people(:messi)
   end
+
+  test "belongs to home arena by slug" do
+    team = teams(:buffalo_bills)
+
+    assert_equal arenas(:highmark_stadium), team.home_arena
+  end
 end
