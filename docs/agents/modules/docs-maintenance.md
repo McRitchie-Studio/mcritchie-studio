@@ -17,8 +17,11 @@ When finishing a meaningful feature:
 
 1. Search docs for the changed route, env var, port, provider, model, or workflow.
 2. Update the canonical doc.
-3. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
-4. Prefer deleting stale docs over preserving contradictory context.
+3. While editing active docs, fix nearby ambiguous owner/orchestrator language:
+   use **Alex** for the Alex agent/orchestrator and **Mr. McRitchie** for
+   Alexander Ray McRitchie, the owner/operator.
+4. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
+5. Prefer deleting stale docs over preserving contradictory context.
 
 ## Closeout Checklist
 

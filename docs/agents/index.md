@@ -12,6 +12,10 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 - Keep repo-specific facts in the owning repo, but keep cross-repo operating rules here.
 - In agent docs and handoffs, **Alex** means the Alex agent/orchestrator. The
   owner/operator is **Mr. McRitchie**.
+- When editing active docs, fix nearby ambiguous references you notice:
+  **Alex** for the agent/orchestrator, **Mr. McRitchie** for the owner/operator.
+  Leave historical/archive snapshots alone unless you are already promoting or
+  correcting that file.
 - Do not print secrets. Use named 1Password references and purpose-built scripts.
 - Do not hand Mr. McRitchie terminal chores. Run safe commands yourself; ask Mr.
   McRitchie for approvals, credentials, product judgment, or external access.
