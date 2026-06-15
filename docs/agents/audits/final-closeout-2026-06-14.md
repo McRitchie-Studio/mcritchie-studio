@@ -81,6 +81,14 @@ SES/Resend drift. Archive candidates were checked for explicit historical
 boundaries; the remaining cleanup was limited to Turf Monster's active runbook
 and historical test backlog plus SolanaStudio's old security audit banner.
 
+Production deployment follow-up, 2026-06-14: Turf Monster was deployed from the
+cleaned baseline to Heroku release `v90` at commit `4333f90`. Stripe checkout is
+retired by default with `PAYMENT_PROVIDER=none`; CDP ramp and web2 USDC entry
+remain enabled. Production mail uses the verified Resend fallback sender
+`McRitchie Studio <team@mcritchie.studio>` while SES production access remains
+pending. The Heroku Node build pin was moved from Node 20 to Node 22 across
+Turf Monster, CI, and McRitchie Studio's recovery docs/scripts.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
@@ -94,6 +102,15 @@ High-signal proof from this cleanup:
 - Primary local McRitchie Studio and Turf Monster stacks now send real mail
   through Resend while worktree stacks default to local capture; both
   non-production banners show the runtime mail state.
+- Turf Monster production release `v90` built with Node `22.22.3`, with
+  buildpacks ordered `heroku/nodejs` then `heroku/ruby`; the previous Node 20
+  EOL build warning is gone.
+- Turf Monster production release output confirms
+  `transport=Resend from=McRitchie Studio <team@mcritchie.studio>` and Solana
+  `mainnet-beta` alignment.
+- Turf Monster public production URLs returned `200`:
+  `https://app.turfmonster.media/up` and
+  `https://app.turfmonster.media/contests/world-cup-week-3-contest`.
 - Turf Vault TypeScript tests were rewritten around
   `turf-vault/docs/VERIFICATION_MATRIX.md`.
 - Latest Turf Vault local proof: `23 passing` against an isolated validator on
@@ -127,9 +144,17 @@ These are not blockers to maintenance mode, but they should not be forgotten:
   `/Users/alex/projects/bin/clean-artifacts` were removed after their durable
   content was confirmed in tracked McRitchie Studio docs/scripts.
 - **SES production access**: shared email architecture and domain verification
-  are ready, but the SES account is still sandboxed. AWS support access should
-  be completed after the audit cleanup is closed, then production SES needs a
-  real stability window before Resend fallback is removed.
+  are ready, and production fallback mail has been proved through the verified
+  `mcritchie.studio` Resend domain, but the SES account is still sandboxed. AWS
+  support access should be completed after the audit cleanup is closed, then
+  production SES needs a real stability window before Resend fallback is
+  removed.
+- **Heroku platform drift**: Turf Monster is healthy on Heroku-24, but Heroku
+  now advertises Heroku-26 as available. Treat stack migration as a planned
+  platform audit item, not a deployment blocker.
+- **Browserslist freshness**: asset precompile reports the usual
+  `caniuse-lite` freshness warning. This is not blocking production, but should
+  be swept during routine frontend dependency maintenance.
 - **Turf Vault mainnet feature gates**: local tests cover the default
   localnet/devnet build. Mainnet-only `INIT_AUTHORITY`, canonical USDC, and
   canonical USDT checks still need mainnet build/deploy proof when that window
@@ -160,6 +185,7 @@ Weekly or after several agent sessions:
 
 ## Next Best Action
 
-Finish SES production access, run a provider smoke test after AWS approval, and
+Run the fresh final audit pass from this deployment checkpoint. After that,
+finish SES production access, run a provider smoke test after AWS approval, and
 keep Resend configured until SES has a stability window. Otherwise, the
 ecosystem cleanup has moved from audit work to normal feature maintenance.

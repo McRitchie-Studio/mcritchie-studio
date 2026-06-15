@@ -6,8 +6,10 @@ Mode: read-heavy architecture and documentation audit. No product-code refactor.
 
 Closeout: the final pass is recorded in
 [`final-closeout-2026-06-14.md`](final-closeout-2026-06-14.md). The cleanup is
-now in maintenance mode; salvage/deletion decisions are complete, and the
-remaining items are SES production access plus normal drift maintenance.
+now in maintenance mode; salvage/deletion decisions are complete, production
+email fallback has been proved, Turf Monster is deployed from the cleaned
+baseline, and the remaining items are SES production access plus normal drift
+maintenance.
 
 ## Executive Summary
 
@@ -15,8 +17,9 @@ The ecosystem is in a materially better place than the first pass. `AGENTS.md`
 is the right LLM-neutral entrypoint, `mcritchie-studio` is correctly acting as
 the documentation and bootstrap anchor, the primary apps are clean on `main`,
 shared auth/email primitives now live in `studio-engine 0.5.9`, local email
-capture exists for worktree stacks, and `bin/agent-worktree` can now diagnose
-worktree lifecycle drift without deleting anything.
+capture exists for worktree stacks, production fallback mail sends through the
+verified `mcritchie.studio` Resend domain, and `bin/agent-worktree` can now
+diagnose worktree lifecycle drift without deleting anything.
 
 The highest remaining risk is not missing infrastructure. It is trust in the
 instructions that agents read first. Several active docs and all app
@@ -332,15 +335,18 @@ Implemented:
 Goal: make SES the normal shared path and local inbox the default development
 proof path.
 
-Status 2026-06-14: complete for documentation/operations. The canonical
-cross-app playbook is `mcritchie-studio/docs/agents/modules/email-operations.md`;
-app-level implementation notes remain in each app's `docs/email-delivery.md`.
+Status 2026-06-14: complete for documentation/operations and production
+fallback. The canonical cross-app playbook is
+`mcritchie-studio/docs/agents/modules/email-operations.md`; app-level
+implementation notes remain in each app's `docs/email-delivery.md`.
 
 Implemented:
 
 - Added one ecosystem SES checklist in McRitchie Studio docs.
 - Added per-app sender-domain rows to the shared email operations matrix.
 - Documented local inbox proof and provider smoke workflow for each app.
+- Proved Resend fallback through the verified `mcritchie.studio` domain in
+  production while SES remains sandboxed.
 - Kept Resend rollback documented until SES has a real stability window.
 - Deferred full preview/catalog extraction until the sender-domain cutover is
   stable.
@@ -386,6 +392,12 @@ Implemented:
    maintenance are tracked in
    [`final-closeout-2026-06-14.md`](final-closeout-2026-06-14.md) and
    [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
+
+2. Start the fresh final audit pass from the production deployment checkpoint:
+   Turf Monster release `v90`, commit `4333f90`, Node `22.x`, Stripe retired by
+   default, payment provider `none`, Resend fallback from
+   `McRitchie Studio <team@mcritchie.studio>`, and public `/up` plus live
+   contest URLs returning `200`.
 
 Status 2026-06-14: the Turf Vault TypeScript suite has been rewritten against
 `turf-vault/docs/VERIFICATION_MATRIX.md`; local proof was `23 passing` against

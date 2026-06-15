@@ -5,7 +5,9 @@ Turf Monster, and future apps without cutting production traffic over too early.
 
 ## Result
 
-SES domain verification is ready. Full production cutover is not ready.
+SES domain verification is ready. Full production cutover is not ready because
+the account remains sandboxed, but production fallback delivery is proved
+through Resend on the verified `mcritchie.studio` domain.
 
 | Surface | Result |
 |---------|--------|
@@ -20,13 +22,13 @@ SES domain verification is ready. Full production cutover is not ready.
 
 | App | Heroku app | Current safe transport | Notes |
 |-----|------------|------------------------|-------|
-| McRitchie Studio | `mcritchie-studio` | Resend rollback | `MAIL_TRANSPORT` was unset during proof; do not persist SES while sandboxed. |
-| Turf Monster | `turf-monster-mainnet` | Resend rollback | `SES_REGION=us-east-2` existed, but persistent SES cutover remains blocked by sandbox mode. |
+| McRitchie Studio | `mcritchie-studio` | Resend fallback | `MAIL_TRANSPORT` remains unset or non-SES while SES is sandboxed. |
+| Turf Monster | `turf-monster-mainnet` | Resend fallback | Release `v90` proved `transport=Resend from=McRitchie Studio <team@mcritchie.studio>`. |
 
-The production dynos checked during this proof were still loading
-`studio-engine 0.5.2`, while local consumer lockfiles were already on
-`studio-engine 0.5.6`. Deploy the consumers with the current engine before
-proving `Studio::Email.deliver` and the shared outbox path on Heroku.
+Updated 2026-06-14: consumer deploys now run `studio-engine 0.5.9`. Turf
+Monster release `v90` proved the shared mail boot path and successful production
+fallback posture. Keep Resend configured until SES has production access and a
+stability window.
 
 ## Sender Convention
 
@@ -99,8 +101,7 @@ and falls back to `AWS_*` only for older apps.
    setting persistent `MAIL_TRANSPORT=ses` on web dynos.
 2. Runtime SES SMTP credentials need to be stored or derived and staged as
    `SES_SMTP_USERNAME` / `SES_SMTP_PASSWORD`.
-3. Consumer apps need a deploy with the current `studio-engine` release.
-4. After production access and deploy, run one provider smoke test per app and
+3. After production access, run one provider smoke test per app and
    confirm DKIM/SPF/DMARC pass.
 
 ## Safe Next Proof
