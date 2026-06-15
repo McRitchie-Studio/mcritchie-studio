@@ -19,18 +19,19 @@
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
+      <%= link_to "Tracked Builders", "#tracked-builders", class: "btn btn-outline btn-sm" %>
       <%= link_to "JSON", admin_ai_builder_multiple_path(format: :json), class: "btn btn-neutral btn-sm" %>
     </div>
   </header>
 
   <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-    <div class="card p-4">
+    <%= link_to "#tracked-builders", class: "card p-4 block hover:border-primary/40 transition" do %>
       <p class="label-upper">Tracked Builders</p>
       <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:active_builders_count]) %></p>
       <p class="text-xs text-muted mt-1">
         AI <%= @tracked_builder_summary["ai_builder"].to_i %> / Control <%= @tracked_builder_summary["control_builder"].to_i %>
       </p>
-    </div>
+    <% end %>
     <div class="card p-4">
       <p class="label-upper">Tracked Repos</p>
       <p class="text-2xl font-bold text-heading mt-2"><%= ai_count(@overview[:active_repos_count]) %></p>
@@ -223,20 +224,50 @@
       <% end %>
     </div>
 
-    <div class="card p-5">
-      <h2 class="text-lg font-bold text-heading">Builder Backtest Progress</h2>
+    <div id="tracked-builders" class="card p-5 scroll-mt-28">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold text-heading">Tracked Builders</h2>
+          <p class="text-sm text-secondary mt-1">GitHub accounts and repo scopes used for this benchmark run.</p>
+        </div>
+        <span class="text-xs text-muted whitespace-nowrap"><%= ai_count(@builder_rollups.size) %> active</span>
+      </div>
       <div class="mt-4 space-y-3">
         <% @builder_rollups.each do |row| %>
           <% builder = row[:builder] %>
           <% metric = row[:latest_metric] %>
+          <% active_repos = builder.tracked_github_builder_repos.active.sort_by(&:repo_full_name) %>
           <div class="rounded-lg border border-subtle bg-surface-alt p-3">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="font-semibold text-heading truncate"><%= builder.display_label %></p>
-                <p class="text-xs text-muted"><%= builder.github_login %> · <%= builder.cohort.humanize %></p>
+                <div class="flex items-center gap-2 min-w-0">
+                  <p class="font-semibold text-heading truncate"><%= builder.display_label %></p>
+                  <%= link_to "@#{builder.github_login}",
+                        "https://github.com/#{builder.github_login}",
+                        target: "_blank",
+                        rel: "noopener",
+                        class: "text-xs text-primary hover:text-heading transition whitespace-nowrap" %>
+                </div>
+                <p class="text-xs text-muted">
+                  <%= builder.cohort.humanize %><%= " · #{builder.category}" if builder.category.present? %>
+                </p>
               </div>
               <span class="text-xs font-mono text-secondary whitespace-nowrap"><%= ai_multiple(metric&.builder_multiple) %></span>
             </div>
+            <% if active_repos.any? %>
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                <% active_repos.each do |repo| %>
+                  <%= link_to repo.repo_full_name,
+                        "https://github.com/#{repo.repo_full_name}",
+                        target: "_blank",
+                        rel: "noopener",
+                        class: "rounded border border-subtle bg-surface px-2 py-1 text-[11px] text-secondary hover:text-heading hover:border-primary/40 transition" %>
+                <% end %>
+              </div>
+            <% end %>
+            <% if builder.notes.present? %>
+              <p class="text-xs text-muted mt-3 leading-snug"><%= builder.notes %></p>
+            <% end %>
             <div class="grid grid-cols-4 gap-2 mt-3 text-center">
               <div>
                 <p class="text-sm font-bold text-heading"><%= ai_count(row[:observations_count]) %></p>

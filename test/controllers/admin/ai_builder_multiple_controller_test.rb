@@ -34,7 +34,11 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "AI Builder Multiple"
     assert_select "h2", "Published Multiples"
+    assert_select "h2", "Tracked Builders"
     assert_select "p", /does not measure true productivity/
+    assert_select "a[href=?]", "#tracked-builders", "Tracked Builders"
+    assert_select "a[href=?]", "https://github.com/builder", "@builder"
+    assert_select "a[href=?]", "https://github.com/example/repo", "example/repo"
     assert_select "a[href=?]", admin_ai_builder_multiple_path(format: :json), "JSON"
   end
 
@@ -42,7 +46,8 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
 
   def create_backtest_snapshot
     week_start = Date.new(2026, 6, 1)
-    TrackedGithubBuilder.create!(github_login: "builder", cohort: "ai_builder", active: true)
+    builder = TrackedGithubBuilder.create!(github_login: "builder", cohort: "ai_builder", active: true)
+    builder.tracked_github_builder_repos.create!(repo_full_name: "example/repo", active: true)
     GithubCommitObservation.create!(
       github_login: "builder",
       repo_full_name: "example/repo",
