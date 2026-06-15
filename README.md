@@ -99,7 +99,7 @@ Seeds load 4 agents with avatars, 9 skills, sample tasks, plus 32 NFL + 71 NCAA 
 
 - Ruby **3.1.7** (use `brew install ruby@3.1` — not mise/rbenv; see [house-burn-down.md gotcha 1](docs/agents/system/house-burn-down.md))
 - PostgreSQL 14+
-- Node.js **20+** (Node 18 breaks `turf-vault`'s yarn deps)
+- Node.js **22.x** (keeps local dev, CI, and Heroku aligned; `turf-vault` needs at least Node 20.18.0)
 - Bundler 2.4+ (`gem install bundler`)
 
 ## Test

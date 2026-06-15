@@ -144,11 +144,11 @@ Then either `source ~/.zshrc` or open a new terminal. Verify: `which ruby` → `
 ### Node + yarn (via mise)
 
 ```bash
-mise use --global node@20
+mise use --global node@22
 npm install -g yarn
 ```
 
-~30s. Node 20 (not 18) is required — `turf-vault`'s TypeScript test deps (`@solana/codecs-numbers`) need Node ≥ 20.18.0. Both Rails apps' Playwright deps are fine on either, but pinning to 20 keeps everything consistent.
+~30s. Node 22 is the ecosystem standard for local dev, CI, and Heroku asset builds. `turf-vault`'s TypeScript test deps (`@solana/codecs-numbers`) need Node >= 20.18.0, so do not downgrade to Node 18.
 
 ### Ruby — already installed in Phase 1
 
@@ -435,7 +435,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | Phase | Responsibility |
 |-------|----------------|
 | 1. System tools | Homebrew packages (ruby@3.1, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
-| 2. Languages | Node 20 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
+| 2. Languages | Node 22 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
 | 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
@@ -463,7 +463,7 @@ What this protocol installed last successful run:
 | Homebrew | latest | pre-existing |
 | mise | latest | brew |
 | Ruby | 3.1.7 | brew `ruby@3.1` |
-| Node | 20.20.x | mise |
+| Node | 22.x | mise |
 | yarn | 1.22.x | npm -g |
 | Postgres | 14.x | brew (`postgresql@14`) |
 | Redis | latest | brew |

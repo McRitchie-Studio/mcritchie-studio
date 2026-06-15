@@ -151,10 +151,10 @@ phase_system_tools() {
 phase_languages() {
   log_phase "Phase 2: Languages"
 
-  # Node 20 via mise (20+ required for turf-vault yarn deps — gotcha)
-  if ! mise list 2>/dev/null | grep -qE "^node\s+20"; then
-    log_act "installing node@20 via mise"
-    mise use --global node@20 >/dev/null
+  # Node 22 via mise (>=20.18 required for turf-vault yarn deps; Heroku/CI use 22)
+  if ! mise list 2>/dev/null | grep -qE "^node\s+22"; then
+    log_act "installing node@22 via mise"
+    mise use --global node@22 >/dev/null
   fi
   log_ok "Node" "$(node --version 2>/dev/null)"
 
