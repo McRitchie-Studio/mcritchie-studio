@@ -25,6 +25,9 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   code or app docs, create or enter an isolated worktree with an allocated port
   before making changes unless Mr. McRitchie explicitly assigns you as the
   deploy owner for that repo.
+- A pushed feature branch preserves code. `main` is for reviewed integration,
+  not backup. Feature agents push their own branch and graduate through PR/QA;
+  Avi or the designated release conductor merges.
 
 ## Default Operating Context
 
@@ -45,8 +48,10 @@ launch flow is:
    local URL to react to.
 7. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
-8. Commit and push when the work is coherent. Deploy only when Mr. McRitchie
-   asks for a deploy or the task explicitly includes production rollout.
+8. Commit and push the feature branch when the work is coherent, then run
+   `bin/agent-worktree finish <app> <task-slug>` to prepare PR/QA handoff.
+   Deploy or merge only when Mr. McRitchie assigned that lane or the task
+   explicitly includes production rollout.
 
 For a new feature session, Mr. McRitchie should only need to say the target app
 and the feature. A good prompt is:
@@ -54,8 +59,9 @@ and the feature. A good prompt is:
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use an isolated worktree and allocated port before editing. Give me a local URL
-to review, update docs if behavior changes, then commit, push, and deploy only
-if I explicitly asked for deploy.
+to review, update docs if behavior changes, then commit, push the feature
+branch, run bin/agent-worktree finish, and prepare a PR for Avi QA. Do not merge
+or deploy unless I explicitly assigned that lane.
 ```
 
 ## Start Here
@@ -70,6 +76,7 @@ if I explicitly asked for deploy.
 | Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
+| Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
@@ -114,6 +121,7 @@ cd /Users/alex/projects/mcritchie-studio
 bin/agent-worktree plan turf-monster task-slug
 bin/agent-worktree new turf-monster task-slug
 bin/agent-worktree up turf-monster task-slug
+bin/agent-worktree finish turf-monster task-slug
 ```
 
 Return the printed `http://localhost:<port>` URL in the handoff.
@@ -130,6 +138,11 @@ http://localhost:<port>/_studio/local_emails
 ```
 
 Worktree stacks default to `LOCAL_EMAIL_CAPTURE=1`, so magic links and other emails are recorded there instead of sent to real inboxes.
+
+Feature work graduates through PR/QA, not direct `main` pushes. Use
+`bin/agent-worktree finish <app> <task-slug> --push --pr` when the branch is
+ready for Avi review. Keep the worktree and branch until Avi confirms the PR was
+merged or intentionally abandoned.
 
 Before reusing or deleting worktrees, inspect lifecycle state:
 

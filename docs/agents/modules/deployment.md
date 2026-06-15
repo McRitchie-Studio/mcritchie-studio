@@ -19,6 +19,11 @@ Use `turf-monster/bin/deploy`; do not hand-push around its preflight checks for 
 
 ## Rule
 
+Deploys, gem publishes, provider changes, and production env-var changes are
+Release-lane work. A feature agent can recommend deploy, but only the designated
+release conductor should run it after explicit approval from Mr. McRitchie or an
+already-approved rollout prompt.
+
 If deployment changes a provider, domain, callback URL, env var, or local port, update:
 
 - `mcritchie-studio/config/satellites.yml`
