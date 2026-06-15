@@ -21,14 +21,14 @@
 %>
 
 <%= link_to "/_studio/local_emails",
-            class: "group relative inline-flex items-center font-semibold rounded px-3 py-1 whitespace-nowrap gap-2 transition duration-150 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/90",
-            style: "background:#ffffff; color:#be185d; text-decoration:none; position:relative; transition:transform 150ms ease, box-shadow 150ms ease;",
+            class: "group relative inline-flex items-center font-semibold rounded px-3 py-1 whitespace-nowrap gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/90",
+            style: "background:transparent; border:1px solid rgba(255,255,255,0.9); color:#ffffff; text-decoration:none; position:relative; transition:background-color 150ms ease, color 150ms ease, border-color 150ms ease;",
             title: title,
             "aria-label": title,
-            onmouseover: "this.style.transform='translateY(-1px)'; this.style.boxShadow='0 8px 18px rgba(0,0,0,0.18)'; this.querySelector('[data-email-status-tooltip]').style.opacity='1';",
-            onmouseout: "this.style.transform=''; this.style.boxShadow=''; this.querySelector('[data-email-status-tooltip]').style.opacity='0';",
-            onfocus: "this.style.transform='translateY(-1px)'; this.style.boxShadow='0 8px 18px rgba(0,0,0,0.18)'; this.querySelector('[data-email-status-tooltip]').style.opacity='1';",
-            onblur: "this.style.transform=''; this.style.boxShadow=''; this.querySelector('[data-email-status-tooltip]').style.opacity='0';" do %>
+            onmouseover: "this.style.background='#ffffff'; this.style.borderColor='#ffffff'; this.style.color='#be185d'; this.querySelector('[data-email-status-tooltip]').style.opacity='1';",
+            onmouseout: "this.style.background='transparent'; this.style.borderColor='rgba(255,255,255,0.9)'; this.style.color='#ffffff'; this.querySelector('[data-email-status-tooltip]').style.opacity='0';",
+            onfocus: "this.style.background='#ffffff'; this.style.borderColor='#ffffff'; this.style.color='#be185d'; this.querySelector('[data-email-status-tooltip]').style.opacity='1';",
+            onblur: "this.style.background='transparent'; this.style.borderColor='rgba(255,255,255,0.9)'; this.style.color='#ffffff'; this.querySelector('[data-email-status-tooltip]').style.opacity='0';" do %>
   <span>Email</span>
   <span aria-hidden="true"><%= status_icon %></span>
   <% if provider_icon.present? %>
