@@ -58,6 +58,57 @@ Use `SKIP_FETCH=1` to run the regression from stored observations only. This is
 useful after importing a large control-candidate list, because users without
 repo scopes would otherwise require broad GitHub commit search.
 
+For ad hoc user fetches, use the tracked builder model rather than the app's
+`Person` model:
+
+```ruby
+builder = TrackedGithubBuilder.find_by!(github_login: "amcritchie")
+builder.current_week_commits
+builder.last_week_commits
+builder.last_year_commits
+builder.last_five_commits
+```
+
+Class helpers are also available:
+
+```ruby
+TrackedGithubBuilder.last_week_commits("amcritchie")
+```
+
+The fetch windows use the same Saturday-Friday UTC calendar as the dashboard.
+`last_five_commits` is the five-year report window, starting `2021-07-24` and
+ending at the latest complete Friday.
+
+Two task shortcuts fetch common windows and then recalculate metrics/index rows
+and CSV exports for that window:
+
+```bash
+bin/rails github:ai_builder_multiple:fetch_last_week
+bin/rails github:ai_builder_multiple:fetch_last_five_years
+```
+
+Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` while testing. The full
+five-year task across the large control pool can require broad GitHub commit
+search for builders without repo scopes.
+
+Rate-limit and pacing knobs:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=0.25 \
+GITHUB_BUILDER_PAUSE_SECONDS=2 \
+GITHUB_RATE_LIMIT_PAUSE_SECONDS=900 \
+GITHUB_RATE_LIMIT_RETRIES=4 \
+bin/rails github:ai_builder_multiple:fetch_last_week
+```
+
+`GITHUB_REQUEST_PAUSE_SECONDS` pauses after successful GitHub HTTP requests.
+`GITHUB_BUILDER_PAUSE_SECONDS` pauses between tracked builders.
+`GITHUB_RATE_LIMIT_PAUSE_SECONDS` and `GITHUB_RATE_LIMIT_RETRIES` control retry
+behavior after a GitHub rate-limit response. `GITHUB_SEARCH_RANGE_DAYS` can be
+lowered to make global commit search windows smaller. The fetch shortcuts use
+the exact target window by default; set `FETCH_WARMUP_DAYS=90` when you want to
+fetch baseline warmup data too.
+
 Paul Miller's historic active GitHub users list can be imported as a large
 control-candidate pool:
 

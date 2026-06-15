@@ -60,4 +60,17 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_equal({ "ok" => true }, client.get("/test"))
     assert_equal [1], sleeps
   end
+
+  test "can pause after successful requests" do
+    sleeps = []
+    client = Github::Client.new(
+      logger: nil,
+      sleeper: ->(seconds) { sleeps << seconds },
+      request_pause_seconds: 0.25,
+      executor: ->(_uri, _request) { FakeResponse.new("200", '{"ok":true}', {}) }
+    )
+
+    assert_equal({ "ok" => true }, client.get("/test"))
+    assert_equal [0.25], sleeps
+  end
 end

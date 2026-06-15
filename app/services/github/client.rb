@@ -13,13 +13,15 @@ module Github
     attr_reader :request_count
 
     def initialize(token: ENV["GITHUB_TOKEN"], base_url: DEFAULT_BASE_URL, logger: Rails.logger,
-      executor: nil, sleeper: ->(seconds) { sleep(seconds) }, max_retries: 2)
+      executor: nil, sleeper: ->(seconds) { sleep(seconds) }, max_retries: 2,
+      request_pause_seconds: ENV.fetch("GITHUB_REQUEST_PAUSE_SECONDS", 0).to_f)
       @token = token.to_s.strip.presence
       @base_url = base_url
       @logger = logger
       @executor = executor
       @sleeper = sleeper
       @max_retries = max_retries
+      @request_pause_seconds = request_pause_seconds.to_f
       @request_count = 0
     end
 
@@ -74,6 +76,7 @@ module Github
             raise HttpError, "GitHub API HTTP #{status}: #{response.body}"
           end
 
+          pause_after_request
           return response
         rescue HttpError
           raise
@@ -143,6 +146,10 @@ module Github
       reset = response["x-ratelimit-reset"].to_i
       reset_at = reset.positive? ? Time.at(reset).utc.iso8601 : "unknown"
       raise RateLimitError, "GitHub API rate limit exhausted; resets at #{reset_at}"
+    end
+
+    def pause_after_request
+      @sleeper.call(@request_pause_seconds) if @request_pause_seconds.positive?
     end
 
     def log_response(uri, response)

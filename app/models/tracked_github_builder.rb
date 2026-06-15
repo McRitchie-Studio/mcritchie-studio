@@ -22,7 +22,51 @@ class TrackedGithubBuilder < ApplicationRecord
     display_name.presence || github_login
   end
 
+  def current_week_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.current_week(today: today), fetcher: fetcher)
+  end
+
+  def last_week_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.last_week(today: today), fetcher: fetcher)
+  end
+
+  def last_year_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.last_year(today: today), fetcher: fetcher)
+  end
+
+  def last_five_commits(fetcher: Github::CommitFetcher.new, today: Github::CommitFetchWindows.utc_today)
+    fetch_commits_for_window(Github::CommitFetchWindows.last_five_years(today: today), fetcher: fetcher)
+  end
+  alias_method :last_five_years_commits, :last_five_commits
+
+  def self.current_week_commits(github_login, **options)
+    find_by!(github_login: normalize_login_value(github_login)).current_week_commits(**options)
+  end
+
+  def self.last_week_commits(github_login, **options)
+    find_by!(github_login: normalize_login_value(github_login)).last_week_commits(**options)
+  end
+
+  def self.last_year_commits(github_login, **options)
+    find_by!(github_login: normalize_login_value(github_login)).last_year_commits(**options)
+  end
+
+  def self.last_five_commits(github_login, **options)
+    find_by!(github_login: normalize_login_value(github_login)).last_five_commits(**options)
+  end
+  class << self
+    alias_method :last_five_years_commits, :last_five_commits
+  end
+
+  def self.normalize_login_value(github_login)
+    github_login.to_s.strip.downcase
+  end
+
   private
+
+  def fetch_commits_for_window(window, fetcher:)
+    fetcher.fetch_for_builder(builder: self, start_date: window.begin, end_date: window.end)
+  end
 
   def normalize_github_login
     self.github_login = github_login.to_s.strip.downcase if github_login.present?
