@@ -7,6 +7,7 @@
 # Apps listed here may not exist yet on Heroku. Use:
 #   bin/qa-server list
 #   bin/qa-server plan <app>
+#   bin/qa-server provision <app> --yes
 #   bin/qa-server status <app>
 #
 # Never put secret values in this file. Put secret names/purposes here and pull
@@ -17,18 +18,23 @@ qa_environments:
     display_name: McRitchie Studio QA
     repo: mcritchie-studio
     heroku_app: mcritchie-studio-qa
-    qa_url: https://mcritchie-studio-qa.herokuapp.com
+    heroku_domain: mcritchie-studio-qa-26cedb6e8fdc.herokuapp.com
+    qa_url: https://qa.mcritchie.studio
+    custom_domains:
+      - qa.mcritchie.studio
     production_app: mcritchie-studio
     production_url: https://app.mcritchie.studio
     deploy_provider: heroku
+    addons:
+      - heroku-postgresql:essential-0
     dynos:
       web: 1
       worker: 1
     safety_profile: hub-qa
     required_config:
-      APP_HOST: mcritchie-studio-qa.herokuapp.com
-      MAILER_HOST: mcritchie-studio-qa.herokuapp.com
-      DYNO_HOST: mcritchie-studio-qa.herokuapp.com
+      APP_HOST: qa.mcritchie.studio
+      MAILER_HOST: qa.mcritchie.studio
+      DYNO_HOST: "${HEROKU_HOST}"
       QA_ENV: "true"
       MAIL_TRANSPORT: resend
       RESEND_MAILER_FROM: "McRitchie QA <team@mcritchie.studio>"
@@ -40,18 +46,24 @@ qa_environments:
     display_name: Turf Monster QA
     repo: turf-monster
     heroku_app: turf-monster-qa
-    qa_url: https://turf-monster-qa.herokuapp.com
+    heroku_domain: turf-monster-qa-93e18f3ae318.herokuapp.com
+    qa_url: https://qa.turfmonster.media
+    custom_domains:
+      - qa.turfmonster.media
     production_app: turf-monster-mainnet
     production_url: https://app.turfmonster.media
     deploy_provider: heroku
+    addons:
+      - heroku-postgresql:essential-0
+      - heroku-redis:mini
     dynos:
       web: 1
       worker: 1
     safety_profile: devnet-no-real-money
     required_config:
-      APP_HOST: turf-monster-qa.herokuapp.com
-      MAILER_HOST: turf-monster-qa.herokuapp.com
-      DYNO_HOST: turf-monster-qa.herokuapp.com
+      APP_HOST: qa.turfmonster.media
+      MAILER_HOST: qa.turfmonster.media
+      DYNO_HOST: "${HEROKU_HOST}"
       QA_ENV: "true"
       MAIL_TRANSPORT: resend
       RESEND_MAILER_FROM: "Turf Monster QA <team@mcritchie.studio>"
@@ -59,9 +71,11 @@ qa_environments:
       ENABLE_CDP_RAMP: "false"
       SOLANA_NETWORK: devnet
       SOLANA_RPC_URL: https://api.devnet.solana.com
+      SOLANA_PROGRAM_ID: EQGFJAcABtDb6VXtiijTjZ6cE2UqdvhnqJvoharJbpMJ
+    derived_config:
+      EXPECTED_IDL_HASH: sha256:config/turf_vault.idl.json
     required_secrets:
       - RAILS_MASTER_KEY
       - RESEND_API_KEY
       - MANAGED_WALLET_ENCRYPTION_KEY
       - SOLANA_ADMIN_KEY
-      - EXPECTED_IDL_HASH
