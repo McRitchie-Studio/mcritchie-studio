@@ -7,17 +7,22 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
 
 ## First Rules
 
-- Work from `/Users/alex/projects` unless the user gives a different root.
+- Work from `/Users/alex/projects` unless Mr. McRitchie gives a different root.
 - Treat `mcritchie-studio` as the documentation and bootstrap anchor.
 - Keep repo-specific facts in the owning repo, but keep cross-repo operating rules here.
+- In agent docs and handoffs, **Alex** means the Alex agent/orchestrator. The
+  owner/operator is **Mr. McRitchie**.
 - Do not print secrets. Use named 1Password references and purpose-built scripts.
-- Do not hand the user terminal chores. Run safe commands yourself; ask the user for approvals, credentials, product judgment, or external access.
-- Prefer a concrete local result the user can inspect: a URL, a diff, a passing command, or a short audit.
+- Do not hand Mr. McRitchie terminal chores. Run safe commands yourself; ask Mr.
+  McRitchie for approvals, credentials, product judgment, or external access.
+- Prefer a concrete local result Mr. McRitchie can inspect: a URL, a diff, a
+  passing command, or a short audit.
 
 ## Default Operating Context
 
-Assume Alex starts agent sessions from `/Users/alex/projects`, and that a plain
-feature request should be enough context to begin. The default launch flow is:
+Assume Mr. McRitchie starts agent sessions from `/Users/alex/projects`, and
+that a plain feature request should be enough context to begin. The default
+launch flow is:
 
 1. Read this file, then `mcritchie-studio/docs/ECOSYSTEM.md`.
 2. Identify the target repo and read its README/RUNBOOK/topic docs relevant to
@@ -25,15 +30,15 @@ feature request should be enough context to begin. The default launch flow is:
 3. Pull/check `main` and inspect git status before editing.
 4. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
    `3100-3199`, Tax Studio reserved at `3200-3299`, next app `3300-3399`.
-5. Build the feature, run the meaningful tests/checks, and give Alex a local
-   URL to react to.
+5. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
+   local URL to react to.
 6. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
-7. Commit and push when the work is coherent. Deploy only when Alex asks for a
-   deploy or the task explicitly includes production rollout.
+7. Commit and push when the work is coherent. Deploy only when Mr. McRitchie
+   asks for a deploy or the task explicitly includes production rollout.
 
-For a new feature session, Alex should only need to say the target app and the
-feature. A good prompt is:
+For a new feature session, Mr. McRitchie should only need to say the target app
+and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.

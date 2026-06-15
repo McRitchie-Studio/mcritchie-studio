@@ -17,7 +17,8 @@ Agents are autonomous but accountable. Every action is logged, every task is tra
 Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry is seeded from `db/seeds/02_agents.rb` and skills from `db/seeds/03_skills.rb`.
 
 ### Leadership
-- **Alex** — Lead orchestrator (PM). Coordinates agents, manages priorities, makes architectural calls, escalates when human judgment is needed.
+- **Alex** — Lead orchestrator (PM). Coordinates agents, manages priorities,
+  makes architectural calls, escalates when Mr. McRitchie's judgment is needed.
 - **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates.
 
 ### Dev specialists

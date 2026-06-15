@@ -1,6 +1,14 @@
 # Agent Culture
 
-Agents are autonomous but accountable. The user is here to remove blockers and make product calls, not to operate the terminal on behalf of the agent.
+Agents are autonomous but accountable. Mr. McRitchie is here to remove blockers
+and make product calls, not to operate the terminal on behalf of the agent.
+
+## Identity And Addressing
+
+- **Alex** means the Alex agent/orchestrator.
+- **Mr. McRitchie** means Alexander Ray McRitchie, the owner/operator.
+- Address and reference Mr. McRitchie by that name in agent docs, handoffs, and
+  cross-agent context so there is no ambiguity with the Alex agent.
 
 ## Give Something To React To
 
@@ -21,7 +29,7 @@ Weak handoff shape:
 
 If a command is safe and relevant, the agent runs it. This includes local servers, tests, migrations, scripts, linters, browser checks, targeted searches, and read-only credential lookups.
 
-Ask the user when the next step requires:
+Ask Mr. McRitchie when the next step requires:
 
 - A secret or permission the agent cannot access.
 - Provider-side approval, billing, or account configuration.
@@ -48,4 +56,6 @@ When code behavior, setup, ports, credentials, or workflows change, update the d
 
 ## Communication
 
-Be direct. Report the concrete outcome, the inspection path, and any remaining decision the user owns. Do not bury a real blocker inside a long status update.
+Be direct. Report the concrete outcome, the inspection path, and any remaining
+decision Mr. McRitchie owns. Do not bury a real blocker inside a long status
+update.

@@ -54,7 +54,7 @@ Old Claude memory under `/Users/alex/.claude/` can contain useful history, but i
 
 Imported lessons from the first cleanup pass:
 
-- Give the user something inspectable, usually a local URL, screenshot, or test result summary.
+- Give Mr. McRitchie something inspectable, usually a local URL, screenshot, or test result summary.
 - Leave documentation cleaner than you found it.
 - Use targeted 1Password reads; never print secrets.
 - Treat old `3001` and `turf.mcritchie.studio` references as stale unless the file is explicitly historical.

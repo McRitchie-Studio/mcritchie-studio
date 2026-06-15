@@ -119,7 +119,7 @@ Use real provider delivery for primary local stacks:
    blocked by sandbox access.
 3. Trigger the app flow.
 4. Verify the latest delivery row is `sent=true` with no error.
-5. Return the app URL tested and the target inbox so the human can check inbox
+5. Return the app URL tested and the target inbox so Mr. McRitchie can check inbox
    or spam when visual confirmation is needed.
 
 Use local capture for parallel worktree stacks or tasks that should not email
@@ -161,7 +161,7 @@ in Resend and wait for the domain status to become `verified` before retrying
 app email. Do not switch fallback senders to an app domain unless that domain is
 also present and verified in the active Resend account.
 
-Do not ask the user to run terminal commands for these proofs. Ask for approval
+Do not ask Mr. McRitchie to run terminal commands for these proofs. Ask for approval
 or external access only when the agent cannot perform the check directly.
 
 ## SES Cutover Checklist

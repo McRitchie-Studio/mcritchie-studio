@@ -10,7 +10,7 @@ Credential docs are split into two layers:
 - Never print secrets into the terminal or transcript.
 - Use `/opt/homebrew/bin/op` directly for targeted reads.
 - Prefer repo scripts that write or consume secrets without echoing them.
-- Do not scan vaults broadly unless the user explicitly asks.
+- Do not scan vaults broadly unless Mr. McRitchie explicitly asks.
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
 - If a permission is missing, report the exact vault, item, and operation needed instead of inventing a workaround.
 
