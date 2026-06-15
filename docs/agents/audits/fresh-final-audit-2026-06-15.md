@@ -130,12 +130,20 @@ real satellite, assign the next range (`3300-3399`), give it a primary port
 
 ## Recommended Next Moves
 
-1. Deploy McRitchie Studio's Solid Queue release, confirm `worker=1`, and prove
-   a magic-link send completes through the durable worker path.
+1. Stage `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` from
+   `agent.aws.mcritchie-ses` on both Heroku apps, then rerun
+   `bin/rails ses:check` so production proof tasks stop using the S3 IAM user.
 2. Finish SES production access, stage SMTP creds, then run provider smoke and
-   real magic-link smoke for both domains.
+   real magic-link smoke for both domains. Keep `MAIL_TRANSPORT` unset until
+   that smoke passes.
 3. Plan a dedicated frontend dependency window for the residual
-   Tailwind/Browserslist warning.
+   Tailwind/Browserslist warning. Both apps currently use
+   `tailwindcss-rails 2.7.9` through `studio-engine 0.5.9`; RubyGems currently
+   lists `tailwindcss-rails 4.4.0`, so this is a major-version visual/build
+   upgrade rather than a patch bump.
+4. Clean merged worktrees when Mr. McRitchie approves deletion:
+   `mcritchie-studio/agent-isolation-policy` and
+   `turf-monster/cdp-phantom-create-hardening`.
 
 ## Verification For This Pass
 
@@ -170,5 +178,12 @@ Results:
   buildpacks ordered correctly, web and worker dynos up, `/up` `200`. Focused
   CDP/contest/vault tests passed for the hardening commit:
   `148 runs, 647 assertions, 0 failures`.
+- Final docket proof, 2026-06-15: live Heroku `ses:check` on both apps returns
+  SES `HTTP 403` because `SES_AWS_ACCESS_KEY_ID` is absent and the task falls
+  back to the S3 IAM user. `MAIL_TRANSPORT` is unset on both apps, so Resend
+  fallback remains active.
+- Tailwind proof, 2026-06-15: both apps are on `tailwindcss-rails 2.7.9`
+  through `studio-engine 0.5.9`; RubyGems lists `4.4.0`, making the residual
+  Browserslist warning a deliberate major-version upgrade window.
 - Stale-string scan found the old OmniAuth GET guidance only in historical
   audit files, not active runtime docs.

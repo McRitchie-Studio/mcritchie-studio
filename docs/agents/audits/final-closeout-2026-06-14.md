@@ -155,18 +155,22 @@ These are not blockers to maintenance mode, but they should not be forgotten:
   content was confirmed in tracked McRitchie Studio docs/scripts.
 - **SES production access**: shared email architecture and domain verification
   are ready, and production fallback mail has been proved through the verified
-  `mcritchie.studio` Resend domain, but the SES account is still sandboxed. AWS
-  support access should be completed after the audit cleanup is closed, then
-  production SES needs a real stability window before Resend fallback is
-  removed.
+  `mcritchie.studio` Resend domain, but the SES account is still sandboxed.
+  Live Heroku `ses:check` on 2026-06-15 also proved the apps do not yet have
+  `SES_AWS_ACCESS_KEY_ID` staged, so the task falls back to the S3 IAM user and
+  returns SES `HTTP 403`. Stage the SES-scoped API creds first, then confirm AWS
+  production access, then run a real SES provider smoke window before Resend
+  fallback is removed.
 - **Heroku platform drift**: resolved for the active Rails apps on 2026-06-15.
   McRitchie Studio and Turf Monster both run on Heroku-26 with explicit Ruby and
   Node runtime pins.
 - **Browserslist freshness**: asset precompile reports the usual
   `caniuse-lite` freshness warning even after `npx update-browserslist-db@latest`.
-  This appears tied to the current `tailwindcss-rails 2.7.9` build chain. Do not
-  treat it as a production blocker; handle it during a deliberate Tailwind
-  dependency upgrade window.
+  This appears tied to the current `tailwindcss-rails 2.7.9` build chain, which
+  both apps receive through `studio-engine 0.5.9`. RubyGems currently lists
+  `tailwindcss-rails 4.4.0`, so do not treat this as a production blocker or a
+  quick patch; handle it during a deliberate Tailwind major-version visual/build
+  upgrade window.
 - **Turf Vault mainnet feature gates**: local tests cover the default
   localnet/devnet build. Mainnet-only `INIT_AUTHORITY`, canonical USDC, and
   canonical USDT checks still need mainnet build/deploy proof when that window
@@ -197,7 +201,8 @@ Weekly or after several agent sessions:
 
 ## Next Best Action
 
-Run the fresh final audit pass from this deployment checkpoint. After that,
-finish SES production access, run a provider smoke test after AWS approval, and
-keep Resend configured until SES has a stability window. Otherwise, the
-ecosystem cleanup has moved from audit work to normal feature maintenance.
+The broad audit cleanup is in maintenance mode. Next operational actions are
+narrow: stage SES-scoped API credentials for proof tasks, finish AWS SES
+production access and provider smoke, schedule the Tailwind major-version
+maintenance window, and clean merged worktrees after approval. Keep Resend
+configured until SES has a stability window.

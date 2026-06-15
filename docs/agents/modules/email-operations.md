@@ -93,18 +93,32 @@ Last checked: 2026-06-15.
 | `turfmonster.media` identity | verified for sending, DKIM `SUCCESS` |
 | Resend fallback domain | `mcritchie.studio` verified in the Resend account backing production apps |
 
-Conclusion: domain verification is ready, but the account is still in SES
-sandbox. Do not set persistent `MAIL_TRANSPORT=ses` on production web dynos
-until production access is approved; sandbox mode can send only to verified
-recipient identities/domains and would break normal user mail.
+Conclusion: domain verification is ready, but production cutover is still
+blocked. Do not set persistent `MAIL_TRANSPORT=ses` on production web dynos
+until SES production access is approved and runtime SMTP credentials have passed
+a one-off provider smoke test; sandbox mode can send only to verified recipient
+identities/domains and would break normal user mail.
+
+Live production check, 2026-06-15:
+
+- McRitchie Studio and Turf Monster both have `MAIL_TRANSPORT` unset, so live
+  mail stays on Resend fallback.
+- `SES_AWS_ACCESS_KEY_ID` is not staged on either Heroku app.
+- `bin/rails ses:check` on both Heroku apps falls back to `AWS_ACCESS_KEY_ID`,
+  which is the `mcritchie-s3` IAM user, and returns `HTTP 403` for
+  `ses:GetAccount` and `ses:ListEmailIdentities`.
+- The next safe production step is to stage SES-scoped API credentials as
+  `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on both apps, then
+  rerun `bin/rails ses:check`. Keep `MAIL_TRANSPORT` unset while AWS production
+  access remains unresolved.
 
 Production proof gaps:
 
-1. Store or derive SES SMTP credentials for each runtime environment.
-2. Set `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on Heroku for the
-   shared `ses:*` checks without touching the existing S3 `AWS_*` vars.
+1. Stage `SES_AWS_ACCESS_KEY_ID` / `SES_AWS_SECRET_ACCESS_KEY` on Heroku for
+   the shared `ses:*` checks without touching the existing S3 `AWS_*` vars.
+2. Store or derive SES SMTP credentials for each runtime environment.
 3. Keep consumer apps on the current `studio-engine` release before proofing a
-   provider cutover. Turf Monster release `v90` proved the shared mail boot path
+   provider cutover. Turf Monster release `v93` proved the shared mail boot path
    through Resend fallback; the remaining production proof is SES after sandbox
    removal and SMTP credential staging.
 4. Request or confirm SES production access approval, then run a provider smoke
