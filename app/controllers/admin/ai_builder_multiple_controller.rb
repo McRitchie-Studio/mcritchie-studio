@@ -7,7 +7,11 @@ module Admin
       @index_weeks = GithubBuilderIndexWeek.recent.limit(@limit).to_a
       @chart_weeks = @index_weeks.reverse
       @latest_week = @index_weeks.first&.week_start_date
+      @observed_through_date = GithubCommitObservation.maximum(:committed_at)&.to_date
       @latest_metrics = @latest_week ? GithubBuilderWeeklyMetric.for_week(@latest_week).order(:cohort, :github_login).to_a : []
+      @builder_metrics_week = representative_metrics_week
+      @builder_metrics = @builder_metrics_week ? GithubBuilderWeeklyMetric.for_week(@builder_metrics_week).order(:cohort, :github_login).to_a : []
+      @metrics_boundary_week_excluded = @builder_metrics_week.present? && @latest_week.present? && @builder_metrics_week != @latest_week
       @tracked_builder_summary = tracked_builder_summary
       @overview = overview_summary
       @builder_rollups = builder_rollups
@@ -40,6 +44,19 @@ module Admin
       TrackedGithubBuilder.active.group(:cohort).count
     end
 
+    def representative_metrics_week
+      return unless @latest_week
+      return @latest_week unless boundary_week_partial?
+
+      GithubBuilderIndexWeek.where("week_start_date < ?", @latest_week).recent.first&.week_start_date || @latest_week
+    end
+
+    def boundary_week_partial?
+      return false unless @latest_week && @observed_through_date
+
+      @observed_through_date < @latest_week + 6.days
+    end
+
     def overview_summary
       total_index_weeks = GithubBuilderIndexWeek.count
       complete_index_scope = GithubBuilderIndexWeek
@@ -64,7 +81,7 @@ module Admin
     end
 
     def builder_rollups
-      latest_metrics_by_login = @latest_metrics.index_by(&:github_login)
+      latest_metrics_by_login = @builder_metrics.index_by(&:github_login)
 
       TrackedGithubBuilder.active.includes(:tracked_github_builder_repos).order(:cohort, :github_login).map do |builder|
         observations = GithubCommitObservation.for_login(builder.github_login)

@@ -34,6 +34,7 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "AI Builder Multiple"
     assert_select "h2", "Published Multiples"
+    assert_select "h2", "Latest Full Builder Weekly Metrics"
     assert_select "h2", "Tracked Builders"
     assert_select "p", /does not measure true productivity/
     assert_select "a[href=?]", "#tracked-builders", "Tracked Builders"

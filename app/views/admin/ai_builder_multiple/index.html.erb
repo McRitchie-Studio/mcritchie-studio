@@ -183,10 +183,15 @@
   <section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
     <div class="card overflow-hidden">
       <div class="p-5 border-b border-subtle">
-        <h2 class="text-lg font-bold text-heading">Latest Builder Weekly Metrics</h2>
-        <p class="text-sm text-secondary">Commit pace rows for <%= ai_date(@latest_week) %>.</p>
+        <h2 class="text-lg font-bold text-heading">Latest Full Builder Weekly Metrics</h2>
+        <p class="text-sm text-secondary">Commit pace rows for <%= ai_date(@builder_metrics_week) %>.</p>
+        <% if @metrics_boundary_week_excluded %>
+          <p class="text-xs text-muted mt-1">
+            The <%= ai_date(@latest_week) %> boundary week is excluded here because observations only run through <%= ai_date(@observed_through_date) %>.
+          </p>
+        <% end %>
       </div>
-      <% if @latest_metrics.any? %>
+      <% if @builder_metrics.any? %>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
@@ -201,7 +206,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-subtle">
-              <% @latest_metrics.each do |metric| %>
+              <% @builder_metrics.each do |metric| %>
                 <tr class="hover:bg-surface-alt/60 transition">
                   <td class="py-3 px-4 font-semibold text-heading"><%= metric.github_login %></td>
                   <td class="py-3 px-4 text-secondary"><%= metric.cohort.humanize %></td>
