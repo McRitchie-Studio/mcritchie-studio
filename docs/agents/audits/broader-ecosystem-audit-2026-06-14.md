@@ -14,7 +14,7 @@ remaining items are SES production access plus normal drift maintenance.
 The ecosystem is in a materially better place than the first pass. `AGENTS.md`
 is the right LLM-neutral entrypoint, `mcritchie-studio` is correctly acting as
 the documentation and bootstrap anchor, the primary apps are clean on `main`,
-shared auth/email primitives now live in `studio-engine 0.5.7`, local email
+shared auth/email primitives now live in `studio-engine 0.5.8`, local email
 capture exists for worktree stacks, and `bin/agent-worktree` can now diagnose
 worktree lifecycle drift without deleting anything.
 
@@ -71,7 +71,7 @@ recovery story.
 
 ### Shared Engine Direction
 
-Both Rails apps consume `studio-engine 0.5.7`.
+Both Rails apps consume `studio-engine 0.5.8`.
 
 The engine is now the right home for:
 
@@ -105,9 +105,9 @@ README/RUNBOOK/topic docs. Rolio remains outside the managed ecosystem registry.
 
 `CLAUDE.md` files are no longer safe canonical context. Examples found:
 
-- `studio-engine/CLAUDE.md` says version `0.4.13`; code is `0.5.7`.
+- `studio-engine/CLAUDE.md` says version `0.4.13`; code is `0.5.8`.
 - `turf-monster/CLAUDE.md` says Studio Engine is locked at `0.5.1`; lockfile is
-  `0.5.7`.
+  `0.5.8`.
 - `mcritchie-studio/CLAUDE.md` includes stale exact test counts and an old
   roadmap pointer.
 - `solana-studio/CLAUDE.md` includes stale test counts.
@@ -245,9 +245,9 @@ exists; the missing piece is making drift impossible to miss.
 
 Current locks:
 
-- McRitchie Studio: `studio-engine 0.5.7`, `solana-studio 0.4.6`
-- Turf Monster: `studio-engine 0.5.7`, `solana-studio 0.4.7`
-- Studio Engine: `0.5.7`
+- McRitchie Studio: `studio-engine 0.5.8`, `solana-studio 0.4.6`
+- Turf Monster: `studio-engine 0.5.8`, `solana-studio 0.4.7`
+- Studio Engine: `0.5.8`
 - Solana Studio: `0.4.7`
 - Turf Vault: `0.25.0` source, mainnet documented at `0.24.0`
 
