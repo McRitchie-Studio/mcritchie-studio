@@ -13,11 +13,29 @@ git push heroku main
 heroku run bin/rails db:migrate --app mcritchie-studio
 ```
 
-### Root-Domain Launch Cutover
+### Root-Domain Launch
 
 `mcritchie.studio` is the canonical McRitchie Studio app host. The previous
 Squarespace site is archived at `https://v1.mcritchie.studio`; the old Rails app
 host `https://app.mcritchie.studio` remains a legacy alias.
+
+Launch status as of 2026-06-15:
+
+- Production deploy: Heroku release `v63`, commit `4831ebcd`.
+- Heroku ACM: certs issued for `mcritchie.studio`, `www.mcritchie.studio`, and
+  `app.mcritchie.studio`.
+- Rails host config: `APP_HOST=mcritchie.studio`,
+  `MAILER_HOST=mcritchie.studio`, and `APP_HOST_ALIASES` includes
+  `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
+- Verified app health: root, `www`, legacy `app`, and Heroku fallback all return
+  `200` on `/up` once DNS resolves to Heroku.
+- Known propagation caveat: local routers and public resolvers may cache old
+  Squarespace records for up to the prior 4-hour TTL. Verify against
+  `1.1.1.1` or the authoritative nameservers before changing records again.
+- Squarespace archive caveat: `v1.mcritchie.studio` must stay connected to the
+  Squarespace site and should be the Squarespace primary domain. If Chrome shows
+  `NET::ERR_CERT_COMMON_NAME_INVALID`, wait for Squarespace SSL issuance and
+  confirm the `v1` CNAME points to `ext-cust.squarespace.com`.
 
 Heroku domains for `mcritchie-studio`:
 
@@ -46,8 +64,10 @@ heroku config:set \
 
 DNS cutover in Squarespace:
 
-1. Add `v1` CNAME -> `ext-cust.squarespace.com` and attach
-   `v1.mcritchie.studio` to the Squarespace site before moving the apex.
+1. Attach `v1.mcritchie.studio` to the Squarespace site before moving the apex.
+   Squarespace manages this as `v1` CNAME -> `ext-cust.squarespace.com`. If a
+   manually-created `v1` CNAME blocks connection, delete only that `v1` row and
+   re-run the Squarespace "Connect subdomain" flow.
 2. Replace the four apex `A` records currently pointing at Squarespace with an
    apex `ALIAS`/`ANAME` to Heroku:
    `human-gooseberry-dpwdkczq4dpjxe0n7qconbut.herokudns.com`.
@@ -57,9 +77,32 @@ DNS cutover in Squarespace:
 4. Run `heroku certs:auto --app mcritchie-studio` until ACM shows issued certs
    for every Heroku-hosted hostname.
 5. Verify:
-   `curl -I https://mcritchie.studio/up`,
-   `curl -I https://app.mcritchie.studio/up`, and
-   `curl -I https://v1.mcritchie.studio`.
+
+   ```bash
+   dig +short @1.1.1.1 mcritchie.studio A
+   dig +short @1.1.1.1 www.mcritchie.studio CNAME
+   dig +short @1.1.1.1 v1.mcritchie.studio CNAME
+   curl -I https://mcritchie.studio/up
+   curl -I https://www.mcritchie.studio/up
+   curl -I https://app.mcritchie.studio/up
+   curl -I https://v1.mcritchie.studio
+   ```
+
+   If local DNS is stale but public DNS is correct, force a Heroku routing check:
+
+   ```bash
+   curl -I --resolve mcritchie.studio:443:76.223.57.73 https://mcritchie.studio/up
+   curl -I --resolve www.mcritchie.studio:443:76.223.57.73 https://www.mcritchie.studio/up
+   ```
+
+6. Smoke auth after DNS settles:
+
+   ```bash
+   curl -I https://mcritchie.studio/signin
+   ```
+
+   Then request one production magic link from the browser and confirm the email
+   link uses `https://mcritchie.studio`.
 
 ## Turf Monster
 

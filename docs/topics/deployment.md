@@ -13,14 +13,41 @@
 - **Heroku app**: `mcritchie-studio`
 - **URL**: https://mcritchie.studio
 - **Legacy URL**: https://app.mcritchie.studio
+- **Archive URL**: https://v1.mcritchie.studio for the previous Squarespace site
 - **Heroku URL**: https://mcritchie-studio-039470649719.herokuapp.com/
 - **Database**: Heroku Postgres (essential-0)
-- **DNS**: apex `mcritchie.studio` ALIAS/ANAME → Heroku DNS target; `app` CNAME remains as a legacy alias
+- **DNS**: apex `mcritchie.studio` ALIAS/ANAME → Heroku DNS target;
+  `www` CNAME → Heroku DNS target; `app` CNAME remains as a legacy alias;
+  `v1` CNAME remains attached to Squarespace
 - **Deploy**: `git push heroku main`; the Heroku `release` process runs
   `bin/rails db:migrate` before promotion.
 - **Workers**: keep `worker=1` scaled for Solid Queue mail/auth job durability.
 - **Env vars**: `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES`, `DATABASE_URL` (auto), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTHROPIC_API_KEY` (for AI chat + content script/metadata agents), `X_BEARER_TOKEN` (read-only, News intake), `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` (OAuth 1.0a write creds for `X::PostMedia` — must be from an X app with "Read and Write" permissions), `HIGGSFIELD_API_KEY`, `HIGGSFIELD_API_SECRET` (for content image/video generation via Nano Banana + Kling 3 — 1Password item `agent.higgesfield` in `agents` vault)
 - **ACM**: Enabled (auto SSL via Let's Encrypt)
+
+## Root-Domain Launch Status
+
+As of 2026-06-15, `mcritchie.studio` is the canonical production host.
+Production config should keep `APP_HOST=mcritchie.studio` and
+`MAILER_HOST=mcritchie.studio`; `APP_HOST_ALIASES` should include
+`app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
+Heroku ACM has issued certs for root, `www`, and legacy `app`.
+
+Use public DNS when checking propagation because local routers may cache the old
+Squarespace records for up to the previous 4-hour TTL:
+
+```bash
+dig +short @1.1.1.1 mcritchie.studio A
+dig +short @1.1.1.1 www.mcritchie.studio CNAME
+dig +short @1.1.1.1 v1.mcritchie.studio CNAME
+curl -I https://mcritchie.studio/up
+curl -I https://www.mcritchie.studio/up
+curl -I https://app.mcritchie.studio/up
+```
+
+`v1.mcritchie.studio` is the Squarespace archive. If it shows a browser privacy
+error, verify the site connection in Squarespace and wait for Squarespace SSL to
+issue; the DNS target should be `ext-cust.squarespace.com`.
 
 ## Public Assets
 
