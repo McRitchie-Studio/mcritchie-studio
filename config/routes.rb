@@ -137,6 +137,7 @@ Rails.application.routes.draw do
     end
   end
   resources :teams, only: [:index], param: :slug
+  resources :builders, only: [:index], param: :github_login
   resources :people, only: [:index], param: :slug do
     collection do
       get :merge

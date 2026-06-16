@@ -1,0 +1,69 @@
+require "test_helper"
+
+class BuildersControllerTest < ActionDispatch::IntegrationTest
+  test "index renders builder roster with latest four commit ranges" do
+    person = Person.create!(
+      first_name: "Yukihiro",
+      last_name: "Matsumoto",
+      location: "Matsue, Japan",
+      avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+      website_url: "https://ruby-lang.org"
+    )
+    builder = Builder.create!(
+      person: person,
+      github_login: "matz",
+      github_profile_url: "https://github.com/matz",
+      primary_language: "Ruby",
+      active: true
+    )
+    Builder.create!(
+      person: Person.create!(first_name: "Java", last_name: "Script"),
+      github_login: "not-ruby",
+      primary_language: "JavaScript",
+      active: true
+    )
+    tracked = TrackedGithubBuilder.create!(
+      github_login: builder.github_login,
+      display_name: builder.display_name,
+      cohort: "control_builder",
+      active: true
+    )
+    week_starts = [
+      Date.new(2026, 5, 23),
+      Date.new(2026, 5, 30),
+      Date.new(2026, 6, 6),
+      Date.new(2026, 6, 13),
+      Date.new(2026, 6, 20)
+    ]
+    ranges = week_starts.map { |week_start| GithubCommitRange.for_week_start(week_start) }
+    ranges.last(4).each_with_index do |range, index|
+      GithubBuilderCommitRangeCache.create!(
+        tracked_github_builder: tracked,
+        github_commit_range: range,
+        github_login: builder.github_login,
+        cohort: tracked.cohort,
+        commits_count: index + 1,
+        non_merge_commits_count: index + 1,
+        bot_adjusted_commits_count: index + 1,
+        active_repos_count: 1,
+        cached_at: Time.current
+      )
+    end
+
+    get builders_path
+
+    assert_response :success
+    assert_select "h2", "Ruby Builder Roster"
+    assert_select "a[href=?]", "https://github.com/matz", "@matz"
+    assert_select "td", "Matsue, Japan"
+    assert_select "a[href=?]", "https://ruby-lang.org", "Website"
+    assert_select "th", text: /Jun 26/
+    assert_select "th", text: /Jun 19/
+    assert_select "th", text: /Jun 12/
+    assert_select "th", text: /Jun 5/
+    assert_select "th", text: /May 29/, count: 0
+    assert_select "td", text: "4"
+    assert_select "td", text: "1"
+    assert_no_match "not-ruby", response.body
+  end
+end

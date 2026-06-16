@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_15_162000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_15_183000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -198,6 +198,32 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_162000) do
     t.string "hero_url"
     t.index ["slug"], name: "index_broadcasts_on_slug", unique: true
     t.index ["status"], name: "index_broadcasts_on_status"
+  end
+
+  create_table "builders", force: :cascade do |t|
+    t.bigint "person_id", null: false
+    t.string "github_login", null: false
+    t.string "github_profile_url"
+    t.string "github_avatar_url"
+    t.string "github_name"
+    t.string "github_company"
+    t.text "github_bio"
+    t.string "github_blog"
+    t.string "github_email"
+    t.string "github_twitter_username"
+    t.string "primary_language"
+    t.string "source_dataset"
+    t.string "source_url"
+    t.integer "source_rank"
+    t.integer "source_contributions"
+    t.boolean "active", default: true, null: false
+    t.jsonb "raw_profile", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["github_login"], name: "index_builders_on_github_login", unique: true
+    t.index ["person_id"], name: "index_builders_on_person_id"
+    t.index ["primary_language", "active"], name: "index_builders_on_primary_language_and_active"
+    t.index ["source_dataset"], name: "index_builders_on_source_dataset"
   end
 
   create_table "coach_rankings", force: :cascade do |t|
@@ -550,6 +576,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_162000) do
     t.datetime "updated_at", null: false
     t.jsonb "aliases", default: []
     t.boolean "coach", default: false
+    t.string "location"
+    t.string "avatar_url"
+    t.string "website_url"
+    t.string "email"
+    t.string "linkedin_url"
+    t.string "x_url"
+    t.string "instagram_url"
+    t.string "facebook_url"
+    t.index ["email"], name: "index_people_on_email"
     t.index ["last_name", "first_name"], name: "index_people_on_last_name_and_first_name"
     t.index ["slug"], name: "index_people_on_slug", unique: true
   end
@@ -995,6 +1030,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_162000) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
+  add_foreign_key "builders", "people"
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "roster_spots", "rosters"

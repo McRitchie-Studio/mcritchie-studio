@@ -22,7 +22,7 @@ module Github
     end
 
     def import!(url: DEFAULT_URL, cohort: "control_builder", active: true, max: nil)
-      users = parse(@http_get.call(url))
+      users = users(url: url)
       users = users.first(max.to_i) if max.to_i.positive?
       result = { source_url: url, seen: users.size, created: 0, updated: 0, existing_preserved: 0 }
 
@@ -50,8 +50,12 @@ module Github
       result
     end
 
+    def users(url: DEFAULT_URL)
+      parse(@http_get.call(url))
+    end
+
     def parse(markdown)
-      markdown.to_s.to_enum(:scan, ROW_PATTERN).map do
+      normalized_markdown(markdown).to_enum(:scan, ROW_PATTERN).map do
         match = Regexp.last_match
         User.new(
           rank: match[:rank].to_i,
@@ -65,6 +69,10 @@ module Github
     end
 
     private
+
+    def normalized_markdown(markdown)
+      markdown.to_s.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+    end
 
     def preserve_existing_builder(builder, user, url, active)
       builder.active = true if active

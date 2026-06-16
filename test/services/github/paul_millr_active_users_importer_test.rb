@@ -16,6 +16,13 @@ class Github::PaulMillrActiveUsersImporterTest < ActiveSupport::TestCase
     assert_equal "JavaScript", users.first.language
   end
 
+  test "parses binary encoded gist bodies as utf eight" do
+    users = Github::PaulMillrActiveUsersImporter.new.parse(SAMPLE.b)
+
+    assert_equal "visionmedia", users.first.github_login
+    assert_equal Encoding::UTF_8, users.first.name.encoding
+  end
+
   test "imports users as control candidates and preserves existing builders" do
     TrackedGithubBuilder.create!(
       github_login: "visionmedia",

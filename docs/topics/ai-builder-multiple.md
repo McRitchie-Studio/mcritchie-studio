@@ -142,6 +142,19 @@ bin/rails github:ai_builder_multiple:import_paulmillr_active_users MAX=910
 bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12 SKIP_FETCH=1
 ```
 
+Ruby-language rows from the same list can also be imported into the production
+`Builder` roster model. This creates/updates a `Person`, creates/updates the
+GitHub-specific `Builder`, enriches public GitHub profile fields, and ensures a
+matching `TrackedGithubBuilder` exists for commit cache jobs:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=0.1 \
+bin/rails github:ai_builder_multiple:import_paulmillr_ruby_builders
+```
+
+Use `ENRICH_PROFILES=false` to skip `/users/:login` profile calls, `MAX=25` for
+a small sample, and `LANGUAGE=Ruby` if overriding the default explicitly.
+
 The runner fetches a 90-day warmup before `START` so the first target week can
 have baseline context. Weekly metrics and index weeks are upserted, so reruns
 do not duplicate commit observations.
@@ -176,6 +189,15 @@ by default. The full five-year commit cache table is available at:
 ```text
 /admin/ai_builder_multiple/commit_history
 ```
+
+The public Ruby builder roster is available at:
+
+```text
+/builders
+```
+
+It shows the `Builder`/`Person` roster with avatar, GitHub username, location,
+and the trailing four cached Saturday-Friday commit ranges.
 
 The same latest index data is also available as JSON:
 

@@ -127,5 +127,27 @@ namespace :github do
       puts "  updated: #{result[:updated]}"
       puts "  existing preserved: #{result[:existing_preserved]}"
     end
+
+    desc "Import Ruby builders from Paul Miller's active GitHub users gist into Builder + Person. [MAX=] [ENRICH_PROFILES=true] [ACTIVE=true]"
+    task import_paulmillr_ruby_builders: :environment do
+      importer = Github::PaulMillrRubyBuildersImporter.new
+      result = importer.import!(
+        url: ENV.fetch("URL", Github::PaulMillrActiveUsersImporter::DEFAULT_URL),
+        language: ENV.fetch("LANGUAGE", Github::PaulMillrRubyBuildersImporter::DEFAULT_LANGUAGE),
+        active: ActiveModel::Type::Boolean.new.cast(ENV.fetch("ACTIVE", "true")),
+        max: ENV["MAX"].presence,
+        enrich_profiles: ActiveModel::Type::Boolean.new.cast(ENV.fetch("ENRICH_PROFILES", "true")),
+        tracked_cohort: ENV.fetch("COHORT", "control_builder")
+      )
+
+      puts "Paul Miller Ruby builders import complete"
+      puts "  source: #{result[:source_url]}"
+      puts "  language: #{result[:language]}"
+      puts "  rows seen: #{result[:seen]}"
+      puts "  created: #{result[:created]}"
+      puts "  updated: #{result[:updated]}"
+      puts "  profiles enriched: #{result[:profiles_enriched]}"
+      puts "  profile errors: #{result[:profile_errors]}"
+    end
   end
 end
