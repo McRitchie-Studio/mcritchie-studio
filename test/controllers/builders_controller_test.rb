@@ -53,7 +53,7 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     get builders_path
 
     assert_response :success
-    assert_select "h2", "Ruby Builder Roster"
+    assert_select "h2", "Builder Roster"
     assert_select "a[href=?]", "https://github.com/matz", "@matz"
     assert_select "td", "Matsue, Japan"
     assert_select "a[href=?]", "https://ruby-lang.org", "Website"
@@ -64,6 +64,20 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_select "th", text: /May 29/, count: 0
     assert_select "td", text: "4"
     assert_select "td", text: "1"
-    assert_no_match "not-ruby", response.body
+    assert_match "not-ruby", response.body
+  end
+
+  test "index can filter builders by primary language" do
+    ruby_person = Person.create!(first_name: "Ruby", last_name: "Builder")
+    js_person = Person.create!(first_name: "Java", last_name: "Script")
+    Builder.create!(person: ruby_person, github_login: "ruby-builder", primary_language: "Ruby", active: true)
+    Builder.create!(person: js_person, github_login: "js-builder", primary_language: "JavaScript", active: true)
+
+    get builders_path(language: "Ruby")
+
+    assert_response :success
+    assert_select "h2", "Ruby Builder Roster"
+    assert_match "ruby-builder", response.body
+    assert_no_match "js-builder", response.body
   end
 end

@@ -10,7 +10,7 @@ class Builder < ApplicationRecord
   before_validation :normalize_github_login
 
   def display_name
-    person&.full_name.presence || github_name.presence || github_login
+    github_name.presence || person&.full_name.presence || github_login
   end
 
   def github_url

@@ -196,8 +196,18 @@ The public Ruby builder roster is available at:
 /builders
 ```
 
-It shows the `Builder`/`Person` roster with avatar, GitHub username, location,
-and the trailing four cached Saturday-Friday commit ranges.
+It shows the active `Builder`/`Person` roster with avatar, GitHub username,
+location, and the trailing four cached Saturday-Friday commit ranges. Use
+`/builders?language=Ruby` for the Ruby-only gist slice.
+
+Production/QA seed data for owner-requested monitored builders lives in:
+
+```text
+db/seeds/55_builders.rb
+```
+
+That seed creates/updates the `Person`, `Builder`, and matching
+`TrackedGithubBuilder` rows for the manually tracked GitHub accounts.
 
 The same latest index data is also available as JSON:
 

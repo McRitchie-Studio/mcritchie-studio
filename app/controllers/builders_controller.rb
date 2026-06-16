@@ -4,9 +4,9 @@ class BuildersController < ApplicationController
   RANGE_LIMIT = 4
 
   def index
-    @language = params.fetch(:language, "Ruby")
+    @language = params[:language].presence
     @ranges = recent_commit_ranges
-    @builders = Builder.active.includes(:person).where(primary_language: @language).to_a
+    @builders = builders_scope.to_a
     @builder_rows = builder_rows
   end
 
@@ -19,6 +19,11 @@ class BuildersController < ApplicationController
       .to_a
       .select { |range| range.week_start_date.saturday? }
       .first(RANGE_LIMIT)
+  end
+
+  def builders_scope
+    scope = Builder.active.includes(:person)
+    @language.present? ? scope.where(primary_language: @language) : scope
   end
 
   def builder_rows
