@@ -1,7 +1,7 @@
 class BuildersController < ApplicationController
   skip_before_action :require_authentication, only: [:index]
 
-  RANGE_LIMIT = 4
+  RANGE_LIMIT = 13
 
   def index
     @language = params[:language].presence

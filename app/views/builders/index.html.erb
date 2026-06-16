@@ -34,6 +34,7 @@
           <colgroup>
             <col>
             <col style="width: 100px;">
+            <col style="width: 92px;">
             <% @ranges.each do |_range| %>
               <col style="width: 88px;">
             <% end %>
@@ -42,6 +43,10 @@
             <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
               <th class="sticky left-0 z-10 bg-surface-alt text-left py-3 px-4">Builder</th>
               <th class="text-left py-3 px-3" style="width: 100px; max-width: 100px;">Location</th>
+              <th class="text-right py-3 px-3" title="Total commits across the displayed cached ranges">
+                <span>Total</span>
+                <span class="block text-[10px] text-muted normal-case tracking-normal"><%= @ranges.size %> weeks</span>
+              </th>
               <% @ranges.each do |range| %>
                 <th class="text-right py-3 px-3" title="<%= range.display_label %>">
                   <%= builder_week_header(range) %>
@@ -86,6 +91,10 @@
                 </td>
                 <td class="py-3 px-3 text-secondary" style="width: 100px; max-width: 100px;" title="<%= person.location.presence || "No location" %>">
                   <span style="display: block; width: 100px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><%= person.location.presence || "—" %></span>
+                </td>
+                <td class="py-3 px-3 text-right font-semibold text-heading"
+                    title="Total commits across the displayed cached ranges">
+                  <%= builder_count(row[:trailing_commits_count]) %>
                 </td>
                 <% @ranges.each do |range| %>
                   <% cache = row[:caches_by_range_id][range.id] %>

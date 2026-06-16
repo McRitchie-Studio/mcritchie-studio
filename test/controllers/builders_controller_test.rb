@@ -1,7 +1,7 @@
 require "test_helper"
 
 class BuildersControllerTest < ActionDispatch::IntegrationTest
-  test "index renders builder roster with latest four commit ranges" do
+  test "index renders builder roster with latest thirteen commit ranges and total" do
     person = Person.create!(
       first_name: "Yukihiro",
       last_name: "Matsumoto",
@@ -28,15 +28,9 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
       cohort: "control_builder",
       active: true
     )
-    week_starts = [
-      Date.new(2026, 5, 23),
-      Date.new(2026, 5, 30),
-      Date.new(2026, 6, 6),
-      Date.new(2026, 6, 13),
-      Date.new(2026, 6, 20)
-    ]
+    week_starts = (0..13).map { |index| Date.new(2026, 3, 28) + index.weeks }
     ranges = week_starts.map { |week_start| GithubCommitRange.for_week_start(week_start) }
-    ranges.last(4).each_with_index do |range, index|
+    ranges.last(13).each_with_index do |range, index|
       GithubBuilderCommitRangeCache.create!(
         tracked_github_builder: tracked,
         github_commit_range: range,
@@ -61,8 +55,10 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_select "th", text: /Jun 19/
     assert_select "th", text: /Jun 12/
     assert_select "th", text: /Jun 5/
-    assert_select "th", text: /May 29/, count: 0
-    assert_select "td", text: "4"
+    assert_select "th", text: /Apr 3/, count: 0
+    assert_select "th", text: /Total/
+    assert_select "td", text: "91"
+    assert_select "td", text: "13"
     assert_select "td", text: "1"
     assert_match "not-ruby", response.body
   end
