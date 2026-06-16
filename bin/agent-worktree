@@ -33,6 +33,8 @@ end
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
+DEFAULT_REDIS_MIN_DB = 9
+DEFAULT_REDIS_MAX_DB = 15
 
 ALIASES = {
   "studio" => "mcritchie-studio",
@@ -76,6 +78,10 @@ def usage
       doctor [app]
       cleanup [app] [--write]
       down <app> <task-slug>
+
+    Environment:
+      AGENT_REDIS_MIN_DB   first Redis DB eligible for worktree stacks (default 9)
+      AGENT_REDIS_MAX_DB   last Redis DB eligible for worktree stacks (default 15)
 
     Examples:
       bin/agent-worktree plan turf-monster button-color
@@ -199,7 +205,14 @@ def port_pid(port)
 end
 
 def pid_alive?(pid)
-  !pid.to_s.empty? && system("kill", "-0", pid.to_s, out: File::NULL, err: File::NULL)
+  return false if pid.to_s.empty?
+
+  Process.kill(0, Integer(pid))
+  true
+rescue Errno::EPERM
+  true
+rescue ArgumentError, Errno::ESRCH
+  false
 end
 
 def pidfile_state(path)
@@ -232,12 +245,36 @@ def allocated_redis_dbs
   end.compact
 end
 
+def integer_env(name, default)
+  Integer(ENV.fetch(name, default.to_s))
+rescue ArgumentError
+  abort "#{name} must be an integer"
+end
+
+def redis_db_min
+  integer_env("AGENT_REDIS_MIN_DB", DEFAULT_REDIS_MIN_DB)
+end
+
+def redis_db_max
+  integer_env("AGENT_REDIS_MAX_DB", DEFAULT_REDIS_MAX_DB)
+end
+
+def redis_db_range
+  min = redis_db_min
+  max = redis_db_max
+  abort "AGENT_REDIS_MIN_DB must be <= AGENT_REDIS_MAX_DB" if min > max
+
+  min..max
+end
+
 def allocate_redis_db
   used = allocated_redis_dbs
-  ((9..15).to_a + (16..255).to_a).each do |db|
+  range = redis_db_range
+  range.each do |db|
     return db unless used.include?(db)
   end
-  abort "no free Redis DB found"
+
+  abort "no free Redis DB in #{range.begin}-#{range.end}. Run bin/agent-worktree cleanup and remove merged worktrees, or configure Redis for more databases and rerun with AGENT_REDIS_MAX_DB=<max>."
 end
 
 def allocate_port(app)
@@ -318,9 +355,9 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "start:    bin/agent-worktree up #{app.fetch("slug")} #{task}"
   puts "stop:     bin/agent-worktree down #{app.fetch("slug")} #{task}"
   puts
-  if redis_db.to_i > 15
-    puts "warning: Redis db #{redis_db} exceeds the default local Redis database range."
-    puts "         Increase Redis databases or use a dedicated Redis instance before starting many stacks."
+  if redis_db.to_i > DEFAULT_REDIS_MAX_DB
+    puts "warning: Redis db #{redis_db} exceeds stock Redis databases 0-#{DEFAULT_REDIS_MAX_DB}."
+    puts "         Keep AGENT_REDIS_MAX_DB aligned with the local Redis databases setting."
     puts
   end
   puts "callback-heavy flows stay on primary http://localhost:#{app.fetch("primary_port")} unless providers are configured for this port."
@@ -368,7 +405,7 @@ def start_generic_rails(dir, app, values)
 
   if File.exist?(pidfile)
     pid = File.read(pidfile).strip
-    if !pid.empty? && system("kill", "-0", pid, err: File::NULL)
+    if pid_alive?(pid)
       puts "web already running pid #{pid}"
       return
     end
@@ -391,16 +428,11 @@ def wait_for_url(port)
   url = "http://localhost:#{port}/up"
   last_code = nil
   30.times do
-    begin
-      socket = TCPSocket.new("127.0.0.1", port.to_i)
-      socket.close
-      out, = Open3.capture3("curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", url)
-      code = out.strip
-      last_code = code unless code.empty?
-      return code if code == "200"
-    rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH
-      # keep polling
-    end
+    out, = Open3.capture3("curl", "-sS", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", url)
+    code = out.strip
+    last_code = code unless code.empty?
+    return code if code == "200"
+
     sleep 1
   end
   last_code || "down"
@@ -551,17 +583,27 @@ def duplicate_values(records, key)
   records.group_by { |record| record[key].to_s }.select { |value, grouped| !value.empty? && value != "?" && grouped.size > 1 }
 end
 
-def stop_generic_rails(dir)
+def stop_generic_rails(dir, port = nil)
   pidfile = File.join(dir, "tmp", "pids", "agent-web.pid")
   unless File.exist?(pidfile)
-    puts "no agent-web pidfile"
+    live_pid = port ? port_pid(port) : ""
+    if live_pid.empty?
+      puts "no agent-web pidfile"
+      return
+    end
+
+    Process.kill("TERM", live_pid.to_i)
+    puts "stopped web pid #{live_pid} on port #{port}"
     return
   end
 
   pid = File.read(pidfile).strip
-  if !pid.empty? && system("kill", "-0", pid, err: File::NULL)
+  if pid_alive?(pid)
     Process.kill("TERM", pid.to_i)
     puts "stopped web pid #{pid}"
+  elsif port && !(live_pid = port_pid(port)).empty?
+    Process.kill("TERM", live_pid.to_i)
+    puts "stopped web pid #{live_pid} on port #{port}"
   else
     puts "web not running"
   end
@@ -616,8 +658,8 @@ def doctor_issues(app = nil)
       issues << [label, "missing REDIS_URL Redis DB"]
     elsif redis_dupes.key?(record[:redis_db].to_s)
       issues << [label, "Redis DB #{record[:redis_db]} reused by #{redis_dupes.fetch(record[:redis_db].to_s).map { |r| r[:task] }.join(", ")}"]
-    elsif record[:redis_db].to_i > 15
-      issues << [label, "Redis DB #{record[:redis_db]} exceeds stock Redis database count"]
+    elsif record[:redis_db].to_i > redis_db_max
+      issues << [label, "Redis DB #{record[:redis_db]} exceeds AGENT_REDIS_MAX_DB=#{redis_db_max}"]
     end
 
     issues << [label, "LOCAL_EMAIL_CAPTURE is not enabled"] unless env_truthy?(record[:env]["LOCAL_EMAIL_CAPTURE"])
@@ -880,7 +922,7 @@ when "down"
   if app.fetch("stack") == "tm"
     sh("bin/tm", "down", chdir: dir, env: command_env(app, values))
   else
-    stop_generic_rails(dir)
+    stop_generic_rails(dir, values["APP_PORT"])
   end
 else
   usage

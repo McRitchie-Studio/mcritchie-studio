@@ -140,6 +140,48 @@ devnet with `PAYMENT_PROVIDER=none`. The intended stable review URLs are
 `bin/qa-server status <app>` to confirm the Heroku app, DNS target, and `/up`
 checks before asking Mr. McRitchie to review.
 
+## Recurring QA Intake Prompt
+
+Use this prompt when Mr. McRitchie wants a session to run the PR review, merge,
+and QA deployment cycle:
+
+```text
+Work from /Users/alex/projects as the QA / Integration lane.
+
+Run the parallel-agent DevOps cycle:
+- read /Users/alex/projects/AGENTS.md and the app docs
+- pull latest main in mcritchie-studio and each affected app
+- inspect open PRs for mcritchie-studio, turf-monster, and any app mentioned in the current work
+- review each PR for diff/description match, CI or local proof, docs impact, migrations, auth/email/payment/Solana risk, and overlap with other open PRs
+- ask Steffon/infra review for risky changes before merge when needed
+- merge only PRs that are ready; leave comments on PRs that need changes
+- after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
+- run bin/qa-server status <app> and report the QA URL, /up status, release SHA, and what Mr. McRitchie should review
+
+Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
+```
+
+This cycle ends at QA. Mr. McRitchie reviews the QA URL and then gives a
+separate production instruction if the release should go live.
+
+## Recurring Production Release Prompt
+
+Use this only after QA has passed and Mr. McRitchie asks for production rollout:
+
+```text
+Work from /Users/alex/projects as the Release lane.
+
+Promote the accepted QA work to production:
+- read /Users/alex/projects/AGENTS.md and the deployment docs
+- pull latest main in mcritchie-studio and each affected app
+- confirm the QA deployment SHA and production target app
+- run the app-specific deployment command from the repo docs
+- verify production /up and the user-facing URL
+- report production URL, release SHA/version, checks run, and any follow-up cleanup
+
+Do not include unrelated PRs or new feature work in this rollout.
+```
+
 ## Code Loss Prevention
 
 - A pushed feature branch preserves work. Merging to `main` is an integration
@@ -159,10 +201,12 @@ checks before asking Mr. McRitchie to review.
 The current slot allocator uses app port ranges and `.env.agent-stack` files as
 the local session registry. That is enough for dozens of occasional worktrees.
 
-Known future ceilings:
+Known future ceilings and controls:
 
-- Stock Redis usually exposes DBs `0-15`; many live stacks need more Redis DBs
-  or dedicated Redis instances.
+- Stock Redis usually exposes DBs `0-15`. The launcher defaults to worktree
+  DBs `9-15` and refuses to allocate beyond that range. Clean merged worktrees
+  first, or increase Redis `databases` and set `AGENT_REDIS_MAX_DB=<max>` for an
+  intentional high-concurrency window.
 - Browser-heavy flows on 100 ports will be CPU-bound before Git becomes the
   problem.
 - Shared dependency release trains, especially `studio-engine`, need a single

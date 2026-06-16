@@ -145,6 +145,10 @@ Feature work graduates through PR/QA, not direct `main` pushes. Use
 ready for Avi review. Keep the worktree and branch until Avi confirms the PR was
 merged or intentionally abandoned.
 
+For a dedicated review/merge/QA session, use the recurring QA intake prompt in
+`mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
+stops after QA deployment; production rollout needs a separate explicit prompt.
+
 QA servers, once provisioned, are operated with `mcritchie-studio/bin/qa-server`.
 They are release-candidate targets for Mr. McRitchie review before production;
 production deploy remains separately approval-gated.
@@ -158,6 +162,10 @@ bin/agent-worktree cleanup
 ```
 
 `cleanup` is dry-run only; `cleanup --write` only appends candidates to the delete-later ledger. Actual removal stays manual and approval-gated.
+
+The worktree launcher defaults to stock-safe Redis DBs `9-15`. If those slots
+are full, clean merged worktrees before creating another stack. Only set
+`AGENT_REDIS_MAX_DB=<max>` after Redis is configured with enough databases.
 
 ## LLM Adapters
 

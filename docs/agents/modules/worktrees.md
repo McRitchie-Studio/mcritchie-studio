@@ -136,7 +136,7 @@ Worktree tooling should make parallel stacks "just work" without user terminal c
 Each worktree stack needs its own:
 
 - App-range port (`3101`, `3102`, etc. for Turf Monster).
-- Redis DB for Sidekiq and cache. The launcher allocates globally across generated stack env files.
+- Redis DB for Sidekiq and cache. The launcher allocates globally across generated stack env files and defaults to DBs `9-15`.
 - Development database via `DATABASE_URL`.
 - Session cookie key.
 - `APP_PORT` so magic links point at the stack.
@@ -157,4 +157,12 @@ Callback-heavy flows such as Stripe, Google OAuth, CDP/MoonPay, webhooks, and em
 
 ## Scale Note
 
-The port plan supports 99 local stacks per app. Stock Redis usually exposes only databases `0-15`; once local worktree count approaches that limit, move worktree Redis to dedicated Redis instances or explicitly increase the local Redis database count before expecting dozens of live stacks.
+The port plan supports 99 local stacks per app, but stock Redis usually exposes
+only databases `0-15`. The launcher therefore allocates only DBs `9-15` by
+default. If those slots are full, remove merged worktrees before creating new
+ones.
+
+For higher local concurrency, intentionally increase the local Redis
+`databases` setting or move worktree stacks to dedicated Redis instances, then
+run the launcher with `AGENT_REDIS_MAX_DB=<max>`. Do not set that override
+unless Redis is actually configured to serve the expanded range.
