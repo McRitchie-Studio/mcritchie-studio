@@ -34,7 +34,7 @@
           <thead>
             <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
               <th class="sticky left-0 z-10 bg-surface-alt text-left py-3 px-4 min-w-80">Builder</th>
-              <th class="text-left py-3 px-4 min-w-52">Location</th>
+              <th class="text-left py-3 px-3 w-[100px] max-w-[100px]">Location</th>
               <% @ranges.each do |range| %>
                 <th class="text-right py-3 px-3 min-w-24" title="<%= range.display_label %>">
                   <%= builder_week_header(range) %>
@@ -77,7 +77,9 @@
                     </div>
                   </div>
                 </td>
-                <td class="py-3 px-4 text-secondary"><%= person.location.presence || "—" %></td>
+                <td class="py-3 px-3 text-secondary w-[100px] max-w-[100px]" title="<%= person.location.presence || "No location" %>">
+                  <span class="block truncate"><%= person.location.presence || "—" %></span>
+                </td>
                 <% @ranges.each do |range| %>
                   <% cache = row[:caches_by_range_id][range.id] %>
                   <% count = cache&.commits_count %>
