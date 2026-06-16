@@ -32,9 +32,11 @@ has active repos, and falls back to commit search when no repos are attached.
 If the repo-scoped result is too sparse for the requested window, the fetcher
 can supplement with commit search so a narrow repo list does not make a builder
 look inactive. `GITHUB_REPO_SCOPE_MIN_OBSERVATIONS` controls that threshold,
-and `GITHUB_SEARCH_RANGE_DAYS` controls the search date-window size. This keeps
-the adapter replaceable by GH Archive, BigQuery, or another public commit source
-later.
+and `GITHUB_SEARCH_RANGE_DAYS` controls the search date-window size. Commit
+search uses 13-week windows by default (`91` days), then stores the raw response
+items and lets the weekly aggregator split those commits into Saturday-Friday
+builder/range cache rows. This keeps the adapter replaceable by GH Archive,
+BigQuery, or another public commit source later.
 
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
@@ -103,6 +105,7 @@ GitHub search date segment:
 
 ```bash
 GITHUB_REQUEST_PAUSE_SECONDS=3 \
+GITHUB_SEARCH_RANGE_DAYS=91 \
 GITHUB_RATE_LIMIT_PAUSE_SECONDS=180 \
 GITHUB_RATE_LIMIT_RETRIES=5 \
 bin/rails github:ai_builder_multiple:fetch_last_five_years_batch BATCH_SIZE=10
@@ -125,10 +128,11 @@ bin/rails github:ai_builder_multiple:fetch_last_week
 `GITHUB_REQUEST_PAUSE_SECONDS` pauses after successful GitHub HTTP requests.
 `GITHUB_BUILDER_PAUSE_SECONDS` pauses between tracked builders.
 `GITHUB_RATE_LIMIT_PAUSE_SECONDS` and `GITHUB_RATE_LIMIT_RETRIES` control retry
-behavior after a GitHub rate-limit response. `GITHUB_SEARCH_RANGE_DAYS` can be
-lowered to make global commit search windows smaller. The fetch shortcuts use
-the exact target window by default; set `FETCH_WARMUP_DAYS=90` when you want to
-fetch baseline warmup data too.
+behavior after a GitHub rate-limit response. `GITHUB_SEARCH_RANGE_DAYS` defaults
+to `91`, which is 13 weeks. Lower it if a prolific builder's 13-week response is
+too large or repeatedly throttled. The fetch shortcuts use the exact target
+window by default; set `FETCH_WARMUP_DAYS=90` when you want to fetch baseline
+warmup data too.
 
 Paul Miller's historic active GitHub users list can be imported as a large
 control-candidate pool:

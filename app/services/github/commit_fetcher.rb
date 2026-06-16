@@ -4,7 +4,7 @@ module Github
       "Accept" => "application/vnd.github+json"
     }.freeze
     DEFAULT_REPO_SCOPE_MIN_OBSERVATIONS = 25
-    DEFAULT_SEARCH_RANGE_DAYS = 31
+    DEFAULT_SEARCH_RANGE_DAYS = 91
 
     def initialize(client: Github::Client.new, logger: Rails.logger,
       repo_scope_min_observations: ENV.fetch("GITHUB_REPO_SCOPE_MIN_OBSERVATIONS", DEFAULT_REPO_SCOPE_MIN_OBSERVATIONS).to_i,
@@ -101,7 +101,7 @@ module Github
       end
 
       @logger&.info("GitHub commit fetch search login=#{builder.github_login} stored=#{stored}")
-      { strategy: "search", stored: stored }
+      { strategy: "search", stored: stored, search_range_days: @search_range_days }
     end
 
     def upsert_observation(builder:, payload:, repo_full_name:, source_strategy:)

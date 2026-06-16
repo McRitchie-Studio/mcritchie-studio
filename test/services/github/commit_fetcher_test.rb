@@ -111,6 +111,21 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
     assert_includes client.calls.first[:params][:q], "author-date:2026-06-01..2026-06-07"
   end
 
+  test "uses thirteen week search ranges by default" do
+    builder = TrackedGithubBuilder.create!(github_login: "range-builder", cohort: "ai_builder")
+    client = FakeClient.new([], [])
+
+    result = Github::CommitFetcher.new(client: client, logger: nil).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 1, 3),
+      end_date: Date.new(2026, 4, 10)
+    )
+
+    assert_equal 91, result[:search_range_days]
+    assert_includes client.calls.first[:params][:q], "author-date:2026-01-03..2026-04-03"
+    assert_includes client.calls.third[:params][:q], "author-date:2026-04-04..2026-04-10"
+  end
+
   test "calls segment callback after each search date range" do
     builder = TrackedGithubBuilder.create!(github_login: "segment-builder", cohort: "ai_builder")
     payload = {
