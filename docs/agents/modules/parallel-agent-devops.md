@@ -77,6 +77,35 @@ It blocks dirty worktrees, branches with no commits, branches already merged to
 
 Avi owns PR intake and merge safety.
 
+Start conductor sessions by generating the PR/worktree queue from McRitchie
+Studio:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+```
+
+`bin/qa-intake` refreshes
+`/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
+state with open GitHub PRs, and prints an Avi-ready queue. Add apps to
+`--apps` as new satellites are promoted. Use `--json` when a supervisor script
+or dashboard should consume the same queue.
+
+Status labels mean:
+
+- `avi-ready`: clean local branch with a matching PR, no blocking local issues,
+  and no merge/check warnings.
+- `avi-ready-draft`: clean local branch and clean merge state, but the PR is
+  still draft.
+- `checks-review`: local branch is present, but GitHub reports unstable checks;
+  inspect CI before merge.
+- `merge-risk`: GitHub reports conflict, blocked, dirty, or unknown merge
+  state.
+- `needs-agent`: the local branch has blocking worktree issues such as a dirty
+  tree, stale branch, broken `/up`, missing stack env, or Redis slot problem.
+- `missing-local-branch`: GitHub has an open PR, but the current machine has no
+  matching local worktree.
+
 For each PR, Avi checks:
 
 - the PR body matches the diff
@@ -151,9 +180,10 @@ Work from /Users/alex/projects as the QA / Integration lane.
 Run the parallel-agent DevOps cycle:
 - read /Users/alex/projects/AGENTS.md and the app docs
 - pull latest main in mcritchie-studio and each affected app
-- run `bin/agent-worktree snapshot --write` from McRitchie Studio and use
-  `/Users/alex/projects/.agents/worktree-registry.json` as the local queue
-- inspect open PRs for mcritchie-studio, turf-monster, and any app mentioned in the current work
+- run `bin/qa-intake --refresh --apps mcritchie-studio,turf-monster` from
+  McRitchie Studio, adding any other app mentioned in the current work
+- use the QA intake queue to identify avi-ready, checks-review, merge-risk,
+  needs-agent, missing-local-branch, and cleanup candidates
 - review each PR for diff/description match, CI or local proof, docs impact, migrations, auth/email/payment/Solana risk, and overlap with other open PRs
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave comments on PRs that need changes

@@ -1,0 +1,364 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Conductor-facing PR/worktree intake for the parallel-agent DevOps cycle.
+#
+# Reads the local non-secret worktree registry produced by:
+#   bin/agent-worktree snapshot --write
+#
+# Then, when GitHub CLI is available, joins that local state with open PRs so
+# Avi can see what is ready, what is stale, and what needs cleanup.
+
+require "json"
+require "open3"
+require "optparse"
+require "shellwords"
+require "time"
+
+SCRIPT_ROOT = File.expand_path("..", __dir__)
+
+def default_projects_dir
+  candidate = File.expand_path("..", SCRIPT_ROOT)
+  return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
+
+  candidate
+end
+
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
+DEFAULT_REGISTRY = File.join(PROJECTS_DIR, ".agents", "worktree-registry.json")
+
+OPTIONS = {
+  refresh: false,
+  json: false,
+  gh: true,
+  registry: File.expand_path(ENV.fetch("AGENT_WORKTREE_REGISTRY", DEFAULT_REGISTRY)),
+  apps: nil
+}
+
+OptionParser.new do |opts|
+  opts.banner = <<~TEXT
+    Usage: bin/qa-intake [options]
+
+    Builds an Avi-ready intake queue from local worktree state and open GitHub PRs.
+
+    Options:
+  TEXT
+
+  opts.on("--refresh", "Refresh the local registry before reading it") { OPTIONS[:refresh] = true }
+  opts.on("--registry PATH", "Read/write this registry path") { |path| OPTIONS[:registry] = File.expand_path(path) }
+  opts.on("--apps LIST", "Comma-separated app slugs to include") { |value| OPTIONS[:apps] = value.split(",").map(&:strip).reject(&:empty?) }
+  opts.on("--no-gh", "Skip GitHub PR lookup and use local registry only") { OPTIONS[:gh] = false }
+  opts.on("--json", "Print machine-readable intake JSON") { OPTIONS[:json] = true }
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+def capture_status(*cmd, chdir: nil, env: {})
+  options = {}
+  options[:chdir] = chdir if chdir
+  out, err, status = Open3.capture3(env, *cmd, **options)
+  [status.success?, out, err]
+end
+
+def command_available?(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+    path = File.join(dir, name)
+    File.file?(path) && File.executable?(path)
+  end
+end
+
+def refresh_registry(path, warnings)
+  env = { "AGENT_WORKTREE_REGISTRY" => path }
+  ok, out, err = capture_status("bin/agent-worktree", "snapshot", "--write", chdir: SCRIPT_ROOT, env: env)
+  return out.strip if ok
+
+  warnings << "registry refresh failed: #{[err, out].join(" ").strip}"
+  nil
+end
+
+def read_registry(path)
+  abort "missing worktree registry: #{path}\nRun: bin/agent-worktree snapshot --write" unless File.exist?(path)
+
+  JSON.parse(File.read(path))
+rescue JSON::ParserError => e
+  abort "invalid worktree registry JSON at #{path}: #{e.message}"
+end
+
+def github_repo_for(repo_path)
+  ok, out, = capture_status("git", "remote", "get-url", "origin", chdir: repo_path)
+  return nil unless ok
+
+  remote = out.strip
+  case remote
+  when %r{\Agit@github\.com:(.+?)(?:\.git)?\z}
+    Regexp.last_match(1).delete_suffix(".git")
+  when %r{\Ahttps://github\.com/(.+?)(?:\.git)?\z}
+    Regexp.last_match(1).delete_suffix(".git")
+  end
+end
+
+def fetch_open_prs(apps, warnings)
+  return [] unless OPTIONS[:gh]
+  unless command_available?("gh")
+    warnings << "GitHub PR lookup skipped: gh CLI is not available"
+    return []
+  end
+
+  apps.flat_map do |app|
+    repo_path = app.fetch("repo")
+    repo = github_repo_for(repo_path)
+    unless repo
+      warnings << "GitHub PR lookup skipped for #{app.fetch("slug")}: no GitHub origin remote"
+      next []
+    end
+
+    fields = "number,title,url,isDraft,headRefName,baseRefName,mergeStateStatus,reviewDecision,updatedAt,author,labels"
+    ok, out, err = capture_status("gh", "pr", "list", "--repo", repo, "--state", "open", "--json", fields)
+    unless ok
+      warnings << "GitHub PR lookup failed for #{repo}: #{err.lines.first.to_s.strip}"
+      next []
+    end
+
+    JSON.parse(out).map { |pr| pr.merge("app" => app.fetch("slug"), "repo" => repo) }
+  rescue JSON::ParserError => e
+    warnings << "GitHub PR lookup returned invalid JSON for #{app.fetch("slug")}: #{e.message}"
+    []
+  end
+end
+
+def selected_apps(registry)
+  apps = registry.fetch("apps", [])
+  return apps unless OPTIONS[:apps]
+
+  selected = OPTIONS[:apps]
+  apps.select { |app| selected.include?(app.fetch("slug")) }
+end
+
+def selected_worktrees(registry, apps)
+  app_slugs = apps.map { |app| app.fetch("slug") }
+  registry.fetch("worktrees", []).select { |worktree| app_slugs.include?(worktree.fetch("app")) }
+end
+
+def truthy?(value)
+  value == true || value.to_s == "true"
+end
+
+def zeroish?(value)
+  %w[0 ?].include?(value.to_s)
+end
+
+def worktree_ready_for_avi?(worktree)
+  !truthy?(worktree["dirty"]) &&
+    !truthy?(worktree["merged_to_origin_main"]) &&
+    worktree["ahead_origin_main"].to_s != "0" &&
+    zeroish?(worktree["behind_origin_main"]) &&
+    blocking_issues(worktree).empty?
+end
+
+def worktree_needs_attention?(worktree)
+  truthy?(worktree["dirty"]) ||
+    !zeroish?(worktree["behind_origin_main"]) ||
+    Array(worktree["issues"]).any?
+end
+
+def blocking_issues(worktree)
+  Array(worktree["issues"]).select do |issue|
+    issue.match?(/dirty worktree/) ||
+      issue.match?(/behind origin\/main/) ||
+      issue.match?(/missing \.env\.agent-stack/) ||
+      issue.match?(/missing APP_PORT/) ||
+      issue.match?(/missing REDIS_URL/) ||
+      issue.match?(/Redis DB/) ||
+      issue.match?(/LOCAL_EMAIL_CAPTURE/) ||
+      issue.match?(/API_KEY|SMTP/) ||
+      issue.match?(/port .* listens but \/up/)
+  end
+end
+
+def status_label_for_pr(pr, worktree)
+  return "missing-local-branch" unless worktree
+  return "needs-agent" if blocking_issues(worktree).any?
+  return "merge-risk" if %w[DIRTY BLOCKED UNKNOWN].include?(pr["mergeStateStatus"].to_s)
+  return "checks-review" if pr["mergeStateStatus"].to_s == "UNSTABLE"
+  return "avi-ready-draft" if pr["isDraft"]
+  return "avi-ready" if worktree_ready_for_avi?(worktree)
+
+  "review"
+end
+
+def pr_notes(pr, worktree)
+  notes = []
+  notes << "draft" if pr["isDraft"]
+  notes << "review=#{pr["reviewDecision"]}" if pr["reviewDecision"].to_s != ""
+  notes << "merge=#{pr["mergeStateStatus"]}" if pr["mergeStateStatus"].to_s != ""
+
+  if worktree
+    notes << "local=#{worktree["health"]}"
+    notes << "+#{worktree["ahead_origin_main"]}/-#{worktree["behind_origin_main"]}"
+    notes.concat(Array(worktree["issues"]))
+  else
+    notes << "no matching local worktree"
+  end
+
+  notes
+end
+
+def build_intake(registry, prs, apps, worktrees, warnings)
+  by_app_branch = worktrees.each_with_object({}) do |worktree, index|
+    index[[worktree.fetch("app"), worktree.fetch("branch")]] = worktree
+  end
+
+  prs_by_app_branch = prs.each_with_object({}) do |pr, index|
+    index[[pr.fetch("app"), pr.fetch("headRefName")]] = pr
+  end
+
+  pr_queue = prs.sort_by { |pr| [pr.fetch("app"), pr.fetch("number")] }.map do |pr|
+    worktree = by_app_branch[[pr.fetch("app"), pr.fetch("headRefName")]]
+    {
+      "status" => status_label_for_pr(pr, worktree),
+      "app" => pr.fetch("app"),
+      "repo" => pr.fetch("repo"),
+      "number" => pr.fetch("number"),
+      "title" => pr.fetch("title"),
+      "url" => pr.fetch("url"),
+      "draft" => pr["isDraft"],
+      "branch" => pr.fetch("headRefName"),
+      "base" => pr.fetch("baseRefName"),
+      "updated_at" => pr.fetch("updatedAt"),
+      "local_worktree" => worktree&.fetch("worktree"),
+      "notes" => pr_notes(pr, worktree)
+    }
+  end
+
+  local_without_pr = worktrees.select do |worktree|
+    next false if %w[main master].include?(worktree.fetch("branch").to_s)
+    next false if truthy?(worktree["merged_to_origin_main"])
+    next false if worktree["ahead_origin_main"].to_s == "0"
+
+    !prs_by_app_branch.key?([worktree.fetch("app"), worktree.fetch("branch")])
+  end.sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+
+  attention = worktrees.select { |worktree| worktree_needs_attention?(worktree) }
+                       .sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+
+  cleanup = worktrees.select { |worktree| truthy?(worktree["cleanup_candidate"]) }
+                     .sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+
+  {
+    "generated_at" => Time.now.utc.iso8601,
+    "registry_path" => OPTIONS[:registry],
+    "registry_generated_at" => registry["generated_at"],
+    "summary" => {
+      "apps" => apps.size,
+      "open_prs" => pr_queue.size,
+      "local_branches_without_pr" => local_without_pr.size,
+      "attention_items" => attention.size,
+      "cleanup_candidates" => cleanup.size,
+      "registry" => registry["summary"]
+    },
+    "prs" => pr_queue,
+    "local_branches_without_pr" => local_without_pr,
+    "attention" => attention,
+    "cleanup_candidates" => cleanup,
+    "warnings" => warnings
+  }
+end
+
+def print_section(title)
+  puts
+  puts "#{title}"
+  puts "-" * title.length
+end
+
+def print_pr_queue(prs)
+  print_section("PR Queue")
+  if prs.empty?
+    puts "No open PRs found or GitHub lookup unavailable."
+    return
+  end
+
+  prs.each do |pr|
+    puts "[#{pr.fetch("status")}] #{pr.fetch("app")} ##{pr.fetch("number")} #{pr.fetch("title")}"
+    puts "  #{pr.fetch("url")}"
+    puts "  branch=#{pr.fetch("branch")} base=#{pr.fetch("base")} local=#{pr["local_worktree"] || "none"}"
+    puts "  notes: #{pr.fetch("notes").join("; ")}"
+  end
+end
+
+def print_local_without_pr(worktrees)
+  print_section("Local Branches Without PR")
+  if worktrees.empty?
+    puts "No local ahead branches without a matching open PR."
+    return
+  end
+
+  worktrees.each do |worktree|
+    readiness = worktree_ready_for_avi?(worktree) ? "ready-to-open-pr" : "needs-agent"
+    puts "[#{readiness}] #{worktree.fetch("label")} #{worktree.fetch("branch")} +#{worktree["ahead_origin_main"]}/-#{worktree["behind_origin_main"]}"
+    puts "  #{worktree["compare_url"] || "no compare URL"}"
+    puts "  local: #{worktree["local_url"] || "none"}  inbox: #{worktree["local_inbox_url"] || "none"}"
+    issues = Array(worktree["issues"])
+    puts "  issues: #{issues.empty? ? "none" : issues.join("; ")}"
+  end
+end
+
+def print_attention(worktrees)
+  print_section("Worktree Attention")
+  if worktrees.empty?
+    puts "No dirty, stale, behind, missing-env, or unhealthy worktrees in scope."
+    return
+  end
+
+  worktrees.each do |worktree|
+    puts "#{worktree.fetch("label")} #{worktree.fetch("health")} #{worktree.fetch("branch")} +#{worktree["ahead_origin_main"]}/-#{worktree["behind_origin_main"]}"
+    puts "  path: #{worktree.fetch("worktree")}"
+    puts "  issues: #{Array(worktree["issues"]).join("; ")}"
+  end
+end
+
+def print_cleanup(worktrees)
+  print_section("Cleanup Candidates")
+  if worktrees.empty?
+    puts "No clean merged worktrees in scope."
+    return
+  end
+
+  worktrees.each do |worktree|
+    puts "#{worktree.fetch("label")} #{worktree.fetch("worktree")}"
+    puts "  branch=#{worktree.fetch("branch")} head=#{worktree.fetch("head")}"
+  end
+  puts
+  puts "Removal remains approval-gated. Use bin/agent-worktree cleanup --write to ledger candidates first."
+end
+
+warnings = []
+refresh_registry(OPTIONS[:registry], warnings) if OPTIONS[:refresh]
+registry = read_registry(OPTIONS[:registry])
+apps = selected_apps(registry)
+worktrees = selected_worktrees(registry, apps)
+prs = fetch_open_prs(apps, warnings)
+intake = build_intake(registry, prs, apps, worktrees, warnings)
+
+if OPTIONS[:json]
+  puts JSON.pretty_generate(intake)
+  exit 0
+end
+
+puts "QA Intake Queue"
+puts "Generated: #{intake.fetch("generated_at")}"
+puts "Registry:  #{intake.fetch("registry_path")}"
+puts "Snapshot:  #{intake["registry_generated_at"] || "unknown"}"
+puts
+puts "Summary: #{intake.fetch("summary").reject { |key, _| key == "registry" }.map { |key, value| "#{key}=#{value}" }.join("  ")}"
+
+print_pr_queue(intake.fetch("prs"))
+print_local_without_pr(intake.fetch("local_branches_without_pr"))
+print_attention(intake.fetch("attention"))
+print_cleanup(intake.fetch("cleanup_candidates"))
+
+if intake.fetch("warnings").any?
+  print_section("Warnings")
+  intake.fetch("warnings").each { |warning| puts "- #{warning}" }
+end
