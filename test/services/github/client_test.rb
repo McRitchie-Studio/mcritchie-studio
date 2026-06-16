@@ -96,6 +96,36 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_equal [3], sleeps
   end
 
+  test "logs safe rate limit diagnostics without request auth headers" do
+    log_io = StringIO.new
+    client = Github::Client.new(
+      token: "secret-token",
+      logger: Logger.new(log_io),
+      rate_limit_pause_seconds: 0,
+      rate_limit_retries: 0,
+      executor: ->(_uri, _request) {
+        FakeResponse.new(
+          "403",
+          '{"message":"You have exceeded a secondary rate limit.","documentation_url":"https://docs.github.com/rest"}',
+          {
+            "x-ratelimit-remaining" => "24",
+            "x-ratelimit-limit" => "30",
+            "x-github-request-id" => "REQUEST123",
+            "retry-after" => "180"
+          }
+        )
+      }
+    )
+
+    assert_raises(Github::Client::RateLimitError) { client.get("/test") }
+
+    assert_includes log_io.string, "status=403"
+    assert_includes log_io.string, "x-ratelimit-remaining"
+    assert_includes log_io.string, "REQUEST123"
+    assert_includes log_io.string, "You have exceeded a secondary rate limit."
+    assert_not_includes log_io.string, "secret-token"
+  end
+
   test "raises rate limit error after configured secondary retries" do
     client = Github::Client.new(
       logger: nil,

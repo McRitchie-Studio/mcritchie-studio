@@ -9,6 +9,15 @@ module Github
 
     DEFAULT_BASE_URL = "https://api.github.com".freeze
     TRANSIENT_STATUSES = [500, 502, 503, 504].freeze
+    RATE_LIMIT_HEADER_NAMES = %w[
+      retry-after
+      x-github-request-id
+      x-ratelimit-limit
+      x-ratelimit-remaining
+      x-ratelimit-reset
+      x-ratelimit-resource
+      x-ratelimit-used
+    ].freeze
 
     attr_reader :request_count
 
@@ -70,6 +79,8 @@ module Github
           log_response(uri, response)
 
           if (rate_limit_message = rate_limit_error_message(response))
+            log_rate_limit_response(uri, response, rate_limit_message)
+
             if rate_limit_attempts < @rate_limit_retries && @rate_limit_pause_seconds.positive?
               rate_limit_attempts += 1
               @logger&.warn(
@@ -190,6 +201,21 @@ module Github
       parsed.is_a?(Hash) ? parsed.fetch("message", "").to_s : ""
     rescue JSON::ParserError
       ""
+    end
+
+    def log_rate_limit_response(uri, response, message)
+      @logger&.warn(
+        "GitHub API rate limit response request=#{@request_count} " \
+        "status=#{response.code} path=#{uri.path} " \
+        "headers=#{safe_rate_limit_headers(response).to_json} " \
+        "message=#{message} body=#{response.body}"
+      )
+    end
+
+    def safe_rate_limit_headers(response)
+      RATE_LIMIT_HEADER_NAMES.to_h do |header_name|
+        [header_name, response[header_name]]
+      end.compact
     end
 
     def pause_after_request
