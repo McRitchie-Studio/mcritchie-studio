@@ -74,6 +74,7 @@ bin/agent-worktree list
 bin/agent-worktree status turf-monster task-slug
 bin/agent-worktree finish turf-monster task-slug
 bin/agent-worktree doctor
+bin/agent-worktree snapshot
 bin/agent-worktree cleanup
 ```
 
@@ -84,6 +85,14 @@ bin/agent-worktree cleanup
   behind `origin/main`, and already-merged branches. Add `--push` to push the
   branch, or `--push --pr` to create a draft PR through `gh` when available.
 - `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to `origin/main`.
+- `snapshot` prints a non-secret JSON registry of every generated worktree,
+  including health, local URLs, branch state, Redis DB, database name, cleanup
+  candidacy, compare URL, and doctor issues.
+- `snapshot --write` writes the same registry to
+  `/Users/alex/projects/.agents/worktree-registry.json` for conductor sessions,
+  dashboards, and future automation. Set
+  `AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json` when a sandboxed
+  session needs a scratch write instead of the shared projects registry.
 - `cleanup` is a dry run. It only prints clean merged worktree candidates.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
 
@@ -124,6 +133,25 @@ A feature-agent handoff should include:
 
 Do not leave Mr. McRitchie with "run these commands." Start the stack, prove the
 URL, and name any blocker that truly needs owner action.
+
+## Machine Registry
+
+`bin/agent-worktree snapshot --write` is the local registry for scale. It does
+not contain secrets and is safe to hand to another agent session as current
+machine context.
+
+Use it when:
+
+- a QA or release conductor starts a shift
+- multiple feature agents are active at once
+- worktree ports, Redis DBs, or pidfiles appear inconsistent
+- a dashboard or future supervisor needs a machine-readable queue
+
+The registry is intentionally local under `/Users/alex/projects/.agents/`.
+McRitchie Studio documents and owns the format, but the file itself reflects the
+current machine and should not be treated as a Git-tracked source of truth.
+If the agent runtime blocks writing to that directory, rerun the command with
+filesystem approval or set `AGENT_WORKTREE_REGISTRY` to a writable scratch path.
 
 ## Ports
 

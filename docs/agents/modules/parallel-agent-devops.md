@@ -151,6 +151,8 @@ Work from /Users/alex/projects as the QA / Integration lane.
 Run the parallel-agent DevOps cycle:
 - read /Users/alex/projects/AGENTS.md and the app docs
 - pull latest main in mcritchie-studio and each affected app
+- run `bin/agent-worktree snapshot --write` from McRitchie Studio and use
+  `/Users/alex/projects/.agents/worktree-registry.json` as the local queue
 - inspect open PRs for mcritchie-studio, turf-monster, and any app mentioned in the current work
 - review each PR for diff/description match, CI or local proof, docs impact, migrations, auth/email/payment/Solana risk, and overlap with other open PRs
 - ask Steffon/infra review for risky changes before merge when needed
@@ -188,6 +190,8 @@ Do not include unrelated PRs or new feature work in this rollout.
   decision, not a backup step.
 - Never delete a feature branch or worktree until the PR is merged or explicitly
   abandoned.
+- Start conductor sessions with `bin/agent-worktree snapshot --write` so the
+  current machine queue is captured before branches, pidfiles, or ports move.
 - `cleanup` only records candidates in the delete-later ledger; removal remains
   approval-gated.
 - Feature agents do not force-push shared branches. If a rebase needs a push,
@@ -199,7 +203,10 @@ Do not include unrelated PRs or new feature work in this rollout.
 ## 100-Agent Scaling Notes
 
 The current slot allocator uses app port ranges and `.env.agent-stack` files as
-the local session registry. That is enough for dozens of occasional worktrees.
+the local session registry. `bin/agent-worktree snapshot --write` turns that
+state into `/Users/alex/projects/.agents/worktree-registry.json`, a local
+machine-readable queue for QA, release, dashboards, and future supervisor
+agents. That is enough for dozens of occasional worktrees.
 
 Known future ceilings and controls:
 
@@ -216,8 +223,10 @@ Known future ceilings and controls:
 - Callback-heavy provider flows should stay on primary ports unless each
   provider is configured for worktree callback URLs.
 
-When the current `.env.agent-stack` registry becomes too small, promote it into
-a durable machine-readable registry under `/Users/alex/projects/.agents/`.
+When the current local JSON registry becomes too small, promote it from a
+generated snapshot into a lockable service or database-backed coordinator. Do
+not skip directly to that complexity until the file-based queue is proving too
+small in real use.
 
 ## Recurring Feature Prompt
 
