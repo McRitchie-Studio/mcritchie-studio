@@ -148,6 +148,16 @@ merged or intentionally abandoned.
 For a dedicated review/merge/QA session, use the recurring QA intake prompt in
 `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
 stops after QA deployment; production rollout needs a separate explicit prompt.
+The conductor queue starts with:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+```
+
+The command joins open GitHub PRs to the local worktree registry and labels
+items as `avi-ready`, `avi-ready-draft`, `checks-review`, `merge-risk`,
+`needs-agent`, or `missing-local-branch`.
 
 QA servers, once provisioned, are operated with `mcritchie-studio/bin/qa-server`.
 They are release-candidate targets for Mr. McRitchie review before production;
@@ -159,6 +169,7 @@ Before reusing or deleting worktrees, inspect lifecycle state:
 bin/agent-worktree list
 bin/agent-worktree doctor
 bin/agent-worktree snapshot --write
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 bin/agent-worktree cleanup
 ```
 
