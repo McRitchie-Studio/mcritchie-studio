@@ -14,13 +14,16 @@
 #   bin/agent-worktree status turf-monster docs-stack
 #   bin/agent-worktree finish turf-monster docs-stack
 #   bin/agent-worktree doctor
+#   bin/agent-worktree snapshot
 #   bin/agent-worktree cleanup
 #   bin/agent-worktree down turf-monster docs-stack
 
 require "fileutils"
+require "json"
 require "open3"
 require "shellwords"
 require "socket"
+require "time"
 require "yaml"
 
 def default_projects_dir
@@ -76,6 +79,7 @@ def usage
       status <app> <task-slug>
       finish <app> <task-slug> [--push] [--pr]
       doctor [app]
+      snapshot [app] [--write]
       cleanup [app] [--write]
       down <app> <task-slug>
 
@@ -658,8 +662,8 @@ def doctor_issues(app = nil)
       issues << [label, "missing REDIS_URL Redis DB"]
     elsif redis_dupes.key?(record[:redis_db].to_s)
       issues << [label, "Redis DB #{record[:redis_db]} reused by #{redis_dupes.fetch(record[:redis_db].to_s).map { |r| r[:task] }.join(", ")}"]
-    elsif record[:redis_db].to_i > redis_db_max
-      issues << [label, "Redis DB #{record[:redis_db]} exceeds AGENT_REDIS_MAX_DB=#{redis_db_max}"]
+    elsif record[:redis_db].to_i < redis_db_min || record[:redis_db].to_i > redis_db_max
+      issues << [label, "Redis DB #{record[:redis_db]} outside AGENT_REDIS_MIN_DB=#{redis_db_min} and AGENT_REDIS_MAX_DB=#{redis_db_max}"]
     end
 
     issues << [label, "LOCAL_EMAIL_CAPTURE is not enabled"] unless env_truthy?(record[:env]["LOCAL_EMAIL_CAPTURE"])
@@ -668,6 +672,7 @@ def doctor_issues(app = nil)
     end
 
     issues << [label, "dirty worktree"] if record[:dirty]
+    issues << [label, "branch is #{record[:behind]} commit(s) behind origin/main; rebase before QA handoff"] unless %w[0 ?].include?(record[:behind].to_s)
     issues << [label, "branch is merged to origin/main and clean; cleanup candidate"] if record[:merged] && !record[:dirty]
     issues << [label, "port #{record[:port]} listens but /up is #{record[:code]}"] if !record[:port_pid].empty? && record[:code] != "200"
     issues << [label, "stale web pidfile #{record[:pidfile_state]}"] if record[:pidfile_state].start_with?("stale")
@@ -689,6 +694,112 @@ def run_doctor(app = nil)
   issues.each do |label, message|
     puts "  - #{label}: #{message}"
   end
+end
+
+def doctor_issues_by_label(app = nil)
+  doctor_issues(app).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(label, message), grouped|
+    grouped[label] << message
+  end
+end
+
+def agent_registry_dir
+  File.join(PROJECTS_DIR, ".agents")
+end
+
+def snapshot_path
+  File.expand_path(ENV.fetch("AGENT_WORKTREE_REGISTRY") { File.join(agent_registry_dir, "worktree-registry.json") })
+end
+
+def app_snapshot(app)
+  {
+    "slug" => app.fetch("slug"),
+    "display_name" => app.fetch("display_name", app.fetch("slug")),
+    "repo" => app.fetch("repo"),
+    "primary_port" => app.fetch("primary_port"),
+    "range_start" => app.fetch("range_start"),
+    "range_end" => app.fetch("range_end"),
+    "status" => app.fetch("status", "unknown"),
+    "stack" => app.fetch("stack"),
+    "sidekiq" => app.fetch("sidekiq")
+  }
+end
+
+def stack_record_snapshot(record, issues_by_label)
+  app = record.fetch(:app)
+  label = "#{app.fetch("slug")}/#{record.fetch(:task)}"
+  port = record.fetch(:port)
+  has_port = !port.to_s.empty? && port != "?"
+
+  {
+    "label" => label,
+    "app" => app.fetch("slug"),
+    "task" => record.fetch(:task),
+    "worktree" => record.fetch(:dir),
+    "env_exists" => record.fetch(:env_exists),
+    "health" => stack_health(record),
+    "local_url" => has_port ? "http://localhost:#{port}" : nil,
+    "local_inbox_url" => has_port ? "http://localhost:#{port}/_studio/local_emails" : nil,
+    "app_port" => has_port ? port.to_i : nil,
+    "port_pid" => record.fetch(:port_pid).empty? ? nil : record.fetch(:port_pid).to_i,
+    "up_code" => record.fetch(:code),
+    "redis_db" => record.fetch(:redis_db).empty? ? nil : record.fetch(:redis_db).to_i,
+    "database" => record.fetch(:db_name).empty? ? nil : record.fetch(:db_name),
+    "database_exists" => record.fetch(:db_exists),
+    "branch" => record.fetch(:branch),
+    "head" => record.fetch(:head),
+    "commit_subject" => record.fetch(:commit_subject),
+    "dirty" => record.fetch(:dirty),
+    "merged_to_origin_main" => record.fetch(:merged),
+    "ahead_origin_main" => record.fetch(:ahead),
+    "behind_origin_main" => record.fetch(:behind),
+    "pidfile_state" => record.fetch(:pidfile_state),
+    "sidekiq_pidfile_state" => record.fetch(:sidekiq_pidfile_state),
+    "cleanup_candidate" => record.fetch(:merged) && !record.fetch(:dirty),
+    "compare_url" => github_compare_url(record),
+    "issues" => issues_by_label[label]
+  }
+end
+
+def snapshot_payload(app = nil)
+  selected_apps = app ? [app] : apps.values
+  records = stack_records(app)
+  issues_by_label = doctor_issues_by_label(app)
+
+  {
+    "generated_at" => Time.now.utc.iso8601,
+    "projects_dir" => PROJECTS_DIR,
+    "hub_dir" => HUB_DIR,
+    "redis_db_range" => {
+      "min" => redis_db_min,
+      "max" => redis_db_max
+    },
+    "apps" => selected_apps.sort_by { |config| config.fetch("primary_port") }.map { |config| app_snapshot(config) },
+    "summary" => {
+      "worktrees" => records.size,
+      "issues" => issues_by_label.values.sum(&:size),
+      "cleanup_candidates" => records.count { |record| record.fetch(:merged) && !record.fetch(:dirty) },
+      "dirty_worktrees" => records.count { |record| record.fetch(:dirty) },
+      "running_or_port_busy" => records.count { |record| !record.fetch(:port_pid).empty? },
+      "behind_origin_main" => records.count { |record| !%w[0 ?].include?(record.fetch(:behind).to_s) }
+    },
+    "worktrees" => records.map { |record| stack_record_snapshot(record, issues_by_label) }
+  }
+end
+
+def run_snapshot(app = nil, write: false)
+  payload = snapshot_payload(app)
+  json = JSON.pretty_generate(payload)
+
+  unless write
+    puts json
+    return
+  end
+
+  FileUtils.mkdir_p(File.dirname(snapshot_path))
+  File.write(snapshot_path, "#{json}\n")
+  puts "wrote #{payload.fetch("worktrees").size} worktree record(s) to #{snapshot_path}"
+rescue Errno::EACCES, Errno::EPERM => e
+  abort "could not write worktree registry to #{snapshot_path}: #{e.message}\nSet AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json for a scratch write, or rerun with filesystem approval for the projects registry."
 end
 
 def cleanup_candidates(app = nil)
@@ -908,6 +1019,10 @@ when "finish"
 when "doctor"
   app = ARGV[0] ? app_for(ARGV[0]) : nil
   run_doctor(app)
+when "snapshot"
+  write = ARGV.delete("--write")
+  app = ARGV[0] ? app_for(ARGV[0]) : nil
+  run_snapshot(app, write: !!write)
 when "cleanup"
   write = ARGV.delete("--write")
   app = ARGV[0] ? app_for(ARGV[0]) : nil
