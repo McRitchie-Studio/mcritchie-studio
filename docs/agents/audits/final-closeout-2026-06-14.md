@@ -97,6 +97,22 @@ and Solid Queue worker dynos are up. Turf Monster release `v93` at commit
 hardening commit; web and Sidekiq worker dynos are up. Both production `/up`
 checks returned `200`.
 
+Root-domain and QA follow-up, 2026-06-15: McRitchie Studio release `v63` at
+commit `4831ebcd` made `https://mcritchie.studio` the canonical production host.
+`https://app.mcritchie.studio` remains a legacy Rails alias, and
+`https://v1.mcritchie.studio` now serves the previous Squarespace site. Heroku
+ACM certificates are issued for root, `www`, and `app`; production
+`/signin` returns `200`; and a production magic-link POST returned
+`{"success":true}`. QA apps are provisioned and healthy at
+`https://qa.mcritchie.studio` and `https://qa.turfmonster.media`.
+
+Parallel-worktree follow-up, 2026-06-15: `bin/agent-worktree doctor` now reports
+a cleanup queue because multiple parallel feature sessions have run since the
+original closeout. The queue includes merged clean worktrees, stale pidfiles,
+missing per-worktree DBs, and Redis DB indexes above the stock Redis range.
+Treat this as DevOps hygiene work, not production drift; do not delete worktrees
+without confirming the owning branch is merged or explicitly abandoned.
+
 ## Verification On Record
 
 High-signal proof from this cleanup:
@@ -203,7 +219,7 @@ Weekly or after several agent sessions:
 ## Next Best Action
 
 The broad audit cleanup is in maintenance mode. Next operational actions are
-narrow: stage SES-scoped API credentials for proof tasks, finish AWS SES
-production access and provider smoke, schedule the Tailwind major-version
-maintenance window, and clean merged worktrees after approval. Keep Resend
-configured until SES has a stability window.
+narrow: finish AWS SES production access and provider smoke, schedule the
+Tailwind major-version maintenance window, and keep the parallel-agent PR/QA
+release cycle disciplined as active worktrees accumulate. Keep Resend configured
+until SES has a stability window.

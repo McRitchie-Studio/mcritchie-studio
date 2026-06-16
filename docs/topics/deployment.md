@@ -32,6 +32,8 @@ Production config should keep `APP_HOST=mcritchie.studio` and
 `MAILER_HOST=mcritchie.studio`; `APP_HOST_ALIASES` should include
 `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
 Heroku ACM has issued certs for root, `www`, and legacy `app`.
+`v1.mcritchie.studio` is connected to the old Squarespace site as its primary
+domain, has the Squarespace `www` prefix disabled, and returns `200`.
 
 Use public DNS when checking propagation because local routers may cache the old
 Squarespace records for up to the previous 4-hour TTL:
@@ -45,9 +47,10 @@ curl -I https://www.mcritchie.studio/up
 curl -I https://app.mcritchie.studio/up
 ```
 
-`v1.mcritchie.studio` is the Squarespace archive. If it shows a browser privacy
-error, verify the site connection in Squarespace and wait for Squarespace SSL to
-issue; the DNS target should be `ext-cust.squarespace.com`.
+`v1.mcritchie.studio` is the Squarespace archive. If it regresses to a browser
+privacy error or redirects to `www.mcritchie.studio`, verify the Squarespace
+site connection, primary-domain setting, disabled `www` prefix, and
+`ext-cust.squarespace.com` DNS target.
 
 ## Public Assets
 

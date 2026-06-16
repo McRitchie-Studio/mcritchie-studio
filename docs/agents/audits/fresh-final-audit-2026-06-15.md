@@ -33,7 +33,8 @@ Managed app registry:
 mcritchie-studio   active    3000-3099   McRitchie Studio
 turf-monster       active    3100-3199   Turf Monster
 tax-studio         planned   3200-3299   Tax Studio
-Next open range: 3300-3399
+chain-ops          planned   3300-3399   Chain Ops
+Next open range: 3400-3499
 ```
 
 ## Changes Made In This Pass
@@ -70,6 +71,20 @@ Stale active docs were corrected:
 - Turf Vault README now explains that on-chain `Locked` is vestigial and lock
   enforcement is derived from timestamps.
 
+### Root-Domain Launch And QA Stabilization
+
+McRitchie Studio now uses `https://mcritchie.studio` as the canonical production
+host. `https://app.mcritchie.studio` remains a legacy Rails alias, and the
+previous Squarespace site is archived at `https://v1.mcritchie.studio`.
+
+QA servers are provisioned and healthy:
+
+- McRitchie Studio QA: `https://qa.mcritchie.studio`
+- Turf Monster QA: `https://qa.turfmonster.media`
+
+The launch state is recorded in `docs/agents/modules/deployment.md` and
+`docs/topics/deployment.md`.
+
 ## Findings
 
 ### 1. McRitchie production email durability is now worker-grade
@@ -95,12 +110,18 @@ Both SES domains are verified with DKIM success. The blocker is SES production
 access in `us-east-2`; until AWS removes sandbox mode, Resend remains the
 production/presetup fallback.
 
-### 3. Heroku platform hygiene is complete for the active apps
+### 3. Heroku platform hygiene and McRitchie root launch are complete
 
 McRitchie Studio is pinned to Ruby `3.3.11` and Node `22.x`, deploys with
 `heroku/nodejs` before `heroku/ruby`, and is live on Heroku-26 at release
-`v59` / commit `bc38c5b`. Web and `worker=1` dynos are up, and
-`https://app.mcritchie.studio/up` returns `200`.
+`v63` / commit `4831ebcd`. Web and `worker=1` dynos are up. The canonical
+root, `www`, legacy app host, and Heroku fallback all return `200` on `/up`.
+Heroku ACM has issued certificates for `mcritchie.studio`,
+`www.mcritchie.studio`, and `app.mcritchie.studio`.
+
+The old Squarespace site is now available at `https://v1.mcritchie.studio`.
+It is connected as the Squarespace primary domain, has the Squarespace `www`
+prefix disabled, and returns `200`.
 
 Turf Monster first received an empty operational rebuild to apply Heroku-26
 without folding uncommitted local WIP into the stack migration. Steffon's
@@ -125,8 +146,8 @@ promoted into an active module or app runbook.
 ### 5. Rolio is still unmanaged
 
 `rolio` exists locally but is not in the managed app registry. If it becomes a
-real satellite, assign the next range (`3300-3399`), give it a primary port
-(`3300`), and onboard it through the registry/recovery docs.
+real satellite, assign the next open range (`3400-3499`), give it a primary port
+(`3400`), and onboard it through the registry/recovery docs.
 
 ## Recommended Next Moves
 
@@ -138,9 +159,10 @@ real satellite, assign the next range (`3300-3399`), give it a primary port
    `tailwindcss-rails 2.7.9` through `studio-engine 0.5.9`; RubyGems currently
    lists `tailwindcss-rails 4.4.0`, so this is a major-version visual/build
    upgrade rather than a patch bump.
-3. Clean merged worktrees when Mr. McRitchie approves deletion:
-   `mcritchie-studio/agent-isolation-policy` and
-   `turf-monster/cdp-phantom-create-hardening`.
+3. Review the active parallel-session worktree queue before deleting anything.
+   Several worktrees are intentionally present while feature agents run in
+   parallel; do not clean them unless the owning branch is merged or explicitly
+   abandoned.
 
 ## Verification For This Pass
 
@@ -171,6 +193,25 @@ Results:
   production to Solid Queue: `577 runs, 1591 assertions, 0 failures, 4 skips`.
 - McRitchie Studio Heroku platform follow-up: release `v59` on Heroku-26,
   Node/Ruby buildpacks ordered correctly, web and worker dynos up, `/up` `200`.
+- McRitchie Studio root-domain follow-up, 2026-06-15: release `v63` /
+  `4831ebcd` is live with `APP_HOST=mcritchie.studio`,
+  `MAILER_HOST=mcritchie.studio`, and aliases for `app`, `www`, and the Heroku
+  fallback host. Public DNS points root and `www` to Heroku and `v1` to
+  Squarespace. `/up` returns `200` on `mcritchie.studio`,
+  `www.mcritchie.studio`, and `app.mcritchie.studio`; `v1.mcritchie.studio`
+  returns `200` from Squarespace. A production magic-link POST for
+  `alex@mcritchie.studio` returned `{"success":true}`.
+- QA infrastructure follow-up, 2026-06-15: `mcritchie-studio-qa` and
+  `turf-monster-qa` are provisioned, have running web and worker dynos, custom
+  domains `qa.mcritchie.studio` / `qa.turfmonster.media`, and `/up` returns
+  `200` on both QA URLs.
+- Stabilization closeout follow-up, 2026-06-15: a fresh
+  `bin/agent-worktree doctor` reports a cleanup queue rather than a clean
+  lifecycle state: merged clean worktrees, stale pidfiles, missing per-worktree
+  DBs, and Redis DB indexes above the stock Redis `0-15` range. This is not a
+  production blocker, but it is the next DevOps hygiene task. Do not delete
+  these worktrees during parallel feature work without confirming ownership or
+  abandonment.
 - Turf Monster Heroku platform follow-up: release `v93` on Heroku-26, Node/Ruby
   buildpacks ordered correctly, web and worker dynos up, `/up` `200`. Focused
   CDP/contest/vault tests passed for the hardening commit:

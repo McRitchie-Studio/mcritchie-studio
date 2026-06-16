@@ -29,13 +29,15 @@ Launch status as of 2026-06-15:
   `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
 - Verified app health: root, `www`, legacy `app`, and Heroku fallback all return
   `200` on `/up` once DNS resolves to Heroku.
+- Verified archive health: `v1.mcritchie.studio` is attached to the old
+  Squarespace site as its primary domain, has the `www` prefix disabled, uses
+  `ext-cust.squarespace.com`, and returns `200`.
 - Known propagation caveat: local routers and public resolvers may cache old
   Squarespace records for up to the prior 4-hour TTL. Verify against
   `1.1.1.1` or the authoritative nameservers before changing records again.
-- Squarespace archive caveat: `v1.mcritchie.studio` must stay connected to the
-  Squarespace site and should be the Squarespace primary domain. If Chrome shows
-  `NET::ERR_CERT_COMMON_NAME_INVALID`, wait for Squarespace SSL issuance and
-  confirm the `v1` CNAME points to `ext-cust.squarespace.com`.
+- Production auth smoke: `https://mcritchie.studio/signin` returns `200`, and
+  a production `POST /magic_link` for `alex@mcritchie.studio` returned
+  `{"success":true}`.
 
 Heroku domains for `mcritchie-studio`:
 
