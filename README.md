@@ -70,6 +70,17 @@ The launcher creates `~/projects/<repo>/.worktrees/<task-slug>`, assigns a port 
 Primary checkouts are integration/deploy lanes. Feature agents should not commit
 from them unless they are explicitly acting as the deploy owner.
 
+For QA / Integration lane sessions, build Avi's intake queue from the local
+worktree registry and open PRs:
+
+```bash
+cd ~/projects/mcritchie-studio
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+```
+
+This labels open work as ready for Avi, needing checks review, needing the
+feature agent, missing a local branch, or safe to ledger for later cleanup.
+
 ## Adding or promoting apps
 
 The managed satellite registry is `config/satellites.yml`. Before adding an app
