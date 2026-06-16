@@ -30,13 +30,20 @@
 
     <% if @builder_rows.any? %>
       <div class="overflow-x-auto">
-        <table class="w-full min-w-max text-sm">
+        <table class="w-full table-fixed text-sm">
+          <colgroup>
+            <col>
+            <col style="width: 100px;">
+            <% @ranges.each do |_range| %>
+              <col style="width: 88px;">
+            <% end %>
+          </colgroup>
           <thead>
             <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
-              <th class="sticky left-0 z-10 bg-surface-alt text-left py-3 px-4 min-w-80">Builder</th>
-              <th class="text-left py-3 px-3 w-[100px] max-w-[100px]">Location</th>
+              <th class="sticky left-0 z-10 bg-surface-alt text-left py-3 px-4">Builder</th>
+              <th class="text-left py-3 px-3">Location</th>
               <% @ranges.each do |range| %>
-                <th class="text-right py-3 px-3 min-w-24" title="<%= range.display_label %>">
+                <th class="text-right py-3 px-3" title="<%= range.display_label %>">
                   <%= builder_week_header(range) %>
                 </th>
               <% end %>
@@ -77,7 +84,7 @@
                     </div>
                   </div>
                 </td>
-                <td class="py-3 px-3 text-secondary w-[100px] max-w-[100px]" title="<%= person.location.presence || "No location" %>">
+                <td class="py-3 px-3 text-secondary" title="<%= person.location.presence || "No location" %>">
                   <span class="block truncate"><%= person.location.presence || "—" %></span>
                 </td>
                 <% @ranges.each do |range| %>
