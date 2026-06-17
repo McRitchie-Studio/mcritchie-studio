@@ -1,3 +1,3 @@
 class ApplicationMailer < ActionMailer::Base
-  default from: ENV.fetch("MAILER_FROM", "noreply@mcritchie.studio")
+  default from: -> { Studio.mailer_from || "McRitchie Studio <team@mcritchie.studio>" }
 end

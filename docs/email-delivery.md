@@ -112,7 +112,7 @@ Last checked: 2026-06-15.
   account.
 - Persistent production transport: keep Resend active until SES production
   access is approved and SMTP runtime credentials are staged.
-- Production app adoption: `studio-engine 0.5.9` is adopted. McRitchie Studio
+- Production app adoption: `studio-engine 0.6.0` is adopted. McRitchie Studio
   records durable `Studio::EmailDelivery` rows and uses Solid Queue for
   production job durability.
 
@@ -149,7 +149,7 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio currently uses `studio-engine 0.5.9`, so transport selection,
+McRitchie Studio currently uses `studio-engine 0.6.0`, so transport selection,
 durable delivery primitives, the local agent inbox, and provider smoke testing
 live in the engine. Keep future shared email changes in `studio-engine` unless
 they are truly app-specific.

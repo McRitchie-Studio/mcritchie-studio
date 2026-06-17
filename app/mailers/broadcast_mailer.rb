@@ -1,9 +1,10 @@
 class BroadcastMailer < ApplicationMailer
   helper :broadcasts # BroadcastsHelper#broadcast_greeting_name (mailers don't auto-include app helpers)
+  default from: -> { Studio.marketing_from_for_transport(ses_from: "Alex McRitchie <alex@mcritchie.studio>") }
 
   # Renders a broadcast for ONE contact: personalized greeting, public S3 images,
   # a per-contact unsubscribe link, and (when a delivery is given) the open pixel
-  # + click-tracking links.
+  # + click-tracking links. Delivery uses the shared Studio mail transport.
   def campaign(broadcast, contact, delivery = nil)
     @broadcast        = broadcast
     @contact          = contact
@@ -25,13 +26,13 @@ class BroadcastMailer < ApplicationMailer
   private
 
   # Unsubscribe links must be absolute. The dev default_url_options pins port
-  # 3000 (the main app), but this broadcasts worktree serves on :3030 — so pass
-  # host + port explicitly. Set BROADCAST_HOST in prod (e.g. app.mcritchie.studio).
+  # 3000 (the main app), but worktrees serve on allocated ports — so pass host +
+  # port explicitly. Set BROADCAST_HOST in prod (e.g. mcritchie.studio).
   def url_host_options
     if (host = ENV["BROADCAST_HOST"]).present?
       { host: host }
     elsif Rails.env.production?
-      { host: "app.mcritchie.studio" }
+      { host: "mcritchie.studio" }
     else
       { host: "127.0.0.1", port: 3030 }
     end
