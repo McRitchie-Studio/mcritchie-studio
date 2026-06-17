@@ -85,8 +85,9 @@ or deploy unless I explicitly assigned that lane.
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
 | Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
-| Fresh final audit | `mcritchie-studio/docs/agents/audits/fresh-final-audit-2026-06-15.md` |
-| Final ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
+| Current final closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-17.md` |
+| Prior final audit | `mcritchie-studio/docs/agents/audits/fresh-final-audit-2026-06-15.md` |
+| Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
 
