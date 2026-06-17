@@ -75,6 +75,20 @@ Github::Query.commits_for_email(
 
 The helper never returns or logs `GITHUB_TOKEN`.
 
+Use `Github::CommitSearchPlan` when deciding how to inspect or fetch a builder
+window. The plan is deterministic:
+
+- identity aliases are expanded as login and email query variants;
+- roles are expanded as author and committer variants by default;
+- the first pass uses clipped calendar-year windows;
+- probes use `per_page=1`;
+- fetches use `per_page=100`;
+- windows with more than `900` results split year -> quarter -> month -> 7-day
+  windows before fetching.
+
+That keeps operator decisions to inputs such as login, known commit emails, and
+date range; the query order and split rules stay in code.
+
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
 ```bash
