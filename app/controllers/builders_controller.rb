@@ -29,6 +29,7 @@ class BuildersController < ApplicationController
     scope = scope.where(primary_language: @language) if @language.present?
     @builders = scope.order(included_in_roster: :desc, github_login: :asc).to_a
     @total_commits_by_login = GithubBuilderCommitRangeCache
+      .for_cache_key
       .where(github_login: @builders.map(&:github_login))
       .group(:github_login)
       .sum(:commits_count)
@@ -82,6 +83,7 @@ class BuildersController < ApplicationController
       .index_by(&:github_login)
     caches_by_key = if @ranges.any? && tracked_by_login.any?
       GithubBuilderCommitRangeCache
+        .for_cache_key
         .where(tracked_github_builder_id: tracked_by_login.values.map(&:id), github_commit_range_id: @ranges.map(&:id))
         .index_by { |cache| [cache.tracked_github_builder_id, cache.github_commit_range_id] }
     else

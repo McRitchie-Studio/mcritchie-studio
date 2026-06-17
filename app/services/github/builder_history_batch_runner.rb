@@ -7,13 +7,15 @@ module Github
       logger: Rails.logger,
       sleeper: ->(seconds) { sleep(seconds) },
       reporter: nil,
-      builder_pause_seconds: ENV.fetch("GITHUB_BUILDER_PAUSE_SECONDS", 0).to_f)
+      builder_pause_seconds: ENV.fetch("GITHUB_BUILDER_PAUSE_SECONDS", 0).to_f,
+      cache_key: nil)
       @fetcher = fetcher
       @aggregator = aggregator
       @logger = logger
       @sleeper = sleeper
       @reporter = reporter
       @builder_pause_seconds = builder_pause_seconds.to_f
+      @cache_key = cache_key.presence || aggregator_cache_key(aggregator)
     end
 
     def run!(today: Github::CommitFetchWindows.utc_today,
@@ -36,7 +38,7 @@ module Github
 
       report(
         "AI Builder Multiple five-year batch selected #{builders.size} " \
-        "of #{eligible_builders.size} eligible builders"
+        "of #{eligible_builders.size} eligible builders cache_key=#{@cache_key}"
       )
 
       builders.each_with_index do |builder, index|
@@ -48,6 +50,7 @@ module Github
         window_start: window.begin,
         window_end: window.end,
         week_count: week_starts.size,
+        cache_key: @cache_key,
         selected_logins: builders.map(&:github_login),
         next_start_after: builders.last&.github_login,
         eligible_count: eligible_builders.size,
@@ -126,6 +129,7 @@ module Github
     def complete_cache?(builder, week_starts)
       GithubBuilderCommitRangeCache
         .joins(:github_commit_range)
+        .for_cache_key(@cache_key)
         .where(tracked_github_builder: builder)
         .where(github_commit_ranges: { week_start_date: week_starts })
         .distinct
@@ -135,6 +139,7 @@ module Github
     def cache_summary(builder, week_starts)
       caches = GithubBuilderCommitRangeCache
         .joins(:github_commit_range)
+        .for_cache_key(@cache_key)
         .where(tracked_github_builder: builder)
         .where(github_commit_ranges: { week_start_date: week_starts })
       {
@@ -158,6 +163,12 @@ module Github
 
     def normalize_login(login)
       login.to_s.strip.downcase
+    end
+
+    def aggregator_cache_key(aggregator)
+      return aggregator.cache_key if aggregator.respond_to?(:cache_key)
+
+      Github::CommitCacheKey.current
     end
 
     def sleep_between_builders

@@ -51,6 +51,7 @@ class Github::BacktestCsvExporterTest < ActiveSupport::TestCase
       builder_multiple: 2,
       bot_adjusted_builder_multiple: 1,
       commit_shas: ["abc123"],
+      cache_run_key: Github::CommitCacheKey.current,
       cached_at: Time.current
     )
     GithubCommitObservation.create!(

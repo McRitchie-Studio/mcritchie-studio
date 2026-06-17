@@ -80,6 +80,7 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
       bot_adjusted_commits_count: 4,
       active_repos_count: 1,
       commit_shas: ["def456"],
+      cache_run_key: Github::CommitCacheKey.current,
       cached_at: Time.current
     )
 
@@ -126,6 +127,7 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
       github_login: low_activity_builder.github_login,
       cohort: low_activity_builder.cohort,
       commits_count: 0,
+      cache_run_key: Github::CommitCacheKey.current,
       cached_at: Time.current
     )
 
@@ -184,6 +186,7 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
       builder_multiple: 2,
       bot_adjusted_builder_multiple: 2,
       commit_shas: ["abc123"],
+      cache_run_key: Github::CommitCacheKey.current,
       cached_at: Time.current
     )
     week_start
@@ -225,6 +228,7 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
         bot_adjusted_commits_count: index + 1,
         active_repos_count: 1,
         commit_shas: [],
+        cache_run_key: Github::CommitCacheKey.current,
         cached_at: Time.current
       )
     end

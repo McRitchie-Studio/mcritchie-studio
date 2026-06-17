@@ -78,6 +78,7 @@ class Github::BuilderWeeklyAggregatorTest < ActiveSupport::TestCase
     assert_equal 1, cache.bot_adjusted_commits_count
     assert_equal 2, cache.active_repos_count
     assert_equal [first_commit.sha, second_commit.sha], cache.commit_shas
+    assert_equal Github::CommitCacheKey.current, cache.cache_run_key
     assert_not_nil cache.cached_at
   end
 

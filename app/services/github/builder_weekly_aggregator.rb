@@ -7,6 +7,12 @@ module Github
     WEEK_START_WDAY = 6 # Saturday, using Ruby Date#wday.
     WEEK_LENGTH_DAYS = 7
 
+    attr_reader :cache_key
+
+    def initialize(cache_key: Github::CommitCacheKey.current)
+      @cache_key = cache_key
+    end
+
     def aggregate!(start_date:, end_date:, github_logins: nil)
       start_date = parse_date(start_date)
       end_date = parse_date(end_date)
@@ -108,6 +114,7 @@ module Github
         builder_multiple: builder_multiple,
         bot_adjusted_builder_multiple: bot_adjusted_builder_multiple,
         commit_shas: target.sort_by { |observation| [observation.observed_at, observation.sha] }.map(&:sha),
+        cache_run_key: cache_key,
         cached_at: Time.current
       )
       cache.save!

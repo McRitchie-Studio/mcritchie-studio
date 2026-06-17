@@ -40,6 +40,7 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
         non_merge_commits_count: index + 1,
         bot_adjusted_commits_count: index + 1,
         active_repos_count: 1,
+        cache_run_key: Github::CommitCacheKey.current,
         cached_at: Time.current
       )
     end
@@ -229,6 +230,7 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
       non_merge_commits_count: commits_count,
       bot_adjusted_commits_count: commits_count,
       active_repos_count: 1,
+      cache_run_key: Github::CommitCacheKey.current,
       cached_at: Time.current
     )
   end

@@ -24,10 +24,12 @@ module Github
 
     attr_reader :builders, :ranges, :years, :quarters, :rows
 
-    def initialize(builders:, start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE, end_date: nil)
+    def initialize(builders:, start_date: Github::BuilderWeeklyAggregator::REPORT_START_DATE, end_date: nil,
+      cache_key: Github::CommitCacheKey.current)
       @builders = builders.to_a
       @start_date = start_date.to_date
       @end_date = end_date&.to_date
+      @cache_key = cache_key
       @ranges = []
       @years = []
       @quarters = []
@@ -62,7 +64,7 @@ module Github
 
     private
 
-    attr_reader :start_date, :end_date
+    attr_reader :start_date, :end_date, :cache_key
 
     def load_ranges
       scope = GithubCommitRange.where(week_start_date: start_date..)
@@ -114,6 +116,7 @@ module Github
 
       GithubBuilderCommitRangeCache
         .where(tracked_github_builder_id: tracked_builders.map(&:id), github_commit_range_id: ranges.map(&:id))
+        .for_cache_key(cache_key)
         .index_by { |cache| [cache.tracked_github_builder_id, cache.github_commit_range_id] }
     end
 
