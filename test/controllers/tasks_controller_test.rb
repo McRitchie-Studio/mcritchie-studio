@@ -65,6 +65,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil @new_task.started_at
   end
 
+  test "move task through DevOps handoff stages" do
+    log_in_as(@admin)
+
+    %w[pr_review qa_review prod_ready].each do |stage|
+      patch task_path(@new_task.slug, format: :json),
+            params: { task: { stage: stage } }, as: :json
+      assert_response :success
+      assert_equal stage, @new_task.reload.stage
+    end
+  end
+
   test "move task to failed sets failed_at" do
     log_in_as(@admin)
     patch task_path(@new_task.slug, format: :json),
@@ -122,6 +133,56 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     @new_task.reload
     assert_equal "Updated Title", @new_task.title
+  end
+
+  test "create stores devops handoff metadata" do
+    log_in_as(@admin)
+
+    assert_difference "Task.count", 1 do
+      post tasks_path, params: {
+        task: {
+          title: "Review Turf PR",
+          devops: {
+            kind: "feature",
+            repositories: "turf-monster, turf-vault",
+            branch: "feat/contest-flow",
+            pr_url: "https://github.com/amcritchie/turf-monster/pull/149",
+            qa_url: "https://qa.turfmonster.media/contests",
+            release_train: "2026-06-17-turf",
+            requires_release_conductor: "1",
+            acceptance: "Contest creates on QA\nEntry submits on QA",
+            test_plan: "bin/rails test\nQA devnet mutating smoke"
+          }
+        }
+      }
+    end
+
+    task = Task.order(:created_at).last
+    assert_redirected_to task_path(task.slug)
+    assert task.requires_release_conductor?
+    assert_equal ["turf-monster", "turf-vault"], task.devops_repositories
+    assert_equal ["Contest creates on QA", "Entry submits on QA"], task.devops_acceptance
+    assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
+  end
+
+  test "show renders devops handoff details" do
+    @new_task.update!(
+      metadata: {
+        "devops" => {
+          "kind" => "release",
+          "repositories" => ["mcritchie-studio"],
+          "qa_url" => "https://qa.mcritchie.studio/tasks",
+          "acceptance" => ["Task board shows release metadata"]
+        }
+      }
+    )
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select ".label-upper", "DevOps handoff"
+    assert_select "a[href=?]", "https://qa.mcritchie.studio/tasks"
+    assert_includes response.body, "Task board shows release metadata"
   end
 
   # === Auth enforcement ===

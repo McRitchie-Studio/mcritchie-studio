@@ -14,7 +14,7 @@ Carl is the backend specialist. Crack Rails dev — controllers, models, migrati
 - **Migration Lane** — Captain of the `backend_migration` exclusive lane (`docs/agents/system/exclusive-lanes.md`). Coordinates concurrent migration work across Carl instances; advises Avi on which tickets need the lane during refinement
 
 ## Contact
-- **Email**: `carl@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `carl@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

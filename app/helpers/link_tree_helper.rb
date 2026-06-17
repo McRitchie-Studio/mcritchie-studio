@@ -48,6 +48,7 @@ module LinkTreeHelper
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", desc: "DB schema browser" },
       ] },
       { title: "Ops", links: [
+        { label: "DevOps", href: devops_path, emoji: "🚦", desc: "Apps, test suites, and deploy checks" },
         { label: "Error logs", href: "/error_logs", emoji: "🚨", desc: "Captured errors" },
         { label: "Toast test", href: toast_test_path, emoji: "🔔", desc: "Notification harness" },
         { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", desc: "OAuth handshake" },

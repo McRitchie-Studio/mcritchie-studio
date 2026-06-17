@@ -30,7 +30,10 @@ Default feature sessions are Feature lane only.
 
 1. **Start** from `/Users/alex/projects`.
 2. **Read** root `AGENTS.md`, then the relevant app docs.
-3. **Allocate** a task worktree from McRitchie Studio:
+3. **Create or update** the McRitchie Studio task-board item with affected
+   repos, acceptance criteria, risk tags, and expected checks. Use
+   [`devops-task-board.md`](devops-task-board.md) for the metadata contract.
+4. **Allocate** a task worktree from McRitchie Studio:
 
    ```bash
    cd /Users/alex/projects/mcritchie-studio
@@ -38,15 +41,17 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree new <app> <task-slug>
    ```
 
-4. **Build** only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
-5. **Run** meaningful checks and start the stack when visual/local proof matters:
+5. **Build** only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
+6. **Run** meaningful checks and start the stack when visual/local proof matters:
 
    ```bash
    bin/agent-worktree up <app> <task-slug>
    ```
 
-6. **Commit** coherent work on the feature branch.
-7. **Graduate** through the launcher:
+7. **Update** the task-board item with local URL, branch, PR URL, and checks
+   run.
+8. **Commit** coherent work on the feature branch.
+9. **Graduate** through the launcher:
 
    ```bash
    bin/agent-worktree finish <app> <task-slug>
@@ -54,8 +59,8 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree finish <app> <task-slug> --push --pr
    ```
 
-8. **Handoff** the PR/QA packet. Do not merge to `main` unless assigned the QA
-   or Release lane.
+10. **Handoff** the PR/QA packet by moving the task to `pr_review`. Do not
+   merge to `main` unless assigned the QA or Release lane.
 
 ## Feature Graduation Rules
 
@@ -127,6 +132,9 @@ Action lines mean:
 
 For each PR, Avi checks:
 
+- the task-board acceptance criteria are concrete and still match the request
+- the task has affected repos, branch/PR URL, local/QA URLs where relevant, risk
+  tags, and expected checks recorded in `metadata["devops"]`
 - the PR body matches the diff
 - the branch started from current enough `main`
 - the local proof URL or test evidence is credible
@@ -177,13 +185,18 @@ QA deployment sits between PR merge and production deploy.
 The intended cycle is:
 
 1. Feature agent opens a PR.
-2. Avi reviews and merges when ready.
-3. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
+2. Feature agent moves the task to `pr_review`.
+3. Avi reviews and merges when ready.
+4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
-4. Avi or Steffon deploys the merged `main` ref to the app's QA server with
+5. Avi or Steffon deploys the merged `main` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/main --yes`.
-5. Mr. McRitchie reviews the QA URL.
-6. Production deploy happens only after Mr. McRitchie explicitly approves it.
+6. Avi or Steffon moves the task to `qa_review` and records the QA URL,
+   deployed SHA, release-train tag, and QA checks run.
+7. Mr. McRitchie reviews the QA URL.
+8. Accepted QA work moves to `prod_ready`.
+9. Production deploy happens only after Mr. McRitchie explicitly approves it.
+10. Verified production work moves to `done`.
 
 QA servers are tracked in `config/qa_environments.yml` and operated through
 `bin/qa-server`. A QA deploy is allowed for the QA conductor lane, but it must
@@ -213,7 +226,8 @@ Run the parallel-agent DevOps cycle:
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave comments on PRs that need changes
 - after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
-- run bin/qa-server status <app> and report the QA URL, /up status, release SHA, and what Mr. McRitchie should review
+- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks run
+- run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
 ```
@@ -232,9 +246,11 @@ Promote the accepted QA work to production:
 - read /Users/alex/projects/AGENTS.md and the deployment docs
 - pull latest main in mcritchie-studio and each affected app
 - confirm the QA deployment SHA and production target app
+- confirm the task-board release train and accepted tasks included in the rollout
 - run the app-specific deployment command from the repo docs
 - verify production /up and the user-facing URL
-- report production URL, release SHA/version, checks run, and any follow-up cleanup
+- update tasks with production URL/release SHA/check results
+- report production URL, release SHA/version, tasks deployed, checks run, and any follow-up cleanup
 
 Do not include unrelated PRs or new feature work in this rollout.
 ```

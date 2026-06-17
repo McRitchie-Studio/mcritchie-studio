@@ -112,6 +112,39 @@ class UserTest < ActiveSupport::TestCase
     assert_nil User.from_solana_wallet("nope")
   end
 
+  test "parked identity can be found by email or wallet" do
+    wallet = User.parked_identity_for(email: "team@mcritchie.studio").fetch(:wallet)
+
+    assert_equal "team@mcritchie.studio", User.parked_identity_for(wallet: wallet).fetch(:email)
+  end
+
+  test "parked email signup gets canonical admin identity" do
+    user = User.create!(email: "team@mcritchie.studio")
+
+    assert user.admin?
+    assert_equal "McRitchie Studio Team", user.name
+    assert_equal "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd", user.solana_address
+  end
+
+  test "parked wallet signup gets canonical email identity" do
+    wallet = User.parked_identity_for(email: "team@mcritchie.studio").fetch(:wallet)
+    user = User.create!(solana_address: wallet)
+
+    assert_equal "team@mcritchie.studio", user.email
+    assert user.admin?
+  end
+
+  test "from_solana_wallet links parked wallet to existing email user" do
+    user = User.create!(email: "team@mcritchie.studio")
+    user.update_column(:solana_address, nil)
+
+    found = User.from_solana_wallet(User.parked_identity_for(email: user.email).fetch(:wallet))
+
+    assert_equal user.id, found.id
+    assert_equal "admin", found.role
+    assert_equal User.parked_identity_for(email: user.email).fetch(:wallet), found.solana_address
+  end
+
   test "wallet-only user is valid without email and gets a unique slug" do
     addr = "Wa11etAddrTwo2222222222222222222222222222"
     user = User.create!(solana_address: addr)

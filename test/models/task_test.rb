@@ -64,10 +64,30 @@ class TaskTest < ActiveSupport::TestCase
     task = tasks(:new_task)
     task.start!
     assert_equal "in_progress", task.stage
+    task.update!(stage: "pr_review")
+    assert_equal "pr_review", task.stage
+    task.update!(stage: "qa_review")
+    assert_equal "qa_review", task.stage
+    task.update!(stage: "prod_ready")
+    assert_equal "prod_ready", task.stage
     task.complete!
     assert_equal "done", task.stage
     task.queue!
     assert_equal "queued", task.stage
+  end
+
+  test "all task stages are valid" do
+    Task::STAGES.each do |stage|
+      task = Task.new(title: "Task in #{stage}", stage: stage)
+      assert task.valid?, "#{stage} should be valid"
+    end
+  end
+
+  test "stage labels expose DevOps pipeline names" do
+    assert_equal "PR Review", Task::STAGE_LABELS.fetch("pr_review")
+    assert_equal "QA Review", Task::STAGE_LABELS.fetch("qa_review")
+    assert_equal "Prod Ready", Task::STAGE_LABELS.fetch("prod_ready")
+    assert_equal "Shipped", Task::STAGE_LABELS.fetch("done")
   end
 
   test "stage change sets appropriate timestamp" do
@@ -167,5 +187,45 @@ class TaskTest < ActiveSupport::TestCase
     assert_includes [true, false], acquired
     released = Task.release_migration_lane
     assert_includes [true, false], released
+  end
+
+  # --- DevOps metadata ---
+
+  test "normalizes devops metadata lists from strings and arrays" do
+    metadata = Task.normalize_devops_metadata(
+      "repositories" => "mcritchie-studio, turf-monster\nstudio-engine",
+      "risk_tags" => ["auth", "auth", "deploy"],
+      "acceptance" => "QA URL works\nProduction stays gated",
+      "branch" => " feat/example "
+    )
+
+    assert_equal ["mcritchie-studio", "turf-monster", "studio-engine"], metadata["repositories"]
+    assert_equal ["auth", "deploy"], metadata["risk_tags"]
+    assert_equal ["QA URL works", "Production stays gated"], metadata["acceptance"]
+    assert_equal "feat/example", metadata["branch"]
+  end
+
+  test "devops helpers expose stored release metadata" do
+    task = Task.create!(
+      title: "Ship a feature",
+      metadata: {
+        "devops" => {
+          "kind" => "bug",
+          "repositories" => ["turf-monster"],
+          "release_train" => "2026-06-17-turf",
+          "qa_url" => "https://qa.turfmonster.media/contests",
+          "requires_release_conductor" => "1",
+          "test_plan" => ["bin/rails test"]
+        }
+      }
+    )
+
+    assert task.devops?
+    assert task.requires_release_conductor?
+    assert_equal "bug", task.devops_kind
+    assert_equal ["turf-monster"], task.devops_repositories
+    assert_equal "2026-06-17-turf", task.devops_release_train
+    assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
+    assert_equal ["bin/rails test"], task.devops_test_plan
   end
 end

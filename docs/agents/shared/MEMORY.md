@@ -14,9 +14,9 @@
 - API has no authentication initially (add token auth later)
 
 ## Agent Accounts
-- Shared Gmail: `bot@mcritchie.studio` (all agents)
+- Shared Gmail: `team@mcritchie.studio` (all agents)
 - Per-agent emails: `admin@` (Alex), `mack@` (Mack), `mason@` (Mason), `turf@` (Turf Monster) — all forward to shared inbox
-- 1Password vault under `bot@mcritchie.studio` holds Gmail credentials and Solana wallet keypairs for each agent
+- 1Password vault under `team@mcritchie.studio` holds Gmail credentials and Solana wallet keypairs for each agent
 - Each agent has a dedicated Solana wallet (keypairs in 1Password)
 
 ## Conventions

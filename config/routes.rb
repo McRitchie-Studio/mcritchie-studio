@@ -27,6 +27,7 @@ Rails.application.routes.draw do
   get "e/c/:token", to: "email_tracking#click", as: :email_click
 
   get "dashboard", to: "dashboard#index"
+  get "devops", to: "devops#index", as: :devops
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).

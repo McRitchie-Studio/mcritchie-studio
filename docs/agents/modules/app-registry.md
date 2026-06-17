@@ -59,6 +59,10 @@ itself. Keep the registry status as `planned` until:
 - the app boots on its primary port
 - the `.env`/credential restore path is documented
 - the app README points back to `/Users/alex/projects/AGENTS.md`
+- the app defines parked/core identities for `alex@mcritchie.studio` and
+  `team@mcritchie.studio`, with any app-specific wallet fields wired so first
+  email, Google, or wallet login adopts the seeded row instead of creating a
+  fresh operator account
 - the production app and DNS target are real, if this is a deployed app
 
 Flip to `active` only when `bin/ecosystem-build` should manage the app and the
@@ -70,3 +74,8 @@ hub should expose it in satellite links.
 generate the Rails app, Heroku/GitHub resources, 1Password items, and docs, but
 it should call or preserve the same registry rules instead of inventing another
 app list.
+
+The generated app should also scaffold a parked identity constant on `User`, a
+seed file that consumes that constant, and focused tests proving that a known
+email or wallet login adopts the parked row. This is now part of the managed app
+contract, not an app-specific convenience.

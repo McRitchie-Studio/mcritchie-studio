@@ -29,6 +29,91 @@
       </div>
     </div>
 
+    <% devops = task.devops %>
+    <div class="border border-subtle rounded-lg p-4 mb-5 bg-surface-alt/40">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <p class="label-upper">DevOps handoff</p>
+          <p class="text-xs text-muted mt-1">Feature, bug, QA, and release context for agents and conductors.</p>
+        </div>
+        <label class="inline-flex items-center gap-2 text-xs text-secondary">
+          <%= hidden_field_tag "task[devops][requires_release_conductor]", "0" %>
+          <%= check_box_tag "task[devops][requires_release_conductor]", "1", task.requires_release_conductor?,
+                class: "rounded border-subtle bg-surface text-primary focus:ring-primary" %>
+          Release lane
+        </label>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Type</label>
+          <%= select_tag "task[devops][kind]",
+                options_for_select([["Feature", "feature"], ["Bug", "bug"], ["Chore", "chore"], ["QA", "qa"], ["Release", "release"], ["Cleanup", "cleanup"]], task.devops_kind),
+                class: "input-field" %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Repositories</label>
+          <%= text_field_tag "task[devops][repositories]", task.devops_repositories.join(", "),
+                class: "input-field", placeholder: "mcritchie-studio, turf-monster" %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Release Train</label>
+          <%= text_field_tag "task[devops][release_train]", task.devops_release_train,
+                class: "input-field", placeholder: "2026-06-17-turf-qa" %>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Branch</label>
+          <%= text_field_tag "task[devops][branch]", task.devops_field("branch"),
+                class: "input-field", placeholder: "feat/example" %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">PR URL</label>
+          <%= url_field_tag "task[devops][pr_url]", task.devops_url("pr"),
+                class: "input-field", placeholder: "https://github.com/..." %>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Local URL</label>
+          <%= url_field_tag "task[devops][local_url]", task.devops_url("local"),
+                class: "input-field", placeholder: "http://localhost:3004" %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">QA URL</label>
+          <%= url_field_tag "task[devops][qa_url]", task.devops_url("qa"),
+                class: "input-field", placeholder: "https://qa.mcritchie.studio/..." %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Production URL</label>
+          <%= url_field_tag "task[devops][production_url]", task.devops_url("production"),
+                class: "input-field", placeholder: "https://mcritchie.studio/..." %>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm text-secondary mb-2 font-medium">Risk Tags</label>
+        <%= text_field_tag "task[devops][risk_tags]", task.devops_risk_tags.join(", "),
+              class: "input-field", placeholder: "auth, solana, migration, email" %>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Acceptance Criteria</label>
+          <%= text_area_tag "task[devops][acceptance]", task.devops_acceptance.join("\n"), rows: 5,
+                class: "input-field", placeholder: "One criterion per line" %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Checks / Test Plan</label>
+          <%= text_area_tag "task[devops][test_plan]", task.devops_test_plan.join("\n"), rows: 5,
+                class: "input-field", placeholder: "One check per line" %>
+        </div>
+      </div>
+    </div>
+
     <button type="submit" class="btn btn-primary btn-lg">
       <%= task.persisted? ? "Update Task" : "Create Task" %>
     </button>

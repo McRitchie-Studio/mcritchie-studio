@@ -1,4 +1,4 @@
-<% stages = %w[new queued in_progress done failed archived] %>
+<% stages = Task::BOARD_STAGES + ["archived"] %>
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
@@ -12,10 +12,7 @@ function kanbanBoard() {
     showArchived: false,
     toasts: [],
 
-    stageLabels: {
-      new: 'New', queued: 'Queued', in_progress: 'In Progress',
-      done: 'Done', failed: 'Failed', archived: 'Archived'
-    },
+    stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
     matchesFilter(agent) {
       return !this.agentFilter || agent === this.agentFilter;
@@ -212,17 +209,10 @@ function kanbanBoard() {
         <div class="flex items-center justify-between mb-3 px-1">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
-              <%= stage.humanize %>
+              <%= Task::STAGE_LABELS.fetch(stage) %>
             </h3>
             <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
-              <%= case stage
-                  when 'new' then 'bg-blue-900/50 text-blue-300'
-                  when 'queued' then 'bg-yellow-900/50 text-yellow-300'
-                  when 'in_progress' then 'bg-mint-900/50 text-mint-300'
-                  when 'done' then 'bg-green-900/50 text-green-300'
-                  when 'failed' then 'bg-red-900/50 text-red-300'
-                  when 'archived' then 'bg-surface-alt text-muted'
-                  end %>"
+              <%= task_stage_count_classes(stage) %>"
               data-stage-count="<%= stage %>">
               <%= (@tasks_by_stage[stage] || []).size %>
             </span>
@@ -291,8 +281,37 @@ function kanbanBoard() {
                   <% if task.requires_migration %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
                   <% end %>
+                  <% if task.requires_release_conductor? %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_train lane">REL</span>
+                  <% end %>
                 </div>
               </div>
+
+              <% if task.devops? %>
+                <div class="flex flex-wrap gap-1 mb-1.5">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary border border-primary/30"><%= task.devops_kind %></span>
+                  <% task.devops_repositories.first(2).each do |repo| %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= repo %></span>
+                  <% end %>
+                  <% if task.devops_release_train.present? %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= task.devops_release_train %></span>
+                  <% end %>
+                </div>
+                <div class="flex flex-wrap gap-2 text-[10px] mb-1.5">
+                  <% if (local_url = task.devops_url("local")) %>
+                    <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if (qa_url = task.devops_url("qa")) %>
+                    <%= link_to "QA", qa_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if (production_url = task.devops_url("production")) %>
+                    <%= link_to "Prod", production_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if (pr_url = task.devops_url("pr")) %>
+                    <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                </div>
+              <% end %>
 
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>

@@ -13,7 +13,7 @@ Avi is the Product Owner. Refines tickets, sets the official planning size, revi
 - **Roadmap** — Help prioritize what ships next based on user value vs cost
 
 ## Contact
-- **Email**: `avi@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `avi@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

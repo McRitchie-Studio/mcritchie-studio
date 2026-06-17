@@ -8,7 +8,7 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 
 | Phase | File | Contents |
 |-------|------|----------|
-| 1. Infrastructure | `01_users.rb` | 4 admin users |
+| 1. Infrastructure | `01_users.rb` | Parked operator identities, including admin users |
 | | `02_agents.rb` | 9 agents with avatars (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason). Avatar PNGs at `/public/agents/<slug>.png` — the 5 new agents (Avi/Carl/Shannon/Jasper/Steffon) still need PNG files added. |
 | | `03_skills.rb` | 35 skills + 40 assignments. Skill assignments are sync-style (destroys non-desired rows) so re-seeding cleans up role changes — e.g. Mason's 2026-05-23 move from Infrastructure → Marketing dropped the old infra skills. |
 | 2. Leagues | `10_teams_nfl.rb` | 32 NFL teams (sport/league/conference/division) |
@@ -44,7 +44,7 @@ For weekly in-season refresh, use the non-destructive nflverse delta + ESPN scra
 
 ## Conventions
 
-- Admin: `alex@mcritchie.studio`; sign in by magic link in normal local development.
+- Admins: `alex@mcritchie.studio` and `team@mcritchie.studio` are required parked admin identities; sign in by magic link in normal local development.
 - NFL Draft tweets: oldest→newest in array, `.reverse` before seeding so oldest = top of kanban. Deduped by `x_post_id`.
 - AI Builder Multiple seed candidates are placeholders for public GitHub commit pace analysis. Review cohort, repo scope, and active status before treating results as meaningful.
 - College contracts expire `2026-04-01`. NFL star contracts have `annual_value_cents` (bigint).
