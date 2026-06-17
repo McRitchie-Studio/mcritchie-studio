@@ -64,10 +64,30 @@ class TaskTest < ActiveSupport::TestCase
     task = tasks(:new_task)
     task.start!
     assert_equal "in_progress", task.stage
+    task.update!(stage: "pr_review")
+    assert_equal "pr_review", task.stage
+    task.update!(stage: "qa_review")
+    assert_equal "qa_review", task.stage
+    task.update!(stage: "prod_ready")
+    assert_equal "prod_ready", task.stage
     task.complete!
     assert_equal "done", task.stage
     task.queue!
     assert_equal "queued", task.stage
+  end
+
+  test "all task stages are valid" do
+    Task::STAGES.each do |stage|
+      task = Task.new(title: "Task in #{stage}", stage: stage)
+      assert task.valid?, "#{stage} should be valid"
+    end
+  end
+
+  test "stage labels expose DevOps pipeline names" do
+    assert_equal "PR Review", Task::STAGE_LABELS.fetch("pr_review")
+    assert_equal "QA Review", Task::STAGE_LABELS.fetch("qa_review")
+    assert_equal "Prod Ready", Task::STAGE_LABELS.fetch("prod_ready")
+    assert_equal "Shipped", Task::STAGE_LABELS.fetch("done")
   end
 
   test "stage change sets appropriate timestamp" do

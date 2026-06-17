@@ -1,5 +1,18 @@
 class Task < ApplicationRecord
   SIZES = %w[small medium large xl].freeze
+  STAGE_LABELS = {
+    "new" => "New",
+    "queued" => "Queued",
+    "in_progress" => "In Progress",
+    "pr_review" => "PR Review",
+    "qa_review" => "QA Review",
+    "prod_ready" => "Prod Ready",
+    "done" => "Shipped",
+    "failed" => "Failed",
+    "archived" => "Archived"
+  }.freeze
+  STAGES = STAGE_LABELS.keys.freeze
+  BOARD_STAGES = (STAGES - ["archived"]).freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind branch pr_url local_url qa_url production_url release_train
@@ -12,7 +25,7 @@ class Task < ApplicationRecord
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
-  validates :stage, inclusion: { in: %w[new queued in_progress done failed archived] }
+  validates :stage, inclusion: { in: STAGES }
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -74,6 +87,10 @@ class Task < ApplicationRecord
 
   def requires_release_conductor?
     ActiveModel::Type::Boolean.new.cast(devops.fetch("requires_release_conductor", false))
+  end
+
+  def stage_label
+    STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
 
   def self.normalize_devops_metadata(raw)

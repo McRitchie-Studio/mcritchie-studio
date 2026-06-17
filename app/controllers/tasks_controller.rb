@@ -22,6 +22,8 @@ class TasksController < ApplicationController
     tasks = Task.ordered
     agent_filter = params[:agent_slug].presence || params[:agent].presence
     tasks = tasks.where(agent_slug: agent_filter) if agent_filter
+    stage_filter = params[:stage].presence
+    tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
     @tasks_by_stage = tasks.group_by(&:stage)
     @agents = Agent.order(:position)
   end

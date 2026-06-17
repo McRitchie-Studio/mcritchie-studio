@@ -1,4 +1,4 @@
-<% stages = %w[new queued in_progress done failed archived] %>
+<% stages = Task::BOARD_STAGES + ["archived"] %>
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
@@ -12,10 +12,7 @@ function kanbanBoard() {
     showArchived: false,
     toasts: [],
 
-    stageLabels: {
-      new: 'New', queued: 'Queued', in_progress: 'In Progress',
-      done: 'Done', failed: 'Failed', archived: 'Archived'
-    },
+    stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
     matchesFilter(agent) {
       return !this.agentFilter || agent === this.agentFilter;
@@ -212,17 +209,10 @@ function kanbanBoard() {
         <div class="flex items-center justify-between mb-3 px-1">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
-              <%= stage.humanize %>
+              <%= Task::STAGE_LABELS.fetch(stage) %>
             </h3>
             <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
-              <%= case stage
-                  when 'new' then 'bg-blue-900/50 text-blue-300'
-                  when 'queued' then 'bg-yellow-900/50 text-yellow-300'
-                  when 'in_progress' then 'bg-mint-900/50 text-mint-300'
-                  when 'done' then 'bg-green-900/50 text-green-300'
-                  when 'failed' then 'bg-red-900/50 text-red-300'
-                  when 'archived' then 'bg-surface-alt text-muted'
-                  end %>"
+              <%= task_stage_count_classes(stage) %>"
               data-stage-count="<%= stage %>">
               <%= (@tasks_by_stage[stage] || []).size %>
             </span>

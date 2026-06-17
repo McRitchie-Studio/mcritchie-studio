@@ -14,6 +14,27 @@ tasks when they need to be promoted together.
 Use parent/child modeling only after flat tasks and release-train tags prove too
 weak in real operations.
 
+## Stage Flow
+
+The board stages should mirror the release path, not generic activity buckets:
+
+| Stage | Use when |
+|---|---|
+| `new` | Work is captured but not accepted for an agent yet |
+| `queued` | Scope and acceptance criteria are clear enough for an agent to start |
+| `in_progress` | A feature agent is actively implementing or fixing the task |
+| `pr_review` | Branch is pushed and the PR is ready for Avi review |
+| `qa_review` | PR merged to main and deployed to QA/local review for Mr. McRitchie |
+| `prod_ready` | QA passed and the task is waiting for explicit production approval |
+| `done` | Production or final approved target is shipped and verified |
+| `failed` | Work is blocked by a real failure that needs new action |
+| `archived` | Historical or cleaned-up work that should not appear on the active board |
+
+Do not skip `qa_review` for user-facing app changes. Do not move a task to
+`prod_ready` until the QA URL and checks are recorded. Do not move a task to
+`done` for production work until production has actually deployed and the
+post-deploy check has passed.
+
 ## Task Metadata Contract
 
 Tasks carry DevOps metadata in `tasks.metadata["devops"]`. The UI exposes these
@@ -90,14 +111,15 @@ During handoff, the agent updates:
 
 Avi uses the task board plus `bin/qa-intake`:
 
-1. Find queued or in-progress tasks with PR URLs or branches.
+1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.
 3. Check `risk_tags` for Steffon/infra gate needs.
 4. Merge only ready PRs.
 5. Deploy merged `origin/main` to QA.
-6. Update the task with QA URL, QA release SHA, and checks run.
-7. Leave production tasks queued until Mr. McRitchie explicitly approves
-   release work.
+6. Move the task to `qa_review` with QA URL, QA release SHA, and checks run.
+7. Move accepted QA tasks to `prod_ready`.
+8. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
+   approves release work.
 
 ## Release Train Tags
 

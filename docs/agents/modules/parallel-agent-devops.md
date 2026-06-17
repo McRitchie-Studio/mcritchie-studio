@@ -59,8 +59,8 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree finish <app> <task-slug> --push --pr
    ```
 
-10. **Handoff** the PR/QA packet. Do not merge to `main` unless assigned the QA
-   or Release lane.
+10. **Handoff** the PR/QA packet by moving the task to `pr_review`. Do not
+   merge to `main` unless assigned the QA or Release lane.
 
 ## Feature Graduation Rules
 
@@ -185,15 +185,18 @@ QA deployment sits between PR merge and production deploy.
 The intended cycle is:
 
 1. Feature agent opens a PR.
-2. Avi reviews and merges when ready.
-3. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
+2. Feature agent moves the task to `pr_review`.
+3. Avi reviews and merges when ready.
+4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
-4. Avi or Steffon deploys the merged `main` ref to the app's QA server with
+5. Avi or Steffon deploys the merged `main` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/main --yes`.
-5. Avi or Steffon updates the task-board item with the QA URL, deployed SHA,
-   release-train tag, and QA checks run.
-6. Mr. McRitchie reviews the QA URL.
-7. Production deploy happens only after Mr. McRitchie explicitly approves it.
+6. Avi or Steffon moves the task to `qa_review` and records the QA URL,
+   deployed SHA, release-train tag, and QA checks run.
+7. Mr. McRitchie reviews the QA URL.
+8. Accepted QA work moves to `prod_ready`.
+9. Production deploy happens only after Mr. McRitchie explicitly approves it.
+10. Verified production work moves to `done`.
 
 QA servers are tracked in `config/qa_environments.yml` and operated through
 `bin/qa-server`. A QA deploy is allowed for the QA conductor lane, but it must
@@ -223,7 +226,7 @@ Run the parallel-agent DevOps cycle:
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave comments on PRs that need changes
 - after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
-- update task-board metadata with QA URL, release train, deployed SHA, and checks run
+- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.

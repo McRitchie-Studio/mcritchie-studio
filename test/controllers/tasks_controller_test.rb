@@ -65,6 +65,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil @new_task.started_at
   end
 
+  test "move task through DevOps handoff stages" do
+    log_in_as(@admin)
+
+    %w[pr_review qa_review prod_ready].each do |stage|
+      patch task_path(@new_task.slug, format: :json),
+            params: { task: { stage: stage } }, as: :json
+      assert_response :success
+      assert_equal stage, @new_task.reload.stage
+    end
+  end
+
   test "move task to failed sets failed_at" do
     log_in_as(@admin)
     patch task_path(@new_task.slug, format: :json),
