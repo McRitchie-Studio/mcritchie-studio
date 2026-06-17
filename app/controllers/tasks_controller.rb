@@ -165,6 +165,42 @@ class TasksController < ApplicationController
   end
 
   def task_params
-    params.require(:task).permit(:title, :description, :priority, :agent_slug, :stage)
+    permitted = params.require(:task).permit(
+      :title,
+      :description,
+      :priority,
+      :agent_slug,
+      :stage,
+      devops: [
+        :kind,
+        :branch,
+        :pr_url,
+        :local_url,
+        :qa_url,
+        :production_url,
+        :release_train,
+        :requires_release_conductor,
+        :repositories,
+        :risk_tags,
+        :acceptance,
+        :test_plan
+      ]
+    )
+    attrs = permitted.except(:devops).to_h
+    return attrs unless permitted[:devops]
+
+    attrs[:metadata] = merged_metadata_with_devops(permitted[:devops])
+    attrs
+  end
+
+  def merged_metadata_with_devops(raw_devops)
+    base = (@task&.metadata || {}).deep_dup
+    normalized = Task.normalize_devops_metadata(raw_devops)
+    if normalized.any?
+      base["devops"] = normalized
+    else
+      base.delete("devops")
+    end
+    base
   end
 end

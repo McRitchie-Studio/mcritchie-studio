@@ -13,7 +13,7 @@ Shannon is the UI specialist. Owns frontend development across the ecosystem —
 - **Mobile-First** — Sticky-nav scroll behavior, hold-button interactions, mobile breakpoints
 
 ## Contact
-- **Email**: `shannon@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `shannon@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

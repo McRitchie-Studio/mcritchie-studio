@@ -1,0 +1,84 @@
+apps:
+  mcritchie-studio:
+    display_name: McRitchie Studio
+    qa_url: https://qa.mcritchie.studio
+    production_url: https://mcritchie.studio
+    suites:
+      - name: Rails unit and controller
+        environment: local
+        trigger: Every feature PR and before deploy
+        command: bin/rails test
+        mutates: false
+        notes: Covers models, controllers, jobs, and integration request flows.
+      - name: Tailwind build
+        environment: local
+        trigger: UI/CSS/theme PRs and before deploy
+        command: bin/rails tailwindcss:build
+        mutates: false
+        notes: Proves Tailwind v4 assets compile before QA or production.
+      - name: Local browser smoke
+        environment: local
+        trigger: UI/auth/task-flow PRs
+        command: E2E_PORT=<port> npx playwright test
+        mutates: true
+        notes: Uses local worktree database and local email capture.
+      - name: QA read-only smoke
+        environment: qa
+        trigger: After QA deploy
+        command: QA_BASE_URL=https://qa.mcritchie.studio npx playwright test --grep @qa-readonly
+        mutates: false
+        notes: Banner, signin, task board, and public page health checks.
+      - name: Production read-only smoke
+        environment: production
+        trigger: After approved production deploy
+        command: bin/prod-smoke mcritchie-studio
+        mutates: false
+        notes: Should not create content, send emails, or change provider state.
+
+  turf-monster:
+    display_name: Turf Monster
+    qa_url: https://qa.turfmonster.media
+    production_url: https://app.turfmonster.media
+    suites:
+      - name: Rails unit and controller
+        environment: local
+        trigger: Every feature PR and before deploy
+        command: bin/rails test
+        mutates: false
+        notes: Required for model/controller/job changes.
+      - name: Local browser smoke
+        environment: local
+        trigger: UI/auth/contest PRs
+        command: PW_BASE_URL=http://127.0.0.1:<port> npx playwright test --project=chromium
+        mutates: true
+        notes: Uses worktree DB, local email capture, and local-safe seeded data.
+      - name: QA read-only smoke
+        environment: qa
+        trigger: After QA deploy
+        command: QA_BASE_URL=https://qa.turfmonster.media npx playwright test --grep @qa-readonly
+        mutates: false
+        notes: Banner, signin, contests index, wallet chooser presence, and public page health.
+      - name: QA devnet mutating smoke
+        environment: qa
+        trigger: After Solana, wallet, contest, or entry changes reach QA
+        command: QA_BASE_URL=https://qa.turfmonster.media npx playwright test --grep @qa-devnet-mutating
+        mutates: true
+        notes: Devnet-only contest create/enter checks. Never run against production.
+      - name: Devnet on-chain smoke
+        environment: devnet
+        trigger: Manually or nightly for Solana/contract integration changes
+        command: npx playwright test --grep @devnet
+        mutates: true
+        notes: Uses real devnet resources and funded test wallets.
+      - name: Production read-only smoke
+        environment: production
+        trigger: After approved production deploy
+        command: bin/post_deploy_smoke --app turf-monster-mainnet
+        mutates: false
+        notes: Release, dynos, /up, key routes, payment flags, and core identities.
+      - name: Production live email smoke
+        environment: production
+        trigger: Explicit operator approval only
+        command: bin/post_deploy_smoke --app turf-monster-mainnet --email-smoke
+        mutates: true
+        notes: Sends a real magic link and checks worker delivery.

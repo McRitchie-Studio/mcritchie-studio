@@ -1,6 +1,12 @@
 class Task < ApplicationRecord
   SIZES = %w[small medium large xl].freeze
   MIGRATION_LANE = "backend_migration".freeze
+  DEVOPS_SCALAR_KEYS = %w[
+    kind branch pr_url local_url qa_url production_url release_train
+    requires_release_conductor
+  ].freeze
+  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan].freeze
+  DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
 
@@ -25,6 +31,71 @@ class Task < ApplicationRecord
   scope :recent, -> { order(created_at: :desc) }
   scope :ordered, -> { order(Arel.sql("position ASC NULLS LAST, created_at DESC")) }
   scope :requires_migration, -> { where(requires_migration: true) }
+
+  def devops
+    metadata.fetch("devops", {}) || {}
+  end
+
+  def devops?
+    devops.any?
+  end
+
+  def devops_kind
+    devops.fetch("kind", "").presence || "feature"
+  end
+
+  def devops_release_train
+    devops.fetch("release_train", "").presence
+  end
+
+  def devops_repositories
+    devops_list("repositories")
+  end
+
+  def devops_risk_tags
+    devops_list("risk_tags")
+  end
+
+  def devops_acceptance
+    devops_list("acceptance")
+  end
+
+  def devops_test_plan
+    devops_list("test_plan")
+  end
+
+  def devops_url(name)
+    devops.fetch("#{name}_url", "").presence
+  end
+
+  def devops_field(name)
+    devops.fetch(name.to_s, "").presence
+  end
+
+  def requires_release_conductor?
+    ActiveModel::Type::Boolean.new.cast(devops.fetch("requires_release_conductor", false))
+  end
+
+  def self.normalize_devops_metadata(raw)
+    return {} if raw.blank?
+
+    raw.to_h.each_with_object({}) do |(key, value), normalized|
+      key = key.to_s
+      next unless DEVOPS_KEYS.include?(key)
+
+      normalized_value = DEVOPS_LIST_KEYS.include?(key) ? normalize_devops_list(value) : value.to_s.strip
+      next if normalized_value.blank?
+
+      normalized[key] = normalized_value
+    end
+  end
+
+  def self.normalize_devops_list(value)
+    Array(value).flat_map { |item| item.to_s.split(/[\n,]/) }
+                .map(&:strip)
+                .reject(&:blank?)
+                .uniq
+  end
 
   # Postgres advisory locks are session-scoped — try_acquire and release
   # must run on the same DB connection. Designed for long-lived agent
@@ -58,6 +129,10 @@ class Task < ApplicationRecord
   end
 
   private
+
+  def devops_list(key)
+    self.class.normalize_devops_list(devops.fetch(key.to_s, []))
+  end
 
   def set_stage_timestamp
     case stage

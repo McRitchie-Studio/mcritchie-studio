@@ -13,7 +13,7 @@ Mason runs marketing for the McRitchie ecosystem. Owns brand voice, launch comms
 - **Copywriting** — Marketing copy, push notifications, transactional email tone
 
 ## Contact
-- **Email**: `mason@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `mason@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

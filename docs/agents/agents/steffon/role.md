@@ -14,7 +14,7 @@ Steffon is the gate before production AND the operator of production. He owns **
 - **Recovery** — Owns `docs/agents/system/house-burn-down.md` — fresh-Mac bringup must always work
 
 ## Contact
-- **Email**: `steffon@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `steffon@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

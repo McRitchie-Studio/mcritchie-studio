@@ -65,6 +65,95 @@
       </div>
     <% end %>
 
+    <% if @task.devops? %>
+      <div class="bg-surface-alt rounded-lg p-3 mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="label-upper">DevOps handoff</p>
+          <% if @task.requires_release_conductor? %>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50">RELEASE LANE</span>
+          <% end %>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-3 mb-3">
+          <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Type</p>
+            <p class="text-heading text-sm font-bold mt-0.5"><%= @task.devops_kind.humanize %></p>
+          </div>
+          <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Repositories</p>
+            <p class="text-heading text-sm mt-0.5"><%= @task.devops_repositories.presence&.join(", ") || "—" %></p>
+          </div>
+          <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Release Train</p>
+            <p class="text-heading text-sm mt-0.5"><%= @task.devops_release_train || "—" %></p>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3 mb-3">
+          <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Branch</p>
+            <p class="text-heading text-sm font-mono mt-0.5 break-all"><%= @task.devops_field("branch") || "—" %></p>
+          </div>
+          <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Pull Request</p>
+            <% if (pr_url = @task.devops_url("pr")) %>
+              <%= link_to pr_url, pr_url, class: "text-primary text-sm break-all hover:underline", target: "_blank", rel: "noopener" %>
+            <% else %>
+              <p class="text-heading text-sm mt-0.5">—</p>
+            <% end %>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-3 mb-3">
+          <% [["Local", "local"], ["QA", "qa"], ["Production", "production"]].each do |label, key| %>
+            <div class="bg-surface rounded p-2">
+              <p class="text-[10px] text-muted uppercase tracking-wide"><%= label %> URL</p>
+              <% if (url = @task.devops_url(key)) %>
+                <%= link_to url, url, class: "text-primary text-sm break-all hover:underline", target: "_blank", rel: "noopener" %>
+              <% else %>
+                <p class="text-heading text-sm mt-0.5">—</p>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+
+        <% if @task.devops_risk_tags.any? %>
+          <div class="flex flex-wrap gap-1 mb-3">
+            <% @task.devops_risk_tags.each do |tag| %>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface text-secondary border border-subtle"><%= tag %></span>
+            <% end %>
+          </div>
+        <% end %>
+
+        <div class="grid md:grid-cols-2 gap-3">
+          <div class="bg-surface rounded p-3">
+            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Acceptance Criteria</p>
+            <% if @task.devops_acceptance.any? %>
+              <ul class="space-y-1 text-sm text-body list-disc pl-4">
+                <% @task.devops_acceptance.each do |item| %>
+                  <li><%= item %></li>
+                <% end %>
+              </ul>
+            <% else %>
+              <p class="text-sm text-muted">No criteria recorded.</p>
+            <% end %>
+          </div>
+          <div class="bg-surface rounded p-3">
+            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Checks / Test Plan</p>
+            <% if @task.devops_test_plan.any? %>
+              <ul class="space-y-1 text-sm text-body list-disc pl-4">
+                <% @task.devops_test_plan.each do |item| %>
+                  <li><%= item %></li>
+                <% end %>
+              </ul>
+            <% else %>
+              <p class="text-sm text-muted">No checks recorded.</p>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
     <!-- Sizing -->
     <div class="bg-surface-alt rounded-lg p-3">
       <div class="flex items-center justify-between mb-3">

@@ -13,7 +13,7 @@ Lanes are about *correctness*, not resource limits.
 | Lane | Flag | What triggers it | Concurrency |
 |---|---|---|---|
 | `backend_migration` | `tasks.requires_migration = true` | Any task that adds/modifies/removes a Rails migration, or modifies `db/schema.rb` | One Dev at a time |
-| `release_train` | `tasks.requires_release_conductor = true` | Gem publish, consumer lockfile adoption, production deploy, provider config, or env-var rollout | One conductor at a time per affected repo/app set |
+| `release_train` | `tasks.metadata["devops"]["requires_release_conductor"] = true` | Gem publish, consumer lockfile adoption, production deploy, provider config, or env-var rollout | One conductor at a time per affected repo/app set |
 
 Don't add lanes pre-emptively. Add a lane only after a class of conflict has
 bitten twice, or when an action has irreversible production/provider effects.
@@ -80,6 +80,12 @@ or strand other agents' work. Typical examples:
 - Heroku deploys and post-deploy migrations
 - SES/Resend/provider env-var changes
 - callback URL or domain configuration changes
+
+Release trains are flat task groupings. Do not create parent/child task trees
+for ordinary rollouts. Put the same `metadata["devops"]["release_train"]` value
+on each task that should be promoted together, and mark only tasks requiring
+production, gem publish, provider config, or env-var work with
+`requires_release_conductor`.
 
 The conductor must:
 

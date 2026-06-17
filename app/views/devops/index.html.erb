@@ -1,0 +1,75 @@
+<section class="space-y-8">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="label-upper">Operations</p>
+      <h2 class="text-2xl font-bold text-heading mt-1">DevOps Test Suites</h2>
+      <p class="text-secondary text-sm mt-2 max-w-3xl">
+        Catalog of local, QA, devnet, and production checks. Mutating suites require an explicit target environment and should not run against production unless named as a production-safe smoke.
+      </p>
+    </div>
+    <%= link_to "Task Board", tasks_path, class: "btn btn-outline" %>
+  </div>
+
+  <div class="grid gap-6">
+    <% @apps.each do |slug, app| %>
+      <article class="border border-subtle rounded-lg bg-surface overflow-hidden">
+        <header class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-subtle">
+          <div>
+            <h3 class="text-xl font-bold text-heading"><%= app.fetch("display_name", slug) %></h3>
+            <div class="flex flex-wrap gap-3 text-xs mt-2">
+              <% if app["qa_url"].present? %>
+                <%= link_to "QA", app["qa_url"], class: "text-primary hover:underline", target: "_blank", rel: "noopener" %>
+              <% end %>
+              <% if app["production_url"].present? %>
+                <%= link_to "Production", app["production_url"], class: "text-primary hover:underline", target: "_blank", rel: "noopener" %>
+              <% end %>
+            </div>
+          </div>
+          <span class="text-xs text-muted font-mono"><%= slug %></span>
+        </header>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-alt text-secondary">
+              <tr>
+                <th class="text-left px-4 py-3 font-semibold">Suite</th>
+                <th class="text-left px-4 py-3 font-semibold">Env</th>
+                <th class="text-left px-4 py-3 font-semibold">When Run</th>
+                <th class="text-left px-4 py-3 font-semibold">Command</th>
+                <th class="text-left px-4 py-3 font-semibold">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% app.fetch("suites", []).each do |suite| %>
+                <tr class="border-t border-subtle align-top">
+                  <td class="px-4 py-3">
+                    <p class="font-semibold text-heading"><%= suite.fetch("name") %></p>
+                    <% if suite["notes"].present? %>
+                      <p class="text-xs text-muted mt-1"><%= suite["notes"] %></p>
+                    <% end %>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="px-2 py-1 rounded text-[11px] font-bold uppercase bg-surface-alt text-secondary border border-subtle">
+                      <%= suite.fetch("environment") %>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-secondary"><%= suite.fetch("trigger") %></td>
+                  <td class="px-4 py-3">
+                    <code class="block text-xs text-body bg-inset rounded px-2 py-1 whitespace-nowrap"><%= suite.fetch("command") %></code>
+                  </td>
+                  <td class="px-4 py-3">
+                    <% if suite["mutates"] %>
+                      <span class="px-2 py-1 rounded text-[11px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50">MUTATES</span>
+                    <% else %>
+                      <span class="px-2 py-1 rounded text-[11px] font-bold bg-green-900/50 text-green-300 border border-green-700/50">READ ONLY</span>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </article>
+    <% end %>
+  </div>
+</section>

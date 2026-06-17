@@ -77,6 +77,7 @@ or deploy unless I explicitly assigned that lane.
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
+| DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |

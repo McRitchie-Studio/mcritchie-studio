@@ -16,7 +16,7 @@ and makes architectural decisions.
 - **Escalation** — Handle tasks that require Mr. McRitchie's judgment or cross-agent coordination
 
 ## Contact
-- **Email**: `admin@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `admin@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

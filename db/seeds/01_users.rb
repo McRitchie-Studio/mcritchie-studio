@@ -1,14 +1,10 @@
 # Core users. Each can authenticate via email (magic-link) / Google AND, where a
-# wallet is set, via Solana (Phantom) — all resolving to the SAME user, since
-# the User row carries email + provider/uid + solana_address together.
-users_data = [
-  { name: "Alex McRitchie",  email: "alex@mcritchie.studio",  role: "admin",
-    solana_address: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" }, # Mr. McRitchie's Phantom
-  { name: "Mason McRitchie", email: "mason@mcritchie.studio", role: "admin",
-    solana_address: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" }, # Mason's Phantom
-  { name: "Mack McRitchie",  email: "mack@mcritchie.studio",  role: "admin" },
-  { name: "Turf Monster",    email: "turf@mcritchie.studio",  role: "admin" }
-]
+# wallet is set, via Solana (Phantom) — all resolving to the SAME user. Keep the
+# durable operator list on User::PARKED_IDENTITIES so login, seeds, and future
+# app bootstrap workflows share the same identity contract.
+users_data = User::PARKED_IDENTITIES.map do |identity|
+  identity.merge(solana_address: identity[:wallet])
+end
 
 users_data.each do |data|
   user = User.find_or_create_by!(email: data[:email]) do |u|

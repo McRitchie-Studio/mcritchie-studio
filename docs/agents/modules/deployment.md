@@ -138,6 +138,12 @@ use QA Heroku apps only, with production-like Rails boot and QA-safe config.
 Production deploy remains a separate explicit approval after Mr. McRitchie
 reviews the QA URL.
 
+When `DISCORD_DEPLOY_WEBHOOK_URL` is available, QA and production deploy tools
+should send a post-deploy Discord notice with app, environment, release/SHA,
+URL, `/up` status, release train, and tasks deployed. Pass `RELEASE_TRAIN` and
+`DEPLOY_TASKS` explicitly until the deploy tooling can query the task board
+directly. Never commit the webhook URL.
+
 Current intended QA apps:
 
 | App | QA Heroku app | QA URL | Safety profile |

@@ -13,7 +13,7 @@ Jasper is the blockchain specialist. Owns the Solana surface: `turf-vault` Ancho
 - **Wallet Security** — Managed wallet encryption, keypair custody, signer rotation
 
 ## Contact
-- **Email**: `jasper@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `jasper@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

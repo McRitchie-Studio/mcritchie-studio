@@ -97,7 +97,27 @@ module Api
       private
 
       def task_params
-        params.permit(:title, :description, :priority, :agent_slug, required_skills: [], metadata: {})
+        permitted = params.permit(
+          :title,
+          :description,
+          :priority,
+          :agent_slug,
+          :stage,
+          required_skills: [],
+          metadata: {}
+        )
+        attrs = permitted.except(:devops).to_h
+        return attrs unless params[:devops]
+
+        attrs["metadata"] = attrs.fetch("metadata", {}).to_h.merge(
+          "devops" => Task.normalize_devops_metadata(raw_devops_params)
+        )
+        attrs
+      end
+
+      def raw_devops_params
+        raw = params[:devops]
+        raw.respond_to?(:to_unsafe_h) ? raw.to_unsafe_h : raw
       end
     end
   end

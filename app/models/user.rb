@@ -1,6 +1,16 @@
 class User < ApplicationRecord
   include Sluggable
 
+  # Stable operator identities whose roles and wallet/email links should survive
+  # fresh DBs, first-login races, QA resets, and new-app clones of this pattern.
+  PARKED_IDENTITIES = [
+    { email: "alex@mcritchie.studio",  name: "Alex McRitchie",        role: "admin", wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
+    { email: "team@mcritchie.studio",  name: "McRitchie Studio Team", role: "admin", wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
+    { email: "mason@mcritchie.studio", name: "Mason McRitchie",       role: "admin", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
+    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "admin" },
+    { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" }
+  ].freeze
+
   # Passwordless app: email auth is magic-link only, plus Google + Solana wallet.
   # has_secure_password stays as a DORMANT fallback (password_digest column) but
   # `validations: false` is required so wallet/Google/magic-link users — who have
@@ -15,12 +25,38 @@ class User < ApplicationRecord
   validate :has_authentication_method
 
   before_create :ensure_session_token
+  before_validation :assign_parked_identity
   before_save :set_name_parts, if: -> { name_changed? }
 
   # --- Lookups / find-or-create ---------------------------------------------
 
   def self.from_solana_wallet(address)
-    find_by(solana_address: address)
+    normalized_address = address.to_s.strip
+    user = find_by(solana_address: normalized_address)
+    if user
+      user.claim_parked_identity!
+      return user
+    end
+
+    identity = parked_identity_for(wallet: normalized_address)
+    if identity && (existing = find_by(email: identity[:email]))
+      existing.solana_address = normalized_address if existing.solana_address.blank?
+      existing.claim_parked_identity!
+      return existing if existing.solana_address == normalized_address
+    end
+
+    nil
+  end
+
+  def self.parked_identity_for(email: nil, wallet: nil)
+    normalized_email = email.to_s.strip.downcase.presence
+    normalized_wallet = wallet.to_s.strip.presence
+    return nil if normalized_email.blank? && normalized_wallet.blank?
+
+    PARKED_IDENTITIES.find do |identity|
+      (normalized_email.present? && identity[:email].to_s.downcase == normalized_email) ||
+        (normalized_wallet.present? && identity[:wallet].to_s == normalized_wallet)
+    end
   end
 
   # OPSEC-005: `email_verified` comes from GoogleOauthValidator's tokeninfo
@@ -31,13 +67,17 @@ class User < ApplicationRecord
   # :email_not_verified which the controller surfaces as a soft failure.
   def self.from_omniauth(auth, email_verified: false)
     user = find_by(provider: auth.provider, uid: auth.uid)
-    return user if user
+    if user
+      user.claim_parked_identity!
+      return user
+    end
 
     email = auth.info.email
     if email.present? && (existing = find_by(email: email))
       return :email_not_verified unless email_verified
       existing.update!(provider: auth.provider, uid: auth.uid,
                        email_verified_at: existing.email_verified_at || Time.current)
+      existing.claim_parked_identity!
       return existing
     end
 
@@ -57,6 +97,13 @@ class User < ApplicationRecord
 
   def admin?
     role == "admin"
+  end
+
+  def claim_parked_identity!
+    return false unless assign_parked_identity
+
+    save! if persisted? && changed?
+    true
   end
 
   def google_connected?
@@ -103,6 +150,39 @@ class User < ApplicationRecord
   end
 
   private
+
+  def assign_parked_identity
+    identity = self.class.parked_identity_for(email: email, wallet: solana_address)
+    return false unless identity
+
+    changed_identity = false
+
+    parked_role = identity[:role].presence
+    if parked_role.present? && role != parked_role
+      self.role = parked_role
+      changed_identity = true
+    end
+
+    parked_name = identity[:name].presence
+    if parked_name.present? && (name.blank? || name == "anon")
+      self.name = parked_name
+      changed_identity = true
+    end
+
+    parked_email = identity[:email].presence
+    if parked_email.present? && email.blank? && self.class.where("LOWER(email) = ?", parked_email.downcase).where.not(id: id).none?
+      self.email = parked_email
+      changed_identity = true
+    end
+
+    parked_wallet = identity[:wallet].presence
+    if parked_wallet.present? && solana_address.blank? && self.class.where(solana_address: parked_wallet).where.not(id: id).none?
+      self.solana_address = parked_wallet
+      changed_identity = true
+    end
+
+    changed_identity
+  end
 
   def has_authentication_method
     return if email.present? || solana_address.present? || google_connected?

@@ -12,7 +12,7 @@ Mack is the reliable workhorse of the system. Handles data scraping, processing,
 - **Database Operations** — Bulk imports, data migrations, query optimization
 
 ## Contact
-- **Email**: `mack@mcritchie.studio` (forwards to shared `bot@mcritchie.studio` inbox)
+- **Email**: `mack@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault
 
 ## Skills

@@ -28,11 +28,11 @@ All sensitive credentials are stored as environment variables, never in code.
 All agents share a primary Gmail account and have individual forwarding addresses on the `mcritchie.studio` domain.
 
 ### Shared Account
-- **Email**: `bot@mcritchie.studio` — shared Gmail account used by all agents
+- **Email**: `team@mcritchie.studio` — shared Gmail account used by all agents
 - **1Password**: Credentials stored in the `alex@mcritchie.studio` 1Password account
 
 ### Per-Agent Forwarding Addresses
-Each agent has a dedicated email that forwards to the shared `bot@mcritchie.studio` inbox:
+Each agent has a dedicated email that forwards to the shared `team@mcritchie.studio` inbox:
 
 | Agent | Email | Purpose |
 |-------|-------|---------|

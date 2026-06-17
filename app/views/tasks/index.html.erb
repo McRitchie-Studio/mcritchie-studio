@@ -291,8 +291,37 @@ function kanbanBoard() {
                   <% if task.requires_migration %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
                   <% end %>
+                  <% if task.requires_release_conductor? %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_train lane">REL</span>
+                  <% end %>
                 </div>
               </div>
+
+              <% if task.devops? %>
+                <div class="flex flex-wrap gap-1 mb-1.5">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary border border-primary/30"><%= task.devops_kind %></span>
+                  <% task.devops_repositories.first(2).each do |repo| %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= repo %></span>
+                  <% end %>
+                  <% if task.devops_release_train.present? %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= task.devops_release_train %></span>
+                  <% end %>
+                </div>
+                <div class="flex flex-wrap gap-2 text-[10px] mb-1.5">
+                  <% if (local_url = task.devops_url("local")) %>
+                    <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if (qa_url = task.devops_url("qa")) %>
+                    <%= link_to "QA", qa_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if (production_url = task.devops_url("production")) %>
+                    <%= link_to "Prod", production_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if (pr_url = task.devops_url("pr")) %>
+                    <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                </div>
+              <% end %>
 
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
