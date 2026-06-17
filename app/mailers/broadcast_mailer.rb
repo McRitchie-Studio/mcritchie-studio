@@ -25,16 +25,15 @@ class BroadcastMailer < ApplicationMailer
 
   private
 
-  # Unsubscribe links must be absolute. The dev default_url_options pins port
-  # 3000 (the main app), but worktrees serve on allocated ports — so pass host +
-  # port explicitly. Set BROADCAST_HOST in prod (e.g. mcritchie.studio).
+  # Unsubscribe/tracking links must be absolute and point at the environment
+  # that sent the email. BROADCAST_HOST is an optional campaign-specific
+  # override; otherwise use the app's mailer defaults so QA/worktree links follow
+  # MAILER_HOST/APP_PORT instead of silently pointing at another host.
   def url_host_options
-    if (host = ENV["BROADCAST_HOST"]).present?
-      { host: host }
-    elsif Rails.env.production?
-      { host: "mcritchie.studio" }
-    else
-      { host: "127.0.0.1", port: 3030 }
-    end
+    options = Rails.application.config.action_mailer.default_url_options.to_h.symbolize_keys
+    options[:host] = ENV["BROADCAST_HOST"] if ENV["BROADCAST_HOST"].present?
+    options[:host] ||= "localhost"
+    options[:port] ||= ENV["APP_PORT"].to_i if !Rails.env.production? && ENV["APP_PORT"].present?
+    options
   end
 end

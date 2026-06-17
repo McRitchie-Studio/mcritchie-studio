@@ -226,7 +226,10 @@ Minimum rules for broadcast surfaces:
    `LOCAL_EMAIL_CAPTURE=1`.
 4. Keep templates, campaign copy, and marketing sender defaults in the owning
    app.
-5. Add provider smoke proof before sending to a real list.
+5. Generate unsubscribe, open-pixel, and click-tracking URLs from the app's
+   mailer host defaults so QA/worktree links do not point at production.
+   Use `BROADCAST_HOST` only for an intentional campaign-specific host override.
+6. Add provider smoke proof before sending to a real list.
 
 ## Recovery
 

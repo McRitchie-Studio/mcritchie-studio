@@ -84,6 +84,8 @@ Environment variables:
 - `SES_AWS_ACCESS_KEY_ID` and `SES_AWS_SECRET_ACCESS_KEY` for `ses:*` checks
 - `MAILER_FROM`
 - `MARKETING_MAILER_FROM`
+- `BROADCAST_HOST` only if broadcast unsubscribe/tracking links should use a
+  host different from `MAILER_HOST`
 - `RESEND_MAILER_FROM`
 - `RESEND_API_KEY` only for rollback.
 
@@ -94,6 +96,10 @@ fallback uses `RESEND_MAILER_FROM="McRitchie Studio
 <team@mcritchie.studio>"`, which is also the shared fallback sender for future
 apps before their SES setup is complete. This fallback is valid only while
 `mcritchie.studio` is verified in the Resend account backing `RESEND_API_KEY`.
+Broadcast unsubscribe, open-pixel, and click-tracking links use Action Mailer's
+default URL options, so QA inherits `MAILER_HOST=qa.mcritchie.studio` and
+worktrees inherit `APP_PORT`. Set `BROADCAST_HOST` only for an intentional
+campaign-specific host override.
 An app-level success response does not prove delivery; the provider smoke must
 also show the durable email job completing without a Resend error.
 
