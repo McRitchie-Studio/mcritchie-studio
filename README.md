@@ -79,7 +79,9 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
 This labels open work as ready for Avi, needing checks review, needing the
-feature agent, missing a local branch, or safe to ledger for later cleanup.
+feature agent, missing a local branch, ready to open a PR, or safe to ledger for
+later cleanup. Each queue item prints an `action:` line; follow that before
+guessing at the next owner.
 
 ## Adding or promoting apps
 

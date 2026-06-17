@@ -157,7 +157,8 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 
 The command joins open GitHub PRs to the local worktree registry and labels
 items as `avi-ready`, `avi-ready-draft`, `checks-review`, `merge-risk`,
-`needs-agent`, or `missing-local-branch`.
+`needs-agent`, `missing-local-branch`, or `ready-to-open-pr`. Each queue item
+also prints an `action:` line; use it as the next owner handoff.
 
 QA servers, once provisioned, are operated with `mcritchie-studio/bin/qa-server`.
 They are release-candidate targets for Mr. McRitchie review before production;

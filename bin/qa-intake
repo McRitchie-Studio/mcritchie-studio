@@ -205,6 +205,58 @@ def pr_notes(pr, worktree)
   notes
 end
 
+def pr_action(status, pr, worktree)
+  case status
+  when "missing-local-branch"
+    "recreate a local worktree for `#{pr.fetch("branch", pr["headRefName"])}` or ask the branch owner to rebase; do not merge blind"
+  when "needs-agent"
+    "return to the feature agent to resolve local blockers before Avi review"
+  when "merge-risk"
+    "rebase or repair the branch until GitHub reports a clean merge state"
+  when "checks-review"
+    "inspect checks/merge state and wait for green or an explicit conductor override"
+  when "avi-ready-draft"
+    "confirm owner intent, mark ready for review, then Avi can review"
+  when "avi-ready"
+    "Avi can review for scope, tests, and merge safety"
+  else
+    if worktree_ready_for_avi?(worktree)
+      "Avi can review, but inspect notes because this did not hit the fast-path label"
+    else
+      "inspect notes and decide whether this belongs with the feature agent, Avi, or Steffon"
+    end
+  end
+end
+
+def local_action(worktree)
+  if worktree_ready_for_avi?(worktree)
+    "open a draft PR with `bin/agent-worktree finish #{worktree.fetch("app")} #{worktree.fetch("task")} --push --pr`"
+  elsif truthy?(worktree["dirty"])
+    "commit, stash, or intentionally discard local edits before QA handoff"
+  elsif !zeroish?(worktree["behind_origin_main"])
+    "rebase on `origin/main`, resolve conflicts, test, and force-push with lease if already pushed"
+  elsif Array(worktree["issues"]).any?
+    "resolve listed lifecycle issues, then rerun `bin/qa-intake --refresh`"
+  else
+    "inspect manually; branch is ahead but did not satisfy QA readiness rules"
+  end
+end
+
+def attention_action(worktree)
+  issues = Array(worktree["issues"]).join("; ")
+  return "run cleanup workflow after approval; branch is already contained in `origin/main`" if issues.include?("cleanup candidate")
+  return "remove stale pidfiles or restart the stack with `bin/agent-worktree up #{worktree.fetch("app")} #{worktree.fetch("task")}`" if issues.include?("stale")
+  return "rebase this worktree on `origin/main` before QA handoff" if issues.include?("behind origin/main")
+  return "commit or intentionally clear uncommitted changes" if issues.include?("dirty worktree")
+  return "fix stack env/database/port health, then rerun intake" if issues.match?(/missing|database|port|Redis|LOCAL_EMAIL_CAPTURE/)
+
+  "inspect listed issues and assign back to the owning agent"
+end
+
+def cleanup_action(worktree)
+  "ledger with `bin/agent-worktree cleanup --write`, then remove the worktree after Mr. McRitchie or the conductor approves deletion"
+end
+
 def build_intake(registry, prs, apps, worktrees, warnings)
   by_app_branch = worktrees.each_with_object({}) do |worktree, index|
     index[[worktree.fetch("app"), worktree.fetch("branch")]] = worktree
@@ -216,8 +268,9 @@ def build_intake(registry, prs, apps, worktrees, warnings)
 
   pr_queue = prs.sort_by { |pr| [pr.fetch("app"), pr.fetch("number")] }.map do |pr|
     worktree = by_app_branch[[pr.fetch("app"), pr.fetch("headRefName")]]
+    status = status_label_for_pr(pr, worktree)
     {
-      "status" => status_label_for_pr(pr, worktree),
+      "status" => status,
       "app" => pr.fetch("app"),
       "repo" => pr.fetch("repo"),
       "number" => pr.fetch("number"),
@@ -228,7 +281,8 @@ def build_intake(registry, prs, apps, worktrees, warnings)
       "base" => pr.fetch("baseRefName"),
       "updated_at" => pr.fetch("updatedAt"),
       "local_worktree" => worktree&.fetch("worktree"),
-      "notes" => pr_notes(pr, worktree)
+      "notes" => pr_notes(pr, worktree),
+      "action" => pr_action(status, pr, worktree)
     }
   end
 
@@ -239,12 +293,15 @@ def build_intake(registry, prs, apps, worktrees, warnings)
 
     !prs_by_app_branch.key?([worktree.fetch("app"), worktree.fetch("branch")])
   end.sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+    .map { |worktree| worktree.merge("action" => local_action(worktree)) }
 
   attention = worktrees.select { |worktree| worktree_needs_attention?(worktree) }
                        .sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+                       .map { |worktree| worktree.merge("action" => attention_action(worktree)) }
 
   cleanup = worktrees.select { |worktree| truthy?(worktree["cleanup_candidate"]) }
                      .sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+                     .map { |worktree| worktree.merge("action" => cleanup_action(worktree)) }
 
   {
     "generated_at" => Time.now.utc.iso8601,
@@ -284,6 +341,7 @@ def print_pr_queue(prs)
     puts "  #{pr.fetch("url")}"
     puts "  branch=#{pr.fetch("branch")} base=#{pr.fetch("base")} local=#{pr["local_worktree"] || "none"}"
     puts "  notes: #{pr.fetch("notes").join("; ")}"
+    puts "  action: #{pr.fetch("action")}"
   end
 end
 
@@ -301,6 +359,7 @@ def print_local_without_pr(worktrees)
     puts "  local: #{worktree["local_url"] || "none"}  inbox: #{worktree["local_inbox_url"] || "none"}"
     issues = Array(worktree["issues"])
     puts "  issues: #{issues.empty? ? "none" : issues.join("; ")}"
+    puts "  action: #{worktree.fetch("action") { local_action(worktree) }}"
   end
 end
 
@@ -315,6 +374,7 @@ def print_attention(worktrees)
     puts "#{worktree.fetch("label")} #{worktree.fetch("health")} #{worktree.fetch("branch")} +#{worktree["ahead_origin_main"]}/-#{worktree["behind_origin_main"]}"
     puts "  path: #{worktree.fetch("worktree")}"
     puts "  issues: #{Array(worktree["issues"]).join("; ")}"
+    puts "  action: #{worktree.fetch("action") { attention_action(worktree) }}"
   end
 end
 
@@ -328,6 +388,7 @@ def print_cleanup(worktrees)
   worktrees.each do |worktree|
     puts "#{worktree.fetch("label")} #{worktree.fetch("worktree")}"
     puts "  branch=#{worktree.fetch("branch")} head=#{worktree.fetch("head")}"
+    puts "  action: #{worktree.fetch("action") { cleanup_action(worktree) }}"
   end
   puts
   puts "Removal remains approval-gated. Use bin/agent-worktree cleanup --write to ledger candidates first."

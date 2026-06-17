@@ -89,7 +89,9 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
 state with open GitHub PRs, and prints an Avi-ready queue. Add apps to
 `--apps` as new satellites are promoted. Use `--json` when a supervisor script
-or dashboard should consume the same queue.
+or dashboard should consume the same queue. Every printed queue item includes an
+`action:` line. Treat that action as the next owner handoff unless new evidence
+from the diff, tests, or Mr. McRitchie changes the call.
 
 Status labels mean:
 
@@ -105,6 +107,22 @@ Status labels mean:
   tree, stale branch, broken `/up`, missing stack env, or Redis slot problem.
 - `missing-local-branch`: GitHub has an open PR, but the current machine has no
   matching local worktree.
+- `ready-to-open-pr`: local branch has no matching open PR and is clean,
+  current with `origin/main`, and ready for `bin/agent-worktree finish`.
+
+Action lines mean:
+
+- `Avi can review...`: review diff, evidence, overlap, then merge or comment.
+- `return to the feature agent...`: do not merge; the branch owner needs to
+  resolve local blockers.
+- `rebase or repair...`: merge state is unsafe; fix branch freshness/conflicts
+  before QA.
+- `inspect checks...`: wait for CI/checks or make an explicit conductor
+  decision.
+- `recreate a local worktree...`: the machine cannot inspect the branch safely;
+  fetch/recreate it or ask the branch owner for a handoff.
+- `open a draft PR...`: run the printed finish command from the worktree owner
+  lane, then let Avi review.
 
 For each PR, Avi checks:
 
@@ -183,7 +201,8 @@ Run the parallel-agent DevOps cycle:
 - run `bin/qa-intake --refresh --apps mcritchie-studio,turf-monster` from
   McRitchie Studio, adding any other app mentioned in the current work
 - use the QA intake queue to identify avi-ready, checks-review, merge-risk,
-  needs-agent, missing-local-branch, and cleanup candidates
+  needs-agent, missing-local-branch, ready-to-open-pr, and cleanup candidates;
+  follow each item's `action:` line for the next owner handoff
 - review each PR for diff/description match, CI or local proof, docs impact, migrations, auth/email/payment/Solana risk, and overlap with other open PRs
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave comments on PRs that need changes
