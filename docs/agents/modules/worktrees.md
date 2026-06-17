@@ -102,6 +102,32 @@ Deletion remains manual and approval-gated:
 2. Confirm `bin/agent-worktree doctor <app>` has no dirty or unique-work warnings for the target.
 3. Add or confirm the delete-later ledger entry.
 4. Remove with `git -C /Users/alex/projects/<repo> worktree remove /Users/alex/projects/<repo>/.worktrees/<task-slug>` only after approval.
+5. Delete the stale local branch only after confirming the branch content is
+   preserved by `origin/main` or intentionally abandoned.
+6. Run `bin/agent-worktree snapshot <app> --write` and
+   `bin/qa-intake --refresh --apps <apps>` so the conductor registry no longer
+   reports the removed worktree.
+
+## Squash-Merge Cleanup
+
+GitHub squash merges do not preserve the feature branch SHA on `main`. After a
+PR lands, a branch can appear behind `origin/main` even when all of its content
+was merged. Do not rely on ahead/behind alone.
+
+Before removing a squash-merged worktree:
+
+1. Pull the primary checkout so `origin/main` is current.
+2. From the feature worktree, confirm the final diff is empty:
+
+   ```bash
+   git diff --stat origin/main..HEAD
+   git diff --name-status origin/main..HEAD
+   ```
+
+3. If both commands are empty, stop the stack, ledger the cleanup, remove the
+   worktree, delete the stale local branch, and refresh the registry.
+4. If the diff is not empty, do not delete. The branch contains work not
+   represented on `main`; send it back through PR/QA or salvage deliberately.
 
 ## Rules
 

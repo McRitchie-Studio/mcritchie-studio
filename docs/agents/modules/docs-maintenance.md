@@ -36,6 +36,21 @@ Use this before handing a feature back:
 6. Return an inspectable result: local URL, local inbox URL, screenshot, test
    summary, commit SHA, or concrete blocker.
 
+## Session Retrospectives
+
+After a long or high-leverage session, add a short retrospective under
+`docs/agents/audits/` when the conversation uncovered reusable operational
+lessons. Retrospectives should capture:
+
+- What worked.
+- What caused friction.
+- Which docs or tools were updated.
+- What future agents should do differently.
+
+Keep retrospectives distinct from closeout audits. A closeout says what the
+system state is now; a retrospective explains what the team learned while
+getting there.
+
 ## Recurring Drift Maintenance
 
 Do this weekly, or after several agent sessions:

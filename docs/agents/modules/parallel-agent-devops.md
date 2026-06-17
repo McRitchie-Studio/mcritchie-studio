@@ -120,7 +120,8 @@ Action lines mean:
 - `inspect checks...`: wait for CI/checks or make an explicit conductor
   decision.
 - `recreate a local worktree...`: the machine cannot inspect the branch safely;
-  fetch/recreate it or ask the branch owner for a handoff.
+  fetch/recreate it or ask the branch owner for a handoff. If another active
+  agent owns the PR, do not take it over unless Mr. McRitchie assigns that lane.
 - `open a draft PR...`: run the printed finish command from the worktree owner
   lane, then let Avi review.
 
@@ -135,6 +136,11 @@ For each PR, Avi checks:
 
 Avi should avoid rewriting feature branches unless taking explicit ownership of
 the fix. If Avi does modify a PR, the PR comment must say what changed and why.
+
+Long-running CI is not automatically a code failure. If GitHub checks are still
+progressing, especially browser install or Playwright shard startup, watch the
+run until it completes or exposes logs/artifacts. Do not push speculative
+changes solely because one shard is slow while other checks are green.
 
 ## Steffon QA Gate
 
@@ -243,6 +249,12 @@ Do not include unrelated PRs or new feature work in this rollout.
   current machine queue is captured before branches, pidfiles, or ports move.
 - `cleanup` only records candidates in the delete-later ledger; removal remains
   approval-gated.
+- After a squash merge, ahead/behind can look stale even when the branch diff is
+  fully represented on `origin/main`. Confirm `git diff origin/main..HEAD` is
+  empty before deleting the worktree or local branch.
+- After removing a worktree, run `bin/agent-worktree snapshot <app> --write`
+  and then `bin/qa-intake --refresh --apps ...` so stale registry entries do not
+  linger in the conductor queue.
 - Feature agents do not force-push shared branches. If a rebase needs a push,
   use `--force-with-lease` only on your own branch.
 - If another agent moved `origin/main`, rebase and rerun checks before PR.

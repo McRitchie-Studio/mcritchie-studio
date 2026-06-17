@@ -86,6 +86,7 @@ or deploy unless I explicitly assigned that lane.
 | Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
 | Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
 | Current final closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-17.md` |
+| Session retrospective | `mcritchie-studio/docs/agents/audits/session-retrospective-2026-06-17.md` |
 | Prior final audit | `mcritchie-studio/docs/agents/audits/fresh-final-audit-2026-06-15.md` |
 | Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |

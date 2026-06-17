@@ -54,7 +54,7 @@ cmp -s /Users/alex/projects/AGENTS.md /Users/alex/projects/mcritchie-studio/docs
 
 ## Findings
 
-### 1. Cleanup Queue Is Clean; One Turf Branch Is Active
+### 1. Cleanup Queue Is Clean
 
 McRitchie Studio is in the clean state this audit was trying to reach:
 
