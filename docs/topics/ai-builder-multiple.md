@@ -9,6 +9,9 @@ a builder-activity index, not a productivity measure.
   login during a Saturday-Friday UTC week.
 - **Commit Range** — the explicit Saturday-Friday UTC period used for the
   displayed weekly commit log. Dashboard headers show the Friday end date.
+- **Calendar Year / Quarter Totals** — report-only aggregates derived from
+  cached Saturday-Friday commit ranges. A range is assigned to the calendar
+  year and quarter of its Friday end date.
 - **Builder Baseline** — average weekly non-merge commits over the prior 90
   days before that week.
 - **Builder Multiple** — non-merge weekly commits divided by that builder's
@@ -124,6 +127,18 @@ Use `START_AFTER=github_login` to continue from a known login, `COHORT=ai_builde
 or `COHORT=control_builder` to limit the batch, and `SKIP_COMPLETE=false` to
 force a refresh of already-complete builders.
 
+For the curated public roster, use the included-builder batch task. It targets
+only active `Builder` rows with `included_in_roster=true`, while still using
+the same five-year cache completeness check and GitHub pacing controls:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=3 \
+GITHUB_SEARCH_RANGE_DAYS=91 \
+GITHUB_RATE_LIMIT_PAUSE_SECONDS=180 \
+GITHUB_RATE_LIMIT_RETRIES=5 \
+bin/rails github:ai_builder_multiple:fetch_included_last_five_years_batch BATCH_SIZE=10
+```
+
 The public builder roster has a separate `included_in_roster` flag so noisy or
 below-cutoff candidates can be hidden without deleting their identity or cached
 commit data. After cache rows are populated, apply the current roster cutoff at
@@ -220,6 +235,16 @@ The public Ruby builder roster is available at:
 It shows the active `Builder`/`Person` roster with avatar, GitHub username,
 location, and the trailing thirteen cached Saturday-Friday commit ranges. Use
 `/builders?language=Ruby` for the Ruby-only gist slice.
+
+The included-roster five-year history page is available at:
+
+```text
+/builders/history
+```
+
+It shows total commits, calendar-year totals, calendar-quarter totals,
+Saturday-Friday weekly counts back to `2021-07-24`, and a line chart with one
+quarterly commit-count line per included builder.
 
 Production/QA seed data for owner-requested monitored builders lives in:
 

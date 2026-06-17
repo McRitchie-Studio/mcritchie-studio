@@ -99,4 +99,68 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_no_match "excluded-builder", response.body
     assert Builder.exists?(github_login: "excluded-builder")
   end
+
+  test "history renders included builders with totals years quarters and weekly counts" do
+    included = Builder.create!(
+      person: Person.create!(first_name: "Included", last_name: "History"),
+      github_login: "included-history",
+      active: true,
+      included_in_roster: true
+    )
+    excluded = Builder.create!(
+      person: Person.create!(first_name: "Excluded", last_name: "History"),
+      github_login: "excluded-history",
+      active: true,
+      included_in_roster: false
+    )
+    included_tracked = TrackedGithubBuilder.create!(
+      github_login: included.github_login,
+      display_name: included.display_name,
+      cohort: "control_builder",
+      active: true
+    )
+    excluded_tracked = TrackedGithubBuilder.create!(
+      github_login: excluded.github_login,
+      display_name: excluded.display_name,
+      cohort: "control_builder",
+      active: true
+    )
+    old_range = GithubCommitRange.for_week_start(Date.new(2021, 7, 24))
+    new_range = GithubCommitRange.for_week_start(Date.new(2022, 1, 1))
+    create_cache(included_tracked, old_range, 4)
+    create_cache(included_tracked, new_range, 8)
+    create_cache(excluded_tracked, new_range, 99)
+
+    get history_builders_path
+
+    assert_response :success
+    assert_select "h2", "Builder Commit History"
+    assert_select "svg[aria-label=?]", "Quarterly commit counts by builder"
+    assert_match "included-history", response.body
+    assert_no_match "excluded-history", response.body
+    assert_select "th", text: "Total"
+    assert_select "th", text: /2022/
+    assert_select "th", text: /Q1/
+    assert_select "th", text: /Jul 30/
+    assert_select "td", text: "12"
+    assert_select "td", text: "8"
+    assert_select "td", text: "4"
+    assert_match "2/2 weeks", response.body
+  end
+
+  private
+
+  def create_cache(tracked, range, commits_count)
+    GithubBuilderCommitRangeCache.create!(
+      tracked_github_builder: tracked,
+      github_commit_range: range,
+      github_login: tracked.github_login,
+      cohort: tracked.cohort,
+      commits_count: commits_count,
+      non_merge_commits_count: commits_count,
+      bot_adjusted_commits_count: commits_count,
+      active_repos_count: 1,
+      cached_at: Time.current
+    )
+  end
 end

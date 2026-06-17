@@ -1,5 +1,5 @@
 class BuildersController < ApplicationController
-  skip_before_action :require_authentication, only: [:index]
+  skip_before_action :require_authentication, only: [:index, :history]
 
   RANGE_LIMIT = 13
 
@@ -9,6 +9,17 @@ class BuildersController < ApplicationController
     @builders = builders_scope.to_a
     @builder_rows = builder_rows
     @normalized_scores_by_cache_id = normalized_scores_by_cache_id
+  end
+
+  def history
+    @language = params[:language].presence
+    @builders = builders_scope.to_a
+    @report = Github::BuilderCommitHistoryReport.new(builders: @builders).build
+    @chart_quarters = @report.chart_quarters
+    @chart_max_value = [
+      @report.rows.flat_map { |row| @chart_quarters.map { |quarter| row[:quarter_totals][quarter.key].to_i } }.max.to_i,
+      1
+    ].max
   end
 
   private

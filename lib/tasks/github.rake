@@ -110,6 +110,46 @@ namespace :github do
       end
     end
 
+    desc "Fetch five-year commit history for builders included in the public roster. [BATCH_SIZE=10] [START_AFTER=github_login] [SKIP_COMPLETE=true]"
+    task fetch_included_last_five_years_batch: :environment do
+      $stdout.sync = true
+      logins = Builder.active.included_in_roster.order(:github_login).pluck(:github_login)
+      if ENV["START_AFTER"].present?
+        start_after = ENV["START_AFTER"].strip.downcase
+        logins = logins.select { |login| login > start_after }
+      end
+
+      batch_size = ENV.fetch("BATCH_SIZE", ENV.fetch("LIMIT", Github::BuilderHistoryBatchRunner::DEFAULT_BATCH_SIZE)).to_i
+      runner = Github::BuilderHistoryBatchRunner.new(reporter: ->(message) { puts message })
+      result = runner.run!(
+        today: parse_today.call,
+        batch_size: batch_size,
+        github_logins: logins,
+        skip_complete: ENV.fetch("SKIP_COMPLETE", "true")
+      )
+
+      puts "AI Builder Multiple included-roster five-year batch complete"
+      puts "  window: #{result[:window_start]} to #{result[:window_end]}"
+      puts "  weeks per builder: #{result[:week_count]}"
+      puts "  included roster candidates after START_AFTER: #{logins.size}"
+      puts "  selected builders: #{result[:selected_logins].join(", ")}"
+      puts "  next START_AFTER: #{result[:next_start_after] || "(none)"}"
+      puts "  remaining eligible after batch: #{result[:remaining_after_batch]}"
+      puts "  pacing:"
+      puts "    GITHUB_SEARCH_RANGE_DAYS=#{ENV.fetch("GITHUB_SEARCH_RANGE_DAYS", Github::CommitFetcher::DEFAULT_SEARCH_RANGE_DAYS)}"
+      puts "    GITHUB_REQUEST_PAUSE_SECONDS=#{ENV.fetch("GITHUB_REQUEST_PAUSE_SECONDS", 0)}"
+      puts "    GITHUB_BUILDER_PAUSE_SECONDS=#{ENV.fetch("GITHUB_BUILDER_PAUSE_SECONDS", 0)}"
+      puts "    GITHUB_RATE_LIMIT_PAUSE_SECONDS=#{ENV.fetch("GITHUB_RATE_LIMIT_PAUSE_SECONDS", 60)}"
+      puts "    GITHUB_RATE_LIMIT_RETRIES=#{ENV.fetch("GITHUB_RATE_LIMIT_RETRIES", 1)}"
+      result[:results].each do |login, builder_result|
+        puts(
+          "  #{login}: strategy=#{builder_result[:strategy]} stored=#{builder_result[:stored]} " \
+          "cache_rows=#{builder_result[:cache_rows] || 0} commits=#{builder_result[:total_cached_commits] || 0} " \
+          "complete=#{builder_result[:complete] || false} elapsed=#{builder_result[:elapsed_seconds]}s"
+        )
+      end
+    end
+
     desc "Mark builders at or above a cached commit-total cutoff as included in the roster. [CUTOFF=mitchellh] [RANGE_LIMIT=13]"
     task apply_builder_roster_cutoff: :environment do
       cutoff_login = ENV.fetch("CUTOFF", "mitchellh")

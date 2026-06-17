@@ -36,4 +36,44 @@ module BuildersHelper
   def builder_initials(builder)
     builder.display_name.split.map(&:first).first(2).join.upcase.presence || builder.github_login.first.upcase
   end
+
+  def builder_quarter_header(quarter)
+    safe_join(
+      [
+        content_tag(:span, "Q#{quarter.quarter}", class: "block text-secondary"),
+        content_tag(:span, quarter.year, class: "block text-[10px] text-muted mt-0.5")
+      ]
+    )
+  end
+
+  def builder_history_chart_color(index)
+    hue = (index * 137.508).round(2) % 360
+    "hsl(#{hue}, 72%, 62%)"
+  end
+
+  def builder_history_chart_points(row, quarters, max_value, width:, height:, padding_x:, padding_y:)
+    return "" if quarters.blank?
+
+    values = quarters.map { |quarter| row[:quarter_totals][quarter.key].to_i }
+    drawable_width = width - (padding_x * 2)
+    drawable_height = height - (padding_y * 2)
+    x_step = quarters.size > 1 ? drawable_width.to_f / (quarters.size - 1) : 0
+
+    values.each_with_index.map do |value, index|
+      x = padding_x + (x_step * index)
+      y = height - padding_y - ((value.to_f / max_value.to_f) * drawable_height)
+      "#{x.round(2)},#{y.round(2)}"
+    end.join(" ")
+  end
+
+  def builder_history_chart_x(quarters, index, width:, padding_x:)
+    return width / 2.0 if quarters.size <= 1
+
+    padding_x + (((width - (padding_x * 2)).to_f / (quarters.size - 1)) * index)
+  end
+
+  def builder_history_chart_y(value, max_value, height:, padding_y:)
+    drawable_height = height - (padding_y * 2)
+    height - padding_y - ((value.to_f / max_value.to_f) * drawable_height)
+  end
 end

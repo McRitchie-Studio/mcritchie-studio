@@ -24,7 +24,10 @@
           <h3 class="text-lg font-bold text-heading">Roster</h3>
           <p class="text-sm text-secondary">Avatar, GitHub identity, location, and recent public commit pace.</p>
         </div>
-        <%= link_to "AI Builder Multiple", admin_ai_builder_multiple_path(builder_limit: 1_000, anchor: "commit-log"), class: "btn btn-outline btn-sm" %>
+        <div class="flex flex-wrap gap-2">
+          <%= link_to "Five-Year History", history_builders_path(language: @language), class: "btn btn-outline btn-sm" %>
+          <%= link_to "AI Builder Multiple", admin_ai_builder_multiple_path(builder_limit: 1_000, anchor: "commit-log"), class: "btn btn-outline btn-sm" %>
+        </div>
       </div>
     </div>
 
