@@ -39,8 +39,10 @@ bin/agent-worktree remove <app> <task-slug> --yes
 ## Branch naming
 
 Default branch naming is `<type>/<task-slug>`, where type is usually `feat`.
-The task slug is the stable collaboration unit; do not include an agent id in
-the branch unless the task itself requires it.
+Here `<task-slug>` means the worktree slug recorded on the production task as
+`metadata["devops"]["worktree_slug"]`; it is separate from the app's immutable
+random `Task.slug`. Do not include an agent id in the branch unless the task
+itself requires it.
 
 Examples:
 - `feat/agent-page-banner`

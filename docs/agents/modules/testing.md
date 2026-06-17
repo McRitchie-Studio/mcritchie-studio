@@ -4,8 +4,8 @@ Use the smallest verification that proves the change, then broaden when the touc
 
 ## Test Suite Genres
 
-Record the expected genre in the task-board `test_plan` before implementation,
-then update it with the checks actually run during handoff.
+Record expected checks in the task-board `test_plan` before implementation,
+then update `checks_run` with the checks actually run during handoff.
 
 | Genre | Target | Mutates data | When to run |
 |---|---|---:|---|

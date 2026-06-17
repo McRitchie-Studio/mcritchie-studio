@@ -140,9 +140,10 @@ reviews the QA URL.
 
 When `DISCORD_DEPLOY_WEBHOOK_URL` is available, QA and production deploy tools
 should send a post-deploy Discord notice with app, environment, release/SHA,
-URL, `/up` status, release train, and tasks deployed. Pass `RELEASE_TRAIN` and
+URL, `/up` status, release train when present, and tasks deployed. Pass
 `DEPLOY_TASKS` explicitly until the deploy tooling can query the task board
-directly. Never commit the webhook URL.
+directly. Pass `RELEASE_TRAIN` only when a grouped release train exists. Never
+commit the webhook URL.
 
 Current intended QA apps:
 

@@ -21,10 +21,17 @@ a branch, PR, QA deployment, production deployment, or cleanup follow-up must
 have a McRitchie Studio task-board item. Chat, `bin/agent-worktree`, GitHub PRs,
 and `bin/qa-intake` are supporting channels; they do not replace the task.
 
-Create or update the task before implementation starts. If Mr. McRitchie starts
-work in chat and no task exists yet, the feature agent creates a flat task from
-the ask before allocating a worktree or editing files. If a task already exists,
-the agent updates that task instead of creating a duplicate.
+Create or update the durable handoff task in production McRitchie Studio at
+`https://mcritchie.studio` before implementation starts. Local, QA, and
+worktree task boards are only for testing task-board behavior; they are not
+durable handoff records. If an agent records task metadata outside production
+while implementing, the agent must backfill or update the production task before
+PR handoff.
+
+If Mr. McRitchie starts work in chat and no task exists yet, the feature agent
+creates a flat production task from the ask before allocating a worktree or
+editing files. If a task already exists, the agent updates that task instead of
+creating a duplicate.
 
 Use one task per independently reviewable increment. For a vertical feature
 that touches multiple repos and ships together, either use one task with all
@@ -36,13 +43,15 @@ Minimum task setup before implementation:
 - `title` and `description` summarize the user-visible ask.
 - `kind` is `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup`.
 - `repositories` lists every repo expected to change.
+- `worktree_slug` records the `bin/agent-worktree` task/worktree slug. The
+  app-level `Task.slug` remains an immutable random task id.
 - `acceptance` records concrete acceptance criteria. If the ask is ambiguous,
   confirm criteria with Mr. McRitchie before building.
 - `risk_tags` captures likely risk such as `auth`, `email`, `solana`,
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
-- `release_train` groups related tasks that should move through QA/release
-  together.
+- `release_train` is required only when multiple tasks should move through
+  QA/release together. Tiny independent fixes do not need fake release trains.
 - `requires_release_conductor` is `true` when production deploy, gem publish,
   provider config, env vars, data correction, credentials, or migration/backfill
   handling may be needed.
@@ -54,7 +63,8 @@ Stage movement:
 2. Move to `in_progress` when an agent claims the task and creates or enters the
    worktree.
 3. Move to `pr_review` only after the branch is pushed, the PR exists, the
-   local URL is recorded when applicable, and checks run are recorded.
+   local URL is recorded when applicable, and `checks_run` records actual
+   feature-agent verification.
 4. Move to `qa_review` only after Avi merges the PR and deploys or starts the
    accepted result on a QA/local review target. Record QA URL, deployed SHA, and
    QA checks.
@@ -67,15 +77,17 @@ Stage movement:
 
 Handoff connections:
 
-- The task slug should match the worktree slug whenever practical.
+- `Task.slug` is the app's immutable random task id. The worktree slug must be
+  recorded on the task as `metadata["devops"]["worktree_slug"]`.
 - The PR body should mention the task slug or task URL.
 - The task must record `branch`, `pr_url`, `local_url` when applicable,
-  `qa_url` after QA deployment, and `production_url` after production deploy.
+  `checks_run`, `qa_url` after QA deployment, and `production_url` after
+  production deploy.
 - `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
   should join that queue back to tasks and leave feedback on the task or PR when
   metadata is missing.
-- Final handoff should name the task, PR, release train, URLs, checks run,
-  deployment SHA/release, and cleanup decision.
+- Final handoff should name the task, PR, release train when present, URLs,
+  checks run, deployment SHA/release, and cleanup decision.
 
 ## Stage Flow
 
@@ -110,16 +122,18 @@ Supported fields:
 |---|---|
 | `kind` | `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup` |
 | `repositories` | Repos touched by this increment, such as `mcritchie-studio` or `turf-monster` |
+| `worktree_slug` | Worktree/task slug used by `bin/agent-worktree`; separate from immutable random `Task.slug` |
 | `branch` | Feature branch or release branch |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
-| `release_train` | Shared tag for tasks promoted together |
+| `release_train` | Optional shared tag for tasks promoted together |
 | `requires_release_conductor` | `true` when production deploy, gem publish, provider config, or env change is involved |
 | `risk_tags` | Short tags such as `auth`, `email`, `solana`, `payment`, `migration`, `ui`, `provider` |
 | `acceptance` | Acceptance criteria, one item per line |
 | `test_plan` | Checks the feature agent expects to run, one item per line |
+| `checks_run` | Actual checks the feature agent performed, one item per line |
 
 Example API payload:
 
@@ -132,6 +146,7 @@ Example API payload:
   "devops": {
     "kind": "bug",
     "repositories": ["turf-monster"],
+    "worktree_slug": "qa-wallet-chooser",
     "branch": "fix/qa-wallet-chooser",
     "local_url": "http://localhost:3102/contests",
     "qa_url": "https://qa.turfmonster.media/contests",
@@ -144,6 +159,9 @@ Example API payload:
     "test_plan": [
       "bin/rails test",
       "QA_BASE_URL=https://qa.turfmonster.media npx playwright test --grep @qa-readonly"
+    ],
+    "checks_run": [
+      "bin/rails test test/controllers/wallets_controller_test.rb"
     ]
   }
 }
@@ -158,14 +176,15 @@ Before implementation, the agent should record or confirm:
 - acceptance criteria
 - likely risk tags
 - expected local proof URL
-- expected tests/checks
+- expected tests/checks in `test_plan`
 
 During handoff, the agent updates:
 
+- worktree slug in `worktree_slug`
 - branch
 - PR URL
 - local URL
-- checks actually run, either in `test_plan` or task result
+- checks actually run in `checks_run`
 - any changed acceptance criteria
 - release lane flag if the work needs production deploy, gem publish, provider
   config, env vars, or credential handling
@@ -179,7 +198,7 @@ Avi uses the task board plus `bin/qa-intake`:
 3. Check `risk_tags` for Steffon/infra gate needs.
 4. Merge only ready PRs.
 5. Deploy merged `origin/main` to QA.
-6. Move the task to `qa_review` with QA URL, QA release SHA, and checks run.
+6. Move the task to `qa_review` with QA URL, QA release SHA, and QA checks run.
 7. Move accepted QA tasks to `prod_ready`.
 8. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
    approves release work.
@@ -187,7 +206,9 @@ Avi uses the task board plus `bin/qa-intake`:
 ## Release Train Tags
 
 Use `release_train` as a grouping label, not a hierarchy. A conductor can filter
-tasks by one release train and promote those accepted tasks together.
+tasks by one release train and promote those accepted tasks together. Leave it
+blank for independent fixes that can be reviewed, QAed, released, and cleaned up
+alone.
 
 Good release-train examples:
 
@@ -254,7 +275,7 @@ bin/qa-server deploy turf-monster origin/main --yes
 ```
 
 The message should include app, environment, release/SHA, URL, `/up` status,
-release train, and tasks deployed.
+release train when present, and tasks deployed.
 
 ## Future Heartbeats
 

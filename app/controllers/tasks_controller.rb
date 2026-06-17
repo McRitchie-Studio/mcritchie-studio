@@ -175,6 +175,7 @@ class TasksController < ApplicationController
       :stage,
       devops: [
         :kind,
+        :worktree_slug,
         :branch,
         :pr_url,
         :local_url,
@@ -185,7 +186,8 @@ class TasksController < ApplicationController
         :repositories,
         :risk_tags,
         :acceptance,
-        :test_plan
+        :test_plan,
+        :checks_run
       ]
     )
     attrs = permitted.except(:devops).to_h

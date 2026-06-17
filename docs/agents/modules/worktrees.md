@@ -26,10 +26,12 @@ integration, final merge, and deploy.
 When a new agent session starts actual implementation work:
 
 1. Identify the target app and a task slug.
-2. Create or update the McRitchie Studio task-board item before editing. The
-   task slug should match the worktree slug when practical, and the task should
-   include acceptance criteria, affected repos, risk tags, expected checks, and
-   release-train metadata when relevant.
+2. Create or update the production McRitchie Studio task-board item before
+   editing. The worktree slug should be recorded as
+   `metadata["devops"]["worktree_slug"]`; the app-level `Task.slug` stays an
+   immutable random task id. The task should include acceptance criteria,
+   affected repos, risk tags, expected checks, and release-train metadata when
+   related tasks must move together.
 3. Inspect the primary checkout only for status and context.
 4. Run `bin/agent-worktree plan <app> <task-slug>`.
 5. Run `bin/agent-worktree new <app> <task-slug>`.
@@ -40,8 +42,9 @@ When a new agent session starts actual implementation work:
 9. Commit coherent work on the feature branch.
 10. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
    packet.
-11. Update the task with branch, PR URL, local URL, checks run, and any changed
-   acceptance criteria. Move it to `pr_review` when the PR is ready for Avi.
+11. Update the production task with branch, PR URL, local URL, `checks_run`, and
+   any changed acceptance criteria. Move it to `pr_review` when the PR is ready
+   for Avi.
 12. Return the task slug, branch, worktree path, URL, tests, and PR/QA
    recommendation in the handoff. Do not merge to `main` unless assigned the
    QA/Release lane.
@@ -169,7 +172,7 @@ A feature-agent handoff should include:
 - PR URL or the exact reason a PR was not opened.
 - QA-intake status when available, but do not use `bin/qa-intake` as a
   substitute for the task-board record.
-- Tests/checks run and their result.
+- `checks_run` and their result.
 - Files or behavior changed at a high level.
 - The `bin/agent-worktree finish` result.
 - Whether the branch is ready for Avi review, needs another agent, or needs

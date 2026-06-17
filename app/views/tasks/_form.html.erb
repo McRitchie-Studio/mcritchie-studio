@@ -59,11 +59,16 @@
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Release Train</label>
           <%= text_field_tag "task[devops][release_train]", task.devops_release_train,
-                class: "input-field", placeholder: "2026-06-17-turf-qa" %>
+                class: "input-field", placeholder: "Only when tasks ship together" %>
         </div>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="grid md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Worktree Slug</label>
+          <%= text_field_tag "task[devops][worktree_slug]", task.devops_worktree_slug,
+                class: "input-field", placeholder: "task-slug" %>
+        </div>
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Branch</label>
           <%= text_field_tag "task[devops][branch]", task.devops_field("branch"),
@@ -100,16 +105,21 @@
               class: "input-field", placeholder: "auth, solana, migration, email" %>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4">
+      <div class="grid md:grid-cols-3 gap-4">
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Acceptance Criteria</label>
           <%= text_area_tag "task[devops][acceptance]", task.devops_acceptance.join("\n"), rows: 5,
                 class: "input-field", placeholder: "One criterion per line" %>
         </div>
         <div>
-          <label class="block text-sm text-secondary mb-2 font-medium">Checks / Test Plan</label>
+          <label class="block text-sm text-secondary mb-2 font-medium">Expected Checks / Test Plan</label>
           <%= text_area_tag "task[devops][test_plan]", task.devops_test_plan.join("\n"), rows: 5,
-                class: "input-field", placeholder: "One check per line" %>
+                class: "input-field", placeholder: "Planned checks, one per line" %>
+        </div>
+        <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Checks Run</label>
+          <%= text_area_tag "task[devops][checks_run]", task.devops_checks_run.join("\n"), rows: 5,
+                class: "input-field", placeholder: "Actual checks run, one per line" %>
         </div>
       </div>
     </div>

@@ -89,7 +89,11 @@
           </div>
         </div>
 
-        <div class="grid md:grid-cols-2 gap-3 mb-3">
+        <div class="grid md:grid-cols-3 gap-3 mb-3">
+          <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Worktree Slug</p>
+            <p class="text-heading text-sm font-mono mt-0.5 break-all"><%= @task.devops_worktree_slug || "—" %></p>
+          </div>
           <div class="bg-surface rounded p-2">
             <p class="text-[10px] text-muted uppercase tracking-wide">Branch</p>
             <p class="text-heading text-sm font-mono mt-0.5 break-all"><%= @task.devops_field("branch") || "—" %></p>
@@ -125,7 +129,7 @@
           </div>
         <% end %>
 
-        <div class="grid md:grid-cols-2 gap-3">
+        <div class="grid md:grid-cols-3 gap-3">
           <div class="bg-surface rounded p-3">
             <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Acceptance Criteria</p>
             <% if @task.devops_acceptance.any? %>
@@ -139,7 +143,7 @@
             <% end %>
           </div>
           <div class="bg-surface rounded p-3">
-            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Checks / Test Plan</p>
+            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Expected Checks / Test Plan</p>
             <% if @task.devops_test_plan.any? %>
               <ul class="space-y-1 text-sm text-body list-disc pl-4">
                 <% @task.devops_test_plan.each do |item| %>
@@ -147,7 +151,19 @@
                 <% end %>
               </ul>
             <% else %>
-              <p class="text-sm text-muted">No checks recorded.</p>
+              <p class="text-sm text-muted">No expected checks recorded.</p>
+            <% end %>
+          </div>
+          <div class="bg-surface rounded p-3">
+            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Checks Run</p>
+            <% if @task.devops_checks_run.any? %>
+              <ul class="space-y-1 text-sm text-body list-disc pl-4">
+                <% @task.devops_checks_run.each do |item| %>
+                  <li><%= item %></li>
+                <% end %>
+              </ul>
+            <% else %>
+              <p class="text-sm text-muted">No checks run recorded.</p>
             <% end %>
           </div>
         </div>

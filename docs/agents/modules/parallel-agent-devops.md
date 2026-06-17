@@ -30,8 +30,9 @@ Default feature sessions are Feature lane only.
 
 1. **Start** from `/Users/alex/projects`.
 2. **Read** root `AGENTS.md`, then the relevant app docs.
-3. **Create or update** the McRitchie Studio task-board item with affected
-   repos, acceptance criteria, risk tags, and expected checks. Use
+3. **Create or update** the production McRitchie Studio task-board item at
+   `https://mcritchie.studio` with affected repos, acceptance criteria, risk
+   tags, `devops["worktree_slug"]`, and expected checks. Use
    [`devops-task-board.md`](devops-task-board.md) for the required metadata
    contract. This task is mandatory for feature, bug, QA, release, cleanup, and
    active-doc work that may produce a branch, PR, QA deploy, production deploy,
@@ -52,8 +53,8 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree up <app> <task-slug>
    ```
 
-7. **Update** the task-board item with local URL, branch, PR URL when opened,
-   checks run, and any acceptance-criteria changes.
+7. **Update** the production task-board item with local URL, branch, PR URL when
+   opened, `checks_run`, and any acceptance-criteria changes.
 8. **Commit** coherent work on the feature branch.
 9. **Graduate** through the launcher:
 
@@ -73,7 +74,8 @@ Before a branch is ready for QA, it must be:
 
 - in a generated worktree, not the primary checkout
 - represented by a McRitchie Studio task with acceptance criteria, affected
-  repos, risk tags, branch or PR URL, local URL when applicable, and checks run
+  repos, risk tags, `worktree_slug`, branch or PR URL, local URL when
+  applicable, and `checks_run`
 - on a feature branch, not `main`
 - committed cleanly
 - ahead of `origin/main`
@@ -140,8 +142,9 @@ Action lines mean:
 For each PR, Avi checks:
 
 - the task-board acceptance criteria are concrete and still match the request
-- the task has affected repos, branch/PR URL, local/QA URLs where relevant, risk
-  tags, and expected checks recorded in `metadata["devops"]`
+- the task has affected repos, `worktree_slug`, branch/PR URL, local/QA URLs
+  where relevant, risk tags, expected checks in `test_plan`, and actual
+  feature-agent checks in `checks_run` recorded in `metadata["devops"]`
 - the PR body matches the diff
 - the branch started from current enough `main`
 - the local proof URL or test evidence is credible
@@ -205,7 +208,7 @@ The intended cycle is:
 5. Avi or Steffon deploys the merged `main` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/main --yes`.
 6. Avi or Steffon moves the task to `qa_review` and records the QA URL,
-   deployed SHA, release-train tag, and QA checks run.
+   deployed SHA, release-train tag when present, and QA checks run.
 7. Mr. McRitchie reviews the QA URL.
 8. Accepted QA work moves to `prod_ready`.
 9. Production deploy happens only after Mr. McRitchie explicitly approves it.
@@ -239,7 +242,7 @@ Run the parallel-agent DevOps cycle:
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave comments on PRs that need changes
 - after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
-- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks run
+- move merged tasks to qa_review and update task-board metadata with QA URL, release train when present, deployed SHA, and QA checks run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
@@ -259,7 +262,7 @@ Promote the accepted QA work to production:
 - read /Users/alex/projects/AGENTS.md and the deployment docs
 - pull latest main in mcritchie-studio and each affected app
 - confirm the QA deployment SHA and production target app
-- confirm the task-board release train and accepted tasks included in the rollout
+- confirm the task-board release train when present and accepted tasks included in the rollout
 - run the app-specific deployment command from the repo docs
 - verify production /up and the user-facing URL
 - update tasks with production URL/release SHA/check results

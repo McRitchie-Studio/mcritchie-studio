@@ -40,9 +40,11 @@ launch flow is:
    the request.
 3. Pull/check `main` and inspect git status before editing.
 4. If the work is a feature, bug, QA, release, cleanup, or active-doc change,
-   create or update a McRitchie Studio task-board item before implementation.
+   create or update a production McRitchie Studio task-board item at
+   `https://mcritchie.studio` before implementation.
    Record acceptance criteria, affected repos, risk tags, expected checks, and
-   the task slug. Move the task to `in_progress` once the agent starts work.
+   `devops["worktree_slug"]`. Move the task to `in_progress` once the agent
+   starts work.
 5. If the task will change code or active docs, allocate an isolated worktree
    from McRitchie Studio and work there. Keep the primary checkout stable for
    integration, review, and deploys.
@@ -54,8 +56,8 @@ launch flow is:
    operations change, update the owning active docs in the same pass.
 9. Commit and push the feature branch when the work is coherent, then run
    `bin/agent-worktree finish <app> <task-slug>` to prepare PR/QA handoff.
-   Update the task with branch, PR URL, local URL, checks run, and any changed
-   acceptance criteria, then move it to `pr_review`.
+   Update the production task with branch, PR URL, local URL, `checks_run`, and
+   any changed acceptance criteria, then move it to `pr_review`.
    Deploy or merge only when Mr. McRitchie assigned that lane or the task
    explicitly includes production rollout.
 
@@ -64,13 +66,13 @@ and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Create or update the McRitchie Studio task first with acceptance criteria,
-affected repos, risk tags, and expected checks. Use an isolated worktree and
-allocated port before editing. Give me a local URL to review, update docs if
-behavior changes, then commit, push the feature branch, run
-bin/agent-worktree finish, update the task with branch/PR/local URL/checks, and
-move it to pr_review for Avi QA. Do not merge or deploy unless I explicitly
-assigned that lane.
+Create or update the production McRitchie Studio task first with acceptance
+criteria, affected repos, risk tags, expected checks, and
+devops["worktree_slug"]. Use an isolated worktree and allocated port before
+editing. Give me a local URL to review, update docs if behavior changes, then
+commit, push the feature branch, run bin/agent-worktree finish, update the task
+with branch/PR/local URL/checks_run, and move it to pr_review for Avi QA. Do
+not merge or deploy unless I explicitly assigned that lane.
 ```
 
 ## Start Here
@@ -140,12 +142,18 @@ bin/agent-worktree finish turf-monster task-slug
 
 Return the printed `http://localhost:<port>` URL in the handoff.
 
-Every feature or bug cycle must have a McRitchie Studio task before code or
-active-doc edits start. The task slug should match the worktree slug. Use
-`metadata["devops"]` to record affected repos, branch, PR URL, local URL, QA
-URL, production URL when deployed, release train, risk tags, acceptance
-criteria, and test plan. `bin/qa-intake` helps Avi discover PR/worktree state,
-but it does not replace the task-board record.
+Every feature or bug cycle must have a production McRitchie Studio task before
+code or active-doc edits start. `Task.slug` stays the app's immutable random
+task id; record the worktree slug in `metadata["devops"]["worktree_slug"]`.
+Use `metadata["devops"]` to record affected repos, branch, PR URL, local URL,
+QA URL, production URL when deployed, release train when related tasks must move
+together, risk tags, acceptance criteria, expected `test_plan`, and actual
+`checks_run`. `bin/qa-intake` helps Avi discover PR/worktree state, but it does
+not replace the task-board record.
+
+Local, QA, or worktree task boards are only for testing task-board behavior. If
+an agent records handoff metadata outside production while implementing, the
+agent must backfill or update the production task before PR handoff.
 
 Primary checkouts are for reading, status checks, integration, and deployment.
 Do not commit task work from a primary checkout unless you are explicitly acting
@@ -163,8 +171,8 @@ Worktree stacks default to `LOCAL_EMAIL_CAPTURE=1`, so magic links and other ema
 Feature work graduates through PR/QA, not direct `main` pushes. Use
 `bin/agent-worktree finish <app> <task-slug> --push --pr` when the branch is
 ready for Avi review. The same handoff must update the task with the branch,
-PR URL, local URL, and checks run, then move the task to `pr_review`. Keep the
-worktree and branch until Avi confirms the PR was merged or intentionally
+PR URL, local URL, and `checks_run`, then move the task to `pr_review`. Keep
+the worktree and branch until Avi confirms the PR was merged or intentionally
 abandoned.
 
 For a dedicated review/merge/QA session, use the recurring QA intake prompt in

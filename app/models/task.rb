@@ -15,10 +15,10 @@ class Task < ApplicationRecord
   BOARD_STAGES = (STAGES - ["archived"]).freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
-    kind branch pr_url local_url qa_url production_url release_train
+    kind worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor
   ].freeze
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan].freeze
+  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
@@ -75,6 +75,14 @@ class Task < ApplicationRecord
 
   def devops_test_plan
     devops_list("test_plan")
+  end
+
+  def devops_checks_run
+    devops_list("checks_run")
+  end
+
+  def devops_worktree_slug
+    devops_field("worktree_slug")
   end
 
   def devops_url(name)
