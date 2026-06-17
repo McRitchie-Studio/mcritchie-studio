@@ -22,6 +22,7 @@ class Task < ApplicationRecord
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
+  has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true

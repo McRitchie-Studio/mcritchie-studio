@@ -41,7 +41,9 @@ When a new agent session starts actual implementation work:
 10. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
    packet.
 11. Update the task with branch, PR URL, local URL, checks run, and any changed
-   acceptance criteria. Move it to `pr_review` when the PR is ready for Avi.
+   acceptance criteria. Add a task conversation `handoff` note with the change
+   summary, verification, and review focus. Move it to `pr_review` when the PR
+   is ready for Avi.
 12. Return the task slug, branch, worktree path, URL, tests, and PR/QA
    recommendation in the handoff. Do not merge to `main` unless assigned the
    QA/Release lane.
@@ -169,6 +171,8 @@ A feature-agent handoff should include:
 - PR URL or the exact reason a PR was not opened.
 - QA-intake status when available, but do not use `bin/qa-intake` as a
   substitute for the task-board record.
+- Task conversation status: whether any `qa_feedback` remains open in practice,
+  and the latest `handoff` note the feature agent added.
 - Tests/checks run and their result.
 - Files or behavior changed at a high level.
 - The `bin/agent-worktree finish` result.

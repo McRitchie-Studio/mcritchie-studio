@@ -185,6 +185,69 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Task board shows release metadata"
   end
 
+  test "show renders task conversation" do
+    Activity.create!(
+      task_slug: @new_task.slug,
+      agent_slug: "alex",
+      activity_type: "qa_feedback",
+      description: "QA blocked until the sidebar branch is rebased."
+    )
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select ".label-upper", "Conversation"
+    assert_includes response.body, "QA blocked until the sidebar branch is rebased."
+  end
+
+  test "admin sees task feedback form" do
+    log_in_as(@admin)
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select "form[action=?]", comment_task_path(@new_task.slug)
+    assert_select "textarea[name='activity[description]']"
+    assert_select "select[name='activity[activity_type]']"
+  end
+
+  test "admin can add task feedback from show page" do
+    log_in_as(@admin)
+
+    assert_difference "Activity.count", 1 do
+      post comment_task_path(@new_task.slug),
+           params: {
+             activity: {
+               activity_type: "qa_feedback",
+               description: "Please address the QA browser-back regression."
+             }
+           }
+    end
+
+    assert_redirected_to task_path(@new_task.slug)
+    activity = Activity.order(:created_at).last
+    assert_equal @new_task.slug, activity.task_slug
+    assert_equal "qa_feedback", activity.activity_type
+    assert_equal "alex", activity.agent_slug
+    assert_equal "task_conversation", activity.metadata["source"]
+  end
+
+  test "task feedback requires admin" do
+    log_in_as(@viewer)
+
+    assert_no_difference "Activity.count" do
+      post comment_task_path(@new_task.slug),
+           params: {
+             activity: {
+               activity_type: "qa_feedback",
+               description: "Viewer feedback should not be accepted."
+             }
+           }
+    end
+
+    assert_response :redirect
+  end
+
   # === Auth enforcement ===
 
   test "moves require admin" do

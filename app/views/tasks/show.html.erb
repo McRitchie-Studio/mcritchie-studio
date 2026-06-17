@@ -154,6 +154,70 @@
       </div>
     <% end %>
 
+    <!-- Conversation -->
+    <div class="bg-surface-alt rounded-lg p-3 mb-4">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <p class="label-upper">Conversation</p>
+          <p class="text-xs text-muted mt-1">QA review feedback, agent handoffs, and follow-up notes for this task.</p>
+        </div>
+        <%= link_to "Activity feed", activities_path(task_slug: @task.slug), class: "text-xs text-primary hover:text-primary-300" %>
+      </div>
+
+      <% if @task_activity&.errors&.any? %>
+        <div class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
+          <% @task_activity.errors.full_messages.each do |msg| %>
+            <p><%= msg %></p>
+          <% end %>
+        </div>
+      <% end %>
+
+      <% if admin? %>
+        <%= form_with model: @task_activity, url: comment_task_path(@task.slug), scope: :activity, local: true, class: "mb-4" do |f| %>
+          <div class="grid md:grid-cols-[180px_1fr_auto] gap-3 items-start">
+            <div>
+              <label class="block text-xs text-muted uppercase tracking-wide mb-1">Type</label>
+              <%= f.select :activity_type,
+                    options_for_select(Activity::TASK_CONVERSATION_TYPES.map { |type| [Activity::TASK_CONVERSATION_LABELS.fetch(type), type] }, @task_activity.activity_type),
+                    {},
+                    class: "input-field" %>
+            </div>
+            <div>
+              <label class="block text-xs text-muted uppercase tracking-wide mb-1">Feedback</label>
+              <%= f.text_area :description,
+                    rows: 3,
+                    class: "input-field",
+                    placeholder: "Record QA feedback, handoff notes, or agent response..." %>
+            </div>
+            <div class="md:pt-6">
+              <button type="submit" class="btn btn-primary whitespace-nowrap">Add Note</button>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
+
+      <% if @task_activities.any? %>
+        <div class="space-y-2">
+          <% @task_activities.each do |activity| %>
+            <div class="bg-surface rounded p-3 border border-subtle">
+              <div class="flex flex-wrap items-center gap-2 mb-2">
+                <%= render "components/badge", text: activity.activity_type_label, scheme: activity.activity_type == "qa_feedback" ? "warning" : "violet" %>
+                <% if activity.agent.present? %>
+                  <%= link_to activity.agent_slug, agent_path(activity.agent_slug), class: "text-xs text-primary hover:text-primary-300" %>
+                <% elsif activity.agent_slug.present? %>
+                  <span class="text-xs text-secondary"><%= activity.agent_slug %></span>
+                <% end %>
+                <span class="text-xs text-muted"><%= time_ago_in_words(activity.created_at) %> ago</span>
+              </div>
+              <p class="text-sm text-body whitespace-pre-wrap"><%= activity.description %></p>
+            </div>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="text-sm text-muted">No task feedback has been recorded yet.</p>
+      <% end %>
+    </div>
+
     <!-- Sizing -->
     <div class="bg-surface-alt rounded-lg p-3">
       <div class="flex items-center justify-between mb-3">

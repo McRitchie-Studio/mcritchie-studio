@@ -4,6 +4,7 @@ module Api
       def index
         activities = Activity.recent
         activities = activities.where(agent_slug: params[:agent_slug]) if params[:agent_slug].present?
+        activities = activities.for_task(params[:task_slug]) if params[:task_slug].present?
         activities = activities.by_type(params[:activity_type]) if params[:activity_type].present?
         result = paginate(activities)
         render_data(result[:records], meta: result[:meta])
