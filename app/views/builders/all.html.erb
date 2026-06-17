@@ -39,7 +39,9 @@
               <th class="text-left py-3 px-3 min-w-40">Location</th>
               <th class="text-left py-3 px-3 min-w-28">Language</th>
               <th class="text-right py-3 px-3 min-w-28">Cached Commits</th>
-              <th class="text-right py-3 px-4 min-w-40">Action</th>
+              <% if admin? %>
+                <th class="text-right py-3 px-4 min-w-40">Action</th>
+              <% end %>
             </tr>
           </thead>
           <tbody class="divide-y divide-subtle">
@@ -87,19 +89,21 @@
                 <td class="py-3 px-3 text-secondary"><%= person.location.presence || "—" %></td>
                 <td class="py-3 px-3 text-secondary"><%= builder.primary_language.presence || "—" %></td>
                 <td class="py-3 px-3 text-right font-semibold text-heading"><%= builder_count(total_commits) %></td>
-                <td class="py-3 px-4 text-right">
-                  <% if builder.included_in_roster? %>
-                    <%= button_to "Archive",
-                          archive_builder_path(builder.github_login, redirect_to: request.fullpath),
-                          method: :patch,
-                          class: "btn btn-outline btn-sm" %>
-                  <% else %>
-                    <%= button_to "Restore To Focus",
-                          restore_builder_path(builder.github_login, redirect_to: request.fullpath),
-                          method: :patch,
-                          class: "btn btn-primary btn-sm" %>
-                  <% end %>
-                </td>
+                <% if admin? %>
+                  <td class="py-3 px-4 text-right">
+                    <% if builder.included_in_roster? %>
+                      <%= button_to "Archive",
+                            archive_builder_path(builder.github_login, redirect_to: request.fullpath),
+                            method: :patch,
+                            class: "btn btn-outline btn-sm" %>
+                    <% else %>
+                      <%= button_to "Restore To Focus",
+                            restore_builder_path(builder.github_login, redirect_to: request.fullpath),
+                            method: :patch,
+                            class: "btn btn-primary btn-sm" %>
+                    <% end %>
+                  </td>
+                <% end %>
               </tr>
             <% end %>
           </tbody>

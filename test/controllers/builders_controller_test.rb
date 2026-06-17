@@ -153,7 +153,7 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_match "2/2 weeks", response.body
   end
 
-  test "all renders focus and archived builders with roster actions" do
+  test "all renders focus and archived builders without roster actions for visitors" do
     focus = Builder.create!(
       person: Person.create!(first_name: "Focus", last_name: "Builder"),
       github_login: "focus-builder",
@@ -182,9 +182,33 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "All Ruby Builders"
     assert_match focus.github_login, response.body
     assert_match archived.github_login, response.body
+    assert_select "form[action=?]", archive_builder_path(focus.github_login, redirect_to: "/builders/all?language=Ruby"), count: 0
+    assert_select "form[action=?]", restore_builder_path(archived.github_login, redirect_to: "/builders/all?language=Ruby"), count: 0
+    assert_select "td", text: "12"
+  end
+
+  test "all renders roster actions for admins" do
+    log_in_as users(:alex)
+    focus = Builder.create!(
+      person: Person.create!(first_name: "Focus", last_name: "Builder"),
+      github_login: "focus-builder",
+      primary_language: "Ruby",
+      active: true,
+      included_in_roster: true
+    )
+    archived = Builder.create!(
+      person: Person.create!(first_name: "Archived", last_name: "Builder"),
+      github_login: "archived-builder",
+      primary_language: "Ruby",
+      active: true,
+      included_in_roster: false
+    )
+
+    get all_builders_path(language: "Ruby")
+
+    assert_response :success
     assert_select "form[action=?]", archive_builder_path(focus.github_login, redirect_to: "/builders/all?language=Ruby")
     assert_select "form[action=?]", restore_builder_path(archived.github_login, redirect_to: "/builders/all?language=Ruby")
-    assert_select "td", text: "12"
   end
 
   test "archive removes a builder from focus views without deleting it" do
@@ -201,6 +225,21 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to history_builders_path
     refute builder.reload.included_in_roster?
     assert Builder.exists?(builder.id)
+  end
+
+  test "archive requires admin" do
+    log_in_as users(:viewer)
+    builder = Builder.create!(
+      person: Person.create!(first_name: "Archive", last_name: "Viewer"),
+      github_login: "archive-viewer",
+      active: true,
+      included_in_roster: true
+    )
+
+    patch archive_builder_path(builder.github_login), params: { redirect_to: history_builders_path }
+
+    assert_redirected_to root_path
+    assert builder.reload.included_in_roster?
   end
 
   test "restore adds a builder back to focus views" do
