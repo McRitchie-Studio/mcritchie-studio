@@ -99,9 +99,15 @@
                 <% @ranges.each do |range| %>
                   <% cache = row[:caches_by_range_id][range.id] %>
                   <% count = cache&.commits_count %>
+                  <% normalized_score = cache ? @normalized_scores_by_cache_id[cache.id] : nil %>
                   <td class="py-3 px-3 text-right <%= count.to_i.positive? ? "font-semibold text-heading" : "text-muted" %>"
                       title="<%= cache ? "#{builder_count(cache.non_merge_commits_count)} non-merge, #{builder_count(cache.bot_adjusted_commits_count)} bot-adjusted" : "No cached row" %>">
-                    <%= cache ? builder_count(count) : "—" %>
+                    <% if cache %>
+                      <span><%= builder_count(count) %></span>
+                      <%= builder_normalized_score_badge(normalized_score) %>
+                    <% else %>
+                      —
+                    <% end %>
                   </td>
                 <% end %>
               </tr>

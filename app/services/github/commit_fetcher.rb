@@ -53,7 +53,7 @@ module Github
                 until: end_time(end_date),
                 per_page: 100
               }
-            )
+            ).select { |payload| commit_login_matches?(payload, builder, role: role) }
           )
         end
 
@@ -88,6 +88,8 @@ module Github
           )
 
           payloads.uniq { |payload| payload["sha"] }.each do |payload|
+            next unless commit_login_matches?(payload, builder, role: role)
+
             stored += 1 if upsert_observation(
               builder: builder,
               payload: payload,
@@ -161,6 +163,21 @@ module Github
     def search_query(github_login, role, range_start, range_end)
       date_qualifier = role == :author ? "author-date" : "committer-date"
       "#{role}:#{github_login} #{date_qualifier}:#{range_start.iso8601}..#{range_end.iso8601} merge:false is:public"
+    end
+
+    def commit_login_matches?(payload, builder, role:)
+      login = builder.github_login.to_s.downcase
+      author_login = payload.dig("author", "login").to_s.downcase
+      committer_login = payload.dig("committer", "login").to_s.downcase
+
+      case role
+      when :author
+        author_login == login
+      when :committer
+        committer_login == login
+      else
+        author_login == login || committer_login == login
+      end
     end
 
     def search_date_ranges(start_date, end_date)

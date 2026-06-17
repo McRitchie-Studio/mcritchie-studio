@@ -8,6 +8,7 @@ class BuildersController < ApplicationController
     @ranges = recent_commit_ranges
     @builders = builders_scope.to_a
     @builder_rows = builder_rows
+    @normalized_scores_by_cache_id = normalized_scores_by_cache_id
   end
 
   private
@@ -52,5 +53,11 @@ class BuildersController < ApplicationController
         trailing_commits_count: range_caches.values.compact.sum(&:commits_count)
       }
     end.sort_by { |row| [-row[:trailing_commits_count], row[:builder].display_name.downcase, row[:builder].github_login] }
+  end
+
+  def normalized_scores_by_cache_id
+    caches = @builder_rows.flat_map { |row| row[:caches_by_range_id].values }.compact
+    history_end_date = @ranges.first&.week_start_date || Date.current
+    Github::BuilderCommitNormalizer.new(history_end_date: history_end_date).scores_for(caches: caches)
   end
 end

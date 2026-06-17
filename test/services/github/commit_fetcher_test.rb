@@ -111,6 +111,58 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
     assert_includes client.calls.first[:params][:q], "author-date:2026-06-01..2026-06-07"
   end
 
+  test "ignores search results that are not attributed to the requested builder login" do
+    builder = TrackedGithubBuilder.create!(github_login: "nex3", cohort: "ai_builder")
+    payload = {
+      "sha" => "wrong-login",
+      "html_url" => "https://github.com/owner/repo/commit/wrong-login",
+      "repository" => { "full_name" => "owner/repo" },
+      "author" => { "login" => "someone-else" },
+      "committer" => { "login" => "someone-else" },
+      "commit" => {
+        "author" => { "name" => "Nex Three", "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "name" => "Nex Three", "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Search result from a matching email but different GitHub login"
+      }
+    }
+    client = FakeClient.new([payload], [])
+
+    result = Github::CommitFetcher.new(client: client, logger: nil).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 7)
+    )
+
+    assert_equal 0, result[:stored]
+    assert_equal 0, GithubCommitObservation.where(github_login: "nex3").count
+  end
+
+  test "accepts search results attributed to the requested committer login" do
+    builder = TrackedGithubBuilder.create!(github_login: "commit-builder", cohort: "ai_builder")
+    payload = {
+      "sha" => "committer-match",
+      "html_url" => "https://github.com/owner/repo/commit/committer-match",
+      "repository" => { "full_name" => "owner/repo" },
+      "author" => { "login" => "someone-else" },
+      "committer" => { "login" => "commit-builder" },
+      "commit" => {
+        "author" => { "name" => "Other Author", "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "name" => "Commit Builder", "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Committed by the tracked builder"
+      }
+    }
+    client = FakeClient.new([payload], [])
+
+    result = Github::CommitFetcher.new(client: client, logger: nil).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 7)
+    )
+
+    assert_equal 1, result[:stored]
+    assert_equal 1, GithubCommitObservation.where(github_login: "commit-builder", sha: "committer-match").count
+  end
+
   test "uses thirteen week search ranges by default" do
     builder = TrackedGithubBuilder.create!(github_login: "range-builder", cohort: "ai_builder")
     client = FakeClient.new([], [])

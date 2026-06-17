@@ -58,8 +58,9 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_select "th", text: /Apr 3/, count: 0
     assert_select "th", text: /Total/
     assert_select "td", text: "91"
-    assert_select "td", text: "13"
-    assert_select "td", text: "1"
+    assert_select "span[title=?]", "Normalized score from this builder's five-year cached weekly history", text: "8"
+    assert_select "td span", text: "13"
+    assert_select "td span", text: "1"
     assert_match "not-ruby", response.body
   end
 

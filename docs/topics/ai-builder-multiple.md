@@ -18,6 +18,10 @@ a builder-activity index, not a productivity measure.
   `control_builder` cohort.
 - **Difficulty-Adjusted AI Builder Multiple** — AI Builder Multiple divided by
   Control Builder Multiple.
+- **Normalized Score** — a builder-relative weekly commit pace score using
+  buckets `1`, `2`, `3`, `5`, and `8`. It compares a week's commit count to
+  that same builder's cached five-year Saturday-Friday weekly history, then
+  colors the result from red to green in the roster UI.
 
 Bot-adjusted commit pace is also stored. It excludes obvious bot commits and
 merge commits from both the weekly count and its internal 90-day baseline.
@@ -37,6 +41,11 @@ search uses 13-week windows by default (`91` days), then stores the raw response
 items and lets the weekly aggregator split those commits into Saturday-Friday
 builder/range cache rows. This keeps the adapter replaceable by GH Archive,
 BigQuery, or another public commit source later.
+
+Search and repo-scoped responses are only accepted when the returned
+`author.login` or `committer.login` matches the queried builder login for that
+role. This intentionally drops ambiguous email-only attribution so the metric
+stays tied to public GitHub identities.
 
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
@@ -197,7 +206,7 @@ The public Ruby builder roster is available at:
 ```
 
 It shows the active `Builder`/`Person` roster with avatar, GitHub username,
-location, and the trailing four cached Saturday-Friday commit ranges. Use
+location, and the trailing thirteen cached Saturday-Friday commit ranges. Use
 `/builders?language=Ruby` for the Ruby-only gist slice.
 
 Production/QA seed data for owner-requested monitored builders lives in:
