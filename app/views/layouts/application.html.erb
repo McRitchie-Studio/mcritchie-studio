@@ -21,7 +21,7 @@
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
             class="sticky top-0 z-50 bg-page transition-shadow duration-300"
             :class="scrolled && 'shadow-lg border-b border-subtle'">
-      <% unless Rails.env.production? %>
+      <% if show_environment_banner? %>
         <% environment_actions = capture do %>
           <%= render "shared/dev_mode_button" %>
           <%= render "shared/email_status_button" %>
@@ -29,7 +29,7 @@
         <%= render "shared/app_banner",
                    tone: :environment,
                    density: :normal,
-                   message: "#{Rails.env.capitalize} Environment",
+                   message: environment_banner_message,
                    actions: environment_actions %>
       <% end %>
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
