@@ -13,30 +13,32 @@ Covered surfaces:
 
 ## Executive Summary
 
-The managed cleanup queue is clean. McRitchie Studio has no tracked feature worktrees, no stale cleanup candidates, and no local branches needing PR handoff. The generated projects-root `AGENTS.md` matches the McRitchie Studio source file.
+The managed cleanup queue is clean. McRitchie Studio and Turf Monster have no tracked feature worktrees, no stale cleanup candidates, and no local branches needing PR handoff. The generated projects-root `AGENTS.md` matches the McRitchie Studio source file.
 
-One remaining app worktree is active PR work, not cleanup:
+The Turf Monster PR #149 cleanup lane is complete:
 
-- Turf Monster PR #149, `feat/bot-admin-email`, a clean pushed branch that changes the parked Alex agent email from `alexbot@mcritchie.studio` to `bot@mcritchie.studio` and carries the Playwright hardening needed for the current CI suite.
+- PR #149 landed on `turf-monster/main` as `ecf6154 Bot Admin Email (#149)`.
+- The former `turf-monster/.worktrees/bot-admin-email` worktree had zero diff against `origin/main`, was stopped, removed, and its stale local branch was deleted.
 
-Do not delete that Turf Monster worktree unless PR #149 is merged, abandoned, or separately archived.
+One separate draft PR is visible in QA intake:
+
+- McRitchie Studio PR #23, `feat/ai-builder-cache-run`, is draft and has no registered local worktree in the current agent registry. Do not merge it blind; recreate the local worktree or ask the branch owner to rebase.
 
 The Studio Engine Tailwind v4 release is complete: `studio-engine` main is at `72c72eb`, tag `v0.6.0` exists, RubyGems has `studio-engine` `0.6.0`, the consumer apps are already locked to `studio-engine (~> 0.6)` / `0.6.0`, and the local release worktree has been removed.
 
-The remaining blockers are not hidden local state. They are explicit docket items: merge PR #149 through the PR/QA conductor lane, resume SES production proof once AWS grants production access, and continue using the PR/QA conductor lane for future parallel-agent work.
+The remaining blockers are not hidden local state. They are explicit docket items: resolve the draft PR #23 handoff, resume SES production proof once AWS grants production access, and continue using the PR/QA conductor lane for future parallel-agent work.
 
 ## Verified State
 
 | Surface | State |
 |---------|-------|
 | `mcritchie-studio` | `main` clean and aligned with `origin/main` after closeout docs are pushed; cleanup ledger records the final AI worktree removal |
-| `turf-monster` | Primary `main` clean and aligned with `origin/main`; current head `48a391d` |
+| `turf-monster` | Primary `main` clean and aligned with `origin/main`; current head `ecf6154` |
 | `studio-engine` primary | `main` clean and aligned with `origin/main`; current head `72c72eb`, tagged `v0.6.0` |
-| Turf Monster worktree | `turf-monster/.worktrees/bot-admin-email` on `feat/bot-admin-email` at `25b316f`; PR #149 is open and CI is passing |
+| Turf Monster worktrees | Primary checkout only after merged PR #149 cleanup |
 | Studio Engine worktree | Primary checkout only; the local `tailwind-v4-upgrade` release worktree was removed after `v0.6.0` was verified |
 | McRitchie Studio worktrees | Primary checkout only |
-| Turf Monster worktrees | Primary checkout plus `bot-admin-email` active worktree |
-| QA intake | `open_prs=1`, `local_branches_without_pr=0`, `attention_items=0`, `cleanup_candidates=0` after PR #149 was rebased, prepared, tested, and pushed |
+| QA intake | `open_prs=1`, `local_branches_without_pr=0`, `attention_items=0`, `cleanup_candidates=0`; the remaining open PR is draft Studio PR #23 |
 | Root agent entrypoint | `/Users/alex/projects/AGENTS.md` matches `mcritchie-studio/docs/agents/index.md` |
 
 Commands used for the state check:
@@ -63,7 +65,7 @@ McRitchie Studio is in the clean state this audit was trying to reach:
 
 During this closeout pass, QA intake surfaced one stale local McRitchie Studio worktree/branch for `feat/ai-builder-multiple-ui`. Direct diffing proved it was the old pre-squash local branch for merged PR #21 and only lacked later main commits from the QA banner and cleanup ledger. The local server was stopped, the worktree was removed, the stale local branch was deleted, and the registry was refreshed.
 
-Turf Monster has one active clean worktree: `feat/bot-admin-email`, now open as PR #149. It was rebased on `origin/main`, its local database was prepared, the model test passed locally, and the Playwright hardening needed by CI was committed and pushed. CI is passing on `25b316f`. Leave it for PR/QA review instead of deleting it during cleanup.
+Turf Monster PR #149 landed on `main` as `ecf6154`. The former `feat/bot-admin-email` worktree had no diff against `origin/main`, the local stack was stopped, the worktree was removed, and the stale local branch was deleted.
 
 This means a new feature session can safely start from the standard worktree flow without inheriting old local drift.
 
@@ -107,7 +109,7 @@ The remaining SES blocker is AWS production access, not local implementation.
 
 ## Current Docket
 
-1. Merge Turf Monster PR #149 through the PR/QA conductor lane.
+1. Resolve McRitchie Studio draft PR #23 through the PR/QA conductor lane; recreate/register the local worktree or ask the branch owner to rebase before merge.
 2. Resume SES production proof after AWS production access is granted.
 3. Keep using the QA intake/conductor loop for future parallel-agent work.
 4. Add any new app to the registry before it joins the managed port/worktree/QA flow.
