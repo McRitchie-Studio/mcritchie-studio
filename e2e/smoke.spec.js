@@ -89,6 +89,25 @@ test("nav links work without errors", async ({ page }) => {
   await expect(page).toHaveURL("/signin");
 });
 
+test("logged-in link sidebar reopens after browser back", async ({ page }) => {
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/dashboard");
+  await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
+
+  await page.locator("button[data-link-sidebar-trigger]").first().click();
+  await expect(page.locator("#studio-link-sidebar")).toBeVisible();
+
+  await page.locator('#studio-link-sidebar a[href="/agents"]').click();
+  await expect(page).toHaveURL("/agents");
+
+  await page.goBack();
+  await expect(page).toHaveURL("/dashboard");
+  await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
+
+  await page.locator("button[data-link-sidebar-trigger]").first().click();
+  await expect(page.locator("#studio-link-sidebar")).toBeVisible();
+});
+
 // ---------------------------------------------------------------------------
 // Theme toggle
 // ---------------------------------------------------------------------------
