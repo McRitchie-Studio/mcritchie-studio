@@ -1,0 +1,54 @@
+<div x-cloak
+     x-show="selectedBuilder !== null"
+     x-transition.opacity
+     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8"
+     role="dialog"
+     aria-modal="true"
+     @keydown.escape.window="selectedBuilder = null"
+     @click.self="selectedBuilder = null">
+  <div x-show="selectedBuilder !== null"
+       x-transition
+       class="w-full max-w-md rounded-lg border border-subtle bg-surface p-5 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-primary">Focus Builders</p>
+        <h3 class="mt-1 text-xl font-bold text-heading" x-text="selectedBuilder && selectedBuilder.name"></h3>
+      </div>
+      <button type="button"
+              class="text-muted hover:text-heading transition"
+              aria-label="Close builder actions"
+              @click="selectedBuilder = null">
+        &times;
+      </button>
+    </div>
+
+    <div class="mt-4 rounded-md bg-inset p-4 text-sm text-secondary">
+      <div class="flex items-center justify-between gap-3">
+        <a :href="selectedBuilder && selectedBuilder.githubUrl"
+           target="_blank"
+           rel="noopener"
+           class="font-semibold text-primary hover:text-heading transition"
+           x-text="selectedBuilder ? '@' + selectedBuilder.login : ''"></a>
+        <span class="text-xs text-muted" x-text="selectedBuilder ? selectedBuilder.cachedWeeks + ' cached weeks' : ''"></span>
+      </div>
+      <p class="mt-3">
+        Archiving removes this builder from the focus roster and standard history views. Cached commit rows stay in the database.
+      </p>
+    </div>
+
+    <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+      <button type="button"
+              class="btn btn-outline"
+              @click="selectedBuilder = null">
+        Cancel
+      </button>
+      <form method="post" :action="selectedBuilder && selectedBuilder.archivePath">
+        <input type="hidden" name="_method" value="patch">
+        <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+        <button type="submit" class="btn bg-rose-500/90 text-white hover:bg-rose-500">
+          Archive From Focus
+        </button>
+      </form>
+    </div>
+  </div>
+</div>

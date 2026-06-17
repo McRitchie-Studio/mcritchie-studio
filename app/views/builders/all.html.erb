@@ -1,0 +1,116 @@
+<% content_for :title, "All Builders · McRitchie Studio" %>
+
+<section class="space-y-6">
+  <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div>
+      <p class="text-sm font-semibold text-primary uppercase tracking-wider">Public Build Velocity</p>
+      <h2 class="text-3xl font-bold text-heading mt-1"><%= @language.present? ? "All #{@language} Builders" : "All Builders" %></h2>
+      <p class="text-secondary mt-2 max-w-3xl">
+        Full active builder roster. Restore archived builders to add them back to the focus views and commit history matrix.
+      </p>
+    </div>
+    <div class="flex flex-col items-start gap-2 text-sm text-muted md:items-end md:text-right">
+      <p><%= builder_count(@focus_count) %> focus - <%= builder_count(@archived_count) %> archived</p>
+      <div class="flex flex-wrap gap-2 md:justify-end">
+        <%= link_to "Focus History", history_builders_path(language: @language), class: "btn btn-outline btn-sm" %>
+        <%= link_to "Focus Roster", builders_path(language: @language), class: "btn btn-outline btn-sm" %>
+      </div>
+    </div>
+  </div>
+
+  <section class="card overflow-hidden">
+    <div class="p-5 border-b border-subtle">
+      <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-heading">Builder Directory</h3>
+          <p class="text-sm text-secondary">Archiving changes roster visibility only. Public commit cache rows remain available.</p>
+        </div>
+        <span class="text-xs text-muted whitespace-nowrap"><%= builder_count(@builders.size) %> active builders</span>
+      </div>
+    </div>
+
+    <% if @builders.any? %>
+      <div class="overflow-x-auto">
+        <table class="builders-sticky-table w-full min-w-[860px] text-sm">
+          <thead>
+            <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
+              <th class="sticky left-0 z-50 bg-surface-alt text-left py-3 px-4 min-w-72">Builder</th>
+              <th class="text-left py-3 px-3 min-w-28">Status</th>
+              <th class="text-left py-3 px-3 min-w-40">Location</th>
+              <th class="text-left py-3 px-3 min-w-28">Language</th>
+              <th class="text-right py-3 px-3 min-w-28">Cached Commits</th>
+              <th class="text-right py-3 px-4 min-w-40">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-subtle">
+            <% @builders.each do |builder| %>
+              <% person = builder.person %>
+              <% total_commits = @total_commits_by_login[builder.github_login].to_i %>
+              <tr class="hover:bg-surface-alt/60 transition <%= builder.included_in_roster? ? "" : "opacity-80" %>">
+                <td class="sticky left-0 z-20 bg-surface py-3 px-4">
+                  <div class="flex items-center gap-3">
+                    <% if builder.avatar_url.present? %>
+                      <img src="<%= builder.avatar_url %>"
+                           alt="<%= builder.display_name %>"
+                           loading="lazy"
+                           class="w-10 h-10 rounded-full object-cover bg-surface-alt flex-shrink-0">
+                    <% else %>
+                      <div class="w-10 h-10 rounded-full bg-surface-alt flex items-center justify-center flex-shrink-0 text-secondary text-sm font-semibold">
+                        <%= builder_initials(builder) %>
+                      </div>
+                    <% end %>
+                    <div class="min-w-0">
+                      <p class="font-semibold text-heading truncate"><%= builder.display_name %></p>
+                      <div class="flex flex-wrap items-center gap-2 mt-0.5">
+                        <%= link_to "@#{builder.github_login}",
+                              builder.github_url,
+                              target: "_blank",
+                              rel: "noopener",
+                              class: "text-xs text-primary hover:text-heading transition" %>
+                        <% if person.website_url.present? %>
+                          <%= link_to "Website", person.website_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                        <% end %>
+                        <% if person.x_url.present? %>
+                          <%= link_to "X", person.x_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                        <% end %>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-3 px-3">
+                  <% if builder.included_in_roster? %>
+                    <span class="inline-flex rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200">Focus</span>
+                  <% else %>
+                    <span class="inline-flex rounded-full bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-200">Archived</span>
+                  <% end %>
+                </td>
+                <td class="py-3 px-3 text-secondary"><%= person.location.presence || "—" %></td>
+                <td class="py-3 px-3 text-secondary"><%= builder.primary_language.presence || "—" %></td>
+                <td class="py-3 px-3 text-right font-semibold text-heading"><%= builder_count(total_commits) %></td>
+                <td class="py-3 px-4 text-right">
+                  <% if builder.included_in_roster? %>
+                    <%= button_to "Archive",
+                          archive_builder_path(builder.github_login, redirect_to: request.fullpath),
+                          method: :patch,
+                          class: "btn btn-outline btn-sm" %>
+                  <% else %>
+                    <%= button_to "Restore To Focus",
+                          restore_builder_path(builder.github_login, redirect_to: request.fullpath),
+                          method: :patch,
+                          class: "btn btn-primary btn-sm" %>
+                  <% end %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="p-5">
+        <div class="empty-state">
+          <p class="text-secondary">No active builders found.</p>
+        </div>
+      </div>
+    <% end %>
+  </section>
+</section>

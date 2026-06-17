@@ -139,7 +139,13 @@ Rails.application.routes.draw do
   resources :teams, only: [:index], param: :slug
   resources :builders, only: [:index], param: :github_login do
     collection do
+      get :all
       get :history
+    end
+
+    member do
+      patch :archive
+      patch :restore
     end
   end
   resources :people, only: [:index], param: :slug do

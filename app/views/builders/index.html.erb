@@ -1,6 +1,6 @@
 <% content_for :title, "Builders · McRitchie Studio" %>
 
-<section class="space-y-6">
+<section class="space-y-6" x-data="{ selectedBuilder: null }">
   <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
     <div>
       <p class="text-sm font-semibold text-primary uppercase tracking-wider">Public Build Velocity</p>
@@ -25,6 +25,7 @@
           <p class="text-sm text-secondary">Avatar, GitHub identity, location, and recent public commit pace.</p>
         </div>
         <div class="flex flex-wrap gap-2">
+          <%= link_to "All Builders", all_builders_path(language: @language), class: "btn btn-outline btn-sm" %>
           <%= link_to "Five-Year History", history_builders_path(language: @language), class: "btn btn-outline btn-sm" %>
           <%= link_to "AI Builder Multiple", admin_ai_builder_multiple_path(builder_limit: 1_000, anchor: "commit-log"), class: "btn btn-outline btn-sm" %>
         </div>
@@ -33,7 +34,7 @@
 
     <% if @builder_rows.any? %>
       <div class="overflow-x-auto">
-        <table class="w-full table-fixed text-sm">
+        <table class="builders-sticky-table w-full table-fixed text-sm">
           <colgroup>
             <col>
             <col style="width: 100px;">
@@ -75,7 +76,17 @@
                       </div>
                     <% end %>
                     <div class="min-w-0">
-                      <p class="font-semibold text-heading truncate"><%= builder.display_name %></p>
+                      <button type="button"
+                              class="group block max-w-full text-left"
+                              @click.stop='selectedBuilder = <%= {
+                                name: builder.display_name,
+                                login: builder.github_login,
+                                githubUrl: builder.github_url,
+                                cachedWeeks: @ranges.size.to_s,
+                                archivePath: archive_builder_path(builder.github_login, redirect_to: request.fullpath)
+                              }.to_json %>'>
+                        <span class="block font-semibold text-heading truncate group-hover:text-primary transition"><%= builder.display_name %></span>
+                      </button>
                       <div class="flex flex-wrap items-center gap-2 mt-0.5">
                         <%= link_to "@#{builder.github_login}",
                               builder.github_url,
@@ -126,4 +137,6 @@
       </div>
     <% end %>
   </section>
+
+  <%= render "archive_modal" %>
 </section>

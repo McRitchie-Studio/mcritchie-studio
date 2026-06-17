@@ -1,5 +1,6 @@
 class BuildersController < ApplicationController
-  skip_before_action :require_authentication, only: [:index, :history]
+  skip_before_action :require_authentication, only: [:index, :all, :history]
+  before_action :set_builder, only: [:archive, :restore]
 
   RANGE_LIMIT = 13
 
@@ -22,7 +23,34 @@ class BuildersController < ApplicationController
     ].max
   end
 
+  def all
+    @language = params[:language].presence
+    scope = Builder.active.includes(:person)
+    scope = scope.where(primary_language: @language) if @language.present?
+    @builders = scope.order(included_in_roster: :desc, github_login: :asc).to_a
+    @total_commits_by_login = GithubBuilderCommitRangeCache
+      .where(github_login: @builders.map(&:github_login))
+      .group(:github_login)
+      .sum(:commits_count)
+    @focus_count = @builders.count(&:included_in_roster?)
+    @archived_count = @builders.size - @focus_count
+  end
+
+  def archive
+    @builder.update!(included_in_roster: false)
+    redirect_to safe_redirect_location, notice: "#{@builder.display_name} removed from focus builders."
+  end
+
+  def restore
+    @builder.update!(included_in_roster: true)
+    redirect_to safe_redirect_location, notice: "#{@builder.display_name} restored to focus builders."
+  end
+
   private
+
+  def set_builder
+    @builder = Builder.find_by!(github_login: params[:github_login])
+  end
 
   def recent_commit_ranges
     GithubCommitRange
@@ -36,6 +64,14 @@ class BuildersController < ApplicationController
   def builders_scope
     scope = Builder.active.included_in_roster.includes(:person)
     @language.present? ? scope.where(primary_language: @language) : scope
+  end
+
+  def safe_redirect_location
+    requested_path = params[:redirect_to].to_s
+    return builders_path if requested_path.blank?
+    return builders_path unless requested_path.start_with?("/") && !requested_path.start_with?("//")
+
+    requested_path
   end
 
   def builder_rows
