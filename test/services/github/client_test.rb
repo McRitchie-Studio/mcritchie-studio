@@ -26,6 +26,39 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_not_includes log_io.string, "secret-token"
   end
 
+  test "returns inspectable response without exposing request auth headers" do
+    client = Github::Client.new(
+      token: "secret-token",
+      logger: nil,
+      executor: ->(_uri, _request) {
+        FakeResponse.new(
+          "200",
+          '{"total_count":0,"items":[]}',
+          {
+            "content-type" => "application/json",
+            "link" => '<https://api.github.com/search/commits?page=2>; rel="next"',
+            "x-ratelimit-remaining" => "8",
+            "authorization" => "Bearer secret-token"
+          }
+        )
+      }
+    )
+
+    response = client.get_response(
+      "/search/commits",
+      params: { q: "author:amcritchie", per_page: 5 }
+    )
+
+    assert_equal 200, response.status
+    assert response.success?
+    assert_includes response.url, "q=author%3Aamcritchie"
+    assert_equal({ "total_count" => 0, "items" => [] }, response.body)
+    assert_equal "8", response.headers.fetch("x-ratelimit-remaining")
+    assert_equal "application/json", response.headers.fetch("content-type")
+    assert_not response.headers.key?("authorization")
+    assert_not_includes response.to_h.to_s, "secret-token"
+  end
+
   test "paginates array responses using link header" do
     responses = [
       FakeResponse.new(
