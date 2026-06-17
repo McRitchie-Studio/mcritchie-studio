@@ -43,6 +43,7 @@
             <% end %>
             <nav class="hidden md:flex items-center gap-4">
               <%= link_to "Meet the Agents 🦞", activities_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
+              <%= link_to "Builders", builders_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
             </nav>
           </div>
 
@@ -62,6 +63,7 @@
       <%# Mobile sub-navbar %>
       <div class="flex md:hidden items-center gap-3 px-4 py-1.5 overflow-x-auto border-t border-subtle bg-surface-alt">
         <%= link_to "Meet the Agents 🦞", activities_path, class: "text-secondary hover:text-primary text-xs font-medium transition whitespace-nowrap" %>
+        <%= link_to "Builders", builders_path, class: "text-secondary hover:text-primary text-xs font-medium transition whitespace-nowrap" %>
         <% unless logged_in? %>
           <span class="ml-auto flex items-center gap-3">
             <%= render "components/link_sidebar_trigger" %>

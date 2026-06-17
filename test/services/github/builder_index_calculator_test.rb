@@ -7,7 +7,7 @@ class Github::BuilderIndexCalculatorTest < ActiveSupport::TestCase
   end
 
   test "calculates index week medians and difficulty-adjusted multiple" do
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     [1, 2, 3, 4, 5].each_with_index do |multiple, index|
       create_metric("ai-#{index}", "ai_builder", week_start, multiple)
     end
@@ -25,7 +25,7 @@ class Github::BuilderIndexCalculatorTest < ActiveSupport::TestCase
   end
 
   test "stores incomplete notes when cohort sizes are below minimum" do
-    week_start = Date.new(2026, 6, 1)
+    week_start = Date.new(2026, 6, 6)
     create_metric("ai-1", "ai_builder", week_start, 2)
     create_metric("control-1", "control_builder", week_start, 2)
 

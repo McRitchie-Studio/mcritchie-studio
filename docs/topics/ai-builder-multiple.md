@@ -6,7 +6,12 @@ a builder-activity index, not a productivity measure.
 ## Metric
 
 - **Builder Weekly Commits** — public commits attributed to a tracked GitHub
-  login during a Monday-starting week.
+  login during a Saturday-Friday UTC week.
+- **Commit Range** — the explicit Saturday-Friday UTC period used for the
+  displayed weekly commit log. Dashboard headers show the Friday end date.
+- **Calendar Year / Quarter Totals** — report-only aggregates derived from
+  cached Saturday-Friday commit ranges. A range is assigned to the calendar
+  year and quarter of its Friday end date.
 - **Builder Baseline** — average weekly non-merge commits over the prior 90
   days before that week.
 - **Builder Multiple** — non-merge weekly commits divided by that builder's
@@ -16,22 +21,39 @@ a builder-activity index, not a productivity measure.
   `control_builder` cohort.
 - **Difficulty-Adjusted AI Builder Multiple** — AI Builder Multiple divided by
   Control Builder Multiple.
+- **Normalized Score** — a builder-relative weekly commit pace score using
+  buckets `1`, `2`, `3`, `5`, and `8`. It compares a week's commit count to
+  that same builder's cached five-year Saturday-Friday weekly history, then
+  colors the result from red to green in the roster UI.
 
 Bot-adjusted commit pace is also stored. It excludes obvious bot commits and
 merge commits from both the weekly count and its internal 90-day baseline.
+When the same commit SHA appears from overlapping GitHub API strategies or
+repository aliases, the weekly aggregator counts it once for that builder.
 
 ## Data Source
 
 The v0 source is GitHub's public API through `Github::Client`.
 `Github::CommitFetcher` uses repo-scoped commit listing when a tracked builder
 has active repos, and falls back to commit search when no repos are attached.
-This keeps the adapter replaceable by GH Archive, BigQuery, or another public
-commit source later.
+If the repo-scoped result is too sparse for the requested window, the fetcher
+can supplement with commit search so a narrow repo list does not make a builder
+look inactive. `GITHUB_REPO_SCOPE_MIN_OBSERVATIONS` controls that threshold,
+and `GITHUB_SEARCH_RANGE_DAYS` controls the search date-window size. Commit
+search uses 13-week windows by default (`91` days), then stores the raw response
+items and lets the weekly aggregator split those commits into Saturday-Friday
+builder/range cache rows. This keeps the adapter replaceable by GH Archive,
+BigQuery, or another public commit source later.
+
+Search and repo-scoped responses are only accepted when the returned
+`author.login` or `committer.login` matches the queried builder login for that
+role. This intentionally drops ambiguous email-only attribution so the metric
+stays tied to public GitHub identities.
 
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
 ```bash
-GITHUB_TOKEN=github_pat_... bin/rails github:ai_builder_multiple:backtest START=2025-06-01 END=2026-06-01
+GITHUB_TOKEN=github_pat_... bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12
 ```
 
 Do not print or commit the token. Store long-lived credentials in 1Password.
@@ -39,12 +61,144 @@ Do not print or commit the token. Store long-lived credentials in 1Password.
 ## Running A Backtest
 
 ```bash
-bin/rails github:ai_builder_multiple:backtest START=2025-06-01 END=2026-06-01
+bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12
 ```
+
+Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` to fetch a targeted
+builder subset while still recalculating weekly metrics and index rows from all
+stored observations.
+
+Use `SKIP_FETCH=1` to run the regression from stored observations only. This is
+useful after importing a large control-candidate list, because users without
+repo scopes would otherwise require broad GitHub commit search.
+
+For ad hoc user fetches, use the tracked builder model rather than the app's
+`Person` model:
+
+```ruby
+builder = TrackedGithubBuilder.find_by!(github_login: "amcritchie")
+builder.current_week_commits
+builder.last_week_commits
+builder.last_year_commits
+builder.last_five_commits
+```
+
+Class helpers are also available:
+
+```ruby
+TrackedGithubBuilder.last_week_commits("amcritchie")
+```
+
+The fetch windows use the same Saturday-Friday UTC calendar as the dashboard.
+`last_five_commits` is the five-year report window, starting `2021-07-24` and
+ending at the latest complete Friday. Each helper stores raw commit
+observations and refreshes that builder's `GithubBuilderWeeklyMetric` plus
+`GithubBuilderCommitRangeCache` rows for the requested window. Long search
+fetches publish cache rows after each fetched date segment, then run one final
+full-window aggregation pass so the dashboard can fill in while the job runs and
+still ends with complete zero-commit weeks.
+
+Two task shortcuts fetch common windows and then recalculate metrics/index rows
+and CSV exports for that window:
+
+```bash
+bin/rails github:ai_builder_multiple:fetch_last_week
+bin/rails github:ai_builder_multiple:fetch_last_five_years
+```
+
+Use `LOGIN=amcritchie` or `LOGINS=login_one,login_two` while testing. The full
+five-year task across the large control pool can require broad GitHub commit
+search for builders without repo scopes.
+
+For the large control-candidate pool, run the five-year history in resumable
+batches. The batch task skips builders that already have a complete
+Saturday-Friday cache for the five-year window and prints progress after each
+GitHub search date segment:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=3 \
+GITHUB_SEARCH_RANGE_DAYS=91 \
+GITHUB_RATE_LIMIT_PAUSE_SECONDS=180 \
+GITHUB_RATE_LIMIT_RETRIES=5 \
+bin/rails github:ai_builder_multiple:fetch_last_five_years_batch BATCH_SIZE=10
+```
+
+Use `START_AFTER=github_login` to continue from a known login, `COHORT=ai_builder`
+or `COHORT=control_builder` to limit the batch, and `SKIP_COMPLETE=false` to
+force a refresh of already-complete builders.
+
+For the curated public roster, use the included-builder batch task. It targets
+only active `Builder` rows with `included_in_roster=true`, while still using
+the same five-year cache completeness check and GitHub pacing controls:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=3 \
+GITHUB_SEARCH_RANGE_DAYS=91 \
+GITHUB_RATE_LIMIT_PAUSE_SECONDS=180 \
+GITHUB_RATE_LIMIT_RETRIES=5 \
+bin/rails github:ai_builder_multiple:fetch_included_last_five_years_batch BATCH_SIZE=10
+```
+
+The public builder roster has a separate `included_in_roster` flag so noisy or
+below-cutoff candidates can be hidden without deleting their identity or cached
+commit data. After cache rows are populated, apply the current roster cutoff at
+`@mitchellh` with:
+
+```bash
+bin/rails github:ai_builder_multiple:apply_builder_roster_cutoff CUTOFF=mitchellh RANGE_LIMIT=13
+```
+
+This marks builders ranked at or above the cutoff as included, and marks lower
+ranked active builders as excluded from the `/builders` roster.
+
+Rate-limit and pacing knobs:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=0.25 \
+GITHUB_BUILDER_PAUSE_SECONDS=2 \
+GITHUB_RATE_LIMIT_PAUSE_SECONDS=900 \
+GITHUB_RATE_LIMIT_RETRIES=4 \
+bin/rails github:ai_builder_multiple:fetch_last_week
+```
+
+`GITHUB_REQUEST_PAUSE_SECONDS` pauses after successful GitHub HTTP requests.
+`GITHUB_BUILDER_PAUSE_SECONDS` pauses between tracked builders.
+`GITHUB_RATE_LIMIT_PAUSE_SECONDS` and `GITHUB_RATE_LIMIT_RETRIES` control retry
+behavior after a GitHub rate-limit response. `GITHUB_SEARCH_RANGE_DAYS` defaults
+to `91`, which is 13 weeks. Lower it if a prolific builder's 13-week response is
+too large or repeatedly throttled. The fetch shortcuts use the exact target
+window by default; set `FETCH_WARMUP_DAYS=90` when you want to fetch baseline
+warmup data too.
+
+Paul Miller's historic active GitHub users list can be imported as a large
+control-candidate pool:
+
+```bash
+bin/rails github:ai_builder_multiple:import_paulmillr_active_users MAX=910
+bin/rails github:ai_builder_multiple:backtest START=2021-07-24 END=2026-06-12 SKIP_FETCH=1
+```
+
+Ruby-language rows from the same list can also be imported into the production
+`Builder` roster model. This creates/updates a `Person`, creates/updates the
+GitHub-specific `Builder`, enriches public GitHub profile fields, and ensures a
+matching `TrackedGithubBuilder` exists for commit cache jobs:
+
+```bash
+GITHUB_REQUEST_PAUSE_SECONDS=0.1 \
+bin/rails github:ai_builder_multiple:import_paulmillr_ruby_builders
+```
+
+Use `ENRICH_PROFILES=false` to skip `/users/:login` profile calls, `MAX=25` for
+a small sample, and `LANGUAGE=Ruby` if overriding the default explicitly.
 
 The runner fetches a 90-day warmup before `START` so the first target week can
 have baseline context. Weekly metrics and index weeks are upserted, so reruns
 do not duplicate commit observations.
+
+The aggregator also writes `GithubCommitRange` rows and
+`GithubBuilderCommitRangeCache` rows. These are the dashboard-facing weekly
+commit log: one cached builder/range row per tracked builder per
+Saturday-Friday UTC period, including zero-commit weeks.
 
 CSV exports are written to:
 
@@ -55,13 +209,56 @@ tmp/ai_builder_multiple/
 The files are:
 
 - `github_builder_weekly_metrics.csv`
+- `github_builder_commit_range_caches.csv`
 - `github_builder_index_weeks.csv`
 - `github_commit_observations_sample.csv`
 
-Inspect the latest JSON output at:
+Inspect the latest dashboard at:
 
 ```text
 /admin/ai_builder_multiple
+```
+
+The dashboard commit log loads the latest 9 cached Saturday-Friday UTC ranges
+by default. The full five-year commit cache table is available at:
+
+```text
+/admin/ai_builder_multiple/commit_history
+```
+
+The public Ruby builder roster is available at:
+
+```text
+/builders
+```
+
+It shows the active `Builder`/`Person` roster with avatar, GitHub username,
+location, and the trailing thirteen cached Saturday-Friday commit ranges. Use
+`/builders?language=Ruby` for the Ruby-only gist slice.
+
+The included-roster five-year history page is available at:
+
+```text
+/builders/history
+```
+
+It shows total commits, calendar-year totals, calendar-quarter totals,
+Saturday-Friday weekly counts back to `2021-07-24`, and a line chart with one
+quarterly commit-count line per included builder.
+
+Production/QA seed data for owner-requested monitored builders lives in:
+
+```text
+db/seeds/55_builders.rb
+```
+
+That seed creates/updates the `Person`, `Builder`, and matching
+`TrackedGithubBuilder` rows for the manually tracked GitHub accounts.
+
+The same latest index data is also available as JSON:
+
+```text
+/admin/ai_builder_multiple.json
 ```
 
 ## Caveats

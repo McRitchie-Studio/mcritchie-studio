@@ -1,0 +1,202 @@
+<% content_for :title, "Builder Commit History - McRitchie Studio" %>
+
+<% chart_width = 1280 %>
+<% chart_height = 380 %>
+<% chart_padding_x = 56 %>
+<% chart_padding_y = 38 %>
+
+<section class="space-y-6">
+  <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div>
+      <p class="text-sm font-semibold text-primary uppercase tracking-wider">Public Build Velocity</p>
+      <h2 class="text-3xl font-bold text-heading mt-1"><%= @language.present? ? "#{@language} Builder History" : "Builder Commit History" %></h2>
+      <p class="text-secondary mt-2 max-w-3xl">
+        Included builders with cached public GitHub commit counts by total, calendar year, calendar quarter, and Saturday-Friday UTC week.
+      </p>
+    </div>
+    <div class="flex flex-col items-start gap-2 text-sm text-muted md:items-end md:text-right">
+      <p><%= builder_count(@report.rows.size) %> included builders</p>
+      <% if @report.ranges.any? %>
+        <p><%= builder_count(@report.complete_rows_count) %> complete - <%= builder_count(@report.incomplete_rows_count) %> partial histories</p>
+      <% end %>
+      <p><%= @report.date_range_label %></p>
+      <%= link_to "Back To Roster", builders_path(language: @language), class: "btn btn-outline btn-sm" %>
+    </div>
+  </div>
+
+  <section class="card overflow-hidden">
+    <div class="p-5 border-b border-subtle">
+      <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-heading">Quarterly Commit Pace</h3>
+          <p class="text-sm text-secondary">Calendar-quarter totals derived from weekly cache rows. Each line is one included builder.</p>
+        </div>
+        <span class="text-xs text-muted whitespace-nowrap">Max quarter: <%= builder_count(@chart_max_value) %> commits</span>
+      </div>
+    </div>
+
+    <% if @chart_quarters.any? && @report.rows.any? %>
+      <div class="p-5">
+        <div class="overflow-x-auto">
+          <svg viewBox="0 0 <%= chart_width %> <%= chart_height %>" role="img" aria-label="Quarterly commit counts by builder" class="h-96 min-w-[960px] w-full">
+            <rect x="0" y="0" width="<%= chart_width %>" height="<%= chart_height %>" fill="rgba(17, 12, 42, 0.34)"></rect>
+
+            <% [0, (@chart_max_value / 2.0).round, @chart_max_value].uniq.each do |value| %>
+              <% y = builder_history_chart_y(value, @chart_max_value, height: chart_height, padding_y: chart_padding_y) %>
+              <line x1="<%= chart_padding_x %>" y1="<%= y %>" x2="<%= chart_width - chart_padding_x %>" y2="<%= y %>" stroke="rgba(148, 163, 184, 0.2)" stroke-width="1"></line>
+              <text x="<%= chart_padding_x - 10 %>" y="<%= y + 4 %>" text-anchor="end" fill="rgba(203, 213, 225, 0.72)" font-size="12"><%= builder_count(value) %></text>
+            <% end %>
+
+            <% @chart_quarters.each_with_index do |quarter, index| %>
+              <% next unless index.zero? || index == @chart_quarters.size - 1 || (index % 4).zero? %>
+              <% x = builder_history_chart_x(@chart_quarters, index, width: chart_width, padding_x: chart_padding_x) %>
+              <line x1="<%= x %>" y1="<%= chart_padding_y %>" x2="<%= x %>" y2="<%= chart_height - chart_padding_y %>" stroke="rgba(148, 163, 184, 0.12)" stroke-width="1"></line>
+              <text x="<%= x %>" y="<%= chart_height - 12 %>" text-anchor="middle" fill="rgba(203, 213, 225, 0.72)" font-size="11"><%= quarter.label %></text>
+            <% end %>
+
+            <% @report.rows.each_with_index do |row, index| %>
+              <polyline
+                points="<%= builder_history_chart_points(row, @chart_quarters, @chart_max_value, width: chart_width, height: chart_height, padding_x: chart_padding_x, padding_y: chart_padding_y) %>"
+                fill="none"
+                stroke="<%= builder_history_chart_color(index) %>"
+                stroke-width="2"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+                opacity="0.78">
+                <title><%= row[:builder].display_name %></title>
+              </polyline>
+            <% end %>
+          </svg>
+        </div>
+
+        <div class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <% @report.rows.each_with_index do |row, index| %>
+            <% builder = row[:builder] %>
+            <div class="flex min-w-0 items-center gap-2 text-xs text-secondary">
+              <span class="h-2.5 w-2.5 rounded-full flex-shrink-0" style="background: <%= builder_history_chart_color(index) %>;"></span>
+              <span class="truncate"><%= builder.display_name %></span>
+              <span class="text-muted flex-shrink-0"><%= builder_count(row[:total_commits_count]) %></span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% else %>
+      <div class="p-5">
+        <div class="empty-state">
+          <p class="text-secondary">Run the five-year included-builder cache to populate quarterly history.</p>
+        </div>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="card overflow-hidden">
+    <div class="p-5 border-b border-subtle">
+      <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-heading">Five-Year Commit Matrix</h3>
+          <p class="text-sm text-secondary">Totals are derived from cached Saturday-Friday UTC commit ranges. Missing cache rows show as blank.</p>
+        </div>
+        <% if @report.ranges.any? %>
+          <span class="text-xs text-muted whitespace-nowrap">
+            <%= builder_count(@report.years.size) %> years - <%= builder_count(@report.quarters.size) %> quarters - <%= builder_count(@report.ranges.size) %> weeks
+          </span>
+        <% end %>
+      </div>
+    </div>
+
+    <% if @report.rows.any? && @report.ranges.any? %>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-max text-sm">
+          <thead>
+            <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
+              <th class="sticky left-0 z-20 bg-surface-alt text-left py-3 px-4 min-w-72" rowspan="2">Builder</th>
+              <th class="text-right py-3 px-3 min-w-24" rowspan="2">Total</th>
+              <th class="text-center py-3 px-3" colspan="<%= @report.years.size %>">Calendar Years</th>
+              <th class="text-center py-3 px-3" colspan="<%= @report.quarters.size %>">Calendar Quarters</th>
+              <th class="text-center py-3 px-3" colspan="<%= @report.ranges.size %>">Weeks</th>
+            </tr>
+            <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
+              <% @report.years.each do |year| %>
+                <th class="text-right py-3 px-3 min-w-20"><%= year %></th>
+              <% end %>
+              <% @report.quarters.each do |quarter| %>
+                <th class="text-right py-3 px-3 min-w-20" title="<%= quarter.title %>">
+                  <%= builder_quarter_header(quarter) %>
+                </th>
+              <% end %>
+              <% @report.ranges.each do |range| %>
+                <th class="text-right py-3 px-3 min-w-20" title="<%= range.display_label %>">
+                  <%= builder_week_header(range) %>
+                </th>
+              <% end %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-subtle">
+            <% @report.rows.each_with_index do |row, index| %>
+              <% builder = row[:builder] %>
+              <% person = builder.person %>
+              <tr class="hover:bg-surface-alt/60 transition">
+                <td class="sticky left-0 z-10 bg-surface py-3 px-4">
+                  <div class="flex items-center gap-3">
+                    <% if builder.avatar_url.present? %>
+                      <img src="<%= builder.avatar_url %>"
+                           alt="<%= builder.display_name %>"
+                           loading="lazy"
+                           class="w-10 h-10 rounded-full object-cover bg-surface-alt flex-shrink-0">
+                    <% else %>
+                      <div class="w-10 h-10 rounded-full bg-surface-alt flex items-center justify-center flex-shrink-0 text-secondary text-sm font-semibold">
+                        <%= builder_initials(builder) %>
+                      </div>
+                    <% end %>
+                    <div class="min-w-0">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <span class="h-2.5 w-2.5 rounded-full flex-shrink-0" style="background: <%= builder_history_chart_color(index) %>;"></span>
+                        <p class="font-semibold text-heading truncate"><%= builder.display_name %></p>
+                      </div>
+                      <div class="flex flex-wrap items-center gap-2 mt-0.5">
+                        <%= link_to "@#{builder.github_login}",
+                              builder.github_url,
+                              target: "_blank",
+                              rel: "noopener",
+                              class: "text-xs text-primary hover:text-heading transition" %>
+                        <% if person.website_url.present? %>
+                          <%= link_to "Website", person.website_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                        <% end %>
+                        <% if person.x_url.present? %>
+                          <%= link_to "X", person.x_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                        <% end %>
+                        <span class="text-xs text-muted"><%= builder_count(row[:cached_range_count]) %>/<%= builder_count(@report.ranges.size) %> weeks</span>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-3 px-3 text-right font-semibold text-heading"><%= builder_count(row[:total_commits_count]) %></td>
+                <% @report.years.each do |year| %>
+                  <% count = row[:year_totals][year].to_i %>
+                  <td class="py-3 px-3 text-right <%= count.positive? ? "font-semibold text-heading" : "text-muted" %>"><%= builder_count(count) %></td>
+                <% end %>
+                <% @report.quarters.each do |quarter| %>
+                  <% count = row[:quarter_totals][quarter.key].to_i %>
+                  <td class="py-3 px-3 text-right <%= count.positive? ? "font-semibold text-heading" : "text-muted" %>"><%= builder_count(count) %></td>
+                <% end %>
+                <% @report.ranges.each do |range| %>
+                  <% count = row[:weekly_counts][range.id] %>
+                  <td class="py-3 px-3 text-right <%= count.to_i.positive? ? "font-semibold text-heading" : "text-muted" %>"
+                      title="<%= count.nil? ? "No cached row" : range.display_label %>">
+                    <%= count.nil? ? "&#8212;".html_safe : builder_count(count) %>
+                  </td>
+                <% end %>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="p-5">
+        <div class="empty-state">
+          <p class="text-secondary">Run the five-year included-builder cache to populate this table.</p>
+        </div>
+      </div>
+    <% end %>
+  </section>
+</section>

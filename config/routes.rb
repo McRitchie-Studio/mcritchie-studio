@@ -59,7 +59,8 @@ Rails.application.routes.draw do
     # Admin link hub — gathers every admin/operator destination (incl. the
     # on-chain Signing Console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links
-    get "ai_builder_multiple", to: "ai_builder_multiple#index", defaults: { format: :json }
+    get "ai_builder_multiple", to: "ai_builder_multiple#index"
+    get "ai_builder_multiple/commit_history", to: "ai_builder_multiple#commit_history", as: :ai_builder_multiple_commit_history
 
     get "tiktok/connect",  to: "tiktok#connect",  as: :tiktok_connect
     get "tiktok/callback", to: "tiktok#callback", as: :tiktok_callback
@@ -136,6 +137,11 @@ Rails.application.routes.draw do
     end
   end
   resources :teams, only: [:index], param: :slug
+  resources :builders, only: [:index], param: :github_login do
+    collection do
+      get :history
+    end
+  end
   resources :people, only: [:index], param: :slug do
     collection do
       get :merge

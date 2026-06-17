@@ -32,9 +32,9 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 | | `51_contents.rb` | 4 content items across stages |
 | | `52_tasks.rb` | 8 sample tasks |
 | | `53_activities.rb` | 6 sample activities |
-| | `54_ai_builder_multiple_candidates.rb` | 10 editable public GitHub builder seed candidates, 5 AI builders and 5 control builders, with optional repo scopes. All rows are marked in notes as seed candidates. |
+| | `54_ai_builder_multiple_candidates.rb` | 27 editable public GitHub builder seed candidates/monitors, 15 AI builders and 12 control builders, with optional repo scopes. Seed candidate rows are marked in notes as placeholders; `amcritchie` is an owner-requested monitor account. |
 
-**Totals:** 155 teams, 38 arenas, ~3000 people, ~2800 athletes, ~2800 contracts, plus 10 AI Builder Multiple seed candidates. All idempotent via `find_or_create_by!`.
+**Totals:** 155 teams, 38 arenas, ~3000 people, ~2800 athletes, ~2800 contracts, plus 27 AI Builder Multiple seed candidates/monitors. All idempotent via `find_or_create_by!`.
 
 ## Full rebuild vs plain seed
 

@@ -9,17 +9,32 @@ module Github
 
     DEFAULT_BASE_URL = "https://api.github.com".freeze
     TRANSIENT_STATUSES = [500, 502, 503, 504].freeze
+    RATE_LIMIT_HEADER_NAMES = %w[
+      retry-after
+      x-github-request-id
+      x-ratelimit-limit
+      x-ratelimit-remaining
+      x-ratelimit-reset
+      x-ratelimit-resource
+      x-ratelimit-used
+    ].freeze
 
     attr_reader :request_count
 
     def initialize(token: ENV["GITHUB_TOKEN"], base_url: DEFAULT_BASE_URL, logger: Rails.logger,
-      executor: nil, sleeper: ->(seconds) { sleep(seconds) }, max_retries: 2)
+      executor: nil, sleeper: ->(seconds) { sleep(seconds) }, max_retries: 2,
+      request_pause_seconds: ENV.fetch("GITHUB_REQUEST_PAUSE_SECONDS", 0).to_f,
+      rate_limit_pause_seconds: ENV.fetch("GITHUB_RATE_LIMIT_PAUSE_SECONDS", 60).to_f,
+      rate_limit_retries: ENV.fetch("GITHUB_RATE_LIMIT_RETRIES", 1).to_i)
       @token = token.to_s.strip.presence
       @base_url = base_url
       @logger = logger
       @executor = executor
       @sleeper = sleeper
       @max_retries = max_retries
+      @request_pause_seconds = request_pause_seconds.to_f
+      @rate_limit_pause_seconds = rate_limit_pause_seconds.to_f
+      @rate_limit_retries = [rate_limit_retries.to_i, 0].max
       @request_count = 0
     end
 
@@ -56,12 +71,29 @@ module Github
       default_headers.merge(headers).each { |key, value| req[key] = value }
 
       attempts = 0
+      rate_limit_attempts = 0
       loop do
         begin
           @request_count += 1
           response = execute(uri, req)
           log_response(uri, response)
-          raise_rate_limit!(response)
+
+          if (rate_limit_message = rate_limit_error_message(response))
+            log_rate_limit_response(uri, response, rate_limit_message)
+
+            if rate_limit_attempts < @rate_limit_retries && @rate_limit_pause_seconds.positive?
+              rate_limit_attempts += 1
+              @logger&.warn(
+                "GitHub API rate limited request=#{@request_count} " \
+                "retry=#{rate_limit_attempts}/#{@rate_limit_retries} " \
+                "sleep=#{@rate_limit_pause_seconds}s path=#{uri.path}"
+              )
+              @sleeper.call(@rate_limit_pause_seconds)
+              next
+            end
+
+            raise RateLimitError, rate_limit_message
+          end
 
           status = response.code.to_i
           if TRANSIENT_STATUSES.include?(status) && attempts < @max_retries
@@ -74,6 +106,7 @@ module Github
             raise HttpError, "GitHub API HTTP #{status}: #{response.body}"
           end
 
+          pause_after_request
           return response
         rescue HttpError
           raise
@@ -136,13 +169,57 @@ module Github
       nil
     end
 
-    def raise_rate_limit!(response)
+    def rate_limit_error_message(response)
       remaining = response["x-ratelimit-remaining"]
-      return unless response.code.to_i == 403 && remaining.present? && remaining.to_i.zero?
+      status = response.code.to_i
+      message = parsed_body_message(response.body)
 
-      reset = response["x-ratelimit-reset"].to_i
-      reset_at = reset.positive? ? Time.at(reset).utc.iso8601 : "unknown"
-      raise RateLimitError, "GitHub API rate limit exhausted; resets at #{reset_at}"
+      if status == 403 && remaining.present? && remaining.to_i.zero?
+        reset = response["x-ratelimit-reset"].to_i
+        reset_at = reset.positive? ? Time.at(reset).utc.iso8601 : "unknown"
+        return "GitHub API rate limit exhausted; resets at #{reset_at}"
+      end
+
+      if status == 403 && secondary_rate_limit_message?(message)
+        return "GitHub API secondary rate limit: #{message}"
+      end
+
+      return "GitHub API rate limited: #{message.presence || response.body}" if status == 429
+
+      nil
+    end
+
+    def secondary_rate_limit_message?(message)
+      normalized = message.to_s.downcase
+      normalized.include?("secondary rate limit") || normalized.include?("abuse detection")
+    end
+
+    def parsed_body_message(body)
+      return "" if body.blank?
+
+      parsed = JSON.parse(body)
+      parsed.is_a?(Hash) ? parsed.fetch("message", "").to_s : ""
+    rescue JSON::ParserError
+      ""
+    end
+
+    def log_rate_limit_response(uri, response, message)
+      @logger&.warn(
+        "GitHub API rate limit response request=#{@request_count} " \
+        "status=#{response.code} path=#{uri.path} " \
+        "headers=#{safe_rate_limit_headers(response).to_json} " \
+        "message=#{message} body=#{response.body}"
+      )
+    end
+
+    def safe_rate_limit_headers(response)
+      RATE_LIMIT_HEADER_NAMES.to_h do |header_name|
+        [header_name, response[header_name]]
+      end.compact
+    end
+
+    def pause_after_request
+      @sleeper.call(@request_pause_seconds) if @request_pause_seconds.positive?
     end
 
     def log_response(uri, response)

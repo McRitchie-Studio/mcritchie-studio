@@ -4,7 +4,7 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
   FakeClient = Struct.new(:payloads, :calls) do
     def paginate(path, params:, headers: {})
       calls << { path: path, params: params, headers: headers }
-      payloads
+      payloads.is_a?(Hash) ? Array(payloads.fetch(path, [])) : payloads
     end
   end
 
@@ -24,7 +24,7 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
       }
     }
     client = FakeClient.new([payload], [])
-    fetcher = Github::CommitFetcher.new(client: client, logger: nil)
+    fetcher = Github::CommitFetcher.new(client: client, logger: nil, repo_scope_min_observations: 0)
 
     2.times do
       fetcher.fetch_for_builder(builder: builder, start_date: Date.new(2026, 6, 1), end_date: Date.new(2026, 6, 7))
@@ -33,6 +33,55 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
     assert_equal 1, GithubCommitObservation.where(github_login: "repo-builder", repo_full_name: "owner/repo", sha: "abc123").count
     assert client.calls.all? { |call| call[:path] == "/repos/owner/repo/commits" }
     assert_equal %i[author committer author committer], client.calls.map { |call| call[:params].keys.first }
+  end
+
+  test "supplements sparse repo-scoped results with commit search" do
+    builder = TrackedGithubBuilder.create!(github_login: "sparse-builder", cohort: "ai_builder")
+    builder.tracked_github_builder_repos.create!(repo_full_name: "owner/repo")
+    repo_payload = {
+      "sha" => "repo123",
+      "html_url" => "https://github.com/owner/repo/commit/repo123",
+      "author" => { "login" => "sparse-builder" },
+      "commit" => {
+        "author" => { "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Repo scoped commit"
+      }
+    }
+    search_payload = {
+      "sha" => "search123",
+      "html_url" => "https://github.com/other/repo/commit/search123",
+      "repository" => { "full_name" => "other/repo" },
+      "author" => { "login" => "sparse-builder" },
+      "commit" => {
+        "author" => { "date" => "2026-06-02T12:00:00Z" },
+        "committer" => { "date" => "2026-06-02T12:00:00Z" },
+        "message" => "Search supplement commit"
+      }
+    }
+    client = FakeClient.new(
+      {
+        "/repos/owner/repo/commits" => [repo_payload],
+        "/search/commits" => [search_payload]
+      },
+      []
+    )
+
+    result = Github::CommitFetcher.new(
+      client: client,
+      logger: nil,
+      repo_scope_min_observations: 2
+    ).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 7)
+    )
+
+    assert_equal "repo_scoped_with_search_supplement", result[:strategy]
+    assert_equal 1, GithubCommitObservation.where(github_login: "sparse-builder", source_strategy: "repo_scoped").count
+    assert_equal 1, GithubCommitObservation.where(github_login: "sparse-builder", source_strategy: "search").count
+    assert client.calls.any? { |call| call[:path] == "/repos/owner/repo/commits" }
+    assert client.calls.any? { |call| call[:path] == "/search/commits" }
   end
 
   test "falls back to search strategy when no repos are attached" do
@@ -60,5 +109,101 @@ class Github::CommitFetcherTest < ActiveSupport::TestCase
     assert client.calls.all? { |call| call[:path] == "/search/commits" }
     assert_includes client.calls.first[:params][:q], "author:search-builder"
     assert_includes client.calls.first[:params][:q], "author-date:2026-06-01..2026-06-07"
+  end
+
+  test "ignores search results that are not attributed to the requested builder login" do
+    builder = TrackedGithubBuilder.create!(github_login: "nex3", cohort: "ai_builder")
+    payload = {
+      "sha" => "wrong-login",
+      "html_url" => "https://github.com/owner/repo/commit/wrong-login",
+      "repository" => { "full_name" => "owner/repo" },
+      "author" => { "login" => "someone-else" },
+      "committer" => { "login" => "someone-else" },
+      "commit" => {
+        "author" => { "name" => "Nex Three", "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "name" => "Nex Three", "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Search result from a matching email but different GitHub login"
+      }
+    }
+    client = FakeClient.new([payload], [])
+
+    result = Github::CommitFetcher.new(client: client, logger: nil).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 7)
+    )
+
+    assert_equal 0, result[:stored]
+    assert_equal 0, GithubCommitObservation.where(github_login: "nex3").count
+  end
+
+  test "accepts search results attributed to the requested committer login" do
+    builder = TrackedGithubBuilder.create!(github_login: "commit-builder", cohort: "ai_builder")
+    payload = {
+      "sha" => "committer-match",
+      "html_url" => "https://github.com/owner/repo/commit/committer-match",
+      "repository" => { "full_name" => "owner/repo" },
+      "author" => { "login" => "someone-else" },
+      "committer" => { "login" => "commit-builder" },
+      "commit" => {
+        "author" => { "name" => "Other Author", "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "name" => "Commit Builder", "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Committed by the tracked builder"
+      }
+    }
+    client = FakeClient.new([payload], [])
+
+    result = Github::CommitFetcher.new(client: client, logger: nil).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 7)
+    )
+
+    assert_equal 1, result[:stored]
+    assert_equal 1, GithubCommitObservation.where(github_login: "commit-builder", sha: "committer-match").count
+  end
+
+  test "uses thirteen week search ranges by default" do
+    builder = TrackedGithubBuilder.create!(github_login: "range-builder", cohort: "ai_builder")
+    client = FakeClient.new([], [])
+
+    result = Github::CommitFetcher.new(client: client, logger: nil).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 1, 3),
+      end_date: Date.new(2026, 4, 10)
+    )
+
+    assert_equal 91, result[:search_range_days]
+    assert_includes client.calls.first[:params][:q], "author-date:2026-01-03..2026-04-03"
+    assert_includes client.calls.third[:params][:q], "author-date:2026-04-04..2026-04-10"
+  end
+
+  test "calls segment callback after each search date range" do
+    builder = TrackedGithubBuilder.create!(github_login: "segment-builder", cohort: "ai_builder")
+    payload = {
+      "sha" => "segment123",
+      "html_url" => "https://github.com/owner/repo/commit/segment123",
+      "repository" => { "full_name" => "owner/repo" },
+      "author" => { "login" => "segment-builder" },
+      "commit" => {
+        "author" => { "name" => "Segment Builder", "date" => "2026-06-01T12:00:00Z" },
+        "committer" => { "name" => "Segment Builder", "date" => "2026-06-01T12:00:00Z" },
+        "message" => "Segment callback commit"
+      }
+    }
+    client = FakeClient.new([payload], [])
+    segments = []
+
+    Github::CommitFetcher.new(client: client, logger: nil, search_range_days: 7).fetch_for_builder(
+      builder: builder,
+      start_date: Date.new(2026, 6, 1),
+      end_date: Date.new(2026, 6, 14),
+      after_segment: ->(range_start, range_end) { segments << [range_start, range_end] }
+    )
+
+    assert_equal [
+      [Date.new(2026, 6, 1), Date.new(2026, 6, 7)],
+      [Date.new(2026, 6, 8), Date.new(2026, 6, 14)]
+    ], segments
   end
 end
