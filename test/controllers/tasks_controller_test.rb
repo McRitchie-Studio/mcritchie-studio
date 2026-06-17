@@ -19,6 +19,25 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "Tasks"
   end
 
+  test "index renders latest task feedback on cards" do
+    Activity.create!(
+      task_slug: @new_task.slug,
+      activity_type: "comment",
+      description: "Older note."
+    )
+    Activity.create!(
+      task_slug: @new_task.slug,
+      activity_type: "qa_feedback",
+      description: "Latest QA note should appear on the board."
+    )
+
+    get tasks_path
+
+    assert_response :success
+    assert_includes response.body, "Latest QA note should appear on the board."
+    assert_includes response.body, "2 notes"
+  end
+
   test "show renders task detail" do
     get task_path(@new_task.slug)
     assert_response :success
@@ -198,6 +217,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".label-upper", "Conversation"
     assert_includes response.body, "QA blocked until the sidebar branch is rebased."
+    assert_not_includes response.body, "Activity feed"
   end
 
   test "admin sees task feedback form" do

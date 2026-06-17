@@ -161,7 +161,6 @@
           <p class="label-upper">Conversation</p>
           <p class="text-xs text-muted mt-1">QA review feedback, agent handoffs, and follow-up notes for this task.</p>
         </div>
-        <%= link_to "Activity feed", activities_path(task_slug: @task.slug), class: "text-xs text-primary hover:text-primary-300" %>
       </div>
 
       <% if @task_activity&.errors&.any? %>

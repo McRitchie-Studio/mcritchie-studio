@@ -24,6 +24,7 @@ class TasksController < ApplicationController
     tasks = tasks.where(agent_slug: agent_filter) if agent_filter
     stage_filter = params[:stage].presence
     tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
+    load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
     @agents = Agent.order(:position)
   end
@@ -194,6 +195,15 @@ class TasksController < ApplicationController
   def load_task_conversation
     @task_activities = @task.activities.includes(:agent).conversation_order
     @task_activity ||= @task.activities.build(activity_type: "comment")
+  end
+
+  def load_board_task_conversation(tasks)
+    task_slugs = tasks.map(&:slug)
+    activities = Activity.where(task_slug: task_slugs, activity_type: Activity::TASK_CONVERSATION_TYPES)
+    @task_activity_counts = activities.group(:task_slug).count
+    @latest_task_activities = activities.recent.each_with_object({}) do |activity, memo|
+      memo[activity.task_slug] ||= activity
+    end
   end
 
   def task_activity_params

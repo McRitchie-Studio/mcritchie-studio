@@ -79,9 +79,10 @@ Handoff connections:
 
 ## Task Conversation and QA Feedback
 
-The task detail page owns the durable conversation for an increment. Use the
-task conversation when Avi, Steffon, a release conductor, or the original
-feature agent needs feedback that should survive chat context loss.
+The task board owns the durable conversation for an increment. `/tasks` cards
+show the latest feedback inline so agents can scan the queue without opening a
+separate tool. Open the task detail page when you need the full thread or need
+to add a note.
 
 Use these activity types:
 
