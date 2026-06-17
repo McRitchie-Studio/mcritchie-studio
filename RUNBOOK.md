@@ -5,7 +5,7 @@ Troubleshooting guide for autonomous agents. Format: problem, diagnosis, fix.
 ## Heroku Deploy Failures
 
 **Build error: asset compilation fails**
-- Diagnosis: Tailwind CSS build fails during `assets:precompile`. Usually a missing CSS class reference or syntax error in `application.tailwind.css`.
+- Diagnosis: Tailwind CSS build fails during `assets:precompile`. Usually a missing CSS class reference or syntax error in `app/assets/tailwind/application.css`.
 - Fix: Run `bin/rails tailwindcss:build` locally to reproduce. Check the error output for the offending file/line. Push the fix and redeploy.
 
 **Migration fails on deploy**
