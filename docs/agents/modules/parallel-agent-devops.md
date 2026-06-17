@@ -65,7 +65,9 @@ Default feature sessions are Feature lane only.
 
 10. **Handoff** the PR/QA packet by moving the task to `pr_review`. The PR
    body should mention the task slug or URL, and the task should link back to
-   the PR. Do not merge to `main` unless assigned the QA or Release lane.
+   the PR. Add a task conversation `handoff` note summarizing what changed,
+   what was verified, and what Avi should inspect first. Do not merge to `main`
+   unless assigned the QA or Release lane.
 
 ## Feature Graduation Rules
 
@@ -155,6 +157,11 @@ agent to create/update the task, or create the missing task only when Avi is
 explicitly taking ownership of the handoff. The PR may still be reviewed for
 urgent fixes, but the missing task metadata should be called out before merge.
 
+If a PR needs changes, Avi records the blocker as task conversation
+`qa_feedback` so the original feature agent has a durable next-action list. Add
+a GitHub PR comment too when the feedback is code-specific, CI-specific, or
+needs to live in the PR timeline.
+
 Avi should avoid rewriting feature branches unless taking explicit ownership of
 the fix. If Avi does modify a PR, the PR comment must say what changed and why.
 
@@ -237,7 +244,7 @@ Run the parallel-agent DevOps cycle:
   follow each item's `action:` line for the next owner handoff
 - review each PR for diff/description match, CI or local proof, docs impact, migrations, auth/email/payment/Solana risk, and overlap with other open PRs
 - ask Steffon/infra review for risky changes before merge when needed
-- merge only PRs that are ready; leave comments on PRs that need changes
+- merge only PRs that are ready; leave task `qa_feedback` and PR comments on PRs that need changes
 - after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
 - move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review

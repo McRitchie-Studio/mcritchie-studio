@@ -77,6 +77,42 @@ Handoff connections:
 - Final handoff should name the task, PR, release train, URLs, checks run,
   deployment SHA/release, and cleanup decision.
 
+## Task Conversation and QA Feedback
+
+The task board owns the durable conversation for an increment. `/tasks` cards
+show the latest feedback inline so agents can scan the queue without opening a
+separate tool. Open the task detail page when you need the full thread or need
+to add a note.
+
+Use these activity types:
+
+- `comment` for general coordination notes.
+- `qa_feedback` for Avi or Steffon review findings, QA blockers, failed checks,
+  missing metadata, or changes requested before merge/deploy.
+- `handoff` for feature-agent responses, rebase notes, local proof URLs, or
+  "ready again" messages after addressing feedback.
+
+When Avi sends work back, Avi should add `qa_feedback` on the task with the
+specific action needed and also comment on the PR when the feedback is tied to
+GitHub review, CI, or changed code. The task thread is the durable handoff for
+the original agent; the PR comment is the code-review surface.
+
+When the feature agent returns, the agent should read the task conversation,
+address each open `qa_feedback` item, add a `handoff` note with what changed,
+update branch/PR/local URL/check metadata if needed, and move the task back to
+`pr_review` when ready.
+
+Agents can read or write the same thread through the Activities API:
+
+```bash
+GET /api/v1/activities?task_slug=<task-slug>
+POST /api/v1/activities
+```
+
+Post payloads should include `task_slug`, `activity_type`, `description`,
+optional `agent_slug`, and optional `metadata`. API calls require the app's API
+bearer token. The HTML task page remains the operator-friendly source of truth.
+
 ## Stage Flow
 
 The board stages should mirror the release path, not generic activity buckets:
@@ -169,6 +205,8 @@ During handoff, the agent updates:
 - any changed acceptance criteria
 - release lane flag if the work needs production deploy, gem publish, provider
   config, env vars, or credential handling
+- a `handoff` note on the task conversation summarizing what changed, what was
+  verified, and what Avi should inspect first
 
 ## QA / Avi Duties
 
@@ -183,6 +221,11 @@ Avi uses the task board plus `bin/qa-intake`:
 7. Move accepted QA tasks to `prod_ready`.
 8. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
    approves release work.
+
+If the PR is not ready, Avi leaves `qa_feedback` on the task conversation with
+the exact blocker, expected owner action, and any PR/CI link needed to reproduce
+the issue. Also leave a GitHub PR comment when the blocker is code-review
+specific or should be visible on the PR.
 
 ## Release Train Tags
 

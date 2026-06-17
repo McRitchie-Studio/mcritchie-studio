@@ -2,7 +2,7 @@ class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show]
   before_action :require_admin, except: [:index, :show]
-  before_action :set_task, only: [:show, :edit, :update, :destroy, :queue, :start, :complete, :fail_task, :archive]
+  before_action :set_task, only: [:show, :edit, :update, :destroy, :queue, :start, :complete, :fail_task, :archive, :comment]
 
   def reorder
     slugs = params[:slugs]
@@ -24,11 +24,13 @@ class TasksController < ApplicationController
     tasks = tasks.where(agent_slug: agent_filter) if agent_filter
     stage_filter = params[:stage].presence
     tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
+    load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
     @agents = Agent.order(:position)
   end
 
   def show
+    load_task_conversation
   end
 
   def new
@@ -159,11 +161,73 @@ class TasksController < ApplicationController
     end
   end
 
+  def comment
+    @task_activity = @task.activities.build(task_activity_params)
+    @task_activity.activity_type = permitted_task_activity_type(@task_activity.activity_type)
+    @task_activity.agent_slug = current_activity_agent_slug if @task_activity.agent_slug.blank?
+    @task_activity.metadata = task_activity_metadata(@task_activity.metadata)
+
+    rescue_and_log(target: @task_activity, parent: @task) do
+      @task_activity.save!
+      respond_to do |format|
+        format.html { redirect_to task_path(@task.slug), notice: "Task feedback added." }
+        format.json { render json: @task_activity, status: :created }
+      end
+    end
+  rescue StandardError => e
+    respond_to do |format|
+      format.html do
+        load_task_conversation
+        flash.now[:alert] = e.message
+        render :show, status: :unprocessable_entity
+      end
+      format.json { render json: { error: e.message }, status: :unprocessable_entity }
+    end
+  end
+
   private
 
   def set_task
     @task = Task.find_by(slug: params[:slug])
     return redirect_to tasks_path, alert: "Task not found" unless @task
+  end
+
+  def load_task_conversation
+    @task_activities = @task.activities.includes(:agent).conversation_order
+    @task_activity ||= @task.activities.build(activity_type: "comment")
+  end
+
+  def load_board_task_conversation(tasks)
+    task_slugs = tasks.map(&:slug)
+    activities = Activity.where(task_slug: task_slugs, activity_type: Activity::TASK_CONVERSATION_TYPES)
+    @task_activity_counts = activities.group(:task_slug).count
+    @latest_task_activities = activities.recent.each_with_object({}) do |activity, memo|
+      memo[activity.task_slug] ||= activity
+    end
+  end
+
+  def task_activity_params
+    params.require(:activity).permit(:activity_type, :description, metadata: {})
+  end
+
+  def permitted_task_activity_type(type)
+    type = type.to_s
+    Activity::TASK_CONVERSATION_TYPES.include?(type) ? type : "comment"
+  end
+
+  def current_activity_agent_slug
+    prefix = current_user&.email.to_s.split("@").first.presence
+    return prefix if prefix && Agent.exists?(slug: prefix)
+
+    nil
+  end
+
+  def task_activity_metadata(raw_metadata)
+    metadata = raw_metadata.presence || {}
+    metadata.to_h.merge(
+      "source" => "task_conversation",
+      "user_id" => current_user&.id
+    ).compact
   end
 
   def task_params

@@ -92,6 +92,7 @@ Rails.application.routes.draw do
       post :complete
       post :fail_task
       post :archive
+      post :comment
     end
     resource :sizing, only: [:show, :update]
   end
