@@ -15,27 +15,28 @@ Covered surfaces:
 
 The managed cleanup queue is clean. McRitchie Studio has no tracked feature worktrees, no stale cleanup candidates, and no local branches needing PR handoff. The generated projects-root `AGENTS.md` matches the McRitchie Studio source file.
 
-Two remaining worktrees are active work, not cleanup:
+One remaining app worktree is active PR work, not cleanup:
 
-- Turf Monster PR #149, `feat/bot-admin-email`, a clean pushed branch by Steffon that changes the parked Alex agent email from `alexbot@mcritchie.studio` to `bot@mcritchie.studio`.
-- Studio Engine `feat/tailwind-v4-upgrade`, the Tailwind v4 engine release worktree.
+- Turf Monster PR #149, `feat/bot-admin-email`, a clean pushed branch that changes the parked Alex agent email from `alexbot@mcritchie.studio` to `bot@mcritchie.studio` and carries the Playwright selector hardening needed for the current CI run.
 
-Do not delete either worktree unless the owning feature/release is merged, abandoned, or separately archived.
+Do not delete that Turf Monster worktree unless PR #149 is merged, abandoned, or separately archived.
 
-The remaining blockers are not hidden local state. They are explicit docket items: complete or abandon the Studio Engine Tailwind v4 release, resume SES production proof once AWS grants production access, and continue using the PR/QA conductor lane for future parallel-agent work.
+The Studio Engine Tailwind v4 release is complete: `studio-engine` main is at `72c72eb`, tag `v0.6.0` exists, RubyGems has `studio-engine` `0.6.0`, and the consumer apps are already locked to `studio-engine (~> 0.6)` / `0.6.0`.
+
+The remaining blockers are not hidden local state. They are explicit docket items: clear PR #149 through CI/review, resume SES production proof once AWS grants production access, and continue using the PR/QA conductor lane for future parallel-agent work.
 
 ## Verified State
 
 | Surface | State |
 |---------|-------|
 | `mcritchie-studio` | `main` clean and aligned with `origin/main` after closeout docs are pushed; cleanup ledger records the final AI worktree removal |
-| `turf-monster` | Primary `main` clean and aligned with `origin/main`; current head `df35411` |
-| `studio-engine` primary | `main` clean and aligned with `origin/main`; current head `fcb0e77` |
-| Turf Monster worktree | `turf-monster/.worktrees/bot-admin-email` on `feat/bot-admin-email` at `4ea54af`; PR #149 is open and needs the feature agent |
-| Studio Engine worktree | `studio-engine/.worktrees/tailwind-v4-upgrade` on `feat/tailwind-v4-upgrade` at `72c72eb`, tagged `v0.6.0` |
+| `turf-monster` | Primary `main` clean and aligned with `origin/main`; current head `48a391d` |
+| `studio-engine` primary | `main` clean and aligned with `origin/main`; current head `72c72eb`, tagged `v0.6.0` |
+| Turf Monster worktree | `turf-monster/.worktrees/bot-admin-email` on `feat/bot-admin-email` at `86553f5`; PR #149 is open with CI in progress |
+| Studio Engine worktree | `studio-engine/.worktrees/tailwind-v4-upgrade` on `feat/tailwind-v4-upgrade` at `72c72eb`; release is merged/published and the local worktree can be removed after lifecycle cleanup approval |
 | McRitchie Studio worktrees | Primary checkout only |
 | Turf Monster worktrees | Primary checkout plus `bot-admin-email` active worktree |
-| QA intake | `open_prs=1`, `local_branches_without_pr=0`, `attention_items=1`, `cleanup_candidates=0`; attention item is Turf Monster PR #149 because it is one commit behind `origin/main` and its worktree database is not prepared |
+| QA intake | `open_prs=1`, `local_branches_without_pr=0`, `attention_items=0`, `cleanup_candidates=0` after PR #149 was rebased, prepared, tested, and pushed |
 | Root agent entrypoint | `/Users/alex/projects/AGENTS.md` matches `mcritchie-studio/docs/agents/index.md` |
 
 Commands used for the state check:
@@ -62,13 +63,13 @@ McRitchie Studio is in the clean state this audit was trying to reach:
 
 During this closeout pass, QA intake surfaced one stale local McRitchie Studio worktree/branch for `feat/ai-builder-multiple-ui`. Direct diffing proved it was the old pre-squash local branch for merged PR #21 and only lacked later main commits from the QA banner and cleanup ledger. The local server was stopped, the worktree was removed, the stale local branch was deleted, and the registry was refreshed.
 
-Turf Monster has one active clean worktree: `feat/bot-admin-email`, now open as PR #149. It is pushed and has no uncommitted changes, but QA intake marks it `needs-agent` because it is one commit behind `origin/main` and the local worktree database is not prepared. Leave it for the owner or the PR/QA conductor instead of deleting it during cleanup.
+Turf Monster has one active clean worktree: `feat/bot-admin-email`, now open as PR #149. It was rebased on `origin/main`, its local database was prepared, the model test passed locally, and the Playwright selector hardening needed by CI was committed and pushed. Leave it for PR/QA review instead of deleting it during cleanup.
 
 This means a new feature session can safely start from the standard worktree flow without inheriting old local drift.
 
-### 2. Studio Engine Tailwind v4 Is Live Unfinished Work
+### 2. Studio Engine Tailwind v4 Release Is Complete
 
-Studio Engine still has one registered worktree:
+Studio Engine still has one registered worktree, but it is no longer unfinished release work:
 
 ```text
 studio-engine/.worktrees/tailwind-v4-upgrade
@@ -77,10 +78,16 @@ head: 72c72eb
 tag: v0.6.0
 ```
 
-That branch changes release docs and version metadata for the Tailwind v4 engine release. It should stay on the docket until a release owner either:
+The release was completed after this closeout started:
 
-- merges and publishes the engine release, then updates consuming apps, or
-- abandons the branch and records why.
+- `bin/release-check --build` passed.
+- `studio-engine` `main` was fast-forwarded to `72c72eb` and pushed.
+- Tag `v0.6.0` is present on origin.
+- RubyGems reports `studio-engine (0.6.0)`.
+- McRitchie Studio and Turf Monster are already locked to `studio-engine` `0.6.0`.
+- Consumer smoke checks passed for SES rake tasks, SES SMTP configuration, and Tailwind builds.
+
+The release worktree is now a cleanup candidate once the local lifecycle cleanup step runs.
 
 ### 3. Current Audit Pointers Needed Reset
 
@@ -102,8 +109,8 @@ The remaining SES blocker is AWS production access, not local implementation.
 
 ## Current Docket
 
-1. Decide the Studio Engine Tailwind v4 release path.
-2. Return Turf Monster PR #149 to the feature agent: rebase on `origin/main`, prepare the local database, test, and hand back to Avi review.
+1. Clear Turf Monster PR #149 through final CI/review and merge.
+2. Remove the merged Studio Engine `tailwind-v4-upgrade` worktree during lifecycle cleanup.
 3. Resume SES production proof after AWS production access is granted.
 4. Keep using the QA intake/conductor loop for future parallel-agent work.
 5. Add any new app to the registry before it joins the managed port/worktree/QA flow.
