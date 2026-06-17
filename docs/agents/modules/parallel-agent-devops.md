@@ -310,10 +310,18 @@ agents. That is enough for dozens of occasional worktrees.
 
 Known future ceilings and controls:
 
-- Stock Redis usually exposes DBs `0-15`. The launcher defaults to worktree
-  DBs `9-15` and refuses to allocate beyond that range. Clean merged worktrees
-  first, or increase Redis `databases` and set `AGENT_REDIS_MAX_DB=<max>` for an
-  intentional high-concurrency window.
+- Redis capacity is two-layer: physical `databases` (fixed at Redis startup)
+  and an elastic soft band the launcher allocates from, starting at DB `9`. The
+  band idles at 20 slots, auto-grows by 10 (restart-free) when full while
+  physical room remains, and auto-shrinks by 10 (never below 20) as worktrees
+  close. It never hands out a DB beyond the physical ceiling. Check it with
+  `bin/agent-worktree scale status`; lifecycle detail is in
+  [`worktrees.md`](worktrees.md#scale-note).
+- Raising physical capacity is the one Redis-restart action:
+  `bin/agent-worktree scale --provision` edits the brew `redis.conf` and
+  restarts Redis once (target `databases 64`). It bounces every running stack on
+  `localhost:6379`, so it is a QA/infra-lane action during a quiet window, never
+  mid-session. The band's normal grow/shrink needs no restart.
 - Browser-heavy flows on 100 ports will be CPU-bound before Git becomes the
   problem.
 - Shared dependency release trains, especially `studio-engine`, need a single

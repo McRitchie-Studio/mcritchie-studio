@@ -205,9 +205,14 @@ to the delete-later ledger. Actual removal stays approval-gated and should use
 update, Git worktree removal, local branch deletion, and registry refresh happen
 together.
 
-The worktree launcher defaults to stock-safe Redis DBs `9-15`. If those slots
-are full, clean merged worktrees before creating another stack. Only set
-`AGENT_REDIS_MAX_DB=<max>` after Redis is configured with enough databases.
+The worktree launcher uses an elastic Redis band starting at DB `9`. The band
+idles at `20` slots, auto-grows by `10` (restart-free) when full while physical
+room remains, and auto-shrinks by `10` (never below `20`) as worktrees close.
+Physical capacity is the Redis `databases` setting, fixed at startup; the band
+can never exceed it. Inspect both with `bin/agent-worktree scale status`. If the
+band is capped by physical room, run `bin/agent-worktree scale --provision` once
+to raise Redis `databases` (this restarts Redis and bounces every running stack;
+leave it for the QA/infra lane).
 
 ## LLM Adapters
 

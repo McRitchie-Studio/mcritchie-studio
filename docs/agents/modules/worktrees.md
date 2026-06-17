@@ -87,6 +87,7 @@ bin/agent-worktree doctor
 bin/agent-worktree snapshot
 bin/agent-worktree cleanup
 bin/agent-worktree remove turf-monster task-slug --yes
+bin/agent-worktree scale status
 ```
 
 - `list` shows task, health, URL, branch, dirty state, merge state, ahead/behind, database, Redis DB, pidfile state, and local inbox URL.
@@ -98,7 +99,9 @@ bin/agent-worktree remove turf-monster task-slug --yes
 - `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to `origin/main`.
 - `snapshot` prints a non-secret JSON registry of every generated worktree,
   including health, local URLs, branch state, Redis DB, database name, cleanup
-  candidacy, compare URL, and doctor issues.
+  candidacy, compare URL, and doctor issues. The payload also carries a
+  top-level `capacity` block (`floor`, `step`, `current`, `used`, `free`,
+  `physical_max`) describing the elastic Redis band.
 - `snapshot --write` writes the same registry to
   `/Users/alex/projects/.agents/worktree-registry.json` for conductor sessions,
   dashboards, and future automation. Set
@@ -110,8 +113,15 @@ bin/agent-worktree remove turf-monster task-slug --yes
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
 - `remove <app> <task-slug> --yes` is the approved deletion path after Mr.
   McRitchie or the conductor authorizes cleanup. It refuses dirty or
-  non-equivalent worktrees, stops the stack, updates the cleanup ledger, removes
-  the Git worktree, deletes the stale local branch, and refreshes the registry.
+  non-equivalent worktrees, stops the stack, flushes the stack's Redis DB (so a
+  reused DB number cannot inherit stale keys), updates the cleanup ledger, removes
+  the Git worktree, deletes the stale local branch, shrinks the Redis band toward
+  the floor when slots free up, and refreshes the registry.
+- `scale status` prints the Redis band: floor, step, current band + DB range,
+  used, free, and the physical ceiling (`databases` from Redis). `scale out` /
+  `scale in` are manual nudges (respect floor and physical ceiling). `scale
+  --provision [--yes]` raises the physical `databases` and restarts Redis once;
+  see [Scale Note](#scale-note).
 
 Deletion remains approval-gated:
 
@@ -212,7 +222,7 @@ Worktree tooling should make parallel stacks "just work" without user terminal c
 Each worktree stack needs its own:
 
 - App-range port (`3101`, `3102`, etc. for Turf Monster).
-- Redis DB for Sidekiq and cache. The launcher allocates globally across generated stack env files and defaults to DBs `9-15`.
+- Redis DB for Sidekiq and cache. The launcher allocates globally across generated stack env files from an elastic band starting at DB `9` (see [Scale Note](#scale-note)).
 - Development database via `DATABASE_URL`.
 - Session cookie key.
 - `APP_PORT` so magic links point at the stack.
@@ -233,12 +243,46 @@ Callback-heavy flows such as Stripe, Google OAuth, CDP/MoonPay, webhooks, and em
 
 ## Scale Note
 
-The port plan supports 99 local stacks per app, but stock Redis usually exposes
-only databases `0-15`. The launcher therefore allocates only DBs `9-15` by
-default. If those slots are full, remove merged worktrees before creating new
-ones.
+Redis capacity has two layers:
 
-For higher local concurrency, intentionally increase the local Redis
-`databases` setting or move worktree stacks to dedicated Redis instances, then
-run the launcher with `AGENT_REDIS_MAX_DB=<max>`. Do not set that override
-unless Redis is actually configured to serve the expanded range.
+- **Physical capacity** is the Redis `databases` setting. It is fixed at Redis
+  startup; changing it needs a restart. Stock Redis exposes `0-15` (16 DBs).
+- **Soft band** is the slot range the launcher allocates from, starting at DB
+  `9`. It is elastic and restart-free within the physical ceiling.
+
+The band idles at **20 slots** (`FLOOR`) and changes by **10** (`STEP`):
+
+- **Scale-out (auto):** when the band is full and physical room remains,
+  `allocate_redis_db` grows the band by 10 (`scaled out: 20 -> 30 slots`) and
+  retries. No restart. At the physical ceiling it aborts with guidance to run
+  `cleanup` or `scale --provision`.
+- **Scale-in (auto):** `remove` and `cleanup --write` drop the band by 10
+  (never below the floor, never stranding a still-used DB) as slots free up
+  (`scaled in: 30 -> 20 slots`). No restart.
+
+The band size is persisted in `/Users/alex/projects/.agents/redis-capacity.json`
+and band allocation + capacity mutation are guarded by a `flock` on
+`/Users/alex/projects/.agents/agent-worktree.lock` so concurrent `new`/`up`
+runs cannot collide.
+
+Inspect the band with `bin/agent-worktree scale status`. To realize the full
+20-slot floor you need physical `databases >= 29` (DB 9 band start + 20). The
+band caps band hand-outs at the physical ceiling, so on stock Redis (16 DBs)
+only DBs `9-15` are usable until you provision.
+
+To raise physical capacity (one-time, target `databases 64`):
+
+```bash
+bin/agent-worktree scale --provision         # interactive confirm
+bin/agent-worktree scale --provision --yes   # skip the prompt
+```
+
+This edits the brew `redis.conf` (`$(brew --prefix)/etc/redis.conf`, overridable
+with `AGENT_REDIS_CONF`) and restarts Redis **exactly once**. It is idempotent
+(no-op when `databases` is already at/above target). The restart **bounces every
+running worktree stack** on `localhost:6379`, so it belongs to the QA/infra lane
+during a quiet window, never mid-session while other stacks are live.
+
+Overrides: `AGENT_REDIS_FLOOR`, `AGENT_REDIS_STEP`,
+`AGENT_REDIS_PHYSICAL_TARGET`, and the legacy `AGENT_REDIS_MAX_DB` (pins the band
+top explicitly). Do not set band overrides past what Redis actually serves.
