@@ -42,6 +42,7 @@ module Github
 
     def totals_by_login
       @totals_by_login ||= GithubBuilderCommitRangeCache
+        .for_cache_key
         .where(github_commit_range: ranges)
         .group(:github_login)
         .sum(:commits_count)

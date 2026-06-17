@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_17_021000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_17_182000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -441,6 +441,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_17_021000) do
     t.datetime "cached_at", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "cache_run_key", default: "legacy", null: false
+    t.index ["cache_run_key", "tracked_github_builder_id", "github_commit_range_id"], name: "idx_builder_range_caches_on_run_key_builder_range"
+    t.index ["cache_run_key"], name: "idx_builder_range_caches_on_cache_run_key"
     t.index ["github_commit_range_id", "cohort"], name: "idx_builder_range_caches_on_range_cohort"
     t.index ["github_commit_range_id"], name: "index_builder_range_caches_on_range_id"
     t.index ["github_login", "github_commit_range_id"], name: "idx_builder_range_caches_on_login_range"

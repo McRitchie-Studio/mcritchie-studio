@@ -39,6 +39,18 @@ class Github::BuilderHistoryBatchRunnerTest < ActiveSupport::TestCase
     assert_equal ["bbb-incomplete"], fetcher.calls.map { |call| call[:login] }
     assert_equal "bbb-incomplete", result[:next_start_after]
     assert_equal 1, result[:remaining_after_batch]
+    assert_equal Github::CommitCacheKey.current, result[:cache_key]
+  end
+
+  test "does not treat legacy cache rows as complete for the current cache key" do
+    legacy_builder = TrackedGithubBuilder.create!(github_login: "legacy-complete", cohort: "ai_builder")
+    create_complete_cache(legacy_builder, cache_key: "legacy")
+    fetcher = FakeFetcher.new([])
+
+    result = runner(fetcher: fetcher).run!(today: TODAY, batch_size: 1)
+
+    assert_equal ["legacy-complete"], result[:selected_logins]
+    assert_equal ["legacy-complete"], fetcher.calls.map { |call| call[:login] }
   end
 
   test "filters by cohort start_after and explicit logins" do
@@ -104,7 +116,7 @@ class Github::BuilderHistoryBatchRunnerTest < ActiveSupport::TestCase
     )
   end
 
-  def create_complete_cache(builder)
+  def create_complete_cache(builder, cache_key: Github::CommitCacheKey.current)
     window = Github::CommitFetchWindows.last_five_years(today: TODAY)
     Github::BuilderWeeklyAggregator.week_starts_between(window.begin, window.end).each do |week_start|
       GithubBuilderCommitRangeCache.create!(
@@ -113,6 +125,7 @@ class Github::BuilderHistoryBatchRunnerTest < ActiveSupport::TestCase
         github_login: builder.github_login,
         cohort: builder.cohort,
         commits_count: 0,
+        cache_run_key: cache_key,
         cached_at: Time.current
       )
     end

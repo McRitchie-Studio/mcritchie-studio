@@ -112,9 +112,11 @@ module Admin
       return [] if @commit_log_ranges.blank?
 
       caches = GithubBuilderCommitRangeCache
+        .for_cache_key
         .where(github_commit_range_id: @commit_log_ranges.map(&:id))
         .index_by { |cache| [cache.tracked_github_builder_id, cache.github_commit_range_id] }
       recent_totals = GithubBuilderCommitRangeCache
+        .for_cache_key
         .where(github_commit_range_id: @commit_log_ranges.map(&:id))
         .group(:tracked_github_builder_id)
         .sum(:commits_count)
@@ -151,6 +153,7 @@ module Admin
     def builder_rollups
       recent_totals = if @commit_log_ranges.present?
         GithubBuilderCommitRangeCache
+          .for_cache_key
           .where(github_commit_range_id: @commit_log_ranges.map(&:id))
           .group(:tracked_github_builder_id)
           .sum(:commits_count)

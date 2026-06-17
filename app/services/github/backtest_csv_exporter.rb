@@ -101,6 +101,7 @@ module Github
         csv << RANGE_CACHE_COLUMNS
         GithubBuilderCommitRangeCache
           .joins(:github_commit_range)
+          .for_cache_key
           .where(github_commit_ranges: {
             week_start_date: report_week_range(start_date, end_date)
           })

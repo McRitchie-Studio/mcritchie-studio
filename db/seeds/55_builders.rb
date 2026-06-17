@@ -1,128 +1,51 @@
-seeded_builders = [
-  {
-    github_login: "YungIrishNigerian",
-    github_name: "YungIrishNigerian",
-    first_name: "YungIrishNigerian",
-    last_name: "Builder",
-    location: nil,
-    avatar_url: "https://avatars.githubusercontent.com/u/92494002?v=4",
-    website_url: nil,
-    email: nil,
-    linkedin_url: nil,
-    x_url: nil,
-    instagram_url: nil,
-    facebook_url: nil,
-    github_profile_url: "https://github.com/YungIrishNigerian",
-    github_company: nil,
-    github_bio: nil,
-    github_blog: nil,
-    github_email: nil,
-    github_twitter_username: nil,
-    source_rank: nil,
-    source_contributions: nil,
-    raw_profile: {
-      login: "YungIrishNigerian",
-      id: 92494002,
-      html_url: "https://github.com/YungIrishNigerian",
-      avatar_url: "https://avatars.githubusercontent.com/u/92494002?v=4",
-      name: nil,
-      company: nil,
-      blog: "",
-      location: nil,
-      email: nil,
-      bio: nil,
-      twitter_username: nil,
-      public_repos: 0,
-      followers: 1,
-      following: 0,
-      created_at: "2021-10-14T01:13:29Z",
-      updated_at: "2026-05-27T23:27:27Z"
-    }
-  },
-  {
-    github_login: "amcritchie",
-    github_name: "Alex McRitchie",
-    first_name: "Alex",
-    last_name: "McRitchie",
-    location: nil,
-    avatar_url: "https://avatars.githubusercontent.com/u/7839245?v=4",
-    website_url: nil,
-    email: nil,
-    linkedin_url: nil,
-    x_url: nil,
-    instagram_url: nil,
-    facebook_url: nil,
-    github_profile_url: "https://github.com/amcritchie",
-    github_company: nil,
-    github_bio: "Director of Software Engineering at PlanOmatic with a passion for leading strong teams and scalable technology that is a delight to engage with.",
-    github_blog: nil,
-    github_email: nil,
-    github_twitter_username: nil,
-    source_rank: nil,
-    source_contributions: nil,
-    raw_profile: {
-      login: "amcritchie",
-      id: 7839245,
-      html_url: "https://github.com/amcritchie",
-      avatar_url: "https://avatars.githubusercontent.com/u/7839245?v=4",
-      name: "Alex McRitchie",
-      company: nil,
-      blog: "",
-      location: nil,
-      email: nil,
-      bio: "Director of Software Engineering at PlanOmatic with a passion for leading strong teams and scalable technology that is a delight to engage with.",
-      twitter_username: nil,
-      public_repos: 127,
-      followers: 17,
-      following: 38,
-      created_at: "2014-06-09T14:41:04Z",
-      updated_at: "2026-05-15T23:19:31Z"
-    }
-  },
-  {
-    github_login: "lucasmccomb",
-    github_name: "Lucas McComb",
-    first_name: "Lucas",
-    last_name: "McComb",
-    location: "Brooklyn, NY",
-    avatar_url: "https://avatars.githubusercontent.com/u/5007314?v=4",
-    website_url: "https://lem.work",
-    email: nil,
-    linkedin_url: nil,
-    x_url: nil,
-    instagram_url: nil,
-    facebook_url: nil,
-    github_profile_url: "https://github.com/lucasmccomb",
-    github_company: nil,
-    github_bio: "Software Engineer",
-    github_blog: "lem.work",
-    github_email: nil,
-    github_twitter_username: nil,
-    source_rank: nil,
-    source_contributions: nil,
-    raw_profile: {
-      login: "lucasmccomb",
-      id: 5007314,
-      html_url: "https://github.com/lucasmccomb",
-      avatar_url: "https://avatars.githubusercontent.com/u/5007314?v=4",
-      name: "Lucas McComb",
-      company: nil,
-      blog: "lem.work",
-      location: "Brooklyn, NY",
-      email: nil,
-      bio: "Software Engineer",
-      twitter_username: nil,
-      public_repos: 9,
-      followers: 12,
-      following: 4,
-      created_at: "2013-07-14T14:54:31Z",
-      updated_at: "2026-02-21T17:53:13Z"
-    }
-  }
+# frozen_string_literal: true
+
+source_url = "https://gist.github.com/paulmillr/2657075/a31455729440672467ada20ac10452d74a871e54"
+seed_note = "Focus builder seed for public GitHub commit cache. Public GitHub profile data only; verify before publishing analysis."
+
+focus_builders = [
+  { github_login: "ai", github_name: "Andrey Sitnik", first_name: "Andrey", last_name: "Sitnik", location: "Barcelona, Spain", avatar_url: "https://avatars.githubusercontent.com/u/19343?v=4", website_url: "https://sitnik.es", email: "andrey@sitnik.es", x_url: "https://x.com/sitnikcode", github_profile_url: "https://github.com/ai", github_company: "@evilmartians", github_blog: "https://sitnik.es", github_email: "andrey@sitnik.es", github_twitter_username: "sitnikcode", source_rank: 233, source_contributions: 939, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "akitaonrails", github_name: "Fabio Akita", first_name: "Fabio", last_name: "Akita", location: "Brazil", avatar_url: "https://avatars.githubusercontent.com/u/2840?v=4", website_url: "http://www.akitaonrails.com", x_url: "https://x.com/akitaonrails", github_profile_url: "https://github.com/akitaonrails", github_company: "Codeminer 42", github_blog: "http://www.akitaonrails.com", github_twitter_username: "akitaonrails", source_rank: 796, source_contributions: 39, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "amatsuda", github_name: "Akira Matsuda", first_name: "Akira", last_name: "Matsuda", location: "Tokyo Japan", avatar_url: "https://avatars.githubusercontent.com/u/11493?v=4", website_url: "https://twitter.com/a_matsuda", email: "ronnie@dio.jp", x_url: "https://x.com/a_matsuda", github_profile_url: "https://github.com/amatsuda", github_company: "Freelance", github_blog: "https://twitter.com/a_matsuda", github_email: "ronnie@dio.jp", github_twitter_username: "a_matsuda", source_rank: 331, source_contributions: 633, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "amcritchie", github_name: "Alex McRitchie", first_name: "Alex", last_name: "McRitchie", avatar_url: "https://avatars.githubusercontent.com/u/7839245?v=4", github_profile_url: "https://github.com/amcritchie", github_bio: "Director of Software Engineering at PlanOmatic with a passion for leading strong teams and scalable technology that is a delight to engage with.", cohort: "ai_builder", category: "manual_monitor", source_dataset: "manual_builder_seed" },
+  { github_login: "assaf", github_name: "Assaf Arkin", first_name: "Assaf", last_name: "Arkin", location: "Los Angeles CA", avatar_url: "https://avatars.githubusercontent.com/u/5158?v=4", website_url: "https://labnotes.org", email: "assaf@labnotes.org", github_profile_url: "https://github.com/assaf", github_company: "Rentail", github_blog: "https://labnotes.org", github_email: "assaf@labnotes.org", source_rank: 325, source_contributions: 647, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "auser", github_name: "Ari", first_name: "Ari", last_name: "Auser", location: "San Francisco CA", avatar_url: "https://avatars.githubusercontent.com/u/529?v=4", website_url: "https://ari.io", email: "me@ari.io", github_profile_url: "https://github.com/auser", github_blog: "https://ari.io", github_email: "me@ari.io", source_rank: 787, source_contributions: 43, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "bkeepers", github_name: "Brandon Keepers", first_name: "Brandon", last_name: "Keepers", location: "near the ocean", avatar_url: "https://avatars.githubusercontent.com/u/173?v=4", website_url: "http://opensoul.org", x_url: "https://x.com/bkeepers", github_profile_url: "https://github.com/bkeepers", github_blog: "http://opensoul.org", github_twitter_username: "bkeepers", source_rank: 498, source_contributions: 327, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "brynary", github_name: "Bryan Helmkamp", first_name: "Bryan", last_name: "Helmkamp", location: "New York City", avatar_url: "https://avatars.githubusercontent.com/u/19?v=4", website_url: "http://qlty.sh", github_profile_url: "https://github.com/brynary", github_company: "@qltysh", github_blog: "http://qlty.sh", source_rank: 672, source_contributions: 134, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "carllerche", github_name: "Carl Lerche", first_name: "Carl", last_name: "Lerche", location: "Portland OR", avatar_url: "https://avatars.githubusercontent.com/u/6180?v=4", email: "me@carllerche.com", x_url: "https://x.com/carllerche", github_profile_url: "https://github.com/carllerche", github_company: "@aws", github_email: "me@carllerche.com", github_twitter_username: "carllerche", source_rank: 659, source_contributions: 149, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "chad", github_name: "Chad Fowler", first_name: "Chad", last_name: "Fowler", location: "Arkansas", avatar_url: "https://avatars.githubusercontent.com/u/237?v=4", website_url: "http://chadfowler.com", email: "chad@chadfowler.com", x_url: "https://x.com/chadfowler", github_profile_url: "https://github.com/chad", github_company: "BlueYard", github_blog: "http://chadfowler.com", github_email: "chad@chadfowler.com", github_twitter_username: "chadfowler", source_rank: 795, source_contributions: 39, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "cv", github_name: "Carlos Villela", first_name: "Carlos", last_name: "Villela", location: "Canada", avatar_url: "https://avatars.githubusercontent.com/u/5445?v=4", website_url: "http://lixo.org", email: "cv@lixo.org", github_profile_url: "https://github.com/cv", github_company: "@nvidia", github_blog: "http://lixo.org", github_email: "cv@lixo.org", source_rank: 806, source_contributions: 37, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "dhh", github_name: "David Heinemeier Hansson", first_name: "David", last_name: "Heinemeier Hansson", location: "Chicago USA", avatar_url: "https://avatars.githubusercontent.com/u/2741?v=4", website_url: "https://dhh.dk", email: "dhh@hey.com", x_url: "https://x.com/dhh", github_profile_url: "https://github.com/dhh", github_company: "37signals", github_blog: "https://dhh.dk", github_email: "dhh@hey.com", github_twitter_username: "dhh", source_rank: 439, source_contributions: 411, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "dkubb", github_name: "Dan Kubb", first_name: "Dan", last_name: "Kubb", location: "Mission BC Canada", avatar_url: "https://avatars.githubusercontent.com/u/133?v=4", email: "github@dan.kubb.ca", x_url: "https://x.com/dkubb", github_profile_url: "https://github.com/dkubb", github_company: "Self Employed", github_email: "github@dan.kubb.ca", github_twitter_username: "dkubb", source_rank: 199, source_contributions: 1106, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "elliottcable", github_name: "elliottcable", first_name: "elliottcable", last_name: "Builder", location: "Chicago IL", avatar_url: "https://avatars.githubusercontent.com/u/200?v=4", website_url: "http://ell.io/tt", email: "github-public@from.ec", github_profile_url: "https://github.com/ELLIOTTCABLE", github_company: "@Ahrefs", github_blog: "http://ell.io/tt", github_email: "github-public@from.ec", source_rank: 754, source_contributions: 68, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "ernie", github_name: "Ernie Miller", first_name: "Ernie", last_name: "Miller", location: "Naples FL", avatar_url: "https://avatars.githubusercontent.com/u/14947?v=4", website_url: "https://ernie.io", email: "ernie@ernie.io", x_url: "https://x.com/erniemiller", github_profile_url: "https://github.com/ernie", github_company: "@gusto", github_blog: "https://ernie.io", github_email: "ernie@ernie.io", github_twitter_username: "erniemiller", source_rank: 632, source_contributions: 171, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "homakov", github_name: "Egor Homakov", first_name: "Egor", last_name: "Homakov", location: "Follow there twitter.com/homakov", avatar_url: "https://avatars.githubusercontent.com/u/174693?v=4", website_url: "https://sakurity.com", email: "homakov@gmail.com", x_url: "https://x.com/homakov", github_profile_url: "https://github.com/homakov", github_blog: "https://sakurity.com", github_email: "homakov@gmail.com", github_twitter_username: "homakov", source_rank: 671, source_contributions: 135, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "hsbt", github_name: "Hiroshi SHIBATA", first_name: "Hiroshi", last_name: "SHIBATA", location: "Tokyo Japan", avatar_url: "https://avatars.githubusercontent.com/u/12301?v=4", website_url: "https://www.hsbt.org/", email: "hsbt@ruby-lang.org", x_url: "https://x.com/hsbt", github_profile_url: "https://github.com/hsbt", github_company: "@ruby @rubygems @rbenv @88labs @andpad-dev", github_blog: "https://www.hsbt.org/", github_email: "hsbt@ruby-lang.org", github_twitter_username: "hsbt", source_rank: 222, source_contributions: 989, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "huacnlee", github_name: "Jason Lee", first_name: "Jason", last_name: "Lee", location: "Hangzhou,China", avatar_url: "https://avatars.githubusercontent.com/u/5518?v=4", email: "huacnlee@gmail.com", x_url: "https://x.com/huacnlee", github_profile_url: "https://github.com/huacnlee", github_company: "@longbridge", github_email: "huacnlee@gmail.com", github_twitter_username: "huacnlee", source_rank: 311, source_contributions: 685, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "jackdanger", github_name: "Jack Danger", first_name: "Jack", last_name: "Danger", location: "San Francisco", avatar_url: "https://avatars.githubusercontent.com/u/2071?v=4", website_url: "http://jackdanger.com", email: "github@jackcanty.com", github_profile_url: "https://github.com/JackDanger", github_company: "LaunchDarkly", github_blog: "http://jackdanger.com", github_email: "github@jackcanty.com", source_rank: 529, source_contributions: 279, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "jamtur01", github_name: "James Turnbull", first_name: "James", last_name: "Turnbull", location: "Brooklyn NY", avatar_url: "https://avatars.githubusercontent.com/u/4365?v=4", website_url: "https://www.kartar.net/", email: "james@ltl.so", x_url: "https://x.com/kartar", github_profile_url: "https://github.com/jamtur01", github_blog: "https://www.kartar.net/", github_email: "james@ltl.so", github_twitter_username: "kartar", source_rank: 450, source_contributions: 386, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "jedi4ever", github_name: "Patrick Debois", first_name: "Patrick", last_name: "Debois", location: "Belgium", avatar_url: "https://avatars.githubusercontent.com/u/70908?v=4", website_url: "https://www.jedi.be/blog", x_url: "https://x.com/patrickdebois", github_profile_url: "https://github.com/jedi4ever", github_company: "Jedi BV", github_blog: "https://www.jedi.be/blog", github_twitter_username: "patrickdebois", source_rank: 274, source_contributions: 788, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "josevalim", github_name: "Jos\u00e9 Valim", first_name: "Jos\u00e9", last_name: "Valim", location: "Krak\u00f3w, Poland", avatar_url: "https://avatars.githubusercontent.com/u/9582?v=4", website_url: "https://dashbit.co/", email: "jose.valim@dashbit.co", x_url: "https://x.com/josevalim", github_profile_url: "https://github.com/josevalim", github_blog: "https://dashbit.co/", github_email: "jose.valim@dashbit.co", github_twitter_username: "josevalim", source_rank: 17, source_contributions: 3360, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "komagata", github_name: "Masaki Komagata", first_name: "Masaki", last_name: "Komagata", location: "Tokyo Japan", avatar_url: "https://avatars.githubusercontent.com/u/16577?v=4", website_url: "https://komagata.org/", email: "komagata@gmail.com", x_url: "https://x.com/komagata", github_profile_url: "https://github.com/komagata", github_company: "Lokka, inc", github_blog: "https://komagata.org/", github_email: "komagata@gmail.com", github_twitter_username: "komagata", source_rank: 567, source_contributions: 224, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "lucasmccomb", github_name: "Lucas McComb", first_name: "Lucas", last_name: "McComb", location: "Brooklyn NY", avatar_url: "https://avatars.githubusercontent.com/u/5007314?v=4", website_url: "https://lem.work", github_profile_url: "https://github.com/lucasmccomb", github_bio: "Software Engineer", github_blog: "lem.work", cohort: "ai_builder", category: "manual_monitor", source_dataset: "manual_builder_seed" },
+  { github_login: "mitchellh", github_name: "Mitchell Hashimoto", first_name: "Mitchell", last_name: "Hashimoto", location: "Los Angeles CA", avatar_url: "https://avatars.githubusercontent.com/u/1299?v=4", website_url: "https://mitchellh.com", email: "m@mitchellh.com", x_url: "https://x.com/mitchellh", github_profile_url: "https://github.com/mitchellh", github_blog: "https://mitchellh.com", github_email: "m@mitchellh.com", github_twitter_username: "mitchellh", source_rank: 114, source_contributions: 1536, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "mizzy", github_name: "Gosuke Miyashita", first_name: "Gosuke", last_name: "Miyashita", location: "Kanagawa Japan", avatar_url: "https://avatars.githubusercontent.com/u/3620?v=4", website_url: "http://mizzy.org/", email: "gosukenator@gmail.com", github_profile_url: "https://github.com/mizzy", github_blog: "http://mizzy.org/", github_email: "gosukenator@gmail.com", source_rank: 385, source_contributions: 510, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "nakajima", github_name: "Pat Nakajima", first_name: "Pat", last_name: "Nakajima", location: "New York NY", avatar_url: "https://avatars.githubusercontent.com/u/483?v=4", website_url: "https://patstechweblog.com", email: "patnakajima@gmail.com", github_profile_url: "https://github.com/nakajima", github_blog: "https://patstechweblog.com", github_email: "patnakajima@gmail.com", source_rank: 840, source_contributions: 16, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "nelstrom", github_name: "Drew Neil", first_name: "Drew", last_name: "Neil", location: "London UK", avatar_url: "https://avatars.githubusercontent.com/u/7069?v=4", website_url: "http://drewneil.com", github_profile_url: "https://github.com/nelstrom", github_blog: "http://drewneil.com", source_rank: 537, source_contributions: 270, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "schacon", github_name: "Scott Chacon", first_name: "Scott", last_name: "Chacon", location: "Berlin Germany", avatar_url: "https://avatars.githubusercontent.com/u/70?v=4", website_url: "http://scottchacon.com", email: "schacon@gmail.com", x_url: "https://x.com/chacon", github_profile_url: "https://github.com/schacon", github_company: "@gitbutlerapp", github_blog: "http://scottchacon.com", github_email: "schacon@gmail.com", github_twitter_username: "chacon", source_rank: 481, source_contributions: 348, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "sferik", github_name: "Erik Berlin", first_name: "Erik", last_name: "Berlin", location: "San Francisco", avatar_url: "https://avatars.githubusercontent.com/u/10308?v=4", x_url: "https://x.com/sferik", github_profile_url: "https://github.com/sferik", github_twitter_username: "sferik", source_rank: 21, source_contributions: 3257, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "sorah", github_name: "Sorah Fukumori", first_name: "Sorah", last_name: "Fukumori", location: "Tokyo Japan", avatar_url: "https://avatars.githubusercontent.com/u/29440?v=4", website_url: "https://sorah.jp/", email: "her@sorah.jp", x_url: "https://x.com/sora_h", github_profile_url: "https://github.com/sorah", github_company: "@ivry-inc | AS59128 @kmc-jp", github_blog: "https://sorah.jp/", github_email: "her@sorah.jp", github_twitter_username: "sora_h", source_rank: 405, source_contributions: 480, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "takano32", github_name: "TAKANO Mitsuhiro", first_name: "TAKANO", last_name: "Mitsuhiro", location: "Sakura Chiba Japan", avatar_url: "https://avatars.githubusercontent.com/u/16088?v=4", website_url: "http://takano32.blogspot.com/", email: "takano32@gmail.com", x_url: "https://x.com/takano32", github_profile_url: "https://github.com/takano32", github_blog: "http://takano32.blogspot.com/", github_email: "takano32@gmail.com", github_twitter_username: "takano32", source_rank: 422, source_contributions: 453, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "tarcieri", github_name: "Tony Arcieri", first_name: "Tony", last_name: "Arcieri", location: "Denver CO", avatar_url: "https://avatars.githubusercontent.com/u/797?v=4", website_url: "https://tonyarcieri.com", email: "bascule@gmail.com", github_profile_url: "https://github.com/tarcieri", github_company: "@iqlusioninc", github_blog: "https://tonyarcieri.com", github_email: "bascule@gmail.com", source_rank: 104, source_contributions: 1633, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "technicalpickles", github_name: "Josh Nichols", first_name: "Josh", last_name: "Nichols", location: "Atlanta GA", avatar_url: "https://avatars.githubusercontent.com/u/159?v=4", website_url: "https://pickles.dev", email: "joshua.nichols@gmail.com", x_url: "https://x.com/techpickles", github_profile_url: "https://github.com/technicalpickles", github_company: "@Gusto", github_blog: "https://pickles.dev", github_email: "joshua.nichols@gmail.com", github_twitter_username: "techpickles", source_rank: 489, source_contributions: 339, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "tobi", github_name: "Tobias L\u00fctke", first_name: "Tobias", last_name: "L\u00fctke", location: "Ottawa Canada", avatar_url: "https://avatars.githubusercontent.com/u/347?v=4", website_url: "https://tobi.lutke.com", github_profile_url: "https://github.com/tobi", github_company: "Shopify", github_blog: "tobi.lutke.com", source_rank: 704, source_contributions: 105, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "wycats", github_name: "Yehuda Katz", first_name: "Yehuda", last_name: "Katz", location: "Portland OR", avatar_url: "https://avatars.githubusercontent.com/u/4?v=4", website_url: "http://yehudakatz.com", email: "wycats@gmail.com", x_url: "https://x.com/wycats", github_profile_url: "https://github.com/wycats", github_company: "@heroku", github_blog: "http://yehudakatz.com", github_email: "wycats@gmail.com", github_twitter_username: "wycats", source_rank: 315, source_contributions: 676, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" },
+  { github_login: "yuiseki", github_name: "yuiseki", first_name: "yuiseki", last_name: "Builder", location: "Taito Tokyo Japan", avatar_url: "https://avatars.githubusercontent.com/u/25507?v=4", website_url: "https://yuiseki.net/", email: "yuiseki@gmail.com", x_url: "https://x.com/yuiseki_", github_profile_url: "https://github.com/yuiseki", github_company: "Yuiseki Inc.", github_blog: "https://yuiseki.net/", github_email: "yuiseki@gmail.com", github_twitter_username: "yuiseki_", source_rank: 791, source_contributions: 40, primary_language: "Ruby", cohort: "control_builder", category: "ruby_builder" }
 ]
 
-seeded_builders.each do |data|
+focus_builders.each do |data|
   github_login = data[:github_login].downcase
+  profile_url = data[:github_profile_url].presence || "https://github.com/#{github_login}"
   person = Builder.find_by(github_login: github_login)&.person ||
     Person.find_or_create_by_name!(data[:first_name], data[:last_name])
 
@@ -141,7 +64,7 @@ seeded_builders.each do |data|
   builder = Builder.find_or_initialize_by(github_login: github_login)
   builder.assign_attributes(
     person: person,
-    github_profile_url: data[:github_profile_url],
+    github_profile_url: profile_url,
     github_avatar_url: data[:avatar_url],
     github_name: data[:github_name],
     github_company: data[:github_company],
@@ -149,25 +72,34 @@ seeded_builders.each do |data|
     github_blog: data[:github_blog],
     github_email: data[:github_email],
     github_twitter_username: data[:github_twitter_username],
-    primary_language: nil,
-    source_dataset: "manual_builder_seed",
-    source_url: data[:github_profile_url],
+    primary_language: data[:primary_language],
+    source_dataset: data[:source_dataset].presence || "paul_millr_ruby_focus_seed",
+    source_url: data[:source_url].presence || source_url,
     source_rank: data[:source_rank],
     source_contributions: data[:source_contributions],
     active: true,
-    raw_profile: data[:raw_profile]
+    included_in_roster: true,
+    raw_profile: {
+      "seed_source" => data[:source_dataset].presence || "paul_millr_ruby_focus_seed",
+      "github_login" => github_login,
+      "github_profile_url" => profile_url,
+      "avatar_url" => data[:avatar_url],
+      "source_rank" => data[:source_rank],
+      "source_contributions" => data[:source_contributions],
+      "primary_language" => data[:primary_language]
+    }.compact_blank
   )
   builder.save!
 
-  tracked = TrackedGithubBuilder.find_or_initialize_by(github_login: builder.github_login)
+  tracked = TrackedGithubBuilder.find_or_initialize_by(github_login: github_login)
   tracked.assign_attributes(
     display_name: builder.display_name,
-    cohort: "ai_builder",
-    category: "manual_monitor",
-    notes: "Owner-requested seeded GitHub builder. Public GitHub profile data only; review cohort before publishing analysis.",
+    cohort: data.fetch(:cohort),
+    category: data.fetch(:category),
+    notes: seed_note,
     active: true
   )
   tracked.save!
 end
 
-puts "Seeded GitHub builders: #{seeded_builders.size}"
+puts "Seeded focus GitHub builders: #{focus_builders.size}"

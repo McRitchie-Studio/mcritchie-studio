@@ -60,6 +60,7 @@ class Github::BuilderRosterCutoffTest < ActiveSupport::TestCase
       non_merge_commits_count: commits_count,
       bot_adjusted_commits_count: commits_count,
       active_repos_count: 1,
+      cache_run_key: Github::CommitCacheKey.current,
       cached_at: Time.current
     )
   end
