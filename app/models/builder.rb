@@ -2,6 +2,7 @@ class Builder < ApplicationRecord
   belongs_to :person
 
   scope :active, -> { where(active: true) }
+  scope :included_in_roster, -> { where(included_in_roster: true) }
   scope :ruby, -> { where(primary_language: "Ruby") }
 
   validates :github_login, presence: true, uniqueness: true,

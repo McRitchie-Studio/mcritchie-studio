@@ -124,6 +124,18 @@ Use `START_AFTER=github_login` to continue from a known login, `COHORT=ai_builde
 or `COHORT=control_builder` to limit the batch, and `SKIP_COMPLETE=false` to
 force a refresh of already-complete builders.
 
+The public builder roster has a separate `included_in_roster` flag so noisy or
+below-cutoff candidates can be hidden without deleting their identity or cached
+commit data. After cache rows are populated, apply the current roster cutoff at
+`@mitchellh` with:
+
+```bash
+bin/rails github:ai_builder_multiple:apply_builder_roster_cutoff CUTOFF=mitchellh RANGE_LIMIT=13
+```
+
+This marks builders ranked at or above the cutoff as included, and marks lower
+ranked active builders as excluded from the `/builders` roster.
+
 Rate-limit and pacing knobs:
 
 ```bash

@@ -77,4 +77,26 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_match "ruby-builder", response.body
     assert_no_match "js-builder", response.body
   end
+
+  test "index hides builders excluded from the roster without deleting them" do
+    Builder.create!(
+      person: Person.create!(first_name: "Included", last_name: "Builder"),
+      github_login: "included-builder",
+      active: true,
+      included_in_roster: true
+    )
+    Builder.create!(
+      person: Person.create!(first_name: "Excluded", last_name: "Builder"),
+      github_login: "excluded-builder",
+      active: true,
+      included_in_roster: false
+    )
+
+    get builders_path
+
+    assert_response :success
+    assert_match "included-builder", response.body
+    assert_no_match "excluded-builder", response.body
+    assert Builder.exists?(github_login: "excluded-builder")
+  end
 end

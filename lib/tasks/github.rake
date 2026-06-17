@@ -110,6 +110,21 @@ namespace :github do
       end
     end
 
+    desc "Mark builders at or above a cached commit-total cutoff as included in the roster. [CUTOFF=mitchellh] [RANGE_LIMIT=13]"
+    task apply_builder_roster_cutoff: :environment do
+      cutoff_login = ENV.fetch("CUTOFF", "mitchellh")
+      range_limit = ENV.fetch("RANGE_LIMIT", Github::BuilderRosterCutoff::DEFAULT_RANGE_LIMIT).to_i
+      result = Github::BuilderRosterCutoff.new(range_limit: range_limit).apply!(cutoff_login: cutoff_login)
+
+      puts "AI Builder Multiple roster cutoff applied"
+      puts "  cutoff login: #{result[:cutoff_login]}"
+      puts "  cutoff rank: #{result[:cutoff_rank]}"
+      puts "  cutoff total commits: #{result[:cutoff_total_commits]}"
+      puts "  included builders: #{result[:included_count]}"
+      puts "  excluded builders: #{result[:excluded_count]}"
+      puts "  ranges: #{result[:range_count]} (#{result[:range_start_date]} to #{result[:range_end_date]})"
+    end
+
     desc "Import Paul Miller's historic active GitHub users gist as control candidates. [MAX=910] [ACTIVE=true]"
     task import_paulmillr_active_users: :environment do
       importer = Github::PaulMillrActiveUsersImporter.new

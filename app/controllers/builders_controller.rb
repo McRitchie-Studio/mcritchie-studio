@@ -23,7 +23,7 @@ class BuildersController < ApplicationController
   end
 
   def builders_scope
-    scope = Builder.active.includes(:person)
+    scope = Builder.active.included_in_roster.includes(:person)
     @language.present? ? scope.where(primary_language: @language) : scope
   end
 

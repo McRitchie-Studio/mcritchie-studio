@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_15_183000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_17_021000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -220,6 +220,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_183000) do
     t.jsonb "raw_profile", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "included_in_roster", default: true, null: false
+    t.index ["active", "included_in_roster"], name: "index_builders_on_active_and_included_in_roster"
     t.index ["github_login"], name: "index_builders_on_github_login", unique: true
     t.index ["person_id"], name: "index_builders_on_person_id"
     t.index ["primary_language", "active"], name: "index_builders_on_primary_language_and_active"
