@@ -34,7 +34,7 @@
 
     <% if @builder_rows.any? %>
       <div class="overflow-x-auto">
-        <table class="builders-sticky-table w-full table-fixed text-sm">
+        <table class="w-full table-fixed text-sm">
           <colgroup>
             <col>
             <col style="width: 100px;">
@@ -45,7 +45,7 @@
           </colgroup>
           <thead>
             <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
-              <th class="sticky left-0 z-10 bg-surface-alt text-left py-3 px-4">Builder</th>
+              <th class="bg-surface-alt text-left py-3 px-4">Builder</th>
               <th class="text-left py-3 px-3" style="width: 100px; max-width: 100px;">Location</th>
               <th class="text-right py-3 px-3" title="Total commits across the displayed cached ranges">
                 <span>Total</span>
@@ -63,7 +63,7 @@
               <% builder = row[:builder] %>
               <% person = builder.person %>
               <tr class="hover:bg-surface-alt/60 transition">
-                <td class="sticky left-0 z-10 bg-surface py-3 px-4">
+                <td class="bg-surface py-3 px-4">
                   <div class="flex items-center gap-3">
                     <% if builder.avatar_url.present? %>
                       <img src="<%= builder.avatar_url %>"

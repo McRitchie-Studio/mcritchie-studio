@@ -13,27 +13,3 @@
  *= require_tree .
  *= require_self
  */
-
-.builders-sticky-table thead th {
-  position: sticky;
-  top: var(--builders-table-sticky-top, var(--nav-h, 4.75rem));
-  z-index: 20;
-  box-shadow: inset 0 -1px rgba(148, 163, 184, 0.16);
-}
-
-.builders-sticky-table thead th:first-child {
-  z-index: 30;
-}
-
-.builders-history-table thead tr:nth-child(2) th {
-  top: calc(var(--builders-table-sticky-top, var(--nav-h, 4.75rem)) + 2.75rem);
-  z-index: 21;
-}
-
-.builders-history-table thead tr:first-child th[rowspan] {
-  z-index: 32;
-}
-
-.builders-sticky-table tbody td:first-child {
-  z-index: 10;
-}

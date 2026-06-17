@@ -31,10 +31,10 @@
 
     <% if @builders.any? %>
       <div class="overflow-x-auto">
-        <table class="builders-sticky-table w-full min-w-[860px] text-sm">
+        <table class="w-full min-w-[860px] text-sm">
           <thead>
             <tr class="bg-surface-alt text-xs text-muted uppercase tracking-wider">
-              <th class="sticky left-0 z-50 bg-surface-alt text-left py-3 px-4 min-w-72">Builder</th>
+              <th class="bg-surface-alt text-left py-3 px-4 min-w-72">Builder</th>
               <th class="text-left py-3 px-3 min-w-28">Status</th>
               <th class="text-left py-3 px-3 min-w-40">Location</th>
               <th class="text-left py-3 px-3 min-w-28">Language</th>
@@ -47,7 +47,7 @@
               <% person = builder.person %>
               <% total_commits = @total_commits_by_login[builder.github_login].to_i %>
               <tr class="hover:bg-surface-alt/60 transition <%= builder.included_in_roster? ? "" : "opacity-80" %>">
-                <td class="sticky left-0 z-20 bg-surface py-3 px-4">
+                <td class="bg-surface py-3 px-4">
                   <div class="flex items-center gap-3">
                     <% if builder.avatar_url.present? %>
                       <img src="<%= builder.avatar_url %>"

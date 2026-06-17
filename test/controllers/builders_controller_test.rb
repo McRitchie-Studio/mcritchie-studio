@@ -48,7 +48,7 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h2", "Builder Roster"
-    assert_select "table.builders-sticky-table"
+    assert_select "table"
     assert_select "a[href=?]", all_builders_path, "All Builders"
     assert_select "a[href=?]", "https://github.com/matz", "@matz"
     assert_select "td", "Matsue, Japan"
@@ -137,7 +137,7 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h2", "Builder Commit History"
-    assert_select "table.builders-sticky-table.builders-history-table"
+    assert_select "table"
     assert_select "a[href=?]", all_builders_path, "All Builders"
     assert_select "svg[aria-label=?]", "Quarterly commit counts by builder"
     assert_match "included-history", response.body
