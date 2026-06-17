@@ -71,15 +71,10 @@ frictions and durable lessons future agents should inherit.
 
 ## Recommended Future Improvements
 
-- Teach `bin/qa-intake` to recognize squash-merged branches with empty final
-  diffs so it can label them as cleanup-ready without manual interpretation.
-- Add a first-class `bin/agent-worktree remove <app> <task>` command that
-  performs the approved lifecycle: stop stack, verify clean/empty diff, ledger,
-  remove worktree, delete local branch, refresh registry.
 - Add CI-watch guidance or tooling for long-running GitHub Actions jobs so
   agents can distinguish "runner still progressing" from "test failure needs
   artifacts."
 - Consider a future dashboard over `/Users/alex/projects/.agents/worktree-registry.json`
   once agent concurrency grows beyond what a terminal queue can comfortably
-  express.
-
+  express. The registry now includes squash-merge-aware cleanup candidates and
+  the launcher has an approval-gated removal path.

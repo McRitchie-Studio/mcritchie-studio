@@ -152,12 +152,15 @@ end
 def worktree_ready_for_avi?(worktree)
   !truthy?(worktree["dirty"]) &&
     !truthy?(worktree["merged_to_origin_main"]) &&
+    !truthy?(worktree["cleanup_candidate"]) &&
     worktree["ahead_origin_main"].to_s != "0" &&
     zeroish?(worktree["behind_origin_main"]) &&
     blocking_issues(worktree).empty?
 end
 
 def worktree_needs_attention?(worktree)
+  return false if truthy?(worktree["cleanup_candidate"])
+
   truthy?(worktree["dirty"]) ||
     !zeroish?(worktree["behind_origin_main"]) ||
     Array(worktree["issues"]).any?
@@ -229,7 +232,9 @@ def pr_action(status, pr, worktree)
 end
 
 def local_action(worktree)
-  if worktree_ready_for_avi?(worktree)
+  if truthy?(worktree["cleanup_candidate"])
+    cleanup_action(worktree)
+  elsif worktree_ready_for_avi?(worktree)
     "open a draft PR with `bin/agent-worktree finish #{worktree.fetch("app")} #{worktree.fetch("task")} --push --pr`"
   elsif truthy?(worktree["dirty"])
     "commit, stash, or intentionally discard local edits before QA handoff"
@@ -254,7 +259,7 @@ def attention_action(worktree)
 end
 
 def cleanup_action(worktree)
-  "ledger with `bin/agent-worktree cleanup --write`, then remove the worktree after Mr. McRitchie or the conductor approves deletion"
+  "remove after approval with `bin/agent-worktree remove #{worktree.fetch("app")} #{worktree.fetch("task")} --yes`; the command ledgers, stops, removes, deletes the local branch, and refreshes the registry"
 end
 
 def build_intake(registry, prs, apps, worktrees, warnings)
@@ -289,6 +294,7 @@ def build_intake(registry, prs, apps, worktrees, warnings)
   local_without_pr = worktrees.select do |worktree|
     next false if %w[main master].include?(worktree.fetch("branch").to_s)
     next false if truthy?(worktree["merged_to_origin_main"])
+    next false if truthy?(worktree["cleanup_candidate"])
     next false if worktree["ahead_origin_main"].to_s == "0"
 
     !prs_by_app_branch.key?([worktree.fetch("app"), worktree.fetch("branch")])
@@ -381,7 +387,7 @@ end
 def print_cleanup(worktrees)
   print_section("Cleanup Candidates")
   if worktrees.empty?
-    puts "No clean merged worktrees in scope."
+    puts "No clean merged or main-equivalent worktrees in scope."
     return
   end
 
@@ -391,7 +397,7 @@ def print_cleanup(worktrees)
     puts "  action: #{worktree.fetch("action") { cleanup_action(worktree) }}"
   end
   puts
-  puts "Removal remains approval-gated. Use bin/agent-worktree cleanup --write to ledger candidates first."
+  puts "Removal remains approval-gated. Use bin/agent-worktree remove <app> <task> --yes only after approval."
 end
 
 warnings = []

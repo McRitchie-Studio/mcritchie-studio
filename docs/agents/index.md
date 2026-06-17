@@ -174,12 +174,16 @@ bin/agent-worktree doctor
 bin/agent-worktree snapshot --write
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 bin/agent-worktree cleanup
+bin/agent-worktree remove <app> <task-slug> --yes
 ```
 
 `snapshot --write` refreshes the local non-secret worktree registry at
 `/Users/alex/projects/.agents/worktree-registry.json` for QA/conductor
 sessions. `cleanup` is dry-run only; `cleanup --write` only appends candidates
-to the delete-later ledger. Actual removal stays manual and approval-gated.
+to the delete-later ledger. Actual removal stays approval-gated and should use
+`bin/agent-worktree remove <app> <task-slug> --yes` so stack stop, ledger
+update, Git worktree removal, local branch deletion, and registry refresh happen
+together.
 
 The worktree launcher defaults to stock-safe Redis DBs `9-15`. If those slots
 are full, clean merged worktrees before creating another stack. Only set

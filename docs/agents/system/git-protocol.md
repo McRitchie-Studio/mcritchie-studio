@@ -33,6 +33,7 @@ bin/agent-worktree finish <app> <task-slug> --push --pr
 Remove only after the PR is merged or intentionally abandoned:
 ```
 bin/agent-worktree cleanup --write
+bin/agent-worktree remove <app> <task-slug> --yes
 ```
 
 ## Branch naming

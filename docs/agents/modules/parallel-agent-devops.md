@@ -250,9 +250,12 @@ Do not include unrelated PRs or new feature work in this rollout.
 - `cleanup` only records candidates in the delete-later ledger; removal remains
   approval-gated.
 - After a squash merge, ahead/behind can look stale even when the branch diff is
-  fully represented on `origin/main`. Confirm `git diff origin/main..HEAD` is
-  empty before deleting the worktree or local branch.
-- After removing a worktree, run `bin/agent-worktree snapshot <app> --write`
+  fully represented on `origin/main`. The launcher marks empty-diff branches as
+  cleanup candidates; after approval use
+  `bin/agent-worktree remove <app> <task-slug> --yes` so stack stop, ledger
+  update, worktree removal, local-branch deletion, and registry refresh happen
+  together.
+- After manual cleanup, still run `bin/agent-worktree snapshot <app> --write`
   and then `bin/qa-intake --refresh --apps ...` so stale registry entries do not
   linger in the conductor queue.
 - Feature agents do not force-push shared branches. If a rebase needs a push,

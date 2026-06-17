@@ -16,6 +16,7 @@
 #   bin/agent-worktree doctor
 #   bin/agent-worktree snapshot
 #   bin/agent-worktree cleanup
+#   bin/agent-worktree remove turf-monster docs-stack --yes
 #   bin/agent-worktree down turf-monster docs-stack
 
 require "fileutils"
@@ -81,6 +82,7 @@ def usage
       doctor [app]
       snapshot [app] [--write]
       cleanup [app] [--write]
+      remove <app> <task-slug> [--yes]
       down <app> <task-slug>
 
     Environment:
@@ -523,6 +525,16 @@ def git_merged_to_main?(dir)
   git_success?(dir, "merge-base", "--is-ancestor", "HEAD", "origin/main")
 end
 
+def git_equivalent_to_main?(dir)
+  return false unless git_success?(dir, "rev-parse", "--verify", "origin/main")
+
+  git_success?(dir, "diff", "--quiet", "origin/main..HEAD")
+end
+
+def cleanup_ready?(record)
+  !record.fetch(:dirty) && (record.fetch(:merged) || record.fetch(:equivalent_to_main))
+end
+
 def github_repo_slug(dir)
   remote = git_value(dir, "remote", "get-url", "origin")
   case remote
@@ -605,6 +617,7 @@ def stack_record(app, dir)
     ahead: ahead,
     behind: behind,
     merged: git_merged_to_main?(dir),
+    equivalent_to_main: git_equivalent_to_main?(dir),
     pidfile: pidfile,
     pidfile_state: pidfile_state(pidfile),
     sidekiq_pidfile_state: File.exist?(sidekiq_pidfile) ? pidfile_state(sidekiq_pidfile) : "missing"
@@ -669,7 +682,13 @@ def list_worktrees(app = nil)
       url = record[:port].empty? ? "missing-port" : "http://localhost:#{record[:port]}"
       email_url = record[:port].empty? ? "missing-port" : "http://localhost:#{record[:port]}/_studio/local_emails"
       dirty = record[:dirty] ? "dirty" : "clean"
-      merge = record[:merged] ? "merged" : "unmerged"
+      merge = if record[:merged]
+                "merged"
+              elsif record[:equivalent_to_main]
+                "main-eq"
+              else
+                "unmerged"
+              end
       db = record[:db_exists].nil? ? record[:db_name] : "#{record[:db_name]}:#{record[:db_exists] ? "ok" : "missing"}"
       puts "  #{record[:task].ljust(24)} #{stack_health(record).ljust(11)} #{url.ljust(23)} #{record[:branch].ljust(28)} #{dirty} #{merge} +#{record[:ahead]}/-#{record[:behind]}"
       puts "    redis=#{record[:redis_db]} db=#{db} pid=#{record[:pidfile_state]} email=#{email_url}"
@@ -713,8 +732,13 @@ def doctor_issues(app = nil)
     end
 
     issues << [label, "dirty worktree"] if record[:dirty]
-    issues << [label, "branch is #{record[:behind]} commit(s) behind origin/main; rebase before QA handoff"] unless %w[0 ?].include?(record[:behind].to_s)
-    issues << [label, "branch is merged to origin/main and clean; cleanup candidate"] if record[:merged] && !record[:dirty]
+    if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
+      issues << [label, "branch is #{record[:behind]} commit(s) behind origin/main; rebase before QA handoff"]
+    end
+    if cleanup_ready?(record)
+      message = record[:merged] ? "branch is merged to origin/main and clean; cleanup candidate" : "branch final diff matches origin/main; likely squash-merged cleanup candidate"
+      issues << [label, message]
+    end
     issues << [label, "port #{record[:port]} listens but /up is #{record[:code]}"] if !record[:port_pid].empty? && record[:code] != "200"
     issues << [label, "stale web pidfile #{record[:pidfile_state]}"] if record[:pidfile_state].start_with?("stale")
     issues << [label, "stale sidekiq pidfile #{record[:sidekiq_pidfile_state]}"] if record[:sidekiq_pidfile_state].start_with?("stale")
@@ -791,11 +815,12 @@ def stack_record_snapshot(record, issues_by_label)
     "commit_subject" => record.fetch(:commit_subject),
     "dirty" => record.fetch(:dirty),
     "merged_to_origin_main" => record.fetch(:merged),
+    "equivalent_to_origin_main" => record.fetch(:equivalent_to_main),
     "ahead_origin_main" => record.fetch(:ahead),
     "behind_origin_main" => record.fetch(:behind),
     "pidfile_state" => record.fetch(:pidfile_state),
     "sidekiq_pidfile_state" => record.fetch(:sidekiq_pidfile_state),
-    "cleanup_candidate" => record.fetch(:merged) && !record.fetch(:dirty),
+    "cleanup_candidate" => cleanup_ready?(record),
     "compare_url" => github_compare_url(record),
     "issues" => issues_by_label[label]
   }
@@ -818,10 +843,10 @@ def snapshot_payload(app = nil)
     "summary" => {
       "worktrees" => records.size,
       "issues" => issues_by_label.values.sum(&:size),
-      "cleanup_candidates" => records.count { |record| record.fetch(:merged) && !record.fetch(:dirty) },
+      "cleanup_candidates" => records.count { |record| cleanup_ready?(record) },
       "dirty_worktrees" => records.count { |record| record.fetch(:dirty) },
       "running_or_port_busy" => records.count { |record| !record.fetch(:port_pid).empty? },
-      "behind_origin_main" => records.count { |record| !%w[0 ?].include?(record.fetch(:behind).to_s) }
+      "behind_origin_main" => records.count { |record| !cleanup_ready?(record) && !%w[0 ?].include?(record.fetch(:behind).to_s) }
     },
     "worktrees" => records.map { |record| stack_record_snapshot(record, issues_by_label) }
   }
@@ -844,24 +869,52 @@ rescue Errno::EACCES, Errno::EPERM => e
 end
 
 def cleanup_candidates(app = nil)
-  stack_records(app).select { |record| record[:merged] && !record[:dirty] }
+  stack_records(app).select { |record| cleanup_ready?(record) }
 end
 
 def ledger_path
   File.join(HUB_DIR, "docs", "agents", "maintenance", "delete-later.md")
 end
 
-def cleanup_row(record)
+def cleanup_reason(record)
+  if record[:merged]
+    "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in origin/main."
+  else
+    "Hidden worktree; branch `#{record[:branch]}` is clean and its final diff against origin/main is empty, usually after a squash merge."
+  end
+end
+
+def cleanup_row(record, status: "pending approval")
   path = record[:dir]
-  why = "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in origin/main."
-  condition = "Stop stack if running, then remove with `git -C #{record[:app].fetch("repo")} worktree remove #{path}` after operator approval."
-  "| `#{path}` | worktree | #{why} | #{condition} | pending approval |"
+  command = "bin/agent-worktree remove #{record[:app].fetch("slug")} #{record[:task]} --yes"
+  condition = status.start_with?("removed") ? "Removed with `#{command}` during approved lifecycle cleanup." : "Remove with `#{command}` after operator approval."
+  "| `#{path}` | worktree | #{cleanup_reason(record)} | #{condition} | #{status} |"
+end
+
+def write_cleanup_ledger_record(record, status:)
+  row = cleanup_row(record, status: status)
+  path_cell = "| `#{record[:dir]}` |"
+  existing = File.exist?(ledger_path) ? File.read(ledger_path) : ""
+
+  if existing.include?(path_cell)
+    updated = existing.lines.map { |line| line.include?(path_cell) ? "#{row}\n" : line }.join
+    File.write(ledger_path, updated)
+    puts "updated cleanup ledger: #{ledger_path}"
+    return
+  end
+
+  File.open(ledger_path, "a") do |file|
+    file.puts
+    file.puts "<!-- agent-worktree remove #{Time.now.strftime("%Y-%m-%d")} -->"
+    file.puts row
+  end
+  puts "wrote cleanup ledger: #{ledger_path}"
 end
 
 def run_cleanup(app = nil, write: false)
   candidates = cleanup_candidates(app)
   if candidates.empty?
-    puts "cleanup: no clean merged worktree candidates"
+    puts "cleanup: no clean merged or main-equivalent worktree candidates"
     return
   end
 
@@ -889,6 +942,86 @@ def run_cleanup(app = nil, write: false)
   puts "wrote #{rows.size} candidate(s) to #{ledger_path}"
 end
 
+def registered_worktree?(app, dir)
+  ok, out, = capture_status("git", "-C", app.fetch("repo"), "worktree", "list", "--porcelain")
+  ok && out.lines.any? { |line| line.chomp == "worktree #{dir}" }
+end
+
+def stop_pidfile(path, label)
+  return unless File.exist?(path)
+
+  pid = File.read(path).strip
+  if pid_alive?(pid)
+    Process.kill("TERM", pid.to_i)
+    puts "stopped #{label} pid #{pid}"
+  else
+    puts "#{label} not running"
+  end
+  FileUtils.rm_f(path)
+end
+
+def stop_stack_for_removal(app, dir, record)
+  if record[:env_exists]
+    values = local_email_values.merge(parse_env(record[:env_path]))
+    if app.fetch("stack") == "tm"
+      ok = sh("bin/tm", "down", chdir: dir, env: command_env(app, values), allow_fail: true)
+      warn "warning: bin/tm down failed; falling back to pidfile cleanup" unless ok
+    else
+      stop_generic_rails(dir, values["APP_PORT"])
+    end
+  else
+    stop_generic_rails(dir, record[:port])
+  end
+
+  stop_pidfile(File.join(dir, "tmp", "pids", "tm-web.pid"), "tm web") if app.fetch("stack") == "tm"
+  stop_pidfile(File.join(dir, "tmp", "pids", "tm-sidekiq.pid"), "tm sidekiq") if app.fetch("sidekiq")
+end
+
+def delete_local_branch_if_safe(app, branch)
+  return if branch.to_s.empty? || branch == "?"
+  return if %w[main master].include?(branch)
+
+  ok, out, = capture_status("git", "-C", app.fetch("repo"), "branch", "--list", branch)
+  return unless ok && !out.strip.empty?
+
+  sh("git", "-C", app.fetch("repo"), "branch", "-D", branch)
+end
+
+def run_remove(app, task, yes: false)
+  dir = worktree_dir(app, task)
+  abort "missing worktree: #{dir}" unless Dir.exist?(dir)
+
+  sh("git", "-C", app.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
+  record = stack_record(app, dir)
+  blockers = []
+  blockers << "dirty worktree" if record[:dirty]
+  blockers << "branch content is not represented on origin/main" unless cleanup_ready?(record)
+  blockers << "worktree is not registered with git" unless registered_worktree?(app, dir)
+
+  if blockers.any?
+    puts "refusing to remove #{app.fetch("slug")}/#{task}:"
+    blockers.each { |blocker| puts "  - #{blocker}" }
+    puts "inspect with: git -C #{dir.shellescape} diff --stat origin/main..HEAD"
+    exit 1
+  end
+
+  unless yes
+    puts "remove candidate: #{app.fetch("slug")}/#{task}"
+    puts "worktree: #{dir}"
+    puts "branch:   #{record[:branch]}"
+    puts "reason:   #{cleanup_reason(record)}"
+    puts
+    puts "dry run only. Re-run with --yes after approval to stop the stack, update the ledger, remove the worktree, delete the local branch, and refresh the registry."
+    return
+  end
+
+  stop_stack_for_removal(app, dir, record)
+  write_cleanup_ledger_record(record, status: "removed #{Time.now.strftime("%Y-%m-%d")}")
+  sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
+  delete_local_branch_if_safe(app, record[:branch])
+  run_snapshot(app, write: true)
+end
+
 def graduation_blockers(record)
   blockers = []
   branch = record[:branch]
@@ -897,8 +1030,8 @@ def graduation_blockers(record)
   blockers << "worktree has uncommitted changes; commit or intentionally revert them before QA handoff" if record[:dirty]
   blockers << "branch is #{branch.inspect}; feature work must not graduate from main/master" if %w[main master].include?(branch)
   blockers << "branch has no commits ahead of origin/main" if record[:ahead].to_s == "0"
-  blockers << "branch is #{record[:behind]} commit(s) behind origin/main; rebase before PR" unless %w[0 ?].include?(record[:behind].to_s)
-  blockers << "branch is already contained in origin/main; use cleanup instead of finish" if record[:merged]
+  blockers << "branch is #{record[:behind]} commit(s) behind origin/main; rebase before PR" if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
+  blockers << "branch content is already represented on origin/main; use cleanup/remove instead of finish" if cleanup_ready?(record)
 
   blockers
 end
@@ -1046,7 +1179,14 @@ when "status"
   print_plan(app, task, values)
   puts "status: /up #{code}"
   puts "health: #{stack_health(record)}"
-  puts "git:    #{record[:branch]} #{record[:head]} #{record[:dirty] ? "dirty" : "clean"} #{record[:merged] ? "merged" : "unmerged"} +#{record[:ahead]}/-#{record[:behind]}"
+  merge = if record[:merged]
+            "merged"
+          elsif record[:equivalent_to_main]
+            "main-eq"
+          else
+            "unmerged"
+          end
+  puts "git:    #{record[:branch]} #{record[:head]} #{record[:dirty] ? "dirty" : "clean"} #{merge} +#{record[:ahead]}/-#{record[:behind]}"
   puts "web:    port_pid=#{record[:port_pid].empty? ? "none" : record[:port_pid]} pidfile=#{record[:pidfile_state]}"
   puts "sidekiq: pidfile=#{record[:sidekiq_pidfile_state]}" if app.fetch("sidekiq")
   puts "db:     #{record[:db_name]}#{record[:db_exists].nil? ? "" : " #{record[:db_exists] ? "ok" : "missing"}"}"
@@ -1070,6 +1210,13 @@ when "cleanup"
   write = ARGV.delete("--write")
   app = ARGV[0] ? app_for(ARGV[0]) : nil
   run_cleanup(app, write: !!write)
+when "remove"
+  yes = ARGV.delete("--yes")
+  app_name, raw_task = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  run_remove(app, task, yes: !!yes)
 when "down"
   app_name, raw_task = ARGV
   usage unless app_name && raw_task
