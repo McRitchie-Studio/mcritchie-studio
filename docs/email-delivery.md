@@ -84,6 +84,8 @@ Environment variables:
 - `SES_AWS_ACCESS_KEY_ID` and `SES_AWS_SECRET_ACCESS_KEY` for `ses:*` checks
 - `MAILER_FROM`
 - `MARKETING_MAILER_FROM`
+- `BROADCAST_HOST` only if broadcast unsubscribe/tracking links should use a
+  host different from `MAILER_HOST`
 - `RESEND_MAILER_FROM`
 - `RESEND_API_KEY` only for rollback.
 
@@ -94,6 +96,10 @@ fallback uses `RESEND_MAILER_FROM="McRitchie Studio
 <team@mcritchie.studio>"`, which is also the shared fallback sender for future
 apps before their SES setup is complete. This fallback is valid only while
 `mcritchie.studio` is verified in the Resend account backing `RESEND_API_KEY`.
+Broadcast unsubscribe, open-pixel, and click-tracking links use Action Mailer's
+default URL options, so QA inherits `MAILER_HOST=qa.mcritchie.studio` and
+worktrees inherit `APP_PORT`. Set `BROADCAST_HOST` only for an intentional
+campaign-specific host override.
 An app-level success response does not prove delivery; the provider smoke must
 also show the durable email job completing without a Resend error.
 
@@ -112,7 +118,7 @@ Last checked: 2026-06-15.
   account.
 - Persistent production transport: keep Resend active until SES production
   access is approved and SMTP runtime credentials are staged.
-- Production app adoption: `studio-engine 0.5.9` is adopted. McRitchie Studio
+- Production app adoption: `studio-engine 0.6.0` is adopted. McRitchie Studio
   records durable `Studio::EmailDelivery` rows and uses Solid Queue for
   production job durability.
 
@@ -149,7 +155,7 @@ that the fallback is no longer useful.
 
 ## Engine Ownership
 
-McRitchie Studio currently uses `studio-engine 0.5.9`, so transport selection,
+McRitchie Studio currently uses `studio-engine 0.6.0`, so transport selection,
 durable delivery primitives, the local agent inbox, and provider smoke testing
 live in the engine. Keep future shared email changes in `studio-engine` unless
 they are truly app-specific.

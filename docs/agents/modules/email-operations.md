@@ -212,25 +212,24 @@ bin/rails "email:smoke[approved-test-inbox@example.com]"
 
 ## Marketing And Broadcast Email
 
-Transactional email is the active shared surface today. Future marketing or
-broadcast email should reuse the same SES/provider policy, but the product
-model can stay app-owned.
+Marketing and broadcast surfaces reuse the same provider policy as
+transactional email, but the product model stays app-owned. McRitchie Studio
+owns `Broadcast`, `Contact`, `BroadcastDelivery`, unsubscribe routes,
+engagement tracking, campaign templates, and S3-hosted email assets.
 
-A historical branch, `feat/broadcasts`, contains an old McRitchie Studio
-broadcast prototype: contacts, broadcast drafts, unsubscribe routes, delivery
-tracking, hero assets, and SES helper tasks. Do not merge that branch wholesale;
-it predates the current agent docs, shared engine email outbox, and registry
-tooling. If the broadcast idea comes back, reimplement or cherry-pick narrowly
-on top of current `main`.
-
-Minimum rules for a revived broadcast surface:
+Minimum rules for broadcast surfaces:
 
 1. Keep unsubscribe and privacy behavior in the first implementation.
-2. Use `Studio::Email.deliver` or the current shared transport layer.
+2. Use the current shared transport layer; do not add app-local provider
+   initializers.
 3. Keep real provider delivery explicit; local/worktree proof should still use
    `LOCAL_EMAIL_CAPTURE=1`.
-4. Keep templates and campaign copy in the owning app.
-5. Add provider smoke proof before sending to a real list.
+4. Keep templates, campaign copy, and marketing sender defaults in the owning
+   app.
+5. Generate unsubscribe, open-pixel, and click-tracking URLs from the app's
+   mailer host defaults so QA/worktree links do not point at production.
+   Use `BROADCAST_HOST` only for an intentional campaign-specific host override.
+6. Add provider smoke proof before sending to a real list.
 
 ## Recovery
 

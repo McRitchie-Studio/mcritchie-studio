@@ -1,0 +1,165 @@
+<div class="max-w-7xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-extrabold text-heading">Edit broadcast</h1>
+      <p class="text-secondary text-sm mt-1"><%= link_to "← All broadcasts", broadcasts_path, class: "text-primary underline" %></p>
+    </div>
+    <div class="flex items-center gap-3">
+      <%= link_to "Open preview ↗", preview_broadcast_path(@broadcast), target: "_blank", class: "btn btn-outline" %>
+      <button type="button" id="copy-html-btn"
+              data-export-url="<%= preview_broadcast_path(@broadcast, assets: 's3') %>"
+              class="btn btn-primary">Copy HTML for HubSpot</button>
+    </div>
+  </div>
+
+  <!-- SEND PANEL -->
+  <div class="card p-5 mb-6">
+    <div class="flex items-end gap-4 flex-wrap">
+      <div>
+        <div class="text-xs font-semibold text-secondary mb-1">Send from McRitchie Studio</div>
+        <div class="text-sm text-muted">Personalized via the shared email transport. Unsubscribes are honored automatically.</div>
+      </div>
+      <%= form_with url: deliver_broadcast_path(@broadcast), method: :post, class: "flex items-end gap-3 ml-auto" do %>
+        <div>
+          <label class="block text-xs font-semibold text-secondary mb-1">Audience</label>
+          <select name="audience" class="rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading">
+            <% @audiences.each do |name, count| %>
+              <option value="<%= name %>"><%= name == "all" ? "All subscribers" : name.titleize %> (<%= count %>)</option>
+            <% end %>
+          </select>
+        </div>
+        <%= submit_tag "Send now", class: "btn btn-primary", data: { turbo_confirm: "Send this broadcast now?" } %>
+      <% end %>
+    </div>
+    <% if @broadcast.sent? && @broadcast.sent_at %>
+      <div class="text-xs text-muted mt-3">Last sent <%= @broadcast.sent_at.strftime("%b %-d, %Y at %-l:%M %p") %>.</div>
+    <% end %>
+  </div>
+
+  <!-- ENGAGEMENT -->
+  <% if @broadcast.delivered_count.positive? %>
+    <div class="card p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div class="text-xs font-semibold text-secondary uppercase tracking-wide">Engagement</div>
+        <div class="text-xs text-muted">Opens are approximate (Apple Mail pre-loads images); clicks are exact.</div>
+      </div>
+      <div class="flex gap-8 mb-5">
+        <div><div class="text-2xl font-extrabold text-heading"><%= @broadcast.delivered_count %></div><div class="text-xs text-secondary">Delivered</div></div>
+        <div><div class="text-2xl font-extrabold text-heading"><%= number_to_percentage((@broadcast.open_rate || 0) * 100, precision: 0) %></div><div class="text-xs text-secondary"><%= @broadcast.opened_count %> opened</div></div>
+        <div><div class="text-2xl font-extrabold text-primary"><%= number_to_percentage((@broadcast.click_rate || 0) * 100, precision: 0) %></div><div class="text-xs text-secondary"><%= @broadcast.clicked_count %> clicked</div></div>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="text-secondary border-b border-subtle"><tr>
+          <th class="text-left p-2">Recipient</th><th class="text-left p-2">Opened</th><th class="text-left p-2">Clicked</th>
+        </tr></thead>
+        <tbody>
+          <% @deliveries.each do |d| %>
+            <tr class="border-b border-subtle/50">
+              <td class="p-2 text-heading"><%= d.contact.email %><% if d.contact.first_name.present? %> <span class="text-muted">(<%= d.contact.first_name %>)</span><% end %></td>
+              <td class="p-2 <%= d.opened_at ? 'text-green-300' : 'text-muted' %>"><%= d.opened_at ? "#{d.open_count}×" : "—" %></td>
+              <td class="p-2 <%= d.clicked_at ? 'text-green-300' : 'text-muted' %>"><%= d.clicked_at ? "#{d.click_count}×" : "—" %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+
+  <div class="flex flex-col lg:flex-row gap-8">
+    <!-- EDITOR FORM -->
+    <div class="lg:w-2/5">
+      <%= form_with model: @broadcast, url: broadcast_path(@broadcast), method: :patch do |f| %>
+        <% if @broadcast.errors.any? %>
+          <div class="card p-3 mb-4 text-sm text-red-300 bg-red-900/30">
+            <%= @broadcast.errors.full_messages.to_sentence %>
+          </div>
+        <% end %>
+
+        <div class="card p-5 space-y-4">
+          <div>
+            <%= f.label :subject, class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :subject, class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+          </div>
+
+          <div>
+            <%= f.label :header, "Header", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :header, placeholder: "It's almost here", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            <p class="text-xs text-muted mt-1">Big title in the dark band. Blank = template default.</p>
+          </div>
+
+          <div>
+            <%= f.label :subheader, "Sub-header", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :subheader, placeholder: "The World Cup kicks off next Thursday, June 11", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            <p class="text-xs text-muted mt-1">Line under the title. Blank = template default.</p>
+          </div>
+
+          <div>
+            <%= f.label :preview_text, "Preview text", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :preview_text, class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            <p class="text-xs text-muted mt-1">The grey line shown after the subject in the inbox.</p>
+          </div>
+
+          <div>
+            <%= f.label :template_key, "Template", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.select :template_key, Broadcast::TEMPLATES.map { |k, v| [v, k] }, {}, class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+          </div>
+
+          <div>
+            <%= f.label :hero_url, "Header image link", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :hero_url, placeholder: "https://… (makes the top image clickable)", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            <p class="text-xs text-muted mt-1">Optional. Clicking the header image goes here — click-tracked.</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <%= f.label :survivor_url, "Survivor URL", class: "block text-xs font-semibold text-secondary mb-1" %>
+              <%= f.text_field :survivor_url, placeholder: "https://…", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            </div>
+            <div>
+              <%= f.label :turf_totals_url, "Turf Totals URL", class: "block text-xs font-semibold text-secondary mb-1" %>
+              <%= f.text_field :turf_totals_url, placeholder: "https://…", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+            </div>
+          </div>
+
+          <div>
+            <%= f.label :target_list, "Audience label", class: "block text-xs font-semibold text-secondary mb-1" %>
+            <%= f.text_field :target_list, placeholder: "e.g. World Cup Subscribers", class: "w-full rounded border border-subtle bg-surface-alt px-3 py-2 text-sm text-heading" %>
+          </div>
+
+          <div class="pt-2">
+            <%= f.submit "Save", class: "btn btn-primary" %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+
+    <!-- LIVE PREVIEW -->
+    <div class="lg:w-3/5">
+      <div class="text-xs font-semibold text-secondary mb-2">Live preview</div>
+      <div class="card overflow-hidden p-3 bg-surface-alt">
+        <iframe src="<%= preview_broadcast_path(@broadcast) %>"
+                style="width:100%;height:1100px;border:0;border-radius:8px;background:#eef1f4;"
+                title="Email preview"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById("copy-html-btn");
+    if (!btn) return;
+    btn.addEventListener("click", async function () {
+      var original = btn.textContent;
+      try {
+        var res = await fetch(btn.dataset.exportUrl);
+        var html = await res.text();
+        await navigator.clipboard.writeText(html);
+        btn.textContent = "Copied ✓ — paste into HubSpot";
+      } catch (e) {
+        btn.textContent = "Copy failed — use Open preview";
+      }
+      setTimeout(function () { btn.textContent = original; }, 2500);
+    });
+  })();
+</script>

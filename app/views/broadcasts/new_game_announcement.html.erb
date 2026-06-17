@@ -1,0 +1,95 @@
+<% survivor_url    = @broadcast&.survivor_url.presence    || "{{SURVIVOR_URL}}" %>
+<% turf_totals_url = @broadcast&.turf_totals_url.presence || "{{TURF_TOTALS_URL}}" %>
+<%= render "broadcasts/email_head",
+      hero_file: "world_cup_header.png",
+      preheader: "The World Cup is here — and we built you a brand-new game to play alongside it.",
+      title:     "&#9917;&nbsp; We built you a new game",
+      subtitle:  "Just in time for the World Cup &mdash; introducing Turf Totals." %>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <!-- intro -->
+  <tr>
+    <td style="padding:28px 32px 8px 32px;">
+      <p style="margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;">Hi <%= broadcast_greeting_name %> 👋🏻</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">The World Cup kicks off this week &mdash; 48 teams, 12 groups, a whole summer of football. So we built something new to play alongside every week ⚽️</p>
+    </td>
+  </tr>
+
+  <!-- the game callout -->
+  <tr>
+    <td style="padding:16px 32px 8px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef0ff;border:1px solid #c7c9ff;border-radius:11px;">
+        <tr>
+          <td style="padding:20px 22px;">
+            <div style="font-size:20px;line-height:1.3;color:#312e81;font-weight:800;">&#9889;&nbsp; Turf Totals &mdash; weekly fantasy, built for the Cup</div>
+            <p style="margin:9px 0 0 0;font-size:15px;line-height:1.6;color:#4b4b7a;">Draft a lineup each gameweek, rack up points off real match action, and climb the leaderboard. A fresh slate every week means every single gameweek is a clean shot at the top &mdash; no season-long baggage, just football.</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- how it works -->
+  <tr>
+    <td style="padding:22px 32px 6px 32px;">
+      <h2 style="margin:0 0 12px 0;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#64748b;font-weight:700;">How it works</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td width="33%" valign="top" style="padding:0 6px;">
+            <div style="font-size:22px;font-weight:800;color:#6366f1;">1</div>
+            <div style="font-size:15px;font-weight:700;color:#0b1220;margin-top:2px;">Draft</div>
+            <p style="margin:4px 0 0 0;font-size:13px;line-height:1.55;color:#56616e;">Pick your lineup before each gameweek kicks off.</p>
+          </td>
+          <td width="33%" valign="top" style="padding:0 6px;">
+            <div style="font-size:22px;font-weight:800;color:#6366f1;">2</div>
+            <div style="font-size:15px;font-weight:700;color:#0b1220;margin-top:2px;">Score</div>
+            <p style="margin:4px 0 0 0;font-size:13px;line-height:1.55;color:#56616e;">Rack up points off goals, assists and real match action.</p>
+          </td>
+          <td width="33%" valign="top" style="padding:0 6px;">
+            <div style="font-size:22px;font-weight:800;color:#6366f1;">3</div>
+            <div style="font-size:15px;font-weight:700;color:#0b1220;margin-top:2px;">Climb</div>
+            <p style="margin:4px 0 0 0;font-size:13px;line-height:1.55;color:#56616e;">New slate every week &mdash; a fresh shot at the top each time.</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- primary CTA -->
+  <tr>
+    <td style="padding:22px 32px 8px 32px;text-align:center;">
+      <%= render "broadcasts/button", url: broadcast_link(:turf_totals, turf_totals_url), label: "Play Turf Totals &rarr;".html_safe, color: "#4BAF50", full_width: true %>
+    </td>
+  </tr>
+
+  <!-- secondary: survivor -->
+  <tr>
+    <td style="padding:14px 32px 6px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef1f4;">
+        <tr>
+          <td style="padding-top:16px;font-size:14px;line-height:1.6;color:#56616e;">
+            Prefer one pick a week? Our season-long <strong>Survivor</strong> contest is running all tournament too &mdash;
+            <a href="<%= broadcast_link(:survivor, survivor_url) %>" style="color:#16a34a;font-weight:700;text-decoration:none;">join Survivor &rarr;</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- closing -->
+  <tr>
+    <td style="padding:20px 32px 8px 32px;">
+      <p style="margin:0 0 4px 0;font-size:16px;line-height:1.65;color:#2b3440;">See you on the leaderboard. &#9917;</p>
+      <p style="margin:0;font-size:16px;line-height:1.65;color:#2b3440;">&mdash; Alex</p>
+    </td>
+  </tr>
+
+  <!-- PS -->
+  <tr>
+    <td style="padding:14px 32px 28px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #eef1f4;">
+        <tr><td style="padding-top:16px;font-size:13px;line-height:1.6;color:#94a3b8;"><strong style="color:#64748b;">P.S.</strong> The first gameweek locks at kickoff &mdash; draft your opening lineup before Thursday.</td></tr>
+      </table>
+    </td>
+  </tr>
+</table>

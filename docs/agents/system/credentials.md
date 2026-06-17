@@ -118,7 +118,18 @@ export SOLANA_ADMIN_KEY=$(op item get "agent.alex.solana" --vault "agents" --acc
 
 ### Onchain Admin
 
-Alex Bot is the primary admin for routine TurfVault operations. Alex Human is the backup/admin cosigner. Current program IDs and signer set live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
+Alex Bot is the primary admin for routine TurfVault operations. Mr. McRitchie is the backup/admin cosigner. Current program IDs and signer set live in `turf-vault/docs/CURRENT_DEPLOYMENT.md`. The `SOLANA_ADMIN_KEY` env var in Turf Monster's `.env` holds the Alex Bot private key from `agent.alex.solana`.
+
+## AWS — S3 + Amazon SES
+
+Credential names and provider status now live in the modular docs:
+
+- Shared credential inventory: [`../modules/credential-inventory.md`](../modules/credential-inventory.md)
+- Shared email operations: [`../modules/email-operations.md`](../modules/email-operations.md)
+- McRitchie-specific delivery notes: [`../../email-delivery.md`](../../email-delivery.md)
+
+Do not duplicate SES production status here; it changes as AWS support,
+DNS verification, and runtime SMTP credentials move.
 
 ## Security Notes
 

@@ -164,6 +164,42 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
     t.index ["team_slug"], name: "index_athletes_on_team_slug"
   end
 
+  create_table "broadcast_deliveries", force: :cascade do |t|
+    t.bigint "broadcast_id", null: false
+    t.bigint "contact_id", null: false
+    t.string "token", null: false
+    t.datetime "sent_at"
+    t.datetime "opened_at"
+    t.integer "open_count", default: 0, null: false
+    t.datetime "clicked_at"
+    t.integer "click_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["broadcast_id", "contact_id"], name: "index_broadcast_deliveries_on_broadcast_id_and_contact_id", unique: true
+    t.index ["broadcast_id"], name: "index_broadcast_deliveries_on_broadcast_id"
+    t.index ["contact_id"], name: "index_broadcast_deliveries_on_contact_id"
+    t.index ["token"], name: "index_broadcast_deliveries_on_token", unique: true
+  end
+
+  create_table "broadcasts", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "subject", default: "", null: false
+    t.string "preview_text"
+    t.string "template_key", null: false
+    t.string "status", default: "draft", null: false
+    t.string "target_list"
+    t.string "survivor_url"
+    t.string "turf_totals_url"
+    t.datetime "sent_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "header"
+    t.string "subheader"
+    t.string "hero_url"
+    t.index ["slug"], name: "index_broadcasts_on_slug", unique: true
+    t.index ["status"], name: "index_broadcasts_on_status"
+  end
+
   create_table "coach_rankings", force: :cascade do |t|
     t.string "coach_slug", null: false
     t.string "season_slug", null: false
@@ -196,6 +232,22 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
     t.index ["slug"], name: "index_coaches_on_slug", unique: true
     t.index ["sport"], name: "index_coaches_on_sport"
     t.index ["team_slug"], name: "index_coaches_on_team_slug"
+  end
+
+  create_table "contacts", force: :cascade do |t|
+    t.string "email", null: false
+    t.string "first_name"
+    t.string "last_name"
+    t.string "tags", default: [], null: false, array: true
+    t.boolean "subscribed", default: true, null: false
+    t.datetime "unsubscribed_at"
+    t.string "unsubscribe_token", null: false
+    t.string "source"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "lower((email)::text)", name: "index_contacts_on_lower_email", unique: true
+    t.index ["tags"], name: "index_contacts_on_tags", using: :gin
+    t.index ["unsubscribe_token"], name: "index_contacts_on_unsubscribe_token", unique: true
   end
 
   create_table "contents", force: :cascade do |t|
@@ -908,6 +960,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_15_002003) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "broadcast_deliveries", "broadcasts"
+  add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "roster_spots", "rosters"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

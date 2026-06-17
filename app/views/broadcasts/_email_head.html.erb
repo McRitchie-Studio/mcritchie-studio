@@ -1,0 +1,8 @@
+<%# Sets the shared band/head content_fors from the Broadcast record, falling
+    back to per-template defaults. Locals: hero_file, preheader, title, subtitle.
+    A blank @broadcast field uses the default; the user value renders escaped,
+    the default renders as given (may contain entities/markup). %>
+<% content_for :preheader, (@broadcast&.preview_text.presence || preheader) %>
+<% content_for :email_hero_image, "#{@email_asset_host}/email/#{hero_file}" %>
+<% content_for :email_title,    (@broadcast&.header.present?    ? @broadcast.header    : title.html_safe) %>
+<% content_for :email_subtitle, (@broadcast&.subheader.present? ? @broadcast.subheader : subtitle.html_safe) %>

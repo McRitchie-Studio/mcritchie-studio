@@ -28,5 +28,7 @@ Studio.configure do |config|
     { file: "logo-icon.svg",    title: "Navbar Logo" },
     { file: "studio-logo.svg",  title: "SSO Logo" },
   ]
-  # S3 bucket prefix uses engine default ("mcritchie-studio") — no override needed.
+  # S3 (Studio::S3 — upload/url/delete against "<prefix>-<dev|production>").
+  # Engine default is nil, so set it explicitly. Region defaults to us-east-2.
+  config.s3_bucket_prefix = "mcritchie-studio"
 end
