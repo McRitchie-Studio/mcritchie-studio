@@ -14,6 +14,69 @@ tasks when they need to be promoted together.
 Use parent/child modeling only after flat tasks and release-train tags prove too
 weak in real operations.
 
+## Required Task-Tracking Rule
+
+Every feature, bug, QA, release, cleanup, or active-doc change that may produce
+a branch, PR, QA deployment, production deployment, or cleanup follow-up must
+have a McRitchie Studio task-board item. Chat, `bin/agent-worktree`, GitHub PRs,
+and `bin/qa-intake` are supporting channels; they do not replace the task.
+
+Create or update the task before implementation starts. If Mr. McRitchie starts
+work in chat and no task exists yet, the feature agent creates a flat task from
+the ask before allocating a worktree or editing files. If a task already exists,
+the agent updates that task instead of creating a duplicate.
+
+Use one task per independently reviewable increment. For a vertical feature
+that touches multiple repos and ships together, either use one task with all
+repos listed in `repositories`, or separate flat tasks that share the same
+`release_train` when the increments can be reviewed or promoted separately.
+
+Minimum task setup before implementation:
+
+- `title` and `description` summarize the user-visible ask.
+- `kind` is `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup`.
+- `repositories` lists every repo expected to change.
+- `acceptance` records concrete acceptance criteria. If the ask is ambiguous,
+  confirm criteria with Mr. McRitchie before building.
+- `risk_tags` captures likely risk such as `auth`, `email`, `solana`,
+  `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
+- `test_plan` records the checks the agent expects to run.
+- `release_train` groups related tasks that should move through QA/release
+  together.
+- `requires_release_conductor` is `true` when production deploy, gem publish,
+  provider config, env vars, data correction, credentials, or migration/backfill
+  handling may be needed.
+
+Stage movement:
+
+1. Create new captured work in `new`, or `queued` if the acceptance criteria are
+   clear and the work is ready to start.
+2. Move to `in_progress` when an agent claims the task and creates or enters the
+   worktree.
+3. Move to `pr_review` only after the branch is pushed, the PR exists, the
+   local URL is recorded when applicable, and checks run are recorded.
+4. Move to `qa_review` only after Avi merges the PR and deploys or starts the
+   accepted result on a QA/local review target. Record QA URL, deployed SHA, and
+   QA checks.
+5. Move to `prod_ready` after Mr. McRitchie accepts QA and production is waiting
+   on explicit release approval.
+6. Move to `done` only after the final approved target is deployed or otherwise
+   complete, post-deploy verification is recorded, and cleanup status is clear.
+7. Use `failed` for a real blocker that needs new action, and `archived` for
+   historical or cleaned-up work.
+
+Handoff connections:
+
+- The task slug should match the worktree slug whenever practical.
+- The PR body should mention the task slug or task URL.
+- The task must record `branch`, `pr_url`, `local_url` when applicable,
+  `qa_url` after QA deployment, and `production_url` after production deploy.
+- `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
+  should join that queue back to tasks and leave feedback on the task or PR when
+  metadata is missing.
+- Final handoff should name the task, PR, release train, URLs, checks run,
+  deployment SHA/release, and cleanup decision.
+
 ## Stage Flow
 
 The board stages should mirror the release path, not generic activity buckets:

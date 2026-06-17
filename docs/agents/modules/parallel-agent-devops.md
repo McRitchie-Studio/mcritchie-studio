@@ -32,7 +32,11 @@ Default feature sessions are Feature lane only.
 2. **Read** root `AGENTS.md`, then the relevant app docs.
 3. **Create or update** the McRitchie Studio task-board item with affected
    repos, acceptance criteria, risk tags, and expected checks. Use
-   [`devops-task-board.md`](devops-task-board.md) for the metadata contract.
+   [`devops-task-board.md`](devops-task-board.md) for the required metadata
+   contract. This task is mandatory for feature, bug, QA, release, cleanup, and
+   active-doc work that may produce a branch, PR, QA deploy, production deploy,
+   or cleanup follow-up. Set the task to `in_progress` once implementation
+   starts.
 4. **Allocate** a task worktree from McRitchie Studio:
 
    ```bash
@@ -48,8 +52,8 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree up <app> <task-slug>
    ```
 
-7. **Update** the task-board item with local URL, branch, PR URL, and checks
-   run.
+7. **Update** the task-board item with local URL, branch, PR URL when opened,
+   checks run, and any acceptance-criteria changes.
 8. **Commit** coherent work on the feature branch.
 9. **Graduate** through the launcher:
 
@@ -59,14 +63,17 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree finish <app> <task-slug> --push --pr
    ```
 
-10. **Handoff** the PR/QA packet by moving the task to `pr_review`. Do not
-   merge to `main` unless assigned the QA or Release lane.
+10. **Handoff** the PR/QA packet by moving the task to `pr_review`. The PR
+   body should mention the task slug or URL, and the task should link back to
+   the PR. Do not merge to `main` unless assigned the QA or Release lane.
 
 ## Feature Graduation Rules
 
 Before a branch is ready for QA, it must be:
 
 - in a generated worktree, not the primary checkout
+- represented by a McRitchie Studio task with acceptance criteria, affected
+  repos, risk tags, branch or PR URL, local URL when applicable, and checks run
 - on a feature branch, not `main`
 - committed cleanly
 - ahead of `origin/main`
@@ -141,6 +148,12 @@ For each PR, Avi checks:
 - the work does not silently overwrite another agent's changes
 - docs changed when behavior, env, ports, auth, email, deploys, or workflow changed
 - the branch should merge now, wait for another PR, or be sent back
+
+If `bin/qa-intake` finds a PR/worktree with no matching task-board item, Avi
+does not treat the intake queue as sufficient handoff. Either ask the feature
+agent to create/update the task, or create the missing task only when Avi is
+explicitly taking ownership of the handoff. The PR may still be reviewed for
+urgent fixes, but the missing task metadata should be called out before merge.
 
 Avi should avoid rewriting feature branches unless taking explicit ownership of
 the fix. If Avi does modify a PR, the PR comment must say what changed and why.
