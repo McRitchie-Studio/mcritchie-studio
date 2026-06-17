@@ -50,6 +50,31 @@ Search and repo-scoped responses are only accepted when the returned
 role. This intentionally drops ambiguous email-only attribution so the metric
 stays tied to public GitHub identities.
 
+For console debugging, use `Github::Query` instead of hand-built `curl`
+commands. It returns the final URL, HTTP status, selected non-secret headers,
+parsed JSON body, and raw body while reusing `Github::Client` authentication,
+pacing, logging, and rate-limit handling:
+
+```ruby
+Github::Query.commits_for_login(
+  "amcritchie",
+  start_date: "2024-01-20",
+  end_date: "2024-04-19",
+  role: :author,
+  per_page: 5
+).to_h
+
+Github::Query.commits_for_email(
+  "alex@planomatic.com",
+  start_date: "2024-01-20",
+  end_date: "2024-04-19",
+  role: :author,
+  per_page: 5
+).body
+```
+
+The helper never returns or logs `GITHUB_TOKEN`.
+
 Set `GITHUB_TOKEN` in the environment to raise API limits:
 
 ```bash
