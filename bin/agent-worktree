@@ -413,11 +413,25 @@ def start_generic_rails(dir, app, values)
       puts "web already running pid #{pid}"
       return
     end
+    live_pid = port_pid(values.fetch("APP_PORT"))
+    unless live_pid.empty?
+      File.write(pidfile, "#{live_pid}\n")
+      puts "repaired web pidfile with live pid #{live_pid} on port #{values.fetch("APP_PORT")}"
+      return
+    end
+    FileUtils.rm_f(pidfile)
+  end
+
+  live_pid = port_pid(values.fetch("APP_PORT"))
+  unless live_pid.empty?
+    File.write(pidfile, "#{live_pid}\n")
+    puts "web already running pid #{live_pid} on port #{values.fetch("APP_PORT")}"
+    return
   end
 
   env = command_env(app, values)
   pid = Process.spawn(env, "bin/rails", "server", "-p", values.fetch("APP_PORT"),
-                      chdir: dir, in: File::NULL, out: [logfile, "a"], err: [:child, :out])
+                      chdir: dir, in: File::NULL, out: [logfile, "a"], err: [:child, :out], pgroup: true)
   Process.detach(pid)
   File.write(pidfile, "#{pid}\n")
   puts "started web pid #{pid}"
@@ -440,6 +454,33 @@ def wait_for_url(port)
     sleep 1
   end
   last_code || "down"
+end
+
+def tail_file(path, lines = 80)
+  return "(missing #{path})" unless File.exist?(path)
+
+  File.readlines(path, chomp: true).last(lines).join("\n")
+rescue Errno::ENOENT
+  "(missing #{path})"
+end
+
+def verify_started_stack!(app, dir, port)
+  pidfile = app.fetch("stack") == "tm" ? File.join(dir, "tmp", "pids", "tm-web.pid") : File.join(dir, "tmp", "pids", "agent-web.pid")
+  logfile = app.fetch("stack") == "tm" ? File.join(dir, "log", "tm-web.log") : File.join(dir, "log", "agent-web.log")
+
+  sleep 1
+  record = stack_record(app, dir)
+  return record if record[:code] == "200" && !record[:port_pid].empty? && !record[:pidfile_state].start_with?("stale")
+
+  warn "worktree server did not stay healthy after startup"
+  warn "  url: http://localhost:#{port}"
+  warn "  /up: #{record[:code]}"
+  warn "  port pid: #{record[:port_pid].empty? ? "none" : record[:port_pid]}"
+  warn "  pidfile: #{pidfile} (#{record[:pidfile_state]})"
+  warn "  log: #{logfile}"
+  warn
+  warn tail_file(logfile)
+  exit 1
 end
 
 def git_value(dir, *args)
@@ -989,6 +1030,8 @@ when "up"
   values = load_stack_env(app, task)
   app.fetch("stack") == "tm" ? start_tm(dir, app, values) : start_generic_rails(dir, app, values)
   code = wait_for_url(values.fetch("APP_PORT"))
+  record = verify_started_stack!(app, dir, values.fetch("APP_PORT"))
+  code = record[:code]
   puts
   puts "url: http://localhost:#{values.fetch("APP_PORT")} (/up #{code})"
   puts "email: http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
