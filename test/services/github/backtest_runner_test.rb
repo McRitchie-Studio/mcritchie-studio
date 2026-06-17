@@ -134,7 +134,7 @@ class Github::BacktestRunnerTest < ActiveSupport::TestCase
 
   private
 
-  def runner(fetcher:, sleeper: ->(_seconds) {}, builder_pause_seconds: 0, rate_limit_pause_seconds: 60, rate_limit_retries: 1)
+  def runner(fetcher:, sleeper: ->(_seconds) { }, builder_pause_seconds: 0, rate_limit_pause_seconds: 60, rate_limit_retries: 1)
     Github::BacktestRunner.new(
       fetcher: fetcher,
       aggregator: FakeAggregator.new(1),

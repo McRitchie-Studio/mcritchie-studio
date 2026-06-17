@@ -99,7 +99,7 @@ class Github::BuilderHistoryBatchRunnerTest < ActiveSupport::TestCase
       fetcher: fetcher,
       aggregator: aggregator,
       logger: nil,
-      sleeper: ->(_seconds) {},
+      sleeper: ->(_seconds) { },
       reporter: reporter
     )
   end
