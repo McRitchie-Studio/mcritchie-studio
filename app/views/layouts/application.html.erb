@@ -9,14 +9,54 @@
   <body x-data class="bg-page text-body min-h-screen" :class="{ 'dev-mode': $store.devMode }">
     <%= render "layouts/studio/flash" %>
     <script>
-      document.addEventListener('alpine:init', function () {
-        var sidebars = Alpine.store('sidebars');
-        if (!sidebars) {
-          Alpine.store('sidebars', { linkTreeOpen: false });
-        } else if (typeof sidebars.linkTreeOpen === 'undefined') {
-          sidebars.linkTreeOpen = false;
+      (function () {
+        function ensureLinkSidebarStore() {
+          if (!window.Alpine) return null;
+
+          var sidebars = Alpine.store('sidebars');
+          if (!sidebars) {
+            Alpine.store('sidebars', { linkTreeOpen: false });
+            return Alpine.store('sidebars');
+          }
+
+          if (typeof sidebars.linkTreeOpen === 'undefined') {
+            sidebars.linkTreeOpen = false;
+          }
+
+          return sidebars;
         }
-      });
+
+        function closeLinkSidebar() {
+          var sidebars = ensureLinkSidebarStore();
+          if (sidebars) sidebars.linkTreeOpen = false;
+        }
+
+        function toggleLinkSidebar(event) {
+          var trigger = event.target.closest('[data-link-sidebar-trigger], [data-username-display], [data-profile-image-toggle]');
+          if (!trigger) return;
+          if (!trigger.matches('[aria-controls~="studio-link-sidebar"]')) return;
+
+          var sidebars = ensureLinkSidebarStore();
+          if (!sidebars) return;
+
+          event.preventDefault();
+          event.stopPropagation();
+          sidebars.linkTreeOpen = !sidebars.linkTreeOpen;
+        }
+
+        if (!window.__mcritchieLinkSidebarTriggerBridge) {
+          window.__mcritchieLinkSidebarTriggerBridge = true;
+          document.addEventListener('alpine:init', ensureLinkSidebarStore);
+          document.addEventListener('turbo:load', ensureLinkSidebarStore);
+          document.addEventListener('turbo:before-cache', closeLinkSidebar);
+          window.addEventListener('pageshow', function (event) {
+            if (event.persisted) closeLinkSidebar();
+          });
+          document.addEventListener('click', toggleLinkSidebar, true);
+        }
+
+        ensureLinkSidebarStore();
+      })();
     </script>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
             class="sticky top-0 z-50 bg-page transition-shadow duration-300"
