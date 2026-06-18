@@ -23,6 +23,48 @@
       }
     },
     {
+      "slug": "task-engine789",
+      "title": "Ship shared engine table headers",
+      "stage": "pr_review",
+      "priority": 2,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:30:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "feature",
+          "worktree_slug": "shared-engine-table-headers",
+          "repositories": ["studio-engine", "turf-monster"],
+          "risk_tags": ["gem", "ui"],
+          "branch": "feat/shared-engine-table-headers",
+          "pr_url": "https://github.com/amcritchie/studio-engine/pull/789",
+          "acceptance": ["Engine release can be adopted by Turf Monster"],
+          "test_plan": ["bundle exec rake test", "consumer app smoke"],
+          "checks_run": ["bundle exec rake test"]
+        }
+      }
+    },
+    {
+      "slug": "task-block000",
+      "title": "Fix stale worktree handoff",
+      "stage": "pr_review",
+      "priority": 1,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:45:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "bug",
+          "worktree_slug": "stale-worktree-handoff",
+          "repositories": ["mcritchie-studio"],
+          "risk_tags": ["devops"],
+          "branch": "feat/stale-worktree-handoff",
+          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/1000",
+          "acceptance": ["Worktree handoff is current with main"],
+          "test_plan": ["bin/qa-intake --refresh"],
+          "checks_run": []
+        }
+      }
+    },
+    {
       "slug": "task-qa456",
       "title": "QA contest entry flow",
       "stage": "qa_review",
@@ -43,6 +85,26 @@
           "checks_run": ["QA /up returned 200"]
         }
       }
+    },
+    {
+      "slug": "task-prod999",
+      "title": "Release accepted QA work",
+      "stage": "prod_ready",
+      "priority": 2,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T16:00:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "release",
+          "worktree_slug": "release-accepted-qa",
+          "repositories": ["mcritchie-studio", "turf-monster"],
+          "risk_tags": ["deploy"],
+          "qa_url": "https://qa.mcritchie.studio/devops",
+          "acceptance": ["Production deploy is explicitly approved"],
+          "test_plan": ["production smoke"],
+          "checks_run": ["QA accepted by Mr. McRitchie"]
+        }
+      }
     }
   ],
   "activities": [
@@ -61,6 +123,24 @@
   ],
   "qa_intake": {
     "prs": [
+      {
+        "status": "avi-ready",
+        "repo": "amcritchie/studio-engine",
+        "number": 789,
+        "url": "https://github.com/amcritchie/studio-engine/pull/789",
+        "task_record_slug": "task-engine789",
+        "task_url": "https://mcritchie.studio/tasks/task-engine789",
+        "action": "Avi can review but coordinate release ordering"
+      },
+      {
+        "status": "needs-agent",
+        "repo": "amcritchie/mcritchie-studio",
+        "number": 1000,
+        "url": "https://github.com/amcritchie/mcritchie-studio/pull/1000",
+        "task_record_slug": "task-block000",
+        "task_url": "https://mcritchie.studio/tasks/task-block000",
+        "action": "return to the feature agent to resolve local blockers before Avi review"
+      },
       {
         "status": "avi-ready",
         "repo": "amcritchie/mcritchie-studio",

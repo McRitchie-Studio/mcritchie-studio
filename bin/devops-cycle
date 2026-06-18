@@ -30,6 +30,7 @@ OPTIONS = {
   base_url: ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio"),
   json: false,
   offline_fixture: nil,
+  plan: false,
   qa_intake: true,
   refresh: true,
   stages: DEFAULT_STAGES.dup
@@ -58,6 +59,7 @@ OptionParser.new do |opts|
   opts.on("--offline-fixture PATH", "Read snapshot input from a fixture instead of the live task board") do |path|
     OPTIONS[:offline_fixture] = File.expand_path(path)
   end
+  opts.on("--plan", "Include a read-only batch plan for review/QA/release lanes") { OPTIONS[:plan] = true }
   opts.on("--no-qa-intake", "Skip bin/qa-intake join") { OPTIONS[:qa_intake] = false }
   opts.on("--no-refresh", "Do not pass --refresh to bin/qa-intake") { OPTIONS[:refresh] = false }
   opts.on("--json", "Print machine-readable JSON") { OPTIONS[:json] = true }
@@ -230,7 +232,7 @@ def build_snapshot(source, qa_intake, base_url, stages)
   tasks = enriched_tasks(source.fetch("tasks", []), source.fetch("activities", []), qa_intake, base_url)
   tasks = tasks.select { |task| stages.include?(task.fetch("stage")) }
 
-  {
+  snapshot = {
     "generated_at" => Time.now.utc.iso8601,
     "base_url" => base_url,
     "stages" => stages,
@@ -242,6 +244,8 @@ def build_snapshot(source, qa_intake, base_url, stages)
     },
     "tasks" => tasks
   }
+  snapshot["plan"] = build_plan(tasks) if OPTIONS.fetch(:plan)
+  snapshot
 end
 
 def compact_list(items)
@@ -250,6 +254,122 @@ end
 
 def first_line(text)
   text.to_s.lines.first.to_s.strip
+end
+
+def high_risk?(task)
+  metadata = task.fetch("devops", {})
+  tags = Array(metadata["risk_tags"]).map(&:to_s)
+  repos = Array(task.fetch("repositories"))
+
+  tags.any? { |tag| tag.match?(/auth|email|wallet|solana|payment|provider|deploy|migration|gem|contract|infra/) } ||
+    repos.size > 1 ||
+    metadata["requires_release_conductor"].to_s == "true"
+end
+
+def qa_status(task)
+  task.dig("qa_intake", "status").to_s
+end
+
+def blocked_for_pr_review?(task)
+  %w[needs-agent merge-risk missing-local-branch checks-review avi-ready-draft].include?(qa_status(task))
+end
+
+def plan_reason(task)
+  metadata = task.fetch("devops", {})
+  repos = Array(task.fetch("repositories"))
+  tags = Array(metadata["risk_tags"]).map(&:to_s)
+  return "qa-intake status #{qa_status(task)}" if blocked_for_pr_review?(task)
+  return "multiple repositories: #{repos.join(" + ")}" if repos.size > 1
+  return "no matching qa-intake PR/worktree; conductor must inspect manually" unless task["qa_intake"]
+  return "release conductor required" if metadata["requires_release_conductor"].to_s == "true"
+
+  risky_tag = tags.find { |tag| tag.match?(/auth|email|wallet|solana|payment|provider|deploy|migration|gem|contract|infra/) }
+  return "high-risk tag: #{risky_tag}" if risky_tag
+
+  "standard PR review"
+end
+
+def plan_task(task, owner:, reason:)
+  metadata = task.fetch("devops", {})
+  {
+    "slug" => task.fetch("slug"),
+    "title" => task.fetch("title"),
+    "stage" => task.fetch("stage"),
+    "priority" => task_priority(task),
+    "owner" => owner,
+    "reason" => reason,
+    "task_url" => task.fetch("task_url"),
+    "repositories" => task.fetch("repositories"),
+    "pr_url" => metadata["pr_url"],
+    "qa_url" => metadata["qa_url"],
+    "action" => task.dig("qa_intake", "action")
+  }
+end
+
+def build_plan(tasks)
+  groups = [
+    {
+      "key" => "parallel_pr_review",
+      "title" => "Parallel PR Review",
+      "policy" => "Can be reviewed by separate Avi scout sessions at the same time. Keep final merge decisions with the conductor.",
+      "tasks" => []
+    },
+    {
+      "key" => "serialized_pr_review",
+      "title" => "Serialized / Conductor Review",
+      "policy" => "Review one at a time or intentionally bundle. These may affect multiple repos, release order, or high-risk surfaces.",
+      "tasks" => []
+    },
+    {
+      "key" => "blocked_or_return",
+      "title" => "Blocked / Return To Agent",
+      "policy" => "Do not merge. Send task feedback or wait for the owner agent to clear the blocker.",
+      "tasks" => []
+    },
+    {
+      "key" => "qa_review",
+      "title" => "QA Review",
+      "policy" => "Already merged to QA. Mr. McRitchie reviews URLs and Avi records acceptance or follow-up.",
+      "tasks" => []
+    },
+    {
+      "key" => "production_ready",
+      "title" => "Production Ready",
+      "policy" => "Release conductor can deploy only after explicit production approval.",
+      "tasks" => []
+    }
+  ]
+  by_key = groups.to_h { |group| [group.fetch("key"), group] }
+
+  tasks.each do |task|
+    case task.fetch("stage")
+    when "pr_review"
+      if blocked_for_pr_review?(task)
+        by_key.fetch("blocked_or_return").fetch("tasks") << plan_task(task, owner: "feature_agent", reason: plan_reason(task))
+      elsif !task["qa_intake"]
+        by_key.fetch("serialized_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+      elsif high_risk?(task)
+        by_key.fetch("serialized_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+      else
+        by_key.fetch("parallel_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+      end
+    when "qa_review"
+      by_key.fetch("qa_review").fetch("tasks") << plan_task(task, owner: "mr_mcritchie", reason: "needs QA acceptance or follow-up")
+    when "prod_ready"
+      by_key.fetch("production_ready").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "awaiting explicit production approval")
+    end
+  end
+
+  groups.each do |group|
+    group["tasks"] = group.fetch("tasks").sort_by do |task|
+      [-PRIORITY_LABELS.key(task.fetch("priority")).to_i, task.fetch("repositories").join(","), task.fetch("slug")]
+    end
+  end
+
+  {
+    "summary" => groups.to_h { |group| [group.fetch("key"), group.fetch("tasks").size] },
+    "groups" => groups
+  }
 end
 
 def print_task(task)
@@ -308,6 +428,34 @@ def print_snapshot(snapshot)
   warnings.each { |warning| puts "- #{warning}" }
 end
 
+def print_plan(snapshot)
+  plan = snapshot["plan"]
+  return unless plan
+
+  puts
+  puts "Batch Plan"
+  puts "----------"
+  plan.fetch("groups").each do |group|
+    tasks = group.fetch("tasks")
+    puts
+    puts "#{group.fetch("title")} (#{tasks.size})"
+    puts group.fetch("policy")
+    if tasks.empty?
+      puts "  none"
+      next
+    end
+
+    tasks.each do |task|
+      puts "  [#{task.fetch("priority")}] #{task.fetch("slug")} #{task.fetch("title")}"
+      puts "    owner=#{task.fetch("owner")} repo=#{compact_list(task.fetch("repositories"))} reason=#{task.fetch("reason")}"
+      puts "    task=#{task.fetch("task_url")}"
+      puts "    pr=#{task["pr_url"]}" if task["pr_url"].to_s != ""
+      puts "    qa=#{task["qa_url"]}" if task["qa_url"].to_s != ""
+      puts "    action=#{task["action"]}" if task["action"].to_s != ""
+    end
+  end
+end
+
 source = if OPTIONS[:offline_fixture]
            read_json(OPTIONS[:offline_fixture])
          else
@@ -328,4 +476,5 @@ if OPTIONS[:json]
   puts JSON.pretty_generate(snapshot)
 else
   print_snapshot(snapshot)
+  print_plan(snapshot)
 end

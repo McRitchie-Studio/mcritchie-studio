@@ -242,14 +242,20 @@ Avi starts with the task board plus the local PR/worktree tools:
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
+bin/devops-cycle --plan
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
 `bin/devops-cycle` is the first-pass conductor view. It groups active
 `pr_review`, `qa_review`, and `prod_ready` tasks with task URLs, PR URLs,
 local/QA/production URLs, latest task conversation notes, and matching qa-intake
-status when available. `bin/qa-intake` remains the raw local worktree and GitHub
-PR view for branch freshness, stack health, and cleanup-state details.
+status when available. `bin/devops-cycle --plan` adds a read-only batch plan
+that separates parallel PR reviews, serialized/high-risk work, blocked returns
+to feature agents, QA review, and production-ready release work. Accurate
+`repositories`, `risk_tags`, `pr_url`, `qa_url`, `test_plan`, and `checks_run`
+metadata make that plan useful at scale. `bin/qa-intake` remains the raw local
+worktree and GitHub PR view for branch freshness, stack health, and cleanup-state
+details.
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.
