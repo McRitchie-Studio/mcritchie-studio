@@ -237,7 +237,19 @@ During handoff, the agent updates:
 
 ## QA / Avi Duties
 
-Avi uses the task board plus `bin/qa-intake`:
+Avi starts with the task board plus the local PR/worktree tools:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/devops-cycle
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+```
+
+`bin/devops-cycle` is the first-pass conductor view. It groups active
+`pr_review`, `qa_review`, and `prod_ready` tasks with task URLs, PR URLs,
+local/QA/production URLs, latest task conversation notes, and matching qa-intake
+status when available. `bin/qa-intake` remains the raw local worktree and GitHub
+PR view for branch freshness, stack health, and cleanup-state details.
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.

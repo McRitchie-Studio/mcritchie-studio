@@ -124,10 +124,18 @@ Studio:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
+bin/devops-cycle
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
-`bin/qa-intake` refreshes
+`bin/devops-cycle` is the high-level conductor snapshot. It reads the production
+task board, groups active `pr_review`, `qa_review`, and `prod_ready` tasks,
+joins each task to latest task conversation notes, and attaches matching
+`bin/qa-intake` status when a local PR/worktree exists. Use it first in a fresh
+DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
+before reviewing individual diffs. It is read-only by default.
+
+`bin/qa-intake` is the lower-level PR/worktree intake. It refreshes
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
 state with open GitHub PRs, and prints an Avi-ready queue. Add apps to
 `--apps` as new satellites are promoted. Use `--json` when a supervisor script

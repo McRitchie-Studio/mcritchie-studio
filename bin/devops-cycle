@@ -1,0 +1,331 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Read-only conductor snapshot for the task -> PR -> QA -> deploy cycle.
+
+require "json"
+require "net/http"
+require "open3"
+require "optparse"
+require "shellwords"
+require "time"
+require "uri"
+
+SCRIPT_ROOT = File.expand_path("..", __dir__)
+DEFAULT_STAGES = %w[pr_review qa_review prod_ready].freeze
+DEFAULT_APPS = %w[mcritchie-studio turf-monster].freeze
+STAGE_LABELS = {
+  "pr_review" => "PR Review",
+  "qa_review" => "QA Review",
+  "prod_ready" => "Prod Ready"
+}.freeze
+PRIORITY_LABELS = {
+  0 => "LOW",
+  1 => "MED",
+  2 => "HIGH"
+}.freeze
+
+OPTIONS = {
+  apps: DEFAULT_APPS.dup,
+  base_url: ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio"),
+  json: false,
+  offline_fixture: nil,
+  qa_intake: true,
+  refresh: true,
+  stages: DEFAULT_STAGES.dup
+}
+
+OptionParser.new do |opts|
+  opts.banner = <<~TEXT
+    Usage: bin/devops-cycle [options]
+
+    Prints a read-only DevOps conductor snapshot from the task board and
+    qa-intake. Use this at the start of a fresh Avi/release session.
+
+    Authentication:
+      Set AGENT_API_SECRET or keep it in the local .env. The secret is never printed.
+
+    Options:
+  TEXT
+
+  opts.on("--apps LIST", "Comma-separated apps for qa-intake (default: #{DEFAULT_APPS.join(",")})") do |value|
+    OPTIONS[:apps] = value.split(",").map(&:strip).reject(&:empty?)
+  end
+  opts.on("--base-url URL", "Task board base URL (default: #{OPTIONS[:base_url]})") { |value| OPTIONS[:base_url] = value }
+  opts.on("--stages LIST", "Comma-separated task stages (default: #{DEFAULT_STAGES.join(",")})") do |value|
+    OPTIONS[:stages] = value.split(",").map(&:strip).reject(&:empty?)
+  end
+  opts.on("--offline-fixture PATH", "Read snapshot input from a fixture instead of the live task board") do |path|
+    OPTIONS[:offline_fixture] = File.expand_path(path)
+  end
+  opts.on("--no-qa-intake", "Skip bin/qa-intake join") { OPTIONS[:qa_intake] = false }
+  opts.on("--no-refresh", "Do not pass --refresh to bin/qa-intake") { OPTIONS[:refresh] = false }
+  opts.on("--json", "Print machine-readable JSON") { OPTIONS[:json] = true }
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+def read_json(path)
+  JSON.parse(File.read(path))
+rescue JSON::ParserError => e
+  abort "invalid JSON fixture #{path}: #{e.message}"
+end
+
+def secret_from_env_file
+  path = File.join(SCRIPT_ROOT, ".env")
+  return nil unless File.exist?(path)
+
+  File.foreach(path) do |line|
+    next unless line.match?(/\A\s*AGENT_API_SECRET=/)
+
+    _, raw_value = line.split("=", 2)
+    return raw_value.to_s.strip.delete_prefix("\"").delete_suffix("\"").delete_prefix("'").delete_suffix("'")
+  end
+
+  nil
+end
+
+def task_board_secret
+  value = ENV["AGENT_API_SECRET"].to_s.strip
+  value.empty? ? secret_from_env_file : value
+end
+
+def request_json(uri, method:, token: nil, body: nil)
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = uri.scheme == "https"
+
+  request = case method
+            when :get then Net::HTTP::Get.new(uri)
+            when :post then Net::HTTP::Post.new(uri)
+            else raise ArgumentError, "unsupported method #{method}"
+            end
+  request["Authorization"] = "Bearer #{token}" if token
+  if body
+    request["Content-Type"] = "application/json"
+    request.body = JSON.generate(body)
+  end
+
+  response = http.request(request)
+  unless response.is_a?(Net::HTTPSuccess)
+    raise "HTTP #{response.code} from #{uri.path}: #{response.body[0, 200]}"
+  end
+
+  JSON.parse(response.body)
+end
+
+def task_board_token(base_url, secret)
+  request_json(URI.join(base_url, "/api/v1/auth"), method: :post, body: { secret: secret }).fetch("token")
+end
+
+def fetch_paginated(base_url, path, token, params = {})
+  records = []
+  page = 1
+
+  loop do
+    uri = URI.join(base_url, path)
+    uri.query = URI.encode_www_form(params.merge(page: page, per_page: 100))
+    response = request_json(uri, method: :get, token: token)
+    records.concat(response.fetch("data"))
+    meta = response["meta"] || {}
+    break if meta["total_pages"].to_i <= page
+
+    page += 1
+  end
+
+  records
+end
+
+def fetch_live_tasks(base_url, stages)
+  secret = task_board_secret
+  abort "missing AGENT_API_SECRET; set it or pass --offline-fixture" if secret.to_s.empty?
+
+  token = task_board_token(base_url, secret)
+  tasks = stages.flat_map do |stage|
+    fetch_paginated(base_url, "/api/v1/tasks", token, stage: stage)
+  end
+
+  activities = tasks.each_with_object([]) do |task, collection|
+    collection.concat(fetch_paginated(base_url, "/api/v1/activities", token, task_slug: task.fetch("slug")))
+  rescue StandardError => e
+    warn "activity lookup failed for #{task.fetch("slug")}: #{e.message}"
+  end
+
+  { "tasks" => tasks, "activities" => activities }
+end
+
+def run_qa_intake(apps, refresh:)
+  args = ["bin/qa-intake", "--json", "--apps", apps.join(",")]
+  args.insert(1, "--refresh") if refresh
+  out, err, status = Open3.capture3(*args, chdir: SCRIPT_ROOT)
+  return JSON.parse(out) if status.success?
+
+  {
+    "prs" => [],
+    "warnings" => ["qa-intake failed: #{[err, out].join(" ").strip}"]
+  }
+rescue JSON::ParserError => e
+  {
+    "prs" => [],
+    "warnings" => ["qa-intake returned invalid JSON: #{e.message}"]
+  }
+end
+
+def normalize_url(url)
+  url.to_s.sub(%r{\Ahttps://www\.}, "https://").delete_suffix("/")
+end
+
+def devops(task)
+  task.fetch("metadata", {}).fetch("devops", {}) || {}
+end
+
+def task_url(base_url, task)
+  "#{base_url.sub(%r{/\z}, "")}/tasks/#{task.fetch("slug")}"
+end
+
+def task_repos(task)
+  repos = Array(devops(task)["repositories"])
+  repos.empty? ? ["unassigned"] : repos
+end
+
+def task_priority(task)
+  PRIORITY_LABELS.fetch(task["priority"].to_i, "P#{task["priority"]}")
+end
+
+def latest_activity_for(task, activities)
+  activities
+    .select { |activity| activity["task_slug"] == task.fetch("slug") }
+    .max_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
+end
+
+def qa_intake_match(task, qa_intake)
+  metadata = devops(task)
+  pr_url = normalize_url(metadata["pr_url"])
+  slug = task.fetch("slug")
+
+  Array(qa_intake["prs"]).find do |pr|
+    normalize_url(pr["task_url"]).include?(slug) ||
+      pr["task_record_slug"].to_s == slug ||
+      (!pr_url.empty? && normalize_url(pr["url"]) == pr_url)
+  end
+end
+
+def enriched_tasks(tasks, activities, qa_intake, base_url)
+  tasks.map do |task|
+    metadata = devops(task)
+    activity = latest_activity_for(task, activities)
+    qa = qa_intake_match(task, qa_intake)
+    task.merge(
+      "task_url" => task_url(base_url, task),
+      "devops" => metadata,
+      "repositories" => task_repos(task),
+      "latest_activity" => activity,
+      "qa_intake" => qa
+    )
+  end
+end
+
+def build_snapshot(source, qa_intake, base_url, stages)
+  tasks = enriched_tasks(source.fetch("tasks", []), source.fetch("activities", []), qa_intake, base_url)
+  tasks = tasks.select { |task| stages.include?(task.fetch("stage")) }
+
+  {
+    "generated_at" => Time.now.utc.iso8601,
+    "base_url" => base_url,
+    "stages" => stages,
+    "summary" => {
+      "tasks" => tasks.size,
+      "by_stage" => stages.to_h { |stage| [stage, tasks.count { |task| task.fetch("stage") == stage }] },
+      "qa_intake_prs" => Array(qa_intake["prs"]).size,
+      "warnings" => Array(qa_intake["warnings"])
+    },
+    "tasks" => tasks
+  }
+end
+
+def compact_list(items)
+  Array(items).reject { |item| item.to_s.strip.empty? }.join(", ")
+end
+
+def first_line(text)
+  text.to_s.lines.first.to_s.strip
+end
+
+def print_task(task)
+  metadata = task.fetch("devops", {})
+  qa = task["qa_intake"]
+  activity = task["latest_activity"]
+
+  puts "[#{task_priority(task)}] #{task.fetch("title")} (#{task.fetch("slug")})"
+  puts "  task: #{task.fetch("task_url")}"
+  puts "  repo: #{compact_list(task.fetch("repositories"))}"
+  puts "  worktree: #{metadata["worktree_slug"] || "missing"}"
+  puts "  branch: #{metadata["branch"] || "missing"}"
+  puts "  PR: #{metadata["pr_url"] || "missing"}"
+  urls = {
+    "local" => metadata["local_url"],
+    "qa" => metadata["qa_url"],
+    "prod" => metadata["production_url"]
+  }.select { |_, value| value.to_s != "" }
+  puts "  urls: #{urls.map { |name, value| "#{name}=#{value}" }.join("  ")}" if urls.any?
+  puts "  tests: expected=#{Array(metadata["test_plan"]).size}  run=#{Array(metadata["checks_run"]).size}"
+  if qa
+    puts "  qa-intake: #{qa["status"]} #{qa["repo"]}##{qa["number"]}"
+    puts "  action: #{qa["action"]}"
+  else
+    puts "  qa-intake: no local PR/worktree match"
+  end
+  if activity
+    puts "  latest #{activity["activity_type"]}: #{first_line(activity["description"])}"
+  end
+end
+
+def print_snapshot(snapshot)
+  puts "DevOps Cycle Snapshot"
+  puts "Generated: #{snapshot.fetch("generated_at")}"
+  puts "Task board: #{snapshot.fetch("base_url")}"
+  puts "Summary: tasks=#{snapshot.dig("summary", "tasks")} qa_intake_prs=#{snapshot.dig("summary", "qa_intake_prs")}"
+
+  snapshot.fetch("stages").each do |stage|
+    tasks = snapshot.fetch("tasks").select { |task| task.fetch("stage") == stage }
+    puts
+    puts "#{STAGE_LABELS.fetch(stage, stage)} (#{tasks.size})"
+    puts "-" * (STAGE_LABELS.fetch(stage, stage).size + tasks.size.to_s.size + 3)
+    if tasks.empty?
+      puts "No tasks in this lane."
+    else
+      tasks.each { |task| print_task(task) }
+    end
+  end
+
+  warnings = Array(snapshot.dig("summary", "warnings"))
+  return if warnings.empty?
+
+  puts
+  puts "Warnings"
+  puts "--------"
+  warnings.each { |warning| puts "- #{warning}" }
+end
+
+source = if OPTIONS[:offline_fixture]
+           read_json(OPTIONS[:offline_fixture])
+         else
+           fetch_live_tasks(OPTIONS.fetch(:base_url), OPTIONS.fetch(:stages))
+         end
+
+qa_intake = if OPTIONS[:offline_fixture]
+              source.fetch("qa_intake", { "prs" => [], "warnings" => [] })
+            elsif OPTIONS[:qa_intake]
+              run_qa_intake(OPTIONS.fetch(:apps), refresh: OPTIONS.fetch(:refresh))
+            else
+              { "prs" => [], "warnings" => [] }
+            end
+
+snapshot = build_snapshot(source, qa_intake, OPTIONS.fetch(:base_url), OPTIONS.fetch(:stages))
+
+if OPTIONS[:json]
+  puts JSON.pretty_generate(snapshot)
+else
+  print_snapshot(snapshot)
+end
