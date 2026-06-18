@@ -272,6 +272,7 @@ Avi starts with the task board plus the local PR/worktree tools:
 cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
 bin/devops-cycle --plan
+bin/devops-cycle --decisions
 bin/devops-cycle --scout-packets
 bin/devops-cycle --scout-reports
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
@@ -283,6 +284,10 @@ local/QA/production URLs, latest task conversation notes, and matching qa-intake
 status when available. `bin/devops-cycle --plan` adds a read-only batch plan
 that separates parallel PR reviews, serialized/high-risk work, blocked returns
 to feature agents, QA review, and production-ready release work.
+`bin/devops-cycle --decisions` adds an Avi decision summary for PR-review tasks,
+combining qa-intake status, latest task activity, and scout report outcomes into
+`merge-ready`, `wait-for-ci`, `request-changes`, or `conductor-review`
+recommendations.
 `bin/devops-cycle --scout-packets` turns reviewable PR-review lanes into
 copy-paste prompts for additional review-only sessions. Accurate `repositories`,
 `risk_tags`, `pr_url`, `qa_url`, `acceptance`, `test_plan`, and `checks_run`
@@ -297,6 +302,17 @@ Scout reports are supporting evidence. Avi turns blocker findings into
 `qa_feedback` or PR review comments when the work must return to the feature
 agent. The conductor still owns final merge, QA deploy, production deploy, and
 task stage changes.
+
+Use the decision recommendations conservatively:
+
+- `request-changes` means Avi should return the task to the feature agent with
+  `qa_feedback` or a PR comment.
+- `wait-for-ci` means the next action is to inspect or wait for checks, not
+  merge.
+- `conductor-review` means the task needs Avi's direct review because it is
+  high-risk, multi-repo, missing local intake, or lacks enough scout signal.
+- `merge-ready` means scout evidence and qa-intake are aligned; Avi still
+  performs the final PR review before merging.
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.

@@ -126,7 +126,9 @@ Studio:
 cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
 bin/devops-cycle --plan
+bin/devops-cycle --decisions
 bin/devops-cycle --scout-packets
+bin/devops-cycle --scout-reports
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -150,6 +152,21 @@ comfortably hold in context. The plan separates:
 The plan is still read-only. It does not merge, deploy, update tasks, or create
 sub-agents. The conductor uses it to decide which work can safely happen in
 parallel and which tasks must be bundled or sequenced.
+
+Use `bin/devops-cycle --decisions` after scout reports begin landing. The
+decision summary aggregates `qa-intake` status, latest task conversation state,
+and structured scout report outcomes into conservative Avi recommendations:
+
+- `merge-ready`: clean qa-intake and at least one merge-ready scout report.
+- `wait-for-ci`: qa-intake or a scout says checks are not settled.
+- `request-changes`: qa-intake has a blocker, a scout requested changes, or the
+  latest task activity is `qa_feedback`.
+- `conductor-review`: multi-repo, high-risk, missing local intake, or otherwise
+  requires Avi to inspect personally.
+
+The decision summary is a queue accelerator, not an authority transfer. Avi
+still reviews the underlying PR, decides whether the report is sufficient, and
+performs any merge, QA deploy, or feedback action.
 
 Use `bin/devops-cycle --scout-packets` when the conductor wants to hand
 review-only work to additional sessions. Scout packets are copy-paste prompts
@@ -181,9 +198,9 @@ outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
 task stages or convert findings into final `qa_feedback`; Avi does that after
 reviewing the report and PR context.
 
-Use `bin/devops-cycle --scout-reports` to include recorded scout reports in the
-conductor snapshot. `--json --scout-reports` exposes the same report metadata
-for future supervisors or dashboards.
+Use `bin/devops-cycle --scout-reports` when you need the detailed reports under
+the main queue. `--json --decisions` and `--json --scout-reports` expose the
+same report metadata for future supervisors or dashboards.
 
 `bin/qa-intake` is the lower-level PR/worktree intake. It refreshes
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree

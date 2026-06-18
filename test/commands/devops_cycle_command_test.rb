@@ -14,7 +14,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_includes out, "DevOps Cycle Snapshot"
-    assert_includes out, "PR Review (3)"
+    assert_includes out, "PR Review (4)"
     assert_includes out, "QA Review (1)"
     assert_includes out, "Prod Ready (1)"
     assert_includes out, "Ship sidebar recovery (task-pr123)"
@@ -28,7 +28,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     snapshot = JSON.parse(out)
-    assert_equal 5, snapshot.dig("summary", "tasks")
+    assert_equal 6, snapshot.dig("summary", "tasks")
     task = snapshot.fetch("tasks").find { |item| item.fetch("slug") == "task-qa456" }
     assert_equal "https://qa.turfmonster.media/contests/test", task.dig("devops", "qa_url")
     assert_equal "checks-review", task.dig("qa_intake", "status")
@@ -40,7 +40,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_includes out, "Batch Plan"
-    assert_includes out, "Parallel PR Review (1)"
+    assert_includes out, "Parallel PR Review (2)"
     assert_includes out, "Serialized / Conductor Review (1)"
     assert_includes out, "Blocked / Return To Agent (1)"
     assert_includes out, "QA Review (1)"
@@ -56,7 +56,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     snapshot = JSON.parse(out)
-    assert_equal 1, snapshot.dig("plan", "summary", "parallel_pr_review")
+    assert_equal 2, snapshot.dig("plan", "summary", "parallel_pr_review")
     assert_equal 1, snapshot.dig("plan", "summary", "serialized_pr_review")
     assert_equal 1, snapshot.dig("plan", "summary", "blocked_or_return")
     assert_equal 1, snapshot.dig("plan", "summary", "qa_review")
@@ -71,8 +71,9 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     out, err, status = devops_cycle("--scout-packets")
 
     assert status.success?, err
-    assert_includes out, "Scout Packets (2)"
+    assert_includes out, "Scout Packets (3)"
     assert_includes out, "scout-task-pr123 Ship sidebar recovery"
+    assert_includes out, "scout-task-ready222 Ship focused DevOps helper"
     assert_includes out, "mode=parallel_scout reason=standard PR review"
     assert_includes out, "scout-task-engine789 Ship shared engine table headers"
     assert_includes out, "mode=serialized_scout reason=multiple repositories: studio-engine + turf-monster"
@@ -87,8 +88,8 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     snapshot = JSON.parse(out)
-    assert_equal 2, snapshot.fetch("scout_packets").size
-    assert_equal 1, snapshot.dig("plan", "summary", "parallel_pr_review")
+    assert_equal 3, snapshot.fetch("scout_packets").size
+    assert_equal 2, snapshot.dig("plan", "summary", "parallel_pr_review")
 
     parallel = snapshot.fetch("scout_packets").find { |packet| packet.fetch("packet_id") == "scout-task-pr123" }
     assert_equal "parallel_scout", parallel.fetch("mode")
@@ -107,9 +108,11 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     out, err, status = devops_cycle("--scout-reports")
 
     assert status.success?, err
-    assert_includes out, "Scout Reports (1)"
+    assert_includes out, "Scout Reports (2)"
     assert_includes out, "task-pr123 Ship sidebar recovery"
     assert_includes out, "merge-ready by casey: Diff matches the task and CI is green."
+    assert_includes out, "task-ready222 Ship focused DevOps helper"
+    assert_includes out, "merge-ready by drew: Helper is scoped and checks are green."
     assert_includes out, "finding: PR body matches the task acceptance criteria"
     assert_includes out, "check: Confirmed qa-intake avi-ready"
   end
@@ -119,12 +122,47 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     snapshot = JSON.parse(out)
-    assert_equal 1, snapshot.dig("summary", "scout_reports")
+    assert_equal 2, snapshot.dig("summary", "scout_reports")
     task = snapshot.fetch("tasks").find { |item| item.fetch("slug") == "task-pr123" }
     report = task.fetch("scout_reports").first
     assert_equal "merge-ready", report.fetch("outcome")
     assert_equal "casey", report.fetch("agent_slug")
     assert_includes report.fetch("findings"), "No overlapping worktree risk found"
+  end
+
+  test "prints conductor decision summary from qa-intake and scout reports" do
+    out, err, status = devops_cycle("--decisions")
+
+    assert status.success?, err
+    assert_includes out, "Conductor Decisions (4)"
+    assert_includes out, "Request Changes (2)"
+    assert_includes out, "task-pr123 Ship sidebar recovery"
+    assert_includes out, "reason=latest task activity is qa_feedback"
+    assert_includes out, "task-block000 Fix stale worktree handoff"
+    assert_includes out, "reason=qa-intake status needs-agent"
+    assert_includes out, "Wait For CI (0)"
+    assert_includes out, "Conductor Review (1)"
+    assert_includes out, "task-engine789 Ship shared engine table headers"
+    assert_includes out, "Merge Ready (1)"
+    assert_includes out, "task-ready222 Ship focused DevOps helper"
+    assert_includes out, "scout-reports=merge-ready:1"
+  end
+
+  test "includes conductor decisions in JSON when requested" do
+    out, err, status = devops_cycle("--json", "--decisions")
+
+    assert status.success?, err
+    snapshot = JSON.parse(out)
+    decisions = snapshot.fetch("decisions")
+    assert_equal 4, decisions.size
+
+    ready = decisions.find { |decision| decision.fetch("slug") == "task-ready222" }
+    assert_equal "merge-ready", ready.fetch("recommendation")
+    assert_equal({ "merge-ready" => 1, "wait-for-ci" => 0, "request-changes" => 0, "conductor-review" => 0 }, ready.fetch("scout_report_counts"))
+
+    blocked = decisions.find { |decision| decision.fetch("slug") == "task-pr123" }
+    assert_equal "request-changes", blocked.fetch("recommendation")
+    assert_includes blocked.fetch("reasons"), "latest task activity is qa_feedback"
   end
 
   test "prints scout report dry-run payload without live credentials" do
