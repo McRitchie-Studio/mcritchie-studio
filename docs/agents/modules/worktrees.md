@@ -81,6 +81,8 @@ Use the launcher as the source of truth for worktree stack state:
 
 ```bash
 bin/agent-worktree list
+bin/agent-worktree whereami
+bin/agent-worktree shell-hook zsh
 bin/agent-worktree status turf-monster task-slug
 bin/agent-worktree finish turf-monster task-slug
 bin/agent-worktree doctor
@@ -93,6 +95,15 @@ bin/agent-worktree scale status
 ```
 
 - `list` shows task, health, URL, branch, dirty state, merge state, ahead/behind, database, Redis DB, pidfile state, and local inbox URL.
+- `whereami` reads the nearest `.agent-context.json` marker and prints the app,
+  task/worktree slug, branch, local URL, port, Redis DB, database, terminal
+  title, prompt badge, and shell exports. Pass `<app> <task-slug>` to refresh
+  the marker for a known stack, `--json` for machine-readable output, or
+  `--shell` for exports/title commands.
+- `shell-hook zsh` prints a zsh hook that refreshes `AGENT_CONTEXT_*`
+  variables and the terminal title whenever the prompt redraws or the working
+  directory changes. It does not edit shell dotfiles; source it explicitly when
+  you want evergreen terminal titles.
 - `status` shows the detailed state for one generated stack.
 - `finish` prints a feature graduation packet and PR body. It blocks dirty
   worktrees, branches with no commits ahead of `origin/main`, stale branches
@@ -228,6 +239,44 @@ McRitchie Studio documents and owns the format, but the file itself reflects the
 current machine and should not be treated as a Git-tracked source of truth.
 If the agent runtime blocks writing to that directory, rerun the command with
 filesystem approval or set `AGENT_WORKTREE_REGISTRY` to a writable scratch path.
+
+## Terminal Context Markers
+
+The launcher writes a non-secret `.agent-context.json` file into every generated
+worktree during `new`, and refreshes it during `up`, `status`, and
+`whereami <app> <task-slug>`. The marker is added to the repository's local
+Git exclude file so it does not show as untracked work or enter commits.
+
+Use it from inside a generated worktree:
+
+```bash
+bin/agent-worktree whereami
+bin/agent-worktree whereami --json
+bin/agent-worktree whereami --shell
+```
+
+If the current directory is nested below the worktree root, call the launcher by
+absolute path or from the shell `PATH`; `whereami` walks upward until it finds
+the marker.
+
+For an evergreen terminal title in zsh, source the generated hook:
+
+```bash
+eval "$(/Users/alex/projects/mcritchie-studio/bin/agent-worktree shell-hook zsh)"
+```
+
+The hook exports:
+
+- `AGENT_CONTEXT_APP`
+- `AGENT_CONTEXT_TASK`
+- `AGENT_CONTEXT_PORT`
+- `AGENT_CONTEXT_URL`
+- `AGENT_CONTEXT_TITLE`
+- `AGENT_CONTEXT_BADGE`
+
+The hook updates the terminal title automatically. Shell prompt customization
+can include `$AGENT_CONTEXT_BADGE` wherever the operator wants the badge to
+appear.
 
 ## Ports
 
