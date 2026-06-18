@@ -11,6 +11,12 @@ It is written against the live code (`config/routes.rb`,
 `app/controllers/api/v1/*`, `app/models/task.rb`). When the code changes, update
 this file in the same pass.
 
+> **Preferred path: use `bin/task`.** Don't hand-roll the HTTP calls below
+> unless you're debugging. `bin/task create|update|move|list|show` handles auth,
+> JSON, devops read-merge-write, and stage routing for you, and reads the secret
+> via `bin/secret`. The raw API in this doc is the reference `bin/task` is built
+> on. See the "Use bin/task" section at the end.
+
 ## Authentication
 
 Every endpoint except `POST /api/v1/auth` requires a bearer token.
@@ -43,8 +49,12 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
 
 ### Secret hygiene
 
-Never inline the secret or echo it. Read it from 1Password at call time and pipe
-it straight into the request:
+Prefer **`bin/secret agents 'Agent API Secret' AGENT_API_SECRET`** (value to
+stdout, diagnostics to stderr, verifies op auth) over hand-rolling `op read`.
+`bin/task` already uses it, so you usually never touch the secret directly.
+
+If you must call the API by hand, never inline the secret or echo it — read it at
+call time and pipe it straight into the request:
 
 ```bash
 SECRET="$(/opt/homebrew/bin/op read 'op://agents/Agent API Secret/AGENT_API_SECRET')"
@@ -136,11 +146,15 @@ keys survive (`Task::DEVOPS_KEYS`):
    `devops` object, it **replaces** the stored devops entirely — any field you
    omit is lost. Re-send the *full* devops object on every update that touches
    it. (A `PATCH` that omits `devops` leaves `metadata` untouched — use that to
-   move only the stage.)
-2. **List items split on commas *and* newlines.** `normalize_devops_list` splits
-   each `acceptance`/`test_plan`/`risk_tags`/`repositories` entry on `[,\n]`. A
-   single item containing a comma silently fragments into multiple items. **Keep
-   commas out of list items** (use `/`, `;`, or rephrase).
+   move only the stage.) **`bin/task update` does this read-merge-write for you**,
+   so partial updates are safe through the CLI.
+2. **List delimiting differs by input type.** `normalize_devops_list` treats
+   **array** input (the JSON API / `bin/task`) as already-delimited and splits it
+   **only on newlines** — so commas inside an `acceptance`/`test_plan` sentence
+   are preserved. **String** input (UI free-text fields) still splits on both
+   commas and newlines, so one field can carry several entries. Practical rule:
+   from the API/`bin/task`, **always pass list values as arrays** (one element
+   per item) and commas are safe.
 3. **Unsupported `devops` keys are silently dropped.** Anything not in
    `DEVOPS_KEYS` is discarded by the normalizer. To stash extra data, write it
    under `metadata` directly instead of `devops`.
@@ -208,3 +222,23 @@ sed -n '/namespace :api/,/^  end/p' config/routes.rb       # endpoints
 grep -n "params.permit" app/controllers/api/v1/tasks_controller.rb   # writable fields
 grep -n "STAGES\|DEVOPS_KEYS\|normalize_devops" app/models/task.rb   # stages + devops contract
 ```
+
+## Use `bin/task` (the preferred path)
+
+`bin/task` wraps everything above so you don't construct JSON, manage tokens, or
+remember which stages have transition endpoints. It reads the secret via
+`bin/secret`, does devops **read-merge-write** (partial updates never wipe
+fields), and warns if a list item contains a comma.
+
+```bash
+bin/task list [--stage S] [--agent A]
+bin/task show <slug>
+bin/task create --title T [--kind K] [--repo R ...] [--risk R ...] \
+                [--accept "..." ...] [--test "..." ...] [--agent A]
+bin/task update <slug> --branch B --pr-url U   # merges into existing devops
+bin/task move <slug> pr_review                 # any of the 9 stages
+```
+
+List flags are **repeatable** (one value per flag), so commas inside an
+`acceptance`/`test_plan` item are safe. Fall back to the raw API above only when
+`bin/task` can't express what you need.
