@@ -37,8 +37,22 @@ end
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
+
+# Worktree Redis bands separate physical capacity (Redis `databases`, fixed at
+# startup) from a soft, restart-free band the launcher allocates from.
+#   physical capacity  -> Redis `databases` (changing it needs a restart)
+#   soft band          -> DBs redis_db_min .. redis_db_min + current_capacity - 1
+# The band idles at FLOOR slots, grows by STEP when exhausted (while physical
+# room remains), and shrinks by STEP (never below FLOOR) as worktrees close.
 DEFAULT_REDIS_MIN_DB = 9
+# Legacy stock Redis ships 16 databases (0-15). Used as the conservative
+# physical fallback when redis-cli cannot be reached.
 DEFAULT_REDIS_MAX_DB = 15
+REDIS_BAND_FLOOR = Integer(ENV.fetch("AGENT_REDIS_FLOOR", "20"))
+REDIS_BAND_STEP = Integer(ENV.fetch("AGENT_REDIS_STEP", "10"))
+# Physical `databases` target for `scale --provision`. 64 leaves ~55 band slots
+# above the DB-9 band start with plenty of headroom for primary apps on 0-8.
+DEFAULT_REDIS_PHYSICAL_TARGET = 64
 
 ALIASES = {
   "studio" => "mcritchie-studio",
@@ -84,10 +98,16 @@ def usage
       cleanup [app] [--write]
       remove <app> <task-slug> [--yes]
       down <app> <task-slug>
+      scale [status|out|in]
+      scale --provision [--yes]
 
     Environment:
-      AGENT_REDIS_MIN_DB   first Redis DB eligible for worktree stacks (default 9)
-      AGENT_REDIS_MAX_DB   last Redis DB eligible for worktree stacks (default 15)
+      AGENT_REDIS_MIN_DB         first Redis DB in the worktree band (default 9)
+      AGENT_REDIS_MAX_DB         override the band's top DB (default: derived from band size)
+      AGENT_REDIS_FLOOR          steady-state band size in slots (default 20)
+      AGENT_REDIS_STEP           grow/shrink increment in slots (default 10)
+      AGENT_REDIS_PHYSICAL_TARGET  Redis `databases` target for --provision (default 64)
+      AGENT_REDIS_CONF           brew redis.conf path for --provision (default <brew>/etc/redis.conf)
 
     Examples:
       bin/agent-worktree plan turf-monster button-color
@@ -122,6 +142,20 @@ def capture_status(*cmd, chdir: nil, env: {})
   options[:chdir] = chdir if chdir
   out, err, status = Open3.capture3(env, *cmd, **options)
   [status.success?, out, err]
+end
+
+# Side-channel log helpers for automatic capacity/flush events. They write to
+# stderr so plan/snapshot stdout (consumed by other tooling) stays clean.
+def log_ok(message)
+  warn "ok: #{message}"
+end
+
+def log_act(message)
+  warn "scale: #{message}"
+end
+
+def log_fail(message)
+  warn "warn: #{message}"
 end
 
 def apps
@@ -262,7 +296,11 @@ def redis_db_min
 end
 
 def redis_db_max
-  integer_env("AGENT_REDIS_MAX_DB", DEFAULT_REDIS_MAX_DB)
+  # The band top DB is derived from the elastic soft band. An explicit
+  # AGENT_REDIS_MAX_DB still wins for manual overrides / drift detection.
+  return integer_env("AGENT_REDIS_MAX_DB", redis_db_min + load_current_capacity - 1) if ENV.key?("AGENT_REDIS_MAX_DB")
+
+  redis_db_min + load_current_capacity - 1
 end
 
 def redis_db_range
@@ -273,14 +311,152 @@ def redis_db_range
   min..max
 end
 
-def allocate_redis_db
-  used = allocated_redis_dbs
-  range = redis_db_range
-  range.each do |db|
-    return db unless used.include?(db)
+# --- Elastic Redis band: persisted soft capacity + physical ceiling ---------
+
+def redis_capacity_path
+  File.expand_path(ENV.fetch("AGENT_REDIS_CAPACITY_FILE") { File.join(agent_registry_dir, "redis-capacity.json") })
+end
+
+def worktree_lock_path
+  File.expand_path(ENV.fetch("AGENT_WORKTREE_LOCK") { File.join(agent_registry_dir, "agent-worktree.lock") })
+end
+
+# Reentrant exclusive file lock around DB allocation + capacity mutation so two
+# concurrent `new`/`up`/`scale` runs cannot grab the same DB or corrupt
+# redis-capacity.json. Reentrant within a process (single-threaded CLI) so
+# nested calls (allocate inside a locked `new`) do not self-deadlock.
+def with_worktree_lock
+  $worktree_lock_depth ||= 0
+  if $worktree_lock_depth.positive?
+    $worktree_lock_depth += 1
+    begin
+      return yield
+    ensure
+      $worktree_lock_depth -= 1
+    end
   end
 
-  abort "no free Redis DB in #{range.begin}-#{range.end}. Run bin/agent-worktree cleanup and remove merged worktrees, or configure Redis for more databases and rerun with AGENT_REDIS_MAX_DB=<max>."
+  FileUtils.mkdir_p(File.dirname(worktree_lock_path))
+  File.open(worktree_lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
+    lock.flock(File::LOCK_EX)
+    $worktree_lock_depth += 1
+    begin
+      yield
+    ensure
+      $worktree_lock_depth -= 1
+    end
+  end
+end
+
+def load_current_capacity
+  path = redis_capacity_path
+  return REDIS_BAND_FLOOR unless File.exist?(path)
+
+  value = JSON.parse(File.read(path))["current_capacity"].to_i
+  value >= REDIS_BAND_FLOOR ? value : REDIS_BAND_FLOOR
+rescue JSON::ParserError, Errno::ENOENT
+  REDIS_BAND_FLOOR
+end
+
+def write_current_capacity(value)
+  value = REDIS_BAND_FLOOR if value < REDIS_BAND_FLOOR
+  path = redis_capacity_path
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, "#{JSON.pretty_generate(
+    "current_capacity" => value,
+    "floor" => REDIS_BAND_FLOOR,
+    "step" => REDIS_BAND_STEP,
+    "updated_at" => Time.now.utc.iso8601
+  )}\n")
+  value
+end
+
+# Physical `databases` exposed by the running Redis, or nil if redis-cli is
+# unavailable. This is the hard ceiling; the band may never hand out a DB index
+# at or beyond it.
+def redis_physical_databases
+  ok, out, = capture_status("redis-cli", "-p", "6379", "CONFIG", "GET", "databases")
+  return nil unless ok
+
+  out.lines.map(&:strip).reject(&:empty?).last&.to_i
+rescue StandardError
+  nil
+end
+
+# Physical count with a conservative stock fallback (16 databases, DBs 0-15)
+# when redis-cli cannot be reached, so allocation never optimistically hands out
+# a database that does not exist.
+def redis_physical_count
+  redis_physical_databases || (DEFAULT_REDIS_MAX_DB + 1)
+end
+
+def redis_physical_target
+  integer_env("AGENT_REDIS_PHYSICAL_TARGET", DEFAULT_REDIS_PHYSICAL_TARGET)
+end
+
+# Largest band size (slots) that physically fits above the band start.
+def physical_band_capacity(physical = redis_physical_count)
+  physical - redis_db_min
+end
+
+def allocated_band_dbs
+  allocated_redis_dbs.select { |db| db >= redis_db_min }
+end
+
+def allocate_redis_db
+  with_worktree_lock do
+    physical = redis_physical_count
+    physical_top = physical - 1
+
+    loop do
+      capacity = load_current_capacity
+      band_top = redis_db_min + capacity - 1
+      ceiling = [band_top, physical_top].min
+      used = allocated_redis_dbs
+
+      (redis_db_min..ceiling).each do |db|
+        return db unless used.include?(db)
+      end
+
+      # Band exhausted within physical reach. Grow the soft band (restart-free)
+      # if physical room remains, then retry.
+      room = physical_band_capacity(physical)
+      if capacity < room
+        grown = [capacity + REDIS_BAND_STEP, room].min
+        write_current_capacity(grown)
+        log_act("scaled out: #{capacity} -> #{grown} slots (band redis DBs #{redis_db_min}-#{redis_db_min + grown - 1})")
+        next
+      end
+
+      abort <<~MSG.strip
+        no free Redis DB in band #{redis_db_min}-#{ceiling}; physical Redis ceiling reached (databases=#{physical}).
+        Free a slot:   bin/agent-worktree cleanup   (then remove merged worktrees)
+        Raise ceiling: bin/agent-worktree scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
+      MSG
+    end
+  end
+end
+
+# Restart-free shrink hook: invoked after slots free up (remove/cleanup). Drops
+# the band by STEP increments toward FLOOR without ever stranding a still-used
+# DB above the new band top.
+def maybe_scale_in
+  with_worktree_lock do
+    current = load_current_capacity
+    return if current <= REDIS_BAND_FLOOR
+
+    highest_used = allocated_band_dbs.max
+    min_capacity_for_used = highest_used ? (highest_used - redis_db_min + 1) : 0
+
+    target = current
+    while (target - REDIS_BAND_STEP) >= REDIS_BAND_FLOOR && (target - REDIS_BAND_STEP) >= min_capacity_for_used
+      target -= REDIS_BAND_STEP
+    end
+    return if target >= current
+
+    write_current_capacity(target)
+    log_act("scaled in: #{current} -> #{target} slots (band redis DBs #{redis_db_min}-#{redis_db_min + target - 1})")
+  end
 end
 
 def allocate_port(app)
@@ -361,9 +537,11 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "start:    bin/agent-worktree up #{app.fetch("slug")} #{task}"
   puts "stop:     bin/agent-worktree down #{app.fetch("slug")} #{task}"
   puts
-  if redis_db.to_i > DEFAULT_REDIS_MAX_DB
-    puts "warning: Redis db #{redis_db} exceeds stock Redis databases 0-#{DEFAULT_REDIS_MAX_DB}."
-    puts "         Keep AGENT_REDIS_MAX_DB aligned with the local Redis databases setting."
+  physical = redis_physical_count
+  if redis_db.to_i >= physical
+    puts "warning: Redis db #{redis_db} is at/beyond the physical Redis ceiling (databases=#{physical})."
+    puts "         The soft band grows restart-free, but only DBs 0-#{physical - 1} physically exist."
+    puts "         Run: bin/agent-worktree scale --provision  to raise capacity, or cleanup/remove a stack."
     puts
   end
   puts "callback-heavy flows stay on primary http://localhost:#{app.fetch("primary_port")} unless providers are configured for this port."
@@ -826,6 +1004,31 @@ def stack_record_snapshot(record, issues_by_label)
   }
 end
 
+# Slots that can actually be handed out right now: the soft band intersected with
+# the physically-existing Redis DBs, minus what's already allocated. Band-free
+# alone (current - used) overstates availability whenever the band exceeds
+# physical room (e.g. floor 20 on a stock databases=16 Redis).
+def allocatable_free(current_capacity, physical_count, used_count)
+  band_top = redis_db_min + current_capacity - 1
+  usable_ceiling = [band_top, physical_count - 1].min
+  usable = [usable_ceiling - redis_db_min + 1, 0].max
+  [usable - used_count, 0].max
+end
+
+def capacity_snapshot
+  current = load_current_capacity
+  used = allocated_band_dbs.size
+  physical_count = redis_physical_count
+  {
+    "floor" => REDIS_BAND_FLOOR,
+    "step" => REDIS_BAND_STEP,
+    "current" => current,
+    "used" => used,
+    "free" => allocatable_free(current, physical_count, used),
+    "physical_max" => redis_physical_databases
+  }
+end
+
 def snapshot_payload(app = nil)
   selected_apps = app ? [app] : apps.values
   records = stack_records(app)
@@ -839,6 +1042,7 @@ def snapshot_payload(app = nil)
       "min" => redis_db_min,
       "max" => redis_db_max
     },
+    "capacity" => capacity_snapshot,
     "apps" => selected_apps.sort_by { |config| config.fetch("primary_port") }.map { |config| app_snapshot(config) },
     "summary" => {
       "worktrees" => records.size,
@@ -940,6 +1144,7 @@ def run_cleanup(app = nil, write: false)
     rows.each { |row| file.puts row }
   end
   puts "wrote #{rows.size} candidate(s) to #{ledger_path}"
+  maybe_scale_in
 end
 
 def registered_worktree?(app, dir)
@@ -1016,9 +1221,11 @@ def run_remove(app, task, yes: false)
   end
 
   stop_stack_for_removal(app, dir, record)
+  flush_redis_db(record)
   write_cleanup_ledger_record(record, status: "removed #{Time.now.strftime("%Y-%m-%d")}")
   sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
   delete_local_branch_if_safe(app, record[:branch])
+  maybe_scale_in
   run_snapshot(app, write: true)
 end
 
@@ -1110,6 +1317,146 @@ def run_finish(app, task, push: false, pr: false)
   end
 end
 
+# Flush a worktree's Redis DB on removal so a reused DB number cannot inherit
+# stale keys from the previous stack.
+def flush_redis_db(record)
+  url = record[:env]["REDIS_URL"].to_s
+  db = redis_db_from_url(url)
+  return if db.empty?
+
+  host = "localhost"
+  port = "6379"
+  if url =~ %r{redis://([^:/]+):(\d+)/}
+    host = Regexp.last_match(1)
+    port = Regexp.last_match(2)
+  end
+
+  if sh("redis-cli", "-h", host, "-p", port, "-n", db, "flushdb", allow_fail: true)
+    log_ok("flushed redis DB #{db}")
+  else
+    log_fail("could not flush redis DB #{db} (redis-cli unavailable or redis down)")
+  end
+end
+
+def run_scale_status
+  current = load_current_capacity
+  physical = redis_physical_databases
+  physical_count = physical || redis_physical_count
+  physical_top = physical_count - 1
+  used = allocated_band_dbs.size
+  free = allocatable_free(current, physical_count, used)
+  band_top = redis_db_min + current - 1
+
+  puts "redis worktree band"
+  puts "  floor:        #{REDIS_BAND_FLOOR} slots"
+  puts "  step:         #{REDIS_BAND_STEP} slots"
+  puts "  current band: #{current} slots (redis DBs #{redis_db_min}-#{band_top})"
+  puts "  used:         #{used}"
+  puts "  free:         #{free}"
+  if physical
+    puts "  physical:     databases=#{physical} (max redis DB #{physical_top})"
+  else
+    puts "  physical:     unknown (redis-cli unavailable); assuming databases=#{physical_count}"
+  end
+
+  room = physical_band_capacity(physical_count)
+  return unless current > room
+
+  puts
+  puts "  warning: band (#{current} slots) exceeds physical room (#{room} slots);"
+  puts "           only redis DBs #{redis_db_min}-#{[band_top, physical_top].min} are usable."
+  puts "           run: bin/agent-worktree scale --provision  to raise Redis databases to #{redis_physical_target}."
+end
+
+def run_scale_out
+  with_worktree_lock do
+    current = load_current_capacity
+    room = physical_band_capacity
+    if current >= room
+      puts "at physical ceiling: #{current} slots (redis databases ceiling). Run scale --provision to raise it."
+      return
+    end
+
+    target = [current + REDIS_BAND_STEP, room].min
+    write_current_capacity(target)
+    puts "scaled out: #{current} -> #{target} slots (band redis DBs #{redis_db_min}-#{redis_db_min + target - 1})"
+  end
+end
+
+def run_scale_in
+  with_worktree_lock do
+    current = load_current_capacity
+    if current <= REDIS_BAND_FLOOR
+      puts "already at floor: #{current} slots"
+      return
+    end
+
+    highest_used = allocated_band_dbs.max
+    min_capacity_for_used = highest_used ? (highest_used - redis_db_min + 1) : 0
+    target = [current - REDIS_BAND_STEP, REDIS_BAND_FLOOR].max
+    if target < min_capacity_for_used
+      puts "cannot shrink to #{target} slots; redis DB #{highest_used} is still allocated. Free higher worktrees first."
+      return
+    end
+
+    write_current_capacity(target)
+    puts "scaled in: #{current} -> #{target} slots (band redis DBs #{redis_db_min}-#{redis_db_min + target - 1})"
+  end
+end
+
+def brew_prefix
+  return ENV["HOMEBREW_PREFIX"] if ENV["HOMEBREW_PREFIX"].to_s != ""
+
+  ok, out, = capture_status("brew", "--prefix")
+  ok ? out.strip : "/opt/homebrew"
+rescue StandardError
+  "/opt/homebrew"
+end
+
+def redis_conf_path
+  File.expand_path(ENV.fetch("AGENT_REDIS_CONF") { File.join(brew_prefix, "etc", "redis.conf") })
+end
+
+# Raise local Redis `databases` to the target and restart Redis exactly once.
+# Idempotent; warns that it bounces every running stack; requires --yes to skip
+# the interactive confirm. This is the ONE place that restarts Redis.
+def run_scale_provision(yes: false)
+  target = redis_physical_target
+  current_physical = redis_physical_databases
+  if current_physical && current_physical >= target
+    puts "redis already exposes #{current_physical} databases (>= target #{target}); no restart needed."
+    return
+  end
+
+  conf = redis_conf_path
+  abort "redis config not found at #{conf}. Set AGENT_REDIS_CONF to the brew redis.conf path." unless File.exist?(conf)
+
+  warn "WARNING: provisioning restarts local Redis once."
+  warn "Every running worktree stack (and anything else on localhost:6379) will be bounced."
+  warn "  config:  #{conf}"
+  warn "  current: databases=#{current_physical || "unknown"}"
+  warn "  target:  databases=#{target}"
+
+  unless yes
+    $stderr.print "Type yes to proceed: "
+    answer = $stdin.gets.to_s.strip
+    abort "aborted; Redis not changed" unless answer == "yes"
+  end
+
+  content = File.read(conf)
+  updated =
+    if content =~ /^\s*databases\s+\d+.*$/
+      content.gsub(/^\s*databases\s+\d+.*$/, "databases #{target}")
+    else
+      "#{content.chomp}\ndatabases #{target}\n"
+    end
+  File.write(conf, updated)
+  log_act("set databases #{target} in #{conf}")
+
+  sh("brew", "services", "restart", "redis")
+  puts "redis restarted with databases #{target}."
+end
+
 cmd = ARGV.shift || "help"
 
 case cmd
@@ -1125,7 +1472,7 @@ when "plan"
   usage unless app_name && raw_task
   app = app_for(app_name)
   task = clean_slug(raw_task)
-  values = stack_values(app, task)
+  values = with_worktree_lock { stack_values(app, task) }
   print_plan(app, task, values)
 when "new"
   app_name, raw_task, maybe_type, *rest = ARGV
@@ -1135,9 +1482,11 @@ when "new"
   type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
   start = ARGV.include?("--start")
   dir = ensure_git_worktree(app, task, type)
-  existing = parse_env(stack_env_path(app, task))
-  values = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
-  path = write_stack_env(app, task, values)
+  values, path = with_worktree_lock do
+    existing = parse_env(stack_env_path(app, task))
+    resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
+    [resolved, write_stack_env(app, task, resolved)]
+  end
   puts "worktree ready: #{dir}"
   puts "stack env:      #{path}"
   puts
@@ -1228,6 +1577,19 @@ when "down"
     sh("bin/tm", "down", chdir: dir, env: command_env(app, values))
   else
     stop_generic_rails(dir, values["APP_PORT"])
+  end
+when "scale"
+  if ARGV.include?("--provision")
+    ARGV.delete("--provision")
+    yes = ARGV.delete("--yes")
+    run_scale_provision(yes: !!yes)
+  else
+    case ARGV[0] || "status"
+    when "status" then run_scale_status
+    when "out" then run_scale_out
+    when "in" then run_scale_in
+    else usage
+    end
   end
 else
   usage
