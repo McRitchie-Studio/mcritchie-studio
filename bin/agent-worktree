@@ -1004,15 +1004,27 @@ def stack_record_snapshot(record, issues_by_label)
   }
 end
 
+# Slots that can actually be handed out right now: the soft band intersected with
+# the physically-existing Redis DBs, minus what's already allocated. Band-free
+# alone (current - used) overstates availability whenever the band exceeds
+# physical room (e.g. floor 20 on a stock databases=16 Redis).
+def allocatable_free(current_capacity, physical_count, used_count)
+  band_top = redis_db_min + current_capacity - 1
+  usable_ceiling = [band_top, physical_count - 1].min
+  usable = [usable_ceiling - redis_db_min + 1, 0].max
+  [usable - used_count, 0].max
+end
+
 def capacity_snapshot
   current = load_current_capacity
   used = allocated_band_dbs.size
+  physical_count = redis_physical_count
   {
     "floor" => REDIS_BAND_FLOOR,
     "step" => REDIS_BAND_STEP,
     "current" => current,
     "used" => used,
-    "free" => [current - used, 0].max,
+    "free" => allocatable_free(current, physical_count, used),
     "physical_max" => redis_physical_databases
   }
 end
@@ -1332,7 +1344,7 @@ def run_scale_status
   physical_count = physical || redis_physical_count
   physical_top = physical_count - 1
   used = allocated_band_dbs.size
-  free = [current - used, 0].max
+  free = allocatable_free(current, physical_count, used)
   band_top = redis_db_min + current - 1
 
   puts "redis worktree band"
