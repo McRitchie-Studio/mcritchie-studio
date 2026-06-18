@@ -41,6 +41,17 @@ HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
 CONTEXT_FILE = ".agent-context.json"
 TASK_BASE_URL = ENV.fetch("AGENT_TASK_BASE_URL", "https://mcritchie.studio/tasks")
+AGENT_CONTEXT_EXPORTS = %w[
+  AGENT_CONTEXT_APP
+  AGENT_CONTEXT_TASK
+  AGENT_CONTEXT_WORKTREE_SLUG
+  AGENT_CONTEXT_TASK_RECORD
+  AGENT_CONTEXT_TASK_URL
+  AGENT_CONTEXT_PORT
+  AGENT_CONTEXT_URL
+  AGENT_CONTEXT_TITLE
+  AGENT_CONTEXT_BADGE
+].freeze
 
 # Worktree Redis bands separate physical capacity (Redis `databases`, fixed at
 # startup) from a soft, restart-free band the launcher allocates from.
@@ -837,6 +848,45 @@ def shell_export(name, value)
   "export #{name}=#{value.to_s.shellescape}"
 end
 
+def context_scalar(context, key)
+  value = context[key]
+  return nil if value.nil?
+  return value.to_s if value.is_a?(String) || value.is_a?(Numeric) || value == true || value == false
+
+  nil
+end
+
+def shell_context_from_payload(context)
+  app_slug = context_scalar(context, "app")
+  app_name = context_scalar(context, "app_name") || app_slug
+  task = context_scalar(context, "task_slug") || context_scalar(context, "worktree_slug")
+  worktree_slug = context_scalar(context, "worktree_slug") || task
+  task_record = context_scalar(context, "task_record_slug")
+  task_record_url = context_scalar(context, "task_url")
+  port = context_scalar(context, "app_port")
+  local_review_url = context_scalar(context, "local_url") || local_url(port)
+  stage = context_scalar(context, "stage")
+  port_part = port.to_s.empty? ? nil : ":#{port}"
+  title = [app_name, task, task_record, port_part].compact.join(" | ")
+  badge_parts = [app_slug, worktree_slug, task_record, port_part, stage].compact
+  badge = "[#{badge_parts.join(" ")}]"
+
+  {
+    "title_command" => "printf '\\033]0;%s\\007' #{title.shellescape}",
+    "exports" => [
+      shell_export("AGENT_CONTEXT_APP", app_slug),
+      shell_export("AGENT_CONTEXT_TASK", task),
+      shell_export("AGENT_CONTEXT_WORKTREE_SLUG", worktree_slug),
+      shell_export("AGENT_CONTEXT_TASK_RECORD", task_record),
+      shell_export("AGENT_CONTEXT_TASK_URL", task_record_url),
+      shell_export("AGENT_CONTEXT_PORT", port),
+      shell_export("AGENT_CONTEXT_URL", local_review_url),
+      shell_export("AGENT_CONTEXT_TITLE", title),
+      shell_export("AGENT_CONTEXT_BADGE", badge)
+    ]
+  }
+end
+
 def context_payload(app, task, values, dir, record: nil, stage: nil)
   port = values["APP_PORT"].to_s
   redis_db = redis_db_from_url(values["REDIS_URL"])
@@ -872,21 +922,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "dirty" => record ? record[:dirty] : nil,
     "stage" => stage,
     "terminal_title" => title,
-    "prompt_badge" => badge,
-    "shell" => {
-      "title_command" => "printf '\\033]0;%s\\007' #{title.shellescape}",
-      "exports" => [
-        shell_export("AGENT_CONTEXT_APP", app.fetch("slug")),
-        shell_export("AGENT_CONTEXT_TASK", task),
-        shell_export("AGENT_CONTEXT_WORKTREE_SLUG", task),
-        shell_export("AGENT_CONTEXT_TASK_RECORD", task_record),
-        shell_export("AGENT_CONTEXT_TASK_URL", task_record_url),
-        shell_export("AGENT_CONTEXT_PORT", port),
-        shell_export("AGENT_CONTEXT_URL", local_url(port)),
-        shell_export("AGENT_CONTEXT_TITLE", title),
-        shell_export("AGENT_CONTEXT_BADGE", badge)
-      ]
-    }
+    "prompt_badge" => badge
   }
 end
 
@@ -938,8 +974,9 @@ def print_context(context)
   puts "  #{context["prompt_badge"]}"
   puts
   puts "shell:"
-  context.fetch("shell", {}).fetch("exports", []).each { |line| puts "  #{line}" }
-  puts "  #{context.fetch("shell", {}).fetch("title_command", "")}"
+  shell_context = shell_context_from_payload(context)
+  shell_context.fetch("exports").each { |line| puts "  #{line}" }
+  puts "  #{shell_context.fetch("title_command")}"
 end
 
 def run_whereami(app = nil, task = nil, json: false, shell: false)
@@ -958,8 +995,9 @@ def run_whereami(app = nil, task = nil, json: false, shell: false)
   if json
     puts JSON.pretty_generate(context)
   elsif shell
-    context.fetch("shell", {}).fetch("exports", []).each { |line| puts line }
-    puts context.fetch("shell", {}).fetch("title_command", "")
+    shell_context = shell_context_from_payload(context)
+    shell_context.fetch("exports").each { |line| puts line }
+    puts shell_context.fetch("title_command")
   else
     print_context(context)
   end
@@ -1001,7 +1039,7 @@ def run_shell_hook(shell)
       if [ $? -eq 0 ]; then
         eval "$agent_context_script"
       else
-        unset AGENT_CONTEXT_APP AGENT_CONTEXT_TASK AGENT_CONTEXT_PORT AGENT_CONTEXT_URL AGENT_CONTEXT_TITLE AGENT_CONTEXT_BADGE
+        unset #{AGENT_CONTEXT_EXPORTS.join(" ")}
       fi
     }
 
@@ -1587,6 +1625,10 @@ def graduation_blockers(record)
   blockers
 end
 
+def task_bound?(values)
+  task_record_slug(values) && task_url(values)
+end
+
 def pr_body(record)
   url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"
   email_url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"
@@ -1628,6 +1670,7 @@ def run_finish(app, task, push: false, pr: false)
   record = stack_record(app, dir)
   compare_url = github_compare_url(record)
   blockers = graduation_blockers(record)
+  blockers << "worktree is not bound to a production McRitchie Studio task; run `bin/agent-worktree bind-task #{app.fetch("slug")} #{task} task-...` before `finish --push --pr`" if pr && !task_bound?(record[:env])
 
   puts "feature graduation packet"
   puts "app:      #{app.fetch("display_name", app.fetch("slug"))}"

@@ -67,6 +67,10 @@ Default feature sessions are Feature lane only.
    bin/agent-worktree finish <app> <task-slug> --push --pr
    ```
 
+   `--push --pr` is only valid after `bind-task` has stored the production
+   McRitchie Studio task slug/URL on the worktree. The command blocks unbound
+   worktrees so PR review always leads back to the task board.
+
 10. **Handoff** the PR/QA packet by moving the task to `pr_review`. The PR
    body and final handoff should lead with the task URL, and the task should
    link back to the PR. Add a task conversation `handoff` note summarizing what
@@ -90,7 +94,9 @@ Before a branch is ready for QA, it must be:
 
 `bin/agent-worktree finish` enforces the obvious checks and prints the PR body.
 It blocks dirty worktrees, branches with no commits, branches already merged to
-`origin/main`, and branches behind `origin/main`.
+`origin/main`, and branches behind `origin/main`. When called with
+`--push --pr`, it also blocks worktrees that are not bound to a production
+McRitchie Studio task record.
 
 ## QA / Avi Review
 

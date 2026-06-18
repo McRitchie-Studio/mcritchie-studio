@@ -114,7 +114,9 @@ bin/agent-worktree scale status
   production task record, task URL, task/worktree slug, branch, local URL, port,
   Redis DB, database, terminal title, prompt badge, and shell exports. Pass
   `<app> <task-slug>` to refresh the marker for a known stack, `--json` for
-  machine-readable output, or `--shell` for exports/title commands.
+  machine-readable output, or `--shell` for exports/title commands. The shell
+  form recomputes exports from validated scalar context fields at runtime and
+  ignores any persisted executable shell content in `.agent-context.json`.
 - `shell-hook zsh` prints a zsh hook that refreshes `AGENT_CONTEXT_*`
   variables and the terminal title whenever the prompt redraws or the working
   directory changes. It does not edit shell dotfiles; source it explicitly when
@@ -123,7 +125,8 @@ bin/agent-worktree scale status
 - `finish` prints a feature graduation packet and PR body. It blocks dirty
   worktrees, branches with no commits ahead of `origin/main`, stale branches
   behind `origin/main`, and already-merged branches. Add `--push` to push the
-  branch, or `--push --pr` to create a draft PR through `gh` when available.
+  branch. `--push --pr` additionally requires a bound production task record
+  from `bind-task`, then creates a draft PR through `gh` when available.
 - `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to `origin/main`.
 - `snapshot` prints a non-secret JSON registry of every generated worktree,
   including health, local URLs, branch state, Redis DB, database name, cleanup
@@ -285,7 +288,9 @@ After binding, the marker carries both the human-readable worktree slug and the
 generated production task record. `whereami --shell` exports the task record as
 `AGENT_CONTEXT_TASK_RECORD`, the browser URL as `AGENT_CONTEXT_TASK_URL`, and
 the human slug as `AGENT_CONTEXT_WORKTREE_SLUG`. The prompt badge includes the
-production task slug when available.
+production task slug when available. The shell output is generated from scalar
+marker fields each time; agents must not store or trust executable shell lines
+inside `.agent-context.json`.
 
 For an evergreen terminal title in zsh, source the generated hook:
 
