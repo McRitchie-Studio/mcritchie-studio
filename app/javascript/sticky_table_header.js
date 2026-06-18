@@ -1,4 +1,6 @@
-const TABLE_SELECTOR = "[data-sticky-table-header]";
+const MANUAL_TABLE_SELECTOR = "table[data-sticky-table-header]";
+const AUTO_TABLE_SELECTOR = "table";
+const SKIP_CONTAINER_SELECTOR = "[data-sticky-table-skip]";
 
 let stickyTables = [];
 let scheduled = false;
@@ -21,6 +23,7 @@ function scheduleUpdate() {
 class StickyTableHeader {
   constructor(table) {
     this.table = table;
+    this.prepareTable();
     this.scroller = table.closest("[data-sticky-table-scroll]") || table.parentElement;
     this.cloneShell = document.createElement("div");
     this.cloneShell.className = "sticky-table-header-clone";
@@ -33,6 +36,18 @@ class StickyTableHeader {
     document.body.appendChild(this.cloneShell);
 
     this.scroller?.addEventListener("scroll", scheduleUpdate, { passive: true });
+  }
+
+  prepareTable() {
+    this.table.classList.add("sticky-data-table");
+    if (!this.table.hasAttribute("data-sticky-table-header")) {
+      this.table.setAttribute("data-sticky-table-header", "auto");
+    }
+
+    const scroller = this.table.closest("[data-sticky-table-scroll]") || this.table.parentElement;
+    if (scroller && !scroller.hasAttribute("data-sticky-table-scroll")) {
+      scroller.setAttribute("data-sticky-table-scroll", "auto");
+    }
   }
 
   destroy() {
@@ -96,8 +111,32 @@ function bootStickyTables() {
   }
 
   stickyTables.forEach((stickyTable) => stickyTable.destroy());
-  stickyTables = Array.from(document.querySelectorAll(TABLE_SELECTOR)).map((table) => new StickyTableHeader(table));
+  stickyTables = stickyTableCandidates().map((table) => new StickyTableHeader(table));
   scheduleUpdate();
+}
+
+function stickyTableCandidates() {
+  const candidates = [];
+  const seen = new Set();
+
+  document.querySelectorAll(`${MANUAL_TABLE_SELECTOR}, ${AUTO_TABLE_SELECTOR}`).forEach((table) => {
+    if (seen.has(table) || !shouldEnhanceTable(table)) return;
+    seen.add(table);
+    candidates.push(table);
+  });
+
+  return candidates;
+}
+
+function shouldEnhanceTable(table) {
+  if (table.getAttribute("data-sticky-table-header") === "false") return false;
+  if (table.closest(SKIP_CONTAINER_SELECTOR)) return false;
+  if (table.closest(".sticky-table-header-clone")) return false;
+  if (table.closest("template")) return false;
+  if (table.getAttribute("role")?.toLowerCase() === "presentation") return false;
+  if (!table.tHead || !table.tHead.querySelector("th")) return false;
+
+  return true;
 }
 
 document.addEventListener("turbo:load", bootStickyTables);
