@@ -33,9 +33,11 @@
             <thead class="bg-surface-alt text-secondary">
               <tr>
                 <th class="text-left px-4 py-3 font-semibold">Suite</th>
+                <th class="text-left px-4 py-3 font-semibold">Lane</th>
                 <th class="text-left px-4 py-3 font-semibold">Env</th>
                 <th class="text-left px-4 py-3 font-semibold">When Run</th>
                 <th class="text-left px-4 py-3 font-semibold">Command</th>
+                <th class="text-left px-4 py-3 font-semibold">Gate</th>
                 <th class="text-left px-4 py-3 font-semibold">Risk</th>
               </tr>
             </thead>
@@ -50,12 +52,24 @@
                   </td>
                   <td class="px-4 py-3">
                     <span class="px-2 py-1 rounded text-[11px] font-bold uppercase bg-surface-alt text-secondary border border-subtle">
+                      <%= suite.fetch("lane", "unspecified").tr("_", " ") %>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="px-2 py-1 rounded text-[11px] font-bold uppercase bg-surface-alt text-secondary border border-subtle">
                       <%= suite.fetch("environment") %>
                     </span>
                   </td>
                   <td class="px-4 py-3 text-secondary"><%= suite.fetch("trigger") %></td>
                   <td class="px-4 py-3">
                     <code class="block text-xs text-body bg-inset rounded px-2 py-1 whitespace-nowrap"><%= suite.fetch("command") %></code>
+                  </td>
+                  <td class="px-4 py-3">
+                    <% if suite["blocks_merge"] %>
+                      <span class="px-2 py-1 rounded text-[11px] font-bold bg-red-900/50 text-red-300 border border-red-700/50">BLOCKS PR</span>
+                    <% else %>
+                      <span class="px-2 py-1 rounded text-[11px] font-bold bg-surface-alt text-secondary border border-subtle">NON-BLOCKING</span>
+                    <% end %>
                   </td>
                   <td class="px-4 py-3">
                     <% if suite["mutates"] %>

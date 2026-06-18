@@ -14,6 +14,23 @@ they do not merge to `main`. Work graduates through a PR review lane where Avi
 protects integration, Steffon adds QA/deploy scrutiny when needed, and the
 release conductor handles production effects.
 
+## Four-Stage DevOps Cycle
+
+1. **Task PR submitted** — Feature agent owns this stage. The task has
+   acceptance criteria, affected repos, risk tags, expected `test_plan`,
+   worktree slug, branch, PR URL, local URL when relevant, and completed
+   `checks_run`. The task moves to `pr_review`.
+2. **PR review by Avi** — Avi reviews task metadata, PR body, diff, docs,
+   migrations, merge safety, CI, local proof, and overlap with other agents.
+   Avi classifies check failures by lane before deciding whether to merge,
+   wait, or send `qa_feedback`.
+3. **QA testing** — After merge, Avi deploys the updated `origin/main` to the
+   QA app, records QA URL, deployed SHA, release train, and QA checks in
+   `checks_run`, then moves the task to `qa_review` for Mr. McRitchie.
+4. **Production deployment** — Release conductor promotes only accepted QA
+   work after explicit approval. Production smoke results, production URL, and
+   release notes are recorded before the task moves to `done`.
+
 ## Lanes
 
 | Lane | Owner | Purpose | May push branch | May merge main | May deploy/publish |
@@ -57,7 +74,7 @@ Default feature sessions are Feature lane only.
    ```
 
 7. **Update** the task-board item with local URL, branch, PR URL when opened,
-   checks run, and any acceptance-criteria changes.
+   `checks_run`, and any acceptance-criteria changes.
 8. **Commit** coherent work on the feature branch.
 9. **Graduate** through the launcher:
 
@@ -84,7 +101,7 @@ Before a branch is ready for QA, it must be:
 - in a generated worktree, not the primary checkout
 - represented by a McRitchie Studio task with acceptance criteria, affected
   repos, risk tags, human-readable worktree slug, branch or PR URL, local URL
-  when applicable, and checks run
+  when applicable, expected `test_plan`, and completed `checks_run`
 - on a feature branch, not `main`
 - committed cleanly
 - ahead of `origin/main`
@@ -154,7 +171,8 @@ For each PR, Avi checks:
 
 - the task-board acceptance criteria are concrete and still match the request
 - the task has affected repos, branch/PR URL, local/QA URLs where relevant, risk
-  tags, and expected checks recorded in `metadata["devops"]`
+  tags, expected `test_plan`, and completed `checks_run` recorded in
+  `metadata["devops"]`
 - the PR body matches the diff
 - the branch started from current enough `main`
 - the local proof URL or test evidence is credible
@@ -257,7 +275,7 @@ Run the parallel-agent DevOps cycle:
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave task `qa_feedback` and PR comments on PRs that need changes
 - after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
-- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks run
+- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks_run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
@@ -357,11 +375,13 @@ Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use the parallel-agent protocol:
 - create or enter an isolated worktree with bin/agent-worktree
 - use the allocated port and give me the local URL
+- record expected checks in task devops.test_plan
 - keep all edits inside the task worktree
 - update docs if behavior, workflow, env, ports, auth, email, or deploys change
 - commit your work on the feature branch
 - run bin/agent-worktree finish before handoff
 - push the branch and open/prepare a PR for Avi QA
+- update task devops.checks_run with completed checks and move the task to pr_review
 
 Do not merge to main, publish gems, deploy, force-push, delete branches, or
 delete worktrees unless I explicitly approve that lane for this session.

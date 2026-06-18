@@ -128,7 +128,8 @@ keys survive (`Task::DEVOPS_KEYS`):
 
 - **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
   `production_url`, `release_train`, `requires_release_conductor`
-- **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`
+- **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
+  `checks_run`
 
 ## Footguns (verified, will bite you)
 
@@ -138,9 +139,10 @@ keys survive (`Task::DEVOPS_KEYS`):
    it. (A `PATCH` that omits `devops` leaves `metadata` untouched — use that to
    move only the stage.)
 2. **List items split on commas *and* newlines.** `normalize_devops_list` splits
-   each `acceptance`/`test_plan`/`risk_tags`/`repositories` entry on `[,\n]`. A
-   single item containing a comma silently fragments into multiple items. **Keep
-   commas out of list items** (use `/`, `;`, or rephrase).
+   each `acceptance`/`test_plan`/`checks_run`/`risk_tags`/`repositories` entry
+   on `[,\n]`. A single item containing a comma silently fragments into
+   multiple items. **Keep commas out of list items** (use `/`, `;`, or
+   rephrase).
 3. **Unsupported `devops` keys are silently dropped.** Anything not in
    `DEVOPS_KEYS` is discarded by the normalizer. To stash extra data, write it
    under `metadata` directly instead of `devops`.
@@ -169,7 +171,8 @@ api POST /api/v1/tasks '{
     "repositories": ["mcritchie-studio"],
     "risk_tags": ["ui"],
     "acceptance": ["Header stays pinned while the table scrolls"],
-    "test_plan": ["bin/rails test"]
+    "test_plan": ["bin/rails test"],
+    "checks_run": ["bin/rails test test/controllers/tasks_controller_test.rb"]
   }
 }'   # -> returns the created task with slug "task-<hex>"
 
@@ -188,7 +191,8 @@ api PATCH /api/v1/tasks/task-XXXX '{
     "branch": "feat/admin-users-sticky-header",
     "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
     "acceptance": ["Header stays pinned while the table scrolls"],
-    "test_plan": ["bin/rails test"]
+    "test_plan": ["bin/rails test"],
+    "checks_run": ["bin/rails test test/controllers/tasks_controller_test.rb"]
   }
 }'
 

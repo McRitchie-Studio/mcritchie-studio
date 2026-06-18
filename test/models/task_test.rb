@@ -196,6 +196,7 @@ class TaskTest < ActiveSupport::TestCase
       "repositories" => "mcritchie-studio, turf-monster\nstudio-engine",
       "risk_tags" => ["auth", "auth", "deploy"],
       "acceptance" => "QA URL works\nProduction stays gated",
+      "checks_run" => "bin/rails test\nbin/qa-intake --help",
       "worktree_slug" => " terminal-context-marker ",
       "branch" => " feat/example "
     )
@@ -203,6 +204,7 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["mcritchie-studio", "turf-monster", "studio-engine"], metadata["repositories"]
     assert_equal ["auth", "deploy"], metadata["risk_tags"]
     assert_equal ["QA URL works", "Production stays gated"], metadata["acceptance"]
+    assert_equal ["bin/rails test", "bin/qa-intake --help"], metadata["checks_run"]
     assert_equal "terminal-context-marker", metadata["worktree_slug"]
     assert_equal "feat/example", metadata["branch"]
   end
@@ -218,7 +220,8 @@ class TaskTest < ActiveSupport::TestCase
           "release_train" => "2026-06-17-turf",
           "qa_url" => "https://qa.turfmonster.media/contests",
           "requires_release_conductor" => "1",
-          "test_plan" => ["bin/rails test"]
+          "test_plan" => ["bin/rails test"],
+          "checks_run" => ["bin/rails test test/models/task_test.rb"]
         }
       }
     )
@@ -231,5 +234,6 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "2026-06-17-turf", task.devops_release_train
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
     assert_equal ["bin/rails test"], task.devops_test_plan
+    assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
   end
 end

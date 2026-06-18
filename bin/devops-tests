@@ -1,0 +1,65 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+CONFIG_PATH = File.join(ROOT, "config", "devops_test_suites.yml")
+
+OPTIONS = {
+  app: nil,
+  lane: nil
+}
+
+OptionParser.new do |opts|
+  opts.banner = <<~TEXT
+    Usage: bin/devops-tests [options]
+
+    Prints the DevOps test-suite catalog by app and lane. This is a discovery
+    helper for fresh agent sessions; it does not run mutating checks.
+
+    Examples:
+      bin/devops-tests --app turf-monster
+      bin/devops-tests --app mcritchie-studio --lane pr_review_gate
+      bin/devops-tests --lane qa_acceptance
+
+    Options:
+  TEXT
+
+  opts.on("--app APP", "Only show one app slug") { |value| OPTIONS[:app] = value }
+  opts.on("--lane LANE", "Only show one lane") { |value| OPTIONS[:lane] = value }
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+config = YAML.load_file(CONFIG_PATH)
+apps = config.fetch("apps")
+apps = apps.select { |slug, _| slug == OPTIONS[:app] } if OPTIONS[:app]
+
+if apps.empty?
+  warn "No test suites matched app=#{OPTIONS[:app].inspect}"
+  exit 1
+end
+
+apps.each do |slug, app|
+  suites = app.fetch("suites", [])
+  suites = suites.select { |suite| suite.fetch("lane", nil) == OPTIONS[:lane] } if OPTIONS[:lane]
+  next if suites.empty?
+
+  puts
+  puts "#{app.fetch("display_name", slug)} (#{slug})"
+  puts "-" * (app.fetch("display_name", slug).length + slug.length + 3)
+  suites.each do |suite|
+    merge_gate = suite["blocks_merge"] ? "blocks PR" : "non-blocking"
+    mutation = suite["mutates"] ? "mutates" : "read-only"
+
+    puts "[#{suite.fetch("lane", "unspecified")}] #{suite.fetch("name")}"
+    puts "  env:     #{suite.fetch("environment")}  #{merge_gate}  #{mutation}"
+    puts "  when:    #{suite.fetch("trigger")}"
+    puts "  command: #{suite.fetch("command")}"
+    puts "  notes:   #{suite["notes"]}" if suite["notes"]
+  end
+end

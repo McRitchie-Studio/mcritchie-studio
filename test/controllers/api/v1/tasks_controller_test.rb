@@ -23,7 +23,8 @@ module Api
                   release_train: "2026-06-17-studio",
                   requires_release_conductor: "true",
                   acceptance: ["Task card shows metadata", "QA URL opens"],
-                  test_plan: "bin/rails test"
+                  test_plan: "bin/rails test",
+                  checks_run: ["bin/rails test test/controllers/api/v1/tasks_controller_test.rb"]
                 }
               },
               headers: @headers,
@@ -36,6 +37,7 @@ module Api
         assert_equal ["mcritchie-studio"], @task.devops_repositories
         assert_equal "http://localhost:3004/tasks", @task.devops_url(:local)
         assert_equal ["Task card shows metadata", "QA URL opens"], @task.devops_acceptance
+        assert_equal ["bin/rails test test/controllers/api/v1/tasks_controller_test.rb"], @task.devops_checks_run
         assert @task.requires_release_conductor?
       end
     end

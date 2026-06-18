@@ -1,26 +1,65 @@
 # Testing
 
-Use the smallest verification that proves the change, then broaden when the touched surface has shared behavior or money/security risk.
+Use the smallest verification that proves the change, then broaden when the
+touched surface has shared behavior or money/security risk. Do not treat
+"Playwright shard failed" as one undifferentiated verdict; classify which lane
+failed and whether that lane blocks the current stage.
 
-## Test Suite Genres
+## Task Test Metadata
 
-Record the expected genre in the task-board `test_plan` before implementation,
-then update it with the checks actually run during handoff.
+Tasks separate planned checks from completed checks:
 
-| Genre | Target | Mutates data | When to run |
-|---|---|---:|---|
-| Unit/model/controller CI | Local repo or CI | No | Every PR with code changes |
-| Local browser smoke | Worktree URL | Yes, local DB only | UI, auth, task, contest, or navigation changes |
-| Local integration | Worktree services | Yes, local DB/Redis only | Sidekiq, Redis, mail capture, and cross-service behavior |
-| QA read-only smoke | Stable QA URL | No | After every QA deploy |
-| QA mutating smoke | Stable QA URL | Yes, QA/devnet only | Contest, wallet, Solana, seed, or stateful flow changes |
-| Devnet on-chain smoke | Devnet | Yes, devnet resources | Solana or contract integration changes; manual/nightly |
-| Production read-only smoke | Production URL | No | After approved production deploy |
-| Production live-email smoke | Production URL | Sends real email | Explicit operator approval only |
+- `devops.test_plan` is the expected verification plan captured before or
+  during implementation.
+- `devops.checks_run` is the actual verification evidence recorded during PR,
+  QA, and release handoff.
 
-The `/devops` page in McRitchie Studio is the visual catalog for app-specific
-commands and triggers. Update `config/devops_test_suites.yml` when a suite,
-trigger, or deploy-smoke command changes.
+Feature agents fill `test_plan` before coding and update `checks_run` before
+moving to `pr_review`. Avi and release conductors append QA and production
+checks to `checks_run` as each stage completes.
+
+## Test Lanes
+
+| Lane | Target | Mutates data | Blocks merge | When to run |
+|---|---|---:|---:|---|
+| PR review gate | Local repo or CI | Usually no | Yes | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
+| Local proof | Worktree URL | Local DB only | Usually yes | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
+| QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | After every QA deploy; runs task acceptance criteria against the merged result |
+| Production smoke | Production URL | No by default | N/A | After approved production deploy; verifies health and key read-only routes |
+| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | Full Playwright suite, devnet/on-chain, browser matrix, longer seeded workflows |
+| Quarantine | Any | Varies | No until fixed | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+
+If a lane fails, record the classification in task `qa_feedback`:
+
+- real regression
+- unrelated existing failure
+- flaky infrastructure
+- stale branch
+- missing seed or test data
+- dependency ordering issue
+
+## Test Suite Catalog
+
+The `/devops` page and `bin/devops-tests` read
+`config/devops_test_suites.yml`. Each suite should include:
+
+- `lane`: `pr_review_gate`, `local_proof`, `qa_acceptance`,
+  `production_smoke`, `nightly_deep`, or `quarantine`
+- `environment`: local, QA, devnet, or production target
+- `trigger`: when the suite should run
+- `command`: the command or command template
+- `blocks_merge`: true only for PR review gates that should prevent merge
+- `mutates`: true when it creates or changes data
+- `notes`: risk and setup context
+
+Update the catalog when a suite, trigger, deploy-smoke command, or app joins
+the managed stack. Fresh Avi sessions can run:
+
+```bash
+bin/devops-tests --app turf-monster
+bin/devops-tests --app mcritchie-studio --lane pr_review_gate
+bin/devops-tests --lane qa_acceptance
+```
 
 ## McRitchie Studio
 
