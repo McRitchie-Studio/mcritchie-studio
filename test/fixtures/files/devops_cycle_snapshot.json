@@ -1,0 +1,85 @@
+{
+  "tasks": [
+    {
+      "slug": "task-pr123",
+      "title": "Ship sidebar recovery",
+      "stage": "pr_review",
+      "priority": 2,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:00:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "bug",
+          "worktree_slug": "sidebar-recovery",
+          "repositories": ["mcritchie-studio"],
+          "risk_tags": ["ui", "navigation"],
+          "branch": "feat/sidebar-recovery",
+          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+          "local_url": "http://localhost:3021/tasks",
+          "acceptance": ["Sidebar opens after browser Back"],
+          "test_plan": ["bin/rails test test/integration/links_hub_test.rb"],
+          "checks_run": ["bin/rails test test/integration/links_hub_test.rb"]
+        }
+      }
+    },
+    {
+      "slug": "task-qa456",
+      "title": "QA contest entry flow",
+      "stage": "qa_review",
+      "priority": 1,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T15:00:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "feature",
+          "worktree_slug": "contest-entry-flow",
+          "repositories": ["turf-monster"],
+          "risk_tags": ["wallet", "qa"],
+          "branch": "feat/contest-entry-flow",
+          "pr_url": "https://github.com/amcritchie/turf-monster/pull/456",
+          "qa_url": "https://qa.turfmonster.media/contests/test",
+          "acceptance": ["Contest entry completes on QA"],
+          "test_plan": ["bin/e2e-parallel"],
+          "checks_run": ["QA /up returned 200"]
+        }
+      }
+    }
+  ],
+  "activities": [
+    {
+      "task_slug": "task-pr123",
+      "activity_type": "qa_feedback",
+      "description": "Needs one more navbar regression test before merge.",
+      "created_at": "2026-06-18T14:05:00Z"
+    },
+    {
+      "task_slug": "task-qa456",
+      "activity_type": "handoff",
+      "description": "QA deploy is live for contest entry.",
+      "created_at": "2026-06-18T15:05:00Z"
+    }
+  ],
+  "qa_intake": {
+    "prs": [
+      {
+        "status": "avi-ready",
+        "repo": "amcritchie/mcritchie-studio",
+        "number": 123,
+        "url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+        "task_record_slug": "task-pr123",
+        "task_url": "https://mcritchie.studio/tasks/task-pr123",
+        "action": "Avi can review for scope and merge safety"
+      },
+      {
+        "status": "checks-review",
+        "repo": "amcritchie/turf-monster",
+        "number": 456,
+        "url": "https://github.com/amcritchie/turf-monster/pull/456",
+        "task_record_slug": "task-qa456",
+        "task_url": "https://mcritchie.studio/tasks/task-qa456",
+        "action": "inspect checks and wait for green"
+      }
+    ],
+    "warnings": []
+  }
+}
