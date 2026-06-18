@@ -5,6 +5,11 @@ bug, QA, release, and cleanup work. Chat can start work, but task metadata is
 the handoff that survives across agents, PRs, QA deploys, production deploys,
 and cleanup.
 
+This file covers the **workflow** (stages, metadata, duties). For the **HTTP
+API** an agent uses to authenticate and create/move tasks — auth secret, bearer
+token, endpoints, writable fields, and the normalizer footguns — see
+[`task-board-api.md`](task-board-api.md).
+
 ## Flat Tasks First
 
 Do not create parent/child task trees by default. Deliver increments of work as

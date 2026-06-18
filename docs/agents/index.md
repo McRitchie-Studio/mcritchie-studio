@@ -87,6 +87,7 @@ assigned that lane.
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
+| Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
