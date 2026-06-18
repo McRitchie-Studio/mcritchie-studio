@@ -17,7 +17,14 @@
               target: target,
               rel: target == "_blank" ? "noopener" : nil,
               "@click": close_action do %>
-          <span class="text-lg leading-none flex-shrink-0"><%= link[:emoji] %></span>
+          <% if link[:hover_emoji].present? %>
+            <%= render "components/emoji_swap",
+                  base: link[:emoji],
+                  hover: link[:hover_emoji],
+                  class_name: "text-lg leading-none" %>
+          <% else %>
+            <span class="text-lg leading-none flex-shrink-0"><%= link[:emoji] %></span>
+          <% end %>
           <span class="min-w-0">
             <span class="block font-medium truncate"><%= link[:label] %></span>
             <% if link[:desc].present? %>
