@@ -163,6 +163,28 @@ a concise findings report and one recommendation to Avi: merge-ready,
 wait-for-CI, request-changes, or conductor-review. Avi keeps the final
 integration and deployment decision.
 
+After reviewing, the scout records the report on the task as a structured task
+comment:
+
+```bash
+bin/devops-cycle --record-scout-report task-XXXX \
+  --outcome merge-ready \
+  --summary "No blockers found." \
+  --finding "Diff matches the task acceptance criteria." \
+  --check "Reviewed PR body, changed files, and CI." \
+  --dry-run
+```
+
+Use `--dry-run` first, then remove it when the payload is correct. Valid
+outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
+`conductor-review`. Scout reports are evidence for Avi. Scouts should not move
+task stages or convert findings into final `qa_feedback`; Avi does that after
+reviewing the report and PR context.
+
+Use `bin/devops-cycle --scout-reports` to include recorded scout reports in the
+conductor snapshot. `--json --scout-reports` exposes the same report metadata
+for future supervisors or dashboards.
+
 `bin/qa-intake` is the lower-level PR/worktree intake. It refreshes
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
 state with open GitHub PRs, and prints an Avi-ready queue. Add apps to

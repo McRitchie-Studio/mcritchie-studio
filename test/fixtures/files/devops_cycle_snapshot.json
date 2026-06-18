@@ -110,12 +110,30 @@
   "activities": [
     {
       "task_slug": "task-pr123",
+      "agent_slug": "casey",
+      "activity_type": "comment",
+      "description": "Scout report: merge-ready - Diff matches the task and CI is green.",
+      "created_at": "2026-06-18T14:04:00Z",
+      "metadata": {
+        "kind": "scout_report",
+        "outcome": "merge-ready",
+        "reporter": "casey",
+        "summary": "Diff matches the task and CI is green.",
+        "findings": ["PR body matches the task acceptance criteria", "No overlapping worktree risk found"],
+        "questions": [],
+        "checks": ["Reviewed diff and PR metadata", "Confirmed qa-intake avi-ready"]
+      }
+    },
+    {
+      "task_slug": "task-pr123",
+      "agent_slug": "avi",
       "activity_type": "qa_feedback",
       "description": "Needs one more navbar regression test before merge.",
       "created_at": "2026-06-18T14:05:00Z"
     },
     {
       "task_slug": "task-qa456",
+      "agent_slug": "avi",
       "activity_type": "handoff",
       "description": "QA deploy is live for contest entry.",
       "created_at": "2026-06-18T15:05:00Z"
