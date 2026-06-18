@@ -56,8 +56,9 @@ Minimum task setup before implementation:
 - `risk_tags` captures likely risk such as `auth`, `email`, `solana`,
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
+- `checks_run` records the checks actually completed before handoff.
 - `release_train` groups related tasks that should move through QA/release
-  together.
+  together. Leave it blank for a small independent task.
 - `requires_release_conductor` is `true` when production deploy, gem publish,
   provider config, env vars, data correction, credentials, or migration/backfill
   handling may be needed.
@@ -69,7 +70,7 @@ Stage movement:
 2. Move to `in_progress` when an agent claims the task and creates or enters the
    worktree.
 3. Move to `pr_review` only after the branch is pushed, the PR exists, the
-   local URL is recorded when applicable, and checks run are recorded.
+   local URL is recorded when applicable, and `checks_run` is recorded.
 4. Move to `qa_review` only after Avi merges the PR and deploys or starts the
    accepted result on a QA/local review target. Record QA URL, deployed SHA, and
    QA checks.
@@ -88,11 +89,12 @@ Handoff connections:
   `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`.
 - The PR body and final handoff should lead with the task URL before the PR URL.
 - The task must record `branch`, `pr_url`, `local_url` when applicable,
-  `qa_url` after QA deployment, and `production_url` after production deploy.
+  `qa_url` after QA deployment, `production_url` after production deploy,
+  `test_plan`, and `checks_run`.
 - `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
   should join that queue back to tasks and leave feedback on the task or PR when
   metadata is missing.
-- Final handoff should name the task, PR, release train, URLs, checks run,
+- Final handoff should name the task, PR, release train, URLs, `checks_run`,
   deployment SHA/release, and cleanup decision.
 
 ## Task Conversation and QA Feedback
@@ -175,6 +177,7 @@ Supported fields:
 | `risk_tags` | Short tags such as `auth`, `email`, `solana`, `payment`, `migration`, `ui`, `provider` |
 | `acceptance` | Acceptance criteria, one item per line |
 | `test_plan` | Checks the feature agent expects to run, one item per line |
+| `checks_run` | Checks actually completed before the current handoff, one item per line |
 
 Example API payload:
 
@@ -200,6 +203,10 @@ Example API payload:
     "test_plan": [
       "bin/rails test",
       "QA_BASE_URL=https://qa.turfmonster.media npx playwright test --grep @qa-readonly"
+    ],
+    "checks_run": [
+      "bin/rails test test/controllers/auth_controller_test.rb",
+      "local browser smoke on http://localhost:3102/contests"
     ]
   }
 }
@@ -221,7 +228,7 @@ During handoff, the agent updates:
 - branch
 - PR URL
 - local URL
-- checks actually run, either in `test_plan` or task result
+- checks actually run in `checks_run`
 - any changed acceptance criteria
 - release lane flag if the work needs production deploy, gem publish, provider
   config, env vars, or credential handling
@@ -237,7 +244,7 @@ Avi uses the task board plus `bin/qa-intake`:
 3. Check `risk_tags` for Steffon/infra gate needs.
 4. Merge only ready PRs.
 5. Deploy merged `origin/main` to QA.
-6. Move the task to `qa_review` with QA URL, QA release SHA, and checks run.
+6. Move the task to `qa_review` with QA URL, QA release SHA, and `checks_run`.
 7. Move accepted QA tasks to `prod_ready`.
 8. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
    approves release work.
@@ -288,9 +295,10 @@ confirms the PR was merged or intentionally abandoned.
 
 ## Test Suite Catalog
 
-The `/devops` page reads `config/devops_test_suites.yml`. It shows the local,
-QA, devnet, and production checks for each managed app, including when each
-suite should run and whether it mutates data.
+The `/devops` page and `bin/devops-tests` read
+`config/devops_test_suites.yml`. They show the local, QA, devnet, and
+production checks for each managed app, including lane, trigger, whether each
+suite blocks PR merge, and whether it mutates data.
 
 Add or update this catalog whenever a new app joins the managed stack, a test
 genre changes, or a deploy smoke command changes.

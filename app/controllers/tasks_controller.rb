@@ -250,7 +250,8 @@ class TasksController < ApplicationController
         :repositories,
         :risk_tags,
         :acceptance,
-        :test_plan
+        :test_plan,
+        :checks_run
       ]
     )
     attrs = permitted.except(:devops).to_h
