@@ -112,6 +112,35 @@ Use these activity types:
 - `handoff` for feature-agent responses, rebase notes, local proof URLs, or
   "ready again" messages after addressing feedback.
 
+Review scouts record their findings as `comment` activities with
+`metadata.kind=scout_report`. This keeps scout evidence visible without
+accidentally turning a scout's recommendation into Avi's final review decision.
+The normal path is:
+
+1. Avi runs `bin/devops-cycle --scout-packets` and gives a packet to a
+   review-only scout session.
+2. The scout reviews the task and PR, then dry-runs a structured report:
+
+   ```bash
+   bin/devops-cycle --record-scout-report task-XXXX \
+     --outcome merge-ready \
+     --summary "No blockers found." \
+     --finding "Diff matches the task acceptance criteria." \
+     --check "Reviewed PR body, changed files, and CI." \
+     --dry-run
+   ```
+
+3. The scout removes `--dry-run` only after the payload is correct.
+4. Avi runs `bin/devops-cycle --scout-reports` to see recorded scout reports
+   alongside the task queue.
+5. Avi makes the final call. If changes are required, Avi leaves
+   `qa_feedback` on the task and usually a PR comment with the code-specific
+   blocker.
+
+Valid scout outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
+`conductor-review`. Scouts do not merge, deploy, move task stages, publish
+gems, change providers, rotate credentials, force-push, or take over branches.
+
 When Avi sends work back, Avi should add `qa_feedback` on the task with the
 specific action needed and also comment on the PR when the feedback is tied to
 GitHub review, CI, or changed code. The task thread is the durable handoff for
@@ -244,6 +273,7 @@ cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
 bin/devops-cycle --plan
 bin/devops-cycle --scout-packets
+bin/devops-cycle --scout-reports
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -256,13 +286,17 @@ to feature agents, QA review, and production-ready release work.
 `bin/devops-cycle --scout-packets` turns reviewable PR-review lanes into
 copy-paste prompts for additional review-only sessions. Accurate `repositories`,
 `risk_tags`, `pr_url`, `qa_url`, `acceptance`, `test_plan`, and `checks_run`
-metadata make the plan and packets useful at scale. `bin/qa-intake` remains the
-raw local worktree and GitHub PR view for branch freshness, stack health, and
+metadata make the plan and packets useful at scale. `bin/devops-cycle
+--scout-reports` shows structured scout reports recorded on task comments so
+Avi can make the final merge/request-changes decision from multiple review
+sessions without losing the thread. `bin/qa-intake` remains the raw local
+worktree and GitHub PR view for branch freshness, stack health, and
 cleanup-state details.
 
-Scout feedback should return as task conversation `qa_feedback` when it blocks
-handoff, or as a concise handoff note when it supports merging. The conductor
-still owns final merge, QA deploy, production deploy, and task stage changes.
+Scout reports are supporting evidence. Avi turns blocker findings into
+`qa_feedback` or PR review comments when the work must return to the feature
+agent. The conductor still owns final merge, QA deploy, production deploy, and
+task stage changes.
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.

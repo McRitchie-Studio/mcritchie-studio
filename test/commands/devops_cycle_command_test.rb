@@ -78,6 +78,8 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_includes out, "mode=serialized_scout reason=multiple repositories: studio-engine + turf-monster"
     assert_includes out, "Do not merge, deploy, publish gems, change provider config, rotate credentials, or force-push."
     assert_includes out, "Recommend one outcome to Avi: merge-ready, wait-for-CI, request-changes, or conductor-review."
+    assert_includes out, "bin/devops-cycle --record-scout-report task-pr123 --outcome"
+    assert_includes out, "Remove --dry-run only after the payload looks right."
   end
 
   test "includes scout packets in JSON when requested" do
@@ -99,6 +101,56 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     refute_includes slugs, "task-block000"
     refute_includes slugs, "task-qa456"
     refute_includes slugs, "task-prod999"
+  end
+
+  test "prints scout report summaries when requested" do
+    out, err, status = devops_cycle("--scout-reports")
+
+    assert status.success?, err
+    assert_includes out, "Scout Reports (1)"
+    assert_includes out, "task-pr123 Ship sidebar recovery"
+    assert_includes out, "merge-ready by casey: Diff matches the task and CI is green."
+    assert_includes out, "finding: PR body matches the task acceptance criteria"
+    assert_includes out, "check: Confirmed qa-intake avi-ready"
+  end
+
+  test "includes scout report summaries in JSON when requested" do
+    out, err, status = devops_cycle("--json", "--scout-reports")
+
+    assert status.success?, err
+    snapshot = JSON.parse(out)
+    assert_equal 1, snapshot.dig("summary", "scout_reports")
+    task = snapshot.fetch("tasks").find { |item| item.fetch("slug") == "task-pr123" }
+    report = task.fetch("scout_reports").first
+    assert_equal "merge-ready", report.fetch("outcome")
+    assert_equal "casey", report.fetch("agent_slug")
+    assert_includes report.fetch("findings"), "No overlapping worktree risk found"
+  end
+
+  test "prints scout report dry-run payload without live credentials" do
+    out, err, status = devops_cycle(
+      "--record-scout-report", "task-pr123",
+      "--outcome", "merge-ready",
+      "--summary", "No blockers found.",
+      "--finding", "Diff matches the PR body.",
+      "--question", "Should this deploy with the release train?",
+      "--check", "Reviewed changed files.",
+      "--scout-agent", "casey",
+      "--dry-run",
+      "--json"
+    )
+
+    assert status.success?, err
+    payload = JSON.parse(out)
+    activity = payload.fetch("activity")
+    assert_equal true, payload.fetch("dry_run")
+    assert_equal "task-pr123", activity.fetch("task_slug")
+    assert_equal "comment", activity.fetch("activity_type")
+    assert_equal "casey", activity.fetch("agent_slug")
+    assert_equal "scout_report", activity.dig("metadata", "kind")
+    assert_equal "merge-ready", activity.dig("metadata", "outcome")
+    assert_includes activity.dig("metadata", "findings"), "Diff matches the PR body."
+    assert_includes activity.fetch("description"), "Scout report: merge-ready - No blockers found."
   end
 
   private

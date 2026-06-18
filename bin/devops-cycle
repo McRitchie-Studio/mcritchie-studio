@@ -19,6 +19,7 @@ STAGE_LABELS = {
   "qa_review" => "QA Review",
   "prod_ready" => "Prod Ready"
 }.freeze
+SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze
 PRIORITY_LABELS = {
   0 => "LOW",
   1 => "MED",
@@ -32,8 +33,17 @@ OPTIONS = {
   offline_fixture: nil,
   plan: false,
   qa_intake: true,
+  record_scout_report: nil,
   refresh: true,
+  scout_agent: ENV.fetch("AGENT_SLUG", "avi-scout"),
+  scout_checks: [],
+  scout_findings: [],
+  scout_outcome: nil,
   scout_packets: false,
+  scout_questions: [],
+  scout_reports: false,
+  scout_summary: nil,
+  dry_run: false,
   stages: DEFAULT_STAGES.dup
 }
 
@@ -65,6 +75,21 @@ OptionParser.new do |opts|
     OPTIONS[:plan] = true
     OPTIONS[:scout_packets] = true
   end
+  opts.on("--scout-reports", "Include structured scout report summaries from task activities") do
+    OPTIONS[:scout_reports] = true
+  end
+  opts.on("--record-scout-report TASK_SLUG", "Record a structured scout report on the task board") do |slug|
+    OPTIONS[:record_scout_report] = slug
+  end
+  opts.on("--outcome OUTCOME", "Scout report outcome: #{SCOUT_OUTCOMES.join(", ")}") do |value|
+    OPTIONS[:scout_outcome] = value
+  end
+  opts.on("--summary TEXT", "Scout report summary") { |value| OPTIONS[:scout_summary] = value }
+  opts.on("--finding TEXT", "Scout report finding (repeatable)") { |value| OPTIONS[:scout_findings] << value }
+  opts.on("--question TEXT", "Scout report question (repeatable)") { |value| OPTIONS[:scout_questions] << value }
+  opts.on("--check TEXT", "Scout report check/proof (repeatable)") { |value| OPTIONS[:scout_checks] << value }
+  opts.on("--scout-agent SLUG", "Agent slug to attach to a recorded scout report") { |value| OPTIONS[:scout_agent] = value }
+  opts.on("--dry-run", "Print write payloads instead of sending them") { OPTIONS[:dry_run] = true }
   opts.on("--no-qa-intake", "Skip bin/qa-intake join") { OPTIONS[:qa_intake] = false }
   opts.on("--no-refresh", "Do not pass --refresh to bin/qa-intake") { OPTIONS[:refresh] = false }
   opts.on("--json", "Print machine-readable JSON") { OPTIONS[:json] = true }
@@ -120,6 +145,72 @@ def request_json(uri, method:, token: nil, body: nil)
   end
 
   JSON.parse(response.body)
+end
+
+def compact_values(items)
+  Array(items).map { |item| item.to_s.strip }.reject(&:empty?)
+end
+
+def scout_report_payload
+  task_slug = OPTIONS[:record_scout_report].to_s.strip
+  outcome = OPTIONS[:scout_outcome].to_s.strip
+  summary = OPTIONS[:scout_summary].to_s.strip
+  abort "--record-scout-report requires a task slug" if task_slug.empty?
+  abort "--outcome is required and must be one of: #{SCOUT_OUTCOMES.join(", ")}" unless SCOUT_OUTCOMES.include?(outcome)
+  abort "--summary is required for scout reports" if summary.empty?
+
+  findings = compact_values(OPTIONS[:scout_findings])
+  questions = compact_values(OPTIONS[:scout_questions])
+  checks = compact_values(OPTIONS[:scout_checks])
+  reporter = OPTIONS[:scout_agent].to_s.strip
+  reporter = "avi-scout" if reporter.empty?
+
+  {
+    task_slug: task_slug,
+    activity_type: "comment",
+    agent_slug: reporter,
+    description: scout_report_description(outcome, reporter, summary, findings, questions, checks),
+    metadata: {
+      kind: "scout_report",
+      outcome: outcome,
+      reporter: reporter,
+      summary: summary,
+      findings: findings,
+      questions: questions,
+      checks: checks
+    }
+  }
+end
+
+def scout_report_description(outcome, reporter, summary, findings, questions, checks)
+  lines = [
+    "Scout report: #{outcome} - #{summary}",
+    "",
+    "Reporter: #{reporter}",
+    "Outcome: #{outcome}",
+    "",
+    "Findings:"
+  ]
+  lines.concat((findings.empty? ? ["- none"] : findings.map { |item| "- #{item}" }))
+  lines << ""
+  lines << "Questions:"
+  lines.concat((questions.empty? ? ["- none"] : questions.map { |item| "- #{item}" }))
+  lines << ""
+  lines << "Checks:"
+  lines.concat((checks.empty? ? ["- none"] : checks.map { |item| "- #{item}" }))
+  lines.join("\n")
+end
+
+def record_scout_report(base_url)
+  payload = scout_report_payload
+  return { "dry_run" => true, "activity" => payload } if OPTIONS[:dry_run]
+
+  secret = task_board_secret
+  abort "missing AGENT_API_SECRET; set it or pass --dry-run" if secret.to_s.empty?
+
+  token = task_board_token(base_url, secret)
+  response = request_json(URI.join(base_url, "/api/v1/activities"), method: :post, token: token, body: payload)
+  { "dry_run" => false, "activity" => response.fetch("data", response) }
 end
 
 def task_board_token(base_url, secret)
@@ -206,6 +297,32 @@ def latest_activity_for(task, activities)
     .max_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
 end
 
+def scout_report_activity?(activity)
+  activity.dig("metadata", "kind").to_s == "scout_report"
+end
+
+def scout_reports_for(task, activities)
+  activities
+    .select { |activity| activity["task_slug"] == task.fetch("slug") && scout_report_activity?(activity) }
+    .sort_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
+    .map { |activity| compact_scout_report(activity) }
+end
+
+def compact_scout_report(activity)
+  metadata = activity.fetch("metadata", {}) || {}
+  {
+    "activity_type" => activity["activity_type"],
+    "agent_slug" => activity["agent_slug"],
+    "outcome" => metadata["outcome"],
+    "summary" => metadata["summary"] || first_line(activity["description"]),
+    "findings" => Array(metadata["findings"]),
+    "questions" => Array(metadata["questions"]),
+    "checks" => Array(metadata["checks"]),
+    "description" => activity["description"],
+    "created_at" => activity["created_at"]
+  }
+end
+
 def qa_intake_match(task, qa_intake)
   metadata = devops(task)
   pr_url = normalize_url(metadata["pr_url"])
@@ -218,23 +335,31 @@ def qa_intake_match(task, qa_intake)
   end
 end
 
-def enriched_tasks(tasks, activities, qa_intake, base_url)
+def enriched_tasks(tasks, activities, qa_intake, base_url, include_scout_reports:)
   tasks.map do |task|
     metadata = devops(task)
     activity = latest_activity_for(task, activities)
     qa = qa_intake_match(task, qa_intake)
-    task.merge(
+    enriched = task.merge(
       "task_url" => task_url(base_url, task),
       "devops" => metadata,
       "repositories" => task_repos(task),
       "latest_activity" => activity,
       "qa_intake" => qa
     )
+    enriched["scout_reports"] = scout_reports_for(task, activities) if include_scout_reports
+    enriched
   end
 end
 
 def build_snapshot(source, qa_intake, base_url, stages)
-  tasks = enriched_tasks(source.fetch("tasks", []), source.fetch("activities", []), qa_intake, base_url)
+  tasks = enriched_tasks(
+    source.fetch("tasks", []),
+    source.fetch("activities", []),
+    qa_intake,
+    base_url,
+    include_scout_reports: OPTIONS.fetch(:scout_reports)
+  )
   tasks = tasks.select { |task| stages.include?(task.fetch("stage")) }
 
   snapshot = {
@@ -249,6 +374,7 @@ def build_snapshot(source, qa_intake, base_url, stages)
     },
     "tasks" => tasks
   }
+  snapshot["summary"]["scout_reports"] = tasks.sum { |task| Array(task["scout_reports"]).size } if OPTIONS.fetch(:scout_reports)
   plan = build_plan(tasks) if OPTIONS.fetch(:plan) || OPTIONS.fetch(:scout_packets)
   snapshot["plan"] = plan if plan
   snapshot["scout_packets"] = build_scout_packets(tasks, plan) if OPTIONS.fetch(:scout_packets)
@@ -462,6 +588,10 @@ def scout_prompt(packet)
     - Do not merge, deploy, publish gems, change provider config, rotate credentials, or force-push.
     - Do not push to the branch unless Avi or Mr. McRitchie explicitly asks.
     - Return a concise scout report with file/line references where applicable.
+
+    Record your scout report on the task when complete:
+    bin/devops-cycle --record-scout-report #{task.fetch("slug")} --outcome <merge-ready|wait-for-ci|request-changes|conductor-review> --summary "..." --finding "..." --check "..." --dry-run
+    Remove --dry-run only after the payload looks right. Scout reports are task comments with structured metadata; Avi converts blockers into final QA feedback or PR review comments.
   PROMPT
 end
 
@@ -601,6 +731,27 @@ def print_plan(snapshot)
   end
 end
 
+def print_scout_reports(snapshot)
+  tasks_with_reports = snapshot.fetch("tasks").select { |task| Array(task["scout_reports"]).any? }
+  return if tasks_with_reports.empty?
+
+  total = tasks_with_reports.sum { |task| Array(task["scout_reports"]).size }
+  puts
+  puts "Scout Reports (#{total})"
+  puts "---------------#{'-' * total.to_s.size}"
+  tasks_with_reports.each do |task|
+    puts
+    puts "#{task.fetch("slug")} #{task.fetch("title")}"
+    puts "  task=#{task.fetch("task_url")}"
+    Array(task["scout_reports"]).each do |report|
+      puts "  - #{report["outcome"] || "unknown"} by #{report["agent_slug"] || "unknown"}: #{report["summary"]}"
+      Array(report["findings"]).each { |finding| puts "    finding: #{finding}" }
+      Array(report["questions"]).each { |question| puts "    question: #{question}" }
+      Array(report["checks"]).each { |check| puts "    check: #{check}" }
+    end
+  end
+end
+
 def print_scout_packets(snapshot)
   packets = Array(snapshot["scout_packets"])
   return if packets.empty?
@@ -618,6 +769,25 @@ def print_scout_packets(snapshot)
     puts
     puts packet.fetch("prompt")
   end
+end
+
+if OPTIONS[:record_scout_report]
+  result = record_scout_report(OPTIONS.fetch(:base_url))
+  if OPTIONS[:json]
+    puts JSON.pretty_generate(result)
+  else
+    activity = result.fetch("activity")
+    if result["dry_run"]
+      puts "Scout report dry-run payload"
+      puts JSON.pretty_generate(activity)
+    else
+      puts "Scout report recorded"
+      puts "task=#{activity["task_slug"]}"
+      puts "outcome=#{activity.dig("metadata", "outcome")}"
+      puts "activity=#{activity["slug"] || activity["id"] || "created"}"
+    end
+  end
+  exit 0
 end
 
 source = if OPTIONS[:offline_fixture]
@@ -641,5 +811,6 @@ if OPTIONS[:json]
 else
   print_snapshot(snapshot)
   print_plan(snapshot)
+  print_scout_reports(snapshot)
   print_scout_packets(snapshot)
 end
