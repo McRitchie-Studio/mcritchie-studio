@@ -51,8 +51,14 @@ def agent_secret
   env = ENV["AGENT_API_SECRET"]
   return env if env && !env.empty?
 
-  op = IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-  return op unless op.empty?
+  if File.executable?(OP)
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue SystemCallError
+      ""
+    end
+    return op unless op.empty?
+  end
 
   dotenv = File.join(__dir__, "..", ".env")
   if File.exist?(dotenv)
