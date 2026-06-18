@@ -96,6 +96,7 @@ def usage
       doctor [app]
       snapshot [app] [--write]
       cleanup [app] [--write]
+      cleanup [app] --reclaim [--yes]
       remove <app> <task-slug> [--yes]
       down <app> <task-slug>
       scale [status|out|in]
@@ -1192,6 +1193,78 @@ def delete_local_branch_if_safe(app, branch)
   sh("git", "-C", app.fetch("repo"), "branch", "-D", branch)
 end
 
+# The per-worktree teardown shared by `remove` and `cleanup --reclaim`:
+# stop the stack, flush its Redis DB, record the ledger row, drop the git
+# worktree, and delete the local branch. Callers handle band scale-in and the
+# registry refresh once, after the (possibly batched) teardown.
+def teardown_worktree(app, dir, record)
+  stop_stack_for_removal(app, dir, record)
+  flush_redis_db(record)
+  write_cleanup_ledger_record(record, status: "removed #{Time.now.strftime("%Y-%m-%d")}")
+  sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
+  delete_local_branch_if_safe(app, record[:branch])
+end
+
+# Scale-down-on-close normal flow: release every worktree whose branch is
+# already represented on origin/main (merged or squash-equivalent) and clean.
+# Dry-run by default; --yes performs the teardown. Never touches dirty/unmerged
+# worktrees or the primary checkout (cleanup_ready? + .worktrees-only source),
+# and re-verifies each candidate under the lock before removing it.
+def run_reclaim(app = nil, yes: false)
+  (app ? [app] : apps.values).each do |config|
+    next unless Dir.exist?(File.join(config.fetch("repo"), ".git"))
+    sh("git", "-C", config.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
+  end
+
+  candidates = cleanup_candidates(app)
+  if candidates.empty?
+    puts "reclaim: no clean merged or main-equivalent worktrees to release"
+    return
+  end
+
+  unless yes
+    puts "reclaim candidates:"
+    candidates.each do |record|
+      puts "  - #{record[:app].fetch("slug")}/#{record[:task]} redis=#{record[:redis_db]} #{record[:dir]}"
+    end
+    puts
+    puts "dry run only. Re-run with --reclaim --yes to stop each stack, flush its Redis DB, remove the worktree, delete the local branch, scale the band in, and refresh the registry."
+    return
+  end
+
+  freed = []
+  with_worktree_lock do
+    candidates.each do |record|
+      dir = record[:dir]
+      next unless registered_worktree?(record[:app], dir)
+
+      # Re-read under the lock so a worktree that turned dirty/unmerged between
+      # listing and teardown is skipped, not destroyed.
+      fresh = stack_record(record[:app], dir)
+      unless cleanup_ready?(fresh) && !fresh[:dirty]
+        puts "skipping #{fresh[:app].fetch("slug")}/#{fresh[:task]}: no longer a safe candidate"
+        next
+      end
+
+      teardown_worktree(fresh[:app], dir, fresh)
+      freed << { slug: "#{fresh[:app].fetch("slug")}/#{fresh[:task]}", redis_db: fresh[:redis_db] }
+      puts "reclaimed #{fresh[:app].fetch("slug")}/#{fresh[:task]} (freed redis db #{fresh[:redis_db]})"
+    end
+    maybe_scale_in
+  end
+  run_snapshot(app, write: true)
+
+  if freed.empty?
+    puts "reclaim: nothing reclaimed (candidates changed under lock)"
+  else
+    dbs = freed.map { |entry| entry[:redis_db] }.compact.sort
+    puts
+    puts "reclaimed #{freed.size} worktree(s); freed redis DBs: #{dbs.join(", ")}"
+    band = load_current_capacity
+    puts "current band: #{band} slots (redis DBs #{redis_db_min}-#{redis_db_min + band - 1})"
+  end
+end
+
 def run_remove(app, task, yes: false)
   dir = worktree_dir(app, task)
   abort "missing worktree: #{dir}" unless Dir.exist?(dir)
@@ -1220,11 +1293,7 @@ def run_remove(app, task, yes: false)
     return
   end
 
-  stop_stack_for_removal(app, dir, record)
-  flush_redis_db(record)
-  write_cleanup_ledger_record(record, status: "removed #{Time.now.strftime("%Y-%m-%d")}")
-  sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
-  delete_local_branch_if_safe(app, record[:branch])
+  teardown_worktree(app, dir, record)
   maybe_scale_in
   run_snapshot(app, write: true)
 end
@@ -1556,9 +1625,15 @@ when "snapshot"
   app = ARGV[0] ? app_for(ARGV[0]) : nil
   run_snapshot(app, write: !!write)
 when "cleanup"
+  reclaim = ARGV.delete("--reclaim")
+  yes = ARGV.delete("--yes")
   write = ARGV.delete("--write")
   app = ARGV[0] ? app_for(ARGV[0]) : nil
-  run_cleanup(app, write: !!write)
+  if reclaim
+    run_reclaim(app, yes: !!yes)
+  else
+    run_cleanup(app, write: !!write)
+  end
 when "remove"
   yes = ARGV.delete("--yes")
   app_name, raw_task = ARGV

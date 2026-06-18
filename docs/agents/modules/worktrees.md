@@ -86,6 +86,8 @@ bin/agent-worktree finish turf-monster task-slug
 bin/agent-worktree doctor
 bin/agent-worktree snapshot
 bin/agent-worktree cleanup
+bin/agent-worktree cleanup --reclaim
+bin/agent-worktree cleanup --reclaim --yes
 bin/agent-worktree remove turf-monster task-slug --yes
 bin/agent-worktree scale status
 ```
@@ -111,6 +113,22 @@ bin/agent-worktree scale status
   either contained in `origin/main` or has an empty final diff against
   `origin/main` after a squash merge.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
+- `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
+  worktree self-releases its Redis slot the same way a stack scales down when it
+  closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
+  auto-remove — clean **and** either contained in `origin/main` or
+  main-equivalent (the same `cleanup_ready?` criteria as `cleanup`) — and prints
+  each candidate with its Redis DB. It never lists a dirty or unmerged worktree,
+  and the candidate set is sourced from `.worktrees/*` only, so the primary
+  checkout is never a candidate.
+- `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
+  safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup
+  ledger, remove the Git worktree, delete the stale local branch), re-verifying
+  each candidate under the worktree lock so one that turned dirty/unmerged in the
+  interim is skipped. After the batch it shrinks the Redis band toward the floor
+  (`maybe_scale_in`) and refreshes the registry once. Output names each reclaimed
+  worktree, the freed Redis DB, and the resulting band size. Safe to re-run; with
+  no candidates it prints a clear no-op message and changes nothing.
 - `remove <app> <task-slug> --yes` is the approved deletion path after Mr.
   McRitchie or the conductor authorizes cleanup. It refuses dirty or
   non-equivalent worktrees, stops the stack, flushes the stack's Redis DB (so a
@@ -256,9 +274,11 @@ The band idles at **20 slots** (`FLOOR`) and changes by **10** (`STEP`):
   `allocate_redis_db` grows the band by 10 (`scaled out: 20 -> 30 slots`) and
   retries. No restart. At the physical ceiling it aborts with guidance to run
   `cleanup` or `scale --provision`.
-- **Scale-in (auto):** `remove` and `cleanup --write` drop the band by 10
-  (never below the floor, never stranding a still-used DB) as slots free up
-  (`scaled in: 30 -> 20 slots`). No restart.
+- **Scale-in (auto):** `remove`, `cleanup --write`, and `cleanup --reclaim --yes`
+  drop the band by 10 (never below the floor, never stranding a still-used DB) as
+  slots free up (`scaled in: 30 -> 20 slots`). No restart. `cleanup --reclaim
+  --yes` is the hands-off scale-down-on-close path: it releases every safe
+  candidate, then calls `maybe_scale_in` once for the batch.
 
 The band size is persisted in `/Users/alex/projects/.agents/redis-capacity.json`
 and band allocation + capacity mutation are guarded by a `flock` on
