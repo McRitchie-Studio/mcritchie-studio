@@ -196,12 +196,14 @@ class TaskTest < ActiveSupport::TestCase
       "repositories" => "mcritchie-studio, turf-monster\nstudio-engine",
       "risk_tags" => ["auth", "auth", "deploy"],
       "acceptance" => "QA URL works\nProduction stays gated",
+      "worktree_slug" => " terminal-context-marker ",
       "branch" => " feat/example "
     )
 
     assert_equal ["mcritchie-studio", "turf-monster", "studio-engine"], metadata["repositories"]
     assert_equal ["auth", "deploy"], metadata["risk_tags"]
     assert_equal ["QA URL works", "Production stays gated"], metadata["acceptance"]
+    assert_equal "terminal-context-marker", metadata["worktree_slug"]
     assert_equal "feat/example", metadata["branch"]
   end
 
@@ -211,6 +213,7 @@ class TaskTest < ActiveSupport::TestCase
       metadata: {
         "devops" => {
           "kind" => "bug",
+          "worktree_slug" => "qa-contest-flow",
           "repositories" => ["turf-monster"],
           "release_train" => "2026-06-17-turf",
           "qa_url" => "https://qa.turfmonster.media/contests",
@@ -223,6 +226,7 @@ class TaskTest < ActiveSupport::TestCase
     assert task.devops?
     assert task.requires_release_conductor?
     assert_equal "bug", task.devops_kind
+    assert_equal "qa-contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster"], task.devops_repositories
     assert_equal "2026-06-17-turf", task.devops_release_train
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)

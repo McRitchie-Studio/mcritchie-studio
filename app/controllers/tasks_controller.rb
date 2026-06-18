@@ -239,6 +239,7 @@ class TasksController < ApplicationController
       :stage,
       devops: [
         :kind,
+        :worktree_slug,
         :branch,
         :pr_url,
         :local_url,

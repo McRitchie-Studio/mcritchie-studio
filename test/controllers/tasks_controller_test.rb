@@ -163,6 +163,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
           title: "Review Turf PR",
           devops: {
             kind: "feature",
+            worktree_slug: "contest-flow",
             repositories: "turf-monster, turf-vault",
             branch: "feat/contest-flow",
             pr_url: "https://github.com/amcritchie/turf-monster/pull/149",
@@ -179,6 +180,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     task = Task.order(:created_at).last
     assert_redirected_to task_path(task.slug)
     assert task.requires_release_conductor?
+    assert_equal "contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster", "turf-vault"], task.devops_repositories
     assert_equal ["Contest creates on QA", "Entry submits on QA"], task.devops_acceptance
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
@@ -189,6 +191,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       metadata: {
         "devops" => {
           "kind" => "release",
+          "worktree_slug" => "task-board-devops-handoff",
           "repositories" => ["mcritchie-studio"],
           "qa_url" => "https://qa.mcritchie.studio/tasks",
           "acceptance" => ["Task board shows release metadata"]
@@ -200,6 +203,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select ".label-upper", "DevOps handoff"
+    assert_includes response.body, "task-board-devops-handoff"
     assert_select "a[href=?]", "https://qa.mcritchie.studio/tasks"
     assert_includes response.body, "Task board shows release metadata"
   end

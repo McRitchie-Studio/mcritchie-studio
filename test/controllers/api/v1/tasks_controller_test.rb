@@ -16,6 +16,7 @@ module Api
                 title: @task.title,
                 devops: {
                   kind: "bug",
+                  worktree_slug: "task-card-devops-metadata",
                   repositories: "mcritchie-studio",
                   local_url: "http://localhost:3004/tasks",
                   qa_url: "https://qa.mcritchie.studio/tasks",
@@ -31,6 +32,7 @@ module Api
         assert_response :success
         @task.reload
         assert_equal "bug", @task.devops_kind
+        assert_equal "task-card-devops-metadata", @task.devops_worktree_slug
         assert_equal ["mcritchie-studio"], @task.devops_repositories
         assert_equal "http://localhost:3004/tasks", @task.devops_url(:local)
         assert_equal ["Task card shows metadata", "QA URL opens"], @task.devops_acceptance
