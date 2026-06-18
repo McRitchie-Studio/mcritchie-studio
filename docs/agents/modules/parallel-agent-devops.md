@@ -125,6 +125,7 @@ Studio:
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
+bin/devops-cycle --plan
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -134,6 +135,20 @@ joins each task to latest task conversation notes, and attaches matching
 `bin/qa-intake` status when a local PR/worktree exists. Use it first in a fresh
 DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
 before reviewing individual diffs. It is read-only by default.
+
+Use `bin/devops-cycle --plan` when the queue is larger than one conductor can
+comfortably hold in context. The plan separates:
+
+- parallel PR review tasks that can be assigned to separate scout sessions
+- serialized or conductor-owned tasks that touch multiple repos or high-risk
+  surfaces
+- blocked tasks that should return to the feature agent before review
+- QA review tasks awaiting Mr. McRitchie's acceptance or follow-up
+- production-ready tasks awaiting explicit release approval
+
+The plan is still read-only. It does not merge, deploy, update tasks, or create
+sub-agents. The conductor uses it to decide which work can safely happen in
+parallel and which tasks must be bundled or sequenced.
 
 `bin/qa-intake` is the lower-level PR/worktree intake. It refreshes
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
