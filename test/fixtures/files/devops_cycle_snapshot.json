@@ -65,6 +65,27 @@
       }
     },
     {
+      "slug": "task-ready222",
+      "title": "Ship focused DevOps helper",
+      "stage": "pr_review",
+      "priority": 1,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:50:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "chore",
+          "worktree_slug": "focused-devops-helper",
+          "repositories": ["mcritchie-studio"],
+          "risk_tags": ["devops"],
+          "branch": "feat/focused-devops-helper",
+          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/222",
+          "acceptance": ["Helper output is deterministic"],
+          "test_plan": ["bin/rails test test/commands/devops_cycle_command_test.rb"],
+          "checks_run": ["bin/rails test test/commands/devops_cycle_command_test.rb"]
+        }
+      }
+    },
+    {
       "slug": "task-qa456",
       "title": "QA contest entry flow",
       "stage": "qa_review",
@@ -137,6 +158,22 @@
       "activity_type": "handoff",
       "description": "QA deploy is live for contest entry.",
       "created_at": "2026-06-18T15:05:00Z"
+    },
+    {
+      "task_slug": "task-ready222",
+      "agent_slug": "drew",
+      "activity_type": "comment",
+      "description": "Scout report: merge-ready - Helper is scoped and checks are green.",
+      "created_at": "2026-06-18T15:10:00Z",
+      "metadata": {
+        "kind": "scout_report",
+        "outcome": "merge-ready",
+        "reporter": "drew",
+        "summary": "Helper is scoped and checks are green.",
+        "findings": ["No behavior outside the command changed"],
+        "questions": [],
+        "checks": ["Reviewed command diff", "Confirmed focused command test"]
+      }
     }
   ],
   "qa_intake": {
@@ -166,6 +203,15 @@
         "url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
         "task_record_slug": "task-pr123",
         "task_url": "https://mcritchie.studio/tasks/task-pr123",
+        "action": "Avi can review for scope and merge safety"
+      },
+      {
+        "status": "avi-ready",
+        "repo": "amcritchie/mcritchie-studio",
+        "number": 222,
+        "url": "https://github.com/amcritchie/mcritchie-studio/pull/222",
+        "task_record_slug": "task-ready222",
+        "task_url": "https://mcritchie.studio/tasks/task-ready222",
         "action": "Avi can review for scope and merge safety"
       },
       {

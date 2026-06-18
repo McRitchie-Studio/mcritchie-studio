@@ -20,6 +20,17 @@ STAGE_LABELS = {
   "prod_ready" => "Prod Ready"
 }.freeze
 SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze
+DECISION_ORDER = %w[request-changes wait-for-ci conductor-review merge-ready].freeze
+DECISION_LABELS = {
+  "merge-ready" => "Merge Ready",
+  "wait-for-ci" => "Wait For CI",
+  "request-changes" => "Request Changes",
+  "conductor-review" => "Conductor Review"
+}.freeze
+HIGH_RISK_PATTERN = /auth|email|wallet|solana|payment|provider|deploy|migration|gem|contract|infra/.freeze
+REVIEW_BLOCKING_QA_STATUSES = %w[needs-agent merge-risk missing-local-branch].freeze
+REVIEW_WAIT_QA_STATUSES = %w[checks-review avi-ready-draft].freeze
+REVIEW_NOT_READY_QA_STATUSES = (REVIEW_BLOCKING_QA_STATUSES + REVIEW_WAIT_QA_STATUSES).freeze
 PRIORITY_LABELS = {
   0 => "LOW",
   1 => "MED",
@@ -29,6 +40,7 @@ PRIORITY_LABELS = {
 OPTIONS = {
   apps: DEFAULT_APPS.dup,
   base_url: ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio"),
+  decisions: false,
   json: false,
   offline_fixture: nil,
   plan: false,
@@ -71,6 +83,9 @@ OptionParser.new do |opts|
     OPTIONS[:offline_fixture] = File.expand_path(path)
   end
   opts.on("--plan", "Include a read-only batch plan for review/QA/release lanes") { OPTIONS[:plan] = true }
+  opts.on("--decisions", "Include Avi conductor recommendations from qa-intake and scout reports") do
+    OPTIONS[:decisions] = true
+  end
   opts.on("--scout-packets", "Include copy-paste review scout packets for PR review lanes") do
     OPTIONS[:plan] = true
     OPTIONS[:scout_packets] = true
@@ -358,7 +373,7 @@ def build_snapshot(source, qa_intake, base_url, stages)
     source.fetch("activities", []),
     qa_intake,
     base_url,
-    include_scout_reports: OPTIONS.fetch(:scout_reports)
+    include_scout_reports: OPTIONS.fetch(:scout_reports) || OPTIONS.fetch(:decisions)
   )
   tasks = tasks.select { |task| stages.include?(task.fetch("stage")) }
 
@@ -377,6 +392,7 @@ def build_snapshot(source, qa_intake, base_url, stages)
   snapshot["summary"]["scout_reports"] = tasks.sum { |task| Array(task["scout_reports"]).size } if OPTIONS.fetch(:scout_reports)
   plan = build_plan(tasks) if OPTIONS.fetch(:plan) || OPTIONS.fetch(:scout_packets)
   snapshot["plan"] = plan if plan
+  snapshot["decisions"] = build_decisions(tasks) if OPTIONS.fetch(:decisions)
   snapshot["scout_packets"] = build_scout_packets(tasks, plan) if OPTIONS.fetch(:scout_packets)
   snapshot
 end
@@ -394,7 +410,7 @@ def high_risk?(task)
   tags = Array(metadata["risk_tags"]).map(&:to_s)
   repos = Array(task.fetch("repositories"))
 
-  tags.any? { |tag| tag.match?(/auth|email|wallet|solana|payment|provider|deploy|migration|gem|contract|infra/) } ||
+  tags.any? { |tag| tag.match?(HIGH_RISK_PATTERN) } ||
     repos.size > 1 ||
     metadata["requires_release_conductor"].to_s == "true"
 end
@@ -404,7 +420,7 @@ def qa_status(task)
 end
 
 def blocked_for_pr_review?(task)
-  %w[needs-agent merge-risk missing-local-branch checks-review avi-ready-draft].include?(qa_status(task))
+  REVIEW_NOT_READY_QA_STATUSES.include?(qa_status(task))
 end
 
 def plan_reason(task)
@@ -416,10 +432,104 @@ def plan_reason(task)
   return "no matching qa-intake PR/worktree; conductor must inspect manually" unless task["qa_intake"]
   return "release conductor required" if metadata["requires_release_conductor"].to_s == "true"
 
-  risky_tag = tags.find { |tag| tag.match?(/auth|email|wallet|solana|payment|provider|deploy|migration|gem|contract|infra/) }
+  risky_tag = tags.find { |tag| tag.match?(HIGH_RISK_PATTERN) }
   return "high-risk tag: #{risky_tag}" if risky_tag
 
   "standard PR review"
+end
+
+def scout_report_counts(task)
+  SCOUT_OUTCOMES.to_h do |outcome|
+    [outcome, Array(task["scout_reports"]).count { |report| report["outcome"] == outcome }]
+  end
+end
+
+def scout_report_count_text(counts)
+  counts
+    .select { |_, count| count.positive? }
+    .map { |outcome, count| "#{outcome}:#{count}" }
+    .join(" ")
+end
+
+def scout_report_outcome?(task, outcome)
+  Array(task["scout_reports"]).any? { |report| report["outcome"] == outcome }
+end
+
+def conductor_decision(task)
+  reasons = []
+  status = qa_status(task)
+
+  if REVIEW_BLOCKING_QA_STATUSES.include?(status)
+    reasons << "qa-intake status #{status}"
+    return ["request-changes", reasons]
+  end
+
+  if task.dig("latest_activity", "activity_type") == "qa_feedback"
+    reasons << "latest task activity is qa_feedback"
+    return ["request-changes", reasons]
+  end
+
+  if scout_report_outcome?(task, "request-changes")
+    reasons << "scout requested changes"
+    return ["request-changes", reasons]
+  end
+
+  if REVIEW_WAIT_QA_STATUSES.include?(status)
+    reasons << "qa-intake status #{status}"
+    return ["wait-for-ci", reasons]
+  end
+
+  if scout_report_outcome?(task, "wait-for-ci")
+    reasons << "scout is waiting for CI"
+    return ["wait-for-ci", reasons]
+  end
+
+  if scout_report_outcome?(task, "conductor-review")
+    reasons << "scout requested conductor review"
+    return ["conductor-review", reasons]
+  end
+
+  if !task["qa_intake"]
+    reasons << "no matching qa-intake record"
+    return ["conductor-review", reasons]
+  end
+
+  if high_risk?(task)
+    reasons << plan_reason(task)
+    return ["conductor-review", reasons]
+  end
+
+  if scout_report_outcome?(task, "merge-ready")
+    reasons << "scout report is merge-ready"
+    reasons << "qa-intake status #{status}" unless status.empty?
+    return ["merge-ready", reasons]
+  end
+
+  reasons << "no scout report recorded"
+  ["conductor-review", reasons]
+end
+
+def build_decisions(tasks)
+  tasks
+    .select { |task| task.fetch("stage") == "pr_review" }
+    .sort_by { |task| [-PRIORITY_LABELS.key(task_priority(task)).to_i, task.fetch("repositories").join(","), task.fetch("slug")] }
+    .map do |task|
+      recommendation, reasons = conductor_decision(task)
+      metadata = task.fetch("devops", {})
+      {
+        "slug" => task.fetch("slug"),
+        "title" => task.fetch("title"),
+        "priority" => task_priority(task),
+        "recommendation" => recommendation,
+        "reasons" => reasons,
+        "task_url" => task.fetch("task_url"),
+        "repositories" => task.fetch("repositories"),
+        "pr_url" => metadata["pr_url"],
+        "qa_intake" => compact_qa_intake(task["qa_intake"]),
+        "scout_report_counts" => scout_report_counts(task),
+        "latest_activity" => compact_activity(task["latest_activity"])
+      }
+    end
 end
 
 def plan_task(task, owner:, reason:)
@@ -731,6 +841,35 @@ def print_plan(snapshot)
   end
 end
 
+def print_decisions(snapshot)
+  decisions = Array(snapshot["decisions"])
+  return if decisions.empty?
+
+  puts
+  puts "Conductor Decisions (#{decisions.size})"
+  puts "---------------------#{'-' * decisions.size.to_s.size}"
+  DECISION_ORDER.each do |recommendation|
+    items = decisions.select { |decision| decision.fetch("recommendation") == recommendation }
+    puts
+    puts "#{DECISION_LABELS.fetch(recommendation)} (#{items.size})"
+    if items.empty?
+      puts "  none"
+      next
+    end
+
+    items.each do |decision|
+      puts "  [#{decision.fetch("priority")}] #{decision.fetch("slug")} #{decision.fetch("title")}"
+      puts "    task=#{decision.fetch("task_url")}"
+      puts "    pr=#{decision["pr_url"]}" if decision["pr_url"].to_s != ""
+      puts "    repo=#{compact_list(decision.fetch("repositories"))}"
+      puts "    qa-intake=#{decision.dig("qa_intake", "status") || "none"}"
+      reports = scout_report_count_text(decision.fetch("scout_report_counts"))
+      puts "    scout-reports=#{reports.empty? ? "none" : reports}"
+      puts "    reason=#{decision.fetch("reasons").join("; ")}"
+    end
+  end
+end
+
 def print_scout_reports(snapshot)
   tasks_with_reports = snapshot.fetch("tasks").select { |task| Array(task["scout_reports"]).any? }
   return if tasks_with_reports.empty?
@@ -811,6 +950,7 @@ if OPTIONS[:json]
 else
   print_snapshot(snapshot)
   print_plan(snapshot)
-  print_scout_reports(snapshot)
+  print_decisions(snapshot)
+  print_scout_reports(snapshot) if OPTIONS.fetch(:scout_reports)
   print_scout_packets(snapshot)
 end
