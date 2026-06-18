@@ -195,6 +195,7 @@ bin/agent-worktree doctor
 bin/agent-worktree snapshot --write
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 bin/agent-worktree cleanup
+bin/agent-worktree cleanup --reclaim [--yes]
 bin/agent-worktree remove <app> <task-slug> --yes
 ```
 
@@ -204,11 +205,17 @@ sessions. `cleanup` is dry-run only; `cleanup --write` only appends candidates
 to the delete-later ledger. Actual removal stays approval-gated and should use
 `bin/agent-worktree remove <app> <task-slug> --yes` so stack stop, ledger
 update, Git worktree removal, local branch deletion, and registry refresh happen
-together.
+together. `cleanup --reclaim` is the scale-down-on-close batch flow: the dry run
+lists every worktree SAFE to auto-release (clean + merged/main-equivalent, never
+the primary) with its Redis DB, and `cleanup --reclaim --yes` runs that same full
+`remove` teardown for each candidate, then shrinks the Redis band toward the
+floor. See [worktrees module](modules/worktrees.md).
 
 The worktree launcher uses an elastic Redis band starting at DB `9`. The band
 idles at `20` slots, auto-grows by `10` (restart-free) when full while physical
-room remains, and auto-shrinks by `10` (never below `20`) as worktrees close.
+room remains, and auto-shrinks by `10` (never below `20`) as worktrees close
+(`remove`, `cleanup --write`, and `cleanup --reclaim --yes` all trigger the
+shrink).
 Physical capacity is the Redis `databases` setting, fixed at startup; the band
 can never exceed it. Inspect both with `bin/agent-worktree scale status`. If the
 band is capped by physical room, run `bin/agent-worktree scale --provision` once
