@@ -243,6 +243,7 @@ Avi starts with the task board plus the local PR/worktree tools:
 cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
 bin/devops-cycle --plan
+bin/devops-cycle --scout-packets
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -251,11 +252,17 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 local/QA/production URLs, latest task conversation notes, and matching qa-intake
 status when available. `bin/devops-cycle --plan` adds a read-only batch plan
 that separates parallel PR reviews, serialized/high-risk work, blocked returns
-to feature agents, QA review, and production-ready release work. Accurate
-`repositories`, `risk_tags`, `pr_url`, `qa_url`, `test_plan`, and `checks_run`
-metadata make that plan useful at scale. `bin/qa-intake` remains the raw local
-worktree and GitHub PR view for branch freshness, stack health, and cleanup-state
-details.
+to feature agents, QA review, and production-ready release work.
+`bin/devops-cycle --scout-packets` turns reviewable PR-review lanes into
+copy-paste prompts for additional review-only sessions. Accurate `repositories`,
+`risk_tags`, `pr_url`, `qa_url`, `acceptance`, `test_plan`, and `checks_run`
+metadata make the plan and packets useful at scale. `bin/qa-intake` remains the
+raw local worktree and GitHub PR view for branch freshness, stack health, and
+cleanup-state details.
+
+Scout feedback should return as task conversation `qa_feedback` when it blocks
+handoff, or as a concise handoff note when it supports merging. The conductor
+still owns final merge, QA deploy, production deploy, and task stage changes.
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.

@@ -33,6 +33,7 @@ OPTIONS = {
   plan: false,
   qa_intake: true,
   refresh: true,
+  scout_packets: false,
   stages: DEFAULT_STAGES.dup
 }
 
@@ -60,6 +61,10 @@ OptionParser.new do |opts|
     OPTIONS[:offline_fixture] = File.expand_path(path)
   end
   opts.on("--plan", "Include a read-only batch plan for review/QA/release lanes") { OPTIONS[:plan] = true }
+  opts.on("--scout-packets", "Include copy-paste review scout packets for PR review lanes") do
+    OPTIONS[:plan] = true
+    OPTIONS[:scout_packets] = true
+  end
   opts.on("--no-qa-intake", "Skip bin/qa-intake join") { OPTIONS[:qa_intake] = false }
   opts.on("--no-refresh", "Do not pass --refresh to bin/qa-intake") { OPTIONS[:refresh] = false }
   opts.on("--json", "Print machine-readable JSON") { OPTIONS[:json] = true }
@@ -244,7 +249,9 @@ def build_snapshot(source, qa_intake, base_url, stages)
     },
     "tasks" => tasks
   }
-  snapshot["plan"] = build_plan(tasks) if OPTIONS.fetch(:plan)
+  plan = build_plan(tasks) if OPTIONS.fetch(:plan) || OPTIONS.fetch(:scout_packets)
+  snapshot["plan"] = plan if plan
+  snapshot["scout_packets"] = build_scout_packets(tasks, plan) if OPTIONS.fetch(:scout_packets)
   snapshot
 end
 
@@ -372,6 +379,144 @@ def build_plan(tasks)
   }
 end
 
+def scout_source_groups(plan)
+  Array(plan&.fetch("groups", [])).select do |group|
+    %w[parallel_pr_review serialized_pr_review].include?(group.fetch("key"))
+  end
+end
+
+def scout_mode(group)
+  group.fetch("key") == "parallel_pr_review" ? "parallel_scout" : "serialized_scout"
+end
+
+def compact_activity(activity)
+  return nil unless activity
+
+  {
+    "activity_type" => activity["activity_type"],
+    "description" => activity["description"],
+    "created_at" => activity["created_at"]
+  }
+end
+
+def compact_qa_intake(qa)
+  return nil unless qa
+
+  {
+    "status" => qa["status"],
+    "repo" => qa["repo"],
+    "number" => qa["number"],
+    "url" => qa["url"],
+    "action" => qa["action"]
+  }
+end
+
+def bullet_list(items)
+  values = Array(items).reject { |item| item.to_s.strip.empty? }
+  return "- none recorded" if values.empty?
+
+  values.map { |item| "- #{item}" }.join("\n")
+end
+
+def scout_prompt(packet)
+  task = packet.fetch("task")
+  metadata = packet.fetch("devops")
+  qa = packet["qa_intake"]
+  latest = packet["latest_activity"]
+
+  <<~PROMPT.strip
+    Work from /Users/alex/projects as an Avi review scout for #{task.fetch("slug")}.
+
+    Read /Users/alex/projects/AGENTS.md and the relevant repo README/runbook/docs before reviewing.
+
+    Task: #{task.fetch("url")}
+    PR: #{metadata["pr_url"] || "missing"}
+    Repo(s): #{compact_list(metadata.fetch("repositories"))}
+    Branch: #{metadata["branch"] || "missing"}
+    Review mode: #{packet.fetch("mode")}
+    Planner reason: #{packet.fetch("reason")}
+    Risk tags: #{compact_list(metadata.fetch("risk_tags"))}
+    Local URL: #{metadata["local_url"] || "none recorded"}
+    QA URL: #{metadata["qa_url"] || "none recorded"}
+
+    Acceptance criteria:
+    #{bullet_list(metadata.fetch("acceptance"))}
+
+    Expected checks:
+    #{bullet_list(metadata.fetch("test_plan"))}
+
+    Checks already reported:
+    #{bullet_list(metadata.fetch("checks_run"))}
+
+    Latest task note:
+    #{latest ? "#{latest["activity_type"]}: #{first_line(latest["description"])}" : "none recorded"}
+
+    QA intake:
+    #{qa ? "#{qa["status"]} #{qa["repo"]}##{qa["number"]}: #{qa["action"]}" : "no matching qa-intake record"}
+
+    Scout instructions:
+    - Inspect task metadata, PR body, diff, changed files, docs, tests, and merge safety.
+    - Check whether the PR could overwrite or conflict with another agent's work.
+    - Classify findings as blockers, non-blockers, or questions.
+    - Recommend one outcome to Avi: merge-ready, wait-for-CI, request-changes, or conductor-review.
+    - Do not merge, deploy, publish gems, change provider config, rotate credentials, or force-push.
+    - Do not push to the branch unless Avi or Mr. McRitchie explicitly asks.
+    - Return a concise scout report with file/line references where applicable.
+  PROMPT
+end
+
+def build_scout_packets(tasks, plan)
+  tasks_by_slug = tasks.to_h { |task| [task.fetch("slug"), task] }
+
+  scout_source_groups(plan).flat_map do |group|
+    group.fetch("tasks").each_with_object([]) do |planned_task, packets|
+      task = tasks_by_slug[planned_task.fetch("slug")]
+      next unless task
+
+      metadata = task.fetch("devops", {})
+      packet = {
+        "packet_id" => "scout-#{task.fetch("slug")}",
+        "mode" => scout_mode(group),
+        "group_key" => group.fetch("key"),
+        "group_title" => group.fetch("title"),
+        "reason" => planned_task.fetch("reason"),
+        "task" => {
+          "slug" => task.fetch("slug"),
+          "title" => task.fetch("title"),
+          "stage" => task.fetch("stage"),
+          "priority" => task_priority(task),
+          "url" => task.fetch("task_url")
+        },
+        "devops" => {
+          "kind" => metadata["kind"],
+          "repositories" => Array(task.fetch("repositories")),
+          "risk_tags" => Array(metadata["risk_tags"]),
+          "worktree_slug" => metadata["worktree_slug"],
+          "branch" => metadata["branch"],
+          "pr_url" => metadata["pr_url"],
+          "local_url" => metadata["local_url"],
+          "qa_url" => metadata["qa_url"],
+          "acceptance" => Array(metadata["acceptance"]),
+          "test_plan" => Array(metadata["test_plan"]),
+          "checks_run" => Array(metadata["checks_run"])
+        },
+        "latest_activity" => compact_activity(task["latest_activity"]),
+        "qa_intake" => compact_qa_intake(task["qa_intake"]),
+        "guardrails" => [
+          "Do not merge PRs.",
+          "Do not deploy QA or production.",
+          "Do not publish gems.",
+          "Do not change provider config or credentials.",
+          "Do not force-push.",
+          "Return findings to Avi for final decision."
+        ]
+      }
+      packet["prompt"] = scout_prompt(packet)
+      packets << packet
+    end
+  end
+end
+
 def print_task(task)
   metadata = task.fetch("devops", {})
   qa = task["qa_intake"]
@@ -456,6 +601,25 @@ def print_plan(snapshot)
   end
 end
 
+def print_scout_packets(snapshot)
+  packets = Array(snapshot["scout_packets"])
+  return if packets.empty?
+
+  puts
+  puts "Scout Packets (#{packets.size})"
+  puts "----------------#{'-' * packets.size.to_s.size}"
+  packets.each_with_index do |packet, index|
+    task = packet.fetch("task")
+    puts
+    puts "##{index + 1} #{packet.fetch("packet_id")} #{task.fetch("title")}"
+    puts "mode=#{packet.fetch("mode")} reason=#{packet.fetch("reason")}"
+    puts "task=#{task.fetch("url")}"
+    puts "pr=#{packet.dig("devops", "pr_url") || "missing"}"
+    puts
+    puts packet.fetch("prompt")
+  end
+end
+
 source = if OPTIONS[:offline_fixture]
            read_json(OPTIONS[:offline_fixture])
          else
@@ -477,4 +641,5 @@ if OPTIONS[:json]
 else
   print_snapshot(snapshot)
   print_plan(snapshot)
+  print_scout_packets(snapshot)
 end

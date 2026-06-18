@@ -67,6 +67,40 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_equal "feature_agent", blocked.fetch("tasks").first.fetch("owner")
   end
 
+  test "prints scout packets for reviewable PR lanes" do
+    out, err, status = devops_cycle("--scout-packets")
+
+    assert status.success?, err
+    assert_includes out, "Scout Packets (2)"
+    assert_includes out, "scout-task-pr123 Ship sidebar recovery"
+    assert_includes out, "mode=parallel_scout reason=standard PR review"
+    assert_includes out, "scout-task-engine789 Ship shared engine table headers"
+    assert_includes out, "mode=serialized_scout reason=multiple repositories: studio-engine + turf-monster"
+    assert_includes out, "Do not merge, deploy, publish gems, change provider config, rotate credentials, or force-push."
+    assert_includes out, "Recommend one outcome to Avi: merge-ready, wait-for-CI, request-changes, or conductor-review."
+  end
+
+  test "includes scout packets in JSON when requested" do
+    out, err, status = devops_cycle("--json", "--scout-packets")
+
+    assert status.success?, err
+    snapshot = JSON.parse(out)
+    assert_equal 2, snapshot.fetch("scout_packets").size
+    assert_equal 1, snapshot.dig("plan", "summary", "parallel_pr_review")
+
+    parallel = snapshot.fetch("scout_packets").find { |packet| packet.fetch("packet_id") == "scout-task-pr123" }
+    assert_equal "parallel_scout", parallel.fetch("mode")
+    assert_equal "https://github.com/amcritchie/mcritchie-studio/pull/123", parallel.dig("devops", "pr_url")
+    assert_includes parallel.fetch("guardrails"), "Do not merge PRs."
+    assert_includes parallel.fetch("prompt"), "Work from /Users/alex/projects as an Avi review scout for task-pr123."
+    assert_includes parallel.fetch("prompt"), "Return a concise scout report with file/line references where applicable."
+
+    slugs = snapshot.fetch("scout_packets").map { |packet| packet.dig("task", "slug") }
+    refute_includes slugs, "task-block000"
+    refute_includes slugs, "task-qa456"
+    refute_includes slugs, "task-prod999"
+  end
+
   private
 
   def devops_cycle(*args)

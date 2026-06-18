@@ -126,6 +126,7 @@ Studio:
 cd /Users/alex/projects/mcritchie-studio
 bin/devops-cycle
 bin/devops-cycle --plan
+bin/devops-cycle --scout-packets
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -149,6 +150,18 @@ comfortably hold in context. The plan separates:
 The plan is still read-only. It does not merge, deploy, update tasks, or create
 sub-agents. The conductor uses it to decide which work can safely happen in
 parallel and which tasks must be bundled or sequenced.
+
+Use `bin/devops-cycle --scout-packets` when the conductor wants to hand
+review-only work to additional sessions. Scout packets are copy-paste prompts
+for the `parallel_pr_review` and `serialized_pr_review` lanes. They include the
+task URL, PR URL, repos, branch, risk tags, acceptance criteria, expected checks,
+completed checks, latest task note, qa-intake status, and explicit guardrails.
+
+Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
+credentials, force-push, or take over the feature branch. Their job is to return
+a concise findings report and one recommendation to Avi: merge-ready,
+wait-for-CI, request-changes, or conductor-review. Avi keeps the final
+integration and deployment decision.
 
 `bin/qa-intake` is the lower-level PR/worktree intake. It refreshes
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
