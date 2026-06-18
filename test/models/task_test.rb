@@ -205,6 +205,18 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "feat/example", metadata["branch"]
   end
 
+  test "array-form devops lists keep commas; string-form still splits on commas" do
+    metadata = Task.normalize_devops_metadata(
+      "acceptance" => ["Header stays pinned, even while scrolling", "Email still works"],
+      "risk_tags" => "auth, deploy"
+    )
+
+    # Array items are preserved verbatim — a comma inside a sentence is kept.
+    assert_equal ["Header stays pinned, even while scrolling", "Email still works"], metadata["acceptance"]
+    # String (UI free-text) fields still split on comma and newline.
+    assert_equal ["auth", "deploy"], metadata["risk_tags"]
+  end
+
   test "devops helpers expose stored release metadata" do
     task = Task.create!(
       title: "Ship a feature",
