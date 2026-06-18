@@ -7,20 +7,20 @@
 <% sidebar_expanded_attr = "$store.sidebars && $store.sidebars.linkTreeOpen ? 'true' : 'false'" %>
 <% sidebar_toggle_label = admin? ? "Toggle admin menu" : "Toggle links menu" %>
 
-<div class="flex gap-2">
+<div class="flex gap-2 min-w-0 max-w-[18rem] sm:max-w-[20rem]">
   <% if logged_in? %>
-    <div class="flex-1">
-      <div class="flex items-center gap-2 leading-none" :style="'padding: 0 6px;' + ($store.devMode ? 'background: cornflowerblue;' : '')">
+    <div class="flex-1 min-w-0">
+      <div class="flex min-w-0 items-center gap-2 leading-none" :style="'padding: 0 6px;' + ($store.devMode ? 'background: cornflowerblue;' : '')">
         <% if balance_html.present? %>
           <%= raw balance_html %>
         <% end %>
-        <div class="flex items-center gap-2 ml-auto self-end">
+        <div class="flex flex-shrink-0 items-center gap-2 ml-auto self-end">
           <%= raw extra_icons_html %>
           <%= render "components/link_sidebar_trigger" %>
           <%= render "components/theme_toggle_morph" %>
         </div>
         <button type="button"
-                class="text-heading font-semibold hover:text-primary transition text-base leading-none truncate text-right bg-transparent border-0 p-0"
+                class="min-w-0 max-w-[8rem] sm:max-w-[10rem] text-heading font-semibold hover:text-primary transition text-base leading-none truncate text-right bg-transparent border-0 p-0"
                 @click.stop="<%= sidebar_toggle_action %>"
                 aria-label="<%= sidebar_toggle_label %>"
                 aria-controls="studio-link-sidebar studio-link-sidebar-mobile"
@@ -77,7 +77,7 @@
            }"
            @navbar-replay-level.window="replayLevel()"
            @navbar-seeds-update.window="handleSeedsUpdate($event.detail)"
-           class="relative mt-0.5" style="height: 14px;">
+           class="relative mt-0.5 min-w-[8rem]" style="height: 14px;">
         <div class="absolute inset-y-0 left-0 rounded z-0" style="background: var(--color-cta); transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);" :style="{ width: barWidth + '%' }"></div>
         <div class="absolute inset-0 flex items-center justify-between px-1.5 font-mono text-muted z-[1] nav-bar-text">
           <span>
@@ -88,7 +88,7 @@
           <% if current_user.respond_to?(:level) && current_user.level.present? %>
             <span :class="leveledUp && 'nav-level-pop'" x-text="'Level ' + displayLevel">Level <%= current_user.level %></span>
           <% elsif show_logout_link %>
-            <%= link_to "Log out", logout_path, class: "font-mono text-muted no-underline nav-bar-text" %>
+            <%= link_to "Log out", logout_path, class: "font-mono text-muted no-underline nav-bar-text whitespace-nowrap" %>
           <% end %>
         </div>
         <div class="absolute inset-0 flex items-center justify-between px-1.5 font-mono text-white z-[2] nav-bar-text" :style="{ 'clip-path': 'inset(0 ' + (100 - barWidth) + '% 0 0)' }">
@@ -100,7 +100,7 @@
           <% if current_user.respond_to?(:level) && current_user.level.present? %>
             <span :class="leveledUp && 'nav-level-pop'" x-text="'Level ' + displayLevel">Level <%= current_user.level %></span>
           <% elsif show_logout_link %>
-            <%= link_to "Log out", logout_path, class: "font-mono text-white no-underline nav-bar-text" %>
+            <%= link_to "Log out", logout_path, class: "font-mono text-white no-underline nav-bar-text whitespace-nowrap" %>
           <% end %>
         </div>
       </div>
