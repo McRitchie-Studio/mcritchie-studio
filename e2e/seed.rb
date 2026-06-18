@@ -52,6 +52,14 @@ SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "new", priority: 0, agent_slug: "alex")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "in_progress", priority: 1, agent_slug: "mack", queued_at: 1.day.ago, started_at: 2.hours.ago)
 Task.create!(title: "Deploy v2.0", description: "Deploy latest version to production.", stage: "done", priority: 2, agent_slug: "alex", queued_at: 3.days.ago, started_at: 2.days.ago, completed_at: 1.day.ago)
+Task.create!(
+  title: "Sidebar back-navigation production repro",
+  slug: "task-ea8541e4b5b6",
+  description: "Fixture for the production sidebar back-navigation regression.",
+  stage: "failed",
+  priority: 1,
+  agent_slug: "alex"
+)
 
 # Activities
 Activity.create!(agent_slug: "alex", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
