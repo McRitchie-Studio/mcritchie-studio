@@ -14,6 +14,7 @@ This file names credential locations so agents can ask for or reference the righ
 | Item | Vault | Purpose | Typical consumer |
 |------|-------|---------|------------------|
 | `agent.heroku` | `agents` | Heroku API key | `bin/ecosystem-build` |
+| `Agent API Secret` | `agents` | Task-board API secret (`AGENT_API_SECRET`); auth for the agent task API. Also in app `.env` + Heroku config | McRitchie Studio task board (`POST /api/v1/auth`); see `task-board-api.md` |
 | `agent.solana` | `agents` | Legacy Alex Bot Solana wallet; retired after key rotation | Historical reference only |
 | `agent.alex.solana` | `agents` | Rotated Alex Bot/admin wallet | turf-vault and Turf Monster ops |
 | `agent.mason.solana` | `agents` | Mason wallet | multisig / agent wallet |
