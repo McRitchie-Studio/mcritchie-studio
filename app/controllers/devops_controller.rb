@@ -3,6 +3,7 @@ class DevopsController < ApplicationController
 
   def index
     @apps = devops_test_suites.fetch("apps", {})
+    @worktree_registry = params[:refresh] ? WorktreeRegistry.refresh! : WorktreeRegistry.load
   end
 
   private
