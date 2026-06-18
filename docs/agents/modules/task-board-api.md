@@ -95,8 +95,11 @@ here.)
 - `devops` — **top-level** object, normalized and stored at `metadata.devops`
 
 `slug` is **not** writable — it is auto-generated as `task-<hex>` on create. The
-human-readable handle lives in `devops.worktree_slug` (or the description); see
-[`devops-task-board.md`](devops-task-board.md).
+human-readable handle lives in `devops.worktree_slug`; see
+[`devops-task-board.md`](devops-task-board.md). Bind the generated production
+task URL to the local stack with
+`bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>` so
+terminal context and PR bodies can lead from the task record.
 
 ## Stages
 
@@ -123,7 +126,7 @@ Send `devops` as a top-level key; it is normalized
 (`Task.normalize_devops_metadata`) and merged into `metadata.devops`. Only these
 keys survive (`Task::DEVOPS_KEYS`):
 
-- **Scalars:** `kind`, `branch`, `pr_url`, `local_url`, `qa_url`,
+- **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
   `production_url`, `release_train`, `requires_release_conductor`
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`
 
@@ -162,6 +165,7 @@ api POST /api/v1/tasks '{
   "agent_slug": "shannon",
   "devops": {
     "kind": "feature",
+    "worktree_slug": "admin-users-sticky-header",
     "repositories": ["mcritchie-studio"],
     "risk_tags": ["ui"],
     "acceptance": ["Header stays pinned while the table scrolls"],
@@ -178,6 +182,7 @@ api PATCH /api/v1/tasks/task-XXXX '{
   "stage": "pr_review",
   "devops": {
     "kind": "feature",
+    "worktree_slug": "admin-users-sticky-header",
     "repositories": ["mcritchie-studio"],
     "risk_tags": ["ui"],
     "branch": "feat/admin-users-sticky-header",

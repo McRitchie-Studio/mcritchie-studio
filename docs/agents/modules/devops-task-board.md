@@ -31,6 +31,13 @@ work in chat and no task exists yet, the feature agent creates a flat task from
 the ask before allocating a worktree or editing files. If a task already exists,
 the agent updates that task instead of creating a duplicate.
 
+Feature agents should first identify the feature and accumulate acceptance
+criteria until the agent and Mr. McRitchie are aligned on the goal. The task is
+the durable version of that alignment. Exceptions are narrow conductor sessions
+such as Avi running the DevOps/QA cycle, pure read-only audits, and explicit
+release/deploy lanes; those sessions still update tasks when they change
+handoff state.
+
 Use one task per independently reviewable increment. For a vertical feature
 that touches multiple repos and ships together, either use one task with all
 repos listed in `repositories`, or separate flat tasks that share the same
@@ -40,6 +47,9 @@ Minimum task setup before implementation:
 
 - `title` and `description` summarize the user-visible ask.
 - `kind` is `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup`.
+- `worktree_slug` is the human-readable feature handle used for the branch,
+  worktree path, terminal context, and local stack. The app-generated
+  `Task.slug` remains the immutable production task id.
 - `repositories` lists every repo expected to change.
 - `acceptance` records concrete acceptance criteria. If the ask is ambiguous,
   confirm criteria with Mr. McRitchie before building.
@@ -72,8 +82,11 @@ Stage movement:
 
 Handoff connections:
 
-- The task slug should match the worktree slug whenever practical.
-- The PR body should mention the task slug or task URL.
+- Set `devops.worktree_slug` to the human-readable worktree slug. The generated
+  `Task.slug` is not human-readable and should not be manually changed.
+- Bind the production task to the local stack with
+  `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`.
+- The PR body and final handoff should lead with the task URL before the PR URL.
 - The task must record `branch`, `pr_url`, `local_url` when applicable,
   `qa_url` after QA deployment, and `production_url` after production deploy.
 - `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
@@ -150,6 +163,7 @@ Supported fields:
 | Field | Meaning |
 |---|---|
 | `kind` | `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup` |
+| `worktree_slug` | Human-readable feature handle used for the worktree path, branch, terminal context, and task binding |
 | `repositories` | Repos touched by this increment, such as `mcritchie-studio` or `turf-monster` |
 | `branch` | Feature branch or release branch |
 | `pr_url` | GitHub PR URL |
@@ -172,6 +186,7 @@ Example API payload:
   "agent_slug": "shannon",
   "devops": {
     "kind": "bug",
+    "worktree_slug": "qa-wallet-chooser",
     "repositories": ["turf-monster"],
     "branch": "fix/qa-wallet-chooser",
     "local_url": "http://localhost:3102/contests",

@@ -30,8 +30,11 @@ Default feature sessions are Feature lane only.
 
 1. **Start** from `/Users/alex/projects`.
 2. **Read** root `AGENTS.md`, then the relevant app docs.
-3. **Create or update** the McRitchie Studio task-board item with affected
-   repos, acceptance criteria, risk tags, and expected checks. Use
+3. **Create or update** the production McRitchie Studio task-board item with a
+   human-readable `devops.worktree_slug`, affected repos, acceptance criteria,
+   risk tags, and expected checks. A feature agent should accumulate acceptance
+   criteria with Mr. McRitchie until the goal is aligned before implementation.
+   Use
    [`devops-task-board.md`](devops-task-board.md) for the required metadata
    contract. This task is mandatory for feature, bug, QA, release, cleanup, and
    active-doc work that may produce a branch, PR, QA deploy, production deploy,
@@ -43,6 +46,7 @@ Default feature sessions are Feature lane only.
    cd /Users/alex/projects/mcritchie-studio
    bin/agent-worktree plan <app> <task-slug>
    bin/agent-worktree new <app> <task-slug>
+   bin/agent-worktree bind-task <app> <task-slug> <task-record-slug-or-url>
    ```
 
 5. **Build** only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
@@ -64,10 +68,10 @@ Default feature sessions are Feature lane only.
    ```
 
 10. **Handoff** the PR/QA packet by moving the task to `pr_review`. The PR
-   body should mention the task slug or URL, and the task should link back to
-   the PR. Add a task conversation `handoff` note summarizing what changed,
-   what was verified, and what Avi should inspect first. Do not merge to `main`
-   unless assigned the QA or Release lane.
+   body and final handoff should lead with the task URL, and the task should
+   link back to the PR. Add a task conversation `handoff` note summarizing what
+   changed, what was verified, and what Avi should inspect first. Do not merge
+   to `main` unless assigned the QA or Release lane.
 
 ## Feature Graduation Rules
 
@@ -75,7 +79,8 @@ Before a branch is ready for QA, it must be:
 
 - in a generated worktree, not the primary checkout
 - represented by a McRitchie Studio task with acceptance criteria, affected
-  repos, risk tags, branch or PR URL, local URL when applicable, and checks run
+  repos, risk tags, human-readable worktree slug, branch or PR URL, local URL
+  when applicable, and checks run
 - on a feature branch, not `main`
 - committed cleanly
 - ahead of `origin/main`

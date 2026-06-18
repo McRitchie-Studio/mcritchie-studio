@@ -15,7 +15,7 @@ class Task < ApplicationRecord
   BOARD_STAGES = (STAGES - ["archived"]).freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
-    kind branch pr_url local_url qa_url production_url release_train
+    kind worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor
   ].freeze
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan].freeze
@@ -60,6 +60,10 @@ class Task < ApplicationRecord
 
   def devops_release_train
     devops.fetch("release_train", "").presence
+  end
+
+  def devops_worktree_slug
+    devops.fetch("worktree_slug", "").presence
   end
 
   def devops_repositories

@@ -66,7 +66,7 @@
 
 - **Slug-based FKs** — All foreign keys use slug strings (e.g. `agent_slug`), not integer IDs. Associations: `foreign_key: :agent_slug, primary_key: :slug`.
 - **Sluggable concern** (from studio engine) — `before_save :set_slug` via `name_slug` method. Used by User, Agent, Skill, Usage, Team, Person, Contract, Athlete.
-- **Task slug** — Immutable random hex generated once on create via `before_validation`. Does NOT use Sluggable.
+- **Task slug** — Immutable random hex generated once on create via `before_validation`. Does NOT use Sluggable. DevOps tasks store the human-readable feature/worktree handle in `metadata["devops"]["worktree_slug"]`.
 - **Task transitions** — Enforced server-side. Valid transitions: new→queued, queued→in_progress/failed, in_progress→done/failed, done→archived, failed→archived/queued. Invalid transitions raise RuntimeError. API `task_params` does NOT permit `:stage` — stage changes must go through dedicated transition endpoints (`queue`, `start`, `complete`, `fail_task`, `archive`).
 - **Position ordering** — Both News and Content use position integers in 100-increments, ordered DESC (highest = top of kanban = processed first by agents). Initial position set on create. Position updated when stage changes. Reorder via POST `/news/reorder` or `/contents/reorder`.
 - **News slug** — Immutable random hex (`news-*`) generated once on create via `before_validation`. Does NOT use Sluggable. Free movement between stages via PATCH JSON (stage permitted in `news_params`). Transition methods: `review!`, `process_news!`, `refine!`, `conclude!`, `archive!`.

@@ -52,18 +52,23 @@
                 class: "input-field" %>
         </div>
         <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Worktree Slug</label>
+          <%= text_field_tag "task[devops][worktree_slug]", task.devops_worktree_slug,
+                class: "input-field", placeholder: "admin-users-sticky-header" %>
+        </div>
+        <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Repositories</label>
           <%= text_field_tag "task[devops][repositories]", task.devops_repositories.join(", "),
                 class: "input-field", placeholder: "mcritchie-studio, turf-monster" %>
         </div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mb-4">
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Release Train</label>
           <%= text_field_tag "task[devops][release_train]", task.devops_release_train,
                 class: "input-field", placeholder: "2026-06-17-turf-qa" %>
         </div>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-4 mb-4">
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Branch</label>
           <%= text_field_tag "task[devops][branch]", task.devops_field("branch"),
