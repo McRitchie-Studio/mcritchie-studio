@@ -30,6 +30,10 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", admin_signing_requests_path
     assert_select "a[href=?]", admin_links_path
     assert_select "table#admin-users-table"
+    assert_select "table#admin-users-table.sticky-data-table"
+    assert_select "table#admin-users-table[data-sticky-table-header]"
+    assert_select "div[data-sticky-table-scroll] table#admin-users-table"
+    assert_select "section#admin-users[class*='scroll-mt-']"
     assert_select "table#request-logs-table"
     assert_match @admin.email, response.body
     assert_match "Synthetic request failure", response.body
