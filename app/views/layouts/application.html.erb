@@ -132,14 +132,14 @@
       <% end %>
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
            :class="scrolled ? 'py-2' : 'py-6'">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
+        <div class="flex items-center justify-between gap-4 min-w-0">
+          <div class="flex items-center gap-6 min-w-0">
             <%= link_to root_path, class: "inline-flex items-center gap-3 group" do %>
               <%= image_tag "logo-icon.svg", class: "transition-all duration-300", "x-bind:class": "scrolled ? 'w-5 h-5' : 'w-8 h-8'" %>
               <h1 class="font-extrabold text-heading tracking-tight transition-all duration-300"
                   x-bind:class="scrolled ? 'text-base' : 'text-2xl'">McRitchie <span class="text-primary">Studio</span></h1>
             <% end %>
-            <nav class="hidden md:flex items-center gap-4">
+            <nav class="hidden md:flex items-center gap-4 min-w-0">
               <%= link_to "Meet the Agents 🦞", activities_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
               <%= link_to "Builders", builders_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
             </nav>
