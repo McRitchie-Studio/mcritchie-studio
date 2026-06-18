@@ -395,22 +395,35 @@ New apps should ship:
 
 ## Discord Deploy Notices
 
-QA and production deploy tools should send a Discord message after successful
-deployment when `DISCORD_DEPLOY_WEBHOOK_URL` is present in the environment.
-Never commit the webhook URL.
+Production deploy conductors must use `POST /api/v1/release_notes` to send the
+canonical Discord Release Notes message after a successful production deploy.
+Do not hand-format the Discord post when the API is available.
 
-Until task-board release-train querying is automated, conductors should pass
-the accepted task list explicitly:
+Call the API with the accepted production task slugs, release metadata, URL, and
+verification checks. The API groups linked task titles by application in the
+standard ecosystem order and points every task link at the production task read
+page on McRitchie Studio.
+
+Run a dry-run first:
 
 ```bash
-RELEASE_TRAIN=2026-06-17-turf-admin-identity \
-DEPLOY_TASKS="Turf #149 team admin email" \
-DISCORD_DEPLOY_WEBHOOK_URL="$DISCORD_DEPLOY_WEBHOOK_URL" \
-bin/qa-server deploy turf-monster origin/main --yes
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
 ```
 
-The message should include app, environment, release/SHA, URL, `/up` status,
-release train, and tasks deployed.
+After confirming the rendered `message`, repeat the same request without
+`dry_run`. Production uses `DISCORD_RELEASE_NOTES_WEBHOOK_URL`, with
+`DISCORD_DEPLOY_WEBHOOK_URL` retained as a fallback for older environments.
+Never commit webhook URLs.
 
 ## Future Heartbeats
 

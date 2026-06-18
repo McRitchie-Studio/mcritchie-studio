@@ -66,6 +66,7 @@ Base path `/api/v1`. From `config/routes.rb`:
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/auth` | Exchange secret → bearer token |
+| `POST` | `/release_notes` | Send canonical Discord release notes for deployed task slugs |
 | `GET` | `/tasks` | List tasks (newest first, paginated) |
 | `GET` | `/tasks/:slug` | Show one task |
 | `POST` | `/tasks` | Create a task |
@@ -81,6 +82,57 @@ Base path `/api/v1`. From `config/routes.rb`:
 returns `{ "data": [...], "meta": { page, per_page, total, total_pages } }`.
 (There are also `agents`, `activities`, and `usages` resources; out of scope
 here.)
+
+### Release Notes
+
+`POST /api/v1/release_notes` is the canonical way to post production Release
+Notes to Discord. Do not hand-compose the Discord message when this API is
+available.
+
+The endpoint:
+
+- resolves the provided task slugs from the production task board
+- groups linked task titles by application in the standard ecosystem order
+- links every task to `https://mcritchie.studio/tasks/<task-slug>`
+- includes empty application sections as `No deployed tasks`
+- posts to `DISCORD_RELEASE_NOTES_WEBHOOK_URL` with
+  `DISCORD_DEPLOY_WEBHOOK_URL` as a compatibility fallback
+
+Request body:
+
+```json
+{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"]
+}
+```
+
+Use `dry_run: true` first to render and review the message without sending it:
+
+```bash
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
+```
+
+Successful responses return `{ "data": { "delivered": true|false,
+"dry_run": true|false, "message": "...", "task_slugs": [...] } }`.
+Unknown task slugs return `422 UNKNOWN_TASKS`; missing webhook config on a live
+send returns `422 MISSING_WEBHOOK`.
 
 ## Writable fields
 
@@ -201,6 +253,19 @@ api PATCH /api/v1/tasks/task-XXXX '{"stage": "qa_review"}'   # devops preserved 
 
 # 5. Done (after approved deploy + post-deploy check):
 api POST /api/v1/tasks/task-XXXX/complete '{"result": {"summary": "shipped", "production_url": "..."}}'
+
+# 6. Production release notes (dry-run first, then repeat without dry_run):
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-XXXX"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
 ```
 
 ## Verifying this doc
