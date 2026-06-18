@@ -36,6 +36,24 @@ module Api
         assert_equal ["Task card shows metadata", "QA URL opens"], @task.devops_acceptance
         assert @task.requires_release_conductor?
       end
+
+      test "create preserves commas inside array acceptance items" do
+        post api_v1_tasks_path,
+             params: {
+               title: "Comma in acceptance",
+               devops: {
+                 repositories: ["mcritchie-studio"],
+                 acceptance: ["Header stays pinned, even while scrolling", "Email still works"]
+               }
+             },
+             headers: @headers,
+             as: :json
+
+        assert_response :created
+        slug = JSON.parse(response.body).dig("data", "slug")
+        created = Task.find_by!(slug: slug)
+        assert_equal ["Header stays pinned, even while scrolling", "Email still works"], created.devops_acceptance
+      end
     end
   end
 end
