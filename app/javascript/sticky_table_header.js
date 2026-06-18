@@ -4,7 +4,9 @@ const SKIP_CONTAINER_SELECTOR = "[data-sticky-table-skip]";
 
 let stickyTables = [];
 let scheduled = false;
+let bootScheduled = false;
 let navResizeObserver = null;
+let tableMutationObserver = null;
 
 function navOffset() {
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--nav-h");
@@ -17,6 +19,15 @@ function scheduleUpdate() {
   requestAnimationFrame(() => {
     scheduled = false;
     stickyTables.forEach((stickyTable) => stickyTable.update());
+  });
+}
+
+function scheduleBoot() {
+  if (bootScheduled) return;
+  bootScheduled = true;
+  requestAnimationFrame(() => {
+    bootScheduled = false;
+    bootStickyTables();
   });
 }
 
@@ -101,6 +112,8 @@ class StickyTableHeader {
 }
 
 function bootStickyTables() {
+  startTableObserver();
+
   if (navResizeObserver) navResizeObserver.disconnect();
   if (window.ResizeObserver) {
     const header = document.querySelector("header");
@@ -113,6 +126,28 @@ function bootStickyTables() {
   stickyTables.forEach((stickyTable) => stickyTable.destroy());
   stickyTables = stickyTableCandidates().map((table) => new StickyTableHeader(table));
   scheduleUpdate();
+}
+
+function startTableObserver() {
+  if (!window.MutationObserver || tableMutationObserver || !document.body) return;
+
+  tableMutationObserver = new MutationObserver((mutations) => {
+    const shouldReboot = mutations.some((mutation) => (
+      Array.from(mutation.addedNodes).some(nodeContainsCandidateTable) ||
+      Array.from(mutation.removedNodes).some(nodeContainsCandidateTable)
+    ));
+
+    if (shouldReboot) scheduleBoot();
+  });
+
+  tableMutationObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function nodeContainsCandidateTable(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  if (node.matches(".sticky-table-header-clone") || node.closest(".sticky-table-header-clone")) return false;
+
+  return node.matches("table, thead, th") || Boolean(node.querySelector("table, thead, th"));
 }
 
 function stickyTableCandidates() {
@@ -143,7 +178,9 @@ document.addEventListener("turbo:load", bootStickyTables);
 document.addEventListener("DOMContentLoaded", bootStickyTables);
 document.addEventListener("turbo:before-cache", () => {
   if (navResizeObserver) navResizeObserver.disconnect();
+  if (tableMutationObserver) tableMutationObserver.disconnect();
   navResizeObserver = null;
+  tableMutationObserver = null;
   stickyTables.forEach((stickyTable) => stickyTable.destroy());
   stickyTables = [];
 });
