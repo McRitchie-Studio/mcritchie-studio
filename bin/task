@@ -1,0 +1,186 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/task — deterministic CLI for the McRitchie Studio agent task board.
+#
+# Wraps /api/v1 so agents never hand-roll auth, JSON, or stage transitions.
+# Two footguns it removes for you:
+#   * `update` does read-merge-write on metadata.devops, so a partial update
+#     NEVER wipes existing devops fields (the raw API replaces them wholesale).
+#   * list flags are repeatable and sent as arrays, so commas inside individual
+#     values are preserved by the task-board API.
+#
+# Auth: AGENT_API_SECRET from ENV, else 1Password (op://agents/Agent API
+# Secret/AGENT_API_SECRET), else the repo .env. Base URL via TASK_API_BASE
+# (default https://mcritchie.studio).
+#
+# Usage:
+#   bin/task list [--stage S] [--agent A]
+#   bin/task show <slug>
+#   bin/task create --title T [--kind K] [--priority N] [--agent A] \
+#                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
+#                   [--branch B] [--pr-url U] [--local-url U] [--release-train T]
+#   bin/task update <slug> [same flags as create]   # merges into existing devops
+#   bin/task move <slug> <stage>                     # any of the 9 stages
+
+require "net/http"
+require "json"
+require "uri"
+
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+OP = "/opt/homebrew/bin/op"
+SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+
+SCALAR_FLAGS = {
+  "--kind" => "kind", "--branch" => "branch", "--pr-url" => "pr_url",
+  "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
+  "--release-train" => "release_train"
+}.freeze
+LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan" }.freeze
+TRANSITIONS = { "queued" => "queue", "in_progress" => "start", "done" => "complete", "failed" => "fail_task", "archived" => "archive" }.freeze
+STAGES = %w[new queued in_progress pr_review qa_review prod_ready done failed archived].freeze
+
+def warn!(msg) = $stderr.puts(msg)
+def die!(msg)
+  warn!("error: #{msg}")
+  exit 1
+end
+
+def agent_secret
+  env = ENV["AGENT_API_SECRET"]
+  return env if env && !env.empty?
+
+  if File.executable?(OP)
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue SystemCallError
+      ""
+    end
+    return op unless op.empty?
+  end
+
+  dotenv = File.join(__dir__, "..", ".env")
+  if File.exist?(dotenv)
+    line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
+    return line.split("=", 2)[1].to_s.strip if line
+  end
+  die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+end
+
+def token
+  @token ||= api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
+end
+
+def api(method, path, body = nil, auth: true)
+  uri = URI.join(BASE_URL, path)
+  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch }.fetch(method)
+  req = klass.new(uri)
+  req["Authorization"] = "Bearer #{token}" if auth
+  if body
+    req["Content-Type"] = "application/json"
+    req.body = JSON.generate(body)
+  end
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = (uri.scheme == "https")
+  http.read_timeout = 30
+  res = http.request(req)
+  parsed = res.body.to_s.empty? ? {} : (JSON.parse(res.body) rescue {})
+  unless res.code.to_i.between?(200, 299)
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
+  end
+  parsed
+end
+
+# Parse repeatable + scalar flags out of argv. Returns [positionals, flags-hash].
+def parse_flags(argv)
+  positionals = []
+  scalars = {}
+  lists = Hash.new { |h, k| h[k] = [] }
+  top = {}
+  i = 0
+  while i < argv.length
+    arg = argv[i]
+    if SCALAR_FLAGS.key?(arg)
+      scalars[SCALAR_FLAGS[arg]] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
+    elsif LIST_FLAGS.key?(arg)
+      lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
+    elsif %w[--title --description --agent --priority --stage].include?(arg)
+      top[arg.delete_prefix("--")] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
+    else
+      positionals << arg; i += 1
+    end
+  end
+  [positionals, scalars, lists, top]
+end
+
+def build_devops(base, scalars, lists)
+  devops = (base || {}).dup
+  scalars.each { |k, v| devops[k] = v }
+  lists.each { |k, v| devops[k] = v unless v.empty? }
+  devops
+end
+
+def top_body(top)
+  body = {}
+  body["title"] = top["title"] if top["title"]
+  body["description"] = top["description"] if top["description"]
+  body["agent_slug"] = top["agent"] if top["agent"]
+  body["priority"] = top["priority"].to_i if top["priority"]
+  body["stage"] = top["stage"] if top["stage"]
+  body
+end
+
+def print_task(task)
+  dv = task.dig("metadata", "devops") || {}
+  puts "#{task["slug"]}  [#{task["stage"]}]  #{task["title"]}"
+  puts "  agent: #{task["agent_slug"] || "-"}  kind: #{dv["kind"] || "-"}  repos: #{Array(dv["repositories"]).join(", ")}"
+  puts "  branch: #{dv["branch"] || "-"}  pr: #{dv["pr_url"] || "-"}"
+  puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
+end
+
+cmd = ARGV.shift || "help"
+case cmd
+when "list"
+  _pos, _sc, _ls, top = parse_flags(ARGV)
+  q = []
+  q << "stage=#{top["stage"]}" if top["stage"]
+  q << "agent_slug=#{top["agent"]}" if top["agent"]
+  path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"
+  tasks = api(:get, path)["data"] || []
+  tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
+  puts "(#{tasks.size} task(s))"
+when "show"
+  slug = ARGV.shift || die!("usage: bin/task show <slug>")
+  print_task(api(:get, "/api/v1/tasks/#{slug}")["data"])
+when "create"
+  _pos, scalars, lists, top = parse_flags(ARGV)
+  die!("create needs --title") unless top["title"]
+  devops = build_devops({}, scalars, lists)
+  body = top_body(top)
+  body["devops"] = devops unless devops.empty?
+  print_task(api(:post, "/api/v1/tasks", body)["data"])
+when "update"
+  slug = ARGV.shift || die!("usage: bin/task update <slug> [flags]")
+  _pos, scalars, lists, top = parse_flags(ARGV)
+  current = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  body = top_body(top)
+  if scalars.any? || lists.any?
+    devops = build_devops(current.dig("metadata", "devops"), scalars, lists)
+    body["devops"] = devops
+  end
+  die!("nothing to update") if body.empty?
+  print_task(api(:patch, "/api/v1/tasks/#{slug}", body)["data"])
+when "move"
+  slug = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
+  stage = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
+  die!("unknown stage #{stage.inspect}; one of: #{STAGES.join(", ")}") unless STAGES.include?(stage)
+  task = if (transition = TRANSITIONS[stage])
+    api(:post, "/api/v1/tasks/#{slug}/#{transition}")["data"]
+  else
+    api(:patch, "/api/v1/tasks/#{slug}", { stage: stage })["data"]
+  end
+  print_task(task)
+else
+  warn!(File.read(__FILE__)[/# Usage:.*?(?=\nrequire)/m].to_s.gsub(/^# ?/, ""))
+  exit(cmd == "help" ? 0 : 1)
+end
