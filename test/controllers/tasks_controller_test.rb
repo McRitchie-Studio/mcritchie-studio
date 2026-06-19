@@ -193,7 +193,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       metadata: {
         "devops" => {
           "kind" => "release",
-          "worktree_slug" => "task-board-devops-handoff",
+          "worktree_slug" => "task-board-release",
           "repositories" => ["mcritchie-studio"],
           "qa_url" => "https://qa.mcritchie.studio/tasks",
           "acceptance" => ["Task board shows release metadata"],
@@ -207,7 +207,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select ".label-upper", "DevOps handoff"
-    assert_includes response.body, "task-board-devops-handoff"
+    assert_includes response.body, "task-board-release"
     assert_select "a[href=?]", "https://qa.mcritchie.studio/tasks"
     assert_includes response.body, "Task board shows release metadata"
     assert_includes response.body, "Expected Test Plan"

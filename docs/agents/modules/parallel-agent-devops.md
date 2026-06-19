@@ -357,7 +357,7 @@ The intended cycle is:
 5. Avi or Steffon deploys the merged `main` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/main --yes`.
 6. Avi or Steffon moves the task to `qa_review` and records the QA URL,
-   deployed SHA, release-train tag, and QA checks run.
+   deployed SHA, release-train tag when present, and QA checks run.
 7. Mr. McRitchie reviews the QA URL.
 8. Accepted QA work moves to `prod_ready`.
 9. Production deploy happens only after Mr. McRitchie explicitly approves it.
@@ -411,7 +411,7 @@ Promote the accepted QA work to production:
 - read /Users/alex/projects/AGENTS.md and the deployment docs
 - pull latest main in mcritchie-studio and each affected app
 - confirm the QA deployment SHA and production target app
-- confirm the task-board release train and accepted tasks included in the rollout
+- confirm the task-board release train when present and accepted tasks included in the rollout
 - run the app-specific deployment command from the repo docs
 - verify production /up and the user-facing URL
 - update tasks with production URL/release SHA/check results

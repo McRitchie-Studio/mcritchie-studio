@@ -196,17 +196,17 @@ class TaskTest < ActiveSupport::TestCase
       "repositories" => "mcritchie-studio, turf-monster\nstudio-engine",
       "risk_tags" => ["auth", "auth", "deploy"],
       "acceptance" => "QA URL works\nProduction stays gated",
-      "checks_run" => "bin/rails test\nbin/qa-intake --help",
-      "worktree_slug" => " terminal-context-marker ",
-      "branch" => " feat/example "
+      "checks_run" => "bin/rails test\nbin/rubocop",
+      "branch" => " feat/example ",
+      "worktree_slug" => " task-board-contract "
     )
 
     assert_equal ["mcritchie-studio", "turf-monster", "studio-engine"], metadata["repositories"]
     assert_equal ["auth", "deploy"], metadata["risk_tags"]
     assert_equal ["QA URL works", "Production stays gated"], metadata["acceptance"]
-    assert_equal ["bin/rails test", "bin/qa-intake --help"], metadata["checks_run"]
-    assert_equal "terminal-context-marker", metadata["worktree_slug"]
+    assert_equal ["bin/rails test", "bin/rubocop"], metadata["checks_run"]
     assert_equal "feat/example", metadata["branch"]
+    assert_equal "task-board-contract", metadata["worktree_slug"]
   end
 
   test "array-form devops lists keep commas; string-form still splits on commas" do

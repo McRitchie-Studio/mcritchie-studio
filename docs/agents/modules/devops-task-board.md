@@ -26,10 +26,17 @@ a branch, PR, QA deployment, production deployment, or cleanup follow-up must
 have a McRitchie Studio task-board item. Chat, `bin/agent-worktree`, GitHub PRs,
 and `bin/qa-intake` are supporting channels; they do not replace the task.
 
-Create or update the task before implementation starts. If Mr. McRitchie starts
-work in chat and no task exists yet, the feature agent creates a flat task from
-the ask before allocating a worktree or editing files. If a task already exists,
-the agent updates that task instead of creating a duplicate.
+Create or update the durable handoff task in production McRitchie Studio at
+`https://mcritchie.studio` before implementation starts. Local, QA, and
+worktree task boards are only for testing task-board behavior; they are not
+durable handoff records. If an agent records task metadata outside production
+while implementing, the agent must backfill or update the production task before
+PR handoff.
+
+If Mr. McRitchie starts work in chat and no task exists yet, the feature agent
+creates a flat production task from the ask before allocating a worktree or
+editing files. If a task already exists, the agent updates that task instead of
+creating a duplicate.
 
 Feature agents should first identify the feature and accumulate acceptance
 criteria until the agent and Mr. McRitchie are aligned on the goal. The task is
@@ -70,7 +77,8 @@ Stage movement:
 2. Move to `in_progress` when an agent claims the task and creates or enters the
    worktree.
 3. Move to `pr_review` only after the branch is pushed, the PR exists, the
-   local URL is recorded when applicable, and `checks_run` is recorded.
+   local URL is recorded when applicable, and `checks_run` records actual
+   feature-agent verification.
 4. Move to `qa_review` only after Avi merges the PR and deploys or starts the
    accepted result on a QA/local review target. Record QA URL, deployed SHA, and
    QA checks.
@@ -94,8 +102,8 @@ Handoff connections:
 - `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
   should join that queue back to tasks and leave feedback on the task or PR when
   metadata is missing.
-- Final handoff should name the task, PR, release train, URLs, `checks_run`,
-  deployment SHA/release, and cleanup decision.
+- Final handoff should name the task, PR, release train when present, URLs,
+  `checks_run`, deployment SHA/release, and cleanup decision.
 
 ## Task Conversation and QA Feedback
 
@@ -201,7 +209,7 @@ Supported fields:
 | `local_url` | Worktree review URL |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
-| `release_train` | Shared tag for tasks promoted together |
+| `release_train` | Optional shared tag for tasks promoted together |
 | `requires_release_conductor` | `true` when production deploy, gem publish, provider config, or env change is involved |
 | `risk_tags` | Short tags such as `auth`, `email`, `solana`, `payment`, `migration`, `ui`, `provider` |
 | `acceptance` | Acceptance criteria, one item per line |
@@ -250,10 +258,11 @@ Before implementation, the agent should record or confirm:
 - acceptance criteria
 - likely risk tags
 - expected local proof URL
-- expected tests/checks
+- expected tests/checks in `test_plan`
 
 During handoff, the agent updates:
 
+- worktree slug in `worktree_slug`
 - branch
 - PR URL
 - local URL
@@ -354,7 +363,9 @@ specific or should be visible on the PR.
 ## Release Train Tags
 
 Use `release_train` as a grouping label, not a hierarchy. A conductor can filter
-tasks by one release train and promote those accepted tasks together.
+tasks by one release train and promote those accepted tasks together. Leave it
+blank for independent fixes that can be reviewed, QAed, released, and cleaned up
+alone.
 
 Good release-train examples:
 
