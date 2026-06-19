@@ -18,7 +18,7 @@ class Task < ApplicationRecord
     kind worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor
   ].freeze
-  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan].freeze
+  DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
@@ -82,6 +82,10 @@ class Task < ApplicationRecord
     devops_list("test_plan")
   end
 
+  def devops_checks_run
+    devops_list("checks_run")
+  end
+
   def devops_url(name)
     devops.fetch("#{name}_url", "").presence
   end
@@ -113,10 +117,20 @@ class Task < ApplicationRecord
   end
 
   def self.normalize_devops_list(value)
-    Array(value).flat_map { |item| item.to_s.split(/[\n,]/) }
-                .map(&:strip)
-                .reject(&:blank?)
-                .uniq
+    # Array input (the JSON API / bin/task) is already delimited — each element
+    # is one item, so split ONLY on newlines. Commas are legitimate inside
+    # acceptance/test_plan sentences and must be preserved. String input (UI
+    # free-text fields) keeps the newline+comma split so a single field can
+    # carry several comma-separated entries.
+    parts =
+      if value.is_a?(Array)
+        value.flat_map { |item| item.to_s.split("\n") }
+      else
+        value.to_s.split(/[\n,]/)
+      end
+    parts.map(&:strip)
+         .reject(&:blank?)
+         .uniq
   end
 
   # Postgres advisory locks are session-scoped — try_acquire and release

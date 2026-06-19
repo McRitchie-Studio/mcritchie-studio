@@ -138,11 +138,28 @@ use QA Heroku apps only, with production-like Rails boot and QA-safe config.
 Production deploy remains a separate explicit approval after Mr. McRitchie
 reviews the QA URL.
 
-When `DISCORD_DEPLOY_WEBHOOK_URL` is available, QA and production deploy tools
-should send a post-deploy Discord notice with app, environment, release/SHA,
-URL, `/up` status, release train, and tasks deployed. Pass `RELEASE_TRAIN` and
-`DEPLOY_TASKS` explicitly until the deploy tooling can query the task board
-directly. Never commit the webhook URL.
+Production deploy conductors should send Release Notes through McRitchie
+Studio's authenticated task-board API after successful production verification:
+
+```bash
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
+```
+
+Review the returned `message`, then repeat without `dry_run` to post the
+canonical Discord message. The API groups linked task titles by application and
+links tasks to their production McRitchie Studio task pages. Production uses
+`DISCORD_RELEASE_NOTES_WEBHOOK_URL`, with `DISCORD_DEPLOY_WEBHOOK_URL` as a
+compatibility fallback. Never commit webhook URLs.
 
 Current intended QA apps:
 

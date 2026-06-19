@@ -2,20 +2,20 @@ module LinkTreeHelper
   def public_link_sections
     sections = [
       { title: "Studio", links: [
-        { label: "Dashboard", href: dashboard_path, emoji: "📊", desc: "Overview + activity" },
-        { label: "Agents", href: agents_path, emoji: "🦞", desc: "Meet the McRitchie agents" },
-        { label: "Tasks", href: tasks_path, emoji: "✅", desc: "Task board" },
-        { label: "News", href: news_index_path, emoji: "📰", desc: "News pipeline" },
-        { label: "Content", href: contents_path, emoji: "🎬", desc: "Content pipeline" },
+        { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },
+        { label: "Agents", href: agents_path, emoji: "🦞", hover_emoji: "🤝", desc: "Meet the McRitchie agents" },
+        { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
+        { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
+        { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
       ] },
       { title: "NFL", links: [
-        { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", desc: "Rankings + grades" },
-        { label: "2026 Season", href: games_season_path(2026), emoji: "📅", desc: "Schedule + results" },
+        { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },
+        { label: "2026 Season", href: games_season_path(2026), emoji: "📅", hover_emoji: "🏟️", desc: "Schedule + results" },
       ] },
       { title: "Directory", links: [
-        { label: "Teams", href: teams_path, emoji: "🛡️", desc: "All teams" },
-        { label: "People", href: people_path, emoji: "👤", desc: "Players + staff" },
-        { label: "Docs", href: docs_path, emoji: "📚", desc: "Documentation" },
+        { label: "Teams", href: teams_path, emoji: "🛡️", hover_emoji: "📋", desc: "All teams" },
+        { label: "People", href: people_path, emoji: "👤", hover_emoji: "🪪", desc: "Players + staff" },
+        { label: "Docs", href: docs_path, emoji: "📚", hover_emoji: "🔎", desc: "Documentation" },
       ] },
     ]
 
@@ -27,6 +27,7 @@ module LinkTreeHelper
             label: satellite.display_name,
             href: satellite.url_for(logged_in: logged_in?),
             emoji: satellite.emoji.presence || "🛰️",
+            hover_emoji: satellite_hover_emoji(satellite.slug),
             target: "_blank",
           }
         end,
@@ -39,25 +40,25 @@ module LinkTreeHelper
   def admin_link_sections
     [
       { title: "On-chain", links: [
-        { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", featured: true,
+        { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", hover_emoji: "✍️", featured: true,
           desc: "Keyless multisig — build, sign in your own Phantom, broadcast. Durable-nonce ready." },
       ] },
       { title: "Site", links: [
-        { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", desc: "Users + request logs" },
-        { label: "Theme", href: admin_theme_path, emoji: "🎨", desc: "Palette + dark mode" },
-        { label: "Schema", href: admin_schema_path, emoji: "🗂️", desc: "DB schema browser" },
+        { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", hover_emoji: "🔬", desc: "Users + request logs" },
+        { label: "Theme", href: admin_theme_path, emoji: "🎨", hover_emoji: "🌓", desc: "Palette + dark mode" },
+        { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
       ] },
       { title: "Ops", links: [
-        { label: "DevOps", href: devops_path, emoji: "🚦", desc: "Apps, test suites, and deploy checks" },
-        { label: "Error logs", href: "/error_logs", emoji: "🚨", desc: "Captured errors" },
-        { label: "Toast test", href: toast_test_path, emoji: "🔔", desc: "Notification harness" },
-        { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", desc: "OAuth handshake" },
+        { label: "DevOps", href: devops_path, emoji: "🚦", hover_emoji: "🛠️", desc: "Apps, test suites, and deploy checks" },
+        { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },
+        { label: "Toast test", href: toast_test_path, emoji: "🔔", hover_emoji: "✨", desc: "Notification harness" },
+        { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", hover_emoji: "🔐", desc: "OAuth handshake" },
       ] },
       { title: "Data", links: [
-        { label: "AI Builder Multiple", href: admin_ai_builder_multiple_path, emoji: "📈", desc: "GitHub public commit pace backtest" },
-        { label: "News workflow", href: workflow_news_index_path, emoji: "🛠️", desc: "Intake → conclude board" },
-        { label: "Merge people", href: merge_people_path, emoji: "🔀", desc: "Resolve duplicate people" },
-        { label: "Duplicates", href: duplicates_people_path, emoji: "👥", desc: "Duplicate candidates" },
+        { label: "AI Builder Multiple", href: admin_ai_builder_multiple_path, emoji: "📈", hover_emoji: "🤖", desc: "GitHub public commit pace backtest" },
+        { label: "News workflow", href: workflow_news_index_path, emoji: "🛠️", hover_emoji: "🧭", desc: "Intake → conclude board" },
+        { label: "Merge people", href: merge_people_path, emoji: "🔀", hover_emoji: "✅", desc: "Resolve duplicate people" },
+        { label: "Duplicates", href: duplicates_people_path, emoji: "👥", hover_emoji: "🧹", desc: "Duplicate candidates" },
       ] },
     ]
   end
@@ -65,5 +66,15 @@ module LinkTreeHelper
   def sidebar_link_sections
     sections = public_link_sections
     sections + (admin? ? admin_link_sections.map { |section| section.merge(admin: true) } : [])
+  end
+
+  private
+
+  def satellite_hover_emoji(slug)
+    {
+      "turf-monster" => "👹",
+      "tax-studio" => "🧾",
+      "chain-ops" => "⚡"
+    }.fetch(slug, "✨")
   end
 end

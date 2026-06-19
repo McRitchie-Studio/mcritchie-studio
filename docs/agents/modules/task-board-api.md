@@ -76,6 +76,7 @@ Base path `/api/v1`. From `config/routes.rb`:
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/auth` | Exchange secret → bearer token |
+| `POST` | `/release_notes` | Send canonical Discord release notes for deployed task slugs |
 | `GET` | `/tasks` | List tasks (newest first, paginated) |
 | `GET` | `/tasks/:slug` | Show one task |
 | `POST` | `/tasks` | Create a task |
@@ -91,6 +92,57 @@ Base path `/api/v1`. From `config/routes.rb`:
 returns `{ "data": [...], "meta": { page, per_page, total, total_pages } }`.
 (There are also `agents`, `activities`, and `usages` resources; out of scope
 here.)
+
+### Release Notes
+
+`POST /api/v1/release_notes` is the canonical way to post production Release
+Notes to Discord. Do not hand-compose the Discord message when this API is
+available.
+
+The endpoint:
+
+- resolves the provided task slugs from the production task board
+- groups linked task titles by application in the standard ecosystem order
+- links every task to `https://mcritchie.studio/tasks/<task-slug>`
+- includes empty application sections as `No deployed tasks`
+- posts to `DISCORD_RELEASE_NOTES_WEBHOOK_URL` with
+  `DISCORD_DEPLOY_WEBHOOK_URL` as a compatibility fallback
+
+Request body:
+
+```json
+{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"]
+}
+```
+
+Use `dry_run: true` first to render and review the message without sending it:
+
+```bash
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
+```
+
+Successful responses return `{ "data": { "delivered": true|false,
+"dry_run": true|false, "message": "...", "task_slugs": [...] } }`.
+Unknown task slugs return `422 UNKNOWN_TASKS`; missing webhook config on a live
+send returns `422 MISSING_WEBHOOK`.
 
 ## Writable fields
 
@@ -138,7 +190,8 @@ keys survive (`Task::DEVOPS_KEYS`):
 
 - **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
   `production_url`, `release_train`, `requires_release_conductor`
-- **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`
+- **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
+  `checks_run`
 
 ## Footguns (verified, will bite you)
 
@@ -172,7 +225,7 @@ TOKEN="$(auth)"
 api() { curl -sS -X "$1" "$BASE$2" -H "Authorization: Bearer $TOKEN" \
   ${3:+-H 'Content-Type: application/json' -d "$3"}; }
 
-# 1. Create (note: no commas inside list items)
+# 1. Create (list values are arrays; commas inside an item are preserved)
 api POST /api/v1/tasks '{
   "title": "Add sticky header to admin users table",
   "priority": 1,
@@ -183,7 +236,8 @@ api POST /api/v1/tasks '{
     "repositories": ["mcritchie-studio"],
     "risk_tags": ["ui"],
     "acceptance": ["Header stays pinned while the table scrolls"],
-    "test_plan": ["bin/rails test"]
+    "test_plan": ["bin/rails test"],
+    "checks_run": ["bin/rails test test/controllers/tasks_controller_test.rb"]
   }
 }'   # -> returns the created task with slug "task-<hex>"
 
@@ -202,7 +256,8 @@ api PATCH /api/v1/tasks/task-XXXX '{
     "branch": "feat/admin-users-sticky-header",
     "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
     "acceptance": ["Header stays pinned while the table scrolls"],
-    "test_plan": ["bin/rails test"]
+    "test_plan": ["bin/rails test"],
+    "checks_run": ["bin/rails test test/controllers/tasks_controller_test.rb"]
   }
 }'
 
@@ -211,6 +266,19 @@ api PATCH /api/v1/tasks/task-XXXX '{"stage": "qa_review"}'   # devops preserved 
 
 # 5. Done (after approved deploy + post-deploy check):
 api POST /api/v1/tasks/task-XXXX/complete '{"result": {"summary": "shipped", "production_url": "..."}}'
+
+# 6. Production release notes (dry-run first, then repeat without dry_run):
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-XXXX"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
 ```
 
 ## Verifying this doc
@@ -228,7 +296,7 @@ grep -n "STAGES\|DEVOPS_KEYS\|normalize_devops" app/models/task.rb   # stages + 
 `bin/task` wraps everything above so you don't construct JSON, manage tokens, or
 remember which stages have transition endpoints. It reads the secret via
 `bin/secret`, does devops **read-merge-write** (partial updates never wipe
-fields), and warns if a list item contains a comma.
+fields), and sends list flags as arrays so comma-containing items stay intact.
 
 ```bash
 bin/task list [--stage S] [--agent A]

@@ -171,7 +171,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
             release_train: "2026-06-17-turf",
             requires_release_conductor: "1",
             acceptance: "Contest creates on QA\nEntry submits on QA",
-            test_plan: "bin/rails test\nQA devnet mutating smoke"
+            test_plan: "bin/rails test\nQA devnet mutating smoke",
+            checks_run: "bin/rails test test/controllers/tasks_controller_test.rb"
           }
         }
       }
@@ -183,6 +184,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster", "turf-vault"], task.devops_repositories
     assert_equal ["Contest creates on QA", "Entry submits on QA"], task.devops_acceptance
+    assert_equal ["bin/rails test test/controllers/tasks_controller_test.rb"], task.devops_checks_run
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
   end
 
@@ -194,7 +196,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
           "worktree_slug" => "task-board-devops-handoff",
           "repositories" => ["mcritchie-studio"],
           "qa_url" => "https://qa.mcritchie.studio/tasks",
-          "acceptance" => ["Task board shows release metadata"]
+          "acceptance" => ["Task board shows release metadata"],
+          "test_plan" => ["PR review gate"],
+          "checks_run" => ["bin/rails test"]
         }
       }
     )
@@ -206,6 +210,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "task-board-devops-handoff"
     assert_select "a[href=?]", "https://qa.mcritchie.studio/tasks"
     assert_includes response.body, "Task board shows release metadata"
+    assert_includes response.body, "Expected Test Plan"
+    assert_includes response.body, "Checks Run"
+    assert_includes response.body, "bin/rails test"
   end
 
   test "show renders task conversation" do

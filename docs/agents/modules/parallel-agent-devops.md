@@ -14,6 +14,23 @@ they do not merge to `main`. Work graduates through a PR review lane where Avi
 protects integration, Steffon adds QA/deploy scrutiny when needed, and the
 release conductor handles production effects.
 
+## Four-Stage DevOps Cycle
+
+1. **Task PR submitted** — Feature agent owns this stage. The task has
+   acceptance criteria, affected repos, risk tags, expected `test_plan`,
+   worktree slug, branch, PR URL, local URL when relevant, and completed
+   `checks_run`. The task moves to `pr_review`.
+2. **PR review by Avi** — Avi reviews task metadata, PR body, diff, docs,
+   migrations, merge safety, CI, local proof, and overlap with other agents.
+   Avi classifies check failures by lane before deciding whether to merge,
+   wait, or send `qa_feedback`.
+3. **QA testing** — After merge, Avi deploys the updated `origin/main` to the
+   QA app, records QA URL, deployed SHA, release train, and QA checks in
+   `checks_run`, then moves the task to `qa_review` for Mr. McRitchie.
+4. **Production deployment** — Release conductor promotes only accepted QA
+   work after explicit approval. Production smoke results, production URL, and
+   release notes are recorded before the task moves to `done`.
+
 ## Lanes
 
 | Lane | Owner | Purpose | May push branch | May merge main | May deploy/publish |
@@ -57,7 +74,7 @@ Default feature sessions are Feature lane only.
    ```
 
 7. **Update** the task-board item with local URL, branch, PR URL when opened,
-   checks run, and any acceptance-criteria changes.
+   `checks_run`, and any acceptance-criteria changes.
 8. **Commit** coherent work on the feature branch.
 9. **Graduate** through the launcher:
 
@@ -84,7 +101,7 @@ Before a branch is ready for QA, it must be:
 - in a generated worktree, not the primary checkout
 - represented by a McRitchie Studio task with acceptance criteria, affected
   repos, risk tags, human-readable worktree slug, branch or PR URL, local URL
-  when applicable, and checks run
+  when applicable, expected `test_plan`, and completed `checks_run`
 - on a feature branch, not `main`
 - committed cleanly
 - ahead of `origin/main`
@@ -107,10 +124,126 @@ Studio:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
+bin/devops-cycle
+bin/devops-cycle --plan
+bin/devops-cycle --decisions
+bin/devops-cycle --scout-packets
+bin/devops-cycle --write-scout-packets tmp/devops-scouts
+bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
+bin/devops-cycle --scout-coverage tmp/devops-scouts
+bin/devops-cycle --scout-reports
+bin/devops-cycle --readiness
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
-`bin/qa-intake` refreshes
+`bin/devops-cycle` is the high-level conductor snapshot. It reads the production
+task board, groups active `pr_review`, `qa_review`, and `prod_ready` tasks,
+joins each task to latest task conversation notes, and attaches matching
+`bin/qa-intake` status when a local PR/worktree exists. Use it first in a fresh
+DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
+before reviewing individual diffs. It is read-only by default.
+
+Use `bin/devops-cycle --plan` when the queue is larger than one conductor can
+comfortably hold in context. The plan separates:
+
+- parallel PR review tasks that can be assigned to separate scout sessions
+- serialized or conductor-owned tasks that touch multiple repos or high-risk
+  surfaces
+- blocked tasks that should return to the feature agent before review
+- QA review tasks awaiting Mr. McRitchie's acceptance or follow-up
+- production-ready tasks awaiting explicit release approval
+
+The plan is still read-only. It does not merge, deploy, update tasks, or create
+sub-agents. The conductor uses it to decide which work can safely happen in
+parallel and which tasks must be bundled or sequenced.
+
+Use `bin/devops-cycle --decisions` after scout reports begin landing. The
+decision summary aggregates `qa-intake` status, latest task conversation state,
+and structured scout report outcomes into conservative Avi recommendations:
+
+- `merge-ready`: clean qa-intake and at least one merge-ready scout report.
+- `wait-for-ci`: qa-intake or a scout says checks are not settled.
+- `request-changes`: qa-intake has a blocker, a scout requested changes, or the
+  latest task activity is `qa_feedback`.
+- `conductor-review`: multi-repo, high-risk, missing local intake, or otherwise
+  requires Avi to inspect personally.
+
+The decision summary is a queue accelerator, not an authority transfer. Avi
+still reviews the underlying PR, decides whether the report is sufficient, and
+performs any merge, QA deploy, or feedback action.
+
+Use `bin/devops-cycle --scout-packets` when the conductor wants to hand
+review-only work to additional sessions. Scout packets are copy-paste prompts
+for the `parallel_pr_review` and `serialized_pr_review` lanes. They include the
+task URL, PR URL, repos, branch, risk tags, acceptance criteria, expected checks,
+completed checks, latest task note, qa-intake status, and explicit guardrails.
+
+Use `bin/devops-cycle --write-scout-packets tmp/devops-scouts` when the queue
+is large enough that inline prompts are awkward. The launcher writes one
+`*.prompt` file per scout packet plus `manifest.json` with packet ids, task
+URLs, PR URLs, review modes, reasons, and prompt file paths. It is a local
+filesystem write only. It does not spawn agents, merge, deploy, write task
+feedback, publish gems, or change branches. Use the manifest to hand prompt
+files to separate scout sessions, then collect their structured reports with
+`--scout-reports` and summarize them with `--decisions`.
+
+Use `bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3` to manage
+the local scout run queue. The command reads `manifest.json` and local
+`scout-runs.json`, prints pending/launched/completed/blocked counts, and shows
+which prompt files fit inside the current concurrency limit. It does not launch
+agents. Avi or the operator starts scout sessions manually, then records local
+state:
+
+```bash
+bin/devops-cycle --scout-runs tmp/devops-scouts \
+  --mark-scout-status scout-task-XXXX:launched \
+  --scout-agent casey
+
+bin/devops-cycle --scout-runs tmp/devops-scouts \
+  --mark-scout-status scout-task-XXXX:completed \
+  --scout-agent casey
+```
+
+Use `bin/devops-cycle --scout-coverage tmp/devops-scouts` after scout reports
+start landing. It compares manifest packets with structured task comments and
+flags packets with no report, missing task records, or conflicting scout
+outcomes. This is the Phase 3C harvesting check: the conductor should not treat
+the scout lane as complete until coverage is explicit.
+
+Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
+groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
+QA acceptance, production-ready, and scout-gap lanes. Readiness is still
+advisory: Avi owns the final merge, deploy, QA feedback, and production gate.
+
+Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
+credentials, force-push, or take over the feature branch. Their job is to return
+a concise findings report and one recommendation to Avi: merge-ready,
+wait-for-CI, request-changes, or conductor-review. Avi keeps the final
+integration and deployment decision.
+
+After reviewing, the scout records the report on the task as a structured task
+comment:
+
+```bash
+bin/devops-cycle --record-scout-report task-XXXX \
+  --outcome merge-ready \
+  --summary "No blockers found." \
+  --finding "Diff matches the task acceptance criteria." \
+  --check "Reviewed PR body, changed files, and CI." \
+  --dry-run
+```
+
+Use `--dry-run` first, then remove it when the payload is correct. Valid
+outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
+`conductor-review`. Scout reports are evidence for Avi. Scouts should not move
+task stages or convert findings into final `qa_feedback`; Avi does that after
+reviewing the report and PR context.
+
+Use `bin/devops-cycle --scout-reports` when you need the detailed reports under
+the main queue. `--json --decisions` and `--json --scout-reports` expose the
+same report metadata for future supervisors or dashboards.
+
+`bin/qa-intake` is the lower-level PR/worktree intake. It refreshes
 `/Users/alex/projects/.agents/worktree-registry.json`, joins the local worktree
 state with open GitHub PRs, and prints an Avi-ready queue. Add apps to
 `--apps` as new satellites are promoted. Use `--json` when a supervisor script
@@ -154,7 +287,8 @@ For each PR, Avi checks:
 
 - the task-board acceptance criteria are concrete and still match the request
 - the task has affected repos, branch/PR URL, local/QA URLs where relevant, risk
-  tags, and expected checks recorded in `metadata["devops"]`
+  tags, expected `test_plan`, and completed `checks_run` recorded in
+  `metadata["devops"]`
 - the PR body matches the diff
 - the branch started from current enough `main`
 - the local proof URL or test evidence is credible
@@ -257,7 +391,7 @@ Run the parallel-agent DevOps cycle:
 - ask Steffon/infra review for risky changes before merge when needed
 - merge only PRs that are ready; leave task `qa_feedback` and PR comments on PRs that need changes
 - after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
-- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks run
+- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks_run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
@@ -281,7 +415,8 @@ Promote the accepted QA work to production:
 - run the app-specific deployment command from the repo docs
 - verify production /up and the user-facing URL
 - update tasks with production URL/release SHA/check results
-- report production URL, release SHA/version, tasks deployed, checks run, and any follow-up cleanup
+- send Release Notes through `POST /api/v1/release_notes`
+- report production URL, release SHA/version, tasks deployed, checks run, Release Notes result, and any follow-up cleanup
 
 Do not include unrelated PRs or new feature work in this rollout.
 ```
@@ -357,11 +492,13 @@ Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use the parallel-agent protocol:
 - create or enter an isolated worktree with bin/agent-worktree
 - use the allocated port and give me the local URL
+- record expected checks in task devops.test_plan
 - keep all edits inside the task worktree
 - update docs if behavior, workflow, env, ports, auth, email, or deploys change
 - commit your work on the feature branch
 - run bin/agent-worktree finish before handoff
 - push the branch and open/prepare a PR for Avi QA
+- update task devops.checks_run with completed checks and move the task to pr_review
 
 Do not merge to main, publish gems, deploy, force-push, delete branches, or
 delete worktrees unless I explicitly approve that lane for this session.

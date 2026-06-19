@@ -1,0 +1,1395 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Read-only conductor snapshot for the task -> PR -> QA -> deploy cycle.
+
+require "json"
+require "fileutils"
+require "net/http"
+require "open3"
+require "optparse"
+require "shellwords"
+require "time"
+require "uri"
+
+SCRIPT_ROOT = File.expand_path("..", __dir__)
+DEFAULT_STAGES = %w[pr_review qa_review prod_ready].freeze
+DEFAULT_APPS = %w[mcritchie-studio turf-monster].freeze
+STAGE_LABELS = {
+  "pr_review" => "PR Review",
+  "qa_review" => "QA Review",
+  "prod_ready" => "Prod Ready"
+}.freeze
+SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze
+DECISION_ORDER = %w[request-changes wait-for-ci conductor-review merge-ready].freeze
+DECISION_LABELS = {
+  "merge-ready" => "Merge Ready",
+  "wait-for-ci" => "Wait For CI",
+  "request-changes" => "Request Changes",
+  "conductor-review" => "Conductor Review"
+}.freeze
+HIGH_RISK_PATTERN = /auth|email|wallet|solana|payment|provider|deploy|migration|gem|contract|infra/.freeze
+REVIEW_BLOCKING_QA_STATUSES = %w[needs-agent merge-risk missing-local-branch].freeze
+REVIEW_WAIT_QA_STATUSES = %w[checks-review avi-ready-draft].freeze
+REVIEW_NOT_READY_QA_STATUSES = (REVIEW_BLOCKING_QA_STATUSES + REVIEW_WAIT_QA_STATUSES).freeze
+PRIORITY_LABELS = {
+  0 => "LOW",
+  1 => "MED",
+  2 => "HIGH"
+}.freeze
+
+OPTIONS = {
+  apps: DEFAULT_APPS.dup,
+  base_url: ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio"),
+  decisions: false,
+  json: false,
+  offline_fixture: nil,
+  plan: false,
+  qa_intake: true,
+  record_scout_report: nil,
+  refresh: true,
+  scout_agent: ENV.fetch("AGENT_SLUG", "avi-scout"),
+  scout_checks: [],
+  scout_findings: [],
+  scout_outcome: nil,
+  scout_packets: false,
+  scout_questions: [],
+  scout_reports: false,
+  scout_summary: nil,
+  scout_runs: nil,
+  scout_coverage: nil,
+  mark_scout_status: nil,
+  max_scouts: 3,
+  readiness: false,
+  write_scout_packets: nil,
+  dry_run: false,
+  stages: DEFAULT_STAGES.dup
+}
+
+OptionParser.new do |opts|
+  opts.banner = <<~TEXT
+    Usage: bin/devops-cycle [options]
+
+    Prints a read-only DevOps conductor snapshot from the task board and
+    qa-intake. Use this at the start of a fresh Avi/release session.
+
+    Authentication:
+      Set AGENT_API_SECRET or keep it in the local .env. The secret is never printed.
+
+    Options:
+  TEXT
+
+  opts.on("--apps LIST", "Comma-separated apps for qa-intake (default: #{DEFAULT_APPS.join(",")})") do |value|
+    OPTIONS[:apps] = value.split(",").map(&:strip).reject(&:empty?)
+  end
+  opts.on("--base-url URL", "Task board base URL (default: #{OPTIONS[:base_url]})") { |value| OPTIONS[:base_url] = value }
+  opts.on("--stages LIST", "Comma-separated task stages (default: #{DEFAULT_STAGES.join(",")})") do |value|
+    OPTIONS[:stages] = value.split(",").map(&:strip).reject(&:empty?)
+  end
+  opts.on("--offline-fixture PATH", "Read snapshot input from a fixture instead of the live task board") do |path|
+    OPTIONS[:offline_fixture] = File.expand_path(path)
+  end
+  opts.on("--plan", "Include a read-only batch plan for review/QA/release lanes") { OPTIONS[:plan] = true }
+  opts.on("--decisions", "Include Avi conductor recommendations from qa-intake and scout reports") do
+    OPTIONS[:decisions] = true
+  end
+  opts.on("--scout-packets", "Include copy-paste review scout packets for PR review lanes") do
+    OPTIONS[:plan] = true
+    OPTIONS[:scout_packets] = true
+  end
+  opts.on("--scout-reports", "Include structured scout report summaries from task activities") do
+    OPTIONS[:scout_reports] = true
+  end
+  opts.on("--write-scout-packets DIR", "Write one scout prompt file per packet plus manifest JSON") do |dir|
+    OPTIONS[:plan] = true
+    OPTIONS[:write_scout_packets] = dir
+  end
+  opts.on("--scout-runs DIR", "Read scout manifest and print pending/launched/completed run-control state") do |dir|
+    OPTIONS[:scout_runs] = dir
+  end
+  opts.on("--mark-scout-status PACKET_ID:STATUS", "Update local scout run status: pending, launched, completed, blocked") do |value|
+    OPTIONS[:mark_scout_status] = value
+  end
+  opts.on("--max-scouts N", Integer, "Maximum active launched scout packets for run-control output (default: 3)") do |value|
+    OPTIONS[:max_scouts] = value
+  end
+  opts.on("--scout-coverage DIR", "Compare a scout manifest with recorded task scout reports") do |dir|
+    OPTIONS[:scout_coverage] = dir
+  end
+  opts.on("--readiness", "Include final conductor readiness groups for merge, QA, production, and blockers") do
+    OPTIONS[:plan] = true
+    OPTIONS[:decisions] = true
+    OPTIONS[:readiness] = true
+  end
+  opts.on("--record-scout-report TASK_SLUG", "Record a structured scout report on the task board") do |slug|
+    OPTIONS[:record_scout_report] = slug
+  end
+  opts.on("--outcome OUTCOME", "Scout report outcome: #{SCOUT_OUTCOMES.join(", ")}") do |value|
+    OPTIONS[:scout_outcome] = value
+  end
+  opts.on("--summary TEXT", "Scout report summary") { |value| OPTIONS[:scout_summary] = value }
+  opts.on("--finding TEXT", "Scout report finding (repeatable)") { |value| OPTIONS[:scout_findings] << value }
+  opts.on("--question TEXT", "Scout report question (repeatable)") { |value| OPTIONS[:scout_questions] << value }
+  opts.on("--check TEXT", "Scout report check/proof (repeatable)") { |value| OPTIONS[:scout_checks] << value }
+  opts.on("--scout-agent SLUG", "Agent slug to attach to a recorded scout report") { |value| OPTIONS[:scout_agent] = value }
+  opts.on("--dry-run", "Print write payloads instead of sending them") { OPTIONS[:dry_run] = true }
+  opts.on("--no-qa-intake", "Skip bin/qa-intake join") { OPTIONS[:qa_intake] = false }
+  opts.on("--no-refresh", "Do not pass --refresh to bin/qa-intake") { OPTIONS[:refresh] = false }
+  opts.on("--json", "Print machine-readable JSON") { OPTIONS[:json] = true }
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+if OPTIONS[:mark_scout_status] && OPTIONS[:scout_runs].to_s.strip.empty?
+  abort "--mark-scout-status requires --scout-runs DIR"
+end
+
+def read_json(path)
+  JSON.parse(File.read(path))
+rescue JSON::ParserError => e
+  abort "invalid JSON fixture #{path}: #{e.message}"
+end
+
+def secret_from_env_file
+  path = File.join(SCRIPT_ROOT, ".env")
+  return nil unless File.exist?(path)
+
+  File.foreach(path) do |line|
+    next unless line.match?(/\A\s*AGENT_API_SECRET=/)
+
+    _, raw_value = line.split("=", 2)
+    return raw_value.to_s.strip.delete_prefix("\"").delete_suffix("\"").delete_prefix("'").delete_suffix("'")
+  end
+
+  nil
+end
+
+def task_board_secret
+  value = ENV["AGENT_API_SECRET"].to_s.strip
+  value.empty? ? secret_from_env_file : value
+end
+
+def request_json(uri, method:, token: nil, body: nil)
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = uri.scheme == "https"
+
+  request = case method
+            when :get then Net::HTTP::Get.new(uri)
+            when :post then Net::HTTP::Post.new(uri)
+            else raise ArgumentError, "unsupported method #{method}"
+            end
+  request["Authorization"] = "Bearer #{token}" if token
+  if body
+    request["Content-Type"] = "application/json"
+    request.body = JSON.generate(body)
+  end
+
+  response = http.request(request)
+  unless response.is_a?(Net::HTTPSuccess)
+    raise "HTTP #{response.code} from #{uri.path}: #{response.body[0, 200]}"
+  end
+
+  JSON.parse(response.body)
+end
+
+def compact_values(items)
+  Array(items).map { |item| item.to_s.strip }.reject(&:empty?)
+end
+
+def scout_report_payload
+  task_slug = OPTIONS[:record_scout_report].to_s.strip
+  outcome = OPTIONS[:scout_outcome].to_s.strip
+  summary = OPTIONS[:scout_summary].to_s.strip
+  abort "--record-scout-report requires a task slug" if task_slug.empty?
+  abort "--outcome is required and must be one of: #{SCOUT_OUTCOMES.join(", ")}" unless SCOUT_OUTCOMES.include?(outcome)
+  abort "--summary is required for scout reports" if summary.empty?
+
+  findings = compact_values(OPTIONS[:scout_findings])
+  questions = compact_values(OPTIONS[:scout_questions])
+  checks = compact_values(OPTIONS[:scout_checks])
+  reporter = OPTIONS[:scout_agent].to_s.strip
+  reporter = "avi-scout" if reporter.empty?
+
+  {
+    task_slug: task_slug,
+    activity_type: "comment",
+    agent_slug: reporter,
+    description: scout_report_description(outcome, reporter, summary, findings, questions, checks),
+    metadata: {
+      kind: "scout_report",
+      outcome: outcome,
+      reporter: reporter,
+      summary: summary,
+      findings: findings,
+      questions: questions,
+      checks: checks
+    }
+  }
+end
+
+def scout_report_description(outcome, reporter, summary, findings, questions, checks)
+  lines = [
+    "Scout report: #{outcome} - #{summary}",
+    "",
+    "Reporter: #{reporter}",
+    "Outcome: #{outcome}",
+    "",
+    "Findings:"
+  ]
+  lines.concat((findings.empty? ? ["- none"] : findings.map { |item| "- #{item}" }))
+  lines << ""
+  lines << "Questions:"
+  lines.concat((questions.empty? ? ["- none"] : questions.map { |item| "- #{item}" }))
+  lines << ""
+  lines << "Checks:"
+  lines.concat((checks.empty? ? ["- none"] : checks.map { |item| "- #{item}" }))
+  lines.join("\n")
+end
+
+def record_scout_report(base_url)
+  payload = scout_report_payload
+  return { "dry_run" => true, "activity" => payload } if OPTIONS[:dry_run]
+
+  secret = task_board_secret
+  abort "missing AGENT_API_SECRET; set it or pass --dry-run" if secret.to_s.empty?
+
+  token = task_board_token(base_url, secret)
+  response = request_json(URI.join(base_url, "/api/v1/activities"), method: :post, token: token, body: payload)
+  { "dry_run" => false, "activity" => response.fetch("data", response) }
+end
+
+def task_board_token(base_url, secret)
+  request_json(URI.join(base_url, "/api/v1/auth"), method: :post, body: { secret: secret }).fetch("token")
+end
+
+def fetch_paginated(base_url, path, token, params = {})
+  records = []
+  page = 1
+
+  loop do
+    uri = URI.join(base_url, path)
+    uri.query = URI.encode_www_form(params.merge(page: page, per_page: 100))
+    response = request_json(uri, method: :get, token: token)
+    records.concat(response.fetch("data"))
+    meta = response["meta"] || {}
+    break if meta["total_pages"].to_i <= page
+
+    page += 1
+  end
+
+  records
+end
+
+def fetch_live_tasks(base_url, stages)
+  secret = task_board_secret
+  abort "missing AGENT_API_SECRET; set it or pass --offline-fixture" if secret.to_s.empty?
+
+  token = task_board_token(base_url, secret)
+  tasks = stages.flat_map do |stage|
+    fetch_paginated(base_url, "/api/v1/tasks", token, stage: stage)
+  end
+
+  activities = tasks.each_with_object([]) do |task, collection|
+    collection.concat(fetch_paginated(base_url, "/api/v1/activities", token, task_slug: task.fetch("slug")))
+  rescue StandardError => e
+    warn "activity lookup failed for #{task.fetch("slug")}: #{e.message}"
+  end
+
+  { "tasks" => tasks, "activities" => activities }
+end
+
+def run_qa_intake(apps, refresh:)
+  args = ["bin/qa-intake", "--json", "--apps", apps.join(",")]
+  args.insert(1, "--refresh") if refresh
+  out, err, status = Open3.capture3(*args, chdir: SCRIPT_ROOT)
+  return JSON.parse(out) if status.success?
+
+  {
+    "prs" => [],
+    "warnings" => ["qa-intake failed: #{[err, out].join(" ").strip}"]
+  }
+rescue JSON::ParserError => e
+  {
+    "prs" => [],
+    "warnings" => ["qa-intake returned invalid JSON: #{e.message}"]
+  }
+end
+
+def normalize_url(url)
+  url.to_s.sub(%r{\Ahttps://www\.}, "https://").delete_suffix("/")
+end
+
+def devops(task)
+  task.fetch("metadata", {}).fetch("devops", {}) || {}
+end
+
+def task_url(base_url, task)
+  "#{base_url.sub(%r{/\z}, "")}/tasks/#{task.fetch("slug")}"
+end
+
+def task_repos(task)
+  repos = Array(devops(task)["repositories"])
+  repos.empty? ? ["unassigned"] : repos
+end
+
+def task_priority(task)
+  PRIORITY_LABELS.fetch(task["priority"].to_i, "P#{task["priority"]}")
+end
+
+def latest_activity_for(task, activities)
+  activities
+    .select { |activity| activity["task_slug"] == task.fetch("slug") }
+    .max_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
+end
+
+def scout_report_activity?(activity)
+  activity.dig("metadata", "kind").to_s == "scout_report"
+end
+
+def scout_reports_for(task, activities)
+  activities
+    .select { |activity| activity["task_slug"] == task.fetch("slug") && scout_report_activity?(activity) }
+    .sort_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
+    .map { |activity| compact_scout_report(activity) }
+end
+
+def compact_scout_report(activity)
+  metadata = activity.fetch("metadata", {}) || {}
+  {
+    "activity_type" => activity["activity_type"],
+    "agent_slug" => activity["agent_slug"],
+    "outcome" => metadata["outcome"],
+    "summary" => metadata["summary"] || first_line(activity["description"]),
+    "findings" => Array(metadata["findings"]),
+    "questions" => Array(metadata["questions"]),
+    "checks" => Array(metadata["checks"]),
+    "description" => activity["description"],
+    "created_at" => activity["created_at"]
+  }
+end
+
+def qa_intake_match(task, qa_intake)
+  metadata = devops(task)
+  pr_url = normalize_url(metadata["pr_url"])
+  slug = task.fetch("slug")
+
+  Array(qa_intake["prs"]).find do |pr|
+    normalize_url(pr["task_url"]).include?(slug) ||
+      pr["task_record_slug"].to_s == slug ||
+      (!pr_url.empty? && normalize_url(pr["url"]) == pr_url)
+  end
+end
+
+def enriched_tasks(tasks, activities, qa_intake, base_url, include_scout_reports:)
+  tasks.map do |task|
+    metadata = devops(task)
+    activity = latest_activity_for(task, activities)
+    qa = qa_intake_match(task, qa_intake)
+    enriched = task.merge(
+      "task_url" => task_url(base_url, task),
+      "devops" => metadata,
+      "repositories" => task_repos(task),
+      "latest_activity" => activity,
+      "qa_intake" => qa
+    )
+    enriched["scout_reports"] = scout_reports_for(task, activities) if include_scout_reports
+    enriched
+  end
+end
+
+def build_snapshot(source, qa_intake, base_url, stages)
+  tasks = enriched_tasks(
+    source.fetch("tasks", []),
+    source.fetch("activities", []),
+    qa_intake,
+    base_url,
+    include_scout_reports: OPTIONS.fetch(:scout_reports) ||
+      OPTIONS.fetch(:decisions) ||
+      OPTIONS.fetch(:scout_coverage).to_s != "" ||
+      OPTIONS.fetch(:readiness)
+  )
+  tasks = tasks.select { |task| stages.include?(task.fetch("stage")) }
+
+  snapshot = {
+    "generated_at" => Time.now.utc.iso8601,
+    "base_url" => base_url,
+    "stages" => stages,
+    "summary" => {
+      "tasks" => tasks.size,
+      "by_stage" => stages.to_h { |stage| [stage, tasks.count { |task| task.fetch("stage") == stage }] },
+      "qa_intake_prs" => Array(qa_intake["prs"]).size,
+      "warnings" => Array(qa_intake["warnings"])
+    },
+    "tasks" => tasks
+  }
+  snapshot["summary"]["scout_reports"] = tasks.sum { |task| Array(task["scout_reports"]).size } if OPTIONS.fetch(:scout_reports)
+  plan = build_plan(tasks) if OPTIONS.fetch(:plan) || OPTIONS.fetch(:scout_packets)
+  snapshot["plan"] = plan if plan
+  snapshot["decisions"] = build_decisions(tasks) if OPTIONS.fetch(:decisions)
+  if OPTIONS.fetch(:scout_packets) || OPTIONS.fetch(:write_scout_packets)
+    snapshot["scout_packets"] = build_scout_packets(tasks, plan)
+  end
+  if OPTIONS.fetch(:write_scout_packets)
+    snapshot["scout_launcher"] = write_scout_packet_files(
+      snapshot.fetch("scout_packets", []),
+      OPTIONS.fetch(:write_scout_packets)
+    )
+  end
+  snapshot["scout_runs"] = build_scout_run_control(
+    OPTIONS.fetch(:scout_runs),
+    max_scouts: OPTIONS.fetch(:max_scouts),
+    mark_status: OPTIONS.fetch(:mark_scout_status)
+  ) if OPTIONS.fetch(:scout_runs).to_s != ""
+  snapshot["scout_coverage"] = build_scout_coverage(
+    OPTIONS.fetch(:scout_coverage),
+    tasks
+  ) if OPTIONS.fetch(:scout_coverage).to_s != ""
+  snapshot["readiness"] = build_readiness(
+    tasks,
+    snapshot["decisions"],
+    snapshot["scout_coverage"]
+  ) if OPTIONS.fetch(:readiness)
+  snapshot
+end
+
+def compact_list(items)
+  Array(items).reject { |item| item.to_s.strip.empty? }.join(", ")
+end
+
+def first_line(text)
+  text.to_s.lines.first.to_s.strip
+end
+
+def high_risk?(task)
+  metadata = task.fetch("devops", {})
+  tags = Array(metadata["risk_tags"]).map(&:to_s)
+  repos = Array(task.fetch("repositories"))
+
+  tags.any? { |tag| tag.match?(HIGH_RISK_PATTERN) } ||
+    repos.size > 1 ||
+    metadata["requires_release_conductor"].to_s == "true"
+end
+
+def qa_status(task)
+  task.dig("qa_intake", "status").to_s
+end
+
+def blocked_for_pr_review?(task)
+  REVIEW_NOT_READY_QA_STATUSES.include?(qa_status(task))
+end
+
+def plan_reason(task)
+  metadata = task.fetch("devops", {})
+  repos = Array(task.fetch("repositories"))
+  tags = Array(metadata["risk_tags"]).map(&:to_s)
+  return "qa-intake status #{qa_status(task)}" if blocked_for_pr_review?(task)
+  return "multiple repositories: #{repos.join(" + ")}" if repos.size > 1
+  return "no matching qa-intake PR/worktree; conductor must inspect manually" unless task["qa_intake"]
+  return "release conductor required" if metadata["requires_release_conductor"].to_s == "true"
+
+  risky_tag = tags.find { |tag| tag.match?(HIGH_RISK_PATTERN) }
+  return "high-risk tag: #{risky_tag}" if risky_tag
+
+  "standard PR review"
+end
+
+def scout_report_counts(task)
+  SCOUT_OUTCOMES.to_h do |outcome|
+    [outcome, Array(task["scout_reports"]).count { |report| report["outcome"] == outcome }]
+  end
+end
+
+def scout_report_count_text(counts)
+  counts
+    .select { |_, count| count.positive? }
+    .map { |outcome, count| "#{outcome}:#{count}" }
+    .join(" ")
+end
+
+def scout_report_outcome?(task, outcome)
+  Array(task["scout_reports"]).any? { |report| report["outcome"] == outcome }
+end
+
+def conductor_decision(task)
+  reasons = []
+  status = qa_status(task)
+
+  if REVIEW_BLOCKING_QA_STATUSES.include?(status)
+    reasons << "qa-intake status #{status}"
+    return ["request-changes", reasons]
+  end
+
+  if task.dig("latest_activity", "activity_type") == "qa_feedback"
+    reasons << "latest task activity is qa_feedback"
+    return ["request-changes", reasons]
+  end
+
+  if scout_report_outcome?(task, "request-changes")
+    reasons << "scout requested changes"
+    return ["request-changes", reasons]
+  end
+
+  if REVIEW_WAIT_QA_STATUSES.include?(status)
+    reasons << "qa-intake status #{status}"
+    return ["wait-for-ci", reasons]
+  end
+
+  if scout_report_outcome?(task, "wait-for-ci")
+    reasons << "scout is waiting for CI"
+    return ["wait-for-ci", reasons]
+  end
+
+  if scout_report_outcome?(task, "conductor-review")
+    reasons << "scout requested conductor review"
+    return ["conductor-review", reasons]
+  end
+
+  if !task["qa_intake"]
+    reasons << "no matching qa-intake record"
+    return ["conductor-review", reasons]
+  end
+
+  if high_risk?(task)
+    reasons << plan_reason(task)
+    return ["conductor-review", reasons]
+  end
+
+  if scout_report_outcome?(task, "merge-ready")
+    reasons << "scout report is merge-ready"
+    reasons << "qa-intake status #{status}" unless status.empty?
+    return ["merge-ready", reasons]
+  end
+
+  reasons << "no scout report recorded"
+  ["conductor-review", reasons]
+end
+
+def build_decisions(tasks)
+  tasks
+    .select { |task| task.fetch("stage") == "pr_review" }
+    .sort_by { |task| [-PRIORITY_LABELS.key(task_priority(task)).to_i, task.fetch("repositories").join(","), task.fetch("slug")] }
+    .map do |task|
+      recommendation, reasons = conductor_decision(task)
+      metadata = task.fetch("devops", {})
+      {
+        "slug" => task.fetch("slug"),
+        "title" => task.fetch("title"),
+        "priority" => task_priority(task),
+        "recommendation" => recommendation,
+        "reasons" => reasons,
+        "task_url" => task.fetch("task_url"),
+        "repositories" => task.fetch("repositories"),
+        "pr_url" => metadata["pr_url"],
+        "qa_intake" => compact_qa_intake(task["qa_intake"]),
+        "scout_report_counts" => scout_report_counts(task),
+        "latest_activity" => compact_activity(task["latest_activity"])
+      }
+    end
+end
+
+def plan_task(task, owner:, reason:)
+  metadata = task.fetch("devops", {})
+  {
+    "slug" => task.fetch("slug"),
+    "title" => task.fetch("title"),
+    "stage" => task.fetch("stage"),
+    "priority" => task_priority(task),
+    "owner" => owner,
+    "reason" => reason,
+    "task_url" => task.fetch("task_url"),
+    "repositories" => task.fetch("repositories"),
+    "pr_url" => metadata["pr_url"],
+    "qa_url" => metadata["qa_url"],
+    "action" => task.dig("qa_intake", "action")
+  }
+end
+
+def build_plan(tasks)
+  groups = [
+    {
+      "key" => "parallel_pr_review",
+      "title" => "Parallel PR Review",
+      "policy" => "Can be reviewed by separate Avi scout sessions at the same time. Keep final merge decisions with the conductor.",
+      "tasks" => []
+    },
+    {
+      "key" => "serialized_pr_review",
+      "title" => "Serialized / Conductor Review",
+      "policy" => "Review one at a time or intentionally bundle. These may affect multiple repos, release order, or high-risk surfaces.",
+      "tasks" => []
+    },
+    {
+      "key" => "blocked_or_return",
+      "title" => "Blocked / Return To Agent",
+      "policy" => "Do not merge. Send task feedback or wait for the owner agent to clear the blocker.",
+      "tasks" => []
+    },
+    {
+      "key" => "qa_review",
+      "title" => "QA Review",
+      "policy" => "Already merged to QA. Mr. McRitchie reviews URLs and Avi records acceptance or follow-up.",
+      "tasks" => []
+    },
+    {
+      "key" => "production_ready",
+      "title" => "Production Ready",
+      "policy" => "Release conductor can deploy only after explicit production approval.",
+      "tasks" => []
+    }
+  ]
+  by_key = groups.to_h { |group| [group.fetch("key"), group] }
+
+  tasks.each do |task|
+    case task.fetch("stage")
+    when "pr_review"
+      if blocked_for_pr_review?(task)
+        by_key.fetch("blocked_or_return").fetch("tasks") << plan_task(task, owner: "feature_agent", reason: plan_reason(task))
+      elsif !task["qa_intake"]
+        by_key.fetch("serialized_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+      elsif high_risk?(task)
+        by_key.fetch("serialized_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+      else
+        by_key.fetch("parallel_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+      end
+    when "qa_review"
+      by_key.fetch("qa_review").fetch("tasks") << plan_task(task, owner: "mr_mcritchie", reason: "needs QA acceptance or follow-up")
+    when "prod_ready"
+      by_key.fetch("production_ready").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "awaiting explicit production approval")
+    end
+  end
+
+  groups.each do |group|
+    group["tasks"] = group.fetch("tasks").sort_by do |task|
+      [-PRIORITY_LABELS.key(task.fetch("priority")).to_i, task.fetch("repositories").join(","), task.fetch("slug")]
+    end
+  end
+
+  {
+    "summary" => groups.to_h { |group| [group.fetch("key"), group.fetch("tasks").size] },
+    "groups" => groups
+  }
+end
+
+def scout_source_groups(plan)
+  Array(plan&.fetch("groups", [])).select do |group|
+    %w[parallel_pr_review serialized_pr_review].include?(group.fetch("key"))
+  end
+end
+
+def scout_mode(group)
+  group.fetch("key") == "parallel_pr_review" ? "parallel_scout" : "serialized_scout"
+end
+
+def compact_activity(activity)
+  return nil unless activity
+
+  {
+    "activity_type" => activity["activity_type"],
+    "description" => activity["description"],
+    "created_at" => activity["created_at"]
+  }
+end
+
+def compact_qa_intake(qa)
+  return nil unless qa
+
+  {
+    "status" => qa["status"],
+    "repo" => qa["repo"],
+    "number" => qa["number"],
+    "url" => qa["url"],
+    "action" => qa["action"]
+  }
+end
+
+def bullet_list(items)
+  values = Array(items).reject { |item| item.to_s.strip.empty? }
+  return "- none recorded" if values.empty?
+
+  values.map { |item| "- #{item}" }.join("\n")
+end
+
+def scout_prompt(packet)
+  task = packet.fetch("task")
+  metadata = packet.fetch("devops")
+  qa = packet["qa_intake"]
+  latest = packet["latest_activity"]
+
+  <<~PROMPT.strip
+    Work from /Users/alex/projects as an Avi review scout for #{task.fetch("slug")}.
+
+    Read /Users/alex/projects/AGENTS.md and the relevant repo README/runbook/docs before reviewing.
+
+    Task: #{task.fetch("url")}
+    PR: #{metadata["pr_url"] || "missing"}
+    Repo(s): #{compact_list(metadata.fetch("repositories"))}
+    Branch: #{metadata["branch"] || "missing"}
+    Review mode: #{packet.fetch("mode")}
+    Planner reason: #{packet.fetch("reason")}
+    Risk tags: #{compact_list(metadata.fetch("risk_tags"))}
+    Local URL: #{metadata["local_url"] || "none recorded"}
+    QA URL: #{metadata["qa_url"] || "none recorded"}
+
+    Acceptance criteria:
+    #{bullet_list(metadata.fetch("acceptance"))}
+
+    Expected checks:
+    #{bullet_list(metadata.fetch("test_plan"))}
+
+    Checks already reported:
+    #{bullet_list(metadata.fetch("checks_run"))}
+
+    Latest task note:
+    #{latest ? "#{latest["activity_type"]}: #{first_line(latest["description"])}" : "none recorded"}
+
+    QA intake:
+    #{qa ? "#{qa["status"]} #{qa["repo"]}##{qa["number"]}: #{qa["action"]}" : "no matching qa-intake record"}
+
+    Scout instructions:
+    - Inspect task metadata, PR body, diff, changed files, docs, tests, and merge safety.
+    - Check whether the PR could overwrite or conflict with another agent's work.
+    - Classify findings as blockers, non-blockers, or questions.
+    - Recommend one outcome to Avi: merge-ready, wait-for-CI, request-changes, or conductor-review.
+    - Do not merge, deploy, publish gems, change provider config, rotate credentials, or force-push.
+    - Do not push to the branch unless Avi or Mr. McRitchie explicitly asks.
+    - Return a concise scout report with file/line references where applicable.
+
+    Record your scout report on the task when complete:
+    bin/devops-cycle --record-scout-report #{task.fetch("slug")} --outcome <merge-ready|wait-for-ci|request-changes|conductor-review> --summary "..." --finding "..." --check "..." --dry-run
+    Remove --dry-run only after the payload looks right. Scout reports are task comments with structured metadata; Avi converts blockers into final QA feedback or PR review comments.
+  PROMPT
+end
+
+def build_scout_packets(tasks, plan)
+  tasks_by_slug = tasks.to_h { |task| [task.fetch("slug"), task] }
+
+  scout_source_groups(plan).flat_map do |group|
+    group.fetch("tasks").each_with_object([]) do |planned_task, packets|
+      task = tasks_by_slug[planned_task.fetch("slug")]
+      next unless task
+
+      metadata = task.fetch("devops", {})
+      packet = {
+        "packet_id" => "scout-#{task.fetch("slug")}",
+        "mode" => scout_mode(group),
+        "group_key" => group.fetch("key"),
+        "group_title" => group.fetch("title"),
+        "reason" => planned_task.fetch("reason"),
+        "task" => {
+          "slug" => task.fetch("slug"),
+          "title" => task.fetch("title"),
+          "stage" => task.fetch("stage"),
+          "priority" => task_priority(task),
+          "url" => task.fetch("task_url")
+        },
+        "devops" => {
+          "kind" => metadata["kind"],
+          "repositories" => Array(task.fetch("repositories")),
+          "risk_tags" => Array(metadata["risk_tags"]),
+          "worktree_slug" => metadata["worktree_slug"],
+          "branch" => metadata["branch"],
+          "pr_url" => metadata["pr_url"],
+          "local_url" => metadata["local_url"],
+          "qa_url" => metadata["qa_url"],
+          "acceptance" => Array(metadata["acceptance"]),
+          "test_plan" => Array(metadata["test_plan"]),
+          "checks_run" => Array(metadata["checks_run"])
+        },
+        "latest_activity" => compact_activity(task["latest_activity"]),
+        "qa_intake" => compact_qa_intake(task["qa_intake"]),
+        "guardrails" => [
+          "Do not merge PRs.",
+          "Do not deploy QA or production.",
+          "Do not publish gems.",
+          "Do not change provider config or credentials.",
+          "Do not force-push.",
+          "Return findings to Avi for final decision."
+        ]
+      }
+      packet["prompt"] = scout_prompt(packet)
+      packets << packet
+    end
+  end
+end
+
+def safe_filename(value)
+  value.to_s.gsub(/[^A-Za-z0-9._-]+/, "-").gsub(/\A-+|-+\z/, "")
+end
+
+def scout_prompt_filename(packet)
+  slug = packet.dig("task", "slug")
+  mode = packet.fetch("mode")
+  "#{safe_filename(slug)}--#{safe_filename(mode)}.prompt"
+end
+
+def write_scout_packet_files(packets, directory)
+  dir = File.expand_path(directory, SCRIPT_ROOT)
+  FileUtils.mkdir_p(dir)
+
+  entries = Array(packets).map do |packet|
+    path = File.join(dir, scout_prompt_filename(packet))
+    File.write(path, "#{packet.fetch("prompt")}\n")
+    {
+      "packet_id" => packet.fetch("packet_id"),
+      "mode" => packet.fetch("mode"),
+      "reason" => packet.fetch("reason"),
+      "task_slug" => packet.dig("task", "slug"),
+      "task_title" => packet.dig("task", "title"),
+      "task_url" => packet.dig("task", "url"),
+      "pr_url" => packet.dig("devops", "pr_url"),
+      "prompt_path" => path
+    }
+  end
+
+  manifest = {
+    "generated_at" => Time.now.utc.iso8601,
+    "directory" => dir,
+    "count" => entries.size,
+    "packets" => entries
+  }
+  manifest_path = File.join(dir, "manifest.json")
+  File.write(manifest_path, "#{JSON.pretty_generate(manifest)}\n")
+  manifest.merge("manifest_path" => manifest_path)
+end
+
+def scout_manifest_path(directory)
+  path = File.expand_path(directory, SCRIPT_ROOT)
+  File.directory?(path) ? File.join(path, "manifest.json") : path
+end
+
+def scout_directory(directory)
+  manifest_path = scout_manifest_path(directory)
+  File.dirname(manifest_path)
+end
+
+def read_scout_manifest(directory)
+  path = scout_manifest_path(directory)
+  abort "missing scout manifest: #{path}" unless File.exist?(path)
+
+  manifest = read_json(path)
+  manifest.merge("manifest_path" => path)
+end
+
+def scout_state_path(directory)
+  File.join(scout_directory(directory), "scout-runs.json")
+end
+
+def read_scout_state(directory)
+  path = scout_state_path(directory)
+  return { "packets" => {} } unless File.exist?(path)
+
+  read_json(path)
+rescue JSON::ParserError => e
+  abort "invalid scout run state #{path}: #{e.message}"
+end
+
+def write_scout_state(directory, state)
+  path = scout_state_path(directory)
+  state["updated_at"] = Time.now.utc.iso8601
+  File.write(path, "#{JSON.pretty_generate(state)}\n")
+end
+
+def parse_mark_scout_status(value)
+  packet_id, status = value.to_s.split(":", 2).map { |part| part.to_s.strip }
+  abort "--mark-scout-status expects PACKET_ID:STATUS" if packet_id.to_s.empty? || status.to_s.empty?
+
+  valid = %w[pending launched completed blocked]
+  abort "invalid scout status #{status}; expected #{valid.join(", ")}" unless valid.include?(status)
+
+  [packet_id, status]
+end
+
+def mark_scout_status!(manifest, state, mark_status, agent)
+  packet_id, status = parse_mark_scout_status(mark_status)
+  packets = Array(manifest["packets"])
+  abort "unknown scout packet #{packet_id}" unless packets.any? { |packet| packet["packet_id"] == packet_id }
+
+  state["packets"] ||= {}
+  current = state.fetch("packets").fetch(packet_id, {})
+  now = Time.now.utc.iso8601
+  updated = current.merge(
+    "status" => status,
+    "agent_slug" => agent,
+    "updated_at" => now
+  )
+  updated["launched_at"] ||= now if status == "launched"
+  updated["completed_at"] = now if status == "completed"
+  updated.delete("launched_at") if status == "pending"
+  updated.delete("completed_at") unless status == "completed"
+  state.fetch("packets")[packet_id] = updated
+  state
+end
+
+def scout_entry_state(packet, state)
+  packet_state = state.fetch("packets", {}).fetch(packet.fetch("packet_id"), {})
+  status = packet_state.fetch("status", "pending")
+  packet.merge(
+    "status" => status,
+    "agent_slug" => packet_state["agent_slug"],
+    "launched_at" => packet_state["launched_at"],
+    "completed_at" => packet_state["completed_at"],
+    "updated_at" => packet_state["updated_at"],
+    "prompt_exists" => File.exist?(packet.fetch("prompt_path").to_s)
+  )
+end
+
+def build_scout_run_control(directory, max_scouts:, mark_status: nil)
+  manifest = read_scout_manifest(directory)
+  state = read_scout_state(directory)
+  if mark_status
+    state = mark_scout_status!(manifest, state, mark_status, OPTIONS.fetch(:scout_agent))
+    write_scout_state(directory, state)
+  end
+
+  packets = Array(manifest["packets"]).map { |packet| scout_entry_state(packet, state) }
+  counts = %w[pending launched completed blocked].to_h do |status|
+    [status, packets.count { |packet| packet.fetch("status") == status }]
+  end
+  active = counts.fetch("launched")
+  slots = [max_scouts.to_i - active, 0].max
+  launchable = packets.select { |packet| packet.fetch("status") == "pending" }.first(slots)
+
+  {
+    "directory" => scout_directory(directory),
+    "manifest_path" => manifest.fetch("manifest_path"),
+    "state_path" => scout_state_path(directory),
+    "max_scouts" => max_scouts.to_i,
+    "active" => active,
+    "launch_slots" => slots,
+    "counts" => counts,
+    "packets" => packets,
+    "launchable" => launchable
+  }
+end
+
+def outcome_counts(reports)
+  SCOUT_OUTCOMES.to_h do |outcome|
+    [outcome, reports.count { |report| report["outcome"] == outcome }]
+  end
+end
+
+def coverage_status(reports)
+  outcomes = reports.map { |report| report["outcome"].to_s }.reject(&:empty?).uniq
+  return "missing-report" if outcomes.empty?
+  return "conflict" if outcomes.size > 1
+
+  outcomes.first
+end
+
+def build_scout_coverage(directory, tasks)
+  manifest = read_scout_manifest(directory)
+  tasks_by_slug = tasks.to_h { |task| [task.fetch("slug"), task] }
+  packets = Array(manifest["packets"]).map do |packet|
+    task = tasks_by_slug[packet.fetch("task_slug")]
+    reports = Array(task&.fetch("scout_reports", []))
+    status = task ? coverage_status(reports) : "missing-task"
+    {
+      "packet_id" => packet.fetch("packet_id"),
+      "task_slug" => packet.fetch("task_slug"),
+      "task_title" => packet["task_title"],
+      "task_url" => packet["task_url"],
+      "pr_url" => packet["pr_url"],
+      "mode" => packet["mode"],
+      "status" => status,
+      "report_count" => reports.size,
+      "outcome_counts" => outcome_counts(reports),
+      "reports" => reports
+    }
+  end
+
+  conflicts = packets.select { |packet| packet.fetch("status") == "conflict" }
+  missing = packets.select { |packet| %w[missing-report missing-task].include?(packet.fetch("status")) }
+  {
+    "directory" => scout_directory(directory),
+    "manifest_path" => manifest.fetch("manifest_path"),
+    "summary" => {
+      "packets" => packets.size,
+      "covered" => packets.count { |packet| !%w[missing-report missing-task].include?(packet.fetch("status")) },
+      "missing" => missing.size,
+      "conflicts" => conflicts.size
+    },
+    "packets" => packets,
+    "missing" => missing,
+    "conflicts" => conflicts
+  }
+end
+
+def readiness_task(task, recommendation: nil, reasons: [])
+  metadata = task.fetch("devops", {})
+  {
+    "slug" => task.fetch("slug"),
+    "title" => task.fetch("title"),
+    "priority" => task_priority(task),
+    "stage" => task.fetch("stage"),
+    "task_url" => task.fetch("task_url"),
+    "repositories" => task.fetch("repositories"),
+    "pr_url" => metadata["pr_url"],
+    "qa_url" => metadata["qa_url"],
+    "production_url" => metadata["production_url"],
+    "recommendation" => recommendation,
+    "reasons" => reasons,
+    "latest_activity" => compact_activity(task["latest_activity"])
+  }
+end
+
+def build_readiness(tasks, decisions, scout_coverage)
+  groups = [
+    ["ready_to_merge", "Ready To Merge", "Avi can do final PR inspection and merge if the diff still matches the evidence."],
+    ["needs_conductor_review", "Needs Conductor Review", "Avi must inspect directly before merge or feedback."],
+    ["needs_changes", "Needs Changes", "Return to the feature agent with task feedback or PR review comments."],
+    ["waiting", "Waiting", "Checks, scout reports, or external confirmation are not settled."],
+    ["qa_acceptance", "QA Acceptance", "Merged to QA; Mr. McRitchie reviews the QA URL and Avi records acceptance or follow-up."],
+    ["production_ready", "Production Ready", "Deploy only after explicit production approval."],
+    ["scout_gaps", "Scout Gaps", "Scout packets that need reports or have conflicting evidence."]
+  ].map { |key, title, policy| { "key" => key, "title" => title, "policy" => policy, "tasks" => [] } }
+  by_key = groups.to_h { |group| [group.fetch("key"), group] }
+  decisions_by_slug = Array(decisions).to_h { |decision| [decision.fetch("slug"), decision] }
+
+  tasks.each do |task|
+    case task.fetch("stage")
+    when "pr_review"
+      decision = decisions_by_slug[task.fetch("slug")]
+      recommendation = decision&.fetch("recommendation") || "conductor-review"
+      item = readiness_task(task, recommendation: recommendation, reasons: Array(decision&.fetch("reasons")))
+      case recommendation
+      when "merge-ready"
+        by_key.fetch("ready_to_merge").fetch("tasks") << item
+      when "request-changes"
+        by_key.fetch("needs_changes").fetch("tasks") << item
+      when "wait-for-ci"
+        by_key.fetch("waiting").fetch("tasks") << item
+      else
+        by_key.fetch("needs_conductor_review").fetch("tasks") << item
+      end
+    when "qa_review"
+      by_key.fetch("qa_acceptance").fetch("tasks") << readiness_task(task, recommendation: "qa-review")
+    when "prod_ready"
+      by_key.fetch("production_ready").fetch("tasks") << readiness_task(task, recommendation: "production-ready")
+    end
+  end
+
+  Array(scout_coverage&.fetch("missing", [])).each do |packet|
+    by_key.fetch("scout_gaps").fetch("tasks") << {
+      "slug" => packet.fetch("task_slug"),
+      "title" => packet["task_title"],
+      "task_url" => packet["task_url"],
+      "pr_url" => packet["pr_url"],
+      "recommendation" => packet.fetch("status"),
+      "reasons" => ["scout packet has no matching recorded scout report"]
+    }
+  end
+  Array(scout_coverage&.fetch("conflicts", [])).each do |packet|
+    by_key.fetch("scout_gaps").fetch("tasks") << {
+      "slug" => packet.fetch("task_slug"),
+      "title" => packet["task_title"],
+      "task_url" => packet["task_url"],
+      "pr_url" => packet["pr_url"],
+      "recommendation" => "conflict",
+      "reasons" => ["scout reports disagree: #{scout_report_count_text(packet.fetch("outcome_counts"))}"]
+    }
+  end
+
+  groups.each do |group|
+    group["tasks"] = group.fetch("tasks").sort_by do |task|
+      [-PRIORITY_LABELS.key(task.fetch("priority", "LOW")).to_i, task.fetch("slug").to_s]
+    end
+  end
+  {
+    "summary" => groups.to_h { |group| [group.fetch("key"), group.fetch("tasks").size] },
+    "groups" => groups
+  }
+end
+
+def print_task(task)
+  metadata = task.fetch("devops", {})
+  qa = task["qa_intake"]
+  activity = task["latest_activity"]
+
+  puts "[#{task_priority(task)}] #{task.fetch("title")} (#{task.fetch("slug")})"
+  puts "  task: #{task.fetch("task_url")}"
+  puts "  repo: #{compact_list(task.fetch("repositories"))}"
+  puts "  worktree: #{metadata["worktree_slug"] || "missing"}"
+  puts "  branch: #{metadata["branch"] || "missing"}"
+  puts "  PR: #{metadata["pr_url"] || "missing"}"
+  urls = {
+    "local" => metadata["local_url"],
+    "qa" => metadata["qa_url"],
+    "prod" => metadata["production_url"]
+  }.select { |_, value| value.to_s != "" }
+  puts "  urls: #{urls.map { |name, value| "#{name}=#{value}" }.join("  ")}" if urls.any?
+  puts "  tests: expected=#{Array(metadata["test_plan"]).size}  run=#{Array(metadata["checks_run"]).size}"
+  if qa
+    puts "  qa-intake: #{qa["status"]} #{qa["repo"]}##{qa["number"]}"
+    puts "  action: #{qa["action"]}"
+  else
+    puts "  qa-intake: no local PR/worktree match"
+  end
+  if activity
+    puts "  latest #{activity["activity_type"]}: #{first_line(activity["description"])}"
+  end
+end
+
+def print_snapshot(snapshot)
+  puts "DevOps Cycle Snapshot"
+  puts "Generated: #{snapshot.fetch("generated_at")}"
+  puts "Task board: #{snapshot.fetch("base_url")}"
+  puts "Summary: tasks=#{snapshot.dig("summary", "tasks")} qa_intake_prs=#{snapshot.dig("summary", "qa_intake_prs")}"
+
+  snapshot.fetch("stages").each do |stage|
+    tasks = snapshot.fetch("tasks").select { |task| task.fetch("stage") == stage }
+    puts
+    puts "#{STAGE_LABELS.fetch(stage, stage)} (#{tasks.size})"
+    puts "-" * (STAGE_LABELS.fetch(stage, stage).size + tasks.size.to_s.size + 3)
+    if tasks.empty?
+      puts "No tasks in this lane."
+    else
+      tasks.each { |task| print_task(task) }
+    end
+  end
+
+  warnings = Array(snapshot.dig("summary", "warnings"))
+  return if warnings.empty?
+
+  puts
+  puts "Warnings"
+  puts "--------"
+  warnings.each { |warning| puts "- #{warning}" }
+end
+
+def print_plan(snapshot)
+  plan = snapshot["plan"]
+  return unless plan
+
+  puts
+  puts "Batch Plan"
+  puts "----------"
+  plan.fetch("groups").each do |group|
+    tasks = group.fetch("tasks")
+    puts
+    puts "#{group.fetch("title")} (#{tasks.size})"
+    puts group.fetch("policy")
+    if tasks.empty?
+      puts "  none"
+      next
+    end
+
+    tasks.each do |task|
+      puts "  [#{task.fetch("priority")}] #{task.fetch("slug")} #{task.fetch("title")}"
+      puts "    owner=#{task.fetch("owner")} repo=#{compact_list(task.fetch("repositories"))} reason=#{task.fetch("reason")}"
+      puts "    task=#{task.fetch("task_url")}"
+      puts "    pr=#{task["pr_url"]}" if task["pr_url"].to_s != ""
+      puts "    qa=#{task["qa_url"]}" if task["qa_url"].to_s != ""
+      puts "    action=#{task["action"]}" if task["action"].to_s != ""
+    end
+  end
+end
+
+def print_decisions(snapshot)
+  decisions = Array(snapshot["decisions"])
+  return if decisions.empty?
+
+  puts
+  puts "Conductor Decisions (#{decisions.size})"
+  puts "---------------------#{'-' * decisions.size.to_s.size}"
+  DECISION_ORDER.each do |recommendation|
+    items = decisions.select { |decision| decision.fetch("recommendation") == recommendation }
+    puts
+    puts "#{DECISION_LABELS.fetch(recommendation)} (#{items.size})"
+    if items.empty?
+      puts "  none"
+      next
+    end
+
+    items.each do |decision|
+      puts "  [#{decision.fetch("priority")}] #{decision.fetch("slug")} #{decision.fetch("title")}"
+      puts "    task=#{decision.fetch("task_url")}"
+      puts "    pr=#{decision["pr_url"]}" if decision["pr_url"].to_s != ""
+      puts "    repo=#{compact_list(decision.fetch("repositories"))}"
+      puts "    qa-intake=#{decision.dig("qa_intake", "status") || "none"}"
+      reports = scout_report_count_text(decision.fetch("scout_report_counts"))
+      puts "    scout-reports=#{reports.empty? ? "none" : reports}"
+      puts "    reason=#{decision.fetch("reasons").join("; ")}"
+    end
+  end
+end
+
+def print_scout_reports(snapshot)
+  tasks_with_reports = snapshot.fetch("tasks").select { |task| Array(task["scout_reports"]).any? }
+  return if tasks_with_reports.empty?
+
+  total = tasks_with_reports.sum { |task| Array(task["scout_reports"]).size }
+  puts
+  puts "Scout Reports (#{total})"
+  puts "---------------#{'-' * total.to_s.size}"
+  tasks_with_reports.each do |task|
+    puts
+    puts "#{task.fetch("slug")} #{task.fetch("title")}"
+    puts "  task=#{task.fetch("task_url")}"
+    Array(task["scout_reports"]).each do |report|
+      puts "  - #{report["outcome"] || "unknown"} by #{report["agent_slug"] || "unknown"}: #{report["summary"]}"
+      Array(report["findings"]).each { |finding| puts "    finding: #{finding}" }
+      Array(report["questions"]).each { |question| puts "    question: #{question}" }
+      Array(report["checks"]).each { |check| puts "    check: #{check}" }
+    end
+  end
+end
+
+def print_scout_launcher(snapshot)
+  launcher = snapshot["scout_launcher"]
+  return unless launcher
+
+  puts
+  puts "Scout Launcher"
+  puts "--------------"
+  puts "directory=#{launcher.fetch("directory")}"
+  puts "manifest=#{launcher.fetch("manifest_path")}"
+  puts "count=#{launcher.fetch("count")}"
+  Array(launcher["packets"]).each do |packet|
+    puts "- #{packet.fetch("task_slug")} #{packet.fetch("mode")} -> #{packet.fetch("prompt_path")}"
+  end
+end
+
+def print_scout_runs(snapshot)
+  runs = snapshot["scout_runs"]
+  return unless runs
+
+  counts = runs.fetch("counts")
+  puts
+  puts "Scout Run Control"
+  puts "-----------------"
+  puts "directory=#{runs.fetch("directory")}"
+  puts "manifest=#{runs.fetch("manifest_path")}"
+  puts "state=#{runs.fetch("state_path")}"
+  puts "max_scouts=#{runs.fetch("max_scouts")} active=#{runs.fetch("active")} launch_slots=#{runs.fetch("launch_slots")}"
+  puts "pending=#{counts.fetch("pending")} launched=#{counts.fetch("launched")} completed=#{counts.fetch("completed")} blocked=#{counts.fetch("blocked")}"
+  if Array(runs["launchable"]).empty?
+    puts "launchable: none"
+  else
+    puts "launchable:"
+    Array(runs["launchable"]).each do |packet|
+      puts "  - #{packet.fetch("packet_id")} #{packet.fetch("task_slug")} #{packet.fetch("mode")} #{packet.fetch("prompt_path")}"
+    end
+  end
+  puts "packets:"
+  Array(runs["packets"]).each do |packet|
+    agent = packet["agent_slug"].to_s.empty? ? "" : " agent=#{packet["agent_slug"]}"
+    puts "  - #{packet.fetch("packet_id")} #{packet.fetch("status")}#{agent} prompt_exists=#{packet.fetch("prompt_exists")}"
+  end
+end
+
+def print_scout_coverage(snapshot)
+  coverage = snapshot["scout_coverage"]
+  return unless coverage
+
+  summary = coverage.fetch("summary")
+  puts
+  puts "Scout Coverage"
+  puts "--------------"
+  puts "directory=#{coverage.fetch("directory")}"
+  puts "packets=#{summary.fetch("packets")} covered=#{summary.fetch("covered")} missing=#{summary.fetch("missing")} conflicts=#{summary.fetch("conflicts")}"
+  Array(coverage["packets"]).each do |packet|
+    reports = scout_report_count_text(packet.fetch("outcome_counts"))
+    reports = "none" if reports.empty?
+    puts "- #{packet.fetch("task_slug")} #{packet.fetch("status")} reports=#{packet.fetch("report_count")} outcomes=#{reports}"
+  end
+end
+
+def print_scout_packets(snapshot)
+  packets = Array(snapshot["scout_packets"])
+  return if packets.empty?
+
+  puts
+  puts "Scout Packets (#{packets.size})"
+  puts "----------------#{'-' * packets.size.to_s.size}"
+  packets.each_with_index do |packet, index|
+    task = packet.fetch("task")
+    puts
+    puts "##{index + 1} #{packet.fetch("packet_id")} #{task.fetch("title")}"
+    puts "mode=#{packet.fetch("mode")} reason=#{packet.fetch("reason")}"
+    puts "task=#{task.fetch("url")}"
+    puts "pr=#{packet.dig("devops", "pr_url") || "missing"}"
+    puts
+    puts packet.fetch("prompt")
+  end
+end
+
+def print_readiness(snapshot)
+  readiness = snapshot["readiness"]
+  return unless readiness
+
+  puts
+  puts "Conductor Readiness"
+  puts "-------------------"
+  readiness.fetch("groups").each do |group|
+    tasks = group.fetch("tasks")
+    puts
+    puts "#{group.fetch("title")} (#{tasks.size})"
+    puts group.fetch("policy")
+    if tasks.empty?
+      puts "  none"
+      next
+    end
+
+    tasks.each do |task|
+      puts "  [#{task.fetch("priority", "LOW")}] #{task.fetch("slug")} #{task.fetch("title")}"
+      puts "    task=#{task.fetch("task_url")}"
+      puts "    pr=#{task["pr_url"]}" if task["pr_url"].to_s != ""
+      puts "    qa=#{task["qa_url"]}" if task["qa_url"].to_s != ""
+      puts "    prod=#{task["production_url"]}" if task["production_url"].to_s != ""
+      puts "    recommendation=#{task["recommendation"]}" if task["recommendation"].to_s != ""
+      reasons = Array(task["reasons"]).reject { |reason| reason.to_s.empty? }
+      puts "    reason=#{reasons.join("; ")}" if reasons.any?
+    end
+  end
+end
+
+if OPTIONS[:record_scout_report]
+  result = record_scout_report(OPTIONS.fetch(:base_url))
+  if OPTIONS[:json]
+    puts JSON.pretty_generate(result)
+  else
+    activity = result.fetch("activity")
+    if result["dry_run"]
+      puts "Scout report dry-run payload"
+      puts JSON.pretty_generate(activity)
+    else
+      puts "Scout report recorded"
+      puts "task=#{activity["task_slug"]}"
+      puts "outcome=#{activity.dig("metadata", "outcome")}"
+      puts "activity=#{activity["slug"] || activity["id"] || "created"}"
+    end
+  end
+  exit 0
+end
+
+source = if OPTIONS[:offline_fixture]
+           read_json(OPTIONS[:offline_fixture])
+         else
+           fetch_live_tasks(OPTIONS.fetch(:base_url), OPTIONS.fetch(:stages))
+         end
+
+qa_intake = if OPTIONS[:offline_fixture]
+              source.fetch("qa_intake", { "prs" => [], "warnings" => [] })
+            elsif OPTIONS[:qa_intake]
+              run_qa_intake(OPTIONS.fetch(:apps), refresh: OPTIONS.fetch(:refresh))
+            else
+              { "prs" => [], "warnings" => [] }
+            end
+
+snapshot = build_snapshot(source, qa_intake, OPTIONS.fetch(:base_url), OPTIONS.fetch(:stages))
+
+if OPTIONS[:json]
+  puts JSON.pretty_generate(snapshot)
+else
+  print_snapshot(snapshot)
+  print_plan(snapshot)
+  print_decisions(snapshot)
+  print_scout_reports(snapshot) if OPTIONS.fetch(:scout_reports)
+  print_scout_launcher(snapshot)
+  print_scout_runs(snapshot)
+  print_scout_coverage(snapshot)
+  print_scout_packets(snapshot) if OPTIONS.fetch(:scout_packets)
+  print_readiness(snapshot)
+end
