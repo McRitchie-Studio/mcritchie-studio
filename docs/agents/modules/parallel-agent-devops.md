@@ -128,6 +128,7 @@ bin/devops-cycle
 bin/devops-cycle --plan
 bin/devops-cycle --decisions
 bin/devops-cycle --scout-packets
+bin/devops-cycle --write-scout-packets tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
@@ -173,6 +174,15 @@ review-only work to additional sessions. Scout packets are copy-paste prompts
 for the `parallel_pr_review` and `serialized_pr_review` lanes. They include the
 task URL, PR URL, repos, branch, risk tags, acceptance criteria, expected checks,
 completed checks, latest task note, qa-intake status, and explicit guardrails.
+
+Use `bin/devops-cycle --write-scout-packets tmp/devops-scouts` when the queue
+is large enough that inline prompts are awkward. The launcher writes one
+`*.prompt` file per scout packet plus `manifest.json` with packet ids, task
+URLs, PR URLs, review modes, reasons, and prompt file paths. It is a local
+filesystem write only. It does not spawn agents, merge, deploy, write task
+feedback, publish gems, or change branches. Use the manifest to hand prompt
+files to separate scout sessions, then collect their structured reports with
+`--scout-reports` and summarize them with `--decisions`.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return

@@ -274,6 +274,7 @@ bin/devops-cycle
 bin/devops-cycle --plan
 bin/devops-cycle --decisions
 bin/devops-cycle --scout-packets
+bin/devops-cycle --write-scout-packets tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
@@ -292,11 +293,13 @@ recommendations.
 copy-paste prompts for additional review-only sessions. Accurate `repositories`,
 `risk_tags`, `pr_url`, `qa_url`, `acceptance`, `test_plan`, and `checks_run`
 metadata make the plan and packets useful at scale. `bin/devops-cycle
---scout-reports` shows structured scout reports recorded on task comments so
-Avi can make the final merge/request-changes decision from multiple review
-sessions without losing the thread. `bin/qa-intake` remains the raw local
-worktree and GitHub PR view for branch freshness, stack health, and
-cleanup-state details.
+--write-scout-packets tmp/devops-scouts` writes one prompt file per packet plus
+a manifest so Avi can hand files to parallel review sessions without copying
+large prompts through chat. `bin/devops-cycle --scout-reports` shows structured
+scout reports recorded on task comments so Avi can make the final
+merge/request-changes decision from multiple review sessions without losing the
+thread. `bin/qa-intake` remains the raw local worktree and GitHub PR view for
+branch freshness, stack health, and cleanup-state details.
 
 Scout reports are supporting evidence. Avi turns blocker findings into
 `qa_feedback` or PR review comments when the work must return to the feature
