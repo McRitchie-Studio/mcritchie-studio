@@ -15,6 +15,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "#studio-link-sidebar a[href=?]", dashboard_path
+    assert_select "#studio-link-sidebar .studio-emoji-swap"
     assert_select "#studio-link-sidebar a[href=?]", admin_signing_requests_path, count: 0
   end
 
@@ -47,5 +48,6 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "button[data-username-display][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "button[data-profile-image-toggle][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "#studio-link-sidebar a[href=?]", admin_signing_requests_path
+    assert_select "#studio-link-sidebar .studio-emoji-swap-hover"
   end
 end
