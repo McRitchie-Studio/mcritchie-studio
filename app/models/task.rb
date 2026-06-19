@@ -117,10 +117,20 @@ class Task < ApplicationRecord
   end
 
   def self.normalize_devops_list(value)
-    Array(value).flat_map { |item| item.to_s.split(/[\n,]/) }
-                .map(&:strip)
-                .reject(&:blank?)
-                .uniq
+    # Array input (the JSON API / bin/task) is already delimited — each element
+    # is one item, so split ONLY on newlines. Commas are legitimate inside
+    # acceptance/test_plan sentences and must be preserved. String input (UI
+    # free-text fields) keeps the newline+comma split so a single field can
+    # carry several comma-separated entries.
+    parts =
+      if value.is_a?(Array)
+        value.flat_map { |item| item.to_s.split("\n") }
+      else
+        value.to_s.split(/[\n,]/)
+      end
+    parts.map(&:strip)
+         .reject(&:blank?)
+         .uniq
   end
 
   # Postgres advisory locks are session-scoped — try_acquire and release
