@@ -374,7 +374,8 @@ Promote the accepted QA work to production:
 - run the app-specific deployment command from the repo docs
 - verify production /up and the user-facing URL
 - update tasks with production URL/release SHA/check results
-- report production URL, release SHA/version, tasks deployed, checks run, and any follow-up cleanup
+- send Release Notes through `POST /api/v1/release_notes`
+- report production URL, release SHA/version, tasks deployed, checks run, Release Notes result, and any follow-up cleanup
 
 Do not include unrelated PRs or new feature work in this rollout.
 ```
