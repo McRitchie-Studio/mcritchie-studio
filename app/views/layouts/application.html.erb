@@ -10,6 +10,8 @@
     <%= render "layouts/studio/flash" %>
     <script>
       (function () {
+        var linkSidebarSyncVersion = 0;
+
         function ensureLinkSidebarStore() {
           if (!window.Alpine) return null;
 
@@ -29,33 +31,89 @@
         function closeLinkSidebar() {
           var sidebars = ensureLinkSidebarStore();
           if (sidebars) sidebars.linkTreeOpen = false;
+          syncLinkSidebarPanels(false);
         }
 
-        function toggleLinkSidebar(event) {
+        function linkSidebarPanels() {
+          return document.querySelectorAll('#studio-link-sidebar, #studio-link-sidebar-mobile');
+        }
+
+        function applyLinkSidebarPanelState(open) {
+          linkSidebarPanels().forEach(function (panel) {
+            if (open) {
+              panel.style.removeProperty('display');
+              panel.removeAttribute('aria-hidden');
+            } else {
+              panel.style.display = 'none';
+              panel.setAttribute('aria-hidden', 'true');
+            }
+          });
+        }
+
+        function syncLinkSidebarPanels(open) {
+          var version = ++linkSidebarSyncVersion;
+          applyLinkSidebarPanelState(open);
+          requestAnimationFrame(function () {
+            if (version === linkSidebarSyncVersion) applyLinkSidebarPanelState(open);
+          });
+          setTimeout(function () {
+            if (version === linkSidebarSyncVersion) applyLinkSidebarPanelState(open);
+          }, 0);
+        }
+
+        function handleLinkSidebarClick(event) {
+          var closeTrigger = event.target.closest('[data-link-sidebar-close]');
+          if (closeTrigger) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            closeLinkSidebar();
+            return;
+          }
+
           var trigger = event.target.closest('[data-link-sidebar-trigger], [data-username-display], [data-profile-image-toggle]');
-          if (!trigger) return;
-          if (!trigger.matches('[aria-controls~="studio-link-sidebar"]')) return;
+          if (trigger && trigger.matches('[aria-controls~="studio-link-sidebar"]')) {
+            var sidebars = ensureLinkSidebarStore();
+            if (!sidebars) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            sidebars.linkTreeOpen = !sidebars.linkTreeOpen;
+            syncLinkSidebarPanels(sidebars.linkTreeOpen);
+            return;
+          }
 
           var sidebars = ensureLinkSidebarStore();
-          if (!sidebars) return;
+          if (!sidebars || !sidebars.linkTreeOpen) return;
+          if (event.target.closest('#studio-link-sidebar, #studio-link-sidebar-mobile')) return;
 
-          event.preventDefault();
-          event.stopPropagation();
-          sidebars.linkTreeOpen = !sidebars.linkTreeOpen;
+          closeLinkSidebar();
+        }
+
+        function handleLinkSidebarKeydown(event) {
+          if (event.key === 'Escape') closeLinkSidebar();
         }
 
         if (!window.__mcritchieLinkSidebarTriggerBridge) {
           window.__mcritchieLinkSidebarTriggerBridge = true;
-          document.addEventListener('alpine:init', ensureLinkSidebarStore);
-          document.addEventListener('turbo:load', ensureLinkSidebarStore);
+          document.addEventListener('alpine:init', function () {
+            var sidebars = ensureLinkSidebarStore();
+            syncLinkSidebarPanels(!!(sidebars && sidebars.linkTreeOpen));
+          });
+          document.addEventListener('turbo:load', function () {
+            var sidebars = ensureLinkSidebarStore();
+            syncLinkSidebarPanels(!!(sidebars && sidebars.linkTreeOpen));
+          });
           document.addEventListener('turbo:before-cache', closeLinkSidebar);
           window.addEventListener('pageshow', function (event) {
             if (event.persisted) closeLinkSidebar();
           });
-          document.addEventListener('click', toggleLinkSidebar, true);
+          document.addEventListener('click', handleLinkSidebarClick, true);
+          document.addEventListener('keydown', handleLinkSidebarKeydown, true);
         }
 
-        ensureLinkSidebarStore();
+        syncLinkSidebarPanels(!!(ensureLinkSidebarStore() || {}).linkTreeOpen);
       })();
     </script>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
@@ -74,14 +132,14 @@
       <% end %>
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
            :class="scrolled ? 'py-2' : 'py-6'">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
+        <div class="flex items-center justify-between gap-4 min-w-0">
+          <div class="flex items-center gap-6 min-w-0">
             <%= link_to root_path, class: "inline-flex items-center gap-3 group" do %>
               <%= image_tag "logo-icon.svg", class: "transition-all duration-300", "x-bind:class": "scrolled ? 'w-5 h-5' : 'w-8 h-8'" %>
               <h1 class="font-extrabold text-heading tracking-tight transition-all duration-300"
                   x-bind:class="scrolled ? 'text-base' : 'text-2xl'">McRitchie <span class="text-primary">Studio</span></h1>
             <% end %>
-            <nav class="hidden md:flex items-center gap-4">
+            <nav class="hidden md:flex items-center gap-4 min-w-0">
               <%= link_to "Meet the Agents 🦞", activities_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
               <%= link_to "Builders", builders_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
             </nav>

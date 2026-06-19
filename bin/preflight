@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# bin/preflight — local pre-deploy gate for a Rails app.
+#
+# Runs the deterministic checks an agent would otherwise eyeball by hand, and
+# crucially catches the Zeitwerk eager-load trap LOCALLY (dev/test don't
+# eager-load, so a constant/inflection mismatch only crashes the Heroku boot).
+# Skips any tool that isn't present; exits non-zero if any check fails.
+# Run from the app root (or let bin/deploy call it).
+set -uo pipefail
+
+fail=0
+run() {
+  local name="$1"; shift
+  printf '== %s ==\n' "$name"
+  if "$@"; then
+    echo "  ok"
+  else
+    echo "  FAIL ($name)"
+    fail=1
+  fi
+}
+
+[ -f bin/rails ] || { echo "preflight: not a Rails app root (no bin/rails)"; exit 1; }
+
+run "bundle check"     bundle check
+run "zeitwerk:check"   bin/rails zeitwerk:check
+
+if [ -x bin/rubocop ]; then run "rubocop" bin/rubocop; else echo "== rubocop ==\n  (skip: bin/rubocop not present)"; fi
+if [ -x bin/brakeman ]; then run "brakeman" bin/brakeman -q; else echo "== brakeman ==\n  (skip: bin/brakeman not present)"; fi
+
+echo
+if [ "$fail" -ne 0 ]; then
+  echo "preflight: FAILED — fix the above before deploying."
+  exit 1
+fi
+echo "preflight: all checks passed."

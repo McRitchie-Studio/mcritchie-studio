@@ -317,6 +317,22 @@ function kanbanBoard() {
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
               <% end %>
 
+              <% if (latest_activity = @latest_task_activities[task.slug]) %>
+                <div class="mt-2 rounded-md border border-subtle bg-inset/60 p-2">
+                  <div class="flex items-center gap-1.5 mb-1">
+                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/15 text-primary border border-primary/30">
+                      <%= latest_activity.activity_type_label %>
+                    </span>
+                    <% if (activity_count = @task_activity_counts[task.slug].to_i) > 1 %>
+                      <span class="text-[10px] text-muted"><%= activity_count %> notes</span>
+                    <% end %>
+                  </div>
+                  <p class="text-[11px] leading-snug text-secondary line-clamp-2">
+                    <%= latest_activity.description %>
+                  </p>
+                </div>
+              <% end %>
+
               <p class="text-[10px] text-muted mt-1"><%= time_ago_in_words(task.created_at) %> ago</p>
             </div>
           <% end %>

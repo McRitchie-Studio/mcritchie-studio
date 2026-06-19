@@ -48,6 +48,57 @@
   @apply text-xs text-muted uppercase tracking-wider;
 }
 
+@layer components {
+  .sticky-data-table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .sticky-data-table thead th {
+    background: var(--color-surface-alt);
+    box-shadow:
+      inset 0 -1px 0 var(--color-border),
+      0 10px 18px -18px rgba(15, 23, 42, 0.55);
+    transition:
+      background-color 200ms ease,
+      box-shadow 200ms ease,
+      top 200ms ease;
+  }
+
+  .dark .sticky-data-table thead th {
+    box-shadow:
+      inset 0 -1px 0 var(--color-border),
+      0 12px 22px -18px rgba(0, 0, 0, 0.85);
+  }
+
+  .sticky-table-header-clone {
+    position: fixed;
+    display: none;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 45;
+  }
+
+  .sticky-table-header-clone table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .sticky-table-header-clone thead th {
+    position: static;
+    background: var(--color-surface-alt);
+    box-shadow:
+      inset 0 -1px 0 var(--color-border),
+      0 12px 22px -18px rgba(15, 23, 42, 0.65);
+  }
+
+  .dark .sticky-table-header-clone thead th {
+    box-shadow:
+      inset 0 -1px 0 var(--color-border),
+      0 14px 24px -18px rgba(0, 0, 0, 0.9);
+  }
+}
+
 @utility btn {
   /* -- Button System (standardized across all Studio apps) -- */
   @apply inline-flex items-center justify-center font-bold rounded-lg transition px-6 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed;

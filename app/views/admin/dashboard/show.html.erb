@@ -19,7 +19,7 @@
           subtitle: "all destinations", icon: "✨" %>
   </div>
 
-  <section id="admin-users" class="card overflow-hidden">
+  <section id="admin-users" class="card scroll-mt-[calc(var(--nav-h,0px)+1rem)]">
     <div class="px-4 py-4 border-b border-subtle flex items-center justify-between gap-3">
       <div>
         <h2 class="text-heading text-lg font-semibold">Users</h2>
@@ -28,8 +28,8 @@
       <span class="text-xs text-muted">Showing <%= @users.size %> of <%= @user_count %></span>
     </div>
 
-    <div class="overflow-x-auto">
-      <table id="admin-users-table" class="w-full min-w-[760px] text-sm">
+    <div class="overflow-x-auto" data-sticky-table-scroll>
+      <table id="admin-users-table" class="sticky-data-table w-full min-w-[760px] text-sm" data-sticky-table-header>
         <thead class="bg-surface-alt text-muted text-xs uppercase tracking-wide">
           <tr>
             <th class="px-4 py-3 text-left font-semibold">User</th>

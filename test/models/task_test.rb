@@ -209,19 +209,31 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "task-board-contract", metadata["worktree_slug"]
   end
 
+  test "array-form devops lists keep commas; string-form still splits on commas" do
+    metadata = Task.normalize_devops_metadata(
+      "acceptance" => ["Header stays pinned, even while scrolling", "Email still works"],
+      "risk_tags" => "auth, deploy"
+    )
+
+    # Array items are preserved verbatim — a comma inside a sentence is kept.
+    assert_equal ["Header stays pinned, even while scrolling", "Email still works"], metadata["acceptance"]
+    # String (UI free-text) fields still split on comma and newline.
+    assert_equal ["auth", "deploy"], metadata["risk_tags"]
+  end
+
   test "devops helpers expose stored release metadata" do
     task = Task.create!(
       title: "Ship a feature",
       metadata: {
         "devops" => {
           "kind" => "bug",
+          "worktree_slug" => "qa-contest-flow",
           "repositories" => ["turf-monster"],
           "release_train" => "2026-06-17-turf",
           "qa_url" => "https://qa.turfmonster.media/contests",
           "requires_release_conductor" => "1",
           "test_plan" => ["bin/rails test"],
-          "checks_run" => ["bin/rails test test/models/task_test.rb"],
-          "worktree_slug" => "qa-wallet-chooser"
+          "checks_run" => ["bin/rails test test/models/task_test.rb"]
         }
       }
     )
@@ -229,11 +241,11 @@ class TaskTest < ActiveSupport::TestCase
     assert task.devops?
     assert task.requires_release_conductor?
     assert_equal "bug", task.devops_kind
+    assert_equal "qa-contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster"], task.devops_repositories
     assert_equal "2026-06-17-turf", task.devops_release_train
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
     assert_equal ["bin/rails test"], task.devops_test_plan
     assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
-    assert_equal "qa-wallet-chooser", task.devops_worktree_slug
   end
 end

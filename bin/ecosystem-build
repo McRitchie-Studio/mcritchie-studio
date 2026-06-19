@@ -28,9 +28,9 @@
 set -uo pipefail   # no -e: phases report their own failures and we keep going where safe
 
 # ─── Constants ──────────────────────────────────────────────────────────────
-HOMEBREW_PKGS=(ruby@3.1 mise postgresql@14 redis 1password-cli gh ffmpeg imagemagick libpq jq)
+HOMEBREW_PKGS=(ruby@3.3 mise postgresql@14 redis 1password-cli gh ffmpeg imagemagick libpq jq)
 HOMEBREW_CASK_PKGS=(heroku/brew/heroku)
-RUBY_PREFIX=/opt/homebrew/opt/ruby@3.1
+RUBY_PREFIX=/opt/homebrew/opt/ruby@3.3
 SOLANA_PREFIX=$HOME/.local/share/solana/install/active_release
 CARGO_PREFIX=$HOME/.cargo
 MISE_SHIMS=$HOME/.local/share/mise/shims
@@ -87,7 +87,7 @@ log_fail()  { local detail="${2:-}"; echo "  ${RED}✗${RESET} $1${detail:+  ${D
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # Build PATH for child processes (idempotent)
-export PATH="$RUBY_PREFIX/bin:/opt/homebrew/lib/ruby/gems/3.1.0/bin:$MISE_SHIMS:$SOLANA_PREFIX/bin:$CARGO_PREFIX/bin:/opt/homebrew/bin:$PATH"
+export PATH="$RUBY_PREFIX/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:$MISE_SHIMS:$SOLANA_PREFIX/bin:$CARGO_PREFIX/bin:/opt/homebrew/bin:$PATH"
 
 # Pull OP_SERVICE_ACCOUNT_TOKEN + HEROKU_API_KEY from ~/.zprofile if they live there
 if [ -f "$HOME/.zprofile" ]; then
@@ -120,7 +120,7 @@ phase_system_tools() {
     brew install "${missing[@]}" >/dev/null
   fi
 
-  for pkg in ruby@3.1 mise postgresql@14 redis 1password-cli gh ffmpeg imagemagick jq heroku; do
+  for pkg in ruby@3.3 mise postgresql@14 redis 1password-cli gh ffmpeg imagemagick jq heroku; do
     if brew list "$pkg" >/dev/null 2>&1; then
       log_ok "$pkg"
     else
@@ -132,7 +132,7 @@ phase_system_tools() {
   if "$RUBY_PREFIX/bin/ruby" -e "require 'socket'" 2>/dev/null; then
     log_ok "ruby socket extension"
   else
-    log_fail "ruby missing socket extension" "try: brew reinstall ruby@3.1"
+    log_fail "ruby missing socket extension" "try: brew reinstall ruby@3.3"
   fi
 
   # Background services
@@ -203,8 +203,8 @@ phase_shell_config() {
   log_phase "Phase 3: Shell config"
 
   local zshrc_lines=(
-    'export PATH="/opt/homebrew/opt/ruby@3.1/bin:$PATH"'
-    'export PATH="/opt/homebrew/lib/ruby/gems/3.1.0/bin:$PATH"'
+    'export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"'
+    'export PATH="/opt/homebrew/lib/ruby/gems/3.3.0/bin:$PATH"'
     'eval "$(/opt/homebrew/bin/mise activate zsh)"'
     'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"'
     'export PATH="$HOME/.cargo/bin:$PATH"'

@@ -1,0 +1,229 @@
+{
+  "tasks": [
+    {
+      "slug": "task-pr123",
+      "title": "Ship sidebar recovery",
+      "stage": "pr_review",
+      "priority": 2,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:00:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "bug",
+          "worktree_slug": "sidebar-recovery",
+          "repositories": ["mcritchie-studio"],
+          "risk_tags": ["ui", "navigation"],
+          "branch": "feat/sidebar-recovery",
+          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+          "local_url": "http://localhost:3021/tasks",
+          "acceptance": ["Sidebar opens after browser Back"],
+          "test_plan": ["bin/rails test test/integration/links_hub_test.rb"],
+          "checks_run": ["bin/rails test test/integration/links_hub_test.rb"]
+        }
+      }
+    },
+    {
+      "slug": "task-engine789",
+      "title": "Ship shared engine table headers",
+      "stage": "pr_review",
+      "priority": 2,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:30:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "feature",
+          "worktree_slug": "shared-engine-table-headers",
+          "repositories": ["studio-engine", "turf-monster"],
+          "risk_tags": ["gem", "ui"],
+          "branch": "feat/shared-engine-table-headers",
+          "pr_url": "https://github.com/amcritchie/studio-engine/pull/789",
+          "acceptance": ["Engine release can be adopted by Turf Monster"],
+          "test_plan": ["bundle exec rake test", "consumer app smoke"],
+          "checks_run": ["bundle exec rake test"]
+        }
+      }
+    },
+    {
+      "slug": "task-block000",
+      "title": "Fix stale worktree handoff",
+      "stage": "pr_review",
+      "priority": 1,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:45:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "bug",
+          "worktree_slug": "stale-worktree-handoff",
+          "repositories": ["mcritchie-studio"],
+          "risk_tags": ["devops"],
+          "branch": "feat/stale-worktree-handoff",
+          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/1000",
+          "acceptance": ["Worktree handoff is current with main"],
+          "test_plan": ["bin/qa-intake --refresh"],
+          "checks_run": []
+        }
+      }
+    },
+    {
+      "slug": "task-ready222",
+      "title": "Ship focused DevOps helper",
+      "stage": "pr_review",
+      "priority": 1,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T14:50:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "chore",
+          "worktree_slug": "focused-devops-helper",
+          "repositories": ["mcritchie-studio"],
+          "risk_tags": ["devops"],
+          "branch": "feat/focused-devops-helper",
+          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/222",
+          "acceptance": ["Helper output is deterministic"],
+          "test_plan": ["bin/rails test test/commands/devops_cycle_command_test.rb"],
+          "checks_run": ["bin/rails test test/commands/devops_cycle_command_test.rb"]
+        }
+      }
+    },
+    {
+      "slug": "task-qa456",
+      "title": "QA contest entry flow",
+      "stage": "qa_review",
+      "priority": 1,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T15:00:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "feature",
+          "worktree_slug": "contest-entry-flow",
+          "repositories": ["turf-monster"],
+          "risk_tags": ["wallet", "qa"],
+          "branch": "feat/contest-entry-flow",
+          "pr_url": "https://github.com/amcritchie/turf-monster/pull/456",
+          "qa_url": "https://qa.turfmonster.media/contests/test",
+          "acceptance": ["Contest entry completes on QA"],
+          "test_plan": ["bin/e2e-parallel"],
+          "checks_run": ["QA /up returned 200"]
+        }
+      }
+    },
+    {
+      "slug": "task-prod999",
+      "title": "Release accepted QA work",
+      "stage": "prod_ready",
+      "priority": 2,
+      "agent_slug": "avi",
+      "created_at": "2026-06-18T16:00:00Z",
+      "metadata": {
+        "devops": {
+          "kind": "release",
+          "worktree_slug": "release-accepted-qa",
+          "repositories": ["mcritchie-studio", "turf-monster"],
+          "risk_tags": ["deploy"],
+          "qa_url": "https://qa.mcritchie.studio/devops",
+          "acceptance": ["Production deploy is explicitly approved"],
+          "test_plan": ["production smoke"],
+          "checks_run": ["QA accepted by Mr. McRitchie"]
+        }
+      }
+    }
+  ],
+  "activities": [
+    {
+      "task_slug": "task-pr123",
+      "agent_slug": "casey",
+      "activity_type": "comment",
+      "description": "Scout report: merge-ready - Diff matches the task and CI is green.",
+      "created_at": "2026-06-18T14:04:00Z",
+      "metadata": {
+        "kind": "scout_report",
+        "outcome": "merge-ready",
+        "reporter": "casey",
+        "summary": "Diff matches the task and CI is green.",
+        "findings": ["PR body matches the task acceptance criteria", "No overlapping worktree risk found"],
+        "questions": [],
+        "checks": ["Reviewed diff and PR metadata", "Confirmed qa-intake avi-ready"]
+      }
+    },
+    {
+      "task_slug": "task-pr123",
+      "agent_slug": "avi",
+      "activity_type": "qa_feedback",
+      "description": "Needs one more navbar regression test before merge.",
+      "created_at": "2026-06-18T14:05:00Z"
+    },
+    {
+      "task_slug": "task-qa456",
+      "agent_slug": "avi",
+      "activity_type": "handoff",
+      "description": "QA deploy is live for contest entry.",
+      "created_at": "2026-06-18T15:05:00Z"
+    },
+    {
+      "task_slug": "task-ready222",
+      "agent_slug": "drew",
+      "activity_type": "comment",
+      "description": "Scout report: merge-ready - Helper is scoped and checks are green.",
+      "created_at": "2026-06-18T15:10:00Z",
+      "metadata": {
+        "kind": "scout_report",
+        "outcome": "merge-ready",
+        "reporter": "drew",
+        "summary": "Helper is scoped and checks are green.",
+        "findings": ["No behavior outside the command changed"],
+        "questions": [],
+        "checks": ["Reviewed command diff", "Confirmed focused command test"]
+      }
+    }
+  ],
+  "qa_intake": {
+    "prs": [
+      {
+        "status": "avi-ready",
+        "repo": "amcritchie/studio-engine",
+        "number": 789,
+        "url": "https://github.com/amcritchie/studio-engine/pull/789",
+        "task_record_slug": "task-engine789",
+        "task_url": "https://mcritchie.studio/tasks/task-engine789",
+        "action": "Avi can review but coordinate release ordering"
+      },
+      {
+        "status": "needs-agent",
+        "repo": "amcritchie/mcritchie-studio",
+        "number": 1000,
+        "url": "https://github.com/amcritchie/mcritchie-studio/pull/1000",
+        "task_record_slug": "task-block000",
+        "task_url": "https://mcritchie.studio/tasks/task-block000",
+        "action": "return to the feature agent to resolve local blockers before Avi review"
+      },
+      {
+        "status": "avi-ready",
+        "repo": "amcritchie/mcritchie-studio",
+        "number": 123,
+        "url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+        "task_record_slug": "task-pr123",
+        "task_url": "https://mcritchie.studio/tasks/task-pr123",
+        "action": "Avi can review for scope and merge safety"
+      },
+      {
+        "status": "avi-ready",
+        "repo": "amcritchie/mcritchie-studio",
+        "number": 222,
+        "url": "https://github.com/amcritchie/mcritchie-studio/pull/222",
+        "task_record_slug": "task-ready222",
+        "task_url": "https://mcritchie.studio/tasks/task-ready222",
+        "action": "Avi can review for scope and merge safety"
+      },
+      {
+        "status": "checks-review",
+        "repo": "amcritchie/turf-monster",
+        "number": 456,
+        "url": "https://github.com/amcritchie/turf-monster/pull/456",
+        "task_record_slug": "task-qa456",
+        "task_url": "https://mcritchie.studio/tasks/task-qa456",
+        "action": "inspect checks and wait for green"
+      }
+    ],
+    "warnings": []
+  }
+}

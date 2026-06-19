@@ -18,6 +18,28 @@ module Github
       x-ratelimit-resource
       x-ratelimit-used
     ].freeze
+    INSPECTABLE_HEADER_NAMES = (RATE_LIMIT_HEADER_NAMES + %w[
+      content-type
+      etag
+      last-modified
+      link
+    ]).freeze
+
+    Response = Struct.new(:url, :status, :headers, :body, :raw_body, keyword_init: true) do
+      def success?
+        status.to_i.between?(200, 299)
+      end
+
+      def to_h
+        {
+          url: url,
+          status: status,
+          headers: headers,
+          body: body,
+          raw_body: raw_body
+        }
+      end
+    end
 
     attr_reader :request_count
 
@@ -41,6 +63,17 @@ module Github
     def get(path, params: {}, headers: {})
       response = request(path, params: params, headers: headers)
       parse_json(response.body)
+    end
+
+    def get_response(path, params: {}, headers: {})
+      response = request(path, params: params, headers: headers)
+      Response.new(
+        url: build_uri(path, params).to_s,
+        status: response.code.to_i,
+        headers: inspectable_headers(response),
+        body: parse_json(response.body),
+        raw_body: response.body
+      )
     end
 
     def paginate(path, params: {}, headers: {})
@@ -214,6 +247,12 @@ module Github
 
     def safe_rate_limit_headers(response)
       RATE_LIMIT_HEADER_NAMES.to_h do |header_name|
+        [header_name, response[header_name]]
+      end.compact
+    end
+
+    def inspectable_headers(response)
+      INSPECTABLE_HEADER_NAMES.to_h do |header_name|
         [header_name, response[header_name]]
       end.compact
     end

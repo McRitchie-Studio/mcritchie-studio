@@ -285,6 +285,8 @@ def build_intake(registry, prs, apps, worktrees, warnings)
       "branch" => pr.fetch("headRefName"),
       "base" => pr.fetch("baseRefName"),
       "updated_at" => pr.fetch("updatedAt"),
+      "task_record_slug" => worktree&.fetch("task_record_slug", nil),
+      "task_url" => worktree&.fetch("task_url", nil),
       "local_worktree" => worktree&.fetch("worktree"),
       "notes" => pr_notes(pr, worktree),
       "action" => pr_action(status, pr, worktree)
@@ -345,6 +347,7 @@ def print_pr_queue(prs)
   prs.each do |pr|
     puts "[#{pr.fetch("status")}] #{pr.fetch("app")} ##{pr.fetch("number")} #{pr.fetch("title")}"
     puts "  #{pr.fetch("url")}"
+    puts "  task=#{pr["task_url"] || pr["task_record_slug"] || "not bound"}"
     puts "  branch=#{pr.fetch("branch")} base=#{pr.fetch("base")} local=#{pr["local_worktree"] || "none"}"
     puts "  notes: #{pr.fetch("notes").join("; ")}"
     puts "  action: #{pr.fetch("action")}"

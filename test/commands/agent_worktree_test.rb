@@ -1,0 +1,252 @@
+require "test_helper"
+require "fileutils"
+require "json"
+require "open3"
+require "rbconfig"
+require "tmpdir"
+
+class AgentWorktreeCommandTest < ActiveSupport::TestCase
+  def setup
+    @projects_dir = Dir.mktmpdir("agent-worktree-command")
+    @hub_dir = File.join(@projects_dir, "mcritchie-studio")
+    @task = "terminal-context"
+    @worktree_dir = File.join(@hub_dir, ".worktrees", @task)
+    @script = Rails.root.join("bin/agent-worktree").to_s
+    setup_repo
+  end
+
+  def teardown
+    FileUtils.rm_rf(@projects_dir) if @projects_dir
+  end
+
+  test "bind-task records the production task on env and context marker" do
+    out, err, status = agent_worktree("bind-task", "mcritchie-studio", @task, "task-abc123")
+
+    assert status.success?, err
+    assert_includes out, "task bound"
+    env = File.read(File.join(@worktree_dir, ".env.agent-stack"))
+    assert_includes env, "TASK_RECORD_SLUG=task-abc123"
+    assert_includes env, "TASK_URL=https://mcritchie.studio/tasks/task-abc123"
+
+    context = JSON.parse(File.read(File.join(@worktree_dir, ".agent-context.json")))
+    assert_equal "task-abc123", context.fetch("task_record_slug")
+    assert_equal "https://mcritchie.studio/tasks/task-abc123", context.fetch("task_url")
+  end
+
+  test "whereami shell output ignores tampered shell content from context file" do
+    agent_worktree!("bind-task", "mcritchie-studio", @task, "task-shell")
+    path = File.join(@worktree_dir, ".agent-context.json")
+    context = JSON.parse(File.read(path))
+    context["shell"] = {
+      "exports" => ["touch /tmp/agent-worktree-pwned"],
+      "title_command" => "touch /tmp/agent-worktree-title-pwned"
+    }
+    context["terminal_title"] = "bad title; touch /tmp/agent-worktree-title-pwned"
+    File.write(path, "#{JSON.pretty_generate(context)}\n")
+
+    out, err, status = agent_worktree("whereami", "--shell", chdir: @worktree_dir)
+
+    assert status.success?, err
+    assert_includes out, "export AGENT_CONTEXT_TASK_RECORD=task-shell"
+    assert_includes out, "export AGENT_CONTEXT_TASK_URL=https://mcritchie.studio/tasks/task-shell"
+    assert_includes out, "printf"
+    assert_no_match(%r{touch /tmp/agent-worktree}, out)
+  end
+
+  test "shell-hook failure path unsets every context export" do
+    out, err, status = agent_worktree("shell-hook", "zsh")
+
+    assert status.success?, err
+    %w[
+      AGENT_CONTEXT_APP
+      AGENT_CONTEXT_TASK
+      AGENT_CONTEXT_WORKTREE_SLUG
+      AGENT_CONTEXT_TASK_RECORD
+      AGENT_CONTEXT_TASK_URL
+      AGENT_CONTEXT_PORT
+      AGENT_CONTEXT_URL
+      AGENT_CONTEXT_TITLE
+      AGENT_CONTEXT_BADGE
+    ].each do |name|
+      assert_includes out, name
+    end
+  end
+
+  test "snapshot includes bound task fields" do
+    agent_worktree!("bind-task", "mcritchie-studio", @task, "task-snapshot")
+    registry_path = File.join(@projects_dir, ".agents", "registry.json")
+
+    out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write", env: { "AGENT_WORKTREE_REGISTRY" => registry_path })
+
+    assert status.success?, err
+    assert_includes out, "wrote"
+    registry = JSON.parse(File.read(registry_path))
+    record = registry.fetch("worktrees").find { |item| item.fetch("task") == @task }
+    assert_equal "task-snapshot", record.fetch("task_record_slug")
+    assert_equal "https://mcritchie.studio/tasks/task-snapshot", record.fetch("task_url")
+  end
+
+  test "finish push pr blocks without a bound production task" do
+    out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
+
+    assert_not status.success?
+    combined = "#{out}\n#{err}"
+    assert_includes combined, "not ready for QA"
+    assert_includes combined, "worktree is not bound to a production McRitchie Studio task"
+  end
+
+  test "qa-intake PR metadata includes bound task fields" do
+    registry_path = write_intake_registry
+    fake_bin = write_fake_gh
+
+    out, err, status = qa_intake("--registry", registry_path, "--apps", "mcritchie-studio", "--json", env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" })
+
+    assert status.success?, err
+    intake = JSON.parse(out)
+    pr = intake.fetch("prs").first
+    assert_equal "task-intake", pr.fetch("task_record_slug")
+    assert_equal "https://mcritchie.studio/tasks/task-intake", pr.fetch("task_url")
+  end
+
+  private
+
+  def setup_repo
+    FileUtils.mkdir_p(@hub_dir)
+    git!(@hub_dir, "init")
+    git!(@hub_dir, "config", "user.email", "agent-test@example.com")
+    git!(@hub_dir, "config", "user.name", "Agent Test")
+    git!(@hub_dir, "checkout", "-b", "main")
+    File.write(File.join(@hub_dir, "README.md"), "# Test repo\n")
+    git!(@hub_dir, "add", "README.md")
+    git!(@hub_dir, "commit", "-m", "Initial commit")
+    git!(@hub_dir, "remote", "add", "origin", "https://github.com/amcritchie/mcritchie-studio.git")
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git!(@hub_dir, "worktree", "add", @worktree_dir, "-b", "feat/terminal-context")
+    git!(@worktree_dir, "config", "user.email", "agent-test@example.com")
+    git!(@worktree_dir, "config", "user.name", "Agent Test")
+    File.write(File.join(@worktree_dir, "feature.txt"), "feature\n")
+    git!(@worktree_dir, "add", "feature.txt")
+    git!(@worktree_dir, "commit", "-m", "Add terminal context feature")
+    write_stack_env
+  end
+
+  def write_stack_env
+    File.write(File.join(@worktree_dir, ".env.agent-stack"), <<~ENVFILE)
+      AGENT_WORKTREE=1
+      APP_SLUG=mcritchie-studio
+      TASK_SLUG=#{@task}
+      APP_PORT=39999
+      PORT=39999
+      REDIS_URL=redis://localhost:6379/9
+      DATABASE_URL=postgresql://localhost/mcritchie_studio_development_terminal_context
+      TASK_RECORD_SLUG=
+      TASK_URL=
+      MCRITCHIE_SESSION_KEY=_studio_session_terminal_context
+      LOCAL_EMAIL_CAPTURE=1
+      MAIL_TRANSPORT=
+      RESEND_API_KEY=
+      SES_SMTP_USERNAME=
+      SES_SMTP_PASSWORD=
+    ENVFILE
+  end
+
+  def git!(dir, *args)
+    out, err, status = Open3.capture3("git", *args, chdir: dir)
+    assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
+  end
+
+  def command_env(extra = {})
+    {
+      "PROJECTS_DIR" => @projects_dir,
+      "AGENT_REDIS_CAPACITY_FILE" => File.join(@projects_dir, ".agents", "redis-capacity.json"),
+      "AGENT_WORKTREE_LOCK" => File.join(@projects_dir, ".agents", "agent-worktree.lock"),
+      "PATH" => ENV.fetch("PATH", "")
+    }.merge(extra)
+  end
+
+  def agent_worktree(*args, chdir: Rails.root.to_s, env: {})
+    Open3.capture3(command_env(env), RbConfig.ruby, @script, *args, chdir: chdir)
+  end
+
+  def agent_worktree!(*args, chdir: Rails.root.to_s, env: {})
+    out, err, status = agent_worktree(*args, chdir: chdir, env: env)
+    assert status.success?, "#{out}\n#{err}"
+    out
+  end
+
+  def qa_intake(*args, env: {})
+    Open3.capture3(command_env(env), RbConfig.ruby, Rails.root.join("bin/qa-intake").to_s, *args, chdir: Rails.root.to_s)
+  end
+
+  def write_intake_registry
+    path = File.join(@projects_dir, ".agents", "intake-registry.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{JSON.pretty_generate(
+      "generated_at" => "2026-06-18T00:00:00Z",
+      "apps" => [
+        {
+          "slug" => "mcritchie-studio",
+          "display_name" => "McRitchie Studio",
+          "repo" => @hub_dir,
+          "primary_port" => 3000,
+          "range_start" => 3000,
+          "range_end" => 3099,
+          "status" => "active"
+        }
+      ],
+      "summary" => {},
+      "worktrees" => [
+        {
+          "label" => "mcritchie-studio/terminal-context",
+          "app" => "mcritchie-studio",
+          "task" => @task,
+          "task_record_slug" => "task-intake",
+          "task_url" => "https://mcritchie.studio/tasks/task-intake",
+          "worktree" => @worktree_dir,
+          "health" => "down",
+          "local_url" => "http://localhost:39999",
+          "branch" => "feat/terminal-context",
+          "dirty" => false,
+          "merged_to_origin_main" => false,
+          "cleanup_candidate" => false,
+          "ahead_origin_main" => "1",
+          "behind_origin_main" => "0",
+          "issues" => []
+        }
+      ]
+    )}\n")
+    path
+  end
+
+  def write_fake_gh
+    dir = File.join(@projects_dir, "fake-bin")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "gh")
+    File.write(path, <<~RUBY)
+      #!/usr/bin/env ruby
+      require "json"
+      if ARGV[0, 2] == ["pr", "list"]
+        puts JSON.generate([
+          {
+            number: 41,
+            title: "Terminal context marker",
+            url: "https://github.com/amcritchie/mcritchie-studio/pull/41",
+            isDraft: false,
+            headRefName: "feat/terminal-context",
+            baseRefName: "main",
+            mergeStateStatus: "CLEAN",
+            reviewDecision: "",
+            updatedAt: "2026-06-18T00:00:00Z",
+            author: { login: "agent" },
+            labels: []
+          }
+        ])
+      else
+        warn "unexpected gh args: \#{ARGV.join(" ")}"
+        exit 1
+      end
+    RUBY
+    File.chmod(0o755, path)
+    dir
+  end
+end

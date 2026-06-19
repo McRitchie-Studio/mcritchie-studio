@@ -5,6 +5,11 @@ bug, QA, release, and cleanup work. Chat can start work, but task metadata is
 the handoff that survives across agents, PRs, QA deploys, production deploys,
 and cleanup.
 
+This file covers the **workflow** (stages, metadata, duties). For the **HTTP
+API** an agent uses to authenticate and create/move tasks — auth secret, bearer
+token, endpoints, writable fields, and the normalizer footguns — see
+[`task-board-api.md`](task-board-api.md).
+
 ## Flat Tasks First
 
 Do not create parent/child task trees by default. Deliver increments of work as
@@ -33,6 +38,13 @@ creates a flat production task from the ask before allocating a worktree or
 editing files. If a task already exists, the agent updates that task instead of
 creating a duplicate.
 
+Feature agents should first identify the feature and accumulate acceptance
+criteria until the agent and Mr. McRitchie are aligned on the goal. The task is
+the durable version of that alignment. Exceptions are narrow conductor sessions
+such as Avi running the DevOps/QA cycle, pure read-only audits, and explicit
+release/deploy lanes; those sessions still update tasks when they change
+handoff state.
+
 Use one task per independently reviewable increment. For a vertical feature
 that touches multiple repos and ships together, either use one task with all
 repos listed in `repositories`, or separate flat tasks that share the same
@@ -42,16 +54,18 @@ Minimum task setup before implementation:
 
 - `title` and `description` summarize the user-visible ask.
 - `kind` is `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup`.
+- `worktree_slug` is the human-readable feature handle used for the branch,
+  worktree path, terminal context, and local stack. The app-generated
+  `Task.slug` remains the immutable production task id.
 - `repositories` lists every repo expected to change.
-- `worktree_slug` records the `bin/agent-worktree` task/worktree slug. The
-  app-level `Task.slug` remains an immutable random task id.
 - `acceptance` records concrete acceptance criteria. If the ask is ambiguous,
   confirm criteria with Mr. McRitchie before building.
 - `risk_tags` captures likely risk such as `auth`, `email`, `solana`,
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
-- `release_train` is required only when multiple tasks should move through
-  QA/release together. Tiny independent fixes do not need fake release trains.
+- `checks_run` records the checks actually completed before handoff.
+- `release_train` groups related tasks that should move through QA/release
+  together. Leave it blank for a small independent task.
 - `requires_release_conductor` is `true` when production deploy, gem publish,
   provider config, env vars, data correction, credentials, or migration/backfill
   handling may be needed.
@@ -77,17 +91,84 @@ Stage movement:
 
 Handoff connections:
 
-- `Task.slug` is the app's immutable random task id. The worktree slug must be
-  recorded on the task as `metadata["devops"]["worktree_slug"]`.
-- The PR body should mention the task slug or task URL.
+- Set `devops.worktree_slug` to the human-readable worktree slug. The generated
+  `Task.slug` is not human-readable and should not be manually changed.
+- Bind the production task to the local stack with
+  `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`.
+- The PR body and final handoff should lead with the task URL before the PR URL.
 - The task must record `branch`, `pr_url`, `local_url` when applicable,
-  `checks_run`, `qa_url` after QA deployment, and `production_url` after
-  production deploy.
+  `qa_url` after QA deployment, `production_url` after production deploy,
+  `test_plan`, and `checks_run`.
 - `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
   should join that queue back to tasks and leave feedback on the task or PR when
   metadata is missing.
 - Final handoff should name the task, PR, release train when present, URLs,
-  checks run, deployment SHA/release, and cleanup decision.
+  `checks_run`, deployment SHA/release, and cleanup decision.
+
+## Task Conversation and QA Feedback
+
+The task board owns the durable conversation for an increment. `/tasks` cards
+show the latest feedback inline so agents can scan the queue without opening a
+separate tool. Open the task detail page when you need the full thread or need
+to add a note.
+
+Use these activity types:
+
+- `comment` for general coordination notes.
+- `qa_feedback` for Avi or Steffon review findings, QA blockers, failed checks,
+  missing metadata, or changes requested before merge/deploy.
+- `handoff` for feature-agent responses, rebase notes, local proof URLs, or
+  "ready again" messages after addressing feedback.
+
+Review scouts record their findings as `comment` activities with
+`metadata.kind=scout_report`. This keeps scout evidence visible without
+accidentally turning a scout's recommendation into Avi's final review decision.
+The normal path is:
+
+1. Avi runs `bin/devops-cycle --scout-packets` and gives a packet to a
+   review-only scout session.
+2. The scout reviews the task and PR, then dry-runs a structured report:
+
+   ```bash
+   bin/devops-cycle --record-scout-report task-XXXX \
+     --outcome merge-ready \
+     --summary "No blockers found." \
+     --finding "Diff matches the task acceptance criteria." \
+     --check "Reviewed PR body, changed files, and CI." \
+     --dry-run
+   ```
+
+3. The scout removes `--dry-run` only after the payload is correct.
+4. Avi runs `bin/devops-cycle --scout-reports` to see recorded scout reports
+   alongside the task queue.
+5. Avi makes the final call. If changes are required, Avi leaves
+   `qa_feedback` on the task and usually a PR comment with the code-specific
+   blocker.
+
+Valid scout outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
+`conductor-review`. Scouts do not merge, deploy, move task stages, publish
+gems, change providers, rotate credentials, force-push, or take over branches.
+
+When Avi sends work back, Avi should add `qa_feedback` on the task with the
+specific action needed and also comment on the PR when the feedback is tied to
+GitHub review, CI, or changed code. The task thread is the durable handoff for
+the original agent; the PR comment is the code-review surface.
+
+When the feature agent returns, the agent should read the task conversation,
+address each open `qa_feedback` item, add a `handoff` note with what changed,
+update branch/PR/local URL/check metadata if needed, and move the task back to
+`pr_review` when ready.
+
+Agents can read or write the same thread through the Activities API:
+
+```bash
+GET /api/v1/activities?task_slug=<task-slug>
+POST /api/v1/activities
+```
+
+Post payloads should include `task_slug`, `activity_type`, `description`,
+optional `agent_slug`, and optional `metadata`. API calls require the app's API
+bearer token. The HTML task page remains the operator-friendly source of truth.
 
 ## Stage Flow
 
@@ -121,8 +202,8 @@ Supported fields:
 | Field | Meaning |
 |---|---|
 | `kind` | `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup` |
+| `worktree_slug` | Human-readable feature handle used for the worktree path, branch, terminal context, and task binding |
 | `repositories` | Repos touched by this increment, such as `mcritchie-studio` or `turf-monster` |
-| `worktree_slug` | Worktree/task slug used by `bin/agent-worktree`; separate from immutable random `Task.slug` |
 | `branch` | Feature branch or release branch |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL |
@@ -133,7 +214,7 @@ Supported fields:
 | `risk_tags` | Short tags such as `auth`, `email`, `solana`, `payment`, `migration`, `ui`, `provider` |
 | `acceptance` | Acceptance criteria, one item per line |
 | `test_plan` | Checks the feature agent expects to run, one item per line |
-| `checks_run` | Actual checks the feature agent performed, one item per line |
+| `checks_run` | Checks actually completed before the current handoff, one item per line |
 
 Example API payload:
 
@@ -145,8 +226,8 @@ Example API payload:
   "agent_slug": "shannon",
   "devops": {
     "kind": "bug",
-    "repositories": ["turf-monster"],
     "worktree_slug": "qa-wallet-chooser",
+    "repositories": ["turf-monster"],
     "branch": "fix/qa-wallet-chooser",
     "local_url": "http://localhost:3102/contests",
     "qa_url": "https://qa.turfmonster.media/contests",
@@ -161,7 +242,8 @@ Example API payload:
       "QA_BASE_URL=https://qa.turfmonster.media npx playwright test --grep @qa-readonly"
     ],
     "checks_run": [
-      "bin/rails test test/controllers/wallets_controller_test.rb"
+      "bin/rails test test/controllers/auth_controller_test.rb",
+      "local browser smoke on http://localhost:3102/contests"
     ]
   }
 }
@@ -188,20 +270,95 @@ During handoff, the agent updates:
 - any changed acceptance criteria
 - release lane flag if the work needs production deploy, gem publish, provider
   config, env vars, or credential handling
+- a `handoff` note on the task conversation summarizing what changed, what was
+  verified, and what Avi should inspect first
 
 ## QA / Avi Duties
 
-Avi uses the task board plus `bin/qa-intake`:
+Avi starts with the task board plus the local PR/worktree tools:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/devops-cycle
+bin/devops-cycle --plan
+bin/devops-cycle --decisions
+bin/devops-cycle --scout-packets
+bin/devops-cycle --write-scout-packets tmp/devops-scouts
+bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
+bin/devops-cycle --scout-coverage tmp/devops-scouts
+bin/devops-cycle --scout-reports
+bin/devops-cycle --readiness
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+```
+
+`bin/devops-cycle` is the first-pass conductor view. It groups active
+`pr_review`, `qa_review`, and `prod_ready` tasks with task URLs, PR URLs,
+local/QA/production URLs, latest task conversation notes, and matching qa-intake
+status when available. `bin/devops-cycle --plan` adds a read-only batch plan
+that separates parallel PR reviews, serialized/high-risk work, blocked returns
+to feature agents, QA review, and production-ready release work.
+`bin/devops-cycle --decisions` adds an Avi decision summary for PR-review tasks,
+combining qa-intake status, latest task activity, and scout report outcomes into
+`merge-ready`, `wait-for-ci`, `request-changes`, or `conductor-review`
+recommendations.
+`bin/devops-cycle --scout-packets` turns reviewable PR-review lanes into
+copy-paste prompts for additional review-only sessions. Accurate `repositories`,
+`risk_tags`, `pr_url`, `qa_url`, `acceptance`, `test_plan`, and `checks_run`
+metadata make the plan and packets useful at scale. `bin/devops-cycle
+--write-scout-packets tmp/devops-scouts` writes one prompt file per packet plus
+a manifest so Avi can hand files to parallel review sessions without copying
+large prompts through chat. `bin/devops-cycle --scout-reports` shows structured
+scout reports recorded on task comments so Avi can make the final
+merge/request-changes decision from multiple review sessions without losing the
+thread. `bin/qa-intake` remains the raw local worktree and GitHub PR view for
+branch freshness, stack health, and cleanup-state details.
+
+`bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3` is the local
+run-control view for Phase 3B. It reads the launcher manifest and local
+`scout-runs.json`, then prints pending/launched/completed/blocked packet counts
+and the next prompt files that fit inside the concurrency limit. It does not
+spawn agents or update external systems. Avi marks local state with
+`--mark-scout-status scout-task-XXXX:launched` and later `:completed` when a
+scout report is back.
+
+`bin/devops-cycle --scout-coverage tmp/devops-scouts` is the Phase 3C harvest
+view. It compares manifest packets with structured `scout_report` task comments
+and calls out missing reports or conflicting outcomes. `bin/devops-cycle
+--readiness` is the Phase 3D conductor view: it groups tasks into
+ready-to-merge, needs-conductor-review, needs-changes, waiting, QA acceptance,
+production-ready, and scout-gap lanes. These views accelerate review; they do
+not transfer final merge or deploy authority away from Avi.
+
+Scout reports are supporting evidence. Avi turns blocker findings into
+`qa_feedback` or PR review comments when the work must return to the feature
+agent. The conductor still owns final merge, QA deploy, production deploy, and
+task stage changes.
+
+Use the decision recommendations conservatively:
+
+- `request-changes` means Avi should return the task to the feature agent with
+  `qa_feedback` or a PR comment.
+- `wait-for-ci` means the next action is to inspect or wait for checks, not
+  merge.
+- `conductor-review` means the task needs Avi's direct review because it is
+  high-risk, multi-repo, missing local intake, or lacks enough scout signal.
+- `merge-ready` means scout evidence and qa-intake are aligned; Avi still
+  performs the final PR review before merging.
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.
 3. Check `risk_tags` for Steffon/infra gate needs.
 4. Merge only ready PRs.
 5. Deploy merged `origin/main` to QA.
-6. Move the task to `qa_review` with QA URL, QA release SHA, and QA checks run.
+6. Move the task to `qa_review` with QA URL, QA release SHA, and `checks_run`.
 7. Move accepted QA tasks to `prod_ready`.
 8. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
    approves release work.
+
+If the PR is not ready, Avi leaves `qa_feedback` on the task conversation with
+the exact blocker, expected owner action, and any PR/CI link needed to reproduce
+the issue. Also leave a GitHub PR comment when the blocker is code-review
+specific or should be visible on the PR.
 
 ## Release Train Tags
 
@@ -231,14 +388,25 @@ conductor records or completes a cleanup task with:
 - safe-delete condition
 - `bin/agent-worktree remove <app> <task-slug> --yes` result
 
+For routine batch cleanup after a wave of PRs land, the conductor can use
+`bin/agent-worktree cleanup --reclaim` as the **scale-down-on-close normal
+flow**: the dry run lists every worktree that is SAFE to auto-release (clean +
+merged-to-`origin/main` or main-equivalent, primary checkout excluded) with its
+Redis DB, and `cleanup --reclaim --yes` runs the same full teardown as `remove`
+for each one, then shrinks the Redis band toward the floor. It never touches a
+dirty or unmerged worktree. Use targeted `remove <app> <task-slug> --yes` when
+recording a single named cleanup task; use `cleanup --reclaim` to reclaim all
+merged slots at once.
+
 Feature agents keep worktrees and branches until Avi or the release conductor
 confirms the PR was merged or intentionally abandoned.
 
 ## Test Suite Catalog
 
-The `/devops` page reads `config/devops_test_suites.yml`. It shows the local,
-QA, devnet, and production checks for each managed app, including when each
-suite should run and whether it mutates data.
+The `/devops` page and `bin/devops-tests` read
+`config/devops_test_suites.yml`. They show the local, QA, devnet, and
+production checks for each managed app, including lane, trigger, whether each
+suite blocks PR merge, and whether it mutates data.
 
 Add or update this catalog whenever a new app joins the managed stack, a test
 genre changes, or a deploy smoke command changes.
@@ -260,22 +428,35 @@ New apps should ship:
 
 ## Discord Deploy Notices
 
-QA and production deploy tools should send a Discord message after successful
-deployment when `DISCORD_DEPLOY_WEBHOOK_URL` is present in the environment.
-Never commit the webhook URL.
+Production deploy conductors must use `POST /api/v1/release_notes` to send the
+canonical Discord Release Notes message after a successful production deploy.
+Do not hand-format the Discord post when the API is available.
 
-Until task-board release-train querying is automated, conductors should pass
-the accepted task list explicitly:
+Call the API with the accepted production task slugs, release metadata, URL, and
+verification checks. The API groups linked task titles by application in the
+standard ecosystem order and points every task link at the production task read
+page on McRitchie Studio.
+
+Run a dry-run first:
 
 ```bash
-RELEASE_TRAIN=2026-06-17-turf-admin-identity \
-DEPLOY_TASKS="Turf #149 team admin email" \
-DISCORD_DEPLOY_WEBHOOK_URL="$DISCORD_DEPLOY_WEBHOOK_URL" \
-bin/qa-server deploy turf-monster origin/main --yes
+api POST /api/v1/release_notes '{
+  "app": "mcritchie-studio",
+  "environment": "production",
+  "release": "v71",
+  "sha": "ef693ab1",
+  "url": "https://mcritchie.studio/",
+  "release_train": "2026-06-18-devops-tooling",
+  "task_slugs": ["task-abc123def456"],
+  "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+  "dry_run": true
+}'
 ```
 
-The message should include app, environment, release/SHA, URL, `/up` status,
-release train when present, and tasks deployed.
+After confirming the rendered `message`, repeat the same request without
+`dry_run`. Production uses `DISCORD_RELEASE_NOTES_WEBHOOK_URL`, with
+`DISCORD_DEPLOY_WEBHOOK_URL` retained as a fallback for older environments.
+Never commit webhook URLs.
 
 ## Future Heartbeats
 

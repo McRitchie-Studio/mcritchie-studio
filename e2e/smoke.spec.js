@@ -89,23 +89,51 @@ test("nav links work without errors", async ({ page }) => {
   await expect(page).toHaveURL("/signin");
 });
 
-test("logged-in link sidebar reopens after browser back", async ({ page }) => {
+test("logged-in link sidebar reopens after browser back from signed-in routes", async ({ page }) => {
+  await loginWithMagicLink(page, "alex@test.com");
+
+  const routes = ["/dashboard", "/tasks", "/tasks/task-ea8541e4b5b6", "/agents"];
+  const triggers = [
+    "button[data-link-sidebar-trigger]",
+    "button[data-username-display]",
+    "button[data-profile-image-toggle]",
+  ];
+
+  for (const route of routes) {
+    await page.goto(route);
+    await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
+
+    await page.locator("button[data-link-sidebar-trigger]").first().click();
+    await expect(page.locator("#studio-link-sidebar")).toBeVisible();
+
+    const destination = route === "/agents" ? "/tasks" : "/agents";
+    await page.locator(`#studio-link-sidebar a[href="${destination}"]`).first().click();
+    await expect(page).toHaveURL(destination);
+
+    await page.goBack();
+    await expect(page).toHaveURL(route);
+    await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
+
+    for (const trigger of triggers) {
+      await page.locator(trigger).first().click();
+      await expect(page.locator("#studio-link-sidebar")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#studio-link-sidebar")).toBeHidden();
+    }
+  }
+});
+
+test("logged-in sidebar logout still signs out", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/dashboard");
   await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
 
   await page.locator("button[data-link-sidebar-trigger]").first().click();
   await expect(page.locator("#studio-link-sidebar")).toBeVisible();
+  await page.locator('#studio-link-sidebar a[href="/logout"]').click();
 
-  await page.locator('#studio-link-sidebar a[href="/agents"]').click();
-  await expect(page).toHaveURL("/agents");
-
-  await page.goBack();
-  await expect(page).toHaveURL("/dashboard");
-  await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
-
-  await page.locator("button[data-link-sidebar-trigger]").first().click();
-  await expect(page.locator("#studio-link-sidebar")).toBeVisible();
+  await expect(page).toHaveURL("/signin");
+  await expect(page.locator("body")).toContainText("Say Hi");
 });
 
 // ---------------------------------------------------------------------------
