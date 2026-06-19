@@ -15,11 +15,14 @@ class Task < ApplicationRecord
   BOARD_STAGES = (STAGES - ["archived"]).freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
-    kind worktree_slug branch pr_url local_url qa_url production_url release_train
+    kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor
   ].freeze
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
+  # The change shape selects its DoR test contract. Keep in sync with
+  # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
+  SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical].freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
@@ -56,6 +59,10 @@ class Task < ApplicationRecord
 
   def devops_kind
     devops.fetch("kind", "").presence || "feature"
+  end
+
+  def devops_shape
+    devops.fetch("shape", "").presence
   end
 
   def devops_release_train
