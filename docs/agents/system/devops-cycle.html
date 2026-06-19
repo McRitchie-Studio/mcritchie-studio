@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>McRitchie DevOps Cycle — SOP Viewer</title>
+<style>
+  :root{
+    --bg:#0e1117; --panel:#161b22; --panel2:#1c232c; --line:#2b333d;
+    --ink:#e6edf3; --dim:#9aa7b4; --faint:#6b7785;
+    --new:#6b7785; --queued:#7c8aa0; --prog:#3b82f6; --pr:#a855f7;
+    --qa:#f59e0b; --ready:#eab308; --done:#22c55e; --fail:#ef4444;
+    --accent:#38bdf8; --det:#22c55e; --judge:#f59e0b; --human:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+  header{padding:28px 32px 12px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:22px;letter-spacing:.2px}
+  .sub{color:var(--dim);font-size:13px;margin-top:4px}
+  nav{display:flex;gap:4px;flex-wrap:wrap;padding:14px 32px;position:sticky;top:0;
+    background:rgba(14,17,23,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);z-index:10}
+  nav button{background:var(--panel);color:var(--dim);border:1px solid var(--line);
+    border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer;transition:.15s}
+  nav button:hover{color:var(--ink);border-color:var(--faint)}
+  nav button.active{background:var(--accent);color:#04222e;border-color:var(--accent);font-weight:600}
+  main{padding:26px 32px 80px;max-width:1180px}
+  section{display:none;animation:fade .2s ease}
+  section.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+  h2{font-size:18px;margin:0 0 4px}
+  .lede{color:var(--dim);margin:0 0 22px;max-width:760px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:0 0 18px}
+  .card h3{margin:0 0 12px;font-size:15px;color:var(--accent)}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#0a0e13}
+  .flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:6px 0 12px}
+  .stage{padding:8px 12px;border-radius:9px;font-size:13px;font-weight:600;color:#0a0e13;white-space:nowrap}
+  .arr{color:var(--faint);font-size:18px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:4px 0}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:last-child td{border-bottom:none}
+  code,pre{font-family:"SF Mono",Menlo,Consolas,monospace}
+  code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12.5px;color:#cdd9e5}
+  pre{background:#0a0d12;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow:auto;font-size:12.5px;color:#cdd9e5;line-height:1.5}
+  .tag{display:inline-block;background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+    padding:2px 8px;border-radius:6px;font-size:11.5px;margin:2px 3px 2px 0}
+  ol li,ul li{margin:5px 0}
+  .lane{display:flex;gap:14px;align-items:flex-start;margin:0 0 10px}
+  .lane .who{flex:0 0 150px;font-weight:600;color:var(--accent);font-size:13px;padding-top:2px}
+  .lane .what{flex:1;color:var(--dim);font-size:13.5px}
+  /* pyramid */
+  .pyr{display:flex;flex-direction:column;align-items:center;gap:5px;margin:8px 0 4px}
+  .pyr div{color:#0a0e13;font-weight:700;text-align:center;padding:9px 0;border-radius:6px;font-size:13px}
+  .nums{display:flex;gap:5px;justify-content:center;align-items:center;font-size:12px;color:var(--faint)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);margin-top:10px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
+  .note{font-size:12.5px;color:var(--faint);margin-top:8px}
+  .kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:12px;background:var(--panel2)}
+  b.det{color:var(--det)} b.judge{color:var(--judge)} b.human{color:var(--human)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ McRitchie DevOps Cycle <span class="sub" style="font-weight:400">— SOP Viewer (design v1)</span></h1>
+  <div class="sub">Everything routes through the McRitchie&nbsp;Studio task. The board stage <i>is</i> the source of truth — interruption-resilient by design. Companion to <code>devops-cycle-design.md</code>.</div>
+</header>
+
+<nav id="nav">
+  <button data-t="flow" class="active">① The Cycle</button>
+  <button data-t="sops">② Feature vs Bug SOP</button>
+  <button data-t="pyramid">③ Adaptive Pyramid</button>
+  <button data-t="heartbeat">④ Heartbeat Agent</button>
+  <button data-t="visibility">⑤ Visibility</button>
+  <button data-t="split">⑥ Deterministic vs Judgment</button>
+</nav>
+
+<main>
+
+<!-- ① FLOW -->
+<section id="flow" class="active">
+  <h2>① The cycle, end to end</h2>
+  <p class="lede">A task moves left→right through the stage machine. The feature agent (local) owns up to <code>pr_review</code>. The airgapped DevOps agent picks it up from there — but <b>stops hard at <code>prod_ready</code></b> for your one-click approval. Mainnet is never auto-deployed.</p>
+
+  <div class="card">
+    <h3>Two workflows, not one pipeline</h3>
+    <p style="margin:0 0 10px;color:var(--dim)">Reviewing a <b>task</b> and shipping a <b>release</b> are different jobs. QA + production are properties of the release, so the old per-task <code>qa_review</code> + <code>prod_ready</code> collapse into one release-level QA stop.</p>
+    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow A · per task</div>
+    <div class="flow">
+      <span class="stage" style="background:var(--new)">new</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--queued)">queued</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--prog)">in_progress</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--pr)">pr_review</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--done)">release_ready ✅</span>
+    </div>
+    <div class="note" style="margin:2px 0 14px">⛔ send back from pr_review via <span class="tag">qa_feedback</span>. <b>release_ready ✅</b> = the checkmark: passed review, eligible for a release.</div>
+    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow B · per release <span style="color:var(--faint);font-weight:400">(its own Release model)</span></div>
+    <div class="flow">
+      <span class="stage" style="background:var(--prog)">assembling</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--qa)">qa</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--ready)">confirmed ✅ 🔒</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--done)">shipped</span>
+    </div>
+    <div class="note"><b>Merge happens at <code>assembling</code></b> (in dependency order) so QA mirrors <code>main</code>. QA review is <b>dropped as a stage</b>: <code>qa_acceptance</code> runs as an auto signal, and your single <b>Confirm ✅</b> (🔒 the one human gate) ships it. Member tasks flip to <b>done</b> when the release ships. Also: <span class="stage" style="background:var(--fail);padding:3px 9px">failed</span> · <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span>.</div>
+  </div>
+
+  <div class="card">
+    <h3>New Release model + task links</h3>
+    <p style="margin:0 0 8px;color:var(--dim)">Release becomes its own model (a deliberate step past "flat tasks first" — a release is a coordinating entity, not a task-tree). The old <code>release_train</code> field/lane is renamed to <code>release</code>.</p>
+    <table>
+      <tr><th>Release field</th><th>Meaning</th></tr>
+      <tr><td><code>slug</code></td><td>Canonical id, <code>2026-06-20-s3-uploads</code> (supersedes the <code>release_train</code> string).</td></tr>
+      <tr><td><code>state</code></td><td><code>assembling → qa → confirmed ✅ → shipped</code> (+ failed).</td></tr>
+      <tr><td><code>confirmed_at / by</code></td><td>The operator <b>Confirm ✅</b> — the one human gate.</td></tr>
+      <tr><td>has_many <code>tasks</code></td><td>via <code>tasks.release_slug</code>.</td></tr>
+    </table>
+    <table style="margin-top:10px">
+      <tr><th>Task field</th><th>Meaning</th></tr>
+      <tr><td><code>release_slug</code></td><td>FK to the Release this task rides (null until Avi assigns it at assembly).</td></tr>
+      <tr><td><code>dependencies</code></td><td>Task slugs this one needs shipped first → lets Avi sequence releases (engine release first, then dependents).</td></tr>
+    </table>
+    <div class="note">Composes with the lanes: <code>dependencies</code> = "B needs A's output"; lanes (migration / release / vault) = "one at a time".</div>
+  </div>
+
+  <div class="card">
+    <h3>Who owns what</h3>
+    <div class="lane"><div class="who">Feature agent</div><div class="what">Local machine, isolated worktree. Builds, writes tests left-to-right, self-runs the DoR gate, moves task to <code>pr_review</code>. Never merges.</div></div>
+    <div class="lane"><div class="who">DevOps agent</div><div class="what">Airgapped OpenClaw box, ~10&nbsp;min heartbeat. Reviews → merges → deploys QA → runs acceptance → parks at <code>prod_ready</code>. One safe step per task per tick.</div></div>
+    <div class="lane"><div class="who">Mr. McRitchie</div><div class="what">Reviews the QA URL (the manual test tier) and gives the one-click production approval. Steers by task status, not by reading tests.</div></div>
+  </div>
+
+  <div class="card">
+    <h3>Who progresses each stage</h3>
+    <p style="margin:0 0 10px;color:var(--dim)"><b>Accountable role</b> = the soul whose rubric governs the stage (and where escalations route). <b>Progressed by</b> = who actually moves the task. The DevOps agent executes by wearing each lane's hat — but there's exactly one human gate.</p>
+    <table>
+      <tr><th>Stage</th><th>Accountable</th><th>Progressed by</th><th>Action → next</th></tr>
+      <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">→ pr_review</span></td><td>Feature agent</td><td>Feature agent</td><td>pass <code>dor-check</code>, record checks → <b>pr_review</b></td></tr>
+      <tr><td><span class="stage" style="background:var(--pr);padding:3px 8px">pr_review</span></td><td><b style="color:var(--accent)">Avi</b> <span class="note">(Steffon co-gates risk)</span></td><td>DevOps agent <i>as Avi</i></td><td>review acceptance/diff/tests → <b class="judge">feedback</b> back, OR stamp <b>release_ready ✅</b></td></tr>
+      <tr><td><span class="stage" style="background:var(--done);padding:3px 8px">release_ready ✅</span></td><td><b style="color:var(--accent)">Avi</b></td><td>— (parked)</td><td>approved + pushed, <b>not merged</b> → eligible for a release</td></tr>
+      <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">assembling</span></td><td><b style="color:var(--accent)">Avi</b></td><td>DevOps agent <i>as Avi</i> <span class="note">(strategic)</span></td><td><b class="judge">pick by dependencies</b> → <b class="det">merge to main</b> → deploy QA</td></tr>
+      <tr><td><span class="stage" style="background:var(--qa);padding:3px 8px">qa</span></td><td><b style="color:var(--accent)">Steffon</b> <span class="note">(exec)</span></td><td>DevOps agent <i>as Steffon</i></td><td><b class="det">auto qa_acceptance</b> (signal) → await confirm</td></tr>
+      <tr><td><span class="stage" style="background:var(--ready);padding:3px 8px">confirmed ✅ 🔒</span></td><td><b class="human">Mr. McRitchie</b></td><td>You click Confirm ✅</td><td>eyeball QA + <b class="human">confirm</b> → agent ships</td></tr>
+      <tr><td><span class="stage" style="background:var(--done);padding:3px 8px">shipped</span></td><td>Release conductor</td><td>agent executes</td><td>deploy prod → smoke → notes → members <b>done</b></td></tr>
+    </table>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--det)"></span>deterministic</span>
+      <span><span class="dot" style="background:var(--judge)"></span>judgment (Opus on migration/payment/solana/auth)</span>
+      <span><span class="dot" style="background:var(--human)"></span>the one human gate</span>
+    </div>
+    <div class="note">⚙️ The agent merges even funds-touching work at assembly (your "review+QA, gate prod" choice); risk raises <i>scrutiny</i>, not a second human. Knob: tag vault/payment to require a human pre-merge pass. Humility valve: low confidence → <code>conductor-review</code> → routes to a human Avi/Steffon session. <b>Assembly autonomy policy lives in <code>config/release_builder.yml</code></b> — auto-ship singleton low-risk releases; propose multi-task/cross-repo/risky ones.</div>
+  </div>
+
+  <div class="card">
+    <h3>Example task record (<code>metadata["devops"]</code>)</h3>
+<pre>{
+  "title": "Save uploaded images to S3",
+  "devops": {
+    "kind": "feature",
+    "shape": "library",              <span style="color:var(--faint)">// selects the test contract</span>
+    "worktree_slug": "engine-s3-uploads",
+    "repositories": ["studio-engine","turf-monster","mcritchie-studio"],
+    "release_slug": "2026-06-20-s3-uploads", <span style="color:var(--faint)">// FK to the Release model</span>
+    "dependencies": ["task-engine-s3"],      <span style="color:var(--faint)">// turf-monster adoption waits on the gem</span>
+    "risk_tags": ["provider","ui"],
+    "acceptance": ["Engine saves crops to S3", "Both apps adopt 0.7.0"],
+    "test_plan": ["engine unit", "consumer-CI both apps", "local upload smoke"],
+    "checks_run": []                 <span style="color:var(--faint)">// filled before pr_review</span>
+  }
+}</pre>
+  </div>
+</section>
+
+<!-- ② SOPs -->
+<section id="sops">
+  <h2>② Feature SOP vs Bug SOP</h2>
+  <p class="lede">Same stage machine, two entry rituals. Routing lives in <code>AGENTS.md</code> so a fresh agent self-loads the right one — you never re-explain.</p>
+  <div class="grid2">
+    <div class="card">
+      <h3>🟦 Feature SOP</h3>
+      <ol>
+        <li><b>Classify the shape</b> → loads the test contract (tab ③).</li>
+        <li>Accumulate acceptance criteria until aligned.</li>
+        <li>Set <code>test_plan</code> = the shape's required tiers.</li>
+        <li><b>Build <i>and</i> write tests as you go, unit-first.</b> ← the lever: bugs that reach PR are bugs unit tests should have caught.</li>
+        <li>Self-run <code>bin/dor-check</code> (Definition of Ready).</li>
+        <li>Record <code>checks_run</code>, add a <span class="tag">handoff</span> note, → <code>pr_review</code>.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>🟥 Bug SOP</h3>
+      <ol>
+        <li>Classify <b>severity</b>: <span class="tag">hotfix</span> vs <span class="tag">normal</span>.</li>
+        <li><b>Write a failing regression test first</b>, at the <i>lowest</i> tier that reproduces it. The red test is the acceptance criterion.</li>
+        <li>Fix until green; run the contract for the touched surface.</li>
+        <li><span class="tag">hotfix</span> may skip <code>queued</code> + use expedited review — but <b>never</b> skips the regression test or the <code>prod_ready</code> gate.</li>
+      </ol>
+      <div class="note">Regression-first permanently pushes that bug class <i>down</i> the pyramid → less future PR churn.</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>The ping-pong, made effective</h3>
+    <p style="margin:0 0 8px;color:var(--dim)">You wanted the loop to stay a ping-pong but get <i>effective</i>. Two structural fixes:</p>
+    <ul>
+      <li><b class="det">Gate zero is mechanical.</b> <code>bin/dor-check</code> rejects an under-tested PR <i>before</i> any review judgment is spent — most "not ready" churn never reaches a human/model reviewer.</li>
+      <li><b class="judge">One complete send-back.</b> When review does find issues, it returns <i>one</i> structured <span class="tag">qa_feedback</span> with every blocker + expected action — so the feature agent resolves it in a single return trip, not five.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ③ PYRAMID -->
+<section id="pyramid">
+  <h2>③ The adaptive testing pyramid</h2>
+  <p class="lede">One pyramid, five repos, and a contract that <b>adapts to the shape of the feature</b>. Tiers are the <i>what</i>; the existing test <i>lanes</i> are the <i>when/where</i>.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>The shape</h3>
+      <div class="pyr">
+        <div style="width:36%;background:var(--fail)">Manual</div>
+        <div style="width:50%;background:var(--qa)">E2E</div>
+        <div style="width:66%;background:var(--pr)">Integration</div>
+        <div style="width:82%;background:var(--prog)">Component</div>
+        <div style="width:98%;background:var(--done)">Unit</div>
+      </div>
+      <div class="note">Wide + cheap at the bottom (run on every PR), narrow + expensive at the top (slower lanes / your QA review). A top-heavy suite is a pruning trigger.</div>
+    </div>
+    <div class="card">
+      <h3>Tier → lane mapping</h3>
+      <table>
+        <tr><th>Tier</th><th>Lane (when/where)</th></tr>
+        <tr><td>Unit / Component / Integration</td><td><code>pr_review_gate</code>, <code>local_proof</code> — block merge</td></tr>
+        <tr><td>E2E happy path</td><td><code>local_proof</code></td></tr>
+        <tr><td>E2E full / on-chain</td><td><code>nightly_deep</code></td></tr>
+        <tr><td>Manual</td><td><code>qa_acceptance</code> (your QA review)</td></tr>
+        <tr><td>(post-deploy)</td><td><code>production_smoke</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>What each tier means per repo</h3>
+    <table>
+      <tr><th>Tier</th><th>Rails apps</th><th>studio-engine</th><th>solana-studio</th><th>turf-vault</th></tr>
+      <tr><td><b>Unit</b></td><td>model/service/PORO/decoder</td><td>pure lib (ColorScale, Email)</td><td>Borsh/keypair/tx</td><td>single instruction logic</td></tr>
+      <tr><td><b>Component</b></td><td>request spec + rendered partial + Alpine factory</td><td>UI primitive via host</td><td>client w/ stubbed RPC</td><td>instruction + account constraints</td></tr>
+      <tr><td><b>Integration</b></td><td>request→DB→job, FakeVault RPC</td><td>consumer-CI (both apps)</td><td>client vs test-validator</td><td>multi-instruction lifecycle</td></tr>
+      <tr><td><b>E2E</b></td><td>Playwright</td><td>via consumers</td><td>via consumers</td><td>devnet on-chain</td></tr>
+      <tr><td><b>Manual</b></td><td colspan="4">the <code>qa_review</code> step itself — operator visual/UX acceptance on the QA URL</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Shape → required test contract (the adaptation)</h3>
+    <table>
+      <tr><th>Shape</th><th>Example</th><th>Must be green before pr_review</th></tr>
+      <tr><td><span class="tag">ui-only</span></td><td>"make the button blue"</td><td>Component + Manual (Unit only if it adds logic)</td></tr>
+      <tr><td><span class="tag">ui+db</span></td><td>new form that persists</td><td>Unit + Component + Integration + E2E happy path</td></tr>
+      <tr><td><span class="tag">backend</span></td><td>new job / service</td><td>Unit + Integration (mocked I/O)</td></tr>
+      <tr><td><span class="tag">library</span></td><td>studio-engine change</td><td>Engine Unit + consumer-CI in <b>both</b> apps</td></tr>
+      <tr><td><span class="tag">onchain</span></td><td>new turf-vault instruction</td><td>Anchor unit + Anchor integration + Ruby decoder unit + devnet E2E (nightly)</td></tr>
+      <tr><td><span class="tag">onchain-vertical</span></td><td>full new workflow</td><td>all tiers + devnet E2E (almost always a release_train)</td></tr>
+    </table>
+    <div class="note"><b class="det">Deterministic gate:</b> <code>bin/dor-check &lt;task&gt;</code> reads the shape, confirms every required tier is green in <code>checks_run</code>, and blocks <code>pr_review</code> otherwise.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Who writes what, when</h3>
+      <table>
+        <tr><th>Tier</th><th>Author</th><th>When</th></tr>
+        <tr><td>Unit</td><td>Feature agent</td><td>during build, before 1st commit</td></tr>
+        <tr><td>Component</td><td>Feature agent</td><td>before pr_review</td></tr>
+        <tr><td>Integration</td><td>Feature agent</td><td>before pr_review (mandatory for migration/solana/payment/auth)</td></tr>
+        <tr><td>E2E happy</td><td>Feature agent</td><td>before pr_review (ui+db / vertical)</td></tr>
+        <tr><td>E2E edge</td><td>QA lane</td><td>during review; large → follow-up task</td></tr>
+        <tr><td>Manual</td><td><b class="human">Mr. McRitchie</b></td><td>at qa_review</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>When we prune (a monthly <span class="tag">chore</span>, QA-owned)</h3>
+      <ul>
+        <li><b>Triggers:</b> suite wall-clock creeping up · flake rate rising · "inverted pyramid" (E2E growing, unit flat).</li>
+        <li><b>Flaky</b> → <code>quarantine</code> lane + follow-up task (never silent skip).</li>
+        <li><b>Redundant</b> → delete the higher-tier test once a lower tier covers it (push coverage <i>down</i>).</li>
+        <li><b>Dead</b> → remove tests for removed behavior.</li>
+        <li><b>KPIs:</b> wall-clock/lane · flake rate · coverage-per-tier · <i>bugs-that-reached-PR</i> (falling = left-shift working). Lives on <code>/devops</code>, not your daily view.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ④ HEARTBEAT -->
+<section id="heartbeat">
+  <h2>④ The airgapped heartbeat agent</h2>
+  <p class="lede">Runs on the OpenClaw box every ~10&nbsp;min. Drives the existing <code>bin/devops-cycle</code> / <code>qa-intake</code> / <code>qa-server</code> / <code>deploy</code> toolchain. Evaluates every in-flight task and advances each <b>one safe step</b>.</p>
+
+  <div class="card">
+    <h3>One heartbeat</h3>
+<pre>for each task in {pr_review, qa_review, prod_ready}:
+  acquire lease(claimed_by, claim_expires_at)        <span style="color:var(--faint)"># reclaimable if interrupted</span>
+  ┌ pr_review:
+  │   1 <b class="det">bin/dor-check</b>            fail → qa_feedback, release
+  │   2 <b class="det">run pr_review_gate suite</b> fail → classify, qa_feedback, release
+  │   3 <b class="det">conflict / lane check</b>    conflict → hold + note, release
+  │   4 <b class="judge">diff vs acceptance review</b> changes → ONE complete qa_feedback
+  │   5 <b class="det">merge + deploy QA</b>       → qa_review   (Discord: advanced)
+  ├ qa_review:
+  │     <b class="det">run qa_acceptance suite</b>  green → prod_ready + Discord "awaiting approval"
+  └ prod_ready:
+        if <b class="human">task.approved_by_operator</b>: bin/deploy → release_notes → done
+        else: <b style="color:var(--ready)">no-op (HARD STOP)</b>
+  update last_heartbeat_at, current_command, blocked_reason; emit progress</pre>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Why it scales to 100 agents</h3>
+      <ul>
+        <li><b>One step per tick</b> → bounded blast radius; an interrupted step re-runs next tick from durable task state, not agent memory.</li>
+        <li><b>Lease fields</b> (<code>claimed_by</code>, <code>claim_expires_at</code>, <code>last_heartbeat_at</code>) → interrupted tasks are reclaimable. (The "Future Heartbeats" spec, realized.)</li>
+        <li><b>Idempotent</b> merge/deploy/notes → safe to retry.</li>
+        <li><b>Every tick emits evaluation + progress</b> by construction.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Order-of-operations (multi-feature conflicts)</h3>
+      <ul>
+        <li><b>Two migrations</b> → serialize via <code>backend_migration</code> advisory lock.</li>
+        <li><b>Engine + consumers</b> → one ordered <code>release_train</code>: gem → lockfile → app deploy.</li>
+        <li><b>Two vault changes</b> → <b>new single-writer lane</b>: one in-flight program change at a time; vault + its IDL re-pin ship in order (Squads upgrade, then app).</li>
+        <li>Riskiest sequencing (migration/solana/payment) still lands in <i>your</i> approval queue with full context — agent sequences, you approve.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ⑤ VISIBILITY -->
+<section id="visibility">
+  <h2>⑤ Visibility — standardized Discord</h2>
+  <p class="lede">Three message classes. Deterministic templates with a small freeform <code>notes</code> slot. You <i>must</i> read only two: blockers and "awaiting approval". The digest is ambient.</p>
+  <div class="card">
+    <h3>Message classes</h3>
+    <table>
+      <tr><th>Class</th><th>Trigger</th><th>Template</th></tr>
+      <tr><td>Heartbeat digest</td><td>every tick</td><td><code>🔄 DevOps tick 14:20 — 3 in review · 2 in QA · 1 awaiting approval. Blockers: none</code></td></tr>
+      <tr><td>Task event</td><td>advance / send-back</td><td><code>✅ Save images to S3 merged → QA</code> · <code>⛔ Wallet chooser sent back: missing integration test</code> · <code>🟡 Survivor payouts QA-passed — approve to ship</code></td></tr>
+      <tr><td>Release notes</td><td>after prod deploy</td><td>existing <code>POST /api/v1/release_notes</code> (grouped-by-app, task-linked)</td></tr>
+    </table>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Release note (deterministic)</h3>
+<pre>🚀 Production deployed: Turf Monster v143 (0ad7f7d)
+https://app.turfmonster.media/
+
+🐊 Turf Monster
+• Save uploaded images to S3
+• Fix QA wallet chooser
+
+Checks: /up 200 · /contests 200 · web+worker up</pre>
+    </div>
+    <div class="card">
+      <h3>Webhooks</h3>
+      <ul>
+        <li><code>DISCORD_RELEASE_NOTES_WEBHOOK_URL</code> — releases (exists).</li>
+        <li><code>DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL</code> — digests + events (new), so the release channel stays clean.</li>
+      </ul>
+      <div class="note">Only the small <code>notes</code> slot is freeform; structure is fixed → consistent at 1000ft.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ⑥ SPLIT -->
+<section id="split">
+  <h2>⑥ Deterministic vs judgment + model budget</h2>
+  <p class="lede">Compartmentalize tokens: scripts carry the 80%; escalate to a capable model only for real review judgment, and to Opus only on high-risk surfaces.</p>
+  <div class="legend" style="margin-bottom:14px">
+    <span><span class="dot" style="background:var(--det)"></span>Deterministic (script / no model)</span>
+    <span><span class="dot" style="background:var(--judge)"></span>Judgment (model)</span>
+    <span><span class="dot" style="background:var(--human)"></span>Human</span>
+  </div>
+  <div class="card">
+    <table>
+      <tr><th>Step</th><th>Nature</th><th>Engine</th><th>Model</th></tr>
+      <tr><td>DoR gate, metadata presence</td><td><b class="det">deterministic</b></td><td>bin/dor-check</td><td>—</td></tr>
+      <tr><td>Run test suites</td><td><b class="det">deterministic</b></td><td>CI / bin/devops-tests</td><td>—</td></tr>
+      <tr><td>Conflict / lane check</td><td><b class="det">deterministic</b></td><td>bin + advisory locks</td><td>—</td></tr>
+      <tr><td>Classify a check failure (real/flaky/stale)</td><td><b class="judge">light judgment</b></td><td>small model</td><td>Haiku</td></tr>
+      <tr><td>QA acceptance evaluation</td><td><b class="judge">suite + light</b></td><td>suite + small model</td><td>Haiku</td></tr>
+      <tr><td>PR diff vs acceptance review</td><td><b class="judge">judgment</b></td><td>capable model</td><td><b>Sonnet</b>, <b>Opus</b> if solana/payment/migration/auth</td></tr>
+      <tr><td>Merge decision</td><td><b class="judge">rules-gated</b></td><td>rules + model</td><td>Sonnet</td></tr>
+      <tr><td>QA deploy / prod deploy</td><td><b class="det">deterministic</b></td><td>bin/qa-server / bin/deploy</td><td>—</td></tr>
+      <tr><td>Release-notes formatting</td><td><b class="det">deterministic</b></td><td>/api/v1/release_notes</td><td>—</td></tr>
+      <tr><td>Release-notes highlights prose</td><td><b class="judge">light</b></td><td>small model</td><td>Haiku</td></tr>
+      <tr><td>Discord digest / event</td><td><b class="det">deterministic</b></td><td>template</td><td>—</td></tr>
+      <tr><td>Production approval</td><td><b class="human">human</b></td><td>—</td><td>Mr. McRitchie</td></tr>
+    </table>
+  </div>
+</section>
+
+</main>
+<script>
+  const nav=document.getElementById('nav');
+  nav.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b)return;
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('section').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById(b.dataset.t).classList.add('active');
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+</script>
+</body>
+</html>

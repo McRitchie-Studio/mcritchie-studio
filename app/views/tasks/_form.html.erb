@@ -52,6 +52,12 @@
                 class: "input-field" %>
         </div>
         <div>
+          <label class="block text-sm text-secondary mb-2 font-medium">Shape</label>
+          <%= select_tag "task[devops][shape]",
+                options_for_select([["—", ""]] + Task::SHAPES.map { |s| [s, s] }, task.devops_shape),
+                class: "input-field" %>
+        </div>
+        <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Worktree Slug</label>
           <%= text_field_tag "task[devops][worktree_slug]", task.devops_worktree_slug,
                 class: "input-field", placeholder: "admin-users-sticky-header" %>

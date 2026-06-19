@@ -80,6 +80,10 @@
             <p class="text-heading text-sm font-bold mt-0.5"><%= @task.devops_kind.humanize %></p>
           </div>
           <div class="bg-surface rounded p-2">
+            <p class="text-[10px] text-muted uppercase tracking-wide">Shape</p>
+            <p class="text-heading text-sm font-bold mt-0.5"><%= @task.devops_shape || "—" %></p>
+          </div>
+          <div class="bg-surface rounded p-2">
             <p class="text-[10px] text-muted uppercase tracking-wide">Worktree Slug</p>
             <p class="text-heading text-sm font-mono mt-0.5 break-all"><%= @task.devops_worktree_slug || "—" %></p>
           </div>
