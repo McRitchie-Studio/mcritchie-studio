@@ -17,9 +17,10 @@
 # Usage:
 #   bin/task list [--stage S] [--agent A]
 #   bin/task show <slug>
-#   bin/task create --title T [--kind K] [--priority N] [--agent A] \
+#   bin/task create --title T [--kind K] [--shape S] [--priority N] [--agent A] \
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
 #                   [--branch B] [--pr-url U] [--local-url U] [--release-train T]
+#   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # any of the 9 stages
 
@@ -32,7 +33,7 @@ OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 
 SCALAR_FLAGS = {
-  "--kind" => "kind", "--branch" => "branch", "--pr-url" => "pr_url",
+  "--kind" => "kind", "--shape" => "shape", "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
   "--release-train" => "release_train"
 }.freeze

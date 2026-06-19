@@ -1,0 +1,71 @@
+# config/feature_shapes.yml
+#
+# The adaptive testing pyramid, as data. Maps a task's `devops.shape` → the test
+# tiers that MUST be green (recorded in `devops.checks_run`) before the task may
+# enter `pr_review`, plus the metadata the task must carry. `bin/dor-check`
+# reads this file.
+#
+# Tiers map onto the pyramid in docs/agents/system/devops-cycle.md (§3) and the
+# lanes in config/devops_test_suites.yml. `manual` (operator visual acceptance)
+# is NOT a DoR tier — it is gated at the release QA stop, not before pr_review.
+#
+# CONVENTION — tag each satisfying `checks_run` line with its tier in leading
+# square brackets so the gate can credit it deterministically:
+#   [unit] bin/rails test test/models/upload_test.rb
+#   [component] request spec + rendered _upload partial
+#   [integration] request -> S3 (FakeVault) -> record
+#   [e2e] npx playwright test e2e/upload.spec.js
+# A tier counts as satisfied when at least one checks_run line is tagged with it.
+#
+# Known tiers: unit, component, integration, e2e, e2e_onchain
+#
+# This file is the single source of "how much testing is enough" per change
+# shape. Tune it here; bin/dor-check and the heartbeat agent pick it up with no
+# code change.
+
+defaults:
+  # Required on every shape unless the shape overrides required_metadata.
+  required_metadata: [acceptance, repositories, risk_tags, test_plan]
+
+shapes:
+  ui-only:
+    description: Presentation-only change (copy, styling, layout). No new logic, no persistence.
+    dor_tiers: [component]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
+    notes: Add a unit tier only if it introduces logic. Visual acceptance is the operator's at the release QA stop.
+
+  ui+db:
+    description: UI plus persistence — a form that writes, a record-backed view, a stateful flow.
+    dor_tiers: [unit, component, integration, e2e]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
+    notes: e2e here is the happy path only; the full browser matrix runs nightly.
+
+  backend:
+    description: Background job, service, or pure server logic with no UI surface.
+    dor_tiers: [unit, integration]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan]
+    notes: integration covers the job/service across its I/O boundary (RPC/queue/DB), mocked where external.
+
+  library:
+    description: Change in a shared gem (studio-engine / solana-studio) consumed by the apps.
+    dor_tiers: [unit, integration]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan]
+    notes: >-
+      integration = the consumer-CI suite must pass in BOTH consuming apps.
+      Per-app adoption tasks should declare `dependencies: [this-task]` so Avi
+      sequences the gem release before the app releases.
+
+  onchain:
+    description: turf-vault program change or its Solana::* Ruby integration.
+    dor_tiers: [unit, integration, e2e_onchain]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan]
+    notes: >-
+      unit+integration = Anchor instruction tests + a multi-instruction lifecycle;
+      e2e_onchain = a FRESH devnet run for this change — do not rely on last
+      night's nightly. Highest-scrutiny review (Opus).
+
+  onchain-vertical:
+    description: A full new workflow spanning wallet + DB + UI + program.
+    dor_tiers: [unit, component, integration, e2e, e2e_onchain]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
+    notes: Almost always a multi-task `release`. Highest scrutiny; usually conductor-review.

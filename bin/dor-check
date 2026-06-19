@@ -1,0 +1,194 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/dor-check — Definition-of-Ready gate for pr_review.
+#
+# Reads a task's devops.shape, looks up that shape's required test tiers +
+# metadata in config/feature_shapes.yml, and confirms the task is ready to enter
+# `pr_review`. It is DETERMINISTIC — no model, no judgment. A failed check is an
+# instant, cheap send-back that never burns review tokens.
+#
+#   * Feature agents run it on themselves before handing off.
+#   * The heartbeat DevOps agent re-runs it as gate-zero of review.
+#
+# It does NOT run the tests — it confirms the right tiers were claimed (tagged in
+# devops.checks_run, e.g. "[unit] ...") and required metadata is present. The
+# authoritative green is the CI pr_review_gate suite at the merge transition.
+#
+# Auth: AGENT_API_SECRET from ENV, else 1Password, else repo .env (same as
+# bin/task). Base URL via TASK_API_BASE (default https://mcritchie.studio).
+#
+# Usage:
+#   bin/dor-check <task-slug>            # fetch from the task board, evaluate
+#   bin/dor-check <task-slug> --json     # machine-readable verdict (heartbeat agent)
+#   bin/dor-check --file task.json       # evaluate a local task JSON (offline/tests)
+#
+# Exit code: 0 = ready, 1 = not ready (or error).
+
+require "net/http"
+require "json"
+require "uri"
+require "yaml"
+require "optparse"
+
+ROOT = File.expand_path("..", __dir__)
+CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+OP = "/opt/homebrew/bin/op"
+SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+
+def warn!(msg) = $stderr.puts(msg)
+
+def die!(msg)
+  warn!("error: #{msg}")
+  exit 1
+end
+
+options = { json: false, file: nil }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/dor-check <task-slug> [--json] | bin/dor-check --file task.json [--json]"
+  o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
+  o.on("--file PATH", "Evaluate a local task JSON instead of fetching") { |v| options[:file] = v }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+# --- task board auth + fetch (mirrors bin/task) ---------------------------
+
+def agent_secret
+  env = ENV["AGENT_API_SECRET"]
+  return env if env && !env.empty?
+
+  if File.executable?(OP)
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue SystemCallError
+      ""
+    end
+    return op unless op.empty?
+  end
+
+  dotenv = File.join(ROOT, ".env")
+  if File.exist?(dotenv)
+    line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
+    return line.split("=", 2)[1].to_s.strip if line
+  end
+  die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+end
+
+def token
+  @token ||= api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
+end
+
+def api(method, path, body = nil, auth: true)
+  uri = URI.join(BASE_URL, path)
+  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
+  req = klass.new(uri)
+  req["Authorization"] = "Bearer #{token}" if auth
+  if body
+    req["Content-Type"] = "application/json"
+    req.body = JSON.generate(body)
+  end
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = (uri.scheme == "https")
+  http.read_timeout = 30
+  res = http.request(req)
+  parsed = res.body.to_s.empty? ? {} : (JSON.parse(res.body) rescue {})
+  unless res.code.to_i.between?(200, 299)
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
+  end
+  parsed
+end
+
+def load_task(slug, file)
+  if file
+    raw = JSON.parse(File.read(file))
+    raw["data"] || raw
+  else
+    die!("usage: bin/dor-check <task-slug> [--json]") if slug.nil? || slug.empty?
+    api(:get, "/api/v1/tasks/#{slug}")["data"] || die!("task #{slug} not found")
+  end
+rescue JSON::ParserError => e
+  die!("could not parse task JSON: #{e.message}")
+rescue Errno::ENOENT
+  die!("file not found: #{file}")
+end
+
+# --- evaluation -----------------------------------------------------------
+
+# A devops field is "present" when it is a non-blank string or a non-empty list.
+def present?(value)
+  case value
+  when nil then false
+  when Array then value.any? { |v| v.to_s.strip != "" }
+  else value.to_s.strip != ""
+  end
+end
+
+# A tier is satisfied when a checks_run line is tagged "[tier]" at its start.
+def tier_satisfied?(checks, tier)
+  checks.any? { |line| line.to_s =~ /\A\s*\[\s*#{Regexp.escape(tier)}\s*[\]:]/i }
+end
+
+slug = ARGV.shift
+config = YAML.load_file(CONFIG_PATH)
+shapes = config.fetch("shapes")
+defaults = config.fetch("defaults", {})
+
+task = load_task(slug, options[:file])
+devops = task.dig("metadata", "devops") || {}
+shape = devops["shape"].to_s.strip
+shape_def = shapes[shape]
+
+errors = []
+if shape.empty?
+  errors << "devops.shape is not set (expected one of: #{shapes.keys.join(", ")})"
+elsif shape_def.nil?
+  errors << "unknown shape #{shape.inspect} (valid: #{shapes.keys.join(", ")})"
+end
+
+required_meta = (shape_def && shape_def["required_metadata"]) || defaults["required_metadata"] || []
+missing_meta = required_meta.reject { |field| present?(devops[field]) }
+
+dor_tiers = (shape_def && shape_def["dor_tiers"]) || []
+checks = Array(devops["checks_run"])
+missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
+
+ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?
+
+# --- output ---------------------------------------------------------------
+
+if options[:json]
+  puts JSON.pretty_generate(
+    task: task["slug"] || slug,
+    shape: shape.empty? ? nil : shape,
+    ready: ready,
+    errors: errors,
+    missing_metadata: missing_meta,
+    missing_tiers: missing_tiers
+  )
+  exit(ready ? 0 : 1)
+end
+
+title = task["title"] || task["slug"] || slug || "(task)"
+if ready
+  puts "✓ DoR met for #{title.inspect} (shape: #{shape})"
+  puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
+  puts "  → ready for pr_review"
+  exit 0
+end
+
+puts "✗ DoR NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
+errors.each { |e| puts "  - #{e}" }
+unless missing_meta.empty?
+  puts "  missing metadata:"
+  missing_meta.each { |f| puts "    - devops.#{f}" }
+end
+unless missing_tiers.empty?
+  puts "  missing test tiers (add a tagged checks_run line, e.g. \"[#{missing_tiers.first}] <command>\"):"
+  missing_tiers.each { |t| puts "    - #{t}" }
+end
+puts "  → stay in in_progress; resolve the above before pr_review"
+exit 1
