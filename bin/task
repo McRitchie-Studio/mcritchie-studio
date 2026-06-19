@@ -7,8 +7,8 @@
 # Two footguns it removes for you:
 #   * `update` does read-merge-write on metadata.devops, so a partial update
 #     NEVER wipes existing devops fields (the raw API replaces them wholesale).
-#   * list flags are repeatable (one value each), and it warns when a list item
-#     contains a comma, because the server splits list items on "," and "\n".
+#   * list flags are repeatable and sent as arrays, so commas inside individual
+#     values are preserved by the task-board API.
 #
 # Auth: AGENT_API_SECRET from ENV, else 1Password (op://agents/Agent API
 # Secret/AGENT_API_SECRET), else the repo .env. Base URL via TASK_API_BASE
@@ -37,7 +37,6 @@ SCALAR_FLAGS = {
   "--release-train" => "release_train"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan" }.freeze
-LIST_KEYS = LIST_FLAGS.values.freeze
 TRANSITIONS = { "queued" => "queue", "in_progress" => "start", "done" => "complete", "failed" => "fail_task", "archived" => "archive" }.freeze
 STAGES = %w[new queued in_progress pr_review qa_review prod_ready done failed archived].freeze
 
@@ -114,14 +113,6 @@ def parse_flags(argv)
   [positionals, scalars, lists, top]
 end
 
-def warn_commas(devops)
-  LIST_KEYS.each do |key|
-    Array(devops[key]).each do |item|
-      warn!("warning: #{key} item contains a comma; the server will split it -> #{item.inspect}") if item.to_s.include?(",")
-    end
-  end
-end
-
 def build_devops(base, scalars, lists)
   devops = (base || {}).dup
   scalars.each { |k, v| devops[k] = v }
@@ -165,7 +156,6 @@ when "create"
   _pos, scalars, lists, top = parse_flags(ARGV)
   die!("create needs --title") unless top["title"]
   devops = build_devops({}, scalars, lists)
-  warn_commas(devops)
   body = top_body(top)
   body["devops"] = devops unless devops.empty?
   print_task(api(:post, "/api/v1/tasks", body)["data"])
@@ -176,7 +166,6 @@ when "update"
   body = top_body(top)
   if scalars.any? || lists.any?
     devops = build_devops(current.dig("metadata", "devops"), scalars, lists)
-    warn_commas(devops)
     body["devops"] = devops
   end
   die!("nothing to update") if body.empty?
