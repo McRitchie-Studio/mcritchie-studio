@@ -4,6 +4,7 @@
 # Read-only conductor snapshot for the task -> PR -> QA -> deploy cycle.
 
 require "json"
+require "fileutils"
 require "net/http"
 require "open3"
 require "optparse"
@@ -55,6 +56,7 @@ OPTIONS = {
   scout_questions: [],
   scout_reports: false,
   scout_summary: nil,
+  write_scout_packets: nil,
   dry_run: false,
   stages: DEFAULT_STAGES.dup
 }
@@ -92,6 +94,10 @@ OptionParser.new do |opts|
   end
   opts.on("--scout-reports", "Include structured scout report summaries from task activities") do
     OPTIONS[:scout_reports] = true
+  end
+  opts.on("--write-scout-packets DIR", "Write one scout prompt file per packet plus manifest JSON") do |dir|
+    OPTIONS[:plan] = true
+    OPTIONS[:write_scout_packets] = dir
   end
   opts.on("--record-scout-report TASK_SLUG", "Record a structured scout report on the task board") do |slug|
     OPTIONS[:record_scout_report] = slug
@@ -393,7 +399,15 @@ def build_snapshot(source, qa_intake, base_url, stages)
   plan = build_plan(tasks) if OPTIONS.fetch(:plan) || OPTIONS.fetch(:scout_packets)
   snapshot["plan"] = plan if plan
   snapshot["decisions"] = build_decisions(tasks) if OPTIONS.fetch(:decisions)
-  snapshot["scout_packets"] = build_scout_packets(tasks, plan) if OPTIONS.fetch(:scout_packets)
+  if OPTIONS.fetch(:scout_packets) || OPTIONS.fetch(:write_scout_packets)
+    snapshot["scout_packets"] = build_scout_packets(tasks, plan)
+  end
+  if OPTIONS.fetch(:write_scout_packets)
+    snapshot["scout_launcher"] = write_scout_packet_files(
+      snapshot.fetch("scout_packets", []),
+      OPTIONS.fetch(:write_scout_packets)
+    )
+  end
   snapshot
 end
 
@@ -757,6 +771,46 @@ def build_scout_packets(tasks, plan)
   end
 end
 
+def safe_filename(value)
+  value.to_s.gsub(/[^A-Za-z0-9._-]+/, "-").gsub(/\A-+|-+\z/, "")
+end
+
+def scout_prompt_filename(packet)
+  slug = packet.dig("task", "slug")
+  mode = packet.fetch("mode")
+  "#{safe_filename(slug)}--#{safe_filename(mode)}.prompt"
+end
+
+def write_scout_packet_files(packets, directory)
+  dir = File.expand_path(directory, SCRIPT_ROOT)
+  FileUtils.mkdir_p(dir)
+
+  entries = Array(packets).map do |packet|
+    path = File.join(dir, scout_prompt_filename(packet))
+    File.write(path, "#{packet.fetch("prompt")}\n")
+    {
+      "packet_id" => packet.fetch("packet_id"),
+      "mode" => packet.fetch("mode"),
+      "reason" => packet.fetch("reason"),
+      "task_slug" => packet.dig("task", "slug"),
+      "task_title" => packet.dig("task", "title"),
+      "task_url" => packet.dig("task", "url"),
+      "pr_url" => packet.dig("devops", "pr_url"),
+      "prompt_path" => path
+    }
+  end
+
+  manifest = {
+    "generated_at" => Time.now.utc.iso8601,
+    "directory" => dir,
+    "count" => entries.size,
+    "packets" => entries
+  }
+  manifest_path = File.join(dir, "manifest.json")
+  File.write(manifest_path, "#{JSON.pretty_generate(manifest)}\n")
+  manifest.merge("manifest_path" => manifest_path)
+end
+
 def print_task(task)
   metadata = task.fetch("devops", {})
   qa = task["qa_intake"]
@@ -891,6 +945,21 @@ def print_scout_reports(snapshot)
   end
 end
 
+def print_scout_launcher(snapshot)
+  launcher = snapshot["scout_launcher"]
+  return unless launcher
+
+  puts
+  puts "Scout Launcher"
+  puts "--------------"
+  puts "directory=#{launcher.fetch("directory")}"
+  puts "manifest=#{launcher.fetch("manifest_path")}"
+  puts "count=#{launcher.fetch("count")}"
+  Array(launcher["packets"]).each do |packet|
+    puts "- #{packet.fetch("task_slug")} #{packet.fetch("mode")} -> #{packet.fetch("prompt_path")}"
+  end
+end
+
 def print_scout_packets(snapshot)
   packets = Array(snapshot["scout_packets"])
   return if packets.empty?
@@ -952,5 +1021,6 @@ else
   print_plan(snapshot)
   print_decisions(snapshot)
   print_scout_reports(snapshot) if OPTIONS.fetch(:scout_reports)
-  print_scout_packets(snapshot)
+  print_scout_launcher(snapshot)
+  print_scout_packets(snapshot) if OPTIONS.fetch(:scout_packets)
 end

@@ -1,4 +1,5 @@
 require "test_helper"
+require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
@@ -102,6 +103,51 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     refute_includes slugs, "task-block000"
     refute_includes slugs, "task-qa456"
     refute_includes slugs, "task-prod999"
+  end
+
+  test "writes scout packet prompt files and manifest" do
+    dir = Rails.root.join("tmp/devops-cycle-scouts-test").to_s
+    FileUtils.rm_rf(dir)
+
+    out, err, status = devops_cycle("--write-scout-packets", dir)
+
+    assert status.success?, err
+    assert_includes out, "Scout Launcher"
+    assert_includes out, "count=3"
+    assert_includes out, "task-pr123--parallel_scout.prompt"
+    refute_includes out, "Scout Packets (3)"
+
+    manifest_path = File.join(dir, "manifest.json")
+    assert File.exist?(manifest_path), "expected #{manifest_path} to exist"
+    manifest = JSON.parse(File.read(manifest_path))
+    assert_equal dir, manifest.fetch("directory")
+    assert_equal 3, manifest.fetch("count")
+
+    prompt_paths = manifest.fetch("packets").map { |packet| packet.fetch("prompt_path") }
+    assert_includes prompt_paths, File.join(dir, "task-pr123--parallel_scout.prompt")
+    prompt = File.read(File.join(dir, "task-pr123--parallel_scout.prompt"))
+    assert_includes prompt, "Work from /Users/alex/projects as an Avi review scout for task-pr123."
+    assert_includes prompt, "Record your scout report on the task when complete:"
+  ensure
+    FileUtils.rm_rf(dir)
+  end
+
+  test "includes scout launcher manifest in JSON when writing prompts" do
+    dir = Rails.root.join("tmp/devops-cycle-scouts-json-test").to_s
+    FileUtils.rm_rf(dir)
+
+    out, err, status = devops_cycle("--json", "--write-scout-packets", dir)
+
+    assert status.success?, err
+    snapshot = JSON.parse(out)
+    launcher = snapshot.fetch("scout_launcher")
+    assert_equal dir, launcher.fetch("directory")
+    assert_equal File.join(dir, "manifest.json"), launcher.fetch("manifest_path")
+    assert_equal 3, launcher.fetch("count")
+    assert_equal 3, snapshot.fetch("scout_packets").size
+    assert File.exist?(File.join(dir, "manifest.json")), "expected manifest to exist"
+  ensure
+    FileUtils.rm_rf(dir)
   end
 
   test "prints scout report summaries when requested" do
