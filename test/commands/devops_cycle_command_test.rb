@@ -150,6 +150,74 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     FileUtils.rm_rf(dir)
   end
 
+  test "prints scout run control from a manifest" do
+    dir = Rails.root.join("tmp/devops-cycle-scout-runs-test").to_s
+    FileUtils.rm_rf(dir)
+    devops_cycle("--write-scout-packets", dir)
+
+    out, err, status = devops_cycle("--scout-runs", dir, "--max-scouts", "2")
+
+    assert status.success?, err
+    assert_includes out, "Scout Run Control"
+    assert_includes out, "max_scouts=2 active=0 launch_slots=2"
+    assert_includes out, "pending=3 launched=0 completed=0 blocked=0"
+    assert_includes out, "launchable:"
+    assert_includes out, "scout-task-pr123 task-pr123 parallel_scout"
+    assert_includes out, "scout-task-ready222 task-ready222 parallel_scout"
+  ensure
+    FileUtils.rm_rf(dir)
+  end
+
+  test "marks scout packet run status locally" do
+    dir = Rails.root.join("tmp/devops-cycle-scout-runs-mark-test").to_s
+    FileUtils.rm_rf(dir)
+    devops_cycle("--write-scout-packets", dir)
+
+    out, err, status = devops_cycle(
+      "--scout-runs", dir,
+      "--mark-scout-status", "scout-task-pr123:launched",
+      "--scout-agent", "casey",
+      "--max-scouts", "2"
+    )
+
+    assert status.success?, err
+    assert_includes out, "pending=2 launched=1 completed=0 blocked=0"
+    assert_includes out, "scout-task-pr123 launched agent=casey"
+
+    state = JSON.parse(File.read(File.join(dir, "scout-runs.json")))
+    assert_equal "launched", state.dig("packets", "scout-task-pr123", "status")
+    assert_equal "casey", state.dig("packets", "scout-task-pr123", "agent_slug")
+
+    out, err, status = devops_cycle(
+      "--scout-runs", dir,
+      "--mark-scout-status", "scout-task-pr123:completed",
+      "--scout-agent", "casey"
+    )
+
+    assert status.success?, err
+    assert_includes out, "pending=2 launched=0 completed=1 blocked=0"
+    assert_includes out, "scout-task-pr123 completed agent=casey"
+  ensure
+    FileUtils.rm_rf(dir)
+  end
+
+  test "prints scout coverage gaps from recorded reports" do
+    dir = Rails.root.join("tmp/devops-cycle-scout-coverage-test").to_s
+    FileUtils.rm_rf(dir)
+    devops_cycle("--write-scout-packets", dir)
+
+    out, err, status = devops_cycle("--scout-coverage", dir)
+
+    assert status.success?, err
+    assert_includes out, "Scout Coverage"
+    assert_includes out, "packets=3 covered=2 missing=1 conflicts=0"
+    assert_includes out, "task-pr123 merge-ready reports=1 outcomes=merge-ready:1"
+    assert_includes out, "task-ready222 merge-ready reports=1 outcomes=merge-ready:1"
+    assert_includes out, "task-engine789 missing-report reports=0 outcomes=none"
+  ensure
+    FileUtils.rm_rf(dir)
+  end
+
   test "prints scout report summaries when requested" do
     out, err, status = devops_cycle("--scout-reports")
 
@@ -209,6 +277,40 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     blocked = decisions.find { |decision| decision.fetch("slug") == "task-pr123" }
     assert_equal "request-changes", blocked.fetch("recommendation")
     assert_includes blocked.fetch("reasons"), "latest task activity is qa_feedback"
+  end
+
+  test "prints conductor readiness groups" do
+    out, err, status = devops_cycle("--readiness")
+
+    assert status.success?, err
+    assert_includes out, "Conductor Readiness"
+    assert_includes out, "Ready To Merge (1)"
+    assert_includes out, "task-ready222 Ship focused DevOps helper"
+    assert_includes out, "Needs Conductor Review (1)"
+    assert_includes out, "task-engine789 Ship shared engine table headers"
+    assert_includes out, "Needs Changes (2)"
+    assert_includes out, "task-pr123 Ship sidebar recovery"
+    assert_includes out, "task-block000 Fix stale worktree handoff"
+    assert_includes out, "QA Acceptance (1)"
+    assert_includes out, "task-qa456 QA contest entry flow"
+    assert_includes out, "Production Ready (1)"
+    assert_includes out, "task-prod999 Release accepted QA work"
+  end
+
+  test "readiness includes scout coverage gaps when coverage is provided" do
+    dir = Rails.root.join("tmp/devops-cycle-readiness-coverage-test").to_s
+    FileUtils.rm_rf(dir)
+    devops_cycle("--write-scout-packets", dir)
+
+    out, err, status = devops_cycle("--scout-coverage", dir, "--readiness")
+
+    assert status.success?, err
+    assert_includes out, "Scout Gaps (1)"
+    assert_includes out, "task-engine789 Ship shared engine table headers"
+    assert_includes out, "recommendation=missing-report"
+    assert_includes out, "reason=scout packet has no matching recorded scout report"
+  ensure
+    FileUtils.rm_rf(dir)
   end
 
   test "prints scout report dry-run payload without live credentials" do

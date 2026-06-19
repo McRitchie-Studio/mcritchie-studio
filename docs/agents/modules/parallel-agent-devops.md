@@ -129,7 +129,10 @@ bin/devops-cycle --plan
 bin/devops-cycle --decisions
 bin/devops-cycle --scout-packets
 bin/devops-cycle --write-scout-packets tmp/devops-scouts
+bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
+bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
+bin/devops-cycle --readiness
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -183,6 +186,34 @@ filesystem write only. It does not spawn agents, merge, deploy, write task
 feedback, publish gems, or change branches. Use the manifest to hand prompt
 files to separate scout sessions, then collect their structured reports with
 `--scout-reports` and summarize them with `--decisions`.
+
+Use `bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3` to manage
+the local scout run queue. The command reads `manifest.json` and local
+`scout-runs.json`, prints pending/launched/completed/blocked counts, and shows
+which prompt files fit inside the current concurrency limit. It does not launch
+agents. Avi or the operator starts scout sessions manually, then records local
+state:
+
+```bash
+bin/devops-cycle --scout-runs tmp/devops-scouts \
+  --mark-scout-status scout-task-XXXX:launched \
+  --scout-agent casey
+
+bin/devops-cycle --scout-runs tmp/devops-scouts \
+  --mark-scout-status scout-task-XXXX:completed \
+  --scout-agent casey
+```
+
+Use `bin/devops-cycle --scout-coverage tmp/devops-scouts` after scout reports
+start landing. It compares manifest packets with structured task comments and
+flags packets with no report, missing task records, or conflicting scout
+outcomes. This is the Phase 3C harvesting check: the conductor should not treat
+the scout lane as complete until coverage is explicit.
+
+Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
+groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
+QA acceptance, production-ready, and scout-gap lanes. Readiness is still
+advisory: Avi owns the final merge, deploy, QA feedback, and production gate.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return

@@ -275,7 +275,10 @@ bin/devops-cycle --plan
 bin/devops-cycle --decisions
 bin/devops-cycle --scout-packets
 bin/devops-cycle --write-scout-packets tmp/devops-scouts
+bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
+bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
+bin/devops-cycle --readiness
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
@@ -300,6 +303,22 @@ scout reports recorded on task comments so Avi can make the final
 merge/request-changes decision from multiple review sessions without losing the
 thread. `bin/qa-intake` remains the raw local worktree and GitHub PR view for
 branch freshness, stack health, and cleanup-state details.
+
+`bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3` is the local
+run-control view for Phase 3B. It reads the launcher manifest and local
+`scout-runs.json`, then prints pending/launched/completed/blocked packet counts
+and the next prompt files that fit inside the concurrency limit. It does not
+spawn agents or update external systems. Avi marks local state with
+`--mark-scout-status scout-task-XXXX:launched` and later `:completed` when a
+scout report is back.
+
+`bin/devops-cycle --scout-coverage tmp/devops-scouts` is the Phase 3C harvest
+view. It compares manifest packets with structured `scout_report` task comments
+and calls out missing reports or conflicting outcomes. `bin/devops-cycle
+--readiness` is the Phase 3D conductor view: it groups tasks into
+ready-to-merge, needs-conductor-review, needs-changes, waiting, QA acceptance,
+production-ready, and scout-gap lanes. These views accelerate review; they do
+not transfer final merge or deploy authority away from Avi.
 
 Scout reports are supporting evidence. Avi turns blocker findings into
 `qa_feedback` or PR review comments when the work must return to the feature
