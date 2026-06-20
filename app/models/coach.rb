@@ -15,6 +15,30 @@ class Coach < ApplicationRecord
   validates :lean, inclusion: { in: LEANS }, allow_nil: true
   validates :person_slug, uniqueness: { scope: [:team_slug, :role] }
 
+  # Ordering used by the /admin/models coaches table: grouped by team name,
+  # then by coaching role (head coach first), then by person name.
+  scope :ordered_for_admin, -> {
+    role_order = <<~SQL.squish
+      CASE coaches.role
+      WHEN 'head_coach' THEN 1
+      WHEN 'offensive_coordinator' THEN 2
+      WHEN 'defensive_coordinator' THEN 3
+      WHEN 'special_teams_coordinator' THEN 4
+      ELSE 5
+      END
+    SQL
+    order_sql = <<~SQL.squish
+      LOWER(teams.name) ASC,
+      #{role_order} ASC,
+      LOWER(people.last_name) ASC,
+      LOWER(people.first_name) ASC
+    SQL
+
+    joins(:person, :team)
+      .includes(:person, :team)
+      .order(Arel.sql(order_sql))
+  }
+
   def name_slug
     "#{person_slug}-#{team_slug}-#{role.parameterize}"
   end

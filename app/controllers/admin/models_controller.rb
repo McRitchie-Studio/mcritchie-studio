@@ -34,25 +34,7 @@ module Admin
       when "arenas"
         Arena.includes(:home_teams).order(:name)
       when "coaches"
-        role_order = <<~SQL.squish
-          CASE coaches.role
-          WHEN 'head_coach' THEN 1
-          WHEN 'offensive_coordinator' THEN 2
-          WHEN 'defensive_coordinator' THEN 3
-          WHEN 'special_teams_coordinator' THEN 4
-          ELSE 5
-          END
-        SQL
-        order_sql = <<~SQL.squish
-          LOWER(teams.name) ASC,
-          #{role_order} ASC,
-          LOWER(people.last_name) ASC,
-          LOWER(people.first_name) ASC
-        SQL
-
-        Coach.joins(:person, :team)
-          .includes(:person, :team)
-          .order(Arel.sql(order_sql))
+        Coach.ordered_for_admin
       else
         raise ActiveRecord::RecordNotFound
       end

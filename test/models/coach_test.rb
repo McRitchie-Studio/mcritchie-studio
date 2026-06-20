@@ -65,4 +65,27 @@ class CoachTest < ActiveSupport::TestCase
     team = teams(:buffalo_bills)
     assert_includes team.coaches, coaches(:bills_hc)
   end
+
+  test "ordered_for_admin sorts by team name, then role, then person name" do
+    bills_hc = coaches(:bills_hc) # Buffalo Bills / head_coach
+    miami_oc = Coach.create!(
+      person_slug: people(:messi).slug,
+      team_slug: teams(:miami_dolphins).slug,
+      role: "offensive_coordinator",
+      sport: "football"
+    )
+    miami_hc = Coach.create!(
+      person_slug: people(:pulisic).slug,
+      team_slug: teams(:miami_dolphins).slug,
+      role: "head_coach",
+      sport: "football"
+    )
+
+    ordered = Coach.ordered_for_admin.to_a
+
+    # Buffalo Bills sorts before Miami Dolphins by team name.
+    assert_operator ordered.index(bills_hc), :<, ordered.index(miami_hc)
+    # Within Miami, head_coach sorts before offensive_coordinator by role rank.
+    assert_operator ordered.index(miami_hc), :<, ordered.index(miami_oc)
+  end
 end
