@@ -42,11 +42,13 @@ class Release < ApplicationRecord
     state == "shipped"
   end
 
-  # Attach a reviewed task to this (assembling) release → it becomes `assembled`.
-  # The actual branch merge + per-merge tests are the conductor's job; this is the
-  # membership + stage bookkeeping.
+  # Attach a reviewed task to this (assembling) release. The TASK's stage becomes
+  # `assembled` (its PR is now riding the train) — the release's own state is
+  # unchanged. The actual branch merge + per-merge tests are the conductor's job;
+  # this is the membership + stage bookkeeping.
   def add(task)
     raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
+    raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})" unless task.stage == "reviewed"
 
     task.update!(release_slug: slug, stage: "assembled")
     task
@@ -54,11 +56,16 @@ class Release < ApplicationRecord
 
   # Every member in + tests check out → the RC is complete.
   def assemble!
+    raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
+
     update!(state: "assembled")
   end
 
   # The operator "Makes the release" → ship to prod; members flip to `shipped`.
+  # Allowed from an active release (assembling or assembled); never from terminal.
   def ship!(by: nil)
+    raise ArgumentError, "release #{slug} is already terminal (state: #{state})" unless active?
+
     transaction do
       update!(state: "shipped", confirmed_by: by, confirmed_at: Time.current)
       tasks.to_a.each(&:ship!)
@@ -68,6 +75,8 @@ class Release < ApplicationRecord
   # Discard a stuck RC → members fall back to `reviewed` (off the train), and the
   # singleton frees up for a fresh release.
   def abandon!
+    raise ArgumentError, "release #{slug} is already terminal (state: #{state})" unless active?
+
     transaction do
       tasks.to_a.each { |task| task.update!(stage: "reviewed", release_slug: nil) }
       update!(state: "abandoned")

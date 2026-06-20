@@ -96,4 +96,26 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal 2, rel.tasks.count
     assert_equal rel, a.reload.release
   end
+
+  # --- transition guards (a terminal release must stay terminal) ---
+
+  test "a terminal release cannot be revived" do
+    rel = Release.open!
+    rel.ship!
+    assert_raises(ArgumentError) { rel.assemble! }
+    assert_raises(ArgumentError) { rel.ship! }
+    assert_raises(ArgumentError) { rel.abandon! }
+  end
+
+  test "assemble! only transitions from assembling" do
+    rel = Release.open!
+    rel.assemble!
+    assert_raises(ArgumentError) { rel.assemble! } # already assembled
+  end
+
+  test "add rejects a task that is not reviewed" do
+    rel = Release.open!
+    designed = Task.create!(title: "Not reviewed yet") # stage: designed
+    assert_raises(ArgumentError) { rel.add(designed) }
+  end
 end
