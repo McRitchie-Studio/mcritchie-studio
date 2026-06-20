@@ -1,79 +1,84 @@
 require "test_helper"
 
 class TaskTest < ActiveSupport::TestCase
-  # --- Valid transitions ---
+  # --- Workflow 1: Build transitions ---
 
-  test "new task can be queued" do
+  test "designed task can start building" do
     task = tasks(:new_task)
-    task.queue!
-    assert_equal "queued", task.stage
-    assert_not_nil task.queued_at
-  end
-
-  test "queued task can be started" do
-    task = tasks(:queued_task)
-    task.start!
-    assert_equal "in_progress", task.stage
+    task.build!
+    assert_equal "building", task.stage
     assert_not_nil task.started_at
   end
 
-  test "queued task can be failed" do
-    task = tasks(:queued_task)
-    task.fail!("dependency missing")
-    assert_equal "failed", task.stage
-    assert_not_nil task.failed_at
-    assert_equal "dependency missing", task.error_message
+  test "building task can be submitted" do
+    task = tasks(:in_progress_task)
+    task.submit!
+    assert_equal "submitted", task.stage
+    assert_not_nil task.submitted_at
   end
 
-  test "in_progress task can be completed" do
-    task = tasks(:in_progress_task)
-    task.complete!({ output: "done" })
-    assert_equal "done", task.stage
+  test "submitted task can be reviewed" do
+    task = tasks(:new_task)
+    task.update!(stage: "submitted")
+    task.review!
+    assert_equal "reviewed", task.stage
+    assert_not_nil task.reviewed_at
+  end
+
+  # --- Workflow 2: Deploy transitions ---
+
+  test "reviewed task can be assembled" do
+    task = tasks(:new_task)
+    task.update!(stage: "reviewed")
+    task.assemble!
+    assert_equal "assembled", task.stage
+    assert_not_nil task.assembled_at
+  end
+
+  test "assembled task can be shipped with result" do
+    task = tasks(:new_task)
+    task.update!(stage: "assembled")
+    task.ship!({ output: "done" })
+    assert_equal "shipped", task.stage
     assert_not_nil task.completed_at
     assert_equal({ "output" => "done" }, task.result)
   end
 
-  test "in_progress task can be failed" do
-    task = tasks(:in_progress_task)
-    task.fail!("crash")
-    assert_equal "failed", task.stage
+  # --- blocked side state ---
+
+  test "a task can be blocked, capturing where it came from and why" do
+    task = tasks(:in_progress_task) # building
+    task.block!(kind: "rework")
+    assert task.blocked?
+    assert_equal "blocked", task.stage
+    assert_not_nil task.blocked_at
+    assert_equal "building", task.blocked_from
+    assert_equal "rework", task.block_kind
   end
 
-  test "done task can be archived" do
+  test "a blocked task can resume building" do
+    task = tasks(:failed_task) # blocked
+    task.build!
+    assert_equal "building", task.stage
+  end
+
+  # --- terminal ---
+
+  test "a shipped task can be archived" do
     task = tasks(:done_task)
     task.archive!
     assert_equal "archived", task.stage
     assert_not_nil task.archived_at
   end
 
-  test "failed task can be archived" do
-    task = tasks(:failed_task)
-    task.archive!
-    assert_equal "archived", task.stage
-  end
-
-  test "failed task can be requeued" do
-    task = tasks(:failed_task)
-    task.queue!
-    assert_equal "queued", task.stage
-  end
-
   # --- Free movement (no transition restrictions) ---
 
-  test "task can move to any stage" do
+  test "task can move freely across the two workflows" do
     task = tasks(:new_task)
-    task.start!
-    assert_equal "in_progress", task.stage
-    task.update!(stage: "pr_review")
-    assert_equal "pr_review", task.stage
-    task.update!(stage: "qa_review")
-    assert_equal "qa_review", task.stage
-    task.update!(stage: "prod_ready")
-    assert_equal "prod_ready", task.stage
-    task.complete!
-    assert_equal "done", task.stage
-    task.queue!
-    assert_equal "queued", task.stage
+    %w[building submitted reviewed assembled shipped].each do |stage|
+      task.update!(stage: stage)
+      assert_equal stage, task.stage
+    end
   end
 
   test "all task stages are valid" do
@@ -83,19 +88,28 @@ class TaskTest < ActiveSupport::TestCase
     end
   end
 
-  test "stage labels expose DevOps pipeline names" do
-    assert_equal "PR Review", Task::STAGE_LABELS.fetch("pr_review")
-    assert_equal "QA Review", Task::STAGE_LABELS.fetch("qa_review")
-    assert_equal "Prod Ready", Task::STAGE_LABELS.fetch("prod_ready")
-    assert_equal "Shipped", Task::STAGE_LABELS.fetch("done")
+  test "stage labels expose two-workflow names" do
+    assert_equal "Designed", Task::STAGE_LABELS.fetch("designed")
+    assert_equal "Submitted", Task::STAGE_LABELS.fetch("submitted")
+    assert_equal "Reviewed", Task::STAGE_LABELS.fetch("reviewed")
+    assert_equal "Assembled", Task::STAGE_LABELS.fetch("assembled")
+    assert_equal "Shipped", Task::STAGE_LABELS.fetch("shipped")
+    assert_equal "Blocked", Task::STAGE_LABELS.fetch("blocked")
   end
 
-  test "stage change sets appropriate timestamp" do
+  test "build and deploy stage groups share the reviewed seam" do
+    assert_includes Task::BUILD_STAGES, "reviewed"
+    assert_includes Task::DEPLOY_STAGES, "reviewed"
+    assert_equal "designed", Task::BUILD_STAGES.first
+    assert_equal "shipped", Task::DEPLOY_STAGES.last
+  end
+
+  test "stage change sets the appropriate timestamp" do
     task = tasks(:new_task)
-    task.update!(stage: "done")
+    task.update!(stage: "submitted")
+    assert_not_nil task.submitted_at
+    task.update!(stage: "shipped")
     assert_not_nil task.completed_at
-    task.update!(stage: "failed")
-    assert_not_nil task.failed_at
   end
 
   # --- Slug ---
@@ -121,22 +135,26 @@ class TaskTest < ActiveSupport::TestCase
   # --- Position ---
 
   test "position is auto-set on create" do
-    task = Task.create!(title: "Auto position test", stage: "new")
+    task = Task.create!(title: "Auto position test", stage: "designed")
     assert_not_nil task.position
   end
 
   test "position resets when stage changes" do
     task = tasks(:new_task)
-    original_position = task.position
-    task.update!(stage: "queued")
-    assert_equal "queued", task.stage
+    task.update!(stage: "building")
+    assert_equal "building", task.stage
     assert_not_nil task.position
   end
 
   test "new tasks get appended to end of stage" do
-    t1 = Task.create!(title: "First", stage: "new")
-    t2 = Task.create!(title: "Second", stage: "new")
+    t1 = Task.create!(title: "First", stage: "designed")
+    t2 = Task.create!(title: "Second", stage: "designed")
     assert t2.position > t1.position
+  end
+
+  test "tasks default to the designed stage" do
+    task = Task.create!(title: "Default stage")
+    assert_equal "designed", task.stage
   end
 
   # --- Sizing (sealed-bid) ---
@@ -219,6 +237,11 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["Header stays pinned, even while scrolling", "Email still works"], metadata["acceptance"]
     # String (UI free-text) fields still split on comma and newline.
     assert_equal ["auth", "deploy"], metadata["risk_tags"]
+  end
+
+  test "block_kind normalizes through devops metadata" do
+    metadata = Task.normalize_devops_metadata("block_kind" => "environment")
+    assert_equal "environment", metadata["block_kind"]
   end
 
   test "devops helpers expose stored release metadata" do

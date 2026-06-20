@@ -1,22 +1,33 @@
 class Task < ApplicationRecord
   SIZES = %w[small medium large xl].freeze
+
+  # Two-workflow status model. See docs/agents/system/devops-cycle-design.md.
+  #
+  #   Workflow 1 — Build:   designed → building → submitted → reviewed
+  #   Workflow 2 — Deploy:  reviewed → assembled → shipped   (reviewed is the seam)
+  #   blocked  — side state: agent hit a wall, QA bounced a PR, or a dep isn't ready.
+  #   archived — terminal trash (abandoned, never shipping).
   STAGE_LABELS = {
-    "new" => "New",
-    "queued" => "Queued",
-    "in_progress" => "In Progress",
-    "pr_review" => "PR Review",
-    "qa_review" => "QA Review",
-    "prod_ready" => "Prod Ready",
-    "done" => "Shipped",
-    "failed" => "Failed",
-    "archived" => "Archived"
+    "designed"  => "Designed",
+    "building"  => "Building",
+    "submitted" => "Submitted",
+    "reviewed"  => "Reviewed",
+    "assembled" => "Assembled",
+    "shipped"   => "Shipped",
+    "blocked"   => "Blocked",
+    "archived"  => "Archived"
   }.freeze
   STAGES = STAGE_LABELS.keys.freeze
   BOARD_STAGES = (STAGES - ["archived"]).freeze
+  # The two workflows, for grouping/headers. `reviewed` is the shared seam.
+  BUILD_STAGES  = %w[designed building submitted reviewed].freeze
+  DEPLOY_STAGES = %w[reviewed assembled shipped].freeze
+  # Why a task sits in `blocked` — lets a heartbeat agent route it correctly.
+  BLOCK_KINDS = %w[environment rework dependency].freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
-    requires_release_conductor
+    requires_release_conductor block_kind
   ].freeze
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
@@ -45,6 +56,7 @@ class Task < ApplicationRecord
   end
 
   scope :by_stage, ->(stage) { where(stage: stage) }
+  scope :blocked, -> { where(stage: "blocked") }
   scope :recent, -> { order(created_at: :desc) }
   scope :ordered, -> { order(Arel.sql("position ASC NULLS LAST, created_at DESC")) }
   scope :requires_migration, -> { where(requires_migration: true) }
@@ -105,6 +117,16 @@ class Task < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(devops.fetch("requires_release_conductor", false))
   end
 
+  def blocked?
+    stage == "blocked"
+  end
+
+  # Why the task is blocked (environment / rework / dependency), carried in
+  # devops so a heartbeat agent can route it without re-reading the thread.
+  def block_kind
+    devops.fetch("block_kind", "").presence
+  end
+
   def stage_label
     STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
@@ -151,20 +173,44 @@ class Task < ApplicationRecord
     connection.select_value("SELECT pg_advisory_unlock(hashtext('#{MIGRATION_LANE}'))")
   end
 
-  def queue!
-    update!(stage: "queued")
+  # --- Workflow 1: Build ---------------------------------------------------
+  def design!
+    update!(stage: "designed")
   end
 
-  def start!
-    update!(stage: "in_progress")
+  def build!
+    update!(stage: "building")
   end
 
-  def complete!(result_data = {})
-    update!(stage: "done", result: result_data)
+  def submit!
+    update!(stage: "submitted")
   end
 
-  def fail!(message = nil)
-    update!(stage: "failed", error_message: message)
+  def review!
+    update!(stage: "reviewed")
+  end
+
+  # --- Workflow 2: Deploy --------------------------------------------------
+  def assemble!
+    update!(stage: "assembled")
+  end
+
+  def ship!(result_data = {})
+    update!(stage: "shipped", result: result_data)
+  end
+
+  # --- Side / terminal -----------------------------------------------------
+  # block! moves the task off the autonomous pipeline. `kind` (environment /
+  # rework / dependency) is stored in devops; `blocked_from` is captured
+  # automatically from the stage it left. Feedback rides along as a
+  # qa_feedback Activity, not on the task itself.
+  def block!(kind: nil)
+    merged = metadata.deep_dup
+    if kind.present?
+      merged["devops"] ||= {}
+      merged["devops"]["block_kind"] = kind.to_s
+    end
+    update!(stage: "blocked", metadata: merged)
   end
 
   def archive!
@@ -179,11 +225,15 @@ class Task < ApplicationRecord
 
   def set_stage_timestamp
     case stage
-    when "queued"      then self.queued_at = Time.current
-    when "in_progress" then self.started_at = Time.current
-    when "done"        then self.completed_at = Time.current
-    when "failed"      then self.failed_at = Time.current
-    when "archived"    then self.archived_at = Time.current
+    when "building"  then self.started_at   = Time.current
+    when "submitted" then self.submitted_at = Time.current
+    when "reviewed"  then self.reviewed_at  = Time.current
+    when "assembled" then self.assembled_at = Time.current
+    when "shipped"   then self.completed_at = Time.current
+    when "blocked"
+      self.blocked_at = Time.current
+      self.blocked_from = stage_was.presence
+    when "archived"  then self.archived_at = Time.current
     end
     self.position = (Task.where(stage: stage).maximum(:position) || -1) + 1 unless new_record?
   end

@@ -23,7 +23,9 @@
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
-#   bin/task move <slug> <stage>                     # any of the 9 stages
+#   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
+#   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
+#     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/comment. Repeatable + combinable —
@@ -52,12 +54,14 @@ SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
-  "--release-train" => "release_train"
+  "--release-train" => "release_train", "--block-kind" => "block_kind"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
 NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze
-TRANSITIONS = { "queued" => "queue", "in_progress" => "start", "done" => "complete", "failed" => "fail_task", "archived" => "archive" }.freeze
-STAGES = %w[new queued in_progress pr_review qa_review prod_ready done failed archived].freeze
+# Two-workflow status model. Stages move via PATCH stage (no named-transition
+# endpoints) so the CLI, the board drag-drop, and the API share one path.
+STAGES = %w[designed building submitted reviewed assembled shipped blocked archived].freeze
+BLOCK_KINDS = %w[environment rework dependency].freeze
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -93,7 +97,13 @@ def token
   @token ||= api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
 end
 
-def api(method, path, body = nil, auth: true)
+# NOTE: opts is a trailing positional hash, NOT a keyword arg. Under system Ruby
+# (2.6) a brace-hash passed as the last positional to a method with keyword
+# params is silently coerced to kwargs — which is what made `move` blow up with
+# "unknown keyword: stage". Keeping auth in a positional opts hash is robust
+# across every Ruby the agents might run this under.
+def api(method, path, body = nil, opts = {})
+  auth = opts.fetch(:auth, true)
   uri = URI.join(BASE_URL, path)
   klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch }.fetch(method)
   req = klass.new(uri)
@@ -227,10 +237,33 @@ when "move"
   slug = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
   stage = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
   die!("unknown stage #{stage.inspect}; one of: #{STAGES.join(", ")}") unless STAGES.include?(stage)
-  task = if (transition = TRANSITIONS[stage])
-    api(:post, "/api/v1/tasks/#{slug}/#{transition}")["data"]
-  else
-    api(:patch, "/api/v1/tasks/#{slug}", { stage: stage })["data"]
+  task = api(:patch, "/api/v1/tasks/#{slug}", { "stage" => stage })["data"]
+  write_feature_marker(task)
+  print_task(task)
+when "block"
+  slug = ARGV.shift || die!("usage: bin/task block <slug> [--kind environment|rework|dependency] [--feedback \"...\"] [--agent A]")
+  kind = feedback = agent = nil
+  i = 0
+  while i < ARGV.length
+    case ARGV[i]
+    when "--kind"     then kind = ARGV[i + 1] || die!("--kind needs a value"); i += 2
+    when "--feedback" then feedback = ARGV[i + 1] || die!("--feedback needs a value"); i += 2
+    when "--agent"    then agent = ARGV[i + 1] || die!("--agent needs a value"); i += 2
+    else die!("unknown flag #{ARGV[i].inspect} for block (one of: --kind, --feedback, --agent)")
+    end
+  end
+  die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
+  current = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  devops = (current.dig("metadata", "devops") || {}).dup
+  devops["block_kind"] = kind if kind
+  body = { "stage" => "blocked" }
+  body["devops"] = devops unless devops.empty?
+  task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
+  if feedback
+    note = { "task_slug" => slug, "activity_type" => "qa_feedback", "description" => feedback }
+    note["agent_slug"] = agent if agent
+    api(:post, "/api/v1/activities", note)
+    puts "noted [qa_feedback] on #{slug}"
   end
   write_feature_marker(task)
   print_task(task)

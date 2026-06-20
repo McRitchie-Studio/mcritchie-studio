@@ -83,43 +83,42 @@
 <!-- ① FLOW -->
 <section id="flow" class="active">
   <h2>① The cycle, end to end</h2>
-  <p class="lede">A task moves left→right through the stage machine. The feature agent (local) owns up to <code>pr_review</code>. The airgapped DevOps agent picks it up from there — but <b>stops hard at <code>prod_ready</code></b> for your one-click approval. Mainnet is never auto-deployed.</p>
+  <p class="lede">A task moves left→right through <b>two workflows</b>. The feature agent (local) owns <b>Build</b> up to <code>submitted</code>; QA moves it to <code>reviewed</code> or <code>blocked</code>. The airgapped conductor assembles approved tasks into a release and runs <b>Deploy</b> — but <b>stops hard at your OK</b> before production. Mainnet is never auto-deployed.</p>
 
   <div class="card">
     <h3>Two workflows, not one pipeline</h3>
-    <p style="margin:0 0 10px;color:var(--dim)">Reviewing a <b>task</b> and shipping a <b>release</b> are different jobs. QA + production are properties of the release, so the old per-task <code>qa_review</code> + <code>prod_ready</code> collapse into one release-level QA stop.</p>
-    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow A · per task</div>
+    <p style="margin:0 0 10px;color:var(--dim)">Building a <b>task</b> and shipping a <b>release</b> are different jobs. QA + production are properties of the release, so there is <b>no per-task QA stage</b> — just one release-level QA stop and one operator OK. The two lifecycles meet at the <code>reviewed</code> seam.</p>
+    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow 1 · Build (per task)</div>
     <div class="flow">
-      <span class="stage" style="background:var(--new)">new</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--queued)">queued</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--prog)">in_progress</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--pr)">pr_review</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--done)">release_ready ✅</span>
+      <span class="stage" style="background:var(--new)">designed</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--prog)">building</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--pr)">submitted</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--done)">reviewed ✅</span>
     </div>
-    <div class="note" style="margin:2px 0 14px">⛔ send back from pr_review via <span class="tag">qa_feedback</span>. <b>release_ready ✅</b> = the checkmark: passed review, eligible for a release.</div>
-    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow B · per release <span style="color:var(--faint);font-weight:400">(its own Release model)</span></div>
+    <div class="note" style="margin:2px 0 14px">⛔ from <code>submitted</code>, QA sends back via <span class="tag">qa_feedback</span> → <span class="stage" style="background:var(--fail);padding:2px 8px">blocked</span> (rework). <b>reviewed ✅</b> = passed review, eligible for a release.</div>
+    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow 2 · Deploy (per release <span style="color:var(--faint);font-weight:400">· Release singleton</span>)</div>
     <div class="flow">
       <span class="stage" style="background:var(--prog)">assembling</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--qa)">qa</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--ready)">confirmed ✅ 🔒</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--done)">shipped</span>
+      <span class="stage" style="background:var(--qa)">rc_ready</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--done)">shipped 🔒</span>
     </div>
-    <div class="note"><b>Merge happens at <code>assembling</code></b> (in dependency order) so QA mirrors <code>main</code>. QA review is <b>dropped as a stage</b>: <code>qa_acceptance</code> runs as an auto signal, and your single <b>Confirm ✅</b> (🔒 the one human gate) ships it. Member tasks flip to <b>done</b> when the release ships. Also: <span class="stage" style="background:var(--fail);padding:3px 9px">failed</span> · <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span>.</div>
+    <div class="note"><b>Merge happens at <code>assembling</code></b> onto a disposable <code>release/&lt;slug&gt;</code> branch (dependency order); each merge runs its tests and a conflict <b>ejects</b> the task to <code>blocked</code>. Full e2e green → QA deploy + Discord notes → <code>rc_ready</code>; your single <b>OK</b> (🔒 the one human gate) fast-forwards <code>main</code> and ships. Members flip to <b>shipped</b>. Side/terminal: <span class="stage" style="background:var(--fail);padding:3px 9px">blocked</span> · <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span>.</div>
   </div>
 
   <div class="card">
     <h3>New Release model + task links</h3>
-    <p style="margin:0 0 8px;color:var(--dim)">Release becomes its own model (a deliberate step past "flat tasks first" — a release is a coordinating entity, not a task-tree). The old <code>release_train</code> field/lane is renamed to <code>release</code>.</p>
+    <p style="margin:0 0 8px;color:var(--dim)">Release becomes its own <b>singleton</b> model (a deliberate step past "flat tasks first" — a release is a coordinating entity, not a task-tree). The old <code>release_train</code> field/lane is renamed to <code>release_slug</code>. <span style="color:var(--faint)">(Follow-up task — not yet built.)</span></p>
     <table>
       <tr><th>Release field</th><th>Meaning</th></tr>
-      <tr><td><code>slug</code></td><td>Canonical id, <code>2026-06-20-s3-uploads</code> (supersedes the <code>release_train</code> string).</td></tr>
-      <tr><td><code>state</code></td><td><code>assembling → qa → confirmed ✅ → shipped</code> (+ failed).</td></tr>
-      <tr><td><code>confirmed_at / by</code></td><td>The operator <b>Confirm ✅</b> — the one human gate.</td></tr>
+      <tr><td><code>slug</code></td><td>Canonical id, <code>2026-06-20-s3-uploads</code>.</td></tr>
+      <tr><td><code>state</code></td><td><code>assembling → rc_ready → shipped</code> (+ abandoned).</td></tr>
+      <tr><td><code>branch</code></td><td>Disposable <code>release/&lt;slug&gt;</code>, cut from <code>main</code>; ff'd to main on ship, deleted on abandon.</td></tr>
+      <tr><td><code>confirmed_at / by</code></td><td>The operator <b>OK</b> at <code>rc_ready → shipped</code> — the one human gate.</td></tr>
       <tr><td>has_many <code>tasks</code></td><td>via <code>tasks.release_slug</code>.</td></tr>
     </table>
     <table style="margin-top:10px">
       <tr><th>Task field</th><th>Meaning</th></tr>
-      <tr><td><code>release_slug</code></td><td>FK to the Release this task rides (null until Avi assigns it at assembly).</td></tr>
+      <tr><td><code>release_slug</code></td><td>The Release this task rides (null until the conductor assigns it; task is <code>assembled</code> once merged onto the release branch).</td></tr>
       <tr><td><code>dependencies</code></td><td>Task slugs this one needs shipped first → lets Avi sequence releases (engine release first, then dependents).</td></tr>
     </table>
     <div class="note">Composes with the lanes: <code>dependencies</code> = "B needs A's output"; lanes (migration / release / vault) = "one at a time".</div>
@@ -127,8 +126,8 @@
 
   <div class="card">
     <h3>Who owns what</h3>
-    <div class="lane"><div class="who">Feature agent</div><div class="what">Local machine, isolated worktree. Builds, writes tests left-to-right, self-runs the DoR gate, moves task to <code>pr_review</code>. Never merges.</div></div>
-    <div class="lane"><div class="who">DevOps agent</div><div class="what">Airgapped OpenClaw box, ~10&nbsp;min heartbeat. Reviews → merges → deploys QA → runs acceptance → parks at <code>prod_ready</code>. One safe step per task per tick.</div></div>
+    <div class="lane"><div class="who">Feature agent</div><div class="what">Local machine, isolated worktree. Builds, writes tests left-to-right, self-runs the DoR gate, moves task to <code>submitted</code>. Never merges.</div></div>
+    <div class="lane"><div class="who">DevOps agent</div><div class="what">Airgapped OpenClaw box, ~10&nbsp;min heartbeat. Reviews → assembles → deploys QA → runs acceptance → parks the release at <code>rc_ready</code> for your OK. One safe step per tick.</div></div>
     <div class="lane"><div class="who">Mr. McRitchie</div><div class="what">Reviews the QA URL (the manual test tier) and gives the one-click production approval. Steers by task status, not by reading tests.</div></div>
   </div>
 
@@ -137,13 +136,12 @@
     <p style="margin:0 0 10px;color:var(--dim)"><b>Accountable role</b> = the soul whose rubric governs the stage (and where escalations route). <b>Progressed by</b> = who actually moves the task. The DevOps agent executes by wearing each lane's hat — but there's exactly one human gate.</p>
     <table>
       <tr><th>Stage</th><th>Accountable</th><th>Progressed by</th><th>Action → next</th></tr>
-      <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">→ pr_review</span></td><td>Feature agent</td><td>Feature agent</td><td>pass <code>dor-check</code>, record checks → <b>pr_review</b></td></tr>
-      <tr><td><span class="stage" style="background:var(--pr);padding:3px 8px">pr_review</span></td><td><b style="color:var(--accent)">Avi</b> <span class="note">(Steffon co-gates risk)</span></td><td>DevOps agent <i>as Avi</i></td><td>review acceptance/diff/tests → <b class="judge">feedback</b> back, OR stamp <b>release_ready ✅</b></td></tr>
-      <tr><td><span class="stage" style="background:var(--done);padding:3px 8px">release_ready ✅</span></td><td><b style="color:var(--accent)">Avi</b></td><td>— (parked)</td><td>approved + pushed, <b>not merged</b> → eligible for a release</td></tr>
-      <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">assembling</span></td><td><b style="color:var(--accent)">Avi</b></td><td>DevOps agent <i>as Avi</i> <span class="note">(strategic)</span></td><td><b class="judge">pick by dependencies</b> → <b class="det">merge to main</b> → deploy QA</td></tr>
-      <tr><td><span class="stage" style="background:var(--qa);padding:3px 8px">qa</span></td><td><b style="color:var(--accent)">Steffon</b> <span class="note">(exec)</span></td><td>DevOps agent <i>as Steffon</i></td><td><b class="det">auto qa_acceptance</b> (signal) → await confirm</td></tr>
-      <tr><td><span class="stage" style="background:var(--ready);padding:3px 8px">confirmed ✅ 🔒</span></td><td><b class="human">Mr. McRitchie</b></td><td>You click Confirm ✅</td><td>eyeball QA + <b class="human">confirm</b> → agent ships</td></tr>
-      <tr><td><span class="stage" style="background:var(--done);padding:3px 8px">shipped</span></td><td>Release conductor</td><td>agent executes</td><td>deploy prod → smoke → notes → members <b>done</b></td></tr>
+      <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">→ submitted</span></td><td>Feature agent</td><td>Feature agent</td><td>pass <code>dor-check</code>, record checks, open PR → <b>submitted</b></td></tr>
+      <tr><td><span class="stage" style="background:var(--pr);padding:3px 8px">submitted</span></td><td><b style="color:var(--accent)">Avi</b> <span class="note">(Steffon co-gates risk)</span></td><td>DevOps agent <i>as Avi</i></td><td>review acceptance/diff/tests → <b class="judge">feedback</b> → <b>blocked</b>, OR <b>reviewed ✅</b></td></tr>
+      <tr><td><span class="stage" style="background:var(--done);padding:3px 8px">reviewed ✅</span></td><td><b style="color:var(--accent)">Avi</b></td><td>— (parked)</td><td>approved, off the train → eligible for a release</td></tr>
+      <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">assembling</span></td><td><b style="color:var(--accent)">Avi</b></td><td>DevOps agent <i>as Avi</i> <span class="note">(strategic)</span></td><td><b class="judge">pick by dependencies</b> → <b class="det">merge onto release/&lt;slug&gt;</b> + per-merge tests → member <b>assembled</b></td></tr>
+      <tr><td><span class="stage" style="background:var(--qa);padding:3px 8px">rc_ready</span></td><td><b style="color:var(--accent)">Steffon</b> <span class="note">(exec)</span></td><td>DevOps agent <i>as Steffon</i></td><td><b class="det">full e2e</b> green → deploy QA + notes → await OK</td></tr>
+      <tr><td><span class="stage" style="background:var(--ready);padding:3px 8px">shipped 🔒</span></td><td><b class="human">Mr. McRitchie</b> → conductor</td><td>You OK, then agent</td><td>eyeball QA + <b class="human">OK</b> → ff main, tag, deploy prod → smoke → notes → members <b>shipped</b></td></tr>
     </table>
     <div class="legend">
       <span><span class="dot" style="background:var(--det)"></span>deterministic</span>
@@ -167,7 +165,7 @@
     "risk_tags": ["provider","ui"],
     "acceptance": ["Engine saves crops to S3", "Both apps adopt 0.7.0"],
     "test_plan": ["engine unit", "consumer-CI both apps", "local upload smoke"],
-    "checks_run": []                 <span style="color:var(--faint)">// filled before pr_review</span>
+    "checks_run": []                 <span style="color:var(--faint)">// filled before submitted</span>
   }
 }</pre>
   </div>
@@ -186,7 +184,7 @@
         <li>Set <code>test_plan</code> = the shape's required tiers.</li>
         <li><b>Build <i>and</i> write tests as you go, unit-first.</b> ← the lever: bugs that reach PR are bugs unit tests should have caught.</li>
         <li>Self-run <code>bin/dor-check</code> (Definition of Ready).</li>
-        <li>Record <code>checks_run</code>, add a <span class="tag">handoff</span> note, → <code>pr_review</code>.</li>
+        <li>Record <code>checks_run</code>, add a <span class="tag">handoff</span> note, → <code>submitted</code>.</li>
       </ol>
     </div>
     <div class="card">
@@ -195,7 +193,7 @@
         <li>Classify <b>severity</b>: <span class="tag">hotfix</span> vs <span class="tag">normal</span>.</li>
         <li><b>Write a failing regression test first</b>, at the <i>lowest</i> tier that reproduces it. The red test is the acceptance criterion.</li>
         <li>Fix until green; run the contract for the touched surface.</li>
-        <li><span class="tag">hotfix</span> may skip <code>queued</code> + use expedited review — but <b>never</b> skips the regression test or the <code>prod_ready</code> gate.</li>
+        <li><span class="tag">hotfix</span> may go straight to <code>building</code> + use expedited review — but <b>never</b> skips the regression test or the operator ship gate.</li>
       </ol>
       <div class="note">Regression-first permanently pushes that bug class <i>down</i> the pyramid → less future PR churn.</div>
     </div>
@@ -248,14 +246,14 @@
       <tr><td><b>Component</b></td><td>request spec + rendered partial + Alpine factory</td><td>UI primitive via host</td><td>client w/ stubbed RPC</td><td>instruction + account constraints</td></tr>
       <tr><td><b>Integration</b></td><td>request→DB→job, FakeVault RPC</td><td>consumer-CI (both apps)</td><td>client vs test-validator</td><td>multi-instruction lifecycle</td></tr>
       <tr><td><b>E2E</b></td><td>Playwright</td><td>via consumers</td><td>via consumers</td><td>devnet on-chain</td></tr>
-      <tr><td><b>Manual</b></td><td colspan="4">the <code>qa_review</code> step itself — operator visual/UX acceptance on the QA URL</td></tr>
+      <tr><td><b>Manual</b></td><td colspan="4">the release QA stop — operator visual/UX acceptance on the QA URL</td></tr>
     </table>
   </div>
 
   <div class="card">
     <h3>Shape → required test contract (the adaptation)</h3>
     <table>
-      <tr><th>Shape</th><th>Example</th><th>Must be green before pr_review</th></tr>
+      <tr><th>Shape</th><th>Example</th><th>Must be green before submitted</th></tr>
       <tr><td><span class="tag">ui-only</span></td><td>"make the button blue"</td><td>Component + Manual (Unit only if it adds logic)</td></tr>
       <tr><td><span class="tag">ui+db</span></td><td>new form that persists</td><td>Unit + Component + Integration + E2E happy path</td></tr>
       <tr><td><span class="tag">backend</span></td><td>new job / service</td><td>Unit + Integration (mocked I/O)</td></tr>
@@ -263,7 +261,7 @@
       <tr><td><span class="tag">onchain</span></td><td>new turf-vault instruction</td><td>Anchor unit + Anchor integration + Ruby decoder unit + devnet E2E (nightly)</td></tr>
       <tr><td><span class="tag">onchain-vertical</span></td><td>full new workflow</td><td>all tiers + devnet E2E (almost always a release_train)</td></tr>
     </table>
-    <div class="note"><b class="det">Deterministic gate:</b> <code>bin/dor-check &lt;task&gt;</code> reads the shape, confirms every required tier is green in <code>checks_run</code>, and blocks <code>pr_review</code> otherwise.</div>
+    <div class="note"><b class="det">Deterministic gate:</b> <code>bin/dor-check &lt;task&gt;</code> reads the shape, confirms every required tier is green in <code>checks_run</code>, and blocks <code>submitted → reviewed</code> otherwise.</div>
   </div>
 
   <div class="grid2">
@@ -272,11 +270,11 @@
       <table>
         <tr><th>Tier</th><th>Author</th><th>When</th></tr>
         <tr><td>Unit</td><td>Feature agent</td><td>during build, before 1st commit</td></tr>
-        <tr><td>Component</td><td>Feature agent</td><td>before pr_review</td></tr>
-        <tr><td>Integration</td><td>Feature agent</td><td>before pr_review (mandatory for migration/solana/payment/auth)</td></tr>
-        <tr><td>E2E happy</td><td>Feature agent</td><td>before pr_review (ui+db / vertical)</td></tr>
+        <tr><td>Component</td><td>Feature agent</td><td>before submitted</td></tr>
+        <tr><td>Integration</td><td>Feature agent</td><td>before submitted (mandatory for migration/solana/payment/auth)</td></tr>
+        <tr><td>E2E happy</td><td>Feature agent</td><td>before submitted (ui+db / vertical)</td></tr>
         <tr><td>E2E edge</td><td>QA lane</td><td>during review; large → follow-up task</td></tr>
-        <tr><td>Manual</td><td><b class="human">Mr. McRitchie</b></td><td>at qa_review</td></tr>
+        <tr><td>Manual</td><td><b class="human">Mr. McRitchie</b></td><td>at the release QA stop</td></tr>
       </table>
     </div>
     <div class="card">
@@ -299,19 +297,20 @@
 
   <div class="card">
     <h3>One heartbeat</h3>
-<pre>for each task in {pr_review, qa_review, prod_ready}:
+<pre><b style="color:var(--accent)"># Workflow 1 — per task (review)</b>
+for each task in {submitted}:
   acquire lease(claimed_by, claim_expires_at)        <span style="color:var(--faint)"># reclaimable if interrupted</span>
-  ┌ pr_review:
-  │   1 <b class="det">bin/dor-check</b>            fail → qa_feedback, release
-  │   2 <b class="det">run pr_review_gate suite</b> fail → classify, qa_feedback, release
-  │   3 <b class="det">conflict / lane check</b>    conflict → hold + note, release
-  │   4 <b class="judge">diff vs acceptance review</b> changes → ONE complete qa_feedback
-  │   5 <b class="det">merge + deploy QA</b>       → qa_review   (Discord: advanced)
-  ├ qa_review:
-  │     <b class="det">run qa_acceptance suite</b>  green → prod_ready + Discord "awaiting approval"
-  └ prod_ready:
-        if <b class="human">task.approved_by_operator</b>: bin/deploy → release_notes → done
-        else: <b style="color:var(--ready)">no-op (HARD STOP)</b>
+  1 <b class="det">bin/dor-check --gate merge</b>  fail → block(rework)+qa_feedback, release
+  2 <b class="det">run pr_review_gate suite</b>    fail → classify, block(rework), release
+  3 <b class="judge">diff vs acceptance review</b>   changes → ONE complete qa_feedback + block
+  4 else → <b>reviewed ✅</b>                     (Discord: approved)
+
+<b style="color:var(--accent)"># Workflow 2 — the ONE active release (singleton)</b>
+  assembling:  next reviewed member by deps/lanes → retarget PR → release/&lt;slug&gt;,
+               <b class="det">merge + per-merge tests</b>  conflict/red → eject task to blocked; member → assembled
+               all in + <b class="det">full e2e</b> green → deploy QA + notes → rc_ready
+  rc_ready:    if <b class="human">operator_OK</b>: ff → main, tag, bin/deploy → smoke → notes → members shipped
+               else: <b style="color:var(--ready)">no-op (HARD STOP)</b>
   update last_heartbeat_at, current_command, blocked_reason; emit progress</pre>
   </div>
 

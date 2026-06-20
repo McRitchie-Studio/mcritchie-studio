@@ -59,66 +59,72 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  # === Kanban stage moves via JSON PATCH ===
+  # === Kanban stage moves via JSON PATCH (the one path: board, bin/task, API) ===
 
   test "move task to any stage via PATCH JSON" do
     log_in_as(@admin)
     patch task_path(@new_task.slug, format: :json),
-          params: { task: { stage: "done" } }, as: :json
+          params: { task: { stage: "shipped" } }, as: :json
     assert_response :success
     @new_task.reload
-    assert_equal "done", @new_task.stage
+    assert_equal "shipped", @new_task.stage
     assert_not_nil @new_task.completed_at
   end
 
   test "move task backwards via PATCH JSON" do
     log_in_as(@admin)
     patch task_path(@done_task.slug, format: :json),
-          params: { task: { stage: "new" } }, as: :json
+          params: { task: { stage: "designed" } }, as: :json
     assert_response :success
     @done_task.reload
-    assert_equal "new", @done_task.stage
+    assert_equal "designed", @done_task.stage
   end
 
-  test "move task to queued sets queued_at" do
+  test "move task to building sets started_at" do
     log_in_as(@admin)
     patch task_path(@new_task.slug, format: :json),
-          params: { task: { stage: "queued" } }, as: :json
+          params: { task: { stage: "building" } }, as: :json
     assert_response :success
     @new_task.reload
-    assert_equal "queued", @new_task.stage
-    assert_not_nil @new_task.queued_at
-  end
-
-  test "move task to in_progress sets started_at" do
-    log_in_as(@admin)
-    patch task_path(@new_task.slug, format: :json),
-          params: { task: { stage: "in_progress" } }, as: :json
-    assert_response :success
-    @new_task.reload
-    assert_equal "in_progress", @new_task.stage
+    assert_equal "building", @new_task.stage
     assert_not_nil @new_task.started_at
   end
 
-  test "move task through DevOps handoff stages" do
+  test "move task through the build workflow stages" do
     log_in_as(@admin)
 
-    %w[pr_review qa_review prod_ready].each do |stage|
+    %w[building submitted reviewed].each do |stage|
       patch task_path(@new_task.slug, format: :json),
             params: { task: { stage: stage } }, as: :json
       assert_response :success
       assert_equal stage, @new_task.reload.stage
     end
+    assert_not_nil @new_task.submitted_at
+    assert_not_nil @new_task.reviewed_at
   end
 
-  test "move task to failed sets failed_at" do
+  test "move task through the deploy workflow stages" do
     log_in_as(@admin)
-    patch task_path(@new_task.slug, format: :json),
-          params: { task: { stage: "failed" } }, as: :json
+
+    %w[reviewed assembled shipped].each do |stage|
+      patch task_path(@new_task.slug, format: :json),
+            params: { task: { stage: stage } }, as: :json
+      assert_response :success
+      assert_equal stage, @new_task.reload.stage
+    end
+    assert_not_nil @new_task.assembled_at
+    assert_not_nil @new_task.completed_at
+  end
+
+  test "move task to blocked sets blocked_at and captures blocked_from" do
+    log_in_as(@admin)
+    patch task_path(@in_progress_task.slug, format: :json),
+          params: { task: { stage: "blocked" } }, as: :json
     assert_response :success
-    @new_task.reload
-    assert_equal "failed", @new_task.stage
-    assert_not_nil @new_task.failed_at
+    @in_progress_task.reload
+    assert_equal "blocked", @in_progress_task.stage
+    assert_not_nil @in_progress_task.blocked_at
+    assert_equal "building", @in_progress_task.blocked_from
   end
 
   test "move task to archived sets archived_at" do
@@ -129,24 +135,6 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     @done_task.reload
     assert_equal "archived", @done_task.stage
     assert_not_nil @done_task.archived_at
-  end
-
-  # === Transition methods still work ===
-
-  test "queue transition works via JSON" do
-    log_in_as(@admin)
-    post queue_task_path(@new_task.slug, format: :json)
-    assert_response :success
-    @new_task.reload
-    assert_equal "queued", @new_task.stage
-  end
-
-  test "complete transition works via JSON" do
-    log_in_as(@admin)
-    post complete_task_path(@in_progress_task.slug, format: :json)
-    assert_response :success
-    @in_progress_task.reload
-    assert_equal "done", @in_progress_task.stage
   end
 
   # === Delete ===
@@ -316,7 +304,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "JSON PATCH works without CSRF token" do
     log_in_as(@admin)
     patch task_path(@new_task.slug, format: :json),
-          params: { task: { stage: "queued" } }, as: :json
+          params: { task: { stage: "submitted" } }, as: :json
     assert_response :success
   end
 
@@ -325,8 +313,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "reorder sets positions in order" do
     log_in_as(@admin)
     # Create two tasks in same stage
-    t1 = Task.create!(title: "Reorder A", stage: "new")
-    t2 = Task.create!(title: "Reorder B", stage: "new")
+    t1 = Task.create!(title: "Reorder A", stage: "designed")
+    t2 = Task.create!(title: "Reorder B", stage: "designed")
 
     # Reorder: B before A
     post reorder_tasks_path(format: :json),

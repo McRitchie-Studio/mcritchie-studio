@@ -12,14 +12,19 @@ require "tmpdir"
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
 
-  # Runs dor-check against an in-memory devops payload, returns [stdout, exitcode].
+  # Runs dor-check against an in-memory devops payload, returns [output, exitcode].
   def check(devops, *args)
     Dir.mktmpdir do |dir|
       path = File.join(dir, "task.json")
       File.write(path, JSON.generate(
         "slug" => "task-test", "title" => "T", "metadata" => { "devops" => devops }
       ))
-      out = `#{BIN} --file #{path} #{args.join(" ")} 2>&1`
+      # Capture STDOUT only. dor-check prints its verdict (text and --json) to
+      # stdout via puts; when this test runs inside `bin/rails test`, the
+      # subprocess inherits bundler's env and emits rubygems "already
+      # initialized constant" warnings to STDERR — merging them (2>&1) would
+      # corrupt the JSON parse. Discarding stderr keeps the verdict clean.
+      out = IO.popen("#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
       [out, $?.exitstatus]
     end
   end
@@ -34,7 +39,26 @@ class DorCheckTest < Minitest::Test
       "checks_run" => ["[unit] x", "[integration] y"]
     )
     assert_equal 0, code, out
-    assert_match(/DoR met/, out)
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/submitted → reviewed/, out)
+  end
+
+  def test_build_gate_passes_on_spec_without_test_tiers
+    # DoR-to-Build only needs a complete spec — no test tiers yet (no code).
+    out, code = check(
+      { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
+        "acceptance" => ["a"], "test_plan" => ["unit"], "checks_run" => [] },
+      "--gate", "build"
+    )
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Build met/, out)
+    assert_match(/designed → building/, out)
+  end
+
+  def test_build_gate_still_requires_the_spec
+    out, code = check({ "shape" => "backend" }, "--gate", "build")
+    assert_equal 1, code, out
+    assert_match(/acceptance/, out)
   end
 
   def test_fails_and_lists_missing_tiers_and_metadata

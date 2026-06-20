@@ -33,7 +33,13 @@ Before handoff:
 4. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
    under-tested PR.
 5. Commit on the feature branch, push, open a PR whose body **leads with the
-   task URL**, then `bin/task move <task> pr_review`.
+   task URL**, then `bin/task move <task> submitted`.
+
+Task lifecycle is two workflows — **Build** `designed → building → submitted →
+reviewed` (you own through `submitted`; QA moves it to `reviewed` or
+`bin/task block`s it back) and **Deploy** `reviewed → assembled → shipped` (the
+release conductor's lane). `blocked` = needs attention; `archived` = terminal.
+Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
 **Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
 explicitly assigns you that lane in this session.

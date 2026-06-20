@@ -265,20 +265,27 @@
     </div>
   </div>
 
-  <!-- Stage Transition Buttons -->
+  <!-- Stage transitions — move via PATCH update (one path: board, bin/task, API) -->
   <% if logged_in? %>
+    <%
+      advance = {
+        "designed"  => ["Start Building",     "building",  "btn btn-secondary"],
+        "building"  => ["Submit",             "submitted", "btn btn-warning"],
+        "submitted" => ["Approve → Reviewed", "reviewed",  "btn btn-success"],
+        "reviewed"  => ["Assemble",           "assembled", "btn btn-secondary"],
+        "assembled" => ["Ship",               "shipped",   "btn btn-success"],
+        "blocked"   => ["Resume",             "building",  "btn btn-secondary"]
+      }
+    %>
     <div class="flex flex-wrap gap-2">
-      <% case @task.stage %>
-      <% when "new" %>
-        <%= button_to "Queue", queue_task_path(@task.slug), class: "btn btn-warning" %>
-      <% when "queued" %>
-        <%= button_to "Start", start_task_path(@task.slug), class: "btn btn-secondary" %>
-      <% when "in_progress" %>
-        <%= button_to "Complete", complete_task_path(@task.slug), class: "btn btn-success" %>
-        <%= button_to "Fail", fail_task_task_path(@task.slug), class: "btn btn-danger" %>
+      <% if (step = advance[@task.stage]) %>
+        <%= button_to step[0], task_path(@task.slug), method: :patch, params: { task: { stage: step[1] } }, class: step[2] %>
+      <% end %>
+      <% unless %w[blocked archived].include?(@task.stage) %>
+        <%= button_to "Block", task_path(@task.slug), method: :patch, params: { task: { stage: "blocked" } }, class: "btn btn-danger" %>
       <% end %>
       <% unless @task.stage == "archived" %>
-        <%= button_to "Archive", archive_task_path(@task.slug), class: "btn bg-surface-alt text-body hover:bg-inset" %>
+        <%= button_to "Archive", task_path(@task.slug), method: :patch, params: { task: { stage: "archived" } }, class: "btn bg-surface-alt text-body hover:bg-inset" %>
       <% end %>
     </div>
   <% end %>

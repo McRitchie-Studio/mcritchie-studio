@@ -34,56 +34,6 @@ module Api
         render_error(e.message)
       end
 
-      def queue
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.queue!
-          render_data(task)
-        end
-      rescue StandardError => e
-        render_error(e.message)
-      end
-
-      def start
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.start!
-          render_data(task)
-        end
-      rescue StandardError => e
-        render_error(e.message)
-      end
-
-      def complete
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.complete!(params[:result] || {})
-          render_data(task)
-        end
-      rescue StandardError => e
-        render_error(e.message)
-      end
-
-      def fail_task
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.fail!(params[:error_message])
-          render_data(task)
-        end
-      rescue StandardError => e
-        render_error(e.message)
-      end
-
-      def archive
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.archive!
-          render_data(task)
-        end
-      rescue StandardError => e
-        render_error(e.message)
-      end
-
       def destroy
         task = Task.find_by!(slug: params[:slug])
         rescue_and_log(target: task) do

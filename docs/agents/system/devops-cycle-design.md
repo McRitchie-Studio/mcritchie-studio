@@ -1,15 +1,20 @@
-# DevOps Cycle — Design (v1, for review)
+# DevOps Cycle — Design (v2)
 
-> **Status:** design draft for Mr. McRitchie's 1000ft review. Nothing here is
-> canon yet. Once approved, this folds into the existing modules
-> (`parallel-agent-devops.md`, `testing.md`, `devops-task-board.md`) via
-> surgical edits, and the supporting code lands as its own tasks. This file is
-> the *connective design*; it references the existing modules instead of
-> restating them.
+> **Status:** approved model, landing incrementally. The **two-workflow task
+> status model is now live** — `Task` stages are
+> `designed → building → submitted → reviewed` (Build) and
+> `reviewed → assembled → shipped` (Deploy), plus `blocked` (side) and
+> `archived` (terminal). `bin/task`, `bin/dor-check`, and the board speak it.
+>
+> **Still to land (each its own task):** the `Release` singleton model + the
+> release-branch assembly/abandon tooling (§1.1); migrating the heartbeat
+> planner `bin/devops-cycle` from the old stage names to the new ones (it is
+> self-consistent on the legacy snapshot today); the Discord progress webhook
+> (§5). Where this doc describes those, it is the spec for the follow-up.
 >
 > Visual companion: the in-app DevOps cycle viewer at `/devops/cycle`
 > (admin-gated; `DevopsController#cycle`, view at
-> `app/views/devops/cycle.html.erb`). Built for visual review of this design.
+> `app/views/devops/cycle.html.erb`).
 
 This design answers seven goals:
 
@@ -28,7 +33,7 @@ This design answers seven goals:
 
 | Capability | Where | Reuse as |
 |---|---|---|
-| Task state machine `new→queued→in_progress→pr_review→qa_review→prod_ready→done` (+`failed`/`archived`) | `Task` model, `devops-task-board.md` | The spine. Everything routes through the task. |
+| Task state machine — Build `designed→building→submitted→reviewed`, Deploy `reviewed→assembled→shipped`, plus `blocked`/`archived` | `Task` model, `devops-task-board.md` | The spine. Everything routes through the task. |
 | `kind` (feature/bug/chore/qa/release/cleanup), `metadata["devops"]` contract | `devops-task-board.md` | SOP routing key + handoff record. |
 | Activity log: `comment` / `qa_feedback` / `handoff` + scout reports | `Activity`, task-board API | The durable QA↔feature-agent channel. |
 | Sealed-bid sizing, `backend_migration` advisory-lock lane, `release_train` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
@@ -43,60 +48,90 @@ The job is **formalize + close gaps**, not greenfield.
 
 ## 1. The cycle, end to end
 
-The flow is **two workflows**, matching how Avi actually works. Reviewing a
-*task* and shipping a *release* are different jobs at different cadences.
+The flow is **two workflows**, matching how the work actually splits.
+**Building** a change and **shipping** a release are different jobs at different
+cadences, so they are different lifecycles that meet at one seam — `reviewed`.
 
-- **Workflow A — PR review (per task).** A feature task is judged on its own
-  merits: acceptance, diff, tests. Outcome is binary — send it back with
-  `qa_feedback`, or stamp **`release_ready` ✅** ("ready for the big leagues").
-- **Workflow B — release preparation (per release).** Avi *strategically*
-  assembles `release_ready` tasks into a **release candidate (RC)**, honoring
-  `dependencies`, cuts it to QA as a quick stop-gap, and on Mr. McRitchie's OK
-  ships it to production.
+- **Workflow 1 — Build (per task):** `designed → building → submitted →
+  reviewed`. A task is specced (`designed`), an agent claims and builds it
+  (`building`), opens a PR (`submitted`), and QA judges it on its own merits —
+  acceptance, diff, tests — landing it at **`reviewed`** (approved) or
+  **`blocked`** (rework, with a `qa_feedback` note). `reviewed` is the seam:
+  approved, off the train, waiting for a release.
+- **Workflow 2 — Deploy (per release):** `reviewed → assembled → shipped`. The
+  release conductor assembles `reviewed` tasks into a single **release candidate
+  (RC)** on a release branch (`assembled`), QAs the whole RC, and on the
+  operator's OK ships it (`shipped`).
 
 QA and production are properties of the **release**, not the individual task —
-so the old per-task `qa_review` and `prod_ready` **collapse together** into a
-single release-level QA stop that waits for one operator OK.
+so there is no per-task QA stage; the one operator gate is a single OK on the RC.
 
 ```
-WORKFLOW A · per task                         WORKFLOW B · per release (its own Release model)
-in_progress → pr_review → release_ready ✅ ─┐   assembling → qa → confirmed ✅ → shipped
-                 ▲                           │     (Avi adds    (deploy +   (operator   (prod + smoke +
-                 └ qa_feedback (send back)   └─►   ready tasks) auto-accept) confirms)   notes; members → done)
+WORKFLOW 1 · Build (per task)                  WORKFLOW 2 · Deploy (per release · Release model)
+designed → building → submitted → reviewed ─┐   assembling → rc_ready → shipped
+                         ▲                   │     (conductor    (QA deploy +   (operator OK
+                         └ blocked ──────────┘──►   merges RC    full e2e +     → prod + notes;
+                           (rework/env/dep)         on a branch) Discord notes) members → shipped)
 ```
 
-The RC is a **flat `kind:release` task** (no parent/child trees — consistent
-with "flat tasks first"). Member tasks share its `release` string; it carries
-them through QA→prod and flips them to `done` when it ships. The airgapped agent
-runs both workflows but **never crosses the ship gate autonomously** — the
-operator's single OK on the RC at QA is the one human gate. The task API is on
-production, so the airgapped box only needs an internet connection — no separate
-pull/sync layer.
+`blocked` is the single "not in the pipeline's court" state — an agent hit a
+wall, QA bounced the PR, or a dependency isn't ready. It records `blocked_from`
+(captured automatically) + `block_kind` (environment / rework / dependency) so a
+heartbeat agent routes it without re-reading the thread. `archived` is terminal.
 
-### 1.1 The Release model + task links
+The RC is a **`Release` singleton** (only one assembles at a time). Member tasks
+carry its `release_slug`; it carries them through QA→prod and flips them to
+`shipped` when it ships. The airgapped agent runs both workflows but **never
+crosses the ship gate autonomously** — the operator's single OK on the RC is the
+one human gate. The task API is on production, so the airgapped box only needs an
+internet connection — no separate pull/sync layer.
 
-**Release** (new model) coordinates a candidate from assembly through ship.
-*Rename/consolidation (decided):* the existing `release_train` field and lane
-become **`release`** — one concept, one name.
+### 1.1 The Release model + release branch  *(follow-up task)*
+
+**Release** (new singleton model) coordinates one candidate from assembly through
+ship. *Consolidation (decided):* the legacy `release_train` field becomes
+**`release_slug`** — one concept, one name.
 
 | Field | Meaning |
 |---|---|
-| `slug` | Canonical id, e.g. `2026-06-20-s3-uploads` (supersedes the `release_train` string). |
-| `state` | `assembling` → `qa` → `confirmed` ✅ → `shipped` (+ `failed`). |
-| `confirmed_at` / `confirmed_by` | The operator **Confirm ✅** — the one human gate. |
+| `slug` | Canonical id, e.g. `2026-06-20-s3-uploads`. |
+| `state` | `assembling` → `rc_ready` → `shipped` (+ `abandoned`). |
+| `branch` | The disposable integration branch `release/<slug>`, cut from `main`. |
+| `confirmed_at` / `confirmed_by` | The operator **OK** at `rc_ready → shipped` — the one human gate. |
 | `qa_url` / `production_url` / `deployed_sha` / `release_notes_sent_at` | Deploy + notes record. |
 | has_many `tasks` | via `tasks.release_slug`. |
 
-**Task** gains two links (and drops the old `release_train` string):
+**Task** gains two links:
 
 | Field | Meaning |
 |---|---|
-| `release_slug` | FK to the Release this task rides (null until Avi assigns it at assembly). |
-| `dependencies` | Array of task slugs this one needs shipped first; lets Avi sequence releases (engine-only release first, then dependents). |
+| `release_slug` | The Release this task rides (null until the conductor assigns it; the task is `assembled` once its PR is merged onto the release branch). |
+| `dependencies` | Array of task slugs this one needs shipped first; lets the conductor sequence (e.g. an engine release before its consumers). |
 
 `dependencies` (task→task) and the exclusive **lanes** (resource-level:
 migration, release, vault single-writer) compose: dependencies say *"B needs A's
 output"*; lanes say *"only one of these at a time."*
+
+**Assembly is a merge queue on a disposable branch.** The conductor cuts
+`release/<slug>` from `main`, then for each `reviewed` member: retargets its PR
+base to the release branch (`gh pr edit --base`), merges it, and runs that task's
+required tiers against the release HEAD (the punctuated per-merge test). A
+conflict or red run **ejects** the task to `blocked` — the train keeps moving.
+When every member is in and the **full suite incl. e2e** is green on the release
+HEAD, the branch deploys to **QA** + Discord notes fire → `rc_ready`. On the
+operator OK, the branch fast-forwards into `main`, tags `release-<slug>`, deploys
+prod, and members flip to `shipped`.
+
+**Start-fresh / abandon.** Feature branches are the durable artifact; the release
+branch is disposable, so abandoning a stuck RC is cheap and `main` never moves.
+Order is load-bearing — deleting a PR's base branch first auto-closes it:
+
+1. Cut a new `release/<slug2>` from `main`.
+2. **Pending** members (PR still open) → `gh pr edit --base release/<slug2>`.
+3. **Already-merged** members → their PR is "merged" into the dead branch but the
+   work is safe on its head branch; open a fresh PR from it → `release/<slug2>`.
+4. **Delete `release/<slug>` last.** Members drop back to `reviewed` (the e2e
+   culprit to `blocked`); re-assemble.
 
 ### 1.2 Stage ownership — who progresses each stage
 
@@ -105,29 +140,29 @@ from the **executor** (who moves it). The heartbeat agent executes by wearing
 each lane's hat; accountability maps to a soul; there is exactly **one human
 gate**.
 
-**Merge timing (decided):** branches are **not** merged at `release_ready` —
-they're merged when Avi **assembles** the release, in dependency order, so `main`
-is always exactly the current release candidate and **QA mirrors `main`**.
+**Merge timing (decided):** approved tasks are **not** merged at `reviewed` —
+they're merged when the conductor **assembles** the release onto `release/<slug>`,
+in dependency order. The release branch is the live RC; `main` only moves when it
+ships.
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
-| **→ pr_review** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, move in | self-gate |
-| **pr_review** (task) | **Avi** (Steffon co-gates risk) | DevOps agent *as Avi* | Review acceptance/diff/tests → `qa_feedback` (back) **OR** stamp `release_ready` ✅ (approved + pushed, **not** merged) | judgment (Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
-| **release_ready** ✅ (task, parked) | **Avi** | — (waits) | Eligible queue for Workflow B | — |
-| **assembling** (release) | **Avi** | DevOps agent *as Avi* (strategic) / operator-curated | Add `release_ready` tasks honoring `dependencies` + lanes → **merge them to `main` in order** → deploy `main` to QA | judgment + deterministic merge |
-| **qa** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Run `qa_acceptance` as a signal → await Confirm | deterministic suite; ⛔ regression → kick offending task back to `qa_feedback` |
-| **confirmed** ✅ (release) | **Mr. McRitchie** | Operator clicks **Confirm ✅** | Eyeball QA URL + confirm | 🔒 **the one human gate** |
-| **shipped** (release) | Release conductor | DevOps agent executes | `bin/deploy` → `production_smoke` → release notes → member tasks `done` | rollback on smoke fail |
+| **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR, move in | self-gate |
+| **submitted** (task) | **Avi** (Steffon co-gates risk) | DevOps agent *as Avi* | Review acceptance/diff/tests → `blocked` (back, with `qa_feedback`) **OR** `reviewed` ✅ | judgment (Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
+| **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Eligible queue for Workflow 2 | — |
+| **assembling** (release) | **Avi** | DevOps agent *as Avi* / operator-curated | Add `reviewed` tasks honoring `dependencies` + lanes → **merge each onto `release/<slug>`** + per-merge tests; member → `assembled` | judgment + deterministic merge queue |
+| **rc_ready** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on release HEAD → deploy to QA + Discord notes → await OK | deterministic suite; ⛔ regression → eject task to `blocked` |
+| **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator OK, then DevOps agent | Operator eyeballs QA + OKs → ff to `main`, tag, `bin/deploy` → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
 
 Clarifications:
 
-- **Two checkmarks, same shape:** task `release_ready` ✅ (Avi confirms a task is
-  ready) and release `confirmed` ✅ (operator confirms a QA'd release is good to
-  ship).
-- **QA review is dropped as a stage.** Steffon owns the QA deploy, the
-  `qa_acceptance` suite, and the prod deploy mechanics — but there is no separate
-  Steffon approval ceremony; the suite is a green/red *signal* and your Confirm
-  ✅ is the gate. Per-task `qa_review`/`prod_ready` are retired.
+- **Two checkmarks, same shape:** task `reviewed` ✅ (Avi confirms a task is
+  individually ready) and the release **OK** at `rc_ready → shipped` (operator
+  confirms a QA'd release is good to ship).
+- **There is no per-task QA stage.** Steffon owns the QA deploy, the
+  `qa_acceptance` suite, and the prod mechanics — but there is no separate
+  approval ceremony; the suite is a green/red *signal* and the operator OK is the
+  gate. QA + production are properties of the **release**, not the task.
 - **The agent merges even funds-touching work autonomously** at assembly — the
   consequence of "Review + QA, gate prod". Risk raises *scrutiny* (Opus review +
   full integration/security suite), not a second human. *Knob:* flip
@@ -138,9 +173,9 @@ Clarifications:
 
 ### 1.3 Decided — and where to tune the release builder
 
-Resolved: `release_train` → **`release`** (one field/model); **merge at
-assembly** (QA mirrors `main`); per-task `qa_review`/`prod_ready` **retired**;
-Release is its own model with an operator **Confirm ✅**.
+Resolved: `release_train` → **`release_slug`** (one field/model); **merge at
+assembly onto a disposable `release/<slug>` branch**; no per-task QA stage;
+Release is its own singleton model with the operator **OK** at `rc_ready`.
 
 **RC assembly autonomy is the one evolving policy** — so it lives in a single,
 clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
@@ -149,7 +184,7 @@ clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
   *single* repo, with **no** `migration`/`payment`/`solana` risk tag.
 - **Propose for operator confirmation** any multi-task, cross-repo, or
   risk-tagged release: the agent drafts it, posts the plan to Discord, and waits.
-- Production ship is **always** operator-gated (the Confirm ✅), regardless.
+- Production ship is **always** operator-gated (the OK at `rc_ready`), regardless.
 
 The agent reads this file every heartbeat; changing the thresholds changes
 behavior with no code edit. Keys + defaults are documented at the top of the
@@ -171,8 +206,9 @@ Routing lives in `AGENTS.md` (see §6) so an agent self-loads the right one.
 4. Build **and write the tests at each required tier as you go** — unit first.
    This is the lever for the real complaint: *bugs that reach PR are bugs unit
    tests should have caught.* Left-shift is mechanical, not optional.
-5. Self-run the **Definition of Ready (DoR)** check before `pr_review` (§3.3).
-6. Record `checks_run`, hand off with a `handoff` note, move to `pr_review`.
+5. Self-run the **Definition of Ready (DoR)** check (`bin/dor-check`) — `--gate
+   build` before you start coding, `--gate merge` before handoff (§3.3).
+6. Record `checks_run`, hand off with a `handoff` note, move to `submitted`.
 
 ### Bug SOP
 
@@ -182,8 +218,8 @@ Routing lives in `AGENTS.md` (see §6) so an agent self-loads the right one.
    test, not an E2E). The red test is the acceptance criterion.
 3. Fix until the regression test is green; run the shape's contract for the
    touched surface.
-4. `hotfix` may skip `queued` and use an expedited review, but **never** skips
-   the regression test or the `prod_ready` human gate.
+4. `hotfix` may go straight to `building` and use an expedited review, but
+   **never** skips the regression test or the operator ship gate.
 
 > Why regression-test-first for bugs: it both proves the fix and permanently
 > pushes that class of bug down the pyramid, shrinking future PR-stage churn.
@@ -205,7 +241,7 @@ general strategy, across all five repos. Three pieces: tier definitions (the
 | **Component** | One behavior + its immediate collaborators, no full stack | request/controller specs + rendered partial + Alpine factory | UI primitive via a host harness | client method w/ stubbed RPC | instruction + its account constraints |
 | **Integration** | Multiple objects across a boundary | request→DB→job, RPC-mocked Solana (`FakeVault`) | consumer-CI against both apps | client against test-validator | multi-instruction lifecycle (create→enter→settle) |
 | **E2E** | Real browser / real chain | Playwright | (via consumers) | (via consumers) | devnet on-chain spec |
-| **Manual** | Operator visual/UX acceptance | **the `qa_review` step itself** | — | — | contract transparency / `/contract` review |
+| **Manual** | Operator visual/UX acceptance | **the release QA stop** (operator OK at `rc_ready`) | — | — | contract transparency / `/contract` review |
 
 Tiers are the **what**; the existing **test lanes** are the **when/where**.
 Mapping: Unit+Component+Integration → `pr_review_gate`/`local_proof` (block
@@ -214,9 +250,8 @@ merge); E2E happy-path → `local_proof`, full E2E → `nightly_deep`; Manual �
 
 ### 3.2 Shape → test contract (the adaptation)
 
-A feature's **shape** is recorded in `devops` (new optional field `shape`, or
-inferred from `risk_tags`). It selects the minimum tiers that must be green
-before `pr_review`:
+A feature's **shape** is recorded in `devops.shape`. It selects the minimum
+tiers that must be green by the time the task is `submitted` for review:
 
 | Shape | Example | Required tiers (DoR contract) |
 |---|---|---|
@@ -225,22 +260,24 @@ before `pr_review`:
 | **backend** | new job/service | Unit (service/PORO) + Integration (job + mocked I/O) |
 | **library** | studio-engine change | Unit in engine + **consumer-CI** (component/integration in *both* apps) |
 | **onchain** | new turf-vault instruction | Anchor unit + Anchor integration (lifecycle) + Ruby decoder unit + devnet E2E (nightly) |
-| **onchain-vertical** | new workflow w/ wallet + DB + UI + program | all tiers + devnet E2E; almost always a `release_train` |
+| **onchain-vertical** | new workflow w/ wallet + DB + UI + program | all tiers + devnet E2E; almost always its own `release` |
 
 The matrix is the single source of "how much testing is enough" — it removes
 the per-task judgment call that currently lets thin PRs through.
 
 ### 3.3 Definition of Ready for review (DoR) — the enforcement
 
-A task **may not enter `pr_review`** unless, for its shape:
+A task **may not advance `submitted → reviewed`** unless, for its shape:
 
 - every required tier is present and green, recorded in `checks_run`;
 - required `metadata["devops"]` fields are populated (existing contract);
 - a local proof URL exists when the shape touches UI.
 
-This is **deterministic** — a `bin/` gate (`bin/dor-check <task>`), not a
-judgment call. The feature agent runs it before handoff; the heartbeat agent
-re-runs it as gate zero of review. A failed DoR is an *immediate, cheap*
+This is **deterministic** — a `bin/` gate (`bin/dor-check <task>`, default
+`--gate merge`), not a judgment call. There is also a lighter `--gate build`
+(spec-complete, no tiers) for the `designed → building` entry. The feature agent
+runs it before handoff; the heartbeat agent re-runs `--gate merge` as gate zero
+of review. A failed DoR is an *immediate, cheap*
 send-back that never consumes review-judgment tokens. This is the structural
 fix for the review ping-pong: most "PR not ready" churn becomes a pre-PR
 mechanical check.
@@ -250,11 +287,11 @@ mechanical check.
 | Tier | Author | When |
 |---|---|---|
 | Unit | Feature agent | During build, before first commit |
-| Component | Feature agent | Before `pr_review` |
-| Integration | Feature agent | Before `pr_review` (mandatory for any `migration`/`solana`/`payment`/`auth` risk tag) |
-| E2E (happy path) | Feature agent | Before `pr_review` for ui+db / vertical shapes |
+| Component | Feature agent | Before `submitted` |
+| Integration | Feature agent | Before `submitted` (mandatory for any `migration`/`solana`/`payment`/`auth` risk tag) |
+| E2E (happy path) | Feature agent | Before `submitted` for ui+db / vertical shapes |
 | E2E (edge/regression) | QA lane (Avi/Steffon) | May add during review; becomes a follow-up task if large |
-| Manual | **Mr. McRitchie** | At `qa_review` (this *is* the manual tier) |
+| Manual | **Mr. McRitchie** | At the release QA stop (this *is* the manual tier) |
 
 ### 3.5 Test pruning — *when and how we keep tests effective*
 
@@ -282,22 +319,25 @@ Runs on the OpenClaw box every ~10 minutes. Builds directly on the
 ### 4.1 One heartbeat = evaluate every in-flight task, advance each ONE safe step
 
 ```
-for each task in {pr_review, qa_review, prod_ready}:
+# Workflow 1 — per task (review).  Each submitted task, one safe step.
+for each task in {submitted}:
   acquire lease (claimed_by, claim_expires_at)   # resilience: reclaimable
-  case stage:
-    pr_review:
-      1. bin/dor-check            (deterministic gate-zero)        — fail ⇒ qa_feedback, release
-      2. run pr_review_gate suite (deterministic)                  — fail ⇒ classify, qa_feedback, release
-      3. conflict check (§4.2)    (deterministic)                  — conflict ⇒ hold + note, release
-      4. diff-vs-acceptance review(judgment; model by risk)        — changes ⇒ ONE complete qa_feedback
-      5. merge + bin/qa-server deploy + → qa_review                — Discord: advanced
-    qa_review:
-      run qa_acceptance suite      (deterministic + light judgment) — green ⇒ prod_ready + Discord "awaiting approval"
-    prod_ready:
-      if task.approved_by_operator: bin/deploy → release_notes → done   # ONLY here
-      else: no-op (HARD STOP)
-  update last_heartbeat_at, current_command, blocked_reason
-  emit progress
+  1. bin/dor-check --gate merge (deterministic gate-zero)       — fail ⇒ block(rework) + qa_feedback, release
+  2. run pr_review_gate suite   (deterministic)                 — fail ⇒ classify, block(rework), release
+  3. diff-vs-acceptance review  (judgment; model by risk)       — changes ⇒ ONE complete qa_feedback + block
+  4. else → reviewed ✅                                          — Discord: approved
+
+# Workflow 2 — the ONE active release (singleton).
+release.assembling:
+  pick next reviewed member honoring dependencies + lanes (§4.2)
+  retarget PR → release/<slug>, merge, run member's tiers       — conflict/red ⇒ eject task to blocked
+  member → assembled; when all members in + full e2e green:
+  deploy release branch → QA + Discord notes → rc_ready
+release.rc_ready:
+  if operator_OK: ff → main, tag, bin/deploy → production_smoke → notes → members shipped  # ONLY here
+  else: no-op (HARD STOP)
+
+update last_heartbeat_at, current_command, blocked_reason; emit progress
 ```
 
 Properties that give resilience + scale:
@@ -358,12 +398,13 @@ Add a routing block to `AGENTS.md` so a fresh agent self-selects its SOP:
 ```text
 ## DevOps Routing
 Before implementing, identify your role and read the matching section of
-docs/agents/system/devops-cycle.md:
+docs/agents/system/devops-cycle-design.md:
 - Handling a FEATURE → § Feature SOP. Classify the feature SHAPE and load its
-  test contract before writing code.
+  test contract before writing code. Build: designed → building → submitted.
 - Handling a BUG → § Bug SOP. Write the failing regression test first.
 - Running the airgapped/QA cycle → § Heartbeat agent. One safe step per task;
-  never cross prod_ready without operator approval.
+  review moves submitted → reviewed or blocked; never ship a release without the
+  operator OK.
 ```
 
 Everything else the agent needs already loads via the existing `Start Here`
@@ -398,8 +439,9 @@ surfaces.
 
 1. **`shape` field** vs inferring shape from `risk_tags` — add an explicit
    `devops.shape` field, or derive it? (Recommend explicit; it's the contract key.)
-2. **Hotfix lane** — do you want an expedited `hotfix` severity that skips
-   `queued` and shortens review, still regression-tested + prod-gated? (Recommend yes.)
+2. **Hotfix lane** — do you want an expedited `hotfix` severity that goes
+   straight to `building` and shortens review, still regression-tested +
+   ship-gated? (Recommend yes.)
 3. **turf-vault single-writer lane** — confirm only one in-flight program change
    at a time is acceptable (it serializes blockchain work). (Recommend yes; it's
    the safe default given Squads + IDL pinning.)
@@ -409,12 +451,27 @@ surfaces.
    over the existing bearer-token API; confirm that network path is allowed from
    the OpenClaw environment (the one external dependency the airgap must permit).
 
-## Implementation order (after you react — each its own task)
+## Implementation order (each its own task)
 
-1. `bin/dor-check` + the `shape`→contract matrix in `config/` (the left-shift lever; biggest ROI).
-2. Pyramid re-tag of existing suites in `config/devops_test_suites.yml` (+ split turf-vault's monolith, mark tiers).
-3. `AGENTS.md` routing block + fold SOPs into the existing modules.
-4. `TaskRun`/lease fields (the "Future Heartbeats" migration) — `backend_migration` lane.
-5. Discord progress/event templates + webhook.
-6. The heartbeat agent script for the OpenClaw box (review→QA only first; prod gate as a no-op approval check).
+**Done**
+
+- `bin/dor-check` + the `shape`→contract matrix in `config/feature_shapes.yml`.
+- `AGENTS.md` / `CLAUDE.md` routing block.
+- **The two-workflow status model** (this task): Task stages + state machine,
+  `bin/task` / `bin/dor-check` / board, the data migration, `blocked` metadata
+  (`blocked_from` + `block_kind`), and the DoR-to-Build / DoR-to-Merge gates.
+
+**Next**
+
+1. `Release` singleton model + `release_slug` / `dependencies` on Task + the
+   board's "current release" header.
+2. Release-branch assembly + abandon tooling — the merge queue (retarget → merge
+   → per-merge tests → eject), ff-to-`main` + tag on ship, and the abandon
+   protocol (§1.1).
+3. Migrate the heartbeat planner `bin/devops-cycle` (+ its snapshot fixture +
+   `bin/devops-tests` lane names) from the legacy stage names to the new ones.
+4. Pyramid re-tag of suites in `config/devops_test_suites.yml`.
+5. Discord progress/event templates + `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL`.
+6. The heartbeat agent script for the OpenClaw box (review→QA first; ship gate as
+   a no-op approval check).
 7. turf-vault single-writer advisory lane.
