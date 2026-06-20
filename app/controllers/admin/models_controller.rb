@@ -16,6 +16,10 @@ module Admin
       "arenas" => {
         label: "Arenas",
         description: "Venues seeded for schedules and teams"
+      },
+      "coaches" => {
+        label: "Coaches",
+        description: "Coach assignments by person, team, role, and sport"
       }
     }.freeze
 
@@ -29,6 +33,8 @@ module Admin
         Team.includes(:home_arena).order(team_sort_order)
       when "arenas"
         Arena.includes(:home_teams).order(:name)
+      when "coaches"
+        Coach.ordered_for_admin
       else
         raise ActiveRecord::RecordNotFound
       end
