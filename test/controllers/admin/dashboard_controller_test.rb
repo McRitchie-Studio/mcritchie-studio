@@ -28,6 +28,7 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", "#request-logs"
     assert_select "a[href=?]", admin_models_path
     assert_select "a[href=?]", admin_signing_requests_path
+    assert_select "a[href=?]", tasks_path
     assert_select "a[href=?]", admin_links_path
     assert_select "table#admin-users-table"
     assert_select "table#admin-users-table.sticky-data-table"
