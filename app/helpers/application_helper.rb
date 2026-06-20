@@ -15,26 +15,24 @@ module ApplicationHelper
 
   def stage_scheme(stage)
     case stage.to_s
-    when "new"                         then "info"
-    when "queued", "pr_review"         then "warning"
-    when "in_progress", "qa_review"    then "success"
-    when "prod_ready", "done"          then "success"
-    when "failed"                      then "danger"
+    when "designed"                          then "info"
+    when "submitted"                         then "warning"
+    when "building", "reviewed", "assembled", "shipped" then "success"
+    when "blocked"                           then "danger"
     else "neutral"
     end
   end
 
   def task_stage_count_classes(stage)
     case stage.to_s
-    when "new"         then "bg-blue-900/50 text-blue-300"
-    when "queued"      then "bg-yellow-900/50 text-yellow-300"
-    when "in_progress" then "bg-mint-900/50 text-mint-300"
-    when "pr_review"   then "bg-orange-900/50 text-orange-300"
-    when "qa_review"   then "bg-cyan-900/50 text-cyan-300"
-    when "prod_ready"  then "bg-violet-900/50 text-violet-300"
-    when "done"        then "bg-green-900/50 text-green-300"
-    when "failed"      then "bg-red-900/50 text-red-300"
-    when "archived"    then "bg-surface-alt text-muted"
+    when "designed"  then "bg-blue-900/50 text-blue-300"
+    when "building"  then "bg-mint-900/50 text-mint-300"
+    when "submitted" then "bg-orange-900/50 text-orange-300"
+    when "reviewed"  then "bg-cyan-900/50 text-cyan-300"
+    when "assembled" then "bg-violet-900/50 text-violet-300"
+    when "shipped"   then "bg-green-900/50 text-green-300"
+    when "blocked"   then "bg-red-900/50 text-red-300"
+    when "archived"  then "bg-surface-alt text-muted"
     else "bg-surface-alt text-muted"
     end
   end

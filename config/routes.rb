@@ -90,11 +90,8 @@ Rails.application.routes.draw do
       post :reorder
     end
     member do
-      post :queue
-      post :start
-      post :complete
-      post :fail_task
-      post :archive
+      # Stages move through PATCH update (one path shared by the board drag-drop,
+      # bin/task, and the API). `comment` posts task-conversation activities.
       post :comment
     end
     resource :sizing, only: [:show, :update]
@@ -201,15 +198,9 @@ Rails.application.routes.draw do
       post "auth", to: "auth#create"
       post "release_notes", to: "release_notes#create"
       resources :agents, only: [:index, :show, :update], param: :slug
-      resources :tasks, only: [:index, :show, :create, :update, :destroy], param: :slug do
-        member do
-          post :queue
-          post :start
-          post :complete
-          post :fail_task
-          post :archive
-        end
-      end
+      # Stages move via PATCH update (task: { stage: ... }); no named-transition
+      # endpoints — one path for the CLI, the board, and external callers.
+      resources :tasks, only: [:index, :show, :create, :update, :destroy], param: :slug
       resources :activities, only: [:index, :create]
       resources :usages, only: [:index, :create]
     end

@@ -1,22 +1,24 @@
+# Fixture names are kept stable (referenced across many test files); their stages
+# are the two-workflow model. new_task/queued_task = designed (not yet built),
+# in_progress = building, done = shipped, failed = blocked.
 new_task:
   title: New Task
   slug: task-aaa111
-  stage: new
+  stage: designed
   priority: 0
   position: 0
 
 queued_task:
   title: Queued Task
   slug: task-bbb222
-  stage: queued
+  stage: designed
   priority: 1
-  queued_at: 2026-04-01 10:00:00
-  position: 0
+  position: 1
 
 in_progress_task:
   title: In Progress Task
   slug: task-ccc333
-  stage: in_progress
+  stage: building
   priority: 0
   started_at: 2026-04-01 11:00:00
   agent_slug: alex
@@ -25,7 +27,7 @@ in_progress_task:
 done_task:
   title: Done Task
   slug: task-ddd444
-  stage: done
+  stage: shipped
   priority: 0
   completed_at: 2026-04-01 12:00:00
   position: 0
@@ -33,8 +35,9 @@ done_task:
 failed_task:
   title: Failed Task
   slug: task-eee555
-  stage: failed
+  stage: blocked
   priority: 0
-  failed_at: 2026-04-01 13:00:00
+  blocked_at: 2026-04-01 13:00:00
+  blocked_from: building
   error_message: Something went wrong
   position: 0

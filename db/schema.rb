@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_17_182000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_20_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -873,7 +873,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_17_182000) do
     t.string "title", null: false
     t.string "slug", null: false
     t.text "description"
-    t.string "stage", default: "new"
+    t.string "stage", default: "designed"
     t.integer "priority", default: 0
     t.string "agent_slug"
     t.jsonb "required_skills", default: []
@@ -894,6 +894,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_17_182000) do
     t.string "actual_size"
     t.datetime "sizes_revealed_at"
     t.boolean "requires_migration", default: false, null: false
+    t.datetime "submitted_at"
+    t.datetime "reviewed_at"
+    t.datetime "assembled_at"
+    t.datetime "blocked_at"
+    t.string "blocked_from"
     t.index ["agent_slug"], name: "index_tasks_on_agent_slug"
     t.index ["priority"], name: "index_tasks_on_priority"
     t.index ["requires_migration"], name: "index_tasks_on_requires_migration"

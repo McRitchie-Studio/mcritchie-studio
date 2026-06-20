@@ -1,19 +1,26 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/dor-check — Definition-of-Ready gate for pr_review.
+# bin/dor-check — deterministic Definition-of-Ready gate for the two workflows.
 #
-# Reads a task's devops.shape, looks up that shape's required test tiers +
-# metadata in config/feature_shapes.yml, and confirms the task is ready to enter
-# `pr_review`. It is DETERMINISTIC — no model, no judgment. A failed check is an
-# instant, cheap send-back that never burns review tokens.
+# Reads a task's devops.shape and config/feature_shapes.yml, then confirms the
+# task is ready to cross a workflow boundary. Two gates (pick with --gate):
 #
-#   * Feature agents run it on themselves before handing off.
-#   * The heartbeat DevOps agent re-runs it as gate-zero of review.
+#   --gate merge (default) — DoR-to-Merge, at submitted → reviewed.
+#       Requires the shape's full required_metadata AND its dor_tiers green
+#       (tagged in devops.checks_run, e.g. "[unit] ...").
+#   --gate build           — DoR-to-Build, at designed → building.
+#       Lighter: the spec must be complete (shape + acceptance + repositories +
+#       risk_tags + test_plan). No test tiers yet — there's no code to test.
 #
-# It does NOT run the tests — it confirms the right tiers were claimed (tagged in
-# devops.checks_run, e.g. "[unit] ...") and required metadata is present. The
-# authoritative green is the CI pr_review_gate suite at the merge transition.
+# DETERMINISTIC — no model, no judgment. A failed check is an instant, cheap
+# send-back that never burns review tokens.
+#
+#   * Feature agents run --gate build before coding, --gate merge before handoff.
+#   * The heartbeat DevOps agent re-runs --gate merge as gate-zero of review.
+#
+# It does NOT run the tests — it confirms the right tiers were claimed and the
+# required metadata is present. The authoritative green is CI at the merge.
 #
 # Non-code kinds (devops.kind chore/cleanup/docs) carry no shape and no test
 # tiers, so the shape gate does not apply: they PASS with a "DoR n/a" note.
@@ -22,9 +29,10 @@
 # bin/task). Base URL via TASK_API_BASE (default https://mcritchie.studio).
 #
 # Usage:
-#   bin/dor-check <task-slug>            # fetch from the task board, evaluate
-#   bin/dor-check <task-slug> --json     # machine-readable verdict (heartbeat agent)
-#   bin/dor-check --file task.json       # evaluate a local task JSON (offline/tests)
+#   bin/dor-check <task-slug>                  # DoR-to-Merge (default), fetch + evaluate
+#   bin/dor-check <task-slug> --gate build     # DoR-to-Build (spec complete, no tiers)
+#   bin/dor-check <task-slug> --json           # machine-readable verdict (heartbeat agent)
+#   bin/dor-check --file task.json             # evaluate a local task JSON (offline/tests)
 #
 # Exit code: 0 = ready, 1 = not ready (or error).
 
@@ -52,9 +60,11 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, file: nil }
+options = { json: false, file: nil, gate: "merge" }
+GATES = %w[merge build].freeze
 OptionParser.new do |o|
-  o.banner = "Usage: bin/dor-check <task-slug> [--json] | bin/dor-check --file task.json [--json]"
+  o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--json] | bin/dor-check --file task.json"
+  o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching") { |v| options[:file] = v }
   o.on("-h", "--help", "Show this help") do
@@ -62,6 +72,7 @@ OptionParser.new do |o|
     exit 0
   end
 end.parse!
+die!("--gate must be one of: #{GATES.join(", ")}") unless GATES.include?(options[:gate])
 
 # --- task board auth + fetch (mirrors bin/task) ---------------------------
 
@@ -145,6 +156,10 @@ config = YAML.load_file(CONFIG_PATH)
 shapes = config.fetch("shapes")
 defaults = config.fetch("defaults", {})
 
+gate = options[:gate]
+boundary = gate == "build" ? "designed → building" : "submitted → reviewed"
+gate_label = gate == "build" ? "DoR-to-Build" : "DoR-to-Merge"
+
 task = load_task(slug, options[:file])
 devops = task.dig("metadata", "devops") || {}
 shape = devops["shape"].to_s.strip
@@ -160,6 +175,7 @@ if EXEMPT_KINDS.include?(kind)
       task: task["slug"] || slug,
       shape: shape.empty? ? nil : shape,
       kind: kind,
+      gate: gate,
       ready: true,
       exempt: true,
       note: note,
@@ -169,8 +185,8 @@ if EXEMPT_KINDS.include?(kind)
     )
   else
     title = task["title"] || task["slug"] || slug || "(task)"
-    puts "✓ DoR n/a for #{title.inspect} — #{note}"
-    puts "  → ready for pr_review (shape/test-tier gate skipped for #{kind} tasks)"
+    puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
+    puts "  → ready to advance #{boundary} (shape/test-tier gate skipped for #{kind} tasks)"
   end
   exit 0
 end
@@ -182,10 +198,18 @@ elsif shape_def.nil?
   errors << "unknown shape #{shape.inspect} (valid: #{shapes.keys.join(", ")})"
 end
 
-required_meta = (shape_def && shape_def["required_metadata"]) || defaults["required_metadata"] || []
+# DoR-to-Build checks only spec completeness (the base defaults). local_url and
+# the test tiers are build artifacts — not knowable at design time, so the build
+# gate never asks for them. DoR-to-Merge asks for the shape's full contract.
+if gate == "build"
+  required_meta = defaults["required_metadata"] || []
+  dor_tiers = []
+else
+  required_meta = (shape_def && shape_def["required_metadata"]) || defaults["required_metadata"] || []
+  dor_tiers = (shape_def && shape_def["dor_tiers"]) || []
+end
 missing_meta = required_meta.reject { |field| present?(devops[field]) }
 
-dor_tiers = (shape_def && shape_def["dor_tiers"]) || []
 checks = Array(devops["checks_run"])
 missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 
@@ -197,6 +221,7 @@ if options[:json]
   puts JSON.pretty_generate(
     task: task["slug"] || slug,
     shape: shape.empty? ? nil : shape,
+    gate: gate,
     ready: ready,
     errors: errors,
     missing_metadata: missing_meta,
@@ -207,13 +232,13 @@ end
 
 title = task["title"] || task["slug"] || slug || "(task)"
 if ready
-  puts "✓ DoR met for #{title.inspect} (shape: #{shape})"
+  puts "✓ #{gate_label} met for #{title.inspect} (shape: #{shape})"
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
-  puts "  → ready for pr_review"
+  puts "  → ready to advance #{boundary}"
   exit 0
 end
 
-puts "✗ DoR NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
+puts "✗ #{gate_label} NOT met for #{title.inspect}#{shape.empty? ? "" : " (shape: #{shape})"}"
 errors.each { |e| puts "  - #{e}" }
 unless missing_meta.empty?
   puts "  missing metadata:"
@@ -223,5 +248,5 @@ unless missing_tiers.empty?
   puts "  missing test tiers (add a tagged checks_run line, e.g. \"[#{missing_tiers.first}] <command>\"):"
   missing_tiers.each { |t| puts "    - #{t}" }
 end
-puts "  → stay in in_progress; resolve the above before pr_review"
+puts "  → not ready to advance #{boundary}; resolve the above"
 exit 1
