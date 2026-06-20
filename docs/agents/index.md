@@ -133,6 +133,7 @@ lane.
 |------|------|
 | Ecosystem map | `mcritchie-studio/docs/ECOSYSTEM.md` |
 | Fresh-machine rebuild | `mcritchie-studio/docs/agents/system/house-burn-down.md` |
+| Ecosystem build script | `mcritchie-studio/docs/agents/system/ecosystem-build.md` |
 | Agent culture | `mcritchie-studio/docs/agents/modules/culture.md` |
 | Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
 | Credential item names | `mcritchie-studio/docs/agents/modules/credential-inventory.md` |

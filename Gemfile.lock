@@ -460,7 +460,7 @@ DEPENDENCIES
   solid_queue (~> 1.4)
   sprockets-rails
   stimulus-rails
-  studio-engine (~> 0.6)
+  studio-engine (~> 0.7)
   tailwindcss-rails (~> 4.5)
   turbo-rails
   tzinfo-data

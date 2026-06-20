@@ -1,6 +1,6 @@
 # House Burn-Down Recovery Protocol
 
-How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is the detailed fallback behind `mcritchie-studio/bin/ecosystem-build`; start with the fast path and only drop into manual phases when a script phase fails.
+How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is the detailed fallback behind `mcritchie-studio/bin/ecosystem-build`; start with the fast path and only drop into manual phases when a script phase fails. For the script itself — its phases, when to run it, idempotency, and reset semantics — see [ecosystem-build.md](ecosystem-build.md).
 
 **Time budget**: ~25-30 min on a fresh machine with Homebrew installed, longer on slow links or when Rust/Anchor dependencies compile cold. Later runs are usually under a minute because the script is idempotent.
 
@@ -478,6 +478,7 @@ What this protocol installed last successful run:
 
 ## Appendix D — Cross-references
 
+- `docs/agents/system/ecosystem-build.md` — the `bin/ecosystem-build` script reference (phases, when to run, idempotency, reset semantics)
 - `docs/agents/system/bootstrap.md` — first-time setup (one app, simpler)
 - `docs/agents/modules/credentials.md` — credential rules and 1Password operating model
 - `docs/agents/modules/credential-inventory.md` — known 1Password item names

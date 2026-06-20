@@ -86,4 +86,32 @@ class DorCheckTest < Minitest::Test
     )
     assert_equal 0, code, out
   end
+
+  def test_chore_kind_is_exempt_without_a_shape
+    out, code = check("kind" => "chore")
+    assert_equal 0, code, out
+    assert_match(/DoR n\/a/, out)
+    assert_match(/non-code task \(kind: chore\)/, out)
+  end
+
+  def test_cleanup_kind_is_exempt_without_a_shape
+    out, code = check("kind" => "cleanup")
+    assert_equal 0, code, out
+    assert_match(/DoR n\/a/, out)
+  end
+
+  def test_chore_exemption_in_json_verdict
+    out, code = check({ "kind" => "chore" }, "--json")
+    assert_equal 0, code, out
+    verdict = JSON.parse(out)
+    assert verdict["ready"]
+    assert verdict["exempt"]
+    assert_equal "chore", verdict["kind"]
+  end
+
+  def test_missing_shape_still_fails_when_kind_is_not_exempt
+    out, code = check("kind" => "feature", "repositories" => ["m"])
+    assert_equal 1, code, out
+    assert_match(/shape is not set/, out)
+  end
 end
