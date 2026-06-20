@@ -14,6 +14,10 @@ Agent.delete_all
 Usage.delete_all
 ErrorLog.delete_all
 User.delete_all
+CoachRanking.delete_all
+Coach.delete_all
+Team.delete_all
+Person.delete_all
 
 # Admin user
 admin = User.create!(
@@ -65,4 +69,31 @@ Task.create!(
 Activity.create!(agent_slug: "alex", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
 Activity.create!(agent_slug: "mack", activity_type: "task_started", description: "Started scraping odds data")
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities"
+coach_person = Person.create!(
+  first_name: "Sean",
+  last_name: "McDermott",
+  slug: "sean-mcdermott",
+  coach: true
+)
+
+coach_team = Team.create!(
+  name: "Buffalo Bills",
+  short_name: "BUF",
+  mascot: "Bills",
+  slug: "buffalo-bills",
+  location: "Buffalo",
+  sport: "football",
+  league: "nfl",
+  conference: "AFC",
+  division: "East"
+)
+
+Coach.create!(
+  person_slug: coach_person.slug,
+  team_slug: coach_team.slug,
+  role: "head_coach",
+  lean: "defense",
+  sport: "football"
+)
+
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"
