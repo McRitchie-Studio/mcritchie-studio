@@ -76,6 +76,23 @@ for pair in "${PAIRS[@]}"; do
   echo "  $tgt (from $src)"
 done
 
+# Make the Claude Code status line recoverable too — point it at the repo script.
+# Idempotent: only added when absent, so it never clobbers user settings.
+settings="$HOME/.claude/settings.json"
+if command -v jq >/dev/null 2>&1; then
+  mkdir -p "$HOME/.claude"
+  [ -f "$settings" ] || echo '{}' > "$settings"
+  if ! jq -e '.statusLine' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$ROOT/bin/statusline" '.statusLine = {type:"command", command:$cmd, padding:1, refreshInterval:5}' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (added statusLine -> $ROOT/bin/statusline)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
+fi
+
 echo
 echo "Next reads for a fresh agent:"
 echo "  - $PROJECTS_DIR/AGENTS.md"

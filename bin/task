@@ -32,10 +32,13 @@
 require "net/http"
 require "json"
 require "uri"
+require "fileutils"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+PROJECTS_DIR = File.expand_path("../..", __dir__)
+FEATURE_MARKER = File.join(PROJECTS_DIR, ".agents", "current-feature.json")
 
 SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
@@ -149,6 +152,33 @@ def print_task(task)
   puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
 end
 
+# Genesis trickle-down: the task slug is the single source. Creating/advancing a
+# task writes the active-feature marker that bin/statusline (and the terminal
+# indicator) read — no worktree required. Worktree sessions override it via their
+# own .agent-context.json. Best-effort; never breaks a task command.
+def write_feature_marker(task)
+  return if ENV["TASK_SKIP_MARKER"] == "1"
+  return if Dir.pwd.include?("/.worktrees/")
+  slug = task["slug"].to_s
+  return if slug.empty?
+
+  dv = task.dig("metadata", "devops") || {}
+  marker = {
+    "slug" => slug,
+    "task_slug" => slug,
+    "app" => Array(dv["repositories"]).first,
+    "feature" => dv["worktree_slug"],
+    "worktree_slug" => dv["worktree_slug"],
+    "task_url" => "#{BASE_URL}/tasks/#{slug}",
+    "stage" => task["stage"]
+  }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
+
+  FileUtils.mkdir_p(File.dirname(FEATURE_MARKER))
+  File.write(FEATURE_MARKER, "#{JSON.pretty_generate(marker)}\n")
+rescue StandardError
+  nil
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -169,7 +199,9 @@ when "create"
   devops = build_devops({}, scalars, lists)
   body = top_body(top)
   body["devops"] = devops unless devops.empty?
-  print_task(api(:post, "/api/v1/tasks", body)["data"])
+  task = api(:post, "/api/v1/tasks", body)["data"]
+  write_feature_marker(task)
+  print_task(task)
 when "update"
   slug = ARGV.shift || die!("usage: bin/task update <slug> [flags]")
   _pos, scalars, lists, top = parse_flags(ARGV)
@@ -190,6 +222,7 @@ when "move"
   else
     api(:patch, "/api/v1/tasks/#{slug}", { stage: stage })["data"]
   end
+  write_feature_marker(task)
   print_task(task)
 when "note"
   slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--comment \"...\" [--agent A]")
