@@ -7,8 +7,9 @@
 > the *connective design*; it references the existing modules instead of
 > restating them.
 >
-> Visual companion: `devops-cycle.html` (open in a browser — built for visual
-> review, renders offline, no server).
+> Visual companion: the in-app DevOps cycle viewer at `/devops/cycle`
+> (admin-gated; `DevopsController#cycle`, view at
+> `app/views/devops/cycle.html.erb`). Built for visual review of this design.
 
 This design answers seven goals:
 

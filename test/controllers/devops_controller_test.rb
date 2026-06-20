@@ -63,4 +63,32 @@ class DevopsControllerTest < ActionDispatch::IntegrationTest
   ensure
     WorktreeRegistry.reset_registry_path!
   end
+
+  # === In-app SOP viewer (#cycle) ===
+
+  test "cycle requires login" do
+    get devops_cycle_path
+
+    assert_redirected_to login_path
+  end
+
+  test "cycle requires admin" do
+    log_in_as users(:viewer)
+
+    get devops_cycle_path
+
+    assert_redirected_to root_path
+  end
+
+  test "admin gets 200 and the self-contained viewer renders without app layout" do
+    log_in_as users(:alex)
+
+    get devops_cycle_path
+
+    assert_response :success
+    # The page brings its own <html>/<title> (layout: false).
+    assert_includes response.body, "<!doctype html>"
+    assert_select "title", "McRitchie DevOps Cycle — SOP Viewer"
+    assert_select "h1", /McRitchie DevOps Cycle/
+  end
 end

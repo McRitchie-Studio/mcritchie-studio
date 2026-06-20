@@ -6,6 +6,12 @@ class DevopsController < ApplicationController
     @worktree_registry = params[:refresh] ? WorktreeRegistry.refresh! : WorktreeRegistry.load
   end
 
+  # Self-contained DevOps cycle SOP viewer. The view brings its own
+  # <html>/<style>, so it renders without the app layout.
+  def cycle
+    render layout: false
+  end
+
   private
 
   def devops_test_suites
