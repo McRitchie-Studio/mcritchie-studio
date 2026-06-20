@@ -38,7 +38,15 @@ BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 PROJECTS_DIR = File.expand_path("../..", __dir__)
-FEATURE_MARKER = File.join(PROJECTS_DIR, ".agents", "current-feature.json")
+
+# Per-session active-feature marker path, keyed by CLAUDE_CODE_SESSION_ID so each
+# session shows its OWN feature (no cross-session leak). nil when there's no
+# session id (e.g. Codex — it surfaces the feature via the announce SOP instead).
+def feature_marker_path
+  sid = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  return nil if sid.empty?
+  File.join(PROJECTS_DIR, ".agents", "sessions", "#{sid.gsub(/[^A-Za-z0-9._-]/, "")}.json")
+end
 
 SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
@@ -159,6 +167,8 @@ end
 def write_feature_marker(task)
   return if ENV["TASK_SKIP_MARKER"] == "1"
   return if Dir.pwd.include?("/.worktrees/")
+  path = feature_marker_path
+  return if path.nil?
   slug = task["slug"].to_s
   return if slug.empty?
 
@@ -173,8 +183,8 @@ def write_feature_marker(task)
     "stage" => task["stage"]
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
-  FileUtils.mkdir_p(File.dirname(FEATURE_MARKER))
-  File.write(FEATURE_MARKER, "#{JSON.pretty_generate(marker)}\n")
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, "#{JSON.pretty_generate(marker)}\n")
 rescue StandardError
   nil
 end
