@@ -632,6 +632,9 @@ end
 # LOCAL_EMAIL_CAPTURE, MAILER_HOST, REDIS_URL, ...) — those change app behavior
 # (mailer host/port, local email capture) and made the suite diverge from CI.
 # The worktree's .env (loaded by dotenv) supplies the canonical test defaults.
+# Tradeoff: the isolated stack REDIS_URL is dropped too — inert in test (null
+# cache, fake jobs), but two worktrees running `test` at once would share the
+# default Redis rather than per-worktree DBs.
 def test_command_env(app, values)
   path_parts = [app["ruby_path"], ENV["PATH"]].compact
   env = { "PATH" => path_parts.join(":"), "RAILS_ENV" => "test" }
