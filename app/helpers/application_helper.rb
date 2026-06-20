@@ -37,6 +37,16 @@ module ApplicationHelper
     end
   end
 
+  def release_state_classes(state)
+    case state.to_s
+    when "assembling" then "bg-blue-900/50 text-blue-300"
+    when "assembled"  then "bg-amber-900/50 text-amber-300"
+    when "shipped"    then "bg-green-900/50 text-green-300"
+    when "abandoned"  then "bg-surface-alt text-muted"
+    else "bg-surface-alt text-muted"
+    end
+  end
+
   def news_stage_scheme(stage)
     case stage.to_s
     when "new"        then "stage-fresh"

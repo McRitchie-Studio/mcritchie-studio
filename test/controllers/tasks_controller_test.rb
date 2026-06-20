@@ -19,6 +19,31 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "Tasks"
   end
 
+  test "index shows the current-release header when a release exists" do
+    rel = Release.open!(branch: "release/header-test")
+    @new_task.update!(stage: "reviewed")
+    rel.add(@new_task)
+    rel.assemble!
+
+    get tasks_path
+
+    assert_response :success
+    assert_select "#current-release"
+    assert_includes response.body, rel.slug
+    assert_includes response.body, "assembled"
+    # member task chip links to the task
+    assert_select "#current-release a[href=?]", task_path(@new_task.slug)
+  end
+
+  test "index omits the release header when there is no release" do
+    Release.delete_all
+
+    get tasks_path
+
+    assert_response :success
+    assert_select "#current-release", count: 0
+  end
+
   test "index shows DevOps Cycle link for admins" do
     log_in_as(@admin)
 

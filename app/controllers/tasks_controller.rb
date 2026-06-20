@@ -27,6 +27,7 @@ class TasksController < ApplicationController
     load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
     @agents = Agent.order(:position)
+    @current_release = Release.featured
   end
 
   def show
