@@ -39,6 +39,17 @@ DOT="${D} · ${X}"
 
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
 
+# OSC 8 clickable-text support. Terminal.app does NOT support it (it only
+# auto-links plain https URLs); iTerm2/WezTerm/Kitty/Ghostty do.
+osc8_supported() {
+  [ -n "$KITTY_WINDOW_ID" ] && return 0
+  [ -n "$WEZTERM_PANE" ] && return 0
+  [ "$LC_TERMINAL" = "iTerm2" ] && return 0
+  [ "$FORCE_HYPERLINK" = "1" ] && return 0
+  case "$TERM_PROGRAM" in iTerm.app|WezTerm|ghostty|rio|Tabby) return 0 ;; esac
+  return 1
+}
+
 read_ctx() {  # path -> tab-separated: app feature task url stage
   "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // "")] | @tsv' "$1" 2>/dev/null
 }
@@ -48,7 +59,11 @@ render() {  # app feature task url stage
   [ -n "$app" ]  && out="${out} ${A}${app}${X}"
   [ -n "$feat" ] && out="${out}${DOT}${F}${feat}${X}"
   if [ -n "$url" ]; then
-    out="${out}${DOT}↗ $(link "$url" "${task:-task}")"
+    if osc8_supported; then
+      out="${out}${DOT}↗ $(link "$url" "${task:-task}")"          # clean clickable slug
+    else
+      out="${out}${DOT}${D}${url}${X}"                            # Terminal.app: plain URL is Cmd-clickable
+    fi
   elif [ -n "$task" ]; then
     out="${out}${DOT}${task}"
   fi
