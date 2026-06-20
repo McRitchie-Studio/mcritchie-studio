@@ -91,4 +91,27 @@ class DevopsControllerTest < ActionDispatch::IntegrationTest
     assert_select "title", "McRitchie DevOps Cycle — SOP Viewer"
     assert_select "h1", /McRitchie DevOps Cycle/
   end
+
+  test "cycle viewer renders the two-workflow swimlanes (stage / responsible / next)" do
+    log_in_as users(:alex)
+
+    get devops_cycle_path
+
+    assert_response :success
+    # Swimlane structure: per-workflow column headers + one lane per stage.
+    assert_select ".swimhead", minimum: 2
+    assert_select ".swim", minimum: 8
+    assert_includes response.body, "Responsible"
+    assert_includes response.body, "Next"
+    # Both workflows are present as swimlane groups.
+    assert_includes response.body, "Workflow 1 · Build"
+    assert_includes response.body, "Workflow 2 · Deploy"
+    # Every stage gets a lane.
+    %w[designed building submitted reviewed assembling assembled shipped blocked].each do |stage|
+      assert_includes response.body, stage, "expected a swimlane mentioning #{stage}"
+    end
+    # Responsibility + next-step content render in the lanes.
+    assert_includes response.body, "Feature agent"
+    assert_includes response.body, "Make the release"
+  end
 end

@@ -52,6 +52,21 @@
   .lane{display:flex;gap:14px;align-items:flex-start;margin:0 0 10px}
   .lane .who{flex:0 0 150px;font-weight:600;color:var(--accent);font-size:13px;padding-top:2px}
   .lane .what{flex:1;color:var(--dim);font-size:13.5px}
+  /* swimlanes — the cycle infographic (one lane per stage) */
+  .wfhead{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:700;color:var(--accent);margin:18px 0 8px}
+  .wfhead .ln{flex:1;height:1px;background:var(--line)}
+  .swimhead,.swim{display:grid;grid-template-columns:132px 1.5fr 0.95fr 1.6fr;gap:14px}
+  .swimhead{padding:0 12px 4px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:600}
+  .swim{align-items:start;padding:11px 12px;border-radius:8px;margin:6px 0;background:var(--panel2);border-left:3px solid var(--faint)}
+  .swim .cell{font-size:13px;color:var(--dim)}
+  .swim .cell b{color:var(--ink);font-weight:600}
+  .swim .who{color:var(--accent);font-weight:600;font-size:13px}
+  .swim .lbl{display:none}
+  @media(max-width:760px){
+    .swimhead{display:none}
+    .swim{grid-template-columns:1fr;gap:6px}
+    .swim .lbl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--faint);margin-bottom:1px}
+  }
   /* pyramid */
   .pyr{display:flex;flex-direction:column;align-items:center;gap:5px;margin:8px 0 4px}
   .pyr div{color:#0a0e13;font-weight:700;text-align:center;padding:9px 0;border-radius:6px;font-size:13px}
@@ -88,21 +103,76 @@
   <div class="card">
     <h3>Two workflows, not one pipeline</h3>
     <p style="margin:0 0 10px;color:var(--dim)">Building a <b>task</b> and shipping a <b>release</b> are different jobs. QA + production are properties of the release, so there is <b>no per-task QA stage</b> — just one release-level QA stop and one operator OK. The two lifecycles meet at the <code>reviewed</code> seam.</p>
-    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow 1 · Build (per task)</div>
-    <div class="flow">
-      <span class="stage" style="background:var(--new)">designed</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--prog)">building</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--pr)">submitted</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--done)">reviewed ✅</span>
+    <div class="wfhead">Workflow 1 · Build <span style="color:var(--faint);font-weight:400">(per task)</span><span class="ln"></span></div>
+    <div class="swimhead"><div>Stage</div><div>What it is</div><div>Responsible</div><div>Next →</div></div>
+
+    <div class="swim" style="border-left-color:var(--new)">
+      <div class="st"><span class="stage" style="background:var(--new)">designed</span></div>
+      <div class="cell"><span class="lbl">What it is</span>Spec complete — acceptance, shape, test plan, repos. <b>No code yet.</b></div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Author / operator</span></div>
+      <div class="cell"><span class="lbl">Next →</span>An agent claims it (passes <code>dor-check --gate build</code>) → <b>building</b></div>
     </div>
-    <div class="note" style="margin:2px 0 14px">⛔ from <code>submitted</code>, QA sends back via <span class="tag">qa_feedback</span> → <span class="stage" style="background:var(--fail);padding:2px 8px">blocked</span> (rework). <b>reviewed ✅</b> = passed review, eligible for a release.</div>
-    <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow 2 · Deploy (per release <span style="color:var(--faint);font-weight:400">· Release singleton</span>)</div>
-    <div class="flow">
-      <span class="stage" style="background:var(--prog)">assembling</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--qa)">assembled</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--done)">shipped 🔒</span>
+
+    <div class="swim" style="border-left-color:var(--prog)">
+      <div class="st"><span class="stage" style="background:var(--prog)">building</span></div>
+      <div class="cell"><span class="lbl">What it is</span>Agent owns it in an isolated worktree, writing code + tests as it goes.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Feature agent</span></div>
+      <div class="cell"><span class="lbl">Next →</span>Open PR, pass <code>dor-check --gate merge</code> → <b>submitted</b></div>
     </div>
-    <div class="note"><b>Merge happens at <code>assembling</code></b> onto a disposable <code>release/&lt;slug&gt;</code> branch (dependency order); each merge runs its tests and a conflict <b>ejects</b> the task to <code>blocked</code>. All members in + full e2e green → QA deploy + Discord notes → <code>assembled</code> (complete). You then <b>Make the release</b> (🔒 the one human gate — an action on the page, not a passive status) → it fast-forwards <code>main</code>, ships, and shows as the current release. Members flip to <b>shipped</b>. Side/terminal: <span class="stage" style="background:var(--fail);padding:3px 9px">blocked</span> · <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span>.</div>
+
+    <div class="swim" style="border-left-color:var(--pr)">
+      <div class="st"><span class="stage" style="background:var(--pr)">submitted</span></div>
+      <div class="cell"><span class="lbl">What it is</span>PR(s) open, ready for review.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Feature agent → Avi</span></div>
+      <div class="cell"><span class="lbl">Next →</span>Avi reviews acceptance/diff/tests → <b>reviewed ✅</b>, or <span class="stage" style="background:var(--fail);padding:2px 7px">blocked</span> via <span class="tag">qa_feedback</span></div>
+    </div>
+
+    <div class="swim" style="border-left-color:var(--done)">
+      <div class="st"><span class="stage" style="background:var(--done)">reviewed ✅</span></div>
+      <div class="cell"><span class="lbl">What it is</span>Approved, off the train, waiting for a release. <b>The seam</b> between the two workflows.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Avi</span></div>
+      <div class="cell"><span class="lbl">Next →</span>Conductor pulls it into the next release → <b>assembling</b></div>
+    </div>
+
+    <div class="wfhead">Workflow 2 · Deploy <span style="color:var(--faint);font-weight:400">(per release · Release singleton)</span><span class="ln"></span></div>
+    <div class="swimhead"><div>Stage</div><div>What it is</div><div>Responsible</div><div>Next →</div></div>
+
+    <div class="swim" style="border-left-color:var(--done)">
+      <div class="st"><span class="stage" style="background:var(--done)">reviewed ✅</span></div>
+      <div class="cell"><span class="lbl">What it is</span><b>The seam</b> (carried over from Build) — the eligible queue for the next release.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Avi → conductor</span></div>
+      <div class="cell"><span class="lbl">Next →</span>Conductor cuts <code>release/&lt;slug&gt;</code> + merges it in dependency order → <b>assembling</b></div>
+    </div>
+
+    <div class="swim" style="border-left-color:var(--prog)">
+      <div class="st"><span class="stage" style="background:var(--prog)">assembling</span></div>
+      <div class="cell"><span class="lbl">What it is</span>Members merge onto the disposable <code>release/&lt;slug&gt;</code> branch; each merge runs its tests — a conflict <b>ejects</b> the task to <code>blocked</code>.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Avi</span> <span style="color:var(--faint)">(merge queue)</span></div>
+      <div class="cell"><span class="lbl">Next →</span>All members in + full e2e green → QA deploy + Discord notes → <b>assembled</b></div>
+    </div>
+
+    <div class="swim" style="border-left-color:var(--qa)">
+      <div class="st"><span class="stage" style="background:var(--qa)">assembled</span></div>
+      <div class="cell"><span class="lbl">What it is</span>Every member PR merged <b>and tests check out</b>; the RC is deployed to QA. <span style="color:var(--faint)">(Same meaning at task scope: a task is <code>assembled</code> once its PR is merged + per-merge tests pass.)</span></div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Steffon</span> <span style="color:var(--faint)">(QA)</span></div>
+      <div class="cell"><span class="lbl">Next →</span>Operator <b class="human">Makes the release</b> 🔒 (page action — the one human gate) → <b>shipped</b></div>
+    </div>
+
+    <div class="swim" style="border-left-color:var(--done)">
+      <div class="st"><span class="stage" style="background:var(--done)">shipped 🔒</span></div>
+      <div class="cell"><span class="lbl">What it is</span>The release fast-forwards to <code>main</code>, is tagged, deploys to prod, and shows as the current release. Members flip to <code>shipped</code>.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Mr. McRitchie → conductor</span></div>
+      <div class="cell"><span class="lbl">Next →</span><b>Terminal</b> — it's live in production.</div>
+    </div>
+
+    <div class="swim" style="border-left-color:var(--fail)">
+      <div class="st"><span class="stage" style="background:var(--fail)">blocked</span></div>
+      <div class="cell"><span class="lbl">What it is</span>Off the pipeline — an env blocker, QA rework, or a dependency. Records <code>blocked_from</code> + <code>block_kind</code>.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Whoever can unblock</span> <span style="color:var(--faint)">(agent for rework, operator for env)</span></div>
+      <div class="cell"><span class="lbl">Next →</span>Resume → back to <b>building</b> or <b>submitted</b></div>
+    </div>
+
+    <div class="note">Terminal trash: <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span> — abandoned, never shipping.</div>
   </div>
 
   <div class="card">
