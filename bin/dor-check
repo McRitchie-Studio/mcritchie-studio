@@ -15,6 +15,9 @@
 # devops.checks_run, e.g. "[unit] ...") and required metadata is present. The
 # authoritative green is the CI pr_review_gate suite at the merge transition.
 #
+# Non-code kinds (devops.kind chore/cleanup/docs) carry no shape and no test
+# tiers, so the shape gate does not apply: they PASS with a "DoR n/a" note.
+#
 # Auth: AGENT_API_SECRET from ENV, else 1Password, else repo .env (same as
 # bin/task). Base URL via TASK_API_BASE (default https://mcritchie.studio).
 #
@@ -33,6 +36,9 @@ require "optparse"
 
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
+# Kinds that carry no shippable code surface, so the shape/test-tier gate does
+# not apply. They PASS with a "DoR n/a" note instead of failing on missing shape.
+EXEMPT_KINDS = %w[chore cleanup docs].freeze
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
@@ -143,6 +149,31 @@ task = load_task(slug, options[:file])
 devops = task.dig("metadata", "devops") || {}
 shape = devops["shape"].to_s.strip
 shape_def = shapes[shape]
+kind = devops["kind"].to_s.strip.downcase
+
+# Non-code tasks (chore/cleanup/docs) carry no shape and no test tiers to gate.
+# PASS them with a clear "DoR n/a" note instead of failing on the missing shape.
+if EXEMPT_KINDS.include?(kind)
+  note = "non-code task (kind: #{kind}); DoR n/a"
+  if options[:json]
+    puts JSON.pretty_generate(
+      task: task["slug"] || slug,
+      shape: shape.empty? ? nil : shape,
+      kind: kind,
+      ready: true,
+      exempt: true,
+      note: note,
+      errors: [],
+      missing_metadata: [],
+      missing_tiers: []
+    )
+  else
+    title = task["title"] || task["slug"] || slug || "(task)"
+    puts "✓ DoR n/a for #{title.inspect} — #{note}"
+    puts "  → ready for pr_review (shape/test-tier gate skipped for #{kind} tasks)"
+  end
+  exit 0
+end
 
 errors = []
 if shape.empty?

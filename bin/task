@@ -24,6 +24,10 @@
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # any of the 9 stages
+#   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
+#     ( posts a task activity via POST /api/v1/activities; flags map to
+#       activity_type handoff/qa_feedback/comment. Repeatable + combinable —
+#       one activity is posted per flag given. )
 
 require "net/http"
 require "json"
@@ -40,6 +44,7 @@ SCALAR_FLAGS = {
   "--release-train" => "release_train"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
+NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze
 TRANSITIONS = { "queued" => "queue", "in_progress" => "start", "done" => "complete", "failed" => "fail_task", "archived" => "archive" }.freeze
 STAGES = %w[new queued in_progress pr_review qa_review prod_ready done failed archived].freeze
 
@@ -186,6 +191,31 @@ when "move"
     api(:patch, "/api/v1/tasks/#{slug}", { stage: stage })["data"]
   end
   print_task(task)
+when "note"
+  slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--comment \"...\" [--agent A]")
+  notes = []
+  agent = nil
+  i = 0
+  while i < ARGV.length
+    arg = ARGV[i]
+    if NOTE_FLAGS.key?(arg)
+      desc = ARGV[i + 1] || die!("#{arg} needs a value")
+      notes << [NOTE_FLAGS[arg], desc]
+      i += 2
+    elsif arg == "--agent"
+      agent = ARGV[i + 1] || die!("--agent needs a value")
+      i += 2
+    else
+      die!("unknown flag #{arg.inspect} for note (one of: #{NOTE_FLAGS.keys.join(", ")} [--agent A])")
+    end
+  end
+  die!("note needs one of: #{NOTE_FLAGS.keys.join(", ")}") if notes.empty?
+  notes.each do |activity_type, description|
+    body = { "task_slug" => slug, "activity_type" => activity_type, "description" => description }
+    body["agent_slug"] = agent if agent
+    activity = api(:post, "/api/v1/activities", body)["data"] || {}
+    puts "noted [#{activity_type}] on #{slug} -> #{activity["slug"] || "(created)"}"
+  end
 else
   warn!(File.read(__FILE__)[/# Usage:.*?(?=\nrequire)/m].to_s.gsub(/^# ?/, ""))
   exit(cmd == "help" ? 0 : 1)
