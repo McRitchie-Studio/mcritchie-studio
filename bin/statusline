@@ -72,10 +72,12 @@ render() {  # app feature task url stage
 }
 
 ctx="$cwd/.agent-context.json"
-marker="$PROJECTS/.agents/current-feature.json"
 src=""
-[ -f "$ctx" ] && src="$ctx"
-[ -z "$src" ] && [ -f "$marker" ] && src="$marker"
+[ -f "$ctx" ] && src="$ctx"                                       # worktree session: per-worktree context
+if [ -z "$src" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
+  sm="$PROJECTS/.agents/sessions/$CLAUDE_CODE_SESSION_ID.json"    # per-session marker (no cross-session leak)
+  [ -f "$sm" ] && src="$sm"
+fi
 
 if [ -n "$src" ]; then
   IFS=$'\t' read -r app feat task url stage < <(read_ctx "$src")
