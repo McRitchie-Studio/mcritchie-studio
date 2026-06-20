@@ -65,6 +65,16 @@ Before handoff:
 5. Commit on the feature branch, push, open a PR whose body **leads with the
    task URL**, then `bin/task move <task> pr_review`.
 
+**The task slug is the genesis.** Creating it in step 1 trickles down to
+everything: the worktree (bound by slug), the task URL
+(`https://mcritchie.studio/tasks/<slug>`), and the terminal feature indicator —
+`bin/task` writes the active-feature marker the status line reads (a worktree
+session overrides it via its own `.agent-context.json`). **Announce it every
+session, not on request:** open with one line — `<app-slug> · <feature-slug> ·
+<task URL>` — so the active feature is visible in any tool (Claude's status bar,
+Codex's output; the terminal auto-links the URL), and restate the task URL at
+handoff.
+
 **Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
 assigns you that lane in this session. Full SOP + the two-workflow release model:
 `mcritchie-studio/docs/agents/system/devops-cycle-design.md` (visual: the
