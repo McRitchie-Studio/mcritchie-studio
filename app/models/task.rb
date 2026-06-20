@@ -36,6 +36,7 @@ class Task < ApplicationRecord
   SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical].freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
+  belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
 
   validates :title, presence: true

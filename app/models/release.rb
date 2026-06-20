@@ -1,0 +1,96 @@
+class Release < ApplicationRecord
+  # Workflow 2 — Deploy. A Release is a singleton: at most one is active
+  # (assembling/assembled) at a time. It carries `reviewed` tasks onto a
+  # disposable release branch, through QA, and to production.
+  #   assembling → assembled → shipped   (+ abandoned)
+  # The git/merge-queue mechanics live in the conductor tooling (a later task);
+  # this model owns the state + the task membership.
+  STATES = %w[assembling assembled shipped abandoned].freeze
+  ACTIVE_STATES = %w[assembling assembled].freeze
+  TERMINAL_STATES = %w[shipped abandoned].freeze
+
+  has_many :tasks, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release
+
+  validates :slug, presence: true, uniqueness: true
+  validates :state, inclusion: { in: STATES }
+  validate :at_most_one_active_release, if: :active?
+
+  before_validation :generate_slug, on: :create
+  before_save :set_state_timestamp, if: :state_changed?
+
+  scope :active, -> { where(state: ACTIVE_STATES) }
+
+  def to_param
+    slug
+  end
+
+  # The current (singleton) active release, if any.
+  def self.current
+    active.order(created_at: :desc).first
+  end
+
+  # Open a new release candidate. Raises (singleton validation) if one is active.
+  def self.open!(attrs = {})
+    create!(attrs.merge(state: "assembling"))
+  end
+
+  def active?
+    ACTIVE_STATES.include?(state)
+  end
+
+  def shipped?
+    state == "shipped"
+  end
+
+  # Attach a reviewed task to this (assembling) release → it becomes `assembled`.
+  # The actual branch merge + per-merge tests are the conductor's job; this is the
+  # membership + stage bookkeeping.
+  def add(task)
+    raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
+
+    task.update!(release_slug: slug, stage: "assembled")
+    task
+  end
+
+  # Every member in + tests check out → the RC is complete.
+  def assemble!
+    update!(state: "assembled")
+  end
+
+  # The operator "Makes the release" → ship to prod; members flip to `shipped`.
+  def ship!(by: nil)
+    transaction do
+      update!(state: "shipped", confirmed_by: by, confirmed_at: Time.current)
+      tasks.to_a.each(&:ship!)
+    end
+  end
+
+  # Discard a stuck RC → members fall back to `reviewed` (off the train), and the
+  # singleton frees up for a fresh release.
+  def abandon!
+    transaction do
+      tasks.to_a.each { |task| task.update!(stage: "reviewed", release_slug: nil) }
+      update!(state: "abandoned")
+    end
+  end
+
+  private
+
+  def at_most_one_active_release
+    scope = Release.where(state: ACTIVE_STATES)
+    scope = scope.where.not(id: id) if persisted?
+    errors.add(:state, "another release is already active") if scope.exists?
+  end
+
+  def set_state_timestamp
+    case state
+    when "assembled" then self.assembled_at = Time.current
+    when "shipped"   then self.shipped_at = Time.current
+    when "abandoned" then self.abandoned_at = Time.current
+    end
+  end
+
+  def generate_slug
+    self.slug ||= "rel-#{Time.current.strftime('%Y%m%d')}-#{SecureRandom.hex(3)}"
+  end
+end
