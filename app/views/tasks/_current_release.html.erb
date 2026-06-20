@@ -1,5 +1,6 @@
 <% if @current_release %>
   <% rel = @current_release %>
+  <% members = rel.tasks.order(:position).to_a %>
   <div id="current-release" class="mb-6 rounded-xl border border-subtle bg-surface p-4">
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3 flex-wrap">
@@ -8,7 +9,7 @@
         <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>"><%= rel.state %></span>
       </div>
       <div class="flex items-center gap-4 text-xs text-secondary flex-wrap">
-        <span><%= rel.tasks.size %> task<%= "s" unless rel.tasks.size == 1 %></span>
+        <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>
         <% if rel.qa_url.present? %><%= link_to "QA ↗", rel.qa_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline" %><% end %>
         <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline" %><% end %>
         <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
@@ -16,9 +17,9 @@
         <% elsif rel.assembled_at %><span class="text-muted">assembled <%= time_ago_in_words(rel.assembled_at) %> ago</span><% end %>
       </div>
     </div>
-    <% if rel.tasks.any? %>
+    <% if members.any? %>
       <div class="mt-3 flex flex-wrap gap-2">
-        <% rel.tasks.order(:position).each do |t| %>
+        <% members.each do |t| %>
           <%= link_to task_path(t.slug), class: "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" do %>
             <span class="px-1.5 py-0.5 rounded text-[10px] font-bold <%= task_stage_count_classes(t.stage) %>"><%= t.stage_label %></span>
             <%= truncate(t.title, length: 42) %>

@@ -20,7 +20,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "index shows the current-release header when a release exists" do
-    rel = Release.open!(branch: "release/header-test")
+    rel = Release.open!(branch: "release/header-test", qa_url: "https://qa.example/tasks", deployed_sha: "abc1234def567")
     @new_task.update!(stage: "reviewed")
     rel.add(@new_task)
     rel.assemble!
@@ -29,10 +29,12 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#current-release"
-    assert_includes response.body, rel.slug
-    assert_includes response.body, "assembled"
-    # member task chip links to the task
-    assert_select "#current-release a[href=?]", task_path(@new_task.slug)
+    assert_select "#current-release", text: /#{Regexp.escape(rel.slug)}/
+    assert_select "#current-release", text: /assembled/ # state badge (scoped, not the column label)
+    assert_select "#current-release a[href=?]", task_path(@new_task.slug) # member chip
+    # "when present" fields render
+    assert_select "#current-release a[href=?]", "https://qa.example/tasks" # QA link
+    assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
   test "index omits the release header when there is no release" do
