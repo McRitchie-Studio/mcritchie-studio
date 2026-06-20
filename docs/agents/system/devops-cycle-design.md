@@ -68,10 +68,10 @@ so there is no per-task QA stage; the one operator gate is a single OK on the RC
 
 ```
 WORKFLOW 1 · Build (per task)                  WORKFLOW 2 · Deploy (per release · Release model)
-designed → building → submitted → reviewed ─┐   assembling → rc_ready → shipped
-                         ▲                   │     (conductor    (QA deploy +   (operator OK
-                         └ blocked ──────────┘──►   merges RC    full e2e +     → prod + notes;
-                           (rework/env/dep)         on a branch) Discord notes) members → shipped)
+designed → building → submitted → reviewed ─┐   assembling → assembled → shipped
+                         ▲                   │     (conductor    (all merged +   ("Make the release"
+                         └ blocked ──────────┘──►   merges RC    full e2e green; → prod + notes;
+                           (rework/env/dep)         on a branch) deployed to QA) members → shipped)
 ```
 
 `blocked` is the single "not in the pipeline's court" state — an agent hit a
@@ -95,9 +95,9 @@ ship. *Consolidation (decided):* the legacy `release_train` field becomes
 | Field | Meaning |
 |---|---|
 | `slug` | Canonical id, e.g. `2026-06-20-s3-uploads`. |
-| `state` | `assembling` → `rc_ready` → `shipped` (+ `abandoned`). |
+| `state` | `assembling` → `assembled` → `shipped` (+ `abandoned`). `assembled` = every member PR merged **and** the tests check out. |
 | `branch` | The disposable integration branch `release/<slug>`, cut from `main`. |
-| `confirmed_at` / `confirmed_by` | The operator **OK** at `rc_ready → shipped` — the one human gate. |
+| `confirmed_at` / `confirmed_by` | The operator **Make the release** action at `assembled → shipped` — the one human gate. |
 | `qa_url` / `production_url` / `deployed_sha` / `release_notes_sent_at` | Deploy + notes record. |
 | has_many `tasks` | via `tasks.release_slug`. |
 
@@ -118,9 +118,11 @@ base to the release branch (`gh pr edit --base`), merges it, and runs that task'
 required tiers against the release HEAD (the punctuated per-merge test). A
 conflict or red run **ejects** the task to `blocked` — the train keeps moving.
 When every member is in and the **full suite incl. e2e** is green on the release
-HEAD, the branch deploys to **QA** + Discord notes fire → `rc_ready`. On the
-operator OK, the branch fast-forwards into `main`, tags `release-<slug>`, deploys
-prod, and members flip to `shipped`.
+HEAD, the branch deploys to **QA** + Discord notes fire → the release is
+**`assembled`** (complete). The operator then **Makes the release** — an explicit
+action (surfaced as the current release on `/tasks`, not a passive status) that
+fast-forwards `release/<slug>` into `main`, tags `release-<slug>`, deploys prod,
+and flips members to `shipped`. That action is the one human gate.
 
 **Start-fresh / abandon.** Feature branches are the durable artifact; the release
 branch is disposable, so abandoning a stuck RC is cheap and `main` never moves.
@@ -151,14 +153,16 @@ ships.
 | **submitted** (task) | **Avi** (Steffon co-gates risk) | DevOps agent *as Avi* | Review acceptance/diff/tests → `blocked` (back, with `qa_feedback`) **OR** `reviewed` ✅ | judgment (Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Eligible queue for Workflow 2 | — |
 | **assembling** (release) | **Avi** | DevOps agent *as Avi* / operator-curated | Add `reviewed` tasks honoring `dependencies` + lanes → **merge each onto `release/<slug>`** + per-merge tests; member → `assembled` | judgment + deterministic merge queue |
-| **rc_ready** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on release HEAD → deploy to QA + Discord notes → await OK | deterministic suite; ⛔ regression → eject task to `blocked` |
-| **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator OK, then DevOps agent | Operator eyeballs QA + OKs → ff to `main`, tag, `bin/deploy` → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
+| **assembled** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on release HEAD → deploy to QA + Discord notes → await the operator action | deterministic suite; ⛔ regression → eject task to `blocked` |
+| **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator **Makes the release**, then DevOps agent | Operator eyeballs QA + Makes the release → ff to `main`, tag, `bin/deploy` → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
 
 Clarifications:
 
-- **Two checkmarks, same shape:** task `reviewed` ✅ (Avi confirms a task is
-  individually ready) and the release **OK** at `rc_ready → shipped` (operator
-  confirms a QA'd release is good to ship).
+- **`assembled` means the same at both scopes** — merged + tests check out: a
+  *task* is `assembled` once its PR is merged onto the branch and its per-merge
+  tests pass; the *release* is `assembled` once every member is in and the full
+  suite is green. The operator gate is then a deliberate **Make the release**
+  action on the assembled RC, not a status the agent flips.
 - **There is no per-task QA stage.** Steffon owns the QA deploy, the
   `qa_acceptance` suite, and the prod mechanics — but there is no separate
   approval ceremony; the suite is a green/red *signal* and the operator OK is the
@@ -175,7 +179,8 @@ Clarifications:
 
 Resolved: `release_train` → **`release_slug`** (one field/model); **merge at
 assembly onto a disposable `release/<slug>` branch**; no per-task QA stage;
-Release is its own singleton model with the operator **OK** at `rc_ready`.
+Release is its own singleton model — states `assembling → assembled → shipped`,
+where the operator **Makes the release** (a page action on the assembled RC).
 
 **RC assembly autonomy is the one evolving policy** — so it lives in a single,
 clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
@@ -184,7 +189,8 @@ clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
   *single* repo, with **no** `migration`/`payment`/`solana` risk tag.
 - **Propose for operator confirmation** any multi-task, cross-repo, or
   risk-tagged release: the agent drafts it, posts the plan to Discord, and waits.
-- Production ship is **always** operator-gated (the OK at `rc_ready`), regardless.
+- Production ship is **always** operator-gated (Make the release on the
+  `assembled` RC), regardless.
 
 The agent reads this file every heartbeat; changing the thresholds changes
 behavior with no code edit. Keys + defaults are documented at the top of the
@@ -241,7 +247,7 @@ general strategy, across all five repos. Three pieces: tier definitions (the
 | **Component** | One behavior + its immediate collaborators, no full stack | request/controller specs + rendered partial + Alpine factory | UI primitive via a host harness | client method w/ stubbed RPC | instruction + its account constraints |
 | **Integration** | Multiple objects across a boundary | request→DB→job, RPC-mocked Solana (`FakeVault`) | consumer-CI against both apps | client against test-validator | multi-instruction lifecycle (create→enter→settle) |
 | **E2E** | Real browser / real chain | Playwright | (via consumers) | (via consumers) | devnet on-chain spec |
-| **Manual** | Operator visual/UX acceptance | **the release QA stop** (operator OK at `rc_ready`) | — | — | contract transparency / `/contract` review |
+| **Manual** | Operator visual/UX acceptance | **the release QA stop** (eyeball the `assembled` RC, then Make the release) | — | — | contract transparency / `/contract` review |
 
 Tiers are the **what**; the existing **test lanes** are the **when/where**.
 Mapping: Unit+Component+Integration → `pr_review_gate`/`local_proof` (block
@@ -332,10 +338,10 @@ release.assembling:
   pick next reviewed member honoring dependencies + lanes (§4.2)
   retarget PR → release/<slug>, merge, run member's tiers       — conflict/red ⇒ eject task to blocked
   member → assembled; when all members in + full e2e green:
-  deploy release branch → QA + Discord notes → rc_ready
-release.rc_ready:
-  if operator_OK: ff → main, tag, bin/deploy → production_smoke → notes → members shipped  # ONLY here
-  else: no-op (HARD STOP)
+  deploy release branch → QA + Discord notes → release.assembled
+release.assembled:
+  if operator_made_the_release: ff → main, tag, bin/deploy → production_smoke → notes → members shipped  # ONLY here
+  else: no-op (HARD STOP — wait for the operator to Make the release)
 
 update last_heartbeat_at, current_command, blocked_reason; emit progress
 ```

@@ -99,10 +99,10 @@
     <div style="font-size:12px;color:var(--accent);font-weight:600;margin:2px 0 4px">Workflow 2 · Deploy (per release <span style="color:var(--faint);font-weight:400">· Release singleton</span>)</div>
     <div class="flow">
       <span class="stage" style="background:var(--prog)">assembling</span><span class="arr">→</span>
-      <span class="stage" style="background:var(--qa)">rc_ready</span><span class="arr">→</span>
+      <span class="stage" style="background:var(--qa)">assembled</span><span class="arr">→</span>
       <span class="stage" style="background:var(--done)">shipped 🔒</span>
     </div>
-    <div class="note"><b>Merge happens at <code>assembling</code></b> onto a disposable <code>release/&lt;slug&gt;</code> branch (dependency order); each merge runs its tests and a conflict <b>ejects</b> the task to <code>blocked</code>. Full e2e green → QA deploy + Discord notes → <code>rc_ready</code>; your single <b>OK</b> (🔒 the one human gate) fast-forwards <code>main</code> and ships. Members flip to <b>shipped</b>. Side/terminal: <span class="stage" style="background:var(--fail);padding:3px 9px">blocked</span> · <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span>.</div>
+    <div class="note"><b>Merge happens at <code>assembling</code></b> onto a disposable <code>release/&lt;slug&gt;</code> branch (dependency order); each merge runs its tests and a conflict <b>ejects</b> the task to <code>blocked</code>. All members in + full e2e green → QA deploy + Discord notes → <code>assembled</code> (complete). You then <b>Make the release</b> (🔒 the one human gate — an action on the page, not a passive status) → it fast-forwards <code>main</code>, ships, and shows as the current release. Members flip to <b>shipped</b>. Side/terminal: <span class="stage" style="background:var(--fail);padding:3px 9px">blocked</span> · <span class="stage" style="background:#444;color:#ccc;padding:3px 9px">archived</span>.</div>
   </div>
 
   <div class="card">
@@ -111,9 +111,9 @@
     <table>
       <tr><th>Release field</th><th>Meaning</th></tr>
       <tr><td><code>slug</code></td><td>Canonical id, <code>2026-06-20-s3-uploads</code>.</td></tr>
-      <tr><td><code>state</code></td><td><code>assembling → rc_ready → shipped</code> (+ abandoned).</td></tr>
+      <tr><td><code>state</code></td><td><code>assembling → assembled → shipped</code> (+ abandoned). <b>assembled</b> = every member PR merged <b>and</b> tests check out.</td></tr>
       <tr><td><code>branch</code></td><td>Disposable <code>release/&lt;slug&gt;</code>, cut from <code>main</code>; ff'd to main on ship, deleted on abandon.</td></tr>
-      <tr><td><code>confirmed_at / by</code></td><td>The operator <b>OK</b> at <code>rc_ready → shipped</code> — the one human gate.</td></tr>
+      <tr><td><code>confirmed_at / by</code></td><td>The operator <b>Make the release</b> action at <code>assembled → shipped</code> — the one human gate.</td></tr>
       <tr><td>has_many <code>tasks</code></td><td>via <code>tasks.release_slug</code>.</td></tr>
     </table>
     <table style="margin-top:10px">
@@ -127,7 +127,7 @@
   <div class="card">
     <h3>Who owns what</h3>
     <div class="lane"><div class="who">Feature agent</div><div class="what">Local machine, isolated worktree. Builds, writes tests left-to-right, self-runs the DoR gate, moves task to <code>submitted</code>. Never merges.</div></div>
-    <div class="lane"><div class="who">DevOps agent</div><div class="what">Airgapped OpenClaw box, ~10&nbsp;min heartbeat. Reviews → assembles → deploys QA → runs acceptance → parks the release at <code>rc_ready</code> for your OK. One safe step per tick.</div></div>
+    <div class="lane"><div class="who">DevOps agent</div><div class="what">Airgapped OpenClaw box, ~10&nbsp;min heartbeat. Reviews → assembles → deploys QA → runs acceptance → parks the release at <code>assembled</code> for you to <b>Make the release</b>. One safe step per tick.</div></div>
     <div class="lane"><div class="who">Mr. McRitchie</div><div class="what">Reviews the QA URL (the manual test tier) and gives the one-click production approval. Steers by task status, not by reading tests.</div></div>
   </div>
 
@@ -140,7 +140,7 @@
       <tr><td><span class="stage" style="background:var(--pr);padding:3px 8px">submitted</span></td><td><b style="color:var(--accent)">Avi</b> <span class="note">(Steffon co-gates risk)</span></td><td>DevOps agent <i>as Avi</i></td><td>review acceptance/diff/tests → <b class="judge">feedback</b> → <b>blocked</b>, OR <b>reviewed ✅</b></td></tr>
       <tr><td><span class="stage" style="background:var(--done);padding:3px 8px">reviewed ✅</span></td><td><b style="color:var(--accent)">Avi</b></td><td>— (parked)</td><td>approved, off the train → eligible for a release</td></tr>
       <tr><td><span class="stage" style="background:var(--prog);padding:3px 8px">assembling</span></td><td><b style="color:var(--accent)">Avi</b></td><td>DevOps agent <i>as Avi</i> <span class="note">(strategic)</span></td><td><b class="judge">pick by dependencies</b> → <b class="det">merge onto release/&lt;slug&gt;</b> + per-merge tests → member <b>assembled</b></td></tr>
-      <tr><td><span class="stage" style="background:var(--qa);padding:3px 8px">rc_ready</span></td><td><b style="color:var(--accent)">Steffon</b> <span class="note">(exec)</span></td><td>DevOps agent <i>as Steffon</i></td><td><b class="det">full e2e</b> green → deploy QA + notes → await OK</td></tr>
+      <tr><td><span class="stage" style="background:var(--qa);padding:3px 8px">assembled</span></td><td><b style="color:var(--accent)">Steffon</b> <span class="note">(exec)</span></td><td>DevOps agent <i>as Steffon</i></td><td><b class="det">full e2e</b> green → deploy QA + notes → await <b>Make the release</b></td></tr>
       <tr><td><span class="stage" style="background:var(--ready);padding:3px 8px">shipped 🔒</span></td><td><b class="human">Mr. McRitchie</b> → conductor</td><td>You OK, then agent</td><td>eyeball QA + <b class="human">OK</b> → ff main, tag, deploy prod → smoke → notes → members <b>shipped</b></td></tr>
     </table>
     <div class="legend">
@@ -308,8 +308,8 @@ for each task in {submitted}:
 <b style="color:var(--accent)"># Workflow 2 — the ONE active release (singleton)</b>
   assembling:  next reviewed member by deps/lanes → retarget PR → release/&lt;slug&gt;,
                <b class="det">merge + per-merge tests</b>  conflict/red → eject task to blocked; member → assembled
-               all in + <b class="det">full e2e</b> green → deploy QA + notes → rc_ready
-  rc_ready:    if <b class="human">operator_OK</b>: ff → main, tag, bin/deploy → smoke → notes → members shipped
+               all in + <b class="det">full e2e</b> green → deploy QA + notes → assembled
+  assembled:   if <b class="human">operator Makes the release</b>: ff → main, tag, bin/deploy → smoke → notes → members shipped
                else: <b style="color:var(--ready)">no-op (HARD STOP)</b>
   update last_heartbeat_at, current_command, blocked_reason; emit progress</pre>
   </div>
