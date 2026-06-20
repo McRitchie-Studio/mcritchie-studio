@@ -29,6 +29,8 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", admin_models_path
     assert_select "a[href=?]", admin_signing_requests_path
     assert_select "a[href=?]", tasks_path
+    assert_select "a[href=?]", nfl_hub_path
+    assert_match "NFL Hub", response.body
     assert_select "a[href=?]", admin_links_path
     assert_select "table#admin-users-table"
     assert_select "table#admin-users-table.sticky-data-table"
