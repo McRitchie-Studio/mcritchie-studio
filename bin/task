@@ -17,7 +17,7 @@
 # Usage:
 #   bin/task list [--stage S] [--agent A]
 #   bin/task show <slug>
-#   bin/task create --title T [--kind K] [--shape S] [--priority N] [--agent A] \
+#   bin/task create --title T [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
 #                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
@@ -34,7 +34,8 @@ OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 
 SCALAR_FLAGS = {
-  "--kind" => "kind", "--shape" => "shape", "--branch" => "branch", "--pr-url" => "pr_url",
+  "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
+  "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
   "--release-train" => "release_train"
 }.freeze
@@ -42,7 +43,10 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 TRANSITIONS = { "queued" => "queue", "in_progress" => "start", "done" => "complete", "failed" => "fail_task", "archived" => "archive" }.freeze
 STAGES = %w[new queued in_progress pr_review qa_review prod_ready done failed archived].freeze
 
-def warn!(msg) = $stderr.puts(msg)
+def warn!(msg)
+  $stderr.puts(msg)
+end
+
 def die!(msg)
   warn!("error: #{msg}")
   exit 1
