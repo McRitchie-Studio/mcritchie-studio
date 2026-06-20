@@ -67,8 +67,8 @@ Before handoff:
 
 **Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
 assigns you that lane in this session. Full SOP + the two-workflow release model:
-`mcritchie-studio/docs/agents/system/devops-cycle-design.md` (visual:
-`devops-cycle.html`).
+`mcritchie-studio/docs/agents/system/devops-cycle-design.md` (visual: the
+admin-gated in-app viewer at `/devops/cycle`).
 
 ## Default Operating Context
 

@@ -28,6 +28,9 @@ Rails.application.routes.draw do
 
   get "dashboard", to: "dashboard#index"
   get "devops", to: "devops#index", as: :devops
+  # In-app DevOps cycle SOP viewer — self-contained page (own html/style),
+  # rendered with layout: false. Admin-gated via DevopsController.
+  get "devops/cycle", to: "devops#cycle", as: :devops_cycle
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).
