@@ -81,7 +81,7 @@ You need these *already installed* before this protocol can start:
 
 ```bash
 brew update && brew install \
-  ruby@3.1 \
+  ruby@3.3 \
   mise \
   postgresql@14 \
   redis \
@@ -94,7 +94,7 @@ brew update && brew install \
 ```
 
 ~5 min. Installs:
-- **ruby@3.1** — Ruby 3.1.7 with the full stdlib for McRitchie Studio and ecosystem bootstrap
+- **ruby@3.3** — Ruby 3.3.11 with the full stdlib for McRitchie Studio and ecosystem bootstrap
 - **mise** — version manager for Node (not Ruby — see above)
 - **postgresql@14** — local DB for both Rails apps
 - **redis** — Sidekiq queue for Turf Monster and worktree stacks
@@ -122,8 +122,8 @@ Append to `~/.zshrc` (idempotent — check before adding):
 
 ```bash
 # Ruby via Homebrew (keg-only — must be added to PATH explicitly)
-export PATH="/opt/homebrew/opt/ruby@3.1/bin:$PATH"
-export PATH="/opt/homebrew/lib/ruby/gems/3.1.0/bin:$PATH"
+export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"
+export PATH="/opt/homebrew/lib/ruby/gems/3.3.0/bin:$PATH"
 
 # mise — Node (and other non-Ruby langs) version manager
 eval "$(/opt/homebrew/bin/mise activate zsh)"
@@ -135,7 +135,7 @@ export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-Then either `source ~/.zshrc` or open a new terminal. Verify: `which ruby` → `/opt/homebrew/opt/ruby@3.1/bin/ruby`.
+Then either `source ~/.zshrc` or open a new terminal. Verify: `which ruby` → `/opt/homebrew/opt/ruby@3.3/bin/ruby`.
 
 ---
 
@@ -152,10 +152,10 @@ npm install -g yarn
 
 ### Ruby — already installed in Phase 1
 
-Brew's `ruby@3.1` formula gives you Ruby 3.1.7 with the complete stdlib. Verify:
+Brew's `ruby@3.3` formula gives you Ruby 3.3.11 with the complete stdlib. Verify:
 
 ```bash
-ruby --version                                          # ruby 3.1.7 (...)
+ruby --version                                          # ruby 3.3.11 (...)
 ruby -e "require 'socket'; puts Socket.gethostname"     # should print your hostname
 ```
 
@@ -398,13 +398,13 @@ Season bootstrap and free-entry token operations now live with the app that runs
 
 These are the surprises from the last burn-down. Pre-baked into the steps above; documented here so future-you knows *why*:
 
-1. **Don't use mise/ruby-build for Ruby on Darwin 25 / Apple Silicon** — mise auto-applies `--with-ext=openssl,psych,+` which silently skips the `socket` C extension. Every `bundle exec` then dies with `cannot load such file -- socket (LoadError)`. Reproduces on Ruby 3.1.0 AND 3.1.7. Fix: use `brew install ruby@3.1` (always builds the full stdlib) and keep mise scoped to Node only. The `.ruby-version` files in both Rails apps say `3.1.0`, but brew Ruby reports `3.1.7`; bundler doesn't enforce patch level, so this is harmless.
+1. **Don't use mise/ruby-build for Ruby on Darwin 25 / Apple Silicon** — mise auto-applies `--with-ext=openssl,psych,+` which silently skips the `socket` C extension. Every `bundle exec` then dies with `cannot load such file -- socket (LoadError)`. It's a mise build-flag issue, not version-specific. Fix: use `brew install ruby@3.3` (always builds the full stdlib) and keep mise scoped to Node only. The `.ruby-version` files in both Rails apps pin `3.3.11`, matching brew's `ruby@3.3`.
 
 2. **`release.solana.com` is deprecated** — returns SSL errors. Use `release.anza.xyz/stable/install`.
 
 3. **Solana installer writes PATH to `~/.profile`** — zsh doesn't source `.profile` by default. The Phase 2 `~/.zshrc` block handles this explicitly.
 
-4. **Bundler version drift** — Gemfile.lock pins `BUNDLED WITH 2.4.19`. mise's Ruby 3.1.7 ships with bundler 2.3.x and will auto-upgrade on first `bundle install`. Works fine if `socket` ext is present (Gotcha 1).
+4. **Bundler version drift** — Gemfile.lock pins `BUNDLED WITH 2.4.19`. mise's Ruby 3.3.11 ships with bundler 2.3.x and will auto-upgrade on first `bundle install`. Works fine if `socket` ext is present (Gotcha 1).
 
 5. **System Ruby 2.6 is unusable** — macOS ships with ancient Ruby. Don't run `bundle` against it. mise's shims (`~/.local/share/mise/shims`) must be earlier on PATH than `/usr/bin`.
 
@@ -434,12 +434,12 @@ Phases execute in order. Each phase: detect current state → install/configure 
 
 | Phase | Responsibility |
 |-------|----------------|
-| 1. System tools | Homebrew packages (ruby@3.1, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
+| 1. System tools | Homebrew packages (ruby@3.3, postgres@14, redis, mise, gh, heroku, etc.), starts Postgres + Redis services, verifies ruby socket extension |
 | 2. Languages | Node 22 + yarn (via mise), Rust 1.89.0 (via rustup), Solana CLI (via Anza), Anchor 0.32.1 (via cargo), local Solana devnet keypair |
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
 | 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
-| 5b. Agent docs | Installs `/Users/alex/projects/AGENTS.md` from `mcritchie-studio/docs/agents/index.md` |
+| 5b. Agent docs | Installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md) |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |
 | 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no AWS creds needed. |
@@ -462,7 +462,7 @@ What this protocol installed last successful run:
 |------|---------|--------|
 | Homebrew | latest | pre-existing |
 | mise | latest | brew |
-| Ruby | 3.1.7 | brew `ruby@3.1` |
+| Ruby | 3.3.11 | brew `ruby@3.3` |
 | Node | 22.x | mise |
 | yarn | 1.22.x | npm -g |
 | Postgres | 14.x | brew (`postgresql@14`) |
