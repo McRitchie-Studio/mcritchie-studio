@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# bin/statusline — feature/task status line for agent sessions (Claude Code, etc.)
+#
+# Versioned in the repo (not ~/.claude) so it's shared + recoverable on rebuild.
+# Wire it into ~/.claude/settings.json (installed by bin/install-agent-docs):
+#   "statusLine": { "type": "command",
+#     "command": "/Users/alex/projects/mcritchie-studio/bin/statusline",
+#     "padding": 1, "refreshInterval": 5 }
+#
+# Renders:  🛠  <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
+#
+# Sources, in priority:
+#   1. <cwd>/.agent-context.json              — the active worktree (bin/agent-worktree)
+#   2. $PROJECTS/.agents/current-feature.json — manual "current focus" marker
+#   3. git branch + model                     — primary checkout fallback
+#
+# Input: agent session JSON on stdin (Claude Code shape). The task link uses OSC 8
+# (clickable in iTerm2/Kitty/WezTerm; degrades to plain text elsewhere).
+#
+# NOTE: cross-tool indicator (incl. Codex) is the terminal TAB TITLE, set by the
+# shell hook (`bin/agent-worktree shell-hook zsh`) from the same context — this
+# status line is the Claude-specific in-pane view.
+
+input=$(cat)
+JQ=/usr/bin/jq
+PROJECTS="${CLAUDE_PROJECTS_DIR:-$HOME/projects}"
+
+s_in() { printf '%s' "$input" | "$JQ" -r "$1 // empty" 2>/dev/null; }
+
+cwd=$(s_in '.workspace.current_dir'); [ -z "$cwd" ] && cwd=$(s_in '.cwd'); [ -z "$cwd" ] && cwd="$PWD"
+model=$(s_in '.model.display_name')
+
+# ANSI
+A=$'\033[38;5;75m'    # app slug
+F=$'\033[38;5;179m'   # feature slug
+G=$'\033[38;5;108m'   # git branch
+D=$'\033[2m'; X=$'\033[0m'
+DOT="${D} · ${X}"
+
+link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
+
+read_ctx() {  # path -> tab-separated: app feature task url stage
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // "")] | @tsv' "$1" 2>/dev/null
+}
+
+render() {  # app feature task url stage
+  local app="$1" feat="$2" task="$3" url="$4" stage="$5" out="🛠 "
+  [ -n "$app" ]  && out="${out} ${A}${app}${X}"
+  [ -n "$feat" ] && out="${out}${DOT}${F}${feat}${X}"
+  if [ -n "$url" ]; then
+    out="${out}${DOT}↗ $(link "$url" "${task:-task}")"
+  elif [ -n "$task" ]; then
+    out="${out}${DOT}${task}"
+  fi
+  [ -n "$stage" ] && out="${out}  ${D}[${stage}]${X}"
+  printf '%s' "$out"
+}
+
+ctx="$cwd/.agent-context.json"
+marker="$PROJECTS/.agents/current-feature.json"
+src=""
+[ -f "$ctx" ] && src="$ctx"
+[ -z "$src" ] && [ -f "$marker" ] && src="$marker"
+
+if [ -n "$src" ]; then
+  IFS=$'\t' read -r app feat task url stage < <(read_ctx "$src")
+  render "$app" "$feat" "$task" "$url" "$stage"
+else
+  branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
+  top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+  repo=$(basename "${top:-$cwd}")
+  if [ -n "$branch" ]; then
+    printf '%s' "${D}${repo}${X} ${G}${branch}${X}${DOT}${D}${model}${X}"
+  else
+    printf '%s' "${D}${repo} · ${model}${X}"
+  fi
+fi
