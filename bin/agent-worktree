@@ -109,6 +109,7 @@ def usage
       shell-hook zsh
       env <app> <task-slug>
       up <app> <task-slug>
+      test <app> <task-slug> [-- rails-test-args]
       status <app> <task-slug>
       finish <app> <task-slug> [--push] [--pr]
       doctor [app]
@@ -608,10 +609,60 @@ def ensure_git_worktree(app, task, type)
   dir
 end
 
+# The worktree's TEST database URL, derived from its (development) DATABASE_URL.
+# e.g. .../<app>_development_<slug> -> .../<app>_test_<slug>. Returns nil if the
+# stack has no DATABASE_URL to derive from.
+def test_database_url(values)
+  url = values["DATABASE_URL"].to_s.strip
+  return nil if url.empty?
+
+  base, _, name = url.rpartition("/")
+  return nil if name.empty?
+
+  test_name = name.include?("development") ? name.sub("development", "test") : "#{name}_test"
+  "#{base}/#{test_name}"
+end
+
+# Test-env command env: ruby PATH + RAILS_ENV=test + the worktree's test DB.
+def test_command_env(app, values)
+  env = command_env(app, values).merge("RAILS_ENV" => "test")
+  test_url = test_database_url(values)
+  env = env.merge("DATABASE_URL" => test_url) if test_url
+  env
+end
+
+# Set up the worktree TEST database via db:test:prepare. Must be db:test:prepare
+# (NOT db:schema:load): it leaves the base test DB in a state where minitest's
+# parallel workers can clone their per-worker DBs. A schema:load'd test DB
+# DEADLOCKS the first parallel `bin/rails test` at worker-DB setup, and is what
+# surfaced the transient `before_setup` fixture errors on a fresh worktree.
+def prepare_test_db(dir, app, values)
+  return unless test_database_url(values)
+
+  sh("bin/rails", "db:test:prepare", chdir: dir, env: test_command_env(app, values), allow_fail: true)
+end
+
 def prepare_rails(dir, app, values)
   env = command_env(app, values)
   sh("bin/rails", "db:prepare", chdir: dir, env: env)
+  prepare_test_db(dir, app, values)
   sh("bin/rails", "tailwindcss:build", chdir: dir, env: env, allow_fail: true)
+end
+
+# Run the worktree's test suite reliably: correct ruby PATH, RAILS_ENV=test, the
+# isolated worktree test DB (freshly prepared), and SINGLE-PROCESS execution.
+#
+# Single-process (PARALLEL_WORKERS=1) is deliberate: minitest's parallel workers
+# clone the test DB at fork time (CREATE DATABASE ... TEMPLATE base), which races
+# the base connection and intermittently DEADLOCKS the first run in a fresh
+# worktree (and is what surfaced the transient before_setup fixture errors).
+# Single-process uses the base test DB directly — ~2x slower on the full suite
+# (~30s vs ~15s) but green on the first try, every time. CI keeps parallel.
+# Extra args pass through (e.g. a single test file).
+def run_worktree_tests(dir, app, values, args)
+  prepare_test_db(dir, app, values)
+  env = test_command_env(app, values).merge("PARALLEL_WORKERS" => "1")
+  sh("bin/rails", "test", *args, chdir: dir, env: env)
 end
 
 def start_generic_rails(dir, app, values)
@@ -1921,6 +1972,14 @@ when "up"
   puts "url: http://localhost:#{values.fetch("APP_PORT")} (/up #{code})"
   puts "email: http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
   puts "context: #{context_path(dir)}"
+when "test"
+  app_name, raw_task, *rest = ARGV
+  usage unless app_name && raw_task
+  app = app_for(app_name)
+  task = clean_slug(raw_task)
+  dir = worktree_dir(app, task)
+  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+  run_worktree_tests(dir, app, load_stack_env(app, task), rest)
 when "status"
   app_name, raw_task = ARGV
   usage unless app_name && raw_task
