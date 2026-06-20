@@ -205,6 +205,9 @@ function kanbanBoard() {
     </div>
   </div>
 
+  <!-- Current Release -->
+  <%= render "current_release" %>
+
   <!-- Kanban Board -->
   <div class="flex gap-4 overflow-x-auto pb-4">
     <% stages.each do |stage| %>
