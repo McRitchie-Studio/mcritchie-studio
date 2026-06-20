@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_20_170000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_20_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -625,6 +625,26 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_20_170000) do
     t.index ["team_slug", "season_slug", "stat_type"], name: "idx_pff_team_stats_unique", unique: true
   end
 
+  create_table "releases", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "state", default: "assembling", null: false
+    t.string "branch"
+    t.string "qa_url"
+    t.string "production_url"
+    t.string "deployed_sha"
+    t.datetime "release_notes_sent_at"
+    t.datetime "confirmed_at"
+    t.string "confirmed_by"
+    t.datetime "assembled_at"
+    t.datetime "shipped_at"
+    t.datetime "abandoned_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY ((ARRAY['assembling'::character varying, 'assembled'::character varying])::text[]))"
+    t.index ["slug"], name: "index_releases_on_slug", unique: true
+  end
+
   create_table "roster_spots", force: :cascade do |t|
     t.bigint "roster_id", null: false
     t.string "person_slug", null: false
@@ -899,8 +919,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_20_170000) do
     t.datetime "assembled_at"
     t.datetime "blocked_at"
     t.string "blocked_from"
+    t.string "release_slug"
+    t.jsonb "dependencies", default: [], null: false
     t.index ["agent_slug"], name: "index_tasks_on_agent_slug"
     t.index ["priority"], name: "index_tasks_on_priority"
+    t.index ["release_slug"], name: "index_tasks_on_release_slug"
     t.index ["requires_migration"], name: "index_tasks_on_requires_migration"
     t.index ["slug"], name: "index_tasks_on_slug", unique: true
     t.index ["stage", "created_at"], name: "index_tasks_on_stage_and_created_at"
