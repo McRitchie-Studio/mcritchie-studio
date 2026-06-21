@@ -78,6 +78,16 @@ class Release < ApplicationRecord
     end
   end
 
+  # Pull an assembled RC back to `assembling` so more reviewed work can be added.
+  # Adding members invalidates the prior QA pass, so the RC must re-assemble (and
+  # re-QA) before it can ship. This is what lets `Prepare release` be additive
+  # instead of refusing when a release is already in flight.
+  def reopen!
+    raise ArgumentError, "release #{slug} is not assembled (state: #{state})" unless state == "assembled"
+
+    update!(state: "assembling")
+  end
+
   # Discard a stuck RC → members fall back to `reviewed` (off the train), and the
   # singleton frees up for a fresh release.
   def abandon!
