@@ -60,9 +60,9 @@ module ApplicationHelper
   end
 
   # The two-workflow stage guide rendered on /stages (vertical swimlanes). One
-  # entry per stage: the board column it maps to, what it means, who's
-  # responsible, and what moves it next. `reviewed` is the shared seam, so it
-  # appears in both lanes. Mirrors the SOP viewer at /devops/cycle.
+  # entry per stage: what it means, who's responsible, and what moves it next.
+  # `submitted` is the shared seam, so it appears in both lanes. Mirrors the SOP
+  # viewer at /devops/cycle.
   def devops_stage_guide
     {
       "Build" => [

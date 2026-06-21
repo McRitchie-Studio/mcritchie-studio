@@ -102,8 +102,8 @@
 
   <div class="card">
     <h3>Two workflows, not one pipeline</h3>
-    <p style="margin:0 0 10px;color:var(--dim)">Building a <b>task</b> and shipping a <b>release</b> are different jobs. QA + production are properties of the release, so there is <b>no per-task QA stage</b> — just one release-level QA stop and one operator OK. The two lifecycles meet at the <code>reviewed</code> seam.</p>
-    <div class="wfhead">Workflow 1 · Build <span style="color:var(--faint);font-weight:400">(per task)</span><span class="ln"></span></div>
+    <p style="margin:0 0 10px;color:var(--dim)">Building a <b>task</b> and shipping a <b>release</b> are different jobs. QA + production are properties of the release, so there is <b>no per-task QA stage</b> — just one release-level QA stop and one operator OK. The feature agent owns Build; DevOps owns Deploy; the two lifecycles meet at the <code>submitted</code> seam.</p>
+    <div class="wfhead">Workflow 1 · Build <span style="color:var(--faint);font-weight:400">(per task · feature agent)</span><span class="ln"></span></div>
     <div class="swimhead"><div>Stage</div><div>What it is</div><div>Responsible</div><div>Next →</div></div>
 
     <div class="swim" style="border-left-color:var(--new)">
@@ -122,47 +122,40 @@
 
     <div class="swim" style="border-left-color:var(--pr)">
       <div class="st"><span class="stage" style="background:var(--pr)">submitted</span></div>
-      <div class="cell"><span class="lbl">What it is</span>PR(s) open, ready for review.</div>
-      <div class="cell"><span class="lbl">Responsible</span><span class="who">Feature agent → Avi</span></div>
+      <div class="cell"><span class="lbl">What it is</span>PR(s) open — the feature agent's part is done. <b>The seam</b> where Build hands off to DevOps.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">Feature agent → DevOps</span></div>
+      <div class="cell"><span class="lbl">Next →</span>DevOps picks it up for review → <b>reviewed</b></div>
+    </div>
+
+    <div class="wfhead">Workflow 2 · Deploy <span style="color:var(--faint);font-weight:400">(per release · devops · Release singleton)</span><span class="ln"></span></div>
+    <div class="swimhead"><div>Stage</div><div>What it is</div><div>Responsible</div><div>Next →</div></div>
+
+    <div class="swim" style="border-left-color:var(--pr)">
+      <div class="st"><span class="stage" style="background:var(--pr)">submitted</span></div>
+      <div class="cell"><span class="lbl">What it is</span><b>The seam</b> (carried over from Build) — the review intake queue.</div>
+      <div class="cell"><span class="lbl">Responsible</span><span class="who">DevOps → Avi</span></div>
       <div class="cell"><span class="lbl">Next →</span>Avi reviews acceptance/diff/tests → <b>reviewed ✅</b>, or <span class="stage" style="background:var(--fail);padding:2px 7px">blocked</span> via <span class="tag">qa_feedback</span></div>
     </div>
 
     <div class="swim" style="border-left-color:var(--done)">
       <div class="st"><span class="stage" style="background:var(--done)">reviewed ✅</span></div>
-      <div class="cell"><span class="lbl">What it is</span>Approved, off the train, waiting for a release. <b>The seam</b> between the two workflows.</div>
-      <div class="cell"><span class="lbl">Responsible</span><span class="who">Avi</span></div>
-      <div class="cell"><span class="lbl">Next →</span>Conductor pulls it into the next release → <b>assembling</b></div>
-    </div>
-
-    <div class="wfhead">Workflow 2 · Deploy <span style="color:var(--faint);font-weight:400">(per release · Release singleton)</span><span class="ln"></span></div>
-    <div class="swimhead"><div>Stage</div><div>What it is</div><div>Responsible</div><div>Next →</div></div>
-
-    <div class="swim" style="border-left-color:var(--done)">
-      <div class="st"><span class="stage" style="background:var(--done)">reviewed ✅</span></div>
-      <div class="cell"><span class="lbl">What it is</span><b>The seam</b> (carried over from Build) — the eligible queue for the next release.</div>
+      <div class="cell"><span class="lbl">What it is</span>Approved, off the bench, waiting for a release.</div>
       <div class="cell"><span class="lbl">Responsible</span><span class="who">Avi → conductor</span></div>
-      <div class="cell"><span class="lbl">Next →</span>Conductor cuts <code>release/&lt;slug&gt;</code> + merges it in dependency order → <b>assembling</b></div>
-    </div>
-
-    <div class="swim" style="border-left-color:var(--prog)">
-      <div class="st"><span class="stage" style="background:var(--prog)">assembling</span></div>
-      <div class="cell"><span class="lbl">What it is</span>Members merge onto the disposable <code>release/&lt;slug&gt;</code> branch; each merge runs its tests — a conflict <b>ejects</b> the task to <code>blocked</code>.</div>
-      <div class="cell"><span class="lbl">Responsible</span><span class="who">Avi</span> <span style="color:var(--faint)">(merge queue)</span></div>
-      <div class="cell"><span class="lbl">Next →</span>All members in + full e2e green → QA deploy + Discord notes → <b>assembled</b></div>
+      <div class="cell"><span class="lbl">Next →</span>Conductor cuts <code>release/&lt;slug&gt;</code> + merges members in dependency order (a conflict <b>ejects</b> to <code>blocked</code>) → <b>assembled</b></div>
     </div>
 
     <div class="swim" style="border-left-color:var(--qa)">
       <div class="st"><span class="stage" style="background:var(--qa)">assembled</span></div>
       <div class="cell"><span class="lbl">What it is</span>Every member PR merged <b>and tests check out</b>; the RC is deployed to QA. <span style="color:var(--faint)">(Same meaning at task scope: a task is <code>assembled</code> once its PR is merged + per-merge tests pass.)</span></div>
       <div class="cell"><span class="lbl">Responsible</span><span class="who">Steffon</span> <span style="color:var(--faint)">(QA)</span></div>
-      <div class="cell"><span class="lbl">Next →</span>The operator's <b class="human">Make the release</b> action 🔒 (the one human gate) → <b>shipped</b></div>
+      <div class="cell"><span class="lbl">Next →</span>The operator <b class="human">runs the deployment</b> 🔒 (the one human gate) → <b>shipped</b></div>
     </div>
 
     <div class="swim" style="border-left-color:var(--done)">
       <div class="st"><span class="stage" style="background:var(--done)">shipped 🔒</span></div>
-      <div class="cell"><span class="lbl">What it is</span>The release fast-forwards to <code>main</code>, is tagged, deploys to prod, and shows as the current release. Members flip to <code>shipped</code>.</div>
+      <div class="cell"><span class="lbl">What it is</span>The release fast-forwards to <code>main</code>, is tagged, deploys to prod + posts release notes, and shows as the current release. Members flip to <code>shipped</code>.</div>
       <div class="cell"><span class="lbl">Responsible</span><span class="who">Mr. McRitchie → conductor</span></div>
-      <div class="cell"><span class="lbl">Next →</span><b>Terminal</b> — it's live in production.</div>
+      <div class="cell"><span class="lbl">Next →</span><b>Terminal</b> — live in production; clean up the deployed worktrees.</div>
     </div>
 
     <div class="swim" style="border-left-color:var(--fail)">

@@ -18,15 +18,15 @@ class TasksController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
-  # /tasks — Workflow 1 (Build): designed → building → submitted → reviewed.
+  # /tasks — Workflow 1 (Build, feature agent): designed → building → blocked → submitted.
   def index
-    load_board(Task::TASKS_BOARD_STAGES)
+    load_board
   end
 
-  # /deployments — Workflow 2 (Deploy): reviewed → assembled → shipped, + blocked,
-  # led by the current-release module.
+  # /deployments — Workflow 2 (Deploy, DevOps): submitted → reviewed → assembled →
+  # shipped, led by the current-release module.
   def deployments
-    load_board(Task::DEPLOYMENTS_BOARD_STAGES)
+    load_board
     @current_release = Release.featured
   end
 
@@ -127,11 +127,10 @@ class TasksController < ApplicationController
     @task_activity ||= @task.activities.build(activity_type: "comment")
   end
 
-  # Shared kanban loader for /tasks and /deployments — same data, different
-  # columns. The view renders only `@board_stages`; archived is a toggle on the
-  # board itself, so grouping the full set here is intentional.
-  def load_board(board_stages)
-    @board_stages = board_stages
+  # Shared data loader for /tasks and /deployments — same task set, different
+  # columns. Each view passes its own column list to the _board partial; archived
+  # is a board-side toggle, so grouping the full task set here is intentional.
+  def load_board
     tasks = Task.ordered
     agent_filter = params[:agent_slug].presence || params[:agent].presence
     tasks = tasks.where(agent_slug: agent_filter) if agent_filter
