@@ -284,6 +284,12 @@ class TaskTest < ActiveSupport::TestCase
     assert_match(/\Atask-[0-9a-f]{12}\z/, task.slug)
   end
 
+  test "a slug that parameterizes to blank falls back to hex and does not trickle" do
+    task = Task.create!(title: "X", slug: "###")
+    assert_match(/\Atask-[0-9a-f]{12}\z/, task.slug)
+    assert_nil task.devops_worktree_slug
+  end
+
   test "a custom slug seeds worktree_slug and branch (trickle-down)" do
     task = Task.create!(title: "X", slug: "readable-handle")
     assert_equal "readable-handle", task.devops_worktree_slug
