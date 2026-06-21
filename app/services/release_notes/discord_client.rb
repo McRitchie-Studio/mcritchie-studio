@@ -1,10 +1,19 @@
 require "net/http"
+require "openssl"
 
 module ReleaseNotes
   class DiscordClient
     MissingWebhook = Class.new(StandardError)
     DeliveryError = Class.new(StandardError)
     Delivery = Struct.new(:status, :body, keyword_init: true)
+
+    # Transport-level failures (DNS, refused, timeout, SSL, reset) — converted to
+    # the typed DeliveryError so callers get one error contract instead of a
+    # grab-bag of Net/Socket/SSL exceptions leaking out of `Net::HTTP.start`.
+    TRANSPORT_ERRORS = [
+      SocketError, SystemCallError, Timeout::Error, IOError,
+      Net::OpenTimeout, Net::ReadTimeout, OpenSSL::SSL::SSLError
+    ].freeze
 
     def self.deliver(content:, webhook_url: nil)
       webhook_url = webhook_url.presence || self.webhook_url
@@ -36,6 +45,8 @@ module ReleaseNotes
       end
 
       Delivery.new(status: response.code.to_i, body: response.body)
+    rescue *TRANSPORT_ERRORS => e
+      raise DeliveryError, "Discord release notes delivery failed: #{e.class}: #{e.message}"
     end
   end
 end

@@ -45,5 +45,44 @@ class Release
     def eligible_task_slugs
       Task.where(stage: "reviewed").order(:position).pluck(:slug)
     end
+
+    # Record the QA deployment URL on the release (the deploy itself is run by
+    # bin/qa-server). Lets the board's current-release header link straight to QA.
+    def record_qa_deploy(release:, qa_url:)
+      release.update!(qa_url: qa_url)
+      release
+    end
+
+    # Build + deliver release notes for a shipped release — reusing the exact
+    # Formatter + DiscordClient behind POST /api/v1/release_notes. Non-fatal by
+    # design: a missing webhook or delivery error returns the message without
+    # delivering, so it never fails an already-completed ship. Returns
+    # { message:, delivered: }.
+    def post_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: false)
+      message = ReleaseNotes::Formatter.new(
+        app: app,
+        environment: environment,
+        release: release.slug,
+        sha: release.deployed_sha,
+        url: release.production_url,
+        tasks: release.tasks.order(:position).to_a
+      ).message
+
+      delivered = false
+      unless dry_run
+        begin
+          ReleaseNotes::DiscordClient.deliver(content: message)
+          delivered = true
+        rescue StandardError => e
+          # Defense in depth: this runs AFTER an irreversible prod deploy + ship!,
+          # so a notification failure (missing webhook, HTTP error, or any
+          # transport blip) must never raise. Swallow + log; the ship stands.
+          Rails.logger.warn("[release-notes] delivery failed (non-fatal): #{e.class}: #{e.message}")
+          delivered = false
+        end
+      end
+
+      { message: message, delivered: delivered }
+    end
   end
 end

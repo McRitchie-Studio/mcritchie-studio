@@ -224,16 +224,19 @@ reopening an assembled RC so the new work re-QAs (`Release#reopen!`) — or open
 new one, adds the reviewed task(s) (default: every reviewed task), then cuts/
 merges `release/<slug>` and runs the suite, **stopping for you on a merge
 conflict** (a genuine conflict means the task should be blocked for rework).
-Leaves the RC `assembled`. Then deploy that branch to QA (`mcritchie-studio-qa`)
-for review before production. Record ops default to the local DB; `--prod` runs
-them on the prod board via `heroku run`.
+Leaves the RC `assembled` and **auto-deploys the branch to QA**
+(`bin/qa-server deploy` → `mcritchie-studio-qa`), recording `release.qa_url` for
+review before production. Record ops default to the local DB; `--prod` runs them
+on the prod board via `heroku run`.
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
 Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
 before deploying. It ff's `main` → the release branch, pushes origin (closing
 member PRs), deploys (`git push heroku main`; release phase runs migrations),
-smokes `/up`, then stamps `deployed_sha` and flips the RC + its members to
-`shipped` (`Release::Conductor.ship!`). Post release notes after.
+smokes `/up`, then stamps `deployed_sha`, flips the RC + its members to
+`shipped` (`Release::Conductor.ship!`), and **auto-posts release notes**
+(`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
+`POST /api/v1/release_notes`; non-fatal if the webhook is unset).
 
 **`Cleanup worktrees`**  *(post-ship housekeeping)*
 `bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged
