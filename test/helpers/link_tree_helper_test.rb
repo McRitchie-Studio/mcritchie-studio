@@ -38,6 +38,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"
   def admin_schema_path = "/admin/schema"
+  def admin_email_images_path = "/admin/email_images"
   def devops_path = "/devops"
   def toast_test_path = "/toast_test"
   def admin_tiktok_connect_path = "/admin/tiktok/connect"

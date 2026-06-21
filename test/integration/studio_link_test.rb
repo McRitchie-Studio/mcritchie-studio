@@ -81,4 +81,14 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
     assert_equal a1.token, a2.token, "same (user, target) reuses one link"
     refute_equal a1.token, b.token, "different targets get distinct links"
   end
+
+  test "an expired magic link is rejected on consume" do
+    link = Studio::Link.create_magic_link(email: users(:alex).email)
+    travel(Studio.magic_link_ttl + 1.minute) do
+      post link_consume_path(token: link.token)
+    end
+    assert_redirected_to login_path
+    assert_match(/invalid or has expired/i, flash[:alert])
+    assert_nil session[Studio.session_key]
+  end
 end

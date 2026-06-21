@@ -11,19 +11,19 @@ module Studio
     end
 
     test "shows recent local emails with magic-link proof URLs" do
-      token = MagicLink.generate(email: users(:alex).email)
+      token = Studio::Link.create_magic_link(email: users(:alex).email).token
       Studio::Email.deliver(UserMailer, :magic_link, users(:alex).email, token, to: users(:alex).email)
 
       get studio_local_emails_path
 
       assert_response :success
       assert_includes response.body, "UserMailer#magic_link"
-      assert_includes response.body, "/magic_link/"
+      assert_includes response.body, "/l/"
       assert_includes response.body, "Capture enabled"
     end
 
     test "json includes action URLs for agents" do
-      token = MagicLink.generate(email: users(:alex).email)
+      token = Studio::Link.create_magic_link(email: users(:alex).email).token
       Studio::Email.deliver(UserMailer, :magic_link, users(:alex).email, token, to: users(:alex).email)
 
       get studio_local_emails_path(format: :json)
@@ -32,7 +32,7 @@ module Studio
       body = JSON.parse(response.body)
       assert_equal true, body["capture_enabled"]
       assert_equal "UserMailer#magic_link", body["deliveries"].first["email_key"]
-      assert_match %r{/magic_link/}, body["deliveries"].first["action_url"]
+      assert_match %r{/l/}, body["deliveries"].first["action_url"]
     end
   end
 end
