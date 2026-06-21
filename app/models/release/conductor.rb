@@ -12,25 +12,31 @@ class Release
     # Returns the release. Raises (via Release#add) if a task isn't `reviewed`.
     def prepare!(task_slugs:, slug: nil)
       slugs = Array(task_slugs).compact
-      release = Release.current || Release.open!(slug.present? ? { slug: slug } : {})
-      release.reopen! if release.state == "assembled"
-      release.update!(branch: "release/#{release.slug.sub(/\Arel-/, '')}") if release.branch.blank?
+      # Atomic: if any task isn't reviewed, Release#add raises and the whole
+      # thing rolls back — no dangling `assembling` release left behind.
+      Release.transaction do
+        release = Release.current || Release.open!(slug.present? ? { slug: slug } : {})
+        release.reopen! if release.state == "assembled"
+        release.update!(branch: "release/#{release.slug.sub(/\Arel-/, '')}") if release.branch.blank?
 
-      Task.where(slug: slugs).each do |task|
-        release.add(task) unless release.tasks.exists?(slug: task.slug)
+        Task.where(slug: slugs).each do |task|
+          release.add(task) unless release.tasks.exists?(slug: task.slug)
+        end
+
+        release.assemble!
+        release
       end
-
-      release.assemble!
-      release
     end
 
     # Stamp the deployed commit + flip the RC (and its member tasks) to shipped.
     def ship!(release:, deployed_sha:, by: nil, production_url: nil)
-      release.update!(
-        deployed_sha: deployed_sha,
-        production_url: production_url.presence || release.production_url
-      )
-      release.ship!(by: by)
+      Release.transaction do
+        release.update!(
+          deployed_sha: deployed_sha,
+          production_url: production_url.presence || release.production_url
+        )
+        release.ship!(by: by)
+      end
       release
     end
 

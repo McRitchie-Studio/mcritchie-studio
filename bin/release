@@ -134,8 +134,9 @@ def prepare
     step("merge member #{m['slug']} (#{branch})")
     _, ok = sh("git", "merge", "--no-ff", "-m", "Merge #{branch} into #{rel_branch} (#{m['slug']})", "origin/#{branch}")
     unless ok || DRY
-      abort!("merge conflict on #{branch}. Resolve by hand, commit, then re-run `bin/release prepare`. " \
-             "A genuine conflict means the task should likely be blocked for rework.")
+      abort!("merge conflict on #{branch}. Resolve by hand (or `git merge --abort` to back out), " \
+             "commit, then re-run `bin/release prepare`. A genuine conflict means the task should " \
+             "likely be blocked for rework.")
     end
   end
 
@@ -163,6 +164,9 @@ def ship
   rel_branch = result["branch"]
   abort!("no assembled release branch on the record") if !DRY && rel_branch.to_s.empty?
   say("  shipping #{rel_slug} (#{result['state']}) from #{rel_branch}")
+  # Don't ship a candidate that hasn't been assembled + QA'd (the model would
+  # otherwise allow assembling→shipped, bypassing the QA gate).
+  abort!("release is '#{result['state']}', not assembled — `bin/release prepare` + QA it first") if !DRY && result["state"] != "assembled"
 
   unless confirm("Deploy #{rel_branch} → production?")
     abort!("aborted — production deploy not confirmed")

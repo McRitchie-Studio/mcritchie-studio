@@ -53,6 +53,12 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
   end
 
+  test "prepare! is atomic — a non-reviewed task rolls back the new release" do
+    designed = Task.create!(title: "not reviewed")
+    assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
+    assert_equal 0, Release.count, "a failed prepare! must not leave a dangling release"
+  end
+
   test "ship! stamps the deployed sha + url and flips the RC and members to shipped" do
     t = reviewed_task
     rel = Release::Conductor.prepare!(task_slugs: [t.slug])
