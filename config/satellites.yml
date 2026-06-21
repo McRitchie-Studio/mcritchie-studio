@@ -42,7 +42,7 @@ satellites:
     emoji: "🏈"
     port: 3100
     heroku_app: turf-monster-mainnet
-    production_url: https://app.turfmonster.media
+    production_url: https://turfmonster.media
     role: viewer
     description: Sports pick'em — Solana onchain via turf-vault
     deploy_provider: heroku

@@ -44,7 +44,7 @@ module ReleaseNotes
         environment: "production",
         release: "v3",
         sha: "123456789",
-        url: "https://app.turfmonster.media/",
+        url: "https://turfmonster.media/",
         tasks: [task]
       ).message
 

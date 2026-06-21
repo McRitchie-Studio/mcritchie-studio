@@ -48,7 +48,7 @@ apps:
   turf-monster:
     display_name: Turf Monster
     qa_url: https://qa.turfmonster.media
-    production_url: https://app.turfmonster.media
+    production_url: https://turfmonster.media
     suites:
       - name: Rails unit and controller
         lane: pr_review_gate
