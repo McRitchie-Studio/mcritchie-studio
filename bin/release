@@ -22,7 +22,9 @@
 #     origin, deploy to Heroku, smoke /up, stamp deployed_sha + flip to shipped.
 #
 # Targets:
-#   default        record ops run against the LOCAL db (safe for dev/dry runs)
+#   default        record ops run against the LOCAL db; but note `prepare` still
+#                  fires a REAL `bin/qa-server deploy` and `ship` a REAL prod
+#                  deploy on a non-dry run — use --dry-run to preview safely
 #   --prod         record ops run on production via `heroku run rails runner`
 #   --dry-run      print the plan; execute nothing
 #

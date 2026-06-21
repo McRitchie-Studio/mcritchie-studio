@@ -73,7 +73,11 @@ class Release
         begin
           ReleaseNotes::DiscordClient.deliver(content: message)
           delivered = true
-        rescue ReleaseNotes::DiscordClient::MissingWebhook, ReleaseNotes::DiscordClient::DeliveryError
+        rescue StandardError => e
+          # Defense in depth: this runs AFTER an irreversible prod deploy + ship!,
+          # so a notification failure (missing webhook, HTTP error, or any
+          # transport blip) must never raise. Swallow + log; the ship stands.
+          Rails.logger.warn("[release-notes] delivery failed (non-fatal): #{e.class}: #{e.message}")
           delivered = false
         end
       end

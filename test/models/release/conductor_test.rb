@@ -129,4 +129,15 @@ class Release::ConductorTest < ActiveSupport::TestCase
       assert result[:message].present?, "still returns the message even if delivery fails"
     end
   end
+
+  test "post_release_notes survives any delivery error (defense-in-depth)" do
+    rel = shipped_release
+    # Even a raw transport error (the gap Avi caught) must not fail a completed ship.
+    raiser = ->(content:) { raise Net::OpenTimeout, "boom" }
+    ReleaseNotes::DiscordClient.stub(:deliver, raiser) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert_not result[:delivered]
+      assert result[:message].present?
+    end
+  end
 end
