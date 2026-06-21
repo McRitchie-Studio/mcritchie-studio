@@ -97,9 +97,9 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "Blocked", Task::STAGE_LABELS.fetch("blocked")
   end
 
-  test "build and deploy stage groups share the reviewed seam" do
-    assert_includes Task::BUILD_STAGES, "reviewed"
-    assert_includes Task::DEPLOY_STAGES, "reviewed"
+  test "build and deploy stage groups share the submitted seam" do
+    assert_includes Task::BUILD_STAGES, "submitted"
+    assert_includes Task::DEPLOY_STAGES, "submitted"
     assert_equal "designed", Task::BUILD_STAGES.first
     assert_equal "shipped", Task::DEPLOY_STAGES.last
   end

@@ -3,8 +3,9 @@ class Task < ApplicationRecord
 
   # Two-workflow status model. See docs/agents/system/devops-cycle-design.md.
   #
-  #   Workflow 1 — Build:   designed → building → submitted → reviewed
-  #   Workflow 2 — Deploy:  reviewed → assembled → shipped   (reviewed is the seam)
+  #   Workflow 1 — Build (feature agent):  designed → building → submitted
+  #   Workflow 2 — Deploy (DevOps):        submitted → reviewed → assembled → shipped
+  #   `submitted` is the shared seam — the feature agent hands off to DevOps there.
   #   blocked  — side state: agent hit a wall, QA bounced a PR, or a dep isn't ready.
   #   archived — terminal trash (abandoned, never shipping).
   STAGE_LABELS = {
@@ -18,10 +19,14 @@ class Task < ApplicationRecord
     "archived"  => "Archived"
   }.freeze
   STAGES = STAGE_LABELS.keys.freeze
-  BOARD_STAGES = (STAGES - ["archived"]).freeze
-  # The two workflows, for grouping/headers. `reviewed` is the shared seam.
-  BUILD_STAGES  = %w[designed building submitted reviewed].freeze
-  DEPLOY_STAGES = %w[reviewed assembled shipped].freeze
+  # The two workflows, split at the `submitted` seam (which belongs to both):
+  # Build is the feature agent's, Deploy is DevOps's.
+  BUILD_STAGES  = %w[designed building submitted].freeze
+  DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
+  # Board columns per page. /tasks is the feature-agent lane (Build + the blocked
+  # side state); /deployments is the DevOps lane (= the Deploy workflow).
+  TASKS_BOARD_STAGES       = %w[designed building blocked submitted].freeze
+  DEPLOYMENTS_BOARD_STAGES = DEPLOY_STAGES
   # Why a task sits in `blocked` — lets a heartbeat agent route it correctly.
   BLOCK_KINDS = %w[environment rework dependency].freeze
   MIGRATION_LANE = "backend_migration".freeze

@@ -19,13 +19,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "Tasks"
   end
 
-  test "index shows the current-release header when a release exists" do
+  test "deployments shows the current-release header when a release exists" do
     rel = Release.open!(branch: "release/header-test", qa_url: "https://qa.example/tasks", deployed_sha: "abc1234def567")
     @new_task.update!(stage: "reviewed")
     rel.add(@new_task)
     rel.assemble!
 
-    get tasks_path
+    get deployments_path
 
     assert_response :success
     assert_select "#current-release"
@@ -37,13 +37,99 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
-  test "index omits the release header when there is no release" do
+  test "deployments omits the release header when there is no release" do
     Release.delete_all
 
-    get tasks_path
+    get deployments_path
 
     assert_response :success
     assert_select "#current-release", count: 0
+  end
+
+  test "tasks board shows only the Build-lane columns and no release module" do
+    Release.open!(branch: "release/build-only") # a release exists, but /tasks must not show it
+    get tasks_path
+
+    assert_response :success
+    assert_select "h2", "Tasks"
+    # Feature-agent lane (+ archived toggle column); submitted is the seam
+    assert_select "#dropzone-designed"
+    assert_select "#dropzone-building"
+    assert_select "#dropzone-blocked"
+    assert_select "#dropzone-submitted"
+    assert_select "#dropzone-archived"
+    # DevOps-only columns absent
+    assert_select "#dropzone-reviewed", count: 0
+    assert_select "#dropzone-assembled", count: 0
+    assert_select "#dropzone-shipped", count: 0
+    # the current-release module + kickoff chips live on /deployments, not here
+    assert_select "#current-release", count: 0
+    assert_not_includes response.body, "Review submitted PRs"
+    assert_not_includes response.body, "Run Deployment"
+  end
+
+  test "deployments board shows only the Deploy-lane columns" do
+    get deployments_path
+
+    assert_response :success
+    assert_select "h2", "Deployments"
+    # DevOps lane; submitted is the seam (shared with the feature-agent lane)
+    assert_select "#dropzone-submitted"
+    assert_select "#dropzone-reviewed"
+    assert_select "#dropzone-assembled"
+    assert_select "#dropzone-shipped"
+    # feature-agent-only columns absent
+    assert_select "#dropzone-designed", count: 0
+    assert_select "#dropzone-building", count: 0
+    assert_select "#dropzone-blocked", count: 0
+    assert_select "#dropzone-archived", count: 0
+    # copy-paste kickoff commands sit on the column headers
+    assert_includes response.body, "Review submitted PRs"
+    assert_includes response.body, "Run Deployment"
+  end
+
+  test "stages page renders both workflow lanes and the stage guide" do
+    get stages_path
+
+    assert_response :success
+    assert_select "h2", "Stages"
+    assert_select "h3", text: /Workflow 1 . Build/
+    assert_select "h3", text: /Workflow 2 . Deploy/
+    # a stage from each lane, and the responsible/next scaffolding
+    assert_includes response.body, "Designed"
+    assert_includes response.body, "Assembled"
+    assert_includes response.body, "Responsible"
+    assert_includes response.body, "Run Deployment" # DevOps kickoff chip on the assembled card
+  end
+
+  test "deployments and stages are public (no login required)" do
+    get deployments_path
+    assert_response :success
+    get stages_path
+    assert_response :success
+  end
+
+  test "each board page cross-links to the other two" do
+    [tasks_path, deployments_path, stages_path].each do |page|
+      get page
+      assert_response :success
+      assert_select %(nav a[href="#{tasks_path}"]), { minimum: 1 }, "#{page} missing Tasks nav link"
+      assert_select %(nav a[href="#{deployments_path}"]), { minimum: 1 }, "#{page} missing Deployments nav link"
+      assert_select %(nav a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages nav link"
+    end
+  end
+
+  test "board pages link back to the dashboard for admins" do
+    log_in_as(@admin)
+    [tasks_path, deployments_path, stages_path].each do |page|
+      get page
+      assert_select %(a[href="#{admin_dashboard_path}"]), { minimum: 1 }, "#{page} missing Dashboard link for admin"
+    end
+  end
+
+  test "dashboard link is hidden from non-admins" do
+    get tasks_path
+    assert_select %(a[href="#{admin_dashboard_path}"]), count: 0
   end
 
   test "index shows DevOps Cycle link for admins" do

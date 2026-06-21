@@ -2,8 +2,9 @@
 
 > **Status:** approved model, landing incrementally. The **two-workflow task
 > status model is now live** — `Task` stages are
-> `designed → building → submitted → reviewed` (Build) and
-> `reviewed → assembled → shipped` (Deploy), plus `blocked` (side) and
+> `designed → building → submitted` (Build) and
+> `submitted → reviewed → assembled → shipped` (Deploy) — meeting at the
+> `submitted` seam — plus `blocked` (side) and
 > `archived` (terminal). `bin/task`, `bin/dor-check`, and the board speak it.
 >
 > **Still to land (each its own task):** the `Release` singleton model + the
@@ -48,30 +49,33 @@ The job is **formalize + close gaps**, not greenfield.
 
 ## 1. The cycle, end to end
 
-The flow is **two workflows**, matching how the work actually splits.
-**Building** a change and **shipping** a release are different jobs at different
-cadences, so they are different lifecycles that meet at one seam — `reviewed`.
+The flow is **two workflows**, matching how the work actually splits and *who
+owns each*. **Building** a change (the feature agent) and **shipping** a release
+(DevOps) are different jobs at different cadences, so they are different
+lifecycles that meet at one seam — `submitted`.
 
-- **Workflow 1 — Build (per task):** `designed → building → submitted →
-  reviewed`. A task is specced (`designed`), an agent claims and builds it
-  (`building`), opens a PR (`submitted`), and QA judges it on its own merits —
+- **Workflow 1 — Build (per task · feature agent):** `designed → building →
+  submitted`. A task is specced (`designed`), an agent claims and builds it
+  (`building`), and opens a PR (`submitted`) — where the feature agent's part
+  ends. A wall, bounced PR, or unready dependency parks it at **`blocked`**.
+- **Workflow 2 — Deploy (per release · DevOps):** `submitted → reviewed →
+  assembled → shipped`. DevOps judges the submitted PR on its own merits —
   acceptance, diff, tests — landing it at **`reviewed`** (approved) or
-  **`blocked`** (rework, with a `qa_feedback` note). `reviewed` is the seam:
-  approved, off the train, waiting for a release.
-- **Workflow 2 — Deploy (per release):** `reviewed → assembled → shipped`. The
-  release conductor assembles `reviewed` tasks into a single **release candidate
-  (RC)** on a release branch (`assembled`), QAs the whole RC, and on the
-  operator's OK ships it (`shipped`).
+  **`blocked`** (rework, with a `qa_feedback` note); the release conductor then
+  assembles `reviewed` tasks into a single **release candidate (RC)** on a
+  release branch (`assembled`), QAs the whole RC, and on the operator's OK ships
+  it (`shipped`). `submitted` is the seam — the feature agent hands the PR to
+  DevOps there.
 
 QA and production are properties of the **release**, not the individual task —
 so there is no per-task QA stage; the one operator gate is a single OK on the RC.
 
 ```
-WORKFLOW 1 · Build (per task)                  WORKFLOW 2 · Deploy (per release · Release model)
-designed → building → submitted → reviewed ─┐   assembling → assembled → shipped
-                         ▲                   │     (conductor    (all merged +   ("Make the release"
-                         └ blocked ──────────┘──►   merges RC    full e2e green; → prod + notes;
-                           (rework/env/dep)         on a branch) deployed to QA) members → shipped)
+WORKFLOW 1 · Build (feature agent)         WORKFLOW 2 · Deploy (DevOps · Release model)
+designed → building → submitted ─────────► submitted → reviewed → assembled → shipped
+               ▲         │                  (review)   (approved) (merged RC,  ("run the
+               └ blocked ┘                                         e2e green,   deployment"
+                 (rework / env / dep)                              QA-deployed)  → prod)
 ```
 
 `blocked` is the single "not in the pipeline's court" state — an agent hit a
@@ -151,7 +155,7 @@ ships.
 |---|---|---|---|---|
 | **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR, move in | self-gate |
 | **submitted** (task) | **Avi** (Steffon co-gates risk) | DevOps agent *as Avi* | Review acceptance/diff/tests → `blocked` (back, with `qa_feedback`) **OR** `reviewed` ✅ | judgment (Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
-| **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Eligible queue for Workflow 2 | — |
+| **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Approved; eligible for the next release | — |
 | **assembling** (release) | **Avi** | DevOps agent *as Avi* / operator-curated | Add `reviewed` tasks honoring `dependencies` + lanes → **merge each onto `release/<slug>`** + per-merge tests; member → `assembled` | judgment + deterministic merge queue |
 | **assembled** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on release HEAD → deploy to QA + Discord notes → await the operator action | deterministic suite; ⛔ regression → eject task to `blocked` |
 | **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator **Makes the release**, then DevOps agent | Operator eyeballs QA + Makes the release → ff to `main`, tag, `bin/deploy` → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
@@ -196,6 +200,49 @@ The agent reads this file every heartbeat; changing the thresholds changes
 behavior with no code edit. Keys + defaults are documented at the top of the
 file and mirrored in `deployment.md` when this lands — that is the one place to
 modify the release builder's autonomy.
+
+### 1.4 Kickoff commands — board → Claude session
+
+The `/deployments` board and `/stages` page surface a short copy-paste command
+per DevOps stage (source of truth: `ApplicationHelper#devops_kickoffs`). Pasted
+into a Claude session run from `/Users/alex/projects`, each kicks off that
+stage's workflow. The feature-agent lane (`designed → building → blocked →
+submitted`) has none — the operator drives those hands-on. The DevOps lane maps
+each command to a deterministic runbook:
+
+**`Review submitted PRs`**  *(submitted → reviewed)*
+1. List `submitted` tasks (`bin/task list` or the board).
+2. For each open PR run an independent review (the `avi` subagent): acceptance
+   criteria, the diff, CI, and the shape's required test tiers.
+3. Approve → `bin/task move <task> reviewed`; issues → `bin/task block <task>
+   --kind rework --feedback "…"` (one complete send-back).
+
+**`Prepare release`**  *(reviewed → assembled — ends in a QA deployment)*
+Assembles a release candidate from the reviewed queue and **deploys it to QA**
+for review. The deliverable is a QA URL, not a production change.
+1. Confirm no release is active (`Release.current`).
+2. `Release.open!(slug: "rel-YYYY-MM-DD-<name>")`; `release.add(task)` for each
+   reviewed task (task → `assembled`).
+3. Cut `release/<slug>` from `main`; merge each member's feature branch in
+   dependency order; run per-merge tests (a conflict ejects the task to
+   `blocked`).
+4. **Deploy the branch to QA** (`bin/qa-server` / the `mcritchie-studio-qa`
+   app); record `release.qa_url`.
+5. `release.assemble!` → state `assembled`. Result: a QA deployment of the RC to
+   review before production.
+
+**`Run Deployment`**  *(assembled → shipped — promotes the QA'd RC to prod)*
+The release candidate already exists and has been QA'd; this is the one human
+gate. "Deployment" = ship that assembled RC to production.
+1. Merge `release/<slug>` → `main`, push origin (auto-closes member PRs).
+2. Deploy to production (`git push heroku main`; the release phase runs
+   migrations). Stamp `release.deployed_sha`.
+3. `release.ship!(by:)` → state `shipped`, members `shipped`. Smoke `/up`, then
+   post release notes (`POST /api/v1/release_notes`).
+
+**`Cleanup worktrees`**  *(post-ship housekeeping)*
+`bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged
+feature worktrees. The deployment is done.
 
 ---
 

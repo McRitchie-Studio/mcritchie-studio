@@ -1,0 +1,15 @@
+<%# Click-to-copy kickoff command chip. Locals: command (required), label (optional). %>
+<% command = local_assigns.fetch(:command) %>
+<% label = local_assigns.fetch(:label, nil) %>
+<div x-data="{ copied: false }" class="inline-block">
+  <button type="button"
+          @click="navigator.clipboard.writeText($refs.cmd.textContent); copied = true; setTimeout(() => copied = false, 1400)"
+          class="inline-flex items-center gap-1 rounded-md border border-subtle bg-inset px-1.5 py-0.5 whitespace-nowrap hover:border-primary/40 transition"
+          :title="copied ? 'Copied!' : 'Copy kickoff command'">
+    <% if label %>
+      <span class="text-[9px] uppercase tracking-wide text-muted"><%= label %></span>
+    <% end %>
+    <code x-ref="cmd" class="text-[10px] text-body normal-case font-normal tracking-normal"><%= command %></code>
+    <span class="text-[10px]" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
+  </button>
+</div>

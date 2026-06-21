@@ -1,0 +1,69 @@
+<% content_for(:title, "Stages — DevOps") %>
+<% guide = devops_stage_guide %>
+
+<section class="min-h-screen">
+  <div class="flex items-center justify-between mb-2 flex-wrap gap-3">
+    <h2 class="text-2xl font-bold text-heading">Stages</h2>
+    <div class="flex items-center gap-3 flex-wrap">
+      <%= render "page_nav", current: "stages" %>
+      <% if admin? %>
+        <%= link_to "Full SOP ↗", devops_cycle_path,
+              class: "px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading" %>
+      <% end %>
+    </div>
+  </div>
+  <p class="text-muted text-sm mb-6 max-w-3xl">
+    A task moves through <b class="text-secondary">two workflows</b>, split by owner. The
+    <b class="text-secondary">feature agent</b> runs <b class="text-secondary">Build</b> up to
+    <code class="text-xs">submitted</code>; <b class="text-secondary">DevOps</b> runs
+    <b class="text-secondary">Deploy</b> from there. <code class="text-xs">submitted</code> is the
+    shared seam, so it appears in both lanes.
+  </p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <% guide.each_with_index do |(workflow, stages), i| %>
+      <div>
+        <div class="flex items-center gap-3 mb-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-primary">
+            Workflow <%= i + 1 %> · <%= workflow %>
+          </h3>
+          <span class="text-[11px] text-muted">
+            <%= workflow == "Build" ? "per task · feature agent" : "per release · devops" %>
+          </span>
+          <span class="flex-1 h-px bg-subtle"></span>
+        </div>
+
+        <div class="space-y-3">
+          <% stages.each do |row| %>
+            <div class="rounded-xl border border-subtle bg-surface p-4">
+              <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <span class="px-2 py-0.5 rounded text-xs font-bold <%= task_stage_count_classes(row[:stage]) %>">
+                  <%= Task::STAGE_LABELS.fetch(row[:stage]) %>
+                </span>
+                <% if row[:kick] %>
+                  <%= render "kickoff_chip", command: row[:kick], label: "Kick off" %>
+                <% end %>
+              </div>
+              <p class="text-sm text-body mb-3"><%= row[:what] %></p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Responsible</div>
+                  <div class="text-primary font-medium"><%= row[:who] %></div>
+                </div>
+                <div>
+                  <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Next →</div>
+                  <div class="text-secondary leading-relaxed"><%= devops_next_html(row[:nxt]) %></div>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <p class="text-[11px] text-muted mt-6">
+    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold <%= task_stage_count_classes("archived") %>">Archived</span>
+    is terminal trash — abandoned, never shipping.
+  </p>
+</section>

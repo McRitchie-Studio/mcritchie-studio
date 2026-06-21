@@ -1,0 +1,9 @@
+<%# Workflow 2 · Deploy (DevOps) — submitted → reviewed → assembled → shipped. Led by the
+    current-release module. %>
+<%= render "board",
+      stages: Task::DEPLOYMENTS_BOARD_STAGES,
+      title: "Deployments",
+      archived: false,
+      current_release: @current_release,
+      current_page: "deployments",
+      show_kickoffs: true %>
