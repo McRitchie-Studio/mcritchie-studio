@@ -1,0 +1,82 @@
+class Release
+  # The producer/consumer repo registry for the Deploy workflow — a thin,
+  # dependency-light reader over config/release_repos.yml. Classifies an
+  # ecosystem repo as a :gem (published to RubyGems, the producer) or an :app
+  # (deployed, the consumer), which is what lets a release ship producer-first.
+  #
+  # See config/release_repos.yml for the schema. Memoized for the process; call
+  # .reload! after editing the YAML in dev.
+  module Repos
+    module_function
+
+    CONFIG_PATH = Rails.root.join("config", "release_repos.yml")
+
+    def config
+      @config ||= (YAML.load_file(CONFIG_PATH) || {})
+    end
+
+    def reload!
+      @config = nil
+      config
+    end
+
+    # :gem (producer), :app (consumer), or :unknown (not in the registry).
+    def kind(repo)
+      return :gem if gem?(repo)
+      return :app if app?(repo)
+
+      :unknown
+    end
+
+    def gem?(repo)
+      gem_repos.include?(repo.to_s)
+    end
+
+    def app?(repo)
+      app_repos.include?(repo.to_s)
+    end
+
+    def gem_repos
+      config.fetch("gems", {}).keys
+    end
+
+    def app_repos
+      Array(config.fetch("apps", []))
+    end
+
+    # The gem's registry metadata (version_file, gemspec, release_check, …) or
+    # nil when the repo isn't a registered gem.
+    def gem_meta(repo)
+      config.fetch("gems", {})[repo.to_s]
+    end
+
+    # The sibling checkout path for a repo — gem repos live next to this app at
+    # the projects root, so resolve relative to the app root's parent.
+    def repo_path(repo)
+      Rails.root.parent.join(repo.to_s)
+    end
+
+    # The version a gem would publish, read from its version_file. Returns nil
+    # when the repo isn't a gem, has no version_file, or the file isn't reachable
+    # (e.g. on a prod box where the sibling repo isn't checked out) — the caller
+    # treats nil as "resolve it locally at publish time".
+    def gem_version(repo)
+      meta = gem_meta(repo)
+      return nil unless meta
+
+      version_file = meta["version_file"].to_s
+      return nil if version_file.empty?
+
+      path = repo_path(repo).join(version_file)
+      return nil unless File.exist?(path)
+
+      extract_version(File.read(path))
+    end
+
+    # Pull a semantic version out of either `VERSION = "x.y.z"`
+    # (lib/studio/version.rb) or `spec.version = "x.y.z"` (a gemspec).
+    def extract_version(contents)
+      contents.to_s[/version\s*=\s*["']([\w.\-]+)["']/i, 1]
+    end
+  end
+end

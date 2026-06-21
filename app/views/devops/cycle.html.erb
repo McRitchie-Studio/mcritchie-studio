@@ -182,9 +182,10 @@
     <table style="margin-top:10px">
       <tr><th>Task field</th><th>Meaning</th></tr>
       <tr><td><code>release_slug</code></td><td>The Release this task rides (null until the conductor assigns it; task is <code>assembled</code> once merged onto the release branch).</td></tr>
-      <tr><td><code>dependencies</code></td><td>Task slugs this one needs shipped first → lets Avi sequence releases (engine release first, then dependents).</td></tr>
+      <tr><td><code>dependencies</code></td><td>Task slugs this one needs shipped first → sequences releases (engine gem first, then dependents). <b>Now honored</b> by <code>Release#ordered_members</code>.</td></tr>
     </table>
     <div class="note">Composes with the lanes: <code>dependencies</code> = "B needs A's output"; lanes (migration / release / vault) = "one at a time".</div>
+    <div class="note" style="margin-top:8px"><b style="color:var(--accent)">💎 Gem members &amp; producer-first.</b> A release can carry <b>gem</b> tasks (<code>studio-engine</code>, <code>solana-studio</code>) as first-class members alongside apps (registry: <code>config/release_repos.yml</code>). Gems are <b>published</b>, not branch-merged — they ride the record and are QA'd via a consuming app. <b>Run Deployment</b> processes producer-before-consumer: <code>bin/release ship</code> publishes each gem to RubyGems first (approval-gated <code>gem push</code>), then deploys the apps, so a consumer always builds against the just-published version. The board shows a <code>💎 gem</code> badge on gem tasks.</div>
   </div>
 
   <div class="card">

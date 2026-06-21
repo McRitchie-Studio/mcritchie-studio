@@ -34,9 +34,41 @@
 require "json"
 require "open3"
 require "yaml"
+require "tmpdir"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
+
+# The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
+# which members are gems (published producer-first, no app branch) vs apps. Same
+# single source of truth Release::Repos reads on the record side.
+RELEASE_REPOS =
+  begin
+    YAML.load_file(File.expand_path("../config/release_repos.yml", __dir__)) || {}
+  rescue StandardError
+    {}
+  end
+
+# Gem repos are siblings of this app at the projects root. Resolve relative to
+# the app root's parent — so run `ship` from a PRIMARY checkout, not a worktree
+# (a worktree's parent is .worktrees, not the projects root).
+def gem_repo_path(repo)
+  File.expand_path("../../#{repo}", __dir__)
+end
+
+# A gem's declared version, read locally from its version_file. The authoritative
+# read at publish time (member_plan's version can be nil when run via `--prod`,
+# where the sibling repo isn't checked out). Returns "" if it can't be resolved.
+def gem_version_local(repo)
+  meta = RELEASE_REPOS.dig("gems", repo) || {}
+  version_file = meta["version_file"].to_s
+  return "" if version_file.empty?
+
+  path = File.join(gem_repo_path(repo), version_file)
+  return "" unless File.exist?(path)
+
+  File.read(path)[/version\s*=\s*["']([\w.\-]+)["']/i, 1].to_s
+end
 
 # URLs come from the QA registry (config/qa_environments.yml) — single source of
 # truth, so the CLI doesn't drift from the deploy config.
@@ -58,18 +90,20 @@ def abort!(msg) = abort("✗ #{msg}")
 def say(msg) = puts(msg)
 def step(msg) = puts("→ #{msg}")
 
-# Run a shell command. In dry-run, print it and skip. Returns [stdout, ok?].
-def sh(*cmd, capture: false)
-  printable = cmd.join(" ")
+# Run a shell command. In dry-run, print it and skip. `chdir:` runs it in
+# another directory (used for gem-repo builds/tags). Returns [stdout, ok?].
+def sh(*cmd, capture: false, chdir: nil)
+  printable = "#{chdir ? "(cd #{chdir}) " : ''}#{cmd.join(' ')}"
   if DRY
     puts "  [dry-run] #{printable}"
     return ["", true]
   end
+  opts = chdir ? { chdir: chdir } : {}
   if capture
-    out, status = Open3.capture2e(*cmd)
+    out, status = Open3.capture2e(*cmd, opts)
     [out, status.success?]
   else
-    ok = system(*cmd)
+    ok = system(*cmd, opts)
     ["", ok]
   end
 end
@@ -112,6 +146,65 @@ def confirm(prompt)
   $stdin.gets.to_s.strip.casecmp("y").zero?
 end
 
+# --- gem publishing (producer-first) ---------------------------------------
+# Publish each gem member to RubyGems in order, approval-gated. Aborts the whole
+# ship the moment one can't publish — the apps must not deploy against a gem that
+# never made it to RubyGems.
+def publish_gem_members(gem_members)
+  return if gem_members.empty?
+
+  step("publish gems (producer-first): #{gem_members.map { |m| m['repo'] }.join(', ')}")
+  gem_members.each do |m|
+    repo = m["repo"]
+    # Prefer member_plan's version; resolve locally if it was nil (e.g. --prod).
+    version = m["version"].to_s
+    version = gem_version_local(repo) if version.empty?
+    abort!("could not resolve a version for gem #{repo} — check #{repo}/#{(RELEASE_REPOS.dig('gems', repo) || {})['version_file']}") if version.empty? && !DRY
+
+    say("  gem #{repo} → v#{version}")
+    unless confirm("Publish #{repo} #{version} to RubyGems?")
+      abort!("aborted — #{repo} #{version} not published; the release cannot ship without its gem")
+    end
+    publish_gem(repo, version)
+  end
+end
+
+# Build + push one gem, then tag its repo. Each failure aborts loudly with the
+# fix, never swallowed — a half-published release is worse than a stopped one.
+def publish_gem(repo, version)
+  path = gem_repo_path(repo)
+  abort!("gem repo not found at #{path} — clone it as a sibling of #{APP} (run ship from a primary checkout)") unless DRY || Dir.exist?(path)
+
+  meta    = RELEASE_REPOS.dig("gems", repo) || {}
+  gemspec = meta["gemspec"].to_s.empty? ? "#{repo}.gemspec" : meta["gemspec"]
+  artifact = File.join(Dir.tmpdir, "release-#{repo}-#{version}.gem")
+
+  # 1. Gate on the gem's own release-check (--build = syntax + unit + build) when
+  #    it ships one, so a red gem never gets pushed.
+  if (rc = meta["release_check"]) && (DRY || File.exist?(File.join(path, rc)))
+    step("gem check: #{repo} #{rc} --build")
+    _, ok = sh(rc, "--build", chdir: path)
+    abort!("#{repo} release-check failed — fix before publishing (nothing pushed)") unless ok || DRY
+  end
+
+  # 2. Build the push artifact at a known path.
+  step("gem build: #{repo} #{gemspec} → #{artifact}")
+  _, built = sh("gem", "build", gemspec, "--output", artifact, chdir: path)
+  abort!("gem build failed for #{repo} #{version} — aborting before push") unless built || DRY
+
+  # 3. Push to RubyGems.
+  step("gem push: #{artifact}")
+  _, pushed = sh("gem", "push", artifact)
+  abort!("gem push failed for #{repo} #{version} — already published? bump #{meta['version_file']} (its PR owns the version) or check `gem signin`. Nothing downstream deployed.") unless pushed || DRY
+
+  # 4. Tag the gem repo so the published version is reproducible from git.
+  tag = "v#{version}"
+  step("git tag #{tag} in #{repo}")
+  sh("git", "-C", path, "tag", "-a", tag, "-m", "Release #{repo} #{tag}")
+  _, tagged = sh("git", "-C", path, "push", "origin", tag, capture: true)
+  say("  (tag #{tag} push #{tagged ? 'ok' : 'skipped/failed — push it manually if needed'})") unless DRY
+end
+
 # --- prepare ---------------------------------------------------------------
 def prepare
   task_slugs = opt_values("--task")
@@ -124,8 +217,7 @@ def prepare
   step("record: Release::Conductor.prepare!")
   result = conductor(
     "r = Release::Conductor.prepare!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect}); " \
-    "puts({slug: r.slug, state: r.state, branch: r.branch, members: r.tasks.order(:position).map { |t| " \
-    "{slug: t.slug, branch: t.metadata.dig('devops','branch')} }}.to_json)"
+    "puts({slug: r.slug, state: r.state, branch: r.branch, members: Release::Conductor.member_plan(r)}.to_json)"
   )
   rel_slug   = result["slug"] || slug || "rel-pending"
   rel_branch = result["branch"].to_s.empty? ? "release/#{rel_slug.sub(/\Arel-/, '')}" : result["branch"]
@@ -143,6 +235,14 @@ def prepare
   end
 
   members.each do |m|
+    # Gem members have no app branch in this repo — their PR lives in the gem's
+    # own repo. They ride the release as a record and are published at `ship`
+    # (producer-first), QA'd via a consuming app. Nothing to merge here.
+    if m["kind"] == "gem"
+      step("gem member #{m['slug']} (#{m['repo']} #{gem_version_local(m['repo'])}) — rides the release; published at ship, QA'd via its consuming app")
+      next
+    end
+
     branch = m["branch"]
     next if branch.to_s.empty?
     step("merge member #{m['slug']} (#{branch})")
@@ -184,12 +284,15 @@ def ship
   step("record: read the assembled release")
   result = conductor(
     "r = Release.current; abort('no active release to ship') unless r; " \
-    "puts({slug: r.slug, state: r.state, branch: r.branch}.to_json)"
+    "puts({slug: r.slug, state: r.state, branch: r.branch, members: Release::Conductor.member_plan(r)}.to_json)"
   )
-  rel_slug   = result["slug"]
-  rel_branch = result["branch"]
+  rel_slug    = result["slug"]
+  rel_branch  = result["branch"]
+  members     = result["members"] || []
+  gem_members = members.select { |m| m["kind"] == "gem" } # already producer-first
   abort!("no assembled release branch on the record") if !DRY && rel_branch.to_s.empty?
   say("  shipping #{rel_slug} (#{result['state']}) from #{rel_branch}")
+  say("  gem members (published first): #{gem_members.map { |m| m['repo'] }.join(', ')}") if gem_members.any?
   # Don't ship a candidate that hasn't been assembled + QA'd (the model would
   # otherwise allow assembling→shipped, bypassing the QA gate).
   abort!("release is '#{result['state']}', not assembled — `bin/release prepare` + QA it first") if !DRY && result["state"] != "assembled"
@@ -197,6 +300,12 @@ def ship
   unless confirm("Deploy #{rel_branch} → production?")
     abort!("aborted — production deploy not confirmed")
   end
+
+  # 0. Publish gem members FIRST (producer-first) — a consuming app must deploy
+  #    against the just-published gem, never ahead of it. Each publish is
+  #    approval-gated (respects --yes / --dry-run) and aborts loudly on failure
+  #    so the apps never deploy against an unpublished gem.
+  publish_gem_members(gem_members)
 
   # 1. ff main → release branch, push origin (closes member PRs).
   sh("git", "fetch", "origin", "--quiet")
@@ -235,10 +344,13 @@ def ship
   say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
 end
 
-case ARGV.shift
-when "prepare" then prepare
-when "ship"    then ship
-else
-  warn "usage: bin/release {prepare|ship} [--task SLUG ...] [--slug REL] [--by NAME] [--prod] [--dry-run] [--yes]"
-  exit 1
+# Guarded so the file can be `require`d (helper coverage) without dispatching.
+if __FILE__ == $PROGRAM_NAME
+  case ARGV.shift
+  when "prepare" then prepare
+  when "ship"    then ship
+  else
+    warn "usage: bin/release {prepare|ship} [--task SLUG ...] [--slug REL] [--by NAME] [--prod] [--dry-run] [--yes]"
+    exit 1
+  end
 end

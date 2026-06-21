@@ -19,12 +19,36 @@ class Release
         release.reopen! if release.state == "assembled"
         release.update!(branch: "release/#{release.slug.sub(/\Arel-/, '')}") if release.branch.blank?
 
-        Task.where(slug: slugs).each do |task|
+        # Add in producer-first order so members land at producer-before-consumer
+        # positions (gems before the apps that consume them). `add` raises if a
+        # task isn't reviewed — inside the transaction, so a bad task rolls the
+        # whole thing back.
+        Release::Ordering.producer_first(Task.where(slug: slugs).to_a).each do |task|
           release.add(task) unless release.tasks.exists?(slug: task.slug)
         end
 
         release.assemble!
         release
+      end
+    end
+
+    # The per-member release plan the CLI consumes, in producer-first order:
+    # each entry is { slug, branch, kind ("gem"/"app"), repo, version }. `branch`
+    # is the member's feature branch (apps merge it; gems have none and ride the
+    # record). `version` is the gem's declared version (nil for apps, and nil for
+    # gems when the version_file isn't reachable — the CLI resolves it locally at
+    # publish time). This is what `bin/release` reads to skip the merge for gems
+    # and to publish them producer-first at ship.
+    def member_plan(release)
+      release.ordered_members.map do |task|
+        kind = task.release_kind
+        {
+          slug: task.slug,
+          branch: task.devops_field("branch"),
+          kind: kind.to_s,
+          repo: task.release_repo,
+          version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil
+        }
       end
     end
 

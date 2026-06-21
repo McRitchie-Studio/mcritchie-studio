@@ -321,4 +321,58 @@ class TaskTest < ActiveSupport::TestCase
     assert_not dup.valid?
     assert_includes dup.errors[:slug], "has already been taken"
   end
+
+  # --- release_repo / gem_release? / release_kind ---
+
+  test "release_repo parses the repo from a github PR url" do
+    task = Task.create!(title: "engine bump", stage: "reviewed",
+                        metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/studio-engine/pull/9" } })
+    assert_equal "studio-engine", task.release_repo
+    assert task.gem_release?
+    assert_equal :gem, task.release_kind
+  end
+
+  test "release_repo prefers the PR url over the declared repositories" do
+    task = Task.create!(title: "mixed", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "pr_url" => "https://github.com/amcritchie/solana-studio/pull/3",
+                          "repositories" => ["turf-monster"]
+                        } })
+    assert_equal "solana-studio", task.release_repo
+    assert task.gem_release?
+  end
+
+  test "a library-shape task is a gem release via its declared gem repo" do
+    task = Task.create!(title: "engine UI primitive", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
+    assert_equal "studio-engine", task.release_repo
+    assert task.gem_release?
+    assert_equal :gem, task.release_kind
+  end
+
+  test "a library-shape task is a gem release even with no resolvable gem repo" do
+    task = Task.create!(title: "library no repos", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "library" } })
+    assert task.gem_release?, "library shape is always a gem release"
+    assert_equal :gem, task.release_kind
+  end
+
+  test "an app task is not a gem release" do
+    task = Task.create!(title: "app feature", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "shape" => "backend",
+                          "repositories" => ["mcritchie-studio"],
+                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/77"
+                        } })
+    assert_equal "mcritchie-studio", task.release_repo
+    assert_not task.gem_release?
+    assert_equal :app, task.release_kind
+  end
+
+  test "a task with no repo metadata classifies as unknown, not a gem" do
+    task = Task.create!(title: "bare task", stage: "reviewed")
+    assert_nil task.release_repo
+    assert_not task.gem_release?
+    assert_equal :unknown, task.release_kind
+  end
 end

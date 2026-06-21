@@ -126,6 +126,34 @@ class Task < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(devops.fetch("requires_release_conductor", false))
   end
 
+  # The ecosystem repo this task's PR/branch lives in — the unit the Deploy
+  # workflow classifies as a gem (producer) or an app (consumer). Prefer the
+  # repo parsed from the PR url (github.com/<owner>/<repo>/pull/N), since that's
+  # where the branch actually is; fall back to the declared repositories — for a
+  # `library` shape the gem repo named there, otherwise the first entry.
+  def release_repo
+    repo_from_pr_url.presence ||
+      if devops_shape == "library"
+        devops_repositories.find { |repo| Release::Repos.gem?(repo) } || devops_repositories.first
+      else
+        devops_repositories.first
+      end
+  end
+
+  # True when this task ships as a published gem rather than a deployed app — a
+  # `library` shape always is, and so is anything whose release_repo is a
+  # registered gem. Drives producer-first ordering and the board 💎 gem badge.
+  def gem_release?
+    devops_shape == "library" || Release::Repos.gem?(release_repo)
+  end
+
+  # :gem / :app / :unknown — the member kind the conductor orders + plans by.
+  def release_kind
+    return :gem if gem_release?
+
+    Release::Repos.kind(release_repo)
+  end
+
   def blocked?
     stage == "blocked"
   end
@@ -227,6 +255,11 @@ class Task < ApplicationRecord
   end
 
   private
+
+  # Extract the repo from a GitHub PR url: github.com/<owner>/<repo>/pull/<n>.
+  def repo_from_pr_url
+    devops_url("pr").to_s[%r{github\.com/[^/]+/([^/]+)/pull/}, 1]
+  end
 
   def devops_list(key)
     self.class.normalize_devops_list(devops.fetch(key.to_s, []))
