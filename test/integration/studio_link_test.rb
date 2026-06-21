@@ -73,4 +73,12 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
     assert_nil ref.reload.consumed_at, "referral links are reusable, never burned"
     assert_nil session[Studio.session_key], "a referral click must not sign anyone in"
   end
+
+  test "referral_for is stable per target and distinct across targets" do
+    a1 = Studio::Link.referral_for(users(:alex), target: "/contests/a")
+    a2 = Studio::Link.referral_for(users(:alex), target: "/contests/a")
+    b  = Studio::Link.referral_for(users(:alex), target: "/contests/b")
+    assert_equal a1.token, a2.token, "same (user, target) reuses one link"
+    refute_equal a1.token, b.token, "different targets get distinct links"
+  end
 end

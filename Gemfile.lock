@@ -1,5 +1,7 @@
-PATH
-  remote: /Users/alex/projects/studio-engine/.worktrees/standard-link-model
+GIT
+  remote: https://github.com/amcritchie/studio-engine.git
+  revision: 362e3bd73d2f380f0735655a2213921422a89468
+  branch: feat/standard-link-model
   specs:
     studio-engine (0.7.0)
       aws-sdk-s3 (~> 1.218)
