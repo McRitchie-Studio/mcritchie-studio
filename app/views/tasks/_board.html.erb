@@ -258,7 +258,8 @@ function kanbanBoard() {
 
               <div class="flex items-start justify-between mb-1.5">
                 <a href="<%= task_path(task.slug) %>"
-                   class="text-heading font-semibold text-sm line-clamp-2 flex-1 min-w-0 hover:text-primary transition"
+                   class="text-heading font-semibold text-sm truncate flex-1 min-w-0 hover:text-primary transition"
+                   title="<%= task.title %>"
                    @click.stop>
                   <%= task.title %>
                 </a>
@@ -278,6 +279,14 @@ function kanbanBoard() {
                     </svg>
                   </button>
                 </div>
+              </div>
+
+              <%# Slug (left) + affected-app emojis (right). The slug spans the
+                  full width and truncates; the emojis overlay the right edge on
+                  top (z + surface fade) so they win any overlap. %>
+              <div class="relative mt-0.5 mb-1.5">
+                <code class="block text-[10px] font-mono text-muted truncate"><%= task.slug %></code>
+                <%= app_emoji_badge(task.devops_repositories, css: "absolute inset-y-0 right-0 z-10 flex items-center pl-5 text-xs leading-none bg-gradient-to-l from-surface via-surface to-transparent") %>
               </div>
 
               <div class="flex items-center gap-2 mb-1">

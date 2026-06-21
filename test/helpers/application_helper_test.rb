@@ -61,6 +61,42 @@ class ApplicationHelperTest < ActionView::TestCase
     devops_kickoffs.each_value { |cmd| assert_operator cmd.split.size, :<=, 3 }
   end
 
+  test "app_emoji maps each canonical app slug to its glyph" do
+    assert_equal "🧰", app_emoji("mcritchie-studio")
+    assert_equal "🐊", app_emoji("turf-monster")
+    assert_equal "💎", app_emoji("studio-engine")
+    assert_equal "🏛️", app_emoji("turf-vault")
+    assert_equal "🧱", app_emoji("solana-studio")
+    assert_equal "⛓️", app_emoji("chain-ops")
+  end
+
+  test "app_emoji is blank-safe and case/whitespace tolerant, nil for unknown" do
+    assert_equal "🧰", app_emoji("  MCRITCHIE-STUDIO  ")
+    assert_nil app_emoji("nope")
+    assert_nil app_emoji("")
+    assert_nil app_emoji(nil)
+  end
+
+  test "app_emojis drops unknowns, collapses shared-glyph aliases, preserves order" do
+    assert_equal ["🐊", "💎"], app_emojis(["turf-monster", "studio-engine"])
+    # turf-vault and its 'vault' alias share one glyph → one entry
+    assert_equal ["🏛️"], app_emojis(["turf-vault", "vault"])
+    # unmapped repos are dropped, not rendered blank
+    assert_equal ["🧰"], app_emojis(["mcritchie-studio", "ghost-app"])
+    assert_equal [], app_emojis(nil)
+  end
+
+  test "app_emoji_badge returns nil when nothing maps, else a titled span" do
+    assert_nil app_emoji_badge(["ghost-app"])
+    assert_nil app_emoji_badge([])
+
+    badge = app_emoji_badge(["mcritchie-studio", "studio-engine"])
+    assert_includes badge, "🧰"
+    assert_includes badge, "💎"
+    assert_includes badge, %(title="mcritchie-studio, studio-engine")
+    assert badge.html_safe?
+  end
+
   test "devops_next_html badges whole-word stage names only" do
     html = devops_next_html("pulls it into the next release → assembled")
     assert_includes html, "<span"

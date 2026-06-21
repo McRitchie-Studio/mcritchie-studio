@@ -47,6 +47,43 @@ module ApplicationHelper
     end
   end
 
+  # Canonical app/repo slug → emoji map for the compact app indicators on task
+  # cards and current-release member pills. Mirrors the glyphs in
+  # ReleaseNotes::Formatter::APP_GROUPS (kept independent so views don't reach
+  # into the service); keep the two in sync if an app is added or its glyph
+  # changes.
+  APP_EMOJIS = {
+    "mcritchie-studio" => "🧰",
+    "turf-monster"     => "🐊",
+    "studio-engine"    => "💎",
+    "turf-vault"       => "🏛️",
+    "vault"            => "🏛️",
+    "solana-studio"    => "🧱",
+    "chain-ops"        => "⛓️"
+  }.freeze
+
+  # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
+  def app_emoji(repo)
+    APP_EMOJIS[repo.to_s.strip.downcase]
+  end
+
+  # Order-preserving, de-duplicated emoji list for a set of repo slugs. Two
+  # aliases that share a glyph (turf-vault/vault) collapse to one.
+  def app_emojis(repos)
+    Array(repos).filter_map { |repo| app_emoji(repo) }.uniq
+  end
+
+  # Inline emoji cluster (one glyph per mapped repo) for a set of repo slugs,
+  # titled with the repo list — or nil when nothing maps. Centralizes the markup
+  # shared by the task card's slug row and the current-release member pills;
+  # callers pass layout classes via +css+.
+  def app_emoji_badge(repos, css: "leading-none")
+    emojis = app_emojis(repos)
+    return if emojis.none?
+
+    tag.span(emojis.join(" "), class: css, title: Array(repos).join(", "))
+  end
+
   # Canonical copy-paste kickoff commands for the DevOps (Deploy) lane — the
   # single source of truth shared by the /deployments column headers and the
   # /stages cards. Keyed by stage; the feature-agent lane has none.
