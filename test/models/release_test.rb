@@ -97,6 +97,36 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal rel, a.reload.release
   end
 
+  # --- reopen! (additive prepare: absorb new work into an assembled RC) ---
+
+  test "reopen! pulls an assembled release back to assembling" do
+    rel = Release.open!
+    rel.assemble!
+    rel.reopen!
+    assert_equal "assembling", rel.reload.state
+  end
+
+  test "reopen! only works from assembled" do
+    rel = Release.open! # assembling
+    assert_raises(ArgumentError) { rel.reopen! }
+    rel.assemble!
+    rel.ship!
+    assert_raises(ArgumentError) { rel.reopen! } # terminal
+  end
+
+  test "reopen! lets a new reviewed task join an already-assembled RC" do
+    rel = Release.open!
+    rel.add(reviewed_task("first"))
+    rel.assemble!
+
+    rel.reopen!
+    rel.add(reviewed_task("second"))
+    rel.assemble!
+
+    assert_equal 2, rel.tasks.count
+    assert_equal "assembled", rel.reload.state
+  end
+
   # --- transition guards (a terminal release must stay terminal) ---
 
   test "a terminal release cannot be revived" do

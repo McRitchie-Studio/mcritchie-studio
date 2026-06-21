@@ -217,28 +217,23 @@ each command to a deterministic runbook:
 3. Approve → `bin/task move <task> reviewed`; issues → `bin/task block <task>
    --kind rework --feedback "…"` (one complete send-back).
 
-**`Prepare release`**  *(reviewed → assembled — ends in a QA deployment)*
-Assembles a release candidate from the reviewed queue and **deploys it to QA**
-for review. The deliverable is a QA URL, not a production change.
-1. Confirm no release is active (`Release.current`).
-2. `Release.open!(slug: "rel-YYYY-MM-DD-<name>")`; `release.add(task)` for each
-   reviewed task (task → `assembled`).
-3. Cut `release/<slug>` from `main`; merge each member's feature branch in
-   dependency order; run per-merge tests (a conflict ejects the task to
-   `blocked`).
-4. **Deploy the branch to QA** (`bin/qa-server` / the `mcritchie-studio-qa`
-   app); record `release.qa_url`.
-5. `release.assemble!` → state `assembled`. Result: a QA deployment of the RC to
-   review before production.
+**`Prepare release`**  *(reviewed → assembled — an RC for QA)*
+Run **`bin/release prepare [--task SLUG ...] [--slug rel-…] [--prod]`**. Additive
+find-or-create (`Release::Conductor.prepare!`): extends the active release —
+reopening an assembled RC so the new work re-QAs (`Release#reopen!`) — or opens a
+new one, adds the reviewed task(s) (default: every reviewed task), then cuts/
+merges `release/<slug>` and runs the suite, **stopping for you on a merge
+conflict** (a genuine conflict means the task should be blocked for rework).
+Leaves the RC `assembled`. Then deploy that branch to QA (`mcritchie-studio-qa`)
+for review before production. Record ops default to the local DB; `--prod` runs
+them on the prod board via `heroku run`.
 
-**`Run Deployment`**  *(assembled → shipped — promotes the QA'd RC to prod)*
-The release candidate already exists and has been QA'd; this is the one human
-gate. "Deployment" = ship that assembled RC to production.
-1. Merge `release/<slug>` → `main`, push origin (auto-closes member PRs).
-2. Deploy to production (`git push heroku main`; the release phase runs
-   migrations). Stamp `release.deployed_sha`.
-3. `release.ship!(by:)` → state `shipped`, members `shipped`. Smoke `/up`, then
-   post release notes (`POST /api/v1/release_notes`).
+**`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
+Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
+before deploying. It ff's `main` → the release branch, pushes origin (closing
+member PRs), deploys (`git push heroku main`; release phase runs migrations),
+smokes `/up`, then stamps `deployed_sha` and flips the RC + its members to
+`shipped` (`Release::Conductor.ship!`). Post release notes after.
 
 **`Cleanup worktrees`**  *(post-ship housekeeping)*
 `bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged

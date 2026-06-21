@@ -1,0 +1,211 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/release — deterministic Deploy-workflow CLI for the McRitchie Studio
+# release pipeline. Encodes what used to be hand-run `heroku run rails runner`
+# one-liners + ad-hoc git, so the "Prepare release" and "Run Deployment" kickoff
+# commands run the same way no matter who (or which agent) runs them.
+#
+# The record lifecycle lives in the tested Release::Conductor; this CLI owns the
+# git + deploy mechanics around it and stops for human judgment on a merge
+# conflict (it never auto-resolves).
+#
+# Usage:
+#   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
+#     Additive find-or-create: extends the active release (reopening an assembled
+#     RC) or opens a new one, adds the reviewed task(s) (default: all reviewed),
+#     cuts/updates release/<slug>, merges each member branch, runs the suite.
+#     Ends with the RC assembled — deploy it to QA for review.
+#
+#   bin/release ship [--by NAME] [--prod] [--dry-run]
+#     Promotes the assembled RC to production: ff main → release branch, push
+#     origin, deploy to Heroku, smoke /up, stamp deployed_sha + flip to shipped.
+#
+# Targets:
+#   default        record ops run against the LOCAL db (safe for dev/dry runs)
+#   --prod         record ops run on production via `heroku run rails runner`
+#   --dry-run      print the plan; execute nothing
+#
+# The board is production, so a real release uses --prod. Git push to `heroku`
+# always deploys prod (that IS the deploy), so `ship` asks to confirm first.
+
+require "json"
+require "open3"
+
+APP = "mcritchie-studio"
+HEROKU_REMOTE = "heroku"
+PROD_URL = "https://www.mcritchie.studio"
+
+DRY = ARGV.delete("--dry-run") ? true : false
+PROD = ARGV.delete("--prod") ? true : false
+ASSUME_YES = ARGV.delete("--yes") ? true : false
+
+def abort!(msg) = abort("✗ #{msg}")
+def say(msg) = puts(msg)
+def step(msg) = puts("→ #{msg}")
+
+# Run a shell command. In dry-run, print it and skip. Returns [stdout, ok?].
+def sh(*cmd, capture: false)
+  printable = cmd.join(" ")
+  if DRY
+    puts "  [dry-run] #{printable}"
+    return ["", true]
+  end
+  if capture
+    out, status = Open3.capture2e(*cmd)
+    [out, status.success?]
+  else
+    ok = system(*cmd)
+    ["", ok]
+  end
+end
+
+# Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.
+# The snippet must `puts` a single JSON line; we return the parsed Hash.
+def conductor(ruby)
+  wrapper = "require 'json'; #{ruby}"
+  cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", wrapper]
+             : ["bin/rails", "runner", wrapper]
+  if DRY
+    puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
+    return {}
+  end
+  out, ok = sh(*cmd, capture: true)
+  abort!("record op failed:\n#{out}") unless ok
+  line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+  abort!("record op returned no JSON:\n#{out}") unless line
+  JSON.parse(line)
+end
+
+def opt_values(flag)
+  vals = []
+  while (i = ARGV.index(flag))
+    ARGV.delete_at(i)
+    vals << ARGV.delete_at(i)
+  end
+  vals.compact
+end
+
+def opt_value(flag)
+  return nil unless (i = ARGV.index(flag))
+  ARGV.delete_at(i)
+  ARGV.delete_at(i)
+end
+
+def confirm(prompt)
+  return true if ASSUME_YES || DRY
+  $stdout.print("#{prompt} [y/N] ")
+  $stdin.gets.to_s.strip.casecmp("y").zero?
+end
+
+# --- prepare ---------------------------------------------------------------
+def prepare
+  task_slugs = opt_values("--task")
+  slug = opt_value("--slug")
+
+  say("Prepare release#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+
+  # 1. Record: additive find-or-create + add reviewed tasks + assemble.
+  slugs_ruby = task_slugs.empty? ? "Release::Conductor.eligible_task_slugs" : task_slugs.inspect
+  step("record: Release::Conductor.prepare!")
+  result = conductor(
+    "r = Release::Conductor.prepare!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect}); " \
+    "puts({slug: r.slug, state: r.state, branch: r.branch, members: r.tasks.order(:position).map { |t| " \
+    "{slug: t.slug, branch: t.metadata.dig('devops','branch')} }}.to_json)"
+  )
+  rel_slug   = result["slug"] || slug || "rel-pending"
+  rel_branch = result["branch"].to_s.empty? ? "release/#{rel_slug.sub(/\Arel-/, '')}" : result["branch"]
+  members    = result["members"] || []
+  say("  release #{rel_slug} (#{result['state']}) · #{members.size} member(s)")
+
+  # 2. Git: cut/refresh the release branch from main, merge each member branch.
+  sh("git", "fetch", "origin", "--quiet")
+  step("git: release branch #{rel_branch}")
+  _, exists = sh("git", "rev-parse", "--verify", "--quiet", rel_branch, capture: true)
+  if exists
+    sh("git", "checkout", rel_branch)
+  else
+    sh("git", "checkout", "-b", rel_branch, "origin/main")
+  end
+
+  members.each do |m|
+    branch = m["branch"]
+    next if branch.to_s.empty?
+    step("merge member #{m['slug']} (#{branch})")
+    _, ok = sh("git", "merge", "--no-ff", "-m", "Merge #{branch} into #{rel_branch} (#{m['slug']})", "origin/#{branch}")
+    unless ok || DRY
+      abort!("merge conflict on #{branch}. Resolve by hand, commit, then re-run `bin/release prepare`. " \
+             "A genuine conflict means the task should likely be blocked for rework.")
+    end
+  end
+
+  # 3. Tests on the assembled candidate.
+  step("test: bin/rails test")
+  _, green = sh("bin/rails", "test", capture: false)
+  abort!("suite failed on the release candidate — fix before assembling") unless green || DRY
+
+  say("")
+  say("✓ Assembled #{rel_slug} on #{rel_branch}.")
+  say("  Next: deploy this branch to QA for review, then `bin/release ship`.")
+end
+
+# --- ship ------------------------------------------------------------------
+def ship
+  by = opt_value("--by") || ENV["USER"] || "operator"
+
+  say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  step("record: read the assembled release")
+  result = conductor(
+    "r = Release.current; abort('no active release to ship') unless r; " \
+    "puts({slug: r.slug, state: r.state, branch: r.branch}.to_json)"
+  )
+  rel_slug   = result["slug"]
+  rel_branch = result["branch"]
+  abort!("no assembled release branch on the record") if !DRY && rel_branch.to_s.empty?
+  say("  shipping #{rel_slug} (#{result['state']}) from #{rel_branch}")
+
+  unless confirm("Deploy #{rel_branch} → production?")
+    abort!("aborted — production deploy not confirmed")
+  end
+
+  # 1. ff main → release branch, push origin (closes member PRs).
+  sh("git", "fetch", "origin", "--quiet")
+  step("git: ff main → #{rel_branch}")
+  sh("git", "checkout", "main")
+  sh("git", "pull", "origin", "main", "--quiet")
+  _, ff = sh("git", "merge", "--ff-only", rel_branch, capture: true)
+  abort!("main could not fast-forward to #{rel_branch} (it diverged) — rebase the RC") unless ff || DRY
+  sh("git", "push", "origin", "main")
+
+  # 2. Deploy to Heroku (prod).
+  step("deploy: git push #{HEROKU_REMOTE} main")
+  _, deployed = sh("git", "push", HEROKU_REMOTE, "main", capture: false)
+  abort!("Heroku deploy failed") unless deployed || DRY
+
+  # 3. Smoke.
+  step("smoke: GET #{PROD_URL}/up")
+  out, _ = sh("/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "#{PROD_URL}/up", capture: true)
+  say("  /up → #{out}") unless DRY
+  abort!("smoke failed (/up != 200)") if !DRY && out.strip != "200"
+
+  # 4. Record: stamp deployed_sha + ship!.
+  sha, _ = sh("git", "rev-parse", "HEAD", capture: true)
+  sha = sha.strip
+  step("record: Release::Conductor.ship!")
+  conductor(
+    "r = Release.current; " \
+    "Release::Conductor.ship!(release: r, deployed_sha: #{sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}); " \
+    "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
+  )
+
+  say("")
+  say("🚀 Shipped #{rel_slug} → production (#{sha[0, 7]}).")
+end
+
+case ARGV.shift
+when "prepare" then prepare
+when "ship"    then ship
+else
+  warn "usage: bin/release {prepare|ship} [--task SLUG ...] [--slug REL] [--by NAME] [--prod] [--dry-run] [--yes]"
+  exit 1
+end
