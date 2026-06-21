@@ -31,10 +31,22 @@
 
 require "json"
 require "open3"
+require "yaml"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
-PROD_URL = "https://www.mcritchie.studio"
+
+# URLs come from the QA registry (config/qa_environments.yml) — single source of
+# truth, so the CLI doesn't drift from the deploy config.
+QA_REGISTRY =
+  begin
+    YAML.load_file(File.expand_path("../config/qa_environments.yml", __dir__))
+        .dig("qa_environments", APP) || {}
+  rescue StandardError
+    {}
+  end
+QA_URL   = QA_REGISTRY["qa_url"] || "https://qa.mcritchie.studio"
+PROD_URL = QA_REGISTRY["production_url"] || "https://app.mcritchie.studio"
 
 DRY = ARGV.delete("--dry-run") ? true : false
 PROD = ARGV.delete("--prod") ? true : false
@@ -145,9 +157,21 @@ def prepare
   _, green = sh("bin/rails", "test", capture: false)
   abort!("suite failed on the release candidate — fix before assembling") unless green || DRY
 
-  say("")
-  say("✓ Assembled #{rel_slug} on #{rel_branch}.")
-  say("  Next: deploy this branch to QA for review, then `bin/release ship`.")
+  # 4. Deploy the RC to QA for review + record the URL on the release. Non-fatal:
+  #    the RC is already assembled, so a QA hiccup just means "retry the deploy".
+  step("qa deploy: bin/qa-server deploy #{APP} #{rel_branch}")
+  _, qa_ok = sh("bin/qa-server", "deploy", APP, rel_branch, "--yes", capture: false)
+  if qa_ok || DRY
+    step("record: qa_url #{QA_URL}")
+    conductor("Release::Conductor.record_qa_deploy(release: Release.current, qa_url: #{QA_URL.inspect}); puts({qa_url: #{QA_URL.inspect}}.to_json)")
+    say("")
+    say("✓ Assembled #{rel_slug} on #{rel_branch} → deployed to QA.")
+    say("  Review at #{QA_URL}, then `bin/release ship`.")
+  else
+    say("")
+    say("✓ Assembled #{rel_slug} on #{rel_branch} (QA deploy failed — retry `bin/qa-server deploy #{APP} #{rel_branch}`).")
+    say("  Then `bin/release ship`.")
+  end
 end
 
 # --- ship ------------------------------------------------------------------
@@ -192,18 +216,21 @@ def ship
   say("  /up → #{out}") unless DRY
   abort!("smoke failed (/up != 200)") if !DRY && out.strip != "200"
 
-  # 4. Record: stamp deployed_sha + ship!.
+  # 4. Record: stamp deployed_sha + ship! + post release notes (one runner call so
+  #    `r` is in scope after ship!, since Release.current is nil once shipped).
   sha, _ = sh("git", "rev-parse", "HEAD", capture: true)
   sha = sha.strip
-  step("record: Release::Conductor.ship!")
-  conductor(
+  step("record: Release::Conductor.ship! + post_release_notes")
+  shipped = conductor(
     "r = Release.current; " \
     "Release::Conductor.ship!(release: r, deployed_sha: #{sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}); " \
-    "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
+    "notes = Release::Conductor.post_release_notes(release: r); " \
+    "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
   )
 
   say("")
   say("🚀 Shipped #{rel_slug} → production (#{sha[0, 7]}).")
+  say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
 end
 
 case ARGV.shift

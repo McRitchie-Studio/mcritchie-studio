@@ -1,4 +1,5 @@
 require "test_helper"
+require "minitest/mock"
 
 class Release::ConductorTest < ActiveSupport::TestCase
   def reviewed_task(title = "Reviewable")
@@ -79,5 +80,53 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
     assert_includes slugs, a.slug
     assert_includes slugs, b.slug
+  end
+
+  # --- record_qa_deploy ---
+
+  test "record_qa_deploy stores the qa_url on the release" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_deploy(release: rel, qa_url: "https://qa.example.test")
+    assert_equal "https://qa.example.test", rel.reload.qa_url
+  end
+
+  # --- post_release_notes (reuses ReleaseNotes::Formatter + DiscordClient) ---
+
+  def shipped_release
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "alex", production_url: "https://example.test")
+    rel
+  end
+
+  test "post_release_notes builds a message and delivers it" do
+    rel = shipped_release
+    delivered = nil
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { delivered = content }) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert result[:delivered]
+      assert result[:message].present?
+    end
+    assert delivered.present?, "DiscordClient.deliver should have been called"
+  end
+
+  test "post_release_notes dry_run builds the message without delivering" do
+    rel = shipped_release
+    called = false
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { called = true }) do
+      result = Release::Conductor.post_release_notes(release: rel, dry_run: true)
+      assert_not result[:delivered]
+      assert result[:message].present?
+    end
+    assert_not called, "dry_run must not deliver"
+  end
+
+  test "post_release_notes is non-fatal when the webhook is missing" do
+    rel = shipped_release
+    raiser = ->(content:) { raise ReleaseNotes::DiscordClient::MissingWebhook, "no webhook" }
+    ReleaseNotes::DiscordClient.stub(:deliver, raiser) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert_not result[:delivered]
+      assert result[:message].present?, "still returns the message even if delivery fails"
+    end
   end
 end
