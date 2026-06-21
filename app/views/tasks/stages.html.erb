@@ -6,10 +6,6 @@
     <h2 class="text-2xl font-bold text-heading">Stages</h2>
     <div class="flex items-center gap-3 flex-wrap">
       <%= render "page_nav", current: "stages" %>
-      <% if admin? %>
-        <%= link_to "Full SOP ↗", devops_cycle_path,
-              class: "px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading" %>
-      <% end %>
     </div>
   </div>
   <p class="text-muted text-sm mb-6 max-w-3xl">

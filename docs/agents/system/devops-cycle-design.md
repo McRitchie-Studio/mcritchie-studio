@@ -13,9 +13,8 @@
 > self-consistent on the legacy snapshot today); the Discord progress webhook
 > (§5). Where this doc describes those, it is the spec for the follow-up.
 >
-> Visual companion: the in-app DevOps cycle viewer at `/devops/cycle`
-> (admin-gated; `DevopsController#cycle`, view at
-> `app/views/devops/cycle.html.erb`).
+> Operator companion: the board stage guide at `/stages`; this document remains
+> the canonical full SOP.
 
 This design answers seven goals:
 
@@ -38,7 +37,7 @@ This design answers seven goals:
 | `kind` (feature/bug/chore/qa/release/cleanup), `metadata["devops"]` contract | `devops-task-board.md` | SOP routing key + handoff record. |
 | Activity log: `comment` / `qa_feedback` / `handoff` + scout reports | `Activity`, task-board API | The durable QA↔feature-agent channel. |
 | Sealed-bid sizing, `backend_migration` advisory-lock lane, `release_train` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
-| Test lanes (pr_review_gate / local_proof / qa_acceptance / production_smoke / nightly_deep / quarantine) + `config/devops_test_suites.yml` + `/devops` page + `bin/devops-tests` | `testing.md` | The *when/where* axis of the pyramid. |
+| Test lanes (pr_review_gate / local_proof / qa_acceptance / production_smoke / nightly_deep / quarantine) + `config/devops_test_suites.yml` + `bin/devops-tests` | `testing.md` | The *when/where* axis of the pyramid. |
 | `bin/qa-intake`, `bin/devops-cycle` (scout packets/decisions/readiness), `bin/agent-worktree`, `bin/qa-server`, `bin/deploy` | `parallel-agent-devops.md` | The conductor toolchain the heartbeat agent drives. |
 | Discord `POST /api/v1/release_notes` (dry-run, grouped-by-app, standardized) | release notes service | The standardized visibility primitive. |
 | "Future Heartbeats" lease-model spec | `devops-task-board.md` | The literal blueprint for the airgapped agent. |
@@ -403,8 +402,8 @@ on a monthly cadence, tracked like any other task.
   behavior.
 - **KPIs (tie to Avi's rework-rate):** suite wall-clock per lane, flake rate,
   coverage-per-tier, and "bugs that reached PR" (a falling number proves
-  left-shift is working). These surface on `/devops`, not in your daily view —
-  you steer by task status, tests are the indicator underneath.
+  left-shift is working). Track these through task QA notes, CI, and
+  `bin/devops-tests`; daily steering still comes from task status.
 
 ---
 

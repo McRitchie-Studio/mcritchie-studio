@@ -50,8 +50,7 @@ explicitly assigns you that lane in this session.
 If you skipped any of the above and already edited files: stop, create the task
 now, move the work into a worktree/branch, and proceed from step 3.
 
-Full SOP + visual: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`
-and the admin-gated in-app viewer at `/devops/cycle`.
+Full SOP: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
 ---
 

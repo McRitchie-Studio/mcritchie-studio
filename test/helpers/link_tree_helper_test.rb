@@ -12,6 +12,18 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert links.all? { |link| link[:hover_emoji].present? }, "expected every sidebar link to define hover_emoji"
   end
 
+  test "admin sidebar starts with site admin links and omits removed devops page" do
+    self.admin_enabled = true
+
+    sections = sidebar_link_sections
+    links = sections.flat_map { |section| section.fetch(:links) }
+
+    assert_equal "Site", sections.first.fetch(:title)
+    assert sections.first.fetch(:admin)
+    assert_equal ["Dashboard", "Theme", "Schema", "Email images"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
+  end
+
   private
 
   attr_accessor :admin_enabled
@@ -39,7 +51,6 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_theme_path = "/admin/theme"
   def admin_schema_path = "/admin/schema"
   def admin_email_images_path = "/admin/email_images"
-  def devops_path = "/devops"
   def toast_test_path = "/toast_test"
   def admin_tiktok_connect_path = "/admin/tiktok/connect"
   def admin_ai_builder_multiple_path = "/admin/ai_builder_multiple"

@@ -31,6 +31,7 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", tasks_path
     assert_select "a[href=?]", deployments_path
     assert_select "a[href=?]", stages_path
+    assert_select "a[href=?]", history_builders_path, text: /Builder History/
     assert_select "a[href=?]", nfl_hub_path
     assert_match "NFL Hub", response.body
     assert_select "a[href=?]", admin_links_path

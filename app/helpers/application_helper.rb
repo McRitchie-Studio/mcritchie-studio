@@ -98,8 +98,7 @@ module ApplicationHelper
 
   # The two-workflow stage guide rendered on /stages (vertical swimlanes). One
   # entry per stage: what it means, who's responsible, and what moves it next.
-  # `submitted` is the shared seam, so it appears in both lanes. Mirrors the SOP
-  # viewer at /devops/cycle.
+  # `submitted` is the shared seam, so it appears in both lanes.
   def devops_stage_guide
     {
       "Build" => [

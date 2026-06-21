@@ -40,8 +40,8 @@ If a lane fails, record the classification in task `qa_feedback`:
 
 ## Test Suite Catalog
 
-The `/devops` page and `bin/devops-tests` read
-`config/devops_test_suites.yml`. Each suite should include:
+`bin/devops-tests` reads `config/devops_test_suites.yml`. Each suite should
+include:
 
 - `lane`: `pr_review_gate`, `local_proof`, `qa_acceptance`,
   `production_smoke`, `nightly_deep`, or `quarantine`
