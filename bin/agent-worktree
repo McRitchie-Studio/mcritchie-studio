@@ -627,10 +627,19 @@ def test_database_url(values)
 end
 
 # Test-env command env: ruby PATH + RAILS_ENV=test + the worktree's test DB.
+# Minimal, hermetic test env: ruby PATH + RAILS_ENV=test + the isolated test DB.
+# Deliberately does NOT inherit the worktree's STACK runtime vars (APP_PORT,
+# LOCAL_EMAIL_CAPTURE, MAILER_HOST, REDIS_URL, ...) — those change app behavior
+# (mailer host/port, local email capture) and made the suite diverge from CI.
+# The worktree's .env (loaded by dotenv) supplies the canonical test defaults.
+# Tradeoff: the isolated stack REDIS_URL is dropped too — inert in test (null
+# cache, fake jobs), but two worktrees running `test` at once would share the
+# default Redis rather than per-worktree DBs.
 def test_command_env(app, values)
-  env = command_env(app, values).merge("RAILS_ENV" => "test")
+  path_parts = [app["ruby_path"], ENV["PATH"]].compact
+  env = { "PATH" => path_parts.join(":"), "RAILS_ENV" => "test" }
   test_url = test_database_url(values)
-  env = env.merge("DATABASE_URL" => test_url) if test_url
+  env["DATABASE_URL"] = test_url if test_url
   env
 end
 
@@ -661,10 +670,10 @@ end
 # worktree (and is what surfaced the transient before_setup fixture errors).
 # Single-process uses the base test DB directly — ~2x slower on the full suite
 # (~30s vs ~15s) but green on the first try, every time. CI keeps parallel.
-# KNOWN: single-process can surface a seed-dependent order-flake (a handful of
-# failures the parallel isolation was masking) — that's pre-existing test debt
-# tracked in its own de-flake task, NOT a regression from your change.
-# Extra args pass through (e.g. a single test file).
+# Extra args pass through (e.g. a single test file). The hermetic env
+# (test_command_env) keeps the worktree's stack runtime vars out of the run, so
+# the suite behaves like CI — the "order-dependent" mailer/delivery failures were
+# really the stack's APP_PORT / LOCAL_EMAIL_CAPTURE leaking in.
 def run_worktree_tests(dir, app, values, args)
   prepare_test_db(dir, app, values)
   env = test_command_env(app, values).merge("PARALLEL_WORKERS" => "1")
