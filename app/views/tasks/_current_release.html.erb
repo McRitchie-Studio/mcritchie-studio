@@ -21,7 +21,7 @@
       <div class="mt-3 flex flex-wrap gap-2">
         <% members.each do |t| %>
           <%= link_to task_path(t.slug), class: "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" do %>
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold <%= task_stage_count_classes(t.stage) %>"><%= t.stage_label %></span>
+            <%= app_emoji_badge(t.devops_repositories) %>
             <%= truncate(t.title, length: 42) %>
           <% end %>
         <% end %>
