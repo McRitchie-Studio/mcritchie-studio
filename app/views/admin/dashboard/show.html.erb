@@ -6,7 +6,7 @@
     <p class="text-muted text-sm">Users, request logs, and operator shortcuts.</p>
   </header>
 
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
     <%= render "quick_link", url: "#admin-users", label: "Users",
           subtitle: "#{@user_count} total / #{@admin_count} admin", icon: "👥" %>
     <%= render "quick_link", url: "#request-logs", label: "Request Logs",
@@ -16,7 +16,11 @@
     <%= render "quick_link", url: admin_signing_requests_path, label: "Signing Console",
           subtitle: "keyless queue", icon: "⛓️" %>
     <%= render "quick_link", url: tasks_path, label: "Tasks",
-          subtitle: "task board", icon: "✅" %>
+          subtitle: "build board", icon: "✅" %>
+    <%= render "quick_link", url: deployments_path, label: "Deployments",
+          subtitle: "deploy board + release", icon: "🚀" %>
+    <%= render "quick_link", url: stages_path, label: "Stages",
+          subtitle: "two-workflow guide", icon: "🛠️" %>
     <%= render "quick_link", url: admin_links_path, label: "Admin Links",
           subtitle: "all destinations", icon: "✨" %>
   </div>

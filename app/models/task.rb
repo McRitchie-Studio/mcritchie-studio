@@ -22,6 +22,11 @@ class Task < ApplicationRecord
   # The two workflows, for grouping/headers. `reviewed` is the shared seam.
   BUILD_STAGES  = %w[designed building submitted reviewed].freeze
   DEPLOY_STAGES = %w[reviewed assembled shipped].freeze
+  # Board columns per page, split by owner with `submitted` as the shared seam.
+  # /tasks is the feature-agent lane (build work, incl. the blocked side state);
+  # /deployments is the DevOps lane (review → release), starting at the seam.
+  TASKS_BOARD_STAGES       = %w[designed building blocked submitted].freeze
+  DEPLOYMENTS_BOARD_STAGES = %w[submitted reviewed assembled shipped].freeze
   # Why a task sits in `blocked` — lets a heartbeat agent route it correctly.
   BLOCK_KINDS = %w[environment rework dependency].freeze
   MIGRATION_LANE = "backend_migration".freeze

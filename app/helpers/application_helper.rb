@@ -47,6 +47,67 @@ module ApplicationHelper
     end
   end
 
+  # Canonical copy-paste kickoff commands for the DevOps (Deploy) lane — the
+  # single source of truth shared by the /deployments column headers and the
+  # /stages cards. Keyed by stage; the feature-agent lane has none.
+  def devops_kickoffs
+    {
+      "submitted" => "Review submitted PRs",
+      "reviewed"  => "Prepare release",
+      "assembled" => "Run Deployment",
+      "shipped"   => "Cleanup worktrees"
+    }
+  end
+
+  # The two-workflow stage guide rendered on /stages (vertical swimlanes). One
+  # entry per stage: the board column it maps to, what it means, who's
+  # responsible, and what moves it next. `reviewed` is the shared seam, so it
+  # appears in both lanes. Mirrors the SOP viewer at /devops/cycle.
+  def devops_stage_guide
+    {
+      "Build" => [
+        { stage: "designed",
+          what: "Spec complete — acceptance criteria, change shape, test plan, and affected repos are all set. No code yet.",
+          who: "Author / operator", nxt: "An agent claims it (passes dor-check --gate build) → building" },
+        { stage: "building",
+          what: "An agent owns the task in an isolated worktree, writing the code and its tests together as the work takes shape.",
+          who: "Feature agent", nxt: "Open a PR, pass dor-check --gate merge → submitted" },
+        { stage: "blocked",
+          what: "Off the pipeline — waiting on an environment fix, QA rework, or a dependency. Records where it stalled (blocked_from) and why (block_kind).",
+          who: "Whoever can unblock it (agent for rework, operator for environment)", nxt: "Once cleared, it resumes → back to building or submitted" },
+        { stage: "submitted",
+          what: "The PR is open and the feature agent's part is done — the seam where Build hands off to DevOps.",
+          who: "Feature agent → DevOps", nxt: "DevOps picks it up for review → reviewed" }
+      ],
+      "Deploy" => [
+        { stage: "submitted", kick: devops_kickoffs["submitted"],
+          what: "The intake queue — submitted PRs waiting for review.",
+          who: "DevOps → Avi", nxt: "Avi reviews acceptance / diff / tests → reviewed, or sends it back blocked for rework" },
+        { stage: "reviewed",  kick: devops_kickoffs["reviewed"],
+          what: "Approved and off the bench, waiting to ride the next release.",
+          who: "Avi → conductor", nxt: "The conductor cuts a release/<slug> branch and merges tasks in dependency order → assembled" },
+        { stage: "assembled", kick: devops_kickoffs["assembled"],
+          what: "Every member PR is merged and its tests pass; the release candidate is built and deployed to QA for review.",
+          who: "Steffon (QA)", nxt: "The operator runs the deployment — the one human gate. Run Deployment ships to prod, tags, and posts release notes → shipped" },
+        { stage: "shipped",   kick: devops_kickoffs["shipped"],
+          what: "Live in production and shown as the current release; release notes are posted as part of Run Deployment.",
+          who: "Mr. McRitchie → conductor", nxt: "Terminal — just clean up the deployed feature worktrees." }
+      ]
+    }
+  end
+
+  # Render a stage-guide "Next →" line, turning any stage word into its colored
+  # badge (so "→ assembled" shows the same pill as the column). Escapes first,
+  # then injects badge markup for whole-word stage matches only.
+  def devops_next_html(text)
+    stages = Task::STAGE_LABELS.keys
+    pattern = /\b(#{stages.join('|')})\b/
+    ERB::Util.html_escape(text).to_str.gsub(pattern) do |word|
+      tag.span(Task::STAGE_LABELS.fetch(word),
+               class: "inline-block px-1.5 py-0.5 rounded text-[11px] font-bold align-baseline #{task_stage_count_classes(word)}")
+    end.html_safe
+  end
+
   def news_stage_scheme(stage)
     case stage.to_s
     when "new"        then "stage-fresh"

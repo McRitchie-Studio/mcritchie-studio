@@ -1,7 +1,7 @@
 class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show]
-  before_action :require_admin, except: [:index, :show]
+  skip_before_action :require_authentication, only: [:index, :show, :deployments, :stages]
+  before_action :require_admin, except: [:index, :show, :deployments, :stages]
   before_action :set_task, only: [:show, :edit, :update, :destroy, :comment]
 
   def reorder
@@ -18,16 +18,20 @@ class TasksController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  # /tasks — Workflow 1 (Build): designed → building → submitted → reviewed.
   def index
-    tasks = Task.ordered
-    agent_filter = params[:agent_slug].presence || params[:agent].presence
-    tasks = tasks.where(agent_slug: agent_filter) if agent_filter
-    stage_filter = params[:stage].presence
-    tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
-    load_board_task_conversation(tasks)
-    @tasks_by_stage = tasks.group_by(&:stage)
-    @agents = Agent.order(:position)
+    load_board(Task::TASKS_BOARD_STAGES)
+  end
+
+  # /deployments — Workflow 2 (Deploy): reviewed → assembled → shipped, + blocked,
+  # led by the current-release module.
+  def deployments
+    load_board(Task::DEPLOYMENTS_BOARD_STAGES)
     @current_release = Release.featured
+  end
+
+  # /stages — the two-workflow stage guide (vertical swimlanes, side by side).
+  def stages
   end
 
   def show
@@ -121,6 +125,21 @@ class TasksController < ApplicationController
   def load_task_conversation
     @task_activities = @task.activities.includes(:agent).conversation_order
     @task_activity ||= @task.activities.build(activity_type: "comment")
+  end
+
+  # Shared kanban loader for /tasks and /deployments — same data, different
+  # columns. The view renders only `@board_stages`; archived is a toggle on the
+  # board itself, so grouping the full set here is intentional.
+  def load_board(board_stages)
+    @board_stages = board_stages
+    tasks = Task.ordered
+    agent_filter = params[:agent_slug].presence || params[:agent].presence
+    tasks = tasks.where(agent_slug: agent_filter) if agent_filter
+    stage_filter = params[:stage].presence
+    tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
+    load_board_task_conversation(tasks)
+    @tasks_by_stage = tasks.group_by(&:stage)
+    @agents = Agent.order(:position)
   end
 
   def load_board_task_conversation(tasks)

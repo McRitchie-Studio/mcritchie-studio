@@ -31,6 +31,11 @@ Rails.application.routes.draw do
   # In-app DevOps cycle SOP viewer — self-contained page (own html/style),
   # rendered with layout: false. Admin-gated via DevopsController.
   get "devops/cycle", to: "devops#cycle", as: :devops_cycle
+  # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
+  # current-release module), /stages is the two-workflow stage guide. All three
+  # are public-read like /tasks (mutations stay admin-gated in TasksController).
+  get "deployments", to: "tasks#deployments", as: :deployments
+  get "stages", to: "tasks#stages", as: :stages
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).

@@ -197,6 +197,49 @@ behavior with no code edit. Keys + defaults are documented at the top of the
 file and mirrored in `deployment.md` when this lands — that is the one place to
 modify the release builder's autonomy.
 
+### 1.4 Kickoff commands — board → Claude session
+
+The `/deployments` board and `/stages` page surface a short copy-paste command
+per DevOps stage (source of truth: `ApplicationHelper#devops_kickoffs`). Pasted
+into a Claude session run from `/Users/alex/projects`, each kicks off that
+stage's workflow. The feature-agent lane (`designed → building → blocked →
+submitted`) has none — the operator drives those hands-on. The DevOps lane maps
+each command to a deterministic runbook:
+
+**`Review submitted PRs`**  *(submitted → reviewed)*
+1. List `submitted` tasks (`bin/task list` or the board).
+2. For each open PR run an independent review (the `avi` subagent): acceptance
+   criteria, the diff, CI, and the shape's required test tiers.
+3. Approve → `bin/task move <task> reviewed`; issues → `bin/task block <task>
+   --kind rework --feedback "…"` (one complete send-back).
+
+**`Prepare release`**  *(reviewed → assembled — ends in a QA deployment)*
+Assembles a release candidate from the reviewed queue and **deploys it to QA**
+for review. The deliverable is a QA URL, not a production change.
+1. Confirm no release is active (`Release.current`).
+2. `Release.open!(slug: "rel-YYYY-MM-DD-<name>")`; `release.add(task)` for each
+   reviewed task (task → `assembled`).
+3. Cut `release/<slug>` from `main`; merge each member's feature branch in
+   dependency order; run per-merge tests (a conflict ejects the task to
+   `blocked`).
+4. **Deploy the branch to QA** (`bin/qa-server` / the `mcritchie-studio-qa`
+   app); record `release.qa_url`.
+5. `release.assemble!` → state `assembled`. Result: a QA deployment of the RC to
+   review before production.
+
+**`Run Deployment`**  *(assembled → shipped — promotes the QA'd RC to prod)*
+The release candidate already exists and has been QA'd; this is the one human
+gate. "Deployment" = ship that assembled RC to production.
+1. Merge `release/<slug>` → `main`, push origin (auto-closes member PRs).
+2. Deploy to production (`git push heroku main`; the release phase runs
+   migrations). Stamp `release.deployed_sha`.
+3. `release.ship!(by:)` → state `shipped`, members `shipped`. Smoke `/up`, then
+   post release notes (`POST /api/v1/release_notes`).
+
+**`Cleanup worktrees`**  *(post-ship housekeeping)*
+`bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged
+feature worktrees. The deployment is done.
+
 ---
 
 ## 2. Two SOPs: Feature and Bug
