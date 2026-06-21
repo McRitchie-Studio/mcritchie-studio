@@ -78,4 +78,7 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.7"
+# Temporary: point at the local feat/standard-link-model engine branch to
+# exercise Studio::Link end-to-end before the gem is published. Revert to a
+# published version (~> 0.8) on adoption once the engine release ships.
+gem "studio-engine", path: "/Users/alex/projects/studio-engine/.worktrees/standard-link-model"

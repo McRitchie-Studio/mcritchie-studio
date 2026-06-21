@@ -13,6 +13,10 @@ Studio.configure do |config|
   # minted for one app verify on another (cross-app token confusion).
   config.magic_link_token_name = "magic_link_mcritchie_v1"
 
+  # Use the unified Studio::Link store: short /l/<token> URLs (was the long
+  # /magic_link/<MessageVerifier> blob). Requires the studio_links table.
+  config.magic_link_store = :database
+
   # Verified sending address for the active mail transport. SES uses the
   # McRitchie domain; Resend fallback uses the shared McRitchie Studio sender so
   # future apps can send before their own SES setup is complete.

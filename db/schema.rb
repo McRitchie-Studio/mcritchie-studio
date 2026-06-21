@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_20_230000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_21_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -641,7 +641,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_20_230000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY ((ARRAY['assembling'::character varying, 'assembled'::character varying])::text[]))"
+    t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true
   end
 
@@ -887,6 +887,21 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_20_230000) do
     t.index ["email_key"], name: "index_studio_email_deliveries_on_email_key"
     t.index ["sent"], name: "index_studio_email_deliveries_on_sent"
     t.index ["user_id"], name: "index_studio_email_deliveries_on_user_id"
+  end
+
+  create_table "studio_links", force: :cascade do |t|
+    t.string "token", null: false
+    t.string "kind", null: false
+    t.string "linkable_type"
+    t.bigint "linkable_id"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "expires_at"
+    t.datetime "consumed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["kind"], name: "index_studio_links_on_kind"
+    t.index ["linkable_type", "linkable_id", "kind"], name: "idx_studio_links_owner_kind"
+    t.index ["token"], name: "index_studio_links_on_token", unique: true
   end
 
   create_table "tasks", force: :cascade do |t|
