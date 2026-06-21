@@ -17,7 +17,9 @@
 # Usage:
 #   bin/task list [--stage S] [--agent A]
 #   bin/task show <slug>
-#   bin/task create --title T [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
+#   bin/task create --title T [--slug readable-handle] [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
+#   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
+#     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
 #                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
@@ -136,7 +138,7 @@ def parse_flags(argv)
       scalars[SCALAR_FLAGS[arg]] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
     elsif LIST_FLAGS.key?(arg)
       lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
-    elsif %w[--title --description --agent --priority --stage].include?(arg)
+    elsif %w[--slug --title --description --agent --priority --stage].include?(arg)
       top[arg.delete_prefix("--")] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
     else
       positionals << arg; i += 1
@@ -154,6 +156,7 @@ end
 
 def top_body(top)
   body = {}
+  body["slug"] = top["slug"] if top["slug"] # custom readable handle (create only)
   body["title"] = top["title"] if top["title"]
   body["description"] = top["description"] if top["description"]
   body["agent_slug"] = top["agent"] if top["agent"]

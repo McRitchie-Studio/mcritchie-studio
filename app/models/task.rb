@@ -53,7 +53,10 @@ class Task < ApplicationRecord
   validates :dev_size,    inclusion: { in: SIZES }, allow_nil: true
   validates :actual_size, inclusion: { in: SIZES }, allow_nil: true
 
+  attr_readonly :slug # the readable handle is set once at creation, then immutable
+
   before_validation :generate_slug, on: :create
+  before_validation :default_devops_handles_from_slug, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
 
@@ -248,7 +251,31 @@ class Task < ApplicationRecord
     self.position ||= (Task.where(stage: stage).maximum(:position) || -1) + 1
   end
 
+  # The slug is the readable, immutable handle set at creation — it drives the
+  # URL (/tasks/<slug>) and seeds the worktree + branch. A provided slug is
+  # normalized (parameterized); with none given we fall back to an opaque
+  # task-<hex>. `@custom_slug` records which, so the trickle-down only fires for
+  # a real, human-chosen handle.
   def generate_slug
-    self.slug ||= "task-#{SecureRandom.hex(6)}"
+    normalized = slug.to_s.parameterize
+    if normalized.present?
+      self.slug = normalized
+      @custom_slug = true
+    else
+      self.slug = "task-#{SecureRandom.hex(6)}"
+      @custom_slug = false
+    end
+  end
+
+  # Trickle-down: a custom slug seeds worktree_slug + branch (feat/<slug>) when
+  # they aren't given explicitly, so one slug drives the rest. Opaque hex slugs
+  # don't trickle (nothing readable to propagate).
+  def default_devops_handles_from_slug
+    return unless @custom_slug
+
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+    devops["worktree_slug"] = slug if devops["worktree_slug"].blank?
+    devops["branch"] = "feat/#{slug}" if devops["branch"].blank?
   end
 end

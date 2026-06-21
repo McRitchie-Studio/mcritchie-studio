@@ -271,4 +271,48 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["bin/rails test"], task.devops_test_plan
     assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
   end
+
+  # --- Readable slug: custom handle at creation, trickle-down ---
+
+  test "a provided slug becomes the readable, parameterized Task.slug" do
+    task = Task.create!(title: "X", slug: "Standard Link Model")
+    assert_equal "standard-link-model", task.slug
+  end
+
+  test "no slug falls back to an opaque task-<hex>" do
+    task = Task.create!(title: "X")
+    assert_match(/\Atask-[0-9a-f]{12}\z/, task.slug)
+  end
+
+  test "a custom slug seeds worktree_slug and branch (trickle-down)" do
+    task = Task.create!(title: "X", slug: "readable-handle")
+    assert_equal "readable-handle", task.devops_worktree_slug
+    assert_equal "feat/readable-handle", task.metadata.dig("devops", "branch")
+  end
+
+  test "explicit worktree_slug/branch are not overwritten by the trickle-down" do
+    task = Task.create!(title: "X", slug: "readable-handle",
+                        metadata: { "devops" => { "worktree_slug" => "custom-wt", "branch" => "feat/custom" } })
+    assert_equal "custom-wt", task.devops_worktree_slug
+    assert_equal "feat/custom", task.metadata.dig("devops", "branch")
+  end
+
+  test "an opaque hex slug does not trickle into worktree_slug/branch" do
+    task = Task.create!(title: "X")
+    assert_nil task.devops_worktree_slug
+    assert_nil task.metadata.dig("devops", "branch")
+  end
+
+  test "slug is immutable after creation (attr_readonly raises on update)" do
+    task = Task.create!(title: "X", slug: "original")
+    assert_raises(ActiveRecord::ReadonlyAttributeError) { task.update!(slug: "changed") }
+    assert_equal "original", task.reload.slug
+  end
+
+  test "a duplicate slug is rejected" do
+    Task.create!(title: "A", slug: "dupe")
+    dup = Task.new(title: "B", slug: "dupe")
+    assert_not dup.valid?
+    assert_includes dup.errors[:slug], "has already been taken"
+  end
 end
