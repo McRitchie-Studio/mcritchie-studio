@@ -51,7 +51,7 @@ qa_environments:
     custom_domains:
       - qa.turfmonster.media
     production_app: turf-monster-mainnet
-    production_url: https://app.turfmonster.media
+    production_url: https://turfmonster.media
     deploy_provider: heroku
     addons:
       - heroku-postgresql:essential-0

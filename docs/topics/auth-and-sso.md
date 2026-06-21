@@ -35,7 +35,7 @@ session. The generic satellite pattern points authenticated navbar links at
 
 Current caveat: Turf Monster intentionally disables cross-app SSO and 404s
 `/sso_login` / `/sso_continue` while the money-app cookie stays isolated on
-`app.turfmonster.media`. Use direct magic-link login for Turf Monster smoke
+`turfmonster.media`. Use direct magic-link login for Turf Monster smoke
 tests until SSO is redesigned and re-enabled.
 
 The McRitchie Studio sign-in page does NOT show "Continue as" because the hub is a

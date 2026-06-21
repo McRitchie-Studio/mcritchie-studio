@@ -109,8 +109,52 @@ DNS cutover in Squarespace:
 ## Turf Monster
 
 Production app: `turf-monster-mainnet`
+Canonical URL: `https://turfmonster.media`
+Legacy app URL: `https://app.turfmonster.media`
+Archive URL: `https://v1.turfmonster.media`
 
 Use `turf-monster/bin/deploy`; do not hand-push around its preflight checks for real-money flows.
+
+### Root-Domain Launch
+
+Target state:
+
+- `turfmonster.media` is the canonical Turf Monster Rails app host.
+- `app.turfmonster.media` remains a legacy Rails alias while provider dashboards,
+  saved links, and allowlists migrate.
+- `v1.turfmonster.media` serves the previous Turf Monster landing site on the
+  old Heroku app `limitless-tundra-34071`.
+
+Known Heroku domains for the cutover:
+
+| Hostname | Heroku app | DNS type | Target |
+|----------|------------|----------|--------|
+| `v1.turfmonster.media` | `limitless-tundra-34071` | CNAME | `whispering-savannah-euqsutzic06i9306g89db3ug.herokudns.com` |
+| `app.turfmonster.media` | `turf-monster-mainnet` | CNAME | `evolutionary-endive-vck8w1u6epmos2i4lh68goot.herokudns.com` |
+
+Cutover sequence:
+
+1. Deploy Turf Monster with production host-alias support.
+2. Set `APP_HOST=turfmonster.media`, `MAILER_HOST=turfmonster.media`, and
+   `APP_HOST_ALIASES=app.turfmonster.media` on `turf-monster-mainnet`.
+3. Create DNS `v1` CNAME to
+   `whispering-savannah-euqsutzic06i9306g89db3ug.herokudns.com` and verify the
+   old landing site answers at `https://v1.turfmonster.media`.
+4. Remove `turfmonster.media` from old Heroku app `limitless-tundra-34071`,
+   add it to `turf-monster-mainnet`, then update apex DNS at Name.com to the
+   Heroku target printed by `heroku domains --app turf-monster-mainnet`.
+5. Run `heroku certs:auto --app turf-monster-mainnet` until ACM is issued for
+   `turfmonster.media` and `app.turfmonster.media`.
+6. Verify:
+
+   ```bash
+   dig @ns1psw.name.com turfmonster.media A +short
+   dig @ns1psw.name.com app.turfmonster.media CNAME +short
+   dig @ns1psw.name.com v1.turfmonster.media CNAME +short
+   curl -I https://turfmonster.media/up
+   curl -I https://app.turfmonster.media/up
+   curl -I https://v1.turfmonster.media
+   ```
 
 ## Rule
 
