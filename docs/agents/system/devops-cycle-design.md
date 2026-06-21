@@ -2,8 +2,9 @@
 
 > **Status:** approved model, landing incrementally. The **two-workflow task
 > status model is now live** — `Task` stages are
-> `designed → building → submitted → reviewed` (Build) and
-> `reviewed → assembled → shipped` (Deploy), plus `blocked` (side) and
+> `designed → building → submitted` (Build) and
+> `submitted → reviewed → assembled → shipped` (Deploy) — meeting at the
+> `submitted` seam — plus `blocked` (side) and
 > `archived` (terminal). `bin/task`, `bin/dor-check`, and the board speak it.
 >
 > **Still to land (each its own task):** the `Release` singleton model + the

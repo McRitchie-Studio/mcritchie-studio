@@ -68,10 +68,11 @@ Before handoff:
 The task lifecycle is two workflows (full spec:
 `docs/agents/system/devops-cycle-design.md`):
 
-- **Build** — `designed → building → submitted → reviewed`. You (feature agent)
-  own `designed` through `submitted`; QA moves it to `reviewed` (approved) or
-  `bin/task block <task> --kind rework --feedback "…"` (back to you).
-- **Deploy** — `reviewed → assembled → shipped`. The release conductor merges
+- **Build** (feature agent) — `designed → building → submitted`. You own
+  `designed` through `submitted` (the seam); opening the PR hands off to DevOps.
+- **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. QA reviews
+  the submitted PR → `reviewed` (approved) or `bin/task block <task> --kind
+  rework --feedback "…"` (back to you); the release conductor then assembles
   approved tasks onto a release branch (`assembled`) and ships (`shipped`).
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
