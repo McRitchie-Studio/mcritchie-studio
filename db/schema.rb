@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_21_000000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_21_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -514,8 +514,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_21_000000) do
   end
 
   create_table "image_caches", force: :cascade do |t|
-    t.string "owner_type", null: false
-    t.bigint "owner_id", null: false
+    t.string "owner_type"
+    t.bigint "owner_id"
     t.string "purpose", null: false
     t.string "variant", null: false
     t.string "s3_key", null: false
