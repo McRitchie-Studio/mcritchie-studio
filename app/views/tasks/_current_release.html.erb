@@ -1,52 +1,20 @@
-<% if @current_release %>
-  <% rel = @current_release %>
-  <% members = rel.tasks.order(:position).to_a %>
+<%# Current Release module for /deployments. Renders the active
+    (assembling/assembled) release, or a muted empty state when none is active.
+    Local: release (the Release, or nil for the empty state). The shipped
+    release is NOT shown here; it renders read-only in _last_release. %>
+<% rel = local_assigns.fetch(:release, nil) %>
+<% if rel %>
   <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
     <%# Operator's one-trigger QA-department workflow: assess the active release,
         pull every reviewed/passing task in, deploy QA, then stop for the prod ship. %>
-    <div class="mb-3 flex items-center gap-2 flex-wrap">
-      <span class="text-[11px] uppercase tracking-wide text-primary font-semibold">One-trigger QA release</span>
-      <%= render "kickoff_chip", command: qa_release_kickoff, label: "Kick off" %>
-    </div>
-    <div class="flex items-center justify-between flex-wrap gap-3">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Current Release</span>
-        <code class="text-sm text-heading"><%= rel.slug %></code>
-        <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>"><%= rel.state %></span>
-        <% if rel.branch.present? %><code class="text-xs text-muted" title="persistent integration branch (feature PRs merge into it; ff's to main on ship)"><%= rel.branch %></code><% end %>
-      </div>
-      <div class="flex items-center gap-4 text-xs text-secondary flex-wrap">
-        <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>
-        <% if rel.qa_url.present? %><%= link_to "QA ↗", rel.qa_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline" %><% end %>
-        <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: "text-primary hover:underline" %><% end %>
-        <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
-        <% if rel.shipped_at %><span class="text-muted">shipped <%= time_ago_in_words(rel.shipped_at) %> ago</span>
-        <% elsif rel.assembled_at %><span class="text-muted">assembled <%= time_ago_in_words(rel.assembled_at) %> ago</span><% end %>
-      </div>
-    </div>
-    <% if members.any? %>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <% members.each do |t| %>
-          <%= link_to task_path(t.slug), class: "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" do %>
-            <%= app_emoji_badge(t.devops_repositories) %>
-            <%= truncate(t.title, length: 42) %>
-            <% if (deploy_target = deploy_target_label(t)) %>
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="Deploy target"><%= deploy_target %></span>
-            <% end %>
-          <% end %>
-        <% end %>
-      </div>
-    <% end %>
+    <%= render "kickoff_header" -%>
+    <%= render "release_summary", release: rel, variant: :current -%>
   </div>
 <% else %>
   <%# No active release: muted empty state that still surfaces the one-trigger
-      header + kickoff chip so the operator can establish a release. The shipped
-      release is NOT shown here — it renders read-only in _last_release. %>
+      header + kickoff chip so the operator can establish a release. %>
   <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
-    <div class="mb-3 flex items-center gap-2 flex-wrap">
-      <span class="text-[11px] uppercase tracking-wide text-primary font-semibold">One-trigger QA release</span>
-      <%= render "kickoff_chip", command: qa_release_kickoff, label: "Kick off" %>
-    </div>
+    <%= render "kickoff_header" -%>
     <div class="flex items-center gap-3 flex-wrap">
       <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Current Release</span>
       <span class="text-sm text-muted italic">none active</span>
