@@ -277,9 +277,10 @@ This is Mr. McRitchie's single trigger for the whole QA department: hand it to a
 agent and it walks the persistent-`release` model end to end, stopping only at the
 one human gate. It does **not** ship to production on its own.
 
-1. **Assess the release.** Find the active (non-shipped) release via
-   `Release.featured` (or `bin/release` state) and list its current `assembled`
-   members — the candidate already riding the train.
+1. **Assess the release.** Find the active release via `Release.current` (the
+   board features it via `Release.featured`, which falls back to the last
+   shipped when none is active) and list its current `assembled` members — the
+   candidate already riding the train.
 2. **Pull in the reviewed backlog.** For every eligible `reviewed` task,
    `bin/release merge <task>` it into `release` (membership flips `reviewed →
    assembled` at merge). **Avi's bias is throughput — maximize what ships: get
