@@ -7,7 +7,10 @@ require "tmpdir"
 
 class AgentWorktreeCommandTest < ActiveSupport::TestCase
   def setup
-    @projects_dir = Dir.mktmpdir("agent-worktree-command")
+    # realpath so derived paths match git's canonical worktree-list output on
+    # macOS (/var and /tmp are symlinks into /private), which registered_worktree?
+    # compares by exact string.
+    @projects_dir = File.realpath(Dir.mktmpdir("agent-worktree-command"))
     @hub_dir = File.join(@projects_dir, "mcritchie-studio")
     @task = "terminal-context"
     @worktree_dir = File.join(@hub_dir, ".worktrees", @task)
@@ -140,10 +143,133 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal "https://mcritchie.studio/tasks/task-intake", pr.fetch("task_url")
   end
 
+  # --- remove --force (merge-verified) --------------------------------------
+
+  # [unit] The pure decision force_clears_content_blocker? loaded as a library in
+  # a hermetic subprocess (the dispatch guard keeps `load` side-effect-free).
+  test "[unit] force clears the content blocker only when merge-verified and clean" do
+    assert_equal "true",  force_decision(dirty: false, force: true,  merged: true)
+    assert_equal "false", force_decision(dirty: false, force: true,  merged: false)
+  end
+
+  test "[unit] force never clears the content blocker for a dirty worktree" do
+    assert_equal "false", force_decision(dirty: true, force: true, merged: true)
+  end
+
+  test "[unit] without force the content-blocker decision is unchanged" do
+    assert_equal "false", force_decision(dirty: false, force: false, merged: true)
+    assert_equal "false", force_decision(dirty: true,  force: false, merged: false)
+  end
+
+  # [integration] run_remove end-to-end over the temp worktree. The feature
+  # branch carries a commit not on origin/main (the squash-merge shape), so the
+  # content guard always fires; --force + a merge-verified PR is the only override.
+  test "[integration] force with a merge-verified PR removes a content-blocked worktree" do
+    out, err, status = agent_worktree(
+      "remove", "mcritchie-studio", @task, "--force", "--yes",
+      env: removal_env("AGENT_WORKTREE_MERGED_PR" => "159")
+    )
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_includes combined, "PR #159 merged"
+    assert_includes combined, "overriding content-not-on-main guard (--force)"
+    assert_not Dir.exist?(@worktree_dir), "worktree should have been removed"
+  end
+
+  test "[integration] force refuses when no merged PR can be verified" do
+    fake_bin = write_fake_gh_unmerged
+
+    out, err, status = agent_worktree(
+      "remove", "mcritchie-studio", @task, "--force", "--yes",
+      env: removal_env("PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}")
+    )
+
+    combined = "#{out}\n#{err}"
+    assert_not status.success?, combined
+    assert_includes combined, "branch content is not represented on"
+    assert_includes combined, "--force requires a merged PR; none found for feat/terminal-context"
+    assert Dir.exist?(@worktree_dir), "worktree must be left intact when force is unverified"
+  end
+
+  test "[integration] force never overrides a dirty worktree even with a merged PR" do
+    File.write(File.join(@worktree_dir, "scratch.txt"), "uncommitted\n")
+
+    out, err, status = agent_worktree(
+      "remove", "mcritchie-studio", @task, "--force", "--yes",
+      env: removal_env("AGENT_WORKTREE_MERGED_PR" => "159")
+    )
+
+    combined = "#{out}\n#{err}"
+    assert_not status.success?, combined
+    assert_includes combined, "dirty worktree"
+    assert_no_match(/overriding content-not-on/, combined)
+    assert Dir.exist?(@worktree_dir), "dirty worktree must never be removed"
+  end
+
+  test "[integration] without force a content-blocked worktree still refuses unchanged" do
+    out, err, status = agent_worktree(
+      "remove", "mcritchie-studio", @task, "--yes",
+      env: removal_env
+    )
+
+    combined = "#{out}\n#{err}"
+    assert_not status.success?, combined
+    assert_includes combined, "branch content is not represented on"
+    assert_no_match(/--force/, combined)
+    assert Dir.exist?(@worktree_dir), "no-force behavior must be unchanged"
+  end
+
   private
+
+  # Drive the pure decision method directly by loading the script as a library in
+  # an isolated subprocess (mirrors the file's CLI execution path; the
+  # $PROGRAM_NAME == __FILE__ guard means `load` defines methods without running
+  # the dispatch). Returns the printed "true"/"false".
+  def force_decision(dirty:, force:, merged:)
+    snippet = <<~RUBY
+      load #{@script.inspect}
+      puts force_clears_content_blocker?({ dirty: #{dirty} }, force: #{force}, merged: #{merged})
+    RUBY
+    out, err, status = Open3.capture3(
+      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      RbConfig.ruby, "-e", snippet
+    )
+    assert status.success?, "#{out}\n#{err}"
+    out.strip
+  end
+
+  # Env for run_remove tests: scratch registry + offline `git fetch origin`
+  # (GIT_SSH_COMMAND=/usr/bin/false makes the allow_fail fetch fail instantly with
+  # no network), plus any per-test overrides (merged-PR injection, fake-gh PATH).
+  def removal_env(extra = {})
+    {
+      "AGENT_WORKTREE_REGISTRY" => File.join(@projects_dir, ".agents", "remove-registry.json"),
+      "GIT_SSH_COMMAND" => "/usr/bin/false"
+    }.merge(extra)
+  end
+
+  def write_fake_gh_unmerged
+    dir = File.join(@projects_dir, "fake-bin-unmerged")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "gh")
+    File.write(path, <<~RUBY)
+      #!/usr/bin/env ruby
+      if ARGV[0, 2] == ["pr", "list"]
+        puts "[]"
+      else
+        warn "unexpected gh args: \#{ARGV.join(" ")}"
+        exit 1
+      end
+    RUBY
+    File.chmod(0o755, path)
+    dir
+  end
 
   def setup_repo
     FileUtils.mkdir_p(@hub_dir)
+    # delete-later.md lives here; teardown_worktree appends a removal row to it.
+    FileUtils.mkdir_p(File.join(@hub_dir, "docs", "agents", "maintenance"))
     git!(@hub_dir, "init")
     git!(@hub_dir, "config", "user.email", "agent-test@example.com")
     git!(@hub_dir, "config", "user.name", "Agent Test")
@@ -151,7 +277,17 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     File.write(File.join(@hub_dir, "README.md"), "# Test repo\n")
     git!(@hub_dir, "add", "README.md")
     git!(@hub_dir, "commit", "-m", "Initial commit")
-    git!(@hub_dir, "remote", "add", "origin", "https://github.com/amcritchie/mcritchie-studio.git")
+    # Mirror the real repos: agent stack/context files are gitignored so a
+    # provisioned worktree reads as clean (otherwise every worktree is "dirty"
+    # and un-removable). Committed on main before the worktree branch is cut.
+    File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n")
+    git!(@hub_dir, "add", ".gitignore")
+    git!(@hub_dir, "commit", "-m", "Ignore agent stack files")
+    # SSH-form origin so github_repo_slug still resolves "amcritchie/mcritchie-studio",
+    # while run_remove's `git fetch origin` can be forced offline+instant in the
+    # removal tests via GIT_SSH_COMMAND=/usr/bin/false (the fetch is allow_fail and
+    # base resolution only needs the local refs/remotes/origin/main set below).
+    git!(@hub_dir, "remote", "add", "origin", "git@github.com:amcritchie/mcritchie-studio.git")
     git!(@hub_dir, "update-ref", "refs/remotes/origin/main", "HEAD")
     git!(@hub_dir, "worktree", "add", @worktree_dir, "-b", "feat/terminal-context")
     git!(@worktree_dir, "config", "user.email", "agent-test@example.com")
@@ -169,7 +305,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       TASK_SLUG=#{@task}
       APP_PORT=39999
       PORT=39999
-      REDIS_URL=redis://localhost:6379/9
+      REDIS_URL=redis://localhost:63999/9
       DATABASE_URL=postgresql://localhost/mcritchie_studio_development_terminal_context
       TASK_RECORD_SLUG=
       TASK_URL=

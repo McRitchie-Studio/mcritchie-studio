@@ -116,8 +116,12 @@ def usage
       snapshot [app] [--write]
       cleanup [app] [--write]
       cleanup [app] --reclaim [--yes]
-      remove <app> <task-slug> [--yes]
+      remove <app> <task-slug> [--force] [--yes]
       down <app> <task-slug>
+
+      remove --force: override the content-on-<base> guard ONLY for a
+        merge-verified branch (a merged PR on GitHub). Never overrides
+        the dirty or not-git-registered guards.
       scale [status|out|in]
       scale --provision [--yes]
 
@@ -863,6 +867,60 @@ def command_available?(name)
     path = File.join(dir, name)
     File.file?(path) && File.executable?(path)
   end
+end
+
+# --- merge-verified force removal -------------------------------------------
+# `remove --force` exists for ONE broken case: a worktree whose PR was
+# squash-merged into the base under the old pre-`release`-branch flow. Squash
+# merges do not preserve the feature SHA, so `git_merged_to_base?` is false and
+# `cleanup_ready?` stays false forever — the branch shipped, yet `remove` refuses
+# it with "branch content is not represented on <base>". `--force` overrides ONLY
+# that content guard, and ONLY when a merged PR is verified on GitHub. It never
+# touches the `dirty` or `not-git-registered` guards (those are genuine
+# data-loss / wrong-state, not a squash-merge artifact).
+
+# Pure decision: should `--force` clear the "branch content is not represented on
+# <base>" blocker for this record? Only when force is set AND a merged PR was
+# verified AND the worktree is clean. `dirty` is a SEPARATE blocker computed
+# independently in run_remove and is never suppressed here; returning false for a
+# dirty record keeps that intent explicit and unit-testable. The not-registered
+# guard is computed by registered_worktree? and is not an input to this method,
+# so --force can never clear it.
+def force_clears_content_blocker?(record, force:, merged:)
+  force && merged && !record.fetch(:dirty)
+end
+
+# Merge verification, injectable for tests (mirrors dor-check's
+# DOR_CHECK_CHANGED_FILES seam). AGENT_WORKTREE_MERGED_PR set to a non-empty
+# value short-circuits the real gh call and reports that PR number as merged;
+# empty / unset falls through to `gh`. Returns [status, pr_number]:
+#   [:merged, "<n>"]    a merged PR exists for the branch
+#   [:none, nil]        gh ran but found no merged PR for the branch
+#   [:unavailable, nil] gh is not installed, or there is no GitHub remote
+def merged_pr_for_branch(record)
+  override = ENV["AGENT_WORKTREE_MERGED_PR"].to_s.strip
+  return [:merged, override] unless override.empty?
+
+  return [:unavailable, nil] unless command_available?("gh")
+
+  slug = github_repo_slug(record[:dir])
+  return [:unavailable, nil] unless slug
+
+  branch = record[:branch].to_s
+  return [:none, nil] if branch.empty? || branch == "?"
+
+  ok, out, = capture_status("gh", "pr", "list", "--repo", slug, "--head", branch, "--state", "merged", "--json", "number")
+  return [:unavailable, nil] unless ok
+
+  prs =
+    begin
+      JSON.parse(out)
+    rescue JSON::ParserError
+      []
+    end
+  first = prs.is_a?(Array) ? prs.first : nil
+  number = first.is_a?(Hash) ? first["number"] : nil
+  number ? [:merged, number.to_s] : [:none, nil]
 end
 
 def human_title(slug)
@@ -1687,16 +1745,42 @@ def run_reclaim(app = nil, yes: false)
   end
 end
 
-def run_remove(app, task, yes: false)
+def run_remove(app, task, yes: false, force: false)
   dir = worktree_dir(app, task)
   abort "missing worktree: #{dir}" unless Dir.exist?(dir)
 
   sh("git", "-C", app.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
   record = stack_record(app, dir)
   base = record[:base_ref]
+
+  # The content guard fires when the branch is not represented on base — which a
+  # squash merge always breaks. `--force` overrides it ONLY when a merged PR is
+  # merge-verified (see force_clears_content_blocker?); we only spend a gh call
+  # when --force is set and the content guard is actually firing.
+  content_blocked = !cleanup_ready?(record)
+  merge_status, merged_pr =
+    if force && content_blocked
+      merged_pr_for_branch(record)
+    else
+      [:skip, nil]
+    end
+  force_clears = content_blocked &&
+                 force_clears_content_blocker?(record, force: force, merged: merge_status == :merged)
+
   blockers = []
   blockers << "dirty worktree" if record[:dirty]
-  blockers << "branch content is not represented on #{base}" unless cleanup_ready?(record)
+  if content_blocked && !force_clears
+    blockers << "branch content is not represented on #{base}"
+    # Explain why --force did not clear the content guard, but only when the
+    # merge check itself failed (not when an unrelated guard like dirty is what
+    # holds removal back — merge_status is then :merged or :skip).
+    case merge_status
+    when :unavailable
+      blockers << "--force needs gh; not available (install gh or add a GitHub remote)"
+    when :none
+      blockers << "--force requires a merged PR; none found for #{record[:branch]}"
+    end
+  end
   blockers << "worktree is not registered with git" unless registered_worktree?(app, dir)
 
   if blockers.any?
@@ -1705,6 +1789,8 @@ def run_remove(app, task, yes: false)
     puts "inspect with: git -C #{dir.shellescape} diff --stat #{base}..HEAD"
     exit 1
   end
+
+  puts "✓ #{record[:branch]} PR ##{merged_pr} merged — overriding content-not-on-#{record[:base_branch]} guard (--force)" if force_clears
 
   unless yes
     puts "remove candidate: #{app.fetch("slug")}/#{task}"
@@ -1966,184 +2052,187 @@ def run_scale_provision(yes: false)
   puts "redis restarted with databases #{target}."
 end
 
-cmd = ARGV.shift || "help"
+if $PROGRAM_NAME == __FILE__
+  cmd = ARGV.shift || "help"
 
-case cmd
-when "apps"
-  apps.values.sort_by { |app| app.fetch("primary_port") }.each do |app|
-    puts "#{app.fetch("slug").ljust(18)} #{app.fetch("display_name", app.fetch("slug")).ljust(22)} primary #{app.fetch("primary_port")}  range #{app.fetch("range_start")}-#{app.fetch("range_end")}  #{app.fetch("status", "unknown")}"
-  end
-when "list"
-  app = ARGV[0] ? app_for(ARGV[0]) : nil
-  list_worktrees(app)
-when "plan"
-  app_name, raw_task, type = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  values = with_worktree_lock { stack_values(app, task) }
-  print_plan(app, task, values)
-when "new"
-  app_name, raw_task, maybe_type, *rest = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
-  start = ARGV.include?("--start")
-  dir = ensure_git_worktree(app, task, type)
-  values, path = with_worktree_lock do
-    existing = parse_env(stack_env_path(app, task))
-    resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
-    [resolved, write_stack_env(app, task, resolved)]
-  end
-  write_context_marker(app, task, values, dir)
-  puts "worktree ready: #{dir}"
-  puts "stack env:      #{path}"
-  puts "context:        #{context_path(dir)}"
-  puts
-  print_plan(app, task, values, dir)
-  if start
+  case cmd
+  when "apps"
+    apps.values.sort_by { |app| app.fetch("primary_port") }.each do |app|
+      puts "#{app.fetch("slug").ljust(18)} #{app.fetch("display_name", app.fetch("slug")).ljust(22)} primary #{app.fetch("primary_port")}  range #{app.fetch("range_start")}-#{app.fetch("range_end")}  #{app.fetch("status", "unknown")}"
+    end
+  when "list"
+    app = ARGV[0] ? app_for(ARGV[0]) : nil
+    list_worktrees(app)
+  when "plan"
+    app_name, raw_task, type = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    values = with_worktree_lock { stack_values(app, task) }
+    print_plan(app, task, values)
+  when "new"
+    app_name, raw_task, maybe_type, *rest = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
+    start = ARGV.include?("--start")
+    dir = ensure_git_worktree(app, task, type)
+    values, path = with_worktree_lock do
+      existing = parse_env(stack_env_path(app, task))
+      resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
+      [resolved, write_stack_env(app, task, resolved)]
+    end
+    write_context_marker(app, task, values, dir)
+    puts "worktree ready: #{dir}"
+    puts "stack env:      #{path}"
+    puts "context:        #{context_path(dir)}"
     puts
-    ARGV.replace(["up", app.fetch("slug"), task])
-    exec($PROGRAM_NAME, *ARGV)
-  end
-when "env"
-  app_name, raw_task = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  puts File.read(stack_env_path(app, task))
-when "bind-task"
-  app_name, raw_task, reference = ARGV
-  usage unless app_name && raw_task && reference
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  run_bind_task(app, task, reference)
-when "up"
-  app_name, raw_task = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  dir = worktree_dir(app, task)
-  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
-  values = load_stack_env(app, task)
-  app.fetch("stack") == "tm" ? start_tm(dir, app, values) : start_generic_rails(dir, app, values)
-  code = wait_for_url(values.fetch("APP_PORT"))
-  record = verify_started_stack!(app, dir, values.fetch("APP_PORT"))
-  write_context_marker(app, task, values, dir, record: record)
-  code = record[:code]
-  puts
-  puts "url: http://localhost:#{values.fetch("APP_PORT")} (/up #{code})"
-  puts "email: http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
-  puts "context: #{context_path(dir)}"
-when "test"
-  app_name, raw_task, *rest = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  dir = worktree_dir(app, task)
-  abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
-  run_worktree_tests(dir, app, load_stack_env(app, task), rest)
-when "status"
-  app_name, raw_task = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  values = load_stack_env(app, task)
-  code = wait_for_url(values.fetch("APP_PORT"))
-  record = stack_record(app, worktree_dir(app, task))
-  write_context_marker(app, task, values, worktree_dir(app, task), record: record)
-  print_plan(app, task, values)
-  puts "status: /up #{code}"
-  puts "health: #{stack_health(record)}"
-  merge = if record[:merged]
-            "merged"
-          elsif record[:equivalent_to_main]
-            "base-eq"
-          else
-            "unmerged"
-          end
-  puts "git:    #{record[:branch]} #{record[:head]} #{record[:dirty] ? "dirty" : "clean"} #{merge} +#{record[:ahead]}/-#{record[:behind]}"
-  puts "web:    port_pid=#{record[:port_pid].empty? ? "none" : record[:port_pid]} pidfile=#{record[:pidfile_state]}"
-  puts "sidekiq: pidfile=#{record[:sidekiq_pidfile_state]}" if app.fetch("sidekiq")
-  puts "db:     #{record[:db_name]}#{record[:db_exists].nil? ? "" : " #{record[:db_exists] ? "ok" : "missing"}"}"
-  puts "redis:  db #{record[:redis_db]}"
-  puts "context: #{context_path(worktree_dir(app, task))}"
-when "whereami"
-  json = ARGV.delete("--json")
-  shell = ARGV.delete("--shell")
-  usage if json && shell
-  case ARGV.length
-  when 0
-    run_whereami(json: !!json, shell: !!shell)
-  when 2
-    app = app_for(ARGV[0])
-    task = clean_slug(ARGV[1])
-    run_whereami(app, task, json: !!json, shell: !!shell)
+    print_plan(app, task, values, dir)
+    if start
+      puts
+      ARGV.replace(["up", app.fetch("slug"), task])
+      exec($PROGRAM_NAME, *ARGV)
+    end
+  when "env"
+    app_name, raw_task = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    puts File.read(stack_env_path(app, task))
+  when "bind-task"
+    app_name, raw_task, reference = ARGV
+    usage unless app_name && raw_task && reference
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    run_bind_task(app, task, reference)
+  when "up"
+    app_name, raw_task = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    dir = worktree_dir(app, task)
+    abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+    values = load_stack_env(app, task)
+    app.fetch("stack") == "tm" ? start_tm(dir, app, values) : start_generic_rails(dir, app, values)
+    code = wait_for_url(values.fetch("APP_PORT"))
+    record = verify_started_stack!(app, dir, values.fetch("APP_PORT"))
+    write_context_marker(app, task, values, dir, record: record)
+    code = record[:code]
+    puts
+    puts "url: http://localhost:#{values.fetch("APP_PORT")} (/up #{code})"
+    puts "email: http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
+    puts "context: #{context_path(dir)}"
+  when "test"
+    app_name, raw_task, *rest = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    dir = worktree_dir(app, task)
+    abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
+    run_worktree_tests(dir, app, load_stack_env(app, task), rest)
+  when "status"
+    app_name, raw_task = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    values = load_stack_env(app, task)
+    code = wait_for_url(values.fetch("APP_PORT"))
+    record = stack_record(app, worktree_dir(app, task))
+    write_context_marker(app, task, values, worktree_dir(app, task), record: record)
+    print_plan(app, task, values)
+    puts "status: /up #{code}"
+    puts "health: #{stack_health(record)}"
+    merge = if record[:merged]
+              "merged"
+            elsif record[:equivalent_to_main]
+              "base-eq"
+            else
+              "unmerged"
+            end
+    puts "git:    #{record[:branch]} #{record[:head]} #{record[:dirty] ? "dirty" : "clean"} #{merge} +#{record[:ahead]}/-#{record[:behind]}"
+    puts "web:    port_pid=#{record[:port_pid].empty? ? "none" : record[:port_pid]} pidfile=#{record[:pidfile_state]}"
+    puts "sidekiq: pidfile=#{record[:sidekiq_pidfile_state]}" if app.fetch("sidekiq")
+    puts "db:     #{record[:db_name]}#{record[:db_exists].nil? ? "" : " #{record[:db_exists] ? "ok" : "missing"}"}"
+    puts "redis:  db #{record[:redis_db]}"
+    puts "context: #{context_path(worktree_dir(app, task))}"
+  when "whereami"
+    json = ARGV.delete("--json")
+    shell = ARGV.delete("--shell")
+    usage if json && shell
+    case ARGV.length
+    when 0
+      run_whereami(json: !!json, shell: !!shell)
+    when 2
+      app = app_for(ARGV[0])
+      task = clean_slug(ARGV[1])
+      run_whereami(app, task, json: !!json, shell: !!shell)
+    else
+      usage
+    end
+  when "shell-hook"
+    shell = ARGV.shift
+    usage unless shell && ARGV.empty?
+    run_shell_hook(shell)
+  when "finish"
+    push = ARGV.delete("--push")
+    pr = ARGV.delete("--pr")
+    app_name, raw_task = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    run_finish(app, task, push: !!push, pr: !!pr)
+  when "doctor"
+    app = ARGV[0] ? app_for(ARGV[0]) : nil
+    run_doctor(app)
+  when "snapshot"
+    write = ARGV.delete("--write")
+    app = ARGV[0] ? app_for(ARGV[0]) : nil
+    run_snapshot(app, write: !!write)
+  when "cleanup"
+    reclaim = ARGV.delete("--reclaim")
+    yes = ARGV.delete("--yes")
+    write = ARGV.delete("--write")
+    app = ARGV[0] ? app_for(ARGV[0]) : nil
+    if reclaim
+      run_reclaim(app, yes: !!yes)
+    else
+      run_cleanup(app, write: !!write)
+    end
+  when "remove"
+    yes = ARGV.delete("--yes")
+    force = ARGV.delete("--force")
+    app_name, raw_task = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    run_remove(app, task, yes: !!yes, force: !!force)
+  when "down"
+    app_name, raw_task = ARGV
+    usage unless app_name && raw_task
+    app = app_for(app_name)
+    task = clean_slug(raw_task)
+    dir = worktree_dir(app, task)
+    values = load_stack_env(app, task)
+    if app.fetch("stack") == "tm"
+      sh("bin/tm", "down", chdir: dir, env: command_env(app, values))
+    else
+      stop_generic_rails(dir, values["APP_PORT"])
+    end
+  when "scale"
+    if ARGV.include?("--provision")
+      ARGV.delete("--provision")
+      yes = ARGV.delete("--yes")
+      run_scale_provision(yes: !!yes)
+    else
+      case ARGV[0] || "status"
+      when "status" then run_scale_status
+      when "out" then run_scale_out
+      when "in" then run_scale_in
+      else usage
+      end
+    end
   else
     usage
   end
-when "shell-hook"
-  shell = ARGV.shift
-  usage unless shell && ARGV.empty?
-  run_shell_hook(shell)
-when "finish"
-  push = ARGV.delete("--push")
-  pr = ARGV.delete("--pr")
-  app_name, raw_task = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  run_finish(app, task, push: !!push, pr: !!pr)
-when "doctor"
-  app = ARGV[0] ? app_for(ARGV[0]) : nil
-  run_doctor(app)
-when "snapshot"
-  write = ARGV.delete("--write")
-  app = ARGV[0] ? app_for(ARGV[0]) : nil
-  run_snapshot(app, write: !!write)
-when "cleanup"
-  reclaim = ARGV.delete("--reclaim")
-  yes = ARGV.delete("--yes")
-  write = ARGV.delete("--write")
-  app = ARGV[0] ? app_for(ARGV[0]) : nil
-  if reclaim
-    run_reclaim(app, yes: !!yes)
-  else
-    run_cleanup(app, write: !!write)
-  end
-when "remove"
-  yes = ARGV.delete("--yes")
-  app_name, raw_task = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  run_remove(app, task, yes: !!yes)
-when "down"
-  app_name, raw_task = ARGV
-  usage unless app_name && raw_task
-  app = app_for(app_name)
-  task = clean_slug(raw_task)
-  dir = worktree_dir(app, task)
-  values = load_stack_env(app, task)
-  if app.fetch("stack") == "tm"
-    sh("bin/tm", "down", chdir: dir, env: command_env(app, values))
-  else
-    stop_generic_rails(dir, values["APP_PORT"])
-  end
-when "scale"
-  if ARGV.include?("--provision")
-    ARGV.delete("--provision")
-    yes = ARGV.delete("--yes")
-    run_scale_provision(yes: !!yes)
-  else
-    case ARGV[0] || "status"
-    when "status" then run_scale_status
-    when "out" then run_scale_out
-    when "in" then run_scale_in
-    else usage
-    end
-  end
-else
-  usage
 end
