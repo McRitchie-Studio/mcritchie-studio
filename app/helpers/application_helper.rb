@@ -84,16 +84,37 @@ module ApplicationHelper
     tag.span(emojis.join(" "), class: css, title: Array(repos).join(", "))
   end
 
+  # The non-stage key for the "Build and Deploy QA Release" meta-trigger in
+  # +devops_kickoffs+ (see below). Not a board stage, so it never renders on a
+  # column header — only the current-release section reaches for it.
+  QA_RELEASE_KICKOFF_KEY = "release"
+
   # Canonical copy-paste kickoff commands for the DevOps (Deploy) lane — the
-  # single source of truth shared by the /deployments column headers and the
-  # /stages cards. Keyed by stage; the feature-agent lane has none.
+  # single source of truth shared by the /deployments column headers, the
+  # /stages cards, and the current-release section. The per-stage entries are
+  # keyed by DevOps board stage and kept terse (≤3 words) so each fits a column
+  # header; the feature-agent lane has none.
+  #
+  # Plus one non-stage meta-trigger under QA_RELEASE_KICKOFF_KEY: Mr. McRitchie's
+  # one-trigger "Build and Deploy QA Release" workflow (assess the active
+  # release, pull every reviewed/passing task in, deploy QA, then stop for the
+  # prod ship). It renders as a prominent chip in the current-release section,
+  # never on a column header, so it is exempt from the per-stage word cap.
   def devops_kickoffs
     {
+      QA_RELEASE_KICKOFF_KEY => "Build and Deploy QA Release",
       "submitted" => "Review submitted PRs",
       "reviewed"  => "Prepare release",
       "assembled" => "Run Deployment",
       "shipped"   => "Cleanup worktrees"
     }
+  end
+
+  # The "Build and Deploy QA Release" meta-trigger command — Mr. McRitchie's
+  # one-trigger QA-department workflow, surfaced as a prominent chip in the
+  # current-release section.
+  def qa_release_kickoff
+    devops_kickoffs.fetch(QA_RELEASE_KICKOFF_KEY)
   end
 
   # The two-workflow stage guide rendered on /stages (vertical swimlanes). One
