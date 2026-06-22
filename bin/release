@@ -51,6 +51,15 @@ require "open3"
 require "yaml"
 require "tmpdir"
 
+# Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
+# publish/yank/repin) lives in the unit-tested Release::ShipSequence +
+# Release::GemfileRepin models so this CLI stays I/O-only. Both files are
+# dependency-free Ruby (no Rails), so they load standalone here — keeping the
+# string/version/ordering decisions in one tested place instead of mirrored in
+# the shell. GemfileRepin first: ShipSequence references it at call time.
+require_relative "../app/models/release/gemfile_repin"
+require_relative "../app/models/release/ship_sequence"
+
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
 
@@ -77,8 +86,12 @@ RELEASE_REPOS =
 # default_projects_dir, which climbs out of .worktrees to the real projects root.
 #
 # `projects_root` is pure given its app_root argument (so it's unit-testable for
-# both checkout shapes); it defaults to this script's own app root.
+# both checkout shapes); it defaults to this script's own app root. A PROJECTS_DIR
+# env override wins (mirrors bin/qa-server) so a non-default checkout layout can
+# point the sibling-repo resolution at the right root.
 def projects_root(app_root = File.expand_path("..", __dir__))
+  return File.expand_path(ENV["PROJECTS_DIR"]) if ENV["PROJECTS_DIR"].to_s != ""
+
   parent = File.expand_path("..", app_root)
   # A worktree's app root sits under <hub>/.worktrees/<wt>; climb out of
   # .worktrees/<wt> back to the real projects root that holds the siblings.
@@ -124,7 +137,6 @@ QA_ENVIRONMENTS =
     {}
   end
 QA_REGISTRY = QA_ENVIRONMENTS[APP] || {}
-QA_URL   = QA_REGISTRY["qa_url"] || "https://qa.mcritchie.studio"
 PROD_URL = QA_REGISTRY["production_url"] || "https://app.mcritchie.studio"
 
 # The QA review URL for a qa-server app key (the group's `qa_app`). "" when the
@@ -203,28 +215,6 @@ def confirm(prompt)
 end
 
 # --- gem publishing (producer-first) ---------------------------------------
-# Publish each gem member to RubyGems in order, approval-gated. Aborts the whole
-# ship the moment one can't publish — the apps must not deploy against a gem that
-# never made it to RubyGems.
-def publish_gem_members(gem_members)
-  return if gem_members.empty?
-
-  step("publish gems (producer-first): #{gem_members.map { |m| m['repo'] }.join(', ')}")
-  gem_members.each do |m|
-    repo = m["repo"]
-    # Prefer member_plan's version; resolve locally if it was nil (e.g. --prod).
-    version = m["version"].to_s
-    version = gem_version_local(repo) if version.empty?
-    abort!("could not resolve a version for gem #{repo} — check #{repo}/#{(RELEASE_REPOS.dig('gems', repo) || {})['version_file']}") if version.empty? && !DRY
-
-    say("  gem #{repo} → v#{version}")
-    unless confirm("Publish #{repo} #{version} to RubyGems?")
-      abort!("aborted — #{repo} #{version} not published; the release cannot ship without its gem")
-    end
-    publish_gem(repo, version)
-  end
-end
-
 # Build + push one gem, then tag its repo. Each failure aborts loudly with the
 # fix, never swallowed — a half-published release is worse than a stopped one.
 def publish_gem(repo, version)
@@ -477,72 +467,379 @@ def prepare
   say("  Review the QA app(s) above, then `bin/release ship`.")
 end
 
-# --- ship ------------------------------------------------------------------
-def ship
-  by = opt_value("--by") || ENV["USER"] || "operator"
+# --- ship (multi-repo, producer-first) -------------------------------------
+# "Run Deployment": promote the assembled RC to production across EVERY member
+# repo in a producer-first, hub-before-satellites loop —
+#   gems (publish to RubyGems) → auto-re-pin consumers → hub app → satellites.
+# It ships the QA-FROZEN SHA per repo (the commit QA deployed, from
+# release.metadata["qa_shas"]) — NOT origin/release HEAD — so a PR merged after
+# `prepare` can never ride out un-QA'd. ONE confirm authorizes the whole train
+# (turf included; its own bin/deploy keeps smoke + rollback), so there is no
+# per-satellite re-prompt. Partial-ship: abort on the first failure; ship!/notes
+# run LAST so a partial leaves the record `assembled` (recoverable) and a re-run
+# is idempotent (published gems skip, ff no-ops, re-pins are idempotent).
+#
+# bin/release does only git/gh/gem/bundle I/O here; the string/version/ordering
+# DECISIONS live in the unit-tested Release::ShipSequence (+ GemfileRepin).
 
-  say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
-  step("record: read the assembled release")
-  result = conductor(
-    "r = Release.current; abort('no active release to ship') unless r; " \
-    "puts({slug: r.slug, state: r.state, branch: r.branch, members: Release::Conductor.member_plan(r)}.to_json)"
-  )
-  rel_slug    = result["slug"]
-  rel_branch  = result["branch"]
-  members     = result["members"] || []
-  gem_members = members.select { |m| m["kind"] == "gem" } # already producer-first
-  abort!("no assembled release branch on the record") if !DRY && rel_branch.to_s.empty?
-  say("  shipping #{rel_slug} (#{result['state']}) from #{rel_branch}")
-  say("  gem members (published first): #{gem_members.map { |m| m['repo'] }.join(', ')}") if gem_members.any?
-  # Don't ship a candidate that hasn't been assembled + QA'd (the model would
-  # otherwise allow assembling→shipped, bypassing the QA gate).
-  abort!("release is '#{result['state']}', not assembled — `bin/release prepare` + QA it first") if !DRY && result["state"] != "assembled"
+SHORT = 7
+def short(sha) = sha.to_s.empty? ? "(frozen)" : sha.to_s[0, SHORT]
 
-  unless confirm("Deploy #{rel_branch} → production?")
-    abort!("aborted — production deploy not confirmed")
+# A git read that runs EVEN in dry-run (a read mutates nothing) — mirrors how
+# `conductor(read_only:)` lets a dry-run preview real state. Returns [out, ok?].
+def git_capture(*args)
+  out, status = Open3.capture2e("git", *args)
+  [out, status.success?]
+end
+
+def gem_meta_for(repo) = RELEASE_REPOS.dig("gems", repo) || {}
+def app_meta_for(repo) = RELEASE_REPOS.dig("apps", repo) || {}
+
+# A gem's publish version: prefer member_plan's value, resolve locally if nil
+# (e.g. under --prod, where the sibling repo isn't checked out on the box).
+def gem_version_for(repo, group)
+  member  = (group["members"] || []).find { |m| !m["version"].to_s.empty? }
+  version = member ? member["version"].to_s : ""
+  version.empty? ? gem_version_local(repo) : version
+end
+
+# The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
+# release.metadata["qa_shas"]. Falls back to origin/release HEAD when absent (a
+# gem repo, or a release prepared before SHA recording); resolved live only.
+def frozen_sha_for(repo, qa_shas)
+  sha = qa_shas[repo].to_s
+  return sha unless sha.empty?
+  return "" if DRY
+
+  out, ok = git_capture("-C", repo_path(repo), "rev-parse", "origin/#{RELEASE_BRANCH}")
+  ok ? out.strip : ""
+end
+
+# The RubyGems versions listing for the idempotency check: the array of
+# { "number", "yanked" } from /api/v1/versions/<gem>.json. 404 (never published)
+# or any error → [] (publish needed, not yanked). A live-only read.
+def rubygems_versions(gem_name)
+  out, status = Open3.capture2e("/usr/bin/curl", "-sf",
+                                "https://rubygems.org/api/v1/versions/#{gem_name}.json")
+  return [] unless status.success? && !out.strip.empty?
+
+  JSON.parse(out)
+rescue JSON::ParserError
+  []
+end
+
+# Detached checkout of a repo at a SHA so the gem artifact builds from the
+# QA-frozen commit. Aborts on a failed checkout (never build from the wrong tree).
+def checkout_detached(repo, sha)
+  path = repo_path(repo)
+  abort!("gem repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+  _, ok = sh("git", "-C", path, "checkout", sha, capture: true)
+  abort!("could not checkout #{short(sha)} in #{repo} to build the gem — fetch it or re-run prepare") unless ok
+end
+
+# Fast-forward a repo's main up to a SHA, LOCALLY (no push). Split from the push
+# so an app's test gate can run on a frozen main and a red gate leaves origin
+# untouched. Aborts on a failed checkout or a non-fast-forward.
+def ff_main_local(repo, sha)
+  path = repo_path(repo)
+  abort!("repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
+  if DRY
+    step("ff #{repo} main → frozen #{short(sha)}")
+    return
   end
 
-  # 0. Publish gem members FIRST (producer-first) — a consuming app must deploy
-  #    against the just-published gem, never ahead of it. Each publish is
-  #    approval-gated (respects --yes / --dry-run) and aborts loudly on failure
-  #    so the apps never deploy against an unpublished gem.
-  publish_gem_members(gem_members)
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+  _, co = sh("git", "-C", path, "checkout", "main", capture: true)
+  abort!("could not checkout main in #{repo} (dirty tree / wrong branch?) — clean it, then re-run `bin/release ship`") unless co
+  sh("git", "-C", path, "pull", "origin", "main", "--quiet")
+  _, ff = sh("git", "-C", path, "merge", "--ff-only", sha, capture: true)
+  abort!("#{repo} main can't fast-forward to #{short(sha)} (it diverged) — rebase/re-prepare, then re-run") unless ff
+end
 
-  # 1. ff main → release branch, push origin (closes member PRs).
-  sh("git", "fetch", "origin", "--quiet")
-  step("git: ff main → #{rel_branch}")
-  sh("git", "checkout", "main")
-  sh("git", "pull", "origin", "main", "--quiet")
-  _, ff = sh("git", "merge", "--ff-only", rel_branch, capture: true)
-  abort!("main could not fast-forward to #{rel_branch} (it diverged) — rebase the RC") unless ff || DRY
-  sh("git", "push", "origin", "main")
+def push_origin_main(repo)
+  step("push origin main (#{repo})")
+  sh("git", "-C", repo_path(repo), "push", "origin", "main")
+end
 
-  # 2. Deploy to Heroku (prod).
-  step("deploy: git push #{HEROKU_REMOTE} main")
-  _, deployed = sh("git", "push", HEROKU_REMOTE, "main", capture: false)
-  abort!("Heroku deploy failed") unless deployed || DRY
+# The conductor's pre-prod test gate: run the registry `test_cmd` at the repo's
+# frozen SHA before the irreversible deploy; scoped-abort on red. repo_script
+# apps SELF-GATE (their own deploy runs tests) → no test_cmd → skipped.
+def test_gate(repo)
+  cmd = app_meta_for(repo)["test_cmd"].to_s
+  if cmd.empty?
+    step("test gate: #{repo} self-gates (no conductor test_cmd; its deploy runs tests) — skip")
+    return
+  end
 
-  # 3. Smoke.
-  step("smoke: GET #{PROD_URL}/up")
-  out, _ = sh("/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "#{PROD_URL}/up", capture: true)
-  say("  /up → #{out}") unless DRY
-  abort!("smoke failed (/up != 200)") if !DRY && out.strip != "200"
+  step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · before prod]")
+  return if DRY
 
-  # 4. Record: stamp deployed_sha + ship! + post release notes (one runner call so
-  #    `r` is in scope after ship!, since Release.current is nil once shipped).
-  sha, _ = sh("git", "rev-parse", "HEAD", capture: true)
-  sha = sha.strip
+  _, ok = sh(*cmd.split, chdir: repo_path(repo))
+  abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
+end
+
+# `bundle lock --update <gem>` with a bounded retry/backoff for RubyGems
+# propagation lag (a just-pushed version isn't always instantly resolvable).
+def bundle_lock(path, gem, attempts: 3)
+  delay = 5
+  attempts.times do |i|
+    step("bundle lock --update #{gem} (cd #{path}) [#{i + 1}/#{attempts}]")
+    _, ok = sh("bundle", "lock", "--update", gem, chdir: path)
+    return if ok
+    break if i == attempts - 1
+
+    say("  bundle lock failed — RubyGems may not have propagated #{gem} yet; retrying in #{delay}s")
+    sleep(delay)
+    delay *= 2
+  end
+  abort!("bundle lock --update #{gem} failed in #{path} after #{attempts} tries — re-run `bin/release ship` once RubyGems has propagated")
+end
+
+def checkout_branch(repo, branch)
+  _, ok = sh("git", "-C", repo_path(repo), "checkout", branch, capture: true)
+  abort!("could not checkout #{branch} in #{repo} for re-pin") unless ok
+end
+
+# Publish (or idempotently skip) one gem, then collapse its release → main at the
+# frozen SHA. Skip when the version is already LIVE; ABORT when it was yanked
+# (RubyGems forbids re-pushing). Records the gem as live for the partial report.
+def ship_gem(repo, version, frozen)
+  abort!("could not resolve a version for gem #{repo} — check #{repo}/#{gem_meta_for(repo)['version_file']}") if version.empty? && !DRY
+
+  if DRY
+    step("gem #{repo} #{version}: publish to RubyGems from #{short(frozen)} " \
+         "(skip if already live; ABORT if yanked) → tag v#{version} → ff #{repo} main → #{short(frozen)}")
+    return
+  end
+
+  remote = rubygems_versions(repo)
+  if !Release::ShipSequence.publish_needed?(version, remote)
+    say("  gem #{repo} #{version} already live on RubyGems — skip publish (idempotent)")
+  elsif Release::ShipSequence.yanked?(version, remote)
+    abort!("gem #{repo} #{version} is YANKED on RubyGems — bump #{gem_meta_for(repo)['version_file']} + re-run " \
+           "(RubyGems forbids re-pushing a yanked version)")
+  else
+    checkout_detached(repo, frozen) # build the artifact from the QA-frozen commit
+    publish_gem(repo, version)      # reused: release-check → build → push → tag
+  end
+  @ship_live << "gem #{repo} #{version} live on RubyGems"
+  ff_main_local(repo, frozen)
+  push_origin_main(repo)
+end
+
+# Auto-re-pin (D1): after ALL gems are live, before any app deploys, re-pin each
+# consumer's branch-ref'd gem line to the published `~> x.y` so prod builds
+# against the release, not a branch. Idempotent (already-pinned → no-op). One
+# pass per consumer; the re-pin commit ships on TOP of the frozen SHA (so only
+# frozen + the mechanical re-pin reach prod — guarded against un-QA'd drift).
+def repin_consumers(app_groups, published_gems, ship_sha)
+  return if published_gems.empty?
+
+  gem_names = published_gems.keys
+  step("auto-repin consumers of #{gem_names.join(', ')} → ~> x.y (after all gems live, before any deploy)")
+  app_groups.each do |group|
+    repo = group["repo"]
+    path = repo_path(repo)
+
+    if DRY
+      step("  #{repo}: re-pin any branch-ref'd published gem in Gemfile → bundle lock --update → " \
+           "commit + push origin #{RELEASE_BRANCH} (idempotent; no-op if already pinned)")
+      next
+    end
+
+    gemfile = File.join(path, "Gemfile")
+    next unless File.exist?(gemfile)
+
+    text    = File.read(gemfile)
+    pending = Release::ShipSequence.gems_to_repin(gem_names, text)
+    if pending.empty?
+      say("  #{repo}: Gemfile already pinned for #{gem_names.join(', ')} — no re-pin")
+      next
+    end
+
+    # The re-pin must build on the QA-frozen SHA: require origin/release == frozen
+    # so a post-prepare merge can't sneak out un-QA'd under cover of the re-pin.
+    head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+    abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
+    if head.strip != ship_sha[repo]
+      abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head.strip)}) drifted past the QA-frozen SHA " \
+             "(#{short(ship_sha[repo])}) — re-run `bin/release prepare` to re-QA before re-pinning")
+    end
+
+    checkout_branch(repo, RELEASE_BRANCH)
+    pending.each { |gem| text = Release::GemfileRepin.rewrite(text, gem, published_gems[gem]) }
+    File.write(gemfile, text)
+    pending.each { |gem| bundle_lock(path, gem) }
+
+    pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
+    sh("git", "-C", path, "add", "Gemfile", "Gemfile.lock")
+    _, committed = sh("git", "-C", path, "commit", "-m", "repin #{pins.join(', ')}", capture: true)
+    abort!("could not commit the re-pin in #{repo}") unless committed
+    _, pushed = sh("git", "-C", path, "push", "origin", RELEASE_BRANCH, capture: true)
+    abort!("could not push the re-pin to origin/#{RELEASE_BRANCH} in #{repo}") unless pushed
+
+    new_head, = git_capture("-C", path, "rev-parse", "HEAD")
+    ship_sha[repo] = new_head.strip # ship the re-pin commit (frozen + re-pin)
+    @ship_live << "re-pinned #{pins.join(', ')} in #{repo}"
+  end
+end
+
+# "What's already live" pre-flight (live-only reads): per repo, is the gem
+# version already on RubyGems / is the app's main already at the frozen SHA?
+# Informational — the single confirm follows. A dry-run prints the plan instead.
+def whats_live(repos, qa_shas)
+  return if DRY
+
+  say("")
+  say("  Pre-flight — what's already live:")
+  repos.each do |group|
+    repo = group["repo"]
+    if group["kind"] == "gem"
+      version = gem_version_for(repo, group)
+      live    = !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo))
+      say("    gem #{repo} #{version}: #{live ? 'LIVE on RubyGems — will skip' : 'not published — will publish'}")
+    else
+      frozen        = qa_shas[repo].to_s
+      main_sha, ok  = git_capture("-C", repo_path(repo), "rev-parse", "main")
+      at            = ok && !frozen.empty? && main_sha.strip == frozen
+      say("    app #{repo}: main #{at ? "already at #{short(frozen)}" : "will ff → #{short(frozen)}"}")
+    end
+  end
+end
+
+# Deploy one app to prod via its registry adapter. Common prelude: local ff main
+# → frozen, the test gate (scoped abort on red, BEFORE any push), then push
+# origin main. Then the strategy-specific mechanic + smoke policy.
+def deploy_app(group, frozen)
+  repo    = group["repo"]
+  path    = repo_path(repo)
+  adapter = group["prod_deploy"] || {}
+  handler =
+    begin
+      Release::ShipSequence.strategy_handler(adapter["strategy"])
+    rescue ArgumentError => e
+      abort!(e.message)
+    end
+
+  say("")
+  step("app #{repo} → prod via #{adapter['strategy']} @ frozen #{short(frozen)}")
+
+  ff_main_local(repo, frozen) # local only — a red test gate must leave origin clean
+  test_gate(repo)
+  push_origin_main(repo)
+
+  case handler
+  when :git_push_heroku
+    remote = adapter["remote"] || HEROKU_REMOTE
+    branch = adapter["branch"] || "main"
+    step("deploy: git -C #{repo} push #{remote} #{branch}")
+    _, ok = sh("git", "-C", path, "push", remote, branch, capture: false)
+    abort!("Heroku deploy failed for #{repo}") unless ok || DRY
+
+    smoke = adapter["smoke_url"].to_s
+    if smoke.empty?
+      say("  (no smoke_url for #{repo} — smoke skipped)")
+    else
+      step("smoke: GET #{smoke}/up")
+      code, = sh("/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "#{smoke}/up", capture: true)
+      say("  /up → #{code}") unless DRY
+      abort!("smoke failed for #{repo} (#{smoke}/up != 200)") if !DRY && code.strip != "200"
+    end
+  when :repo_script
+    command = adapter["command"].to_s
+    args    = Array(adapter["args"])
+    abort!("repo_script adapter for #{repo} has no `command`") if command.empty? && !DRY
+    step("deploy: (cd #{repo}) #{command} #{args.join(' ')} — repo owns its smoke + rollback")
+    _, ok = sh(command, *args, chdir: path)
+    abort!("#{repo} deploy script failed (#{command}) — its own rollback applies; fix + re-run `bin/release ship`") unless ok || DRY
+  end
+  @ship_live << "app #{repo} deployed to production"
+end
+
+# --- ship -------------------------------------------------------------------
+def ship
+  by = opt_value("--by") || ENV["USER"] || "operator"
+  @ship_live = [] # the "what's live this run" trail for the partial-ship report
+
+  say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+
+  # 1. Read the active release + its per-repo deploy plan + the QA-frozen SHAs.
+  #    A READ (read_only:) so a dry-run previews the real plan without mutating.
+  step("record (read-only): release + repo_plan + qa_shas")
+  result = conductor(
+    "r = Release.current; abort('no active release to ship') unless r; " \
+    "puts({slug: r.slug, state: r.state, branch: r.branch, " \
+    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {})}.to_json)",
+    read_only: true
+  )
+  abort!("no active release to ship") if result["slug"].to_s.empty?
+  rel_slug = result["slug"]
+  state    = result["state"]
+  repos    = result["repos"] || []
+  qa_shas  = result["qa_shas"] || {}
+  # Don't ship a candidate that hasn't been assembled + QA'd (the model would
+  # otherwise allow assembling→shipped, bypassing the QA gate).
+  abort!("release is '#{state}', not assembled — `bin/release prepare` + QA it first") if !DRY && state != "assembled"
+
+  gem_groups = repos.select { |g| g["kind"] == "gem" } # already producer-first
+  app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
+  say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
+  say("  partial-ship: abort on first failure; re-run resumes (gems skip, ff no-ops, re-pins idempotent)")
+
+  # The QA-frozen SHA to ship per repo (advanced by a re-pin commit in step 4).
+  ship_sha = {}
+  repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
+
+  # 2. "What's already live" pre-flight, then ONE confirm authorizing the whole
+  #    train — turf included (its bin/deploy keeps its own smoke + rollback).
+  whats_live(repos, qa_shas)
+  abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
+
+  # 3. Gems FIRST (producer-first): publish (skip-if-live / abort-if-yanked) + ff.
+  published_gems = {} # repo => version — every gem now live; consumers re-pin to these
+  gem_groups.each do |group|
+    repo    = group["repo"]
+    version = gem_version_for(repo, group)
+    ship_gem(repo, version, ship_sha[repo])
+    published_gems[repo] = version
+  end
+
+  # 4. Auto-re-pin consumers (after ALL gems live, before any app deploy).
+  repin_consumers(app_groups, published_gems, ship_sha)
+
+  # 5. Apps hub-first, then satellites: test gate → prod adapter.
+  app_groups.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
+
+  # 6. Record LAST — only after EVERY repo deployed, so a partial ship leaves the
+  #    record `assembled` (recoverable). Stamp the hub's shipped SHA + ship! +
+  #    post release notes in one runner call (Release.current is nil post-ship).
+  deployed_sha = ship_sha[APP].to_s
+  deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "HEAD").first.strip if deployed_sha.empty? && !DRY
   step("record: Release::Conductor.ship! + post_release_notes")
   shipped = conductor(
     "r = Release.current; " \
-    "Release::Conductor.ship!(release: r, deployed_sha: #{sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}); " \
+    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
     "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
   )
 
   say("")
-  say("🚀 Shipped #{rel_slug} → production (#{sha[0, 7]}).")
+  say("🚀 Shipped #{rel_slug} → production#{DRY ? ' (DRY RUN — nothing executed)' : " (#{short(deployed_sha)})"}.")
   say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
+rescue SystemExit => e
+  # Partial-ship recovery: abort! (Kernel#abort) raised SystemExit mid-train. The
+  # abort message already printed; add what's live + the idempotent re-run path.
+  raise if DRY # a dry-run abort (e.g. no active release) surfaces as-is
+
+  if @ship_live&.any?
+    warn("")
+    warn("✗ Ship ABORTED partway — the release is still 'assembled' (recoverable).")
+    warn("  Already live this run:")
+    @ship_live.each { |line| warn("    ✓ #{line}") }
+    warn("  Re-run `bin/release ship` to resume: published gems skip, fast-forwards no-op, re-pins are idempotent.")
+  end
+  exit(e.respond_to?(:status) && e.status ? e.status : 1)
 end
 
 # Guarded so the file can be `require`d (helper coverage) without dispatching.

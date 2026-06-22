@@ -63,6 +63,14 @@ class Release
       app_meta(repo)&.fetch("prod_deploy", nil)
     end
 
+    # The pre-prod test command an app's MERGED release branch must pass before
+    # the irreversible prod deploy (registry `test_cmd`), or nil when unset. The
+    # hub declares `bin/rails test`; satellites leave it unset because their own
+    # repo_script deploy (e.g. bin/deploy) runs their suite — see the YAML caveat.
+    def test_cmd(repo)
+      app_meta(repo)&.fetch("test_cmd", nil)
+    end
+
     # The qa-server key for an app — its optional `qa_deploy.app` override, else
     # the repo slug. Always returns a string for any repo (qa targets are keyed
     # by slug by default), so callers don't special-case the common case.

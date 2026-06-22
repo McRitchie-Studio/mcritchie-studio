@@ -109,4 +109,22 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "turf-monster", Release::Repos.qa_app("turf-monster")
     assert_equal "mcritchie-studio", Release::Repos.qa_app("mcritchie-studio")
   end
+
+  # --- test_cmd: the conductor's pre-prod gate ---
+
+  test "test_cmd returns the hub's pre-prod gate command" do
+    assert_equal "bin/rails test", Release::Repos.test_cmd("mcritchie-studio")
+  end
+
+  test "test_cmd is nil for a self-gating repo_script satellite" do
+    # Satellites run their own suite in bin/deploy, so they leave test_cmd unset
+    # (the conductor skips the gate) to avoid double-testing.
+    assert_nil Release::Repos.test_cmd("turf-monster")
+    assert_nil Release::Repos.test_cmd("tax-studio")
+  end
+
+  test "test_cmd is nil for a gem or an unknown repo" do
+    assert_nil Release::Repos.test_cmd("studio-engine")
+    assert_nil Release::Repos.test_cmd("not-a-real-repo")
+  end
 end
