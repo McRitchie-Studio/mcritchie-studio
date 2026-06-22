@@ -39,10 +39,6 @@ module LinkTreeHelper
 
   def admin_link_sections
     [
-      { title: "On-chain", links: [
-        { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", hover_emoji: "✍️", featured: true,
-          desc: "Keyless multisig — build, sign in your own Phantom, broadcast. Durable-nonce ready." },
-      ] },
       { title: "Site", links: [
         { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", hover_emoji: "🔬", desc: "Users + request logs" },
         { label: "Theme", href: admin_theme_path, emoji: "🎨", hover_emoji: "🌓", desc: "Palette + dark mode" },
@@ -50,10 +46,13 @@ module LinkTreeHelper
         { label: "Email images", href: admin_email_images_path, emoji: "🖼️", hover_emoji: "✉️", desc: "Manage transactional email banners" },
       ] },
       { title: "Ops", links: [
-        { label: "DevOps", href: devops_path, emoji: "🚦", hover_emoji: "🛠️", desc: "Apps, test suites, and deploy checks" },
         { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },
         { label: "Toast test", href: toast_test_path, emoji: "🔔", hover_emoji: "✨", desc: "Notification harness" },
         { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", hover_emoji: "🔐", desc: "OAuth handshake" },
+      ] },
+      { title: "On-chain", links: [
+        { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", hover_emoji: "✍️", featured: true,
+          desc: "Keyless multisig — build, sign in your own Phantom, broadcast. Durable-nonce ready." },
       ] },
       { title: "Data", links: [
         { label: "AI Builder Multiple", href: admin_ai_builder_multiple_path, emoji: "📈", hover_emoji: "🤖", desc: "GitHub public commit pace backtest" },
@@ -66,7 +65,7 @@ module LinkTreeHelper
 
   def sidebar_link_sections
     sections = public_link_sections
-    sections + (admin? ? admin_link_sections.map { |section| section.merge(admin: true) } : [])
+    admin? ? admin_link_sections.map { |section| section.merge(admin: true) } + sections : sections
   end
 
   private

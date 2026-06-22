@@ -132,20 +132,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select %(a[href="#{admin_dashboard_path}"]), count: 0
   end
 
-  test "index shows DevOps Cycle link for admins" do
+  test "board pages omit removed DevOps Cycle link for admins" do
     log_in_as(@admin)
 
-    get tasks_path
-
-    assert_response :success
-    assert_select "a[href=?]", devops_cycle_path, text: "DevOps Cycle"
-  end
-
-  test "index hides DevOps Cycle link from non-admins" do
-    get tasks_path
-
-    assert_response :success
-    assert_select "a[href=?]", devops_cycle_path, count: 0
+    [tasks_path, deployments_path, stages_path].each do |page|
+      get page
+      assert_response :success
+      assert_select "a", text: "DevOps Cycle", count: 0
+      assert_select "a", text: "Full SOP ↗", count: 0
+    end
   end
 
   test "index renders latest task feedback on cards" do

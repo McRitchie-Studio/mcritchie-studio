@@ -52,7 +52,7 @@ rails_dev = Skill.create!(name: "Rails Development", slug: "rails-development", 
 SkillAssignment.create!(agent_slug: "alex", skill_slug: "rails-development")
 SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 
-# Tasks in different stages
+# Tasks in different workflow stages
 Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "alex")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", queued_at: 1.day.ago, started_at: 2.hours.ago)
 Task.create!(title: "Deploy v2.0", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "alex", queued_at: 3.days.ago, started_at: 2.days.ago)

@@ -19,10 +19,11 @@ test.describe("QA read-only smoke @qa-readonly", () => {
     await expect(page.locator("body")).toContainText("Tasks");
   });
 
-  test("devops route stays auth-gated @qa-readonly", async ({ page }) => {
-    const response = await page.goto("/devops");
-    expect(response.ok()).toBe(true);
-    await expect(page).toHaveURL(/\/(login|signin)$/);
-    await expect(page.locator('input[name="email"]')).toBeVisible();
+  test("devops routes are removed @qa-readonly", async ({ request }) => {
+    const response = await request.get("/devops");
+    expect(response.status()).toBe(404);
+
+    const cycle = await request.get("/devops/cycle");
+    expect(cycle.status()).toBe(404);
   });
 });

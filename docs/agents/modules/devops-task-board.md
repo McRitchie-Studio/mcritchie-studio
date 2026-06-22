@@ -403,10 +403,9 @@ confirms the PR was merged or intentionally abandoned.
 
 ## Test Suite Catalog
 
-The `/devops` page and `bin/devops-tests` read
-`config/devops_test_suites.yml`. They show the local, QA, devnet, and
-production checks for each managed app, including lane, trigger, whether each
-suite blocks PR merge, and whether it mutates data.
+`bin/devops-tests` reads `config/devops_test_suites.yml` and shows the local,
+QA, devnet, and production checks for each managed app, including lane, trigger,
+whether each suite blocks PR merge, and whether it mutates data.
 
 Add or update this catalog whenever a new app joins the managed stack, a test
 genre changes, or a deploy smoke command changes.

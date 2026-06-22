@@ -120,7 +120,7 @@
           "worktree_slug": "release-accepted-qa",
           "repositories": ["mcritchie-studio", "turf-monster"],
           "risk_tags": ["deploy"],
-          "qa_url": "https://qa.mcritchie.studio/devops",
+          "qa_url": "https://qa.mcritchie.studio/deployments",
           "acceptance": ["Production deploy is explicitly approved"],
           "test_plan": ["production smoke"],
           "checks_run": ["QA accepted by Mr. McRitchie"]

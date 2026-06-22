@@ -27,10 +27,6 @@ Rails.application.routes.draw do
   get "e/c/:token", to: "email_tracking#click", as: :email_click
 
   get "dashboard", to: "dashboard#index"
-  get "devops", to: "devops#index", as: :devops
-  # In-app DevOps cycle SOP viewer — self-contained page (own html/style),
-  # rendered with layout: false. Admin-gated via DevopsController.
-  get "devops/cycle", to: "devops#cycle", as: :devops_cycle
   # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
   # current-release module), /stages is the two-workflow stage guide. All three
   # are public-read like /tasks (mutations stay admin-gated in TasksController).

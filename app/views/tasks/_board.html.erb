@@ -205,11 +205,6 @@ function kanbanBoard() {
         </button>
       <% end %>
 
-      <% if admin? %>
-        <%= link_to "DevOps Cycle", devops_cycle_path,
-              class: "px-3 py-2 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading" %>
-      <% end %>
-
       <% if logged_in? %>
         <%= link_to "New Task", new_task_path, class: "btn btn-primary" %>
       <% end %>
