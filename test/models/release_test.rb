@@ -171,4 +171,32 @@ class ReleaseTest < ActiveSupport::TestCase
     designed = Task.create!(title: "Not reviewed yet") # stage: designed
     assert_raises(ArgumentError) { rel.add(designed) }
   end
+
+  # --- last_shipped (the board's "Last Release" section) ---
+
+  test "last_shipped returns the most recently shipped, ignoring active releases" do
+    older = Release.open!
+    older.ship!
+    older.update_column(:shipped_at, 2.days.ago)
+
+    newer = Release.open!
+    newer.ship!
+    newer.update_column(:shipped_at, 1.hour.ago)
+
+    active = Release.open! # assembling — not shipped
+
+    assert_equal newer, Release.last_shipped, "returns the most-recent shipped release"
+    assert_not_equal active, Release.last_shipped, "never returns an active release"
+  end
+
+  test "last_shipped is nil when nothing has shipped" do
+    Release.open! # assembling only
+    assert_nil Release.last_shipped
+  end
+
+  test "current is nil when no active release exists" do
+    assert_nil Release.current, "nil with no releases at all"
+    Release.open!.ship!
+    assert_nil Release.current, "a shipped release is not current"
+  end
 end

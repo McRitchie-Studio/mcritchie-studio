@@ -32,7 +32,10 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "💎" # studio-engine
   end
 
-  test "current-release member pills show app emojis in place of the stage badge" do
+  test "last-release member pills show app emojis in place of the stage badge" do
+    # A shipped release surfaces in the read-only Last Release section (not as
+    # "Current" — that is reserved for the active release). Member pills render
+    # the same way in both sections.
     member = Task.create!(
       title: "release member pill task",
       stage: "reviewed",
@@ -46,7 +49,7 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    assert_select "#current-release" do
+    assert_select "#last-release" do
       assert_select "a[href=?]", task_path(member.slug) do
         # Feature 2: app emojis ride the pill...
         assert_select "span[title=?]", "mcritchie-studio, studio-engine"
