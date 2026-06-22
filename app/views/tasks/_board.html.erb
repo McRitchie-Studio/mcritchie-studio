@@ -3,9 +3,11 @@
       stages          — array of stage keys to render as columns
       title           — header heading
       archived:       — show the Archived toggle + a toggle-hidden archived column
-      current_release — render the current-release module above the board when present %>
+      current_release — render the current-release module above the board when present
+      last_release    — most-recent shipped release, rendered read-only beneath current %>
 <% archived = local_assigns.fetch(:archived, false) %>
 <% current_release = local_assigns.fetch(:current_release, nil) %>
+<% last_release = local_assigns.fetch(:last_release, nil) %>
 <% columns = archived ? (stages + ["archived"]) : stages %>
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 
@@ -211,9 +213,10 @@ function kanbanBoard() {
     </div>
   </div>
 
-  <% if current_release %>
-    <!-- Current Release -->
+  <% if current_release || last_release %>
+    <!-- Current Release (with empty state) + Last Release (read-only history) -->
     <%= render "current_release" %>
+    <%= render "last_release" %>
   <% end %>
 
   <!-- Kanban Board -->

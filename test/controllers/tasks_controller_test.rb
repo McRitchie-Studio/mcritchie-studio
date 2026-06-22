@@ -78,6 +78,56 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#current-release", count: 0
+    assert_select "#last-release", count: 0
+  end
+
+  test "deployments shows a Last Release section + Current empty state when nothing is active" do
+    Release.delete_all
+    shipped = Release.open!(branch: "release/last-test",
+                            qa_url: "https://qa.example/last",
+                            deployed_sha: "9999abcdef000")
+    @new_task.update!(stage: "reviewed")
+    shipped.add(@new_task)
+    shipped.assemble!
+    shipped.ship!
+
+    get deployments_path
+    assert_response :success
+
+    # No active release → Current shows the muted empty state + kickoff chip,
+    # NOT the shipped release dressed up as "current".
+    assert_select "#current-release", text: /none active/
+    assert_select "#current-release", text: /Build and Deploy QA Release/ # kickoff chip
+    assert_select "#current-release", { text: /#{Regexp.escape(shipped.slug)}/, count: 0 },
+                  "shipped release must NOT appear under Current"
+
+    # The shipped release lives in the read-only Last Release section.
+    assert_select "#last-release"
+    assert_select "#last-release", text: /Last Release/
+    assert_select "#last-release", text: /#{Regexp.escape(shipped.slug)}/
+    assert_select "#last-release", text: /shipped/ # state badge
+    assert_select "#last-release a[href=?]", task_path(@new_task.slug) # member chip
+    assert_select "#last-release a[href=?]", "https://qa.example/last" # QA link
+    assert_includes response.body, "9999abc" # deployed SHA (7-char)
+  end
+
+  test "deployments renders Current (active) and Last (shipped) as distinct sections" do
+    Release.delete_all
+    shipped = Release.open!(branch: "release/shipped-distinct")
+    shipped.ship!
+    active = Release.open!(branch: "release/active-distinct")
+    @new_task.update!(stage: "reviewed")
+    active.add(@new_task)
+
+    get deployments_path
+    assert_response :success
+
+    # Current = the active in-progress release only.
+    assert_select "#current-release", text: /#{Regexp.escape(active.slug)}/
+    assert_select "#current-release", { text: /#{Regexp.escape(shipped.slug)}/, count: 0 }
+    # Last = the most-recent shipped release only.
+    assert_select "#last-release", text: /#{Regexp.escape(shipped.slug)}/
+    assert_select "#last-release", { text: /#{Regexp.escape(active.slug)}/, count: 0 }
   end
 
   test "tasks board shows only the Build-lane columns and no release module" do

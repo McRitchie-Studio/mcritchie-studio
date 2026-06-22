@@ -27,7 +27,8 @@ class TasksController < ApplicationController
   # shipped, led by the current-release module.
   def deployments
     load_board
-    @current_release = Release.featured
+    @current_release = Release.current
+    @last_release = Release.last_shipped
   end
 
   # /stages — the two-workflow stage guide (vertical swimlanes, side by side).

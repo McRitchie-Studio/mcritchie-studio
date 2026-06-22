@@ -36,10 +36,9 @@ class Release < ApplicationRecord
     active.order(created_at: :desc).first
   end
 
-  # The release to feature on the board: the active one if any, else the most
-  # recently shipped (so the header always reflects the latest release).
-  def self.featured
-    current || where(state: "shipped").order(Arel.sql("COALESCE(shipped_at, created_at) DESC")).first
+  # The most recently shipped release (for the board's "Last Release" section).
+  def self.last_shipped
+    where(state: "shipped").order(Arel.sql("COALESCE(shipped_at, created_at) DESC")).first
   end
 
   # Open a new release candidate. Raises (singleton validation) if one is active.
