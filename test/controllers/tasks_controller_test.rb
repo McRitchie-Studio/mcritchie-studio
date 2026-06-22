@@ -46,29 +46,34 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release", text: /Build and Deploy QA Release/
   end
 
-  test "deploy-target chip renders on board cards and in the current-release module" do
-    gem_task = @new_task
-    gem_task.update!(stage: "reviewed",
-                     metadata: { "devops" => { "kind" => "feature", "shape" => "library",
-                                               "repositories" => ["studio-engine"] } })
-    app_task = @queued_task
-    app_task.update!(stage: "reviewed",
-                     metadata: { "devops" => { "kind" => "feature", "repositories" => ["turf-monster"] } })
+  test "board header toggle shows building / reviewed / assembled count badges" do
+    # Counts are global (load_board groups every stage), so derive the expected
+    # numbers the same way the view does — robust to whatever the fixtures hold.
+    3.times { |i| Task.create!(title: "fresh building #{i}", stage: "building") }
+    Task.create!(title: "fresh reviewed task", stage: "reviewed")
+    2.times { |i| Task.create!(title: "fresh assembled #{i}", stage: "assembled") }
 
-    rel = Release.open!(branch: "release/chip-test")
-    rel.add(gem_task)
-    rel.add(app_task)
-    rel.assemble!
+    building  = Task.where(stage: "building").count
+    reviewed  = Task.where(stage: "reviewed").count
+    assembled = Task.where(stage: "assembled").count
 
-    get deployments_path
+    get tasks_path
     assert_response :success
 
-    # board cards carry the deploy-target chip next to the 💎 gem badge
-    assert_select "#card-#{gem_task.slug}", text: /publish/
-    assert_select "#card-#{app_task.slug}", text: /turf-monster → QA/
-    # the current-release member pills carry the same chip
-    assert_select "#current-release", text: /publish/
-    assert_select "#current-release", text: /turf-monster → QA/
+    assert_select %(nav[aria-label="Board views"]) do
+      assert_select %(a[href="#{tasks_path}"]), { minimum: 1 }
+      assert_select %(a[href="#{deployments_path}"]), { minimum: 1 }
+      # Tasks toggle → building; Deployments toggle → reviewed + assembled.
+      assert_select %(span[title="#{building} building"]), text: building.to_s
+      assert_select %(span[title="#{reviewed} reviewed"]), text: reviewed.to_s
+      assert_select %(span[title="#{assembled} assembled"]), text: assembled.to_s
+    end
+  end
+
+  test "board header omits the removed All Agents agent filter" do
+    get tasks_path
+    assert_response :success
+    assert_not_includes response.body, "All Agents"
   end
 
   test "deployments omits the release header when there is no release" do

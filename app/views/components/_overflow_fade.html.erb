@@ -1,0 +1,30 @@
+<%# components/_overflow_fade — single-line text that fades at its overflowing
+    edge (mask-image, mirroring the turf-monster nav) and, when scroll_when is a
+    truthy Alpine expression, slides to its end while that holds and snaps back
+    when it clears. When the text already fits its box, fade and scroll are both
+    no-ops.
+
+    Locals:
+      text        (required) the string to render
+      class:      (optional) typography / colour classes for the text
+      scroll_when (optional) an Alpine expression evaluated in the surrounding
+                  scope (e.g. hovered). Omit for a static fade with no scroll. %>
+<% text        = local_assigns.fetch(:text) %>
+<% text_class  = local_assigns.fetch(:class, "") %>
+<% scroll_when = local_assigns.fetch(:scroll_when, "false").to_s.presence || "false" %>
+<div class="relative overflow-hidden min-w-0"
+     x-data="{
+       overflows: false,
+       fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)',
+       fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)',
+       measure() { this.overflows = this.$refs.fadeInner.scrollWidth > this.$el.clientWidth + 1 }
+     }"
+     x-init="$nextTick(() => measure())"
+     @resize.window.debounce.150ms="measure()"
+     :style="!overflows ? '' : ((<%= scroll_when %>) ? fadeLeft : fadeRight)">
+  <span x-ref="fadeInner"
+        class="inline-block whitespace-nowrap will-change-transform transition-transform duration-[1100ms] ease-linear <%= text_class %>"
+        :style="(overflows && (<%= scroll_when %>)) ? ('transform: translateX(-' + ($refs.fadeInner.scrollWidth - $el.parentElement.clientWidth) + 'px)') : 'transform: translateX(0)'">
+    <%= text %>
+  </span>
+</div>

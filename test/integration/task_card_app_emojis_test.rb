@@ -1,10 +1,11 @@
 require "test_helper"
 
 # Component tier (ui-only shape): render the real board + current-release
-# partials through their controllers and assert the new app-emoji indicators,
-# the single-line title, and the slug row.
+# partials through their controllers and assert the polished card behaviour —
+# the full-width overflow-fade title, the data-driven app emoji, the footer
+# actions, the whole-card click target, and the removal of the → QA chip.
 class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
-  test "kanban card renders a single-line title and a slug row with affected-app emojis" do
+  test "kanban card: full-width title link, app emojis, footer actions, click target" do
     task = Task.create!(
       title: "board card title sample",
       stage: "building",
@@ -15,27 +16,34 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#card-#{task.slug}" do
-      # Feature 1: the title is a single-line truncate, no longer a 2-line clamp.
+      # Feature 6: the whole card is the click target (carries its destination).
+      assert_select "[data-href=?]", task_path(task.slug)
+
+      # Feature 1: the title is a single-line link carrying the task title (it
+      # wraps the overflow-fade component instead of a 2-line clamp).
       assert_select "a[href=?]", task_path(task.slug) do |links|
-        klass = links.first["class"].to_s
-        assert_includes klass, "truncate"
-        assert_not_includes klass, "line-clamp-2"
+        assert links.first.text.include?(task.title), "title link should carry the task title"
       end
 
-      # Feature 3: the slug is shown, with the affected-app emojis grouped under
-      # a title attribute listing the repos.
+      # Slug row: the slug shows with the affected-app emojis grouped under a
+      # title attribute listing the repos.
       assert_select "code", text: task.slug
       assert_select "span[title=?]", "mcritchie-studio, studio-engine"
+
+      # Feature 2: archive + delete moved to footer buttons (building shows both).
+      assert_select "button[title=?]", "Archive"
+      assert_select "button[title=?]", "Delete"
     end
 
-    assert_includes response.body, "🧰" # mcritchie-studio
+    # Feature 4: the data-driven app emoji for mcritchie-studio is the new glyph.
+    assert_includes response.body, "🪎" # mcritchie-studio
     assert_includes response.body, "💎" # studio-engine
+    refute_includes response.body, "🧰" # the old mcritchie-studio glyph is gone
   end
 
-  test "last-release member pills show app emojis in place of the stage badge" do
-    # A shipped release surfaces in the read-only Last Release section (not as
-    # "Current" — that is reserved for the active release). Member pills render
-    # the same way in both sections.
+  test "release member pills show app emojis and no deploy-target chip" do
+    # A shipped release surfaces in the read-only Last Release section; member
+    # pills render the same way there as in the Current section.
     member = Task.create!(
       title: "release member pill task",
       stage: "reviewed",
@@ -51,13 +59,12 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
 
     assert_select "#last-release" do
       assert_select "a[href=?]", task_path(member.slug) do
-        # Feature 2: app emojis ride the pill...
+        # Feature 5: app emojis ride the pill, and there is no bold chip — neither
+        # the old stage badge ("Shipped") nor the removed deploy-target ("→ QA").
         assert_select "span[title=?]", "mcritchie-studio, studio-engine"
-        # ...the old bold STAGE badge ("Shipped") is gone; the one bold chip on
-        # the pill now is the deploy-target indicator, not a stage label.
-        assert_select "span.font-bold", text: "mcritchie-studio → QA"
-        assert_select "span.font-bold", { text: /shipped/i, count: 0 }
+        assert_select "span.font-bold", false
       end
     end
+    refute_includes response.body, "→ QA"
   end
 end

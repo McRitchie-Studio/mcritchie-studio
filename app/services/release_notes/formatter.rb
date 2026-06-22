@@ -2,7 +2,7 @@ module ReleaseNotes
   class Formatter
     PRODUCTION_TASK_BASE_URL = "https://mcritchie.studio/tasks".freeze
     APP_GROUPS = [
-      { key: "mcritchie-studio", label: "McRitchie Studio", emoji: "🧰", aliases: ["mcritchie-studio"] },
+      { key: "mcritchie-studio", label: "McRitchie Studio", emoji: "🪎", aliases: ["mcritchie-studio"] },
       { key: "turf-monster", label: "Turf Monster", emoji: "🐊", aliases: ["turf-monster"] },
       { key: "studio-engine", label: "Studio Engine", emoji: "💎", aliases: ["studio-engine"] },
       { key: "vault", label: "Vault", emoji: "🏛️", aliases: ["turf-vault", "vault"] },
