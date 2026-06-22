@@ -3,17 +3,19 @@
 > **Status:** approved model, landing incrementally. The **two-workflow task
 > status model is now live** — `Task` stages are
 > `designed → building → submitted` (Build) and
-> `submitted → reviewed → assembled → shipped` (Deploy) — meeting at the
-> `submitted` seam — plus `blocked` (side) and
-> `archived` (terminal). `bin/task`, `bin/dor-check`, and the board speak it.
+> `submitted → reviewed → assembled → shipped → archived` (Deploy — the
+> `shipped → archived` archive loop closes it, §1.4) — meeting at the
+> `submitted` seam — plus `blocked` (side) and `archived` (terminal).
+> `bin/task`, `bin/dor-check`, and the board speak it.
 >
-> **Landed since:** the `Release` singleton model, and the persistent-`release`
-> branch CLI — `bin/release init|merge|prepare|ship` (§1.1).
+> **Landed since:** the `Release` singleton model; the persistent-`release`
+> branch CLI — `bin/release init|merge|prepare|ship` (§1.1); and
+> `bin/agent-worktree`'s release-aware base default — `new` cuts the feature
+> branch from `origin/release` (falling back to `origin/main` where no `release`
+> branch exists) and `finish --pr` opens the PR with `--base release`.
 >
-> **Still to land (each its own task):** flipping `bin/agent-worktree`'s
-> automatic PR `--base` default from `main` to `release` (until then, branch from
-> `origin/release` and pass `--base release` explicitly); migrating the heartbeat
-> planner `bin/devops-cycle` from the old stage names to the new ones (it is
+> **Still to land (each its own task):** migrating the heartbeat planner
+> `bin/devops-cycle` from the old stage names to the new ones (it is
 > self-consistent on the legacy snapshot today); **multi-repo `ship`** — the
 > per-repo app deploy across satellites (+ gem auto-repin + partial-ship +
 > `test_cmd` gate); `bin/release ship` today publishes gems then deploys
@@ -79,10 +81,10 @@ so there is no per-task QA stage; the one operator gate is a single OK on the RC
 
 ```
 WORKFLOW 1 · Build (feature agent)         WORKFLOW 2 · Deploy (DevOps · Release model)
-designed → building → submitted ─────────► submitted → reviewed → assembled → shipped
-               ▲         │                  (review)   (approved) (merged RC,  ("run the
-               └ blocked ┘                                         e2e green,   deployment"
-                 (rework / env / dep)                              QA-deployed)  → prod)
+designed → building → submitted ─────────► submitted → reviewed → assembled → shipped → archived
+               ▲         │                  (review)   (approved) (merged RC,  ("run the    (archive
+               └ blocked ┘                                         e2e green,   deployment" loop,
+                 (rework / env / dep)                              QA-deployed)  → prod)    §1.4)
 ```
 
 `blocked` is the single "not in the pipeline's court" state — an agent hit a
