@@ -160,24 +160,56 @@ def tier_satisfied?(checks, tier)
   checks.any? { |line| line.to_s =~ /\A\s*\[\s*#{Regexp.escape(tier)}\s*[\]:]/i }
 end
 
-# Files changed on this branch vs the diff base. Tests inject a deterministic
-# list via DOR_CHECK_CHANGED_FILES (newline/comma separated; empty string = no
-# diff); otherwise we read the branch's committed diff against DOR_CHECK_DIFF_BASE
-# (default origin/main). If git can't answer (no repo, base unfetched), return []
-# — we only ever ADD enforcement when a code diff is positively known, never on a
-# guess, so a weird git state can't false-block an otherwise-exempt chore.
+# Files changed on this branch — the FULL working-tree diff, so the code-diff
+# chore gate fires whether dor-check runs BEFORE the feature commit (the SOP
+# order: dor-check → fix → commit) or after it. Tests inject a deterministic list
+# via DOR_CHECK_CHANGED_FILES (newline/comma separated; empty string = no diff),
+# which stays authoritative when set.
+#
+# Otherwise we union four git views, de-duped:
+#   * uncommitted, base-independent (a positive signal — these gate even pre-commit):
+#       staged    git diff --cached --name-only
+#       unstaged  git diff --name-only
+#       untracked git ls-files --others --exclude-standard
+#   * committed against DOR_CHECK_DIFF_BASE (default origin/main): git diff <base>...HEAD
+#     — best-effort; the base can be unfetched on a branch cut off `release`, which
+#     is fine, the working-tree views above don't depend on it.
+# Run dir is overridable via DOR_CHECK_DIFF_ROOT (default ROOT) for deterministic
+# tests against a temp repo. If git can't read the working tree at all (no repo),
+# we default to exempt WITH a warning — we only ever ADD enforcement on a
+# positively-known code diff, never on a guess, so a weird git state can't
+# false-block an otherwise-exempt chore.
 def changed_files
   if ENV.key?("DOR_CHECK_CHANGED_FILES")
     return ENV["DOR_CHECK_CHANGED_FILES"].to_s.split(/[\n,]/).map(&:strip).reject(&:empty?)
   end
 
+  root = ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT)
   base = ENV.fetch("DOR_CHECK_DIFF_BASE", "origin/main")
-  out = IO.popen(["git", "-C", ROOT, "diff", "--name-only", "#{base}...HEAD"], err: File::NULL, &:read)
-  return out.to_s.split("\n").map(&:strip).reject(&:empty?) if $?.success?
+  files = []
 
-  # Git couldn't answer (no repo, or base unfetched). Default to exempt, but say
-  # so — otherwise the code-diff chore gate is silently skipped with no signal.
-  warn!("dor-check: couldn't diff against #{base}; code-diff chore gate skipped this run (defaulting to exempt) — fetch #{base} to enable it")
+  # Working-tree views: base-independent, so they catch the pre-commit SOP case.
+  worktree_ok = true
+  [
+    %w[diff --cached --name-only],
+    %w[diff --name-only],
+    %w[ls-files --others --exclude-standard]
+  ].each do |args|
+    out = IO.popen(["git", "-C", root, *args], err: File::NULL, &:read)
+    $?.success? ? files.concat(out.to_s.split("\n")) : (worktree_ok = false)
+  end
+
+  # Committed view: catches a post-commit run (change already in HEAD). The base
+  # may be unfetched on a release-cut branch — best-effort, never fatal.
+  committed = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base}...HEAD"], err: File::NULL, &:read)
+  files.concat(committed.to_s.split("\n")) if $?.success?
+
+  files = files.map(&:strip).reject(&:empty?).uniq
+  return files unless files.empty?
+
+  # Nothing detected. Only warn+default-to-exempt when git itself couldn't read
+  # the working tree (no repo) — a genuinely clean tree is just an empty diff.
+  warn!("dor-check: couldn't read the git working tree at #{root}; code-diff chore gate skipped this run (defaulting to exempt)") unless worktree_ok
   []
 rescue SystemCallError
   warn!("dor-check: git unavailable; code-diff chore gate skipped this run (defaulting to exempt)")
