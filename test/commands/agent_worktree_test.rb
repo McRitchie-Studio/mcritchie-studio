@@ -86,6 +86,38 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal "https://mcritchie.studio/tasks/task-snapshot", record.fetch("task_url")
   end
 
+  test "snapshot base ref falls back to origin/main without a release branch" do
+    registry_path = File.join(@projects_dir, ".agents", "registry-fallback.json")
+
+    out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write", env: { "AGENT_WORKTREE_REGISTRY" => registry_path })
+
+    assert status.success?, err
+    record = snapshot_record(registry_path)
+    assert_equal "origin/main", record.fetch("base_ref")
+    assert_equal "main", record.fetch("base_branch")
+    assert_equal "0", record.fetch("behind_origin_main")
+    assert_equal "1", record.fetch("ahead_origin_main")
+    assert_match %r{/compare/main\.\.\.}, record.fetch("compare_url")
+  end
+
+  test "snapshot reckons ahead/behind and base against origin/release when present" do
+    register_release_ref_ahead_of_main
+    registry_path = File.join(@projects_dir, ".agents", "registry-release.json")
+
+    out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write", env: { "AGENT_WORKTREE_REGISTRY" => registry_path })
+
+    assert status.success?, err
+    record = snapshot_record(registry_path)
+    assert_equal "origin/release", record.fetch("base_ref")
+    assert_equal "release", record.fetch("base_branch")
+    # Feature branch carries its own commit (ahead) and is missing the
+    # release-only commit (behind) — reckoned against release, not main.
+    assert_equal "1", record.fetch("ahead_origin_main")
+    assert_equal "1", record.fetch("behind_origin_main")
+    assert_equal false, record.fetch("merged_to_origin_main")
+    assert_match %r{/compare/release\.\.\.}, record.fetch("compare_url")
+  end
+
   test "finish push pr blocks without a bound production task" do
     out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
 
@@ -153,6 +185,29 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   def git!(dir, *args)
     out, err, status = Open3.capture3("git", *args, chdir: dir)
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
+  end
+
+  # Register refs/remotes/origin/release one commit ahead of main (a release-only
+  # commit the feature branch does not carry) without disturbing the feature
+  # worktree, so base resolution + ahead/behind can be exercised against release.
+  def register_release_ref_ahead_of_main
+    build_dir = File.join(@projects_dir, "release-build")
+    git!(@hub_dir, "worktree", "add", "-b", "release-build", build_dir, "main")
+    git!(build_dir, "config", "user.email", "agent-test@example.com")
+    git!(build_dir, "config", "user.name", "Agent Test")
+    File.write(File.join(build_dir, "release.txt"), "release\n")
+    git!(build_dir, "add", "release.txt")
+    git!(build_dir, "commit", "-m", "Release-only commit")
+    sha, _err, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: build_dir)
+    assert status.success?, "could not resolve release-build HEAD"
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/release", sha.strip)
+    git!(@hub_dir, "worktree", "remove", build_dir, "--force")
+    git!(@hub_dir, "branch", "-D", "release-build")
+  end
+
+  def snapshot_record(registry_path)
+    registry = JSON.parse(File.read(registry_path))
+    registry.fetch("worktrees").find { |item| item.fetch("task") == @task }
   end
 
   def command_env(extra = {})
