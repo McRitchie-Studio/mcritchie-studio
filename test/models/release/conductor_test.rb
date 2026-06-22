@@ -338,6 +338,18 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal({ "mcritchie-studio" => "abc1234", "turf-monster" => "def5678" }, rel.reload.metadata["qa_shas"])
   end
 
+  test "record_qa_shas persists GEM repo keys too, not just apps (Fix-1 freeze)" do
+    # prepare now freezes a gem's origin/release HEAD into qa_shas alongside apps,
+    # so the record must round-trip a gem repo key the same way (ship then reads it
+    # back via Release::ShipSequence.frozen_sha instead of falling back live).
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_shas(release: rel,
+                                      shas: { "studio-engine" => "eng1234", "mcritchie-studio" => "hub5678" })
+
+    assert_equal({ "studio-engine" => "eng1234", "mcritchie-studio" => "hub5678" }, rel.reload.metadata["qa_shas"])
+    assert_equal "eng1234", Release::ShipSequence.frozen_sha(rel.metadata["qa_shas"], "studio-engine")
+  end
+
   # --- post_release_notes (reuses ReleaseNotes::Formatter + DiscordClient) ---
 
   def shipped_release

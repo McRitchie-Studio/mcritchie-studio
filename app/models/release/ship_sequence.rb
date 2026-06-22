@@ -7,11 +7,12 @@ class Release
   # bin/release and ALL the sequencing/version/ordering decisions stay here, unit
   # tested. (bin/release `require`s this file directly — it has no Rails deps.)
   #
-  # The four decisions a multi-repo ship turns on:
+  # The five decisions a multi-repo ship turns on:
   #   * which prod-deploy adapter handles a repo            (strategy_handler)
   #   * the hub-before-satellites app order                 (ordered_app_groups)
   #   * which of a consumer's gems still need re-pinning     (gems_to_repin)
   #   * whether a gem version must still be published        (publish_needed?)
+  #   * the QA-frozen SHA to ship for a repo (or fall back)  (frozen_sha)
   module ShipSequence
     module_function
 
@@ -65,6 +66,21 @@ class Release
     # fails closed at `gem push`, so there is no listing-based yanked? check.
     def publish_needed?(version, remote_versions)
       !live_numbers(remote_versions).include?(version.to_s)
+    end
+
+    # The QA-frozen SHA to ship for `repo` — the value `bin/release prepare`
+    # recorded under release.metadata["qa_shas"] (apps AND gems both freeze their
+    # origin/release HEAD there). Returns the frozen SHA string when present, or
+    # nil to SIGNAL the caller to fall back to resolving origin/release HEAD live
+    # — for a repo absent from qa_shas, or one prepared before SHA recording. Pure:
+    # the live git fallback stays in bin/release's frozen_sha_for, which delegates
+    # this decision here so the shell keeps no branching of its own. A blank
+    # recorded value reads as absent (fall back). Accepts string- or symbol-keyed
+    # qa_shas (the CLI passes JSON string keys; the record side may use symbols).
+    def frozen_sha(qa_shas, repo)
+      shas = qa_shas || {}
+      sha = (shas[repo] || shas[repo.to_s] || shas[repo.to_sym]).to_s
+      sha.empty? ? nil : sha
     end
 
     # --- internals -----------------------------------------------------------
