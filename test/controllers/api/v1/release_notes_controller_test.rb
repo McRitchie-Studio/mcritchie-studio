@@ -49,19 +49,22 @@ module Api
         )
         delivered = []
 
-        ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { delivered << content }) do
-          post api_v1_release_notes_path,
-               params: {
-                 app: "mcritchie-studio",
-                 environment: "production",
-                 release: "v72",
-                 sha: "abcdef0123",
-                 url: "https://mcritchie.studio/",
-                 checks: "production /up 200",
-                 tasks: task.slug
-               },
-               headers: @headers,
-               as: :json
+        # The happy path must NOT touch ErrorLog — we only log delivery failures.
+        assert_no_difference -> { ErrorLog.count } do
+          ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { delivered << content }) do
+            post api_v1_release_notes_path,
+                 params: {
+                   app: "mcritchie-studio",
+                   environment: "production",
+                   release: "v72",
+                   sha: "abcdef0123",
+                   url: "https://mcritchie.studio/",
+                   checks: "production /up 200",
+                   tasks: task.slug
+                 },
+                 headers: @headers,
+                 as: :json
+          end
         end
 
         assert_response :success
@@ -101,24 +104,70 @@ module Api
         assert_equal "UNKNOWN_TASKS", body["error_code"]
       end
 
-      test "reports missing webhook for live delivery" do
+      test "reports missing webhook for live delivery and records it to ErrorLog" do
         task = tasks(:new_task)
-        ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { raise ReleaseNotes::DiscordClient::MissingWebhook, "Release notes webhook is not configured" }) do
+        assert_difference -> { ErrorLog.count }, 1 do
+          ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { raise ReleaseNotes::DiscordClient::MissingWebhook, "Release notes webhook is not configured" }) do
+            post api_v1_release_notes_path,
+                 params: {
+                   app: "mcritchie-studio",
+                   release: "v72",
+                   sha: "abcdef0",
+                   url: "https://mcritchie.studio/",
+                   task_slugs: [task.slug]
+                 },
+                 headers: @headers,
+                 as: :json
+          end
+        end
+
+        assert_response :unprocessable_entity
+        body = JSON.parse(response.body)
+        assert_equal "MISSING_WEBHOOK", body["error_code"]
+        # The delivery failure surfaces on the board, not just as an API error.
+        assert_equal "Release notes webhook is not configured", ErrorLog.last.message
+      end
+
+      test "reports a discord delivery error for live delivery and records it to ErrorLog" do
+        task = tasks(:new_task)
+        assert_difference -> { ErrorLog.count }, 1 do
+          ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { raise ReleaseNotes::DiscordClient::DeliveryError, "Discord returned 500" }) do
+            post api_v1_release_notes_path,
+                 params: {
+                   app: "mcritchie-studio",
+                   release: "v72",
+                   sha: "abcdef0",
+                   url: "https://mcritchie.studio/",
+                   task_slugs: [task.slug]
+                 },
+                 headers: @headers,
+                 as: :json
+          end
+        end
+
+        assert_response :unprocessable_entity
+        body = JSON.parse(response.body)
+        assert_equal "DISCORD_DELIVERY_FAILED", body["error_code"]
+        assert_equal "Discord returned 500", ErrorLog.last.message
+      end
+
+      test "a dry run delivery failure is impossible, so nothing is logged" do
+        task = tasks(:new_task)
+        assert_no_difference -> { ErrorLog.count } do
           post api_v1_release_notes_path,
                params: {
                  app: "mcritchie-studio",
                  release: "v72",
                  sha: "abcdef0",
                  url: "https://mcritchie.studio/",
-                 task_slugs: [task.slug]
+                 task_slugs: [task.slug],
+                 dry_run: true
                },
                headers: @headers,
                as: :json
         end
 
-        assert_response :unprocessable_entity
-        body = JSON.parse(response.body)
-        assert_equal "MISSING_WEBHOOK", body["error_code"]
+        assert_response :success
       end
     end
   end
