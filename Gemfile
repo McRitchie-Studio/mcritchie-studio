@@ -78,7 +78,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-# Temporary: point at the standard-link-model engine branch to exercise
-# Studio::Link end-to-end before the gem is published. Revert to a published
-# version (~> 0.8) on adoption once the engine release ships.
-gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/standard-link-model"
+gem "studio-engine", "~> 0.8"

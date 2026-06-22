@@ -1,17 +1,3 @@
-GIT
-  remote: https://github.com/amcritchie/studio-engine.git
-  revision: 362e3bd73d2f380f0735655a2213921422a89468
-  branch: feat/standard-link-model
-  specs:
-    studio-engine (0.7.0)
-      aws-sdk-s3 (~> 1.218)
-      faker (>= 2.0, < 4.0)
-      mini_magick (~> 5.0)
-      rails (>= 7.0, < 8.0)
-      resend (~> 1.1)
-      solid_queue (>= 1.0, < 2.0)
-      tailwindcss-rails (~> 4.5)
-
 GEM
   remote: https://rubygems.org/
   specs:
@@ -400,6 +386,14 @@ GEM
     stimulus-rails (1.3.4)
       railties (>= 6.0.0)
     stringio (3.2.0)
+    studio-engine (0.8.0)
+      aws-sdk-s3 (~> 1.218)
+      faker (>= 2.0, < 4.0)
+      mini_magick (~> 5.0)
+      rails (>= 7.0, < 8.0)
+      resend (~> 1.1)
+      solid_queue (>= 1.0, < 2.0)
+      tailwindcss-rails (~> 4.5)
     tailwindcss-rails (4.6.0)
       railties (>= 7.0.0)
       tailwindcss-ruby (~> 4.0)
@@ -466,7 +460,7 @@ DEPENDENCIES
   solid_queue (~> 1.4)
   sprockets-rails
   stimulus-rails
-  studio-engine!
+  studio-engine (~> 0.8)
   tailwindcss-rails (~> 4.5)
   turbo-rails
   tzinfo-data
