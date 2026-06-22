@@ -68,6 +68,11 @@ render() {  # app feature task url stage
     out="${out}${DOT}${task}"
   fi
   [ -n "$stage" ] && out="${out}  ${D}[${stage}]${X}"
+  # Session last-4 (e.g. …12ab) — which terminal/session this is, for resume.
+  # Portable last-4 (bash 3.2-safe): strip everything but the trailing 4 chars.
+  if [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
+    out="${out} ${D}…${CLAUDE_CODE_SESSION_ID#${CLAUDE_CODE_SESSION_ID%????}}${X}"
+  fi
   printf '%s' "$out"
 }
 

@@ -313,6 +313,35 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "2 notes"
   end
 
+  test "board card shows the session last-4 and a full resume copy control" do
+    @in_progress_task.update!(metadata: { "devops" => {
+      "kind" => "feature",
+      "session_id" => "2aa216f6-7565-4bf4-bd01-70793c8ba617",
+      "session_provider" => "claude"
+    } })
+
+    get tasks_path
+    assert_response :success
+
+    card = "#card-#{@in_progress_task.slug}"
+    # the copy control DISPLAYS the truncated command (ending in the last-4 …a617)…
+    assert_select card, text: /claude --resume …a617/
+    # …and CARRIES the FULL resume command for the clipboard
+    assert_includes response.body, "claude --resume 2aa216f6-7565-4bf4-bd01-70793c8ba617"
+  end
+
+  test "board card without a session renders no last-4 and no resume control" do
+    @in_progress_task.update!(metadata: { "devops" => { "kind" => "feature" } })
+
+    get tasks_path
+    assert_response :success
+
+    card = "#card-#{@in_progress_task.slug}"
+    assert_select card # the card still renders
+    assert_select "#{card} *", { text: /resume/, count: 0 }
+    assert_not_includes response.body, "Copy resume command"
+  end
+
   test "show renders task detail" do
     get task_path(@new_task.slug)
     assert_response :success

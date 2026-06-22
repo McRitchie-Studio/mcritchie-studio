@@ -33,8 +33,15 @@ class Task < ApplicationRecord
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
-    requires_release_conductor block_kind agent_context
+    requires_release_conductor block_kind agent_context session_id session_provider
   ].freeze
+  # Provider → resume-command template (one %s, the session id). Codex is a
+  # one-line addition once its real resume syntax is confirmed.
+  # TODO: confirm codex resume syntax + env var.
+  RESUME_COMMANDS = {
+    "claude" => "claude --resume %s",
+    "codex"  => "codex resume %s"
+  }.freeze
   # Human-facing fields are kept terse (so the operator can read the board at a
   # glance); agents put their verbose detail in `agent_context`.
   TITLE_WORD_RANGE = (3..5).freeze
@@ -108,6 +115,45 @@ class Task < ApplicationRecord
   # (the readability constraints are on title + acceptance).
   def devops_agent_context
     devops.fetch("agent_context", "").presence
+  end
+
+  # --- Session resume (V1: store + display + copy; no enforcement gate) -------
+  # The Claude/Codex session that worked this task, captured by bin/task on
+  # create + on the move to `building` (the claim moment). Lets the operator see
+  # which terminal owns a task (the last-4 on the board + status line) and copy a
+  # command to reopen it.
+  def devops_session_id
+    devops.fetch("session_id", "").presence
+  end
+
+  # Which CLI the session belongs to; nil is treated as "claude" (the default).
+  def devops_session_provider
+    devops.fetch("session_provider", "").presence
+  end
+
+  # Last 4 chars of the session id — the at-a-glance handle. nil when unset.
+  def session_id_last4
+    id = devops_session_id
+    id && id[-4..]
+  end
+
+  # The FULL, copyable resume command (provider-aware). nil when no session id.
+  def resume_command
+    id = devops_session_id
+    return nil unless id
+
+    provider = devops_session_provider || "claude"
+    format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), id)
+  end
+
+  # Truncated display form, e.g. "claude --resume …12ab" (verb + …<last4>).
+  # nil when no session id.
+  def resume_command_display
+    id = devops_session_id
+    return nil unless id
+
+    provider = devops_session_provider || "claude"
+    format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), "…#{id[-4..]}")
   end
 
   def devops_repositories
