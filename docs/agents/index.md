@@ -106,11 +106,13 @@ launch flow is:
    implementation (see **DevOps Routing** above — no size exemption). Record
    `devops["kind"]`, `devops["shape"]` (classifies the required tests),
    acceptance criteria, affected repos, risk tags, expected checks in
-   `devops["test_plan"]`, and `devops["worktree_slug"]`. Pass a readable
-   `--slug <feature-handle>` at creation — it becomes the immutable `Task.slug`
-   (the readable `/tasks/<slug>` URL) and **seeds** `worktree_slug` + `branch`
-   (`feat/<slug>`); omit it only for an opaque `task-<hex>`. Move the task to
-   `building` once the agent starts work.
+   `devops["test_plan"]`, and `devops["worktree_slug"]`. **Naming discipline
+   (enforced by the create API):** the **title is 3-5 words** and the slug
+   derives from it (the readable `/tasks/<slug>` URL; seeds `worktree_slug` +
+   `feat/<slug>` — pass `--slug` only to override); **each acceptance bullet is
+   5-12 words**. Put verbose detail/reasoning in `--agent-context` (free-form,
+   for agent-to-agent communication). Move the task to `building` once the agent
+   starts work.
 5. If the task will change code or active docs, allocate an isolated worktree
    from McRitchie Studio and work there. Keep the primary checkout stable for
    integration, review, and deploys. Bind the generated production task URL to
@@ -220,9 +222,10 @@ bin/agent-worktree finish turf-monster task-slug
 Return the printed `http://localhost:<port>` URL in the handoff.
 
 Every feature or bug cycle must have a production McRitchie Studio task before
-code or active-doc edits start. Set a readable `--slug <feature-handle>` at
-creation: it becomes the immutable `Task.slug` (the readable task URL) and seeds
-`metadata["devops"]["worktree_slug"]` + the `feat/<slug>` branch. Bind the task
+code or active-doc edits start. Keep the **title 3-5 words** (the slug derives
+from it — the readable task URL — and seeds `metadata["devops"]["worktree_slug"]`
++ the `feat/<slug>` branch; `--slug` overrides) and **each acceptance bullet
+5-12 words**; verbose detail goes in `devops["agent_context"]`. Bind the task
 URL to the worktree.
 Use `metadata["devops"]` to record affected repos, branch, PR URL, local URL,
 QA URL, production URL when deployed, release train, risk tags, acceptance

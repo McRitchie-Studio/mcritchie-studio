@@ -7,7 +7,7 @@ tasks_data = [
   { title: "Prepare production release train",      stage: "assembled", priority: 2, agent_slug: "alex",         description: "Merged into the current release branch; riding the train to QA." },
   { title: "Deploy Turf Monster v2.1",             stage: "shipped",   priority: 2, agent_slug: "mason",        description: "Shipped with long-press button and cart improvements." },
   { title: "Archive stale Q1 tasks",               stage: "archived",  priority: 0, agent_slug: nil,            description: "Clean up completed tasks from Q1 2026." },
-  { title: "Fix cart persistence bug on mobile",   stage: "blocked",   priority: 2, agent_slug: "turf-monster", description: "Cart picks disappear on mobile Safari after backgrounding the app.", error_message: "localStorage quota exceeded on iOS Safari private browsing", block_kind: "environment" }
+  { title: "Fix mobile cart persistence bug",      stage: "blocked",   priority: 2, agent_slug: "turf-monster", description: "Cart picks disappear on mobile Safari after backgrounding the app.", error_message: "localStorage quota exceeded on iOS Safari private browsing", block_kind: "environment" }
 ]
 
 tasks_data.each do |data|

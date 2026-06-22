@@ -64,7 +64,10 @@ class Release
         kind = task.release_kind
         {
           slug: task.slug,
-          branch: task.devops_field("branch"),
+          # Apps merge their feature branch; gems have none — they ride the record
+          # and publish by version. (A gem task may still carry a branch from the
+          # slug trickle-down, so null it here rather than rely on it being unset.)
+          branch: kind == :gem ? nil : task.devops_field("branch"),
           kind: kind.to_s,
           repo: task.release_repo,
           version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil
