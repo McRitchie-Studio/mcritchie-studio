@@ -6,33 +6,49 @@ class Release
   module Conductor
     module_function
 
-    # Additive find-or-create: extend the active release if one exists (reopening
-    # an assembled RC so the new work re-QAs), else open a fresh one. Adds each
-    # given reviewed task that isn't already a member, then re-assembles.
-    # Returns the release. Raises (via Release#add) if a task isn't `reviewed`.
-    def prepare!(task_slugs:, slug: nil)
-      slugs = Array(task_slugs).compact
-      # Atomic: if any task isn't reviewed, Release#add raises and the whole
-      # thing rolls back — no dangling `assembling` release left behind.
-      Release.transaction do
-        release = Release.current || Release.open!(slug.present? ? { slug: slug } : {})
-        release.reopen! if release.state == "assembled"
-        release.update!(branch: "release/#{release.slug.sub(/\Arel-/, '')}") if release.branch.blank?
+    # Record a PR-merge INTO the persistent `release` branch: attach the task to
+    # the active release (opening one if none is active), flipping the TASK from
+    # `reviewed` to `assembled`. This is the membership-at-merge entrypoint that
+    # `bin/release merge` calls after `gh pr merge`. Idempotent: a task already
+    # on the release is left untouched. Returns the release. Raises (via
+    # Release#add) if the task isn't `reviewed`.
+    def adopt!(task)
+      release = Release.current_or_open!
+      release.add(task) unless release.tasks.exists?(slug: task.slug)
+      release
+    end
 
-        # Add in producer-first order so members land at producer-before-consumer
-        # positions (gems before the apps that consume them). `add` raises if a
-        # task isn't reviewed — inside the transaction, so a bad task rolls the
-        # whole thing back.
-        Release::Ordering.producer_first(Task.where(slug: slugs).to_a).each do |task|
-          release.add(task) unless release.tasks.exists?(slug: task.slug)
+    # Assemble the active release for QA. On the persistent-`release` model
+    # membership flips at PR-merge time (adopt!), so prepare! is NO LONGER the
+    # add path: with no `task_slugs` it just finds the current release and
+    # assembles it (the CLI then deploys `origin/release` to QA). It does NOT
+    # auto-add reviewed work.
+    #
+    # `task_slugs` stays for OPERATOR CURATION — explicitly named tasks are
+    # adopt!ed onto the release before assembling (producer-first so members land
+    # at producer-before-consumer positions). Atomic: a non-reviewed or
+    # unknown-repo member raises and rolls the whole prepare! back — no dangling
+    # `assembling` release left behind. Returns the release (nil if none active
+    # and none curated).
+    def prepare!(task_slugs: [], slug: nil)
+      slugs = Array(task_slugs).compact
+      Release.transaction do
+        if slugs.any?
+          Release.open!(slug: slug) if slug.present? && Release.current.nil?
+          Release::Ordering.producer_first(Task.where(slug: slugs).to_a).each { |task| adopt!(task) }
         end
+
+        release = Release.current
+        return release unless release
 
         # Repo-aware eligibility: a release can't deploy a repo it doesn't know
         # how to deploy. Runs inside the transaction, before assemble!, so an
         # unknown-repo member rolls the whole prepare! back.
         validate_members!(release)
 
-        release.assemble!
+        # Assemble only if still assembling — re-running prepare! against an
+        # already-assembled RC (no new members) is a no-op, not an error.
+        release.assemble! if release.state == "assembling"
         release
       end
     end
@@ -82,8 +98,9 @@ class Release
     # { repo, kind, members, release_branch, qa_app, prod_deploy } where:
     #   * GEM repos carry nil release_branch/qa_app/prod_deploy — a gem is
     #     published, not deployed, and rides the release as a record (no branch).
-    #   * APP repos carry the shared release branch, the qa-server key, and the
-    #     prod_deploy adapter read from config/release_repos.yml.
+    #   * APP repos carry the persistent `release` branch (the same name in every
+    #     repo), the qa-server key, and the prod_deploy adapter read from
+    #     config/release_repos.yml.
     # All keys are symbol-keyed and the values are JSON-serializable.
     def repo_plan(release)
       member_plan(release).group_by { |member| member[:repo] }.map do |repo, members|
@@ -92,7 +109,7 @@ class Release
           repo: repo,
           kind: Release::Repos.kind(repo),
           members: members,
-          release_branch: gem ? nil : "release/#{release.slug.sub(/\Arel-/, '')}",
+          release_branch: gem ? nil : Release::BRANCH,
           qa_app: gem ? nil : Release::Repos.qa_app(repo),
           prod_deploy: gem ? nil : Release::Repos.prod_deploy(repo)
         }
@@ -121,6 +138,16 @@ class Release
     # bin/qa-server). Lets the board's current-release header link straight to QA.
     def record_qa_deploy(release:, qa_url:)
       release.update!(qa_url: qa_url)
+      release
+    end
+
+    # Persist the per-repo SHAs deployed to QA onto the release, so the board (and
+    # ship) can show exactly which commit each repo's QA app is running. `shas` is
+    # a { repo => sha } hash; stored under metadata["qa_shas"].
+    def record_qa_shas(release:, shas:)
+      meta = release.metadata.deep_dup
+      meta["qa_shas"] = shas.to_h.transform_values(&:to_s)
+      release.update!(metadata: meta)
       release
     end
 

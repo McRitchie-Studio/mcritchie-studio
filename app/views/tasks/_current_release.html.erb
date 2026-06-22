@@ -7,6 +7,7 @@
         <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Current Release</span>
         <code class="text-sm text-heading"><%= rel.slug %></code>
         <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>"><%= rel.state %></span>
+        <% if rel.branch.present? %><code class="text-xs text-muted" title="persistent integration branch (feature PRs merge into it; ff's to main on ship)"><%= rel.branch %></code><% end %>
       </div>
       <div class="flex items-center gap-4 text-xs text-secondary flex-wrap">
         <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>

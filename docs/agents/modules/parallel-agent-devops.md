@@ -24,21 +24,26 @@ release conductor handles production effects.
    migrations, merge safety, CI, local proof, and overlap with other agents.
    Avi classifies check failures by lane before deciding whether to merge,
    wait, or send `qa_feedback`.
-3. **QA testing** — After merge, Avi deploys the updated `origin/main` to the
-   QA app, records QA URL, deployed SHA, release train, and QA checks in
-   `checks_run`, then moves the task to `qa_review` for Mr. McRitchie.
+3. **QA testing** — After merging approved PRs into the persistent `release`
+   branch, Avi deploys `origin/release` to the QA app, records QA URL, deployed
+   SHA, release train, and QA checks in `checks_run`, then moves the task to
+   `qa_review` for Mr. McRitchie.
 4. **Production deployment** — Release conductor promotes only accepted QA
    work after explicit approval. Production smoke results, production URL, and
    release notes are recorded before the task moves to `done`.
 
 ## Lanes
 
-| Lane | Owner | Purpose | May push branch | May merge main | May deploy/publish |
-|------|-------|---------|-----------------|----------------|--------------------|
+| Lane | Owner | Purpose | May push branch | May merge → `release` | May deploy/publish |
+|------|-------|---------|-----------------|-----------------------|--------------------|
 | Feature | Task agent | Build scoped work in an isolated worktree | Yes, own branch only | No | No |
 | QA / Integration | Avi | Review PRs, prevent dropped code, merge approved work | Yes, review/fix branches when needed | Yes | No, unless explicitly acting as release conductor |
 | Quality / Infra Gate | Steffon | Validate risky PRs, CI, deploy readiness, provider infra | Yes, review/fix branches when needed | No, unless delegated by Avi | No, unless release conductor |
 | Release | Designated conductor | Gem publish, app deploy, production verification | Yes | Yes | Yes, with explicit approval |
+
+Approved work merges into the **persistent per-repo `release` branch**, not
+`main`. Only the Release lane advances `release → main` — a fast-forward at ship
+(`bin/release ship`). The "Never push to `main`" rule still stands.
 
 One session can wear multiple hats only when Mr. McRitchie explicitly says so.
 Default feature sessions are Feature lane only.
@@ -251,6 +256,14 @@ or dashboard should consume the same queue. Every printed queue item includes an
 `action:` line. Treat that action as the next owner handoff unless new evidence
 from the diff, tests, or Mr. McRitchie changes the call.
 
+Under the persistent-`release` model the merge target is `release`, so a PR's
+freshness should be reckoned against `origin/release` (the branch it merges into),
+not `main`. **Transitional:** `bin/qa-intake` still compares against `origin/main`
+and the `ready-to-open-pr` / freshness labels below still read "current with
+`origin/main`"; that comparison base flips to `release` in the same follow-up PR
+that flips `bin/agent-worktree`'s `--base` default. Until then, confirm a PR
+targets `release` before merging — `bin/release merge` enforces it.
+
 Status labels mean:
 
 - `avi-ready`: clean local branch with a matching PR, no blocking local issues,
@@ -351,11 +364,13 @@ The intended cycle is:
 
 1. Feature agent opens a PR.
 2. Feature agent moves the task to `pr_review`.
-3. Avi reviews and merges when ready.
+3. Avi reviews and merges approved PRs into `release` when ready
+   (`bin/release merge <task>` does the `gh pr merge` + membership flip).
 4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
-5. Avi or Steffon deploys the merged `main` ref to the app's QA server with
-   `bin/qa-server deploy <app> origin/main --yes`.
+5. Avi or Steffon deploys the `release` ref to the app's QA server with
+   `bin/qa-server deploy <app> origin/release --yes` (or `bin/release prepare`,
+   which runs this for every app member).
 6. Avi or Steffon moves the task to `qa_review` and records the QA URL,
    deployed SHA, release-train tag when present, and QA checks run.
 7. Mr. McRitchie reviews the QA URL.
@@ -389,8 +404,9 @@ Run the parallel-agent DevOps cycle:
   follow each item's `action:` line for the next owner handoff
 - review each PR for diff/description match, CI or local proof, docs impact, migrations, auth/email/payment/Solana risk, and overlap with other open PRs
 - ask Steffon/infra review for risky changes before merge when needed
-- merge only PRs that are ready; leave task `qa_feedback` and PR comments on PRs that need changes
-- after merging, deploy the updated origin/main to the relevant QA app with bin/qa-server deploy <app> origin/main --yes
+- merge only PRs that are ready, into the persistent `release` branch (base
+  `release`); leave task `qa_feedback` and PR comments on PRs that need changes
+- after merging, deploy origin/release to the relevant QA app with bin/qa-server deploy <app> origin/release --yes
 - move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks_run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 

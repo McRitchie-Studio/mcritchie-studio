@@ -9,6 +9,13 @@ class Release < ApplicationRecord
   ACTIVE_STATES = %w[assembling assembled].freeze
   TERMINAL_STATES = %w[shipped abandoned].freeze
 
+  # The per-repo integration branch. It is now PERSISTENT: every repo keeps a
+  # single `release` branch that feature PRs merge INTO (membership flips at
+  # merge), QA deploys from, and `ship` fast-forwards into `main`. main is always
+  # an ancestor of `release`; on ship it collapses to main and re-accumulates.
+  # (Was the disposable `release/<slug>` cut per candidate — see the cutover.)
+  BRANCH = "release"
+
   has_many :tasks, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release
 
   validates :slug, presence: true, uniqueness: true
@@ -36,8 +43,16 @@ class Release < ApplicationRecord
   end
 
   # Open a new release candidate. Raises (singleton validation) if one is active.
+  # Defaults the integration branch to the persistent `release` (overridable).
   def self.open!(attrs = {})
-    create!(attrs.merge(state: "assembling"))
+    create!({ branch: BRANCH }.merge(attrs).merge(state: "assembling"))
+  end
+
+  # The active release if one exists, else open a fresh one. The find-or-create
+  # the merge-time membership path (Conductor#adopt!) leans on so a PR merging
+  # into `release` always lands on an active candidate.
+  def self.current_or_open!
+    current || open!
   end
 
   def active?
@@ -60,8 +75,16 @@ class Release < ApplicationRecord
   # unchanged. The actual branch merge + per-merge tests are the conductor's job;
   # this is the membership + stage bookkeeping.
   def add(task)
-    raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
+    # Validate the task BEFORE mutating release state, so adopting a non-reviewed
+    # task onto an assembled RC doesn't needlessly reopen it.
     raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})" unless task.stage == "reviewed"
+
+    # On the durable `release` branch a PR can merge AFTER we've assembled (QA'd)
+    # the candidate. That late merge must re-open the RC so it re-assembles and
+    # re-QAs before shipping — so absorb an assembled state by reopening, rather
+    # than refusing the member.
+    reopen! if state == "assembled"
+    raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
 
     task.update!(release_slug: slug, stage: "assembled")
     task
@@ -97,6 +120,12 @@ class Release < ApplicationRecord
 
   # Discard a stuck RC → members fall back to `reviewed` (off the train), and the
   # singleton frees up for a fresh release.
+  #
+  # NOTE: this only drops BOARD membership. On the DURABLE per-repo `release`
+  # branch the git-side remediation — reverting each abandoned member's merge
+  # commit on `release` (never a force-push, since `release` is permanent and
+  # shared) — is owned by the conductor/CLI as a documented step. The model never
+  # touches git.
   def abandon!
     raise ArgumentError, "release #{slug} is already terminal (state: #{state})" unless active?
 

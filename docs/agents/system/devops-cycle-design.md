@@ -7,10 +7,17 @@
 > `submitted` seam — plus `blocked` (side) and
 > `archived` (terminal). `bin/task`, `bin/dor-check`, and the board speak it.
 >
-> **Still to land (each its own task):** the `Release` singleton model + the
-> release-branch assembly/abandon tooling (§1.1); migrating the heartbeat
+> **Landed since:** the `Release` singleton model, and the persistent-`release`
+> branch CLI — `bin/release init|merge|prepare|ship` (§1.1).
+>
+> **Still to land (each its own task):** flipping `bin/agent-worktree`'s
+> automatic PR `--base` default from `main` to `release` (until then, branch from
+> `origin/release` and pass `--base release` explicitly); migrating the heartbeat
 > planner `bin/devops-cycle` from the old stage names to the new ones (it is
-> self-consistent on the legacy snapshot today); the Discord progress webhook
+> self-consistent on the legacy snapshot today); **multi-repo `ship`** — the
+> per-repo app deploy across satellites (+ gem auto-repin + partial-ship +
+> `test_cmd` gate); `bin/release ship` today publishes gems then deploys
+> mcritchie-studio only; the Discord progress webhook
 > (§5). Where this doc describes those, it is the spec for the follow-up.
 >
 > Operator companion: the board stage guide at `/stages`; this document remains
@@ -61,10 +68,11 @@ lifecycles that meet at one seam — `submitted`.
   assembled → shipped`. DevOps judges the submitted PR on its own merits —
   acceptance, diff, tests — landing it at **`reviewed`** (approved) or
   **`blocked`** (rework, with a `qa_feedback` note); the release conductor then
-  assembles `reviewed` tasks into a single **release candidate (RC)** on a
-  release branch (`assembled`), QAs the whole RC, and on the operator's OK ships
-  it (`shipped`). `submitted` is the seam — the feature agent hands the PR to
-  DevOps there.
+  **merges each approved PR into the persistent `release` branch** — which flips
+  that task to `assembled` (membership at merge) — assembling a single **release
+  candidate (RC)**, QAs the whole RC (a deploy of `origin/release`), and on the
+  operator's OK ships it by fast-forwarding `release → main` (`shipped`).
+  `submitted` is the seam — the feature agent hands the PR to DevOps there.
 
 QA and production are properties of the **release**, not the individual task —
 so there is no per-task QA stage; the one operator gate is a single OK on the RC.
@@ -89,17 +97,27 @@ crosses the ship gate autonomously** — the operator's single OK on the RC is t
 one human gate. The task API is on production, so the airgapped box only needs an
 internet connection — no separate pull/sync layer.
 
-### 1.1 The Release model + release branch  *(follow-up task)*
+### 1.1 The Release model + the persistent `release` branch
 
-**Release** (new singleton model) coordinates one candidate from assembly through
+**Release** (singleton model) coordinates one candidate from assembly through
 ship. *Consolidation (decided):* the legacy `release_train` field becomes
 **`release_slug`** — one concept, one name.
+
+**The integration branch is PERSISTENT.** Every repo keeps a single `release`
+branch — the *same* name in every repo (`Release::BRANCH = "release"`). Feature
+PRs target `release`, not `main`; `main` is always an ancestor of `release`.
+`bin/release init` creates the branch (= `main`) on every gem + app repo, once
+(idempotent). Membership flips `reviewed → assembled` **at merge**: merging an
+approved PR into `release` (`bin/release merge <task>`) records the task onto the
+active candidate. `prepare` deploys `origin/release` to QA; `ship`
+fast-forwards each repo's `release → main` and deploys prod. After a ship,
+`release` collapses to `main` and re-accumulates the next candidate.
 
 | Field | Meaning |
 |---|---|
 | `slug` | Canonical id, e.g. `2026-06-20-s3-uploads`. |
-| `state` | `assembling` → `assembled` → `shipped` (+ `abandoned`). `assembled` = every member PR merged **and** the tests check out. |
-| `branch` | The disposable integration branch `release/<slug>`, cut from `main`. |
+| `state` | `assembling` → `assembled` → `shipped` (+ `abandoned`). `assembled` = the QA candidate is built (members merged into `release`) **and** its suite checks out. |
+| `branch` | The persistent integration branch `release` (same name in every repo); feature PRs merge into it, QA deploys from it, and `ship` fast-forwards it into `main`. |
 | `confirmed_at` / `confirmed_by` | The operator **Make the release** action at `assembled → shipped` — the one human gate. |
 | `qa_url` / `production_url` / `deployed_sha` / `release_notes_sent_at` | Deploy + notes record. |
 | has_many `tasks` | via `tasks.release_slug`. |
@@ -108,7 +126,7 @@ ship. *Consolidation (decided):* the legacy `release_train` field becomes
 
 | Field | Meaning |
 |---|---|
-| `release_slug` | The Release this task rides (null until the conductor assigns it; the task is `assembled` once its PR is merged onto the release branch). |
+| `release_slug` | The Release this task rides (null until merge; the task becomes `assembled` once its PR is merged into `release`). |
 | `dependencies` | Array of task slugs this one needs shipped first. **Now enforced** by the conductor (`Release::Ordering`) — a member sorts after every task listed here — composed under the producer-first rule (e.g. an engine gem before the apps that consume it). |
 
 `dependencies` (task→task) and the exclusive **lanes** (resource-level:
@@ -119,16 +137,20 @@ honors it (a stable topological sort that falls back to `position`), so the
 conductor sequences members producer-first **and** respects explicit
 task-to-task edges. See "Gem members & producer-first ordering" below.
 
-**Assembly is a merge queue on a disposable branch.** The conductor cuts
-`release/<slug>` from `main`, then for each `reviewed` member: retargets its PR
-base to the release branch (`gh pr edit --base`), merges it, and runs that task's
-required tiers against the release HEAD (the punctuated per-merge test). A
-conflict or red run **ejects** the task to `blocked` — the train keeps moving.
-When every member is in and the **full suite incl. e2e** is green on the release
-HEAD, the branch deploys to **QA** + Discord notes fire → the release is
-**`assembled`** (complete). The operator then **Makes the release** — an explicit
-action (surfaced as the current release on `/tasks`, not a passive status) that
-fast-forwards `release/<slug>` into `main`, tags `release-<slug>`, deploys prod,
+**Membership flips at merge; QA is a deploy of `origin/release`.** Feature PRs
+already target `release`, so there is no branch-cut and no PR-base retarget. For
+each `reviewed` member the conductor merges its PR into `release`
+(`bin/release merge <task>` → `gh pr merge` + `Release::Conductor.adopt!`), which
+records the task onto the active candidate and flips it `reviewed → assembled`. A
+merge conflict surfaces **at this PR-merge step** (resolve on GitHub, or block
+the task for rework) — `release` never force-pushes. Once the desired members are
+merged and the **full suite incl. e2e** is green on `origin/release`,
+`bin/release prepare` deploys `origin/release` to **QA** + records the QA URL →
+the release is **`assembled`** (the QA candidate). A late PR merging in after that
+**reopens** the RC (`Release#reopen!`) so it re-QAs before shipping. The operator
+then **Makes the release** — an explicit action (surfaced as the current release
+on `/deployments`, not a passive status): `bin/release ship` fast-forwards each
+repo's `main` up to `release` (so `release` collapses into `main`), deploys prod,
 and flips members to `shipped`. That action is the one human gate.
 
 **Gem members & producer-first ordering.** A release is not apps-only — it can
@@ -137,11 +159,11 @@ alongside apps. The classification lives in `config/release_repos.yml` (read by
 `Release::Repos`): every member is a `:gem` (producer) or an `:app` (consumer).
 Gems and apps are handled differently at both ends of the Deploy workflow:
 
-- **Gem members are PUBLISHED, not branch-merged.** A gem's PR/branch lives in
-  the gem's own repo, not in `mcritchie-studio`, so there is nothing to merge
-  onto `release/<slug>`. At **assembly** the conductor skips the merge for gem
-  members — they ride the release as a *record*, and are QA'd indirectly through
-  a consuming app (the consumer's branch is what gets merged + tested).
+- **Gem members are PUBLISHED, not app-deployed.** A gem's PR merges into the
+  gem's own repo's `release` branch like any other, but there is no app artifact
+  to deploy — so at **prepare** the conductor skips gem members in the QA-deploy
+  loop. They ride the release as a *record*, and are QA'd indirectly through a
+  consuming app (the consumer's branch is what gets deployed + tested).
 - **Run Deployment processes producer-before-consumer.** `Release#ordered_members`
   returns members **gems-first** (then apps), honoring `dependencies` within
   that. `bin/release ship` publishes every gem member to RubyGems first
@@ -161,16 +183,18 @@ bump → app deploy"), now expressed as first-class release membership rather th
 a separate lane: the gem and its consumers can be members of the same release,
 sequenced by kind + `dependencies`.
 
-**Start-fresh / abandon.** Feature branches are the durable artifact; the release
-branch is disposable, so abandoning a stuck RC is cheap and `main` never moves.
-Order is load-bearing — deleting a PR's base branch first auto-closes it:
+**Abandon (revert, never force-push).** `release` is permanent and shared, so a
+stuck RC is **not** thrown away by deleting a branch — it is unwound by reverting.
+`Release#abandon!` drops board membership (members fall back to `reviewed`,
+release → `abandoned`, the singleton frees up). The git-side remediation is owned
+by the conductor/CLI as a documented step:
 
-1. Cut a new `release/<slug2>` from `main`.
-2. **Pending** members (PR still open) → `gh pr edit --base release/<slug2>`.
-3. **Already-merged** members → their PR is "merged" into the dead branch but the
-   work is safe on its head branch; open a fresh PR from it → `release/<slug2>`.
-4. **Delete `release/<slug>` last.** Members drop back to `reviewed` (the e2e
-   culprit to `blocked`); re-assemble.
+1. For each member whose merge you want out, **revert its merge commit on
+   `release`** (`git revert -m 1 <merge-sha>`, push) — never a force-push, since
+   `release` is the shared persistent branch.
+2. The member's task drops to `reviewed`; the e2e culprit goes to `blocked`.
+3. Re-merge the surviving/fixed members into `release` (a new candidate
+   accumulates) and re-`prepare`. `main` never moved.
 
 ### 1.2 Stage ownership — who progresses each stage
 
@@ -179,45 +203,46 @@ from the **executor** (who moves it). The heartbeat agent executes by wearing
 each lane's hat; accountability maps to a soul; there is exactly **one human
 gate**.
 
-**Merge timing (decided):** approved tasks are **not** merged at `reviewed` —
-they're merged when the conductor **assembles** the release onto `release/<slug>`,
-in dependency order. The release branch is the live RC; `main` only moves when it
-ships.
+**Merge timing (decided):** a `reviewed` task is merged when its PR lands **into
+the persistent `release`** (`bin/release merge`), which flips it `reviewed →
+assembled`. The release branch is the live RC; `main` only moves when it ships.
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
-| **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR, move in | self-gate |
+| **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
 | **submitted** (task) | **Avi** (Steffon co-gates risk) | DevOps agent *as Avi* | Review acceptance/diff/tests → `blocked` (back, with `qa_feedback`) **OR** `reviewed` ✅ | judgment (Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
-| **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Approved; eligible for the next release | — |
-| **assembling** (release) | **Avi** | DevOps agent *as Avi* / operator-curated | Add `reviewed` tasks honoring `dependencies` + lanes → **merge each onto `release/<slug>`** + per-merge tests; member → `assembled` | judgment + deterministic merge queue |
-| **assembled** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on release HEAD → deploy to QA + Discord notes → await the operator action | deterministic suite; ⛔ regression → eject task to `blocked` |
-| **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator **Makes the release**, then DevOps agent | Operator eyeballs QA + Makes the release → ff to `main`, tag, `bin/deploy` → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
+| **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Approved; eligible to merge into `release` | — |
+| **assembling** (release) | **Avi** | DevOps agent *as Avi* / operator-curated | **Merge each approved PR into `release`** (`bin/release merge`) honoring `dependencies` + lanes; membership flips at merge → member `assembled` | judgment + deterministic merge (conflicts surface at PR-merge) |
+| **assembled** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on `origin/release` → `bin/release prepare` deploys it to QA + Discord notes → await the operator action | deterministic suite; ⛔ regression → block the task |
+| **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator **Makes the release**, then DevOps agent | Operator eyeballs QA + Makes the release → `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
 
 Clarifications:
 
-- **`assembled` means the same at both scopes** — merged + tests check out: a
-  *task* is `assembled` once its PR is merged onto the branch and its per-merge
-  tests pass; the *release* is `assembled` once every member is in and the full
-  suite is green. The operator gate is then a deliberate **Make the release**
-  action on the assembled RC, not a status the agent flips.
+- **`assembled` means slightly different things at the two scopes** — a *task* is
+  `assembled` the moment its PR is merged into `release` (`bin/release merge`); the
+  *release* is `assembled` once the desired members are in, the full suite is
+  green on `origin/release`, and `prepare` has deployed it to QA. The operator
+  gate is then a deliberate **Make the release** action on the assembled RC, not a
+  status the agent flips.
 - **There is no per-task QA stage.** Steffon owns the QA deploy, the
   `qa_acceptance` suite, and the prod mechanics — but there is no separate
   approval ceremony; the suite is a green/red *signal* and the operator OK is the
   gate. QA + production are properties of the **release**, not the task.
-- **The agent merges even funds-touching work autonomously** at assembly — the
+- **The agent merges even funds-touching work autonomously** into `release` — the
   consequence of "Review + QA, gate prod". Risk raises *scrutiny* (Opus review +
   full integration/security suite), not a second human. *Knob:* flip
   `payment`/`solana` `risk_tags` to require a human pre-**merge** pass — one
   config line.
 - **Humility valve:** low confidence → the agent marks `conductor-review` and
-  routes to a *human* Avi/Steffon session instead of assembling/merging.
+  routes to a *human* Avi/Steffon session instead of merging into `release`.
 
 ### 1.3 Decided — and where to tune the release builder
 
-Resolved: `release_train` → **`release_slug`** (one field/model); **merge at
-assembly onto a disposable `release/<slug>` branch**; no per-task QA stage;
-Release is its own singleton model — states `assembling → assembled → shipped`,
-where the operator **Makes the release** (a page action on the assembled RC).
+Resolved: `release_train` → **`release_slug`** (one field/model); **feature PRs
+merge into a persistent per-repo `release` branch, membership flipping at merge**;
+no per-task QA stage; Release is its own singleton model — states `assembling →
+assembled → shipped`, where the operator **Makes the release** (a page action on
+the assembled RC).
 
 **RC assembly autonomy is the one evolving policy** — so it lives in a single,
 clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
@@ -243,27 +268,38 @@ stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
 each command to a deterministic runbook:
 
+**One-time setup (per machine/clone).** Run **`bin/release init`** once: it
+creates the persistent `release` branch (= `origin/main`) on every gem + app repo
+in `config/release_repos.yml` that doesn't already have one. Idempotent — a repo
+that already has `origin/release` is skipped.
+
 **`Review submitted PRs`**  *(submitted → reviewed)*
 1. List `submitted` tasks (`bin/task list` or the board).
-2. For each open PR run an independent review (the `avi` subagent): acceptance
-   criteria, the diff, CI, and the shape's required test tiers.
+2. For each open PR (base `release`) run an independent review (the `avi`
+   subagent): acceptance criteria, the diff, CI, and the shape's required tiers.
 3. Approve → `bin/task move <task> reviewed`; issues → `bin/task block <task>
    --kind rework --feedback "…"` (one complete send-back).
 
 **`Prepare release`**  *(reviewed → assembled — an RC for QA)*
-Run **`bin/release prepare [--task SLUG ...] [--slug rel-…] [--prod]`**. Additive
-find-or-create (`Release::Conductor.prepare!`): extends the active release —
-reopening an assembled RC so the new work re-QAs (`Release#reopen!`) — or opens a
-new one, adds the reviewed task(s) (default: every reviewed task) **in
-producer-first order**, then cuts/merges `release/<slug>` and runs the suite,
-**stopping for you on a merge conflict** (a genuine conflict means the task
-should be blocked for rework). **Gem members are skipped at the merge step** —
-they have no app branch in this repo; they ride the release record and are QA'd
-through a consuming app, so `prepare` only merges + tests the app members.
-Leaves the RC `assembled` and **auto-deploys the branch to QA**
-(`bin/qa-server deploy` → `mcritchie-studio-qa`), recording `release.qa_url` for
-review before production. Record ops default to the local DB; `--prod` runs them
-on the prod board via `heroku run`.
+Two deterministic steps:
+
+1. **Merge each approved PR into `release`.** Run **`bin/release merge <task-slug>
+   [--prod]`** per `reviewed` task: it resolves the task's PR, verifies its base
+   is `release`, `gh pr merge`s it, then `Release::Conductor.adopt!`s the task
+   onto the active candidate — flipping it `reviewed → assembled` and
+   opening/reopening the singleton release as needed. A merge **conflict surfaces
+   here** (resolve on GitHub or block the task for rework); `release` is never
+   force-pushed. Gem PRs merge into their own repo's `release` like any other.
+2. **Deploy the candidate to QA.** Run **`bin/release prepare [--task SLUG ...]
+   [--slug rel-…] [--prod]`** (`Release::Conductor.prepare!`): finds the active
+   release, runs a per-app **merge-forward guard** (keeps each repo's `release`
+   ahead of `main`), then `bin/qa-server deploy <qa_app> origin/release` for each
+   **app** member — **gem members are skipped** (no app artifact; they ride the
+   record and are QA'd via a consuming app). It records `release.qa_url` +
+   per-repo QA SHAs and leaves the RC `assembled`. `--task` is operator curation
+   (adopt the named tasks first); it does **not** auto-adopt every reviewed task.
+   Record ops default to the local DB; `--prod` runs them on the prod board via
+   `heroku run`.
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
 Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
@@ -274,14 +310,15 @@ version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
 --build`; otherwise `gem build <gemspec>`), `gem push`es the artifact, and tags
 `v<version>` in the gem repo. A build/push failure **aborts the ship** before any
 app deploys, so apps never deploy against an unpublished gem. Then for the apps
-it ff's `main` → the release branch, pushes origin (closing member PRs), deploys
-(`git push heroku main`; release phase runs migrations), smokes `/up`, stamps
-`deployed_sha`, flips the RC + its members to `shipped`
-(`Release::Conductor.ship!`), and **auto-posts release notes**
+it fast-forwards each repo's `main` up to `release` (so `release` collapses into
+`main`), pushes origin, deploys (`git push heroku main`; release phase runs
+migrations), smokes `/up`, stamps `deployed_sha`, flips the RC + its members to
+`shipped` (`Release::Conductor.ship!`), and **auto-posts release notes**
 (`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
-`POST /api/v1/release_notes`; non-fatal if the webhook is unset). Run `ship` from
-a **primary checkout** (not a worktree): the gem repos are resolved as siblings
-at the projects root.
+`POST /api/v1/release_notes`; non-fatal if the webhook is unset). After a ship,
+each repo's `release` equals `main` and re-accumulates the next candidate. Run
+`ship` from a **primary checkout** (not a worktree): the gem repos are resolved
+as siblings at the projects root.
 
 **`Cleanup worktrees`**  *(post-ship housekeeping)*
 `bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged
@@ -426,11 +463,11 @@ for each task in {submitted}:
 # Workflow 2 — the ONE active release (singleton).
 release.assembling:
   pick next reviewed member honoring dependencies + lanes (§4.2)
-  retarget PR → release/<slug>, merge, run member's tiers       — conflict/red ⇒ eject task to blocked
-  member → assembled; when all members in + full e2e green:
-  deploy release branch → QA + Discord notes → release.assembled
+  bin/release merge <task>: gh pr merge PR (base release) + adopt!  — conflict ⇒ block task (resolve on GitHub)
+  member → assembled; when desired members in + full e2e green on origin/release:
+  bin/release prepare → deploy origin/release → QA + Discord notes → release.assembled
 release.assembled:
-  if operator_made_the_release: ff → main, tag, bin/deploy → production_smoke → notes → members shipped  # ONLY here
+  if operator_made_the_release: bin/release ship → ff release → main, bin/deploy → production_smoke → notes → members shipped  # ONLY here
   else: no-op (HARD STOP — wait for the operator to Make the release)
 
 update last_heartbeat_at, current_command, blocked_reason; emit progress
@@ -553,21 +590,25 @@ surfaces.
 
 - `bin/dor-check` + the `shape`→contract matrix in `config/feature_shapes.yml`.
 - `AGENTS.md` / `CLAUDE.md` routing block.
-- **The two-workflow status model** (this task): Task stages + state machine,
+- **The two-workflow status model**: Task stages + state machine,
   `bin/task` / `bin/dor-check` / board, the data migration, `blocked` metadata
   (`blocked_from` + `block_kind`), and the DoR-to-Build / DoR-to-Merge gates.
+- `Release` singleton model + `release_slug` / `dependencies` on Task + the
+  board's "current release" header.
+- **The persistent-`release` branch cutover**: `bin/release init|merge|prepare|
+  ship` on the persistent per-repo `release` branch — membership flips at merge
+  (`merge` → `gh pr merge` + `Release::Conductor.adopt!`), `prepare` deploys
+  `origin/release` to QA, `ship` fast-forwards `release → main` (§1.1).
 
 **Next**
 
-1. `Release` singleton model + `release_slug` / `dependencies` on Task + the
-   board's "current release" header.
-2. Release-branch assembly + abandon tooling — the merge queue (retarget → merge
-   → per-merge tests → eject), ff-to-`main` + tag on ship, and the abandon
-   protocol (§1.1).
-3. Migrate the heartbeat planner `bin/devops-cycle` (+ its snapshot fixture +
+1. Flip `bin/agent-worktree`'s automatic PR `--base` default from `main` to
+   `release` (branch-from + `finish --pr` base), so feature agents no longer pass
+   `--base release` by hand.
+2. Migrate the heartbeat planner `bin/devops-cycle` (+ its snapshot fixture +
    `bin/devops-tests` lane names) from the legacy stage names to the new ones.
-4. Pyramid re-tag of suites in `config/devops_test_suites.yml`.
-5. Discord progress/event templates + `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL`.
-6. The heartbeat agent script for the OpenClaw box (review→QA first; ship gate as
+3. Pyramid re-tag of suites in `config/devops_test_suites.yml`.
+4. Discord progress/event templates + `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL`.
+5. The heartbeat agent script for the OpenClaw box (review→QA first; ship gate as
    a no-op approval check).
-7. turf-vault single-writer advisory lane.
+6. turf-vault single-writer advisory lane.
