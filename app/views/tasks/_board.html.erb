@@ -214,9 +214,11 @@ function kanbanBoard() {
   </div>
 
   <% if current_release || last_release %>
-    <!-- Current Release (with empty state) + Last Release (read-only history) -->
-    <%= render "current_release" %>
-    <%= render "last_release" %>
+    <!-- Current Release (with empty state) + Last Release (read-only history): side by side on lg+, stacked below -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-start">
+      <%= render "current_release" %>
+      <%= render "last_release" %>
+    </div>
   <% end %>
 
   <!-- Kanban Board -->
