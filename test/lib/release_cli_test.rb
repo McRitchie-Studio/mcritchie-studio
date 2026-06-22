@@ -99,6 +99,33 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "/.worktrees/", "repo_path must climb out of .worktrees"
   end
 
+  # --- ARGV parsing via Release::Cli (extracted from this CLI) ---
+  # These drive the REAL bin/release wrappers in a clean, Rails-free subprocess,
+  # proving the require_relative wiring loads standalone and each flag is consumed
+  # from ARGV exactly as the old inline parsers did — the boundary the CLI relies
+  # on every run.
+
+  def test_bin_release_loads_release_cli_standalone
+    # The extracted module must be reachable after a plain `ruby` load (no Rails).
+    assert_equal "true", eval_helper("defined?(Release::Cli) ? 'true' : 'false'")
+  end
+
+  def test_opt_value_is_parsed_through_release_cli_across_the_bin_boundary
+    # load consumes --dry-run at load time; --by survives for opt_value to pull.
+    out = eval_with_argv(["ship", "--dry-run", "--by", "carl"], "opt_value('--by')")
+    assert_equal "carl", out
+  end
+
+  def test_opt_values_collects_repeated_flags_through_the_bin_boundary
+    out = eval_with_argv(["prepare", "--dry-run", "--task", "t-a", "--task", "t-b"],
+                         "opt_values('--task').inspect")
+    assert_equal '["t-a", "t-b"]', out
+  end
+
+  def test_unparsed_flag_returns_nil_through_the_bin_boundary
+    assert_equal "", eval_with_argv(["ship", "--dry-run"], "opt_value('--by').to_s")
+  end
+
   # --- init --dry-run: create the persistent `release` branch per repo ---
 
   def test_init_dry_run_previews_the_release_branch_push_per_repo

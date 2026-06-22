@@ -350,6 +350,23 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "eng1234", Release::ShipSequence.frozen_sha(rel.metadata["qa_shas"], "studio-engine")
   end
 
+  test "record_qa_shas is non-clobbering — a blank value never wipes a frozen SHA, a non-blank updates, a new key is added" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    # First (full) prepare freezes good SHAs for the gem + the hub app.
+    Release::Conductor.record_qa_shas(release: rel,
+                                      shas: { "studio-engine" => "gemgood", "mcritchie-studio" => "huboldsha" })
+
+    # A partial re-run from a gem-less box: it can't resolve the gem sibling, so it
+    # passes "" for the gem, a NEW non-blank SHA for the hub, and a brand-new repo.
+    Release::Conductor.record_qa_shas(release: rel,
+                                      shas: { "studio-engine" => "", "mcritchie-studio" => "hubnewsha", "turf-monster" => "turfsha" })
+
+    shas = rel.reload.metadata["qa_shas"]
+    assert_equal "gemgood", shas["studio-engine"], "a blank incoming value must NOT clobber a previously-frozen SHA"
+    assert_equal "hubnewsha", shas["mcritchie-studio"], "a non-blank value still updates in place"
+    assert_equal "turfsha", shas["turf-monster"], "a brand-new repo key is still added"
+  end
+
   # --- post_release_notes (reuses ReleaseNotes::Formatter + DiscordClient) ---
 
   def shipped_release
