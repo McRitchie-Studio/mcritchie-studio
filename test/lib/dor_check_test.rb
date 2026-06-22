@@ -8,6 +8,7 @@
 require "minitest/autorun"
 require "json"
 require "tmpdir"
+require "fileutils"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -41,6 +42,67 @@ class DorCheckTest < Minitest::Test
     yield
   ensure
     had ? (ENV["DOR_CHECK_CHANGED_FILES"] = prev) : ENV.delete("DOR_CHECK_CHANGED_FILES")
+  end
+
+  # Temporarily set/unset a batch of ENV vars (nil value = unset), restoring the
+  # prior state afterward. Used to point the script's REAL git detection at a temp
+  # repo (DOR_CHECK_DIFF_ROOT/_BASE) while making sure the DOR_CHECK_CHANGED_FILES
+  # injection is OFF — so these tests exercise the actual working-tree diff path.
+  def with_env(vars)
+    saved = vars.keys.to_h { |k| [k, [ENV.key?(k), ENV[k]]] }
+    vars.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+    yield
+  ensure
+    saved.each { |k, (had, val)| had ? ENV[k] = val : ENV.delete(k) }
+  end
+
+  # Build a throwaway git repo so the script's real changed_files git path can be
+  # exercised deterministically (no DOR_CHECK_CHANGED_FILES injection). Files are
+  # relative paths placed in one of three working-tree states:
+  #   staged    — new file, git add'd (git diff --cached)
+  #   unstaged  — committed baseline, then modified (git diff)
+  #   untracked — new file, never added (git ls-files --others)
+  # The base is HEAD, so the committed view (base...HEAD) is empty — mirroring the
+  # pre-commit SOP case where HEAD carries no feature commit yet. Yields the repo
+  # dir; the block runs dor-check via with_env(DOR_CHECK_DIFF_ROOT => dir, ...).
+  def with_git_repo(staged: [], unstaged: [], untracked: [])
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      write = lambda do |rel, body|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, body)
+      end
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      git.call("commit -q --allow-empty -m init")
+
+      # Commit a baseline for the files that should read as "unstaged" edits.
+      unless unstaged.empty?
+        unstaged.each { |rel| write.call(rel, "base\n") }
+        git.call("add -A")
+        git.call("commit -q -m baseline")
+      end
+      # Stage the new files explicitly so the unstaged edits below stay unstaged.
+      staged.each do |rel|
+        write.call(rel, "new\n")
+        git.call("add -- #{rel}")
+      end
+      # Now apply the unstaged working-tree edits (after staging, so they remain unstaged).
+      unstaged.each { |rel| write.call(rel, "changed\n") }
+      # Untracked new files (never added).
+      untracked.each { |rel| write.call(rel, "new\n") }
+
+      yield dir
+    end
+  end
+
+  # Run dor-check against a temp repo's real working tree (injection OFF).
+  def check_against(dir, devops, *args)
+    with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => nil) do
+      check(devops, *args)
+    end
   end
 
   def test_passes_when_shape_contract_is_satisfied
@@ -200,5 +262,104 @@ class DorCheckTest < Minitest::Test
     out, code = check("kind" => "feature", "repositories" => ["m"])
     assert_equal 1, code, out
     assert_match(/shape is not set/, out)
+  end
+
+  # --- [unit] real git working-tree detection --------------------------------
+  # The injection tests above prove the GATE logic; these prove the DETECTION
+  # itself sees uncommitted code (the bug: it used to read only base...HEAD, so a
+  # code-producing chore run pre-commit — the SOP order — was wrongly exempted).
+
+  def test_detects_staged_code_file_pre_commit
+    with_git_repo(staged: ["app/models/widget.rb"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{app/models/widget\.rb}, out)
+    end
+  end
+
+  def test_detects_unstaged_code_file_pre_commit
+    with_git_repo(unstaged: ["lib/foo.rb"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{lib/foo\.rb}, out)
+    end
+  end
+
+  def test_detects_untracked_code_file_pre_commit
+    with_git_repo(untracked: ["bin/new-tool"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{bin/new-tool}, out)
+    end
+  end
+
+  def test_doc_only_working_tree_yields_empty_code_set
+    # docs/ + *.md across all three states — no CODE_PATH_PREFIXES → stays exempt.
+    with_git_repo(staged: ["README.md"], unstaged: ["docs/guide.md"], untracked: ["NOTES.md"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 0, code, out
+      assert_match(/DoR n\/a/, out)
+      assert_match(/non-code task \(kind: chore\)/, out)
+    end
+  end
+
+  def test_clean_working_tree_keeps_chore_exempt
+    with_git_repo do |dir| # nothing changed
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 0, code, out
+      assert_match(/DoR n\/a/, out)
+    end
+  end
+
+  def test_changed_files_injection_overrides_real_git
+    # A real code file is present, but DOR_CHECK_CHANGED_FILES="" must win → exempt.
+    with_git_repo(untracked: ["app/models/widget.rb"]) do |dir|
+      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => "") do
+        out, code = check("kind" => "chore")
+        assert_equal 0, code, out
+        assert_match(/DoR n\/a/, out)
+      end
+    end
+  end
+
+  # --- [integration] end-to-end gate over real git state ---------------------
+
+  def test_e2e_code_producing_chore_fails_merge_gate
+    # The headline regression: a kind:chore with an uncommitted code diff must be
+    # GATED (demand shape + tiers), not waved through as a non-code task.
+    with_git_repo(untracked: ["app/services/charger.rb"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/DoR-to-Merge NOT met/, out)
+      assert_match(/set devops\.shape/, out)
+      refute_match(/DoR n\/a/, out)
+    end
+  end
+
+  def test_e2e_doc_only_chore_passes_merge_gate
+    with_git_repo(untracked: ["docs/agents/whatever.md"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 0, code, out
+      assert_match(/DoR-to-Merge n\/a/, out)
+      assert_match(/ready to advance submitted → reviewed/, out)
+    end
+  end
+
+  def test_e2e_code_chore_passes_once_shape_and_tiers_supplied
+    # Same code diff, but now the chore carries the full backend contract → PASS.
+    with_git_repo(untracked: ["app/services/charger.rb"]) do |dir|
+      out, code = check_against(
+        dir,
+        "kind" => "chore", "shape" => "backend", "repositories" => ["mcritchie-studio"],
+        "risk_tags" => ["tooling"], "acceptance" => ["gate fires on code chores"],
+        "test_plan" => ["unit", "integration"],
+        "checks_run" => ["[unit] x", "[integration] y"]
+      )
+      assert_equal 0, code, out
+      assert_match(/DoR-to-Merge met/, out)
+    end
   end
 end
