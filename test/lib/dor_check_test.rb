@@ -29,6 +29,20 @@ class DorCheckTest < Minitest::Test
     end
   end
 
+  # Inject a deterministic branch diff for the duration of a check. The subprocess
+  # inherits this process's ENV, so setting DOR_CHECK_CHANGED_FILES here drives the
+  # script's code-diff detection without shelling out to git. `files` is newline/
+  # comma separated; "" means "no diff". Any chore/cleanup/docs case must wrap its
+  # check, since the exemption now depends on whether the branch ships code.
+  def with_changed_files(files)
+    had = ENV.key?("DOR_CHECK_CHANGED_FILES")
+    prev = ENV["DOR_CHECK_CHANGED_FILES"]
+    ENV["DOR_CHECK_CHANGED_FILES"] = files
+    yield
+  ensure
+    had ? (ENV["DOR_CHECK_CHANGED_FILES"] = prev) : ENV.delete("DOR_CHECK_CHANGED_FILES")
+  end
+
   def test_passes_when_shape_contract_is_satisfied
     out, code = check(
       "shape" => "backend",
@@ -112,25 +126,74 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_chore_kind_is_exempt_without_a_shape
-    out, code = check("kind" => "chore")
+    out, code = with_changed_files("") { check("kind" => "chore") }
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
     assert_match(/non-code task \(kind: chore\)/, out)
   end
 
   def test_cleanup_kind_is_exempt_without_a_shape
-    out, code = check("kind" => "cleanup")
+    out, code = with_changed_files("") { check("kind" => "cleanup") }
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
   end
 
   def test_chore_exemption_in_json_verdict
-    out, code = check({ "kind" => "chore" }, "--json")
+    out, code = with_changed_files("") { check({ "kind" => "chore" }, "--json") }
     assert_equal 0, code, out
     verdict = JSON.parse(out)
     assert verdict["ready"]
     assert verdict["exempt"]
     assert_equal "chore", verdict["kind"]
+  end
+
+  # --- no size exemption: a chore that ships code gets gated like a feature ---
+
+  def test_doc_only_chore_stays_exempt
+    out, code = with_changed_files("docs/agents/foo.md\nREADME.md") { check("kind" => "chore") }
+    assert_equal 0, code, out
+    assert_match(/DoR n\/a/, out)
+  end
+
+  def test_chore_with_a_code_diff_and_no_shape_is_refused
+    out, code = with_changed_files("bin/dor-check\napp/models/task.rb") { check("kind" => "chore") }
+    assert_equal 1, code, out
+    assert_match(/ships a code diff/, out)
+    assert_match(/bin\/dor-check/, out)
+    assert_match(/set devops\.shape/, out)
+  end
+
+  def test_chore_with_a_code_diff_passes_when_the_shape_contract_is_met
+    out, code = with_changed_files("bin/dor-check") do
+      check(
+        "kind" => "chore", "shape" => "backend", "repositories" => ["mcritchie-studio"],
+        "risk_tags" => ["tooling"], "acceptance" => ["gate fires on code chores"],
+        "test_plan" => ["unit", "integration"],
+        "checks_run" => ["[unit] x", "[integration] y"]
+      )
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_chore_with_a_code_diff_still_needs_the_test_tiers
+    out, code = with_changed_files("lib/foo.rb") do
+      check(
+        "kind" => "chore", "shape" => "backend", "repositories" => ["mcritchie-studio"],
+        "risk_tags" => ["tooling"], "acceptance" => ["gate fires"],
+        "test_plan" => ["unit", "integration"], "checks_run" => ["[unit] x"]
+      )
+    end
+    assert_equal 1, code, out
+    assert_match(/integration/, out)
+  end
+
+  def test_code_diff_chore_refusal_in_json_verdict
+    out, code = with_changed_files("config/routes.rb") { check({ "kind" => "chore" }, "--json") }
+    assert_equal 1, code, out
+    verdict = JSON.parse(out)
+    refute verdict["ready"]
+    assert(verdict["errors"].any? { |e| e =~ /ships a code diff/ })
   end
 
   def test_missing_shape_still_fails_when_kind_is_not_exempt

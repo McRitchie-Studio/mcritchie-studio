@@ -45,8 +45,17 @@ require "optparse"
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
 # Kinds that carry no shippable code surface, so the shape/test-tier gate does
-# not apply. They PASS with a "DoR n/a" note instead of failing on missing shape.
+# not apply. They PASS with a "DoR n/a" note instead of failing on missing shape
+# — UNLESS the branch actually ships code (see CODE_PATH_PREFIXES). "There is no
+# size exemption" (CLAUDE.md/AGENTS.md): a chore with a code diff gets gated too.
 EXEMPT_KINDS = %w[chore cleanup docs].freeze
+# Prefixes that mean a change ships real, testable code. A change confined to
+# anything else (docs/, *.md, READMEs) is doc-only and keeps the exemption.
+# Deliberate gaps: root-level files (Gemfile/Gemfile.lock, Rakefile, config.ru)
+# and test/-only changes are NOT counted as a code diff — a dependency bump is
+# the canonical chore the exemption serves, and adding tests isn't shipping
+# behavior. Revisit if a Gemfile-only chore ever needs the gate.
+CODE_PATH_PREFIXES = %w[app/ lib/ bin/ config/ db/].freeze
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
@@ -151,6 +160,35 @@ def tier_satisfied?(checks, tier)
   checks.any? { |line| line.to_s =~ /\A\s*\[\s*#{Regexp.escape(tier)}\s*[\]:]/i }
 end
 
+# Files changed on this branch vs the diff base. Tests inject a deterministic
+# list via DOR_CHECK_CHANGED_FILES (newline/comma separated; empty string = no
+# diff); otherwise we read the branch's committed diff against DOR_CHECK_DIFF_BASE
+# (default origin/main). If git can't answer (no repo, base unfetched), return []
+# — we only ever ADD enforcement when a code diff is positively known, never on a
+# guess, so a weird git state can't false-block an otherwise-exempt chore.
+def changed_files
+  if ENV.key?("DOR_CHECK_CHANGED_FILES")
+    return ENV["DOR_CHECK_CHANGED_FILES"].to_s.split(/[\n,]/).map(&:strip).reject(&:empty?)
+  end
+
+  base = ENV.fetch("DOR_CHECK_DIFF_BASE", "origin/main")
+  out = IO.popen(["git", "-C", ROOT, "diff", "--name-only", "#{base}...HEAD"], err: File::NULL, &:read)
+  return out.to_s.split("\n").map(&:strip).reject(&:empty?) if $?.success?
+
+  # Git couldn't answer (no repo, or base unfetched). Default to exempt, but say
+  # so — otherwise the code-diff chore gate is silently skipped with no signal.
+  warn!("dor-check: couldn't diff against #{base}; code-diff chore gate skipped this run (defaulting to exempt) — fetch #{base} to enable it")
+  []
+rescue SystemCallError
+  warn!("dor-check: git unavailable; code-diff chore gate skipped this run (defaulting to exempt)")
+  []
+end
+
+# The subset of changed files that ship testable code (under CODE_PATH_PREFIXES).
+def code_changed_files
+  changed_files.select { |f| CODE_PATH_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
+end
+
 slug = ARGV.shift
 config = YAML.load_file(CONFIG_PATH)
 shapes = config.fetch("shapes")
@@ -166,34 +204,47 @@ shape = devops["shape"].to_s.strip
 shape_def = shapes[shape]
 kind = devops["kind"].to_s.strip.downcase
 
-# Non-code tasks (chore/cleanup/docs) carry no shape and no test tiers to gate.
-# PASS them with a clear "DoR n/a" note instead of failing on the missing shape.
+# Non-code kinds (chore/cleanup/docs) normally carry no shape and no test tiers
+# to gate — PASS them with a "DoR n/a" note. BUT if the branch actually ships
+# code, there is no size exemption: fall through to the full shape/test-tier gate
+# (gated_code_files drives a clearer "why am I being gated?" message below).
+gated_code_files = []
 if EXEMPT_KINDS.include?(kind)
-  note = "non-code task (kind: #{kind}); DoR n/a"
-  if options[:json]
-    puts JSON.pretty_generate(
-      task: task["slug"] || slug,
-      shape: shape.empty? ? nil : shape,
-      kind: kind,
-      gate: gate,
-      ready: true,
-      exempt: true,
-      note: note,
-      errors: [],
-      missing_metadata: [],
-      missing_tiers: []
-    )
-  else
-    title = task["title"] || task["slug"] || slug || "(task)"
-    puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
-    puts "  → ready to advance #{boundary} (shape/test-tier gate skipped for #{kind} tasks)"
+  gated_code_files = code_changed_files
+  if gated_code_files.empty?
+    note = "non-code task (kind: #{kind}); DoR n/a"
+    if options[:json]
+      puts JSON.pretty_generate(
+        task: task["slug"] || slug,
+        shape: shape.empty? ? nil : shape,
+        kind: kind,
+        gate: gate,
+        ready: true,
+        exempt: true,
+        note: note,
+        errors: [],
+        missing_metadata: [],
+        missing_tiers: []
+      )
+    else
+      title = task["title"] || task["slug"] || slug || "(task)"
+      puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
+      puts "  → ready to advance #{boundary} (shape/test-tier gate skipped for #{kind} tasks)"
+    end
+    exit 0
   end
-  exit 0
+  # else: this kind ships code — fall through and gate it like a feature.
 end
 
 errors = []
 if shape.empty?
-  errors << "devops.shape is not set (expected one of: #{shapes.keys.join(", ")})"
+  errors << if gated_code_files.any?
+    sample = gated_code_files.first(3).join(", ") + (gated_code_files.size > 3 ? ", …" : "")
+    "kind: #{kind} ships a code diff (#{sample}) so the test gate applies — set " \
+      "devops.shape (#{shapes.keys.join(", ")}) and record its tiers, or move the code out of this #{kind}"
+  else
+    "devops.shape is not set (expected one of: #{shapes.keys.join(", ")})"
+  end
 elsif shape_def.nil?
   errors << "unknown shape #{shape.inspect} (valid: #{shapes.keys.join(", ")})"
 end
