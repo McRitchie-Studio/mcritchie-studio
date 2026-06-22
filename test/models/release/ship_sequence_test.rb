@@ -87,13 +87,14 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal [], S.gems_to_repin([], BRANCH_GEMFILE)
   end
 
-  # --- publish_needed? / yanked?: RubyGems idempotency ---------------------
+  # --- publish_needed?: RubyGems idempotency -------------------------------
 
-  # The rich listing shape (/api/v1/versions/<gem>.json).
+  # The real /api/v1/versions/<gem>.json shape: an array of { "number" => ... }
+  # entries, all LIVE — RubyGems excludes yanked versions from the listing
+  # entirely (there is no `yanked` field). Other API fields are irrelevant here.
   REMOTE = [
-    { "number" => "0.9.0", "yanked" => false },
-    { "number" => "0.8.1", "yanked" => true },  # yanked
-    { "number" => "0.8.0", "yanked" => false }
+    { "number" => "0.9.0" },
+    { "number" => "0.8.0" }
   ].freeze
 
   test "publish_needed? is false when the version is already live (skip)" do
@@ -104,9 +105,11 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert S.publish_needed?("1.0.0", REMOTE)
   end
 
-  test "publish_needed? treats a yanked version as needing a (re)publish, not a skip" do
-    # A yanked version is NOT live, so publish_needed? is true; the yanked? guard
-    # then turns that into an abort (RubyGems forbids re-pushing it).
+  test "publish_needed? is true for a version absent from the listing (e.g. yanked)" do
+    # A yanked version is excluded from the listing, so it reads as not-live →
+    # publish_needed? is true. Ship then attempts the push and RubyGems rejects
+    # re-pushing a yanked number — yank safety lives at `gem push` (fail-closed),
+    # since the listing carries no yanked flag to read.
     assert S.publish_needed?("0.8.1", REMOTE)
   end
 
@@ -117,21 +120,5 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
 
   test "publish_needed? is true against an empty (never-published) listing" do
     assert S.publish_needed?("0.1.0", [])
-  end
-
-  test "yanked? is true for a published-then-yanked version" do
-    assert S.yanked?("0.8.1", REMOTE)
-  end
-
-  test "yanked? is false for a live version" do
-    assert_not S.yanked?("0.9.0", REMOTE)
-  end
-
-  test "yanked? is false for a version that was never published" do
-    assert_not S.yanked?("2.0.0", REMOTE)
-  end
-
-  test "yanked? is false for a plain string listing (no yanked flag available)" do
-    assert_not S.yanked?("0.9.0", %w[0.9.0 0.8.0])
   end
 end

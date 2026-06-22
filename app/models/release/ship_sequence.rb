@@ -11,7 +11,7 @@ class Release
   #   * which prod-deploy adapter handles a repo            (strategy_handler)
   #   * the hub-before-satellites app order                 (ordered_app_groups)
   #   * which of a consumer's gems still need re-pinning     (gems_to_repin)
-  #   * whether a gem version must be published / is yanked  (publish_needed?/yanked?)
+  #   * whether a gem version must still be published        (publish_needed?)
   module ShipSequence
     module_function
 
@@ -56,21 +56,15 @@ class Release
 
     # Should we publish `version`? No when it is already LIVE on RubyGems (an
     # idempotent skip — the gem made it in a prior run). `remote_versions` is the
-    # RubyGems versions listing: an array of { "number" =>, "yanked" => } hashes
-    # (the /api/v1/versions/<gem>.json shape) OR a plain array of version strings
-    # (all treated as live, the `gem list` shape).
+    # RubyGems versions listing from /api/v1/versions/<gem>.json: an array of
+    # { "number" => ... } entries, all LIVE — RubyGems excludes yanked versions
+    # from the listing entirely (there is no `yanked` field). It also accepts a
+    # plain array of version strings (the `gem list` shape). A yanked number is
+    # simply absent → publish_needed? is true → ship attempts the push → RubyGems
+    # rejects re-pushing it → publish_gem aborts. That is the yank safety, and it
+    # fails closed at `gem push`, so there is no listing-based yanked? check.
     def publish_needed?(version, remote_versions)
       !live_numbers(remote_versions).include?(version.to_s)
-    end
-
-    # Was `version` published and then YANKED? RubyGems permanently forbids
-    # re-pushing a yanked number, so this is an abort-and-bump signal, NOT an
-    # idempotent skip. Detectable only from the rich (hash) listing; a plain
-    # string listing carries no yanked flag, so this is always false for it.
-    def yanked?(version, remote_versions)
-      Array(remote_versions).any? do |entry|
-        version_number(entry) == version.to_s && yanked_flag?(entry)
-      end
     end
 
     # --- internals -----------------------------------------------------------
@@ -79,22 +73,16 @@ class Release
       (group[:repo] || group["repo"]).to_s
     end
 
-    # The non-yanked version numbers in a RubyGems listing.
+    # The version numbers in a RubyGems listing. The listing is already live-only
+    # (yanked versions don't appear), so this is a straight map to number strings.
     def live_numbers(remote_versions)
-      Array(remote_versions).reject { |entry| yanked_flag?(entry) }.map { |entry| version_number(entry) }
+      Array(remote_versions).map { |entry| version_number(entry) }
     end
 
-    # The version string out of either a {"number" => "x"} hash or a bare "x".
+    # The version string out of either a {"number" => "x"} hash (the versions API
+    # shape) or a bare "x" (the `gem list` shape).
     def version_number(entry)
       (entry.is_a?(Hash) ? (entry["number"] || entry[:number]) : entry).to_s
-    end
-
-    # The yanked flag out of a hash entry (false for a bare string).
-    def yanked_flag?(entry)
-      return false unless entry.is_a?(Hash)
-
-      flag = entry.key?("yanked") ? entry["yanked"] : entry[:yanked]
-      [true, "true", 1, "1"].include?(flag)
     end
   end
 end

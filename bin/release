@@ -52,7 +52,7 @@ require "yaml"
 require "tmpdir"
 
 # Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
-# publish/yank/repin) lives in the unit-tested Release::ShipSequence +
+# publish/repin) lives in the unit-tested Release::ShipSequence +
 # Release::GemfileRepin models so this CLI stays I/O-only. Both files are
 # dependency-free Ruby (no Rails), so they load standalone here — keeping the
 # string/version/ordering decisions in one tested place instead of mirrored in
@@ -515,9 +515,11 @@ def frozen_sha_for(repo, qa_shas)
   ok ? out.strip : ""
 end
 
-# The RubyGems versions listing for the idempotency check: the array of
-# { "number", "yanked" } from /api/v1/versions/<gem>.json. 404 (never published)
-# or any error → [] (publish needed, not yanked). A live-only read.
+# The RubyGems versions listing for the idempotency check: the parsed
+# /api/v1/versions/<gem>.json — an array of { "number" => ... } entries, all LIVE
+# (RubyGems excludes yanked versions from the listing entirely; there is no
+# `yanked` field). 404 (never published) or any error → [] (publish needed). A
+# live-only read.
 def rubygems_versions(gem_name)
   out, status = Open3.capture2e("/usr/bin/curl", "-sf",
                                 "https://rubygems.org/api/v1/versions/#{gem_name}.json")
@@ -559,7 +561,8 @@ end
 
 def push_origin_main(repo)
   step("push origin main (#{repo})")
-  sh("git", "-C", repo_path(repo), "push", "origin", "main")
+  _, ok = sh("git", "-C", repo_path(repo), "push", "origin", "main")
+  abort!("could not push origin main in #{repo} (diverged remote?) — resolve, then re-run `bin/release ship`") unless ok || DRY
 end
 
 # The conductor's pre-prod test gate: run the registry `test_cmd` at the repo's
@@ -602,24 +605,27 @@ def checkout_branch(repo, branch)
 end
 
 # Publish (or idempotently skip) one gem, then collapse its release → main at the
-# frozen SHA. Skip when the version is already LIVE; ABORT when it was yanked
-# (RubyGems forbids re-pushing). Records the gem as live for the partial report.
+# frozen SHA. Skip when the version is already LIVE. Yank safety is delegated to
+# `gem push` failing closed: a yanked number isn't in the listing → publish_needed?
+# is true → we try to push → RubyGems rejects re-pushing it → publish_gem aborts,
+# BEFORE any app deploys. Records the gem as live for the partial report.
 def ship_gem(repo, version, frozen)
   abort!("could not resolve a version for gem #{repo} — check #{repo}/#{gem_meta_for(repo)['version_file']}") if version.empty? && !DRY
 
   if DRY
     step("gem #{repo} #{version}: publish to RubyGems from #{short(frozen)} " \
-         "(skip if already live; ABORT if yanked) → tag v#{version} → ff #{repo} main → #{short(frozen)}")
+         "(skip if already live) → tag v#{version} → ff #{repo} main → #{short(frozen)}")
     return
   end
 
   remote = rubygems_versions(repo)
   if !Release::ShipSequence.publish_needed?(version, remote)
     say("  gem #{repo} #{version} already live on RubyGems — skip publish (idempotent)")
-  elsif Release::ShipSequence.yanked?(version, remote)
-    abort!("gem #{repo} #{version} is YANKED on RubyGems — bump #{gem_meta_for(repo)['version_file']} + re-run " \
-           "(RubyGems forbids re-pushing a yanked version)")
   else
+    # No listing-based yank check: the versions API omits yanked versions entirely
+    # (no `yanked` field), so yank protection is delegated to `gem push` failing
+    # closed — RubyGems forbids re-pushing a yanked number, so publish_gem aborts
+    # loudly here (BEFORE any app deploy) if `version` was yanked.
     checkout_detached(repo, frozen) # build the artifact from the QA-frozen commit
     publish_gem(repo, version)      # reused: release-check → build → push → tag
   end
@@ -658,8 +664,13 @@ def repin_consumers(app_groups, published_gems, ship_sha)
       next
     end
 
-    # The re-pin must build on the QA-frozen SHA: require origin/release == frozen
-    # so a post-prepare merge can't sneak out un-QA'd under cover of the re-pin.
+    # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
+    # reads the TRUE remote (not a stale local origin/release ref), then require
+    # origin/release == frozen so a post-prepare merge to origin can't sneak out
+    # un-QA'd under cover of the re-pin.
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("could not fetch origin in #{repo} for re-pin — check the remote, then re-run `bin/release ship`") unless fetched
+
     head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
     abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
     if head.strip != ship_sha[repo]
@@ -668,6 +679,17 @@ def repin_consumers(app_groups, published_gems, ship_sha)
     end
 
     checkout_branch(repo, RELEASE_BRANCH)
+
+    # The LOCAL release HEAD must ALSO equal the frozen SHA — origin matching isn't
+    # enough. An un-pushed local commit on a dirty sibling would otherwise ride out
+    # on the re-pin's ff-push, un-QA'd. (origin/release == frozen already passed, so
+    # a mismatch here means a local-only commit.)
+    local_head, local_ok = git_capture("-C", path, "rev-parse", "HEAD")
+    abort!("could not read local #{RELEASE_BRANCH} HEAD in #{repo} for re-pin") unless local_ok
+    if local_head.strip != ship_sha[repo]
+      abort!("#{repo} local #{RELEASE_BRANCH} (#{short(local_head.strip)}) drifted from the QA'd SHA " \
+             "(#{short(ship_sha[repo])}) — re-run `bin/release prepare`")
+    end
     pending.each { |gem| text = Release::GemfileRepin.rewrite(text, gem, published_gems[gem]) }
     File.write(gemfile, text)
     pending.each { |gem| bundle_lock(path, gem) }
@@ -796,7 +818,8 @@ def ship
   whats_live(repos, qa_shas)
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
 
-  # 3. Gems FIRST (producer-first): publish (skip-if-live / abort-if-yanked) + ff.
+  # 3. Gems FIRST (producer-first): publish (skip-if-live; yank safety = `gem push`
+  #    fails closed on a yanked number) + ff.
   published_gems = {} # repo => version — every gem now live; consumers re-pin to these
   gem_groups.each do |group|
     repo    = group["repo"]

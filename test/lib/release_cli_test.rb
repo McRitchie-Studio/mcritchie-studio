@@ -147,12 +147,15 @@ class ReleaseCliTest < Minitest::Test
     end
   RUBY
 
-  def test_ship_dry_run_publishes_gems_first_with_skip_and_yank_guards
+  def test_ship_dry_run_publishes_gems_first_with_skip_idempotency
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     assert_includes out, "gem studio-engine 0.9.0", "the gem is shipped by its resolved version"
     assert_includes out, "skip if already live", "publish is idempotent against RubyGems"
-    assert_includes out, "ABORT if yanked", "a yanked target version is a hard stop, not a skip"
+    # No "ABORT if yanked" branch: yank safety is delegated to `gem push` failing
+    # closed (the versions API omits yanked versions, so there's nothing to detect
+    # in the listing). The dry-run plan must NOT promise a listing-based yank abort.
+    refute_includes out, "yanked", "ship has no listing-based yank check in its plan"
     assert_includes out, "tag v0.9.0", "publish tags the published version"
   end
 
