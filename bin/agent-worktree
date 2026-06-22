@@ -565,7 +565,7 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "worktree: #{dir}"
   puts "url:      http://localhost:#{values.fetch("APP_PORT")}"
   puts "email:    http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
-  puts "branch:   feat/#{task} (or the type you pass to new)"
+  puts "branch:   feat/#{task} (or the type you pass to new) off origin/#{base_branch_for(app.fetch("repo"))}"
   puts "db:       #{values.fetch("DATABASE_URL").sub("postgresql://localhost/", "")}"
   puts "redis:    db #{redis_db}"
   puts "session:  #{app.fetch("session_env")}=#{values.fetch(app.fetch("session_env"))}"
@@ -591,7 +591,10 @@ def ensure_git_worktree(app, task, type)
   FileUtils.mkdir_p(File.dirname(dir))
   sh("git", "-C", primary, "fetch", "origin", "--quiet")
 
-  base_ref = "origin/main"
+  # Cut from the persistent `release` branch (the feature-PR target) when the
+  # repo has one; fall back to `origin/main`, then to local HEAD for a repo with
+  # no fetched remote base at all.
+  base_ref = base_ref_for(primary)
   unless sh("git", "-C", primary, "rev-parse", "--verify", base_ref, allow_fail: true)
     base_ref = "HEAD"
   end
@@ -774,6 +777,23 @@ def git_success?(dir, *args)
   ok
 end
 
+# Resolve the integration base ref ONCE for branch-cut, ahead/behind, and merge
+# checks. Post-cutover every repo keeps a persistent `release` branch (created by
+# `bin/release init`) that feature branches cut from and PR into; we reckon
+# against `origin/release`. Repos that have not run `bin/release init` (no
+# `origin/release`) transparently fall back to `origin/main` so nothing breaks.
+def base_ref_for(dir)
+  return "origin/release" if git_success?(dir, "rev-parse", "--verify", "origin/release")
+
+  "origin/main"
+end
+
+# Bare base branch name (`release` | `main`) for `gh pr create --base` and the
+# GitHub compare URL — derived from the same resolution as base_ref_for.
+def base_branch_for(dir)
+  base_ref_for(dir).delete_prefix("origin/")
+end
+
 def git_dirty?(dir)
   !git_value(dir, "status", "--porcelain").empty?
 end
@@ -790,24 +810,29 @@ def git_commit_subject(dir)
   git_value(dir, "log", "-1", "--pretty=%s")
 end
 
-def git_ahead_behind(dir)
-  return ["?", "?"] unless git_success?(dir, "rev-parse", "--verify", "origin/main")
+def git_ahead_behind(dir, base = base_ref_for(dir))
+  return ["?", "?"] unless git_success?(dir, "rev-parse", "--verify", base)
 
-  value = git_value(dir, "rev-list", "--left-right", "--count", "origin/main...HEAD")
+  value = git_value(dir, "rev-list", "--left-right", "--count", "#{base}...HEAD")
   behind, ahead = value.split(/\s+/, 2)
   [ahead || "?", behind || "?"]
 end
 
-def git_merged_to_main?(dir)
-  return false unless git_success?(dir, "rev-parse", "--verify", "origin/main")
+# True when HEAD is already contained in the resolved base (a real merge). A
+# branch merged into `release` but not yet shipped to `main` counts as done for
+# feature work, so cleanup/reclaim release it.
+def git_merged_to_base?(dir, base = base_ref_for(dir))
+  return false unless git_success?(dir, "rev-parse", "--verify", base)
 
-  git_success?(dir, "merge-base", "--is-ancestor", "HEAD", "origin/main")
+  git_success?(dir, "merge-base", "--is-ancestor", "HEAD", base)
 end
 
-def git_equivalent_to_main?(dir)
-  return false unless git_success?(dir, "rev-parse", "--verify", "origin/main")
+# True when HEAD's final diff against the resolved base is empty (the squash-merge
+# case, where the feature SHA is not preserved on the base).
+def git_equivalent_to_base?(dir, base = base_ref_for(dir))
+  return false unless git_success?(dir, "rev-parse", "--verify", base)
 
-  git_success?(dir, "diff", "--quiet", "origin/main..HEAD")
+  git_success?(dir, "diff", "--quiet", "#{base}..HEAD")
 end
 
 def cleanup_ready?(record)
@@ -829,7 +854,8 @@ def github_compare_url(record)
   return nil unless repo
 
   branch = record[:branch]
-  "https://github.com/#{repo}/compare/main...#{branch}?expand=1"
+  base = record[:base_branch] || base_branch_for(record[:dir])
+  "https://github.com/#{repo}/compare/#{base}...#{branch}?expand=1"
 end
 
 def command_available?(name)
@@ -1149,7 +1175,8 @@ def stack_record(app, dir)
   db_name = db_name_from_url(values["DATABASE_URL"])
   pidfile = app.fetch("stack") == "tm" ? File.join(dir, "tmp", "pids", "tm-web.pid") : File.join(dir, "tmp", "pids", "agent-web.pid")
   sidekiq_pidfile = File.join(dir, "tmp", "pids", "tm-sidekiq.pid")
-  ahead, behind = git_ahead_behind(dir)
+  base_ref = base_ref_for(dir)
+  ahead, behind = git_ahead_behind(dir, base_ref)
   {
     app: app,
     task: task,
@@ -1168,10 +1195,16 @@ def stack_record(app, dir)
     head: git_head(dir),
     commit_subject: git_commit_subject(dir),
     dirty: git_dirty?(dir),
+    # base_ref is the resolved integration target (`origin/release` else
+    # `origin/main`); ahead/behind/merged/equivalent_to_main are all reckoned
+    # against it. The :equivalent_to_main symbol keeps its historical name as an
+    # internal label but measures equivalence to base_ref, not necessarily main.
+    base_ref: base_ref,
+    base_branch: base_ref.delete_prefix("origin/"),
     ahead: ahead,
     behind: behind,
-    merged: git_merged_to_main?(dir),
-    equivalent_to_main: git_equivalent_to_main?(dir),
+    merged: git_merged_to_base?(dir, base_ref),
+    equivalent_to_main: git_equivalent_to_base?(dir, base_ref),
     pidfile: pidfile,
     pidfile_state: pidfile_state(pidfile),
     sidekiq_pidfile_state: File.exist?(sidekiq_pidfile) ? pidfile_state(sidekiq_pidfile) : "missing"
@@ -1239,7 +1272,7 @@ def list_worktrees(app = nil)
       merge = if record[:merged]
                 "merged"
               elsif record[:equivalent_to_main]
-                "main-eq"
+                "base-eq"
               else
                 "unmerged"
               end
@@ -1286,11 +1319,12 @@ def doctor_issues(app = nil)
     end
 
     issues << [label, "dirty worktree"] if record[:dirty]
+    base = record[:base_ref]
     if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
-      issues << [label, "branch is #{record[:behind]} commit(s) behind origin/main; rebase before QA handoff"]
+      issues << [label, "branch is #{record[:behind]} commit(s) behind #{base}; rebase before QA handoff"]
     end
     if cleanup_ready?(record)
-      message = record[:merged] ? "branch is merged to origin/main and clean; cleanup candidate" : "branch final diff matches origin/main; likely squash-merged cleanup candidate"
+      message = record[:merged] ? "branch is merged to #{base} and clean; cleanup candidate" : "branch final diff matches #{base}; likely squash-merged cleanup candidate"
       issues << [label, message]
     end
     issues << [label, "port #{record[:port]} listens but /up is #{record[:code]}"] if !record[:port_pid].empty? && record[:code] != "200"
@@ -1372,6 +1406,12 @@ def stack_record_snapshot(record, issues_by_label)
     "head" => record.fetch(:head),
     "commit_subject" => record.fetch(:commit_subject),
     "dirty" => record.fetch(:dirty),
+    # base_ref/base_branch are the resolved integration target (`origin/release`
+    # else `origin/main`). The *_origin_main keys keep their historical names as
+    # a stable registry contract but are now measured against base_ref — read
+    # base_ref to know which base the merged/ahead/behind numbers reflect.
+    "base_ref" => record.fetch(:base_ref),
+    "base_branch" => record.fetch(:base_branch),
     "merged_to_origin_main" => record.fetch(:merged),
     "equivalent_to_origin_main" => record.fetch(:equivalent_to_main),
     "ahead_origin_main" => record.fetch(:ahead),
@@ -1461,10 +1501,11 @@ def ledger_path
 end
 
 def cleanup_reason(record)
+  base = record[:base_ref] || "origin/main"
   if record[:merged]
-    "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in origin/main."
+    "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in #{base}."
   else
-    "Hidden worktree; branch `#{record[:branch]}` is clean and its final diff against origin/main is empty, usually after a squash merge."
+    "Hidden worktree; branch `#{record[:branch]}` is clean and its final diff against #{base} is empty, usually after a squash merge."
   end
 end
 
@@ -1498,7 +1539,7 @@ end
 def run_cleanup(app = nil, write: false)
   candidates = cleanup_candidates(app)
   if candidates.empty?
-    puts "cleanup: no clean merged or main-equivalent worktree candidates"
+    puts "cleanup: no clean merged or base-equivalent worktree candidates"
     return
   end
 
@@ -1564,7 +1605,9 @@ end
 
 def delete_local_branch_if_safe(app, branch)
   return if branch.to_s.empty? || branch == "?"
-  return if %w[main master].include?(branch)
+  # Never delete an integration branch: `release` is the persistent feature-PR
+  # target, alongside main/master.
+  return if %w[main master release].include?(branch)
 
   ok, out, = capture_status("git", "-C", app.fetch("repo"), "branch", "--list", branch)
   return unless ok && !out.strip.empty?
@@ -1585,7 +1628,7 @@ def teardown_worktree(app, dir, record)
 end
 
 # Scale-down-on-close normal flow: release every worktree whose branch is
-# already represented on origin/main (merged or squash-equivalent) and clean.
+# already represented on the resolved base (merged or squash-equivalent) and clean.
 # Dry-run by default; --yes performs the teardown. Never touches dirty/unmerged
 # worktrees or the primary checkout (cleanup_ready? + .worktrees-only source),
 # and re-verifies each candidate under the lock before removing it.
@@ -1597,7 +1640,7 @@ def run_reclaim(app = nil, yes: false)
 
   candidates = cleanup_candidates(app)
   if candidates.empty?
-    puts "reclaim: no clean merged or main-equivalent worktrees to release"
+    puts "reclaim: no clean merged or base-equivalent worktrees to release"
     return
   end
 
@@ -1650,15 +1693,16 @@ def run_remove(app, task, yes: false)
 
   sh("git", "-C", app.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
   record = stack_record(app, dir)
+  base = record[:base_ref]
   blockers = []
   blockers << "dirty worktree" if record[:dirty]
-  blockers << "branch content is not represented on origin/main" unless cleanup_ready?(record)
+  blockers << "branch content is not represented on #{base}" unless cleanup_ready?(record)
   blockers << "worktree is not registered with git" unless registered_worktree?(app, dir)
 
   if blockers.any?
     puts "refusing to remove #{app.fetch("slug")}/#{task}:"
     blockers.each { |blocker| puts "  - #{blocker}" }
-    puts "inspect with: git -C #{dir.shellescape} diff --stat origin/main..HEAD"
+    puts "inspect with: git -C #{dir.shellescape} diff --stat #{base}..HEAD"
     exit 1
   end
 
@@ -1680,13 +1724,14 @@ end
 def graduation_blockers(record)
   blockers = []
   branch = record[:branch]
+  base = record[:base_ref] || "origin/main"
 
   blockers << "missing #{STACK_ENV}" unless record[:env_exists]
   blockers << "worktree has uncommitted changes; commit or intentionally revert them before QA handoff" if record[:dirty]
-  blockers << "branch is #{branch.inspect}; feature work must not graduate from main/master" if %w[main master].include?(branch)
-  blockers << "branch has no commits ahead of origin/main" if record[:ahead].to_s == "0"
-  blockers << "branch is #{record[:behind]} commit(s) behind origin/main; rebase before PR" if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
-  blockers << "branch content is already represented on origin/main; use cleanup/remove instead of finish" if cleanup_ready?(record)
+  blockers << "branch is #{branch.inspect}; feature work must not graduate from an integration branch (main/master/release)" if %w[main master release].include?(branch)
+  blockers << "branch has no commits ahead of #{base}" if record[:ahead].to_s == "0"
+  blockers << "branch is #{record[:behind]} commit(s) behind #{base}; rebase before PR" if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
+  blockers << "branch content is already represented on #{base}; use cleanup/remove instead of finish" if cleanup_ready?(record)
 
   blockers
 end
@@ -1732,8 +1777,8 @@ def run_finish(app, task, push: false, pr: false)
   load_stack_env(app, task)
 
   fetch_ok, _fetch_out, fetch_err = capture_status("git", "fetch", "origin", "--quiet", chdir: dir)
-  warn "warning: git fetch failed; using local origin/main state: #{fetch_err.lines.first.to_s.strip}" unless fetch_ok
   record = stack_record(app, dir)
+  warn "warning: git fetch failed; using local #{record[:base_ref]} state: #{fetch_err.lines.first.to_s.strip}" unless fetch_ok
   compare_url = github_compare_url(record)
   blockers = graduation_blockers(record)
   blockers << "worktree is not bound to a production McRitchie Studio task; run `bin/agent-worktree bind-task #{app.fetch("slug")} #{task} task-...` before `finish --push --pr`" if pr && !task_bound?(record[:env])
@@ -1748,6 +1793,7 @@ def run_finish(app, task, push: false, pr: false)
   puts "url:      #{record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"}"
   puts "email:    #{record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"}"
   puts "health:   #{stack_health(record)} (/up #{record[:code]})"
+  puts "base:     #{record[:base_ref]} (PR base #{record[:base_branch]})"
   puts "git:      #{record[:dirty] ? "dirty" : "clean"} #{record[:merged] ? "merged" : "unmerged"} +#{record[:ahead]}/-#{record[:behind]}"
   puts "compare:  #{compare_url || "unknown remote"}"
   puts
@@ -1768,8 +1814,11 @@ def run_finish(app, task, push: false, pr: false)
 
     title = human_title(task)
     body = pr_body(record)
-    sh("gh", "pr", "create", "--draft", "--base", "main", "--head", record[:branch],
+    # Feature PRs target the persistent `release` branch (else `main` for repos
+    # without one) so `bin/release merge` can adopt them; never base on `main`.
+    sh("gh", "pr", "create", "--draft", "--base", record[:base_branch], "--head", record[:branch],
        "--title", title, "--body", body, chdir: dir)
+    puts "opened PR base: #{record[:base_branch]}"
   else
     puts "ready for QA. Open a draft PR with this body:"
     puts
@@ -2010,7 +2059,7 @@ when "status"
   merge = if record[:merged]
             "merged"
           elsif record[:equivalent_to_main]
-            "main-eq"
+            "base-eq"
           else
             "unmerged"
           end

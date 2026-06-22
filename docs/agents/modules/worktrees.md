@@ -78,7 +78,7 @@ bin/agent-worktree up turf-monster docs-stack
 bin/agent-worktree finish turf-monster docs-stack
 ```
 
-The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from current `origin/main`, copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
+The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/release` when the repo has one (the persistent feature-PR target), else `origin/main` for repos that have not run `bin/release init` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
 
 Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
 Use `bin/agent-worktree finish <app> <task-slug>` when the work is committed
@@ -123,11 +123,12 @@ bin/agent-worktree scale status
   you want evergreen terminal titles.
 - `status` shows the detailed state for one generated stack.
 - `finish` prints a feature graduation packet and PR body. It blocks dirty
-  worktrees, branches with no commits ahead of `origin/main`, stale branches
-  behind `origin/main`, and already-merged branches. Add `--push` to push the
+  worktrees, branches with no commits ahead of the base ref, stale branches
+  behind the base ref, and already-merged branches. Add `--push` to push the
   branch. `--push --pr` additionally requires a bound production task record
-  from `bind-task`, then creates a draft PR through `gh` when available.
-- `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to `origin/main`.
+  from `bind-task`, then creates a draft PR **based on the base branch
+  (`release`, else `main`)** through `gh` when available.
+- `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to the base ref.
 - `snapshot` prints a non-secret JSON registry of every generated worktree,
   including health, local URLs, branch state, Redis DB, database name, cleanup
   candidacy, compare URL, and doctor issues. The payload also carries a
@@ -139,14 +140,15 @@ bin/agent-worktree scale status
   `AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json` when a sandboxed
   session needs a scratch write instead of the shared projects registry.
 - `cleanup` is a dry run. It prints clean worktree candidates whose branch is
-  either contained in `origin/main` or has an empty final diff against
-  `origin/main` after a squash merge.
+  either contained in the base ref (`origin/release`, else `origin/main`) or has
+  an empty final diff against the base ref after a squash merge. A branch merged
+  into `release` but not yet shipped to `main` therefore counts as done.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
 - `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
-  auto-remove — clean **and** either contained in `origin/main` or
-  main-equivalent (the same `cleanup_ready?` criteria as `cleanup`) — and prints
+  auto-remove — clean **and** either contained in the base ref or
+  base-equivalent (the same `cleanup_ready?` criteria as `cleanup`) — and prints
   each candidate with its Redis DB. It never lists a dirty or unmerged worktree,
   and the candidate set is sourced from `.worktrees/*` only, so the primary
   checkout is never a candidate.
@@ -181,46 +183,49 @@ Deletion remains approval-gated:
 
 ## Squash-Merge Cleanup
 
-GitHub squash merges do not preserve the feature branch SHA on `main`. After a
-PR lands, a branch can appear behind `origin/main` even when all of its content
+GitHub squash merges do not preserve the feature branch SHA on the base. After a
+PR lands, a branch can appear behind its base ref even when all of its content
 was merged. Do not rely on ahead/behind alone.
 
-The launcher now treats an empty final diff against `origin/main` as a cleanup
-candidate. Before removing a squash-merged worktree manually:
+The launcher now treats an empty final diff against the base ref
+(`origin/release`, else `origin/main`) as a cleanup candidate. Before removing a
+squash-merged worktree manually (substitute `origin/main` for repos without a
+`release` branch):
 
-1. Pull the primary checkout so `origin/main` is current.
+1. Pull the primary checkout so `origin/release` is current.
 2. From the feature worktree, confirm the final diff is empty:
 
    ```bash
-   git diff --stat origin/main..HEAD
-   git diff --name-status origin/main..HEAD
+   git diff --stat origin/release..HEAD
+   git diff --name-status origin/release..HEAD
    ```
 
 3. If both commands are empty, prefer
    `bin/agent-worktree remove <app> <task-slug> --yes` after approval.
 4. If the diff is not empty, do not delete. The branch contains work not
-   represented on `main`; send it back through PR/QA or salvage deliberately.
+   represented on the base; send it back through PR/QA or salvage deliberately.
 
 ## Rules
 
-- Branch from current `origin/release` (feature PRs target the persistent
-  `release` branch, not `main`). Open the PR with **`gh pr create --base
-  release`** (or `bin/agent-worktree finish --push --pr`, passing `--base
-  release`). Reckon a branch's ahead/behind against `origin/release` — that is its
-  merge target now.
-  - **Transitional (until a follow-up PR lands):** `bin/agent-worktree new` still
-    cuts from `origin/main` and `finish --pr` still defaults the PR base to
-    `main`. Until the launcher's automatic `--base` default flips to `release`,
-    rebase your branch onto `origin/release` and pass `--base release` to
-    `gh pr create` explicitly. `bin/release merge` rejects any PR whose base
-    isn't `release`, so this is caught at merge time if missed.
+- Branch from the **base ref** (feature PRs target the persistent `release`
+  branch, not `main`). This is now the launcher default: `bin/agent-worktree new`
+  cuts from `origin/release`, `finish --pr` opens the PR with `--base release`,
+  and ahead/behind + cleanup/merge checks all reckon against `origin/release`.
+  - **Fallback:** a repo that has not run `bin/release init` has no
+    `origin/release`, so the launcher transparently falls back to `origin/main`
+    for the branch cut, the PR base, and the comparison base. The resolved base
+    is reported per-worktree (`base_ref` in `snapshot`/registry, the `base:` line
+    in `finish`). `bin/release merge` still rejects any PR whose base isn't
+    `release`, so a stray `main`-based PR is caught at merge time.
 - One task branch per worktree.
 - Never commit task work on the primary `main` checkout unless you are the
   explicit deploy owner for that repo.
-- A feature branch is the backup and collaboration unit. `main` is the reviewed
-  integration lane, not a place to rush code so it is not lost.
-- Feature agents push their branch and open/prepare a PR. Avi or the designated
-  release conductor owns merging to `main`.
+- A feature branch is the backup and collaboration unit. `release` is the
+  reviewed integration lane (`main` is the shipped lane, fast-forwarded from
+  `release` at ship time), not a place to rush code so it is not lost.
+- Feature agents push their branch and open/prepare a PR into `release`. Avi or
+  the designated release conductor owns merging to `release` (and shipping
+  `release → main`).
 - If the primary checkout is dirty, ahead, or moves while you are working, treat
   it as shared-floor drift. Do not fold those changes into your task silently.
   Report it and continue from the isolated worktree.

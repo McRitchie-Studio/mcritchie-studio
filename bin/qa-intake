@@ -141,6 +141,18 @@ def selected_worktrees(registry, apps)
   registry.fetch("worktrees", []).select { |worktree| app_slugs.include?(worktree.fetch("app")) }
 end
 
+# The integration base is resolved by bin/agent-worktree (`origin/release` once a
+# repo has run `bin/release init`, else `origin/main`) and carried per-worktree in
+# the registry as `base_ref`. The registry's *_origin_main keys are historical
+# names that now measure against that resolved base; read `base_ref` to know which
+# base a worktree's ahead/behind/merged numbers and "behind <base>" issue reflect.
+BEHIND_BASE_ISSUE = %r{behind origin/(?:main|release)}
+
+def base_ref_for(worktree)
+  value = worktree["base_ref"].to_s
+  value.empty? ? "origin/main" : value
+end
+
 def truthy?(value)
   value == true || value.to_s == "true"
 end
@@ -169,7 +181,7 @@ end
 def blocking_issues(worktree)
   Array(worktree["issues"]).select do |issue|
     issue.match?(/dirty worktree/) ||
-      issue.match?(/behind origin\/main/) ||
+      issue.match?(BEHIND_BASE_ISSUE) ||
       issue.match?(/missing \.env\.agent-stack/) ||
       issue.match?(/missing APP_PORT/) ||
       issue.match?(/missing REDIS_URL/) ||
@@ -239,7 +251,7 @@ def local_action(worktree)
   elsif truthy?(worktree["dirty"])
     "commit, stash, or intentionally discard local edits before QA handoff"
   elsif !zeroish?(worktree["behind_origin_main"])
-    "rebase on `origin/main`, resolve conflicts, test, and force-push with lease if already pushed"
+    "rebase on `#{base_ref_for(worktree)}`, resolve conflicts, test, and force-push with lease if already pushed"
   elsif Array(worktree["issues"]).any?
     "resolve listed lifecycle issues, then rerun `bin/qa-intake --refresh`"
   else
@@ -248,10 +260,11 @@ def local_action(worktree)
 end
 
 def attention_action(worktree)
+  base = base_ref_for(worktree)
   issues = Array(worktree["issues"]).join("; ")
-  return "run cleanup workflow after approval; branch is already contained in `origin/main`" if issues.include?("cleanup candidate")
+  return "run cleanup workflow after approval; branch is already contained in `#{base}`" if issues.include?("cleanup candidate")
   return "remove stale pidfiles or restart the stack with `bin/agent-worktree up #{worktree.fetch("app")} #{worktree.fetch("task")}`" if issues.include?("stale")
-  return "rebase this worktree on `origin/main` before QA handoff" if issues.include?("behind origin/main")
+  return "rebase this worktree on `#{base}` before QA handoff" if issues.match?(BEHIND_BASE_ISSUE)
   return "commit or intentionally clear uncommitted changes" if issues.include?("dirty worktree")
   return "fix stack env/database/port health, then rerun intake" if issues.match?(/missing|database|port|Redis|LOCAL_EMAIL_CAPTURE/)
 
@@ -390,7 +403,7 @@ end
 def print_cleanup(worktrees)
   print_section("Cleanup Candidates")
   if worktrees.empty?
-    puts "No clean merged or main-equivalent worktrees in scope."
+    puts "No clean merged or base-equivalent worktrees in scope."
     return
   end
 
