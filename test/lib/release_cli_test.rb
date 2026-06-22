@@ -118,4 +118,96 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
     assert_includes out, "rides the release", "a gem member is published at ship, not deployed in prepare"
   end
+
+  # --- ship --dry-run: multi-repo, producer-first, hub-before-satellites ---
+
+  # A mixed release: a gem (producer) + two apps with DIFFERENT prod adapters,
+  # plus per-repo QA-frozen SHAs. turf-monster is listed BEFORE mcritchie-studio
+  # on purpose so the dry-run proves ship reorders the hub to the front.
+  SHIP_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      return {} unless ruby.include?("repo_plan")
+      { "slug" => "rel-ship", "state" => "assembled", "branch" => "release",
+        "qa_shas" => {
+          "studio-engine" => "aaaaaaa1111111111111111111111111111111111",
+          "turf-monster" => "ccccccc3333333333333333333333333333333333",
+          "mcritchie-studio" => "bbbbbbb2222222222222222222222222222222222"
+        },
+        "repos" => [
+          { "repo" => "studio-engine", "kind" => "gem", "prod_deploy" => nil,
+            "members" => [{ "slug" => "t-gem", "version" => "0.9.0", "branch" => nil }] },
+          { "repo" => "turf-monster", "kind" => "app", "qa_app" => "turf-monster",
+            "members" => [{ "slug" => "t-turf", "version" => nil, "branch" => "feat/turf" }],
+            "prod_deploy" => { "strategy" => "repo_script", "command" => "bin/deploy", "args" => ["--yes"] } },
+          { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
+            "members" => [{ "slug" => "t-studio", "version" => nil, "branch" => "feat/studio" }],
+            "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku",
+                               "branch" => "main", "smoke_url" => "https://app.mcritchie.studio" } }
+        ] }
+    end
+  RUBY
+
+  def test_ship_dry_run_publishes_gems_first_with_skip_idempotency
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    assert_includes out, "gem studio-engine 0.9.0", "the gem is shipped by its resolved version"
+    assert_includes out, "skip if already live", "publish is idempotent against RubyGems"
+    # No "ABORT if yanked" branch: yank safety is delegated to `gem push` failing
+    # closed (the versions API omits yanked versions, so there's nothing to detect
+    # in the listing). The dry-run plan must NOT promise a listing-based yank abort.
+    refute_includes out, "yanked", "ship has no listing-based yank check in its plan"
+    assert_includes out, "tag v0.9.0", "publish tags the published version"
+  end
+
+  def test_ship_dry_run_runs_the_auto_repin_pass
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    assert_includes out, "auto-repin consumers of studio-engine"
+    assert_includes out, "bundle lock --update", "re-pin re-locks the consumer against the published gem"
+  end
+
+  def test_ship_dry_run_dispatches_per_repo_prod_adapters
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    # hub: git_push_heroku + smoke its smoke_url
+    assert_includes out, "push heroku main"
+    assert_includes out, "https://app.mcritchie.studio/up"
+    # satellite: repo_script runs the repo's own deploy; the repo owns smoke/rollback
+    assert_includes out, "bin/deploy --yes"
+    assert_includes out, "repo owns its smoke + rollback"
+  end
+
+  def test_ship_dry_run_test_cmd_gate_hub_only
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    # hub carries a conductor test_cmd; satellites self-gate (skip it).
+    assert_includes out, "bin/rails test", "the hub runs its conductor test_cmd before prod"
+    assert_includes out, "self-gates", "a repo_script satellite skips the conductor test_cmd"
+  end
+
+  def test_ship_dry_run_ships_the_frozen_sha
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    assert_includes out, "frozen", "ship fast-forwards each repo to its QA-frozen SHA"
+    assert_includes out, "bbbbbbb", "the hub's frozen SHA prefix appears in the plan"
+  end
+
+  def test_ship_dry_run_order_is_gems_then_hub_then_satellites
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    gem_at = out.index("gem studio-engine")
+    hub_at = out.index("bin/rails test")    # hub's pre-prod gate
+    sat_at = out.index("bin/deploy --yes")  # satellite's deploy
+
+    assert gem_at && hub_at && sat_at, "all three phases must appear"
+    assert_operator gem_at, :<, hub_at, "gems publish before the hub deploys"
+    assert_operator hub_at, :<, sat_at, "the hub deploys before the satellites"
+  end
+
+  def test_ship_dry_run_states_the_partial_ship_policy_and_executes_nothing
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    assert_includes out, "abort on first failure", "partial-ship policy is surfaced"
+    assert_includes out, "DRY RUN", "a dry-run executes nothing"
+  end
 end
