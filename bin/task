@@ -52,6 +52,34 @@ def feature_marker_path
   File.join(PROJECTS_DIR, ".agents", "sessions", "#{sid.gsub(/[^A-Za-z0-9._-]/, "")}.json")
 end
 
+# The agent session working this task — stamped on create + on the move to
+# `building` (the claim moment) so the board + status line can show which
+# terminal owns a task and offer a click-to-copy resume command. Claude exposes
+# CLAUDE_CODE_SESSION_ID; the Codex path is best-effort. Returns [id, provider],
+# or [nil, nil] for a plain shell / CI run (stamp nothing — graceful).
+def session_identity
+  claude = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  return [claude, "claude"] unless claude.empty?
+
+  # TODO: confirm codex resume syntax + its session env var. Best-effort guess.
+  codex = ENV["CODEX_SESSION_ID"].to_s.strip
+  return [codex, "codex"] unless codex.empty?
+
+  [nil, nil]
+end
+
+# Merge the captured session id/provider into a devops hash. No-op (returns the
+# input) when there's no session, so non-Claude/CI runs stamp nothing.
+def stamp_session(devops)
+  id, provider = session_identity
+  return devops if id.nil?
+
+  merged = (devops || {}).dup
+  merged["session_id"] = id
+  merged["session_provider"] = provider
+  merged
+end
+
 SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
   "--branch" => "branch", "--pr-url" => "pr_url",
@@ -220,7 +248,7 @@ when "show"
 when "create"
   _pos, scalars, lists, top = parse_flags(ARGV)
   die!("create needs --title") unless top["title"]
-  devops = build_devops({}, scalars, lists)
+  devops = stamp_session(build_devops({}, scalars, lists))
   body = top_body(top)
   body["devops"] = devops unless devops.empty?
   task = api(:post, "/api/v1/tasks", body)["data"]
@@ -241,7 +269,16 @@ when "move"
   slug = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
   stage = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
   die!("unknown stage #{stage.inspect}; one of: #{STAGES.join(", ")}") unless STAGES.include?(stage)
-  task = api(:patch, "/api/v1/tasks/#{slug}", { "stage" => stage })["data"]
+  body = { "stage" => stage }
+  # Stamp the working session on the claim (move to building). Read-merge-write
+  # so the session fields ride alongside existing devops without wiping them
+  # (the raw API replaces metadata.devops wholesale). No session → no-op.
+  if stage == "building" && !session_identity.first.nil?
+    current = api(:get, "/api/v1/tasks/#{slug}")["data"]
+    merged = stamp_session(current.dig("metadata", "devops") || {})
+    body["devops"] = merged unless merged.empty?
+  end
+  task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   write_feature_marker(task)
   print_task(task)
 when "block"

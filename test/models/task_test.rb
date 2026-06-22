@@ -419,4 +419,66 @@ class TaskTest < ActiveSupport::TestCase
                         metadata: { "devops" => { "agent_context" => "Verbose multi-line\nreasoning for agents." } })
     assert_equal "Verbose multi-line\nreasoning for agents.", task.devops_agent_context
   end
+
+  # --- Session resume (V1: store + display + copy) ---
+
+  test "normalize keeps session_id and session_provider (accepted by the API)" do
+    metadata = Task.normalize_devops_metadata(
+      "session_id" => "2aa216f6-7565-4bf4-bd01-70793c8ba617",
+      "session_provider" => "claude"
+    )
+    assert_equal "2aa216f6-7565-4bf4-bd01-70793c8ba617", metadata["session_id"]
+    assert_equal "claude", metadata["session_provider"]
+  end
+
+  test "session_id_last4 returns the trailing four chars, nil-safe" do
+    with_session = Task.new(title: "session last four",
+                            metadata: { "devops" => { "session_id" => "abcd-1234-12ab" } })
+    assert_equal "12ab", with_session.session_id_last4
+
+    without = Task.new(title: "no session here")
+    assert_nil without.session_id_last4
+  end
+
+  test "resume_command builds the claude command from the full session id" do
+    task = Task.new(title: "resume claude command",
+                    metadata: { "devops" => { "session_id" => "sess-12ab", "session_provider" => "claude" } })
+    assert_equal "claude --resume sess-12ab", task.resume_command
+  end
+
+  test "resume_command builds the codex command for a codex session" do
+    task = Task.new(title: "resume codex command",
+                    metadata: { "devops" => { "session_id" => "sess-99zz", "session_provider" => "codex" } })
+    assert_equal "codex resume sess-99zz", task.resume_command
+  end
+
+  test "resume_command treats a missing provider as claude" do
+    task = Task.new(title: "resume default provider",
+                    metadata: { "devops" => { "session_id" => "sess-77yy" } })
+    assert_equal "claude --resume sess-77yy", task.resume_command
+  end
+
+  test "resume_command falls back to claude for an unknown provider" do
+    task = Task.new(title: "resume unknown provider",
+                    metadata: { "devops" => { "session_id" => "sess-55xx", "session_provider" => "vim" } })
+    assert_equal "claude --resume sess-55xx", task.resume_command
+  end
+
+  test "resume_command is nil when there is no session id" do
+    assert_nil Task.new(title: "no session command").resume_command
+  end
+
+  test "resume_command_display truncates to the verb plus last four" do
+    claude = Task.new(title: "display claude command",
+                      metadata: { "devops" => { "session_id" => "long-session-12ab" } })
+    assert_equal "claude --resume …12ab", claude.resume_command_display
+
+    codex = Task.new(title: "display codex command",
+                     metadata: { "devops" => { "session_id" => "long-session-99zz", "session_provider" => "codex" } })
+    assert_equal "codex resume …99zz", codex.resume_command_display
+  end
+
+  test "resume_command_display is nil when there is no session id" do
+    assert_nil Task.new(title: "no session display").resume_command_display
+  end
 end

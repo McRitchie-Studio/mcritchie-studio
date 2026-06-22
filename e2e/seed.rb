@@ -55,7 +55,7 @@ SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 # Tasks in different workflow stages
 Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "alex")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", queued_at: 1.day.ago, started_at: 2.hours.ago)
-Task.create!(title: "Deploy v2.0", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "alex", queued_at: 3.days.ago, started_at: 2.days.ago)
+Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "alex", queued_at: 3.days.ago, started_at: 2.days.ago)
 Task.create!(
   title: "Sidebar back-navigation production repro",
   slug: "task-ea8541e4b5b6",
@@ -63,6 +63,23 @@ Task.create!(
   stage: "blocked",
   priority: 1,
   agent_slug: "alex"
+)
+
+# Session-resume fixture: a task claimed by a Claude session — drives the …<last4>
+# badge + click-to-copy resume control on the /tasks board.
+Task.create!(
+  title: "Resume session demo task",
+  slug: "session-resume-demo",
+  description: "Fixture for the session-resume board widget (last-4 + resume copy).",
+  stage: "building",
+  priority: 0,
+  agent_slug: "alex",
+  metadata: { "devops" => {
+    "kind" => "feature",
+    "repositories" => ["mcritchie-studio"],
+    "session_id" => "00000000-0000-0000-0000-00000012ab",
+    "session_provider" => "claude"
+  } }
 )
 
 # Activities

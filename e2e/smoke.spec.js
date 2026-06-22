@@ -34,7 +34,7 @@ test("tasks page loads with stage badges", async ({ page }) => {
   await page.goto("/tasks");
   await expect(page.locator("body")).toContainText("Review agent protocol");
   await expect(page.locator("body")).toContainText("Scrape odds data");
-  await expect(page.locator("body")).toContainText("Deploy v2.0");
+  await expect(page.locator("body")).toContainText("Deploy v2 release");
 });
 
 test("task detail loads", async ({ page }) => {
