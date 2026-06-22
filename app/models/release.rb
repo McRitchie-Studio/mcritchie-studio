@@ -75,13 +75,16 @@ class Release < ApplicationRecord
   # unchanged. The actual branch merge + per-merge tests are the conductor's job;
   # this is the membership + stage bookkeeping.
   def add(task)
+    # Validate the task BEFORE mutating release state, so adopting a non-reviewed
+    # task onto an assembled RC doesn't needlessly reopen it.
+    raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})" unless task.stage == "reviewed"
+
     # On the durable `release` branch a PR can merge AFTER we've assembled (QA'd)
     # the candidate. That late merge must re-open the RC so it re-assembles and
     # re-QAs before shipping — so absorb an assembled state by reopening, rather
     # than refusing the member.
     reopen! if state == "assembled"
     raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
-    raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})" unless task.stage == "reviewed"
 
     task.update!(release_slug: slug, stage: "assembled")
     task

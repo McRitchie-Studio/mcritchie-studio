@@ -321,7 +321,9 @@ def merge
   # 2. The PR's base MUST be `release` — this command only records merges INTO it.
   base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
   base = base.strip
-  if !DRY && base_ok && base != RELEASE_BRANCH
+  # Fail CLOSED: if the base can't be read, don't proceed to an unverified merge.
+  abort!("could not read the PR base for #{pr_url} (gh pr view failed) — verify the PR exists and targets `#{RELEASE_BRANCH}`") if !DRY && !base_ok
+  if !DRY && base != RELEASE_BRANCH
     abort!("PR #{pr_url} targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it to `#{RELEASE_BRANCH}` " \
            "(feature PRs merge INTO release now), then re-run `bin/release merge #{task_slug}`.")
   end

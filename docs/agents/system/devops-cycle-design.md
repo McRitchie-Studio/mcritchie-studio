@@ -14,7 +14,10 @@
 > automatic PR `--base` default from `main` to `release` (until then, branch from
 > `origin/release` and pass `--base release` explicitly); migrating the heartbeat
 > planner `bin/devops-cycle` from the old stage names to the new ones (it is
-> self-consistent on the legacy snapshot today); the Discord progress webhook
+> self-consistent on the legacy snapshot today); **multi-repo `ship`** — the
+> per-repo app deploy across satellites (+ gem auto-repin + partial-ship +
+> `test_cmd` gate); `bin/release ship` today publishes gems then deploys
+> mcritchie-studio only; the Discord progress webhook
 > (§5). Where this doc describes those, it is the spec for the follow-up.
 >
 > Operator companion: the board stage guide at `/stages`; this document remains
