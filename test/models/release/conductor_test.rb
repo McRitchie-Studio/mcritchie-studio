@@ -4,9 +4,10 @@ require "minitest/mock"
 class Release::ConductorTest < ActiveSupport::TestCase
   # A reviewed task with a KNOWN app repo. Repo-aware eligibility (see
   # validate_members!) refuses a member whose repo is in neither registry
-  # section, so the default member here must classify to a known kind.
-  def reviewed_task(title = "Reviewable", repo: "mcritchie-studio")
-    Task.create!(title: title, stage: "reviewed",
+  # section, so the default member here must classify to a known kind. The label
+  # is wrapped into a 3-5 word title so it satisfies the naming-discipline rule.
+  def reviewed_task(label = "default", repo: "mcritchie-studio")
+    Task.create!(title: "reviewable #{label} demo task", stage: "reviewed",
                  metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
   end
 
@@ -54,12 +55,12 @@ class Release::ConductorTest < ActiveSupport::TestCase
   end
 
   test "prepare! raises on a task that is not reviewed" do
-    designed = Task.create!(title: "not reviewed") # stage: designed
+    designed = Task.create!(title: "designed task not reviewed") # stage: designed
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
   end
 
   test "prepare! is atomic — a non-reviewed task rolls back the new release" do
-    designed = Task.create!(title: "not reviewed")
+    designed = Task.create!(title: "designed task not reviewed")
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
     assert_equal 0, Release.count, "a failed prepare! must not leave a dangling release"
   end
@@ -88,13 +89,13 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
   # --- producer-first ordering + member_plan ---
 
-  def gem_task(title = "engine", repo: "studio-engine")
-    Task.create!(title: title, stage: "reviewed",
+  def gem_task(label = "engine", repo: "studio-engine")
+    Task.create!(title: "gem #{label} release task", stage: "reviewed",
                  metadata: { "devops" => { "shape" => "library", "repositories" => [repo] } })
   end
 
-  def app_task(title = "app", repo: "mcritchie-studio", branch: "feat/x", deps: [])
-    Task.create!(title: title, stage: "reviewed", dependencies: deps,
+  def app_task(label = "app", repo: "mcritchie-studio", branch: "feat/x", deps: [])
+    Task.create!(title: "app #{label} release task", stage: "reviewed", dependencies: deps,
                  metadata: { "devops" => {
                    "shape" => "backend", "repositories" => [repo], "branch" => branch,
                    "pr_url" => "https://github.com/amcritchie/#{repo}/pull/1"
@@ -225,7 +226,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
   # --- repo-aware eligibility ---
 
   test "prepare! raises naming a member whose repo is in neither registry section" do
-    mystery = Task.create!(title: "mystery", stage: "reviewed",
+    mystery = Task.create!(title: "mystery repo deploy task", stage: "reviewed",
                            metadata: { "devops" => { "shape" => "backend", "repositories" => ["mystery-repo"] } })
 
     err = assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [mystery.slug]) }
@@ -234,7 +235,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
   end
 
   test "prepare! eligibility is atomic — an unknown-repo member rolls the release back" do
-    mystery = Task.create!(title: "mystery", stage: "reviewed",
+    mystery = Task.create!(title: "mystery repo deploy task", stage: "reviewed",
                            metadata: { "devops" => { "shape" => "backend", "repositories" => ["mystery-repo"] } })
 
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [mystery.slug]) }

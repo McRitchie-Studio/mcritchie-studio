@@ -171,6 +171,13 @@
             <% end %>
           </div>
         </div>
+
+        <% if @task.devops_agent_context %>
+          <div class="bg-surface rounded p-3 mt-3">
+            <p class="text-[10px] text-muted uppercase tracking-wide mb-2">Agent Context</p>
+            <p class="text-sm text-body whitespace-pre-wrap break-words"><%= @task.devops_agent_context %></p>
+          </div>
+        <% end %>
       </div>
     <% end %>
 

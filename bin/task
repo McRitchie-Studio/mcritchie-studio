@@ -56,7 +56,8 @@ SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
-  "--release-train" => "release_train", "--block-kind" => "block_kind"
+  "--release-train" => "release_train", "--block-kind" => "block_kind",
+  "--agent-context" => "agent_context"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
 NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze

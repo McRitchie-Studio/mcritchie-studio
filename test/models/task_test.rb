@@ -117,13 +117,13 @@ class TaskTest < ActiveSupport::TestCase
   test "slug is generated on create" do
     task = Task.create!(title: "Test slug generation")
     assert task.slug.present?
-    assert task.slug.start_with?("task-")
+    assert_equal "test-slug-generation", task.slug # derives from the title now
   end
 
   test "slug is immutable after creation" do
     task = tasks(:new_task)
     original_slug = task.slug
-    task.update!(title: "Changed title")
+    task.update!(title: "now a changed title")
     assert_equal original_slug, task.slug
   end
 
@@ -147,20 +147,20 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   test "new tasks get appended to end of stage" do
-    t1 = Task.create!(title: "First", stage: "designed")
-    t2 = Task.create!(title: "Second", stage: "designed")
+    t1 = Task.create!(title: "first designed task here", stage: "designed")
+    t2 = Task.create!(title: "second designed task here", stage: "designed")
     assert t2.position > t1.position
   end
 
   test "tasks default to the designed stage" do
-    task = Task.create!(title: "Default stage")
+    task = Task.create!(title: "default stage check task")
     assert_equal "designed", task.stage
   end
 
   # --- Sizing (sealed-bid) ---
 
   test "size columns accept all valid t-shirt sizes" do
-    task = Task.create!(title: "Sizing test")
+    task = Task.create!(title: "sizing test sample task")
     Task::SIZES.each do |size|
       %i[pm_size po_size dev_size actual_size].each do |col|
         task.update!(col => size)
@@ -170,13 +170,13 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   test "size columns reject invalid sizes" do
-    task = Task.new(title: "Bad size", pm_size: "huge")
+    task = Task.new(title: "bad size value task", pm_size: "huge")
     assert_not task.valid?
     assert_includes task.errors[:pm_size], "is not included in the list"
   end
 
   test "size columns allow nil" do
-    task = Task.create!(title: "No sizes")
+    task = Task.create!(title: "no sizes set task")
     assert_nil task.pm_size
     assert_nil task.po_size
     assert_nil task.dev_size
@@ -187,14 +187,14 @@ class TaskTest < ActiveSupport::TestCase
   # --- requires_migration ---
 
   test "requires_migration scope returns only flagged tasks" do
-    flagged = Task.create!(title: "Needs migration", requires_migration: true)
-    Task.create!(title: "No migration")
+    flagged = Task.create!(title: "needs migration flag task", requires_migration: true)
+    Task.create!(title: "no migration flag task")
     assert_includes Task.requires_migration, flagged
-    assert_equal 1, Task.requires_migration.where(title: ["Needs migration", "No migration"]).count
+    assert_equal 1, Task.requires_migration.where(title: ["needs migration flag task", "no migration flag task"]).count
   end
 
   test "requires_migration defaults to false" do
-    task = Task.create!(title: "Default flag")
+    task = Task.create!(title: "default flag check task")
     assert_equal false, task.requires_migration
   end
 
@@ -272,52 +272,53 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
   end
 
-  # --- Readable slug: custom handle at creation, trickle-down ---
+  # --- Slug: explicit override, else derived from the (terse) title ---
 
-  test "a provided slug becomes the readable, parameterized Task.slug" do
-    task = Task.create!(title: "X", slug: "Standard Link Model")
+  test "an explicit slug becomes the readable, parameterized Task.slug" do
+    task = Task.create!(title: "valid four word title", slug: "Standard Link Model")
     assert_equal "standard-link-model", task.slug
   end
 
-  test "no slug falls back to an opaque task-<hex>" do
-    task = Task.create!(title: "X")
-    assert_match(/\Atask-[0-9a-f]{12}\z/, task.slug)
+  test "no explicit slug derives the slug from the title" do
+    task = Task.create!(title: "Derive slug from title")
+    assert_equal "derive-slug-from-title", task.slug
   end
 
-  test "a slug that parameterizes to blank falls back to hex and does not trickle" do
-    task = Task.create!(title: "X", slug: "###")
+  test "title-derived slugs auto-suffix to stay unique" do
+    first = Task.create!(title: "Same short title")
+    second = Task.create!(title: "Same short title")
+    assert_equal "same-short-title", first.slug
+    assert_equal "same-short-title-2", second.slug
+  end
+
+  test "an unparameterizable title falls back to hex and does not trickle" do
+    task = Task.create!(title: "### @@@ %%%") # 3 'words', parameterizes to blank
     assert_match(/\Atask-[0-9a-f]{12}\z/, task.slug)
     assert_nil task.devops_worktree_slug
   end
 
-  test "a custom slug seeds worktree_slug and branch (trickle-down)" do
-    task = Task.create!(title: "X", slug: "readable-handle")
-    assert_equal "readable-handle", task.devops_worktree_slug
-    assert_equal "feat/readable-handle", task.metadata.dig("devops", "branch")
+  test "the slug seeds worktree_slug and branch (trickle-down)" do
+    task = Task.create!(title: "Readable handle here")
+    assert_equal "readable-handle-here", task.devops_worktree_slug
+    assert_equal "feat/readable-handle-here", task.metadata.dig("devops", "branch")
   end
 
   test "explicit worktree_slug/branch are not overwritten by the trickle-down" do
-    task = Task.create!(title: "X", slug: "readable-handle",
+    task = Task.create!(title: "Readable handle here", slug: "readable-handle",
                         metadata: { "devops" => { "worktree_slug" => "custom-wt", "branch" => "feat/custom" } })
     assert_equal "custom-wt", task.devops_worktree_slug
     assert_equal "feat/custom", task.metadata.dig("devops", "branch")
   end
 
-  test "an opaque hex slug does not trickle into worktree_slug/branch" do
-    task = Task.create!(title: "X")
-    assert_nil task.devops_worktree_slug
-    assert_nil task.metadata.dig("devops", "branch")
-  end
-
   test "slug is immutable after creation (attr_readonly raises on update)" do
-    task = Task.create!(title: "X", slug: "original")
+    task = Task.create!(title: "Immutable slug test", slug: "original")
     assert_raises(ActiveRecord::ReadonlyAttributeError) { task.update!(slug: "changed") }
     assert_equal "original", task.reload.slug
   end
 
-  test "a duplicate slug is rejected" do
-    Task.create!(title: "A", slug: "dupe")
-    dup = Task.new(title: "B", slug: "dupe")
+  test "a duplicate explicit slug is rejected" do
+    Task.create!(title: "First dupe task", slug: "dupe")
+    dup = Task.new(title: "Second dupe task", slug: "dupe")
     assert_not dup.valid?
     assert_includes dup.errors[:slug], "has already been taken"
   end
@@ -325,7 +326,7 @@ class TaskTest < ActiveSupport::TestCase
   # --- release_repo / gem_release? / release_kind ---
 
   test "release_repo parses the repo from a github PR url" do
-    task = Task.create!(title: "engine bump", stage: "reviewed",
+    task = Task.create!(title: "engine version bump task", stage: "reviewed",
                         metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/studio-engine/pull/9" } })
     assert_equal "studio-engine", task.release_repo
     assert task.gem_release?
@@ -333,7 +334,7 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   test "release_repo prefers the PR url over the declared repositories" do
-    task = Task.create!(title: "mixed", stage: "reviewed",
+    task = Task.create!(title: "mixed repo source task", stage: "reviewed",
                         metadata: { "devops" => {
                           "pr_url" => "https://github.com/amcritchie/solana-studio/pull/3",
                           "repositories" => ["turf-monster"]
@@ -358,7 +359,7 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   test "an app task is not a gem release" do
-    task = Task.create!(title: "app feature", stage: "reviewed",
+    task = Task.create!(title: "app feature release task", stage: "reviewed",
                         metadata: { "devops" => {
                           "shape" => "backend",
                           "repositories" => ["mcritchie-studio"],
@@ -370,9 +371,52 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   test "a task with no repo metadata classifies as unknown, not a gem" do
-    task = Task.create!(title: "bare task", stage: "reviewed")
+    task = Task.create!(title: "bare task no repo", stage: "reviewed")
     assert_nil task.release_repo
     assert_not task.gem_release?
     assert_equal :unknown, task.release_kind
+  end
+
+  # --- Naming discipline: terse title + acceptance, agent_context ---
+
+  test "title must be 3-5 words on create" do
+    assert Task.new(title: "fix the login").valid?               # 3
+    assert Task.new(title: "add a new login flow").valid?        # 5
+    assert_not Task.new(title: "fix login").valid?               # 2
+    assert_not Task.new(title: "add a brand new login flow now").valid? # 7
+  end
+
+  test "an existing task is grandfathered until its title actually changes" do
+    task = Task.create!(title: "valid four word title")
+    task.update!(stage: "building") # title untouched → not re-validated
+    assert_equal "building", task.reload.stage
+    assert_raises(ActiveRecord::RecordInvalid) do
+      task.update!(title: "now this title has far too many words to pass") # 9
+    end
+  end
+
+  test "each acceptance bullet must be 5-12 words on create" do
+    ok = Task.new(title: "acceptance length check",
+                  metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } }) # 6
+    assert ok.valid?
+    short = Task.new(title: "acceptance length check",
+                     metadata: { "devops" => { "acceptance" => ["too short here"] } }) # 3
+    assert_not short.valid?
+  end
+
+  test "acceptance is validated on change but unrelated devops updates are grandfathered" do
+    task = Task.create!(title: "acceptance change task",
+                        metadata: { "devops" => { "acceptance" => ["the user can log in successfully"] } })
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "kind" => "bug" })) # acceptance untouched
+    assert_equal "bug", task.devops_kind
+    assert_raises(ActiveRecord::RecordInvalid) do
+      task.update!(metadata: task.metadata.deep_merge("devops" => { "acceptance" => ["too short"] })) # 2
+    end
+  end
+
+  test "agent_context stores free-form verbose detail" do
+    task = Task.create!(title: "agent context round trip",
+                        metadata: { "devops" => { "agent_context" => "Verbose multi-line\nreasoning for agents." } })
+    assert_equal "Verbose multi-line\nreasoning for agents.", task.devops_agent_context
   end
 end

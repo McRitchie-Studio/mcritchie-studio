@@ -265,10 +265,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "update title via JSON returns JSON not redirect" do
     log_in_as(@admin)
     patch task_path(@new_task.slug, format: :json),
-          params: { task: { title: "Updated Title" } }, as: :json
+          params: { task: { title: "updated task title here" } }, as: :json
     assert_response :success
     @new_task.reload
-    assert_equal "Updated Title", @new_task.title
+    assert_equal "updated task title here", @new_task.title
   end
 
   test "create stores devops handoff metadata" do
@@ -287,7 +287,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
             qa_url: "https://qa.turfmonster.media/contests",
             release_train: "2026-06-17-turf",
             requires_release_conductor: "1",
-            acceptance: "Contest creates on QA\nEntry submits on QA",
+            acceptance: "Contest creates on QA without errors\nEntry submits successfully on QA devnet",
             test_plan: "bin/rails test\nQA devnet mutating smoke",
             checks_run: "bin/rails test test/controllers/tasks_controller_test.rb"
           }
@@ -300,7 +300,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert task.requires_release_conductor?
     assert_equal "contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster", "turf-vault"], task.devops_repositories
-    assert_equal ["Contest creates on QA", "Entry submits on QA"], task.devops_acceptance
+    assert_equal ["Contest creates on QA without errors", "Entry submits successfully on QA devnet"], task.devops_acceptance
     assert_equal ["bin/rails test test/controllers/tasks_controller_test.rb"], task.devops_checks_run
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
   end
@@ -426,8 +426,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "reorder sets positions in order" do
     log_in_as(@admin)
     # Create two tasks in same stage
-    t1 = Task.create!(title: "Reorder A", stage: "designed")
-    t2 = Task.create!(title: "Reorder B", stage: "designed")
+    t1 = Task.create!(title: "reorder task a here", stage: "designed")
+    t2 = Task.create!(title: "reorder task b here", stage: "designed")
 
     # Reorder: B before A
     post reorder_tasks_path(format: :json),

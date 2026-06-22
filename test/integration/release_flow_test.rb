@@ -23,7 +23,7 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
   end
 
   test "a mixed gem + app release plans the gem first (producer-first) with its version" do
-    gem = Task.create!(title: "engine 0.8", stage: "reviewed",
+    gem = Task.create!(title: "engine 0.8 gem release", stage: "reviewed",
                        metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
     app = Task.create!(title: "consume engine 0.8", stage: "reviewed", dependencies: [gem.slug],
                        metadata: { "devops" => {

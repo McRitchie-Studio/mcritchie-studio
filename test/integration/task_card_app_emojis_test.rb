@@ -6,7 +6,7 @@ require "test_helper"
 class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
   test "kanban card renders a single-line title and a slug row with affected-app emojis" do
     task = Task.create!(
-      title: "A very long task title that used to wrap onto a second line on the board card",
+      title: "board card title sample",
       stage: "building",
       metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio", "studio-engine"] } }
     )
@@ -34,7 +34,7 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
 
   test "current-release member pills show app emojis in place of the stage badge" do
     member = Task.create!(
-      title: "Release member task carrying two repos",
+      title: "release member pill task",
       stage: "reviewed",
       metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio", "studio-engine"] } }
     )

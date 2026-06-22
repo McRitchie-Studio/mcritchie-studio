@@ -32,8 +32,12 @@ class Task < ApplicationRecord
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
-    requires_release_conductor block_kind
+    requires_release_conductor block_kind agent_context
   ].freeze
+  # Human-facing fields are kept terse (so the operator can read the board at a
+  # glance); agents put their verbose detail in `agent_context`.
+  TITLE_WORD_RANGE = (3..5).freeze
+  ACCEPTANCE_WORD_RANGE = (5..12).freeze
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
   # The change shape selects its DoR test contract. Keep in sync with
@@ -47,6 +51,11 @@ class Task < ApplicationRecord
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
   validates :stage, inclusion: { in: STAGES }
+  # Naming discipline — enforced wherever the title/acceptance is set or changed
+  # (every create + any update that touches them, all paths). Gated on change, so
+  # existing tasks that don't touch these fields stay grandfathered.
+  validate :title_within_word_range, if: :title_changed?
+  validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -92,6 +101,12 @@ class Task < ApplicationRecord
 
   def devops_worktree_slug
     devops.fetch("worktree_slug", "").presence
+  end
+
+  # Free-form verbose detail agents write for each other — no length constraint
+  # (the readability constraints are on title + acceptance).
+  def devops_agent_context
+    devops.fetch("agent_context", "").presence
   end
 
   def devops_repositories
@@ -285,19 +300,33 @@ class Task < ApplicationRecord
   end
 
   # The slug is the readable, immutable handle set at creation — it drives the
-  # URL (/tasks/<slug>) and seeds the worktree + branch. A provided slug is
-  # normalized (parameterized); with none given we fall back to an opaque
-  # task-<hex>. `@custom_slug` records which, so the trickle-down only fires for
-  # a real, human-chosen handle.
+  # URL (/tasks/<slug>) and seeds the worktree + branch. Precedence: an explicit
+  # --slug (parameterized), else the (now-terse) title (parameterized +
+  # auto-suffixed), else an opaque task-<hex> last resort. `@custom_slug` records
+  # whether the slug is readable, so the trickle-down only fires for a real handle.
   def generate_slug
-    normalized = slug.to_s.parameterize
-    if normalized.present?
-      self.slug = normalized
+    explicit = slug.present?
+    base = (explicit ? slug : title).to_s.parameterize
+    if base.present?
+      # Explicit --slug is left as-is (uniqueness validation surfaces a collision
+      # to the chooser); a title-derived slug auto-suffixes, since short titles repeat.
+      self.slug = explicit ? base : unique_slug(base)
       @custom_slug = true
     else
       self.slug = "task-#{SecureRandom.hex(6)}"
       @custom_slug = false
     end
+  end
+
+  # Append -2, -3, … until the title-derived slug is unique.
+  def unique_slug(base)
+    candidate = base
+    n = 1
+    while Task.where(slug: candidate).where.not(id: id).exists?
+      n += 1
+      candidate = "#{base}-#{n}"
+    end
+    candidate
   end
 
   # Trickle-down: a custom slug seeds worktree_slug + branch (feat/<slug>) when
@@ -310,5 +339,41 @@ class Task < ApplicationRecord
     devops = (metadata["devops"] ||= {})
     devops["worktree_slug"] = slug if devops["worktree_slug"].blank?
     devops["branch"] = "feat/#{slug}" if devops["branch"].blank?
+  end
+
+  def word_count(text)
+    text.to_s.split(/\s+/).reject(&:blank?).size
+  end
+
+  # True on create (acceptance newly set) and on any update that actually changes
+  # the acceptance list — so untouched existing tasks (and updates to other devops
+  # fields) stay grandfathered. Both sides are normalized before comparing, so a
+  # task whose stored acceptance isn't already in normalized form (e.g. a direct
+  # Task.create! with dupes/embedded newlines) isn't falsely re-validated on an
+  # unrelated devops update.
+  def acceptance_changed?
+    previous = self.class.normalize_devops_list((metadata_was || {}).dig("devops", "acceptance"))
+    previous != devops_acceptance
+  end
+
+  # Keep titles tight (3-5 words) so they read at a glance and slugify cleanly —
+  # detail belongs in agent_context, not the title.
+  def title_within_word_range
+    count = word_count(title)
+    return if TITLE_WORD_RANGE.cover?(count)
+
+    errors.add(:title, "must be #{TITLE_WORD_RANGE.first}-#{TITLE_WORD_RANGE.last} words " \
+                       "(was #{count}) — name it tightly; put detail in agent_context")
+  end
+
+  # Each acceptance bullet stays a readable 5-12 words so the human can follow the story.
+  def acceptance_bullets_within_word_range
+    devops_acceptance.each_with_index do |bullet, i|
+      count = word_count(bullet)
+      next if ACCEPTANCE_WORD_RANGE.cover?(count)
+
+      errors.add(:base, "acceptance ##{i + 1} must be #{ACCEPTANCE_WORD_RANGE.first}-" \
+                        "#{ACCEPTANCE_WORD_RANGE.last} words (was #{count}): #{bullet.to_s.truncate(48)}")
+    end
   end
 end

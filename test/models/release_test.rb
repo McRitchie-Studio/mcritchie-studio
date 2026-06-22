@@ -1,8 +1,8 @@
 require "test_helper"
 
 class ReleaseTest < ActiveSupport::TestCase
-  def reviewed_task(title = "Reviewable")
-    Task.create!(title: title, stage: "reviewed")
+  def reviewed_task(label = "default")
+    Task.create!(title: "reviewable #{label} demo task", stage: "reviewed")
   end
 
   test "open! creates an assembling release with a generated slug" do
