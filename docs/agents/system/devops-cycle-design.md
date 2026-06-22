@@ -266,7 +266,40 @@ per DevOps stage (source of truth: `ApplicationHelper#devops_kickoffs`). Pasted
 into a Claude session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
-each command to a deterministic runbook:
+each command to a deterministic runbook. The same `devops_kickoffs` source also
+carries one non-stage meta-trigger — **`Build and Deploy QA Release`** — rendered
+as a prominent chip in the current-release section (`#current-release`); it is
+the operator's main one-trigger that composes the per-stage commands below.
+
+**`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run)*
+
+This is Mr. McRitchie's single trigger for the whole QA department: hand it to an
+agent and it walks the persistent-`release` model end to end, stopping only at the
+one human gate. It does **not** ship to production on its own.
+
+1. **Assess the release.** Find the active (non-shipped) release via
+   `Release.featured` (or `bin/release` state) and list its current `assembled`
+   members — the candidate already riding the train.
+2. **Pull in the reviewed backlog.** For every eligible `reviewed` task,
+   `bin/release merge <task>` it into `release` (membership flips `reviewed →
+   assembled` at merge). **Avi's bias is throughput — maximize what ships: get
+   every task that passes QA into the release, default to including, not
+   deferring.** If no release is active, the first merge creates the singleton
+   candidate.
+3. **Work the `submitted` queue.** Review each submitted PR (the `Review
+   submitted PRs` runbook below). For each that **passes QA and doesn't
+   conflict**, `bin/release merge <task>` it into `release` (so it flips
+   `reviewed → assembled` and joins the candidate); send back anything that
+   fails review (`bin/task block … --kind rework`).
+4. **Deploy the candidate to QA.** `bin/release prepare` — deploys
+   `origin/release` to QA for every member's **app** (gem members ride the record
+   and are QA'd via a consuming app), records `release.qa_url`, and leaves the RC
+   `assembled` for the operator to eyeball.
+5. **Stop at the human gate.** Do **not** ship. Report the QA URL and the
+   candidate's members, then **ask the operator to make the production release**
+   (`bin/release ship`) — the one human gate (see `Run Deployment` below).
+
+The per-stage commands below are the building blocks this meta-trigger sequences:
 
 **One-time setup (per machine/clone).** Run **`bin/release init`** once: it
 creates the persistent `release` branch (= `origin/main`) on every gem + app repo

@@ -2,6 +2,12 @@
   <% rel = @current_release %>
   <% members = rel.tasks.order(:position).to_a %>
   <div id="current-release" class="mb-6 rounded-xl border border-subtle bg-surface p-4">
+    <%# Operator's one-trigger QA-department workflow: assess the active release,
+        pull every reviewed/passing task in, deploy QA, then stop for the prod ship. %>
+    <div class="mb-3 flex items-center gap-2 flex-wrap">
+      <span class="text-[11px] uppercase tracking-wide text-primary font-semibold">One-trigger QA release</span>
+      <%= render "kickoff_chip", command: qa_release_kickoff, label: "Kick off" %>
+    </div>
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Current Release</span>

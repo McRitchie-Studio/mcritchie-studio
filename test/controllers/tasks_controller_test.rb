@@ -37,6 +37,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
+  test "deployments current-release section renders the Build and Deploy QA Release kickoff chip" do
+    Release.open!(branch: "release/qa-kickoff")
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#current-release", text: /Build and Deploy QA Release/
+  end
+
   test "deployments omits the release header when there is no release" do
     Release.delete_all
 
