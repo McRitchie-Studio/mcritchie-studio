@@ -47,6 +47,7 @@ module LinkTreeHelper
         { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", hover_emoji: "🔬", desc: "Users + request logs" },
         { label: "Theme", href: admin_theme_path, emoji: "🎨", hover_emoji: "🌓", desc: "Palette + dark mode" },
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
+        { label: "Email images", href: admin_email_images_path, emoji: "🖼️", hover_emoji: "✉️", desc: "Manage transactional email banners" },
       ] },
       { title: "Ops", links: [
         { label: "DevOps", href: devops_path, emoji: "🚦", hover_emoji: "🛠️", desc: "Apps, test suites, and deploy checks" },
