@@ -143,10 +143,23 @@ class Release
 
     # Persist the per-repo SHAs deployed to QA onto the release, so the board (and
     # ship) can show exactly which commit each repo's QA app is running. `shas` is
-    # a { repo => sha } hash; stored under metadata["qa_shas"].
+    # a { repo => sha } hash; MERGED into the existing metadata["qa_shas"].
+    #
+    # NON-CLOBBERING by design: a blank/empty incoming value is IGNORED, never
+    # written. A partial `prepare` (e.g. from a gem-less box that can't resolve a
+    # sibling's origin/release HEAD) passes "" for the repos it couldn't freeze;
+    # without this guard a re-run would overwrite a previously-frozen GOOD SHA with
+    # "", and `ship`'s frozen_sha_for would then fall back to live origin/release
+    # HEAD — the exact post-prepare drift the freeze exists to prevent. Non-blank
+    # values still update in place; brand-new repo keys are still added.
     def record_qa_shas(release:, shas:)
       meta = release.metadata.deep_dup
-      meta["qa_shas"] = shas.to_h.transform_values(&:to_s)
+      existing = meta["qa_shas"].is_a?(Hash) ? meta["qa_shas"] : {}
+      shas.to_h.each do |repo, sha|
+        sha = sha.to_s
+        existing[repo.to_s] = sha unless sha.empty?
+      end
+      meta["qa_shas"] = existing
       release.update!(metadata: meta)
       release
     end

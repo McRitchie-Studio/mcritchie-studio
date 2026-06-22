@@ -104,6 +104,37 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
                  "ship selects the frozen gem SHA — no live origin/release fallback"
   end
 
+  test "a partial re-prepare can't wipe a frozen gem SHA: blank merges non-clobbering and ship still reads the QA'd commit" do
+    gem = Task.create!(title: "engine 1.0 gem release", stage: "reviewed",
+                       metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
+    app = Task.create!(title: "consume engine 1.0", stage: "reviewed", dependencies: [gem.slug],
+                       metadata: { "devops" => {
+                         "shape" => "backend", "repositories" => ["mcritchie-studio"],
+                         "branch" => "feat/consume-engine-10",
+                         "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/400"
+                       } })
+
+    rel = Release::Conductor.prepare!(task_slugs: [gem.slug, app.slug], slug: "rel-freeze-guard")
+    assert_equal "assembled", rel.state
+
+    # First (full) prepare freezes the gem's QA'd origin/release HEAD.
+    Release::Conductor.record_qa_shas(release: rel,
+                                      shas: { "studio-engine" => "frozengem", "mcritchie-studio" => "frozenhub" })
+
+    # A SECOND prepare from a gem-less box: the gem sibling isn't checked out, so
+    # bin/release records "" for it (the exact clobber scenario R2 guards). The
+    # merge must keep the previously-frozen good SHA, not wipe it.
+    Release::Conductor.record_qa_shas(release: rel,
+                                      shas: { "studio-engine" => "", "mcritchie-studio" => "frozenhub" })
+
+    qa_shas = rel.reload.metadata["qa_shas"]
+    # Cross-boundary: ship reads the frozen SHA via Release::ShipSequence.frozen_sha,
+    # so the guard must keep ship pinned to the QA'd commit (no live-HEAD fallback).
+    assert_equal "frozengem", Release::ShipSequence.frozen_sha(qa_shas, "studio-engine"),
+                 "ship must still select the QA-frozen gem SHA after a partial re-prepare"
+    assert_equal "frozenhub", Release::ShipSequence.frozen_sha(qa_shas, "mcritchie-studio")
+  end
+
   test "abandon frees the member tasks and the active-release singleton" do
     a = Task.create!(title: "Abandon flow A", stage: "reviewed")
     rel = Release.open!

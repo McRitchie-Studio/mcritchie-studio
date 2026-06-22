@@ -62,8 +62,11 @@ require "tmpdir"
 # dependency-free Ruby (no Rails), so they load standalone here — keeping the
 # string/version/ordering decisions in one tested place instead of mirrored in
 # the shell. GemfileRepin first: ShipSequence references it at call time.
+# Release::Cli holds the pure ARGV-parsing helpers (also Rails-free) the flag
+# handling below routes through.
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/cli"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -159,13 +162,13 @@ def qa_registered?(app)
   QA_ENVIRONMENTS.key?(app.to_s)
 end
 
-DRY = ARGV.delete("--dry-run") ? true : false
+DRY = Release::Cli.take_flag(ARGV, "--dry-run")
 # Production is the DEFAULT target now (the board IS production) — pass --local to
 # opt into the old, stale-local-db behavior. `--prod` is still consumed so the old
 # flag stays a harmless no-op.
-ARGV.delete("--prod")
-PROD = !ARGV.delete("--local")
-ASSUME_YES = ARGV.delete("--yes") ? true : false
+Release::Cli.take_flag(ARGV, "--prod")
+PROD = !Release::Cli.take_flag(ARGV, "--local")
+ASSUME_YES = Release::Cli.take_flag(ARGV, "--yes")
 
 def abort!(msg) = abort("✗ #{msg}")
 def say(msg) = puts(msg)
@@ -220,20 +223,10 @@ def conductor(ruby, read_only: false)
   JSON.parse(line)
 end
 
-def opt_values(flag)
-  vals = []
-  while (i = ARGV.index(flag))
-    ARGV.delete_at(i)
-    vals << ARGV.delete_at(i)
-  end
-  vals.compact
-end
-
-def opt_value(flag)
-  return nil unless (i = ARGV.index(flag))
-  ARGV.delete_at(i)
-  ARGV.delete_at(i)
-end
+# Thin wrappers over the pure, unit-tested Release::Cli parsers — they consume
+# from this process's ARGV so the subcommands read the same way as before.
+def opt_values(flag) = Release::Cli.opt_values(ARGV, flag)
+def opt_value(flag)  = Release::Cli.opt_value(ARGV, flag)
 
 def confirm(prompt)
   return true if ASSUME_YES || DRY
