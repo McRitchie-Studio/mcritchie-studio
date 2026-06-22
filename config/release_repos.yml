@@ -17,7 +17,23 @@
 #   gems — published to RubyGems. They have NO app branch in mcritchie-studio;
 #          their PR/branch lives in the gem's own repo. They ride the release as
 #          a record, are published at ship, and are QA'd via a consuming app.
-#   apps — deployed (Heroku). They have a branch merged onto the release branch.
+#   apps — deployed. A HASH keyed by repo slug; each app carries a `prod_deploy`
+#          adapter describing HOW it ships to production (the multi-repo conductor
+#          reads this so one release can drive heterogeneous deploys). They have a
+#          branch merged onto the release branch.
+#
+# prod_deploy adapters (the `strategy` selects the deploy mechanic):
+#   git_push_heroku — push the release/main branch to a Heroku git remote.
+#       remote    — the git remote name to push to (e.g. heroku).
+#       branch    — the branch the remote deploys (e.g. main).
+#       smoke_url — the production URL to smoke-test after the push.
+#   repo_script — shell out to a deploy script that lives IN the app repo (the
+#                 repo owns its own deploy logic; the conductor just invokes it).
+#       command — the repo-relative deploy script (e.g. bin/deploy).
+#       args    — argv passed to the script (e.g. ["--yes"] to skip prompts).
+#
+# Optional per-app `qa_deploy: { app: <qa-server-key> }` overrides the qa-server
+# target; absent, `Release::Repos.qa_app` defaults the key to the repo slug.
 #
 # gem fields:
 #   version_file — path (inside the gem repo) declaring the version to publish.
@@ -46,7 +62,24 @@ gems:
     build_cmd: gem build solana-studio.gemspec
 
 apps:
-  - mcritchie-studio
-  - turf-monster
-  - tax-studio
-  - chain-ops
+  mcritchie-studio:
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: heroku
+      branch: main
+      smoke_url: https://app.mcritchie.studio
+  turf-monster:
+    prod_deploy:
+      strategy: repo_script
+      command: bin/deploy
+      args: ["--yes"]
+  tax-studio:
+    prod_deploy:
+      strategy: repo_script
+      command: bin/deploy
+      args: ["--yes"]
+  chain-ops:
+    prod_deploy:
+      strategy: repo_script
+      command: bin/deploy
+      args: ["--yes"]

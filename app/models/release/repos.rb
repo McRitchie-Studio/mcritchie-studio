@@ -41,13 +41,33 @@ class Release
     end
 
     def app_repos
-      Array(config.fetch("apps", []))
+      config.fetch("apps", {}).keys
     end
 
     # The gem's registry metadata (version_file, gemspec, release_check, …) or
     # nil when the repo isn't a registered gem.
     def gem_meta(repo)
       config.fetch("gems", {})[repo.to_s]
+    end
+
+    # The app's registry metadata (prod_deploy adapter, optional qa_deploy, …) or
+    # nil when the repo isn't a registered app.
+    def app_meta(repo)
+      config.fetch("apps", {})[repo.to_s]
+    end
+
+    # The production-deploy adapter for an app (a hash with a `strategy` key —
+    # git_push_heroku or repo_script — plus its strategy-specific fields) or nil
+    # when the repo isn't a registered app.
+    def prod_deploy(repo)
+      app_meta(repo)&.fetch("prod_deploy", nil)
+    end
+
+    # The qa-server key for an app — its optional `qa_deploy.app` override, else
+    # the repo slug. Always returns a string for any repo (qa targets are keyed
+    # by slug by default), so callers don't special-case the common case.
+    def qa_app(repo)
+      app_meta(repo)&.dig("qa_deploy", "app") || repo.to_s
     end
 
     # The sibling checkout path for a repo — gem repos live next to this app at

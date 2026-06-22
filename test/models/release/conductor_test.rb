@@ -2,8 +2,12 @@ require "test_helper"
 require "minitest/mock"
 
 class Release::ConductorTest < ActiveSupport::TestCase
-  def reviewed_task(title = "Reviewable")
-    Task.create!(title: title, stage: "reviewed")
+  # A reviewed task with a KNOWN app repo. Repo-aware eligibility (see
+  # validate_members!) refuses a member whose repo is in neither registry
+  # section, so the default member here must classify to a known kind.
+  def reviewed_task(title = "Reviewable", repo: "mcritchie-studio")
+    Task.create!(title: title, stage: "reviewed",
+                 metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
   end
 
   test "prepare! opens a new release when none is active and assembles it" do
@@ -153,6 +157,89 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
     assert_equal [base.slug, dependent.slug], rel.ordered_members.map(&:slug),
                  "a task must sort after any task in its dependencies"
+  end
+
+  # --- repo_plan: per-repo deploy plan ---
+
+  test "repo_plan groups members by repo, producer-first, with per-repo deploy metadata" do
+    gem = gem_task("engine", repo: "studio-engine")
+    studio = app_task("studio change", repo: "mcritchie-studio", branch: "feat/studio")
+    turf = app_task("turf change", repo: "turf-monster", branch: "feat/turf")
+    rel = Release::Conductor.prepare!(task_slugs: [turf.slug, studio.slug, gem.slug], slug: "rel-multi-repo")
+
+    plan = nil
+    Release::Repos.stub(:gem_version, ->(repo) { repo == "studio-engine" ? "0.9.0" : nil }) do
+      plan = Release::Conductor.repo_plan(rel)
+    end
+
+    # Producer-first repo order: the gem repo leads, then apps in member order.
+    assert_equal %w[studio-engine mcritchie-studio turf-monster], plan.map { |g| g[:repo] }
+
+    gem_group = plan.find { |g| g[:repo] == "studio-engine" }
+    assert_equal :gem, gem_group[:kind]
+    assert_equal [gem.slug], gem_group[:members].map { |m| m[:slug] }
+    assert_nil gem_group[:release_branch]
+    assert_nil gem_group[:qa_app]
+    assert_nil gem_group[:prod_deploy]
+
+    studio_group = plan.find { |g| g[:repo] == "mcritchie-studio" }
+    assert_equal :app, studio_group[:kind]
+    assert_equal [studio.slug], studio_group[:members].map { |m| m[:slug] }
+    assert_equal "release/multi-repo", studio_group[:release_branch] # slug minus the rel- prefix
+    assert_equal "mcritchie-studio", studio_group[:qa_app]
+    assert_equal "git_push_heroku", studio_group[:prod_deploy]["strategy"]
+
+    turf_group = plan.find { |g| g[:repo] == "turf-monster" }
+    assert_equal :app, turf_group[:kind]
+    assert_equal "release/multi-repo", turf_group[:release_branch]
+    assert_equal "turf-monster", turf_group[:qa_app]
+    assert_equal "repo_script", turf_group[:prod_deploy]["strategy"]
+    assert_equal ["--yes"], turf_group[:prod_deploy]["args"]
+  end
+
+  test "repo_plan collapses multiple members of one repo into a single group" do
+    a = app_task("turf a", repo: "turf-monster", branch: "feat/a")
+    b = app_task("turf b", repo: "turf-monster", branch: "feat/b")
+    rel = Release::Conductor.prepare!(task_slugs: [a.slug, b.slug], slug: "rel-one-repo")
+
+    plan = Release::Conductor.repo_plan(rel)
+
+    assert_equal 1, plan.length
+    assert_equal "turf-monster", plan.first[:repo]
+    assert_equal [a.slug, b.slug].sort, plan.first[:members].map { |m| m[:slug] }.sort
+  end
+
+  test "repo_plan is JSON-serializable" do
+    gem = gem_task("engine", repo: "studio-engine")
+    app = app_task("consumer", repo: "turf-monster", branch: "feat/consume")
+    rel = Release::Conductor.prepare!(task_slugs: [gem.slug, app.slug], slug: "rel-json")
+
+    plan = nil
+    Release::Repos.stub(:gem_version, ->(_repo) { "0.9.0" }) do
+      plan = Release::Conductor.repo_plan(rel)
+    end
+
+    assert_nothing_raised { JSON.generate(plan) }
+  end
+
+  # --- repo-aware eligibility ---
+
+  test "prepare! raises naming a member whose repo is in neither registry section" do
+    mystery = Task.create!(title: "mystery", stage: "reviewed",
+                           metadata: { "devops" => { "shape" => "backend", "repositories" => ["mystery-repo"] } })
+
+    err = assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [mystery.slug]) }
+    assert_match mystery.slug, err.message
+    assert_match "mystery-repo", err.message
+  end
+
+  test "prepare! eligibility is atomic — an unknown-repo member rolls the release back" do
+    mystery = Task.create!(title: "mystery", stage: "reviewed",
+                           metadata: { "devops" => { "shape" => "backend", "repositories" => ["mystery-repo"] } })
+
+    assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [mystery.slug]) }
+    assert_equal 0, Release.count, "an unknown-repo member must not leave a dangling release"
+    assert_equal "reviewed", mystery.reload.stage, "the rolled-back task stays reviewed"
   end
 
   # --- record_qa_deploy ---

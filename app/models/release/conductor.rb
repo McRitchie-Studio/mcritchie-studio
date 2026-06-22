@@ -27,9 +27,29 @@ class Release
           release.add(task) unless release.tasks.exists?(slug: task.slug)
         end
 
+        # Repo-aware eligibility: a release can't deploy a repo it doesn't know
+        # how to deploy. Runs inside the transaction, before assemble!, so an
+        # unknown-repo member rolls the whole prepare! back.
+        validate_members!(release)
+
         release.assemble!
         release
       end
+    end
+
+    # Guard: every member must classify to a known release_kind (:gem or :app).
+    # An :unknown member means its repo is in neither registry section of
+    # config/release_repos.yml, so the conductor has no adapter to ship it.
+    # Raises ArgumentError naming the offending members so the operator can fix
+    # the task's repo or register it.
+    def validate_members!(release)
+      unknown = release.ordered_members.select { |task| task.release_kind == :unknown }
+      return if unknown.none?
+
+      named = unknown.map { |task| "#{task.slug} (#{task.release_repo.presence || 'no repo'})" }
+      raise ArgumentError,
+            "release #{release.slug} can't deploy unknown repo(s): #{named.join(', ')} — " \
+            "register the repo in config/release_repos.yml or fix the task's repo"
     end
 
     # The per-member release plan the CLI consumes, in producer-first order:
@@ -48,6 +68,30 @@ class Release
           kind: kind.to_s,
           repo: task.release_repo,
           version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil
+        }
+      end
+    end
+
+    # The per-REPO deploy plan the multi-repo conductor consumes: member_plan
+    # (already producer-first) collapsed into one entry per repo, in the same
+    # producer-first order (group_by preserves first-appearance, so gem repos —
+    # whose members lead member_plan — stay first). Each entry is
+    # { repo, kind, members, release_branch, qa_app, prod_deploy } where:
+    #   * GEM repos carry nil release_branch/qa_app/prod_deploy — a gem is
+    #     published, not deployed, and rides the release as a record (no branch).
+    #   * APP repos carry the shared release branch, the qa-server key, and the
+    #     prod_deploy adapter read from config/release_repos.yml.
+    # All keys are symbol-keyed and the values are JSON-serializable.
+    def repo_plan(release)
+      member_plan(release).group_by { |member| member[:repo] }.map do |repo, members|
+        gem = Release::Repos.gem?(repo)
+        {
+          repo: repo,
+          kind: Release::Repos.kind(repo),
+          members: members,
+          release_branch: gem ? nil : "release/#{release.slug.sub(/\Arel-/, '')}",
+          qa_app: gem ? nil : Release::Repos.qa_app(repo),
+          prod_deploy: gem ? nil : Release::Repos.prod_deploy(repo)
         }
       end
     end
