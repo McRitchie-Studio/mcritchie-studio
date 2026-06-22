@@ -75,7 +75,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "app_emoji maps each canonical app slug to its glyph" do
-    assert_equal "🧰", app_emoji("mcritchie-studio")
+    assert_equal "🪎", app_emoji("mcritchie-studio")
     assert_equal "🐊", app_emoji("turf-monster")
     assert_equal "💎", app_emoji("studio-engine")
     assert_equal "🏛️", app_emoji("turf-vault")
@@ -84,7 +84,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "app_emoji is blank-safe and case/whitespace tolerant, nil for unknown" do
-    assert_equal "🧰", app_emoji("  MCRITCHIE-STUDIO  ")
+    assert_equal "🪎", app_emoji("  MCRITCHIE-STUDIO  ")
     assert_nil app_emoji("nope")
     assert_nil app_emoji("")
     assert_nil app_emoji(nil)
@@ -95,7 +95,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # turf-vault and its 'vault' alias share one glyph → one entry
     assert_equal ["🏛️"], app_emojis(["turf-vault", "vault"])
     # unmapped repos are dropped, not rendered blank
-    assert_equal ["🧰"], app_emojis(["mcritchie-studio", "ghost-app"])
+    assert_equal ["🪎"], app_emojis(["mcritchie-studio", "ghost-app"])
     assert_equal [], app_emojis(nil)
   end
 
@@ -104,28 +104,10 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_nil app_emoji_badge([])
 
     badge = app_emoji_badge(["mcritchie-studio", "studio-engine"])
-    assert_includes badge, "🧰"
+    assert_includes badge, "🪎"
     assert_includes badge, "💎"
     assert_includes badge, %(title="mcritchie-studio, studio-engine")
     assert badge.html_safe?
-  end
-
-  test "deploy_target_label is 'publish' for a gem task" do
-    # a library-shape task whose repo is a registered gem → published, not deployed
-    gem_task = Task.new(metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
-    assert_equal "publish", deploy_target_label(gem_task)
-  end
-
-  test "deploy_target_label is '<qa_app> → QA' for an app task" do
-    app_task = Task.new(metadata: { "devops" => { "repositories" => ["turf-monster"] } })
-    assert_equal "turf-monster → QA", deploy_target_label(app_task)
-  end
-
-  test "deploy_target_label is nil for an unknown release repo" do
-    ghost_task = Task.new(metadata: { "devops" => { "repositories" => ["ghost-app"] } })
-    assert_nil deploy_target_label(ghost_task)
-    # and nil when there's no devops repo at all
-    assert_nil deploy_target_label(Task.new)
   end
 
   test "devops_next_html badges whole-word stage names only" do

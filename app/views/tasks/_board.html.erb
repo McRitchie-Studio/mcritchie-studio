@@ -186,30 +186,25 @@ function kanbanBoard() {
 </script>
 
 <section x-data="kanbanBoard()" class="min-h-screen">
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-3 mb-6 flex-wrap">
-    <h2 class="text-2xl font-bold text-heading"><%= title %></h2>
-    <div class="flex items-center gap-3 flex-wrap">
-      <%= render "page_nav", current: local_assigns[:current_page] %>
-      <select x-model="agentFilter"
-              class="bg-surface border border-subtle text-body text-sm rounded-lg px-3 py-2 focus:border-primary focus:outline-none">
-        <option value="">All Agents</option>
-        <% @agents.each do |agent| %>
-          <option value="<%= agent.slug %>"><%= agent.name %></option>
+  <!-- Header — Dashboard/Stages as small links above the title; the title says
+       where you are, and the Tasks/Deployments toggle (right) switches boards. -->
+  <div class="mb-6">
+    <%= render "board_top_links", current: local_assigns[:current_page] %>
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <h2 class="text-2xl font-bold text-heading"><%= title %></h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <%= render "page_nav", current: local_assigns[:current_page] %>
+        <% if archived %>
+          <button @click="showArchived = !showArchived"
+                  :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
+                  class="px-3 py-1.5 rounded-lg text-sm font-medium transition">
+            Archived
+          </button>
         <% end %>
-      </select>
-
-      <% if archived %>
-        <button @click="showArchived = !showArchived"
-                :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
-                class="px-3 py-2 rounded-lg text-sm font-medium transition">
-          Archived
-        </button>
-      <% end %>
-
-      <% if logged_in? %>
-        <%= link_to "New Task", new_task_path, class: "btn btn-primary" %>
-      <% end %>
+        <% if logged_in? %>
+          <%= link_to "New Task", new_task_path, class: "btn btn-primary" %>
+        <% end %>
+      </div>
     </div>
   </div>
 
@@ -253,33 +248,24 @@ function kanbanBoard() {
                  data-slug="<%= task.slug %>"
                  data-stage="<%= stage %>"
                  data-agent="<%= task.agent_slug %>"
+                 data-href="<%= task_path(task.slug) %>"
+                 x-data="{ hovered: false, mx: 0, my: 0 }"
                  x-show="matchesFilter('<%= task.agent_slug %>')"
-                 class="kanban-card bg-surface rounded-lg border border-subtle p-3 cursor-grab active:cursor-grabbing hover:border-primary/30 transition group">
+                 @mouseenter="hovered = true"
+                 @mouseleave="hovered = false"
+                 @mousedown="mx = $event.clientX; my = $event.clientY"
+                 @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
+                 class="kanban-card relative bg-surface rounded-lg border border-subtle p-3 cursor-pointer hover:border-primary/40 hover:bg-surface-alt transition group">
 
-              <div class="flex items-start justify-between mb-1.5">
-                <a href="<%= task_path(task.slug) %>"
-                   class="text-heading font-semibold text-sm truncate flex-1 min-w-0 hover:text-primary transition"
-                   title="<%= task.title %>"
-                   @click.stop>
-                  <%= task.title %>
-                </a>
-                <div class="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <% if task.stage != 'archived' %>
-                    <button @click.stop="archiveTask('<%= task.slug %>')"
-                            class="text-muted hover:text-yellow-400 transition p-0.5" title="Archive">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
-                      </svg>
-                    </button>
-                  <% end %>
-                  <button @click.stop="deleteTask('<%= task.slug %>')"
-                          class="text-muted hover:text-red-400 transition p-0.5" title="Delete">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
+              <%# Title — spans the full card width, fades at the overflowing edge
+                  and scrolls to its end while the card is hovered (feature 1).
+                  Archive/delete moved to the footer so nothing covers it. %>
+              <a href="<%= task_path(task.slug) %>"
+                 class="block mb-1.5 hover:text-primary transition"
+                 title="<%= task.title %>">
+                <%= render "components/overflow_fade", text: task.title, scroll_when: "hovered",
+                      class: "text-heading font-semibold text-sm" %>
+              </a>
 
               <%# Slug (left) + affected-app emojis (right). The slug spans the
                   full width and truncates; the emojis overlay the right edge on
@@ -343,9 +329,6 @@ function kanbanBoard() {
                   <% if task.gem_release? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50" title="Gem release — published to RubyGems producer-first (before consuming apps)">💎 gem</span>
                   <% end %>
-                  <% if (deploy_target = deploy_target_label(task)) %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="Deploy target — where this task ships when the release runs"><%= deploy_target %></span>
-                  <% end %>
                   <% task.devops_repositories.first(2).each do |repo| %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= repo %></span>
                   <% end %>
@@ -390,6 +373,28 @@ function kanbanBoard() {
               <% end %>
 
               <p class="text-[10px] text-muted mt-1"><%= time_ago_in_words(task.created_at) %> ago</p>
+
+              <%# Footer — archive + delete actions. Bleeds to the card edges with
+                  a slightly inset background; each tints on hover. @click.stop
+                  keeps them from triggering the card-open click (feature 2). %>
+              <div class="-mx-3 -mb-3 mt-2 flex border-t border-subtle bg-inset/60 rounded-b-lg overflow-hidden">
+                <% if task.stage != 'archived' %>
+                  <button type="button" @click.stop="archiveTask('<%= task.slug %>')"
+                          class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium text-muted hover:text-yellow-300 hover:bg-yellow-900/20 transition" title="Archive">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                    </svg>
+                    <span>Archive</span>
+                  </button>
+                <% end %>
+                <button type="button" @click.stop="deleteTask('<%= task.slug %>')"
+                        class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium text-muted hover:text-red-300 hover:bg-red-900/20 transition <%= 'border-l border-subtle' unless task.stage == 'archived' %>" title="Delete">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                  <span>Delete</span>
+                </button>
+              </div>
             </div>
           <% end %>
 

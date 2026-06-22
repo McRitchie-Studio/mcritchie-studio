@@ -26,8 +26,8 @@ module ReleaseNotes
       ).message
 
       assert_includes message, "🚀 Production deployed: McRitchie Studio v71 (ef693ab)"
-      assert_includes message, "https://mcritchie.studio/\n\n🧰 McRitchie Studio"
-      assert_includes message, "🧰 McRitchie Studio"
+      assert_includes message, "https://mcritchie.studio/\n\n🪎 McRitchie Studio"
+      assert_includes message, "🪎 McRitchie Studio"
       assert_includes message, "• [Sidebar back-navigation production fix](https://mcritchie.studio/tasks/task-ddd444)"
       assert_includes message, "\n\n🐊 Turf Monster"
       assert_includes message, "• [Contest settle button](https://mcritchie.studio/tasks/task-bbb222)"

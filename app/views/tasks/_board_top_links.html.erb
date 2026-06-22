@@ -1,0 +1,14 @@
+<%# Secondary board links above the page title: back to the admin dashboard
+    (admins only) and the Stages guide. Wrapped in a nav so cross-page link
+    checks and screen readers find them on every board surface.
+    Local: current ("tasks" | "deployments" | "stages") marks the active page. %>
+<% current = local_assigns.fetch(:current, nil) %>
+<nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Board sections">
+  <% if admin? %>
+    <%= link_to "← Dashboard", admin_dashboard_path,
+          class: "text-muted hover:text-heading transition" %>
+  <% end %>
+  <%= link_to "Stages", stages_path,
+        "aria-current": (current == "stages" ? "page" : nil),
+        class: "transition #{current == 'stages' ? 'text-primary font-medium' : 'text-muted hover:text-heading'}" %>
+</nav>
