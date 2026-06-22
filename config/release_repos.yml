@@ -1,0 +1,52 @@
+# Release repo registry — the producer/consumer classification for the Deploy
+# workflow (Workflow 2). Single source of truth read by `Release::Repos`.
+#
+# The Deploy workflow ships a release PRODUCER-FIRST: a gem (a *producer*) is
+# published to RubyGems BEFORE the apps (its *consumers*) that depend on it
+# deploy, so a consuming app always builds against the just-published version.
+# `bin/release ship` ("Run Deployment") publishes every gem member first
+# (approval-gated `gem push`), then runs the app deploys.
+#
+# Read by:
+#   * Release::Repos (app/models/release/repos.rb) — kind/gem?/app?/gem_meta
+#   * Release::Conductor.member_plan — tags each release member gem vs app
+#   * bin/release — skips the branch-merge for gem members; publishes them first
+#   * Task#release_repo / #gem_release? — board 💎 gem badge + ordering
+#
+# Two member kinds:
+#   gems — published to RubyGems. They have NO app branch in mcritchie-studio;
+#          their PR/branch lives in the gem's own repo. They ride the release as
+#          a record, are published at ship, and are QA'd via a consuming app.
+#   apps — deployed (Heroku). They have a branch merged onto the release branch.
+#
+# gem fields:
+#   version_file — path (inside the gem repo) declaring the version to publish.
+#                  Read for the producer-first publish + the board indicator.
+#                    studio-engine → lib/studio/version.rb  (VERSION = "x.y.z")
+#                    solana-studio → solana-studio.gemspec   (spec.version = "x.y.z")
+#   gemspec      — the .gemspec `gem build` packages (defaults to <repo>.gemspec).
+#   release_check — optional repo-relative pre-publish gate run with `--build`
+#                   (syntax + unit + build) before the artifact is pushed.
+#   build_cmd    — human-readable build command (documentation; bin/release
+#                  drives release_check/gem build directly).
+#
+# The gem repos are checked out as SIBLINGS of this app (the projects root):
+#   /Users/alex/projects/<repo>. `bin/release` resolves them relative to the
+#   app root's parent, so run ship from a PRIMARY checkout, not a worktree.
+
+gems:
+  studio-engine:
+    version_file: lib/studio/version.rb
+    gemspec: studio-engine.gemspec
+    release_check: bin/release-check
+    build_cmd: bin/release-check --build
+  solana-studio:
+    version_file: solana-studio.gemspec
+    gemspec: solana-studio.gemspec
+    build_cmd: gem build solana-studio.gemspec
+
+apps:
+  - mcritchie-studio
+  - turf-monster
+  - tax-studio
+  - chain-ops

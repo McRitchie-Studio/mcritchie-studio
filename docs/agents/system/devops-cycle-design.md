@@ -110,11 +110,15 @@ ship. *Consolidation (decided):* the legacy `release_train` field becomes
 | Field | Meaning |
 |---|---|
 | `release_slug` | The Release this task rides (null until the conductor assigns it; the task is `assembled` once its PR is merged onto the release branch). |
-| `dependencies` | Array of task slugs this one needs shipped first; lets the conductor sequence (e.g. an engine release before its consumers). |
+| `dependencies` | Array of task slugs this one needs shipped first. **Now enforced** by the conductor (`Release::Ordering`) — a member sorts after every task listed here — composed under the producer-first rule (e.g. an engine gem before the apps that consume it). |
 
 `dependencies` (task→task) and the exclusive **lanes** (resource-level:
 migration, release, vault single-writer) compose: dependencies say *"B needs A's
-output"*; lanes say *"only one of these at a time."*
+output"*; lanes say *"only one of these at a time."* As of the gems-first
+release work, `dependencies` is no longer spec-only: `Release#ordered_members`
+honors it (a stable topological sort that falls back to `position`), so the
+conductor sequences members producer-first **and** respects explicit
+task-to-task edges. See "Gem members & producer-first ordering" below.
 
 **Assembly is a merge queue on a disposable branch.** The conductor cuts
 `release/<slug>` from `main`, then for each `reviewed` member: retargets its PR
@@ -127,6 +131,36 @@ HEAD, the branch deploys to **QA** + Discord notes fire → the release is
 action (surfaced as the current release on `/tasks`, not a passive status) that
 fast-forwards `release/<slug>` into `main`, tags `release-<slug>`, deploys prod,
 and flips members to `shipped`. That action is the one human gate.
+
+**Gem members & producer-first ordering.** A release is not apps-only — it can
+carry **gem** tasks (`studio-engine`, `solana-studio`) as first-class members
+alongside apps. The classification lives in `config/release_repos.yml` (read by
+`Release::Repos`): every member is a `:gem` (producer) or an `:app` (consumer).
+Gems and apps are handled differently at both ends of the Deploy workflow:
+
+- **Gem members are PUBLISHED, not branch-merged.** A gem's PR/branch lives in
+  the gem's own repo, not in `mcritchie-studio`, so there is nothing to merge
+  onto `release/<slug>`. At **assembly** the conductor skips the merge for gem
+  members — they ride the release as a *record*, and are QA'd indirectly through
+  a consuming app (the consumer's branch is what gets merged + tested).
+- **Run Deployment processes producer-before-consumer.** `Release#ordered_members`
+  returns members **gems-first** (then apps), honoring `dependencies` within
+  that. `bin/release ship` publishes every gem member to RubyGems first
+  (approval-gated `gem push`, version from the gem's `version_file`), and only
+  then deploys the apps. So a consuming app always builds + deploys against the
+  **just-published** gem version — never ahead of it. If a gem fails to publish,
+  the ship aborts before any app deploys.
+- **The version lives in the gem's PR.** The version bump (`lib/studio/version.rb`
+  for studio-engine, the `.gemspec` for solana-studio) is part of the gem task's
+  own PR; `member_plan` reads it for the publish + the board's `💎 gem` badge.
+  Post-publish, consuming apps re-pin `~> x.y` and deploy as their own members
+  (or follow-up tasks). See `docs/agents/modules/deployment.md` →
+  "Releasing a gem (producer-first)" for the operator runbook.
+
+This is the ordered `release_train` from §4.2 ("gem publish → consumer lockfile
+bump → app deploy"), now expressed as first-class release membership rather than
+a separate lane: the gem and its consumers can be members of the same release,
+sequenced by kind + `dependencies`.
 
 **Start-fresh / abandon.** Feature branches are the durable artifact; the release
 branch is disposable, so abandoning a stuck RC is cheap and `main` never moves.
@@ -221,9 +255,12 @@ each command to a deterministic runbook:
 Run **`bin/release prepare [--task SLUG ...] [--slug rel-…] [--prod]`**. Additive
 find-or-create (`Release::Conductor.prepare!`): extends the active release —
 reopening an assembled RC so the new work re-QAs (`Release#reopen!`) — or opens a
-new one, adds the reviewed task(s) (default: every reviewed task), then cuts/
-merges `release/<slug>` and runs the suite, **stopping for you on a merge
-conflict** (a genuine conflict means the task should be blocked for rework).
+new one, adds the reviewed task(s) (default: every reviewed task) **in
+producer-first order**, then cuts/merges `release/<slug>` and runs the suite,
+**stopping for you on a merge conflict** (a genuine conflict means the task
+should be blocked for rework). **Gem members are skipped at the merge step** —
+they have no app branch in this repo; they ride the release record and are QA'd
+through a consuming app, so `prepare` only merges + tests the app members.
 Leaves the RC `assembled` and **auto-deploys the branch to QA**
 (`bin/qa-server deploy` → `mcritchie-studio-qa`), recording `release.qa_url` for
 review before production. Record ops default to the local DB; `--prod` runs them
@@ -231,12 +268,21 @@ on the prod board via `heroku run`.
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
 Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
-before deploying. It ff's `main` → the release branch, pushes origin (closing
-member PRs), deploys (`git push heroku main`; release phase runs migrations),
-smokes `/up`, then stamps `deployed_sha`, flips the RC + its members to
-`shipped` (`Release::Conductor.ship!`), and **auto-posts release notes**
+before deploying. **Producer-first:** before any app deploy, it publishes every
+**gem member** to RubyGems in order — for each it prints the gem + target
+version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
+`--yes` / `--dry-run`), runs the gem's build (studio-engine: `bin/release-check
+--build`; otherwise `gem build <gemspec>`), `gem push`es the artifact, and tags
+`v<version>` in the gem repo. A build/push failure **aborts the ship** before any
+app deploys, so apps never deploy against an unpublished gem. Then for the apps
+it ff's `main` → the release branch, pushes origin (closing member PRs), deploys
+(`git push heroku main`; release phase runs migrations), smokes `/up`, stamps
+`deployed_sha`, flips the RC + its members to `shipped`
+(`Release::Conductor.ship!`), and **auto-posts release notes**
 (`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
-`POST /api/v1/release_notes`; non-fatal if the webhook is unset).
+`POST /api/v1/release_notes`; non-fatal if the webhook is unset). Run `ship` from
+a **primary checkout** (not a worktree): the gem repos are resolved as siblings
+at the projects root.
 
 **`Cleanup worktrees`**  *(post-ship housekeeping)*
 `bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged

@@ -161,7 +161,54 @@ Cutover sequence:
 Deploys, gem publishes, provider changes, and production env-var changes are
 Release-lane work. A feature agent can recommend deploy, but only the designated
 release conductor should run it after explicit approval from Mr. McRitchie or an
-already-approved rollout prompt.
+already-approved rollout prompt. Gem publishes specifically are **part of**
+"Run Deployment" — they ride a release as first-class members and are published
+producer-first by `bin/release ship` (see below), not as a separate ad-hoc step.
+
+## Releasing a gem (producer-first)
+
+Gems (`studio-engine`, `solana-studio`) are **producers**; the apps that depend
+on them are **consumers**. A release ships them **producer-first** — the gem is
+published to RubyGems *before* any consuming app deploys, so the app always
+builds against the just-published version. The classification is the registry at
+`config/release_repos.yml` (read by `Release::Repos`).
+
+How a gem rides a release:
+
+1. **The gem task is a normal task.** Its PR/branch lives in the gem's *own*
+   repo (e.g. `studio-engine`), not in `mcritchie-studio`. Shape `library`, and
+   the **version bump lives in that PR** — `lib/studio/version.rb` for
+   studio-engine, the `.gemspec` for solana-studio (the registry's
+   `version_file`). It is reviewed → `reviewed` like any other task.
+2. **Prepare adds it as a member, skipping the merge.** `bin/release prepare`
+   adds the gem to the release record but does **not** merge a branch for it (it
+   has none here). The gem is QA'd indirectly through a consuming app — assemble
+   the consumer (or a QA-only spike) in the same release so the gem is exercised
+   end-to-end against the candidate.
+3. **Run Deployment publishes gems first, gated.** `bin/release ship` orders
+   members gems-before-apps (honoring `dependencies`) and, before any app
+   deploy, for each gem member: prints the gem + target version, asks
+   `Publish <repo> <version> to RubyGems?` (approval-gated — `--yes`/`--dry-run`
+   auto-confirm), runs the gem's build (studio-engine: `bin/release-check
+   --build`; otherwise `gem build <gemspec>`), `gem push`es it, and tags
+   `v<version>` in the gem repo. A failed build/push **aborts the ship** before
+   any app deploys.
+4. **Consumers re-pin and deploy.** After the gem is on RubyGems, the consuming
+   apps bump their `Gemfile` to `~> x.y`, `bundle`, and deploy — either as app
+   members of the same release or as fast-follow tasks. Never deploy a consumer
+   ahead of its gem.
+
+Operational notes:
+
+- Run `ship` from a **primary checkout**, not a worktree: the gem repos are
+  resolved as siblings of `mcritchie-studio` at the projects root
+  (`/Users/alex/projects/<repo>`).
+- `gem push` requires a logged-in RubyGems credential (`gem signin`). A
+  "version already published" error means the gem PR didn't bump its
+  `version_file` — fix the version, don't re-push.
+- The manual gem build remains documented in `studio-engine/docs/RELEASE.md`;
+  `bin/release ship` automates that path (build → push → tag) as the release
+  conductor's producer-first step.
 
 ## QA Servers
 

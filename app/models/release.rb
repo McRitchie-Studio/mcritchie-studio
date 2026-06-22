@@ -44,6 +44,13 @@ class Release < ApplicationRecord
     ACTIVE_STATES.include?(state)
   end
 
+  # Member tasks in PRODUCER-FIRST order: gems (published) before apps
+  # (deployed), honoring task `dependencies` within that. This is the order the
+  # conductor publishes/deploys in and the order `member_plan` reports.
+  def ordered_members
+    Release::Ordering.producer_first(tasks.to_a)
+  end
+
   def shipped?
     state == "shipped"
   end

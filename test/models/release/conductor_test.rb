@@ -82,6 +82,79 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_includes slugs, b.slug
   end
 
+  # --- producer-first ordering + member_plan ---
+
+  def gem_task(title = "engine", repo: "studio-engine")
+    Task.create!(title: title, stage: "reviewed",
+                 metadata: { "devops" => { "shape" => "library", "repositories" => [repo] } })
+  end
+
+  def app_task(title = "app", repo: "mcritchie-studio", branch: "feat/x", deps: [])
+    Task.create!(title: title, stage: "reviewed", dependencies: deps,
+                 metadata: { "devops" => {
+                   "shape" => "backend", "repositories" => [repo], "branch" => branch,
+                   "pr_url" => "https://github.com/amcritchie/#{repo}/pull/1"
+                 } })
+  end
+
+  test "prepare! adds members producer-first — the gem gets the earlier position" do
+    app = app_task("consumer")
+    gem = gem_task("engine")
+    rel = Release::Conductor.prepare!(task_slugs: [app.slug, gem.slug]) # app passed first
+
+    assert_equal [gem.slug, app.slug], rel.tasks.order(:position).pluck(:slug)
+  end
+
+  test "member_plan is producer-first and tags kind/repo/branch/version" do
+    gem = gem_task("engine", repo: "studio-engine")
+    app = app_task("consumer", repo: "mcritchie-studio", branch: "feat/consume")
+    rel = Release::Conductor.prepare!(task_slugs: [gem.slug, app.slug])
+
+    plan = nil
+    Release::Repos.stub(:gem_version, ->(repo) { repo == "studio-engine" ? "9.9.9" : nil }) do
+      plan = Release::Conductor.member_plan(rel)
+    end
+
+    assert_equal [gem.slug, app.slug], plan.map { |m| m[:slug] }
+    gem_member, app_member = plan
+
+    assert_equal "gem", gem_member[:kind]
+    assert_equal "studio-engine", gem_member[:repo]
+    assert_equal "9.9.9", gem_member[:version]
+    assert_nil gem_member[:branch]
+
+    assert_equal "app", app_member[:kind]
+    assert_equal "mcritchie-studio", app_member[:repo]
+    assert_equal "feat/consume", app_member[:branch]
+    assert_nil app_member[:version]
+  end
+
+  test "ordered_members puts gems before apps regardless of position" do
+    rel = Release.open!
+    app = app_task("consumer", repo: "mcritchie-studio", branch: "feat/app")
+    gem = gem_task("engine", repo: "studio-engine")
+    rel.add(app)
+    rel.add(gem)
+    app.update!(position: 0)
+    gem.update!(position: 99) # later position, but a producer → still first
+
+    assert_equal [gem.slug, app.slug], rel.ordered_members.map(&:slug)
+  end
+
+  test "ordered_members honors dependencies even against position order" do
+    rel = Release.open!
+    base = app_task("base", repo: "turf-monster", branch: "feat/base")
+    dependent = app_task("dependent", repo: "turf-monster", branch: "feat/dep", deps: [base.slug])
+    rel.add(base)
+    rel.add(dependent)
+    # Force positions so position ALONE would put the dependent first.
+    dependent.update!(position: 0)
+    base.update!(position: 99)
+
+    assert_equal [base.slug, dependent.slug], rel.ordered_members.map(&:slug),
+                 "a task must sort after any task in its dependencies"
+  end
+
   # --- record_qa_deploy ---
 
   test "record_qa_deploy stores the qa_url on the release" do
