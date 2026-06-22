@@ -27,6 +27,13 @@ class ReleaseCliTest < Minitest::Test
     IO.popen(["ruby", "-e", script, { err: File::NULL }], &:read)
   end
 
+  # Like eval_helper, but sets ARGV BEFORE load so the DRY/PROD/ASSUME_YES
+  # constants (read from ARGV at load time) reflect the given flags.
+  def eval_with_argv(argv, expr)
+    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; print(#{expr}))
+    IO.popen(["ruby", "-e", script, { err: File::NULL }], &:read)
+  end
+
   # Run a bin/release subcommand in a clean subprocess with the given argv (which
   # MUST include --dry-run — DRY/PROD are read from ARGV at load time, so argv is
   # set before `load`). `setup` is extra ruby injected AFTER load (e.g. to stub
@@ -62,6 +69,25 @@ class ReleaseCliTest < Minitest::Test
     # that holds the siblings is two levels above .worktrees, not inside it.
     assert_equal "/srv/projects",
                  eval_helper(%(projects_root("/srv/projects/mcritchie-studio/.worktrees/feat-x")))
+  end
+
+  # --- target flags: production is the DEFAULT; --local opts out ---
+
+  def test_prod_is_the_default_target
+    # The board IS production, so record ops default to prod with no flag.
+    assert_equal "true", eval_with_argv([], "PROD")
+  end
+
+  def test_local_flag_opts_into_the_stale_local_db
+    assert_equal "false", eval_with_argv(["--local"], "PROD")
+  end
+
+  def test_legacy_prod_flag_is_a_harmless_noop
+    # --prod predates the default flip; it still parses (so old invocations keep
+    # working) but no longer changes anything — and it's consumed from ARGV so a
+    # subcommand parser never sees it.
+    assert_equal "true", eval_with_argv(["--prod"], "PROD")
+    assert_equal "false", eval_with_argv(["--prod"], "ARGV.include?('--prod')")
   end
 
   def test_repo_path_resolves_a_sibling_never_inside_worktrees
@@ -117,6 +143,30 @@ class ReleaseCliTest < Minitest::Test
   def test_prepare_dry_run_gem_member_rides_the_release
     out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
     assert_includes out, "rides the release", "a gem member is published at ship, not deployed in prepare"
+  end
+
+  # A release with a registered app that has NO qa_environments.yml entry
+  # (tax-studio): prepare must WARN + skip its QA deploy, not abort the release.
+  ELIGIBILITY_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      { "slug" => "rel-elig", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
+          "members" => [{ "slug" => "t-studio", "branch" => "feat/studio" }] },
+        { "repo" => "tax-studio", "kind" => "app", "qa_app" => "tax-studio",
+          "members" => [{ "slug" => "t-tax", "branch" => "feat/tax" }] }
+      ] }
+    end
+  RUBY
+
+  def test_prepare_dry_run_warns_and_skips_an_app_with_no_qa_environment
+    out = run_cli(["--dry-run"], call: "prepare", setup: ELIGIBILITY_STUB)
+
+    assert_includes out, "tax-studio: no QA environment registered",
+                     "a registered app with no qa_environments.yml entry must warn"
+    refute_includes out, "bin/qa-server deploy tax-studio",
+                     "an app with no QA env is skipped, not deployed"
+    # a properly registered app on the same release still deploys
+    assert_includes out, "bin/qa-server deploy mcritchie-studio origin/release"
   end
 
   # --- ship --dry-run: multi-repo, producer-first, hub-before-satellites ---

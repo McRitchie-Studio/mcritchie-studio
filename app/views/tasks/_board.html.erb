@@ -321,6 +321,9 @@ function kanbanBoard() {
                   <% if task.gem_release? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50" title="Gem release — published to RubyGems producer-first (before consuming apps)">💎 gem</span>
                   <% end %>
+                  <% if (deploy_target = deploy_target_label(task)) %>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="Deploy target — where this task ships when the release runs"><%= deploy_target %></span>
+                  <% end %>
                   <% task.devops_repositories.first(2).each do |repo| %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= repo %></span>
                   <% end %>

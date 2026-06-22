@@ -50,8 +50,10 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
       assert_select "a[href=?]", task_path(member.slug) do
         # Feature 2: app emojis ride the pill...
         assert_select "span[title=?]", "mcritchie-studio, studio-engine"
-        # ...and the old bold stage badge ("Shipped") is gone from the pill.
-        assert_select "span.font-bold", count: 0
+        # ...the old bold STAGE badge ("Shipped") is gone; the one bold chip on
+        # the pill now is the deploy-target indicator, not a stage label.
+        assert_select "span.font-bold", text: "mcritchie-studio → QA"
+        assert_select "span.font-bold", { text: /shipped/i, count: 0 }
       end
     end
   end
