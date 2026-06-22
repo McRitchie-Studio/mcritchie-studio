@@ -58,4 +58,55 @@ class Release::ReposTest < ActiveSupport::TestCase
   test "gem_version is nil for a non-gem repo" do
     assert_nil Release::Repos.gem_version("turf-monster")
   end
+
+  # --- apps as a hash: app_meta / prod_deploy / qa_app ---
+
+  test "app_repos lists the registry's app hash keys" do
+    assert_equal %w[mcritchie-studio turf-monster tax-studio chain-ops].sort,
+                 Release::Repos.app_repos.sort
+  end
+
+  test "app? matches the app hash keys" do
+    assert Release::Repos.app?("mcritchie-studio")
+    assert Release::Repos.app?("tax-studio")
+    assert Release::Repos.app?("chain-ops")
+    assert_not Release::Repos.app?("studio-engine") # a gem
+    assert_not Release::Repos.app?("not-a-real-repo")
+  end
+
+  test "app_meta returns the app's registry metadata" do
+    meta = Release::Repos.app_meta("turf-monster")
+    assert_kind_of Hash, meta
+    assert meta.key?("prod_deploy")
+  end
+
+  test "app_meta is nil for a non-app" do
+    assert_nil Release::Repos.app_meta("studio-engine") # a gem
+    assert_nil Release::Repos.app_meta("nope")
+  end
+
+  test "prod_deploy returns the git_push_heroku adapter for mcritchie-studio" do
+    adapter = Release::Repos.prod_deploy("mcritchie-studio")
+    assert_equal "git_push_heroku", adapter["strategy"]
+    assert_equal "heroku", adapter["remote"]
+    assert_equal "main", adapter["branch"]
+    assert_equal "https://app.mcritchie.studio", adapter["smoke_url"]
+  end
+
+  test "prod_deploy returns the repo_script adapter for turf-monster" do
+    adapter = Release::Repos.prod_deploy("turf-monster")
+    assert_equal "repo_script", adapter["strategy"]
+    assert_equal "bin/deploy", adapter["command"]
+    assert_equal ["--yes"], adapter["args"]
+  end
+
+  test "prod_deploy is nil for a gem or an unknown repo" do
+    assert_nil Release::Repos.prod_deploy("studio-engine")
+    assert_nil Release::Repos.prod_deploy("not-a-real-repo")
+  end
+
+  test "qa_app defaults to the repo slug when no qa_deploy override is set" do
+    assert_equal "turf-monster", Release::Repos.qa_app("turf-monster")
+    assert_equal "mcritchie-studio", Release::Repos.qa_app("mcritchie-studio")
+  end
 end
