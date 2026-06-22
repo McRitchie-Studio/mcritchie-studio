@@ -47,6 +47,19 @@ module ApplicationHelper
     end
   end
 
+  # Compact deploy-target chip for a board task — where it goes when the Deploy
+  # workflow runs it: a gem task publishes to RubyGems ("publish"); an app task
+  # deploys to its QA server ("<qa_app> → QA"). nil when the task's release_repo
+  # is unknown (not a registered gem or app) — nothing to show. Reads the same
+  # release registry the conductor ships from (Task#release_kind +
+  # Release::Repos.qa_app) so the chip agrees with the board's 💎 gem badge.
+  def deploy_target_label(task)
+    case task.release_kind
+    when :gem then "publish"
+    when :app then "#{Release::Repos.qa_app(task.release_repo)} → QA"
+    end
+  end
+
   # Canonical app/repo slug → emoji map for the compact app indicators on task
   # cards and current-release member pills. Mirrors the glyphs in
   # ReleaseNotes::Formatter::APP_GROUPS (kept independent so views don't reach

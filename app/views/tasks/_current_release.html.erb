@@ -30,6 +30,9 @@
           <%= link_to task_path(t.slug), class: "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" do %>
             <%= app_emoji_badge(t.devops_repositories) %>
             <%= truncate(t.title, length: 42) %>
+            <% if (deploy_target = deploy_target_label(t)) %>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="Deploy target"><%= deploy_target %></span>
+            <% end %>
           <% end %>
         <% end %>
       </div>

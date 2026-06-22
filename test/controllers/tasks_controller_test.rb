@@ -46,6 +46,31 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release", text: /Build and Deploy QA Release/
   end
 
+  test "deploy-target chip renders on board cards and in the current-release module" do
+    gem_task = @new_task
+    gem_task.update!(stage: "reviewed",
+                     metadata: { "devops" => { "kind" => "feature", "shape" => "library",
+                                               "repositories" => ["studio-engine"] } })
+    app_task = @queued_task
+    app_task.update!(stage: "reviewed",
+                     metadata: { "devops" => { "kind" => "feature", "repositories" => ["turf-monster"] } })
+
+    rel = Release.open!(branch: "release/chip-test")
+    rel.add(gem_task)
+    rel.add(app_task)
+    rel.assemble!
+
+    get deployments_path
+    assert_response :success
+
+    # board cards carry the deploy-target chip next to the 💎 gem badge
+    assert_select "#card-#{gem_task.slug}", text: /publish/
+    assert_select "#card-#{app_task.slug}", text: /turf-monster → QA/
+    # the current-release member pills carry the same chip
+    assert_select "#current-release", text: /publish/
+    assert_select "#current-release", text: /turf-monster → QA/
+  end
+
   test "deployments omits the release header when there is no release" do
     Release.delete_all
 

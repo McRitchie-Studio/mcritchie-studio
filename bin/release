@@ -37,14 +37,19 @@
 #     origin, deploy to Heroku, smoke /up, stamp deployed_sha + flip to shipped.
 #
 # Targets:
-#   default        record ops run against the LOCAL db; but note `prepare` still
-#                  fires a REAL `bin/qa-server deploy` and `ship` a REAL prod
-#                  deploy on a non-dry run — use --dry-run to preview safely
-#   --prod         record ops run on production via `heroku run rails runner`
+#   default        record ops run on PRODUCTION via `heroku run rails runner`
+#                  (the board IS production). On a non-dry run `prepare` also fires
+#                  a REAL `bin/qa-server deploy` and `ship` a REAL prod deploy —
+#                  use --dry-run to preview safely.
+#   --local        the OLD behavior: record ops run against the local db. That db
+#                  is stale, so the board won't reflect production — dev/testing
+#                  only.
+#   --prod         accepted but a no-op (production is now the default).
 #   --dry-run      print the plan; execute nothing
 #
-# The board is production, so a real release uses --prod. Git push to `heroku`
-# always deploys prod (that IS the deploy), so `ship` asks to confirm first.
+# The board is production, so record ops default to production. Git push to
+# `heroku` always deploys prod (that IS the deploy), so `ship` asks to confirm
+# first.
 
 require "json"
 require "open3"
@@ -145,13 +150,35 @@ def qa_url_for(app)
   (QA_ENVIRONMENTS[app] || {})["qa_url"].to_s
 end
 
+# Whether an app is registered in config/qa_environments.yml — i.e. has a QA
+# target to deploy to. A repo can be a registered app in release_repos.yml yet
+# have NO QA env (tax-studio, chain-ops); prepare warns + skips its QA deploy
+# rather than aborting the whole release. (validate_members! already aborts on a
+# fully-unknown repo; this is the softer "registered app, no QA env" case.)
+def qa_registered?(app)
+  QA_ENVIRONMENTS.key?(app.to_s)
+end
+
 DRY = ARGV.delete("--dry-run") ? true : false
-PROD = ARGV.delete("--prod") ? true : false
+# Production is the DEFAULT target now (the board IS production) — pass --local to
+# opt into the old, stale-local-db behavior. `--prod` is still consumed so the old
+# flag stays a harmless no-op.
+ARGV.delete("--prod")
+PROD = !ARGV.delete("--local")
 ASSUME_YES = ARGV.delete("--yes") ? true : false
 
 def abort!(msg) = abort("✗ #{msg}")
 def say(msg) = puts(msg)
 def step(msg) = puts("→ #{msg}")
+
+# Loud banner printed at the top of prepare/ship when --local opted out of the
+# production board. The local db is stale, so a release run against it won't
+# reflect production — only useful for dev/testing.
+def warn_local!
+  return if PROD
+
+  say("⚠ --local: record ops run against the STALE local DB — the board won't reflect production; use the default for real releases.")
+end
 
 # Run a shell command. In dry-run, print it and skip. `chdir:` runs it in
 # another directory (used for gem-repo builds/tags). Returns [stdout, ok?].
@@ -343,6 +370,7 @@ def prepare
   slug = opt_value("--slug")
 
   say("Prepare release#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
 
   # 1. Record: assemble the active release (curating any explicit --task first),
   #    then read the per-REPO deploy plan (producer-first; one group per repo).
@@ -392,6 +420,16 @@ def prepare
     # --- app repo: all branch ops happen in THAT repo via `git -C path` ---
     path   = repo_path(repo)
     qa_app = group["qa_app"]
+
+    # Eligibility: a repo can be a registered app (passes validate_members!) yet
+    # have NO QA env (tax-studio, chain-ops). Warn + skip its QA deploy rather
+    # than firing a `bin/qa-server deploy` that has no target — it still ships at
+    # `ship` via its prod_deploy adapter; it just can't be QA-reviewed here.
+    unless qa_registered?(qa_app)
+      say("")
+      say("  ⚠ #{repo}: no QA environment registered (qa_environments.yml) — skipping QA deploy")
+      next
+    end
 
     say("")
     step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
@@ -785,6 +823,7 @@ def ship
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
 
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
 
   # 1. Read the active release + its per-repo deploy plan + the QA-frozen SHAs.
   #    A READ (read_only:) so a dry-run previews the real plan without mutating.
@@ -874,7 +913,7 @@ if __FILE__ == $PROGRAM_NAME
   when "ship"    then ship
   else
     warn "usage: bin/release {init|merge <task-slug>|prepare|ship} " \
-         "[--task SLUG ...] [--slug REL] [--by NAME] [--prod] [--dry-run] [--yes]"
+         "[--task SLUG ...] [--slug REL] [--by NAME] [--local] [--dry-run] [--yes]"
     exit 1
   end
 end

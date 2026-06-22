@@ -106,6 +106,24 @@ class ApplicationHelperTest < ActionView::TestCase
     assert badge.html_safe?
   end
 
+  test "deploy_target_label is 'publish' for a gem task" do
+    # a library-shape task whose repo is a registered gem → published, not deployed
+    gem_task = Task.new(metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
+    assert_equal "publish", deploy_target_label(gem_task)
+  end
+
+  test "deploy_target_label is '<qa_app> → QA' for an app task" do
+    app_task = Task.new(metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+    assert_equal "turf-monster → QA", deploy_target_label(app_task)
+  end
+
+  test "deploy_target_label is nil for an unknown release repo" do
+    ghost_task = Task.new(metadata: { "devops" => { "repositories" => ["ghost-app"] } })
+    assert_nil deploy_target_label(ghost_task)
+    # and nil when there's no devops repo at all
+    assert_nil deploy_target_label(Task.new)
+  end
+
   test "devops_next_html badges whole-word stage names only" do
     html = devops_next_html("pulls it into the next release → assembled")
     assert_includes html, "<span"
