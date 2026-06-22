@@ -36,6 +36,14 @@
 #     Promotes the assembled RC to production: ff main → release branch, push
 #     origin, deploy to Heroku, smoke /up, stamp deployed_sha + flip to shipped.
 #
+#   bin/release archive [--prod] [--dry-run] [--yes]
+#     The DevOps loop's CONCLUSION (shipped → archived): archive every shipped
+#     task that ISN'T a member of the last shipped release (those members stay
+#     `shipped` as the board's read-only "Last Release"), then reclaim the
+#     merged/shipped feature worktrees. Idempotent — a re-run archives nothing
+#     new and reclaims nothing left. --dry-run previews the archivable plan + the
+#     worktree-reclaim list (the reclaim tool's own dry-run), mutating nothing.
+#
 # Targets:
 #   default        record ops run on PRODUCTION via `heroku run rails runner`
 #                  (the board IS production). On a non-dry run `prepare` also fires
@@ -919,6 +927,94 @@ rescue SystemExit => e
   exit(e.respond_to?(:status) && e.status ? e.status : 1)
 end
 
+# --- archive (the DevOps loop's conclusion) --------------------------------
+# Run the worktree-reclaim batch. PREVIEW (apply: false) runs the reclaim tool's
+# OWN dry-run (no --yes) — it only LISTS reclaimable worktrees, mutating nothing —
+# so it runs for real even under bin/release --dry-run (a read, like
+# conductor(read_only:), it bypasses sh's dry-run gate). With apply: true it adds
+# --yes to actually stop each stack, flush its Redis DB, remove the worktree +
+# branch, and refresh the registry (reclaims squash-merged legacy worktrees too).
+# Streams the tool's output and returns [output, ok?] so the caller can count
+# reclaimed worktrees for the summary.
+def reclaim_worktrees(apply:)
+  cmd = ["bin/agent-worktree", "cleanup", "--reclaim"]
+  cmd << "--yes" if apply
+  out, status = Open3.capture2e(*cmd)
+  print(out)
+  [out, status.success?]
+end
+
+# Parse the "reclaimed N worktree(s)" summary bin/agent-worktree prints after a
+# --reclaim --yes teardown; 0 when nothing was reclaimed / the line is absent.
+def reclaimed_count(out)
+  out.to_s[/reclaimed (\d+) worktree/, 1].to_i
+end
+
+# "Archive completed tasks": the conclusion of the Deploy lane. Archive every
+# shipped task that ISN'T carried by the last shipped release (those stay as the
+# board's "Last Release"), then reclaim the merged/shipped feature worktrees.
+# Idempotent. The PURE rule lives in the unit-tested
+# Release::Conductor.archive_completed! / .archivable_completed_slugs; this CLI
+# owns the board WRITE + the worktree-reclaim I/O around it.
+def archive
+  say("Archive completed tasks#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
+
+  # 1. Plan FIRST — a board READ (read_only:, so it runs even in --dry-run): the
+  #    shipped tasks that WOULD archive + the last-release members KEPT shipped.
+  step("record (read-only): plan archivable shipped tasks")
+  plan = conductor(
+    "puts({ archivable: Release::Conductor.archivable_completed_slugs, " \
+    "kept: (Release.last_shipped&.tasks&.pluck(:slug) || []) }.to_json)",
+    read_only: true
+  )
+  archivable = plan["archivable"] || []
+  kept       = plan["kept"] || []
+
+  sample = archivable.first(8).join(", ")
+  sample += ", …(+#{archivable.size - 8})" if archivable.size > 8
+  say("  #{archivable.size} shipped task(s) to archive#{archivable.empty? ? '' : ": #{sample}"}")
+  say("  #{kept.size} last-release member(s) KEPT shipped#{kept.empty? ? '' : ": #{kept.first(8).join(', ')}"}")
+
+  # 2. Worktree-reclaim PREVIEW — the reclaim tool's own dry-run (no --yes): it
+  #    only LISTS reclaimable worktrees, mutating nothing, so it runs for real
+  #    even under bin/release --dry-run.
+  say("")
+  step("worktree reclaim preview: bin/agent-worktree cleanup --reclaim")
+  reclaim_worktrees(apply: false)
+
+  # 3. --dry-run stops here: the plan + reclaim preview are shown, nothing mutated.
+  if DRY
+    say("")
+    say("✓ Archive plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to archive + reclaim.")
+    return
+  end
+
+  # 4. ONE confirm authorizes the board write + the worktree teardown (--yes skips).
+  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees?")
+
+  # 5. Archive on the board (shipped → archived). A board WRITE.
+  step("record: Release::Conductor.archive_completed!")
+  result = conductor(
+    "r = Release::Conductor.archive_completed!; " \
+    "puts({ archived: r[:archived], kept: r[:kept], count: r[:count] }.to_json)"
+  )
+  archived_count = result["count"] || (result["archived"] || []).size
+  kept_count     = (result["kept"] || kept).size
+
+  # 6. Reclaim the merged/shipped feature worktrees (--yes = real teardown,
+  #    squash-merged legacy worktrees included). The board archive already
+  #    succeeded, so a reclaim hiccup just means fewer worktrees freed this run.
+  say("")
+  step("worktree reclaim: bin/agent-worktree cleanup --reclaim --yes")
+  reclaim_out, = reclaim_worktrees(apply: true)
+  reclaimed = reclaimed_count(reclaim_out)
+
+  # 7. Summary.
+  say("")
+  say("✓ Archived #{archived_count} tasks; reclaimed #{reclaimed} worktrees; SHIPPED → #{kept_count}")
+end
+
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   case ARGV.shift
@@ -926,8 +1022,9 @@ if __FILE__ == $PROGRAM_NAME
   when "merge"   then merge
   when "prepare" then prepare
   when "ship"    then ship
+  when "archive" then archive
   else
-    warn "usage: bin/release {init|merge <task-slug>|prepare|ship} " \
+    warn "usage: bin/release {init|merge <task-slug>|prepare|ship|archive} " \
          "[--task SLUG ...] [--slug REL] [--by NAME] [--local] [--dry-run] [--yes]"
     exit 1
   end

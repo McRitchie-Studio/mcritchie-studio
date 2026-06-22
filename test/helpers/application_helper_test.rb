@@ -63,6 +63,10 @@ class ApplicationHelperTest < ActionView::TestCase
     stage_keys.each { |k| assert_operator devops_kickoffs[k].split.size, :<=, 3 }
   end
 
+  test "shipped kickoff is the Archive completed tasks workflow (DevOps loop conclusion)" do
+    assert_equal "Archive completed tasks", devops_kickoffs["shipped"]
+  end
+
   test "qa_release_kickoff is the one-trigger Build and Deploy QA Release command" do
     assert_equal "Build and Deploy QA Release", qa_release_kickoff
     assert_equal qa_release_kickoff, devops_kickoffs[ApplicationHelper::QA_RELEASE_KICKOFF_KEY]

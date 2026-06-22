@@ -195,5 +195,35 @@ class Release
 
       { message: message, delivered: delivered }
     end
+
+    # --- archive (the DevOps loop's conclusion: shipped → archived) ----------
+
+    # The shipped tasks NOT carried by the last shipped release — exactly the set
+    # `bin/release archive` would archive. A PURE read (no mutation), so it backs
+    # the CLI's --dry-run preview. The operator-confirmed rule: archive every
+    # `shipped` task that is NOT a member of Release.last_shipped. Pre-conductor
+    # shipped tasks (no release_slug → in no release) fall in this set; the last
+    # release's own members stay shipped as the board's read-only "Last Release".
+    def archivable_completed_slugs
+      keep = Release.last_shipped&.tasks&.pluck(:slug) || []
+      Task.where(stage: "shipped").where.not(slug: keep).pluck(:slug)
+    end
+
+    # Archive every shipped task not carried by the last shipped release
+    # (archivable_completed_slugs), leaving ONLY that release's members as the
+    # board's "Last Release". NEVER touches active (designed…assembled) or blocked
+    # tasks — they're outside the `shipped` scope by construction. Idempotent: a
+    # re-run finds nothing new to archive. Wrapped in a transaction so a mid-batch
+    # failure rolls the whole archive back. Returns
+    # { archived: [slugs], kept: [slugs], count: N } (kept = the last-release
+    # member slugs left as shipped).
+    def archive_completed!
+      slugs = archivable_completed_slugs
+      kept  = Release.last_shipped&.tasks&.pluck(:slug) || []
+      Task.transaction do
+        Task.where(slug: slugs).find_each(&:archive!)
+      end
+      { archived: slugs, kept: kept, count: slugs.size }
+    end
   end
 end

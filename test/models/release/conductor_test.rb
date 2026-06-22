@@ -417,4 +417,108 @@ class Release::ConductorTest < ActiveSupport::TestCase
       assert result[:message].present?
     end
   end
+
+  # --- archive_completed! / archivable_completed_slugs (DevOps loop conclusion) ---
+  #
+  # NOTE: `fixtures :all` seeds a release-less shipped task (tasks(:done_task)),
+  # which is itself archivable, so these assert by MEMBERSHIP rather than against
+  # the whole archived set. `kept` IS asserted exactly — it's precisely the last
+  # release's members.
+
+  # A shipped Release whose member tasks end up `shipped` carrying its slug — the
+  # board's read-only "Last Release". Returns [release, reloaded members].
+  def shipped_release_with(*labels)
+    members = labels.map { |label| reviewed_task(label) }
+    rel = Release::Conductor.prepare!(task_slugs: members.map(&:slug))
+    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", production_url: "https://example.test")
+    [rel, members.map(&:reload)]
+  end
+
+  # A shipped task carried by NO release (no release_slug) — a pre-conductor
+  # completion. 3-5 word title per the naming rule.
+  def loose_shipped_task(label = "loose")
+    Task.create!(title: "loose shipped #{label} task", stage: "shipped")
+  end
+
+  test "archivable_completed_slugs previews shipped-not-in-last-release, mutating nothing" do
+    _rel, members = shipped_release_with("member")
+    loose = loose_shipped_task
+
+    slugs = Release::Conductor.archivable_completed_slugs
+
+    assert_includes slugs, loose.slug
+    refute_includes slugs, members.first.slug, "a last-release member is NOT archivable"
+    assert_equal "shipped", loose.reload.stage, "a preview mutates nothing"
+  end
+
+  test "archive_completed! archives shipped tasks NOT in the last release and keeps its members" do
+    _rel, members = shipped_release_with("keep-a", "keep-b")
+    loose = loose_shipped_task
+
+    result = Release::Conductor.archive_completed!
+
+    assert_includes result[:archived], loose.slug
+    assert_equal members.map(&:slug).sort, result[:kept].sort
+    members.each { |m| refute_includes result[:archived], m.slug }
+    assert_equal "archived", loose.reload.stage
+    members.each { |m| assert_equal "shipped", m.reload.stage, "a last-release member stays shipped" }
+  end
+
+  test "archive_completed! never touches active or blocked tasks — only shipped" do
+    actives = {
+      "designed"  => Task.create!(title: "designed demo task here", stage: "designed"),
+      "building"  => Task.create!(title: "building demo task here", stage: "building"),
+      "submitted" => Task.create!(title: "submitted demo task here", stage: "submitted"),
+      "reviewed"  => Task.create!(title: "reviewed demo task here", stage: "reviewed"),
+      "assembled" => Task.create!(title: "assembled demo task here", stage: "assembled"),
+      "blocked"   => Task.create!(title: "blocked demo task here", stage: "blocked")
+    }
+    loose = loose_shipped_task
+
+    result = Release::Conductor.archive_completed!
+
+    assert_includes result[:archived], loose.slug, "the shipped task is archived"
+    actives.each do |stage, task|
+      assert_equal stage, task.reload.stage, "a #{stage} task must be untouched"
+      refute_includes result[:archived], task.slug
+    end
+  end
+
+  test "archive_completed! with no shipped release archives every shipped task" do
+    a = loose_shipped_task("a")
+    b = loose_shipped_task("b")
+    assert_nil Release.last_shipped
+
+    result = Release::Conductor.archive_completed!
+
+    assert_includes result[:archived], a.slug
+    assert_includes result[:archived], b.slug
+    assert_empty result[:kept], "no last release → nothing kept"
+    assert_equal %w[archived archived], [a.reload.stage, b.reload.stage]
+  end
+
+  test "archive_completed! archives a release_slug-less (pre-conductor) shipped task, keeps members" do
+    _rel, members = shipped_release_with("member")
+    legacy = loose_shipped_task("legacy")
+    assert_nil legacy.release_slug
+
+    result = Release::Conductor.archive_completed!
+
+    assert_includes result[:archived], legacy.slug
+    refute_includes result[:archived], members.first.slug
+    assert_equal "archived", legacy.reload.stage
+    assert_equal "shipped", members.first.reload.stage
+  end
+
+  test "archive_completed! is idempotent — a second run archives nothing new" do
+    shipped_release_with("member")
+    loose_shipped_task
+
+    first = Release::Conductor.archive_completed!
+    assert_operator first[:count], :>=, 1
+
+    second = Release::Conductor.archive_completed!
+    assert_equal 0, second[:count]
+    assert_empty second[:archived]
+  end
 end

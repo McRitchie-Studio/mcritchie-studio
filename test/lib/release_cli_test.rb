@@ -287,4 +287,63 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "abort on first failure", "partial-ship policy is surfaced"
     assert_includes out, "DRY RUN", "a dry-run executes nothing"
   end
+
+  # --- archive --dry-run / run: the DevOps loop's conclusion (shipped → archived) ---
+
+  # A dry-run archive must ONLY read (read_only conductor) + run the reclaim tool's
+  # own dry-run; the WRITE conductor and the --yes teardown must NEVER fire — both
+  # stubs raise if hit, so reaching the DRY-RUN line proves nothing was mutated.
+  ARCHIVE_DRY_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      raise "dry-run archive must not call a WRITE conductor" unless read_only
+      { "archivable" => ["old-ship-a", "old-ship-b", "pre-conductor-c"],
+        "kept" => ["last-member-1", "last-member-2"] }
+    end
+    def reclaim_worktrees(apply:)
+      raise "dry-run must not apply the reclaim teardown" if apply
+      puts "reclaim candidates:"
+      puts "  - mcritchie-studio/old-ship-a redis=11"
+      ["reclaim candidates:", true]
+    end
+  RUBY
+
+  def test_archive_dry_run_previews_the_plan_and_mutates_nothing
+    out = run_cli(["--dry-run"], call: "archive", setup: ARCHIVE_DRY_STUB)
+
+    assert_includes out, "3 shipped task(s) to archive", "the archivable count + sample is shown"
+    assert_includes out, "old-ship-a", "a sample of the archivable slugs is shown"
+    assert_includes out, "2 last-release member(s) KEPT", "the kept last-release members are shown"
+    assert_includes out, "worktree reclaim preview", "the reclaim preview runs in dry-run"
+    assert_includes out, "reclaim candidates", "the reclaim tool's own dry-run lists candidates"
+    assert_includes out, "DRY RUN", "a dry-run executes nothing"
+  end
+
+  # A real archive: read the plan, WRITE the archive on the board, reclaim with
+  # --yes, then print the summary line.
+  ARCHIVE_RUN_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "archivable" => ["a", "b"], "kept" => ["m1"] }
+      else
+        { "archived" => ["a", "b"], "kept" => ["m1"], "count" => 2 }
+      end
+    end
+    def reclaim_worktrees(apply:)
+      apply ? ["reclaimed 3 worktree(s); freed redis DBs: 11, 12, 13", true]
+            : ["reclaim candidates:", true]
+    end
+  RUBY
+
+  def test_archive_run_archives_then_reclaims_and_summarizes
+    out = run_cli(["--yes"], call: "archive", setup: ARCHIVE_RUN_STUB)
+
+    assert_includes out, "Archived 2 tasks"
+    assert_includes out, "reclaimed 3 worktrees"
+    assert_includes out, "SHIPPED → 1"
+  end
+
+  def test_reclaimed_count_parses_the_agent_worktree_summary
+    assert_equal "5", eval_helper(%(reclaimed_count("reclaimed 5 worktree(s); freed redis DBs: 9").to_s))
+    assert_equal "0", eval_helper(%(reclaimed_count("reclaim: nothing reclaimed").to_s))
+  end
 end
