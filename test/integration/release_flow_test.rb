@@ -72,6 +72,38 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
     assert_nil app_member[:version]
   end
 
+  test "a gem member is represented so prepare can freeze it: repo_plan tags it gem + record_qa_shas round-trips its SHA" do
+    gem = Task.create!(title: "engine 0.9 gem release", stage: "reviewed",
+                       metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
+    app = Task.create!(title: "consume engine 0.9", stage: "reviewed", dependencies: [gem.slug],
+                       metadata: { "devops" => {
+                         "shape" => "backend", "repositories" => ["mcritchie-studio"],
+                         "branch" => "feat/consume-engine-09",
+                         "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/300"
+                       } })
+
+    rel = Release::Conductor.prepare!(task_slugs: [gem.slug, app.slug], slug: "rel-gem-freeze")
+    assert_equal "assembled", rel.state
+
+    # The gem repo is represented in the deploy plan as kind :gem, producer-first —
+    # this is the group bin/release's prepare loop reaches to freeze qa_shas[gem].
+    plan = Release::Conductor.repo_plan(rel)
+    assert_equal %w[studio-engine mcritchie-studio], plan.map { |g| g[:repo] }
+    gem_group = plan.find { |g| g[:repo] == "studio-engine" }
+    assert_equal :gem, gem_group[:kind]
+    assert_equal [gem.slug], gem_group[:members].map { |m| m[:slug] }
+    assert_equal "gem", Release::Conductor.member_plan(rel).first[:kind]
+
+    # The gem's frozen SHA round-trips onto the release exactly like an app's, so
+    # ship's frozen_sha_for reads the QA-frozen commit, not origin/release HEAD.
+    Release::Conductor.record_qa_shas(release: rel,
+                                      shas: { "studio-engine" => "gemsha1", "mcritchie-studio" => "appsha2" })
+    qa_shas = rel.reload.metadata["qa_shas"]
+    assert_equal "gemsha1", qa_shas["studio-engine"]
+    assert_equal "gemsha1", Release::ShipSequence.frozen_sha(qa_shas, "studio-engine"),
+                 "ship selects the frozen gem SHA — no live origin/release fallback"
+  end
+
   test "abandon frees the member tasks and the active-release singleton" do
     a = Task.create!(title: "Abandon flow A", stage: "reviewed")
     rel = Release.open!

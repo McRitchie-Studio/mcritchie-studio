@@ -371,6 +371,10 @@ def prepare
 
   say("Prepare release#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
+  # On the prod default a non-dry prepare fires a REAL `bin/qa-server deploy`, so
+  # gate it like `ship` does. confirm returns true under --yes (hands-off) and
+  # --dry-run (previews nothing-executed), so both bypass the prompt.
+  return unless confirm("Prepare the current release — assemble + deploy origin/#{RELEASE_BRANCH} to QA?")
 
   # 1. Record: assemble the active release (curating any explicit --task first),
   #    then read the per-REPO deploy plan (producer-first; one group per repo).
@@ -414,6 +418,21 @@ def prepare
       members.each do |m|
         step("gem member #{m['slug']} (#{repo} #{gem_version_local(repo)}) — rides the release; published at ship, QA'd via its consuming app")
       end
+      # Freeze the gem's origin/release HEAD into qa_shas, exactly like apps do at
+      # the bottom of this loop. Without an entry the gem gets NO frozen SHA, so
+      # at ship time frozen_sha_for falls back to resolving origin/release HEAD —
+      # which can DRIFT if a PR merges into the gem's release branch after prepare.
+      # Recording it here ships the exact commit QA froze. (Gems aren't QA-
+      # deployed, but their release branch is still the source ship publishes from;
+      # the frozen_sha_for fallback stays as defense for un-prepared repos.)
+      sha = ""
+      path = repo_path(repo)
+      if !DRY && Dir.exist?(path)
+        sh("git", "-C", path, "fetch", "origin", "--quiet")
+        out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+        sha = out.strip if ok
+      end
+      qa_shas[repo] = sha
       next
     end
 
@@ -542,11 +561,14 @@ def gem_version_for(repo, group)
 end
 
 # The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
-# release.metadata["qa_shas"]. Falls back to origin/release HEAD when absent (a
-# gem repo, or a release prepared before SHA recording); resolved live only.
+# release.metadata["qa_shas"] (apps AND gems both freeze it now). The PURE
+# present?/which-SHA decision lives in Release::ShipSequence.frozen_sha so this
+# stays thin; only the live-git fallback (resolve origin/release HEAD when a repo
+# was never frozen — e.g. a release prepared before SHA recording) is I/O and
+# stays here. Resolved live only (DRY returns "").
 def frozen_sha_for(repo, qa_shas)
-  sha = qa_shas[repo].to_s
-  return sha unless sha.empty?
+  frozen = Release::ShipSequence.frozen_sha(qa_shas, repo)
+  return frozen if frozen
   return "" if DRY
 
   out, ok = git_capture("-C", repo_path(repo), "rev-parse", "origin/#{RELEASE_BRANCH}")

@@ -121,4 +121,43 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   test "publish_needed? is true against an empty (never-published) listing" do
     assert S.publish_needed?("0.1.0", [])
   end
+
+  # --- frozen_sha: QA-frozen-SHA selection (present → freeze; absent → fall back) ---
+  #
+  # The decision behind bin/release's frozen_sha_for: ship the SHA `prepare` froze
+  # under release.metadata["qa_shas"] when present, else signal (nil) the live
+  # origin/release HEAD fallback. The Fix-1 change makes prepare freeze GEM repos
+  # too, so a gem now resolves to its frozen SHA here instead of falling back.
+
+  FROZEN = {
+    "studio-engine" => "aaaaaaa1111111111111111111111111111111111",
+    "mcritchie-studio" => "bbbbbbb2222222222222222222222222222222222"
+  }.freeze
+
+  test "frozen_sha returns the recorded SHA when the repo is in qa_shas (app)" do
+    assert_equal FROZEN["mcritchie-studio"], S.frozen_sha(FROZEN, "mcritchie-studio")
+  end
+
+  test "frozen_sha returns the recorded SHA for a GEM repo (the Fix-1 guarantee)" do
+    # Pre-fix, gems got no qa_shas entry → this fell back to origin/release HEAD
+    # at ship time (drift-prone). Now the gem is frozen, so selection returns it.
+    assert_equal FROZEN["studio-engine"], S.frozen_sha(FROZEN, "studio-engine")
+  end
+
+  test "frozen_sha returns nil to signal the live origin/release fallback when absent" do
+    assert_nil S.frozen_sha(FROZEN, "solana-studio")
+  end
+
+  test "frozen_sha treats a blank recorded value as absent (fall back)" do
+    assert_nil S.frozen_sha({ "studio-engine" => "" }, "studio-engine")
+  end
+
+  test "frozen_sha tolerates a nil qa_shas (fall back)" do
+    assert_nil S.frozen_sha(nil, "studio-engine")
+  end
+
+  test "frozen_sha looks the repo up by string or symbol key" do
+    assert_equal "ccc", S.frozen_sha({ "studio-engine" => "ccc" }, :"studio-engine")
+    assert_equal "ddd", S.frozen_sha({ "studio-engine": "ddd" }, "studio-engine")
+  end
 end
