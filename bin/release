@@ -49,11 +49,27 @@ RELEASE_REPOS =
     {}
   end
 
-# Gem repos are siblings of this app at the projects root. Resolve relative to
-# the app root's parent — so run `ship` from a PRIMARY checkout, not a worktree
-# (a worktree's parent is .worktrees, not the projects root).
-def gem_repo_path(repo)
-  File.expand_path("../../#{repo}", __dir__)
+# Every ecosystem repo — gems, apps, AND this hub — is checked out as a SIBLING
+# at the projects root. `repo_path` resolves that sibling path .worktrees-aware,
+# so paths resolve whether bin/release runs from a primary checkout
+# (…/projects/mcritchie-studio/bin) or (defensively) a worktree
+# (…/projects/mcritchie-studio/.worktrees/<wt>/bin). Mirrors bin/qa-server's
+# default_projects_dir, which climbs out of .worktrees to the real projects root.
+#
+# `projects_root` is pure given its app_root argument (so it's unit-testable for
+# both checkout shapes); it defaults to this script's own app root.
+def projects_root(app_root = File.expand_path("..", __dir__))
+  parent = File.expand_path("..", app_root)
+  # A worktree's app root sits under <hub>/.worktrees/<wt>; climb out of
+  # .worktrees/<wt> back to the real projects root that holds the siblings.
+  return File.expand_path("../..", parent) if File.basename(parent) == ".worktrees"
+
+  parent
+end
+
+# The sibling checkout path for any ecosystem repo (a gem, an app, or the hub).
+def repo_path(repo)
+  File.join(projects_root, repo.to_s)
 end
 
 # A gem's declared version, read locally from its version_file. The authoritative
@@ -64,23 +80,32 @@ def gem_version_local(repo)
   version_file = meta["version_file"].to_s
   return "" if version_file.empty?
 
-  path = File.join(gem_repo_path(repo), version_file)
+  path = File.join(repo_path(repo), version_file)
   return "" unless File.exist?(path)
 
   File.read(path)[/version\s*=\s*["']([\w.\-]+)["']/i, 1].to_s
 end
 
 # URLs come from the QA registry (config/qa_environments.yml) — single source of
-# truth, so the CLI doesn't drift from the deploy config.
-QA_REGISTRY =
+# truth, so the CLI doesn't drift from the deploy config. Load the FULL map so
+# the per-repo prepare loop can report each app's QA review URL (keyed by the
+# qa-server app), not just the hub's.
+QA_ENVIRONMENTS =
   begin
     YAML.load_file(File.expand_path("../config/qa_environments.yml", __dir__))
-        .dig("qa_environments", APP) || {}
+        .fetch("qa_environments", {})
   rescue StandardError
     {}
   end
+QA_REGISTRY = QA_ENVIRONMENTS[APP] || {}
 QA_URL   = QA_REGISTRY["qa_url"] || "https://qa.mcritchie.studio"
 PROD_URL = QA_REGISTRY["production_url"] || "https://app.mcritchie.studio"
+
+# The QA review URL for a qa-server app key (the group's `qa_app`). "" when the
+# app isn't registered — the summary just omits a link and falls back to the key.
+def qa_url_for(app)
+  (QA_ENVIRONMENTS[app] || {})["qa_url"].to_s
+end
 
 DRY = ARGV.delete("--dry-run") ? true : false
 PROD = ARGV.delete("--prod") ? true : false
@@ -110,16 +135,21 @@ end
 
 # Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.
 # The snippet must `puts` a single JSON line; we return the parsed Hash.
-def conductor(ruby)
+#
+# WRITES are suppressed in --dry-run (printed, not run). A read_only: query still
+# runs in dry-run — a read mutates nothing, so it honors "execute nothing" while
+# letting a dry-run PREVIEW the real plan. read_only goes straight to Open3 so
+# it bypasses sh's own dry-run gate.
+def conductor(ruby, read_only: false)
   wrapper = "require 'json'; #{ruby}"
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", wrapper]
              : ["bin/rails", "runner", wrapper]
-  if DRY
+  if DRY && !read_only
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
   end
-  out, ok = sh(*cmd, capture: true)
-  abort!("record op failed:\n#{out}") unless ok
+  out, status = Open3.capture2e(*cmd)
+  abort!("record op failed:\n#{out}") unless status.success?
   line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
   abort!("record op returned no JSON:\n#{out}") unless line
   JSON.parse(line)
@@ -172,8 +202,8 @@ end
 # Build + push one gem, then tag its repo. Each failure aborts loudly with the
 # fix, never swallowed — a half-published release is worse than a stopped one.
 def publish_gem(repo, version)
-  path = gem_repo_path(repo)
-  abort!("gem repo not found at #{path} — clone it as a sibling of #{APP} (run ship from a primary checkout)") unless DRY || Dir.exist?(path)
+  path = repo_path(repo)
+  abort!("gem repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
 
   meta    = RELEASE_REPOS.dig("gems", repo) || {}
   gemspec = meta["gemspec"].to_s.empty? ? "#{repo}.gemspec" : meta["gemspec"]
@@ -212,68 +242,112 @@ def prepare
 
   say("Prepare release#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
 
-  # 1. Record: additive find-or-create + add reviewed tasks + assemble.
-  slugs_ruby = task_slugs.empty? ? "Release::Conductor.eligible_task_slugs" : task_slugs.inspect
-  step("record: Release::Conductor.prepare!")
-  result = conductor(
-    "r = Release::Conductor.prepare!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect}); " \
-    "puts({slug: r.slug, state: r.state, branch: r.branch, members: Release::Conductor.member_plan(r)}.to_json)"
-  )
-  rel_slug   = result["slug"] || slug || "rel-pending"
-  rel_branch = result["branch"].to_s.empty? ? "release/#{rel_slug.sub(/\Arel-/, '')}" : result["branch"]
-  members    = result["members"] || []
-  say("  release #{rel_slug} (#{result['state']}) · #{members.size} member(s)")
-
-  # 2. Git: cut/refresh the release branch from main, merge each member branch.
-  sh("git", "fetch", "origin", "--quiet")
-  step("git: release branch #{rel_branch}")
-  _, exists = sh("git", "rev-parse", "--verify", "--quiet", rel_branch, capture: true)
-  if exists
-    sh("git", "checkout", rel_branch)
+  # 1. Record: additive find-or-create + add reviewed task(s) + assemble, then
+  #    read the per-REPO deploy plan (producer-first; one group per repo). The
+  #    assemble is a board WRITE → suppressed in --dry-run; the plan READ runs
+  #    even in dry-run (read_only:) so a dry-run previews the REAL plan against
+  #    the current release without mutating anything.
+  if DRY
+    step("record (read-only preview): Release::Conductor.repo_plan(Release.current)")
+    record_ruby = "r = Release.current"
   else
-    sh("git", "checkout", "-b", rel_branch, "origin/main")
+    slugs_ruby = task_slugs.empty? ? "Release::Conductor.eligible_task_slugs" : task_slugs.inspect
+    step("record: Release::Conductor.prepare!")
+    record_ruby = "r = Release::Conductor.prepare!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect})"
   end
+  result = conductor(
+    "#{record_ruby}; " \
+    "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r) } : {}).to_json)",
+    read_only: DRY
+  )
 
-  members.each do |m|
-    # Gem members have no app branch in this repo — their PR lives in the gem's
-    # own repo. They ride the release as a record and are published at `ship`
-    # (producer-first), QA'd via a consuming app. Nothing to merge here.
-    if m["kind"] == "gem"
-      step("gem member #{m['slug']} (#{m['repo']} #{gem_version_local(m['repo'])}) — rides the release; published at ship, QA'd via its consuming app")
+  rel_slug = result["slug"] || slug || "rel-pending"
+  repos    = result["repos"] || []
+  abort!("no active release to prepare — pass --task SLUG (or stage reviewed tasks), then re-run") if repos.empty?
+
+  app_groups = repos.select { |g| g["kind"] == "app" }
+  gem_groups = repos.select { |g| g["kind"] == "gem" }
+  say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
+
+  # 2. Per-repo: cut/refresh the release branch IN EACH app repo, merge its
+  #    members, and deploy that repo to its own QA app. Gems are NOT deployed in
+  #    prepare — they ride the release as a record and are published at ship.
+  deployed = [] # [{repo, qa_app, qa_url, release_branch, ok}]
+  repos.each do |group|
+    repo    = group["repo"]
+    members = group["members"] || []
+
+    if group["kind"] == "gem"
+      members.each do |m|
+        step("gem member #{m['slug']} (#{repo} #{gem_version_local(repo)}) — rides the release; published at ship, QA'd via its consuming app")
+      end
       next
     end
 
-    branch = m["branch"]
-    next if branch.to_s.empty?
-    step("merge member #{m['slug']} (#{branch})")
-    _, ok = sh("git", "merge", "--no-ff", "-m", "Merge #{branch} into #{rel_branch} (#{m['slug']})", "origin/#{branch}")
-    unless ok || DRY
-      abort!("merge conflict on #{branch}. Resolve by hand (or `git merge --abort` to back out), " \
-             "commit, then re-run `bin/release prepare`. A genuine conflict means the task should " \
-             "likely be blocked for rework.")
+    # --- app repo: branch surgery happens in THAT repo via `git -C path` ---
+    path           = repo_path(repo)
+    release_branch = group["release_branch"]
+    qa_app         = group["qa_app"]
+
+    say("")
+    step("repo #{repo} → #{release_branch} · #{members.size} member(s) · QA #{qa_app}")
+    abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
+
+    # a. fetch the repo's origin.
+    sh("git", "-C", path, "fetch", "origin", "--quiet")
+
+    # b. cut/refresh the release branch in that repo.
+    _, exists = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", release_branch, capture: true)
+    if exists
+      sh("git", "-C", path, "checkout", release_branch)
+    else
+      sh("git", "-C", path, "checkout", "-b", release_branch, "origin/main")
+    end
+
+    # c. merge each member branch into the repo's release branch.
+    members.each do |m|
+      branch = m["branch"]
+      next if branch.to_s.empty?
+      step("merge #{m['slug']} (#{branch}) → #{release_branch} in #{repo}")
+      _, ok = sh("git", "-C", path, "merge", "--no-ff", "-m", "Merge #{branch} into #{release_branch} (#{m['slug']})", "origin/#{branch}")
+      unless ok || DRY
+        abort!("merge conflict in #{repo} on #{branch} → #{release_branch}. Resolve by hand in #{path} " \
+               "(or `git -C #{path} merge --abort` to back out), commit, then re-run `bin/release prepare`. " \
+               "A genuine conflict means the task should likely be blocked for rework.")
+      end
+    end
+
+    # d. deploy the repo's release branch to its own QA app for review.
+    step("qa deploy: bin/qa-server deploy #{qa_app} #{release_branch}")
+    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, release_branch, "--yes", capture: false)
+    deployed << { "repo" => repo, "qa_app" => qa_app, "qa_url" => qa_url_for(qa_app),
+                  "release_branch" => release_branch, "ok" => (qa_ok || DRY) }
+  end
+
+  # 3. Record the QA URL on the release (the board's current-release header links
+  #    straight to QA) — prefer the hub's, else the first app deployed. A WRITE,
+  #    so it's suppressed in dry-run; non-fatal (the RC is already assembled).
+  primary = deployed.find { |d| d["repo"] == APP } || deployed.first
+  if primary && !primary["qa_url"].empty?
+    step("record: qa_url #{primary['qa_url']}")
+    conductor("Release::Conductor.record_qa_deploy(release: Release.current, qa_url: #{primary['qa_url'].inspect}); puts({qa_url: #{primary['qa_url'].inspect}}.to_json)")
+  end
+
+  # 4. Per-repo summary of what was assembled + QA'd.
+  say("")
+  say("✓ Assembled #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  gem_groups.each do |g|
+    g["members"].each { |m| say("  gem #{g['repo']} (#{m['slug']}) — rides the release; published at ship.") }
+  end
+  deployed.each do |d|
+    if d["ok"]
+      say("  app #{d['repo']} → #{d['release_branch']} → QA #{d['qa_url'].empty? ? d['qa_app'] : d['qa_url']}")
+    else
+      say("  app #{d['repo']} → #{d['release_branch']} — QA deploy FAILED, retry `bin/qa-server deploy #{d['qa_app']} #{d['release_branch']}`")
     end
   end
-
-  # 3. Tests on the assembled candidate.
-  step("test: bin/rails test")
-  _, green = sh("bin/rails", "test", capture: false)
-  abort!("suite failed on the release candidate — fix before assembling") unless green || DRY
-
-  # 4. Deploy the RC to QA for review + record the URL on the release. Non-fatal:
-  #    the RC is already assembled, so a QA hiccup just means "retry the deploy".
-  step("qa deploy: bin/qa-server deploy #{APP} #{rel_branch}")
-  _, qa_ok = sh("bin/qa-server", "deploy", APP, rel_branch, "--yes", capture: false)
-  if qa_ok || DRY
-    step("record: qa_url #{QA_URL}")
-    conductor("Release::Conductor.record_qa_deploy(release: Release.current, qa_url: #{QA_URL.inspect}); puts({qa_url: #{QA_URL.inspect}}.to_json)")
-    say("")
-    say("✓ Assembled #{rel_slug} on #{rel_branch} → deployed to QA.")
-    say("  Review at #{QA_URL}, then `bin/release ship`.")
-  else
-    say("")
-    say("✓ Assembled #{rel_slug} on #{rel_branch} (QA deploy failed — retry `bin/qa-server deploy #{APP} #{rel_branch}`).")
-    say("  Then `bin/release ship`.")
-  end
+  say("")
+  say("  Review the QA app(s) above, then `bin/release ship`.")
 end
 
 # --- ship ------------------------------------------------------------------
