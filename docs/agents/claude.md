@@ -36,14 +36,19 @@ Before handoff:
 
 4. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
    under-tested PR.
-5. Commit on the feature branch, push, open a PR whose body **leads with the
-   task URL**, then `bin/task move <task> submitted`.
+5. Commit on the feature branch, push, open a PR **into `release`** (base
+   `release`, not `main`) whose body **leads with the task URL**, then
+   `bin/task move <task> submitted`.
 
 Task lifecycle is two workflows meeting at the `submitted` seam — **Build**
 (feature agent) `designed → building → submitted` (you own through `submitted`)
-and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped` (QA reviews
-→ `reviewed` or `bin/task block`s it back; the conductor assembles + ships).
-`blocked` = needs attention; `archived` = terminal.
+and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped`. Every repo
+keeps a **persistent `release` branch** that feature PRs merge into (not `main`):
+QA reviews → `reviewed` or `bin/task block`s it back; merging an approved PR into
+`release` flips its task to `assembled` (`bin/release merge`); the conductor
+deploys `origin/release` to QA (`bin/release prepare`) and ships by
+fast-forwarding `release → main` (`bin/release ship`). `blocked` = needs
+attention; `archived` = terminal.
 Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
 **Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie

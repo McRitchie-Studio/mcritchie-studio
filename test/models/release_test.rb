@@ -12,6 +12,18 @@ class ReleaseTest < ActiveSupport::TestCase
     assert rel.active?
   end
 
+  test "open! defaults the integration branch to the persistent `release`" do
+    assert_equal "release", Release::BRANCH
+    assert_equal "release", Release.open!.branch
+  end
+
+  test "current_or_open! returns the active release, else opens one" do
+    opened = Release.current_or_open!
+    assert_equal "assembling", opened.state
+    assert_equal opened, Release.current_or_open!, "returns the SAME active release, doesn't open a second"
+    assert_equal 1, Release.count
+  end
+
   test "only one active release at a time (singleton)" do
     Release.open!
     assert_raises(ActiveRecord::RecordInvalid) { Release.open! }
@@ -42,9 +54,20 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal "assembled", task.stage
   end
 
-  test "add only works while assembling" do
+  test "add from an assembled RC auto-reopens, then adds (a late merge re-QAs)" do
     rel = Release.open!
     rel.assemble!
+    assert_equal "assembled", rel.state
+
+    rel.add(reviewed_task)
+
+    assert_equal "assembling", rel.reload.state, "a late merge reopens the candidate"
+    assert_equal 1, rel.tasks.count
+  end
+
+  test "add still refuses from a terminal release" do
+    rel = Release.open!
+    rel.ship!
     assert_raises(ArgumentError) { rel.add(reviewed_task) }
   end
 

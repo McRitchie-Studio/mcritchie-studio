@@ -3,21 +3,33 @@ require "test_helper"
 # Integration: the Release lifecycle across multiple Task records and the DB —
 # assemble reviewed tasks, ship the candidate, members flip; abandon frees them.
 class ReleaseFlowTest < ActionDispatch::IntegrationTest
-  test "assemble two reviewed tasks, ship the release, both flip to shipped" do
-    a = Task.create!(title: "Release flow A", stage: "reviewed")
-    b = Task.create!(title: "Release flow B", stage: "reviewed")
+  def app_reviewed(title, repo: "mcritchie-studio")
+    Task.create!(title: title, stage: "reviewed",
+                 metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
+  end
 
-    rel = Release.open!(branch: "release/2026-flow-test")
-    rel.add(a)
-    rel.add(b)
+  test "persistent-release flow: adopt two merged tasks → prepare assembles → ship flips shipped" do
+    a = app_reviewed("Release flow A")
+    b = app_reviewed("Release flow B")
+
+    # PR for A merged INTO the persistent `release` branch → adopt! records
+    # membership + flips the task reviewed→assembled (the release stays open).
+    rel = Release::Conductor.adopt!(a)
+    assert_equal "release", rel.branch # the persistent per-repo branch
+    assert_equal "assembling", rel.state
+    # PR for B merged later → the same active release absorbs it.
+    Release::Conductor.adopt!(b)
 
     assert_equal %w[assembled assembled], [a.reload.stage, b.reload.stage]
     assert_equal [rel.slug, rel.slug], [a.release_slug, b.release_slug]
-    assert_equal 2, rel.tasks.count
+    assert_equal 2, rel.reload.tasks.count
 
-    rel.assemble!
+    # prepare assembles the active release (the QA gate); membership is NOT added
+    # here — it already flipped at merge.
+    Release::Conductor.prepare!(task_slugs: [])
+    assert_equal "assembled", rel.reload.state
+
     rel.ship!(by: "alex")
-
     assert_equal "shipped", rel.reload.state
     assert_equal %w[shipped shipped], [a.reload.stage, b.reload.stage]
   end

@@ -16,10 +16,55 @@ class Release::ConductorTest < ActiveSupport::TestCase
     rel = Release::Conductor.prepare!(task_slugs: [t.slug], slug: "rel-test-new")
 
     assert_equal "rel-test-new", rel.slug
-    assert_equal "release/test-new", rel.branch # derived from the slug
+    assert_equal "release", rel.branch # the persistent per-repo release branch
     assert_equal "assembled", rel.state
     assert_equal "assembled", t.reload.stage
     assert_includes rel.tasks.pluck(:slug), t.slug
+  end
+
+  # --- adopt! (membership-at-merge: PR merged INTO `release`) ---
+
+  test "adopt! records membership, flips the task to assembled, opens a release if none" do
+    assert_nil Release.current
+    t = reviewed_task
+    rel = Release::Conductor.adopt!(t)
+
+    assert_equal rel, Release.current
+    assert_equal "assembling", rel.state # adopt! records membership; prepare! assembles
+    assert_equal "assembled", t.reload.stage
+    assert_includes rel.tasks.pluck(:slug), t.slug
+  end
+
+  test "adopt! attaches to the existing active release" do
+    first = reviewed_task("first")
+    rel = Release::Conductor.adopt!(first)
+    Release::Conductor.adopt!(reviewed_task("second"))
+
+    assert_equal 2, rel.reload.tasks.count
+  end
+
+  test "adopt! is idempotent — re-adopting the same task is a no-op" do
+    t = reviewed_task
+    rel = Release::Conductor.adopt!(t)
+    again = Release::Conductor.adopt!(t)
+
+    assert_equal rel.id, again.id
+    assert_equal 1, again.tasks.count
+  end
+
+  test "adopt! reopens an assembled RC so a late merge re-QAs" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task("first").slug])
+    assert_equal "assembled", rel.state
+
+    Release::Conductor.adopt!(reviewed_task("late"))
+
+    assert_equal "assembling", rel.reload.state # reopened to re-assemble + re-QA
+    assert_equal 2, rel.tasks.count
+  end
+
+  test "adopt! raises on a task that is not reviewed" do
+    designed = Task.create!(title: "designed task not reviewed") # stage: designed
+    assert_raises(ArgumentError) { Release::Conductor.adopt!(designed) }
   end
 
   test "prepare! is additive — extends the active release instead of opening a second" do
@@ -63,6 +108,39 @@ class Release::ConductorTest < ActiveSupport::TestCase
     designed = Task.create!(title: "designed task not reviewed")
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
     assert_equal 0, Release.count, "a failed prepare! must not leave a dangling release"
+  end
+
+  test "prepare! no longer auto-adds reviewed work — nothing active + no --task is a no-op" do
+    a = reviewed_task("a")
+    b = reviewed_task("b")
+
+    # Membership now flips at PR-merge time (adopt!), not here — with nothing
+    # active and no explicit curation there's nothing to prepare.
+    assert_nil Release::Conductor.prepare!(task_slugs: [])
+    assert_equal 0, Release.count
+    assert_equal %w[reviewed reviewed], [a.reload.stage, b.reload.stage]
+  end
+
+  test "prepare! assembles the active release without pulling in uncurated reviewed work" do
+    member = reviewed_task("member")
+    Release::Conductor.adopt!(member) # merged into release
+    bystander = reviewed_task("bystander") # reviewed but never merged
+
+    rel = Release::Conductor.prepare!(task_slugs: [])
+
+    assert_equal "assembled", rel.state
+    assert_equal [member.slug], rel.tasks.pluck(:slug)
+    assert_equal "reviewed", bystander.reload.stage, "an uncurated reviewed task must not ride the release"
+  end
+
+  test "prepare! is idempotent against an already-assembled RC" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    assert_equal "assembled", rel.state
+
+    again = Release::Conductor.prepare!(task_slugs: [])
+
+    assert_equal rel.id, again.id
+    assert_equal "assembled", again.state
   end
 
   test "ship! stamps the deployed sha + url and flips the RC and members to shipped" do
@@ -186,13 +264,13 @@ class Release::ConductorTest < ActiveSupport::TestCase
     studio_group = plan.find { |g| g[:repo] == "mcritchie-studio" }
     assert_equal :app, studio_group[:kind]
     assert_equal [studio.slug], studio_group[:members].map { |m| m[:slug] }
-    assert_equal "release/multi-repo", studio_group[:release_branch] # slug minus the rel- prefix
+    assert_equal "release", studio_group[:release_branch] # the persistent per-repo branch
     assert_equal "mcritchie-studio", studio_group[:qa_app]
     assert_equal "git_push_heroku", studio_group[:prod_deploy]["strategy"]
 
     turf_group = plan.find { |g| g[:repo] == "turf-monster" }
     assert_equal :app, turf_group[:kind]
-    assert_equal "release/multi-repo", turf_group[:release_branch]
+    assert_equal "release", turf_group[:release_branch]
     assert_equal "turf-monster", turf_group[:qa_app]
     assert_equal "repo_script", turf_group[:prod_deploy]["strategy"]
     assert_equal ["--yes"], turf_group[:prod_deploy]["args"]
@@ -249,6 +327,15 @@ class Release::ConductorTest < ActiveSupport::TestCase
     rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
     Release::Conductor.record_qa_deploy(release: rel, qa_url: "https://qa.example.test")
     assert_equal "https://qa.example.test", rel.reload.qa_url
+  end
+
+  # --- record_qa_shas ---
+
+  test "record_qa_shas persists the per-repo deployed SHAs onto the release" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_shas(release: rel, shas: { "mcritchie-studio" => "abc1234", "turf-monster" => "def5678" })
+
+    assert_equal({ "mcritchie-studio" => "abc1234", "turf-monster" => "def5678" }, rel.reload.metadata["qa_shas"])
   end
 
   # --- post_release_notes (reuses ReleaseNotes::Formatter + DiscordClient) ---

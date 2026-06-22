@@ -10,12 +10,27 @@
 # git + deploy mechanics around it and stops for human judgment on a merge
 # conflict (it never auto-resolves).
 #
+# The integration branch is now PERSISTENT: every repo keeps a single `release`
+# branch that feature PRs merge INTO. Membership flips reviewed→assembled AT
+# MERGE (`bin/release merge`); `prepare` just deploys `origin/release` to QA;
+# `ship` (later) fast-forwards `release` → `main`.
+#
 # Usage:
+#   bin/release init [--dry-run]
+#     One-time (idempotent) per repo: create the persistent `release` branch from
+#     `origin/main` in every gem + app repo that doesn't already have one.
+#
+#   bin/release merge <task-slug> [--prod] [--dry-run]
+#     Record a PR merge INTO `release`: resolve the task's PR, `gh pr merge` it
+#     (its base MUST be `release`), then adopt the task onto the active release
+#     (reviewed→assembled, opening/reopening the candidate as needed).
+#
 #   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
-#     Additive find-or-create: extends the active release (reopening an assembled
-#     RC) or opens a new one, adds the reviewed task(s) (default: all reviewed),
-#     cuts/updates release/<slug>, merges each member branch, runs the suite.
-#     Ends with the RC assembled — deploy it to QA for review.
+#     Assemble the active release + deploy it to QA. Keeps each app's `release`
+#     branch ahead of main (merge-forward guard), then `bin/qa-server deploy
+#     <qa_app> origin/release`. No branch-cut/member-merge here — that happened at
+#     PR-merge time. `--task` is operator curation (adopt named tasks first).
+#     Ends with the RC assembled — review the QA app(s), then ship.
 #
 #   bin/release ship [--by NAME] [--prod] [--dry-run]
 #     Promotes the assembled RC to production: ff main → release branch, push
@@ -38,6 +53,11 @@ require "tmpdir"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
+
+# The persistent per-repo integration branch (same name in every repo). Mirrors
+# Release::BRANCH on the record side — feature PRs merge into it, QA deploys from
+# it, ship fast-forwards it into main.
+RELEASE_BRANCH = "release"
 
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
@@ -70,6 +90,12 @@ end
 # The sibling checkout path for any ecosystem repo (a gem, an app, or the hub).
 def repo_path(repo)
   File.join(projects_root, repo.to_s)
+end
+
+# Every registered ecosystem repo — gems AND apps — from the release registry.
+# The set `init` seeds the persistent `release` branch in.
+def release_repo_slugs
+  (RELEASE_REPOS.fetch("gems", {}).keys + RELEASE_REPOS.fetch("apps", {}).keys)
 end
 
 # A gem's declared version, read locally from its version_file. The authoritative
@@ -235,6 +261,90 @@ def publish_gem(repo, version)
   say("  (tag #{tag} push #{tagged ? 'ok' : 'skipped/failed — push it manually if needed'})") unless DRY
 end
 
+# --- init ------------------------------------------------------------------
+# One-time, idempotent: create the persistent `release` branch from origin/main
+# in every gem + app repo that doesn't already have one. Re-runnable — a repo
+# that already has origin/release is skipped.
+def init
+  say("Init persistent `release` branches#{DRY ? ' — DRY RUN' : ''}")
+  release_repo_slugs.each do |repo|
+    path = repo_path(repo)
+    unless DRY || Dir.exist?(path)
+      say("  - #{repo}: SKIP (not checked out at #{path})")
+      next
+    end
+
+    sh("git", "-C", path, "fetch", "origin", "--quiet")
+
+    # Existence is a read — check it for real outside dry-run; in dry-run we
+    # always PREVIEW the push so the plan is visible.
+    unless DRY
+      _, exists = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/release", capture: true)
+      if exists
+        say("  - #{repo}: origin/release already exists — skip")
+        next
+      end
+    end
+
+    step("push release branch in #{repo}: origin/main → origin/release")
+    _, pushed = sh("git", "-C", path, "push", "origin", "origin/main:refs/heads/release")
+    say("  - #{repo}: created origin/release from origin/main") if pushed || DRY
+  end
+  say("")
+  say("✓ Persistent `release` branches ready#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+end
+
+# --- merge -----------------------------------------------------------------
+# Record a PR merge INTO the persistent `release` branch: resolve the task's PR,
+# verify its base is `release`, `gh pr merge` it, then adopt the task onto the
+# active release (reviewed→assembled). This is the conductor's membership-at-merge
+# command — conflicts now surface here (at PR-merge), not in prepare.
+def merge
+  task_slug = ARGV.shift
+  abort!("usage: bin/release merge <task-slug>") if task_slug.to_s.empty?
+
+  say("Merge #{task_slug} into `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+
+  # 1. Resolve the task's PR url + repo from the board (a read — runs in dry-run).
+  step("record (read-only): resolve task PR")
+  info = conductor(
+    "t = Task.find_by(slug: #{task_slug.inspect}); " \
+    "puts((t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage } : {}).to_json)",
+    read_only: true
+  )
+  abort!("task #{task_slug} not found on the board") if info["slug"].to_s.empty?
+  pr_url = info["pr_url"].to_s
+  repo   = info["repo"].to_s
+  abort!("task #{task_slug} has no PR url (devops.pr_url) — set it before merging") if pr_url.empty?
+  say("  task #{task_slug} (#{info['stage']}) · #{repo} · #{pr_url}")
+
+  # 2. The PR's base MUST be `release` — this command only records merges INTO it.
+  base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
+  base = base.strip
+  if !DRY && base_ok && base != RELEASE_BRANCH
+    abort!("PR #{pr_url} targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it to `#{RELEASE_BRANCH}` " \
+           "(feature PRs merge INTO release now), then re-run `bin/release merge #{task_slug}`.")
+  end
+
+  # 3. Merge the PR (base is release).
+  step("gh pr merge #{pr_url} --merge")
+  _, merged = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
+  abort!("gh pr merge failed for #{pr_url} — resolve on GitHub (conflicts/checks), then re-run `bin/release merge #{task_slug}`.") unless merged || DRY
+
+  # 4. Record membership: adopt the task onto the active release (reviewed→
+  #    assembled, opening/reopening the candidate as needed). A board WRITE →
+  #    suppressed in dry-run.
+  step("record: Release::Conductor.adopt!(#{task_slug})")
+  result = conductor(
+    "r = Release::Conductor.adopt!(Task.find_by!(slug: #{task_slug.inspect})); " \
+    "puts({slug: r.slug, state: r.state, task: #{task_slug.inspect}}.to_json)"
+  )
+
+  say("")
+  say("✓ Merged #{task_slug} (#{repo}) into `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` to QA it.") unless DRY
+end
+
 # --- prepare ---------------------------------------------------------------
 def prepare
   task_slugs = opt_values("--task")
@@ -242,16 +352,17 @@ def prepare
 
   say("Prepare release#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
 
-  # 1. Record: additive find-or-create + add reviewed task(s) + assemble, then
-  #    read the per-REPO deploy plan (producer-first; one group per repo). The
-  #    assemble is a board WRITE → suppressed in --dry-run; the plan READ runs
-  #    even in dry-run (read_only:) so a dry-run previews the REAL plan against
-  #    the current release without mutating anything.
+  # 1. Record: assemble the active release (curating any explicit --task first),
+  #    then read the per-REPO deploy plan (producer-first; one group per repo).
+  #    The assemble is a board WRITE → suppressed in --dry-run; the plan READ
+  #    runs even in dry-run (read_only:) so a dry-run previews the REAL plan
+  #    against the current release without mutating anything. Membership comes
+  #    from PR merges (`bin/release merge`), NOT from prepare.
   if DRY
     step("record (read-only preview): Release::Conductor.repo_plan(Release.current)")
     record_ruby = "r = Release.current"
   else
-    slugs_ruby = task_slugs.empty? ? "Release::Conductor.eligible_task_slugs" : task_slugs.inspect
+    slugs_ruby = task_slugs.empty? ? "[]" : task_slugs.inspect
     step("record: Release::Conductor.prepare!")
     record_ruby = "r = Release::Conductor.prepare!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect})"
   end
@@ -263,16 +374,18 @@ def prepare
 
   rel_slug = result["slug"] || slug || "rel-pending"
   repos    = result["repos"] || []
-  abort!("no active release to prepare — pass --task SLUG (or stage reviewed tasks), then re-run") if repos.empty?
+  abort!("no active release to prepare — merge task PR(s) into `#{RELEASE_BRANCH}` (`bin/release merge SLUG`) or pass --task SLUG, then re-run") if repos.empty?
 
   app_groups = repos.select { |g| g["kind"] == "app" }
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
 
-  # 2. Per-repo: cut/refresh the release branch IN EACH app repo, merge its
-  #    members, and deploy that repo to its own QA app. Gems are NOT deployed in
-  #    prepare — they ride the release as a record and are published at ship.
-  deployed = [] # [{repo, qa_app, qa_url, release_branch, ok}]
+  # 2. Per-app: keep the persistent `release` branch ahead of main (merge-forward
+  #    guard), then deploy origin/release to that app's QA. The branch is
+  #    populated by PR merges, so there's NO branch-cut/member-merge here. Gems
+  #    are NOT deployed — they ride the release as a record, published at ship.
+  deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
+  qa_shas = {}  # { repo => sha } deployed to QA
   repos.each do |group|
     repo    = group["repo"]
     members = group["members"] || []
@@ -284,53 +397,63 @@ def prepare
       next
     end
 
-    # --- app repo: branch surgery happens in THAT repo via `git -C path` ---
-    path           = repo_path(repo)
-    release_branch = group["release_branch"]
-    qa_app         = group["qa_app"]
+    # --- app repo: all branch ops happen in THAT repo via `git -C path` ---
+    path   = repo_path(repo)
+    qa_app = group["qa_app"]
 
     say("")
-    step("repo #{repo} → #{release_branch} · #{members.size} member(s) · QA #{qa_app}")
+    step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
     abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
 
     # a. fetch the repo's origin.
     sh("git", "-C", path, "fetch", "origin", "--quiet")
 
-    # b. cut/refresh the release branch in that repo.
-    _, exists = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", release_branch, capture: true)
-    if exists
-      sh("git", "-C", path, "checkout", release_branch)
+    # b. merge-forward guard: `release` must always have main as an ancestor. If
+    #    main has moved ahead (e.g. a hotfix landed on main), merge it forward so
+    #    release never lags — abort with guidance on conflict.
+    if DRY
+      step("merge-forward guard: if origin/main isn't an ancestor of origin/release, merge origin/main → release in #{repo}")
     else
-      sh("git", "-C", path, "checkout", "-b", release_branch, "origin/main")
-    end
-
-    # c. merge each member branch into the repo's release branch.
-    members.each do |m|
-      branch = m["branch"]
-      next if branch.to_s.empty?
-      step("merge #{m['slug']} (#{branch}) → #{release_branch} in #{repo}")
-      _, ok = sh("git", "-C", path, "merge", "--no-ff", "-m", "Merge #{branch} into #{release_branch} (#{m['slug']})", "origin/#{branch}")
-      unless ok || DRY
-        abort!("merge conflict in #{repo} on #{branch} → #{release_branch}. Resolve by hand in #{path} " \
-               "(or `git -C #{path} merge --abort` to back out), commit, then re-run `bin/release prepare`. " \
-               "A genuine conflict means the task should likely be blocked for rework.")
+      _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/release", capture: true)
+      unless in_sync
+        step("merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
+        sh("git", "-C", path, "checkout", RELEASE_BRANCH)
+        _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
+        unless fwd
+          abort!("merge-forward conflict in #{repo}: origin/main → #{RELEASE_BRANCH}. Resolve by hand in #{path} " \
+                 "(or `git -C #{path} merge --abort` to back out), commit, push, then re-run `bin/release prepare`.")
+        end
+        sh("git", "-C", path, "push", "origin", RELEASE_BRANCH)
       end
     end
 
-    # d. deploy the repo's release branch to its own QA app for review.
-    step("qa deploy: bin/qa-server deploy #{qa_app} #{release_branch}")
-    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, release_branch, "--yes", capture: false)
+    # c. deploy origin/release to the repo's own QA app. qa-server resolves the
+    #    ref in the sibling and pushes its SHA — no local checkout/branch-cut.
+    step("qa deploy: bin/qa-server deploy #{qa_app} origin/#{RELEASE_BRANCH} --yes")
+    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}", "--yes", capture: false)
+
+    # d. capture the deployed SHA (origin/release after any merge-forward).
+    sha = ""
+    unless DRY
+      out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+      sha = out.strip if ok
+    end
+    qa_shas[repo] = sha
     deployed << { "repo" => repo, "qa_app" => qa_app, "qa_url" => qa_url_for(qa_app),
-                  "release_branch" => release_branch, "ok" => (qa_ok || DRY) }
+                  "sha" => sha, "ok" => (qa_ok || DRY) }
   end
 
-  # 3. Record the QA URL on the release (the board's current-release header links
-  #    straight to QA) — prefer the hub's, else the first app deployed. A WRITE,
-  #    so it's suppressed in dry-run; non-fatal (the RC is already assembled).
+  # 3. Record the QA URL + per-repo deployed SHAs on the release (the board's
+  #    current-release header links straight to QA; the SHAs give provenance).
+  #    WRITES → suppressed in dry-run; non-fatal (the RC is already assembled).
   primary = deployed.find { |d| d["repo"] == APP } || deployed.first
   if primary && !primary["qa_url"].empty?
     step("record: qa_url #{primary['qa_url']}")
     conductor("Release::Conductor.record_qa_deploy(release: Release.current, qa_url: #{primary['qa_url'].inspect}); puts({qa_url: #{primary['qa_url'].inspect}}.to_json)")
+  end
+  unless qa_shas.empty?
+    step("record: qa_shas #{qa_shas.map { |r, s| "#{r}@#{s.to_s[0, 7]}" }.join(', ')}")
+    conductor("Release::Conductor.record_qa_shas(release: Release.current, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
   end
 
   # 4. Per-repo summary of what was assembled + QA'd.
@@ -340,10 +463,12 @@ def prepare
     g["members"].each { |m| say("  gem #{g['repo']} (#{m['slug']}) — rides the release; published at ship.") }
   end
   deployed.each do |d|
+    loc = d["qa_url"].empty? ? d["qa_app"] : d["qa_url"]
+    at  = d["sha"].to_s.empty? ? "" : " @ #{d['sha'][0, 7]}"
     if d["ok"]
-      say("  app #{d['repo']} → #{d['release_branch']} → QA #{d['qa_url'].empty? ? d['qa_app'] : d['qa_url']}")
+      say("  app #{d['repo']} → #{RELEASE_BRANCH} → QA #{loc}#{at}")
     else
-      say("  app #{d['repo']} → #{d['release_branch']} — QA deploy FAILED, retry `bin/qa-server deploy #{d['qa_app']} #{d['release_branch']}`")
+      say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry `bin/qa-server deploy #{d['qa_app']} origin/#{RELEASE_BRANCH}`")
     end
   end
   say("")
@@ -421,10 +546,13 @@ end
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   case ARGV.shift
+  when "init"    then init
+  when "merge"   then merge
   when "prepare" then prepare
   when "ship"    then ship
   else
-    warn "usage: bin/release {prepare|ship} [--task SLUG ...] [--slug REL] [--by NAME] [--prod] [--dry-run] [--yes]"
+    warn "usage: bin/release {init|merge <task-slug>|prepare|ship} " \
+         "[--task SLUG ...] [--slug REL] [--by NAME] [--prod] [--dry-run] [--yes]"
     exit 1
   end
 end

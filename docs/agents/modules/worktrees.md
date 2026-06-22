@@ -203,7 +203,17 @@ candidate. Before removing a squash-merged worktree manually:
 
 ## Rules
 
-- Branch from current `origin/main`.
+- Branch from current `origin/release` (feature PRs target the persistent
+  `release` branch, not `main`). Open the PR with **`gh pr create --base
+  release`** (or `bin/agent-worktree finish --push --pr`, passing `--base
+  release`). Reckon a branch's ahead/behind against `origin/release` — that is its
+  merge target now.
+  - **Transitional (until a follow-up PR lands):** `bin/agent-worktree new` still
+    cuts from `origin/main` and `finish --pr` still defaults the PR base to
+    `main`. Until the launcher's automatic `--base` default flips to `release`,
+    rebase your branch onto `origin/release` and pass `--base release` to
+    `gh pr create` explicitly. `bin/release merge` rejects any PR whose base
+    isn't `release`, so this is caught at merge time if missed.
 - One task branch per worktree.
 - Never commit task work on the primary `main` checkout unless you are the
   explicit deploy owner for that repo.

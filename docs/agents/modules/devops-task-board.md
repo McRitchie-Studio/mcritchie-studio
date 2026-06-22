@@ -172,6 +172,19 @@ bearer token. The HTML task page remains the operator-friendly source of truth.
 
 ## Stage Flow
 
+> **Canonical stages (two-workflow model).** The live board runs **Build**
+> (`designed → building → submitted`) and **Deploy** (`submitted → reviewed →
+> assembled → shipped`), plus `blocked` (side) and `archived` (terminal). Under
+> the persistent-`release` branch model, **`reviewed`** = an approved PR whose
+> base is `release`, and **`assembled`** = that PR merged into `release`
+> (`bin/release merge` flips the task at merge); the conductor then deploys
+> `origin/release` to QA (`bin/release prepare`) and ships by fast-forwarding
+> `release → main` (`bin/release ship`). Full spec:
+> [`devops-cycle-design.md`](../system/devops-cycle-design.md) §1. The legacy
+> stage names in the table and tooling sections below (`pr_review` / `qa_review` /
+> `prod_ready` / `done`) still describe `bin/devops-cycle`'s current snapshot and
+> are pending a separate migration to the names above.
+
 The board stages should mirror the release path, not generic activity buckets:
 
 | Stage | Use when |
@@ -204,7 +217,7 @@ Supported fields:
 | `kind` | `feature`, `bug`, `chore`, `qa`, `release`, or `cleanup` |
 | `worktree_slug` | Human-readable feature handle used for the worktree path, branch, terminal context, and task binding |
 | `repositories` | Repos touched by this increment, such as `mcritchie-studio` or `turf-monster` |
-| `branch` | Feature branch or release branch |
+| `branch` | The feature branch (opened as a PR with base `release`). The shared integration branch is the persistent per-repo `release` (same name everywhere). |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL |
 | `qa_url` | Stable QA URL or specific QA route |

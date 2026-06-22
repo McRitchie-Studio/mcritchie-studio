@@ -62,18 +62,23 @@ Before handoff:
 
 4. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
    under-tested PR.
-5. Commit on the feature branch, push, open a PR whose body **leads with the
-   task URL**, then `bin/task move <task> submitted`.
+5. Commit on the feature branch, push, open a PR **into `release`** (base
+   `release`, not `main`) whose body **leads with the task URL**, then
+   `bin/task move <task> submitted`.
 
 The task lifecycle is two workflows (full spec:
 `docs/agents/system/devops-cycle-design.md`):
 
 - **Build** (feature agent) — `designed → building → submitted`. You own
   `designed` through `submitted` (the seam); opening the PR hands off to DevOps.
-- **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. QA reviews
-  the submitted PR → `reviewed` (approved) or `bin/task block <task> --kind
-  rework --feedback "…"` (back to you); the release conductor then assembles
-  approved tasks onto a release branch (`assembled`) and ships (`shipped`).
+- **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. Every repo
+  keeps a **persistent `release` branch** (feature PRs target it, never `main`).
+  QA reviews the submitted PR → `reviewed` (approved) or `bin/task block <task>
+  --kind rework --feedback "…"` (back to you). Approved PRs are then **merged
+  into `release`** — which flips the task to `assembled` (`bin/release merge
+  <task>`); the conductor deploys `origin/release` to QA (`bin/release prepare`)
+  and ships by fast-forwarding each repo's `release → main` (`bin/release ship`)
+  → `shipped`.
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
 

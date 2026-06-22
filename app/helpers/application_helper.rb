@@ -121,7 +121,7 @@ module ApplicationHelper
           who: "DevOps → Avi", nxt: "Avi reviews acceptance / diff / tests → reviewed, or sends it back blocked for rework" },
         { stage: "reviewed",  kick: devops_kickoffs["reviewed"],
           what: "Approved and off the bench, waiting to ride the next release.",
-          who: "Avi → conductor", nxt: "The conductor cuts a release/<slug> branch and merges tasks in dependency order → assembled" },
+          who: "Avi → conductor", nxt: "Approved PRs merge into the persistent release branch (membership flips at merge) → assembled; prepare deploys it to QA, then ship fast-forwards release → main" },
         { stage: "assembled", kick: devops_kickoffs["assembled"],
           what: "Every member PR is merged and its tests pass; the release candidate is built and deployed to QA for review.",
           who: "Steffon (QA)", nxt: "The operator runs the deployment — the one human gate. Run Deployment ships to prod, tags, and posts release notes → shipped" },
