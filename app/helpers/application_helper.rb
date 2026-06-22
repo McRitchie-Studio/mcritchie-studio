@@ -119,7 +119,7 @@ module ApplicationHelper
       "submitted" => "Review submitted PRs",
       "reviewed"  => "Prepare release",
       "assembled" => "Run Deployment",
-      "shipped"   => "Cleanup worktrees"
+      "shipped"   => "Archive completed tasks"
     }
   end
 
@@ -160,8 +160,8 @@ module ApplicationHelper
           what: "Every member PR is merged and its tests pass; the release candidate is built and deployed to QA for review.",
           who: "Steffon (QA)", nxt: "The operator runs the deployment — the one human gate. Run Deployment ships to prod, tags, and posts release notes → shipped" },
         { stage: "shipped",   kick: devops_kickoffs["shipped"],
-          what: "Live in production and shown as the current release; release notes are posted as part of Run Deployment.",
-          who: "Mr. McRitchie → conductor", nxt: "Terminal — just clean up the deployed feature worktrees." }
+          what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
+          who: "Mr. McRitchie → conductor", nxt: "Run Archive completed tasks — shipped tasks move to archived (the last release stays as history) and their worktrees are reclaimed" }
       ]
     }
   end

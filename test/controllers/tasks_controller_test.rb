@@ -111,6 +111,37 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "9999abc" # deployed SHA (7-char)
   end
 
+  test "deployments Last Release renders a chip + working link for an ARCHIVED member" do
+    # Operator requirement: archiving a shipped task must NOT break the board's
+    # Last-Release history — rel.tasks fetches members by release_slug regardless
+    # of stage, so an archived member still renders a chip + a working task_path.
+    Release.delete_all
+    shipped = Release.open!(branch: "release/archived-member")
+    @new_task.update!(stage: "reviewed")
+    shipped.add(@new_task)    # member: release_slug set, stage → assembled
+    shipped.assemble!
+    shipped.ship!             # member → shipped
+    @new_task.reload.archive! # archive the member AFTER ship; release_slug preserved
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#last-release", text: /#{Regexp.escape(shipped.slug)}/
+    # The archived member is still listed with a WORKING task_path link.
+    assert_select "#last-release a[href=?]", task_path(@new_task.slug)
+    assert_equal "archived", @new_task.reload.stage
+    assert_equal shipped.slug, @new_task.reload.release_slug
+  end
+
+  test "task show renders an archived task (HTTP 200)" do
+    @new_task.update!(stage: "shipped")
+    @new_task.archive!
+
+    get task_path(@new_task.slug)
+    assert_response :success
+    assert_equal "archived", @new_task.reload.stage
+  end
+
   test "deployments renders Current (active) and Last (shipped) as distinct sections" do
     Release.delete_all
     shipped = Release.open!(branch: "release/shipped-distinct")
@@ -204,6 +235,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # copy-paste kickoff commands sit on the column headers
     assert_includes response.body, "Review submitted PRs"
     assert_includes response.body, "Run Deployment"
+    # the shipped column's kickoff is the DevOps loop's conclusion
+    assert_includes response.body, "Archive completed tasks"
   end
 
   test "stages page renders both workflow lanes and the stage guide" do
