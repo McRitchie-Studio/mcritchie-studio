@@ -7,7 +7,8 @@ class Task < ApplicationRecord
   #   Workflow 2 — Deploy (DevOps):        submitted → reviewed → assembled → shipped
   #   `submitted` is the shared seam — the feature agent hands off to DevOps there.
   #   blocked  — side state: agent hit a wall, QA bounced a PR, or a dep isn't ready.
-  #   archived — terminal trash (abandoned, never shipping).
+  #   archived — terminal resting state: abandoned tickets AND shipped/completed
+  #              work filed away (Archive completed tasks) to close the loop.
   STAGE_LABELS = {
     "designed"  => "Designed",
     "building"  => "Building",

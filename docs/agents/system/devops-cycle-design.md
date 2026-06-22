@@ -354,9 +354,22 @@ each repo's `release` equals `main` and re-accumulates the next candidate. Run
 `ship` from a **primary checkout** (not a worktree): the gem repos are resolved
 as siblings at the projects root.
 
-**`Cleanup worktrees`**  *(post-ship housekeeping)*
-`bin/agent-worktree cleanup --reclaim` (then `--yes`) to tear down the merged
-feature worktrees. The deployment is done.
+**`Archive completed tasks`**  *(shipped → archived — the Deploy loop's conclusion)*
+Run **`bin/release archive [--dry-run] [--yes] [--prod]`** to close the loop. It
+archives every `shipped` task that is **not** a member of `Release.last_shipped`
+(`shipped → archived`), so the most recently shipped release stays on the board
+as the read-only **Last Release** while older, superseded completed work is filed
+away. The pure, unit-tested rule lives in
+`Release::Conductor.archive_completed!` / `.archivable_completed_slugs`; the CLI
+owns the board write plus the worktree teardown around it. After archiving it
+reclaims the merged/shipped feature worktrees (`bin/agent-worktree cleanup
+--reclaim --yes`). `--dry-run` previews the plan (archivable + kept) and the
+reclaim list without mutating anything; `--yes` runs it hands-off (skips the
+single confirm). Idempotent — a re-run finds nothing new to archive. Archiving
+only flips a task's stage, never its `release_slug`, so the board's Last Release
+section keeps linking to its members even after they're later archived,
+preserving the release history. `shipped` is therefore **no longer terminal** —
+the Deploy loop now closes at `archived`.
 
 ---
 
