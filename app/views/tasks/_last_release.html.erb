@@ -3,7 +3,7 @@
   <% members = rel.tasks.order(:position).to_a %>
   <%# Read-only history: the most-recently shipped release. Dimmed (opacity-75 +
       muted text) so it reads as the past, distinct from the active Current block. %>
-  <div id="last-release" class="mb-6 rounded-xl border border-subtle bg-surface p-4 opacity-75">
+  <div id="last-release" class="rounded-xl border border-subtle bg-surface p-4 opacity-75">
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Last Release</span>

@@ -130,6 +130,40 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release", { text: /#{Regexp.escape(active.slug)}/, count: 0 }
   end
 
+  test "deployments wraps Current and Last release modules in a responsive side-by-side grid" do
+    Release.delete_all
+    shipped = Release.open!(branch: "release/grid-shipped")
+    shipped.ship!
+    active = Release.open!(branch: "release/grid-active")
+    @new_task.update!(stage: "reviewed")
+    active.add(@new_task)
+
+    get deployments_path
+    assert_response :success
+
+    # Both modules sit inside ONE responsive grid container: single column on
+    # narrow viewports, two columns on lg+ so they render side by side.
+    assert_select "div.grid.grid-cols-1.lg\\:grid-cols-2" do
+      assert_select "#current-release", count: 1
+      assert_select "#last-release", count: 1
+    end
+  end
+
+  test "deployments empty-state Current still nests inside the responsive grid beside Last" do
+    Release.delete_all
+    shipped = Release.open!(branch: "release/grid-empty")
+    shipped.ship!
+
+    get deployments_path
+    assert_response :success
+
+    # Short empty-state Current + tall Last both live in the grid container.
+    assert_select "div.grid.grid-cols-1.lg\\:grid-cols-2" do
+      assert_select "#current-release", text: /none active/
+      assert_select "#last-release", count: 1
+    end
+  end
+
   test "tasks board shows only the Build-lane columns and no release module" do
     Release.open!(branch: "release/build-only") # a release exists, but /tasks must not show it
     get tasks_path

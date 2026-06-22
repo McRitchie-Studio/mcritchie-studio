@@ -1,7 +1,7 @@
 <% if @current_release %>
   <% rel = @current_release %>
   <% members = rel.tasks.order(:position).to_a %>
-  <div id="current-release" class="mb-6 rounded-xl border border-subtle bg-surface p-4">
+  <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
     <%# Operator's one-trigger QA-department workflow: assess the active release,
         pull every reviewed/passing task in, deploy QA, then stop for the prod ship. %>
     <div class="mb-3 flex items-center gap-2 flex-wrap">
@@ -42,7 +42,7 @@
   <%# No active release: muted empty state that still surfaces the one-trigger
       header + kickoff chip so the operator can establish a release. The shipped
       release is NOT shown here — it renders read-only in _last_release. %>
-  <div id="current-release" class="mb-6 rounded-xl border border-subtle bg-surface p-4">
+  <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
     <div class="mb-3 flex items-center gap-2 flex-wrap">
       <span class="text-[11px] uppercase tracking-wide text-primary font-semibold">One-trigger QA release</span>
       <%= render "kickoff_chip", command: qa_release_kickoff, label: "Kick off" %>
