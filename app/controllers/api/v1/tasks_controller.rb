@@ -48,6 +48,7 @@ module Api
 
       def task_params
         permitted = params.permit(
+          :slug, # honored only on create (attr_readonly on the model); custom readable handle
           :title,
           :description,
           :priority,
@@ -57,6 +58,9 @@ module Api
           metadata: {}
         )
         attrs = permitted.except(:devops).to_h
+        # slug is honored only on create; on update params[:slug] is the URL id and
+        # assigning it would trip attr_readonly. Drop it so updates never touch slug.
+        attrs.delete("slug") unless action_name == "create"
         return attrs unless params[:devops]
 
         attrs["metadata"] = attrs.fetch("metadata", {}).to_h.merge(

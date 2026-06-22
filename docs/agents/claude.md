@@ -13,8 +13,10 @@ editing files until you have:
 
 1. **Created the production task** —
    `cd /Users/alex/projects/mcritchie-studio && bin/task create --title "<feature>"
-   --kind feature --shape <shape> --repo <app> --risk <tags> --accept "<criterion>"
-   --test "<tier>"`. Classify the **shape** (it selects the tests you must write,
+   --slug <feature-handle> --kind feature --shape <shape> --repo <app> --risk <tags>
+   --accept "<criterion>" --test "<tier>"`. The `--slug` becomes the immutable,
+   readable `Task.slug` (the `/tasks/<slug>` URL) and seeds `worktree_slug` +
+   `feat/<slug>`. Classify the **shape** (it selects the tests you must write,
    per `config/feature_shapes.yml`):
    `ui-only` · `ui+db` · `backend` · `library` · `onchain` · `onchain-vertical`.
 2. **Allocated an isolated worktree** — `bin/agent-worktree new <app> <task>` —

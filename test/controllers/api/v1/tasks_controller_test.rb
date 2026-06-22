@@ -58,6 +58,31 @@ module Api
         created = Task.find_by!(slug: slug)
         assert_equal ["Header stays pinned, even while scrolling", "Email still works"], created.devops_acceptance
       end
+
+      test "create with a custom slug sets a readable slug and trickles to worktree_slug + branch" do
+        post api_v1_tasks_path,
+             params: { slug: "Readable Handle Here", title: "X", devops: { repositories: ["mcritchie-studio"] } },
+             headers: @headers,
+             as: :json
+
+        assert_response :created
+        created = Task.find_by!(slug: "readable-handle-here")
+        assert_equal "readable-handle-here", created.devops_worktree_slug
+        assert_equal "feat/readable-handle-here", created.metadata.dig("devops", "branch")
+      end
+
+      test "update ignores a slug in the body (slug is create-only)" do
+        original = @task.slug
+        patch api_v1_task_path(@task.slug),
+              params: { slug: "hacked-slug", title: "Renamed" },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        @task.reload
+        assert_equal original, @task.slug, "update must not change the immutable slug"
+        assert_equal "Renamed", @task.title
+      end
     end
   end
 end
