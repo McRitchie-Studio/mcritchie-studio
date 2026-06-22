@@ -34,8 +34,13 @@ module Api
           }
         )
       rescue ReleaseNotes::DiscordClient::MissingWebhook => e
+        # Caught here, before BaseController's rescue_from chain, so log it
+        # explicitly — otherwise a delivery failure only ever surfaces as an API
+        # error and never lands in ErrorLog / the board.
+        create_error_log(e)
         render_error(e.message, error_code: "MISSING_WEBHOOK")
       rescue ReleaseNotes::DiscordClient::DeliveryError => e
+        create_error_log(e)
         render_error(e.message, error_code: "DISCORD_DELIVERY_FAILED")
       end
 
