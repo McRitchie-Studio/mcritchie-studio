@@ -1,0 +1,73 @@
+<%# locals: (task:, agents:, variant: :stack, events: nil) %>
+<%#
+  Per-completed-stage agent attribution for a task's Deploy half — who reviewed,
+  assembled, and shipped it, with the time each stage took.
+
+  Source: stage_agent_groups(task, agents) reads the task's TaskEvents +
+  reviewers metadata (see StageAgentsHelper). An Assembled task shows up to 3
+  avatars (2 senior reviewers + Steffon); a Shipped task up to 4 (+ Avi).
+  Build-lane and old-flow tasks have nothing to show — the partial then renders
+  nothing at all (no empty container).
+
+  variant:
+    :stack    (default) overlapping circular avatars + a compact corner duration
+              pill — the board card glance.
+    :detailed grouped per stage with a studio-engine badge, names, weights, and
+              the full humanized duration — the task detail.
+
+  Avatars are theme-token only (ring-surface separators, surface-alt pills) so
+  dark/light parity holds; faces reuse the components/agent_avatar primitive
+  (image with a deterministic initials fallback).
+%>
+<% entries = stage_agent_groups(task, agents, events: events) %>
+<% if entries.any? %>
+  <% if variant.to_sym == :detailed %>
+    <div class="bg-surface-alt rounded-lg p-3" data-test="stage-agent-avatars">
+      <p class="label-upper mb-3">Deploy crew</p>
+      <div class="space-y-3">
+        <% entries.group_by(&:stage).each do |stage, stage_entries| %>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <%= render "components/badge", text: Task::STAGE_LABELS.fetch(stage, stage.humanize), scheme: stage_scheme(stage) %>
+            <% stage_entries.each do |entry| %>
+              <div class="flex items-center gap-2">
+                <div class="relative rounded-full ring-2 ring-surface">
+                  <%= render "components/agent_avatar", agent: entry, size: "xs" %>
+                </div>
+                <div class="leading-tight">
+                  <p class="text-sm text-heading flex items-center gap-1.5">
+                    <%= entry.name %>
+                    <% if entry.weight.present? %>
+                      <span class="px-1 py-px rounded text-[9px] font-bold uppercase tracking-wide
+                                   <%= entry.heavy? ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-surface text-muted border border-subtle' %>"
+                            title="<%= entry.heavy? ? 'Heavy (deep) review' : 'Light review' %>">
+                        <%= entry.weight %>
+                      </span>
+                    <% end %>
+                  </p>
+                  <% if (spent = humanize_stage_duration(entry.seconds)) %>
+                    <p class="text-xs text-muted"><%= spent %> in <%= entry.from_label %></p>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <div class="flex items-center -space-x-2 mb-1.5" data-test="stage-agent-avatars">
+      <% entries.each do |entry| %>
+        <div class="relative rounded-full ring-2 ring-surface hover:z-10 transition"
+             title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})"), (humanize_stage_duration(entry.seconds).presence && "#{humanize_stage_duration(entry.seconds)} in #{entry.from_label}")].compact.join(' · ') %>">
+          <%= render "components/agent_avatar", agent: entry, size: "xs" %>
+          <% if (pill = compact_stage_duration(entry.seconds)) %>
+            <span class="absolute -bottom-1 -left-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                         bg-surface-alt text-secondary border border-subtle ring-1 ring-surface">
+              <%= pill %>
+            </span>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+<% end %>

@@ -38,6 +38,7 @@ class TasksController < ApplicationController
   def show
     load_task_conversation
     @task_events = @task.task_events.chronological.to_a
+    @agents = Agent.order(:position)
   end
 
   def new
@@ -135,7 +136,7 @@ class TasksController < ApplicationController
   # columns. Each view passes its own column list to the _board partial; archived
   # is a board-side toggle, so grouping the full task set here is intentional.
   def load_board
-    tasks = Task.ordered
+    tasks = Task.ordered.includes(:task_events)
     agent_filter = params[:agent_slug].presence || params[:agent].presence
     tasks = tasks.where(agent_slug: agent_filter) if agent_filter
     stage_filter = params[:stage].presence

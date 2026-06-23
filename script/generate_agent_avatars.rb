@@ -22,11 +22,12 @@ PUB_DIR   = File.join(ROOT, "public",   "agents")
 DOCS_DIR  = File.join(ROOT, "docs", "agents", "agents")
 
 AGENTS = [
-  { slug: "shannon", initials: "Sh", bg: "#06D6A0", fg: "#FFFFFF", note: "UI / mint" },
-  { slug: "jasper",  initials: "J",  bg: "#8E82FE", fg: "#FFFFFF", note: "Blockchain / violet" },
-  { slug: "carl",    initials: "C",  bg: "#4BAF50", fg: "#FFFFFF", note: "Backend / primary green" },
-  { slug: "avi",     initials: "A",  bg: "#FF7C47", fg: "#FFFFFF", note: "Product Owner / orange" },
-  { slug: "steffon", initials: "St", bg: "#475569", fg: "#FFFFFF", note: "Infrastructure / slate" }
+  { slug: "shannon",   initials: "Sh", bg: "#06D6A0", fg: "#FFFFFF", note: "UI / mint" },
+  { slug: "jasper",    initials: "J",  bg: "#8E82FE", fg: "#FFFFFF", note: "Blockchain / violet" },
+  { slug: "carl",      initials: "C",  bg: "#4BAF50", fg: "#FFFFFF", note: "Backend / primary green" },
+  { slug: "avi",       initials: "A",  bg: "#FF7C47", fg: "#FFFFFF", note: "Product Owner / orange" },
+  { slug: "steffon",   initials: "St", bg: "#475569", fg: "#FFFFFF", note: "Platform Engineer / slate" },
+  { slug: "alex-docs", initials: "AD", bg: "#0EA5E9", fg: "#FFFFFF", note: "Documentation reviewer / sky" }
 ].freeze
 
 SIZE       = 340
@@ -42,12 +43,22 @@ def magick(*args)
   end
 end
 
+# Safety: these are PLACEHOLDERS. Several agents already have real portraits
+# committed at public/agents/<slug>.png — never clobber them. Only generate
+# where the portrait is missing. Pass FORCE=1 to regenerate every placeholder.
+FORCE = ENV["FORCE"] == "1"
+
 FileUtils.mkdir_p(PUB_DIR)
 
 AGENTS.each do |a|
   out_pub  = File.join(PUB_DIR,  "#{a[:slug]}.png")
   agent_doc_dir = File.join(DOCS_DIR, a[:slug])
   out_docs = File.join(agent_doc_dir, "avatar.png")
+
+  if File.exist?(out_pub) && !FORCE
+    puts "#{a[:slug].ljust(10)} — skip (portrait exists; FORCE=1 to overwrite)"
+    next
+  end
 
   FileUtils.mkdir_p(agent_doc_dir)
 

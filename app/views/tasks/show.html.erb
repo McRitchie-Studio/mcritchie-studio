@@ -181,6 +181,14 @@
       </div>
     <% end %>
 
+    <!-- Per-completed-stage agents (reviewers + Steffon + Avi) -->
+    <% deploy_crew = capture do %>
+      <%= render "components/stage_agent_avatars", task: @task, agents: @agents, variant: :detailed, events: @task_events %>
+    <% end %>
+    <% if deploy_crew.strip.present? %>
+      <div class="mb-4"><%= deploy_crew %></div>
+    <% end %>
+
     <!-- Stage Timeline -->
     <div class="bg-surface-alt rounded-lg p-3 mb-4" data-test="stage-timeline">
       <div class="flex items-center justify-between gap-3 mb-3">
