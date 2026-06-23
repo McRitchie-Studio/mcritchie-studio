@@ -113,4 +113,33 @@ Coach.create!(
   sport: "football"
 )
 
+# Stage-change timeline demo: one task walked through a full lifecycle, carrying
+# the per-transition usage agents report. Drives the Stage Timeline section on
+# the task show page — durations are measured server-side, model/tokens/cost are
+# agent-reported (best-effort).
+timeline_task = Task.create!(
+  title: "Timeline walkthrough demo",
+  slug: "timeline-demo",
+  description: "Fixture for the task Stage Timeline — genesis, transitions, durations, and reported model cost.",
+  stage: "reviewed",
+  priority: 1,
+  agent_slug: "alex",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+timeline_task.task_events.delete_all # replace the auto-genesis with a curated, time-spaced sequence
+[
+  { from: nil,         to: "designed",  at: 6.hours.ago,              secs: nil,  src: "web" },
+  { from: "designed",  to: "building",  at: 5.hours.ago,              secs: 3600, src: "cli",
+    model: "claude-opus-4-8", tin: 18_000,  tout: 42_000, cost: "0.61" },
+  { from: "building",  to: "submitted", at: 2.5.hours.ago,           secs: 9000, src: "cli",
+    model: "claude-opus-4-8", tin: 240_000, tout: 96_000, cost: "5.40" },
+  { from: "submitted", to: "reviewed",  at: 40.minutes.ago,          secs: 6600, src: "web", actor: "avi" }
+].each do |e|
+  timeline_task.task_events.create!(
+    from_stage: e[:from], to_stage: e[:to], occurred_at: e[:at], seconds_in_from: e[:secs],
+    source: e[:src], actor: e[:actor], model: e[:model],
+    tokens_in: e[:tin], tokens_out: e[:tout], cost: e[:cost]
+  )
+end
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"

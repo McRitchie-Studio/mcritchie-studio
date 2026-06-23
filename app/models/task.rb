@@ -55,6 +55,7 @@ class Task < ApplicationRecord
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
+  has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
@@ -76,6 +77,11 @@ class Task < ApplicationRecord
   before_validation :default_devops_handles_from_slug, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
+  # One TaskEvent per save that lands a stage: the genesis on create (the default
+  # "designed" stage isn't a dirty change, so this is guard-free) and one per real
+  # transition on update.
+  after_create :record_genesis_event
+  after_update :record_transition_event, if: :saved_change_to_stage?
 
   def to_param
     slug
@@ -325,6 +331,38 @@ class Task < ApplicationRecord
 
   def devops_list(key)
     self.class.normalize_devops_list(devops.fetch(key.to_s, []))
+  end
+
+  # Append-only audit spine: one TaskEvent per stage that lands. The deterministic
+  # fields (from/to/occurred_at/seconds_in_from) are computed here from the same
+  # chokepoint that stamps the stage timestamps, so they're server-owned and
+  # exact. The optional usage (model/tokens/cost) rides in on Current — set by the
+  # request layer for the move it just performed — and is null for model-method
+  # and conductor transitions. Runs inside the save transaction so a stage change
+  # can never land without its event.
+  def record_genesis_event
+    write_stage_event(from: nil)
+  end
+
+  def record_transition_event
+    write_stage_event(from: stage_before_last_save)
+  end
+
+  def write_stage_event(from:)
+    occurred = Time.current
+    previous = task_events.chronological.last
+    task_events.create!(
+      from_stage: from,
+      to_stage: stage,
+      occurred_at: occurred,
+      seconds_in_from: previous && (occurred - previous.occurred_at).round,
+      source: Current.task_event_source,
+      actor: Current.task_event_actor.presence || devops_session_id,
+      model: Current.task_event_model.presence,
+      tokens_in: Current.task_event_tokens_in,
+      tokens_out: Current.task_event_tokens_out,
+      cost: Current.task_event_cost
+    )
   end
 
   def set_stage_timestamp

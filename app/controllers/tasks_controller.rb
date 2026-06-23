@@ -37,6 +37,7 @@ class TasksController < ApplicationController
 
   def show
     load_task_conversation
+    @task_events = @task.task_events.chronological.to_a
   end
 
   def new
@@ -61,6 +62,8 @@ class TasksController < ApplicationController
 
   def update
     rescue_and_log(target: @task) do
+      Current.task_event_source = "web"
+      Current.task_event_actor = current_activity_agent_slug || current_user&.email
       @task.update!(task_params)
       respond_to do |format|
         format.html { redirect_to task_path(@task.slug), notice: "Task updated." }

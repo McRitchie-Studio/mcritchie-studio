@@ -26,6 +26,10 @@
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
+#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A]
+#     ( best-effort per-transition usage the agent burned in the stage it's
+#       leaving — recorded on this move's TaskEvent. The deterministic
+#       from/to/duration spine is recorded server-side regardless. )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
@@ -269,7 +273,21 @@ when "move"
   slug = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
   stage = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
   die!("unknown stage #{stage.inspect}; one of: #{STAGES.join(", ")}") unless STAGES.include?(stage)
-  body = { "stage" => stage }
+  # Best-effort per-transition usage the agent reports for the work it just did
+  # in the stage it's leaving — the optional layer on top of the deterministic
+  # from/to/duration spine the server records. Always tags source=cli.
+  event = { "source" => "cli" }
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--model"      then event["model"]      = ARGV.shift || die!("--model needs a value")
+    when "--tokens-in"  then event["tokens_in"]  = (ARGV.shift || die!("--tokens-in needs a value")).to_i
+    when "--tokens-out" then event["tokens_out"] = (ARGV.shift || die!("--tokens-out needs a value")).to_i
+    when "--cost"       then event["cost"]       = ARGV.shift || die!("--cost needs a value")
+    when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
+    else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor)")
+    end
+  end
+  body = { "stage" => stage, "event" => event }
   # Stamp the working session on the claim (move to building). Read-merge-write
   # so the session fields ride alongside existing devops without wiping them
   # (the raw API replaces metadata.devops wholesale). No session → no-op.
