@@ -103,6 +103,31 @@ class Task < ApplicationRecord
     live.pluck(:metadata).filter_map { |m| m&.dig("devops", "mascot").presence }
   end
 
+  # Backfill: give a mascot to every task that lacks one — for tasks created
+  # before the mascot feature (assign_mascot is create-only) so the existing
+  # board lights up. Idempotent (skips tasks that already have one), unique among
+  # live tasks via the same deck-draw, and written through the normal devops path
+  # (not update_column) so it stays a real, normalized scalar. Returns the count
+  # newly assigned; a row that fails to save is logged and skipped so one bad
+  # task can't abort a prod run.
+  def self.backfill_mascots!
+    assigned = 0
+    find_each do |task|
+      next if task.devops["mascot"].present?
+
+      pick = Pokemon.draw(exclude: active_mascots)
+      next unless pick
+
+      merged = task.metadata.deep_dup
+      (merged["devops"] ||= {})["mascot"] = pick.slug
+      task.update!(metadata: merged)
+      assigned += 1
+    rescue StandardError => e
+      Rails.logger.warn("backfill_mascots! skipped #{task.slug}: #{e.message}")
+    end
+    assigned
+  end
+
   def devops
     metadata.fetch("devops", {}) || {}
   end

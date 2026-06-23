@@ -33,6 +33,12 @@ namespace :pokemon do
     load Rails.root.join("db/seeds/56_pokemon.rb").to_s
   end
 
+  desc "Assign a mascot to every task lacking one (idempotent; safe to re-run on prod/QA)"
+  task backfill_mascots: :environment do
+    count = Task.backfill_mascots!
+    puts "backfilled #{count} mascot(s)"
+  end
+
   desc "Pull the original 151 from PokéAPI into db/seeds/data/pokemon.json"
   task fetch: :environment do
     rows = DEX_RANGE.map do |dex|

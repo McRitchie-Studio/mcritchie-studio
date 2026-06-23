@@ -549,4 +549,26 @@ class TaskTest < ActiveSupport::TestCase
       task.reviewers
     )
   end
+
+  # --- Mascot backfill (for tasks created before the feature shipped) ---
+
+  test "backfill_mascots! gives a mascot to a task that lacks one" do
+    task = Task.create!(title: "Backfill target task here") # no Pokémon yet → no mascot
+    assert_nil task.devops["mascot"]
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
+
+    Task.backfill_mascots!
+
+    assert task.reload.devops["mascot"].present?, "backfill should assign a mascot"
+  end
+
+  test "backfill_mascots! leaves an existing mascot untouched" do
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
+    task = Task.create!(title: "Already has a mascot",
+                        metadata: { "devops" => { "mascot" => "ditto" } })
+
+    Task.backfill_mascots!
+
+    assert_equal "ditto", task.reload.devops["mascot"]
+  end
 end
