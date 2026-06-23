@@ -418,10 +418,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{card} [data-test='stage-agent-avatars']"
     # Steffon's image avatar renders (the others fall back to initials)
     assert_select "#{card} img[src='https://example.com/steffon.png']"
-    # compact corner pills: 7200s → 2h (both reviewers), 1800s → 30m, 600s → 10m
-    assert_select card, text: /2h/
-    assert_select card, text: /30m/
-    assert_select card, text: /10m/
+    # The Deploy lane is SPLIT into separate compartments (review · assembled ·
+    # shipped), each carrying its OWN compact corner pill — assembled (Steffon) and
+    # shipped (Avi) are NOT collapsed into one combined deploy duration. This seed has
+    # no build-lane events, so three pills land, asserted on the real crew-duration
+    # markers (not loose body text): 7200s → 2h (longer review), 1800s → 30m
+    # (assembled, its own pill), 600s → 10m (shipped, its own pill).
+    pills = "#{card} [data-test='crew-duration']"
+    assert_select pills, count: 3
+    assert_select pills, text: /2h/  # review compartment (max of the two reviewers)
+    assert_select pills, text: /30m/ # assembled compartment (Steffon) — its own pill
+    assert_select pills, text: /10m/ # shipped compartment (Avi) — its own pill
   end
 
   test "task show renders the detailed deploy crew with stage badges, names, weights and durations" do
@@ -431,7 +438,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "[data-test='stage-agent-avatars']"
-    assert_includes response.body, "Deploy crew"
+    # The detail crew header is "Stage crew" (the whole-journey label) — asserted on
+    # the REAL rendered header. The old `response.body` include of "Deploy crew" only
+    # passed incidentally because this seed task's TITLE contains "Deploy crew", so it
+    # no longer reflected the rendered UI after the header was renamed.
+    assert_select "[data-test='stage-agent-avatars'] p.label-upper", text: /Stage crew/
     # one studio-engine badge per completed stage group (reviewed, assembled, shipped)
     assert_select "[data-test='stage-agent-avatars'] span.badge", count: 3
     # every soul is named
