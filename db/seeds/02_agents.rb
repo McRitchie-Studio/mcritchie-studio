@@ -8,7 +8,15 @@
 #   metadata["reviewer"]       — true if in the senior review pool
 #   metadata["review_role"]    — "delegator" | "reviewer" | "orchestrator"
 #   metadata["domains"]        — areas/repos this soul reviews (domain-fit input)
-#   metadata["review_weight"]  — "heavy" (Opus-capable deep review) | "light"
+#   metadata["review_weight"]  — NUMERIC review weight (higher = takes the heavy,
+#                                deep-review seat when a pair ties on domain fit).
+#                                Stored as a number, NOT the "heavy"/"light" label
+#                                a bare String#to_f would silently zero (see
+#                                ReviewerSelector::WEIGHT_LABELS). All five seniors
+#                                are heavy-capable, so they share the heavy weight;
+#                                within a pair the seat falls to fit then the
+#                                logged roll. ReviewerSelector::WEIGHT_LABELS maps
+#                                heavy->2.0 / light->1.0 for any legacy label rows.
 #
 # Pool {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform ·
 # Alex=Documentation}. Avi is the delegator (selects 1 heavy + 1 light), not a
@@ -41,7 +49,7 @@ agents_data = [
       "review_role" => "reviewer",
       "reviewer" => true,
       "domains" => ["documentation", "docs", "runbooks", "agent-operating-model", "readme"],
-      "review_weight" => "heavy",
+      "review_weight" => 2.0,
       "persona_of" => "alex"
     }
   },
@@ -74,7 +82,7 @@ agents_data = [
       "review_role" => "reviewer",
       "reviewer" => true,
       "domains" => ["backend", "models", "controllers", "migrations", "jobs", "studio-engine"],
-      "review_weight" => "heavy"
+      "review_weight" => 2.0
     }
   },
   {
@@ -90,7 +98,7 @@ agents_data = [
       "review_role" => "reviewer",
       "reviewer" => true,
       "domains" => ["ui", "views", "tailwind", "alpine", "theme", "studio-engine-ui"],
-      "review_weight" => "heavy"
+      "review_weight" => 2.0
     }
   },
   {
@@ -106,7 +114,7 @@ agents_data = [
       "review_role" => "reviewer",
       "reviewer" => true,
       "domains" => ["web3", "solana", "turf-vault", "solana-studio", "on-chain", "anchor"],
-      "review_weight" => "heavy"
+      "review_weight" => 2.0
     }
   },
   {
@@ -122,7 +130,7 @@ agents_data = [
       "review_role" => "reviewer",
       "reviewer" => true,
       "domains" => ["devops", "release", "infrastructure", "ci", "observability", "heroku"],
-      "review_weight" => "heavy",
+      "review_weight" => 2.0,
       "qa_owner" => true
     }
   },

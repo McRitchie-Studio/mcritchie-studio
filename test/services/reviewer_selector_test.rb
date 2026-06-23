@@ -284,4 +284,43 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     b = ReviewerSelector.new(task, random: Random.new(7)).decision
     assert_equal a, b
   end
+
+  # --- weight + roll follow-ups (PR #123 review: reviewer-select-weight-followups) ---
+
+  test "string review_weight labels drive the heavy seat regardless of the roll" do
+    # Regression: prod seeds (db/seeds/02_agents.rb) store review_weight as the
+    # STRING "heavy"/"light". A bare String#to_f silently zeroed every label
+    # (-> 0.0), so the label never drove the deep seat — fit (then the roll)
+    # broke the tie instead. Both reviewers fit backend equally here, so the
+    # weight LABEL is the only thing that can decide who reviews deep — and it
+    # must win under EVERY tiebreak roll, not just some.
+    seed_agent("Carl", domains: ["backend"], review_weight: "light")
+    seed_agent("Shannon", domains: ["backend"], review_weight: "heavy")
+    task = task_for(shape: "backend")
+
+    8.times do |seed|
+      result = ReviewerSelector.new(task, random: Random.new(seed)).reviewers
+      assert_equal %w[carl shannon], slugs(result).sort, "both backend-fitted reviewers are picked"
+      assert_equal "heavy", weight_of(result, "shannon"), "the 'heavy' label must drive the deep seat (seed=#{seed})"
+      assert_equal "light", weight_of(result, "carl")
+    end
+  end
+
+  test "the CLI decision and the recorded pick never diverge on a genuine tie" do
+    # Regression: bin/reviewer-select prints .decision while Task records .select —
+    # two INDEPENDENT passes. On a genuine tie (no shape/risk/repo -> every
+    # candidate fit 0 and equal weight) a fresh process RNG let them diverge: Avi
+    # could spawn one pair while the timeline records another. The default
+    # tiebreak RNG is now seeded from the task identity, so independent passes
+    # roll identically and the CLI preview always matches the recorded pick.
+    task = Task.create!(title: "genuine tie sample task", stage: "submitted")
+
+    cli_pair = ReviewerSelector.explain(task)["reviewers"].map { |r| r["slug"] }
+    recorded = Array.new(8) { ReviewerSelector.select(task).map { |r| r["slug"] } }
+
+    assert_equal 1, recorded.uniq.size,
+      "independent passes must pick one stable pair (no process-random divergence)"
+    assert_equal cli_pair, recorded.first,
+      "the CLI .decision preview must match the recorded .select pick (heavy/light order included)"
+  end
 end
