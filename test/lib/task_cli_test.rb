@@ -16,16 +16,22 @@ require "open3"
 require "rbconfig"
 require "tmpdir"
 require "fileutils"
+require "time"
 
 class TaskCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
   SESSION = "2aa216f6-7565-4bf4-bd01-70793c8ba617"
+  OTHER_SESSION = "9f9f9f9f-0000-1111-2222-333344445555"
 
   # Run bin/task against a one-shot stub server; returns [recorded_requests, out].
   # `env` overrides merge onto a clean base (auth secret + base url + skip marker);
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
-  def run_task(args, env: {})
+  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building")
+    # The GET response the stub serves — lets a test seed an existing claim so the
+    # move-to-building gate (and the heartbeat) read a real claim state.
+    @stub_devops = stub_devops
+    @stub_stage = stub_stage
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -35,12 +41,15 @@ class TaskCliTest < Minitest::Test
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
       "TASK_SKIP_MARKER" => "1",
+      # A fixed instance nonce so the CLI never shells out to `ps` in a test; the
+      # gate cases override it to play a second / different live instance.
+      "TASK_CLAIM_NONCE" => "inst-default",
       "CLAUDE_CODE_SESSION_ID" => nil,
       "CODEX_SESSION_ID" => nil
     }.merge(env)
 
-    out, = Open3.capture2(base_env, RbConfig.ruby, BIN, *args, err: File::NULL)
-    [requests, out]
+    out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, *args)
+    [requests, out, err, status]
   ensure
     server&.close
     thread&.join(1)
@@ -77,10 +86,11 @@ class TaskCliTest < Minitest::Test
     return JSON.generate("token" => "stub-token") if path == "/api/v1/auth"
 
     # The GET in the move read-merge returns an existing task carrying prior
-    # devops, so the test can prove the session stamp is MERGED, not a wipe.
+    # devops (configurable per-test via stub_devops), so the test can prove the
+    # session stamp / claim is MERGED, not a wipe, and seed an existing claim.
     JSON.generate("data" => {
-      "slug" => "demo-task", "stage" => "building",
-      "metadata" => { "devops" => { "kind" => "feature" } }
+      "slug" => "demo-task", "stage" => @stub_stage,
+      "metadata" => { "devops" => @stub_devops }
     })
   end
 
@@ -281,5 +291,136 @@ class TaskCliTest < Minitest::Test
       refute event.key?("model"), "no transcript → spine-only event"
       refute event.key?("tokens_in")
     end
+  end
+
+  # --- Build claim lease gate (V2) — the move-to-building enforcement ---------
+
+  # A devops slice carrying an existing claim with a lease `expires_in` seconds out.
+  def claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
+    {
+      "kind" => "feature",
+      "claimed_session" => session,
+      "claim_nonce" => nonce,
+      "claim_expires_at" => (Time.now + expires_in).utc.iso8601
+    }
+  end
+
+  def patch_of(requests)
+    requests.find { |r| r[:method] == "PATCH" }
+  end
+
+  def patch_devops(requests)
+    JSON.parse(patch_of(requests)[:body]).fetch("devops")
+  end
+
+  # AC #1 + #4: a live claim held by a DIFFERENT instance (same session, other
+  # nonce ⇒ the terminal-A/terminal-B case) REFUSES the move — exit 1, loud, and
+  # NO stage PATCH — and points the operator at --steal.
+  def test_move_to_building_refuses_a_live_foreign_claim
+    requests, _out, err, status = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
+    )
+    refute status.success?, "a live foreign claim must refuse the move (non-zero exit)"
+    assert_nil patch_of(requests), "a refused move must NOT PATCH the stage"
+    assert_match(/different live instance/i, err)
+    assert_match(/--steal/, err)
+  end
+
+  # AC #1: --steal overrides the gate and takes the claim for the stealer's instance.
+  def test_move_to_building_with_steal_takes_the_claim
+    requests, _out, _err, status = run_task(
+      ["move", "demo-task", "building", "--steal"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
+    )
+    assert status.success?, "--steal must let the move through"
+    devops = patch_devops(requests)
+    assert_equal SESSION, devops["claimed_session"]
+    assert_equal "inst-B", devops["claim_nonce"], "the stealer's instance now holds the claim"
+    assert devops["claim_expires_at"], "a fresh lease is written"
+  end
+
+  # AC #3: an EXPIRED lease is reclaimed automatically — no --steal, no refusal.
+  def test_move_to_building_reclaims_an_expired_lease
+    requests, _out, _err, status = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: OTHER_SESSION, nonce: "inst-A", expires_in: -30)
+    )
+    assert status.success?, "an expired lease is silently reclaimable"
+    devops = patch_devops(requests)
+    assert_equal SESSION, devops["claimed_session"]
+    assert_equal "inst-B", devops["claim_nonce"]
+  end
+
+  # AC #3: an unclaimed task is claimed on the move with the mover's identity.
+  def test_move_to_building_claims_an_unclaimed_task
+    requests, _out, _err, status = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: { "kind" => "feature" }
+    )
+    assert status.success?
+    devops = patch_devops(requests)
+    assert_equal SESSION, devops["claimed_session"]
+    assert_equal "inst-B", devops["claim_nonce"]
+    assert_equal "feature", devops["kind"], "existing devops is preserved (read-merge-write)"
+  end
+
+  # AC #2: the SAME instance (session AND nonce match) re-moving renews, no --steal.
+  def test_move_to_building_same_instance_renews_its_own_claim
+    requests, _out, _err, status = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30)
+    )
+    assert status.success?, "re-moving my own task is fine"
+    devops = patch_devops(requests)
+    assert_equal SESSION, devops["claimed_session"]
+    assert_equal "inst-A", devops["claim_nonce"]
+  end
+
+  # --- Heartbeat (the lease renewal bin/statusline drives) --------------------
+
+  def test_heartbeat_renews_an_unclaimed_task_for_this_instance
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
+      stub_devops: { "kind" => "feature" }
+    )
+    assert status.success?
+    devops = patch_devops(requests)
+    assert_equal SESSION, devops["claimed_session"]
+    assert_equal "inst-A", devops["claim_nonce"]
+    assert devops["claim_expires_at"], "the heartbeat writes a fresh lease"
+  end
+
+  def test_heartbeat_renews_this_instances_own_claim
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 20)
+    )
+    assert status.success?
+    assert_equal SESSION, patch_devops(requests)["claimed_session"]
+  end
+
+  # A heartbeat must NOT steal a live claim held by a different instance.
+  def test_heartbeat_does_not_steal_a_live_foreign_claim
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
+    )
+    assert status.success?, "the heartbeat is best-effort and silent"
+    assert_nil patch_of(requests), "a heartbeat never steals a live foreign claim"
+  end
+
+  def test_heartbeat_without_a_session_is_a_silent_noop
+    requests, _out, _err, status = run_task(["heartbeat", "demo-task"])
+    assert status.success?
+    assert_nil patch_of(requests), "no session → no claim write"
   end
 end

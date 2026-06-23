@@ -272,6 +272,56 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
   end
 
+  # --- Build claim lease (V2) ---
+
+  test "claim keys survive devops normalization (persist on the board)" do
+    metadata = Task.normalize_devops_metadata(
+      "claimed_session" => "sess-1",
+      "claim_nonce" => "inst-A",
+      "claim_expires_at" => "2026-06-23T12:02:00Z"
+    )
+    assert_equal "sess-1", metadata["claimed_session"]
+    assert_equal "inst-A", metadata["claim_nonce"]
+    assert_equal "2026-06-23T12:02:00Z", metadata["claim_expires_at"]
+  end
+
+  test "claim_live? and heartbeat age reflect a non-expired lease" do
+    now = Time.utc(2026, 6, 23, 12, 0, 0)
+    task = Task.create!(
+      title: "Claimed build task",
+      metadata: { "devops" => {
+        "claimed_session" => "sess-1", "claim_nonce" => "inst-A",
+        "claim_expires_at" => (now + 90).utc.iso8601
+      } }
+    )
+
+    assert task.claim_live?(now: now)
+    assert_equal "sess-1", task.claimed_session_id
+    assert_equal "inst-A", task.devops_claim_nonce
+    # 120s TTL, 90s of lease left ⇒ last heartbeat ~30s ago.
+    assert_equal 30, task.claim_heartbeat_seconds_ago(now: now)
+  end
+
+  test "claim_live? is false once the lease has expired" do
+    now = Time.utc(2026, 6, 23, 12, 0, 0)
+    task = Task.create!(
+      title: "Stale claim task",
+      metadata: { "devops" => {
+        "claimed_session" => "sess-1", "claim_nonce" => "inst-A",
+        "claim_expires_at" => (now - 5).utc.iso8601
+      } }
+    )
+
+    refute task.claim_live?(now: now)
+  end
+
+  test "an unclaimed task is not live" do
+    task = Task.create!(title: "Unclaimed build task")
+    refute task.claim_live?
+    assert_nil task.claimed_session_id
+    assert_nil task.claim_heartbeat_seconds_ago
+  end
+
   # --- Slug: explicit override, else derived from the (terse) title ---
 
   test "an explicit slug becomes the readable, parameterized Task.slug" do

@@ -41,6 +41,37 @@ DOT="${D} · ${X}"
 
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
 
+# --- Build-claim heartbeat (best-effort lease renewal) ---------------------
+# A live terminal renews its build claim each render, so a crashed/closed session
+# stops renewing and its lease lapses (TTL) — making the task reclaimable by the
+# next claimant. Throttled to ~once/HEARTBEAT_THROTTLE seconds and run detached so
+# it never delays the status line. STATUSLINE_HEARTBEAT_FG=1 runs it inline (tests).
+TASK_BIN="${TASK_BIN:-$(dirname "$0")/task}"
+heartbeat_claim() {  # slug stage
+  local slug="$1" stage="$2"
+  [ -z "$slug" ] && return 0
+  [ -z "$CLAUDE_CODE_SESSION_ID" ] && return 0
+  [ -x "$TASK_BIN" ] || return 0
+  # Only the live BUILD claim matters (stage empty ⇒ unknown context, still renew).
+  case "$stage" in ""|building) ;; *) return 0 ;; esac
+  local mdir="$PROJECTS/.agents/sessions"
+  local marker="$mdir/${CLAUDE_CODE_SESSION_ID}.heartbeat"
+  local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
+  if [ -f "$marker" ]; then
+    local mtime age
+    mtime=$(stat -f %m "$marker" 2>/dev/null || echo 0)
+    age=$(( $(date +%s) - mtime ))
+    [ "$age" -lt "$throttle" ] && return 0
+  fi
+  mkdir -p "$mdir" 2>/dev/null
+  : > "$marker"
+  if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
+    "$TASK_BIN" heartbeat "$slug" >/dev/null 2>&1
+  else
+    ( "$TASK_BIN" heartbeat "$slug" >/dev/null 2>&1 & ) >/dev/null 2>&1
+  fi
+}
+
 # OSC 8 clickable-text support. Terminal.app does NOT support it (it only
 # auto-links plain https URLs); iTerm2/WezTerm/Kitty/Ghostty do.
 osc8_supported() {
@@ -99,6 +130,7 @@ fi
 if [ -n "$src" ]; then
   IFS=$'\t' read -r app feat task url stage mascot < <(read_ctx "$src")
   render "$app" "$feat" "$task" "$url" "$stage" "$mascot"
+  heartbeat_claim "$task" "$stage"   # keep this terminal's build-claim lease fresh
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
   top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
