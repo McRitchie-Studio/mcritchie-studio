@@ -217,7 +217,7 @@ function kanbanBoard() {
         <button type="button" @click="showAllCols = !showAllCols"
                 class="hidden max-[1250px]:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
                 :class="showAllCols ? 'bg-primary text-white border-primary' : ''">
-          <span x-text="showAllCols ? 'Recent only' : 'All columns'">All columns</span>
+          <span>All Stages</span>
         </button>
       <% end %>
       <div class="ml-auto flex items-center gap-2 flex-wrap">
@@ -367,12 +367,8 @@ function kanbanBoard() {
                     <span class="text-xs text-muted"><%= task.agent_slug %></span>
                   </div>
                 <% end %>
-                <% if (mascot_slug = task.devops_field("mascot")) && (mon = pokemon_by_slug[mascot_slug]) %>
-                  <div class="flex items-center gap-1" title="Mascot: <%= mon.name %> (#<%= format('%03d', mon.dex) %>)">
-                    <img src="<%= mon.sprite_url %>" alt="<%= mon.name %>" class="w-5 h-5 object-contain" loading="lazy" onerror="this.remove()">
-                    <span class="text-xs text-muted"><%= mon.name %></span>
-                  </div>
-                <% end %>
+                <%# (The mascot is already shown by the stage crew above the slug — no
+                    separate mascot chip here.) %>
                 <div class="ml-auto flex items-center gap-1">
                   <% if task.po_size.present? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
