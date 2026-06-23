@@ -242,6 +242,36 @@ def confirm(prompt)
   $stdin.gets.to_s.strip.casecmp("y").zero?
 end
 
+# Poll <url>/up until it returns 200 (the dyno booted) or the attempts run out,
+# sleeping `delay`s between tries. Returns true on a 200, false on timeout. This
+# closes the /up-smoke race in `prepare`: `bin/qa-server deploy` returns once the
+# push is accepted, but a slow dyno may still be booting, so the release would
+# record QA + assemble against an app that isn't serving yet.
+#
+# An empty url (an app with no QA review url) returns true — there's nothing to
+# smoke. A dry-run prints the plan and returns true (executes nothing).
+def wait_for_boot(url, attempts: 30, delay: 5)
+  return true if url.to_s.empty?
+  if DRY
+    step("wait for boot: poll #{url}/up until 200 (≤ #{attempts}×#{delay}s)")
+    return true
+  end
+
+  step("wait for boot: #{url}/up (≤ #{attempts}×#{delay}s)")
+  attempts.times do |i|
+    code, = sh("/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "#{url}/up", capture: true)
+    if code.to_s.strip == "200"
+      say("  /up → 200 (booted after #{i + 1} poll#{i.zero? ? '' : 's'})")
+      return true
+    end
+    break if i == attempts - 1
+
+    sleep(delay)
+  end
+  say("  ⚠ /up never returned 200 after #{attempts} polls — dyno may still be booting")
+  false
+end
+
 # --- gem publishing (producer-first) ---------------------------------------
 # Build + push one gem, then tag its repo. Each failure aborts loudly with the
 # fix, never swallowed — a half-published release is worse than a stopped one.
@@ -377,19 +407,21 @@ def prepare
   # --dry-run (previews nothing-executed), so both bypass the prompt.
   return unless confirm("Prepare the current release — assemble + deploy origin/#{RELEASE_BRANCH} to QA?")
 
-  # 1. Record: assemble the active release (curating any explicit --task first),
-  #    then read the per-REPO deploy plan (producer-first; one group per repo).
-  #    The assemble is a board WRITE → suppressed in --dry-run; the plan READ
-  #    runs even in dry-run (read_only:) so a dry-run previews the REAL plan
-  #    against the current release without mutating anything. Membership comes
-  #    from PR merges (`bin/release merge`), NOT from prepare.
+  # 1. Record: CURATE the active release (adopt any explicit --task first), then
+  #    read the per-REPO deploy plan (producer-first; one group per repo). The
+  #    assemble is DEFERRED to step 4 — after wait_for_boot confirms QA is up — so
+  #    a slow dyno can't leave the RC flipped `assembled` against an app that
+  #    isn't serving (the /up-smoke race). Curation is a board WRITE → suppressed
+  #    in --dry-run; the plan READ runs even in dry-run (read_only:) so a dry-run
+  #    previews the REAL plan against the current release without mutating
+  #    anything. Membership comes from PR merges (`bin/release merge`), not prepare.
   if DRY
     step("record (read-only preview): Release::Conductor.repo_plan(Release.current)")
     record_ruby = "r = Release.current"
   else
     slugs_ruby = task_slugs.empty? ? "[]" : task_slugs.inspect
-    step("record: Release::Conductor.prepare!")
-    record_ruby = "r = Release::Conductor.prepare!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect})"
+    step("record: Release::Conductor.curate! (assemble deferred until QA boots)")
+    record_ruby = "r = Release::Conductor.curate!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect})"
   end
   result = conductor(
     "#{record_ruby}; " \
@@ -482,6 +514,14 @@ def prepare
     step("qa deploy: bin/qa-server deploy #{qa_app} origin/#{RELEASE_BRANCH} --yes")
     _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}", "--yes", capture: false)
 
+    # c2. wait for the dyno to actually BOOT before treating the deploy as done.
+    #     `bin/qa-server deploy` returns once the push is accepted, but a slow dyno
+    #     may still be booting — recording QA + assembling against it is the
+    #     /up-smoke race that left the RC stuck `assembling`. Poll <qa_url>/up
+    #     until 200 (or timeout); a non-200 marks the app NOT ok so step 4 leaves
+    #     the release `assembling` for a clean re-run.
+    qa_ok &&= wait_for_boot(qa_url_for(qa_app))
+
     # d. capture the deployed SHA (origin/release after any merge-forward).
     sha = ""
     unless DRY
@@ -495,7 +535,8 @@ def prepare
 
   # 3. Record the QA URL + per-repo deployed SHAs on the release (the board's
   #    current-release header links straight to QA; the SHAs give provenance).
-  #    WRITES → suppressed in dry-run; non-fatal (the RC is already assembled).
+  #    WRITES → suppressed in dry-run; recorded BEFORE the deferred assemble
+  #    (step 4) but AFTER wait_for_boot, so the board links a booted QA dyno.
   primary = deployed.find { |d| d["repo"] == APP } || deployed.first
   if primary && !primary["qa_url"].empty?
     step("record: qa_url #{primary['qa_url']}")
@@ -506,7 +547,21 @@ def prepare
     conductor("Release::Conductor.record_qa_shas(release: Release.current, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
   end
 
-  # 4. Per-repo summary of what was assembled + QA'd.
+  # 4. ASSEMBLE — deferred to here so it lands only AFTER every QA app booted
+  #    (wait_for_boot returned 200). A boot failure leaves the RC `assembling` so
+  #    a re-run completes once the dyno is up, instead of stranding a half-up RC
+  #    flipped `assembled`. WRITE → suppressed in dry-run.
+  boot_failures = deployed.reject { |d| d["ok"] }
+  if boot_failures.any?
+    say("")
+    say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — leaving the release `assembling`.")
+    say("    Re-run `bin/release prepare` once they boot: #{boot_failures.map { |d| d['repo'] }.join(', ')}")
+  elsif !DRY
+    step("record: Release::Conductor.assemble!(Release.current) (QA booted)")
+    conductor("r = Release.current; Release::Conductor.assemble!(r) if r; puts({ state: r&.reload&.state }.to_json)")
+  end
+
+  # 5. Per-repo summary of what was assembled + QA'd.
   say("")
   say("✓ Assembled #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
   gem_groups.each do |g|
@@ -791,9 +846,25 @@ def whats_live(repos, qa_shas)
   end
 end
 
+# Avi's ship gate: run each app's highest-tier suite (registry `test_cmd`) on the
+# FROZEN ship SHA — the exact code that ships — BEFORE the operator's deploy gate,
+# so an approval can never authorize untested code (§1.2 "fixes shipped ≠ tested").
+# ff main → frozen LOCALLY (no push) so the suite runs on the frozen tree; a red
+# gate scoped-aborts before the confirm, leaving origin untouched. Satellites
+# self-gate (their own deploy runs their suite) → no `test_cmd` → skipped.
+def avi_ship_gate(app_groups, ship_sha)
+  say("")
+  step("Avi ship gate: full e2e + highest tier on the FROZEN ship SHA (before the operator gate)")
+  app_groups.each do |group|
+    repo = group["repo"]
+    ff_main_local(repo, ship_sha[repo]) # local only — run the suite on the frozen tree
+    test_gate(repo)
+  end
+end
+
 # Deploy one app to prod via its registry adapter. Common prelude: local ff main
-# → frozen, the test gate (scoped abort on red, BEFORE any push), then push
-# origin main. Then the strategy-specific mechanic + smoke policy.
+# → frozen (the test gate already ran in avi_ship_gate, before the operator gate),
+# then push origin main. Then the strategy-specific mechanic + smoke policy.
 def deploy_app(group, frozen)
   repo    = group["repo"]
   path    = repo_path(repo)
@@ -808,8 +879,7 @@ def deploy_app(group, frozen)
   say("")
   step("app #{repo} → prod via #{adapter['strategy']} @ frozen #{short(frozen)}")
 
-  ff_main_local(repo, frozen) # local only — a red test gate must leave origin clean
-  test_gate(repo)
+  ff_main_local(repo, frozen) # local only — a no-op ff (avi_ship_gate already ff'd to frozen)
   push_origin_main(repo)
 
   case handler
@@ -875,9 +945,19 @@ def ship
   ship_sha = {}
   repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
 
-  # 2. "What's already live" pre-flight, then ONE confirm authorizing the whole
-  #    train — turf included (its bin/deploy keeps its own smoke + rollback).
+  # 2. "What's already live" pre-flight, then Avi's ship gate, then the ONE
+  #    operator gate — turf included (its bin/deploy keeps its own smoke + rollback).
   whats_live(repos, qa_shas)
+
+  # 2a. Avi's ship gate (§1.2): run the FULL e2e + highest tier on the FROZEN ship
+  #     SHA — the exact prod code — BEFORE the operator gate, so "shipped" can
+  #     never mean "untested". A red gate scoped-aborts here, before the confirm
+  #     and before any push, leaving origin untouched.
+  avi_ship_gate(app_groups, ship_sha)
+
+  # 2b. The ONE operator gate — explicit, AFTER Avi's test confirmation and BEFORE
+  #     any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
+  step("operator gate: Avi's full e2e passed on the frozen SHA — awaiting operator approval to deploy")
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
 
   # 3. Gems FIRST (producer-first): publish (skip-if-live; yank safety = `gem push`

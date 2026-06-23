@@ -365,8 +365,27 @@ class Task < ApplicationRecord
       model: Current.task_event_model.presence,
       tokens_in: Current.task_event_tokens_in,
       tokens_out: Current.task_event_tokens_out,
-      cost: Current.task_event_cost
+      cost: Current.task_event_cost,
+      metadata: stage_event_metadata(from: from)
     )
+  end
+
+  # Extra, non-spine event metadata. On the submitted→reviewed transition this
+  # carries the TWO reviewers (+ heavy/light) so the avatars UI can render WHO
+  # reviewed — the single `actor` stays the primary mover. Every other transition
+  # records the column default ({}). An explicit Current.task_event_reviewers
+  # (set when Avi curated the pair) wins; otherwise the pair is selected here via
+  # ReviewerSelector, so the avatars populate no matter who drove the move. It
+  # NEVER blocks the stage change: a selection error is logged and the event
+  # records no reviewers (graceful degradation).
+  def stage_event_metadata(from:)
+    return {} unless from == "submitted" && stage == "reviewed"
+
+    reviewers = Current.task_event_reviewers.presence || ReviewerSelector.select(self)
+    reviewers.present? ? { "reviewers" => reviewers } : {}
+  rescue StandardError => e
+    Rails.logger.warn("[reviewer-selector] recording failed (non-fatal): #{e.class}: #{e.message}")
+    {}
   end
 
   def set_stage_timestamp

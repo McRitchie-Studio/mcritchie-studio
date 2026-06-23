@@ -108,6 +108,65 @@ class TaskEventTest < ActiveSupport::TestCase
     assert_nil event.actor, "model-driven transitions record no actor (no claimant fallback)"
   end
 
+  # --- reviewers recorded on submitted→reviewed (the avatars payload) ---
+
+  test "the submitted→reviewed transition records the two reviewers in event metadata" do
+    task = Task.create!(title: "reviewer recording sample task", stage: "submitted",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.review!
+
+    event = task.task_events.chronological.last
+    assert_equal "reviewed", event.to_stage
+    reviewers = event.metadata["reviewers"]
+    assert_equal 2, reviewers.size, "two reviewers recorded for the avatars UI"
+    assert_equal %w[heavy light].sort, reviewers.map { |r| r["weight"] }.sort
+    assert(reviewers.all? { |r| r["slug"].present? })
+    refute_includes reviewers.map { |r| r["slug"] }, "steffon", "the QA owner is never a reviewer"
+  end
+
+  test "reviewers ride alongside the primary actor, not replacing it" do
+    Current.task_event_actor = "avi"
+    task = Task.create!(title: "reviewer actor sample task", stage: "submitted")
+    task.review!
+
+    event = task.task_events.chronological.last
+    assert_equal "avi", event.actor, "the single actor stays primary"
+    assert_equal 2, event.metadata["reviewers"].size
+  ensure
+    Current.reset
+  end
+
+  test "an explicit Current.task_event_reviewers override is recorded verbatim" do
+    Current.task_event_reviewers = [{ "slug" => "carl", "weight" => "heavy" },
+                                    { "slug" => "alex", "weight" => "light" }]
+    task = Task.create!(title: "reviewer override sample task", stage: "submitted")
+    task.review!
+
+    reviewers = task.task_events.chronological.last.metadata["reviewers"]
+    assert_equal %w[carl alex], reviewers.map { |r| r["slug"] }, "Avi's curated pair wins over auto-select"
+  ensure
+    Current.reset
+  end
+
+  test "non-review transitions record no reviewers (empty event metadata)" do
+    task = Task.create!(title: "no reviewer transition task", stage: "designed")
+    task.build!  # designed→building
+    task.submit! # building→submitted
+
+    task.task_events.chronological.each do |event|
+      assert_nil event.metadata["reviewers"], "#{event.from_stage}→#{event.to_stage} must not record reviewers"
+    end
+  end
+
+  test "a selection error never blocks the stage change (graceful)" do
+    task = Task.create!(title: "reviewer graceful sample task", stage: "submitted")
+    ReviewerSelector.stub(:select, ->(_t) { raise "boom" }) do
+      assert_nothing_raised { task.review! }
+    end
+    assert_equal "reviewed", task.reload.stage
+    assert_nil task.task_events.chronological.last.metadata["reviewers"]
+  end
+
   test "events are destroyed with their task" do
     task = Task.create!(title: "Disposable timeline task", stage: "designed")
     assert task.task_events.exists?
