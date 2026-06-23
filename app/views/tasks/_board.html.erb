@@ -198,11 +198,7 @@ function kanbanBoard() {
 }
 </script>
 
-<%# /deployments renders full-bleed — six swim lanes need the screen width — by
-    asking the layout to skip its centered max-w-7xl wrapper; the board then supplies
-    its own page padding. /tasks stays inside the centered wrapper. %>
-<% content_for :full_width, "1" if local_assigns[:full_width] %>
-<section x-data="kanbanBoard()" class="min-h-screen<%= " px-4 sm:px-6 py-6" if local_assigns[:full_width] %>">
+<section x-data="kanbanBoard()" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">

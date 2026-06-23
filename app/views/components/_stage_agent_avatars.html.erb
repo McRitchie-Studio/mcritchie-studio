@@ -71,6 +71,10 @@
       (:detailed) still shows every stage per-usual.
     %>
     <% columns = crew_columns(task, entries, board: board, mascot: mascot) %>
+    <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
+        on the roomier Build board; the stack overlap tracks the size to keep an ~8px peek. %>
+    <% crew_size = board == :build ? "sm" : "xs" %>
+    <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
     <%# Fixed grid (3 columns, or 4 once shipped / for blocked) so the crew is one
         solid row; each compartment centered in its column, an unreached stage left
         blank. The Build board (/tasks) splits the build steps; Deploy collapses them. %>
@@ -84,11 +88,11 @@
                   (z-30) so its glow sits on top; the next gets a subtler ring; deeper avatars
                   blend and peek out to the right. The whole stack scales on card hover
                   (transform only, so siblings don't shift). %>
-              <div class="flex items-center -space-x-8 transition-transform duration-150 group-hover:scale-110">
+              <div class="flex items-center <%= crew_overlap %> transition-transform duration-150 group-hover:scale-110">
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
                   <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
                        title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
-                    <%= render "components/agent_avatar", agent: entry, size: "sm" %>
+                    <%= render "components/agent_avatar", agent: entry, size: crew_size %>
                   </div>
                 <% end %>
               </div>
