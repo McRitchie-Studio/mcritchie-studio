@@ -85,6 +85,29 @@ class TaskEventTest < ActiveSupport::TestCase
     assert_not event.usage?
   end
 
+  test "actor is recorded per-transition from Current" do
+    Current.task_event_actor = "avi"
+    task = tasks(:new_task)
+    task.build!
+
+    assert_equal "avi", task.task_events.chronological.last.actor
+  ensure
+    Current.reset
+  end
+
+  test "a transition does not inherit the claimant session as the actor" do
+    # A task claimed at `building` carries devops.session_id. A later transition
+    # with no Current actor (model-driven / conductor) must NOT backfill actor
+    # from that claimant — doing so mis-attributes the move to the build agent.
+    task = Task.create!(title: "claimant actor task", stage: "building",
+                        metadata: { "devops" => { "session_id" => "build-sess-1234" } })
+    task.update!(stage: "submitted")
+
+    event = task.task_events.chronological.last
+    assert_equal "submitted", event.to_stage
+    assert_nil event.actor, "model-driven transitions record no actor (no claimant fallback)"
+  end
+
   test "events are destroyed with their task" do
     task = Task.create!(title: "Disposable timeline task", stage: "designed")
     assert task.task_events.exists?

@@ -54,6 +54,11 @@ module Api
       # regardless; this only adds model/tokens/cost when the caller supplies them.
       def capture_task_event_context
         event = params[:event]
+        # `event` is only a hash payload when nested params arrive as
+        # ActionController::Parameters. A scalar (`?event=foo`) or array comes
+        # through as String/Array — symbol-indexing those raises TypeError in the
+        # before_action — so treat anything that isn't Parameters as "no payload".
+        event = nil unless event.is_a?(ActionController::Parameters)
         Current.task_event_source = (event && event[:source].presence) || "api"
         return if event.blank?
 

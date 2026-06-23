@@ -105,6 +105,21 @@ module Api
              headers: @headers, as: :json
         assert_response :created
       end
+
+      # A scalar `event` (e.g. ?event=foo) used to raise TypeError in the
+      # before_action when it symbol-indexed a String. Guard it: the move still
+      # lands and source falls back to the default "api".
+      test "a scalar event param does not raise and falls back to source=api" do
+        patch api_v1_task_path(@task.slug),
+              params: { stage: "building", event: "oops" },
+              headers: @headers, as: :json
+
+        assert_response :success
+        @task.reload
+        event = @task.task_events.chronological.last
+        assert_equal "building", event.to_stage
+        assert_equal "api", event.source
+      end
     end
   end
 end
