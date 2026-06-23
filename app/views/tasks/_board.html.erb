@@ -8,7 +8,9 @@
 <% archived = local_assigns.fetch(:archived, false) %>
 <% current_release = local_assigns.fetch(:current_release, nil) %>
 <% last_release = local_assigns.fetch(:last_release, nil) %>
-<% columns = archived ? (stages + ["archived"]) : stages %>
+<%# Blocked tasks live in the Building column (a block means more building to do), so the
+    board never renders a standalone Blocked column on either page. %>
+<% columns = (archived ? (stages + ["archived"]) : stages).reject { |s| s == "blocked" } %>
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
@@ -33,6 +35,7 @@ function kanbanBoard() {
     _pendingMoves: {},
     agentFilter: '',
     showArchived: false,
+    showAllCols: false,
     toasts: [],
 
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
@@ -208,6 +211,15 @@ function kanbanBoard() {
       <%# Toggle sits directly right of the title (where you are → switch boards);
           New Task / Archived are pushed to the far right with ml-auto. %>
       <%= render "page_nav", current: local_assigns[:current_page] %>
+      <% if columns.size > 4 %>
+        <%# Below ~1250px only the last three lanes fit; this reveals all six (x-scroll).
+            Hidden at wider widths where all six already fit. %>
+        <button type="button" @click="showAllCols = !showAllCols"
+                class="hidden max-[1250px]:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
+                :class="showAllCols ? 'bg-primary text-white border-primary' : ''">
+          <span x-text="showAllCols ? 'Recent only' : 'All columns'">All columns</span>
+        </button>
+      <% end %>
       <div class="ml-auto flex items-center gap-2 flex-wrap">
         <% if archived %>
           <button @click="showArchived = !showArchived"
@@ -233,9 +245,17 @@ function kanbanBoard() {
 
   <!-- Kanban Board -->
   <div class="flex gap-4 overflow-x-auto pb-4">
-    <% columns.each do |stage| %>
+    <% columns.each_with_index do |stage, idx| %>
+      <%# Blocked tasks surface at the TOP of Building (a block means more building to do),
+          on BOTH boards. The count badge + the cards both reflect that. %>
+      <% column_tasks = @tasks_by_stage[stage] || [] %>
+      <% column_tasks = (@tasks_by_stage["blocked"] || []) + column_tasks if stage == "building" %>
+      <%# On a six-lane board (Deployments) the three upstream lanes collapse below ~1250px
+          unless "All columns" is on, leaving the last three (reviewed · assembled · shipped). %>
+      <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
       <div class="flex-1 min-w-[190px]"
-           <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>>
+           <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>
+           <% if collapsible %>:class="showAllCols ? '' : 'max-[1250px]:hidden'"<% end %>>
         <!-- Column Header -->
         <div class="mb-3 px-1">
           <div class="flex items-center gap-2">
@@ -245,7 +265,7 @@ function kanbanBoard() {
             <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
               <%= task_stage_count_classes(stage) %>"
               data-stage-count="<%= stage %>">
-              <%= (@tasks_by_stage[stage] || []).size %>
+              <%= column_tasks.size %>
             </span>
           </div>
           <%# Kickoff-chip row, reserved at a fixed height on EVERY column (empty for
@@ -264,10 +284,6 @@ function kanbanBoard() {
              data-stage="<%= stage %>"
              class="kanban-dropzone rounded-xl border-2 border-dashed min-h-[calc(100vh-220px)] p-2 space-y-2 transition-colors duration-150 border-subtle">
 
-          <%# On a board with no Blocked column (Deployments), surface blocked tasks at
-              the top of Submitted so they aren't lost off-board. %>
-          <% column_tasks = @tasks_by_stage[stage] || [] %>
-          <% column_tasks = (@tasks_by_stage["blocked"] || []) + column_tasks if stage == "submitted" && !stages.include?("blocked") %>
           <% column_tasks.each do |task| %>
             <%# Blocked cards wear a reddish hue (the crew also flags the stall point). %>
             <% card_tone = task.blocked? ? "bg-red-950/40 border-red-800/60 hover:border-red-600/70 hover:bg-red-900/40" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt" %>
