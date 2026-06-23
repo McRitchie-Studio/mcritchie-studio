@@ -290,6 +290,11 @@ function kanbanBoard() {
                 <%= app_emoji_badge(task.devops_repositories, css: "absolute inset-y-0 right-0 z-10 flex items-center pl-5 text-xs leading-none bg-gradient-to-l from-surface via-surface to-transparent") %>
               </div>
 
+              <%# Stage crew (agent-events summary) sits directly under the slug — build-lane
+                  stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
+                  shipped. Renders nothing when there are no events. %>
+              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
+
               <%# Session resume (V1): which terminal/session owns this task. The
                   copy control DISPLAYS the truncated command (ending in …<last4>,
                   the glance) and COPIES the full resume command (hidden span).
@@ -379,10 +384,6 @@ function kanbanBoard() {
                   <% end %>
                 </div>
               <% end %>
-
-              <%# Stage crew — build-lane stages wear the task's mascot; deploy-lane
-                  shows who reviewed/assembled/shipped. Renders nothing with no events. %>
-              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
 
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
