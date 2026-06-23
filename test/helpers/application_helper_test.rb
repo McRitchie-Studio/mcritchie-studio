@@ -110,6 +110,36 @@ class ApplicationHelperTest < ActionView::TestCase
     assert badge.html_safe?
   end
 
+  test "compact_stage_duration renders a tight one-token form, nil-safe" do
+    assert_nil compact_stage_duration(nil)
+    assert_equal "<1m", compact_stage_duration(30)
+    assert_equal "12m", compact_stage_duration(12 * 60)
+    assert_equal "3h", compact_stage_duration(3 * 3600)
+    assert_equal "5d", compact_stage_duration(5 * 86_400)
+  end
+
+  test "devops_stage_guide Deploy steps carry tests-run + gate; Build steps do not" do
+    guide = devops_stage_guide
+
+    guide["Deploy"].each do |row|
+      assert row[:tests].present?, "#{row[:stage]} Deploy step missing :tests"
+      assert row[:gate].present?, "#{row[:stage]} Deploy step missing :gate"
+    end
+    guide["Build"].each do |row|
+      assert_nil row[:tests], "#{row[:stage]} Build step should not carry :tests"
+      assert_nil row[:gate], "#{row[:stage]} Build step should not carry :gate"
+    end
+
+    deploy = guide["Deploy"].index_by { |row| row[:stage] }
+    # review is Avi-delegated to two seniors, scoped to base-tier tests
+    assert_match(/two senior/i, deploy["submitted"][:who])
+    assert_match(/base/i, deploy["submitted"][:tests])
+    # Steffon owns QA; Avi runs the frozen-SHA suite; the operator is the one gate
+    assert_match(/steffon/i, deploy["assembled"][:who])
+    assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
+    assert_match(/operator gate/i, deploy["shipped"][:gate])
+  end
+
   test "devops_next_html badges whole-word stage names only" do
     html = devops_next_html("pulls it into the next release → assembled")
     assert_includes html, "<span"

@@ -40,15 +40,30 @@
                 <% end %>
               </div>
               <p class="text-sm text-body mb-3"><%= row[:what] %></p>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                <div>
-                  <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Responsible</div>
-                  <div class="text-primary font-medium"><%= row[:who] %></div>
+              <div class="space-y-2 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                  <div>
+                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Responsible</div>
+                    <div class="text-primary font-medium"><%= row[:who] %></div>
+                  </div>
+                  <div>
+                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Next →</div>
+                    <div class="text-secondary leading-relaxed"><%= devops_next_html(row[:nxt]) %></div>
+                  </div>
                 </div>
-                <div>
-                  <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Next →</div>
-                  <div class="text-secondary leading-relaxed"><%= devops_next_html(row[:nxt]) %></div>
-                </div>
+                <%# Deploy steps outline their tests-run + gate (per devops-cycle-design §1.2). %>
+                <% if row[:tests].present? %>
+                  <div>
+                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Tests run</div>
+                    <div class="text-secondary leading-relaxed"><%= row[:tests] %></div>
+                  </div>
+                <% end %>
+                <% if row[:gate].present? %>
+                  <div>
+                    <div class="uppercase tracking-wide text-[10px] text-muted font-semibold mb-0.5">Gate</div>
+                    <div class="text-secondary leading-relaxed"><%= row[:gate] %></div>
+                  </div>
+                <% end %>
               </div>
             </div>
           <% end %>

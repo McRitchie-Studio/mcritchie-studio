@@ -272,6 +272,18 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Run Deployment" # DevOps kickoff chip on the assembled card
   end
 
+  test "stages page outlines tests-run and gate for the Deploy lane" do
+    get stages_path
+    assert_response :success
+
+    # Deploy steps now spell out their tests-run + gate (devops-cycle-design §1.2)
+    assert_includes response.body, "Tests run"
+    assert_includes response.body, "Gate"
+    assert_includes response.body, "two senior reviewers"     # review delegated, not Avi-solo
+    assert_includes response.body, "FROZEN ship SHA"          # Avi's ship-time suite
+    assert_includes response.body, "operator gate"            # the one human gate
+  end
+
   test "deployments and stages are public (no login required)" do
     get deployments_path
     assert_response :success
@@ -366,6 +378,90 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "show renders task detail" do
     get task_path(@new_task.slug)
     assert_response :success
+  end
+
+  # === Per-stage deploy-crew avatars (task-ui-stage-agents) ===
+
+  # Seed the four Deploy-half souls + a shipped task with explicit TaskEvents so
+  # the avatars (reviewers + Steffon + Avi) and durations are deterministic.
+  def seed_deploy_crew_task(steffon_avatar: nil)
+    Agent.create!(name: "Shannon", slug: "shannon")
+    Agent.create!(name: "Carl", slug: "carl")
+    Agent.create!(name: "Steffon", slug: "steffon", avatar: steffon_avatar)
+    Agent.create!(name: "Avi", slug: "avi")
+
+    task = Task.create!(title: "Deploy crew render task", stage: "shipped",
+                        metadata: { "reviewers" => [
+                          { "slug" => "shannon", "weight" => "heavy" },
+                          { "slug" => "carl", "weight" => "light" }
+                        ] })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 3.hours.ago, seconds_in_from: 7200)  # 2h review
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon") # 30m
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 1.hour.ago, seconds_in_from: 600, actor: "avi") # 10m
+    task
+  end
+
+  test "deployments board card shows the deploy crew with avatars and compact durations" do
+    task = seed_deploy_crew_task(steffon_avatar: "https://example.com/steffon.png")
+
+    get deployments_path
+    assert_response :success
+
+    card = "#card-#{task.slug}"
+    assert_select "#{card} [data-test='stage-agent-avatars']"
+    # Steffon's image avatar renders (the others fall back to initials)
+    assert_select "#{card} img[src='https://example.com/steffon.png']"
+    # compact corner pills: 7200s → 2h (both reviewers), 1800s → 30m, 600s → 10m
+    assert_select card, text: /2h/
+    assert_select card, text: /30m/
+    assert_select card, text: /10m/
+  end
+
+  test "task show renders the detailed deploy crew with stage badges, names, weights and durations" do
+    task = seed_deploy_crew_task
+
+    get task_path(task.slug)
+    assert_response :success
+
+    assert_select "[data-test='stage-agent-avatars']"
+    assert_includes response.body, "Deploy crew"
+    # one studio-engine badge per completed stage group (reviewed, assembled, shipped)
+    assert_select "[data-test='stage-agent-avatars'] span.badge", count: 3
+    # every soul is named
+    %w[Shannon Carl Steffon Avi].each { |name| assert_includes response.body, name }
+    # heavy/light review weights surface
+    assert_select "[data-test='stage-agent-avatars']", text: /heavy/
+    assert_select "[data-test='stage-agent-avatars']", text: /light/
+    # full humanized durations (7200s → about 2 hours), labelled by the stage left
+    assert_select "[data-test='stage-agent-avatars']", text: /about 2 hours in Submitted/
+  end
+
+  test "task show omits the deploy crew for an old-flow task lacking reviewers and actors" do
+    # a shipped task whose Deploy events were conductor-driven (no actor) and that
+    # predates the two-senior model (no reviewers metadata) shows no crew.
+    task = Task.create!(title: "Old flow crewless task", stage: "shipped")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 2.hours.ago, seconds_in_from: 600)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 1.hour.ago, seconds_in_from: 600)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 30.minutes.ago, seconds_in_from: 600)
+
+    get task_path(task.slug)
+    assert_response :success
+    assert_select "[data-test='stage-agent-avatars']", count: 0
+    assert_not_includes response.body, "Deploy crew"
+  end
+
+  test "build-lane board cards render no deploy-crew avatars" do
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{@in_progress_task.slug} [data-test='stage-agent-avatars']", count: 0
   end
 
   # === Kanban stage moves via JSON PATCH (the one path: board, bin/task, API) ===
