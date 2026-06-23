@@ -76,6 +76,7 @@
 # first.
 
 require "json"
+require "base64"
 require "open3"
 require "yaml"
 require "tmpdir"
@@ -1229,6 +1230,24 @@ def prompt_list(question)
   items
 end
 
+# Build the read-only conductor snippet that gathers + renders the retro on the
+# board. The retro answers are operator FREE TEXT — they can carry quotes,
+# parens, &&, pipes, backticks. Earlier this raw-interpolated `answers.to_json`
+# as a \"-escaped string literal into the `rails runner "<code>"` command, but
+# `heroku run`'s remote re-quoting EATS that escaping: parens triggered a remote
+# `bash: syntax error near unexpected token '('` and even EMPTY answers arrived
+# corrupted (`JSON::ParserError ... got 'worked:[],riction:[],ollowups:'`). So
+# the payload now rides as a url-safe Base64 blob (alphabet [A-Za-z0-9_-]=, zero
+# shell metacharacters) that the remote runner decodes — as quote-free as the
+# bare `slug.inspect` literal the other conductor callers already pass safely.
+# Pure (no Rails) so it's unit-tested standalone in test/lib/release_cli_test.rb.
+def retro_record_ruby(slug, answers)
+  answers_b64 = Base64.urlsafe_encode64(answers.to_json)
+  "rel = Release::Retro.resolve(#{slug.inspect}); " \
+  "answers = JSON.parse(Base64.urlsafe_decode64(#{answers_b64.inspect})); " \
+  "puts((rel ? { slug: rel.slug, markdown: Release::Retro.render(Release::Retro.gather(rel), answers: answers) } : {}).to_json)"
+end
+
 # The post-ship "review & learn" step. NON-BLOCKING by construction: it only
 # READS the board (gather/render via a read_only conductor) and WRITES a doc to
 # the local tree — nothing in the pipeline (archive included) depends on it.
@@ -1244,9 +1263,10 @@ def retro
   say("Release retro#{slug ? " #{slug}" : ' (current/last-shipped)'}#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  # 1. Gather + render server-side (a pure READ → runs even in --dry-run). Answers
-  #    are passed in as an inspected JSON string so free-text never breaks the
-  #    runner snippet. Returns { slug, markdown } (or {} when no release resolves).
+  # 1. Gather + render server-side (a pure READ → runs even in --dry-run). The
+  #    operator's free-text answers ride as a Base64 blob (see retro_record_ruby)
+  #    so quotes/parens/&& survive the `heroku run` round-trip. Returns
+  #    { slug, markdown } (or {} when no release resolves).
   interactive = !(ASSUME_YES || DRY)
   if interactive
     say("")
@@ -1258,12 +1278,7 @@ def retro
   answers = { "worked" => worked, "friction" => friction, "followups" => followups }
 
   step("record (read-only): gather + render retro for #{slug || 'the current/last-shipped release'}")
-  result = conductor(
-    "rel = Release::Retro.resolve(#{slug.inspect}); " \
-    "answers = JSON.parse(#{answers.to_json.inspect}); " \
-    "puts((rel ? { slug: rel.slug, markdown: Release::Retro.render(Release::Retro.gather(rel), answers: answers) } : {}).to_json)",
-    read_only: true
-  )
+  result = conductor(retro_record_ruby(slug, answers), read_only: true)
   resolved = result["slug"].to_s
   abort!("no release to retro (no active release and nothing shipped yet)") if resolved.empty?
 
