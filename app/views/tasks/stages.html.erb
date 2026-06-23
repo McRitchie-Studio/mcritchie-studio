@@ -3,11 +3,9 @@
 
 <section class="min-h-screen">
   <%= render "board_top_links", current: "stages" %>
-  <div class="flex items-center justify-between mb-2 flex-wrap gap-3">
+  <div class="flex items-center gap-4 mb-2 flex-wrap">
     <h2 class="text-2xl font-bold text-heading">Stages</h2>
-    <div class="flex items-center gap-3 flex-wrap">
-      <%= render "page_nav", current: "stages" %>
-    </div>
+    <%= render "page_nav", current: "stages" %>
   </div>
   <p class="text-muted text-sm mb-6 max-w-3xl">
     A task moves through <b class="text-secondary">two workflows</b>, split by owner. The
