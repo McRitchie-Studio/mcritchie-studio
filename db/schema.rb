@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_21_000001) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_22_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -902,6 +902,24 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_21_000001) do
     t.index ["kind"], name: "index_studio_links_on_kind"
     t.index ["linkable_type", "linkable_id", "kind"], name: "idx_studio_links_owner_kind"
     t.index ["token"], name: "index_studio_links_on_token", unique: true
+  end
+
+  create_table "task_events", force: :cascade do |t|
+    t.string "task_slug", null: false
+    t.string "from_stage"
+    t.string "to_stage", null: false
+    t.datetime "occurred_at", null: false
+    t.integer "seconds_in_from"
+    t.string "source"
+    t.string "actor"
+    t.string "model"
+    t.integer "tokens_in"
+    t.integer "tokens_out"
+    t.decimal "cost", precision: 10, scale: 4
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["task_slug", "occurred_at"], name: "index_task_events_on_task_slug_and_occurred_at"
   end
 
   create_table "tasks", force: :cascade do |t|

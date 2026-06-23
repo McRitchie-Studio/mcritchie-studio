@@ -23,6 +23,15 @@ module ApplicationHelper
     end
   end
 
+  # Human duration for time spent in a stage (seconds → "about 2 hours"). nil
+  # when unknown — the genesis event has no prior stage to measure.
+  def humanize_stage_duration(seconds)
+    return nil if seconds.nil?
+    return "under a minute" if seconds < 60
+
+    distance_of_time_in_words(0, seconds)
+  end
+
   def task_stage_count_classes(stage)
     case stage.to_s
     when "designed"  then "bg-blue-900/50 text-blue-300"

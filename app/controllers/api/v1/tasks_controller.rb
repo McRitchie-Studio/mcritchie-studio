@@ -1,6 +1,8 @@
 module Api
   module V1
     class TasksController < BaseController
+      before_action :capture_task_event_context, only: [:create, :update]
+
       def index
         tasks = Task.recent
         tasks = tasks.by_stage(params[:stage]) if params[:stage].present?
@@ -45,6 +47,22 @@ module Api
       end
 
       private
+
+      # Drain an optional `event` payload into Current so Task#record_stage_event
+      # can annotate the transition it's about to write with the agent-reported,
+      # per-transition usage. The deterministic from/to/duration spine is recorded
+      # regardless; this only adds model/tokens/cost when the caller supplies them.
+      def capture_task_event_context
+        event = params[:event]
+        Current.task_event_source = (event && event[:source].presence) || "api"
+        return if event.blank?
+
+        Current.task_event_actor      = event[:actor].presence
+        Current.task_event_model      = event[:model].presence
+        Current.task_event_tokens_in  = event[:tokens_in].presence&.to_i
+        Current.task_event_tokens_out = event[:tokens_out].presence&.to_i
+        Current.task_event_cost       = event[:cost].presence&.to_d
+      end
 
       def task_params
         permitted = params.permit(
