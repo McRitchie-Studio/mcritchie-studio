@@ -358,13 +358,14 @@ function kanbanBoard() {
 
               <% if (latest_activity = @latest_task_activities[task.slug]) %>
                 <div class="mt-2">
-                  <%# Activity type (+ note count) as a small header above the block. %>
-                  <div class="flex items-center gap-1.5 mb-1">
-                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/15 text-primary border border-primary/30">
+                  <%# Activity type (+ note count) as a small plain-text header
+                      above the block — no chip background. %>
+                  <div class="flex items-center gap-1.5 mb-0.5">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-primary">
                       <%= latest_activity.activity_type_label %>
                     </span>
                     <% if (activity_count = @task_activity_counts[task.slug].to_i) > 1 %>
-                      <span class="text-[10px] text-muted"><%= activity_count %> notes</span>
+                      <span class="text-[10px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
                     <% end %>
                   </div>
                   <%# The message on a single line — fades at the overflow and
