@@ -1,17 +1,18 @@
 <%# locals: (task:, agents:, variant: :stack, events: nil) %>
 <%#
-  Per-completed-stage agent attribution for a task's Deploy half — who reviewed,
-  assembled, and shipped it, with the time each stage took.
+  Per-stage agent attribution across a task's WHOLE journey — who designed, built,
+  submitted, reviewed, assembled, and shipped it, with the time each stage took.
 
   Source: stage_agent_groups(task, agents) reads the task's TaskEvents +
-  reviewers metadata (see StageAgentsHelper). An Assembled task shows up to 3
-  avatars (2 senior reviewers + Steffon); a Shipped task up to 4 (+ Avi).
-  Build-lane and old-flow tasks have nothing to show — the partial then renders
-  nothing at all (no empty container).
+  (review only) reviewers metadata (see StageAgentsHelper). Build-lane stages show
+  the event's actor (the feature agent); reviewed shows the 2 senior reviewers;
+  assembled shows Steffon; shipped shows Avi. A task renders nothing only when it
+  has no stage events with a crew to attribute — the partial then renders nothing
+  at all (no empty container).
 
   variant:
     :stack    (default) overlapping circular avatars + a compact corner duration
-              pill — the board card glance.
+              pill, capped with a "+N" overflow bubble — the board card glance.
     :detailed grouped per stage with a studio-engine badge, names, weights, and
               the full humanized duration — the task detail.
 
@@ -55,8 +56,17 @@
       </div>
     </div>
   <% else %>
-    <div class="flex items-center -space-x-2 mb-1.5" data-test="stage-agent-avatars">
-      <% entries.each do |entry| %>
+    <%#
+      Board-card glance: one tight, prominent crew row. Cap the visible faces so a
+      fully-shipped task (designer/builder/submitter + 2 seniors + Steffon + Avi)
+      can't widen the small card — the rest collapse into a "+N" bubble that names
+      them on hover.
+    %>
+    <% max_faces = 5 %>
+    <% shown = entries.first(max_faces) %>
+    <% overflow = entries.drop(max_faces) %>
+    <div class="flex items-center -space-x-2 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+      <% shown.each do |entry| %>
         <div class="relative rounded-full ring-2 ring-surface hover:z-10 transition"
              title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})"), (humanize_stage_duration(entry.seconds).presence && "#{humanize_stage_duration(entry.seconds)} in #{entry.from_label}")].compact.join(' · ') %>">
           <%= render "components/agent_avatar", agent: entry, size: "xs" %>
@@ -66,6 +76,12 @@
               <%= pill %>
             </span>
           <% end %>
+        </div>
+      <% end %>
+      <% if overflow.any? %>
+        <div class="relative w-8 h-8 rounded-full ring-2 ring-surface bg-surface-alt border border-subtle flex items-center justify-center flex-shrink-0"
+             title="<%= overflow.map(&:name).join(', ') %>">
+          <span class="text-[10px] font-bold text-secondary leading-none">+<%= overflow.size %></span>
         </div>
       <% end %>
     </div>
