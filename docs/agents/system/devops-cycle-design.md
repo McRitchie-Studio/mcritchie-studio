@@ -286,15 +286,22 @@ one human gate. It does **not** ship to production on its own.
 > that is **already** `reviewed`; it does not create a task, take a worktree, or
 > write feature code.
 
-> **A non-interactive agent MUST pass `--yes`.** Since the prepare-confirm
-> shipped, `bin/release prepare` / `ship` / `merge` / `archive` all **prompt for
-> confirmation**. An agent runs in a non-interactive shell where stdin is EOF,
-> which the confirm reads as **"no"** — so the command **silently no-ops**: it
-> looks like it ran, but nothing was merged or deployed. Every conductor command
-> an agent runs below therefore carries **`--yes`**. (`--prod` is already the
-> default — the board is prod — so don't add it redundantly. `ship` stays the
-> operator-run human gate, where the operator answers the prompt; an agent ever
-> assigned that lane needs `--yes` too.)
+> **A non-interactive agent MUST pass `--yes` where a command confirms.** An
+> agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as
+> **"no"**. The consequence differs per command, so know which you're running:
+> - **`prepare`** *silently no-ops* without `--yes` — it returns early on the
+>   "no", so it looks like it ran but nothing deployed. This is the dangerous
+>   one: always run `bin/release prepare --yes`.
+> - **`ship`** and **`archive`** *abort loudly* without `--yes` (they raise, not
+>   no-op) — so they fail visibly; pass `--yes` only to run them hands-off.
+> - **`merge`** does not prompt at all today; its `--yes` is harmless,
+>   future-proofing only — the examples below include it for consistency.
+>
+> So the agent-run commands below carry **`--yes`**. (`--prod` is already the
+> default — the board is prod — so don't add it redundantly. **`ship` stays the
+> operator-run human gate**: the operator answers the prompt interactively, so
+> this SOP does NOT pass `--yes` to ship; an agent that is ever explicitly
+> assigned the ship lane would need it too.)
 
 1. **Assess the release.** Find the active release via `Release.current` (the
    board features it via `Release.featured`, which falls back to the last
