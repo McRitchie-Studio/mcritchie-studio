@@ -70,32 +70,38 @@
       ticks a LIVE counter while the task is still being built. The detail page
       (:detailed) still shows every stage per-usual.
     %>
-    <% clusters = crew_clusters(task, entries) %>
-    <div class="flex flex-wrap items-center gap-1.5 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
-      <% clusters.each do |cluster| %>
-        <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
-          <%# Tight stack — virtually one circle; priority last = on top. The whole
-              stack scales up on card hover (transform only, so siblings don't shift). %>
-          <div class="flex items-center -space-x-9 transition-transform duration-150 group-hover:scale-110">
-            <% cluster.stacked.each do |entry| %>
-              <div class="rounded-full ring-2 ring-surface"
-                   title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
-                <%= render "components/agent_avatar", agent: entry, size: "sm" %>
+    <% by_lane = crew_clusters(task, entries).index_by(&:lane) %>
+    <%# Four fixed 25% columns so the crew is always one solid row (build · review ·
+        assembled · shipped), each centered; an absent stage leaves its column blank. %>
+    <div class="grid grid-cols-4 gap-1 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+      <% %i[build review assembled shipped].each do |lane| %>
+        <div class="flex justify-center">
+          <% if (cluster = by_lane[lane]) %>
+            <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
+              <%# Tight stack — virtually one circle; priority last = on top. The whole
+                  stack scales up on card hover (transform only, so siblings don't shift). %>
+              <div class="flex items-center -space-x-9 transition-transform duration-150 group-hover:scale-110">
+                <% cluster.stacked.each do |entry| %>
+                  <div class="rounded-full ring-2 ring-surface"
+                       title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
+                    <%= render "components/agent_avatar", agent: entry, size: "sm" %>
+                  </div>
+                <% end %>
               </div>
-            <% end %>
-          </div>
-          <% if cluster.live_since %>
-            <%# Live elapsed counter (s → m → h → d → w), ticking each second. %>
-            <span class="absolute -bottom-1 -right-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
-                         bg-primary/20 text-primary border border-primary/40 ring-1 ring-surface tabular-nums"
-                  data-test="crew-live"
-                  x-data="{ start: <%= cluster.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
-                  x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)"
-                  x-text="window.elapsedLabel(now - start)">…</span>
-          <% elsif cluster.seconds.to_i.positive? %>
-            <span class="absolute -bottom-1 -right-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
-                         bg-surface-alt text-secondary border border-subtle ring-1 ring-surface tabular-nums"
-                  data-test="crew-duration"><%= compact_stage_duration(cluster.seconds) %></span>
+              <% if cluster.live_since %>
+                <%# Live elapsed counter (s → m → h → d → w), ticking each second. %>
+                <span class="absolute -bottom-1 -right-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                             bg-primary/20 text-primary border border-primary/40 ring-1 ring-surface tabular-nums"
+                      data-test="crew-live"
+                      x-data="{ start: <%= cluster.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
+                      x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)"
+                      x-text="window.elapsedLabel(now - start)">…</span>
+              <% elsif cluster.seconds.to_i.positive? %>
+                <span class="absolute -bottom-1 -right-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                             bg-surface-alt text-secondary border border-subtle ring-1 ring-surface tabular-nums"
+                      data-test="crew-duration"><%= compact_stage_duration(cluster.seconds) %></span>
+              <% end %>
+            </div>
           <% end %>
         </div>
       <% end %>
