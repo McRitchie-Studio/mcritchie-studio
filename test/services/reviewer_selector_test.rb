@@ -157,6 +157,18 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_includes decision["candidates"], "carl", "the domain owner stays eligible when builder is unknown"
   end
 
+  test "a known builder outside the pool excludes nobody and isn't reported excluded" do
+    # `mack` is a real soul but NOT in the reviewer POOL — there's nothing to
+    # remove, so the audit must not claim an exclusion (the old bug reported
+    # excluded_builder for a non-candidate) and the candidate set is unchanged.
+    baseline = ReviewerSelector.explain(task_for(shape: "backend"))["candidates"]
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "mack").decision
+
+    assert_equal "mack", decision["builder"], "the builder is still identified"
+    assert_nil decision["excluded_builder"], "a non-pool builder excludes nobody — no false (excluded)"
+    assert_equal baseline.sort, decision["candidates"].sort, "the candidate set is unchanged"
+  end
+
   test "the builder is KEPT when excluding it would leave too few candidates" do
     # Pool {carl, shannon, jasper}; qa_owner=jasper leaves {carl, shannon} (a
     # formable pair); excluding builder carl too would leave only {shannon} — so
@@ -183,6 +195,14 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     ReviewerSelector.new(task_for(shape: "backend"), logger: logger).reviewers
 
     assert_match(/builder=-/, logger.lines.last)
+  end
+
+  test "the audit log marks a known non-pool builder as not-a-candidate" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), builder: "mack", logger: logger).reviewers
+
+    assert_match(/builder=mack\(not-a-candidate\)/, logger.lines.last,
+      "a known builder outside the pool is flagged not-a-candidate, never kept:too-few")
   end
 
   # --- logged random tiebreak ---

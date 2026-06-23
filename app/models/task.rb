@@ -164,10 +164,12 @@ class Task < ApplicationRecord
   end
 
   # The soul who BUILT this task — stamped from the build-claim actor on the move
-  # to `building` (see #stamp_builder), so the reviewer pool can exclude the
-  # builder (a soul shouldn't review their own work). nil when the build lane
-  # recorded no actor (a model-method / conductor move). ReviewerSelector also
-  # falls back to the `→ building` TaskEvent actor when this scalar is blank.
+  # to `building` WHEN that actor resolves to a soul slug (see #stamp_builder), so
+  # the reviewer pool can exclude the builder (a soul shouldn't review their own
+  # work). nil when the build lane recorded no actor (a model-method / conductor
+  # move) or only a session id (a bare CLI move with no --actor <soul>).
+  # ReviewerSelector also falls back to the `→ building` TaskEvent actor when this
+  # scalar is blank.
   def devops_built_by
     devops.fetch("built_by", "").presence
   end
@@ -517,21 +519,33 @@ class Task < ApplicationRecord
     self.position = (Task.where(stage: stage).maximum(:position) || -1) + 1 unless new_record?
   end
 
-  # Stamp WHO built this task onto devops.built_by, sourced from the build-claim
-  # actor for THIS transition (Current.task_event_actor — set by the request/CLI
-  # layer on the move to `building`, the same value the TaskEvent records). The
-  # reviewer pool later excludes the builder so a soul never reviews their own
-  # work (ReviewerSelector). Set on every `→ building` move that carries an actor,
-  # so a rework re-claim by a different soul re-points it at the current builder.
-  # A move with NO actor (model method / conductor) leaves any existing value
-  # untouched — never clobbered to nil. Runs inside set_stage_timestamp (a before-
-  # save), so the new metadata persists in the same UPDATE as the stage change.
+  # A soul SLUG is a short human handle (carl, alex-docs) — lowercase letters with
+  # optional internal hyphens, NO digits. That format distinguishes it from a
+  # session id (the UUID `bin/task move <slug> building` defaults the actor to,
+  # which always carries digits), so the check needs no Agent-table lookup and
+  # works before the reviewer souls are seeded.
+  SOUL_SLUG = /\A[a-z]+(?:-[a-z]+)*\z/
+
+  # Stamp WHO built this task onto devops.built_by — the soul the reviewer pool
+  # later excludes (ReviewerSelector) so a soul never reviews their own work. The
+  # value MUST be a soul SLUG to match the soul-keyed pool. The build-claim actor
+  # (Current.task_event_actor) is a soul slug ONLY when the move passed
+  # --actor <soul> (the real build path); a bare `bin/task move <slug> building`
+  # DEFAULTS the actor to the session id (a UUID), which is NOT a soul and would
+  # never match the pool — stamping it would make the audit name a builder that
+  # can't be excluded (the feature no-ops while the log lies). So stamp the actor
+  # only when it's a soul slug; a session id / non-soul actor stamps NOTHING and
+  # exclusion degrades to domain-only (truthful). A no-actor move (model method /
+  # conductor) and an unresolvable actor both leave any existing built_by
+  # untouched — never clobbered to nil. A rework re-claim by a different soul
+  # re-points it. Runs inside set_stage_timestamp (a before-save), so the new
+  # metadata persists in the same UPDATE as the stage change.
   def stamp_builder
-    actor = Current.task_event_actor.presence
-    return if actor.blank?
+    soul = Current.task_event_actor.presence
+    return unless soul&.match?(SOUL_SLUG)
 
     merged = metadata.deep_dup
-    (merged["devops"] ||= {})["built_by"] = actor.to_s
+    (merged["devops"] ||= {})["built_by"] = soul.to_s
     self.metadata = merged
   end
 

@@ -15,12 +15,14 @@
 # different `qa_owner:` when he isn't the one QAing this task.
 #
 # The BUILDER is excluded too — a soul shouldn't review their own work. Who built
-# the task is read from devops.built_by (stamped from the build-claim actor) and,
-# for a persisted task, falls back to the actor on the latest `→ building`
-# TaskEvent; pass `builder:` to override. When the builder is unknown the
-# selection degrades to domain-only (QA-owner exclusion still applies), and if
-# excluding the builder would leave fewer than two candidates the builder is KEPT
-# (the decision/log flags it) so a pair is always returned.
+# the task is read from devops.built_by (stamped from the build-claim actor when
+# it resolves to a soul slug — see Task#stamp_builder) and, for a persisted task,
+# falls back to the actor on the latest `→ building` TaskEvent; pass `builder:` to
+# override. When the builder is unknown OR isn't in the selectable pool (a soul
+# not in POOL, or the QA owner) the selection degrades to domain-only (QA-owner
+# exclusion still applies) and the audit reports no excluded builder. If excluding
+# a pool builder would leave fewer than two candidates the builder is KEPT (the
+# decision/log flags it) so a pair is always returned.
 #
 # Reads each reviewer's Agent.metadata["domains"] + ["review_weight"]; DEGRADES
 # GRACEFULLY to built-in defaults when the Agent row or those keys are absent, so
@@ -173,16 +175,28 @@ class ReviewerSelector
     @builder = (@builder_override || devops_built_by || building_event_actor).to_s.strip.presence
   end
 
-  # True only when a known builder is actually removed from the pool. Skipped when
-  # the builder is unknown, or when removing it would drop the candidate count
-  # below MIN_CANDIDATES — then the builder is KEPT and the decision/log flags it.
-  # (builder == qa_owner is already out via the QA exclusion; this still reads
-  # true so the audit shows the builder was not a candidate.) Memoized.
+  # True when the builder is a real selectable candidate — present, in the pool,
+  # and not the QA owner (who's already excluded). The PRECONDITION for actually
+  # excluding them: only a candidate can be removed. A known-but-non-pool builder
+  # (a soul not seeded into POOL, or one equal to the QA owner) is NOT a candidate,
+  # so "excluding" it would remove nobody — the audit must not report that as an
+  # exclusion. Memoized.
+  def builder_candidate?
+    return @builder_candidate if defined?(@builder_candidate)
+
+    @builder_candidate = builder.present? && (pool - [qa_owner]).include?(builder)
+  end
+
+  # True only when the builder IS a candidate (#builder_candidate?) and is actually
+  # removed from the pool. False when the builder is unknown, isn't a candidate
+  # (not in POOL, or is the QA owner — already out), or when removing it would drop
+  # the candidate count below MIN_CANDIDATES — then the builder is KEPT and the
+  # decision/log flags it. Memoized.
   def builder_excluded?
     return @builder_excluded if defined?(@builder_excluded)
 
     @builder_excluded =
-      builder.present? && (pool - [qa_owner] - [builder]).size >= MIN_CANDIDATES
+      builder_candidate? && (pool - [qa_owner] - [builder]).size >= MIN_CANDIDATES
   end
 
   def devops_built_by
@@ -304,11 +318,14 @@ class ReviewerSelector
     )
   end
 
-  # The builder, annotated for the audit log: "-" when unknown, "<slug>(excluded)"
-  # when removed from the pool, or "<slug>(kept:too-few)" when the builder is known
-  # but kept because excluding them would leave too few candidates.
+  # The builder, annotated for the audit log: "-" when unknown,
+  # "<slug>(excluded)" when removed from the pool, "<slug>(kept:too-few)" when a
+  # POOL builder is kept because excluding it would leave too few candidates, or
+  # "<slug>(not-a-candidate)" when a known builder isn't in the selectable pool
+  # (not seeded into POOL, or is the QA owner) — so there was nothing to exclude.
   def builder_log_token
     return "-" if builder.blank?
+    return "#{builder}(not-a-candidate)" unless builder_candidate?
 
     "#{builder}(#{builder_excluded? ? 'excluded' : 'kept:too-few'})"
   end
