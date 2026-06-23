@@ -272,13 +272,78 @@ class ReleaseCliTest < Minitest::Test
   def test_ship_dry_run_order_is_gems_then_hub_then_satellites
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    gem_at = out.index("gem studio-engine")
-    hub_at = out.index("bin/rails test")    # hub's pre-prod gate
+    gem_at = out.index("gem studio-engine") # gem publish
+    hub_at = out.index("push heroku main")  # hub DEPLOY (the test gate now runs up front, in avi_ship_gate)
     sat_at = out.index("bin/deploy --yes")  # satellite's deploy
 
     assert gem_at && hub_at && sat_at, "all three phases must appear"
     assert_operator gem_at, :<, hub_at, "gems publish before the hub deploys"
     assert_operator hub_at, :<, sat_at, "the hub deploys before the satellites"
+  end
+
+  # --- Avi ship gate: full e2e on the FROZEN SHA, THEN the operator gate (§1.2) ---
+
+  def test_ship_runs_the_avi_e2e_gate_before_the_operator_gate_and_any_deploy
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+
+    gate_at   = out.index("Avi ship gate")
+    e2e_at    = out.index("bin/rails test")            # the hub's highest-tier run on the frozen SHA
+    oper_at   = out.index("awaiting operator approval") # the operator gate step (unique marker)
+    deploy_at = out.index("push heroku main")
+
+    assert gate_at && e2e_at && oper_at && deploy_at, "gate, e2e, operator gate, and a deploy must all appear"
+    assert_operator gate_at, :<, oper_at, "the Avi gate precedes the operator gate"
+    assert_operator e2e_at, :<, oper_at, "the full suite runs on the frozen SHA BEFORE the operator approves"
+    assert_operator oper_at, :<, deploy_at, "the operator gate precedes any deploy"
+  end
+
+  def test_ship_avi_gate_runs_the_suite_on_the_frozen_sha
+    out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
+    # The gate ff's main → the frozen hub SHA, then runs the suite on that tree.
+    assert_includes out, "Avi ship gate"
+    assert_includes out, "FROZEN ship SHA"
+    assert_includes out, "bbbbbbb", "the gate runs on the hub's QA-frozen SHA"
+  end
+
+  # --- prepare: wait_for_boot closes the /up-smoke race before assembling ---
+
+  def test_prepare_dry_run_waits_for_the_qa_dyno_to_boot
+    out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
+    assert_includes out, "wait for boot", "prepare must poll /up before recording QA + assembling"
+    assert_includes out, "/up until 200"
+  end
+
+  # wait_for_boot drives a REAL retry loop (DRY=false): poll /up until 200, with
+  # `sh` (the curl) + `sleep` stubbed so the loop runs instantly.
+  WAIT_BOOT_STUB = <<~RUBY
+    $codes = ["000", "000", "200"]
+    def sh(*_a, **_k)
+      [($codes.shift || "200"), true]
+    end
+    def sleep(*_a); end
+  RUBY
+
+  def test_wait_for_boot_retries_until_up_returns_200
+    out = run_cli(["--yes"], setup: WAIT_BOOT_STUB,
+                  call: "print(wait_for_boot('https://qa.example', attempts: 5, delay: 0))")
+    assert_includes out, "booted after 3 polls", "polls /up until it returns 200"
+    assert out.end_with?("true"), "returns true once booted: #{out.inspect}"
+  end
+
+  def test_wait_for_boot_times_out_to_false_when_never_200
+    setup = <<~RUBY
+      def sh(*_a, **_k) = ["503", true]
+      def sleep(*_a); end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "print(wait_for_boot('https://qa.example', attempts: 3, delay: 0))")
+    assert_includes out, "never returned 200 after 3 polls"
+    assert out.end_with?("false"), "times out to false: #{out.inspect}"
+  end
+
+  def test_wait_for_boot_skips_an_empty_url
+    out = run_cli(["--yes"], setup: "", call: "print(wait_for_boot('', attempts: 3, delay: 0))")
+    assert_equal "true", out, "an app with no QA url has nothing to smoke"
   end
 
   def test_ship_dry_run_states_the_partial_ship_policy_and_executes_nothing

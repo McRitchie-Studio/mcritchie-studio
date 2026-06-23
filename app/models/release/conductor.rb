@@ -31,26 +31,59 @@ class Release
     # `assembling` release left behind. Returns the release (nil if none active
     # and none curated).
     def prepare!(task_slugs: [], slug: nil)
-      slugs = Array(task_slugs).compact
       Release.transaction do
+        release = curate!(task_slugs: task_slugs, slug: slug)
+        return release unless release
+
+        assemble!(release)
+        release
+      end
+    end
+
+    # The CURATE half of prepare! — adopt any operator-named `task_slugs` onto the
+    # active release (opening one if none + a `slug` is given) and validate the
+    # members, but DO NOT assemble. Split out so the boot-gated CLI can curate +
+    # deploy + wait_for_boot, then assemble ONLY after QA is confirmed up (the
+    # slow-dyno race that left the RC stuck `assembling`).
+    #
+    # SELF-ATOMIC: wraps its own body in a transaction. The atomicity can't be
+    # borrowed from prepare!'s wrapper, because the production caller
+    # `bin/release prepare` invokes curate! STANDALONE (its own process, no outer
+    # DB txn). Without the wrapper a validate_members! raise AFTER adopt! has
+    # opened a candidate and flipped members to `assembled` would strand a
+    # half-curated release on the board — and the single-active-release rule then
+    # makes that stranded RC block every other session. The transaction rolls the
+    # whole curation back instead. Nested inside prepare!'s transaction, AR joins
+    # the outer txn, so this is a no-op wrapper there. Producer-first. Returns the
+    # active release, or nil when none is active and none was curated.
+    def curate!(task_slugs: [], slug: nil)
+      Release.transaction do
+        slugs = Array(task_slugs).compact
         if slugs.any?
           Release.open!(slug: slug) if slug.present? && Release.current.nil?
           Release::Ordering.producer_first(Task.where(slug: slugs).to_a).each { |task| adopt!(task) }
         end
 
         release = Release.current
-        return release unless release
 
-        # Repo-aware eligibility: a release can't deploy a repo it doesn't know
-        # how to deploy. Runs inside the transaction, before assemble!, so an
-        # unknown-repo member rolls the whole prepare! back.
-        validate_members!(release)
-
-        # Assemble only if still assembling — re-running prepare! against an
-        # already-assembled RC (no new members) is a no-op, not an error.
-        release.assemble! if release.state == "assembling"
+        # Repo-aware eligibility: a release can't deploy a repo it doesn't know how
+        # to deploy. An unknown-repo member raises here, rolling the whole curation
+        # back (the opened candidate + the adopt!-flipped members) via the wrapper
+        # transaction above.
+        validate_members!(release) if release
         release
       end
+    end
+
+    # Flip the curated, QA-deployed RC assembling→assembled — the ASSEMBLE half of
+    # prepare!. Idempotent: a no-op when the release is already assembled, so
+    # re-running prepare! against an in-flight RC (no new members) never errors.
+    # The CLI calls this LAST, after wait_for_boot confirms the QA dyno is up, so a
+    # slow boot can't leave the RC flipped `assembled` against an app that isn't
+    # actually serving.
+    def assemble!(release)
+      release.assemble! if release.state == "assembling"
+      release
     end
 
     # Guard: every member must classify to a known release_kind (:gem or :app).

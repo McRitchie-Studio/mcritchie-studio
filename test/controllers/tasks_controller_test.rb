@@ -390,14 +390,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     Agent.create!(name: "Steffon", slug: "steffon", avatar: steffon_avatar)
     Agent.create!(name: "Avi", slug: "avi")
 
-    task = Task.create!(title: "Deploy crew render task", stage: "shipped",
-                        metadata: { "reviewers" => [
-                          { "slug" => "shannon", "weight" => "heavy" },
-                          { "slug" => "carl", "weight" => "light" }
-                        ] })
+    task = Task.create!(title: "Deploy crew render task", stage: "shipped")
     task.task_events.delete_all
+    # Reviewers ride the →reviewed EVENT's metadata (the canonical write target,
+    # per Task#stage_event_metadata) — NOT Task.metadata. The avatars read the
+    # event, so the harness must seed the pair there.
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
-                      occurred_at: 3.hours.ago, seconds_in_from: 7200)  # 2h review
+                      occurred_at: 3.hours.ago, seconds_in_from: 7200, # 2h review
+                      metadata: { "reviewers" => [
+                        { "slug" => "shannon", "weight" => "heavy" },
+                        { "slug" => "carl", "weight" => "light" }
+                      ] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon") # 30m
     TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",

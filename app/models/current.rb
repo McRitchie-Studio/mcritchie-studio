@@ -18,4 +18,9 @@ class Current < ActiveSupport::CurrentAttributes
   attribute :user
   attribute :task_event_source, :task_event_actor, :task_event_model
   attribute :task_event_tokens_in, :task_event_tokens_out, :task_event_cost
+  # Optional override for the two reviewers recorded on a submitted→reviewed
+  # event (the avatars payload). When unset, Task#stage_event_metadata selects
+  # the pair via ReviewerSelector — so the avatars populate no matter who drove
+  # the transition; set it when Avi curated the pair explicitly.
+  attribute :task_event_reviewers
 end

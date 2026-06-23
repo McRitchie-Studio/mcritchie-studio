@@ -199,4 +199,24 @@ class ReleaseTest < ActiveSupport::TestCase
     Release.open!.ship!
     assert_nil Release.current, "a shipped release is not current"
   end
+
+  # --- per-step test-tier ownership (devops-cycle-design §1.2) ---
+
+  test "the tier→step map matches the redesign: base@review, integration+e2e-smoke@prepare, full-e2e@ship" do
+    assert_equal %w[base], Release.test_tiers_for("review")
+    assert_equal %w[integration e2e-smoke], Release.test_tiers_for("prepare")
+    assert_equal %w[e2e-full], Release.test_tiers_for("ship")
+    assert_equal [], Release.test_tiers_for("nope"), "an unknown step owns no tiers"
+  end
+
+  test "each test tier is owned by exactly one step — so no step re-runs a lower tier" do
+    all = Release::STEP_TEST_TIERS.values.flatten
+    assert_equal all.uniq.sort, all.sort, "a tier owned by two steps would re-run; ownership must be disjoint"
+
+    assert_equal "review", Release.step_owning_tier("base")
+    assert_equal "prepare", Release.step_owning_tier("e2e-smoke")
+    assert_equal "prepare", Release.step_owning_tier("integration")
+    assert_equal "ship", Release.step_owning_tier("e2e-full")
+    assert_nil Release.step_owning_tier("base-not-real")
+  end
 end

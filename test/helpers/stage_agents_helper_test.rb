@@ -13,11 +13,14 @@ class StageAgentsHelperTest < ActionView::TestCase
   # Build a Deploy-half task with explicit TaskEvents so the per-stage attribution
   # and durations are deterministic (seconds chosen distinct per stage).
   def deploy_task(stage:, reviewers: nil, assembled_actor: "steffon", shipped_actor: "avi")
-    metadata = reviewers ? { "reviewers" => reviewers } : {}
-    task = Task.create!(title: "deploy crew #{stage} task", stage: stage, metadata: metadata)
+    task = Task.create!(title: "deploy crew #{stage} task", stage: stage)
     task.task_events.delete_all
+    # Reviewers ride the →reviewed EVENT's metadata (the canonical write target,
+    # per Task#stage_event_metadata) — NOT Task.metadata. The helper reads them
+    # off the event, so the harness must seed them there too.
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
-                      occurred_at: 3.hours.ago, seconds_in_from: 3600)
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600,
+                      metadata: reviewers ? { "reviewers" => reviewers } : {})
     if %w[assembled shipped].include?(stage)
       TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                         occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: assembled_actor)
@@ -107,5 +110,33 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert heavy.heavy?
     assert_equal "Submitted", heavy.from_label
     assert_equal 3600, heavy.seconds
+  end
+
+  # --- end-to-end seam: review! writes the pair to the EVENT, the avatars read it
+  #
+  # Regression for the reviewer→avatars seam bug: the engine records the pair on
+  # the submitted→reviewed TaskEvent's metadata (NOT Task.metadata), but the
+  # avatars reader pulled from task.reviewers (Task.metadata, the wrong record), so
+  # the two senior avatars rendered nothing in prod. Drive the REAL write path
+  # (review! → Task#stage_event_metadata via Current) through the helper so the
+  # whole seam is exercised, not a hand-seeded record.
+  test "review! records reviewers on the event and stage_agent_groups renders 2 seniors with heavy/light" do
+    task = Task.create!(title: "seam review crew task", stage: "submitted")
+    Current.task_event_reviewers = REVIEWERS
+    task.review! # submitted→reviewed: writes the pair onto the new TaskEvent's metadata
+    Current.task_event_reviewers = nil
+
+    reviewed_event = task.task_events.find_by(to_stage: "reviewed")
+    assert_equal REVIEWERS, reviewed_event.metadata["reviewers"],
+                 "the pair must land on the →reviewed EVENT, not Task.metadata"
+    assert_empty task.reload.metadata.fetch("reviewers", []),
+                 "nothing is written to Task.metadata — the old (wrong) read source"
+
+    avatars = stage_agent_groups(task, @agents).select { |g| g.stage == "reviewed" }
+
+    assert_equal 2, avatars.size, "both senior reviewers must render off the event"
+    assert_equal %w[shannon carl], avatars.map { |g| g.agent&.slug }
+    assert_equal %w[heavy light], avatars.map(&:weight)
+    assert avatars.first.heavy?, "the heavy reviewer keeps its heavy pill"
   end
 end

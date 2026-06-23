@@ -16,6 +16,20 @@ class Release < ApplicationRecord
   # (Was the disposable `release/<slug>` cut per candidate — see the cutover.)
   BRANCH = "release"
 
+  # Per-step test-tier ownership for the Deploy workflow (devops-cycle-design
+  # §1.2, "Test-tier → step map"). Each tier runs ONCE, at the step that OWNS it —
+  # no step re-runs a lower tier a previous step already proved green:
+  #   review  → base (unit/component), by the two senior reviewers
+  #   prepare → integration + e2e-smoke, by Steffon on origin/release at QA
+  #   ship    → full e2e (highest tier), by Avi on the FROZEN ship SHA
+  # The ownership is disjoint by construction (a tier maps to exactly one step),
+  # which is what makes "runs once" enforceable — see step_owning_tier.
+  STEP_TEST_TIERS = {
+    "review"  => %w[base],
+    "prepare" => %w[integration e2e-smoke],
+    "ship"    => %w[e2e-full]
+  }.freeze
+
   has_many :tasks, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release
 
   validates :slug, presence: true, uniqueness: true
@@ -29,6 +43,19 @@ class Release < ApplicationRecord
 
   def to_param
     slug
+  end
+
+  # The test tiers a Deploy step OWNS (runs). Unknown step → []. The single
+  # source of truth bin/release's per-step gates (prepare's e2e-smoke /up wait,
+  # ship's full-e2e gate) are documented against.
+  def self.test_tiers_for(step)
+    STEP_TEST_TIERS.fetch(step.to_s, [])
+  end
+
+  # The one step that OWNS a tier (runs it), or nil. Enforces "each tier runs once
+  # at the step that owns it" — a tier maps to exactly one step.
+  def self.step_owning_tier(tier)
+    STEP_TEST_TIERS.find { |_step, tiers| tiers.include?(tier.to_s) }&.first
   end
 
   # The current (singleton) active release, if any.
