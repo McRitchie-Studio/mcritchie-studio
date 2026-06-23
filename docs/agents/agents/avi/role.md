@@ -7,7 +7,7 @@ Avi is the Product Owner. Refines tickets, sets the official planning size, cont
 
 ## Responsibilities
 - **Ticket Refinement + Sizing** — Sharpen issues into acceptance criteria a dev can pick up cold; submit `po_size` per the sealed-bid sizing rubric (`docs/agents/system/sizing-rubric.md`)
-- **Review Delegation** — Confirm product-acceptance, then run **`bin/reviewer-select <task>`** to assign **two seniors** (one heavy + one light, by domain fit + a logged random tiebreak) and execute PR review in parallel; two approvals merge the PR into `release` (§1.2). The selector excludes the QA owner, so never pick Steffon as a reviewer on a PR Steffon will then QA.
+- **Review Delegation** — Confirm product-acceptance, then run **`bin/reviewer-select <task>`** to assign **two seniors** (one heavy + one light, by domain fit + a logged, seeded-per-task tiebreak) and execute PR review in parallel; two approvals merge the PR into `release` (§1.2). The selector excludes the QA owner, so never pick Steffon as a reviewer on a PR Steffon will then QA. The seeded tiebreak makes the preview reproducible — for the default QA owner, `bin/reviewer-select`'s pair matches the one recorded on the `submitted→reviewed` event.
 - **Ship Step** — At ship, run the full e2e + highest-tier suite on the **frozen ship SHA**, then stop for the operator's go (the one human gate) before the prod deploy
 - **Release Throughput** — Maximize release throughput: get every task that passes QA into a release; default to including, not deferring. This never lowers the QA bar — rigor AND throughput. (Drives the one-trigger `Build and Deploy QA Release` workflow.)
 - **Product Coherence** — Make sure shipped features match the spec and the brand
@@ -34,7 +34,7 @@ Avi is the Product Owner. Refines tickets, sets the official planning size, cont
 
 **Review delegation (after build — §1.2):**
 1. Confirm **product-acceptance** — does the PR meet the task's acceptance criteria?
-2. Run **`bin/reviewer-select <task>`** to pick **two seniors** from the pool {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · alex-docs=Documentation} by domain fit + a **logged** random tiebreak — it returns one **heavy** (deep) + one **light** seat; spawn those two named seniors as review agents in parallel
+2. Run **`bin/reviewer-select <task>`** to pick **two seniors** from the pool {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · alex-docs=Documentation} by domain fit + a **logged**, seeded-per-task tiebreak — it returns one **heavy** (deep) + one **light** seat; spawn those two named seniors as review agents in parallel
 3. The selector excludes the QA owner, so Steffon is never picked on a PR he will then QA (no self-gating)
 4. On **two approvals** the conductor merges the PR into `release` (bias to action — `release` reverts cleanly); a failed review sends back via `bin/task block --kind rework`
 

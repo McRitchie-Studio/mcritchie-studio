@@ -2,9 +2,15 @@
 # review to two seniors" step in the redesigned Deploy workflow
 # (docs/agents/system/devops-cycle-design.md §1.2). Selection is by DOMAIN FIT
 # (the task's shape + repositories + risk tags → the reviewer whose domains cover
-# the change) with a LOGGED random tiebreak, so reviews spread across the pool
-# instead of always landing on the obvious domain owner. The pair is split 1 HEAVY
-# (the deep review) / 1 LIGHT, driven by each reviewer's review_weight.
+# the change) with a LOGGED tiebreak, so reviews spread across the pool instead
+# of always landing on the obvious domain owner. The pair is split 1 HEAVY (the
+# deep review) / 1 LIGHT, driven by each reviewer's review_weight.
+#
+# The tiebreak RNG is seeded per-task by default (see #seed_for), so the
+# selection is REPRODUCIBLE across processes: `bin/reviewer-select` (.decision)
+# and the avatars recorder in Task (.select) compute the pair independently, and
+# the seed makes both roll identically — the CLI preview always matches the
+# recorded pick, even on a genuine tie. Different tasks still spread the picks.
 #
 # The pool is {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
 # alex-docs=Documentation} (alex-docs is Alex's launchable reviewer persona, the
@@ -30,6 +36,8 @@
 #
 # `bin/reviewer-select <task>` is the CLI wrapper Avi runs to choose; it prints
 # the pair + the auditable tiebreak from `.explain`.
+require "zlib"
+
 class ReviewerSelector
   # The senior reviewer pool (slugs). `alex-docs` is the Documentation reviewer
   # persona (seeded in db/seeds/02_agents.rb), NOT the `alex` orchestrator seat.
@@ -55,6 +63,14 @@ class ReviewerSelector
 
   # Neutral weight when an Agent row has no metadata["review_weight"].
   DEFAULT_REVIEW_WEIGHT = 1.0
+
+  # The seeded review_weight LABELS → their numeric weight. The prod seeds
+  # (db/seeds/02_agents.rb) store the human label, not a number; a bare
+  # String#to_f would silently zero every label ("heavy".to_f == 0.0), so the
+  # label never drove the heavy seat — fit broke the tie instead. Mapping the
+  # labels here (heavy outranks light) makes the seeded weight actually
+  # weight-driven, and keeps numeric weights (tests, future tuning) working too.
+  WEIGHT_LABELS = { "heavy" => 2.0, "light" => 1.0 }.freeze
 
   # The task's shape → the review domains that change needs covered.
   SHAPE_DOMAINS = {
@@ -104,12 +120,22 @@ class ReviewerSelector
 
   # `builder:` overrides who built the task (else it's derived from the task —
   # see #builder). Pass it when the caller already knows the build agent.
-  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, logger: nil, random: Random.new)
+  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, logger: nil, random: nil)
     @task = task
     @qa_owner = qa_owner.to_s
     @builder_override = builder.to_s.strip.presence
     @logger = logger || Rails.logger
-    @random = random
+    # Default the tiebreak RNG to a STABLE per-task seed. The default selection
+    # must be reproducible across processes: bin/reviewer-select prints
+    # `.decision` while the avatars recorder in Task computes `.select`
+    # INDEPENDENTLY, so on a genuine fit+weight tie a fresh process RNG let them
+    # diverge — Avi spawns one pair, the timeline records another. Seeding from
+    # the task's own identity (+ the excluded QA owner AND excluded builder, which
+    # set the candidate pool) makes both passes roll identically over the SAME
+    # post-exclusion pool (the CLI preview always matches the recorded pick), while
+    # different tasks still spread the picks. Tests pass an explicit `random:` to
+    # pin a scenario.
+    @random = random || Random.new(seed_for(@task, @qa_owner, builder_excluded? ? builder : nil))
   end
 
   # Exactly two entries — [{ "slug" =>, "weight" => "heavy" }, { … "light" }] —
@@ -152,6 +178,19 @@ class ReviewerSelector
   # exercise the too-few-candidates fallback without mutating the frozen constant.
   def pool
     POOL
+  end
+
+  # A STABLE integer seed derived from the task identity AND the two exclusions
+  # that set the candidate pool — the QA owner and the excluded builder. CRC32 of
+  # the key gives a fixed 32-bit seed, so any process selecting for the same task
+  # over the SAME post-exclusion pool rolls the same tiebreak (the basis for the
+  # CLI preview matching the recorded pick). Folding the excluded builder in keeps
+  # two passes that exclude DIFFERENT builders (e.g. an in-memory CLI task vs the
+  # persisted recorder) from sharing a seed over different pools, which would
+  # diverge. A slug-less in-memory stand-in falls back to a constant key (still
+  # reproducible).
+  def seed_for(task, qa_owner, excluded_builder)
+    Zlib.crc32("#{task.try(:slug)}:#{qa_owner}:#{excluded_builder}")
   end
 
   # The selectable pool — the five souls minus the QA owner (no self-gating) and
@@ -292,9 +331,23 @@ class ReviewerSelector
     list.is_a?(Array) && list.any? ? list.map(&:to_s) : Array(DEFAULT_DOMAINS[slug])
   end
 
+  # Numeric review weight for a slug. Understands the seeded "heavy"/"light"
+  # LABELS (via WEIGHT_LABELS — so the label drives the heavy seat instead of
+  # silently becoming 0.0), a Numeric or numeric String (its own value), and a
+  # missing/unknown value (the neutral default — never 0.0, which would sink a
+  # reviewer below every default-weighted peer).
   def reviewer_weight(slug)
     raw = agent_meta(slug)["review_weight"]
-    raw.nil? ? DEFAULT_REVIEW_WEIGHT : raw.to_f
+    case raw
+    when nil     then DEFAULT_REVIEW_WEIGHT
+    when Numeric then raw.to_f
+    else
+      label = raw.to_s.strip.downcase
+      # Only a FULLY numeric string is read as its value — a stray "12abc" must
+      # NOT slip through as 12.0 (String#to_f would truncate it silently); it
+      # falls back to the neutral default like any unknown label.
+      WEIGHT_LABELS.fetch(label) { label.match?(/\A[-+]?\d+(?:\.\d+)?\z/) ? label.to_f : DEFAULT_REVIEW_WEIGHT }
+    end
   end
 
   # Agent.metadata for a slug (memoized). A missing row / any lookup error

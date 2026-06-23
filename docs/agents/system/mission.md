@@ -69,10 +69,11 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
 
 - **Avi** opens **review** as delegator — confirms product-acceptance, then picks
   **two seniors** from the pool {Shannon = UI · Carl = backend · Jasper = Web3 ·
-  Steffon = DevOps/Platform · alex-docs = Documentation} by **domain fit + a logged
-  random tiebreak**, assigning **one heavy (deep) and one light** review in
-  parallel. **Two approvals merge the PR into `release`** (bias to action —
-  `release` reverts cleanly).
+  Steffon = DevOps/Platform · alex-docs = Documentation} by **domain fit + a logged,
+  seeded-per-task tiebreak**, assigning **one heavy (deep) and one light** review in
+  parallel. The seed makes the pick reproducible — `bin/reviewer-select`'s preview
+  matches the pair recorded on the `submitted→reviewed` event. **Two approvals
+  merge the PR into `release`** (bias to action — `release` reverts cleanly).
 - **Steffon** (**Platform Engineer**) runs the **integration + e2e-smoke** tier
   and deploys `origin/release` to QA (`assembled`).
 - **Avi** runs the **full e2e + highest tier on the frozen ship SHA**, then

@@ -692,6 +692,25 @@ class TaskTest < ActiveSupport::TestCase
     )
   end
 
+  test "submitted->reviewed records the same pair bin/reviewer-select would preview" do
+    # Integration boundary for AC2: the recorder (stage_event_metadata ->
+    # ReviewerSelector.select) writes the reviewers into the submitted->reviewed
+    # TaskEvent, while bin/reviewer-select previews them via .decision/.explain —
+    # two independent passes. With the per-task seeded tiebreak they must agree,
+    # even on a genuine tie (no shape/risk/repo), so Avi never spawns a pair the
+    # timeline then contradicts.
+    task = Task.create!(title: "reviewer record boundary task", stage: "submitted")
+    preview = ReviewerSelector.explain(task)["reviewers"].map { |r| r["slug"] }
+
+    task.review! # submitted -> reviewed; the recorder writes the reviewers
+
+    event = task.task_events.chronological.last
+    assert_equal "reviewed", event.to_stage, "the recorded event is the submitted->reviewed transition"
+    recorded = Task.normalize_reviewers(event.metadata["reviewers"]).map { |r| r["slug"] }
+    assert_equal preview, recorded,
+      "the recorded reviewers must match the CLI preview for the same task (no divergence)"
+  end
+
   # --- Mascot backfill (for tasks created before the feature shipped) ---
   #
   # Backfill is global, so the loaded task fixtures are also live + mascotless and
