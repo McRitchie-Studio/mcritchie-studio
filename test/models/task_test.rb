@@ -551,24 +551,76 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   # --- Mascot backfill (for tasks created before the feature shipped) ---
+  #
+  # Backfill is global, so the loaded task fixtures are also live + mascotless and
+  # get filled too. Tests assert on relative counts + the specific tasks they
+  # create, and seed enough Pokémon that no draw falls back to a duplicate.
 
-  test "backfill_mascots! gives a mascot to a task that lacks one" do
-    task = Task.create!(title: "Backfill target task here") # no Pokémon yet → no mascot
-    assert_nil task.devops["mascot"]
-    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
+  def seed_backfill_deck(spare = 3)
+    (Task.live.count + spare).times do |i|
+      Pokemon.create!(dex: 700 + i, name: "Mon#{i}", slug: "mon-#{i}", generation: 1)
+    end
+  end
+
+  test "backfill_mascots! fills every live mascotless task with distinct picks and returns the count" do
+    a = Task.create!(title: "Backfill task one here")
+    b = Task.create!(title: "Backfill task two here")
+    [a, b].each { |t| t.update_column(:metadata, {}) }
+    seed_backfill_deck
+
+    blank_before = Task.live.count { |t| t.devops["mascot"].blank? }
+    count = Task.backfill_mascots!
+
+    assert_equal blank_before, count
+    assert_equal 0, Task.live.count { |t| t.devops["mascot"].blank? }, "no live task left mascotless"
+    assert a.reload.devops["mascot"].present?
+    assert b.reload.devops["mascot"].present?
+    assert_not_equal a.devops["mascot"], b.devops["mascot"], "live tasks get distinct mascots"
+  end
+
+  test "backfill_mascots! is idempotent — a second run assigns nothing" do
+    task = Task.create!(title: "Idempotent backfill task here")
+    task.update_column(:metadata, {})
+    seed_backfill_deck
 
     Task.backfill_mascots!
-
-    assert task.reload.devops["mascot"].present?, "backfill should assign a mascot"
+    assert task.reload.devops["mascot"].present?
+    assert_equal 0, Task.backfill_mascots!, "a second run assigns nothing"
   end
 
   test "backfill_mascots! leaves an existing mascot untouched" do
-    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
+    seed_pokemon("snorlax")
     task = Task.create!(title: "Already has a mascot",
                         metadata: { "devops" => { "mascot" => "ditto" } })
 
     Task.backfill_mascots!
 
     assert_equal "ditto", task.reload.devops["mascot"]
+  end
+
+  test "backfill_mascots! skips terminal (shipped/archived) tasks" do
+    seed_backfill_deck
+    shipped = Task.create!(title: "Shipped terminal backfill task")
+    shipped.update_columns(stage: "shipped", metadata: {})
+
+    Task.backfill_mascots!
+
+    assert_nil shipped.reload.devops["mascot"], "terminal tasks are not backfilled"
+  end
+
+  test "backfill_mascots! captures a failed row to ErrorLog and continues" do
+    good = Task.create!(title: "Good backfill task here")
+    bad  = Task.create!(title: "Bad backfill task here")
+    good.update_column(:metadata, {})
+    bad.update_columns(metadata: {}, priority: 99) # invalid priority → update! raises
+    seed_backfill_deck
+    errors_before = ErrorLog.count
+
+    assert_nothing_raised { Task.backfill_mascots! }
+
+    assert good.reload.devops["mascot"].present?, "the healthy task is still backfilled"
+    assert_nil bad.reload.devops["mascot"], "the failing task is skipped, not aborted"
+    assert_equal errors_before + 1, ErrorLog.count, "the failure is captured to ErrorLog"
+    assert_equal bad.slug, ErrorLog.last.target_name
   end
 end
