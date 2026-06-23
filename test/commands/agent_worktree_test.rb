@@ -1,9 +1,11 @@
 require "test_helper"
+require "erb"
 require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require "yaml"
 
 class AgentWorktreeCommandTest < ActiveSupport::TestCase
   def setup
@@ -323,7 +325,104 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert Dir.exist?(@worktree_dir), "no-force behavior must be unchanged"
   end
 
+  # --- worktree isolated test DB provisioning -------------------------------
+
+  # [unit] test_database_url rewrites a worktree's DEV DATABASE_URL into the name
+  # of an isolated TEST DB: the `_development[_slug]` env marker -> `_test[_slug]`,
+  # a marker-less name still gets a `_test` DB, and no DATABASE_URL -> nil. This
+  # is the name both .env.test.local and db:test:prepare key off.
+  test "[unit] test_database_url derives an isolated test DB from the dev DATABASE_URL" do
+    base = "postgresql://localhost"
+    assert_equal "#{base}/app_test_my_slug",
+                 script_eval(%(print test_database_url("DATABASE_URL" => "#{base}/app_development_my_slug").to_s)).strip
+    assert_equal "#{base}/app_test",
+                 script_eval(%(print test_database_url("DATABASE_URL" => "#{base}/app_development").to_s)).strip
+    assert_equal "#{base}/plain_test",
+                 script_eval(%(print test_database_url("DATABASE_URL" => "#{base}/plain").to_s)).strip
+    assert_equal "", script_eval(%(print test_database_url({}).to_s)).strip
+  end
+
+  # [unit] write_test_env_local drops a gitignored .env.test.local that pins
+  # TEST_DATABASE_URL at the isolated test DB. dotenv auto-loads it for the test
+  # env so a plain `bin/rails test` resolves there even with DATABASE_URL at the
+  # seeded dev DB. No DATABASE_URL -> nothing to derive -> no file.
+  test "[unit] write_test_env_local pins TEST_DATABASE_URL to the isolated test DB" do
+    dir = Dir.mktmpdir("test-env-local")
+    empty = Dir.mktmpdir("test-env-local-empty")
+    begin
+      script_eval(%(write_test_env_local(#{dir.inspect}, "DATABASE_URL" => "postgresql://localhost/app_development_demo")))
+      content = File.read(File.join(dir, ".env.test.local"))
+      assert_includes content, "TEST_DATABASE_URL=postgresql://localhost/app_test_demo"
+      assert_includes content, "do not commit"
+
+      script_eval(%(write_test_env_local(#{empty.inspect}, {})))
+      assert_not File.exist?(File.join(empty, ".env.test.local")),
+                 "no DATABASE_URL must write no test-env pointer"
+    ensure
+      FileUtils.rm_rf(dir)
+      FileUtils.rm_rf(empty)
+    end
+  end
+
+  # [unit] config/database.yml: the test env exposes TEST_DATABASE_URL via an
+  # explicit `url:` (an explicit url wins over DATABASE_URL) and falls back to the
+  # shared `mcritchie_studio_test` when it is unset — so CI / normal local are
+  # unchanged while a worktree can pin its own isolated test DB.
+  test "[unit] database.yml test env reads TEST_DATABASE_URL with a shared-DB fallback" do
+    yml = Rails.root.join("config/database.yml").read
+    original = ENV["TEST_DATABASE_URL"]
+    begin
+      ENV["TEST_DATABASE_URL"] = "postgresql://localhost/iso_test"
+      set = YAML.safe_load(ERB.new(yml).result, aliases: true).fetch("test")
+      assert_equal "postgresql://localhost/iso_test", set["url"],
+                   "test.url must surface TEST_DATABASE_URL so it can win over DATABASE_URL"
+
+      ENV.delete("TEST_DATABASE_URL")
+      unset = YAML.safe_load(ERB.new(yml).result, aliases: true).fetch("test")
+      assert unset["url"].to_s.strip.empty?, "test.url must be blank without TEST_DATABASE_URL"
+      assert_equal "mcritchie_studio_test", unset.fetch("database")
+    ensure
+      original.nil? ? ENV.delete("TEST_DATABASE_URL") : ENV["TEST_DATABASE_URL"] = original
+    end
+  end
+
+  # [integration] The real app boots in the test env and resolves its DB through
+  # the actual config/database.yml + dotenv stack. With DATABASE_URL at a dev DB
+  # (as a worktree exports) AND TEST_DATABASE_URL at the isolated test DB, the
+  # test env MUST resolve to the test DB — the regression that made a plain
+  # `bin/rails test` load `fixtures :all` into the seeded dev DB and FK-fail.
+  test "[integration] test env resolves to TEST_DATABASE_URL over a dev DATABASE_URL" do
+    out, err, status = Open3.capture3(
+      {
+        "RAILS_ENV" => "test",
+        "DATABASE_URL" => "postgresql://localhost/mcritchie_studio_development_db_resolution_probe",
+        "TEST_DATABASE_URL" => "postgresql://localhost/mcritchie_studio_test_db_resolution_probe",
+        "PATH" => ENV.fetch("PATH", "")
+      },
+      RbConfig.ruby, Rails.root.join("bin/rails").to_s, "runner",
+      'print ActiveRecord::Base.configurations.configs_for(env_name: "test").map(&:database).join(",")',
+      chdir: Rails.root.to_s
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "mcritchie_studio_test_db_resolution_probe"
+    assert_no_match(/development/, out)
+  end
+
   private
+
+  # Load bin/agent-worktree as a library in a hermetic subprocess (the
+  # $PROGRAM_NAME == __FILE__ dispatch guard keeps `load` side-effect-free) and
+  # evaluate a snippet against its pure helpers. Returns stdout. Mirrors
+  # force_decision/orphan_decision below.
+  def script_eval(snippet)
+    out, err, status = Open3.capture3(
+      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      RbConfig.ruby, "-e", "load #{@script.inspect}\n#{snippet}"
+    )
+    assert status.success?, "#{out}\n#{err}"
+    out
+  end
 
   # Drive the pure decision method directly by loading the script as a library in
   # an isolated subprocess (mirrors the file's CLI execution path; the
