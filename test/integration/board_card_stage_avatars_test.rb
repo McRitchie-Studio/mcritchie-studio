@@ -13,7 +13,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     @avi     = Agent.create!(name: "Avi", slug: "avi")
   end
 
-  test "tasks board card shows the Build-lane stage-agent avatars" do
+  test "tasks board card splits the build into its stage steps" do
     task = Task.create!(title: "build lane crewed card", stage: "building")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed",
@@ -24,12 +24,16 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
+    # the Build board splits the build into its three steps (designed · building ·
+    # submitted) with NO QA spots — a three-column row
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].grid-cols-3", count: 1
+
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "[data-test='crew-cluster']", count: 1 # build collapses to one stacked circle
-      assert_select "span.text-white", count: 2            # designer + builder stacked
-      assert_select "div[title^='Carl']"                   # designer
-      assert_select "div[title^='Shannon']"                # builder
-      assert_select "[data-test='crew-live']"              # ticking counter while building
+      assert_select "[data-test='crew-cluster']", count: 2 # designed + building reached; submitted blank
+      assert_select "span.text-white", count: 2            # the designer + the builder, each its own column
+      assert_select "div[title^='Carl']"                   # designer's own column
+      assert_select "div[title^='Shannon']"                # builder's own column
+      assert_select "[data-test='crew-live']"              # ticking counter on the current (building) step
     end
   end
 
