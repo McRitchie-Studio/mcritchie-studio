@@ -134,4 +134,35 @@ class TaskCliTest < Minitest::Test
     assert_equal "submitted", parsed["stage"]
     refute parsed.key?("devops"), "non-building moves should not send devops"
   end
+
+  # The mover — not the build session that claimed the task at `building` — owns
+  # this transition's actor. So every move defaults event.actor to the running
+  # session, since the server no longer backfills actor from devops_session_id.
+  def test_move_defaults_event_actor_to_the_running_session
+    requests, = run_task(
+      ["move", "demo-task", "reviewed"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    event = JSON.parse(patch[:body]).fetch("event")
+    assert_equal "cli", event["source"]
+    assert_equal SESSION, event["actor"], "move should attribute to the mover's session"
+  end
+
+  def test_move_actor_flag_overrides_the_session_default
+    requests, = run_task(
+      ["move", "demo-task", "reviewed", "--actor", "avi"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    event = JSON.parse(patch[:body]).fetch("event")
+    assert_equal "avi", event["actor"], "--actor must override the session default"
+  end
+
+  def test_move_without_a_session_stamps_no_actor
+    requests, = run_task(["move", "demo-task", "reviewed"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    event = JSON.parse(patch[:body]).fetch("event")
+    refute event.key?("actor"), "a plain shell / CI run (no session) stamps no actor"
+  end
 end
