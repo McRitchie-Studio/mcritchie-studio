@@ -29,8 +29,10 @@
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A]
 #     ( best-effort per-transition usage the agent burned in the stage it's
-#       leaving — recorded on this move's TaskEvent. The deterministic
-#       from/to/duration spine is recorded server-side regardless. )
+#       leaving — recorded on this move's TaskEvent. With NO usage flags, a
+#       Claude session auto-captures model + token delta + cost from its
+#       transcript, so a bare move still leaves a full paper trail; flags
+#       override. The from/to/duration spine is recorded server-side regardless. )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
@@ -42,6 +44,7 @@ require "net/http"
 require "json"
 require "uri"
 require "fileutils"
+require_relative "../lib/agent_session_usage"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
@@ -236,6 +239,59 @@ rescue StandardError
   nil
 end
 
+# --- Auto-captured move usage (best-effort) --------------------------------
+# Per-session baseline of cumulative token usage, keyed by task slug, so each
+# move computes the delta since the previous move. Lives under .agents (not
+# committed); TASK_USAGE_DIR overrides the dir (tests point it at a tmp path).
+def usage_state_path(session)
+  dir = ENV["TASK_USAGE_DIR"].to_s.strip
+  dir = File.join(PROJECTS_DIR, ".agents", "task-usage") if dir.empty?
+  File.join(dir, "#{session.gsub(/[^A-Za-z0-9._-]/, "")}.json")
+end
+
+def read_usage_baseline(session, slug)
+  path = usage_state_path(session)
+  return nil unless File.exist?(path)
+
+  (JSON.parse(File.read(path)) || {})[slug]
+rescue StandardError
+  nil
+end
+
+def write_usage_baseline(session, slug, totals)
+  path = usage_state_path(session)
+  FileUtils.mkdir_p(File.dirname(path))
+  data = File.exist?(path) ? (JSON.parse(File.read(path)) rescue {}) : {}
+  data[slug] = totals
+  File.write(path, "#{JSON.generate(data)}\n")
+rescue StandardError
+  nil
+end
+
+# Fill the event's model/tokens/cost from the session transcript (the delta since
+# the last move), then advance the baseline. No session, no transcript, or the
+# first move for a task (no baseline yet) → record at most the model; the
+# deterministic spine is recorded server-side regardless.
+def autofill_move_usage(event, slug)
+  session = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  return if session.empty?
+
+  capture = AgentSessionUsage.capture(session_id: session, baseline: read_usage_baseline(session, slug))
+  return unless capture
+
+  write_usage_baseline(session, slug, capture.totals)
+  event["model"] = capture.model if capture.model
+  return unless capture.usage?
+
+  event["tokens_in"]  = capture.tokens_in
+  event["tokens_out"] = capture.tokens_out
+  event["cost"]       = format("%.4f", capture.cost) if capture.cost
+rescue StandardError
+  # A capture failure must degrade to spine-only, never abort the move (and its
+  # stage-transition PATCH). Matches read_usage_baseline/write_usage_baseline.
+  nil
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -303,6 +359,10 @@ when "move"
     else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor)")
     end
   end
+  # No explicit usage flags → auto-capture the per-transition delta (model +
+  # tokens + cost) from the session transcript so a bare move still leaves a full
+  # paper trail. Best-effort; a missing transcript leaves the event spine-only.
+  autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
   body = { "stage" => stage, "event" => event }
   # Stamp the working session on the claim (move to building). Read-merge-write
   # so the session fields ride alongside existing devops without wiping them

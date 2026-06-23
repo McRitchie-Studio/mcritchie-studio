@@ -14,6 +14,8 @@ require "json"
 require "socket"
 require "open3"
 require "rbconfig"
+require "tmpdir"
+require "fileutils"
 
 class TaskCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
@@ -164,5 +166,120 @@ class TaskCliTest < Minitest::Test
     patch = requests.find { |r| r[:method] == "PATCH" }
     event = JSON.parse(patch[:body]).fetch("event")
     refute event.key?("actor"), "a plain shell / CI run (no session) stamps no actor"
+  end
+
+  # --- Auto-captured move usage (from the session transcript) ----------------
+
+  # Build a fake $HOME holding a Claude transcript for SESSION with the given
+  # assistant usage turns, plus an isolated usage-state dir; yields the env
+  # overrides (and the state dir) for run_task.
+  def with_session_transcript(turns)
+    Dir.mktmpdir do |home|
+      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      FileUtils.mkdir_p(proj)
+      lines = turns.map do |u|
+        JSON.generate("type" => "assistant", "message" => {
+          "model" => "claude-opus-4-8",
+          "usage" => {
+            "input_tokens" => u[:input], "output_tokens" => u[:output],
+            "cache_creation_input_tokens" => u[:cc], "cache_read_input_tokens" => u[:cr]
+          }
+        })
+      end
+      File.write(File.join(proj, "#{SESSION}.jsonl"), "#{lines.join("\n")}\n")
+      usage_dir = File.join(home, "usage-state")
+      yield({ "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => usage_dir }, usage_dir)
+    end
+  end
+
+  def test_move_auto_captures_the_usage_delta_from_the_transcript
+    turns = [
+      { input: 1000, output: 2000, cc: 0,  cr: 5000 },
+      { input: 100,  output: 4000, cc: 50, cr: 6000 }
+    ]
+    with_session_transcript(turns) do |env, usage_dir|
+      # Seed the baseline at the first turn's totals so the move's delta is
+      # exactly the second turn.
+      FileUtils.mkdir_p(usage_dir)
+      File.write(File.join(usage_dir, "#{SESSION}.json"),
+                 JSON.generate("demo-task" => { "input" => 1000, "output" => 2000, "cache_creation" => 0, "cache_read" => 5000 }))
+
+      requests, = run_task(["move", "demo-task", "submitted"], env: env)
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+
+      assert_equal "claude-opus-4-8", event["model"]
+      assert_equal 6150, event["tokens_in"]   # 100 + 50 + 6000
+      assert_equal 4000, event["tokens_out"]
+      assert_equal "0.1038", event["cost"]     # (100*5 + 4000*25 + 50*5*1.25 + 6000*5*0.1)/1e6
+      assert_equal SESSION, event["actor"]
+    end
+  end
+
+  def test_first_move_with_no_baseline_records_model_only
+    with_session_transcript([{ input: 1000, output: 2000, cc: 0, cr: 5000 }]) do |env, _dir|
+      requests, = run_task(["move", "demo-task", "submitted"], env: env)
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+
+      assert_equal "claude-opus-4-8", event["model"]
+      refute event.key?("tokens_in"), "no baseline yet → no token delta to report"
+      refute event.key?("cost")
+    end
+  end
+
+  def test_explicit_usage_flag_disables_auto_capture
+    with_session_transcript([{ input: 1000, output: 2000, cc: 0, cr: 5000 }]) do |env, _dir|
+      requests, = run_task(["move", "demo-task", "submitted", "--tokens-in", "42"], env: env)
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+
+      assert_equal 42, event["tokens_in"]
+      refute event.key?("model"), "an explicit usage flag turns auto-capture off"
+      refute event.key?("cost")
+    end
+  end
+
+  # Like with_session_transcript, but writes RAW transcript lines verbatim so a
+  # test can include valid-JSON-but-non-object lines (42, [1,2], null, true) —
+  # the exact shape that once made sum_usage raise a TypeError on obj["type"].
+  def with_raw_session_transcript(raw_lines)
+    Dir.mktmpdir do |home|
+      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      FileUtils.mkdir_p(proj)
+      File.write(File.join(proj, "#{SESSION}.jsonl"), "#{raw_lines.join("\n")}\n")
+      usage_dir = File.join(home, "usage-state")
+      yield({ "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => usage_dir }, usage_dir)
+    end
+  end
+
+  # Acceptance #5: a malformed transcript must degrade to a SPINE-ONLY move, never
+  # abort it. A non-object JSON line (42) once raised TypeError inside the capture,
+  # and autofill_move_usage had no rescue, so the exception escaped BEFORE the
+  # stage-transition PATCH fired — strictly worse than spine-only. Prove the PATCH
+  # still fires and carries no usage. (Regression for the rework on PR #121.)
+  def test_move_with_a_malformed_transcript_still_records_the_spine
+    with_raw_session_transcript(["42", "[1,2,3]", "null", "true", '"bare string"']) do |env, _dir|
+      requests, = run_task(["move", "demo-task", "submitted"], env: env)
+      patch = requests.find { |r| r[:method] == "PATCH" }
+
+      refute_nil patch, "the stage PATCH must still fire — a capture failure can't abort the move"
+      parsed = JSON.parse(patch[:body])
+      assert_equal "submitted", parsed["stage"]
+      event = parsed.fetch("event")
+      assert_equal "cli", event["source"]
+      refute event.key?("model"), "a malformed transcript yields a spine-only event"
+      refute event.key?("tokens_in")
+      refute event.key?("cost")
+    end
+  end
+
+  def test_move_without_a_transcript_records_spine_only
+    Dir.mktmpdir do |home| # $HOME with no transcript file present
+      requests, = run_task(["move", "demo-task", "submitted"],
+                           env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => File.join(home, "u") })
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+
+      assert_equal "cli", event["source"]
+      refute event.key?("model"), "no transcript → spine-only event"
+      refute event.key?("tokens_in")
+    end
   end
 end
