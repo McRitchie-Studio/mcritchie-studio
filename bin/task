@@ -17,6 +17,7 @@
 # Usage:
 #   bin/task list [--stage S] [--agent A]
 #   bin/task show <slug>
+#   bin/task field <slug> <devops-key>       # machine-readable single value (e.g. mascot)
 #   bin/task create --title T [--slug readable-handle] [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )

@@ -7,7 +7,8 @@
 #     "command": "/Users/alex/projects/mcritchie-studio/bin/statusline",
 #     "padding": 1, "refreshInterval": 5 }
 #
-# Renders:  🛠  <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
+# Renders:  🛠  ⊙<mascot> · <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
+#           (the ⊙<mascot> segment shows only when the context carries one)
 #
 # Sources, in priority:
 #   1. <cwd>/.agent-context.json              — the active worktree (bin/agent-worktree)

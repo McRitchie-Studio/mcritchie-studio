@@ -24,6 +24,7 @@ This file names credential locations so agents can ask for or reference the righ
 | `agent.managed_wallet` | `agents` | Managed wallet encryption key | Turf Monster managed-wallet flows |
 | `agent.helius` | `agents` | Devnet/mainnet Helius RPC URLs | Solana apps |
 | `agent.aws.mcritchie-ses` | `agents` | Shared SES-scoped AWS API credentials, region `us-east-2`; runtime SMTP credentials are derived/stored separately | McRitchie, Turf Monster, and future app email delivery |
+| `agent.aws` | `agents` | General AWS API credentials (S3 read/write, `us-east-2`); fields `access key` + `access secret key`. Bucket `mcritchie-studio-production` is bucket-owner-enforced (no ACLs) with a standing public-read policy on `/*` — use **path-style** URLs (`s3.us-east-2.amazonaws.com/<bucket>/…`) to avoid Chrome's lookalike warning. Ignore the decoy `dont.use.agent.aws`. | Active Storage + reference-image (e.g. Pokémon) uploads |
 | `Coinbase Developer Platform` | `agents` | CDP API key | Turf Monster CDP ramp |
 | `agent.higgesfield` | `agents` | Higgsfield media generation API | McRitchie Studio content pipeline |
 | `x.api` | `agents` | X/Twitter API credentials | McRitchie Studio news/content |
