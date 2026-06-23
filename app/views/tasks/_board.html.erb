@@ -325,31 +325,29 @@ function kanbanBoard() {
                 </div>
               </div>
 
+              <%# One meta row: kind (+ gem / release-train) badge, then the
+                  Local/QA/Prod/PR links inline. The repo-name badge is dropped —
+                  the affected app already shows as an emoji on the slug row. %>
               <% if task.devops? %>
-                <div class="flex flex-wrap gap-1 mb-1.5">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
                   <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary border border-primary/30"><%= task.devops_kind %></span>
                   <% if task.gem_release? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50" title="Gem release — published to RubyGems producer-first (before consuming apps)">💎 gem</span>
                   <% end %>
-                  <% task.devops_repositories.first(2).each do |repo| %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= repo %></span>
-                  <% end %>
                   <% if task.devops_release_train.present? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= task.devops_release_train %></span>
                   <% end %>
-                </div>
-                <div class="flex flex-wrap gap-2 text-[10px] mb-1.5">
                   <% if (local_url = task.devops_url("local")) %>
-                    <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                    <%= link_to "Local", local_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
                   <% end %>
                   <% if (qa_url = task.devops_url("qa")) %>
-                    <%= link_to "QA", qa_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                    <%= link_to "QA", qa_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
                   <% end %>
                   <% if (production_url = task.devops_url("production")) %>
-                    <%= link_to "Prod", production_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                    <%= link_to "Prod", production_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
                   <% end %>
                   <% if (pr_url = task.devops_url("pr")) %>
-                    <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                    <%= link_to "PR", pr_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
                   <% end %>
                 </div>
               <% end %>
@@ -359,7 +357,8 @@ function kanbanBoard() {
               <% end %>
 
               <% if (latest_activity = @latest_task_activities[task.slug]) %>
-                <div class="mt-2 rounded-md border border-subtle bg-inset/60 p-2">
+                <div class="mt-2">
+                  <%# Activity type (+ note count) as a small header above the block. %>
                   <div class="flex items-center gap-1.5 mb-1">
                     <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/15 text-primary border border-primary/30">
                       <%= latest_activity.activity_type_label %>
@@ -368,9 +367,12 @@ function kanbanBoard() {
                       <span class="text-[10px] text-muted"><%= activity_count %> notes</span>
                     <% end %>
                   </div>
-                  <p class="text-[11px] leading-snug text-secondary line-clamp-2">
-                    <%= latest_activity.description %>
-                  </p>
+                  <%# The message on a single line — fades at the overflow and
+                      scrolls to its end while the card is hovered. %>
+                  <div class="rounded-md border border-subtle bg-inset/60 px-2 py-1.5">
+                    <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
+                          class: "text-[11px] text-secondary" %>
+                  </div>
                 </div>
               <% end %>
 
