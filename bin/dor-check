@@ -69,12 +69,13 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, file: nil, gate: "merge" }
+options = { json: false, file: nil, gate: "merge", diff_base: false }
 GATES = %w[merge build].freeze
 OptionParser.new do |o|
   o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--json] | bin/dor-check --file task.json"
   o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
+  o.on("--diff-base", "Resolve and print the committed-diff base for this repo, then exit (debug/resolver seam)") { options[:diff_base] = true }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching") { |v| options[:file] = v }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -171,9 +172,13 @@ end
 #       staged    git diff --cached --name-only
 #       unstaged  git diff --name-only
 #       untracked git ls-files --others --exclude-standard
-#   * committed against DOR_CHECK_DIFF_BASE (default origin/main): git diff <base>...HEAD
-#     — best-effort; the base can be unfetched on a branch cut off `release`, which
-#     is fine, the working-tree views above don't depend on it.
+#   * committed against the release-aware base (see diff_base/default_diff_base):
+#     git diff <base>...HEAD. Default base is origin/release when it exists, else
+#     origin/main — because post-cutover branches are cut off `release` (which runs
+#     AHEAD of `main`), so diffing against origin/main drags in everyone else's
+#     already-merged-to-release work → a false code diff. DOR_CHECK_DIFF_BASE
+#     overrides the default. Best-effort; the base can be unfetched on a fresh
+#     branch, which is fine — the working-tree views above don't depend on it.
 # Run dir is overridable via DOR_CHECK_DIFF_ROOT (default ROOT) for deterministic
 # tests against a temp repo. If git can't read the working tree at all (no repo),
 # we default to exempt WITH a warning — we only ever ADD enforcement on a
@@ -185,7 +190,7 @@ def changed_files
   end
 
   root = ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT)
-  base = ENV.fetch("DOR_CHECK_DIFF_BASE", "origin/main")
+  base = diff_base(root)
   files = []
 
   # Working-tree views: base-independent, so they catch the pre-commit SOP case.
@@ -216,9 +221,36 @@ rescue SystemCallError
   []
 end
 
+# The committed-diff base for `root`. DOR_CHECK_DIFF_BASE is authoritative when
+# set (tests/edge cases); otherwise the default is release-aware.
+def diff_base(root)
+  ENV.fetch("DOR_CHECK_DIFF_BASE") { default_diff_base(root) }
+end
+
+# Release-aware DEFAULT committed-diff base. Post-cutover every repo keeps a
+# persistent `release` branch that feature branches cut from and PR into, and
+# `origin/release` runs AHEAD of `origin/main` (merged-but-unshipped work). So we
+# diff against origin/release when it exists, falling back to origin/main when it
+# doesn't — mirroring bin/agent-worktree's base_ref_for. Resolved against `root`
+# (DOR_CHECK_DIFF_ROOT) so tests can drive it at a temp repo. Git missing or no
+# repo → origin/main, consistent with changed_files' best-effort committed view.
+def default_diff_base(root)
+  IO.popen(["git", "-C", root, "rev-parse", "--verify", "origin/release"], err: File::NULL, &:read)
+  $?.success? ? "origin/release" : "origin/main"
+rescue SystemCallError
+  "origin/main"
+end
+
 # The subset of changed files that ship testable code (under CODE_PATH_PREFIXES).
 def code_changed_files
   changed_files.select { |f| CODE_PATH_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
+end
+
+# Resolver/debug seam: print the committed-diff base this repo would diff against
+# and exit, before any task fetch. Honors DOR_CHECK_DIFF_ROOT/_BASE like changed_files.
+if options[:diff_base]
+  puts diff_base(ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT))
+  exit 0
 end
 
 slug = ARGV.shift
