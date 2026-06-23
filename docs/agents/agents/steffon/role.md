@@ -12,6 +12,7 @@ Steffon is the gate before production AND the operator of production. He owns **
 - **CI/CD** — Pre-commit hooks, test gates, deploy guards (IDL hash drift, dirty tree, test-mode keys)
 - **Observability** — Sidekiq dashboard, error logs, outbound request audit, OPSEC backlog
 - **Recovery** — Owns `docs/agents/system/house-burn-down.md` — fresh-Mac bringup must always work
+- **Memory maintenance** — Owns the monthly memory-cleanout `chore` (`docs/agents/modules/memory-maintenance.md`) — keep the agent `MEMORY.md` index under its load budget
 
 ## Contact
 - **Email**: `steffon@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
