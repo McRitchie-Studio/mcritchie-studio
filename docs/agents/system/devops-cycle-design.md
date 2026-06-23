@@ -230,7 +230,9 @@ review in parallel; **`assembled`** is owned by **Steffon** (now titled
 **Platform Engineer**); and **`shipped`** is owned by **Avi** (who runs the full
 e2e on the frozen ship SHA) ahead of the one operator gate. The senior reviewer
 pool is **{Shannon = UI · Carl = backend · Jasper = Web3 · Steffon =
-DevOps/Platform · Alex = Documentation}**.
+DevOps/Platform · alex-docs = Documentation}** (`alex-docs` is Alex's launchable
+reviewer persona — the Documentation seat — not the `alex` orchestrator seat).
+Avi picks the pair with **`bin/reviewer-select <task>`** (wraps `ReviewerSelector`).
 
 **Merge timing (decided):** a `reviewed` task is merged when its PR lands **into
 the persistent `release`** (`bin/release merge`), which flips it `reviewed →
@@ -242,9 +244,9 @@ so we don't fear merging there.
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
 | **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
-| **submitted** (task) — REVIEW | **Avi** (delegator) | Avi assigns; **two seniors** review in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged random tiebreak**, assigning **1 HEAVY (deep) + 1 LIGHT**. Each senior confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance** → `blocked` (rework, with `qa_feedback`) **OR** `reviewed` ✅ on **2 approvals** | **2 senior approvals** (HEAVY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
+| **submitted** (task) — REVIEW | **Avi** (delegator) | Avi assigns; **two seniors** review in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · alex-docs=Documentation} by **domain fit + a logged random tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 HEAVY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change; the pair + heavy/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Each senior confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance** → `blocked` (rework, with `qa_feedback`) **OR** `reviewed` ✅ on **2 approvals** | **2 senior approvals** (HEAVY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — MERGE (task) | the **two seniors' approval** | DevOps conductor *executes* | **2 approvals → merge the PR into `release`** (`bin/release merge`) honoring `dependencies` + lanes; membership flips at merge → member `assembled`. **Bias to action: green tests = go** (`release` reverts cleanly; we don't fear merging there) | deterministic merge (conflicts surface at PR-merge); **no separate Avi gate** |
-| **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* | Run the **next tier — integration + an e2e smoke** on `origin/release`; green → `bin/release prepare` deploys it to QA → **Discord QA-deployment note** → release `assembled` | deterministic suite; ⛔ regression → block the task. **`prepare` must retry/wait-for-boot** (the `/up`-smoke race) so the state reliably advances — flagged for `deploy-flow-heartbeat-tooling` |
+| **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* | Run the **next tier — integration + an e2e smoke** on `origin/release`; green → `bin/release prepare` deploys it to QA → **Discord QA-deployment note** → release `assembled` | deterministic suite; ⛔ regression → block the task. **`prepare` retries/waits-for-boot** (the `/up`-smoke race): `bin/release prepare` polls `<qa_url>/up` via `wait_for_boot` and **defers the assemble** (`Release::Conductor.curate!` then `assemble!`) until QA returns 200, so a slow dyno can't strand the RC `assembling` |
 | **→ shipped** (release) | **Avi**, then **Mr. McRitchie** | Avi tests; operator approves; conductor deploys | Avi runs the **full e2e + highest-tier suite on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"). On green Avi **STOPS for the operator** → on go: `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → **Discord release notes** → members `shipped` | 🔒 **the one operator gate — after Avi's test confirmation, before deploy**; rollback on smoke fail |
 
 Clarifications:
@@ -257,7 +259,10 @@ Clarifications:
   (unit/component) @ **review** (the two seniors) · **integration + e2e-smoke** @
   **QA** (Steffon) · **full e2e + highest tier** @ **ship** (Avi, on the frozen
   ship SHA). Each tier runs once, at the step that owns it — no step re-runs a
-  lower tier the previous step already proved green.
+  lower tier the previous step already proved green. Encoded as
+  `Release::STEP_TEST_TIERS` (ownership is disjoint by construction — a tier maps
+  to exactly one step); ship runs Avi's full-e2e gate on the frozen SHA **before**
+  the operator gate (`bin/release ship` → `avi_ship_gate`, then `confirm`).
 - **`assembled` means slightly different things at the two scopes** — a *task* is
   `assembled` the moment its PR is merged into `release` (`bin/release merge`,
   driven by the **two seniors' approval**); the *release* is `assembled` once the
@@ -273,9 +278,11 @@ Clarifications:
   Steffon will then QA at the `assembled` step — one soul cannot both review and
   QA the same change. (Steffon remains a valid reviewer for **other** PRs,
   especially DevOps/Platform ones.)
-- **An `Alex` reviewer persona is required.** Today "Alex" is the orchestrator
-  seat, not a reviewer; the **Documentation** domain reviewer needs its own
-  persona/seat — tracked in `seed-souls-prod-qa`.
+- **The Documentation reviewer is its own persona.** The `alex` seat is the
+  orchestrator, not a reviewer; the **Documentation** domain reviewer is the
+  separate **`alex-docs`** persona (seeded in `db/seeds/02_agents.rb`, a launchable
+  review agent). `ReviewerSelector`/`bin/reviewer-select` pick `alex-docs`, never
+  `alex`.
 - **There is no per-task QA stage.** Steffon owns the QA deploy, the QA tier
   (integration + e2e-smoke), and the prod mechanics — but there is no separate
   approval ceremony; the suite is a green/red *signal* and the operator OK at
@@ -380,11 +387,14 @@ one human gate. It does **not** ship to production on its own.
    is throughput — maximize what ships: get every task that passes QA into the
    release, default to including, not deferring.** If no release is active, the
    first merge creates the singleton candidate.
-3. **Work the `submitted` queue.** Review each submitted PR (the `Review
-   submitted PRs` runbook below). For each that **passes QA and doesn't
-   conflict**, run the step-2 pre-merge checklist then `bin/release merge <task>
-   --yes` it into `release` (so it flips `reviewed → assembled` and joins the
-   candidate); send back anything that fails review (`bin/task block … --kind
+3. **Work the `submitted` queue.** For each submitted PR run the **two-senior
+   review cascade** (the `Review submitted PRs` runbook below): spawn **Avi**, who
+   confirms product-acceptance, runs **`bin/reviewer-select <task>`** to pick the
+   two seniors (1 heavy + 1 light, QA owner excluded), and spawns them in parallel
+   to review. For each that earns **two approvals** and doesn't conflict, move it
+   `reviewed`, then run the step-2 pre-merge checklist and `bin/release merge
+   <task> --yes` it into `release` (flips `reviewed → assembled`, joins the
+   candidate); send back anything a reviewer blocks (`bin/task block … --kind
    rework`).
 4. **Deploy the candidate to QA.** `bin/release prepare --yes` — deploys
    `origin/release` to QA for every member's **app** (gem members ride the record
@@ -404,12 +414,30 @@ creates the persistent `release` branch (= `origin/main`) on every gem + app rep
 in `config/release_repos.yml` that doesn't already have one. Idempotent — a repo
 that already has `origin/release` is skipped.
 
-**`Review submitted PRs`**  *(submitted → reviewed)*
-1. List `submitted` tasks (`bin/task list` or the board).
-2. For each open PR (base `release`) run an independent review (the `avi`
-   subagent): acceptance criteria, the diff, CI, and the shape's required tiers.
-3. Approve → `bin/task move <task> reviewed`; issues → `bin/task block <task>
-   --kind rework --feedback "…"` (one complete send-back).
+**`Review submitted PRs`**  *(submitted → reviewed → assembled)*
+Review is **delegated by Avi to two seniors** (§1.2) — not a solo `avi` pass. For
+each `submitted` task (`bin/task list` or the board):
+
+1. **Spawn Avi.** He confirms **product-acceptance** — does the open PR (base
+   `release`) meet the task's acceptance criteria?
+2. **Pick the two seniors.** Avi runs **`bin/reviewer-select <task>`** — it loads
+   the app and scores the pool `{shannon, carl, jasper, steffon, alex-docs}` by
+   **domain fit** (the task's shape + repositories + risk tags vs each soul's
+   `domains`) with a **logged random tiebreak**, returns **1 HEAVY + 1 LIGHT**, and
+   **excludes the QA owner** (Steffon, who QAs the assembled RC — no self-gating).
+   `alex-docs` is Alex's launchable Documentation reviewer persona, distinct from
+   the `alex` orchestrator seat. (`--qa-owner SLUG` excludes a different soul when
+   Steffon isn't the one QAing this task; `--json` for a machine-readable pick.)
+3. **Run the two reviews in parallel.** Avi spawns the two named seniors as review
+   agents — each is a launchable subagent. Each judges **diff-vs-acceptance + code
+   standards + code smell + scalability** at its depth: HEAVY does the deep pass
+   (Opus on `migration`/`payment`/`solana`/`auth`), LIGHT a focused pass; both
+   confirm the shape's **base** tiers are green.
+4. **Resolve.** On **two approvals** → `bin/task move <task> reviewed`, then the
+   conductor merges the PR into `release` with **`bin/release merge <task>`**
+   (membership flips `reviewed → assembled`). Any reviewer blocks → **`bin/task
+   block <task> --kind rework --feedback "…"`** (one complete send-back). Bias to
+   action: two green approvals = go (`release` reverts cleanly).
 
 **`Prepare release`**  *(reviewed → assembled — an RC for QA)*
 Two deterministic steps:

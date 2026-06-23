@@ -104,6 +104,52 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
   end
 
+  # --- curate! / assemble! (the boot-gated split of prepare!) ---
+  # The CLI defers the assemble until wait_for_boot confirms QA is up, so the two
+  # halves are separately callable: curate! adopts + validates without assembling,
+  # assemble! flips assembling→assembled only after boot.
+
+  test "curate! adopts the named tasks but leaves the release ASSEMBLING (no flip)" do
+    t = reviewed_task
+    rel = Release::Conductor.curate!(task_slugs: [t.slug], slug: "rel-curate")
+
+    assert_equal "rel-curate", rel.slug
+    assert_equal "assembling", rel.state, "curate! must NOT assemble — that's deferred until QA boots"
+    assert_equal "assembled", t.reload.stage, "membership still flips the task at adopt"
+    assert_includes rel.tasks.pluck(:slug), t.slug
+  end
+
+  test "curate! is a no-op returning nil when nothing is active and no --task is given" do
+    assert_nil Release::Conductor.curate!(task_slugs: [])
+    assert_equal 0, Release.count
+  end
+
+  test "curate! validates members — an unknown-repo member raises and rolls back" do
+    bad = Task.create!(title: "unknown repo member task", stage: "reviewed",
+                       metadata: { "devops" => { "shape" => "backend", "repositories" => ["not-a-real-repo"] } })
+    assert_raises(ArgumentError) { Release::Conductor.curate!(task_slugs: [bad.slug], slug: "rel-bad") }
+
+    # curate! is called STANDALONE by `bin/release prepare` (no outer txn), so its
+    # OWN transaction must roll the half-curation back — open! + adopt! already ran
+    # before validate_members! raised. Without that wrapper a stranded RC sits on
+    # the board and the single-active-release rule blocks every other session.
+    assert_equal 0, Release.count, "a failed curate! must not strand a half-curated release"
+    assert_nil Release.current, "no active candidate left after the rollback"
+    assert_equal "reviewed", bad.reload.stage, "the rolled-back member stays reviewed (not assembled)"
+  end
+
+  test "assemble! flips a curated RC assembling→assembled (idempotent)" do
+    rel = Release::Conductor.curate!(task_slugs: [reviewed_task.slug], slug: "rel-asm")
+    assert_equal "assembling", rel.state
+
+    Release::Conductor.assemble!(rel)
+    assert_equal "assembled", rel.reload.state
+
+    # Re-running against an already-assembled RC is a no-op, not an error.
+    assert_nothing_raised { Release::Conductor.assemble!(rel) }
+    assert_equal "assembled", rel.reload.state
+  end
+
   test "prepare! is atomic — a non-reviewed task rolls back the new release" do
     designed = Task.create!(title: "designed task not reviewed")
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }

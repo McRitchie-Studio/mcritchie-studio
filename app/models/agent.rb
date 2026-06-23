@@ -14,15 +14,28 @@ class Agent < ApplicationRecord
 
   AVATAR_COLORS = %w[#EF4444 #F97316 #EAB308 #22C55E #06B6D4 #3B82F6 #8B5CF6 #EC4899].freeze
 
+  # Deterministic single-letter initial for any seed string — the fallback face
+  # for an avatar with no image. Shared so a non-Agent (e.g. an unresolved
+  # TaskEvent actor) can borrow the same rule.
+  def self.initials_for(seed)
+    seed.to_s.strip.first.presence&.upcase || "?"
+  end
+
+  # Deterministic AVATAR_COLORS hue for any seed string. Shared so a non-Agent
+  # stand-in renders in the same palette as a real soul.
+  def self.avatar_color_for(seed)
+    AVATAR_COLORS[Digest::MD5.hexdigest(seed.to_s).hex % AVATAR_COLORS.size]
+  end
+
   def name_slug
     name.parameterize
   end
 
   def avatar_initials
-    name.to_s.first.presence&.upcase || "?"
+    self.class.initials_for(name)
   end
 
   def avatar_color
-    AVATAR_COLORS[Digest::MD5.hexdigest(slug.to_s).hex % AVATAR_COLORS.size]
+    self.class.avatar_color_for(slug)
   end
 end

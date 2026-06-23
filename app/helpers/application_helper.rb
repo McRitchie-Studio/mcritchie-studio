@@ -32,6 +32,19 @@ module ApplicationHelper
     distance_of_time_in_words(0, seconds)
   end
 
+  # Tight one-token form of humanize_stage_duration for a corner pill on a
+  # stacked avatar, where "about 2 hours" is too wide: "<1m" / "12m" / "3h" /
+  # "5d". Shares the same nil contract (nil → render no pill); the full
+  # humanize_stage_duration rides along as the avatar's title.
+  def compact_stage_duration(seconds)
+    return nil if seconds.nil?
+    return "<1m" if seconds < 60
+    return "#{seconds / 60}m" if seconds < 3600
+    return "#{seconds / 3600}h" if seconds < 86_400
+
+    "#{seconds / 86_400}d"
+  end
+
   def task_stage_count_classes(stage)
     case stage.to_s
     when "designed"  then "bg-blue-900/50 text-blue-300"
@@ -147,17 +160,29 @@ module ApplicationHelper
       ],
       "Deploy" => [
         { stage: "submitted", kick: devops_kickoffs["submitted"],
-          what: "The intake queue — submitted PRs waiting for review.",
-          who: "DevOps → Avi", nxt: "Avi reviews acceptance / diff / tests → reviewed, or sends it back blocked for rework" },
+          what: "The intake queue — submitted PRs waiting for review. Review is no longer Avi's solo gate: he confirms product-acceptance, then assigns two seniors (1 HEAVY + 1 LIGHT) from {Shannon · Carl · Jasper · Steffon · Alex} by domain fit + a logged random tiebreak.",
+          who: "Avi (delegator) → two senior reviewers",
+          tests: "Base tier — unit + component. Each senior confirms green, plus code standards, smell, scalability, and acceptance.",
+          gate: "Two senior approvals (HEAVY = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
+          nxt: "Two approvals → reviewed, or one senior sends it back blocked for rework" },
         { stage: "reviewed",  kick: devops_kickoffs["reviewed"],
-          what: "Approved and off the bench, waiting to ride the next release.",
-          who: "Avi → conductor", nxt: "Approved PRs merge into the persistent release branch (membership flips at merge) → assembled; prepare deploys it to QA, then ship fast-forwards release → main" },
+          what: "Approved by two seniors and off the bench — the conductor merges each approved PR into the persistent release branch (membership flips at merge).",
+          who: "The two seniors' approval; conductor executes the merge",
+          tests: "None re-run — the green review tests carry forward (bias to action: release reverts cleanly, so we don't fear merging there).",
+          gate: "Deterministic merge honoring dependencies + lanes; conflicts surface at PR-merge. No separate Avi gate.",
+          nxt: "Merge into release (bin/release merge) → assembled; prepare then deploys it to QA" },
         { stage: "assembled", kick: devops_kickoffs["assembled"],
-          what: "Every member PR is merged and its tests pass; the release candidate is built and deployed to QA for review.",
-          who: "Steffon (QA)", nxt: "The operator runs the deployment — the one human gate. Run Deployment ships to prod, tags, and posts release notes → shipped" },
+          what: "Every member PR is merged and the release candidate is built; Steffon QAs it and deploys origin/release to QA.",
+          who: "Steffon (Platform Engineer)",
+          tests: "Integration + an e2e smoke on origin/release (the next tier up from review).",
+          gate: "Deterministic suite — a regression blocks the task. No human approval at this step.",
+          nxt: "Green → bin/release prepare deploys to QA + a Discord note. The operator gate is at ship, not here" },
         { stage: "shipped",   kick: devops_kickoffs["shipped"],
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
-          who: "Mr. McRitchie → conductor", nxt: "Run Archive completed tasks — shipped tasks move to archived (the last release stays as history) and their worktrees are reclaimed" }
+          who: "Avi (tests the frozen SHA) → Mr. McRitchie (operator gate)",
+          tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
+          gate: "🔒 The one operator gate — after Avi's test confirmation, before deploy. Rollback on a smoke fail.",
+          nxt: "On the operator's OK: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }
   end

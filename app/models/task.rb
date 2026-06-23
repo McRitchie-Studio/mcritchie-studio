@@ -192,6 +192,17 @@ class Task < ApplicationRecord
     devops_list("checks_run")
   end
 
+  # The two senior reviewers Avi assigned for the `submitted` review (the Deploy
+  # half's review step), each `{ "slug" => ..., "weight" => "heavy"|"light" }`,
+  # read off THIS task's own `metadata["reviewers"]`. NOTE: the canonical write
+  # target for the avatars UI is the submitted→reviewed TaskEvent's metadata (see
+  # #stage_event_metadata) — StageAgentsHelper#stage_agent_groups reads the event,
+  # not this. This stays for callers that store the pair on the task itself.
+  # Old-flow tasks that predate the two-senior model have none → empty list.
+  def reviewers
+    self.class.normalize_reviewers(metadata["reviewers"])
+  end
+
   def devops_url(name)
     devops.fetch("#{name}_url", "").presence
   end
@@ -275,6 +286,29 @@ class Task < ApplicationRecord
     parts.map(&:strip)
          .reject(&:blank?)
          .uniq
+  end
+
+  # Normalize a raw reviewers payload — from EITHER the submitted→reviewed
+  # TaskEvent's metadata["reviewers"] (the canonical write target, see
+  # #stage_event_metadata) OR a Task's own metadata["reviewers"] — into uniform
+  # `{ "slug" =>, "weight" => "heavy"|"light"|nil }` entries. Accepts a list of
+  # slug strings or of hashes, and tolerates the agent_slug/review_weight/depth
+  # aliases (review_weight is the per-agent key the souls seed + ReviewerSelector
+  # use), so the writer's exact shape isn't load-bearing. Blank-slug entries drop.
+  def self.normalize_reviewers(raw)
+    Array(raw).filter_map do |entry|
+      if entry.is_a?(Hash)
+        slug = (entry["slug"] || entry["agent_slug"]).to_s.strip
+        next if slug.blank?
+
+        { "slug" => slug, "weight" => (entry["weight"] || entry["review_weight"] || entry["depth"]).to_s.strip.presence }
+      else
+        slug = entry.to_s.strip
+        next if slug.blank?
+
+        { "slug" => slug, "weight" => nil }
+      end
+    end
   end
 
   # Postgres advisory locks are session-scoped — try_acquire and release
@@ -375,8 +409,27 @@ class Task < ApplicationRecord
       model: Current.task_event_model.presence,
       tokens_in: Current.task_event_tokens_in,
       tokens_out: Current.task_event_tokens_out,
-      cost: Current.task_event_cost
+      cost: Current.task_event_cost,
+      metadata: stage_event_metadata(from: from)
     )
+  end
+
+  # Extra, non-spine event metadata. On the submitted→reviewed transition this
+  # carries the TWO reviewers (+ heavy/light) so the avatars UI can render WHO
+  # reviewed — the single `actor` stays the primary mover. Every other transition
+  # records the column default ({}). An explicit Current.task_event_reviewers
+  # (set when Avi curated the pair) wins; otherwise the pair is selected here via
+  # ReviewerSelector, so the avatars populate no matter who drove the move. It
+  # NEVER blocks the stage change: a selection error is logged and the event
+  # records no reviewers (graceful degradation).
+  def stage_event_metadata(from:)
+    return {} unless from == "submitted" && stage == "reviewed"
+
+    reviewers = Current.task_event_reviewers.presence || ReviewerSelector.select(self)
+    reviewers.present? ? { "reviewers" => reviewers } : {}
+  rescue StandardError => e
+    Rails.logger.warn("[reviewer-selector] recording failed (non-fatal): #{e.class}: #{e.message}")
+    {}
   end
 
   def set_stage_timestamp

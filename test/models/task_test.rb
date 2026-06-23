@@ -522,4 +522,31 @@ class TaskTest < ActiveSupport::TestCase
     task = Task.create!(title: "No deck mascot task")
     assert_nil task.devops["mascot"]
   end
+
+  # --- reviewers (two-senior review metadata) ---------------------------------
+
+  test "reviewers is empty for an old-flow task without the metadata" do
+    assert_equal [], Task.new(title: "no reviewers meta task").reviewers
+  end
+
+  test "reviewers normalizes hashes, slug strings, and aliases; drops blanks" do
+    task = Task.new(title: "reviewers shape task", metadata: { "reviewers" => [
+      { "slug" => "shannon", "weight" => "heavy" },
+      { "agent_slug" => " carl ", "depth" => "light" },  # aliases + whitespace
+      { "slug" => "steffon", "review_weight" => "heavy" }, # souls-seed key
+      "jasper",                                           # bare slug string
+      { "slug" => "" },                                   # blank slug, dropped
+      { "weight" => "heavy" }                             # no slug, dropped
+    ] })
+
+    assert_equal(
+      [
+        { "slug" => "shannon", "weight" => "heavy" },
+        { "slug" => "carl",    "weight" => "light" },
+        { "slug" => "steffon", "weight" => "heavy" },
+        { "slug" => "jasper",  "weight" => nil }
+      ],
+      task.reviewers
+    )
+  end
 end
