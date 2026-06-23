@@ -10,6 +10,8 @@
 <% last_release = local_assigns.fetch(:last_release, nil) %>
 <% columns = archived ? (stages + ["archived"]) : stages %>
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
+<%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
+<% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 
@@ -310,6 +312,12 @@ function kanbanBoard() {
                       </div>
                     <% end %>
                     <span class="text-xs text-muted"><%= task.agent_slug %></span>
+                  </div>
+                <% end %>
+                <% if (mascot_slug = task.devops_field("mascot")) && (mon = pokemon_by_slug[mascot_slug]) %>
+                  <div class="flex items-center gap-1" title="Mascot: <%= mon.name %> (#<%= format('%03d', mon.dex) %>)">
+                    <img src="<%= mon.sprite_url %>" alt="<%= mon.name %>" class="w-5 h-5 object-contain" loading="lazy" onerror="this.remove()">
+                    <span class="text-xs text-muted"><%= mon.name %></span>
                   </div>
                 <% end %>
                 <div class="ml-auto flex items-center gap-1">

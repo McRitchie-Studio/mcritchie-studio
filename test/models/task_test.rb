@@ -482,6 +482,47 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil Task.new(title: "no session display").resume_command_display
   end
 
+  # --- Pokémon mascot (a fun, unique, per-task identifier) ---
+
+  def seed_pokemon(*slugs)
+    slugs.each_with_index { |s, i| Pokemon.create!(dex: 900 + i, name: s.capitalize, slug: s, generation: 1) }
+  end
+
+  test "create assigns a Pokemon mascot from the deck" do
+    seed_pokemon("snorlax", "pikachu", "eevee")
+    task = Task.create!(title: "Mascot assignment test task")
+    assert_includes %w[snorlax pikachu eevee], task.devops["mascot"]
+  end
+
+  test "mascot is unique among live tasks" do
+    seed_pokemon("snorlax", "pikachu")
+    first = Task.create!(title: "First live mascot task")
+    second = Task.create!(title: "Second live mascot task")
+    assert_not_equal first.devops["mascot"], second.devops["mascot"]
+  end
+
+  test "an explicit mascot override is preserved" do
+    seed_pokemon("snorlax")
+    task = Task.create!(title: "Override mascot test task",
+                        metadata: { "devops" => { "mascot" => "ditto" } })
+    assert_equal "ditto", task.devops["mascot"]
+  end
+
+  test "active_mascots excludes shipped and archived tasks" do
+    seed_pokemon("snorlax", "pikachu", "eevee")
+    live = Task.create!(title: "Live mascot holder task")
+    shipped = Task.create!(title: "Shipped mascot holder task")
+    shipped.update!(stage: "shipped")
+
+    assert_includes Task.active_mascots, live.devops["mascot"]
+    assert_not_includes Task.active_mascots, shipped.devops["mascot"]
+  end
+
+  test "create leaves mascot unset when the deck is unseeded" do
+    task = Task.create!(title: "No deck mascot task")
+    assert_nil task.devops["mascot"]
+  end
+
   # --- reviewers (two-senior review metadata) ---------------------------------
 
   test "reviewers is empty for an old-flow task without the metadata" do

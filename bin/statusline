@@ -7,7 +7,8 @@
 #     "command": "/Users/alex/projects/mcritchie-studio/bin/statusline",
 #     "padding": 1, "refreshInterval": 5 }
 #
-# Renders:  🛠  <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
+# Renders:  🛠  ⊙<mascot> · <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
+#           (the ⊙<mascot> segment shows only when the context carries one)
 #
 # Sources, in priority:
 #   1. <cwd>/.agent-context.json              — the active worktree (bin/agent-worktree)
@@ -35,6 +36,7 @@ A=$'\033[38;5;75m'    # app slug
 F=$'\033[38;5;179m'   # feature slug
 G=$'\033[38;5;108m'   # git branch
 D=$'\033[2m'; X=$'\033[0m'
+M=$'\033[38;5;213m'   # mascot (Pokémon)
 DOT="${D} · ${X}"
 
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
@@ -50,13 +52,23 @@ osc8_supported() {
   return 1
 }
 
-read_ctx() {  # path -> tab-separated: app feature task url stage
-  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // "")] | @tsv' "$1" 2>/dev/null
+read_ctx() {  # path -> tab-separated: app feature task url stage mascot
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // "")] | @tsv' "$1" 2>/dev/null
 }
 
-render() {  # app feature task url stage
-  local app="$1" feat="$2" task="$3" url="$4" stage="$5" out="🛠 "
-  [ -n "$app" ]  && out="${out} ${A}${app}${X}"
+render() {  # app feature task url stage mascot
+  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" out="🛠 "
+  if [ -n "$mascot" ]; then
+    # title-case the slug, BSD-sed / bash-3.2 safe: cap first char, hyphens->spaces
+    # (snorlax -> "Snorlax"; nidoran-f -> "Nidoran f").
+    local first rest
+    first=$(printf '%s' "$mascot" | cut -c1 | tr '[:lower:]' '[:upper:]')
+    rest=$(printf '%s' "${mascot:1}" | tr '-' ' ')
+    out="${out} ${M}⊙ ${first}${rest}${X}"
+    [ -n "$app" ] && out="${out}${DOT}${A}${app}${X}"
+  elif [ -n "$app" ]; then
+    out="${out} ${A}${app}${X}"
+  fi
   [ -n "$feat" ] && out="${out}${DOT}${F}${feat}${X}"
   if [ -n "$url" ]; then
     if osc8_supported; then
@@ -85,8 +97,8 @@ if [ -z "$src" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
 fi
 
 if [ -n "$src" ]; then
-  IFS=$'\t' read -r app feat task url stage < <(read_ctx "$src")
-  render "$app" "$feat" "$task" "$url" "$stage"
+  IFS=$'\t' read -r app feat task url stage mascot < <(read_ctx "$src")
+  render "$app" "$feat" "$task" "$url" "$stage" "$mascot"
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
   top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)

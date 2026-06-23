@@ -67,4 +67,22 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
     end
     refute_includes response.body, "→ QA"
   end
+
+  test "kanban card shows the Pokemon mascot chip" do
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                    sprite_url: "https://example.test/pokemon/143-sprite.png")
+    task = Task.create!(
+      title: "mascot chip card task",
+      stage: "building",
+      metadata: { "devops" => { "kind" => "feature", "mascot" => "snorlax" } }
+    )
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug}" do
+      assert_select "img[src=?]", "https://example.test/pokemon/143-sprite.png"
+      assert_select "span", text: "Snorlax"
+    end
+  end
 end

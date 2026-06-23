@@ -33,7 +33,7 @@ class Task < ApplicationRecord
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
-    requires_release_conductor block_kind agent_context session_id session_provider
+    requires_release_conductor block_kind agent_context session_id session_provider mascot
   ].freeze
   # Provider → resume-command template (one %s, the session id). Codex is a
   # one-line addition once its real resume syntax is confirmed.
@@ -75,6 +75,7 @@ class Task < ApplicationRecord
 
   before_validation :generate_slug, on: :create
   before_validation :default_devops_handles_from_slug, on: :create
+  before_validation :assign_mascot, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
   # One TaskEvent per save that lands a stage: the genesis on create (the default
@@ -92,6 +93,15 @@ class Task < ApplicationRecord
   scope :recent, -> { order(created_at: :desc) }
   scope :ordered, -> { order(Arel.sql("position ASC NULLS LAST, created_at DESC")) }
   scope :requires_migration, -> { where(requires_migration: true) }
+  # Tasks still in play — everything except the two terminal stages. A live task's
+  # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
+  scope :live, -> { where.not(stage: %w[shipped archived]) }
+
+  # The mascot slugs currently held by live tasks — the exclusion set the draw
+  # skips so two in-flight tasks never share a Pokémon.
+  def self.active_mascots
+    live.pluck(:metadata).filter_map { |m| m&.dig("devops", "mascot").presence }
+  end
 
   def devops
     metadata.fetch("devops", {}) || {}
@@ -481,6 +491,22 @@ class Task < ApplicationRecord
     devops = (metadata["devops"] ||= {})
     devops["worktree_slug"] = slug if devops["worktree_slug"].blank?
     devops["branch"] = "feat/#{slug}" if devops["branch"].blank?
+  end
+
+  # Give every new task a Pokémon mascot — a fun, unique, traitless handle for the
+  # session working it ("Snorlax is building <task>"). Idempotent: an explicit
+  # mascot (the --mascot override) is left alone. Unique among live tasks; the draw
+  # recycles a Pokémon once its task ships or is archived. No-ops gracefully when
+  # the deck isn't seeded (or the table doesn't exist yet) so task creation never
+  # depends on Pokémon being present.
+  def assign_mascot
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+    return if devops["mascot"].present?
+    return unless Pokemon.table_exists?
+
+    pick = Pokemon.draw(exclude: Task.active_mascots)
+    devops["mascot"] = pick.slug if pick
   end
 
   def word_count(text)

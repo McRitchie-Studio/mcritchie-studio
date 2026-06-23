@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_22_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_23_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -623,6 +623,26 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_22_120000) do
     t.index ["data"], name: "index_pff_team_stats_on_data", using: :gin
     t.index ["slug"], name: "index_pff_team_stats_on_slug", unique: true
     t.index ["team_slug", "season_slug", "stat_type"], name: "idx_pff_team_stats_unique", unique: true
+  end
+
+  create_table "pokemons", force: :cascade do |t|
+    t.integer "dex", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.string "types", default: [], null: false, array: true
+    t.integer "hp"
+    t.integer "attack"
+    t.integer "defense"
+    t.integer "special_attack"
+    t.integer "special_defense"
+    t.integer "speed"
+    t.integer "generation", default: 1, null: false
+    t.string "avatar_url"
+    t.string "sprite_url"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["dex"], name: "index_pokemons_on_dex", unique: true
+    t.index ["slug"], name: "index_pokemons_on_slug", unique: true
   end
 
   create_table "releases", force: :cascade do |t|

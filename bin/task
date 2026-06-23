@@ -17,6 +17,7 @@
 # Usage:
 #   bin/task list [--stage S] [--agent A]
 #   bin/task show <slug>
+#   bin/task field <slug> <devops-key>       # machine-readable single value (e.g. mascot)
 #   bin/task create --title T [--slug readable-handle] [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
@@ -249,6 +250,14 @@ when "list"
 when "show"
   slug = ARGV.shift || die!("usage: bin/task show <slug>")
   print_task(api(:get, "/api/v1/tasks/#{slug}")["data"])
+when "field"
+  # Machine-readable single devops field — e.g. `bin/task field <slug> mascot`.
+  # Prints just the value (no decoration) so scripts can capture it; silent +
+  # exit 0 when unset, so callers can treat it as optional.
+  slug = ARGV.shift || die!("usage: bin/task field <slug> <devops-key>")
+  key  = ARGV.shift || die!("usage: bin/task field <slug> <devops-key>")
+  value = (api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", key)
+  print value unless value.nil? || value.is_a?(Enumerable)
 when "create"
   _pos, scalars, lists, top = parse_flags(ARGV)
   die!("create needs --title") unless top["title"]
