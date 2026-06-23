@@ -69,7 +69,7 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
 
 - **Avi** opens **review** as delegator — confirms product-acceptance, then picks
   **two seniors** from the pool {Shannon = UI · Carl = backend · Jasper = Web3 ·
-  Steffon = DevOps/Platform · Alex = Documentation} by **domain fit + a logged
+  Steffon = DevOps/Platform · alex-docs = Documentation} by **domain fit + a logged
   random tiebreak**, assigning **one heavy (deep) and one light** review in
   parallel. **Two approvals merge the PR into `release`** (bias to action —
   `release` reverts cleanly).
