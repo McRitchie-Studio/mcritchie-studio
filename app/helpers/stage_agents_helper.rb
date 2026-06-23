@@ -1,8 +1,15 @@
-# Per-completed-stage agent attribution for the Deploy half of a task's life.
-# Reads a task's TaskEvents + its reviewers metadata and answers "who handled
-# each finished stage, and how long did that stage take" — the data behind the
-# components/stage_agent_avatars partial on the board card and task detail.
+# Per-completed-stage agent attribution across a task's WHOLE life — Build lane
+# (designed/building/submitted) AND Deploy lane (reviewed/assembled/shipped).
+# Reads a task's TaskEvents + (review only) its reviewers metadata and answers
+# "who handled each stage the task passed through, and how long did that stage
+# take" — the data behind the components/stage_agent_avatars partial on the board
+# card and task detail.
 module StageAgentsHelper
+  # Pipeline order the avatars render in. Build stages first (the feature agent's
+  # half), then Deploy (DevOps's half); `submitted` is the shared seam and counts
+  # as a Build stage (the feature agent moved it there). `blocked`/`archived` are
+  # side/terminal states with no per-stage crew, so they're excluded.
+  STAGE_AGENT_ORDER = %w[designed building submitted reviewed assembled shipped].freeze
   # One avatar to render: the soul (or an unresolved-actor stand-in), which
   # finished stage, the time spent in the stage it left, and (reviewers only)
   # the heavy/light review weight. Quacks like an Agent (avatar/avatar_color/
@@ -42,51 +49,56 @@ module StageAgentsHelper
     agents_by_slug[key] || agents_by_slug[key.split("@").first]
   end
 
-  # The per-completed-stage avatars for a task's Deploy half, in pipeline order:
+  # The per-stage avatars for a task's WHOLE journey, in pipeline order
+  # (STAGE_AGENT_ORDER). Per stage the task has a landing TaskEvent for:
+  #   designed/building/submitted → the actor of that event (the feature agent who
+  #               did the build-lane move — designer, builder, submitter)
   #   reviewed  → the two senior reviewers (off the →reviewed event's metadata,
   #               with heavy/light) — the canonical write target, NOT task.reviewers
   #   assembled → the actor of the →assembled event (Steffon, Platform Engineer)
   #   shipped   → the actor of the →shipped event (Avi)
-  # Each entry carries seconds_in_from of the event that COMPLETED its stage, so
-  # the badge reads "how long that stage took". Returns [] for Build-lane tasks
-  # (no review/assembled/shipped events) and old-flow tasks without reviewers —
-  # so an Assembled task shows up to 3 (2 seniors + Steffon) and a Shipped task
-  # up to 4 (+ Avi).
+  # When a stage has several landing events (e.g. blocked→building bounces) the
+  # MOST RECENT one wins. Each entry carries seconds_in_from of that event, so the
+  # pill reads "how long the prior stage took". A build/assembled/shipped event
+  # with a blank actor (model-method or conductor move) contributes nothing, and a
+  # →reviewed event without reviewers metadata contributes nothing — so a task with
+  # no stage events at all (or only crewless ones) renders []. A Build-lane card
+  # thus shows its designer/builder/submitter, and a Shipped card shows up to
+  # designer/builder/submitter + 2 seniors + Steffon + Avi.
   def stage_agent_groups(task, agents, events: nil)
     events = Array(events || task.task_events).select(&:to_stage)
                                               .sort_by { |e| [e.occurred_at, e.id.to_i] }
     by_slug = agents.index_by(&:slug)
-    entries = []
 
-    if (reviewed = events.reverse.find { |e| e.to_stage == "reviewed" })
-      # The pair is written to the →reviewed EVENT's metadata (Task#stage_event_metadata),
-      # not Task.metadata — read it off the event so the avatars actually populate.
-      Task.normalize_reviewers(reviewed.metadata["reviewers"]).each do |reviewer|
-        entries << StageAgent.new(
-          stage: "reviewed",
-          from_label: reviewed.from_label,
-          label: reviewer["slug"],
-          weight: reviewer["weight"],
-          agent: resolve_actor_agent(reviewer["slug"], by_slug),
-          seconds: reviewed.seconds_in_from
-        )
+    STAGE_AGENT_ORDER.flat_map do |stage|
+      evt = events.reverse.find { |e| e.to_stage == stage }
+      next [] if evt.nil?
+
+      if stage == "reviewed"
+        # The pair is written to the →reviewed EVENT's metadata (Task#stage_event_metadata),
+        # not Task.metadata — read it off the event so the avatars actually populate.
+        Task.normalize_reviewers(evt.metadata["reviewers"]).map do |reviewer|
+          StageAgent.new(
+            stage: stage,
+            from_label: evt.from_label,
+            label: reviewer["slug"],
+            weight: reviewer["weight"],
+            agent: resolve_actor_agent(reviewer["slug"], by_slug),
+            seconds: evt.seconds_in_from
+          )
+        end
+      elsif evt.actor.present?
+        [StageAgent.new(
+          stage: stage,
+          from_label: evt.from_label,
+          label: evt.actor,
+          weight: nil,
+          agent: resolve_actor_agent(evt.actor, by_slug),
+          seconds: evt.seconds_in_from
+        )]
+      else
+        []
       end
     end
-
-    %w[assembled shipped].each do |stage|
-      evt = events.reverse.find { |e| e.to_stage == stage }
-      next if evt.nil? || evt.actor.blank?
-
-      entries << StageAgent.new(
-        stage: stage,
-        from_label: evt.from_label,
-        label: evt.actor,
-        weight: nil,
-        agent: resolve_actor_agent(evt.actor, by_slug),
-        seconds: evt.seconds_in_from
-      )
-    end
-
-    entries
   end
 end

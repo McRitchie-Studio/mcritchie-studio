@@ -97,9 +97,61 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_nil assembled.avatar
   end
 
-  test "a Build-lane task (no deploy events) yields nothing" do
+  # --- Build-lane attribution (designed / building / submitted) ---------------
+
+  test "a Build-lane task whose events carry no actor yields nothing" do
+    # genesis event (→building) has a blank actor (model-method create) → skipped
     task = Task.create!(title: "build lane crewless task", stage: "building")
     assert_empty stage_agent_groups(task, @agents)
+  end
+
+  test "a Build-lane task attributes each build event to its actor" do
+    task = Task.create!(title: "build lane crewed task", stage: "submitted")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed",
+                      occurred_at: 3.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 2.hours.ago, seconds_in_from: 3600, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 1.hour.ago, seconds_in_from: 1800, actor: "shannon")
+
+    groups = stage_agent_groups(task.reload, @agents)
+
+    assert_equal %w[designed building submitted], groups.map(&:stage)
+    assert_equal %w[carl shannon shannon], groups.map { |g| g.agent&.slug }
+    assert_equal [nil, 3600, 1800], groups.map(&:seconds)
+    assert_empty groups.map(&:weight).compact, "build entries carry no review weight"
+  end
+
+  test "build + deploy stages render together for a fully-shipped task" do
+    task = deploy_task(stage: "shipped", reviewers: REVIEWERS)
+    # graft on the earlier build-lane events the deploy_task helper omits
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed",
+                      occurred_at: 6.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
+
+    groups = stage_agent_groups(task.reload, @agents)
+
+    assert_equal %w[designed building reviewed reviewed assembled shipped], groups.map(&:stage)
+    assert_equal %w[carl shannon shannon carl steffon avi], groups.map { |g| g.agent&.slug }
+  end
+
+  test "the most recent landing event wins when a stage is re-entered" do
+    task = Task.create!(title: "build lane bounce task", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 3.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "blocked",
+                      occurred_at: 2.hours.ago, actor: "avi")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "blocked", to_stage: "building",
+                      occurred_at: 1.hour.ago, actor: "shannon")
+
+    groups = stage_agent_groups(task.reload, @agents)
+
+    # only the latest →building event contributes; blocked is not a crew stage
+    assert_equal %w[building], groups.map(&:stage)
+    assert_equal %w[shannon], groups.map { |g| g.agent&.slug }
   end
 
   test "the resolved reviewer carries its weight and from_label" do
