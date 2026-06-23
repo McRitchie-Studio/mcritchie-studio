@@ -76,6 +76,14 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "All Agents"
   end
 
+  test "toggle count badge renders even at zero so the glance count never vanishes" do
+    # building tasks are never release members, so clearing them is FK-safe.
+    Task.where(stage: "building").delete_all
+    get tasks_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board views"] span[title="0 building"]), text: "0"
+  end
+
   test "deployments omits the release header when there is no release" do
     Release.delete_all
 

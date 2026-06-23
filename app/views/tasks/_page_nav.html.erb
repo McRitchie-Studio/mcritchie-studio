@@ -1,9 +1,10 @@
 <%# Tasks ⇄ Deployments toggle for the board header — the page title says where
-    you are, this switches to the other board. Each button carries a glance
-    badge: Tasks shows tasks currently building; Deployments shows the deploy
-    queue as two badges, reviewed and assembled. Counts come from
-    @tasks_by_stage (all stages, grouped by TasksController#load_board); the
-    /stages page runs no board load, so it simply renders no badges.
+    you are, this switches to the other board. Each button carries glance count
+    badges: Tasks shows tasks currently building; Deployments shows the deploy
+    queue as two badges, reviewed and assembled. Counts come from @tasks_by_stage
+    (all stages, grouped by TasksController#load_board); the /stages page runs no
+    board load, so counts read zero there. Badges ALWAYS render (muted when zero)
+    so the count is visible at a glance even on an empty board.
     Local: current ("tasks" | "deployments" | "stages"). %>
 <% current = local_assigns.fetch(:current, nil) %>
 <% by_stage = @tasks_by_stage || {} %>
@@ -14,27 +15,22 @@
 <% on    = "bg-primary text-white" %>
 <% off   = "bg-surface text-secondary border border-subtle hover:text-heading" %>
 <% badge = "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none" %>
+<% muted = "bg-surface-alt text-muted" %>
 <nav class="flex items-center gap-1.5" aria-label="Board views">
   <% tasks_active = current == "tasks" %>
   <%= link_to tasks_path, "aria-current": (tasks_active ? "page" : nil),
         class: "#{base} #{tasks_active ? on : off}" do %>
     <span>Tasks</span>
-    <% if building_count > 0 %>
-      <span class="<%= badge %> <%= task_stage_count_classes('building') %>"
-            title="<%= building_count %> building"><%= building_count %></span>
-    <% end %>
+    <span class="<%= badge %> <%= building_count > 0 ? task_stage_count_classes('building') : muted %>"
+          title="<%= building_count %> building"><%= building_count %></span>
   <% end %>
   <% deploys_active = current == "deployments" %>
   <%= link_to deployments_path, "aria-current": (deploys_active ? "page" : nil),
         class: "#{base} #{deploys_active ? on : off}" do %>
     <span>Deployments</span>
-    <% if reviewed_count > 0 %>
-      <span class="<%= badge %> <%= task_stage_count_classes('reviewed') %>"
-            title="<%= reviewed_count %> reviewed"><%= reviewed_count %></span>
-    <% end %>
-    <% if assembled_count > 0 %>
-      <span class="<%= badge %> <%= task_stage_count_classes('assembled') %>"
-            title="<%= assembled_count %> assembled"><%= assembled_count %></span>
-    <% end %>
+    <span class="<%= badge %> <%= reviewed_count > 0 ? task_stage_count_classes('reviewed') : muted %>"
+          title="<%= reviewed_count %> reviewed"><%= reviewed_count %></span>
+    <span class="<%= badge %> <%= assembled_count > 0 ? task_stage_count_classes('assembled') : muted %>"
+          title="<%= assembled_count %> assembled"><%= assembled_count %></span>
   <% end %>
 </nav>
