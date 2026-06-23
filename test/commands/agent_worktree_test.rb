@@ -143,6 +143,42 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal "https://mcritchie.studio/tasks/task-intake", pr.fetch("task_url")
   end
 
+  # --- doctor orphan reconciliation -----------------------------------------
+
+  # [unit] The pure set-difference orphan_worktree_dirs loaded as a library in a
+  # hermetic subprocess. Any git-listed worktree that is neither the primary
+  # checkout nor a managed `.worktrees/*` dir is an orphan; a fully-managed set
+  # yields none. Reproduces the bug at the lowest tier (no git, no fixtures).
+  test "[unit] orphan reconciliation flags only untracked git worktrees" do
+    primary = "/repo"
+    managed = ["/repo/.worktrees/a", "/repo/.worktrees/b"]
+
+    # Every git worktree is known -> no orphans.
+    assert_equal [], orphan_decision(primary, managed, [primary] + managed)
+
+    # A stray out-of-tree worktree git tracks but the registry never created.
+    assert_equal ["/elsewhere/stray"],
+                 orphan_decision(primary, managed, [primary, managed.first, "/elsewhere/stray"])
+  end
+
+  # [integration] A real out-of-tree git worktree (outside `.worktrees/`) must be
+  # reported by `doctor` with its path, branch, and clean/merged state, and
+  # doctor must NOT claim "no issues" when an orphan exists.
+  test "[integration] doctor flags an out-of-tree orphan worktree" do
+    orphan_dir = File.join(@projects_dir, "stray-worktree")
+    git!(@hub_dir, "worktree", "add", orphan_dir, "-b", "stray/orphan")
+
+    out, err, status = agent_worktree("doctor", "mcritchie-studio", env: command_env)
+
+    assert status.success?, err
+    assert_no_match(/no worktree lifecycle issues found/, out)
+    assert_includes out, "untracked git worktree"
+    assert_includes out, File.realpath(orphan_dir)
+    assert_includes out, "stray/orphan"
+    # The managed worktree (in `.worktrees/`) must NOT be misreported as orphan.
+    assert_no_match(%r{untracked git worktree at \S*\.worktrees/}, out)
+  end
+
   # --- remove --force (merge-verified) --------------------------------------
 
   # [unit] The pure decision force_clears_content_blocker? loaded as a library in
@@ -237,6 +273,23 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     )
     assert status.success?, "#{out}\n#{err}"
     out.strip
+  end
+
+  # Drive the pure orphan_worktree_dirs reconciliation directly via `load` in an
+  # isolated subprocess (same hermetic pattern as force_decision). Returns the
+  # orphan path array.
+  def orphan_decision(primary, managed, git_dirs)
+    snippet = <<~RUBY
+      require "json"
+      load #{@script.inspect}
+      puts JSON.generate(orphan_worktree_dirs(#{primary.inspect}, #{managed.inspect}, #{git_dirs.inspect}))
+    RUBY
+    out, err, status = Open3.capture3(
+      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      RbConfig.ruby, "-e", snippet
+    )
+    assert status.success?, "#{out}\n#{err}"
+    JSON.parse(out.strip)
   end
 
   # Env for run_remove tests: scratch registry + offline `git fetch origin`

@@ -128,7 +128,7 @@ bin/agent-worktree scale status
   branch. `--push --pr` additionally requires a bound production task record
   from `bind-task`, then creates a draft PR **based on the base branch
   (`release`, else `main`)** through `gh` when available.
-- `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to the base ref.
+- `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to the base ref. It also reconciles `git worktree list` against the managed registry per repo and flags any **orphan** — a git worktree that is neither the primary checkout nor a managed `.worktrees/*` dir — with its path, branch, and merge/clean state. Orphans are detect-and-report only; removal stays approval-gated (`bin/agent-worktree remove`).
 - `snapshot` prints a non-secret JSON registry of every generated worktree,
   including health, local URLs, branch state, Redis DB, database name, cleanup
   candidacy, compare URL, and doctor issues. The payload also carries a

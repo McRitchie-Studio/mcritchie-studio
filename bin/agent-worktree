@@ -1349,6 +1349,58 @@ def list_worktrees(app = nil)
   end
 end
 
+# Canonicalize for cross-source path comparison: `git worktree list` reports
+# realpath'd paths (macOS /var and /tmp are symlinks into /private), while
+# Dir.glob keeps PROJECTS_DIR as given. Fall back to expand_path if the path no
+# longer exists on disk.
+def canonical_path(path)
+  File.realpath(path)
+rescue SystemCallError
+  File.expand_path(path)
+end
+
+# Every worktree git tracks for a repo (the primary checkout plus any
+# `git worktree add` targets), canonicalized for comparison against managed dirs.
+def git_worktree_dirs(repo)
+  ok, out, = capture_status("git", "-C", repo, "worktree", "list", "--porcelain")
+  return [] unless ok
+
+  out.lines.filter_map do |line|
+    line = line.chomp
+    next unless line.start_with?("worktree ")
+
+    canonical_path(line.delete_prefix("worktree "))
+  end
+end
+
+# Pure reconciliation (set difference): any git-registered worktree that is
+# neither the primary checkout nor a managed `.worktrees/*` dir is an ORPHAN the
+# launcher never created and the registry never tracks. Paths are canonicalized
+# by callers; this compares strings so it stays trivially unit-testable.
+def orphan_worktree_dirs(primary, managed_dirs, git_dirs)
+  known = [primary, *managed_dirs]
+  git_dirs.reject { |dir| known.include?(dir) }
+end
+
+# Reconcile `git worktree list` against the managed registry for an app and emit
+# a doctor issue for each orphan, carrying its path, branch, merge state, and
+# clean/dirty state so doctor stops reporting "no issues" while orphans pile up.
+def orphan_worktree_issues(app)
+  repo = app.fetch("repo")
+  primary = canonical_path(repo)
+  managed = stack_dirs(app).map { |dir| canonical_path(dir) }
+
+  orphan_worktree_dirs(primary, managed, git_worktree_dirs(repo)).map do |dir|
+    branch = git_branch(dir)
+    branch = "detached" if branch.empty? || branch == "?"
+    base = base_ref_for(dir)
+    merge = git_merged_to_base?(dir, base) ? "merged to #{base}" : "unmerged"
+    state = git_dirty?(dir) ? "dirty" : "clean"
+    label = "#{app.fetch("slug")}/orphan:#{File.basename(dir)}"
+    [label, "untracked git worktree at #{dir} (branch #{branch}, #{merge}, #{state}); not in managed registry — review then remove"]
+  end
+end
+
 def doctor_issues(app = nil)
   records = stack_records(app)
   issues = []
@@ -1398,6 +1450,12 @@ def doctor_issues(app = nil)
     issues << [label, "stale sidekiq pidfile #{record[:sidekiq_pidfile_state]}"] if record[:sidekiq_pidfile_state].start_with?("stale")
     issues << [label, "database #{record[:db_name]} missing"] if record[:db_exists] == false
   end
+
+  # Reconcile against git itself: stack_records only sees `.worktrees/*` dirs the
+  # launcher created, so orphan worktrees at non-standard paths are otherwise
+  # invisible. Reconcile per managed repo so doctor flags every untracked one.
+  selected_apps = app ? [app] : apps.values
+  selected_apps.each { |config| issues.concat(orphan_worktree_issues(config)) }
 
   issues
 end
