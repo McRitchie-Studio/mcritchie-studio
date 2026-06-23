@@ -35,25 +35,10 @@ OPTIONS = {
   apps: nil
 }
 
-OptionParser.new do |opts|
-  opts.banner = <<~TEXT
-    Usage: bin/qa-intake [options]
-
-    Builds an Avi-ready intake queue from local worktree state and open GitHub PRs.
-
-    Options:
-  TEXT
-
-  opts.on("--refresh", "Refresh the local registry before reading it") { OPTIONS[:refresh] = true }
-  opts.on("--registry PATH", "Read/write this registry path") { |path| OPTIONS[:registry] = File.expand_path(path) }
-  opts.on("--apps LIST", "Comma-separated app slugs to include") { |value| OPTIONS[:apps] = value.split(",").map(&:strip).reject(&:empty?) }
-  opts.on("--no-gh", "Skip GitHub PR lookup and use local registry only") { OPTIONS[:gh] = false }
-  opts.on("--json", "Print machine-readable intake JSON") { OPTIONS[:json] = true }
-  opts.on("-h", "--help", "Show this help") do
-    puts opts
-    exit 0
-  end
-end.parse!
+# CLI option parsing + dispatch live at the bottom of this file, behind a
+# `$PROGRAM_NAME == __FILE__` guard (see `parse_options!` / `run!`), so the
+# classification helpers can be `load`ed as a library in unit tests without
+# parsing ARGV or reading a registry.
 
 def capture_status(*cmd, chdir: nil, env: {})
   options = {}
@@ -114,7 +99,7 @@ def fetch_open_prs(apps, warnings)
       next []
     end
 
-    fields = "number,title,url,isDraft,headRefName,baseRefName,mergeStateStatus,reviewDecision,updatedAt,author,labels"
+    fields = "number,title,url,isDraft,headRefName,baseRefName,mergeStateStatus,mergeable,reviewDecision,updatedAt,author,labels"
     ok, out, err = capture_status("gh", "pr", "list", "--repo", repo, "--state", "open", "--json", fields)
     unless ok
       warnings << "GitHub PR lookup failed for #{repo}: #{err.lines.first.to_s.strip}"
@@ -161,13 +146,19 @@ def zeroish?(value)
   %w[0 ?].include?(value.to_s)
 end
 
-def worktree_ready_for_avi?(worktree)
+# `ignore_staleness:` drops the "behind base" signal (the behind-count gate and the
+# BEHIND_BASE_ISSUE blocker) when GitHub already calls the PR a clean merge — a
+# behind-but-clean branch fast-forwards, so staleness is not a readiness blocker.
+def worktree_ready_for_avi?(worktree, ignore_staleness: false)
+  blockers = blocking_issues(worktree)
+  blockers = blockers.reject { |issue| issue.match?(BEHIND_BASE_ISSUE) } if ignore_staleness
+
   !truthy?(worktree["dirty"]) &&
     !truthy?(worktree["merged_to_origin_main"]) &&
     !truthy?(worktree["cleanup_candidate"]) &&
     worktree["ahead_origin_main"].to_s != "0" &&
-    zeroish?(worktree["behind_origin_main"]) &&
-    blocking_issues(worktree).empty?
+    (ignore_staleness || zeroish?(worktree["behind_origin_main"])) &&
+    blockers.empty?
 end
 
 def worktree_needs_attention?(worktree)
@@ -192,13 +183,33 @@ def blocking_issues(worktree)
   end
 end
 
+# GitHub reports the PR is safe to merge as-is: mergeable, no conflicts, CI not
+# failing. mergeStateStatus CLEAN/HAS_HOOKS both mean "mergeable and passing commit
+# status", so a behind-but-clean branch still fast-forward merges. Note GitHub's own
+# BEHIND state (head out of date under up-to-date branch protection) is deliberately
+# excluded — there the rebase is genuinely required, so it must stay a blocker.
+def pr_clean_merge?(pr)
+  return false unless %w[CLEAN HAS_HOOKS].include?(pr["mergeStateStatus"].to_s)
+  return false if pr["mergeable"].to_s == "CONFLICTING"
+
+  true
+end
+
 def status_label_for_pr(pr, worktree)
   return "missing-local-branch" unless worktree
-  return "needs-agent" if blocking_issues(worktree).any?
+
+  clean_merge = pr_clean_merge?(pr)
+  # When GitHub already calls the merge clean+green, pure "behind base" staleness is
+  # a no-op fast-forward, not a return-to-agent blocker. Drop only that contradiction;
+  # every other blocker (conflicts, dirty/down local state, missing env) is preserved.
+  blockers = blocking_issues(worktree)
+  blockers = blockers.reject { |issue| issue.match?(BEHIND_BASE_ISSUE) } if clean_merge
+  return "needs-agent" if blockers.any?
+
   return "merge-risk" if %w[DIRTY BLOCKED UNKNOWN].include?(pr["mergeStateStatus"].to_s)
   return "checks-review" if pr["mergeStateStatus"].to_s == "UNSTABLE"
   return "avi-ready-draft" if pr["isDraft"]
-  return "avi-ready" if worktree_ready_for_avi?(worktree)
+  return "avi-ready" if worktree_ready_for_avi?(worktree, ignore_staleness: clean_merge)
 
   "review"
 end
@@ -212,12 +223,25 @@ def pr_notes(pr, worktree)
   if worktree
     notes << "local=#{worktree["health"]}"
     notes << "+#{worktree["ahead_origin_main"]}/-#{worktree["behind_origin_main"]}"
-    notes.concat(Array(worktree["issues"]))
+    notes.concat(pr_issue_notes(pr, worktree))
   else
     notes << "no matching local worktree"
   end
 
   notes
+end
+
+# Worktree issues as they should read in the PR queue. When GitHub already calls the
+# PR a clean merge, rewrite pure "behind base" staleness as an informational note
+# ("no action needed") instead of surfacing it as a blocker-shaped issue.
+def pr_issue_notes(pr, worktree)
+  clean_merge = pr_clean_merge?(pr)
+  Array(worktree["issues"]).map do |issue|
+    next issue unless clean_merge && issue.match?(BEHIND_BASE_ISSUE)
+
+    core = issue.split(";").first.strip
+    "info: #{core} (clean merge, no action needed)"
+  end
 end
 
 def pr_action(status, pr, worktree)
@@ -416,32 +440,60 @@ def print_cleanup(worktrees)
   puts "Removal remains approval-gated. Use bin/agent-worktree remove <app> <task> --yes only after approval."
 end
 
-warnings = []
-refresh_registry(OPTIONS[:registry], warnings) if OPTIONS[:refresh]
-registry = read_registry(OPTIONS[:registry])
-apps = selected_apps(registry)
-worktrees = selected_worktrees(registry, apps)
-prs = fetch_open_prs(apps, warnings)
-intake = build_intake(registry, prs, apps, worktrees, warnings)
+def parse_options!
+  OptionParser.new do |opts|
+    opts.banner = <<~TEXT
+      Usage: bin/qa-intake [options]
 
-if OPTIONS[:json]
-  puts JSON.pretty_generate(intake)
-  exit 0
+      Builds an Avi-ready intake queue from local worktree state and open GitHub PRs.
+
+      Options:
+    TEXT
+
+    opts.on("--refresh", "Refresh the local registry before reading it") { OPTIONS[:refresh] = true }
+    opts.on("--registry PATH", "Read/write this registry path") { |path| OPTIONS[:registry] = File.expand_path(path) }
+    opts.on("--apps LIST", "Comma-separated app slugs to include") { |value| OPTIONS[:apps] = value.split(",").map(&:strip).reject(&:empty?) }
+    opts.on("--no-gh", "Skip GitHub PR lookup and use local registry only") { OPTIONS[:gh] = false }
+    opts.on("--json", "Print machine-readable intake JSON") { OPTIONS[:json] = true }
+    opts.on("-h", "--help", "Show this help") do
+      puts opts
+      exit 0
+    end
+  end.parse!
 end
 
-puts "QA Intake Queue"
-puts "Generated: #{intake.fetch("generated_at")}"
-puts "Registry:  #{intake.fetch("registry_path")}"
-puts "Snapshot:  #{intake["registry_generated_at"] || "unknown"}"
-puts
-puts "Summary: #{intake.fetch("summary").reject { |key, _| key == "registry" }.map { |key, value| "#{key}=#{value}" }.join("  ")}"
+def run!
+  parse_options!
 
-print_pr_queue(intake.fetch("prs"))
-print_local_without_pr(intake.fetch("local_branches_without_pr"))
-print_attention(intake.fetch("attention"))
-print_cleanup(intake.fetch("cleanup_candidates"))
+  warnings = []
+  refresh_registry(OPTIONS[:registry], warnings) if OPTIONS[:refresh]
+  registry = read_registry(OPTIONS[:registry])
+  apps = selected_apps(registry)
+  worktrees = selected_worktrees(registry, apps)
+  prs = fetch_open_prs(apps, warnings)
+  intake = build_intake(registry, prs, apps, worktrees, warnings)
 
-if intake.fetch("warnings").any?
+  if OPTIONS[:json]
+    puts JSON.pretty_generate(intake)
+    return
+  end
+
+  puts "QA Intake Queue"
+  puts "Generated: #{intake.fetch("generated_at")}"
+  puts "Registry:  #{intake.fetch("registry_path")}"
+  puts "Snapshot:  #{intake["registry_generated_at"] || "unknown"}"
+  puts
+  puts "Summary: #{intake.fetch("summary").reject { |key, _| key == "registry" }.map { |key, value| "#{key}=#{value}" }.join("  ")}"
+
+  print_pr_queue(intake.fetch("prs"))
+  print_local_without_pr(intake.fetch("local_branches_without_pr"))
+  print_attention(intake.fetch("attention"))
+  print_cleanup(intake.fetch("cleanup_candidates"))
+
+  return unless intake.fetch("warnings").any?
+
   print_section("Warnings")
   intake.fetch("warnings").each { |warning| puts "- #{warning}" }
 end
+
+run! if $PROGRAM_NAME == __FILE__
