@@ -21,6 +21,7 @@
 #   bin/agent-worktree remove turf-monster docs-stack --yes
 #   bin/agent-worktree down turf-monster docs-stack
 
+require "digest"
 require "fileutils"
 require "json"
 require "open3"
@@ -166,6 +167,12 @@ def capture_status(*cmd, chdir: nil, env: {})
   options[:chdir] = chdir if chdir
   out, err, status = Open3.capture3(env, *cmd, **options)
   [status.success?, out, err]
+rescue SystemCallError => e
+  # A missing chdir target makes spawn raise Errno::ENOENT before the command
+  # ever runs (e.g. a PRUNABLE git worktree git still lists but whose directory
+  # was deleted on disk). Read-only callers — doctor and snapshot --write —
+  # must degrade to a failed command, never crash the whole run.
+  [false, "", e.message]
 end
 
 # Side-channel log helpers for automatic capacity/flush events. They write to
@@ -1382,6 +1389,14 @@ def orphan_worktree_dirs(primary, managed_dirs, git_dirs)
   git_dirs.reject { |dir| known.include?(dir) }
 end
 
+# Stable, collision-free doctor label for an orphan worktree. doctor_issues_by_label
+# groups by label, so two orphans that share a basename (e.g. /a/foo and /b/foo)
+# must not collapse to one key — append a short hash of the full canonical path.
+def orphan_label(app, dir)
+  digest = Digest::SHA1.hexdigest(dir)[0, 8]
+  "#{app.fetch("slug")}/orphan:#{File.basename(dir)}-#{digest}"
+end
+
 # Reconcile `git worktree list` against the managed registry for an app and emit
 # a doctor issue for each orphan, carrying its path, branch, merge state, and
 # clean/dirty state so doctor stops reporting "no issues" while orphans pile up.
@@ -1391,12 +1406,20 @@ def orphan_worktree_issues(app)
   managed = stack_dirs(app).map { |dir| canonical_path(dir) }
 
   orphan_worktree_dirs(primary, managed, git_worktree_dirs(repo)).map do |dir|
+    label = orphan_label(app, dir)
+
+    # PRUNABLE: git still lists the worktree but its directory was deleted on
+    # disk. Computing branch/merge/clean state would chdir into the missing dir
+    # and raise Errno::ENOENT (the capture_status guard now also catches this),
+    # which used to crash BOTH `doctor` and `snapshot --write`. Flag it
+    # distinctly and skip the git calls so both still exit 0.
+    next [label, "prunable git worktree at #{dir} (directory deleted on disk, still in `git worktree list`); run `git -C #{repo} worktree prune` then review"] unless Dir.exist?(dir)
+
     branch = git_branch(dir)
     branch = "detached" if branch.empty? || branch == "?"
     base = base_ref_for(dir)
     merge = git_merged_to_base?(dir, base) ? "merged to #{base}" : "unmerged"
     state = git_dirty?(dir) ? "dirty" : "clean"
-    label = "#{app.fetch("slug")}/orphan:#{File.basename(dir)}"
     [label, "untracked git worktree at #{dir} (branch #{branch}, #{merge}, #{state}); not in managed registry — review then remove"]
   end
 end
