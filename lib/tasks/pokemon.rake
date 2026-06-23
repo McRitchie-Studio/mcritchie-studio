@@ -25,6 +25,11 @@ namespace :pokemon do
     "farfetchd" => "Farfetch'd"
   }.freeze
 
+  desc "Seed/refresh the 151 Pokémon rows from the committed JSON (idempotent; safe on QA/prod)"
+  task seed: :environment do
+    load Rails.root.join("db/seeds/56_pokemon.rb").to_s
+  end
+
   desc "Pull the original 151 from PokéAPI into db/seeds/data/pokemon.json"
   task fetch: :environment do
     rows = DEX_RANGE.map do |dex|
