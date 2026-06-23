@@ -65,19 +65,26 @@
       can't widen the small card — the rest collapse into a "+N" bubble that names
       them on hover.
     %>
-    <% max_faces = 5 %>
-    <% shown = entries.first(max_faces) %>
-    <% overflow = entries.drop(max_faces) %>
-    <div class="flex items-center -space-x-2 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
-      <% shown.each do |entry| %>
-        <div class="relative rounded-full ring-2 ring-surface hover:z-10 transition"
-             title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})"), (humanize_stage_duration(entry.seconds).presence && "#{humanize_stage_duration(entry.seconds)} in #{entry.from_label}")].compact.join(' · ') %>">
-          <%= render "components/agent_avatar", agent: entry, size: "xs" %>
-          <% if (pill = compact_stage_duration(entry.seconds)) %>
-            <span class="absolute -bottom-1 -left-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
-                         bg-surface-alt text-secondary border border-subtle ring-1 ring-surface">
-              <%= pill %>
-            </span>
+    <%# Show the whole crew, grouped into spaced "bunches" by lane —
+        Build (designer/builder/submitter) · Review (2 seniors) · Deploy (Steffon/Avi).
+        The 8-cap is a safety rail; a real journey never exceeds 7. %>
+    <% shown = entries.first(8) %>
+    <% overflow = entries.drop(8) %>
+    <% bunches = shown.chunk_while { |a, b| stage_lane(a.stage) == stage_lane(b.stage) }.to_a %>
+    <div class="flex items-center gap-2 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+      <% bunches.each do |bunch| %>
+        <div class="flex items-center -space-x-2" data-test="crew-bunch">
+          <% bunch.each do |entry| %>
+            <div class="relative rounded-full ring-2 ring-surface hover:z-10 transition"
+                 title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})"), (humanize_stage_duration(entry.seconds).presence && "#{humanize_stage_duration(entry.seconds)} in #{entry.from_label}")].compact.join(' · ') %>">
+              <%= render "components/agent_avatar", agent: entry, size: "xs" %>
+              <% if (pill = compact_stage_duration(entry.seconds)) %>
+                <span class="absolute -bottom-1 -left-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                             bg-surface-alt text-secondary border border-subtle ring-1 ring-surface">
+                  <%= pill %>
+                </span>
+              <% end %>
+            </div>
           <% end %>
         </div>
       <% end %>

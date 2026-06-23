@@ -62,6 +62,15 @@ module StageAgentsHelper
     agents_by_slug[key] || agents_by_slug[key.split("@").first]
   end
 
+  # Which crew "bunch" a stage belongs to, for the board-card grouping: the Build
+  # lane, the review pair, and the Deploy tail render as spaced clusters.
+  def stage_lane(stage)
+    return :build if Task::BUILD_STAGES.include?(stage)
+    return :review if stage == "reviewed"
+
+    :deploy
+  end
+
   # The per-stage avatars for a task's WHOLE journey, in pipeline order
   # (STAGE_AGENT_ORDER). Per stage the task has a landing TaskEvent for:
   #   designed/building/submitted → the actor of that event (the feature agent who

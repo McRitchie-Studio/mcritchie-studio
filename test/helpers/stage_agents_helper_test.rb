@@ -52,6 +52,14 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_nil resolve_actor_agent("", @by_slug)
   end
 
+  # --- stage_lane (board-card bunching) ---------------------------------------
+
+  test "stage_lane buckets each stage into a build / review / deploy bunch" do
+    assert_equal %i[build build build], %w[designed building submitted].map { |s| stage_lane(s) }
+    assert_equal :review, stage_lane("reviewed")
+    assert_equal %i[deploy deploy], %w[assembled shipped].map { |s| stage_lane(s) }
+  end
+
   # --- stage_agent_groups -----------------------------------------------------
 
   test "a shipped task yields 2 reviewers + steffon + avi with per-stage seconds" do

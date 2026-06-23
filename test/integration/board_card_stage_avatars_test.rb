@@ -53,9 +53,9 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the +N overflow bubble collapses a crowded crew on the card" do
-    # A full journey: designer, builder, submitter, 2 reviewers, Steffon, Avi = 7
-    # entries — past the 5-face cap, so a "+2" bubble appears.
+  test "the full crew renders in three spaced lane bunches (build / review / deploy)" do
+    # A full journey: designer, builder, submitter (build), 2 reviewers, Steffon,
+    # Avi = 7 faces — all shown, grouped into three lane bunches, no +N cap.
     task = Task.create!(title: "crowded crew shipped card", stage: "shipped")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl")
@@ -76,8 +76,8 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "span.text-white", count: 5 # capped at 5 visible faces
-      assert_select "div[title*='Avi'] span", text: "+2", count: 1
+      assert_select "[data-test='crew-bunch']", count: 3 # Build · Review · Deploy
+      assert_select "span.text-white", count: 7          # every face shown, no +N cap
     end
   end
 
