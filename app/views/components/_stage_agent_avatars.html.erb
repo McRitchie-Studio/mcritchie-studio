@@ -82,10 +82,11 @@
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
               <%# Tight stack — virtually one circle; priority last = on top. The whole
                   stack scales up on card hover (transform only, so siblings don't shift). %>
-              <div class="flex items-center -space-x-7 transition-transform duration-150 group-hover:scale-110">
+              <div class="flex items-center -space-x-8 transition-transform duration-150 group-hover:scale-110">
                 <% cluster.stacked.each_with_index do |entry, i| %>
-                  <%# Frontmost (priority) avatar wears an accent border so the lead reads clear of the stack. %>
-                  <div class="rounded-full ring-2 <%= i == cluster.stacked.size - 1 ? "ring-primary/70" : "ring-surface" %>"
+                  <%# Frontmost (priority) avatar wears an accent ring AND is lifted (z-10) so its
+                      glow paints on top of the next-highest avatar, never tucked behind it. %>
+                  <div class="rounded-full ring-2 <%= i == cluster.stacked.size - 1 ? "ring-primary/70 relative z-10" : "ring-surface" %>"
                        title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
                     <%= render "components/agent_avatar", agent: entry, size: "sm" %>
                   </div>
