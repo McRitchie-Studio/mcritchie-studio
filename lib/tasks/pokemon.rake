@@ -14,8 +14,11 @@ namespace :pokemon do
   DATA_FILE = Rails.root.join("db/seeds/data/pokemon.json")
   # Deterministic-by-dex sources on the PokéAPI sprite CDN.
   SPRITE_CDN = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon".freeze
-  # Final home — the existing Active Storage S3 bucket, under a pokemon/ prefix.
-  S3_BASE = "https://mcritchie-studio-production.s3.us-east-2.amazonaws.com/pokemon".freeze
+  # Final home — the existing S3 bucket, under a pokemon/ prefix. PATH-STYLE
+  # (bucket in the path) on purpose: the virtual-hosted host
+  # `mcritchie-studio-production.s3…` trips Chrome's lookalike-domain warning
+  # (resembles mcritchie.studio); the generic `s3…amazonaws.com` host does not.
+  S3_BASE = "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon".freeze
 
   # The handful of Pokémon whose display name isn't just the title-cased slug.
   DISPLAY_NAMES = {
