@@ -128,6 +128,14 @@ class Release::ConductorTest < ActiveSupport::TestCase
     bad = Task.create!(title: "unknown repo member task", stage: "reviewed",
                        metadata: { "devops" => { "shape" => "backend", "repositories" => ["not-a-real-repo"] } })
     assert_raises(ArgumentError) { Release::Conductor.curate!(task_slugs: [bad.slug], slug: "rel-bad") }
+
+    # curate! is called STANDALONE by `bin/release prepare` (no outer txn), so its
+    # OWN transaction must roll the half-curation back — open! + adopt! already ran
+    # before validate_members! raised. Without that wrapper a stranded RC sits on
+    # the board and the single-active-release rule blocks every other session.
+    assert_equal 0, Release.count, "a failed curate! must not strand a half-curated release"
+    assert_nil Release.current, "no active candidate left after the rollback"
+    assert_equal "reviewed", bad.reload.stage, "the rolled-back member stays reviewed (not assembled)"
   end
 
   test "assemble! flips a curated RC assembling→assembled (idempotent)" do

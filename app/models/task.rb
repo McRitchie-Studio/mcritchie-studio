@@ -183,27 +183,14 @@ class Task < ApplicationRecord
   end
 
   # The two senior reviewers Avi assigned for the `submitted` review (the Deploy
-  # half's review step), each `{ "slug" => ..., "weight" => "heavy"|"light" }`.
-  # Carried in `metadata["reviewers"]`; old-flow tasks that predate the
-  # two-senior model simply have none, so this is an empty list (graceful).
-  # Accepts either a list of slug strings or of hashes, and tolerates
-  # agent_slug/review_weight/depth aliases (review_weight is the per-agent key
-  # the souls seed + ReviewerSelector use), so the writer's exact shape isn't
-  # load-bearing.
+  # half's review step), each `{ "slug" => ..., "weight" => "heavy"|"light" }`,
+  # read off THIS task's own `metadata["reviewers"]`. NOTE: the canonical write
+  # target for the avatars UI is the submitted→reviewed TaskEvent's metadata (see
+  # #stage_event_metadata) — StageAgentsHelper#stage_agent_groups reads the event,
+  # not this. This stays for callers that store the pair on the task itself.
+  # Old-flow tasks that predate the two-senior model have none → empty list.
   def reviewers
-    Array(metadata["reviewers"]).filter_map do |entry|
-      if entry.is_a?(Hash)
-        slug = (entry["slug"] || entry["agent_slug"]).to_s.strip
-        next if slug.blank?
-
-        { "slug" => slug, "weight" => (entry["weight"] || entry["review_weight"] || entry["depth"]).to_s.strip.presence }
-      else
-        slug = entry.to_s.strip
-        next if slug.blank?
-
-        { "slug" => slug, "weight" => nil }
-      end
-    end
+    self.class.normalize_reviewers(metadata["reviewers"])
   end
 
   def devops_url(name)
@@ -289,6 +276,29 @@ class Task < ApplicationRecord
     parts.map(&:strip)
          .reject(&:blank?)
          .uniq
+  end
+
+  # Normalize a raw reviewers payload — from EITHER the submitted→reviewed
+  # TaskEvent's metadata["reviewers"] (the canonical write target, see
+  # #stage_event_metadata) OR a Task's own metadata["reviewers"] — into uniform
+  # `{ "slug" =>, "weight" => "heavy"|"light"|nil }` entries. Accepts a list of
+  # slug strings or of hashes, and tolerates the agent_slug/review_weight/depth
+  # aliases (review_weight is the per-agent key the souls seed + ReviewerSelector
+  # use), so the writer's exact shape isn't load-bearing. Blank-slug entries drop.
+  def self.normalize_reviewers(raw)
+    Array(raw).filter_map do |entry|
+      if entry.is_a?(Hash)
+        slug = (entry["slug"] || entry["agent_slug"]).to_s.strip
+        next if slug.blank?
+
+        { "slug" => slug, "weight" => (entry["weight"] || entry["review_weight"] || entry["depth"]).to_s.strip.presence }
+      else
+        slug = entry.to_s.strip
+        next if slug.blank?
+
+        { "slug" => slug, "weight" => nil }
+      end
+    end
   end
 
   # Postgres advisory locks are session-scoped — try_acquire and release

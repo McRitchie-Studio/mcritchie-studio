@@ -43,7 +43,8 @@ module StageAgentsHelper
   end
 
   # The per-completed-stage avatars for a task's Deploy half, in pipeline order:
-  #   reviewed  → the two senior reviewers (task.reviewers, with heavy/light)
+  #   reviewed  → the two senior reviewers (off the →reviewed event's metadata,
+  #               with heavy/light) — the canonical write target, NOT task.reviewers
   #   assembled → the actor of the →assembled event (Steffon, Platform Engineer)
   #   shipped   → the actor of the →shipped event (Avi)
   # Each entry carries seconds_in_from of the event that COMPLETED its stage, so
@@ -58,7 +59,9 @@ module StageAgentsHelper
     entries = []
 
     if (reviewed = events.reverse.find { |e| e.to_stage == "reviewed" })
-      task.reviewers.each do |reviewer|
+      # The pair is written to the →reviewed EVENT's metadata (Task#stage_event_metadata),
+      # not Task.metadata — read it off the event so the avatars actually populate.
+      Task.normalize_reviewers(reviewed.metadata["reviewers"]).each do |reviewer|
         entries << StageAgent.new(
           stage: "reviewed",
           from_label: reviewed.from_label,
