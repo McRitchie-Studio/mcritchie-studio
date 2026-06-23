@@ -1,0 +1,223 @@
+require "fileutils"
+
+class Release
+  # The Deploy loop's post-ship "review & learn" step (`bin/release retro`). It is
+  # deliberately NON-BLOCKING: nothing in the pipeline (archive included) depends
+  # on a retro ever being run. The DURABLE output is a doc on disk
+  # (docs/agents/audits/retro-<slug>.md) plus any follow-up tasks the operator
+  # chooses to file — this model never writes to an agent "memory" store.
+  #
+  # Split so the data-gathering + rendering live here (Rails, fully unit-tested)
+  # and bin/release stays thin I/O: the CLI reaches `gather`/`render` through the
+  # same `conductor()` runner the rest of the Deploy CLI uses, then writes the
+  # returned markdown to the local working tree.
+  class Retro
+    # Where the durable retro doc lands, relative to the repo root.
+    AUDITS_DIR = "docs/agents/audits".freeze
+
+    class << self
+      # Resolve the release to retro. An explicit slug wins; otherwise default to
+      # the current active release, else the most-recently-shipped one (retro
+      # normally runs AFTER ship, when there is no active release). Returns nil
+      # when nothing matches so the caller can report it instead of raising.
+      def resolve(slug = nil)
+        slug = slug.to_s.strip
+        return Release.find_by(slug: slug) if slug.present?
+
+        Release.current || Release.last_shipped
+      end
+
+      # The durable retro RECORD for a release — a plain Hash (JSON-round-trippable
+      # so the CLI can fetch it over `heroku run rails runner`): the release header,
+      # one entry per member (kind, cycle timing, rework rounds, reviewers,
+      # recorded checks_run), and roll-up totals. A pure read; mutates nothing.
+      def gather(release)
+        members = release.ordered_members.map { |task| member_record(task) }
+        {
+          "slug" => release.slug,
+          "state" => release.state,
+          "shipped_at" => release.shipped_at&.iso8601,
+          "confirmed_by" => release.confirmed_by.presence,
+          "members" => members,
+          "totals" => totals(members)
+        }
+      end
+
+      # One member's retro line: identity + the auto-gathered signals.
+      def member_record(task)
+        events = task.task_events.chronological.to_a
+        {
+          "slug" => task.slug,
+          "title" => task.title,
+          "kind" => task.devops_kind,
+          "shape" => task.devops_shape,
+          "repo" => task.release_repo.to_s.presence,
+          "cycle_seconds" => cycle_seconds(events),
+          "rework_rounds" => rework_rounds(events),
+          "reviewers" => reviewers_for(task, events),
+          "checks_run" => task.devops_checks_run
+        }
+      end
+
+      # Deploy cycle duration: first entry into `submitted` (the Build→Deploy seam)
+      # → last entry into `shipped`, in seconds. nil when either end is missing
+      # from the event spine (so the doc can say "—" rather than guess).
+      def cycle_seconds(events)
+        started  = events.find { |e| e.to_stage == "submitted" }&.occurred_at
+        shipped  = events.reverse.find { |e| e.to_stage == "shipped" }&.occurred_at
+        return nil unless started && shipped
+
+        (shipped - started).round
+      end
+
+      # Rework rounds = how many times the task bounced into `blocked` (a QA
+      # rework or env block sends it there). Counted off the append-only spine.
+      def rework_rounds(events)
+        events.count { |e| e.to_stage == "blocked" }
+      end
+
+      # The reviewers, if discoverable. Canonical write is the submitted→reviewed
+      # TaskEvent's metadata["reviewers"]; fall back to the task's own
+      # metadata["reviewers"]. Returns normalized slug strings.
+      def reviewers_for(task, events)
+        event = events.reverse.find { |e| e.from_stage == "submitted" && e.to_stage == "reviewed" }
+        raw = event&.metadata&.dig("reviewers")
+        list = Task.normalize_reviewers(raw)
+        list = task.reviewers if list.empty?
+        list.map { |r| r["slug"] }
+      end
+
+      # Roll-ups across members: count, total/known cycle time, total rework.
+      def totals(members)
+        cycles = members.filter_map { |m| m["cycle_seconds"] }
+        {
+          "members" => members.size,
+          "cycle_seconds" => (cycles.sum if cycles.any?),
+          "rework_rounds" => members.sum { |m| m["rework_rounds"].to_i }
+        }
+      end
+
+      # Render the retro doc as markdown from a gathered record + the operator's
+      # judgment answers. Pure (no DB, no I/O) so the CLI can call it server-side
+      # and just write the result. `answers` keys: "worked", "friction",
+      # "followups" — each an Array of strings (blank/absent → an explicit
+      # "(none recorded)" so the doc never looks half-finished).
+      def render(data, answers: {})
+        answers = answers || {}
+        lines = []
+        lines << "# Release Retro — #{data['slug']}"
+        lines << ""
+        lines << "> Generated by `bin/release retro` on #{Time.current.utc.strftime('%Y-%m-%d %H:%M UTC')}."
+        lines << "> Non-blocking post-ship review. Durable record only — not wired into the pipeline."
+        lines << ""
+        lines.concat(render_summary(data))
+        lines << ""
+        lines.concat(render_members(data["members"] || []))
+        lines << ""
+        lines.concat(render_checks(data["members"] || []))
+        lines << ""
+        lines.concat(render_answers(answers))
+        lines << ""
+        "#{lines.join("\n")}\n"
+      end
+
+      # Gather → render → write, in one call. Returns the written path. Used by
+      # the model integration test (the full DB→render→file pipeline) and by any
+      # in-process caller; bin/release renders via `conductor` then writes itself,
+      # so the file lands in the local working tree rather than on the dyno.
+      def write_doc(release, answers: {}, root: nil, dir: AUDITS_DIR)
+        root ||= Rails.root
+        markdown = render(gather(release), answers: answers)
+        path = File.join(root.to_s, dir, "retro-#{release.slug}.md")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, markdown)
+        path
+      end
+
+      # Format a duration in seconds as a compact human string ("2d 3h", "45m",
+      # "30s"). nil/blank → "—".
+      def humanize_duration(seconds)
+        return "—" if seconds.nil?
+
+        seconds = seconds.to_i
+        return "0s" if seconds.zero?
+
+        days, rem = seconds.divmod(86_400)
+        hours, rem = rem.divmod(3_600)
+        mins, secs = rem.divmod(60)
+        parts = []
+        parts << "#{days}d" if days.positive?
+        parts << "#{hours}h" if hours.positive?
+        parts << "#{mins}m" if mins.positive?
+        parts << "#{secs}s" if secs.positive? && days.zero? && hours.zero?
+        parts.first(2).join(" ")
+      end
+
+      private
+
+      def render_summary(data)
+        totals = data["totals"] || {}
+        out = ["## Summary", ""]
+        out << "- **Release:** #{data['slug']} (#{data['state']})"
+        out << "- **Shipped:** #{data['shipped_at'] || '—'}#{data['confirmed_by'] ? " by #{data['confirmed_by']}" : ''}"
+        out << "- **Members:** #{totals['members'] || (data['members'] || []).size}"
+        out << "- **Total cycle time (submitted→shipped):** #{humanize_duration(totals['cycle_seconds'])}"
+        out << "- **Total rework rounds:** #{totals['rework_rounds'] || 0}"
+        out
+      end
+
+      def render_members(members)
+        out = ["## Members", ""]
+        if members.empty?
+          out << "_No member tasks on this release._"
+          return out
+        end
+        out << "| Task | Kind | Repo | Cycle | Rework | Reviewers |"
+        out << "| --- | --- | --- | --- | --- | --- |"
+        members.each do |m|
+          reviewers = (m["reviewers"] || []).any? ? (m["reviewers"]).join(", ") : "—"
+          out << "| #{m['slug']} | #{m['kind']} | #{m['repo'] || '—'} | " \
+                 "#{humanize_duration(m['cycle_seconds'])} | #{m['rework_rounds'] || 0} | #{reviewers} |"
+        end
+        out
+      end
+
+      def render_checks(members)
+        out = ["## Recorded checks", ""]
+        any = false
+        members.each do |m|
+          checks = m["checks_run"] || []
+          next if checks.empty?
+
+          any = true
+          out << "### #{m['slug']}"
+          checks.each { |c| out << "- #{c}" }
+          out << ""
+        end
+        out << "_No checks_run recorded on the member tasks._" unless any
+        out
+      end
+
+      def render_answers(answers)
+        out = []
+        out.concat(answer_section("What worked well", answers["worked"]))
+        out << ""
+        out.concat(answer_section("What caused friction", answers["friction"]))
+        out << ""
+        out.concat(answer_section("Follow-ups", answers["followups"]))
+        out
+      end
+
+      def answer_section(heading, items)
+        items = Array(items).map { |i| i.to_s.strip }.reject(&:empty?)
+        out = ["## #{heading}", ""]
+        if items.empty?
+          out << "_(none recorded)_"
+        else
+          items.each { |i| out << "- #{i}" }
+        end
+        out
+      end
+    end
+  end
+end

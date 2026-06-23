@@ -498,6 +498,25 @@ section keeps linking to its members even after they're later archived,
 preserving the release history. `shipped` is therefore **no longer terminal** —
 the Deploy loop now closes at `archived`.
 
+**`Release retro`**  *(post-ship "review & learn" — completely NON-BLOCKING)*
+Run **`bin/release retro [release-slug] [--worked "…"] [--friction "…"] [--followup
+"…"] [--file-tasks] [--yes] [--dry-run]`** after a ship to capture what the release
+taught us. It defaults to the current / most-recently-shipped release, **auto-gathers**
+the release record (member tasks + kinds, per-member `submitted → shipped` cycle
+timing from `TaskEvents`, rework rounds = bounces into `blocked`, reviewers, and
+recorded `checks_run`), prompts a few judgment questions (what worked / what caused
+friction / follow-ups — `--worked`/`--friction`/`--followup` supply them from args,
+`--yes` runs fully non-interactive), and **writes a durable doc** at
+`docs/agents/audits/retro-<slug>.md`. `--file-tasks` opens each follow-up via
+`bin/task create`. The gather + render rule is the pure, unit-tested
+`Release::Retro` (`.gather` / `.render` / `.write_doc`); the CLI reaches it through
+the same read-only `conductor` runner and writes the returned markdown to the local
+tree. It writes **no** agent-memory store — the doc (+ any filed tasks) is the only
+record. **Retro is decoupled from the pipeline by design:** `archive` does not
+depend on, trigger, or wait for it, so the loop closes whether or not a retro was
+run. Unlike `ship`/`archive`, retro never deploys or mutates the board, so it does
+not gate on `--yes`.
+
 ---
 
 ## 2. Two SOPs: Feature and Bug
