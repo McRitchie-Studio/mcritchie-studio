@@ -352,6 +352,10 @@ function kanbanBoard() {
                 </div>
               <% end %>
 
+              <%# Deploy crew — who reviewed/assembled/shipped, with time-in-stage.
+                  Renders nothing for Build-lane / old-flow cards. %>
+              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack %>
+
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
               <% end %>
