@@ -11,9 +11,13 @@
 # It loads the Rails app and calls `ReviewerSelector` for the task — scoring the
 # senior pool {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
 # alex-docs=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
-# tags vs each soul's Agent.metadata["domains"]) with a LOGGED random tiebreak,
-# and splitting the pick 1 HEAVY (deep review) + 1 LIGHT. The QA owner (steffon by
-# default) is EXCLUDED so one soul never both reviews AND QAs the same change.
+# tags vs each soul's Agent.metadata["domains"]) with a LOGGED, SEEDED-PER-TASK
+# tiebreak (reproducible — not process-random), and splitting the pick 1 HEAVY
+# (deep review) + 1 LIGHT. The QA owner (steffon by default) is EXCLUDED so one
+# soul never both reviews AND QAs the same change. Because the tiebreak is seeded
+# from the task identity, for the DEFAULT qa_owner this preview matches the pair
+# the app records on the submitted→reviewed TaskEvent (a custom --qa-owner shifts
+# the candidate pool + seed, so the preview is then advisory).
 #
 # Task source: the production task board API (same auth as bin/task / bin/dor-check),
 # or a local JSON via --file (offline / tests). Degrades gracefully — a missing
@@ -136,7 +140,7 @@ def fmt_list(list)
 end
 
 def seat_line(label, seat)
-  matched = seat["matched"].empty? ? "(no domain match — random tiebreak)" : seat["matched"].join(", ")
+  matched = seat["matched"].empty? ? "(no domain match — seeded tiebreak)" : seat["matched"].join(", ")
   format("%-5s  %-10s  matched: %-30s  (fit %d, roll %.4f)",
          label, seat["slug"], matched, seat["fit"], seat["roll"])
 end

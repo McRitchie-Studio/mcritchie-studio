@@ -323,4 +323,26 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal cli_pair, recorded.first,
       "the CLI .decision preview must match the recorded .select pick (heavy/light order included)"
   end
+
+  test "the CLI preview and recorded pick agree on a tie WITH a builder excluded" do
+    # The seed folds in the EXCLUDED builder, so two passes that exclude the same
+    # builder roll over the SAME post-exclusion pool — they must still agree. A
+    # genuine tie (no shape/risk/repo) means the seeded tiebreak is the ONLY thing
+    # deciding the pair, and the excluded builder (carl, via devops.built_by) is
+    # really out of both passes.
+    task = Task.create!(title: "tie with builder excluded task", stage: "submitted",
+                        metadata: { "devops" => { "built_by" => "carl" } })
+
+    decision = ReviewerSelector.explain(task)
+    assert_equal "carl", decision["excluded_builder"], "the builder is excluded from both passes"
+    refute_includes decision["candidates"], "carl", "carl is out of the candidate pool"
+
+    cli_pair = decision["reviewers"].map { |r| r["slug"] }
+    recorded = Array.new(8) { ReviewerSelector.select(task).map { |r| r["slug"] } }
+
+    assert_equal 1, recorded.uniq.size, "the seeded tiebreak gives one stable pair over the carl-excluded pool"
+    refute_includes recorded.first, "carl", "the excluded builder is never in the recorded pair"
+    assert_equal cli_pair, recorded.first,
+      "CLI preview == recorded pick even with a builder folded into the seed"
+  end
 end

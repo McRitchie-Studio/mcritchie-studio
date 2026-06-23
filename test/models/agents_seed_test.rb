@@ -46,7 +46,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
     refute avi.metadata["reviewer"], "Avi delegates review; he is not one of the two seniors"
   end
 
-  test "senior reviewers carry domains + heavy review_weight" do
+  test "senior reviewers carry domains + a numeric review_weight" do
     run_seed
     {
       "shannon"   => "ui",
@@ -59,7 +59,10 @@ class AgentsSeedTest < ActiveSupport::TestCase
       assert agent.metadata["reviewer"], "#{slug} must be a senior pool reviewer"
       assert_equal "reviewer", agent.metadata["review_role"], "#{slug} review_role"
       assert_includes Array(agent.metadata["domains"]), domain, "#{slug} owns the #{domain} domain"
-      assert_equal "heavy", agent.metadata["review_weight"], "#{slug} is heavy-capable"
+      # review_weight is stored NUMERICally (not the legacy "heavy"/"light" label a
+      # bare String#to_f would silently zero — see ReviewerSelector::WEIGHT_LABELS).
+      # All five seniors are heavy-capable, so they share the heavy weight (2.0).
+      assert_equal 2.0, agent.metadata["review_weight"], "#{slug} carries the heavy numeric weight"
     end
   end
 
