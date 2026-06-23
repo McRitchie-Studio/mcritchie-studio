@@ -1,5 +1,13 @@
 <%# locals: (task:, agents:, variant: :stack, events: nil, mascot: nil, board: :deploy) %>
 <%#
+  The line above is a Rails strict-locals signature, so Rails itself supplies every
+  default — `variant` is :stack, `events`/`mascot` are nil, and `board` is :deploy —
+  without any local_assigns.fetch. `mascot` is the one exception that still reads
+  through local_assigns below (line 27): its default must differ per caller — the
+  board passes a preloaded mascot (which may be nil), while the detail page omits it
+  and falls back to a DB lookup. (Strict-locals defaults are NOT keys in
+  local_assigns, so that fetch block genuinely runs when mascot is omitted.)
+
   Per-stage agent attribution across a task's WHOLE journey — who designed, built,
   submitted, reviewed, assembled, and shipped it, with the time each stage took.
 
@@ -72,16 +80,19 @@
     %>
     <% columns = crew_columns(task, entries, board: board, mascot: mascot) %>
     <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
-        on the roomier Build board; the stack overlap tracks the size to keep an ~8px peek. %>
+        on the roomier Build board; the stack overlap tracks the size to keep a small peek
+        of each face — 8px on Build (sm = w-10 face, -space-x-8 = 32px) and 4px on Deploy
+        (xs = w-8 face, -space-x-7 = 28px). %>
     <% crew_size = board == :build ? "sm" : "xs" %>
     <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
     <%# When the task is blocked, the LAST filled compartment is where it stalled
         (a block lands from reviewed or assembled) — its timer turns into a red ✕. %>
     <% blocked = task.stage == "blocked" %>
     <% block_idx = (columns.rindex { |c| c.stacked.any? } if blocked) %>
-    <%# Fixed grid (3 columns, or 4 once shipped / for blocked) so the crew is one
-        solid row; each compartment centered in its column, an unreached stage left
-        blank. The Build board (/tasks) splits the build steps; Deploy collapses them. %>
+    <%# Fixed grid (3 columns, or 4 only once shipped — blocked mirrors Assembled's
+        three) so the crew is one solid row; each compartment centered in its column,
+        an unreached stage left blank. The Build board (/tasks) splits the build
+        steps; Deploy collapses them. %>
     <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
          data-test="stage-agent-avatars" title="Stage crew">
       <% columns.each_with_index do |cluster, ci| %>
