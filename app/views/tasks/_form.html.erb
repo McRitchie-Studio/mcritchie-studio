@@ -111,6 +111,13 @@
               class: "input-field", placeholder: "auth, solana, migration, email" %>
       </div>
 
+      <div class="mb-4">
+        <label class="block text-sm text-secondary mb-2 font-medium">Post-deploy Command</label>
+        <%= text_field_tag "task[devops][post_deploy_cmd]", task.devops_field("post_deploy_cmd"),
+              class: "input-field", placeholder: "rake pokemon:backfill_mascots" %>
+        <p class="text-xs text-muted mt-1">Run on the deployed app after boot — QA on prepare, prod on ship. Must be idempotent.</p>
+      </div>
+
       <div class="grid md:grid-cols-3 gap-4">
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Acceptance Criteria</label>

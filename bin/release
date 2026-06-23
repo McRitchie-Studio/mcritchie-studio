@@ -29,12 +29,15 @@
 #     Assemble the active release + deploy it to QA. Keeps each app's `release`
 #     branch ahead of main (merge-forward guard), then `bin/qa-server deploy
 #     <qa_app> origin/release`. No branch-cut/member-merge here — that happened at
-#     PR-merge time. `--task` is operator curation (adopt named tasks first).
+#     PR-merge time. `--task` is operator curation (adopt named tasks first). Once
+#     each QA dyno boots, runs any member's `devops.post_deploy_cmd` on its QA app
+#     (`heroku run`, records [post-deploy] to checks_run, aborts on non-zero).
 #     Ends with the RC assembled — review the QA app(s), then ship.
 #
 #   bin/release ship [--by NAME] [--prod] [--dry-run]
 #     Promotes the assembled RC to production: ff main → release branch, push
-#     origin, deploy to Heroku, smoke /up, stamp deployed_sha + flip to shipped.
+#     origin, deploy to Heroku, smoke /up, run any member's post_deploy_cmd on the
+#     PROD app (aborts on non-zero), stamp deployed_sha + flip to shipped.
 #
 #   bin/release archive [--prod] [--dry-run] [--yes]
 #     The DevOps loop's CONCLUSION (shipped → archived): archive every shipped
@@ -87,6 +90,7 @@ require "tmpdir"
 # handling below routes through.
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/cli"
 
 APP = "mcritchie-studio"
@@ -283,6 +287,63 @@ def wait_for_boot(url, attempts: 30, delay: 5)
   end
   say("  ⚠ /up never returned 200 after #{attempts} polls — dyno may still be booting")
   false
+end
+
+# --- post-deploy command hook ----------------------------------------------
+# Run each release member's declared `devops.post_deploy_cmd` via `heroku run` on
+# the just-deployed app — the QA heroku app on `prepare` (target: :qa), the
+# production app on `ship` (target: :prod). The {task, app, cmd} plan + the
+# QA-vs-prod target resolution are the unit-tested Release::PostDeploy.plan; this
+# CLI owns only the `heroku run` I/O, the abort-on-failure, and the checks_run
+# record. Commands are expected IDEMPOTENT, so a re-run after a failure just
+# re-runs them (partial-deploy semantics: the release stays recoverable).
+#
+# Aborts the WHOLE pipeline on the first non-zero exit (so a bad backfill stops
+# the release instead of shipping past it). A declared command with no resolvable
+# target app (e.g. a gem, or an app missing from qa_environments.yml) is a hard
+# abort — a declared command must never silently no-op. --dry-run PRINTS the
+# command + target app and executes nothing.
+def run_post_deploy(repos, target:)
+  plan = Release::PostDeploy.plan(repos, qa_environments: QA_ENVIRONMENTS, target: target)
+  return if plan.empty?
+
+  phase  = target == :qa ? "QA" : "prod"
+  subcmd = target == :qa ? "prepare" : "ship"
+  say("")
+  step("post-deploy hooks (#{phase}): #{plan.size} command(s)")
+  plan.each do |entry|
+    task = entry["task"]
+    app  = entry["app"]
+    cmd  = entry["cmd"]
+    abort!("task #{task} (#{entry['repo']}) declares a post_deploy_cmd but has no #{phase} app in " \
+           "config/qa_environments.yml — register one or clear devops.post_deploy_cmd") if app.empty?
+
+    if DRY
+      say("  [dry-run] post-deploy #{task}: heroku run -a #{app} #{cmd}")
+      next
+    end
+
+    step("post-deploy #{task}: heroku run -a #{app} #{cmd}")
+    out, ok = sh("heroku", "run", "-a", app, "--no-tty", *cmd.split, capture: true)
+    print(out)
+    record_post_deploy_check(task: task, app: app, cmd: cmd, ok: ok)
+    # In ship, add successful runs to the partial-ship "what's live" trail.
+    @ship_live << "post-deploy `#{cmd}` on #{app} (#{task})" if ok && defined?(@ship_live) && @ship_live
+    abort!("post-deploy command failed for #{task} on #{app}: `#{cmd}` — fix it, then re-run " \
+           "`bin/release #{subcmd}` (the command is idempotent; a re-run resumes)") unless ok
+  end
+end
+
+# Stamp the [post-deploy] outcome on the member task's checks_run via the board
+# conductor (read-merge-write, idempotent — see Release::Conductor). A board WRITE,
+# so it routes through `conductor` (suppressed under --dry-run; run_post_deploy
+# never reaches here in dry-run, but the gate keeps it safe).
+def record_post_deploy_check(task:, app:, cmd:, ok:)
+  conductor(
+    "c = Release::Conductor.record_post_deploy_check(" \
+    "task_slug: #{task.inspect}, app: #{app.inspect}, cmd: #{cmd.inspect}, ok: #{ok.inspect}); " \
+    "puts({ task: #{task.inspect}, checks: c.size }.to_json)"
+  )
 end
 
 # --- gem publishing (producer-first) ---------------------------------------
@@ -561,17 +622,27 @@ def prepare
   end
 
   # 4. ASSEMBLE — deferred to here so it lands only AFTER every QA app booted
-  #    (wait_for_boot returned 200). A boot failure leaves the RC `assembling` so
-  #    a re-run completes once the dyno is up, instead of stranding a half-up RC
-  #    flipped `assembled`. WRITE → suppressed in dry-run.
+  #    (wait_for_boot returned 200) AND every post-deploy hook ran green. A boot
+  #    failure leaves the RC `assembling` so a re-run completes once the dyno is up,
+  #    instead of stranding a half-up RC flipped `assembled`. WRITE → suppressed in
+  #    dry-run.
   boot_failures = deployed.reject { |d| d["ok"] }
   if boot_failures.any?
     say("")
     say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — leaving the release `assembling`.")
     say("    Re-run `bin/release prepare` once they boot: #{boot_failures.map { |d| d['repo'] }.join(', ')}")
-  elsif !DRY
-    step("record: Release::Conductor.assemble!(Release.current) (QA booted)")
-    conductor("r = Release.current; Release::Conductor.assemble!(r) if r; puts({ state: r&.reload&.state }.to_json)")
+  else
+    # 4a. Post-deploy hooks on the booted QA app(s): run each member's declared
+    #     post_deploy_cmd against its QA app, record the [post-deploy] outcome, and
+    #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, re-run
+    #     resumes). dry-run prints the plan; nothing executes.
+    run_post_deploy(repos, target: :qa)
+
+    # 4b. Flip assembling→assembled now that QA booted + every post-deploy passed.
+    unless DRY
+      step("record: Release::Conductor.assemble!(Release.current) (QA booted)")
+      conductor("r = Release.current; Release::Conductor.assemble!(r) if r; puts({ state: r&.reload&.state }.to_json)")
+    end
   end
 
   # 5. Per-repo summary of what was assembled + QA'd.
@@ -988,6 +1059,14 @@ def ship
 
   # 5. Apps hub-first, then satellites: test gate → prod adapter.
   app_groups.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
+
+  # 5b. Post-deploy hooks on PROD — after every app deployed + smoked, run each
+  #     member's declared post_deploy_cmd against its PRODUCTION app, record the
+  #     [post-deploy] outcome, and ABORT ship on a non-zero exit. Aborting here (a
+  #     post-deploy failure) lands BEFORE the ship! record (step 6), so the release
+  #     stays `assembled` (recoverable) and a re-run resumes (the command is
+  #     idempotent). dry-run prints the plan.
+  run_post_deploy(repos, target: :prod)
 
   # 6. Record LAST — only after EVERY repo deployed, so a partial ship leaves the
   #    record `assembled` (recoverable). Stamp the hub's shipped SHA + ship! +

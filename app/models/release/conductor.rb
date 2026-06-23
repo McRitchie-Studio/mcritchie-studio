@@ -102,12 +102,15 @@ class Release
     end
 
     # The per-member release plan the CLI consumes, in producer-first order:
-    # each entry is { slug, branch, kind ("gem"/"app"), repo, version }. `branch`
-    # is the member's feature branch (apps merge it; gems have none and ride the
-    # record). `version` is the gem's declared version (nil for apps, and nil for
-    # gems when the version_file isn't reachable — the CLI resolves it locally at
-    # publish time). This is what `bin/release` reads to skip the merge for gems
-    # and to publish them producer-first at ship.
+    # each entry is { slug, branch, kind ("gem"/"app"), repo, version,
+    # post_deploy_cmd }. `branch` is the member's feature branch (apps merge it;
+    # gems have none and ride the record). `version` is the gem's declared version
+    # (nil for apps, and nil for gems when the version_file isn't reachable — the
+    # CLI resolves it locally at publish time). `post_deploy_cmd` is the optional
+    # one-off command (a shell/rake line) the pipeline runs on the deployed app
+    # AFTER it boots — on the QA app in `prepare`, the prod app in `ship` (nil when
+    # the task declares none). This is what `bin/release` reads to skip the merge
+    # for gems, publish them producer-first at ship, and run the post-deploy hook.
     def member_plan(release)
       release.ordered_members.map do |task|
         kind = task.release_kind
@@ -119,7 +122,8 @@ class Release
           branch: kind == :gem ? nil : task.devops_field("branch"),
           kind: kind.to_s,
           repo: task.release_repo,
-          version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil
+          version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil,
+          post_deploy_cmd: task.devops_field("post_deploy_cmd")
         }
       end
     end
@@ -195,6 +199,29 @@ class Release
       meta["qa_shas"] = existing
       release.update!(metadata: meta)
       release
+    end
+
+    # Record a [post-deploy] outcome line on a member task's devops.checks_run —
+    # the audit trail for the command the release pipeline ran on the deployed app
+    # (`bin/release prepare` → QA app, `ship` → prod app). IDEMPOTENT: a re-run
+    # REPLACES the prior line for the SAME command+app instead of piling up
+    # duplicates (post-deploy commands are expected idempotent, so prepare/ship are
+    # re-runnable) — the recorded line always reflects the LAST outcome. Does NOT
+    # change stage, so it writes no TaskEvent. Returns the updated checks_run array.
+    def record_post_deploy_check(task_slug:, app:, cmd:, ok:, at: Time.current)
+      task   = Task.find_by!(slug: task_slug)
+      meta   = task.metadata.deep_dup
+      devops = meta["devops"].is_a?(Hash) ? meta["devops"] : {}
+      checks = Array(devops["checks_run"]).map(&:to_s)
+
+      signature = "[post-deploy] #{cmd} on #{app}"
+      checks.reject! { |line| line == signature || line.start_with?("#{signature} ") }
+      checks << "#{signature} → #{ok ? 'ok' : 'FAILED'} (#{at.utc.iso8601})"
+
+      devops["checks_run"] = checks
+      meta["devops"] = devops
+      task.update!(metadata: meta)
+      checks
     end
 
     # Build + deliver release notes for a shipped release — reusing the exact

@@ -460,7 +460,13 @@ Two deterministic steps:
    per-repo QA SHAs and leaves the RC `assembled`. `--task` is operator curation
    (adopt the named tasks first); it does **not** auto-adopt every reviewed task.
    Record ops default to the local DB; `--prod` runs them on the prod board via
-   `heroku run`.
+   `heroku run`. **Post-deploy hook:** once each QA dyno boots (after
+   `wait_for_boot`, before the assemble flip), for every member that declares
+   `devops.post_deploy_cmd` it runs that command on the member's **QA heroku app**
+   via `heroku run`, records the `[post-deploy]` outcome on the task's
+   `checks_run`, and **aborts `prepare` on a non-zero exit** (so the RC stays
+   `assembling`, re-runnable). The `{task, app, cmd}` plan + the QA-vs-prod target
+   resolution are the unit-tested `Release::PostDeploy.plan`.
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
 Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
@@ -473,8 +479,14 @@ version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
 app deploys, so apps never deploy against an unpublished gem. Then for the apps
 it fast-forwards each repo's `main` up to `release` (so `release` collapses into
 `main`), pushes origin, deploys (`git push heroku main`; release phase runs
-migrations), smokes `/up`, stamps `deployed_sha`, flips the RC + its members to
-`shipped` (`Release::Conductor.ship!`), and **auto-posts release notes**
+migrations), and smokes `/up`. After every app deploys + smokes (and before the
+`shipped` record), the **post-deploy hook** runs each member's
+`devops.post_deploy_cmd` on its **production app** via `heroku run`, records the
+`[post-deploy]` outcome, and **aborts `ship` on a non-zero exit** — the abort
+lands before `ship!`, so the release stays `assembled` (recoverable) and a re-run
+resumes (the command is expected idempotent). On success it stamps `deployed_sha`,
+flips the RC + its members to `shipped` (`Release::Conductor.ship!`), and
+**auto-posts release notes**
 (`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
 `POST /api/v1/release_notes`; non-fatal if the webhook is unset). After a ship,
 each repo's `release` equals `main` and re-accumulates the next candidate. Run
