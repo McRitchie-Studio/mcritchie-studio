@@ -64,14 +64,18 @@ function kanbanBoard() {
     async handleSortEnd(evt) {
       const card = evt.item;
       const slug = card.dataset.slug;
-      const oldStage = card.dataset.stage;
-      const newZone = evt.to;
-      const newStage = newZone.dataset.stage;
+      const fromZone = evt.from;
+      const toZone = evt.to;
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
-      // Stage changed — update via PATCH
-      if (oldStage !== newStage) {
-        card.dataset.stage = newStage;
+      // A same-zone drop is an in-place reorder — it must NEVER change the task's
+      // stage. This is what guards a blocked card: it rides the Building dropzone
+      // (data-stage="building") yet is tagged data-stage="blocked", so reordering
+      // it would otherwise read oldStage="blocked" vs newStage="building" and
+      // silently PATCH it un-blocked. Source the stage from the DROPZONES, not the
+      // card, and only PATCH on a real cross-column move (fromZone !== toZone).
+      if (fromZone !== toZone) {
+        const newStage = toZone.dataset.stage;
         try {
           const resp = await fetch('/tasks/' + slug + '.json', {
             method: 'PATCH',
@@ -82,14 +86,13 @@ function kanbanBoard() {
             const err = await resp.json().catch(() => ({}));
             throw new Error(err.error || 'Failed (' + resp.status + ')');
           }
+          card.dataset.stage = newStage;
           this.showToast('Task moved to ' + this.stageLabels[newStage], 'success');
         } catch (err) {
-          // Revert: move card back to old column
-          const oldZone = document.getElementById('dropzone-' + oldStage);
-          if (oldZone) {
-            oldZone.insertBefore(card, oldZone.querySelector('.kanban-empty'));
-            card.dataset.stage = oldStage;
-          }
+          // Revert: drop the card back into its SOURCE zone, which always exists
+          // (a blocked card's source zone is dropzone-building — there is no
+          // dropzone-blocked to look up).
+          fromZone.insertBefore(card, fromZone.querySelector('.kanban-empty'));
           card.classList.add('ring-2', 'ring-red-500');
           setTimeout(() => card.classList.remove('ring-2', 'ring-red-500'), 1500);
           this.showToast(err.message || 'Move failed', 'error');
@@ -99,7 +102,7 @@ function kanbanBoard() {
       }
 
       // Save order of destination column
-      const slugs = Array.from(newZone.querySelectorAll('.kanban-card')).map(c => c.dataset.slug);
+      const slugs = Array.from(toZone.querySelectorAll('.kanban-card')).map(c => c.dataset.slug);
       try {
         await fetch('/tasks/reorder.json', {
           method: 'POST',
@@ -111,6 +114,12 @@ function kanbanBoard() {
       }
 
       this.updateCounts();
+    },
+
+    // A blocked task has no Blocked column — it lives in the Building dropzone, so
+    // map blocked → building when resolving a stage back to its on-board dropzone.
+    zoneForStage(stage) {
+      return document.getElementById('dropzone-' + (stage === 'blocked' ? 'building' : stage));
     },
 
     updateCounts() {
@@ -150,7 +159,7 @@ function kanbanBoard() {
         this.showToast('Task archived', 'success');
       } catch (err) {
         if (card && oldStage) {
-          const oldZone = document.getElementById('dropzone-' + oldStage);
+          const oldZone = this.zoneForStage(oldStage);
           if (oldZone) {
             oldZone.insertBefore(card, oldZone.querySelector('.kanban-empty'));
             card.dataset.stage = oldStage;
@@ -212,7 +221,8 @@ function kanbanBoard() {
           New Task / Archived are pushed to the far right with ml-auto. %>
       <%= render "page_nav", current: local_assigns[:current_page] %>
       <% if columns.size > 4 %>
-        <%# Below ~1250px only the last three lanes fit; this reveals all six (x-scroll).
+        <%# Below ~1250px the upstream lanes collapse (Building stays — it carries
+            blocked, needs-attention tasks); this reveals all six (x-scroll).
             Hidden at wider widths where all six already fit. %>
         <button type="button" @click="showAllCols = !showAllCols"
                 class="hidden max-[1250px]:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
@@ -250,9 +260,11 @@ function kanbanBoard() {
           on BOTH boards. The count badge + the cards both reflect that. %>
       <% column_tasks = @tasks_by_stage[stage] || [] %>
       <% column_tasks = (@tasks_by_stage["blocked"] || []) + column_tasks if stage == "building" %>
-      <%# On a six-lane board (Deployments) the three upstream lanes collapse below ~1250px
-          unless "All columns" is on, leaving the last three (reviewed · assembled · shipped). %>
-      <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
+      <%# On a six-lane board (Deployments) the upstream lanes collapse below ~1250px
+          unless "All Stages" is on, leaving Building (it carries blocked,
+          needs-attention tasks) plus the last three (reviewed · assembled · shipped).
+          Building is exempt from the collapse so a stalled task never hides. %>
+      <% collapsible = columns.size > 4 && idx < columns.size - 3 && stage != "building" %>
       <div class="flex-1 min-w-[190px]"
            <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1250px]:hidden'"<% end %>>
