@@ -42,6 +42,41 @@ class AgentSessionUsageTest < Minitest::Test
     end
   end
 
+  # A transcript can hold valid-JSON-but-NON-OBJECT lines (a bare number, array,
+  # null, or boolean). sum_usage must skip them, not crash with a TypeError when
+  # it reaches obj["type"] — otherwise the whole capture (and the move that calls
+  # it) aborts. Regression for the rework on PR #121: `42` once raised mid-parse.
+  def write_transcript_with_non_object_lines(root)
+    dir = File.join(root, "-Users-alex-projects")
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, "#{SESSION}.jsonl"), <<~JSONL)
+      42
+      {"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":200,"cache_creation_input_tokens":10,"cache_read_input_tokens":1000}}}
+      [1,2,3]
+      null
+      true
+      "a bare string is valid JSON too"
+      {"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":50,"output_tokens":80,"cache_creation_input_tokens":5,"cache_read_input_tokens":2000}}}
+    JSONL
+  end
+
+  def test_non_object_json_lines_are_skipped_not_fatal
+    Dir.mktmpdir do |root|
+      write_transcript_with_non_object_lines(root)
+      result =
+        begin
+          AgentSessionUsage.capture(session_id: SESSION, transcript_root: root)
+        rescue StandardError => e
+          flunk "a non-object JSON line must not raise, got #{e.class}: #{e.message}"
+        end
+
+      refute_nil result, "a non-object line must not crash the capture"
+      assert_equal "claude-opus-4-8", result.model
+      # Still sums the two valid assistant turns, the garbage lines skipped.
+      assert_equal({ "input" => 150, "output" => 280, "cache_creation" => 15, "cache_read" => 3000 }, result.totals)
+    end
+  end
+
   def test_delta_against_a_baseline_yields_tokens_and_cost
     Dir.mktmpdir do |root|
       write_transcript(root)

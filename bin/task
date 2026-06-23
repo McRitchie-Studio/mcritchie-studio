@@ -285,6 +285,10 @@ def autofill_move_usage(event, slug)
   event["tokens_in"]  = capture.tokens_in
   event["tokens_out"] = capture.tokens_out
   event["cost"]       = format("%.4f", capture.cost) if capture.cost
+rescue StandardError
+  # A capture failure must degrade to spine-only, never abort the move (and its
+  # stage-transition PATCH). Matches read_usage_baseline/write_usage_baseline.
+  nil
 end
 
 cmd = ARGV.shift || "help"

@@ -237,6 +237,40 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  # Like with_session_transcript, but writes RAW transcript lines verbatim so a
+  # test can include valid-JSON-but-non-object lines (42, [1,2], null, true) —
+  # the exact shape that once made sum_usage raise a TypeError on obj["type"].
+  def with_raw_session_transcript(raw_lines)
+    Dir.mktmpdir do |home|
+      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      FileUtils.mkdir_p(proj)
+      File.write(File.join(proj, "#{SESSION}.jsonl"), "#{raw_lines.join("\n")}\n")
+      usage_dir = File.join(home, "usage-state")
+      yield({ "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => usage_dir }, usage_dir)
+    end
+  end
+
+  # Acceptance #5: a malformed transcript must degrade to a SPINE-ONLY move, never
+  # abort it. A non-object JSON line (42) once raised TypeError inside the capture,
+  # and autofill_move_usage had no rescue, so the exception escaped BEFORE the
+  # stage-transition PATCH fired — strictly worse than spine-only. Prove the PATCH
+  # still fires and carries no usage. (Regression for the rework on PR #121.)
+  def test_move_with_a_malformed_transcript_still_records_the_spine
+    with_raw_session_transcript(["42", "[1,2,3]", "null", "true", '"bare string"']) do |env, _dir|
+      requests, = run_task(["move", "demo-task", "submitted"], env: env)
+      patch = requests.find { |r| r[:method] == "PATCH" }
+
+      refute_nil patch, "the stage PATCH must still fire — a capture failure can't abort the move"
+      parsed = JSON.parse(patch[:body])
+      assert_equal "submitted", parsed["stage"]
+      event = parsed.fetch("event")
+      assert_equal "cli", event["source"]
+      refute event.key?("model"), "a malformed transcript yields a spine-only event"
+      refute event.key?("tokens_in")
+      refute event.key?("cost")
+    end
+  end
+
   def test_move_without_a_transcript_records_spine_only
     Dir.mktmpdir do |home| # $HOME with no transcript file present
       requests, = run_task(["move", "demo-task", "submitted"],

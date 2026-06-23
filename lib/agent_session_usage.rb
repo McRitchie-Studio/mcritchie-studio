@@ -90,9 +90,10 @@ class AgentSessionUsage
     File.foreach(path) do |line|
       obj = begin
         JSON.parse(line)
-      rescue JSON::ParserError
+      rescue StandardError
         next
       end
+      next unless obj.is_a?(Hash)
       next unless obj["type"] == "assistant"
 
       message = obj["message"] || {}
