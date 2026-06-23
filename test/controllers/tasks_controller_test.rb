@@ -236,19 +236,20 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Run Deployment"
   end
 
-  test "deployments board shows only the Deploy-lane columns" do
+  test "deployments board shows the full pipeline swim lanes (designed through shipped)" do
     get deployments_path
 
     assert_response :success
     assert_select "h2", "Deployments"
-    # DevOps lane; submitted is the seam (shared with the feature-agent lane)
+    # Upstream build lanes now lead the board (drag-and-drop; expanded later)…
+    assert_select "#dropzone-designed"
+    assert_select "#dropzone-building"
+    # …then the Deploy workflow; submitted is the seam (shared with the feature-agent lane)
     assert_select "#dropzone-submitted"
     assert_select "#dropzone-reviewed"
     assert_select "#dropzone-assembled"
     assert_select "#dropzone-shipped"
-    # feature-agent-only columns absent
-    assert_select "#dropzone-designed", count: 0
-    assert_select "#dropzone-building", count: 0
+    # the side / terminal states stay off the board
     assert_select "#dropzone-blocked", count: 0
     assert_select "#dropzone-archived", count: 0
     # copy-paste kickoff commands sit on the column headers

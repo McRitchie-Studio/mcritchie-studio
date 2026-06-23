@@ -25,9 +25,12 @@ class Task < ApplicationRecord
   BUILD_STAGES  = %w[designed building submitted].freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
   # Board columns per page. /tasks is the feature-agent lane (Build + the blocked
-  # side state); /deployments is the DevOps lane (= the Deploy workflow).
+  # side state). /deployments shows the full pipeline as swim lanes — the Deploy
+  # workflow plus the upstream designed/building lanes (drag-and-drop; more later).
+  # The Deploy *workflow* itself (the /stages guide + per-stage kickoffs) stays
+  # DEPLOY_STAGES — the board carrying extra lanes doesn't widen the workflow.
   TASKS_BOARD_STAGES       = %w[designed building blocked submitted].freeze
-  DEPLOYMENTS_BOARD_STAGES = DEPLOY_STAGES
+  DEPLOYMENTS_BOARD_STAGES = %w[designed building submitted reviewed assembled shipped].freeze
   # Why a task sits in `blocked` — lets a heartbeat agent route it correctly.
   BLOCK_KINDS = %w[environment rework dependency].freeze
   MIGRATION_LANE = "backend_migration".freeze
