@@ -69,3 +69,6 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-06-19 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/add-coach-admin-model` | worktree | Hidden worktree; branch `feat/add-coach-admin-model` is clean and its final diff against origin/main is empty, usually after a squash merge. | Removed with `bin/agent-worktree remove mcritchie-studio add-coach-admin-model --yes` during approved lifecycle cleanup. | removed 2026-06-19 |
+
+<!-- agent-worktree remove 2026-06-21 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/readable-task-slugs` | worktree | Hidden worktree; branch `feat/readable-task-slugs` is clean and HEAD f8f0cbf is contained in origin/main. | Removed with `bin/agent-worktree remove mcritchie-studio readable-task-slugs --yes` during approved lifecycle cleanup. | removed 2026-06-21 |
