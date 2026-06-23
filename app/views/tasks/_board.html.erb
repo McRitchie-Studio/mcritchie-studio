@@ -12,6 +12,8 @@
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
+<%# Build board (/tasks) splits the build steps; Deploy board (/deployments) shows the pipeline. %>
+<% crew_board = stages.include?("reviewed") ? :deploy : :build %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 
@@ -380,7 +382,7 @@ function kanbanBoard() {
 
               <%# Stage crew — build-lane stages wear the task's mascot; deploy-lane
                   shows who reviewed/assembled/shipped. Renders nothing with no events. %>
-              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
+              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
 
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>

@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, variant: :stack, events: nil, mascot: nil) %>
+<%# locals: (task:, agents:, variant: :stack, events: nil, mascot: nil, board: :deploy) %>
 <%#
   Per-stage agent attribution across a task's WHOLE journey — who designed, built,
   submitted, reviewed, assembled, and shipped it, with the time each stage took.
@@ -70,19 +70,22 @@
       ticks a LIVE counter while the task is still being built. The detail page
       (:detailed) still shows every stage per-usual.
     %>
-    <% by_lane = crew_clusters(task, entries).index_by(&:lane) %>
-    <%# Four fixed 25% columns so the crew is always one solid row (build · review ·
-        assembled · shipped), each centered; an absent stage leaves its column blank. %>
-    <div class="grid grid-cols-4 gap-1 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
-      <% %i[build review assembled shipped].each do |lane| %>
+    <% columns = crew_columns(task, entries, board: board, mascot: mascot) %>
+    <%# Fixed grid (3 columns, or 4 once shipped / for blocked) so the crew is one
+        solid row; each compartment centered in its column, an unreached stage left
+        blank. The Build board (/tasks) splits the build steps; Deploy collapses them. %>
+    <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
+         data-test="stage-agent-avatars" title="Stage crew">
+      <% columns.each do |cluster| %>
         <div class="flex justify-center">
-          <% if (cluster = by_lane[lane]) %>
+          <% if cluster.stacked.any? %>
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
               <%# Tight stack — virtually one circle; priority last = on top. The whole
                   stack scales up on card hover (transform only, so siblings don't shift). %>
-              <div class="flex items-center -space-x-9 transition-transform duration-150 group-hover:scale-110">
-                <% cluster.stacked.each do |entry| %>
-                  <div class="rounded-full ring-2 ring-surface"
+              <div class="flex items-center -space-x-7 transition-transform duration-150 group-hover:scale-110">
+                <% cluster.stacked.each_with_index do |entry, i| %>
+                  <%# Frontmost (priority) avatar wears an accent border so the lead reads clear of the stack. %>
+                  <div class="rounded-full ring-2 <%= i == cluster.stacked.size - 1 ? "ring-primary/70" : "ring-surface" %>"
                        title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
                     <%= render "components/agent_avatar", agent: entry, size: "sm" %>
                   </div>

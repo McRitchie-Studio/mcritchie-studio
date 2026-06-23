@@ -282,4 +282,39 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal 1800, assembled.seconds, "Steffon's assembled time stands alone"
     assert_equal 600, shipped.seconds, "Avi's ship time stands alone"
   end
+
+  # --- crew_columns (board-aware: Build splits, Deploy collapses; 3 vs 4 cols) -
+
+  test "crew_columns on the Build board splits into three build steps, no QA spots" do
+    task = Task.create!(title: "crew columns build split", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 2.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "shannon")
+
+    cols = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :build)
+
+    assert_equal %i[designed building submitted], cols.map(&:lane), "three build steps, no QA"
+    assert cols[0].stacked.any?, "designed step is filled"
+    assert cols[1].stacked.any?, "building step is filled"
+    assert_empty cols[2].stacked, "submitted not reached → blank reserved column"
+    assert_equal 3600, cols[0].seconds, "designed shows the time spent in designed"
+    assert cols[1].live_since, "the current step (building) ticks live"
+  end
+
+  test "crew_columns on the Deploy board is three columns until shipped, four once shipped" do
+    assembled = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    assert_equal %i[build review assembled],
+                 crew_columns(assembled, stage_agent_groups(assembled, @agents), board: :deploy).map(&:lane)
+
+    shipped = deploy_task(stage: "shipped", reviewers: REVIEWERS)
+    assert_equal %i[build review assembled shipped],
+                 crew_columns(shipped, stage_agent_groups(shipped, @agents), board: :deploy).map(&:lane)
+  end
+
+  test "crew_columns keeps a blocked task at four columns" do
+    task = Task.create!(title: "crew columns blocked task", stage: "blocked")
+    cols = crew_columns(task, stage_agent_groups(task, @agents), board: :build)
+    assert_equal %i[build review assembled shipped], cols.map(&:lane), "blocked stays four (custom later)"
+  end
 end
