@@ -23,6 +23,7 @@
 #   bin/reviewer-select <task-slug>                 # fetch from the board, print the pair
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
+#   bin/reviewer-select <task-slug> --builder carl  # exclude a specific builder
 #   bin/reviewer-select --file task.json            # evaluate a local task JSON
 #
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error.
@@ -140,12 +141,28 @@ def seat_line(label, seat)
          label, seat["slug"], matched, seat["fit"], seat["roll"])
 end
 
+# The auditable "who's out" line: the QA owner always, plus the builder when
+# known — flagged "(builder)" when excluded, or "(builder — KEPT: …)" when it was
+# kept because excluding it would leave too few candidates.
+def excluded_line(decision)
+  parts = ["#{decision["excluded_qa_owner"]} (QA owner — never reviews a PR he then QAs)"]
+  builder = decision["builder"].to_s
+  unless builder.empty?
+    parts << if decision["excluded_builder"].to_s == builder
+      "#{builder} (builder — a soul never reviews their own work)"
+    else
+      "#{builder} (builder — KEPT: excluding would leave too few candidates)"
+    end
+  end
+  parts.join("; ")
+end
+
 def print_human(decision, pr_url, log_line)
   heavy, light = decision["reviewers"]
   puts "reviewer-select  task=#{decision["task"] || "-"}  shape=#{decision["shape"] || "-"}  " \
        "repos=#{fmt_list(decision["repositories"])}  risks=#{fmt_list(decision["risk_tags"])}"
   puts "needs-domains:   #{fmt_list(decision["needed_domains"])}"
-  puts "excluded:        #{decision["excluded_qa_owner"]}  (QA owner — never reviews a PR he then QAs)"
+  puts "excluded:        #{excluded_line(decision)}"
   puts
   puts seat_line("HEAVY", heavy)
   puts seat_line("LIGHT", light)
@@ -166,11 +183,12 @@ end
 
 # --- main -----------------------------------------------------------------
 
-options = { json: false, file: nil, qa_owner: nil }
+options = { json: false, file: nil, qa_owner: nil, builder: nil }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--qa-owner SLUG] | bin/reviewer-select --file task.json"
+  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--qa-owner SLUG] [--builder SLUG] | bin/reviewer-select --file task.json"
   o.on("--json", "Emit a machine-readable decision (single-line JSON)") { options[:json] = true }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (steffon)") { |v| options[:qa_owner] = v }
+  o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by)") { |v| options[:builder] = v }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching from the board") { |v| options[:file] = v }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -188,9 +206,11 @@ devops = task_json.dig("metadata", "devops") || {}
 task = Task.new(slug: task_json["slug"], metadata: { "devops" => devops })
 qa_owner = options[:qa_owner].to_s.strip
 qa_owner = ReviewerSelector::DEFAULT_QA_OWNER if qa_owner.empty?
+builder = options[:builder].to_s.strip
+builder = nil if builder.empty?
 
 log = CaptureLogger.new
-decision = ReviewerSelector.new(task, qa_owner: qa_owner, logger: log).decision
+decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, logger: log).decision
 pr_url = devops["pr_url"].to_s.strip
 
 if options[:json]

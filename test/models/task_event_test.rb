@@ -1,4 +1,8 @@
 require "test_helper"
+# Object#stub — this file's graceful-degradation test uses it standalone (mock
+# isn't required globally; matches the repo's per-file convention), so it must
+# not depend on run order.
+require "minitest/mock"
 
 class TaskEventTest < ActiveSupport::TestCase
   test "creating a task records a genesis event with no from-stage" do

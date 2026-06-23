@@ -51,4 +51,34 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_match(/excluded:\s+steffon/, out)
     assert_match(/tiebreak \(auditable/, out)
   end
+
+  def test_builder_recorded_on_the_task_is_excluded
+    # devops.built_by is what the board JSON carries (the CLI builds an in-memory
+    # task from it) — the builder must drop out of the candidate pool.
+    out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--json")
+    assert_equal 0, code, out
+
+    line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+    decision = JSON.parse(line)
+    refute_includes decision["candidates"], "carl", "the recorded builder is excluded"
+    assert_equal "carl", decision["builder"]
+    assert_equal "carl", decision["excluded_builder"]
+  end
+
+  def test_human_output_names_the_excluded_builder
+    out, code = select("shape" => "backend", "built_by" => "carl")
+    assert_equal 0, code, out
+    assert_match(/excluded:\s+steffon/, out, "the QA owner still leads the excluded line")
+    assert_match(/carl \(builder/, out, "the builder is named on the excluded line")
+  end
+
+  def test_builder_flag_overrides_the_recorded_builder
+    out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--builder shannon --json")
+    assert_equal 0, code, out
+
+    line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+    decision = JSON.parse(line)
+    assert_equal "shannon", decision["builder"], "--builder wins over devops.built_by"
+    refute_includes decision["candidates"], "shannon"
+  end
 end

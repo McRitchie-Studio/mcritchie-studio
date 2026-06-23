@@ -25,6 +25,98 @@ class TaskTest < ActiveSupport::TestCase
     assert_not_nil task.reviewed_at
   end
 
+  # --- builder identity: who built this (devops.built_by) ---
+
+  test "moving to building stamps the build-claim actor onto devops.built_by" do
+    Current.task_event_actor = "carl"
+    task = tasks(:new_task)
+    task.build!
+
+    assert_equal "carl", task.reload.devops_built_by, "the build agent is recorded for reviewer exclusion"
+  ensure
+    Current.reset
+  end
+
+  test "a building move with no actor leaves built_by unset" do
+    # A model-method / conductor move carries no Current actor — nothing to stamp,
+    # and an existing value must never be clobbered to nil.
+    task = tasks(:new_task)
+    task.build!
+
+    assert_nil task.reload.devops_built_by
+  end
+
+  test "a rework re-claim re-points built_by to the current builder" do
+    Current.task_event_actor = "shannon"
+    task = tasks(:new_task)
+    task.build!
+    assert_equal "shannon", task.reload.devops_built_by
+
+    # Bounced back, then re-claimed by a different soul — built_by follows.
+    task.update!(stage: "blocked")
+    Current.task_event_actor = "carl"
+    task.update!(stage: "building")
+
+    assert_equal "carl", task.reload.devops_built_by, "the latest builder wins on a re-claim"
+  ensure
+    Current.reset
+  end
+
+  test "a soul-slug build actor is stamped and excluded from review end-to-end" do
+    # The real build path passes --actor <soul>; the soul is stamped and the
+    # reviewer pool then excludes it (a soul never reviews their own work).
+    Current.task_event_actor = "carl"
+    task = Task.create!(title: "soul builder exclusion task",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build!
+
+    assert_equal "carl", task.reload.devops_built_by, "a soul slug is recorded as the builder"
+
+    decision = ReviewerSelector.explain(task)
+    assert_equal "carl", decision["excluded_builder"], "the soul builder is excluded from review"
+    refute_includes decision["candidates"], "carl"
+  ensure
+    Current.reset
+  end
+
+  test "a session-id build actor is not stamped and causes no false exclusion" do
+    # A bare `bin/task move <slug> building` defaults the actor to the session id
+    # (a UUID) — NOT a soul. It must not be stamped as built_by, and must not be
+    # reported as excluded (it was never a reviewer candidate). This is the gap
+    # that made the feature no-op on the CLI build path while the audit lied.
+    Current.task_event_actor = "942a9824-375f-4d13-b60e-85be79ee9880"
+    task = Task.create!(title: "session id builder task",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build!
+
+    assert_nil task.reload.devops_built_by, "a session id is not stamped as the builder"
+
+    decision = ReviewerSelector.explain(task)
+    assert_nil decision["excluded_builder"], "no soul is falsely excluded"
+    assert_includes decision["candidates"], "carl", "the full pool (minus QA owner) stays eligible"
+  ensure
+    Current.reset
+  end
+
+  test "a no-actor re-move to building preserves the existing built_by" do
+    # Set a builder, bounce to blocked, then re-move to building with NO actor
+    # (Current cleared) — stamp_builder must leave the prior builder untouched,
+    # never clobber it to nil.
+    Current.task_event_actor = "shannon"
+    task = tasks(:new_task)
+    task.build!
+    assert_equal "shannon", task.reload.devops_built_by
+    Current.reset # the re-claim below carries no actor
+
+    task.update!(stage: "blocked")
+    task.update!(stage: "building")
+
+    assert_equal "shannon", task.reload.devops_built_by,
+      "a no-actor re-claim leaves the prior builder untouched"
+  ensure
+    Current.reset
+  end
+
   # --- Workflow 2: Deploy transitions ---
 
   test "reviewed task can be assembled" do
