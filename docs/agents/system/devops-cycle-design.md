@@ -279,25 +279,56 @@ This is Mr. McRitchie's single trigger for the whole QA department: hand it to a
 agent and it walks the persistent-`release` model end to end, stopping only at the
 one human gate. It does **not** ship to production on its own.
 
+> **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
+> opens a fresh session with just `Build and Deploy QA Release`, follow **this**
+> SOP — *not* the feature-agent "⛔ STOP before writing code" flow in `CLAUDE.md`
+> (that is the **Build** lane). The conductor reviews, merges, and deploys work
+> that is **already** `reviewed`; it does not create a task, take a worktree, or
+> write feature code.
+
+> **A non-interactive agent MUST pass `--yes`.** Since the prepare-confirm
+> shipped, `bin/release prepare` / `ship` / `merge` / `archive` all **prompt for
+> confirmation**. An agent runs in a non-interactive shell where stdin is EOF,
+> which the confirm reads as **"no"** — so the command **silently no-ops**: it
+> looks like it ran, but nothing was merged or deployed. Every conductor command
+> an agent runs below therefore carries **`--yes`**. (`--prod` is already the
+> default — the board is prod — so don't add it redundantly. `ship` stays the
+> operator-run human gate, where the operator answers the prompt; an agent ever
+> assigned that lane needs `--yes` too.)
+
 1. **Assess the release.** Find the active release via `Release.current` (the
    board features it via `Release.featured`, which falls back to the last
    shipped when none is active) and list its current `assembled` members — the
    candidate already riding the train.
 2. **Pull in the reviewed backlog.** For every eligible `reviewed` task,
-   `bin/release merge <task>` it into `release` (membership flips `reviewed →
-   assembled` at merge). **Avi's bias is throughput — maximize what ships: get
-   every task that passes QA into the release, default to including, not
-   deferring.** If no release is active, the first merge creates the singleton
-   candidate.
+   `bin/release merge <task> --yes` it into `release` (membership flips `reviewed →
+   assembled` at merge). **Before each `bin/release merge` run this pre-merge
+   checklist** — older `reviewed` PRs commonly trip both, and either one makes the
+   merge fail:
+   - **Un-draft the PR.** A draft PR refuses merge (`gh pr merge` errors "Pull
+     Request is still a draft") — run `gh pr ready <n>` first.
+   - **Re-base it onto `release`.** PRs cut before the persistent-`release`
+     cutover (or by older tooling) target `main`, but `bin/release merge` needs
+     base `release` — run `gh pr edit <n> --base release` first (a no-op rebase
+     when `main` == `release`).
+
+   The same two checks apply to every `bin/release merge` in step 3. **Avi's bias
+   is throughput — maximize what ships: get every task that passes QA into the
+   release, default to including, not deferring.** If no release is active, the
+   first merge creates the singleton candidate.
 3. **Work the `submitted` queue.** Review each submitted PR (the `Review
    submitted PRs` runbook below). For each that **passes QA and doesn't
-   conflict**, `bin/release merge <task>` it into `release` (so it flips
-   `reviewed → assembled` and joins the candidate); send back anything that
-   fails review (`bin/task block … --kind rework`).
-4. **Deploy the candidate to QA.** `bin/release prepare` — deploys
+   conflict**, run the step-2 pre-merge checklist then `bin/release merge <task>
+   --yes` it into `release` (so it flips `reviewed → assembled` and joins the
+   candidate); send back anything that fails review (`bin/task block … --kind
+   rework`).
+4. **Deploy the candidate to QA.** `bin/release prepare --yes` — deploys
    `origin/release` to QA for every member's **app** (gem members ride the record
    and are QA'd via a consuming app), records `release.qa_url`, and leaves the RC
-   `assembled` for the operator to eyeball.
+   `assembled` for the operator to eyeball. If `prepare` prints the recorded QA
+   URL with `(/up 000)` right after a Heroku release, that's usually the dyno
+   still booting, not a failure — re-check with a fresh `curl -s -o /dev/null -w
+   "%{http_code}" <url>/up` before treating it as broken.
 5. **Stop at the human gate.** Do **not** ship. Report the QA URL and the
    candidate's members, then **ask the operator to make the production release**
    (`bin/release ship`) — the one human gate (see `Run Deployment` below).
@@ -320,13 +351,15 @@ that already has `origin/release` is skipped.
 Two deterministic steps:
 
 1. **Merge each approved PR into `release`.** Run **`bin/release merge <task-slug>
-   [--prod]`** per `reviewed` task: it resolves the task's PR, verifies its base
+   --yes [--prod]`** per `reviewed` task (run the pre-merge checklist first —
+   `gh pr ready <n>` to un-draft, `gh pr edit <n> --base release` to retarget):
+   it resolves the task's PR, verifies its base
    is `release`, `gh pr merge`s it, then `Release::Conductor.adopt!`s the task
    onto the active candidate — flipping it `reviewed → assembled` and
    opening/reopening the singleton release as needed. A merge **conflict surfaces
    here** (resolve on GitHub or block the task for rework); `release` is never
    force-pushed. Gem PRs merge into their own repo's `release` like any other.
-2. **Deploy the candidate to QA.** Run **`bin/release prepare [--task SLUG ...]
+2. **Deploy the candidate to QA.** Run **`bin/release prepare --yes [--task SLUG ...]
    [--slug rel-…] [--prod]`** (`Release::Conductor.prepare!`): finds the active
    release, runs a per-app **merge-forward guard** (keeps each repo's `release`
    ahead of `main`), then `bin/qa-server deploy <qa_app> origin/release` for each
