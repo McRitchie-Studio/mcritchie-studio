@@ -69,7 +69,8 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
   end
 
   test "kanban card shows the Pokemon mascot chip" do
-    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                    sprite_url: "https://example.test/pokemon/143-sprite.png")
     task = Task.create!(
       title: "mascot chip card task",
       stage: "building",
@@ -80,7 +81,7 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#card-#{task.slug}" do
-      assert_select "img[src=?]", "/pokemon/143.png"
+      assert_select "img[src=?]", "https://example.test/pokemon/143-sprite.png"
       assert_select "span", text: "Snorlax"
     end
   end

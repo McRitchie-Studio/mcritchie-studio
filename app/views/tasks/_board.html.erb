@@ -316,7 +316,7 @@ function kanbanBoard() {
                 <% end %>
                 <% if (mascot_slug = task.devops_field("mascot")) && (mon = pokemon_by_slug[mascot_slug]) %>
                   <div class="flex items-center gap-1" title="Mascot: <%= mon.name %> (#<%= format('%03d', mon.dex) %>)">
-                    <img src="/pokemon/<%= mon.dex %>.png" alt="<%= mon.name %>" class="w-5 h-5 object-contain" loading="lazy">
+                    <img src="<%= mon.sprite_url %>" alt="<%= mon.name %>" class="w-5 h-5 object-contain" loading="lazy" onerror="this.remove()">
                     <span class="text-xs text-muted"><%= mon.name %></span>
                   </div>
                 <% end %>

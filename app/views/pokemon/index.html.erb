@@ -27,7 +27,7 @@
         <% @pokemon.each do |p| %>
           <tr class="border-b border-subtle/50 hover:bg-surface">
             <td class="p-2">
-              <img src="/pokemon/<%= p.dex %>.png" alt="<%= p.name %>" width="40" height="40"
+              <img src="<%= p.sprite_url %>" alt="<%= p.name %>" width="40" height="40"
                    class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.visibility='hidden'">
             </td>
             <td class="p-3 text-muted tabular-nums"><%= format("%03d", p.dex) %></td>
@@ -59,7 +59,7 @@
   </div>
 
   <p class="text-muted text-xs mt-3">
-    Sprites bundled at <code>/pokemon/&lt;dex&gt;.png</code>. “Avatar (S3)” is the hosted high-res render,
-    populated by <code>rake pokemon:upload_images</code> on the deploy target.
+    Both the sprite and the high-res “Avatar (S3)” render are served from S3
+    (<code>mcritchie-studio-production/pokemon/</code>), populated once by <code>rake pokemon:upload_images</code>.
   </p>
 </section>
