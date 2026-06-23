@@ -1057,6 +1057,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "worktree_slug" => task,
     "task_record_slug" => task_record,
     "task_url" => task_record_url,
+    "mascot" => compact_value(values["TASK_MASCOT"]),
     "branch" => branch,
     "head" => head,
     "repo" => app.fetch("repo"),
@@ -1161,6 +1162,13 @@ def run_bind_task(app, task, reference)
   record_slug, url = parse_task_reference(reference)
   values["TASK_RECORD_SLUG"] = record_slug
   values["TASK_URL"] = url
+  # Best-effort: capture the task's Pokémon mascot for the status line. The
+  # bin/task field reader hits the board API; any failure (offline / auth / no
+  # mascot) just leaves it unset, so binding never depends on it.
+  if record_slug =~ /\A[\w.-]+\z/
+    mascot = `#{__dir__}/task field #{record_slug} mascot 2>/dev/null`.to_s.strip
+    values["TASK_MASCOT"] = mascot unless mascot.empty?
+  end
   write_stack_env(app, task, values)
 
   record = stack_record(app, dir)
