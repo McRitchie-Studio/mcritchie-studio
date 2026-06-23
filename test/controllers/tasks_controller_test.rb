@@ -57,17 +57,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     reviewed  = Task.where(stage: "reviewed").count
     assembled = Task.where(stage: "assembled").count
 
+    # On /tasks the Tasks button is hidden (redundant with the title); the
+    # Deployments button shows with its reviewed + assembled badges.
     get tasks_path
     assert_response :success
-
     assert_select %(nav[aria-label="Board views"]) do
-      assert_select %(a[href="#{tasks_path}"]), { minimum: 1 }
       assert_select %(a[href="#{deployments_path}"]), { minimum: 1 }
-      # Tasks toggle → building; Deployments toggle → reviewed + assembled.
-      assert_select %(span[title="#{building} building"]), text: building.to_s
+      assert_select %(a[href="#{tasks_path}"]), { count: 0 }
       assert_select %(span[title="#{reviewed} reviewed"]), text: reviewed.to_s
       assert_select %(span[title="#{assembled} assembled"]), text: assembled.to_s
     end
+
+    # On /deployments the Tasks button shows with its building badge.
+    get deployments_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board views"] span[title="#{building} building"]), text: building.to_s
   end
 
   test "board header omits the removed All Agents agent filter" do
@@ -79,7 +83,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "toggle count badge renders even at zero so the glance count never vanishes" do
     # building tasks are never release members, so clearing them is FK-safe.
     Task.where(stage: "building").delete_all
-    get tasks_path
+    # The building badge rides the Tasks button, which shows on /deployments
+    # (it is hidden on /tasks as redundant with the title).
+    get deployments_path
     assert_response :success
     assert_select %(nav[aria-label="Board views"] span[title="0 building"]), text: "0"
   end
@@ -273,13 +279,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "each board page cross-links to the other two" do
-    [tasks_path, deployments_path, stages_path].each do |page|
+  test "each board page cross-links to the other boards" do
+    # The active board hides its own (redundant) toggle button, so a page links
+    # to the OTHER board(s); Stages stays reachable from the top-links nav.
+    { tasks_path => "tasks", deployments_path => "deployments", stages_path => "stages" }.each do |page, current|
       get page
       assert_response :success
-      assert_select %(nav a[href="#{tasks_path}"]), { minimum: 1 }, "#{page} missing Tasks nav link"
-      assert_select %(nav a[href="#{deployments_path}"]), { minimum: 1 }, "#{page} missing Deployments nav link"
       assert_select %(nav a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages nav link"
+      assert_select %(nav a[href="#{tasks_path}"]), { minimum: 1 }, "#{page} missing Tasks nav link" unless current == "tasks"
+      assert_select %(nav a[href="#{deployments_path}"]), { minimum: 1 }, "#{page} missing Deployments nav link" unless current == "deployments"
     end
   end
 
