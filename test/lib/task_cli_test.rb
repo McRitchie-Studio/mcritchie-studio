@@ -3,7 +3,7 @@
 # Standalone integration test for bin/task's session-resume capture. Shells out
 # to bin/task against a localhost stub HTTP server (no Rails, no real network),
 # so it deterministically asserts that the CLI stamps devops.session_id +
-# session_provider from CLAUDE_CODE_SESSION_ID on `create` and on the move to
+# session_provider from Claude/Codex session env on `create` and on the move to
 # `building` (the claim moment) — and stamps nothing when no session env is set.
 #
 #   ruby -Itest test/lib/task_cli_test.rb
@@ -36,7 +36,7 @@ class TaskCliTest < Minitest::Test
       "AGENT_API_SECRET" => "test-secret",
       "TASK_SKIP_MARKER" => "1",
       "CLAUDE_CODE_SESSION_ID" => nil,
-      "CODEX_SESSION_ID" => nil
+      "CODEX_THREAD_ID" => nil
     }.merge(env)
 
     out, = Open3.capture2(base_env, RbConfig.ruby, BIN, *args, err: File::NULL)
@@ -101,6 +101,19 @@ class TaskCliTest < Minitest::Test
     assert_equal "feature", devops["kind"]
   end
 
+  def test_create_stamps_session_from_codex_thread_env
+    requests, = run_task(
+      ["create", "--title", "Session demo task", "--kind", "feature"],
+      env: { "CODEX_THREAD_ID" => SESSION }
+    )
+    create = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }
+    refute_nil create, "expected a POST /api/v1/tasks"
+    devops = devops_of(create)
+    assert_equal SESSION, devops["session_id"]
+    assert_equal "codex", devops["session_provider"]
+    assert_equal "feature", devops["kind"]
+  end
+
   def test_move_to_building_stamps_session_and_preserves_devops
     requests, = run_task(
       ["move", "demo-task", "building"],
@@ -113,6 +126,20 @@ class TaskCliTest < Minitest::Test
     assert_equal SESSION, parsed.dig("devops", "session_id")
     assert_equal "claude", parsed.dig("devops", "session_provider")
     # read-merge-write keeps the existing devops field rather than wiping it
+    assert_equal "feature", parsed.dig("devops", "kind")
+  end
+
+  def test_move_to_building_stamps_codex_thread_and_preserves_devops
+    requests, = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CODEX_THREAD_ID" => SESSION }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch, "expected a PATCH for the move"
+    parsed = JSON.parse(patch[:body])
+    assert_equal "building", parsed["stage"]
+    assert_equal SESSION, parsed.dig("devops", "session_id")
+    assert_equal "codex", parsed.dig("devops", "session_provider")
     assert_equal "feature", parsed.dig("devops", "kind")
   end
 

@@ -63,14 +63,13 @@ end
 # The agent session working this task — stamped on create + on the move to
 # `building` (the claim moment) so the board + status line can show which
 # terminal owns a task and offer a click-to-copy resume command. Claude exposes
-# CLAUDE_CODE_SESSION_ID; the Codex path is best-effort. Returns [id, provider],
+# CLAUDE_CODE_SESSION_ID; Codex exposes CODEX_THREAD_ID. Returns [id, provider],
 # or [nil, nil] for a plain shell / CI run (stamp nothing — graceful).
 def session_identity
   claude = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
   return [claude, "claude"] unless claude.empty?
 
-  # TODO: confirm codex resume syntax + its session env var. Best-effort guess.
-  codex = ENV["CODEX_SESSION_ID"].to_s.strip
+  codex = ENV["CODEX_THREAD_ID"].to_s.strip
   return [codex, "codex"] unless codex.empty?
 
   [nil, nil]

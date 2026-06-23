@@ -35,9 +35,7 @@ class Task < ApplicationRecord
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor block_kind agent_context session_id session_provider mascot
   ].freeze
-  # Provider → resume-command template (one %s, the session id). Codex is a
-  # one-line addition once its real resume syntax is confirmed.
-  # TODO: confirm codex resume syntax + env var.
+  # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
     "claude" => "claude --resume %s",
     "codex"  => "codex resume %s"
