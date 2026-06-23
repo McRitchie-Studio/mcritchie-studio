@@ -75,12 +75,16 @@
         on the roomier Build board; the stack overlap tracks the size to keep an ~8px peek. %>
     <% crew_size = board == :build ? "sm" : "xs" %>
     <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
+    <%# When the task is blocked, the LAST filled compartment is where it stalled
+        (a block lands from reviewed or assembled) — its timer turns into a red ✕. %>
+    <% blocked = task.stage == "blocked" %>
+    <% block_idx = (columns.rindex { |c| c.stacked.any? } if blocked) %>
     <%# Fixed grid (3 columns, or 4 once shipped / for blocked) so the crew is one
         solid row; each compartment centered in its column, an unreached stage left
         blank. The Build board (/tasks) splits the build steps; Deploy collapses them. %>
     <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
          data-test="stage-agent-avatars" title="Stage crew">
-      <% columns.each do |cluster| %>
+      <% columns.each_with_index do |cluster, ci| %>
         <div class="flex justify-start">
           <% if cluster.stacked.any? %>
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
@@ -96,7 +100,12 @@
                   </div>
                 <% end %>
               </div>
-              <% if cluster.live_since %>
+              <% if blocked && ci == block_idx %>
+                <%# Blocked here — the latest agent's timer becomes a red ✕. %>
+                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-[10px] font-bold leading-none
+                             bg-red-500/30 text-red-200 border border-red-400/70 ring-1 ring-surface"
+                      data-test="crew-blocked" title="Blocked at this stage">✕</span>
+              <% elsif cluster.live_since %>
                 <%# Live elapsed counter (s → m → h → d → w), ticking each second. %>
                 <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-[9px] font-semibold leading-none
                              bg-primary/20 text-primary border border-primary/40 ring-1 ring-surface tabular-nums"

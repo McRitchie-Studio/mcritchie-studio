@@ -312,9 +312,21 @@ class StageAgentsHelperTest < ActionView::TestCase
                  crew_columns(shipped, stage_agent_groups(shipped, @agents), board: :deploy).map(&:lane)
   end
 
-  test "crew_columns keeps a blocked task at four columns" do
+  test "crew_columns gives a blocked task Assembled's three columns" do
     task = Task.create!(title: "crew columns blocked task", stage: "blocked")
-    cols = crew_columns(task, stage_agent_groups(task, @agents), board: :build)
-    assert_equal %i[build review assembled shipped], cols.map(&:lane), "blocked stays four (custom later)"
+    cols = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy)
+    assert_equal %i[build review assembled], cols.map(&:lane), "blocked mirrors Assembled (build · review · assembled)"
+  end
+
+  test "crew_columns splits the build steps for designed/building even on the Deploy board" do
+    task = Task.create!(title: "crew columns deploy design", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 2.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "shannon")
+
+    cols = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy)
+
+    assert_equal %i[designed building submitted], cols.map(&:lane), "build steps show even on the deploy board"
   end
 end

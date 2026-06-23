@@ -237,7 +237,7 @@ function kanbanBoard() {
       <div class="flex-1 min-w-[190px]"
            <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>>
         <!-- Column Header -->
-        <div class="flex items-center justify-between gap-2 mb-3 px-1 flex-wrap">
+        <div class="mb-3 px-1">
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
               <%= Task::STAGE_LABELS.fetch(stage) %>
@@ -248,8 +248,14 @@ function kanbanBoard() {
               <%= (@tasks_by_stage[stage] || []).size %>
             </span>
           </div>
-          <% if local_assigns[:show_kickoffs] && (kick = devops_kickoffs[stage]) %>
-            <%= render "kickoff_chip", command: kick %>
+          <%# Kickoff-chip row, reserved at a fixed height on EVERY column (empty for
+              designed/building) so all dropzones start at the same y — no height jog. %>
+          <% if local_assigns[:show_kickoffs] %>
+            <div class="mt-2 min-h-[26px]">
+              <% if (kick = devops_kickoffs[stage]) %>
+                <%= render "kickoff_chip", command: kick %>
+              <% end %>
+            </div>
           <% end %>
         </div>
 
@@ -258,10 +264,16 @@ function kanbanBoard() {
              data-stage="<%= stage %>"
              class="kanban-dropzone rounded-xl border-2 border-dashed min-h-[calc(100vh-220px)] p-2 space-y-2 transition-colors duration-150 border-subtle">
 
-          <% (@tasks_by_stage[stage] || []).each do |task| %>
+          <%# On a board with no Blocked column (Deployments), surface blocked tasks at
+              the top of Submitted so they aren't lost off-board. %>
+          <% column_tasks = @tasks_by_stage[stage] || [] %>
+          <% column_tasks = (@tasks_by_stage["blocked"] || []) + column_tasks if stage == "submitted" && !stages.include?("blocked") %>
+          <% column_tasks.each do |task| %>
+            <%# Blocked cards wear a reddish hue (the crew also flags the stall point). %>
+            <% card_tone = task.blocked? ? "bg-red-950/40 border-red-800/60 hover:border-red-600/70 hover:bg-red-900/40" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt" %>
             <div id="card-<%= task.slug %>"
                  data-slug="<%= task.slug %>"
-                 data-stage="<%= stage %>"
+                 data-stage="<%= task.stage %>"
                  data-agent="<%= task.agent_slug %>"
                  data-href="<%= task_path(task.slug) %>"
                  x-data="{ hovered: false, mx: 0, my: 0 }"
@@ -270,7 +282,7 @@ function kanbanBoard() {
                  @mouseleave="hovered = false"
                  @mousedown="mx = $event.clientX; my = $event.clientY"
                  @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
-                 class="kanban-card relative bg-surface rounded-lg border border-subtle p-3 cursor-pointer hover:border-primary/40 hover:bg-surface-alt transition group">
+                 class="kanban-card relative <%= card_tone %> rounded-lg border p-3 cursor-pointer transition group">
 
               <%# Title — spans the full card width, fades at the overflowing edge
                   and scrolls to its end while the card is hovered (feature 1).
