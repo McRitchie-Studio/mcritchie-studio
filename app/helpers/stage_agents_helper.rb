@@ -68,15 +68,17 @@ module StageAgentsHelper
     return :build if Task::BUILD_STAGES.include?(stage)
     return :review if stage == "reviewed"
 
-    :deploy
+    stage.to_sym # :assembled, :shipped — each its own compartment
   end
 
-  # Board-card crew: ONE stacked circle per lane (Build · Review · Deploy) so a full
-  # crew fits a small card. Each cluster stacks its avatars (priority LAST, so it
-  # paints on top) and carries the single duration that matters for that lane:
-  #   build  → total build time, shown once submitted; LIVE counter while building
-  #   review → the longer of the two reviews (they share the →reviewed event)
-  #   deploy → assembled + shipped (QA→prod), Avi on top
+  # Board-card crew: FOUR fixed compartments (Build · Review · Assembled · Shipped)
+  # so a full crew fits a small card and nothing reflows on hover. Each cluster
+  # stacks its avatars (priority LAST, so it paints on top) and carries the single
+  # duration that matters for that compartment:
+  #   build     → total build time, shown once submitted; LIVE counter while building
+  #   review    → the longer of the two reviews (they share the →reviewed event)
+  #   assembled → Steffon's QA-stage time, on its own
+  #   shipped   → Avi's ship time, on its own
   CrewCluster = Struct.new(:lane, :stacked, :seconds, :live_since, keyword_init: true)
 
   def crew_clusters(task, entries)
@@ -103,13 +105,14 @@ module StageAgentsHelper
         )
       end
 
-      if (deploy = by_lane[:deploy])
-        clusters << CrewCluster.new(
-          lane: :deploy,
-          stacked: deploy.sort_by { |e| e.stage == "shipped" ? 1 : 0 }, # Avi (shipped) last = on top
-          seconds: deploy.sum { |e| e.seconds.to_i },
-          live_since: nil
-        )
+      if (assembled = by_lane[:assembled])
+        clusters << CrewCluster.new(lane: :assembled, stacked: assembled,
+                                    seconds: assembled.sum { |e| e.seconds.to_i }, live_since: nil)
+      end
+
+      if (shipped = by_lane[:shipped])
+        clusters << CrewCluster.new(lane: :shipped, stacked: shipped,
+                                    seconds: shipped.sum { |e| e.seconds.to_i }, live_since: nil)
       end
     end
   end

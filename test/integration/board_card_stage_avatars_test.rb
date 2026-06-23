@@ -55,9 +55,9 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the full crew collapses to three lane clusters (build / review / deploy)" do
+  test "the full crew collapses to four lane compartments (build / review / assembled / shipped)" do
     # A full journey: designer, builder, submitter (build), 2 reviewers, Steffon,
-    # Avi = 7 faces — all shown, grouped into three lane bunches, no +N cap.
+    # Avi = 7 faces — all shown, in four lane compartments.
     task = Task.create!(title: "crowded crew shipped card", stage: "shipped")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl")
@@ -82,9 +82,9 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].flex-wrap", count: 1
 
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "[data-test='crew-cluster']", count: 3  # one stacked circle per lane
+      assert_select "[data-test='crew-cluster']", count: 4  # build · review · assembled · shipped
       assert_select "span.text-white", count: 7             # all 7 faces, just stacked
-      assert_select "[data-test='crew-duration']", count: 3 # build total · review · QA→prod
+      assert_select "[data-test='crew-duration']", count: 4 # one duration per compartment
     end
   end
 

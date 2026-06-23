@@ -54,10 +54,11 @@ class StageAgentsHelperTest < ActionView::TestCase
 
   # --- stage_lane (board-card bunching) ---------------------------------------
 
-  test "stage_lane buckets each stage into a build / review / deploy bunch" do
+  test "stage_lane buckets each stage into its own compartment" do
     assert_equal %i[build build build], %w[designed building submitted].map { |s| stage_lane(s) }
     assert_equal :review, stage_lane("reviewed")
-    assert_equal %i[deploy deploy], %w[assembled shipped].map { |s| stage_lane(s) }
+    assert_equal :assembled, stage_lane("assembled")
+    assert_equal :shipped, stage_lane("shipped")
   end
 
   # --- stage_agent_groups -----------------------------------------------------
@@ -269,15 +270,16 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_nil build.seconds, "no static build time until submitted"
   end
 
-  test "crew_clusters stacks review heavy-on-top and deploy avi-on-top with combined QA time" do
+  test "crew_clusters keeps review heavy-on-top and splits assembled/shipped with their own time" do
     task = deploy_task(stage: "shipped", reviewers: REVIEWERS) # reviewed 3600, assembled 1800, shipped 600
     clusters = crew_clusters(task, stage_agent_groups(task, @agents))
     review = clusters.find { |c| c.lane == :review }
-    deploy = clusters.find { |c| c.lane == :deploy }
+    assembled = clusters.find { |c| c.lane == :assembled }
+    shipped = clusters.find { |c| c.lane == :shipped }
 
     assert review.stacked.last.heavy?, "heavy reviewer is on top (rendered last)"
     assert_equal 3600, review.seconds, "the longer of the two reviews"
-    assert_equal "shipped", deploy.stacked.last.stage, "Avi (shipped) is on top"
-    assert_equal 2400, deploy.seconds, "assembled + shipped = 1800 + 600"
+    assert_equal 1800, assembled.seconds, "Steffon's assembled time stands alone"
+    assert_equal 600, shipped.seconds, "Avi's ship time stands alone"
   end
 end

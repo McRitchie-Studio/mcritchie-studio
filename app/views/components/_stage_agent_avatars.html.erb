@@ -71,15 +71,16 @@
       (:detailed) still shows every stage per-usual.
     %>
     <% clusters = crew_clusters(task, entries) %>
-    <div class="flex flex-wrap items-center gap-2.5 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+    <div class="flex flex-wrap items-center gap-1.5 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
       <% clusters.each do |cluster| %>
         <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
-          <%# Stacked, near-fully overlapped (virtually one circle); priority is last = on top. %>
-          <div class="flex items-center -space-x-6">
+          <%# Tight stack — virtually one circle; priority last = on top. The whole
+              stack scales up on card hover (transform only, so siblings don't shift). %>
+          <div class="flex items-center -space-x-9 transition-transform duration-150 group-hover:scale-110">
             <% cluster.stacked.each do |entry| %>
               <div class="rounded-full ring-2 ring-surface"
                    title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
-                <%= render "components/agent_avatar", agent: entry, size: "xs" %>
+                <%= render "components/agent_avatar", agent: entry, size: "sm" %>
               </div>
             <% end %>
           </div>
