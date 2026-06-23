@@ -77,6 +77,16 @@ namespace :pokemon do
 
   def put_image(s3, bucket, key, source_url)
     body = Net::HTTP.get(URI(source_url))
-    s3.put_object(bucket: bucket, key: key, body: body, content_type: "image/png")
+    # public-read so the plain avatar_url resolves without a signed URL, plus a
+    # long immutable cache since these reference images never change. Requires the
+    # bucket to allow public-read on the pokemon/ prefix (ACL or bucket policy).
+    s3.put_object(
+      bucket: bucket,
+      key: key,
+      body: body,
+      content_type: "image/png",
+      acl: "public-read",
+      cache_control: "public, max-age=31536000, immutable"
+    )
   end
 end
