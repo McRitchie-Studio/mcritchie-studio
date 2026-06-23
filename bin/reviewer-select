@@ -1,0 +1,201 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/reviewer-select — picks the TWO senior reviewers for a submitted task's PR.
+#
+# This is the tool AVI runs at the review step of the Deploy workflow
+# (docs/agents/system/devops-cycle-design.md §1.2): after confirming
+# product-acceptance, he runs `bin/reviewer-select <task>` to choose the pair,
+# then spawns those two named seniors in parallel as review agents.
+#
+# It loads the Rails app and calls `ReviewerSelector` for the task — scoring the
+# senior pool {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
+# alex-docs=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
+# tags vs each soul's Agent.metadata["domains"]) with a LOGGED random tiebreak,
+# and splitting the pick 1 HEAVY (deep review) + 1 LIGHT. The QA owner (steffon by
+# default) is EXCLUDED so one soul never both reviews AND QAs the same change.
+#
+# Task source: the production task board API (same auth as bin/task / bin/dor-check),
+# or a local JSON via --file (offline / tests). Degrades gracefully — a missing
+# Agent row (or no DB at all) falls back to ReviewerSelector's domain defaults.
+#
+# Usage:
+#   bin/reviewer-select <task-slug>                 # fetch from the board, print the pair
+#   bin/reviewer-select <task-slug> --json          # machine-readable decision
+#   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
+#   bin/reviewer-select --file task.json            # evaluate a local task JSON
+#
+# Exit code: 0 = a pair was selected, 1 = task not found / usage error.
+
+# Activate the bundled gem versions first (Bundler.setup) — before requiring
+# `json` et al, so the pinned json (not the newer default gem) is the one loaded.
+# This is the same boot order bin/rails uses; config/environment (booted later,
+# after the fetch) brings up the full app.
+require_relative "../config/boot"
+require "net/http"
+require "json"
+require "uri"
+require "optparse"
+
+ROOT = File.expand_path("..", __dir__)
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+OP = "/opt/homebrew/bin/op"
+SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+
+def warn!(msg)
+  $stderr.puts(msg)
+end
+
+def die!(msg)
+  warn!("error: #{msg}")
+  exit 1
+end
+
+# --- task board auth + fetch (mirrors bin/task / bin/dor-check) ------------
+
+def agent_secret
+  env = ENV["AGENT_API_SECRET"]
+  return env if env && !env.empty?
+
+  if File.executable?(OP)
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue SystemCallError
+      ""
+    end
+    return op unless op.empty?
+  end
+
+  dotenv = File.join(ROOT, ".env")
+  if File.exist?(dotenv)
+    line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
+    return line.split("=", 2)[1].to_s.strip if line
+  end
+  die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+end
+
+def token
+  @token ||= api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
+end
+
+def api(method, path, body = nil, auth: true)
+  uri = URI.join(BASE_URL, path)
+  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
+  req = klass.new(uri)
+  req["Authorization"] = "Bearer #{token}" if auth
+  if body
+    req["Content-Type"] = "application/json"
+    req.body = JSON.generate(body)
+  end
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = (uri.scheme == "https")
+  http.read_timeout = 30
+  res = http.request(req)
+  parsed = res.body.to_s.empty? ? {} : (JSON.parse(res.body) rescue {})
+  die!("task not found") if method == :get && res.code.to_i == 404
+  unless res.code.to_i.between?(200, 299)
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
+  end
+  parsed
+end
+
+# Returns the task hash (slug + metadata.devops) from --file or the board API.
+def load_task_json(slug, file)
+  if file
+    raw = JSON.parse(File.read(file))
+    raw["data"] || raw
+  else
+    die!("usage: bin/reviewer-select <task-slug> [--json] [--qa-owner SLUG] | --file task.json") if slug.to_s.empty?
+    res = api(:get, "/api/v1/tasks/#{slug}")
+    res["data"] || die!("task #{slug} not found")
+  end
+rescue Errno::ENOENT
+  die!("file not found: #{file}")
+end
+
+# Captures ReviewerSelector's structured tiebreak log line so the CLI can echo
+# the audited roll instead of leaving it only in the Rails log.
+class CaptureLogger
+  attr_reader :lines
+
+  def initialize
+    @lines = []
+  end
+
+  def info(msg = nil)
+    @lines << (msg || (block_given? ? yield : ""))
+  end
+end
+
+# --- human-readable output ------------------------------------------------
+
+def fmt_list(list)
+  arr = Array(list)
+  arr.empty? ? "-" : arr.join(", ")
+end
+
+def seat_line(label, seat)
+  matched = seat["matched"].empty? ? "(no domain match — random tiebreak)" : seat["matched"].join(", ")
+  format("%-5s  %-10s  matched: %-30s  (fit %d, roll %.4f)",
+         label, seat["slug"], matched, seat["fit"], seat["roll"])
+end
+
+def print_human(decision, pr_url, log_line)
+  heavy, light = decision["reviewers"]
+  puts "reviewer-select  task=#{decision["task"] || "-"}  shape=#{decision["shape"] || "-"}  " \
+       "repos=#{fmt_list(decision["repositories"])}  risks=#{fmt_list(decision["risk_tags"])}"
+  puts "needs-domains:   #{fmt_list(decision["needed_domains"])}"
+  puts "excluded:        #{decision["excluded_qa_owner"]}  (QA owner — never reviews a PR he then QAs)"
+  puts
+  puts seat_line("HEAVY", heavy)
+  puts seat_line("LIGHT", light)
+  puts
+  puts "tiebreak (auditable — also logged to Rails.logger):"
+  puts "  candidates: #{decision["candidates"].join(", ")}"
+  puts "  rolls:      #{decision["ranked"].map { |c| "#{c["slug"]}:#{format("%.4f", c["roll"])}" }.join("  ")}"
+  puts "  ranked:     #{decision["ranked"].map { |c| "#{c["slug"]}(fit#{c["fit"]})" }.join(" > ")}"
+  puts "  chosen:     #{heavy["slug"]} (heavy) + #{light["slug"]} (light)"
+  puts "  log:        #{log_line}" if log_line
+  puts
+  if pr_url.empty?
+    puts "PR:              (none yet — selection is advisory until the PR is opened)"
+  else
+    puts "PR:              #{pr_url}"
+  end
+end
+
+# --- main -----------------------------------------------------------------
+
+options = { json: false, file: nil, qa_owner: nil }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--qa-owner SLUG] | bin/reviewer-select --file task.json"
+  o.on("--json", "Emit a machine-readable decision (single-line JSON)") { options[:json] = true }
+  o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (steffon)") { |v| options[:qa_owner] = v }
+  o.on("--file PATH", "Evaluate a local task JSON instead of fetching from the board") { |v| options[:file] = v }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!(ARGV)
+
+slug = ARGV.shift
+task_json = load_task_json(slug, options[:file])
+
+# Boot the Rails app — ReviewerSelector reads Agent metadata + uses the Task model.
+require_relative "../config/environment"
+
+devops = task_json.dig("metadata", "devops") || {}
+task = Task.new(slug: task_json["slug"], metadata: { "devops" => devops })
+qa_owner = options[:qa_owner].to_s.strip
+qa_owner = ReviewerSelector::DEFAULT_QA_OWNER if qa_owner.empty?
+
+log = CaptureLogger.new
+decision = ReviewerSelector.new(task, qa_owner: qa_owner, logger: log).decision
+pr_url = devops["pr_url"].to_s.strip
+
+if options[:json]
+  puts JSON.generate(decision.merge("pr_url" => pr_url.empty? ? nil : pr_url))
+else
+  print_human(decision, pr_url, log.lines.last)
+end
+exit 0
