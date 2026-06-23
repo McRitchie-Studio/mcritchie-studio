@@ -44,6 +44,19 @@
 #     new and reclaims nothing left. --dry-run previews the archivable plan + the
 #     worktree-reclaim list (the reclaim tool's own dry-run), mutating nothing.
 #
+#   bin/release retro [release-slug] [--worked "…"] [--friction "…"] [--followup "…"]
+#                     [--file-tasks] [--yes] [--dry-run]
+#     The post-ship "review & learn" step — completely NON-BLOCKING (archive does
+#     not depend on it). Defaults to the current/most-recently-shipped release.
+#     AUTO-GATHERS the release record (members + kinds, per-member submitted→shipped
+#     cycle timing from TaskEvents, rework rounds, reviewers, recorded checks_run)
+#     and PROMPTS a few judgment questions (what worked / what caused friction /
+#     follow-ups). --worked/--friction/--followup (repeatable) supply answers from
+#     args; --yes runs fully non-interactive (no TTY). WRITES a durable doc at
+#     docs/agents/audits/retro-<slug>.md. --file-tasks files each follow-up via
+#     `bin/task create`. Writes NO agent-memory store — the doc (+ tasks) is the
+#     record. --dry-run previews the gathered record + doc path, writing nothing.
+#
 # Targets:
 #   default        record ops run on PRODUCTION via `heroku run rails runner`
 #                  (the board IS production). On a non-dry run `prepare` also fires
@@ -1095,6 +1108,108 @@ def archive
   say("✓ Archived #{archived_count} tasks; reclaimed #{reclaimed} worktrees; SHIPPED → #{kept_count}")
 end
 
+# --- retro -----------------------------------------------------------------
+# Where the durable retro doc lands. Defaults next to the other agent audits in
+# THIS checkout (so a worktree run writes into the worktree); RETRO_DOCS_DIR
+# overrides it (the test points it at a tmpdir). Mirrors Release::Retro::AUDITS_DIR.
+def retro_docs_dir
+  return File.expand_path(ENV["RETRO_DOCS_DIR"]) if ENV["RETRO_DOCS_DIR"].to_s != ""
+
+  File.expand_path("../docs/agents/audits", __dir__)
+end
+
+# Prompt for a repeatable free-text answer: read lines until a blank one, return
+# the collected non-blank entries. Used for the interactive judgment questions.
+def prompt_list(question)
+  say("#{question} (one per line; blank line to finish)")
+  items = []
+  loop do
+    $stdout.print("  - ")
+    line = $stdin.gets
+    break if line.nil?
+
+    line = line.strip
+    break if line.empty?
+
+    items << line
+  end
+  items
+end
+
+# The post-ship "review & learn" step. NON-BLOCKING by construction: it only
+# READS the board (gather/render via a read_only conductor) and WRITES a doc to
+# the local tree — nothing in the pipeline (archive included) depends on it.
+def retro
+  # Optional positional release-slug (default = current/last-shipped). Guard so a
+  # flag isn't mistaken for the slug when retro is run with no slug.
+  slug = (ARGV.first && !ARGV.first.start_with?("--")) ? ARGV.shift : nil
+  worked    = opt_values("--worked")
+  friction  = opt_values("--friction")
+  followups = opt_values("--followup")
+  file_tasks = Release::Cli.take_flag(ARGV, "--file-tasks")
+
+  say("Release retro#{slug ? " #{slug}" : ' (current/last-shipped)'}#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
+
+  # 1. Gather + render server-side (a pure READ → runs even in --dry-run). Answers
+  #    are passed in as an inspected JSON string so free-text never breaks the
+  #    runner snippet. Returns { slug, markdown } (or {} when no release resolves).
+  interactive = !(ASSUME_YES || DRY)
+  if interactive
+    say("")
+    worked    += prompt_list("What worked well?")
+    friction  += prompt_list("What caused friction?")
+    followups += prompt_list("Follow-up tasks to file?")
+    say("")
+  end
+  answers = { "worked" => worked, "friction" => friction, "followups" => followups }
+
+  step("record (read-only): gather + render retro for #{slug || 'the current/last-shipped release'}")
+  result = conductor(
+    "rel = Release::Retro.resolve(#{slug.inspect}); " \
+    "answers = JSON.parse(#{answers.to_json.inspect}); " \
+    "puts((rel ? { slug: rel.slug, markdown: Release::Retro.render(Release::Retro.gather(rel), answers: answers) } : {}).to_json)",
+    read_only: true
+  )
+  resolved = result["slug"].to_s
+  abort!("no release to retro (no active release and nothing shipped yet)") if resolved.empty?
+
+  markdown = result["markdown"].to_s
+  path = File.join(retro_docs_dir, "retro-#{resolved}.md")
+
+  # 2. Write the durable doc to the LOCAL tree (skipped in --dry-run).
+  if DRY
+    say("")
+    step("would write retro doc: #{path} (#{markdown.lines.size} lines)")
+    say("✓ Retro previewed for #{resolved} (DRY RUN — nothing written).")
+    return
+  end
+
+  require "fileutils"
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, markdown)
+  say("✓ wrote #{path}")
+
+  # 3. Optionally file the follow-ups as tasks (gated by --file-tasks). The doc is
+  #    already written, so a `bin/task create` hiccup just means fewer tasks filed.
+  if file_tasks && followups.any?
+    say("")
+    step("file #{followups.size} follow-up task(s) via bin/task create")
+    task_bin = File.expand_path("../bin/task", __dir__)
+    followups.each do |f|
+      title = f.split(/\s+/).first(5).join(" ")
+      _, ok = sh(task_bin, "create", "--title", title, "--kind", "chore",
+                 "--agent-context", "Retro follow-up from #{resolved}: #{f}", capture: true)
+      say("  - #{ok ? '✓' : '✗'} #{title}")
+    end
+  elsif followups.any?
+    say("  (#{followups.size} follow-up(s) recorded in the doc; re-run with --file-tasks to open them as tasks)")
+  end
+
+  say("")
+  say("✓ Retro for #{resolved} written to #{path}. NON-BLOCKING — `bin/release archive` is unaffected.")
+end
+
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   case ARGV.shift
@@ -1103,9 +1218,11 @@ if __FILE__ == $PROGRAM_NAME
   when "prepare" then prepare
   when "ship"    then ship
   when "archive" then archive
+  when "retro"   then retro
   else
-    warn "usage: bin/release {init|merge <task-slug>|prepare|ship|archive} " \
-         "[--task SLUG ...] [--slug REL] [--by NAME] [--local] [--dry-run] [--yes]"
+    warn "usage: bin/release {init|merge <task-slug>|prepare|ship|archive|retro} " \
+         "[--task SLUG ...] [--slug REL] [--by NAME] " \
+         "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
     exit 1
   end
 end

@@ -411,4 +411,94 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "5", eval_helper(%(reclaimed_count("reclaimed 5 worktree(s); freed redis DBs: 9").to_s))
     assert_equal "0", eval_helper(%(reclaimed_count("reclaim: nothing reclaimed").to_s))
   end
+
+  # --- retro: the NON-BLOCKING post-ship review step -----------------------
+
+  # gather + render run server-side (stubbed conductor returns canned markdown);
+  # the CLI writes the returned doc to the LOCAL tree. RETRO_DOCS_DIR points the
+  # write at a tmpdir so the test never touches the repo's docs/.
+  RETRO_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      raise "retro gather must be a read" unless read_only
+      { "slug" => "rel-retro", "markdown" => "# Release Retro — rel-retro\\n\\n## Summary\\n\\n- demo\\n" }
+    end
+  RUBY
+
+  def test_retro_writes_the_doc_to_disk_in_non_interactive_mode
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      setup = %(ENV['RETRO_DOCS_DIR'] = #{dir.inspect}; #{RETRO_STUB})
+      # --yes → fully non-interactive (no TTY prompt); an explicit slug positional.
+      out = run_cli(["rel-retro", "--yes"], call: "retro", setup: setup)
+
+      path = File.join(dir, "retro-rel-retro.md")
+      assert File.exist?(path), "retro writes the durable doc: #{out}"
+      assert_includes File.read(path), "# Release Retro — rel-retro"
+      assert_includes out, "wrote"
+    end
+  end
+
+  def test_retro_dry_run_previews_without_writing
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      setup = %(ENV['RETRO_DOCS_DIR'] = #{dir.inspect}; #{RETRO_STUB})
+      out = run_cli(["rel-retro", "--dry-run"], call: "retro", setup: setup)
+
+      refute File.exist?(File.join(dir, "retro-rel-retro.md")), "a dry-run writes nothing"
+      assert_includes out, "DRY RUN"
+      assert_includes out, "would write retro doc"
+    end
+  end
+
+  def test_retro_resolves_the_default_release_when_no_slug_is_given
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      # No positional slug → CLI passes nil; the (stubbed) resolver returns the
+      # current/last-shipped release's slug, which the CLI writes the doc for.
+      setup = %(ENV['RETRO_DOCS_DIR'] = #{dir.inspect}; #{RETRO_STUB})
+      run_cli(["--yes"], call: "retro", setup: setup)
+      assert File.exist?(File.join(dir, "retro-rel-retro.md")), "default-release retro still writes a doc"
+    end
+  end
+
+  def test_retro_collects_repeated_answer_flags_into_the_runner_payload
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      # Capture the answers the CLI hands the (server-side) renderer: the stubbed
+      # conductor echoes the snippet back so we can prove the flags rode through.
+      capture = <<~RUBY
+        def conductor(ruby, read_only: false)
+          File.write(#{File.join(dir, 'snippet.txt').inspect}, ruby)
+          { "slug" => "rel-retro", "markdown" => "# Release Retro — rel-retro\\n" }
+        end
+      RUBY
+      setup = %(ENV['RETRO_DOCS_DIR'] = #{dir.inspect}; #{capture})
+      run_cli(["rel-retro", "--yes", "--worked", "fast review", "--friction", "flaky e2e", "--followup", "fix flake"],
+              call: "retro", setup: setup)
+
+      snippet = File.read(File.join(dir, "snippet.txt"))
+      assert_includes snippet, "fast review", "--worked rides into the render payload"
+      assert_includes snippet, "flaky e2e", "--friction rides into the render payload"
+      assert_includes snippet, "fix flake", "--followup rides into the render payload"
+    end
+  end
+
+  # NON-BLOCKING: archive must complete WITHOUT ever invoking retro. The stub
+  # raises if `retro` is touched, so reaching the summary line proves archive does
+  # not depend on (or trigger) the retro step in any way.
+  ARCHIVE_NO_RETRO_STUB = <<~RUBY
+    def retro(*); raise "non-blocking violation: archive invoked retro"; end
+    def conductor(ruby, read_only: false)
+      read_only ? { "archivable" => ["a"], "kept" => ["m1"] }
+                : { "archived" => ["a"], "kept" => ["m1"], "count" => 1 }
+    end
+    def reclaim_worktrees(apply:)
+      apply ? ["reclaimed 1 worktree(s); freed redis DBs: 11", true] : ["reclaim candidates:", true]
+    end
+  RUBY
+
+  def test_archive_is_non_blocking_and_never_invokes_retro
+    out = run_cli(["--yes"], call: "archive", setup: ARCHIVE_NO_RETRO_STUB)
+    assert_includes out, "Archived 1 tasks", "archive completes independently of retro"
+  end
 end
