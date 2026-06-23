@@ -14,6 +14,14 @@
 # "no self-gating" (§1.2). Steffon stays a valid reviewer for other PRs; pass a
 # different `qa_owner:` when he isn't the one QAing this task.
 #
+# The BUILDER is excluded too — a soul shouldn't review their own work. Who built
+# the task is read from devops.built_by (stamped from the build-claim actor) and,
+# for a persisted task, falls back to the actor on the latest `→ building`
+# TaskEvent; pass `builder:` to override. When the builder is unknown the
+# selection degrades to domain-only (QA-owner exclusion still applies), and if
+# excluding the builder would leave fewer than two candidates the builder is KEPT
+# (the decision/log flags it) so a pair is always returned.
+#
 # Reads each reviewer's Agent.metadata["domains"] + ["review_weight"]; DEGRADES
 # GRACEFULLY to built-in defaults when the Agent row or those keys are absent, so
 # selection works even before the reviewer souls are seeded.
@@ -28,6 +36,10 @@ class ReviewerSelector
   # The soul who QAs the assembled RC at the `assembled` step — excluded from the
   # pool by default so a reviewer never gates their own QA (§1.2 "no self-gating").
   DEFAULT_QA_OWNER = "steffon"
+
+  # A heavy + a light seat — the floor of candidates a selection needs. The
+  # builder exclusion is skipped (builder kept) rather than drop below this.
+  MIN_CANDIDATES = 2
 
   # Fallback domain tags per reviewer when an Agent row has no metadata["domains"].
   # Keep aligned with the seeded `domains` in db/seeds/02_agents.rb.
@@ -88,9 +100,12 @@ class ReviewerSelector
     new(task, **opts).decision
   end
 
-  def initialize(task, qa_owner: DEFAULT_QA_OWNER, logger: nil, random: Random.new)
+  # `builder:` overrides who built the task (else it's derived from the task —
+  # see #builder). Pass it when the caller already knows the build agent.
+  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, logger: nil, random: Random.new)
     @task = task
     @qa_owner = qa_owner.to_s
+    @builder_override = builder.to_s.strip.presence
     @logger = logger || Rails.logger
     @random = random
   end
@@ -119,6 +134,8 @@ class ReviewerSelector
       "risk_tags" => task_risk_tags,
       "needed_domains" => needs,
       "excluded_qa_owner" => qa_owner,
+      "builder" => builder,
+      "excluded_builder" => builder_excluded? ? builder : nil,
       "candidates" => candidate_slugs,
       "reviewers" => [seat(heavy, needs, "heavy"), seat(light, needs, "light")],
       "ranked" => ordered.map { |c| ranked_view(c) }
@@ -129,9 +146,59 @@ class ReviewerSelector
 
   attr_reader :task, :qa_owner, :logger, :random
 
-  # The selectable pool — the five souls minus the QA owner (no self-gating).
+  # The full reviewer pool. A seam (returns POOL) so tests can shrink it to
+  # exercise the too-few-candidates fallback without mutating the frozen constant.
+  def pool
+    POOL
+  end
+
+  # The selectable pool — the five souls minus the QA owner (no self-gating) and
+  # minus the builder (a soul never reviews their own work). The builder drop is
+  # skipped when it would leave too few candidates (#builder_excluded?), so a
+  # heavy+light pair is always returnable.
   def candidate_slugs
-    POOL - [qa_owner]
+    base = pool - [qa_owner]
+    builder_excluded? ? base - [builder] : base
+  end
+
+  # Who built this task: the explicit override, else devops.built_by (stamped from
+  # the build-claim actor — works for the CLI's in-memory task built from board
+  # JSON), else the actor on the latest `→ building` TaskEvent (persisted tasks
+  # only). nil when the builder can't be determined → selection degrades to
+  # domain-only (QA-owner exclusion still applies). Memoized (the event lookup
+  # can hit the DB).
+  def builder
+    return @builder if defined?(@builder)
+
+    @builder = (@builder_override || devops_built_by || building_event_actor).to_s.strip.presence
+  end
+
+  # True only when a known builder is actually removed from the pool. Skipped when
+  # the builder is unknown, or when removing it would drop the candidate count
+  # below MIN_CANDIDATES — then the builder is KEPT and the decision/log flags it.
+  # (builder == qa_owner is already out via the QA exclusion; this still reads
+  # true so the audit shows the builder was not a candidate.) Memoized.
+  def builder_excluded?
+    return @builder_excluded if defined?(@builder_excluded)
+
+    @builder_excluded =
+      builder.present? && (pool - [qa_owner] - [builder]).size >= MIN_CANDIDATES
+  end
+
+  def devops_built_by
+    task.respond_to?(:devops_built_by) ? task.devops_built_by.to_s.strip.presence : nil
+  end
+
+  # The actor on the most recent `→ building` transition — the build claim. Only
+  # for a persisted task (the CLI's in-memory stand-in has no events). Any lookup
+  # error degrades to nil so selection never depends on the events being readable.
+  def building_event_actor
+    return nil unless task.respond_to?(:task_events) && task.try(:persisted?)
+
+    task.task_events.where(to_stage: "building").where.not(actor: [nil, ""])
+        .order(:occurred_at, :id).last&.actor.to_s.strip.presence
+  rescue StandardError
+    nil
   end
 
   # The domains this change needs reviewed: its shape's domains, plus any pulled
@@ -230,10 +297,19 @@ class ReviewerSelector
     chosen = ordered.first(2).map { |c| c[:slug] }
     logger.info(
       "[reviewer-selector] task=#{task.try(:slug)} needs=#{needs.join('/').presence || '-'} " \
-      "excluded=#{qa_owner} " \
+      "excluded=#{qa_owner} builder=#{builder_log_token} " \
       "rolls=#{ordered.map { |c| "#{c[:slug]}:#{c[:roll].round(4)}" }.join(',')} " \
       "ranked=#{ordered.map { |c| "#{c[:slug]}(fit#{c[:fit]},w#{c[:weight]})" }.join('>')} " \
       "chosen=#{chosen.join('+')}"
     )
+  end
+
+  # The builder, annotated for the audit log: "-" when unknown, "<slug>(excluded)"
+  # when removed from the pool, or "<slug>(kept:too-few)" when the builder is known
+  # but kept because excluding them would leave too few candidates.
+  def builder_log_token
+    return "-" if builder.blank?
+
+    "#{builder}(#{builder_excluded? ? 'excluded' : 'kept:too-few'})"
   end
 end

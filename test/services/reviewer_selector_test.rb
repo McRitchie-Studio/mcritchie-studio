@@ -96,6 +96,95 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     refute_includes slugs(result), "carl", "the named QA owner is excluded instead"
   end
 
+  # --- no self-reviewing: the builder is never a reviewer of their own work ---
+
+  # A selector whose pool is shrunk to three souls — lets the too-few-candidates
+  # fallback be exercised with the real logic, no frozen-constant mutation. With
+  # the QA owner out, two remain (a formable pair); dropping the builder too would
+  # leave one — so the fallback must KEEP the builder.
+  class TinyPoolSelector < ReviewerSelector
+    def pool = %w[carl shannon jasper]
+  end
+
+  test "an explicit builder is excluded from the candidate pool" do
+    result = ReviewerSelector.new(task_for(shape: "backend"), builder: "carl").reviewers
+    refute_includes slugs(result), "carl", "the builder never reviews their own work"
+    assert_equal 2, result.size, "a heavy+light pair is still returned"
+  end
+
+  test "the builder recorded on devops.built_by is excluded" do
+    task = task_for(shape: "backend")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "carl" }))
+
+    decision = ReviewerSelector.explain(task)
+    refute_includes decision["candidates"], "carl", "devops.built_by is read as the builder"
+    assert_equal "carl", decision["builder"]
+    assert_equal "carl", decision["excluded_builder"]
+  end
+
+  test "the builder is derived from the latest building TaskEvent actor" do
+    # A task with NO devops.built_by but a building event whose actor is carl —
+    # the persisted-task fallback the model-path selection (stage_event_metadata)
+    # relies on. Build the event with the actor, then strip the stamped scalar so
+    # only the event-actor path can supply the builder.
+    task = nil
+    begin
+      Current.task_event_actor = "carl"
+      task = Task.create!(title: "builder via building event task", stage: "building",
+                          metadata: { "devops" => { "shape" => "backend" } })
+    ensure
+      Current.reset
+    end
+    task.update_columns(metadata: { "devops" => { "shape" => "backend" } }) # drop the stamped built_by
+
+    decision = ReviewerSelector.explain(task)
+    assert_equal "carl", decision["builder"], "derived from the → building event actor"
+    refute_includes decision["candidates"], "carl"
+  end
+
+  test "the QA owner and the builder are excluded together" do
+    decision = ReviewerSelector.new(task_for(shape: "backend"), qa_owner: "steffon", builder: "carl").decision
+    refute_includes decision["candidates"], "steffon", "the QA owner stays excluded"
+    refute_includes decision["candidates"], "carl", "and the builder is excluded too"
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size
+  end
+
+  test "an unknown builder degrades to a domain-only pick (QA owner still excluded)" do
+    decision = ReviewerSelector.explain(task_for(shape: "backend"))
+    assert_nil decision["builder"], "no builder known"
+    assert_nil decision["excluded_builder"]
+    refute_includes decision["candidates"], "steffon", "the QA-owner exclusion still applies"
+    assert_includes decision["candidates"], "carl", "the domain owner stays eligible when builder is unknown"
+  end
+
+  test "the builder is KEPT when excluding it would leave too few candidates" do
+    # Pool {carl, shannon, jasper}; qa_owner=jasper leaves {carl, shannon} (a
+    # formable pair); excluding builder carl too would leave only {shannon} — so
+    # the builder is kept and a heavy+light pair is still returned.
+    selector = TinyPoolSelector.new(task_for(shape: "backend"), qa_owner: "jasper", builder: "carl")
+    decision = selector.decision
+
+    assert_includes decision["candidates"], "carl", "builder kept — excluding would leave too few"
+    assert_equal "carl", decision["builder"], "the builder is still identified"
+    assert_nil decision["excluded_builder"], "but it was NOT excluded (degraded to keep)"
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair is still returned"
+  end
+
+  test "the audit log names the builder and its exclusion state" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), builder: "carl", logger: logger).reviewers
+
+    line = logger.lines.last
+    assert_match(/builder=carl\(excluded\)/, line, "the builder + its state is logged")
+  end
+
+  test "the audit log shows builder=- when the builder is unknown" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), logger: logger).reviewers
+
+    assert_match(/builder=-/, logger.lines.last)
+  end
+
   # --- logged random tiebreak ---
 
   test "the random tiebreak is logged (auditable review spread)" do

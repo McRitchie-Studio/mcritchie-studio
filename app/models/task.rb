@@ -34,7 +34,7 @@ class Task < ApplicationRecord
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor block_kind agent_context session_id session_provider mascot
-    claimed_session claim_nonce claim_expires_at post_deploy_cmd
+    claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
   ].freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
@@ -161,6 +161,15 @@ class Task < ApplicationRecord
   # (the readability constraints are on title + acceptance).
   def devops_agent_context
     devops.fetch("agent_context", "").presence
+  end
+
+  # The soul who BUILT this task — stamped from the build-claim actor on the move
+  # to `building` (see #stamp_builder), so the reviewer pool can exclude the
+  # builder (a soul shouldn't review their own work). nil when the build lane
+  # recorded no actor (a model-method / conductor move). ReviewerSelector also
+  # falls back to the `→ building` TaskEvent actor when this scalar is blank.
+  def devops_built_by
+    devops.fetch("built_by", "").presence
   end
 
   # --- Session resume (V1: store + display + copy; no enforcement gate) -------
@@ -493,7 +502,9 @@ class Task < ApplicationRecord
 
   def set_stage_timestamp
     case stage
-    when "building"  then self.started_at   = Time.current
+    when "building"
+      self.started_at = Time.current
+      stamp_builder
     when "submitted" then self.submitted_at = Time.current
     when "reviewed"  then self.reviewed_at  = Time.current
     when "assembled" then self.assembled_at = Time.current
@@ -504,6 +515,24 @@ class Task < ApplicationRecord
     when "archived"  then self.archived_at = Time.current
     end
     self.position = (Task.where(stage: stage).maximum(:position) || -1) + 1 unless new_record?
+  end
+
+  # Stamp WHO built this task onto devops.built_by, sourced from the build-claim
+  # actor for THIS transition (Current.task_event_actor — set by the request/CLI
+  # layer on the move to `building`, the same value the TaskEvent records). The
+  # reviewer pool later excludes the builder so a soul never reviews their own
+  # work (ReviewerSelector). Set on every `→ building` move that carries an actor,
+  # so a rework re-claim by a different soul re-points it at the current builder.
+  # A move with NO actor (model method / conductor) leaves any existing value
+  # untouched — never clobbered to nil. Runs inside set_stage_timestamp (a before-
+  # save), so the new metadata persists in the same UPDATE as the stage change.
+  def stamp_builder
+    actor = Current.task_event_actor.presence
+    return if actor.blank?
+
+    merged = metadata.deep_dup
+    (merged["devops"] ||= {})["built_by"] = actor.to_s
+    self.metadata = merged
   end
 
   def set_initial_position

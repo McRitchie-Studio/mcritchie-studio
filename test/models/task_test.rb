@@ -25,6 +25,43 @@ class TaskTest < ActiveSupport::TestCase
     assert_not_nil task.reviewed_at
   end
 
+  # --- builder identity: who built this (devops.built_by) ---
+
+  test "moving to building stamps the build-claim actor onto devops.built_by" do
+    Current.task_event_actor = "carl"
+    task = tasks(:new_task)
+    task.build!
+
+    assert_equal "carl", task.reload.devops_built_by, "the build agent is recorded for reviewer exclusion"
+  ensure
+    Current.reset
+  end
+
+  test "a building move with no actor leaves built_by unset" do
+    # A model-method / conductor move carries no Current actor — nothing to stamp,
+    # and an existing value must never be clobbered to nil.
+    task = tasks(:new_task)
+    task.build!
+
+    assert_nil task.reload.devops_built_by
+  end
+
+  test "a rework re-claim re-points built_by to the current builder" do
+    Current.task_event_actor = "shannon"
+    task = tasks(:new_task)
+    task.build!
+    assert_equal "shannon", task.reload.devops_built_by
+
+    # Bounced back, then re-claimed by a different soul — built_by follows.
+    task.update!(stage: "blocked")
+    Current.task_event_actor = "carl"
+    task.update!(stage: "building")
+
+    assert_equal "carl", task.reload.devops_built_by, "the latest builder wins on a re-claim"
+  ensure
+    Current.reset
+  end
+
   # --- Workflow 2: Deploy transitions ---
 
   test "reviewed task can be assembled" do
