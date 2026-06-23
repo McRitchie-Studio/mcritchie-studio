@@ -18,9 +18,9 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     end
   end
 
-  def task_for(shape:, risks: [])
+  def task_for(shape:, risks: [], repos: [])
     Task.create!(title: "reviewer selection sample task", stage: "submitted",
-                 metadata: { "devops" => { "shape" => shape, "risk_tags" => risks } })
+                 metadata: { "devops" => { "shape" => shape, "risk_tags" => risks, "repositories" => repos } })
   end
 
   def seed_agent(name, domains: nil, review_weight: nil)
@@ -62,6 +62,24 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     result = ReviewerSelector.select(task_for(shape: "backend", risks: ["solana"]))
     assert_includes slugs(result), "carl", "the backend shape owner still fits"
     assert_includes slugs(result), "jasper", "the solana risk pulls the Web3 reviewer in"
+  end
+
+  test "an on-chain repo pulls the Web3 reviewer in even on a backend shape" do
+    # A backend-shaped change living in turf-vault still wants Jasper's eyes —
+    # the repo carries the Web3 signal the shape alone misses.
+    result = ReviewerSelector.select(task_for(shape: "backend", repos: ["turf-vault"]))
+    assert_includes slugs(result), "carl", "the backend shape owner still fits"
+    assert_includes slugs(result), "jasper", "the turf-vault repo pulls the Web3 reviewer in"
+  end
+
+  # --- the documentation persona is the pool's docs seat (alex-docs, not alex) ---
+
+  test "a docs change selects the documentation persona (alex-docs), not the orchestrator" do
+    # `docs` is the only needed domain → only the docs persona fits → heavy seat.
+    result = ReviewerSelector.select(task_for(shape: nil, risks: ["docs"]))
+    assert_includes slugs(result), "alex-docs", "the docs persona is the pool's documentation seat"
+    refute_includes slugs(result), "alex", "the orchestrator seat never reviews"
+    assert_equal "heavy", weight_of(result, "alex-docs"), "the docs-domain owner takes the heavy seat"
   end
 
   # --- no self-gating: the QA owner (steffon) is never a reviewer ---
@@ -127,5 +145,34 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal %w[carl shannon], slugs(result).sort, "both metadata-fitted reviewers are picked"
     assert_equal "heavy", weight_of(result, "carl"), "higher review_weight → heavy seat"
     assert_equal "light", weight_of(result, "shannon")
+  end
+
+  # --- explain: the auditable decision the CLI (bin/reviewer-select) prints ---
+
+  test "explain returns the chosen pair, their matched domains, and the excluded QA owner" do
+    decision = ReviewerSelector.explain(task_for(shape: "backend"))
+
+    assert_equal %w[heavy light], decision["reviewers"].map { |r| r["weight"] }, "one heavy + one light, heavy first"
+    heavy = decision["reviewers"].first
+    assert_equal "carl", heavy["slug"], "the backend owner takes the heavy seat"
+    assert_includes heavy["matched"], "backend", "the seat shows which needed domains it covers"
+    assert_equal "steffon", decision["excluded_qa_owner"]
+    refute_includes decision["candidates"], "steffon", "the QA owner is not a candidate (no self-gating)"
+  end
+
+  test "explain's ranked list is the auditable tiebreak — every candidate with its roll" do
+    decision = ReviewerSelector.explain(task_for(shape: "backend"))
+
+    assert_equal decision["candidates"].sort, decision["ranked"].map { |c| c["slug"] }.sort,
+      "every candidate appears in the ranking"
+    assert(decision["ranked"].all? { |c| c["roll"].is_a?(Numeric) }, "each candidate carries a logged roll")
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "two distinct seniors"
+  end
+
+  test "explain is deterministic under a seeded random (the tiebreak is the only nondeterminism)" do
+    task = task_for(shape: "backend")
+    a = ReviewerSelector.new(task, random: Random.new(7)).decision
+    b = ReviewerSelector.new(task, random: Random.new(7)).decision
+    assert_equal a, b
   end
 end
