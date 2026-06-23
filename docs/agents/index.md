@@ -168,6 +168,7 @@ lane.
 | Credential item names | `mcritchie-studio/docs/agents/modules/credential-inventory.md` |
 | Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
+| New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |

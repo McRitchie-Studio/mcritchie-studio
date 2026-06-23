@@ -232,6 +232,53 @@ squash-merged worktree manually (substitute `origin/main` for repos without a
 - Do not remove a worktree until its branch/PR status is known.
 - Log stale worktrees in [`../maintenance/delete-later.md`](../maintenance/delete-later.md) before deleting them.
 
+## Multi-Agent Safety & Merge Patterns
+
+When several agents build in parallel and their work converges on **one branch**
+— e.g. scaffolding a new app: Rolio's first cut was 4 gap features by 4 agents
+merged together — isolation and merge discipline matter more than usual. The
+patterns below came out of that run.
+
+**Isolation — use a manual `git worktree add` per agent.**
+
+- The Agent tool's `isolation: worktree` mode was **unreliable when the target
+  repo differs from the session repo** — agents leaked their edits onto the main
+  checkout instead of an isolated worktree. For cross-repo or multi-agent fan-out,
+  give each agent an explicit `git worktree add -b <branch> .worktrees/<slug>
+  <base>` and point it at that absolute path.
+- One branch per worktree; never let two agents share a checkout (branches switch
+  under you and files mutate mid-edit — see the "parallel sessions in shared
+  worktree" lessons).
+
+**Design the work to merge cleanly — new-files-first.**
+
+- Prefer **new files** over editing shared ones. A feature that lands as its own
+  partial, service, model, or stylesheet never conflicts.
+- **Shared view edits = a new partial + a single `<%= render %>` line at a named
+  anchor.** Each agent adds only its one render line at the agreed anchor; the
+  body lives in the agent's own partial. Conflicts shrink to one predictable line.
+- **Routes: additive blocks.** Each agent appends its own routes block (ideally a
+  `namespace`/`scope` of its own) rather than editing a shared resource line.
+- **One migration owner per integration.** Two agents writing migrations against
+  the same tables will collide on `schema.rb`. Either nominate a single migration
+  owner, or have the orchestrator **pre-add the columns** before fanning out so
+  the agents only read them.
+
+**The recurring conflict: the CSS end-of-file seam.**
+
+- Multiple agents appending styles to the same stylesheet conflict at the
+  **end-of-file**. This one is expected; **resolve it by keeping both blocks** —
+  the changes are additive by construction. Don't agonize over it, concatenate.
+
+**Merge sequentially, suite green between merges.**
+
+- Integrate one branch at a time and **run the full suite green between each
+  merge** — never batch-merge several agents' branches and test once at the end.
+  A red suite after a sequential merge points at exactly one branch.
+
+This is the multi-agent build path referenced by
+[`../system/new-app-onboarding-sop.md`](../system/new-app-onboarding-sop.md).
+
 ## Handoff Contract
 
 A feature-agent handoff should include:
