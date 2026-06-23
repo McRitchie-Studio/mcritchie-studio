@@ -389,6 +389,7 @@ Each worktree stack needs its own:
 - App-range port (`3101`, `3102`, etc. for Turf Monster).
 - Redis DB for Sidekiq and cache. The launcher allocates globally across generated stack env files from an elastic band starting at DB `9` (see [Scale Note](#scale-note)).
 - Development database via `DATABASE_URL`.
+- Isolated **test** database (`<app>_test_<slug>`), provisioned by `bin/agent-worktree new` and pinned via `TEST_DATABASE_URL` in `.env.test.local` (see [Running tests](#running-tests)).
 - Session cookie key.
 - `APP_PORT` so magic links point at the stack.
 - `LOCAL_EMAIL_CAPTURE=1` so mail is recorded locally instead of sent.
@@ -405,6 +406,17 @@ http://localhost:<port>/_studio/local_emails
 The inbox shows recent outbox rows and proof links such as magic-link sign-in URLs. Worktree stacks should not email real recipients unless the task is specifically testing real delivery. For provider tests, intentionally set `LOCAL_EMAIL_CAPTURE=0` and restore the needed mail credentials in that stack env.
 
 Callback-heavy flows such as Stripe, Google OAuth, CDP/MoonPay, webhooks, and emailed magic links stay on the primary port unless the provider and local listener are configured for the worktree port.
+
+## Running tests
+
+`bin/agent-worktree new` provisions an isolated test database (`<app>_test_<slug>`) and writes `.env.test.local` with `TEST_DATABASE_URL` pointing at it. `config/database.yml`'s `test.url` reads `TEST_DATABASE_URL`, and an explicit `url:` wins over `DATABASE_URL` — so a plain `bin/rails test` resolves to the isolated test DB **out of the box**:
+
+```bash
+bin/rails test           # auto-resolves to <app>_test_<slug>; no manual prep
+bin/agent-worktree test mcritchie-studio <slug>   # same, single-process + hermetic env
+```
+
+Do **not** `source .env.agent-stack` before running tests. You do not need the dev `DATABASE_URL` to test (the test DB resolves on its own), and sourcing it sets `AGENT_WORKTREE=1`/`LOCAL_EMAIL_CAPTURE=1`, which routes mail into the local capture store and diverges email-delivery tests from CI. Source `.env.agent-stack` only for dev-DB chores like `bin/rails runner` seeding. `bin/agent-worktree test` sidesteps this with a hermetic env (correct Ruby PATH, `RAILS_ENV=test`, single-process to avoid the parallel worker-DB clone deadlock on a cold test DB).
 
 ## Scale Note
 

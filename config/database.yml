@@ -57,6 +57,12 @@ development:
 test:
   <<: *default
   database: mcritchie_studio_test
+  # TEST_DATABASE_URL lets a worktree point the TEST env at its own isolated test
+  # DB (set in .env.test.local by bin/agent-worktree) WITHOUT being overridden by
+  # DATABASE_URL — which a worktree exports at the seeded DEV DB. An explicit
+  # `url:` wins over DATABASE_URL; when TEST_DATABASE_URL is unset it renders
+  # empty and Rails falls back to `database:` above (CI/normal local unchanged).
+  url: <%= ENV["TEST_DATABASE_URL"] %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is
