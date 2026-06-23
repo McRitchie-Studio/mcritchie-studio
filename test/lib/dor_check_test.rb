@@ -105,6 +105,129 @@ class DorCheckTest < Minitest::Test
     end
   end
 
+  # Build a throwaway repo modeling the persistent-`release` topology that drives
+  # the false-positive bug: origin/main sits at a baseline, origin/release runs
+  # AHEAD of it by a real `release_code` commit (merged-but-unshipped work), and
+  # HEAD is a feature branch cut off `release` carrying `branch_files` (committed,
+  # so the working tree is CLEAN — only the committed-diff view is exercised). The
+  # remote-tracking refs are forged with update-ref (no real remote needed). With
+  # the release-aware default base, `release_code` must NOT show up in this
+  # branch's diff; the old origin/main default wrongly dragged it in.
+  def with_release_ahead_repo(release_code: ["app/models/release_thing.rb"], branch_files: [])
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      sha = -> { `git -C #{dir} rev-parse HEAD`.strip }
+      write = lambda do |rel, body|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, body)
+      end
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+
+      # origin/main baseline.
+      write.call("README.md", "base\n")
+      git.call("add -A")
+      git.call("commit -q -m main-baseline")
+      git.call("update-ref refs/remotes/origin/main #{sha.call}")
+
+      # origin/release: AHEAD of main by a real code commit (merged-but-unshipped).
+      release_code.each { |rel| write.call(rel, "shipped to release\n") }
+      git.call("add -A")
+      git.call("commit -q -m release-only-code")
+      git.call("update-ref refs/remotes/origin/release #{sha.call}")
+
+      # Feature branch cut off release: its own committed change, clean tree.
+      unless branch_files.empty?
+        branch_files.each { |rel| write.call(rel, "feature change\n") }
+        git.call("add -A")
+        git.call("commit -q -m feature-change")
+      end
+
+      yield dir
+    end
+  end
+
+  # Resolve the committed-diff base the script would use for `dir`, honoring the
+  # same DOR_CHECK_DIFF_ROOT/_BASE seams. Uses the script's --diff-base resolver
+  # so the unit tests exercise the real resolution (release-aware default + env
+  # override), not a reimplementation.
+  def resolved_base(dir, env = {})
+    base = nil
+    with_env({ "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => nil, "DOR_CHECK_CHANGED_FILES" => nil }.merge(env)) do
+      base = IO.popen("#{BIN} --diff-base 2>/dev/null", &:read).strip
+    end
+    base
+  end
+
+  # --- regression: release-aware committed-diff base (the headline bug) -------
+  # A branch cut off `release` (which runs AHEAD of `main`) used to diff against
+  # origin/main, dragging in everyone else's already-merged-to-release code → a
+  # docs-only chore got a FALSE code-diff flag. The fix defaults the committed
+  # base to origin/release when it exists. This test FAILS on the old default.
+
+  def test_release_cut_docs_branch_not_false_flagged_as_code
+    with_release_ahead_repo(
+      release_code: ["app/models/release_thing.rb"],
+      branch_files: ["docs/agents/sop.md"]
+    ) do |dir|
+      # No DOR_CHECK_DIFF_BASE override → exercises the release-aware default.
+      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
+        out, code = check("kind" => "chore")
+        assert_equal 0, code, out
+        assert_match(/DoR n\/a/, out)
+        assert_match(/non-code task \(kind: chore\)/, out)
+        refute_match(%r{app/models/release_thing\.rb}, out)
+      end
+    end
+  end
+
+  # --- [unit] default_diff_base resolution -----------------------------------
+
+  def test_default_diff_base_prefers_origin_release_when_present
+    with_release_ahead_repo { |dir| assert_equal "origin/release", resolved_base(dir) }
+  end
+
+  def test_default_diff_base_falls_back_to_origin_main_without_release
+    # Plain repo: no origin/release forged → falls back to origin/main.
+    with_git_repo { |dir| assert_equal "origin/main", resolved_base(dir) }
+  end
+
+  def test_diff_base_env_override_wins_over_release_default
+    # DOR_CHECK_DIFF_BASE stays authoritative even when origin/release exists.
+    with_release_ahead_repo do |dir|
+      assert_equal "origin/main", resolved_base(dir, "DOR_CHECK_DIFF_BASE" => "origin/main")
+    end
+  end
+
+  # --- [integration] end-to-end gate over the release-ahead topology ---------
+
+  def test_e2e_release_cut_docs_branch_passes_merge_gate
+    with_release_ahead_repo(branch_files: ["docs/agents/sop.md"]) do |dir|
+      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
+        out, code = check("kind" => "chore")
+        assert_equal 0, code, out
+        assert_match(/DoR-to-Merge n\/a/, out)
+        assert_match(/ready to advance submitted → reviewed/, out)
+      end
+    end
+  end
+
+  def test_e2e_release_cut_code_branch_still_gated
+    # Don't over-correct into under-gating: a release-cut branch that itself adds
+    # app/ code is STILL gated — but only for its OWN code, not release's.
+    with_release_ahead_repo(branch_files: ["app/services/charger.rb"]) do |dir|
+      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
+        out, code = check("kind" => "chore")
+        assert_equal 1, code, out
+        assert_match(/ships a code diff/, out)
+        assert_match(%r{app/services/charger\.rb}, out)
+        refute_match(%r{app/models/release_thing\.rb}, out)
+      end
+    end
+  end
+
   def test_passes_when_shape_contract_is_satisfied
     out, code = check(
       "shape" => "backend",
