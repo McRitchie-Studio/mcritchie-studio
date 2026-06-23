@@ -34,9 +34,11 @@ class ApplicationHelperTest < ActionView::TestCase
     guide = devops_stage_guide
 
     assert_equal %w[Build Deploy], guide.keys
-    # lanes match the board columns; submitted is the shared seam
+    # Build guide tracks the /tasks board columns; the Deploy guide tracks the deploy
+    # WORKFLOW (DEPLOY_STAGES, four stages). The /deployments board now carries extra
+    # upstream designed/building lanes, but the workflow guide stays the four stages.
     assert_equal Task::TASKS_BOARD_STAGES, guide["Build"].map { |row| row[:stage] }
-    assert_equal Task::DEPLOYMENTS_BOARD_STAGES, guide["Deploy"].map { |row| row[:stage] }
+    assert_equal Task::DEPLOY_STAGES, guide["Deploy"].map { |row| row[:stage] }
     assert_includes guide["Build"].map { |r| r[:stage] }, "submitted"
     assert_includes guide["Deploy"].map { |r| r[:stage] }, "submitted"
 
@@ -58,7 +60,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
   test "devops_kickoffs covers every DevOps board stage plus the QA-release meta-trigger" do
     stage_keys = devops_kickoffs.keys - [ApplicationHelper::QA_RELEASE_KICKOFF_KEY]
-    assert_equal Task::DEPLOYMENTS_BOARD_STAGES.sort, stage_keys.sort
+    assert_equal Task::DEPLOY_STAGES.sort, stage_keys.sort
     # per-stage kickoffs stay terse enough for a column header (≤3 words)
     stage_keys.each { |k| assert_operator devops_kickoffs[k].split.size, :<=, 3 }
   end
@@ -71,7 +73,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "Build and Deploy QA Release", qa_release_kickoff
     assert_equal qa_release_kickoff, devops_kickoffs[ApplicationHelper::QA_RELEASE_KICKOFF_KEY]
     # the meta-trigger is exempt from the per-stage word cap (prominent chip, not a header)
-    assert_not_includes Task::DEPLOYMENTS_BOARD_STAGES, ApplicationHelper::QA_RELEASE_KICKOFF_KEY
+    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::QA_RELEASE_KICKOFF_KEY
   end
 
   test "app_emoji maps each canonical app slug to its glyph" do

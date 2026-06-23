@@ -12,6 +12,8 @@
 <% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
+<%# Build board (/tasks) splits the build steps; Deploy board (/deployments) shows the pipeline. %>
+<% crew_board = stages.include?("reviewed") ? :deploy : :build %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 
@@ -196,7 +198,11 @@ function kanbanBoard() {
 }
 </script>
 
-<section x-data="kanbanBoard()" class="min-h-screen">
+<%# /deployments renders full-bleed — six swim lanes need the screen width — by
+    asking the layout to skip its centered max-w-7xl wrapper; the board then supplies
+    its own page padding. /tasks stays inside the centered wrapper. %>
+<% content_for :full_width, "1" if local_assigns[:full_width] %>
+<section x-data="kanbanBoard()" class="min-h-screen<%= " px-4 sm:px-6 py-6" if local_assigns[:full_width] %>">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">
@@ -232,7 +238,7 @@ function kanbanBoard() {
   <!-- Kanban Board -->
   <div class="flex gap-4 overflow-x-auto pb-4">
     <% columns.each do |stage| %>
-      <div class="flex-1 min-w-[220px]"
+      <div class="flex-1 min-w-[190px]"
            <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>>
         <!-- Column Header -->
         <div class="flex items-center justify-between gap-2 mb-3 px-1 flex-wrap">
@@ -287,6 +293,11 @@ function kanbanBoard() {
                 <code class="block text-[10px] font-mono text-muted truncate"><%= task.slug %></code>
                 <%= app_emoji_badge(task.devops_repositories, css: "absolute inset-y-0 right-0 z-10 flex items-center pl-5 text-xs leading-none bg-gradient-to-l from-surface via-surface to-transparent") %>
               </div>
+
+              <%# Stage crew (agent-events summary) sits directly under the slug — build-lane
+                  stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
+                  shipped. Renders nothing when there are no events. %>
+              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
 
               <%# Session resume (V1): which terminal/session owns this task. The
                   copy control DISPLAYS the truncated command (ending in …<last4>,
@@ -377,10 +388,6 @@ function kanbanBoard() {
                   <% end %>
                 </div>
               <% end %>
-
-              <%# Stage crew — build-lane stages wear the task's mascot; deploy-lane
-                  shows who reviewed/assembled/shipped. Renders nothing with no events. %>
-              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
 
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>

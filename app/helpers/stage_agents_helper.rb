@@ -117,6 +117,46 @@ module StageAgentsHelper
     end
   end
 
+  BUILD_STEP_NEXT = { "designed" => "building", "building" => "submitted", "submitted" => "reviewed" }.freeze
+  BUILD_STEP_START = { "designed" => :created_at, "building" => :started_at, "submitted" => :submitted_at }.freeze
+
+  # Board-aware crew columns. The Build board (/tasks) splits the build into its
+  # three steps (designed · building · submitted) — no QA spots yet — while the
+  # Deploy board (/deployments) collapses the build into one circle and shows the
+  # pipeline (build · review · assembled, + shipped). Returns an ordered array of
+  # CrewCluster; the partial renders one fixed grid column per entry (an empty entry
+  # reserves its slot). Three columns until a task ships — four once shipped, and for
+  # blocked (kept four for now).
+  def crew_columns(task, entries, board:, mascot: nil)
+    return build_step_columns(task, entries, mascot) if board == :build && task.stage != "blocked"
+
+    by_lane = crew_clusters(task, entries).index_by(&:lane)
+    lanes = %i[build review assembled]
+    lanes << :shipped if %w[shipped blocked].include?(task.stage)
+    lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
+  end
+
+  # /tasks build board: the three build steps split out, each wearing the task's
+  # mascot + the time spent IN that step (live for the current step). Unreached
+  # steps render an empty, reserved column.
+  def build_step_columns(task, entries, mascot)
+    face = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url)
+    by_to_stage = entries.index_by(&:stage)
+    reached_idx = Task::STAGES.index(task.stage).to_i
+
+    %w[designed building submitted].map do |stage|
+      reached = reached_idx >= Task::STAGES.index(stage)
+      current = task.stage == stage
+      agent = face || by_to_stage[stage]&.agent # the mascot, else this step's own actor
+      CrewCluster.new(
+        lane: stage.to_sym,
+        stacked: (reached && agent ? [StageAgent.new(stage: stage, agent: agent)] : []),
+        seconds: (by_to_stage[BUILD_STEP_NEXT[stage]]&.seconds.to_i if reached && !current),
+        live_since: ((task.public_send(BUILD_STEP_START[stage]) || task.created_at) if reached && current)
+      )
+    end
+  end
+
   # The per-stage avatars for a task's WHOLE journey, in pipeline order
   # (STAGE_AGENT_ORDER). Per stage the task has a landing TaskEvent for:
   #   designed/building/submitted → the actor of that event (the feature agent who
