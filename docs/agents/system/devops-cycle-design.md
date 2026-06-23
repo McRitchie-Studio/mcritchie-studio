@@ -22,6 +22,16 @@
 > mcritchie-studio only; the Discord progress webhook
 > (§5). Where this doc describes those, it is the spec for the follow-up.
 >
+> **Deploy-flow redesign (decided, 2026-06-22).** The `submitted → shipped` half
+> was re-homed by role — review is **delegated by Avi to two seniors** (no longer
+> his solo gate), `assembled` is owned by **Steffon** (now titled **Platform
+> Engineer**), and `shipped` is owned by **Avi** (full e2e on the frozen ship
+> SHA) plus the one operator gate. **§1.2 is the rewritten spec.** It lands via
+> three build tasks: `deploy-flow-heartbeat-tooling` (planner/tooling + the
+> `prepare` retry/wait-for-boot fix), `stages-page-step-outlines` (the per-step
+> `/stages` outlines), and `seed-souls-prod-qa` (the reviewer souls, incl. a new
+> **Alex Documentation** reviewer persona distinct from the orchestrator seat).
+>
 > Operator companion: the board stage guide at `/stages`; this document remains
 > the canonical full SOP.
 
@@ -67,14 +77,18 @@ lifecycles that meet at one seam — `submitted`.
   (`building`), and opens a PR (`submitted`) — where the feature agent's part
   ends. A wall, bounced PR, or unready dependency parks it at **`blocked`**.
 - **Workflow 2 — Deploy (per release · DevOps):** `submitted → reviewed →
-  assembled → shipped`. DevOps judges the submitted PR on its own merits —
-  acceptance, diff, tests — landing it at **`reviewed`** (approved) or
-  **`blocked`** (rework, with a `qa_feedback` note); the release conductor then
-  **merges each approved PR into the persistent `release` branch** — which flips
-  that task to `assembled` (membership at merge) — assembling a single **release
-  candidate (RC)**, QAs the whole RC (a deploy of `origin/release`), and on the
-  operator's OK ships it by fast-forwarding `release → main` (`shipped`).
-  `submitted` is the seam — the feature agent hands the PR to DevOps there.
+  assembled → shipped`. **Avi delegates** review of the submitted PR — he
+  confirms **product-acceptance**, then assigns **two seniors** who judge it on
+  its merits (acceptance, base tests, standards, smell, scalability), landing it
+  at **`reviewed`** on **two approvals** or **`blocked`** (rework, with a
+  `qa_feedback` note); the release conductor then **merges each approved PR into
+  the persistent `release` branch** — which flips that task to `assembled`
+  (membership at merge) — assembling a single **release candidate (RC)**.
+  **Steffon** (Platform Engineer) QAs the RC with the next tier (integration +
+  an e2e smoke) and deploys `origin/release` to QA; at ship **Avi** runs the
+  full e2e on the frozen ship SHA and, on the operator's OK, the conductor
+  fast-forwards `release → main` (`shipped`). `submitted` is the seam — the
+  feature agent hands the PR to DevOps there.
 
 QA and production are properties of the **release**, not the individual task —
 so there is no per-task QA stage; the one operator gate is a single OK on the RC.
@@ -146,14 +160,18 @@ each `reviewed` member the conductor merges its PR into `release`
 records the task onto the active candidate and flips it `reviewed → assembled`. A
 merge conflict surfaces **at this PR-merge step** (resolve on GitHub, or block
 the task for rework) — `release` never force-pushes. Once the desired members are
-merged and the **full suite incl. e2e** is green on `origin/release`,
-`bin/release prepare` deploys `origin/release` to **QA** + records the QA URL →
-the release is **`assembled`** (the QA candidate). A late PR merging in after that
-**reopens** the RC (`Release#reopen!`) so it re-QAs before shipping. The operator
-then **Makes the release** — an explicit action (surfaced as the current release
-on `/deployments`, not a passive status): `bin/release ship` fast-forwards each
+merged and **Steffon's integration + e2e-smoke suite** is green on
+`origin/release`, `bin/release prepare` deploys `origin/release` to **QA** +
+records the QA URL → the release is **`assembled`** (the QA candidate). A late PR
+merging in after that **reopens** the RC (`Release#reopen!`) so it re-QAs before
+shipping. At ship, **Avi** first runs the **full e2e + highest-tier suite on the
+frozen ship SHA** (the exact prod code — closing the merge-forward "shipped ≠
+tested" gap); on green he **stops for the operator**, who then **Makes the
+release** — an explicit action (surfaced as the current release on
+`/deployments`, not a passive status): `bin/release ship` fast-forwards each
 repo's `main` up to `release` (so `release` collapses into `main`), deploys prod,
-and flips members to `shipped`. That action is the one human gate.
+and flips members to `shipped`. The operator's action — **after Avi's test
+confirmation, before the deploy** — is the one human gate.
 
 **Gem members & producer-first ordering.** A release is not apps-only — it can
 carry **gem** tasks (`studio-engine`, `solana-studio`) as first-class members
@@ -202,41 +220,76 @@ by the conductor/CLI as a documented step:
 
 Distinguish the **accountable role** (the soul whose rubric governs the stage)
 from the **executor** (who moves it). The heartbeat agent executes by wearing
-each lane's hat; accountability maps to a soul; there is exactly **one human
-gate**.
+each lane's hat; accountability maps to a soul; there is exactly **one operator
+gate** — the ship.
+
+**Redesigned `submitted → shipped` (decided, 2026-06-22).** The Deploy half is
+re-homed by role: **review is no longer Avi's solo gate** — Avi *delegates* it,
+confirming product-acceptance and then assigning **two seniors** who execute the
+review in parallel; **`assembled`** is owned by **Steffon** (now titled
+**Platform Engineer**); and **`shipped`** is owned by **Avi** (who runs the full
+e2e on the frozen ship SHA) ahead of the one operator gate. The senior reviewer
+pool is **{Shannon = UI · Carl = backend · Jasper = Web3 · Steffon =
+DevOps/Platform · Alex = Documentation}**.
 
 **Merge timing (decided):** a `reviewed` task is merged when its PR lands **into
 the persistent `release`** (`bin/release merge`), which flips it `reviewed →
 assembled`. The release branch is the live RC; `main` only moves when it ships.
+The merge is now triggered by **two senior approvals** (not Avi's solo gate) —
+**bias to action: green tests = go**, because `release` is recoverable by revert,
+so we don't fear merging there.
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
 | **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
-| **submitted** (task) | **Avi** (Steffon co-gates risk) | DevOps agent *as Avi* | Review acceptance/diff/tests → `blocked` (back, with `qa_feedback`) **OR** `reviewed` ✅ | judgment (Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
-| **reviewed** ✅ (task, parked) | **Avi** | — (waits) | Approved; eligible to merge into `release` | — |
-| **assembling** (release) | **Avi** | DevOps agent *as Avi* / operator-curated | **Merge each approved PR into `release`** (`bin/release merge`) honoring `dependencies` + lanes; membership flips at merge → member `assembled` | judgment + deterministic merge (conflicts surface at PR-merge) |
-| **assembled** (release) | **Steffon** (executes) | DevOps agent *as Steffon* | Full suite incl. e2e green on `origin/release` → `bin/release prepare` deploys it to QA + Discord notes → await the operator action | deterministic suite; ⛔ regression → block the task |
-| **→ shipped** (release) | **Mr. McRitchie**, then conductor | Operator **Makes the release**, then DevOps agent | Operator eyeballs QA + Makes the release → `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → notes → members `shipped` | 🔒 **the one human gate**; rollback on smoke fail |
+| **submitted** (task) — REVIEW | **Avi** (delegator) | Avi assigns; **two seniors** review in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged random tiebreak**, assigning **1 HEAVY (deep) + 1 LIGHT**. Each senior confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance** → `blocked` (rework, with `qa_feedback`) **OR** `reviewed` ✅ on **2 approvals** | **2 senior approvals** (HEAVY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
+| **reviewed** ✅ — MERGE (task) | the **two seniors' approval** | DevOps conductor *executes* | **2 approvals → merge the PR into `release`** (`bin/release merge`) honoring `dependencies` + lanes; membership flips at merge → member `assembled`. **Bias to action: green tests = go** (`release` reverts cleanly; we don't fear merging there) | deterministic merge (conflicts surface at PR-merge); **no separate Avi gate** |
+| **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* | Run the **next tier — integration + an e2e smoke** on `origin/release`; green → `bin/release prepare` deploys it to QA → **Discord QA-deployment note** → release `assembled` | deterministic suite; ⛔ regression → block the task. **`prepare` must retry/wait-for-boot** (the `/up`-smoke race) so the state reliably advances — flagged for `deploy-flow-heartbeat-tooling` |
+| **→ shipped** (release) | **Avi**, then **Mr. McRitchie** | Avi tests; operator approves; conductor deploys | Avi runs the **full e2e + highest-tier suite on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"). On green Avi **STOPS for the operator** → on go: `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → **Discord release notes** → members `shipped` | 🔒 **the one operator gate — after Avi's test confirmation, before deploy**; rollback on smoke fail |
 
 Clarifications:
 
+- **Product-acceptance is a core check at BOTH ends.** The two senior reviewers
+  confirm the task's acceptance criteria at the review step, and **Avi confirms
+  acceptance again at ship** (on the frozen SHA). It is checked twice by design —
+  once before merge, once before prod — not a one-time gate.
+- **Test-tier → step map (efficiency — no redundant re-runs):** **base**
+  (unit/component) @ **review** (the two seniors) · **integration + e2e-smoke** @
+  **QA** (Steffon) · **full e2e + highest tier** @ **ship** (Avi, on the frozen
+  ship SHA). Each tier runs once, at the step that owns it — no step re-runs a
+  lower tier the previous step already proved green.
 - **`assembled` means slightly different things at the two scopes** — a *task* is
-  `assembled` the moment its PR is merged into `release` (`bin/release merge`); the
-  *release* is `assembled` once the desired members are in, the full suite is
-  green on `origin/release`, and `prepare` has deployed it to QA. The operator
-  gate is then a deliberate **Make the release** action on the assembled RC, not a
-  status the agent flips.
-- **There is no per-task QA stage.** Steffon owns the QA deploy, the
-  `qa_acceptance` suite, and the prod mechanics — but there is no separate
-  approval ceremony; the suite is a green/red *signal* and the operator OK is the
-  gate. QA + production are properties of the **release**, not the task.
-- **The agent merges even funds-touching work autonomously** into `release` — the
-  consequence of "Review + QA, gate prod". Risk raises *scrutiny* (Opus review +
-  full integration/security suite), not a second human. *Knob:* flip
+  `assembled` the moment its PR is merged into `release` (`bin/release merge`,
+  driven by the **two seniors' approval**); the *release* is `assembled` once the
+  desired members are in, **Steffon's integration + e2e-smoke** is green on
+  `origin/release`, and `prepare` has deployed it to QA. The operator gate is at
+  **ship** (after Avi's full-suite run on the frozen SHA), **not here** — at this
+  scope `assembled` is a state the conductor flips, not a human approval.
+- **Review is no longer Avi's solo gate.** Avi opens review as **delegator** —
+  product-acceptance + reviewer selection — and the **two seniors execute** it.
+  The random tiebreak in the selection is **logged** (auditable) so reviews
+  spread across the pool instead of always landing on the obvious domain owner.
+- **No self-gating:** Avi must **not** pick **Steffon** as a reviewer on a PR
+  Steffon will then QA at the `assembled` step — one soul cannot both review and
+  QA the same change. (Steffon remains a valid reviewer for **other** PRs,
+  especially DevOps/Platform ones.)
+- **An `Alex` reviewer persona is required.** Today "Alex" is the orchestrator
+  seat, not a reviewer; the **Documentation** domain reviewer needs its own
+  persona/seat — tracked in `seed-souls-prod-qa`.
+- **There is no per-task QA stage.** Steffon owns the QA deploy, the QA tier
+  (integration + e2e-smoke), and the prod mechanics — but there is no separate
+  approval ceremony; the suite is a green/red *signal* and the operator OK at
+  ship is the gate. QA + production are properties of the **release**, not the
+  task.
+- **The conductor merges even funds-touching work autonomously** into `release`
+  on the two seniors' approval — the consequence of "Review + QA, gate prod".
+  Risk raises *scrutiny* (the HEAVY review goes to Opus + full
+  integration/security suite), not a second human. *Knob:* flip
   `payment`/`solana` `risk_tags` to require a human pre-**merge** pass — one
   config line.
-- **Humility valve:** low confidence → the agent marks `conductor-review` and
-  routes to a *human* Avi/Steffon session instead of merging into `release`.
+- **Humility valve:** low confidence → a reviewer marks `conductor-review` and
+  routes to a *human* Avi/Steffon session instead of approving the merge into
+  `release`.
 
 ### 1.3 Decided — and where to tune the release builder
 
@@ -244,7 +297,11 @@ Resolved: `release_train` → **`release_slug`** (one field/model); **feature PR
 merge into a persistent per-repo `release` branch, membership flipping at merge**;
 no per-task QA stage; Release is its own singleton model — states `assembling →
 assembled → shipped`, where the operator **Makes the release** (a page action on
-the assembled RC).
+the assembled RC). **Decided 2026-06-22 (§1.2):** review is **delegated by Avi to
+two seniors** (not his solo gate); `assembled` is owned by **Steffon** (titled
+**Platform Engineer**); and at `shipped` **Avi** runs the full e2e + highest tier
+on the **frozen ship SHA** *before* the operator's Make-the-release action — so
+the human gate sits **after test confirmation, before the deploy**.
 
 **RC assembly autonomy is the one evolving policy** — so it lives in a single,
 clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
@@ -578,17 +635,20 @@ Runs on the OpenClaw box every ~10 minutes. Builds directly on the
 for each task in {submitted}:
   acquire lease (claimed_by, claim_expires_at)   # resilience: reclaimable
   1. bin/dor-check --gate merge (deterministic gate-zero)       — fail ⇒ block(rework) + qa_feedback, release
-  2. run pr_review_gate suite   (deterministic)                 — fail ⇒ classify, block(rework), release
-  3. diff-vs-acceptance review  (judgment; model by risk)       — changes ⇒ ONE complete qa_feedback + block
-  4. else → reviewed ✅                                          — Discord: approved
+  2. run pr_review_gate suite (base: unit/component)            — fail ⇒ classify, block(rework), release
+  3. Avi delegates: 2 seniors (domain fit + LOGGED tiebreak), 1 HEAVY + 1 LIGHT — §1.2
+     each: diff-vs-acceptance + standards/smell/scalability     — changes ⇒ ONE complete qa_feedback + block
+  4. on 2 approvals → reviewed ✅                                — Discord: approved
 
 # Workflow 2 — the ONE active release (singleton).
 release.assembling:
   pick next reviewed member honoring dependencies + lanes (§4.2)
   bin/release merge <task>: gh pr merge PR (base release) + adopt!  — conflict ⇒ block task (resolve on GitHub)
-  member → assembled; when desired members in + full e2e green on origin/release:
+  member → assembled; when desired members in + integration + e2e-smoke green on origin/release (Steffon):
   bin/release prepare → deploy origin/release → QA + Discord notes → release.assembled
+  # full e2e + highest tier runs at ship, on the FROZEN ship SHA (Avi) — §1.2
 release.assembled:
+  Avi: full e2e + highest tier on the FROZEN ship SHA          # §1.2 — closes "shipped ≠ tested"
   if operator_made_the_release: bin/release ship → ff release → main, bin/deploy → production_smoke → notes → members shipped  # ONLY here
   else: no-op (HARD STOP — wait for the operator to Make the release)
 

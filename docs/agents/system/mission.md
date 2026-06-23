@@ -19,15 +19,18 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 ### Leadership
 - **Alex** — Lead orchestrator (PM). Coordinates agents, manages priorities,
   makes architectural calls, escalates when Mr. McRitchie's judgment is needed.
-- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates.
+  Also the **Documentation** domain expert and a senior **reviewer** in the
+  Deploy-flow review pool — via a dedicated reviewer persona distinct from the
+  orchestrator seat (tracked in `seed-souls-prod-qa`).
+- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates. In the Deploy flow he is the **review delegator** — confirms **product-acceptance**, then assigns **two seniors** to execute the review — and owns the **ship step** (full e2e on the frozen ship SHA, then the operator gate).
 
 ### Dev specialists
-- **Carl** — Backend / Rails. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane.
-- **Shannon** — UI. ERB views, Tailwind, Alpine.js, theme system, studio-engine UI primitives.
-- **Jasper** — Blockchain. turf-vault Anchor program, solana-studio Ruby client, on-chain integration.
+- **Carl** — Backend / Rails. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane. Senior **reviewer** for backend PRs in the Deploy-flow review pool.
+- **Shannon** — UI. ERB views, Tailwind, Alpine.js, theme system, studio-engine UI primitives. Senior **reviewer** for UI PRs.
+- **Jasper** — Blockchain. turf-vault Anchor program, solana-studio Ruby client, on-chain integration. Senior **reviewer** for Web3 / on-chain PRs.
 
 ### Quality + Operations
-- **Steffon** — QA + Infrastructure. Quality gate on every PR; then Heroku deploys, env vars, CI, observability, recovery protocol.
+- **Steffon** — **Platform Engineer** (QA + Infrastructure). Owns the **QA test tier** (integration + an e2e smoke) and the **QA deploy** of `origin/release`, plus Heroku deploys, env vars, CI, observability, and the recovery protocol. Also a senior **reviewer** for DevOps/Platform PRs — but never reviews a PR he will then QA (no self-gating).
 
 ### Domain & support
 - **Turf Monster** — Sports specialist. Sports data, pick'em games, World Cup props, player analytics.
@@ -38,21 +41,48 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 
 ```
 Alex (PM)
-  ↔  Avi (PO) ───── refine + assign ────> Devs (Carl, Shannon, Jasper)
-                                               │
-                                               ▼ open PR
-                                          Steffon (QA pass)
-                                               │
-              ◀───── merge + tag release ──────┘
-              │
-              ▼
-         Steffon (deploy)
-              │
-              ▼
-         Mason (announce)
+  ↔  Avi (PO) ── refine + assign ──> Devs (Carl, Shannon, Jasper)
+                                          │ open PR (base release)
+                                          ▼
+        Avi delegates review ──> 2 seniors (1 heavy + 1 light)
+                                          │ 2 approvals
+                                          ▼ merge into release
+                          Steffon (Platform Engineer)
+                          integration + e2e-smoke → QA deploy
+                                          │
+                                          ▼
+        Avi: full e2e on frozen ship SHA ──> 🔒 operator gate
+                                          │ operator OK
+                                          ▼
+                  conductor (Steffon's mechanics): prod deploy + smoke
+                                          │
+                                          ▼
+                                   Mason (announce)
 ```
 
 Off the critical path: **Turf Monster** (sports domain consults), **Mack** (data ops, parallel).
+
+## Deploy-flow review model (redesigned 2026-06-22)
+
+The `submitted → shipped` half of the Deploy workflow was re-homed by role
+(canonical spec: [`devops-cycle-design.md`](devops-cycle-design.md) §1.2):
+
+- **Avi** opens **review** as delegator — confirms product-acceptance, then picks
+  **two seniors** from the pool {Shannon = UI · Carl = backend · Jasper = Web3 ·
+  Steffon = DevOps/Platform · Alex = Documentation} by **domain fit + a logged
+  random tiebreak**, assigning **one heavy (deep) and one light** review in
+  parallel. **Two approvals merge the PR into `release`** (bias to action —
+  `release` reverts cleanly).
+- **Steffon** (**Platform Engineer**) runs the **integration + e2e-smoke** tier
+  and deploys `origin/release` to QA (`assembled`).
+- **Avi** runs the **full e2e + highest tier on the frozen ship SHA**, then
+  **stops for the operator** — the one human gate, after tests, before deploy.
+
+Lands via three build tasks: **`deploy-flow-heartbeat-tooling`** (planner +
+tooling, incl. the `prepare` retry/wait-for-boot fix), **`stages-page-step-outlines`**
+(per-step `/stages` outlines), and **`seed-souls-prod-qa`** (the reviewer souls,
+incl. a dedicated **Alex Documentation** reviewer persona distinct from the
+orchestrator seat).
 
 ## System protocols
 
