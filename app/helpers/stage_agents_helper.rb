@@ -38,6 +38,19 @@ module StageAgentsHelper
     end
   end
 
+  # A task's Pokémon mascot rendered as a build-lane "agent" — the mascot IS the
+  # feature agent's face. Quacks like an Agent (avatar/avatar_initials/avatar_color/
+  # name) so it drops straight into components/agent_avatar.
+  MascotAgent = Struct.new(:name, :avatar) do
+    def avatar_initials
+      name.to_s[0, 1].upcase
+    end
+
+    def avatar_color
+      Agent.avatar_color_for(name)
+    end
+  end
+
   # Resolve a TaskEvent#actor — which may be an agent slug, a session id, or an
   # email — to an Agent, or nil when it matches no soul (a raw session id, an
   # external email). agents_by_slug is a prebuilt slug→Agent map so this never
@@ -65,10 +78,11 @@ module StageAgentsHelper
   # no stage events at all (or only crewless ones) renders []. A Build-lane card
   # thus shows its designer/builder/submitter, and a Shipped card shows up to
   # designer/builder/submitter + 2 seniors + Steffon + Avi.
-  def stage_agent_groups(task, agents, events: nil)
+  def stage_agent_groups(task, agents, events: nil, mascot: nil)
     events = Array(events || task.task_events).select(&:to_stage)
                                               .sort_by { |e| [e.occurred_at, e.id.to_i] }
     by_slug = agents.index_by(&:slug)
+    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url)
 
     STAGE_AGENT_ORDER.flat_map do |stage|
       evt = events.reverse.find { |e| e.to_stage == stage }
@@ -93,7 +107,9 @@ module StageAgentsHelper
           from_label: evt.from_label,
           label: evt.actor,
           weight: nil,
-          agent: resolve_actor_agent(evt.actor, by_slug),
+          # Build-lane stages wear the task's mascot (the feature agent's face);
+          # deploy-lane stages keep their real actor.
+          agent: (mascot_agent if Task::BUILD_STAGES.include?(stage)) || resolve_actor_agent(evt.actor, by_slug),
           seconds: evt.seconds_in_from
         )]
       else

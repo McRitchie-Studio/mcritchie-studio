@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, variant: :stack, events: nil) %>
+<%# locals: (task:, agents:, variant: :stack, events: nil, mascot: nil) %>
 <%#
   Per-stage agent attribution across a task's WHOLE journey — who designed, built,
   submitted, reviewed, assembled, and shipped it, with the time each stage took.
@@ -20,7 +20,10 @@
   dark/light parity holds; faces reuse the components/agent_avatar primitive
   (image with a deterministic initials fallback).
 %>
-<% entries = stage_agent_groups(task, agents, events: events) %>
+<%# Build-lane crew wears the task's mascot. Callers (the board) pass it from a
+    preloaded map to avoid an N+1; the detail page resolves it here. %>
+<% mascot = local_assigns.fetch(:mascot) { Pokemon.find_by(slug: task.devops["mascot"].to_s.presence) } %>
+<% entries = stage_agent_groups(task, agents, events: events, mascot: mascot) %>
 <% if entries.any? %>
   <% if variant.to_sym == :detailed %>
     <div class="bg-surface-alt rounded-lg p-3" data-test="stage-agent-avatars">

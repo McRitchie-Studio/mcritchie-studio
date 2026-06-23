@@ -191,4 +191,43 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[heavy light], avatars.map(&:weight)
     assert avatars.first.heavy?, "the heavy reviewer keeps its heavy pill"
   end
+
+  # --- Build-lane mascot (the task's Pokémon is the feature agent's face) -------
+
+  test "build-lane stages wear the task mascot when one is given" do
+    mon = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                          sprite_url: "https://example.test/snorlax-sprite.png")
+    task = Task.create!(title: "mascot build crew task", stage: "submitted")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 2.hours.ago, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 1.hour.ago, actor: "shannon")
+
+    groups = stage_agent_groups(task.reload, @agents, mascot: mon)
+
+    assert_equal %w[designed building submitted], groups.map(&:stage)
+    assert_equal %w[Snorlax Snorlax Snorlax], groups.map(&:name), "every build stage wears the mascot"
+    assert_equal ["https://example.test/snorlax-sprite.png"] * 3, groups.map(&:avatar)
+  end
+
+  test "build stages wear the mascot while deploy stages keep their real actors" do
+    mon = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                          sprite_url: "https://example.test/snorlax-sprite.png")
+    task = deploy_task(stage: "shipped", reviewers: REVIEWERS)
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 6.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 5.hours.ago, actor: "shannon")
+
+    by_stage = stage_agent_groups(task.reload, @agents, mascot: mon).group_by(&:stage)
+
+    # Build lane → the mascot
+    assert_equal "Snorlax", by_stage["designed"].first.name
+    assert_equal "https://example.test/snorlax-sprite.png", by_stage["building"].first.avatar
+    # Deploy lane → the real crew, no mascot
+    assert_equal %w[shannon carl steffon avi],
+                 (by_stage["reviewed"] + by_stage["assembled"] + by_stage["shipped"]).map { |g| g.agent&.slug }
+    assert_not_equal "https://example.test/snorlax-sprite.png", by_stage["shipped"].first.avatar
+  end
 end

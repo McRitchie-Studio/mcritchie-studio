@@ -80,4 +80,24 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "div[title*='Avi'] span", text: "+2", count: 1
     end
   end
+
+  test "build-lane card crew wears the task mascot instead of the actor initial" do
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                    sprite_url: "https://example.test/snorlax-sprite.png")
+    task = Task.create!(title: "mascot crew board card", stage: "building",
+                        metadata: { "devops" => { "mascot" => "snorlax" } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed",
+                      occurred_at: 2.hours.ago, actor: "claude-session")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "claude-session")
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "img[src='https://example.test/snorlax-sprite.png']" # the mascot face, not "C"
+      assert_select "div[title^='Snorlax']"
+    end
+  end
 end
