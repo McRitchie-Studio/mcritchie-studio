@@ -238,4 +238,46 @@ class StageAgentsHelperTest < ActionView::TestCase
                  (by_stage["reviewed"] + by_stage["assembled"] + by_stage["shipped"]).map { |g| g.agent&.slug }
     assert_not_equal "https://example.test/snorlax-sprite.png", by_stage["shipped"].first.avatar
   end
+
+  # --- crew_clusters (board-card collapsing) ----------------------------------
+
+  test "crew_clusters collapses the build lane to one circle with total build time once submitted" do
+    task = Task.create!(title: "crew clusters build task", stage: "submitted")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 5.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 4.hours.ago, seconds_in_from: 1800, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600, actor: "carl")
+
+    build = crew_clusters(task.reload, stage_agent_groups(task, @agents)).find { |c| c.lane == :build }
+
+    assert_equal 3, build.stacked.size, "all three build stages stack into one circle"
+    assert_equal 5400, build.seconds, "total build time = 1800 + 3600"
+    assert_nil build.live_since, "not live once submitted"
+  end
+
+  test "crew_clusters marks the build lane live while still building" do
+    task = Task.create!(title: "crew clusters live task", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, actor: "carl")
+
+    build = crew_clusters(task.reload, stage_agent_groups(task, @agents)).find { |c| c.lane == :build }
+
+    assert_not_nil build.live_since, "a building task ticks a live counter"
+    assert_nil build.seconds, "no static build time until submitted"
+  end
+
+  test "crew_clusters stacks review heavy-on-top and deploy avi-on-top with combined QA time" do
+    task = deploy_task(stage: "shipped", reviewers: REVIEWERS) # reviewed 3600, assembled 1800, shipped 600
+    clusters = crew_clusters(task, stage_agent_groups(task, @agents))
+    review = clusters.find { |c| c.lane == :review }
+    deploy = clusters.find { |c| c.lane == :deploy }
+
+    assert review.stacked.last.heavy?, "heavy reviewer is on top (rendered last)"
+    assert_equal 3600, review.seconds, "the longer of the two reviews"
+    assert_equal "shipped", deploy.stacked.last.stage, "Avi (shipped) is on top"
+    assert_equal 2400, deploy.seconds, "assembled + shipped = 1800 + 600"
+  end
 end

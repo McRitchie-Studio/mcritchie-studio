@@ -71,6 +71,49 @@ module StageAgentsHelper
     :deploy
   end
 
+  # Board-card crew: ONE stacked circle per lane (Build · Review · Deploy) so a full
+  # crew fits a small card. Each cluster stacks its avatars (priority LAST, so it
+  # paints on top) and carries the single duration that matters for that lane:
+  #   build  → total build time, shown once submitted; LIVE counter while building
+  #   review → the longer of the two reviews (they share the →reviewed event)
+  #   deploy → assembled + shipped (QA→prod), Avi on top
+  CrewCluster = Struct.new(:lane, :stacked, :seconds, :live_since, keyword_init: true)
+
+  def crew_clusters(task, entries)
+    by_lane = entries.group_by { |e| stage_lane(e.stage) }
+
+    [].tap do |clusters|
+      if (build = by_lane[:build])
+        building = %w[designed building].include?(task.stage)
+        done = build.any? { |e| e.stage == "submitted" }
+        clusters << CrewCluster.new(
+          lane: :build,
+          stacked: build, # designed→building→submitted; the mascot, last on top
+          seconds: (build.sum { |e| e.seconds.to_i } if done),
+          live_since: (task.started_at || task.created_at if building)
+        )
+      end
+
+      if (review = by_lane[:review])
+        clusters << CrewCluster.new(
+          lane: :review,
+          stacked: review.sort_by { |e| e.heavy? ? 1 : 0 }, # heavy last = on top
+          seconds: review.map { |e| e.seconds.to_i }.max,
+          live_since: nil
+        )
+      end
+
+      if (deploy = by_lane[:deploy])
+        clusters << CrewCluster.new(
+          lane: :deploy,
+          stacked: deploy.sort_by { |e| e.stage == "shipped" ? 1 : 0 }, # Avi (shipped) last = on top
+          seconds: deploy.sum { |e| e.seconds.to_i },
+          live_since: nil
+        )
+      end
+    end
+  end
+
   # The per-stage avatars for a task's WHOLE journey, in pipeline order
   # (STAGE_AGENT_ORDER). Per stage the task has a landing TaskEvent for:
   #   designed/building/submitted → the actor of that event (the feature agent who

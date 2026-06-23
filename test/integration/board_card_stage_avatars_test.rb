@@ -25,9 +25,11 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "span.text-white", count: 2 # the two build-stage faces
-      assert_select "div[title^='Carl']"        # designer
-      assert_select "div[title^='Shannon']"     # builder, with its time-in-stage
+      assert_select "[data-test='crew-cluster']", count: 1 # build collapses to one stacked circle
+      assert_select "span.text-white", count: 2            # designer + builder stacked
+      assert_select "div[title^='Carl']"                   # designer
+      assert_select "div[title^='Shannon']"                # builder
+      assert_select "[data-test='crew-live']"              # ticking counter while building
     end
   end
 
@@ -53,7 +55,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the full crew renders in three spaced lane bunches (build / review / deploy)" do
+  test "the full crew collapses to three lane clusters (build / review / deploy)" do
     # A full journey: designer, builder, submitter (build), 2 reviewers, Steffon,
     # Avi = 7 faces — all shown, grouped into three lane bunches, no +N cap.
     task = Task.create!(title: "crowded crew shipped card", stage: "shipped")
@@ -76,8 +78,9 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "[data-test='crew-bunch']", count: 3 # Build · Review · Deploy
-      assert_select "span.text-white", count: 7          # every face shown, no +N cap
+      assert_select "[data-test='crew-cluster']", count: 3  # one stacked circle per lane
+      assert_select "span.text-white", count: 7             # all 7 faces, just stacked
+      assert_select "[data-test='crew-duration']", count: 3 # build total · review · QA→prod
     end
   end
 
