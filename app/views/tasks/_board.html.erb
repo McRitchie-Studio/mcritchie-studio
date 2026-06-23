@@ -293,6 +293,15 @@ function kanbanBoard() {
                     <span class="text-[10px]" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
                   </button>
                   <span x-ref="resumeCmd" class="hidden"><%= task.resume_command %></span>
+                  <%# Liveness (V2): a live build-claim lease means a session looks
+                      active in another terminal — the resume control's "resume
+                      anyway?" cue. Lapses automatically once the heartbeat stops. %>
+                  <% if task.claim_live? %>
+                    <span class="inline-flex items-center gap-1 text-[10px] text-mint-300"
+                          title="Build claim is live — a session looks active in another terminal (last heartbeat ~<%= task.claim_heartbeat_seconds_ago %>s ago). Resume anyway?">
+                      <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse"></span>live
+                    </span>
+                  <% end %>
                 </div>
               <% end %>
 

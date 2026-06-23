@@ -27,12 +27,17 @@
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
-#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A]
+#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--steal]
 #     ( best-effort per-transition usage the agent burned in the stage it's
 #       leaving — recorded on this move's TaskEvent. With NO usage flags, a
 #       Claude session auto-captures model + token delta + cost from its
 #       transcript, so a bare move still leaves a full paper trail; flags
 #       override. The from/to/duration spine is recorded server-side regardless. )
+#     ( the move to `building` CLAIMS the task for this live instance (session id +
+#       a per-process nonce) under a TTL lease. It REFUSES (loudly) if a DIFFERENT,
+#       non-expired instance already holds it — pass --steal to take it over. An
+#       expired / dead-session lease is reclaimed automatically. )
+#   bin/task heartbeat <slug>                         # renew this instance's build-claim lease (bin/statusline calls it)
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
@@ -44,7 +49,9 @@ require "net/http"
 require "json"
 require "uri"
 require "fileutils"
+require "digest"
 require_relative "../lib/agent_session_usage"
+require_relative "../lib/claim_lease"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
@@ -86,6 +93,99 @@ def stamp_session(devops)
   merged["session_id"] = id
   merged["session_provider"] = provider
   merged
+end
+
+# --- Build claim lease (V2: the enforcement gate) --------------------------
+# The per-PROCESS-instance nonce that, with the session id, identifies the LIVE
+# INSTANCE holding a claim (see lib/claim_lease.rb). It MUST be stable across the
+# many short-lived bin/task invocations within ONE terminal, yet DIFFER between
+# terminal-A and a `claude --resume` in terminal-B (both share
+# CLAUDE_CODE_SESSION_ID). So it can't be per-invocation — it's anchored to the
+# long-lived AGENT process (the `claude`/`codex` CLI), which is the common
+# ancestor of every bin/task call in a terminal and a distinct OS process per
+# terminal. Resolution, most-robust first:
+#   1. TASK_CLAIM_NONCE — explicit injection (tests; a future agent-exported
+#      per-instance token would set this).
+#   2. The agent process found by walking the ancestry: a short hash of its
+#      PID + start time. PID alone is reused after exit; pairing it with the
+#      start time makes the identity collision-resistant. Two `claude --resume`
+#      processes ⇒ different PID+start ⇒ different nonce.
+#   3. Degrade: the controlling TTY of the nearest ancestor that has one (the
+#      agent's per-call Bash-tool shells are detached, so this resolves to the
+#      agent's own terminal); then "" — a session-only claim that still catches a
+#      DIFFERENT session, just not two terminals of the same one.
+# Memoized (incl. the "" degrade) so the gate + the renewal agree and ps runs once.
+AGENT_COMMANDS = %w[claude codex].freeze
+
+def claim_nonce
+  return @claim_nonce if defined?(@claim_nonce)
+
+  @claim_nonce = resolve_claim_nonce
+end
+
+def resolve_claim_nonce
+  override = ENV["TASK_CLAIM_NONCE"].to_s.strip
+  return override unless override.empty?
+
+  chain = process_ancestry
+  agent = chain.find { |p| AGENT_COMMANDS.include?(File.basename(p[:comm].to_s.split(/\s+/).first.to_s)) }
+  return short_hash("pid:#{agent[:pid]}|start:#{proc_start(agent[:pid])}") if agent
+
+  tty = chain.map { |p| p[:tty] }.find { |t| !t.to_s.empty? && t != "?" && t != "??" }
+  return short_hash("tty:#{tty}") if tty
+
+  "" # could not determine — degrade to a session-only claim
+rescue StandardError
+  ""
+end
+
+# Walk the process tree from us up to init: [{pid:, ppid:, tty:, comm:}, ...].
+# One `ps` per level (≈5 deep) — cheap, and bin/task isn't a hot path.
+def process_ancestry(max_depth: 12)
+  chain = []
+  pid = Process.pid
+  max_depth.times do
+    out = IO.popen(["ps", "-o", "ppid=,tty=,comm=", "-p", pid.to_s], err: File::NULL, &:read).to_s.strip
+    break if out.empty?
+
+    ppid, tty, comm = out.split(/\s+/, 3)
+    chain << { pid: pid.to_i, ppid: ppid.to_i, tty: tty.to_s, comm: comm.to_s }
+    pid = ppid.to_i
+    break if pid <= 1
+  end
+  chain
+rescue StandardError
+  []
+end
+
+# The wall-clock start time of a pid (`ps -o lstart=`), e.g. "Mon Jun 22 13:39:32
+# 2026" — the disambiguator that survives PID reuse after the process exits.
+def proc_start(pid)
+  IO.popen(["ps", "-o", "lstart=", "-p", pid.to_s], err: File::NULL, &:read).to_s.strip
+rescue StandardError
+  ""
+end
+
+def short_hash(text)
+  Digest::SHA256.hexdigest(text)[0, 12]
+end
+
+# Refuse a move-to-building when the task is already claimed by a DIFFERENT,
+# still-live instance — unless --steal. Unclaimed / expired / same-instance claim
+# freely. Loud (not a hard block): it prints WHO holds it + how to override.
+def enforce_claim_gate!(slug, devops, mover_session, steal:)
+  claim = ClaimLease.from_devops(devops)
+  decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
+  return if decision != :held_by_other || steal
+
+  held = claim["claimed_session"].to_s
+  age = ClaimLease.heartbeat_age(claim)
+  warn!("⚠  task #{slug} is already claimed by a DIFFERENT live instance:")
+  warn!("     session …#{held[-4..] || held}  instance #{claim["claim_nonce"]}  ·  last heartbeat ~#{age}s ago " \
+        "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)")
+  warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
+  warn!("     bin/task move #{slug} building --steal")
+  exit 1
 end
 
 SCALAR_FLAGS = {
@@ -349,6 +449,7 @@ when "move"
   # a plain shell / CI run (no session) stamps no actor.
   mover_session = session_identity.first
   event["actor"] = mover_session unless mover_session.nil?
+  steal = false
   while ARGV.any?
     case (flag = ARGV.shift)
     when "--model"      then event["model"]      = ARGV.shift || die!("--model needs a value")
@@ -356,7 +457,8 @@ when "move"
     when "--tokens-out" then event["tokens_out"] = (ARGV.shift || die!("--tokens-out needs a value")).to_i
     when "--cost"       then event["cost"]       = ARGV.shift || die!("--cost needs a value")
     when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
-    else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor)")
+    when "--steal"      then steal = true # override the build-claim gate (take a live foreign claim)
+    else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor, --steal)")
     end
   end
   # No explicit usage flags → auto-capture the per-transition delta (model +
@@ -364,17 +466,44 @@ when "move"
   # paper trail. Best-effort; a missing transcript leaves the event spine-only.
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
   body = { "stage" => stage, "event" => event }
-  # Stamp the working session on the claim (move to building). Read-merge-write
-  # so the session fields ride alongside existing devops without wiping them
-  # (the raw API replaces metadata.devops wholesale). No session → no-op.
-  if stage == "building" && !session_identity.first.nil?
+  # Claim the task on the move to building. The gate refuses (loudly, overridable
+  # with --steal) when a DIFFERENT live instance already holds it; otherwise it
+  # claims/renews the lease. Read-merge-write so the claim + session fields ride
+  # alongside existing devops without wiping them (the raw API replaces
+  # metadata.devops wholesale). No session → no claim (plain shell / CI degrades).
+  if stage == "building" && !mover_session.nil?
     current = api(:get, "/api/v1/tasks/#{slug}")["data"]
-    merged = stamp_session(current.dig("metadata", "devops") || {})
-    body["devops"] = merged unless merged.empty?
+    current_devops = current.dig("metadata", "devops") || {}
+    enforce_claim_gate!(slug, current_devops, mover_session, steal: steal)
+    merged = stamp_session(current_devops)
+    merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce))
+    body["devops"] = merged
   end
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   write_feature_marker(task)
   print_task(task)
+when "heartbeat"
+  # The live-terminal lease renewal — bin/statusline calls this each render
+  # (throttled) so a crashed/closed session's claim lapses after the TTL and the
+  # task becomes reclaimable. Renews THIS instance's claim on <slug> (or adopts an
+  # unclaimed/expired one); NEVER steals a live foreign claim. Fully best-effort:
+  # no session, no slug, or any API error → silent no-op (a heartbeat must never
+  # disrupt the status line). Prints nothing on success.
+  slug = ARGV.shift || die!("usage: bin/task heartbeat <slug>")
+  begin
+    session = session_identity.first
+    unless session.nil?
+      current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
+      devops = current.dig("metadata", "devops") || {}
+      decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
+      unless decision == :held_by_other # don't steal a live foreign claim via a heartbeat
+        merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce))
+        api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+      end
+    end
+  rescue SystemExit, StandardError
+    nil # best-effort: swallow API/transport failures
+  end
 when "block"
   slug = ARGV.shift || die!("usage: bin/task block <slug> [--kind environment|rework|dependency] [--feedback \"...\"] [--agent A]")
   kind = feedback = agent = nil

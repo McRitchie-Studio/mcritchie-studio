@@ -34,6 +34,7 @@ class Task < ApplicationRecord
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor block_kind agent_context session_id session_provider mascot
+    claimed_session claim_nonce claim_expires_at
   ].freeze
   # Provider → resume-command template (one %s, the session id). Codex is a
   # one-line addition once its real resume syntax is confirmed.
@@ -170,6 +171,35 @@ class Task < ApplicationRecord
 
     provider = devops_session_provider || "claude"
     format(RESUME_COMMANDS.fetch(provider, RESUME_COMMANDS["claude"]), "…#{id[-4..]}")
+  end
+
+  # --- Build claim lease (V2: the enforcement gate) -------------------------
+  # The LIVE INSTANCE that owns this task while it's building — the session id
+  # PLUS a per-process nonce, under a TTL lease (claim_expires_at) renewed by the
+  # heartbeat (bin/statusline). `bin/task move <task> building` refuses to claim a
+  # task already held by a different, non-expired instance. The lease math lives
+  # in ClaimLease (shared verbatim with the standalone bin/task CLI).
+  def devops_claim
+    ClaimLease.from_devops(devops)
+  end
+
+  def claimed_session_id
+    devops.fetch("claimed_session", "").presence
+  end
+
+  def devops_claim_nonce
+    devops.fetch("claim_nonce", "").presence
+  end
+
+  # True while a non-expired claim is held — the liveness check the /tasks resume
+  # control reuses ("session looks active in another terminal — resume anyway?").
+  def claim_live?(now: Time.current)
+    ClaimLease.live?(devops, now: now)
+  end
+
+  # Seconds since the holder's last heartbeat (nil when unclaimed / no lease).
+  def claim_heartbeat_seconds_ago(now: Time.current)
+    ClaimLease.heartbeat_age(devops, now: now)
   end
 
   def devops_repositories

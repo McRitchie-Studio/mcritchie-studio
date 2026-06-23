@@ -48,4 +48,57 @@ class StatuslineTest < Minitest::Test
     refute_includes out, "…a617", "no session → no last-4 segment"
     assert_includes out, "[building]", "the no-session path must still render the stage"
   end
+
+  # --- Heartbeat wiring (V2): the status line renews the active build claim ----
+
+  # Run statusline with a stub `task` binary (records its args) wired in via
+  # TASK_BIN, in foreground heartbeat mode so the call is observable. Returns the
+  # recorded invocations (one per line, e.g. "heartbeat <slug>").
+  def heartbeat_calls(stage:, runs: 1, session: SESSION, slug: "session-claim-lease-gate")
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, ".agent-context.json"), JSON.generate(
+        "app" => "mcritchie-studio",
+        "worktree_slug" => "session-claim-lease-gate",
+        "task_record_slug" => slug,
+        "task_url" => "https://mcritchie.studio/tasks/#{slug}",
+        "stage" => stage
+      ))
+      calls = File.join(dir, "calls.log")
+      stub = File.join(dir, "task")
+      File.write(stub, "#!/bin/bash\necho \"$@\" >> #{calls.inspect}\n")
+      File.chmod(0o755, stub)
+
+      env = {
+        "CLAUDE_CODE_SESSION_ID" => session,
+        "TASK_BIN" => stub,
+        "STATUSLINE_HEARTBEAT_FG" => "1",
+        "CLAUDE_PROJECTS_DIR" => File.join(dir, "projects")
+      }
+      stdin = JSON.generate("workspace" => { "current_dir" => dir })
+      runs.times { Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL) }
+
+      File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
+    end
+  end
+
+  def test_statusline_fires_the_heartbeat_for_the_active_building_task
+    calls = heartbeat_calls(stage: "building")
+    assert_equal ["heartbeat session-claim-lease-gate"], calls,
+                 "a building task's status line should renew its claim via `task heartbeat <slug>`"
+  end
+
+  def test_statusline_throttles_repeated_heartbeats
+    calls = heartbeat_calls(stage: "building", runs: 3)
+    assert_equal 1, calls.size, "the throttle suppresses repeat heartbeats within the window"
+  end
+
+  def test_statusline_does_not_heartbeat_a_non_building_task
+    assert_empty heartbeat_calls(stage: "submitted"),
+                 "only the live BUILD claim is renewed — other stages don't heartbeat"
+  end
+
+  def test_statusline_does_not_heartbeat_without_a_session
+    assert_empty heartbeat_calls(stage: "building", session: nil),
+                 "no session → no claim to renew"
+  end
 end
