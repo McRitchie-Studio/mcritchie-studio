@@ -459,8 +459,8 @@ Two deterministic steps:
    record and are QA'd via a consuming app). It records `release.qa_url` +
    per-repo QA SHAs and leaves the RC `assembled`. `--task` is operator curation
    (adopt the named tasks first); it does **not** auto-adopt every reviewed task.
-   Record ops default to the local DB; `--prod` runs them on the prod board via
-   `heroku run`. **Post-deploy hook:** once each QA dyno boots (after
+   Record ops run on the **prod board by default** (the board IS production) via
+   `heroku run`; `--local` opts into the stale local DB. **Post-deploy hook:** once each QA dyno boots (after
    `wait_for_boot`, before the assemble flip), for every member that declares
    `devops.post_deploy_cmd` it runs that command on the member's **QA heroku app**
    via `heroku run`, records the `[post-deploy]` outcome on the task's

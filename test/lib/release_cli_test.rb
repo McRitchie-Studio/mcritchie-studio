@@ -524,8 +524,11 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "prepare", setup: POST_DEPLOY_PREP_STUB)
 
     assert_includes out, "post-deploy hooks (QA)"
-    assert_includes out, "heroku run -a turf-monster-qa rake pokemon:backfill_mascots",
-                     "prepare runs the post-deploy command on the QA heroku app"
+    # The printed command is byte-for-byte what executes: `--exit-code` (so heroku
+    # passes through the remote exit status — the abort-on-failure linchpin) and the
+    # `--` flag-terminator before the task-declared command.
+    assert_includes out, "heroku run -a turf-monster-qa --no-tty --exit-code -- rake pokemon:backfill_mascots",
+                     "prepare runs the post-deploy command on the QA heroku app with --exit-code"
   end
 
   def test_prepare_dry_run_has_no_post_deploy_hook_when_no_member_declares_one
@@ -553,8 +556,8 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: POST_DEPLOY_SHIP_STUB)
 
     assert_includes out, "post-deploy hooks (prod)"
-    assert_includes out, "heroku run -a turf-monster-mainnet rake pokemon:backfill_mascots",
-                     "ship runs the post-deploy command on the production app"
+    assert_includes out, "heroku run -a turf-monster-mainnet --no-tty --exit-code -- rake pokemon:backfill_mascots",
+                     "ship runs the post-deploy command on the production app with --exit-code"
   end
 
   def test_ship_dry_run_runs_post_deploy_after_the_app_deploys
@@ -566,20 +569,54 @@ class ReleaseCliTest < Minitest::Test
   end
 
   # A non-zero exit from `heroku run` must ABORT the pipeline. Drive run_post_deploy
-  # directly (DRY=false) with `sh` stubbed to fail and `conductor` (the record
-  # write) stubbed out, so the real abort-on-failure path runs without Rails.
+  # directly (DRY=false) with `sh` stubbed to FAIL — but the stub first ECHOES its
+  # argv, so we also prove the EXECUTED command carries `--exit-code` (the flag that
+  # makes heroku passthrough the remote exit status; without it heroku returns 0 at
+  # dyno launch and abort-on-failure never fires). `conductor` (record write) is a
+  # no-op. Keeps the stubbed-false branch for abort coverage without a real dyno.
   def test_post_deploy_aborts_the_pipeline_on_a_nonzero_exit
     setup = <<~RUBY
-      def sh(*_a, **_k) = ["the command exploded", false]  # heroku run exits non-zero
-      def conductor(*_a, **_k) = {}                          # record write is a no-op
+      def sh(*a, **_k)
+        $stdout.puts("SH-ARGV " + a.inspect)  # echo the executed heroku argv...
+        ["the command exploded", false]        # ...then fail (non-zero remote exit)
+      end
+      def conductor(*_a, **_k) = {}             # record write is a no-op
       REPOS = [{ "repo" => "turf-monster", "kind" => "app", "qa_app" => "turf-monster",
                  "members" => [{ "slug" => "t-turf", "post_deploy_cmd" => "rake boom" }] }]
     RUBY
     out = run_cli(["--yes"], setup: setup,
                   call: "begin; run_post_deploy(REPOS, target: :qa); rescue SystemExit; puts('ABORTED'); end")
 
-    assert_includes out, "heroku run -a turf-monster-qa rake boom", "it attempted the command on the QA app"
+    assert_includes out, %q("--exit-code"),
+                     "the EXECUTED heroku argv passes --exit-code so a failing remote command returns non-zero"
+    assert_includes out, %q("turf-monster-qa"), "it attempted the command on the QA app"
     assert_includes out, "ABORTED", "a non-zero post-deploy exit aborts the pipeline"
+  end
+
+  # `heroku run` argv hardening: Shellwords.split keeps a quoted/spaced arg as ONE
+  # token, and a `--` terminator precedes the task command so a flag-shaped arg
+  # can't be reparsed as a `heroku run` option. Drive run_post_deploy (DRY=false)
+  # with `sh` echoing its argv (and returning ok, so no abort).
+  POST_DEPLOY_ARGV_STUB = <<~RUBY
+    def sh(*a, **_k)
+      $stdout.puts("SH-ARGV " + a.inspect)
+      ["", true]
+    end
+    def conductor(*_a, **_k) = {}
+  RUBY
+
+  def test_post_deploy_shell_splits_and_terminates_heroku_flags
+    setup = POST_DEPLOY_ARGV_STUB + <<~RUBY
+      REPOS = [{ "repo" => "turf-monster", "kind" => "app", "qa_app" => "turf-monster",
+                 "members" => [{ "slug" => "t-turf",
+                                 "post_deploy_cmd" => %q(rake "db:migrate[hello world]") }] }]
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "run_post_deploy(REPOS, target: :qa)")
+
+    assert_includes out, %q("--"),
+                     "a `--` terminator stops heroku flag parsing before the task command"
+    assert_includes out, %q("db:migrate[hello world]"),
+                     "Shellwords keeps a quoted/spaced arg as a single token (not two argv entries)"
   end
 
   # A declared post_deploy_cmd on a repo with no resolvable target app (a gem, or

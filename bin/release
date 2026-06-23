@@ -79,6 +79,7 @@ require "json"
 require "open3"
 require "yaml"
 require "tmpdir"
+require "shellwords"
 
 # Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
 # publish/repin) lives in the unit-tested Release::ShipSequence +
@@ -315,16 +316,29 @@ def run_post_deploy(repos, target:)
     task = entry["task"]
     app  = entry["app"]
     cmd  = entry["cmd"]
+    # Unroutable declared command (a gem, or an app missing from qa_environments)
+    # is a HARD abort, never a silent no-op. Intentionally BEFORE the DRY gate: a
+    # dry-run must surface this misconfig (it would block the real run) rather than
+    # preview past it.
     abort!("task #{task} (#{entry['repo']}) declares a post_deploy_cmd but has no #{phase} app in " \
            "config/qa_environments.yml — register one or clear devops.post_deploy_cmd") if app.empty?
 
+    # One canonical argv drives BOTH the preview and the real run, so --dry-run
+    # prints exactly what executes. `--exit-code` makes `heroku run` passthrough the
+    # REMOTE command's exit status — without it heroku returns 0 the instant the
+    # dyno LAUNCHES (regardless of the command), so abort-on-failure never fires.
+    # `--` stops heroku flag parsing so a task-declared cmd can't be reparsed as
+    # `heroku run` flags; Shellwords.split keeps quoted/spaced args intact.
+    heroku_argv = ["heroku", "run", "-a", app, "--no-tty", "--exit-code", "--", *Shellwords.split(cmd)]
+    printed = heroku_argv.join(" ")
+
     if DRY
-      say("  [dry-run] post-deploy #{task}: heroku run -a #{app} #{cmd}")
+      say("  [dry-run] post-deploy #{task}: #{printed}")
       next
     end
 
-    step("post-deploy #{task}: heroku run -a #{app} #{cmd}")
-    out, ok = sh("heroku", "run", "-a", app, "--no-tty", *cmd.split, capture: true)
+    step("post-deploy #{task}: #{printed}")
+    out, ok = sh(*heroku_argv, capture: true)
     print(out)
     record_post_deploy_check(task: task, app: app, cmd: cmd, ok: ok)
     # In ship, add successful runs to the partial-ship "what's live" trail.
