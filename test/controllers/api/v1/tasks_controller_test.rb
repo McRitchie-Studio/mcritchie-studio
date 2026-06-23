@@ -120,6 +120,27 @@ module Api
         assert_equal "building", event.to_stage
         assert_equal "api", event.source
       end
+
+      test "create assigns a Pokemon mascot persisted in devops" do
+        Pokemon.create!(dex: 905, name: "Snorlax", slug: "snorlax", generation: 1)
+        post api_v1_tasks_path,
+             params: { title: "Api mascot create task", devops: { repositories: ["mcritchie-studio"] } },
+             headers: @headers, as: :json
+
+        assert_response :created
+        slug = JSON.parse(response.body).dig("data", "slug")
+        assert_equal "snorlax", Task.find_by!(slug: slug).devops["mascot"]
+      end
+
+      test "create honors an explicit mascot through devops normalization" do
+        post api_v1_tasks_path,
+             params: { title: "Api mascot override task", devops: { repositories: ["mcritchie-studio"], mascot: "gyarados" } },
+             headers: @headers, as: :json
+
+        assert_response :created
+        slug = JSON.parse(response.body).dig("data", "slug")
+        assert_equal "gyarados", Task.find_by!(slug: slug).devops["mascot"]
+      end
     end
   end
 end
