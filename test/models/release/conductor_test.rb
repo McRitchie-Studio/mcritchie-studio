@@ -258,6 +258,75 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_nil app_member[:version]
   end
 
+  test "member_plan carries each member's post_deploy_cmd (nil when undeclared)" do
+    with_cmd = Task.create!(title: "backfill mascots release task", stage: "reviewed",
+                            metadata: { "devops" => {
+                              "shape" => "backend", "repositories" => ["turf-monster"], "branch" => "feat/x",
+                              "pr_url" => "https://github.com/amcritchie/turf-monster/pull/1",
+                              "post_deploy_cmd" => "rake pokemon:backfill_mascots"
+                            } })
+    without = app_task("plain", repo: "mcritchie-studio", branch: "feat/plain")
+    rel = Release::Conductor.prepare!(task_slugs: [with_cmd.slug, without.slug])
+
+    plan = Release::Conductor.member_plan(rel)
+    declared = plan.find { |m| m[:slug] == with_cmd.slug }
+    undeclared = plan.find { |m| m[:slug] == without.slug }
+
+    assert_equal "rake pokemon:backfill_mascots", declared[:post_deploy_cmd]
+    assert_nil undeclared[:post_deploy_cmd], "an undeclared post_deploy_cmd is nil, not blank"
+  end
+
+  # --- record_post_deploy_check: the [post-deploy] checks_run audit line ---
+
+  test "record_post_deploy_check appends a tagged [post-deploy] outcome line" do
+    t = reviewed_task("pd-record")
+    Release::Conductor.record_post_deploy_check(
+      task_slug: t.slug, app: "turf-monster-qa", cmd: "rake pokemon:backfill_mascots", ok: true
+    )
+
+    line = t.reload.devops_checks_run.last
+    assert_match(/\A\[post-deploy\] rake pokemon:backfill_mascots on turf-monster-qa → ok/, line)
+  end
+
+  test "record_post_deploy_check records a FAILED outcome" do
+    t = reviewed_task("pd-fail")
+    Release::Conductor.record_post_deploy_check(task_slug: t.slug, app: "turf-monster-mainnet", cmd: "rake boom", ok: false)
+
+    assert_match(/→ FAILED/, t.reload.devops_checks_run.last)
+  end
+
+  test "record_post_deploy_check is idempotent — a re-run replaces the prior line for the same cmd+app" do
+    t = reviewed_task("pd-idem")
+    # First run fails, second (same cmd+app) succeeds — the LAST outcome wins, no pile-up.
+    Release::Conductor.record_post_deploy_check(task_slug: t.slug, app: "turf-monster-qa", cmd: "rake x", ok: false)
+    Release::Conductor.record_post_deploy_check(task_slug: t.slug, app: "turf-monster-qa", cmd: "rake x", ok: true)
+
+    pd_lines = t.reload.devops_checks_run.select { |l| l.start_with?("[post-deploy] rake x on turf-monster-qa") }
+    assert_equal 1, pd_lines.size, "the same cmd+app must not pile up duplicate lines"
+    assert_match(/→ ok/, pd_lines.first)
+  end
+
+  test "record_post_deploy_check keeps distinct entries for different cmd or app, and preexisting checks" do
+    t = Task.create!(title: "preexisting checks demo task", stage: "reviewed",
+                     metadata: { "devops" => { "shape" => "backend", "repositories" => ["turf-monster"],
+                                               "checks_run" => ["[unit] bin/rails test"] } })
+    Release::Conductor.record_post_deploy_check(task_slug: t.slug, app: "turf-monster-qa", cmd: "rake a", ok: true)
+    Release::Conductor.record_post_deploy_check(task_slug: t.slug, app: "turf-monster-mainnet", cmd: "rake a", ok: true)
+
+    checks = t.reload.devops_checks_run
+    assert_includes checks, "[unit] bin/rails test", "preexisting non-post-deploy checks are preserved"
+    assert_equal 2, checks.count { |l| l.start_with?("[post-deploy] rake a on") },
+                 "the same cmd on a different app is a distinct entry"
+  end
+
+  test "record_post_deploy_check does not write a TaskEvent (no stage change)" do
+    t = reviewed_task("pd-noevent")
+    before = t.task_events.count
+    Release::Conductor.record_post_deploy_check(task_slug: t.slug, app: "turf-monster-qa", cmd: "rake x", ok: true)
+
+    assert_equal before, t.reload.task_events.count, "recording a check must not append a stage event"
+  end
+
   test "ordered_members puts gems before apps regardless of position" do
     rel = Release.open!
     app = app_task("consumer", repo: "mcritchie-studio", branch: "feat/app")

@@ -196,6 +196,7 @@ class TasksController < ApplicationController
         :production_url,
         :release_train,
         :requires_release_conductor,
+        :post_deploy_cmd,
         :repositories,
         :risk_tags,
         :acceptance,

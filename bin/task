@@ -22,9 +22,12 @@
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
-#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T]
+#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T] \
+#                   [--post-deploy-cmd "rake foo:bar"]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
+#   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
+#     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--steal]
@@ -192,7 +195,7 @@ SCALAR_FLAGS = {
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
   "--release-train" => "release_train", "--block-kind" => "block_kind",
-  "--agent-context" => "agent_context"
+  "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
 NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze
