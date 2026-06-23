@@ -120,19 +120,21 @@ module StageAgentsHelper
   BUILD_STEP_NEXT = { "designed" => "building", "building" => "submitted", "submitted" => "reviewed" }.freeze
   BUILD_STEP_START = { "designed" => :created_at, "building" => :started_at, "submitted" => :submitted_at }.freeze
 
-  # Board-aware crew columns. The Build board (/tasks) splits the build into its
-  # three steps (designed · building · submitted) — no QA spots yet — while the
-  # Deploy board (/deployments) collapses the build into one circle and shows the
-  # pipeline (build · review · assembled, + shipped). Returns an ordered array of
-  # CrewCluster; the partial renders one fixed grid column per entry (an empty entry
-  # reserves its slot). Three columns until a task ships — four once shipped, and for
-  # blocked (kept four for now).
+  # Board-aware crew columns. The upstream build stages (designed · building) always
+  # split into the design + building agents, on either board; the Build board (/tasks)
+  # keeps that split through submitted. Everything else is Deploy-style: the build
+  # collapses into one circle and the pipeline shows build · review · assembled. Only
+  # a shipped task earns the fourth (shipped) lane; blocked mirrors Assembled's three
+  # (a block lands from reviewed or assembled). Returns an ordered array of CrewCluster;
+  # the partial renders one fixed grid column per entry (an empty entry reserves its slot).
   def crew_columns(task, entries, board:, mascot: nil)
-    return build_step_columns(task, entries, mascot) if board == :build && task.stage != "blocked"
+    if %w[designed building].include?(task.stage) || (board == :build && task.stage != "blocked")
+      return build_step_columns(task, entries, mascot)
+    end
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
     lanes = %i[build review assembled]
-    lanes << :shipped if %w[shipped blocked].include?(task.stage)
+    lanes << :shipped if task.stage == "shipped"
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
   end
 

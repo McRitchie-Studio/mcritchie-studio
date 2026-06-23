@@ -220,12 +220,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h2", "Tasks"
-    # Feature-agent lane (+ archived toggle column); submitted is the seam
+    # Feature-agent lane (+ archived toggle column); submitted is the seam. Blocked is
+    # NOT its own column anymore — blocked tasks ride the Building column.
     assert_select "#dropzone-designed"
     assert_select "#dropzone-building"
-    assert_select "#dropzone-blocked"
     assert_select "#dropzone-submitted"
     assert_select "#dropzone-archived"
+    assert_select "#dropzone-blocked", count: 0
     # DevOps-only columns absent
     assert_select "#dropzone-reviewed", count: 0
     assert_select "#dropzone-assembled", count: 0
@@ -257,6 +258,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Run Deployment"
     # the shipped column's kickoff is the DevOps loop's conclusion
     assert_includes response.body, "Archive completed tasks"
+  end
+
+  test "blocked tasks ride the Building column (red hue) on both boards" do
+    blocked = Task.create!(title: "blocked rides building", stage: "blocked")
+    [tasks_path, deployments_path].each do |path|
+      get path
+      assert_response :success
+      assert_select "#dropzone-building #card-#{blocked.slug}[class*=bg-red]", true,
+                    "blocked card should ride the Building column with a red hue on #{path}"
+    end
   end
 
   test "stages page renders both workflow lanes and the stage guide" do
