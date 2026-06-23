@@ -143,6 +143,109 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal "https://mcritchie.studio/tasks/task-intake", pr.fetch("task_url")
   end
 
+  # --- doctor orphan reconciliation -----------------------------------------
+
+  # [unit] The pure set-difference orphan_worktree_dirs loaded as a library in a
+  # hermetic subprocess. Any git-listed worktree that is neither the primary
+  # checkout nor a managed `.worktrees/*` dir is an orphan; a fully-managed set
+  # yields none. Reproduces the bug at the lowest tier (no git, no fixtures).
+  test "[unit] orphan reconciliation flags only untracked git worktrees" do
+    primary = "/repo"
+    managed = ["/repo/.worktrees/a", "/repo/.worktrees/b"]
+
+    # Every git worktree is known -> no orphans.
+    assert_equal [], orphan_decision(primary, managed, [primary] + managed)
+
+    # A stray out-of-tree worktree git tracks but the registry never created.
+    assert_equal ["/elsewhere/stray"],
+                 orphan_decision(primary, managed, [primary, managed.first, "/elsewhere/stray"])
+  end
+
+  # [integration] A real out-of-tree git worktree (outside `.worktrees/`) must be
+  # reported by `doctor` with its path, branch, and clean/merged state, and
+  # doctor must NOT claim "no issues" when an orphan exists.
+  test "[integration] doctor flags an out-of-tree orphan worktree" do
+    orphan_dir = File.join(@projects_dir, "stray-worktree")
+    git!(@hub_dir, "worktree", "add", orphan_dir, "-b", "stray/orphan")
+
+    out, err, status = agent_worktree("doctor", "mcritchie-studio", env: command_env)
+
+    assert status.success?, err
+    assert_no_match(/no worktree lifecycle issues found/, out)
+    assert_includes out, "untracked git worktree"
+    assert_includes out, File.realpath(orphan_dir)
+    assert_includes out, "stray/orphan"
+    # The managed worktree (in `.worktrees/`) must NOT be misreported as orphan.
+    assert_no_match(%r{untracked git worktree at \S*\.worktrees/}, out)
+  end
+
+  # [integration] A PRUNABLE worktree — git still LISTS it but its directory was
+  # deleted on disk without `git worktree prune`. Computing branch/merge/clean
+  # state used to chdir into the missing dir and raise an uncaught Errno::ENOENT,
+  # crashing doctor. doctor must now exit 0 and label it distinctly as prunable.
+  test "[integration] doctor survives a prunable orphan worktree" do
+    orphan_dir = File.join(@projects_dir, "prunable-worktree")
+    git!(@hub_dir, "worktree", "add", orphan_dir, "-b", "stray/prunable")
+    realpath = File.realpath(orphan_dir)
+    FileUtils.rm_rf(orphan_dir) # delete on disk; do NOT `git worktree prune`
+
+    out, err, status = agent_worktree("doctor", "mcritchie-studio", env: command_env)
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_no_match(/Errno::ENOENT|No such file or directory/, combined)
+    assert_includes out, "prunable git worktree"
+    assert_includes out, realpath
+    assert_includes out, "worktree prune"
+  end
+
+  # [integration] The same prunable orphan must not crash `snapshot --write`,
+  # which QA/conductor automation runs (it shares doctor_issues_by_label). It
+  # must still exit 0 and write the registry.
+  test "[integration] snapshot --write survives a prunable orphan worktree" do
+    orphan_dir = File.join(@projects_dir, "prunable-snapshot")
+    git!(@hub_dir, "worktree", "add", orphan_dir, "-b", "stray/prunable-snap")
+    FileUtils.rm_rf(orphan_dir)
+    registry_path = File.join(@projects_dir, ".agents", "registry-prunable.json")
+
+    out, err, status = agent_worktree(
+      "snapshot", "mcritchie-studio", "--write",
+      env: { "AGENT_WORKTREE_REGISTRY" => registry_path }
+    )
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_no_match(/Errno::ENOENT|No such file or directory/, combined)
+    assert File.exist?(registry_path), "snapshot must still write the registry"
+  end
+
+  # [integration] A satellite declared in satellites.yml but never cloned locally
+  # (no repo dir) must not crash the no-arg doctor that automation runs:
+  # `git -C <missing-repo>` degrades to no worktrees, so doctor still exits 0.
+  test "[integration] doctor exits 0 when a satellite has no local clone" do
+    write_satellite("ghost-app", 3300) # PROJECTS_DIR/ghost-app is never created
+
+    out, err, status = agent_worktree("doctor", env: command_env)
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_no_match(/Errno::ENOENT|No such file or directory/, combined)
+    assert_no_match(/ghost-app/, combined)
+  end
+
+  # [unit] doctor_issues_by_label groups by label, so two orphan dirs that share
+  # a basename (e.g. /a/foo and /b/foo) must produce distinct, deterministic
+  # labels (basename + short path hash) rather than collapsing to one key.
+  test "[unit] orphan labels disambiguate same-basename dirs by path hash" do
+    a = orphan_label_for("mcritchie-studio", "/a/foo")
+    b = orphan_label_for("mcritchie-studio", "/b/foo")
+
+    assert_match %r{\Amcritchie-studio/orphan:foo-[0-9a-f]{8}\z}, a
+    assert_match %r{\Amcritchie-studio/orphan:foo-[0-9a-f]{8}\z}, b
+    refute_equal a, b, "same-basename orphans must not collapse to one label"
+    assert_equal a, orphan_label_for("mcritchie-studio", "/a/foo"), "label must be deterministic"
+  end
+
   # --- remove --force (merge-verified) --------------------------------------
 
   # [unit] The pure decision force_clears_content_blocker? loaded as a library in
@@ -237,6 +340,52 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     )
     assert status.success?, "#{out}\n#{err}"
     out.strip
+  end
+
+  # Drive the pure orphan_worktree_dirs reconciliation directly via `load` in an
+  # isolated subprocess (same hermetic pattern as force_decision). Returns the
+  # orphan path array.
+  def orphan_decision(primary, managed, git_dirs)
+    snippet = <<~RUBY
+      require "json"
+      load #{@script.inspect}
+      puts JSON.generate(orphan_worktree_dirs(#{primary.inspect}, #{managed.inspect}, #{git_dirs.inspect}))
+    RUBY
+    out, err, status = Open3.capture3(
+      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      RbConfig.ruby, "-e", snippet
+    )
+    assert status.success?, "#{out}\n#{err}"
+    JSON.parse(out.strip)
+  end
+
+  # Drive the pure orphan_label labeller via `load` in an isolated subprocess
+  # (same hermetic pattern as orphan_decision). Returns the computed label.
+  def orphan_label_for(slug, dir)
+    snippet = <<~RUBY
+      load #{@script.inspect}
+      puts orphan_label({ "slug" => #{slug.inspect} }, #{dir.inspect})
+    RUBY
+    out, err, status = Open3.capture3(
+      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      RbConfig.ruby, "-e", snippet
+    )
+    assert status.success?, "#{out}\n#{err}"
+    out.strip
+  end
+
+  # Declare a satellite app in the hub's config/satellites.yml without cloning
+  # its repo (PROJECTS_DIR/<slug> never exists), exercising the missing-clone path.
+  def write_satellite(slug, port)
+    path = File.join(@hub_dir, "config", "satellites.yml")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, <<~YAML)
+      satellites:
+        - slug: #{slug}
+          display_name: #{slug}
+          port: #{port}
+          status: active
+    YAML
   end
 
   # Env for run_remove tests: scratch registry + offline `git fetch origin`
