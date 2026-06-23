@@ -51,8 +51,8 @@ namespace :pokemon do
         "special_defense" => stats["special-defense"],
         "speed" => stats["speed"],
         "generation" => 1,
-        "avatar_url" => "#{S3_BASE}/#{dex}.png",
-        "sprite_url" => "#{S3_BASE}/#{dex}-sprite.png"
+        "avatar_url" => "#{S3_BASE}/#{dex}-#{slug}.png",
+        "sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-sprite.png"
       }
       warn "fetched ##{format('%03d', dex)} #{row['name']}"
       row
@@ -66,12 +66,16 @@ namespace :pokemon do
     require "aws-sdk-s3"
     bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
     s3 = Aws::S3::Client.new(region: "us-east-2")
-    DEX_RANGE.each do |dex|
-      put_image(s3, bucket, "pokemon/#{dex}.png", "#{SPRITE_CDN}/other/official-artwork/#{dex}.png")
-      put_image(s3, bucket, "pokemon/#{dex}-sprite.png", "#{SPRITE_CDN}/#{dex}.png")
-      warn "uploaded ##{format('%03d', dex)}"
+    # Slug-keyed for self-describing URLs (e.g. pokemon/73-tentacruel.png). Slugs
+    # come from the committed JSON; the source images are still dex-keyed on the CDN.
+    JSON.parse(File.read(DATA_FILE)).each do |row|
+      dex = row.fetch("dex")
+      slug = row.fetch("slug")
+      put_image(s3, bucket, "pokemon/#{dex}-#{slug}.png", "#{SPRITE_CDN}/other/official-artwork/#{dex}.png")
+      put_image(s3, bucket, "pokemon/#{dex}-#{slug}-sprite.png", "#{SPRITE_CDN}/#{dex}.png")
+      warn "uploaded ##{format('%03d', dex)} #{slug}"
     end
-    puts "mirrored #{DEX_RANGE.size} Pokémon avatars → s3://#{bucket}/pokemon/"
+    puts "mirrored 151 Pokémon avatars → s3://#{bucket}/pokemon/"
   end
 
   def get_json(url)
