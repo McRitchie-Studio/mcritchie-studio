@@ -517,6 +517,16 @@ Routing lives in `AGENTS.md` (see §6) so an agent self-loads the right one.
    build` before you start coding, `--gate merge` before handoff (§3.3).
 6. Record `checks_run`, hand off with a `handoff` note, move to `submitted`.
 
+> **Every `bin/task move` leaves a paper trail — for free.** Each stage change
+> appends a `TaskEvent` capturing `from → to`, the timestamp, and the time spent
+> in the prior stage (the deterministic spine; it renders as the **Stage Timeline**
+> on the task page). You do nothing to get it. To *also* attribute model cost to a
+> transition, add the optional per-transition usage on the move:
+> `bin/task move <task> submitted --model claude-opus-4-8 --tokens-in N --tokens-out N --cost D`.
+> Usage is best-effort and opt-in; the spine is recorded regardless (and for
+> non-agent moves too). Details:
+> [`task-board-api.md`](../modules/task-board-api.md#stage-change-event-trail).
+
 ### Bug SOP
 
 1. Classify **severity**: `hotfix` (production broken / funds at risk) vs `normal`.

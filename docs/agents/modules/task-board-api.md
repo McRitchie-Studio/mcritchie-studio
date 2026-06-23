@@ -11,6 +11,16 @@ It is written against the live code (`config/routes.rb`,
 `app/controllers/api/v1/*`, `app/models/task.rb`). When the code changes, update
 this file in the same pass.
 
+> ⚠️ **Partially stale (pre-2026-06-20 stage migration).** The **Endpoints**
+> table, the **Stages** section, and the **worked example** below still use the
+> legacy 9-stage model and its per-stage transition endpoints, which no longer
+> exist. The live model is the two-workflow 8-stage one (`designed → building →
+> submitted → reviewed → assembled → shipped`, plus `blocked`/`archived`), and
+> **every move is a plain `PATCH stage`** — there are no transition endpoints. See
+> [`devops-cycle-design.md`](../system/devops-cycle-design.md) for the live stage
+> policy, and the **[Stage-change event trail](#stage-change-event-trail)**
+> section below (which is current). A full refresh of this doc is tracked separately.
+
 > **Preferred path: use `bin/task`.** Don't hand-roll the HTTP calls below
 > unless you're debugging. `bin/task create|update|move|list|show` handles auth,
 > JSON, devops read-merge-write, and stage routing for you, and reads the secret
@@ -182,6 +192,44 @@ Stage is also directly settable on create/update; transitions are **not**
 guarded by a state machine, so any stage can be set to any value (only validated
 against `Task::STAGES`). Follow the documented stage policy by convention.
 
+## Stage-change event trail
+
+Every stage change appends an **append-only `TaskEvent`** — the durable change
+log behind the **Stage Timeline** on the task page (`/tasks/<slug>`). You get the
+core of it for **zero effort**:
+
+- **Automatic (deterministic spine).** On *every* move — CLI, API, web, or
+  release-conductor — the board records `from_stage`, `to_stage`, `occurred_at`,
+  and `seconds_in_from` (time spent in the stage you left). Moving the task is the
+  only action required; the duration is measured server-side, never passed.
+- **Optional (agent-reported usage).** To attribute model cost to the work you
+  did in the stage you're leaving, pass it on the move. It is **best-effort and
+  per-transition** — null when omitted, and for non-agent moves.
+
+```bash
+bin/task move <slug> submitted \
+  --model claude-opus-4-8 --tokens-in 240000 --tokens-out 96000 --cost 5.40 \
+  --actor alex        # --actor optional; the working session is auto-stamped otherwise
+```
+
+Raw API: send a top-level `event` object alongside `stage` on the `PATCH` (it is
+consumed for the event row only — not stored on the task):
+
+```
+PATCH /api/v1/tasks/:slug
+{ "stage": "submitted",
+  "event": { "model": "claude-opus-4-8", "tokens_in": 240000,
+             "tokens_out": 96000, "cost": 5.40, "actor": "alex" } }
+```
+
+**Backfill** existing tasks once, from their stage-timestamp columns:
+`rake task_events:backfill` (idempotent; reconstructed rows are flagged
+`source=system`).
+
+Source of truth: `app/models/task_event.rb`, `Task#record_genesis_event` /
+`#record_transition_event`, and `app/models/current.rb` (the request-scoped
+bridge that carries usage into the event).
+
 ## The `devops` object
 
 Send `devops` as a top-level key; it is normalized
@@ -304,7 +352,9 @@ bin/task show <slug>
 bin/task create --title T [--kind K] [--repo R ...] [--risk R ...] \
                 [--accept "..." ...] [--test "..." ...] [--agent A]
 bin/task update <slug> --branch B --pr-url U   # merges into existing devops
-bin/task move <slug> pr_review                 # any of the 9 stages
+bin/task move <slug> <stage>                   # any of the 8 two-workflow stages
+bin/task move <slug> submitted \               # optional per-transition usage →
+  --model M --tokens-in N --tokens-out N --cost D --actor A   #   recorded on the TaskEvent
 ```
 
 List flags are **repeatable** (one value per flag), so commas inside an
