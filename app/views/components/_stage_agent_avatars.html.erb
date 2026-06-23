@@ -11,8 +11,10 @@
   at all (no empty container).
 
   variant:
-    :stack    (default) overlapping circular avatars + a compact corner duration
-              pill, capped with a "+N" overflow bubble — the board card glance.
+    :stack    (default) one near-fully stacked circle per lane (Build · Review ·
+              Deploy) carrying that lane's duration or a live build counter — the
+              board card glance; the lane row flex-wraps so a full crew never
+              spills a narrow column.
     :detailed grouped per stage with a studio-engine badge, names, weights, and
               the full humanized duration — the task detail.
 
@@ -27,7 +29,7 @@
 <% if entries.any? %>
   <% if variant.to_sym == :detailed %>
     <div class="bg-surface-alt rounded-lg p-3" data-test="stage-agent-avatars">
-      <p class="label-upper mb-3">Deploy crew</p>
+      <p class="label-upper mb-3">Stage crew</p>
       <div class="space-y-3">
         <% entries.group_by(&:stage).each do |stage, stage_entries| %>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -61,14 +63,15 @@
   <% else %>
     <%#
       Board-card glance (a dashboard, not the read view): collapse each lane to ONE
-      stacked circle — Build · Review · Deploy — so a full crew fits a small card.
+      stacked circle — Build · Review · Deploy — so a full crew fits a small card;
+      the row also flex-wraps as a final guard against spilling a narrow column.
       Each cluster stacks its faces (priority on top) and shows the one duration that
       matters for the lane (build total / longer review / QA→prod). The build lane
       ticks a LIVE counter while the task is still being built. The detail page
       (:detailed) still shows every stage per-usual.
     %>
     <% clusters = crew_clusters(task, entries) %>
-    <div class="flex items-center gap-2.5 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
+    <div class="flex flex-wrap items-center gap-2.5 mt-2 mb-1" data-test="stage-agent-avatars" title="Stage crew">
       <% clusters.each do |cluster| %>
         <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
           <%# Stacked, near-fully overlapped (virtually one circle); priority is last = on top. %>

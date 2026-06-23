@@ -77,6 +77,10 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
+    # the lane row flex-wraps so a full 7-face crew never spills the narrow
+    # (min-w-[220px], p-3) kanban column — it bunches to a second row instead
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].flex-wrap", count: 1
+
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
       assert_select "[data-test='crew-cluster']", count: 3  # one stacked circle per lane
       assert_select "span.text-white", count: 7             # all 7 faces, just stacked

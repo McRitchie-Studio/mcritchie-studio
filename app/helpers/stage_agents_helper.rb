@@ -41,7 +41,7 @@ module StageAgentsHelper
   # A task's Pokémon mascot rendered as a build-lane "agent" — the mascot IS the
   # feature agent's face. Quacks like an Agent (avatar/avatar_initials/avatar_color/
   # name) so it drops straight into components/agent_avatar.
-  MascotAgent = Struct.new(:name, :avatar) do
+  MascotAgent = Struct.new(:name, :avatar, keyword_init: true) do
     def avatar_initials
       name.to_s[0, 1].upcase
     end
