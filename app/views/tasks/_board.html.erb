@@ -17,6 +17,15 @@
 
 <%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
 <script>
+// Compact elapsed label for the live crew counter: s → m → h → d → w.
+window.elapsedLabel = function (e) {
+  e = Math.max(0, e | 0);
+  if (e < 60) return e + 's';
+  if (e < 3600) return Math.floor(e / 60) + 'm';
+  if (e < 86400) return Math.floor(e / 3600) + 'h';
+  if (e < 604800) return Math.floor(e / 86400) + 'd';
+  return Math.floor(e / 604800) + 'w';
+};
 function kanbanBoard() {
   return {
     _pendingMoves: {},
@@ -369,9 +378,9 @@ function kanbanBoard() {
                 </div>
               <% end %>
 
-              <%# Deploy crew — who reviewed/assembled/shipped, with time-in-stage.
-                  Renders nothing for Build-lane / old-flow cards. %>
-              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack %>
+              <%# Stage crew — build-lane stages wear the task's mascot; deploy-lane
+                  shows who reviewed/assembled/shipped. Renders nothing with no events. %>
+              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
 
               <% if task.stage == 'failed' && task.error_message.present? %>
                 <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
