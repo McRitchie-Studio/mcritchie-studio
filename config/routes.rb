@@ -27,6 +27,9 @@ Rails.application.routes.draw do
   get "e/c/:token", to: "email_tracking#click", as: :email_click
 
   get "dashboard", to: "dashboard#index"
+  # Pokémon reference-data inspector — read-only grid of the seeded 151 (data
+  # shape + bundled sprites). Public-read like the board pages.
+  get "pokemon", to: "pokemon#index", as: :pokemon
   # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
   # current-release module), /stages is the two-workflow stage guide. All three
   # are public-read like /tasks (mutations stay admin-gated in TasksController).
