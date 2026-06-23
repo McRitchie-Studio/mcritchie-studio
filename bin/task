@@ -277,6 +277,13 @@ when "move"
   # in the stage it's leaving — the optional layer on top of the deterministic
   # from/to/duration spine the server records. Always tags source=cli.
   event = { "source" => "cli" }
+  # Attribute this transition to whoever is RUNNING the move (the actual mover),
+  # not the build session that claimed the task at `building`. So a CLI
+  # reviewed/assembled/shipped move records the mover's session — the server no
+  # longer backfills actor from devops_session_id. --actor (below) overrides;
+  # a plain shell / CI run (no session) stamps no actor.
+  mover_session = session_identity.first
+  event["actor"] = mover_session unless mover_session.nil?
   while ARGV.any?
     case (flag = ARGV.shift)
     when "--model"      then event["model"]      = ARGV.shift || die!("--model needs a value")

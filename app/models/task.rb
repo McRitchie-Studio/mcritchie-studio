@@ -336,10 +336,14 @@ class Task < ApplicationRecord
   # Append-only audit spine: one TaskEvent per stage that lands. The deterministic
   # fields (from/to/occurred_at/seconds_in_from) are computed here from the same
   # chokepoint that stamps the stage timestamps, so they're server-owned and
-  # exact. The optional usage (model/tokens/cost) rides in on Current — set by the
-  # request layer for the move it just performed — and is null for model-method
-  # and conductor transitions. Runs inside the save transaction so a stage change
-  # can never land without its event.
+  # exact. The optional attribution (actor/model/tokens/cost) rides in on Current —
+  # set per-transition by the request layer (web) or the CLI's --actor (defaulted
+  # to the mover's own session in bin/task) for the move it just performed — and is
+  # null for model-method and conductor transitions. actor is intentionally NOT
+  # backfilled from devops_session_id: that's the session that CLAIMED the task at
+  # `building`, so inheriting it would mis-attribute later reviewed/assembled/
+  # shipped moves to the build agent. Runs inside the save transaction so a stage
+  # change can never land without its event.
   def record_genesis_event
     write_stage_event(from: nil)
   end
@@ -357,7 +361,7 @@ class Task < ApplicationRecord
       occurred_at: occurred,
       seconds_in_from: previous && (occurred - previous.occurred_at).round,
       source: Current.task_event_source,
-      actor: Current.task_event_actor.presence || devops_session_id,
+      actor: Current.task_event_actor.presence,
       model: Current.task_event_model.presence,
       tokens_in: Current.task_event_tokens_in,
       tokens_out: Current.task_event_tokens_out,
