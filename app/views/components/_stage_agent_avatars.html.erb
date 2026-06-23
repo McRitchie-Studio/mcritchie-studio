@@ -82,11 +82,13 @@
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
               <%# Tight stack — virtually one circle; priority last = on top. The whole
                   stack scales up on card hover (transform only, so siblings don't shift). %>
+              <% last = cluster.stacked.size - 1 %>
               <div class="flex items-center -space-x-8 transition-transform duration-150 group-hover:scale-110">
                 <% cluster.stacked.each_with_index do |entry, i| %>
-                  <%# Frontmost (priority) avatar wears an accent ring AND is lifted (z-10) so its
-                      glow paints on top of the next-highest avatar, never tucked behind it. %>
-                  <div class="rounded-full ring-2 <%= i == cluster.stacked.size - 1 ? "ring-primary/70 relative z-10" : "ring-surface" %>"
+                  <%# Lead (last) wears the accent ring + z-10 so its glow paints on top of the
+                      stack; the one directly behind gets a subtler ring for distinction; any
+                      deeper avatars just blend (no border needed — they're barely peeking). %>
+                  <div class="rounded-full ring-2 <%= i == last ? "ring-primary/70 relative z-10" : (i == last - 1 ? "ring-primary/30" : "ring-surface") %>"
                        title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
                     <%= render "components/agent_avatar", agent: entry, size: "sm" %>
                   </div>
@@ -94,14 +96,14 @@
               </div>
               <% if cluster.live_since %>
                 <%# Live elapsed counter (s → m → h → d → w), ticking each second. %>
-                <span class="absolute -bottom-1 -right-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                <span class="absolute -bottom-1 -right-1 z-20 px-1 py-px rounded-full text-[9px] font-semibold leading-none
                              bg-primary/20 text-primary border border-primary/40 ring-1 ring-surface tabular-nums"
                       data-test="crew-live"
                       x-data="{ start: <%= cluster.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
                       x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)"
                       x-text="window.elapsedLabel(now - start)">…</span>
               <% elsif cluster.seconds.to_i.positive? %>
-                <span class="absolute -bottom-1 -right-1 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                <span class="absolute -bottom-1 -right-1 z-20 px-1 py-px rounded-full text-[9px] font-semibold leading-none
                              bg-surface-alt text-secondary border border-subtle ring-1 ring-surface tabular-nums"
                       data-test="crew-duration"><%= compact_stage_duration(cluster.seconds) %></span>
               <% end %>
