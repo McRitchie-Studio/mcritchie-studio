@@ -446,6 +446,39 @@ Routing lives in `AGENTS.md` (see §6) so an agent self-loads the right one.
 > Why regression-test-first for bugs: it both proves the fix and permanently
 > pushes that class of bug down the pyramid, shrinking future PR-stage churn.
 
+### Standalone / Client App SOP
+
+Not every app is a managed satellite. A **standalone / client app** (Rolio) uses
+the studio's *process* — the task board, worktrees, the multi-agent merge
+patterns, and the evergreen build conventions — but **owns its own runtime and
+deploy** and is eventually handed off to a client. It rides the same **Build**
+workflow (`designed → building → submitted`); the **Deploy** half is lighter:
+
+- **PRs target `main`, not `release`** — there is no persistent `release` branch
+  and no release train. `bin/agent-worktree` already falls back to `origin/main`
+  as the base for any repo without a `release` branch.
+- **The app team owns the merge** — an approved PR is merged into `main` by the
+  app's owner; it is not assembled into a studio RC.
+- **Lite DoR** — task + tests-as-you-go + the non-optional error-logging
+  discipline; no release-train / shape-gated `bin/dor-check` ceremony. (Robust
+  error/API-failure logging is evergreen for *both* tiers — managed apps via
+  `studio-engine`'s `rescue_and_log`/`ErrorLog`, standalone apps via plain
+  `Rails.logger` and/or their own tracker.)
+- **No QA RC, no operator ship gate** — the app owns its deploy and its eventual
+  client handoff.
+
+Full tier decision + phased checklist:
+[`new-app-onboarding-sop.md`](new-app-onboarding-sop.md). Multi-agent build/merge
+patterns (several agents scaffolding one app in parallel):
+[`../modules/worktrees.md`](../modules/worktrees.md) → **Multi-Agent Safety &
+Merge Patterns**.
+
+> **Shapes are deployment-agnostic.** `config/feature_shapes.yml` and the
+> shape→tier contract (§3) classify the *kind of change* (ui-only, backend,
+> library, …), not the deploy tier — so they apply unchanged to a standalone app.
+> The shape still selects which tiers you write; the standalone tier only changes
+> *where the PR lands and who ships it*. No `feature_shapes.yml` change is needed.
+
 ---
 
 ## 3. The adaptive testing pyramid

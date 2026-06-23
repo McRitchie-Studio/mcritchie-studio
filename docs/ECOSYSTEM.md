@@ -13,7 +13,7 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
 
-`rolio` exists locally as a prototype app, but it is not yet in the managed ecosystem registry. `tax-studio` remains reserved at `3200-3299` and `chain-ops` is planned at `3300-3399` in `config/satellites.yml`; if Rolio joins the managed stack, assign it `3400-3499` and move its primary port to `3400`.
+📇 `rolio` exists locally as a **standalone / client app** (own runtime + deploy), not yet in the managed ecosystem registry — see [`docs/agents/system/new-app-onboarding-sop.md`](agents/system/new-app-onboarding-sop.md) for the tier model. `tax-studio` remains reserved at `3200-3299` and `chain-ops` is planned at `3300-3399` in `config/satellites.yml`; if Rolio joins the managed stack, assign it `3400-3499` and move its primary port to `3400`.
 
 ## Dependency graph
 
@@ -34,7 +34,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 | Setting up a fresh Mac | [`bin/ecosystem-build`](../bin/ecosystem-build) + [`docs/agents/system/house-burn-down.md`](agents/system/house-burn-down.md) |
 | Onboarding to the codebase | [`docs/agents/index.md`](agents/index.md), then the app README/runbook/topic docs for the repo you'll touch |
 | Hardening or modularizing the stack | [`docs/agents/audits/final-closeout-2026-06-17.md`](agents/audits/final-closeout-2026-06-17.md), then the current app runbooks |
-| Adding or promoting an app | [`docs/agents/modules/app-registry.md`](agents/modules/app-registry.md), `bin/register-satellite --list`, then `studio-engine/docs/NEW_APP_SETUP.md` |
+| Adding or promoting an app | [`docs/agents/system/new-app-onboarding-sop.md`](agents/system/new-app-onboarding-sop.md) (tier decision), then [`docs/agents/modules/app-registry.md`](agents/modules/app-registry.md), `bin/register-satellite --list`, and `studio-engine/docs/NEW_APP_SETUP.md` |
 | Working on Solana | `turf-monster/docs/SOLANA.md` and `turf-vault/docs/CURRENT_DEPLOYMENT.md` |
 | Working on auth | `studio-engine/docs/USER_CONTRACT.md`, `mcritchie-studio/docs/topics/auth-and-sso.md`, and `turf-monster/docs/AUTH.md` |
 
