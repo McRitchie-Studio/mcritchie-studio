@@ -464,8 +464,10 @@ class ReleaseCliTest < Minitest::Test
   def test_retro_collects_repeated_answer_flags_into_the_runner_payload
     require "tmpdir"
     Dir.mktmpdir do |dir|
-      # Capture the answers the CLI hands the (server-side) renderer: the stubbed
-      # conductor echoes the snippet back so we can prove the flags rode through.
+      # Capture the snippet the CLI hands the (server-side) renderer: the stubbed
+      # conductor echoes it back so we can prove the flags rode through. The
+      # payload now rides as a Base64 blob (see the round-trip test below), so we
+      # decode it rather than grep for the raw text.
       capture = <<~RUBY
         def conductor(ruby, read_only: false)
           File.write(#{File.join(dir, 'snippet.txt').inspect}, ruby)
@@ -476,11 +478,75 @@ class ReleaseCliTest < Minitest::Test
       run_cli(["rel-retro", "--yes", "--worked", "fast review", "--friction", "flaky e2e", "--followup", "fix flake"],
               call: "retro", setup: setup)
 
-      snippet = File.read(File.join(dir, "snippet.txt"))
-      assert_includes snippet, "fast review", "--worked rides into the render payload"
-      assert_includes snippet, "flaky e2e", "--friction rides into the render payload"
-      assert_includes snippet, "fix flake", "--followup rides into the render payload"
+      answers = decode_retro_payload(File.read(File.join(dir, "snippet.txt")))
+      assert_includes answers["worked"], "fast review", "--worked rides into the render payload"
+      assert_includes answers["friction"], "flaky e2e", "--friction rides into the render payload"
+      assert_includes answers["followups"], "fix flake", "--followup rides into the render payload"
     end
+  end
+
+  # --- retro payload shell-safety: the heroku-run round-trip bug -------------
+  # The retro answers are operator free-text — they can carry quotes, parens, &&,
+  # pipes, backticks. Raw-interpolating their JSON into `rails runner "<code>"`
+  # broke the `heroku run` round-trip: heroku's remote re-quoting ATE the embedded
+  # \"-escaping, so even EMPTY answers arrived corrupted (`JSON::ParserError ...
+  # got 'worked:[],riction:[],ollowups:'`) and parens triggered a remote
+  # `bash: syntax error near unexpected token '('`. The fix passes the payload as
+  # a url-safe Base64 blob (alphabet [A-Za-z0-9_-]=, zero shell metacharacters) —
+  # exactly as quote-free as the bare `slug.inspect` literal the other conductor
+  # callers already pass safely.
+
+  # Pull the Base64 payload literal the CLI embedded and decode it the way the
+  # remote runner does. Asserts the snippet does NOT raw-interpolate JSON.
+  def decode_retro_payload(snippet)
+    require "base64"
+    require "json"
+    b64 = snippet[/urlsafe_decode64\("([A-Za-z0-9_\-=]+)"\)/, 1]
+    refute_nil b64, "the retro snippet must embed a url-safe Base64 payload literal: #{snippet}"
+    JSON.parse(Base64.urlsafe_decode64(b64))
+  end
+
+  def test_retro_record_ruby_passes_the_payload_shell_safe_not_raw_json
+    # An adversarial payload: the exact metacharacters that broke heroku run.
+    answers = { "worked" => ["fixed (a) bug && shipped"],
+                "friction" => ['flaky "e2e" | pipe'], "followups" => [] }
+    out = eval_helper(%(retro_record_ruby("rel-x", #{answers.inspect})))
+
+    # The raw JSON (the thing heroku's re-quoting eats) must NOT be interpolated.
+    refute_includes out, %q("worked":), "the raw answers JSON must not ride into the runner command"
+    refute_includes out, "&&", "no payload shell metacharacter rides raw into the command"
+    refute_includes out, "(a)", "no payload parens ride raw into the command (remote bash syntax error)"
+    refute_includes out, "| pipe", "no payload pipe rides raw into the command"
+    # It rides as a url-safe Base64 blob the remote runner decodes, and still
+    # renders through the retro model.
+    assert_includes out, "Base64.urlsafe_decode64", "the payload is base64-decoded server-side"
+    assert_includes out, "Release::Retro.render", "the snippet still renders via the retro model"
+  end
+
+  def test_retro_record_ruby_round_trips_quotes_parens_and_ampersands
+    require "base64"
+    require "json"
+    answers = { "worked" => ['used "quotes" & (parens)', "shipped && done"],
+                "friction" => ["bash $(danger) | pipe; rm -rf"],
+                "followups" => ["file `backticks` and \\backslash" ] }
+    out = eval_helper(%(retro_record_ruby("rel-x", #{answers.inspect})))
+
+    b64 = out[/urlsafe_decode64\("([A-Za-z0-9_\-=]+)"\)/, 1]
+    refute_nil b64, "the snippet embeds a url-safe Base64 literal: #{out}"
+    assert_equal answers, JSON.parse(Base64.urlsafe_decode64(b64)),
+                 "quotes/parens/&&/pipes/backticks/backslashes round-trip byte-for-byte through the payload encoding"
+  end
+
+  def test_retro_empty_answers_survive_the_runner_payload
+    # The simplest repro: even all-empty answers were corrupted by the old raw
+    # interpolation (quotes + leading chars eaten by heroku's re-quoting).
+    answers = { "worked" => [], "friction" => [], "followups" => [] }
+    out = eval_helper(%(retro_record_ruby("rel-x", #{answers.inspect})))
+
+    b64 = out[/urlsafe_decode64\("([A-Za-z0-9_\-=]+)"\)/, 1]
+    refute_nil b64, out
+    assert_equal answers, JSON.parse(Base64.urlsafe_decode64(b64)),
+                 "empty answers must survive intact (the JSON::ParserError repro)"
   end
 
   # NON-BLOCKING: archive must complete WITHOUT ever invoking retro. The stub
