@@ -88,7 +88,7 @@
                   <%# Lead (last) wears the accent ring + z-10 so its glow paints on top of the
                       stack; the one directly behind gets a subtler ring for distinction; any
                       deeper avatars just blend (no border needed — they're barely peeking). %>
-                  <div class="rounded-full ring-2 <%= i == last ? "ring-primary/70 relative z-10" : (i == last - 1 ? "ring-primary/30" : "ring-surface") %>"
+                  <div class="rounded-full ring-2 <%= i == last ? "ring-primary/70 relative z-10" : (i == last - 1 ? "ring-primary/50" : "ring-surface") %>"
                        title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
                     <%= render "components/agent_avatar", agent: entry, size: "sm" %>
                   </div>
