@@ -68,6 +68,15 @@ bin/rails test
 npm test
 ```
 
+> **Running the Rails suite from an agent shell.** A non-interactive shell does
+> not load `direnv`, so `ruby` resolves to the wrong version (brew `ruby@3.1` or
+> system 2.6) and `bundle`/`rails` fail with `bundler RubyVersionMismatch`. The
+> apps pin **3.3.11** — prepend the pinned Ruby first:
+> `export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"`. The suite parallelizes by
+> forking, which can intermittently **segfault the `pg` gem on macOS** (a Ruby
+> crash report, not a test failure); if it crashes, run single-process:
+> `PARALLEL_WORKERS=1 OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES bundle exec rails test`.
+
 ## Turf Monster
 
 ```bash
