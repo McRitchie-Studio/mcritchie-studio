@@ -109,10 +109,21 @@ class Release < ApplicationRecord
     # the candidate. That late merge must re-open the RC so it re-assembles and
     # re-QAs before shipping — so absorb an assembled state by reopening, rather
     # than refusing the member.
-    reopen! if state == "assembled"
-    raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
+    #
+    # Atomic: the reopen and the member flip are ONE unit. The conductor's
+    # late-merge caller (Conductor.adopt! ← `bin/release merge`) runs `add`
+    # standalone with no enclosing transaction (unlike prepare!/curate!), so
+    # without this wrapper a failed member flip would leave the RC reopened
+    # (assembling) with the member never attached — a DISTINCT half-state from the
+    # adopt! no-op the incident actually hit (that one — member attached but stage
+    # regressed to reviewed — is healed by adopt!'s reconciliation, not here); this
+    # wrapper is defense-in-depth against a never-observed second mode.
+    transaction do
+      reopen! if state == "assembled"
+      raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
 
-    task.update!(release_slug: slug, stage: "assembled")
+      task.update!(release_slug: slug, stage: "assembled")
+    end
     task
   end
 
