@@ -708,6 +708,31 @@ when "heartbeat"
   rescue SystemExit, StandardError
     nil # best-effort: swallow API/transport failures
   end
+when "session-mascot"
+  # Eagerly paint the session's Pokémon mascot onto the per-session marker so
+  # bin/statusline shows it in SECONDS — fired by a SessionStart hook, before any
+  # task exists. Idempotent server-side (SessionMascot), and the board task adopts
+  # the same mascot later. Best-effort: no session, no marker path, or any API /
+  # transport failure → silent no-op (it must never delay or break session start).
+  begin
+    sid = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+    path = feature_marker_path
+    unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty? || path.nil?
+      data = api(:post, "/api/v1/sessions/#{sid}/mascot")["data"]
+      if data && !data["mascot"].to_s.strip.empty?
+        existing = (JSON.parse(File.read(path)) if File.exist?(path)) || {}
+        marker = existing.merge(
+          "mascot" => data["mascot"],
+          "mascot_color" => data["mascot_color"],
+          "mascot_emoji" => data["mascot_emoji"]
+        ).reject { |_, v| v.nil? || v.to_s.strip.empty? }
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "#{JSON.pretty_generate(marker)}\n")
+      end
+    end
+  rescue SystemExit, StandardError
+    nil # best-effort: never disrupt session start
+  end
 when "block"
   slug = ARGV.shift || die!("usage: bin/task block <slug> [--kind environment|rework|dependency] [--feedback \"...\"] [--agent A]")
   kind = feedback = agent = nil

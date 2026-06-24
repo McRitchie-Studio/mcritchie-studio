@@ -752,16 +752,15 @@ class Task < ApplicationRecord
     devops["mascot_emoji"] = pokemon&.type_emoji.presence
   end
 
-  # The Pokémon for a session: reuse the one its other LIVE tasks already carry (so
-  # every task an agent builds shares its handle), else draw a fresh one — unique
-  # among live sessions. With no session, draw a one-off so the task isn't mascot-less.
+  # The Pokémon for a session: ADOPT the session's stable mascot (SessionMascot —
+  # drawn eagerly at session start so the status line shows it in seconds, OR
+  # drawn here on first task when the hook hasn't run). SessionMascot itself reuses
+  # a live peer task's mascot, so every task an agent builds shares its handle.
+  # With no session, draw a one-off so the task isn't mascot-less.
   def session_mascot_slug(sid)
     if sid.present?
-      peer = Task.live.detect do |t|
-        t.id != id && t.metadata&.dig("devops", "session_id").to_s == sid &&
-          t.metadata&.dig("devops", "mascot").present?
-      end
-      return peer.metadata.dig("devops", "mascot") if peer
+      mascot = SessionMascot.for(sid)&.mascot_slug
+      return mascot if mascot
     end
     Pokemon.draw(exclude: Task.active_mascots)&.slug
   end

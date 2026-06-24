@@ -86,7 +86,14 @@ APP_OVERRIDES = {
     "ruby_path" => "/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin",
     "session_env" => "MCRITCHIE_SESSION_KEY",
     "session_key" => "_studio_session",
-    "sidekiq" => false
+    "sidekiq" => false,
+    # Ports a FOREIGN app squats inside this band — never hand them to a worktree
+    # even when the squatter is momentarily down (allocate_port's live-listener
+    # check can't see it then). The rolio app runs on 3020, which sits inside
+    # mcritchie's 3000-3099 band; the real fix is to move rolio to the 3300-3399
+    # "next app" band, but until then we reserve it out so a worktree never
+    # collides + then silently adopts rolio's server on `up`.
+    "reserved_ports" => [3020]
   },
   "turf-monster" => {
     "stack" => "tm",
@@ -221,7 +228,8 @@ def apps
       "ruby_path" => override.fetch("ruby_path", nil),
       "session_env" => override.fetch("session_env", "#{slug.tr("-", "_").upcase}_SESSION_KEY"),
       "session_key" => override.fetch("session_key", "_#{slug.tr("-", "_")}_session"),
-      "sidekiq" => override.fetch("sidekiq", false)
+      "sidekiq" => override.fetch("sidekiq", false),
+      "reserved_ports" => override.fetch("reserved_ports", [])
     )
   end
 end
@@ -285,6 +293,42 @@ end
 def port_pid(port)
   ok, out, = capture_status("lsof", "-tiTCP:#{port}", "-sTCP:LISTEN")
   ok ? out.lines.first.to_s.strip : ""
+end
+
+# The working directory of a running process, via lsof (the `n` field of its cwd
+# fd). Used to tell THIS worktree's server apart from a foreign app squatting on
+# the same port. "" when the pid is gone or unreadable.
+def process_cwd(pid)
+  return "" if pid.to_s.empty?
+
+  ok, out, = capture_status("lsof", "-a", "-p", pid.to_s, "-d", "cwd", "-Fn")
+  return "" unless ok
+
+  line = out.lines.find { |l| l.start_with?("n") }
+  line ? line[1..].to_s.strip : ""
+end
+
+# True when the process listening on `port` is THIS worktree's stack — i.e. its
+# cwd is the worktree dir (we always spawn the server with chdir: dir). False for
+# a foreign app on the port (e.g. rolio squatting a port inside our band), so the
+# caller can refuse to adopt it instead of reporting a bogus healthy /up.
+def own_stack_on_port?(port, dir)
+  pid = port_pid(port)
+  return false if pid.empty?
+
+  File.expand_path(process_cwd(pid)) == File.expand_path(dir)
+end
+
+# Refuse to adopt a server we didn't start: if the live process on `port` isn't
+# rooted in this worktree, it's a foreign app squatting the port — abort loudly
+# rather than writing its pid into our pidfile and reporting a bogus healthy /up
+# (the rolio-on-3020 trap). No-op when the port is ours or free.
+def assert_own_stack!(port, dir, live_pid)
+  return if live_pid.to_s.empty? || own_stack_on_port?(port, dir)
+
+  cwd = process_cwd(live_pid)
+  abort "port #{port} is held by a FOREIGN process (pid #{live_pid}#{cwd.empty? ? "" : ", cwd #{cwd}"}) — " \
+        "not this worktree's stack at #{dir}. Free that port or reallocate the worktree, then retry."
 end
 
 def pid_alive?(pid)
@@ -504,8 +548,13 @@ end
 
 def allocate_port(app)
   used = allocated_ports(app)
+  # Ports a foreign app owns inside this band (e.g. rolio on 3020) — skipped even
+  # when the squatter is momentarily down, which the live-listener check below
+  # can't catch. Otherwise the worktree later collides + adopts the foreign server.
+  reserved = Array(app.fetch("reserved_ports", []))
   ((app.fetch("primary_port") + 1)..app.fetch("range_end")).each do |port|
     next if used.include?(port)
+    next if reserved.include?(port)
     next if port_listening?(port)
 
     return port
@@ -762,6 +811,7 @@ def start_generic_rails(dir, app, values)
     end
     live_pid = port_pid(values.fetch("APP_PORT"))
     unless live_pid.empty?
+      assert_own_stack!(values.fetch("APP_PORT"), dir, live_pid)
       File.write(pidfile, "#{live_pid}\n")
       puts "repaired web pidfile with live pid #{live_pid} on port #{values.fetch("APP_PORT")}"
       return
@@ -771,6 +821,7 @@ def start_generic_rails(dir, app, values)
 
   live_pid = port_pid(values.fetch("APP_PORT"))
   unless live_pid.empty?
+    assert_own_stack!(values.fetch("APP_PORT"), dir, live_pid)
     File.write(pidfile, "#{live_pid}\n")
     puts "web already running pid #{live_pid} on port #{values.fetch("APP_PORT")}"
     return

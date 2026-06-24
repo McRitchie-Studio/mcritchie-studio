@@ -214,6 +214,9 @@ Rails.application.routes.draw do
       end
       resources :activities, only: [:index, :create]
       resources :usages, only: [:index, :create]
+      # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
+      # so a SessionStart hook can show it on the status line in seconds.
+      post "sessions/:session_id/mascot", to: "sessions#mascot"
     end
   end
 end
