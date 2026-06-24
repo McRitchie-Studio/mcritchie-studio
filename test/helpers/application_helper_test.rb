@@ -142,6 +142,24 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_match(/operator gate/i, deploy["shipped"][:gate])
   end
 
+  test "release_state_label folds a shipped release into 'Shipped <time> ago'" do
+    rel = Release.new(state: "shipped", shipped_at: 7.minutes.ago)
+    assert_match(/\AShipped .+ ago\z/, release_state_label(rel))
+  end
+
+  test "release_state_label shows 'Assembled <time> ago' for an assembled current release" do
+    rel = Release.new(state: "assembled", assembled_at: 2.hours.ago)
+    assert_match(/\AAssembled .+ ago\z/, release_state_label(rel, current: true))
+  end
+
+  test "release_state_label falls back to the capitalized state when no timestamp applies" do
+    # in-progress release with no timestamp yet
+    assert_equal "Assembling", release_state_label(Release.new(state: "assembling"), current: true)
+    # a not-current (Last Release) card ignores assembled_at — only shipped_at promotes a time
+    assert_equal "Assembled",
+                 release_state_label(Release.new(state: "assembled", assembled_at: 1.hour.ago), current: false)
+  end
+
   test "devops_next_html badges whole-word stage names only" do
     html = devops_next_html("pulls it into the next release → assembled")
     assert_includes html, "<span"
