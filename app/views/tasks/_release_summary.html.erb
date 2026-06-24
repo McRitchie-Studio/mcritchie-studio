@@ -18,7 +18,9 @@
 <% pill_class = current ? "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" : "px-2 py-1 rounded bg-inset text-xs text-muted hover:text-body flex items-center gap-1.5 border border-subtle" %>
 <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span>
+<%# The current (Next Release) card carries its label in the header above, so only the
+    Last Release card repeats the section label here. %>
+        <% unless current %><span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span><% end %>
         <code class="<%= slug_class %>"><%= rel.slug %></code>
         <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>"><%= rel.state %></span>
         <% if rel.branch.present? %><code class="text-xs text-muted" title="<%= branch_title %>"><%= rel.branch %></code><% end %>
