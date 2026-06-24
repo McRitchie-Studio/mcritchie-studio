@@ -1,8 +1,8 @@
 <%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, latest_activity: nil, activity_count: 0) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
-  server-side and pushed over ActionCable (DeploymentsChannel) for live board
-  updates — the board loop passes its preloaded maps (mascot, latest_activity),
+  server-side and pushed over Turbo Streams (the "deployments" stream) for live
+  board updates — the board loop passes its preloaded maps (mascot, latest_activity),
   while DeploymentsBroadcaster renders one card with per-task lookups. The markup
   is unchanged from the inline version; only the data source moved to locals
   (agents/mascot/latest_activity/activity_count instead of the board's @ivars).

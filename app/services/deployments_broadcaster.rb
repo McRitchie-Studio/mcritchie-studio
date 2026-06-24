@@ -1,32 +1,33 @@
 # frozen_string_literal: true
 
-# Pushes a single re-rendered board card to the /deployments board over
-# ActionCable (DeploymentsChannel) when a task's stage changes (a transition
-# event) or an agent starts a stage's work (an intent event), so the board
-# updates live without a reload — the realtime layer on top of the agentic-intent
-# data shape.
+# Pushes a single re-rendered board card to the /deployments board over Turbo
+# Streams when a task's stage changes (a transition) or an agent starts a stage's
+# work (an intent), so the board updates live without a reload.
 #
-# The payload carries the SERVER-RENDERED card HTML (not structured data) so the
-# client never re-implements the card markup — it just moves / replaces / inserts
-# the node and animates. Always renders the deploy-board variant.
+# It broadcasts the SAME `tasks/_task_card` partial the board loop renders, as a
+# Turbo Stream action chosen by the event:
+#   intent / same-column change          → REPLACE the card in place
+#   cross-column stage move              → REMOVE the old card + PREPEND a fresh one
+#   brand-new task (genesis)             → PREPEND to the Designed column
+#   leaves the active board (→ archived) → REMOVE
+# Subscribers run `turbo_stream_from "deployments"`; Turbo patches the DOM and a
+# MutationObserver on the board animates the result + refreshes the column counts.
 #
-# Best-effort: a render or transport failure must NEVER break the task move/intent
-# that triggered it — it's caught and logged.
+# Every broadcast is wrapped in Studio::Cable.safe_broadcast so a cable/adapter
+# failure can NEVER break the task write that triggered it — the SEV-1 guard, now
+# shared in studio-engine (rescues StandardError AND ScriptError/Gem::LoadError).
 class DeploymentsBroadcaster
-  # TaskEvent.kind → the client-facing update type. A transition moves the card to
-  # its (possibly new) column; an intent updates it in place (new ticker/avatars).
-  EVENT_TYPES = { TaskEvent::TRANSITION => "stage_change", TaskEvent::INTENT => "intent" }.freeze
+  STREAM = "deployments"
+  PARTIAL = "tasks/task_card"
+  # The stages the deploy board shows as columns. `blocked` rides the Building
+  # column; `archived` (or anything off this list) means the card left the board.
+  BOARD_ZONES = Task::DEPLOYMENTS_BOARD_STAGES
 
+  # Wrap the WHOLE operation (resolve + render + broadcast) in the engine's
+  # safe_broadcast so nothing — not even a lookup or render error — can escape the
+  # after_commit and break the task write (the SEV-1 guard, ScriptError included).
   def self.task_event(event)
-    new(event).deliver
-  # A best-effort board push must NEVER break the task write that triggered it.
-  # ScriptError (NOT a StandardError) is included on purpose: a missing/misconfigured
-  # cable adapter raises Gem::LoadError (< ScriptError) on the first broadcast, and a
-  # plain `rescue StandardError` let it escape the after_commit → 500 on every task
-  # create / stage move. Catch the whole best-effort surface here.
-  rescue StandardError, ScriptError => e
-    Rails.logger.warn("[deployments-broadcaster] non-fatal: #{e.class}: #{e.message}")
-    nil
+    Studio::Cable.safe_broadcast { new(event).deliver }
   end
 
   def initialize(event)
@@ -34,44 +35,79 @@ class DeploymentsBroadcaster
     @task = event.task
   end
 
-  # The JSON message subscribers receive: the update type, the task slug + its
-  # CURRENT stage (which column it belongs in), the prior stage (a move), and the
-  # re-rendered card HTML.
-  def payload
-    {
-      "type" => EVENT_TYPES.fetch(@event.kind, "stage_change"),
-      "slug" => @task.slug,
-      "stage" => @task.stage,
-      "from_stage" => @event.from_stage,
-      "html" => card_html
-    }
-  end
-
   def deliver
     return nil if @task.nil?
 
-    message = payload
-    ActionCable.server.broadcast(DeploymentsChannel::STREAM, message)
-    message
+    broadcast
   end
 
   private
 
-  # Render exactly the partial the board loop renders, for this one task, as the
-  # deploy-board card. Path/helper-only (no request), so it's safe from a job /
-  # after_commit context.
-  def card_html
-    ApplicationController.render(
-      partial: "tasks/task_card",
-      locals: {
-        task: @task,
-        agents: Agent.order(:position).to_a,
-        crew_board: :deploy,
-        mascot: Pokemon.find_by(slug: @task.devops_field("mascot").to_s.presence),
-        latest_activity: activities.recent.first,
-        activity_count: activities.count
-      }
-    )
+  # One Turbo Stream action, picked from the event kind + the from/to columns.
+  def broadcast
+    if left_board?
+      remove_card           # → archived: drop it from the active board
+    elsif new_card?
+      prepend_card          # genesis: a brand-new card at the top of Designed
+    elsif @event.intent? || same_zone?
+      replace_card          # in place: intent ticker, or a building↔blocked re-tint
+    else
+      move_card             # cross-column move: remove the old card, prepend a fresh one
+    end
+  end
+
+  def replace_card
+    Turbo::StreamsChannel.broadcast_replace_to(STREAM, target: card_id, partial: PARTIAL, locals: card_locals)
+  end
+
+  def prepend_card
+    Turbo::StreamsChannel.broadcast_prepend_to(STREAM, target: dropzone_id, partial: PARTIAL, locals: card_locals)
+  end
+
+  def remove_card
+    Turbo::StreamsChannel.broadcast_remove_to(STREAM, target: card_id)
+  end
+
+  def move_card
+    remove_card
+    prepend_card
+  end
+
+  def card_id
+    "card-#{@task.slug}"
+  end
+
+  def dropzone_id
+    "dropzone-#{zone(@task.stage)}"
+  end
+
+  # The on-board column a stage lives in (blocked → the Building column).
+  def zone(stage)
+    stage == "blocked" ? "building" : stage
+  end
+
+  def left_board?
+    !BOARD_ZONES.include?(zone(@task.stage))
+  end
+
+  def new_card?
+    @event.transition? && @event.from_stage.nil?
+  end
+
+  def same_zone?
+    zone(@event.from_stage) == zone(@task.stage)
+  end
+
+  # The same locals the board loop renders the card with — the deploy-board variant.
+  def card_locals
+    {
+      task: @task,
+      agents: Agent.order(:position).to_a,
+      crew_board: :deploy,
+      mascot: Pokemon.find_by(slug: @task.devops_field("mascot").to_s.presence),
+      latest_activity: activities.recent.first,
+      activity_count: activities.count
+    }
   end
 
   def activities

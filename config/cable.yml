@@ -1,13 +1,29 @@
+<%
+  # Redis-backed ActionCable (Turbo Streams). URL + TLS are resolved ONCE through
+  # the shared studio-engine primitive: Heroku Redis serves rediss:// with a
+  # self-signed cert, so ssl_params: VERIFY_NONE is required or every broadcast
+  # silently never reaches subscribers — the exact SEV-1 this primitive prevents.
+  cable = Studio::Redis.options
+%>
 development:
-  adapter: async
+  adapter: redis
+  url: <%= cable[:url] %>
+  channel_prefix: mcritchie_studio_development
+  <% if cable[:ssl_params] %>
+  ssl_params:
+    verify_mode: <%= cable[:ssl_params][:verify_mode] %>
+  <% end %>
 
 test:
-  # `test` adapter by default so minitest can assert_broadcasts; the Playwright
-  # e2e server overrides CABLE_ADAPTER=async for REAL in-process delivery to the
-  # browser (the test adapter captures broadcasts but never pushes them to clients).
+  # `test` adapter by default so minitest can assert_broadcasts; the Playwright e2e
+  # server overrides CABLE_ADAPTER=async for REAL in-process delivery to the browser.
   adapter: <%= ENV.fetch("CABLE_ADAPTER", "test") %>
 
 production:
   adapter: redis
-  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
+  url: <%= cable[:url] %>
   channel_prefix: mcritchie_studio_production
+  <% if cable[:ssl_params] %>
+  ssl_params:
+    verify_mode: <%= cable[:ssl_params][:verify_mode] %>
+  <% end %>
