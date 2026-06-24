@@ -658,7 +658,13 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
 
 - every required tier is present and green, recorded in `checks_run`;
 - required `metadata["devops"]` fields are populated (existing contract);
-- a local proof URL exists when the shape touches UI.
+- a local proof URL exists when the shape touches UI;
+- if the branch diff touches a **seed or data-migration** (`db/seeds`,
+  `db/migrate/`), the task declares `devops.post_deploy_cmd` — the command
+  `bin/release` runs on the deployed app (QA on `prepare`, prod on `ship`) so a
+  seed/backfill isn't run by hand post-ship. Heroku's release phase auto-runs
+  `db:migrate` but **not** `db:seed` or a backfill rake; set `post_deploy_cmd` to
+  `none` to acknowledge a schema-only migration that needs no command.
 
 This is **deterministic** — a `bin/` gate (`bin/dor-check <task>`, default
 `--gate merge`), not a judgment call. There is also a lighter `--gate build`

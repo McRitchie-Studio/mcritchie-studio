@@ -485,4 +485,130 @@ class DorCheckTest < Minitest::Test
       assert_match(/DoR-to-Merge met/, out)
     end
   end
+
+  # --- post-deploy nudge: seed / data-migration diffs must declare a command ---
+  # A diff under db/seeds or db/migrate/ should carry devops.post_deploy_cmd so
+  # the conductor runs the seed/backfill on ship — these tests use the injection
+  # seam (DOR_CHECK_CHANGED_FILES) to drive the diff deterministically. The
+  # otherwise-complete backend contract isolates the nudge as the sole failure.
+
+  BACKEND_CONTRACT = {
+    "shape" => "backend", "repositories" => ["mcritchie-studio"],
+    "risk_tags" => ["migration"], "acceptance" => ["adds the table"],
+    "test_plan" => ["unit", "integration"],
+    "checks_run" => ["[unit] x", "[integration] y"]
+  }.freeze
+
+  def test_migration_diff_without_post_deploy_cmd_is_gated
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+      check(BACKEND_CONTRACT)
+    end
+    assert_equal 1, code, out
+    assert_match(/post_deploy_cmd is blank/, out)
+    assert_match(%r{db/migrate/20260623120000_add_widgets\.rb}, out)
+    assert_match(/--post-deploy-cmd/, out)
+  end
+
+  def test_seed_diff_without_post_deploy_cmd_is_gated
+    # db/seeds.rb (the file) and db/seeds/*.rb (the dir) both trip the nudge.
+    out, code = with_changed_files("db/seeds/pokemon.rb") { check(BACKEND_CONTRACT) }
+    assert_equal 1, code, out
+    assert_match(/post_deploy_cmd is blank/, out)
+    assert_match(%r{db/seeds/pokemon\.rb}, out)
+  end
+
+  def test_seeds_rb_file_trips_the_nudge
+    out, code = with_changed_files("db/seeds.rb") { check(BACKEND_CONTRACT) }
+    assert_equal 1, code, out
+    assert_match(/post_deploy_cmd is blank/, out)
+  end
+
+  def test_migration_diff_passes_when_post_deploy_cmd_declared
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails pokemon:seed"))
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_explicit_none_acknowledges_a_schema_only_migration
+    # The escape hatch: a schema-only migration the release phase auto-runs needs
+    # no command, but the author must DECLARE that decision ("none"), not omit it.
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "none"))
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_non_data_diff_is_unaffected_by_the_nudge
+    # A code diff that touches neither seeds nor migrations never asks for a cmd.
+    out, code = with_changed_files("app/models/widget.rb\nlib/foo.rb") do
+      check(BACKEND_CONTRACT)
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_schema_rb_alone_does_not_trip_the_nudge
+    # db/schema.rb is under db/ but not db/migrate/ or db/seeds — a bare schema
+    # touch (no migration file) isn't a data change the nudge cares about.
+    out, code = with_changed_files("db/schema.rb") { check(BACKEND_CONTRACT) }
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_build_gate_skips_the_post_deploy_nudge
+    # post_deploy_cmd is a build artifact (known once the migration exists), so
+    # the spec-complete build gate never asks for it — even with a migration diff.
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+      check(
+        { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["migration"],
+          "acceptance" => ["adds table"], "test_plan" => ["unit"], "checks_run" => [] },
+        "--gate", "build"
+      )
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Build met/, out)
+  end
+
+  def test_post_deploy_nudge_surfaces_in_json_verdict
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+      check(BACKEND_CONTRACT, "--json")
+    end
+    assert_equal 1, code, out
+    verdict = JSON.parse(out)
+    refute verdict["ready"]
+    assert(verdict["errors"].any? { |e| e =~ /post_deploy_cmd is blank/ })
+  end
+
+  def test_code_chore_adding_a_migration_demands_both_shape_and_post_deploy
+    # A chore whose diff is ONLY a migration is gated twice: it ships code (db/ is
+    # a code prefix → demand a shape) AND it's a data change (→ demand a command).
+    out, code = with_changed_files("db/migrate/20260623120000_add_widgets.rb") do
+      check("kind" => "chore")
+    end
+    assert_equal 1, code, out
+    assert_match(/ships a code diff/, out)
+    assert_match(/post_deploy_cmd is blank/, out)
+  end
+
+  # --- [integration] real git working-tree detection of a migration diff -------
+
+  def test_e2e_real_migration_diff_without_command_fails_merge_gate
+    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
+      out, code = check_against(dir, BACKEND_CONTRACT)
+      assert_equal 1, code, out
+      assert_match(/DoR-to-Merge NOT met/, out)
+      assert_match(/post_deploy_cmd is blank/, out)
+    end
+  end
+
+  def test_e2e_real_migration_diff_passes_with_command
+    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
+      out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails db:seed"))
+      assert_equal 0, code, out
+      assert_match(/DoR-to-Merge met/, out)
+    end
+  end
 end
