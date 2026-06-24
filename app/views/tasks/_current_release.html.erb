@@ -3,16 +3,16 @@
     Local: release (the Release, or nil for the empty state). The shipped
     release is NOT shown here; it renders read-only in _last_release.
     Layout: the status badge owns the top-right corner (in _release_summary);
-    the one-trigger QA-release kickoff chip is floated to the bottom-right. %>
+    the one-trigger QA-release kickoff chip rides inline (right) with the task
+    pills row. %>
 <% rel = local_assigns.fetch(:release, nil) %>
 <% if rel %>
   <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
-    <%= render "release_summary", release: rel, variant: :current -%>
-    <%# Operator's one-trigger QA-department workflow, bottom-right: assess the active
-        release, pull every reviewed/passing task in, deploy QA, then stop for ship. %>
-    <div class="mt-3 flex justify-end">
-      <%= render "kickoff_chip", command: qa_release_kickoff %>
-    </div>
+    <%# Operator's one-trigger QA-department workflow chip rides inline with the task
+        pills: assess the active release, pull every reviewed/passing task in, deploy
+        QA, then stop for ship. %>
+    <% kickoff = render "kickoff_chip", command: qa_release_kickoff %>
+    <%= render "release_summary", release: rel, variant: :current, trailing: kickoff -%>
   </div>
 <% else %>
   <%# No active release: muted empty state mirroring the active card — the section

@@ -37,17 +37,24 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
-  test "deployments current-release floats the Build and Deploy QA Release chip bottom-right" do
-    Release.open!(branch: "release/qa-kickoff")
+  test "deployments rides the Build and Deploy QA Release chip inline (right) with the task pills" do
+    Release.delete_all
+    rel = Release.open!(branch: "release/qa-kickoff")
+    @new_task.update!(stage: "reviewed")
+    rel.add(@new_task)
 
     get deployments_path
 
     assert_response :success
-    # the kickoff chip now sits in its own right-justified row at the bottom of the card
-    assert_select "#current-release div.justify-end", text: /Build and Deploy QA Release/
+    # the kickoff chip shares the member-pills row (not a row of its own): the task
+    # pill and the chip both live in the same release-members-row.
+    assert_select "#current-release [data-test='release-members-row']" do
+      assert_select "a[href=?]", task_path(@new_task.slug)  # the task pill
+      assert_select "code", text: /Build and Deploy QA Release/ # the kickoff chip
+    end
   end
 
-  test "deployments renders the status badge above the bottom-right kickoff chip on the current card" do
+  test "deployments renders the status badge above the kickoff chip on the current card" do
     Release.delete_all
     rel = Release.open!(branch: "release/badge-order")
     @new_task.update!(stage: "reviewed")
@@ -63,7 +70,25 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert badge_at, "current card should render the status badge"
     assert chip_at, "current card should render the kickoff chip"
     assert badge_at < chip_at,
-           "the status badge (top-right) must render before the bottom-right kickoff chip"
+           "the top-right status badge must render before the inline kickoff chip"
+  end
+
+  test "deployments release cards omit the redundant 'release' branch label" do
+    Release.delete_all
+    shipped = Release.open!(branch: "release")
+    shipped.ship!
+    active = Release.open!(branch: "release")
+    @new_task.update!(stage: "reviewed")
+    active.add(@new_task)
+
+    get deployments_path
+    assert_response :success
+
+    # the bare branch name no longer renders as a code chip in either card header
+    assert_select "#current-release code", { text: "release", count: 0 },
+                  "the redundant 'release' branch label must be gone from the Next Release card"
+    assert_select "#last-release code", { text: "release", count: 0 },
+                  "the redundant 'release' branch label must be gone from the Last Release card"
   end
 
   test "board header toggle shows building / reviewed / assembled count badges" do

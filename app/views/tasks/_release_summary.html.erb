@@ -10,12 +10,12 @@
 <% members = rel.tasks.order(:position).to_a %>
 <% label_text = current ? "Next Release" : "Last Release" %>
 <% slug_class = current ? "text-sm text-heading" : "text-sm text-muted" %>
-<%# Static literals (no user input) marked html_safe so the apostrophe stays a
-    literal ' in the title attribute, byte-for-byte with the prior inline HTML. %>
-<% branch_title = (current ? "persistent integration branch (feature PRs merge into it; ff's to main on ship)" : "persistent integration branch").html_safe %>
 <% meta_color = current ? "text-secondary" : "text-muted" %>
 <% link_class = current ? "text-primary hover:underline" : "text-secondary hover:underline" %>
 <% pill_class = current ? "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" : "px-2 py-1 rounded bg-inset text-xs text-muted hover:text-body flex items-center gap-1.5 border border-subtle" %>
+<%# Optional trailing content rendered to the right of the member-pills row
+    (e.g. the QA-release kickoff chip on the Current card). %>
+<% trailing = local_assigns.fetch(:trailing, nil) %>
 <%# Top row: section label + slug/branch on the left; the consolidated status badge
     pinned to the card's top-right corner on the right (items-start keeps it aligned
     to the first line even when the slug group wraps). %>
@@ -23,7 +23,6 @@
       <div class="flex items-center gap-3 flex-wrap min-w-0">
         <span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span>
         <code class="<%= slug_class %>"><%= rel.slug %></code>
-        <% if rel.branch.present? %><code class="text-xs text-muted" title="<%= branch_title %>"><%= rel.branch %></code><% end %>
       </div>
       <%# Consolidated status badge: one state-colored pill folding the bare state + its
           relative time into "Shipped 7 minutes ago" — replaces the former left-side
@@ -37,13 +36,18 @@
         <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
         <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
       </div>
-    <% if members.any? %>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <% members.each do |t| %>
-          <%= link_to task_path(t.slug), class: pill_class do %>
-            <%= app_emoji_badge(t.devops_repositories) %>
-            <%= truncate(t.title, length: 42) %>
+    <% if members.any? || trailing %>
+      <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)
+          inline on the right of the same row. %>
+      <div class="mt-3 flex items-start justify-between gap-3 flex-wrap" data-test="release-members-row">
+        <div class="flex flex-wrap gap-2 min-w-0">
+          <% members.each do |t| %>
+            <%= link_to task_path(t.slug), class: pill_class do %>
+              <%= app_emoji_badge(t.devops_repositories) %>
+              <%= truncate(t.title, length: 42) %>
+            <% end %>
           <% end %>
-        <% end %>
+        </div>
+        <% if trailing %><div class="shrink-0"><%= trailing %></div><% end %>
       </div>
     <% end %>
