@@ -10,7 +10,7 @@
 #
 # It loads the Rails app and calls `ReviewerSelector` for the task — scoring the
 # senior pool {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
-# alex-docs=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
+# alex=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
 # tags vs each soul's Agent.metadata["domains"]) with a LOGGED, SEEDED-PER-TASK
 # tiebreak (reproducible — not process-random), and splitting the pick 1 HEAVY
 # (deep review) + 1 LIGHT. The QA owner (steffon by default) is EXCLUDED so one
