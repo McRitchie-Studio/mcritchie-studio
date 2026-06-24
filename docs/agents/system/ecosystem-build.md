@@ -101,6 +101,33 @@ rebuild from scratch":
 - **Tools and bundles are reconciled, not reinstalled** — already-present tools
   and satisfied bundles are left untouched.
 
+## Seeding QA/prod environments
+
+`bin/ecosystem-build` runs the full `rails db:seed` only on **first local DB
+creation** (Phase 6). **Do not run the full seed on a hosted environment** — it
+loads demo data (`52_tasks.rb`, `53_activities.rb`) plus the sports fixtures,
+which would pollute a QA/prod board.
+
+For QA/prod (Heroku), seed only the **idempotent reference registries** (find-or-
+create upserts — no duplicates, no demo rows), safe to re-run on any deploy:
+
+- **Agent registry** — souls + avatars + review roles. This is what populates the
+  **agent images** on the board crew (a fresh environment shows initials until it
+  runs):
+
+  ```bash
+  heroku run -a <app> rails runner 'load Rails.root.join("db/seeds/02_agents.rb").to_s'
+  ```
+
+- **Pokémon mascot deck** — the per-session task mascots:
+
+  ```bash
+  heroku run -a <app> rake pokemon:seed
+  ```
+
+Re-run the agent registry on any deploy that changes a soul's metadata, avatar,
+or review weight.
+
 ## Cross-references
 
 - [house-burn-down.md](house-burn-down.md) — the detailed phase-by-phase manual
