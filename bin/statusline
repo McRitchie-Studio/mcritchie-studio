@@ -90,13 +90,31 @@ read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_c
   "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // "")] | join("")' "$1" 2>/dev/null
 }
 
+# Nearest xterm-256 cube index (16..231) for an r,g,b triple. We use 256-color,
+# NOT 24-bit truecolor: the default macOS Terminal.app supports 256 colors but
+# not truecolor, and 256 renders correctly everywhere.
+rgb_to_256() {  # r g b -> index
+  local out=16 mult=36 c
+  for c in "$1" "$2" "$3"; do
+    local best=0 bestd=1000 i=0 lvl d
+    # The 6 cube levels xterm-256 uses per channel.
+    for lvl in 0 95 135 175 215 255; do
+      d=$(( c - lvl )); [ $d -lt 0 ] && d=$(( -d ))
+      [ $d -lt $bestd ] && { bestd=$d; best=$i; }
+      i=$(( i + 1 ))
+    done
+    out=$(( out + mult * best )); mult=$(( mult / 6 ))
+  done
+  printf '%d' "$out"
+}
+
 # The ⊙<mascot> handle wears its least-common type's color. The context carries
-# that color as #RRGGBB; emit it as a 24-bit truecolor escape, falling back to the
-# default mascot tint (M) when absent or not a 6-hex-digit color.
+# that color as #RRGGBB; emit the nearest 256-color as an escape, falling back to
+# the default mascot tint (M) when absent or not a 6-hex-digit color.
 mascot_tint() {  # hex -> ANSI escape (echoed)
   local hex="${1#\#}"
   if [ ${#hex} -eq 6 ]; then
-    printf '%s[38;2;%d;%d;%dm' $'\033' "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))"
+    printf '%s[38;5;%dm' $'\033' "$(rgb_to_256 "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))")"
   else
     printf '%s' "$M"
   fi
