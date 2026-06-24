@@ -1,6 +1,6 @@
 <section>
   <div class="mb-6 flex items-center justify-between">
-    <%= link_to "&larr; All Tasks".html_safe, tasks_path, class: "text-secondary hover:text-heading text-sm transition" %>
+    <%= link_to "&larr; All Tasks".html_safe, deployments_path, class: "text-secondary hover:text-heading text-sm transition" %>
     <div class="flex items-center gap-2">
       <%= link_to "Sizing", task_sizing_path(@task), class: "btn btn-outline btn-sm" %>
       <% if logged_in? %>
