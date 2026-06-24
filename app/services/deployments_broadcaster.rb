@@ -19,7 +19,12 @@ class DeploymentsBroadcaster
 
   def self.task_event(event)
     new(event).deliver
-  rescue StandardError => e
+  # A best-effort board push must NEVER break the task write that triggered it.
+  # ScriptError (NOT a StandardError) is included on purpose: a missing/misconfigured
+  # cable adapter raises Gem::LoadError (< ScriptError) on the first broadcast, and a
+  # plain `rescue StandardError` let it escape the after_commit → 500 on every task
+  # create / stage move. Catch the whole best-effort surface here.
+  rescue StandardError, ScriptError => e
     Rails.logger.warn("[deployments-broadcaster] non-fatal: #{e.class}: #{e.message}")
     nil
   end
