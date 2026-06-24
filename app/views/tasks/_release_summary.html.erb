@@ -8,7 +8,7 @@
 <% variant = local_assigns.fetch(:variant) %>
 <% current = variant == :current %>
 <% members = rel.tasks.order(:position).to_a %>
-<% label_text = current ? "Current Release" : "Last Release" %>
+<% label_text = current ? "Next Release" : "Last Release" %>
 <% slug_class = current ? "text-sm text-heading" : "text-sm text-muted" %>
 <%# Static literals (no user input) marked html_safe so the apostrophe stays a
     literal ' in the title attribute, byte-for-byte with the prior inline HTML. %>
@@ -18,9 +18,9 @@
 <% pill_class = current ? "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" : "px-2 py-1 rounded bg-inset text-xs text-muted hover:text-body flex items-center gap-1.5 border border-subtle" %>
 <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3 flex-wrap">
-<%# The current (Next Release) card carries its label in the header above, so only the
-    Last Release card repeats the section label here. %>
-        <% unless current %><span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span><% end %>
+<%# Section label (Next Release / Last Release), top-left of the card header so the
+    status badge can own the top-right corner. %>
+        <span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span>
         <code class="<%= slug_class %>"><%= rel.slug %></code>
         <% if rel.branch.present? %><code class="text-xs text-muted" title="<%= branch_title %>"><%= rel.branch %></code><% end %>
       </div>

@@ -1,25 +1,30 @@
 <%# Current Release module for /deployments. Renders the active
     (assembling/assembled) release, or a muted empty state when none is active.
     Local: release (the Release, or nil for the empty state). The shipped
-    release is NOT shown here; it renders read-only in _last_release. %>
+    release is NOT shown here; it renders read-only in _last_release.
+    Layout: the status badge owns the top-right corner (in _release_summary);
+    the one-trigger QA-release kickoff chip is floated to the bottom-right. %>
 <% rel = local_assigns.fetch(:release, nil) %>
 <% if rel %>
   <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
-    <%# Operator's one-trigger QA-department workflow: assess the active release,
-        pull every reviewed/passing task in, deploy QA, then stop for the prod ship. %>
-    <%= render "kickoff_header" -%>
     <%= render "release_summary", release: rel, variant: :current -%>
+    <%# Operator's one-trigger QA-department workflow, bottom-right: assess the active
+        release, pull every reviewed/passing task in, deploy QA, then stop for ship. %>
+    <div class="mt-3 flex justify-end">
+      <%= render "kickoff_chip", command: qa_release_kickoff %>
+    </div>
   </div>
 <% else %>
-  <%# No active release: muted empty state that still surfaces the one-trigger
-      header + kickoff chip so the operator can establish a release. %>
+  <%# No active release: muted empty state mirroring the active card — the section
+      label top-left, the kickoff chip floated bottom-right. %>
   <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
-    <%= render "kickoff_header" -%>
-    <%# The "Next Release" label now lives in the header above; the empty state just
-        states there's nothing active yet. %>
     <div class="flex items-center gap-3 flex-wrap">
+      <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Next Release</span>
       <span class="text-sm text-muted italic">none active</span>
     </div>
-    <p class="mt-2 text-xs text-muted">Merge a reviewed task (or kick off above) to establish one.</p>
+    <p class="mt-2 text-xs text-muted">Merge a reviewed task (or kick off below) to establish one.</p>
+    <div class="mt-3 flex justify-end">
+      <%= render "kickoff_chip", command: qa_release_kickoff %>
+    </div>
   </div>
 <% end %>

@@ -37,13 +37,33 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
-  test "deployments current-release section renders the Build and Deploy QA Release kickoff chip" do
+  test "deployments current-release floats the Build and Deploy QA Release chip bottom-right" do
     Release.open!(branch: "release/qa-kickoff")
 
     get deployments_path
 
     assert_response :success
-    assert_select "#current-release", text: /Build and Deploy QA Release/
+    # the kickoff chip now sits in its own right-justified row at the bottom of the card
+    assert_select "#current-release div.justify-end", text: /Build and Deploy QA Release/
+  end
+
+  test "deployments renders the status badge above the bottom-right kickoff chip on the current card" do
+    Release.delete_all
+    rel = Release.open!(branch: "release/badge-order")
+    @new_task.update!(stage: "reviewed")
+    rel.add(@new_task)
+    rel.assemble!
+
+    get deployments_path
+    assert_response :success
+
+    card = css_select("#current-release").first.to_html
+    badge_at = card.index("release-state-badge")
+    chip_at  = card.index("Build and Deploy QA Release")
+    assert badge_at, "current card should render the status badge"
+    assert chip_at, "current card should render the kickoff chip"
+    assert badge_at < chip_at,
+           "the status badge (top-right) must render before the bottom-right kickoff chip"
   end
 
   test "board header toggle shows building / reviewed / assembled count badges" do
