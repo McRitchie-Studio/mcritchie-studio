@@ -83,12 +83,30 @@ osc8_supported() {
   return 1
 }
 
-read_ctx() {  # path -> tab-separated: app feature task url stage mascot
-  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // "")] | @tsv' "$1" 2>/dev/null
+read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color
+  # Joined with the unit separator (U+001F), NOT a tab: a tab is IFS-whitespace,
+  # so an empty middle field (e.g. a missing task_url) would collapse and shift
+  # every later field left. US is non-whitespace, so empty fields are preserved.
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // "")] | join("")' "$1" 2>/dev/null
 }
 
-render() {  # app feature task url stage mascot
-  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" out="🛠 "
+# The ⊙<mascot> handle wears its least-common type's color. The context carries
+# that color as #RRGGBB; emit it as a 24-bit truecolor escape, falling back to the
+# default mascot tint (M) when absent or not a 6-hex-digit color.
+mascot_tint() {  # hex -> ANSI escape (echoed)
+  local hex="${1#\#}"
+  if [ ${#hex} -eq 6 ]; then
+    printf '%s[38;2;%d;%d;%dm' $'\033' "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))"
+  else
+    printf '%s' "$M"
+  fi
+}
+
+render() {  # app feature task url stage mascot mascot_color
+  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" out="🛠 "
+  # Per-mascot tint overrides the default M when the context carries a color.
+  local M="$M"
+  [ -n "$mascot_color" ] && M=$(mascot_tint "$mascot_color")
   if [ -n "$mascot" ]; then
     # title-case the slug, BSD-sed / bash-3.2 safe: cap first char, hyphens->spaces
     # (snorlax -> "Snorlax"; nidoran-f -> "Nidoran f").
@@ -132,8 +150,8 @@ if [ -z "$src" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
 fi
 
 if [ -n "$src" ]; then
-  IFS=$'\t' read -r app feat task url stage mascot < <(read_ctx "$src")
-  render "$app" "$feat" "$task" "$url" "$stage" "$mascot"
+  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color < <(read_ctx "$src")
+  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color"
   heartbeat_claim "$task" "$stage"   # keep this terminal's build-claim lease fresh
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)

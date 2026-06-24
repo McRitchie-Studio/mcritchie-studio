@@ -40,9 +40,9 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=pokemon-grid]", text: /Snorlax/
   end
 
-  test "type badges carry the seeded enumeral color (list + grid)" do
+  test "type badges carry the seeded enumeral color + emoji (list + grid)" do
     Studio::Enumeral.create!(category: "pokemon_type", key: "normal", label: "Normal",
-                             color: "#A8A77A", position: 0)
+                             color: "#A8A77A", position: 0, metadata: { "emoji" => "⚪" })
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal],
                     hp: 160, attack: 110, defense: 65, special_attack: 65,
                     special_defense: 110, speed: 30, generation: 1,
@@ -55,6 +55,8 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     # The badge is colored by an inline style from the enumeral; both the list
     # row and the grid card render one, so there are at least two.
     assert_select "span[data-type=normal][style*=?]", "#A8A77A", minimum: 2
+    # …and prefixed with the type's emoji.
+    assert_select "span[data-type=normal] [data-test=type-emoji]", text: "⚪", minimum: 2
   end
 
   test "a type with no enumeral falls back to the neutral chip" do

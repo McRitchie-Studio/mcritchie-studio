@@ -1111,6 +1111,17 @@ def record_mascot(record_slug)
   mascot.empty? ? nil : mascot
 end
 
+# The mascot's signature type color (devops.mascot_color), best-effort, so the
+# worktree status line can tint ⊙<mascot>. Derived/re-derivable, so unlike the
+# mascot slug it needs no persist-and-fallback chain — a blank just falls back.
+def record_mascot_color(record_slug)
+  slug = compact_value(record_slug)
+  return nil unless slug
+
+  color = `#{__dir__}/task field #{slug.shellescape} mascot_color 2>/dev/null`.to_s.strip
+  color.empty? ? nil : color
+end
+
 def context_payload(app, task, values, dir, record: nil, stage: nil)
   port = values["APP_PORT"].to_s
   redis_db = redis_db_from_url(values["REDIS_URL"])
@@ -1132,6 +1143,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "task_record_slug" => task_record,
     "task_url" => task_record_url,
     "mascot" => resolve_mascot(values, dir, task),
+    "mascot_color" => record_mascot_color(task_record_slug(values) || task),
     "branch" => branch,
     "head" => head,
     "repo" => app.fetch("repo"),

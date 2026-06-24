@@ -5,9 +5,9 @@ require "test_helper"
 # the consumer — the same place Studio::Link / Studio::EmailDelivery behavior is
 # exercised.
 class Studio::EnumeralTest < ActiveSupport::TestCase
-  def make(category:, key:, color: "#EE8130", label: nil, position: 0, rank: nil)
+  def make(category:, key:, color: "#EE8130", label: nil, position: 0, rank: nil, metadata: {})
     Studio::Enumeral.create!(category: category, key: key, color: color,
-                             label: label, position: position, rank: rank)
+                             label: label, position: position, rank: rank, metadata: metadata)
   end
 
   # --- Validations ---
@@ -56,6 +56,19 @@ class Studio::EnumeralTest < ActiveSupport::TestCase
     make(category: "other",        key: "z",     color: "#000000")
     assert_equal({ "fire" => "#EE8130", "water" => "#6390F0" },
                  Studio::Enumeral.color_map("pokemon_type"))
+  end
+
+  test "emoji reads metadata['emoji']" do
+    fire = make(category: "pokemon_type", key: "fire", metadata: { "emoji" => "🔥" })
+    assert_equal "🔥", fire.emoji
+    assert_nil make(category: "pokemon_type", key: "water").emoji
+  end
+
+  test "emoji_map is a key => emoji hash for just that category" do
+    make(category: "pokemon_type", key: "fire",  metadata: { "emoji" => "🔥" }, position: 0)
+    make(category: "pokemon_type", key: "water", metadata: { "emoji" => "💧" }, position: 1)
+    make(category: "other",        key: "z",     metadata: { "emoji" => "❓" })
+    assert_equal({ "fire" => "🔥", "water" => "💧" }, Studio::Enumeral.emoji_map("pokemon_type"))
   end
 
   test "color_for returns the color, or the fallback when unknown" do

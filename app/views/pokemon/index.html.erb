@@ -49,7 +49,7 @@
             <td class="p-3">
               <div class="flex gap-1">
                 <% p.types.each do |type| %>
-                  <%= render "type_badge", type: type, color: @type_colors[type] %>
+                  <%= render "type_badge", type: type, enumeral: @type_enumerals[type] %>
                 <% end %>
               </div>
             </td>
@@ -86,7 +86,7 @@
         <div class="text-heading font-medium text-sm"><%= p.name %></div>
         <div class="flex flex-wrap justify-center gap-1 mt-1">
           <% p.types.each do |type| %>
-            <%= render "type_badge", type: type, color: @type_colors[type] %>
+            <%= render "type_badge", type: type, enumeral: @type_enumerals[type] %>
           <% end %>
         </div>
       </div>

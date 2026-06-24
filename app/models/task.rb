@@ -162,6 +162,7 @@ class Task < ApplicationRecord
       d = (merged["devops"] ||= {})
       d["mascot"] = slug
       d["mascot_session"] = sid
+      d["mascot_color"] = Pokemon.find_by(slug: slug)&.signature_color
       task.update_columns(metadata: merged)
       restamped += 1
     rescue StandardError => e
@@ -655,6 +656,11 @@ class Task < ApplicationRecord
     return unless slug
     devops["mascot"] = slug
     devops["mascot_session"] = sid
+    # Stamp the mascot's signature type color (its least-common type) so the
+    # status line / context JSON can tint the ⊙<mascot> handle without DB access
+    # (bin/task and bin/agent-worktree are API clients). nil when the type colors
+    # aren't seeded — the status line then falls back to its default tint.
+    devops["mascot_color"] = Pokemon.find_by(slug: slug)&.signature_color
   end
 
   # The Pokémon for a session: reuse the one its other LIVE tasks already carry (so

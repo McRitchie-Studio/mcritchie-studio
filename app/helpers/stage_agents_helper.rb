@@ -40,14 +40,17 @@ module StageAgentsHelper
 
   # A task's Pokémon mascot rendered as a build-lane "agent" — the mascot IS the
   # feature agent's face. Quacks like an Agent (avatar/avatar_initials/avatar_color/
-  # name) so it drops straight into components/agent_avatar.
-  MascotAgent = Struct.new(:name, :avatar, keyword_init: true) do
+  # name) so it drops straight into components/agent_avatar. `color` is the
+  # mascot's signature type color (its least-common type, via Pokemon#signature_color);
+  # it backs the avatar circle so e.g. Dragonite wears Dragon, falling back to the
+  # name-derived palette color when no type is seeded.
+  MascotAgent = Struct.new(:name, :avatar, :color, keyword_init: true) do
     def avatar_initials
       name.to_s[0, 1].upcase
     end
 
     def avatar_color
-      Agent.avatar_color_for(name)
+      color.presence || Agent.avatar_color_for(name)
     end
   end
 
@@ -142,7 +145,7 @@ module StageAgentsHelper
   # mascot + the time spent IN that step (live for the current step). Unreached
   # steps render an empty, reserved column.
   def build_step_columns(task, entries, mascot)
-    face = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url)
+    face = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
     by_to_stage = entries.index_by(&:stage)
     reached_idx = Task::STAGES.index(task.stage).to_i
 
@@ -179,7 +182,7 @@ module StageAgentsHelper
     events = Array(events || task.task_events).select(&:to_stage)
                                               .sort_by { |e| [e.occurred_at, e.id.to_i] }
     by_slug = agents.index_by(&:slug)
-    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url)
+    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
 
     STAGE_AGENT_ORDER.flat_map do |stage|
       evt = events.reverse.find { |e| e.to_stage == stage }
