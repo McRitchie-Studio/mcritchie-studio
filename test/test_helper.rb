@@ -4,10 +4,25 @@ require "rails/test_help"
 
 OmniAuth.config.test_mode = true
 
+# How many test workers to fork. Parallel workers fork-clone the test DB
+# (CREATE DATABASE … TEMPLATE), which races the base connection and intermittently
+# DEADLOCKS or segfaults LOCALLY (pg fork-safety) — and a killed parallel run leaks
+# orphan workers that hold the test DB and hang the next run. So default to
+# SINGLE-PROCESS locally; CI keeps the parallel speedup, and PARALLEL_WORKERS
+# overrides either way (e.g. bin/agent-worktree pins it to 1). See the matching
+# rationale in bin/agent-worktree#run_worktree_tests.
+module TestParallelism
+  def self.worker_count(env = ENV)
+    return Integer(env["PARALLEL_WORKERS"]) if env["PARALLEL_WORKERS"].to_s.match?(/\A\d+\z/)
+
+    env["CI"].present? ? :number_of_processors : 1
+  end
+end
+
 module ActiveSupport
   class TestCase
-    # Run tests in parallel with specified workers
-    parallelize(workers: :number_of_processors)
+    # Single-process locally (reliable), parallel in CI (fast) — see TestParallelism.
+    parallelize(workers: TestParallelism.worker_count)
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
