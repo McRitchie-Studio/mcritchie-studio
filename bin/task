@@ -332,7 +332,8 @@ def write_feature_marker(task)
     "feature" => dv["worktree_slug"],
     "worktree_slug" => dv["worktree_slug"],
     "task_url" => "#{BASE_URL}/tasks/#{slug}",
-    "stage" => task["stage"]
+    "stage" => task["stage"],
+    "mascot" => dv["mascot"] # bin/statusline renders ⊙<mascot> — the session's Pokémon handle
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
   FileUtils.mkdir_p(File.dirname(path))
