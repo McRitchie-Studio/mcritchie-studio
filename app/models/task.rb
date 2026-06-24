@@ -96,7 +96,13 @@ class Task < ApplicationRecord
   scope :by_stage, ->(stage) { where(stage: stage) }
   scope :blocked, -> { where(stage: "blocked") }
   scope :recent, -> { order(created_at: :desc) }
-  scope :ordered, -> { order(Arel.sql("position ASC NULLS LAST, created_at DESC")) }
+  # Board order: highest `position` first, so the freshest task in a column sits
+  # on top. `position` is an event-driven RANK — a create or a stage move stamps
+  # it to (column max + 100), floating that task to the top (see
+  # set_initial_position / set_stage_timestamp). The 100-gaps leave room for a
+  # drag-drop reorder to slot a card between two others without renumbering. This
+  # mirrors the News/Content rank scheme (which Task previously inverted).
+  scope :ordered, -> { order(Arel.sql("position DESC NULLS LAST, created_at DESC")) }
   scope :requires_migration, -> { where(requires_migration: true) }
   # Tasks still in play — everything except the two terminal stages. A live task's
   # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
@@ -556,7 +562,10 @@ class Task < ApplicationRecord
       self.blocked_from = stage_was.presence
     when "archived"  then self.archived_at = Time.current
     end
-    self.position = (Task.where(stage: stage).maximum(:position) || -1) + 1 unless new_record?
+    # Re-rank to the TOP of the new column on every stage move: max + 100 wins the
+    # `position DESC` sort. The 100-gap keeps room for later drag inserts. (Skip on
+    # create — set_initial_position seeds the genesis rank.)
+    self.position = (Task.where(stage: stage).maximum(:position) || 0) + 100 unless new_record?
   end
 
   # A soul SLUG is a short human handle (carl, alex-docs) — lowercase letters with
@@ -590,7 +599,9 @@ class Task < ApplicationRecord
   end
 
   def set_initial_position
-    self.position ||= (Task.where(stage: stage).maximum(:position) || -1) + 1
+    # A new task lands at the TOP of its (designed) column: max + 100 under the
+    # `position DESC` sort. 100-spacing mirrors News/Content and leaves drag gaps.
+    self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
   end
 
   # The slug is the readable, immutable handle set at creation — it drives the
