@@ -83,6 +83,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "🏛️", app_emoji("turf-vault")
     assert_equal "🧱", app_emoji("solana-studio")
     assert_equal "⛓️", app_emoji("chain-ops")
+    assert_equal "📇", app_emoji("rolio")
   end
 
   test "app_emoji is blank-safe and case/whitespace tolerant, nil for unknown" do
@@ -110,6 +111,25 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes badge, "💎"
     assert_includes badge, %(title="mcritchie-studio, studio-engine")
     assert badge.html_safe?
+  end
+
+  # Component-tier: render the board card's slug-row markup (mirrors
+  # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
+  # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.
+  test "board slug-row renders the 📇 app badge alongside a rolio task slug" do
+    rendered = render(
+      inline: <<~ERB,
+        <div class="relative mt-0.5 mb-1.5">
+          <code class="block text-[10px] font-mono text-muted truncate"><%= slug %></code>
+          <%= app_emoji_badge(repositories, css: "absolute inset-y-0 right-0 z-10 flex items-center") %>
+        </div>
+      ERB
+      locals: { slug: "rolio-public-api", repositories: ["rolio"] }
+    )
+
+    assert_includes rendered, "rolio-public-api", "the card should still show the slug"
+    assert_includes rendered, "📇", "rolio's affected-app glyph should render on the card"
+    assert_includes rendered, %(title="rolio"), "the badge is titled with the affected repo"
   end
 
   test "compact_stage_duration renders a tight one-token form, nil-safe" do

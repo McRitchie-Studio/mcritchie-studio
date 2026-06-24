@@ -96,7 +96,8 @@ module ApplicationHelper
     "turf-vault"       => "🏛️",
     "vault"            => "🏛️",
     "solana-studio"    => "🧱",
-    "chain-ops"        => "⛓️"
+    "chain-ops"        => "⛓️",
+    "rolio"            => "📇"
   }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
