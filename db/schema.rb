@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_23_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_23_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -661,7 +661,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_23_120000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
+    t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY ((ARRAY['assembling'::character varying, 'assembled'::character varying])::text[]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true
   end
 
@@ -907,6 +907,21 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_23_120000) do
     t.index ["email_key"], name: "index_studio_email_deliveries_on_email_key"
     t.index ["sent"], name: "index_studio_email_deliveries_on_sent"
     t.index ["user_id"], name: "index_studio_email_deliveries_on_user_id"
+  end
+
+  create_table "studio_enumerals", force: :cascade do |t|
+    t.string "category", null: false
+    t.string "key", null: false
+    t.string "label"
+    t.string "color"
+    t.integer "position", default: 0, null: false
+    t.integer "rank"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["category", "key"], name: "index_studio_enumerals_on_category_and_key", unique: true
+    t.index ["category", "position"], name: "index_studio_enumerals_on_category_and_position"
+    t.index ["category", "rank"], name: "index_studio_enumerals_on_category_and_rank"
   end
 
   create_table "studio_links", force: :cascade do |t|

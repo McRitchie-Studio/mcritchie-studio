@@ -6,6 +6,12 @@
 class Pokemon < ApplicationRecord
   GEN1_RANGE = (1..151).freeze
 
+  # The shared Studio::Enumeral category holding each type's display color
+  # (seeded in db/seeds/57_pokemon_type_colors.rb). Kept here so the
+  # "pokemon_type" key lives with the model that owns types, not scattered across
+  # the controller and view.
+  TYPE_COLOR_CATEGORY = "pokemon_type".freeze
+
   validates :dex, presence: true,
                   uniqueness: true,
                   numericality: { only_integer: true, greater_than: 0 }
@@ -29,6 +35,21 @@ class Pokemon < ApplicationRecord
     pool = deck.where.not(slug: taken)
     pool = deck unless pool.exists?
     pool.order(Arel.sql("RANDOM()")).first
+  end
+
+  # { type_key => hex color } for every seeded type, in ONE query — build it once
+  # per page and look up each badge with no extra queries (avoids an N+1 over the
+  # 151 rows). Empty when the enumeral table/gem isn't installed yet, so badges
+  # fall back to the neutral chip.
+  def self.type_colors
+    Studio::Enumeral.color_map(TYPE_COLOR_CATEGORY)
+  end
+
+  # The hex color for one of this Pokémon's types, or nil — convenience for a
+  # one-off lookup. The index page uses .type_colors instead so it queries once,
+  # not once per badge.
+  def type_color(type)
+    Studio::Enumeral.color_for(TYPE_COLOR_CATEGORY, type)
   end
 
   def to_param

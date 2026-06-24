@@ -1,0 +1,15 @@
+<%# A single Pokémon type badge, colored from the shared Studio::Enumeral
+    "pokemon_type" catalog. The caller passes the resolved `color` (built once
+    per page via Pokemon.type_colors) so this partial does no lookup. Falls back
+    to the neutral surface chip when a type has no seeded color, so the page
+    renders fine before the enumerals are seeded. Used by BOTH the list and grid
+    views — keep the two in sync by routing both through here. %>
+<% color = local_assigns[:color] %>
+<% if color.present? %>
+  <span class="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide font-semibold text-white border"
+        style="background-color: <%= color %>; border-color: <%= color %>;"
+        data-test="type-badge" data-type="<%= type %>"><%= type %></span>
+<% else %>
+  <span class="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-surface border border-subtle text-secondary"
+        data-test="type-badge" data-type="<%= type %>"><%= type %></span>
+<% end %>
