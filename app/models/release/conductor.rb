@@ -15,9 +15,10 @@ class Release
     # Idempotent AND self-healing: a member already riding the train at
     # `assembled` is left untouched, but a member still ATTACHED (release_slug
     # set) whose stage has regressed off `assembled` — e.g. a re-review reverted
-    # the stage while keeping membership, the live half-state — is RECONCILED back
-    # to `assembled` (reopening the RC if it had assembled). The old
-    # `unless exists?` guard no-op'd that case, so the half-state could never
+    # the stage while keeping membership, the live half-state — is RE-RUN through
+    # `add` (which flips a `reviewed` member back to `assembled`, reopening the RC
+    # if it had assembled, and raises for any other stage per the top line). The
+    # old `unless exists?` guard no-op'd that case, so the half-state could never
     # self-heal and had to be fixed by hand.
     def adopt!(task)
       release = Release.current_or_open!
@@ -25,6 +26,11 @@ class Release
       if member.nil?
         release.add(task)
       elsif member.stage != "assembled"
+        # Hand any non-`assembled` member back to `add` — NOT a narrower
+        # `== "reviewed"` check. `add` heals a `reviewed` one and deliberately
+        # RAISES for any other stage (blocked, etc.), mirroring the nil → add(task)
+        # path above. Narrowing to `== "reviewed"` here would silently no-op those
+        # off-path members, reintroducing the asymmetry the review flagged.
         release.add(member)
       end
       release

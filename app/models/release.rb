@@ -114,7 +114,10 @@ class Release < ApplicationRecord
     # late-merge caller (Conductor.adopt! ← `bin/release merge`) runs `add`
     # standalone with no enclosing transaction (unlike prepare!/curate!), so
     # without this wrapper a failed member flip would leave the RC reopened
-    # (assembling) with the member never attached — the half-state the incident hit.
+    # (assembling) with the member never attached — a DISTINCT half-state from the
+    # adopt! no-op the incident actually hit (that one — member attached but stage
+    # regressed to reviewed — is healed by adopt!'s reconciliation, not here); this
+    # wrapper is defense-in-depth against a never-observed second mode.
     transaction do
       reopen! if state == "assembled"
       raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"

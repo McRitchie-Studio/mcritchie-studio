@@ -87,6 +87,20 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "assembling", rel.reload.state # reopened to re-assemble + re-QA
   end
 
+  test "adopt! on an already-assembled member of an assembled RC is a no-op (no reopen)" do
+    rel = Release::Conductor.adopt!(reviewed_task("member"))
+    Release::Conductor.prepare! # assemble (QA) the RC
+    member = rel.reload.tasks.first
+    assert_equal "assembled", rel.state
+    assert_equal "assembled", member.stage
+
+    Release::Conductor.adopt!(member)
+
+    assert_equal "assembled", rel.reload.state, "re-adopting an assembled member must NOT reopen the QA'd RC"
+    assert_equal "assembled", member.reload.stage
+    assert_equal 1, rel.tasks.count
+  end
+
   test "prepare! is additive — extends the active release instead of opening a second" do
     first = reviewed_task("first")
     rel1 = Release::Conductor.prepare!(task_slugs: [first.slug], slug: "rel-test-a")
