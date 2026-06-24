@@ -827,4 +827,29 @@ class TaskTest < ActiveSupport::TestCase
 
     assert_equal a.reload.devops["mascot"], b.reload.devops["mascot"], "one mascot per session"
   end
+
+  test "the same session keeps its mascot across a build transition" do
+    # Regression: mascot_session was stripped by normalize_devops_metadata, so every
+    # build transition re-rolled the Pokémon (designed→building showed a different one).
+    3.times { |i| Pokemon.create!(dex: i + 1, name: "P#{i}", slug: "p#{i}", generation: 1) }
+    t = Task.create!(title: "stable session mascot task",
+                     metadata: { "devops" => { "session_id" => "sess-stable" } })
+    first = t.devops["mascot"]
+    assert first.present?
+    assert_equal "sess-stable", t.devops["mascot_session"], "mascot_session must survive the save"
+
+    t.update!(stage: "building") # same session, build transition — must NOT re-roll
+
+    assert_equal first, t.reload.devops["mascot"], "same session keeps one Pokémon across designed→building"
+  end
+
+  test "normalize_devops_metadata keeps the mascot_session tag" do
+    # The actual stripping point (the API path normalizes; the model alone does not):
+    # mascot_session was dropped here, so the saved task lost it and every transition
+    # re-rolled. It must survive normalization.
+    result = Task.normalize_devops_metadata("mascot" => "graveler", "mascot_session" => "sess-1")
+
+    assert_equal "graveler", result["mascot"]
+    assert_equal "sess-1", result["mascot_session"], "mascot_session must survive normalization"
+  end
 end
