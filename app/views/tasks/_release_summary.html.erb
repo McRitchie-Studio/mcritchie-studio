@@ -16,25 +16,27 @@
 <% meta_color = current ? "text-secondary" : "text-muted" %>
 <% link_class = current ? "text-primary hover:underline" : "text-secondary hover:underline" %>
 <% pill_class = current ? "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" : "px-2 py-1 rounded bg-inset text-xs text-muted hover:text-body flex items-center gap-1.5 border border-subtle" %>
-<div class="flex items-center justify-between flex-wrap gap-3">
-      <div class="flex items-center gap-3 flex-wrap">
-<%# Section label (Next Release / Last Release), top-left of the card header so the
-    status badge can own the top-right corner. %>
+<%# Top row: section label + slug/branch on the left; the consolidated status badge
+    pinned to the card's top-right corner on the right (items-start keeps it aligned
+    to the first line even when the slug group wraps). %>
+<div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-3 flex-wrap min-w-0">
         <span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span>
         <code class="<%= slug_class %>"><%= rel.slug %></code>
         <% if rel.branch.present? %><code class="text-xs text-muted" title="<%= branch_title %>"><%= rel.branch %></code><% end %>
       </div>
-      <div class="flex items-center gap-4 text-xs <%= meta_color %> flex-wrap">
+      <%# Consolidated status badge: one state-colored pill folding the bare state + its
+          relative time into "Shipped 7 minutes ago" — replaces the former left-side
+          state pill AND the separate muted "shipped X ago" line. %>
+      <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>" data-test="release-state-badge"><%= release_state_label(rel, current: current) %></span>
+    </div>
+    <%# Second row: release meta — task count, QA/Prod links, deployed SHA. %>
+    <div class="mt-1 flex items-center gap-4 text-xs <%= meta_color %> flex-wrap">
         <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>
         <% if rel.qa_url.present? %><%= link_to "QA ↗", rel.qa_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
         <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
         <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
-        <%# Consolidated status badge (top-right): one state-colored pill folding the
-            bare state + its relative time into "Shipped 7 minutes ago" — replaces the
-            former left-side state pill AND the separate muted "shipped X ago" line. %>
-        <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>" data-test="release-state-badge"><%= release_state_label(rel, current: current) %></span>
       </div>
-    </div>
     <% if members.any? %>
       <div class="mt-3 flex flex-wrap gap-2">
         <% members.each do |t| %>
