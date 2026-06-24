@@ -126,6 +126,57 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "", eval_with_argv(["ship", "--dry-run"], "opt_value('--by').to_s")
   end
 
+  # --- confirm: a non-interactive shell ABORTS loudly (never a silent no-op) ---
+  # The old `$stdin.gets.to_s.strip.casecmp("y").zero?` returned FALSE on EOF, so
+  # `prepare` (return unless confirm) silently no-op'd on a non-TTY — "looked like
+  # it ran but nothing deployed". confirm now aborts on a non-TTY / EOF so prepare
+  # fails VISIBLY like ship/archive already do, while --yes still bypasses the gate.
+
+  # Stub $stdin so the (subprocess) confirm sees a non-interactive shell
+  # deterministically (the test runner's real stdin may or may not be a TTY).
+  NON_TTY_STDIN = %($stdin = (o = Object.new; def o.tty?; false; end; def o.gets; nil; end; o))
+  # A TTY whose read immediately hits EOF (Ctrl-D) — tty? true, gets nil.
+  TTY_EOF_STDIN = %($stdin = (o = Object.new; def o.tty?; true; end; def o.gets; nil; end; o))
+
+  def test_confirm_aborts_on_a_non_interactive_shell
+    # No --yes / --dry-run, so confirm reaches the TTY check; abort! raises
+    # SystemExit and we surface its message (abort writes to the discarded stderr,
+    # but SystemExit#message carries the text) to assert the loud, helpful abort.
+    out = run_cli([], setup: NON_TTY_STDIN,
+                  call: "begin; confirm('Proceed?'); puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "a non-TTY confirm must abort, not silently return false"
+    assert_includes out, "non-interactive shell", "the abort names the cause"
+    assert_includes out, "--yes", "the abort points at the --yes escape hatch"
+    refute_includes out, "NO-ABORT", "confirm must not fall through to a return value on a non-TTY"
+  end
+
+  def test_confirm_aborts_on_eof_even_with_a_tty
+    out = run_cli([], setup: TTY_EOF_STDIN,
+                  call: "begin; confirm('Proceed?'); puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "EOF on stdin must abort, never fold into a false 'no'"
+    assert_includes out, "EOF on stdin", "the abort names EOF as the cause"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_confirm_yes_flag_bypasses_the_prompt_without_touching_stdin
+    # --yes short-circuits to true BEFORE the TTY check — the stub's tty?/gets raise
+    # if consulted, proving the hands-off bypass never reads stdin.
+    setup = %($stdin = (o = Object.new; def o.tty?; raise 'tty? consulted under --yes'; end; def o.gets; raise 'gets consulted under --yes'; end; o))
+    out = run_cli(["--yes"], setup: setup, call: "print(confirm('Proceed?'))")
+
+    assert_equal "true", out, "--yes returns true without prompting or reading stdin (hands-off bypass preserved)"
+  end
+
+  def test_confirm_dry_run_also_bypasses_the_prompt
+    # --dry-run likewise returns true without consulting stdin (previews execute nothing).
+    setup = %($stdin = (o = Object.new; def o.tty?; raise 'tty? consulted under --dry-run'; end; o))
+    out = run_cli(["--dry-run"], setup: setup, call: "print(confirm('Proceed?'))")
+
+    assert_equal "true", out, "--dry-run returns true without prompting"
+  end
+
   # --- init --dry-run: create the persistent `release` branch per repo ---
 
   def test_init_dry_run_previews_the_release_branch_push_per_repo
