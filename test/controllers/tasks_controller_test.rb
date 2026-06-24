@@ -395,6 +395,19 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "task show 'All Tasks' back-link points to /deployments" do
+    get task_path(@new_task.slug)
+    assert_response :success
+    assert_select "a[href=?]", deployments_path, text: /All Tasks/
+  end
+
+  test "new task 'All Tasks' back-link points to /deployments" do
+    log_in_as(@admin)
+    get new_task_path
+    assert_response :success
+    assert_select "a[href=?]", deployments_path, text: /All Tasks/
+  end
+
   # === Per-stage deploy-crew avatars (task-ui-stage-agents) ===
 
   # Seed the four Deploy-half souls + a shipped task with explicit TaskEvents so
