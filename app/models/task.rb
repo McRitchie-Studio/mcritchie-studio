@@ -319,6 +319,54 @@ class Task < ApplicationRecord
     self.class.normalize_reviewers(metadata["reviewers"])
   end
 
+  # Record an INTENT: an agent (or the two-senior review pair) STARTING the work
+  # that will produce `to_stage`, the moment that work begins — so the board and
+  # the task timeline can show WHO is on it with a live ticker before the
+  # transition lands. Appends a TaskEvent(kind: intent) FROM the current stage TO
+  # to_stage, carrying `actor` (a single owner — Steffon at QA, Avi at ship)
+  # and/or `reviewers` metadata (the heavy/light pair at review). Append-only +
+  # idempotent: an identical open intent (same target + same crew) is returned
+  # as-is rather than stacked, and it is a no-op once to_stage has already landed.
+  def record_intent_event(to_stage:, actor: nil, reviewers: nil, source: nil)
+    return nil if task_events.transitions.exists?(to_stage: to_stage)
+
+    pair  = reviewers.present? ? self.class.normalize_reviewers(reviewers).presence : nil
+    actor = actor.to_s.strip.presence
+
+    existing = task_events.intents.where(to_stage: to_stage).chronological.last
+    if existing && existing.actor == actor &&
+       self.class.normalize_reviewers(existing.metadata["reviewers"]).presence == pair
+      return existing
+    end
+
+    task_events.create!(
+      kind: TaskEvent::INTENT,
+      from_stage: stage,
+      to_stage: to_stage,
+      occurred_at: Time.current,
+      seconds_in_from: nil,
+      source: (source.presence || Current.task_event_source).presence,
+      actor: actor,
+      metadata: pair ? { "reviewers" => pair } : {}
+    )
+  end
+
+  # The OPEN intent event for `to_stage` (work has STARTED toward that stage but no
+  # transition into it has landed yet), or nil once it's resolved by a transition —
+  # so a non-nil result means "work is in progress on this stage right now".
+  def open_intent_for(to_stage)
+    return nil if task_events.transitions.exists?(to_stage: to_stage)
+
+    task_events.intents.where(to_stage: to_stage).chronological.last
+  end
+
+  # The reviewer pair (normalized) recorded on the latest review intent, or nil —
+  # ties the completed →reviewed event back to the pair that actually started.
+  def latest_intent_reviewers(to_stage = "reviewed")
+    intent = task_events.intents.where(to_stage: to_stage).chronological.last
+    intent && self.class.normalize_reviewers(intent.metadata["reviewers"]).presence
+  end
+
   def devops_url(name)
     devops.fetch("#{name}_url", "").presence
   end
@@ -514,7 +562,10 @@ class Task < ApplicationRecord
 
   def write_stage_event(from:)
     occurred = Time.current
-    previous = task_events.chronological.last
+    # Measure the stage duration between TRANSITIONS only — an intent row recorded
+    # mid-stage (review picked, QA started) is the live "who's on it" signal, not a
+    # stage boundary, so it must never shorten seconds_in_from.
+    previous = task_events.transitions.chronological.last
     task_events.create!(
       from_stage: from,
       to_stage: stage,
@@ -541,7 +592,13 @@ class Task < ApplicationRecord
   def stage_event_metadata(from:)
     return {} unless from == "submitted" && stage == "reviewed"
 
-    reviewers = Current.task_event_reviewers.presence || ReviewerSelector.select(self)
+    # Prefer the pair that actually STARTED the review (stamped on the open review
+    # intent) so the completed event shows the same two seniors the board showed
+    # ticking; an explicit Current override (Avi curated on the move) still wins,
+    # and an old-flow move with neither falls back to a fresh selection.
+    reviewers = Current.task_event_reviewers.presence ||
+                latest_intent_reviewers("reviewed") ||
+                ReviewerSelector.select(self)
     reviewers.present? ? { "reviewers" => reviewers } : {}
   rescue StandardError => e
     Rails.logger.warn("[reviewer-selector] recording failed (non-fatal): #{e.class}: #{e.message}")

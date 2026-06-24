@@ -229,14 +229,19 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_passes_when_shape_contract_is_satisfied
-    out, code = check(
-      "shape" => "backend",
-      "repositories" => ["mcritchie-studio"],
-      "risk_tags" => ["devops"],
-      "acceptance" => ["gate works"],
-      "test_plan" => ["unit", "integration"],
-      "checks_run" => ["[unit] x", "[integration] y"]
-    )
+    # Inject a plain code-file diff so this asserts the SHAPE-CONTRACT path
+    # deterministically, independent of what this branch's real working tree
+    # happens to touch (e.g. a migration would trip the post_deploy_cmd rule).
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(
+        "shape" => "backend",
+        "repositories" => ["mcritchie-studio"],
+        "risk_tags" => ["devops"],
+        "acceptance" => ["gate works"],
+        "test_plan" => ["unit", "integration"],
+        "checks_run" => ["[unit] x", "[integration] y"]
+      )
+    end
     assert_equal 0, code, out
     assert_match(/DoR-to-Merge met/, out)
     assert_match(/submitted → reviewed/, out)
@@ -287,12 +292,14 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_json_verdict_is_machine_readable
-    out, code = check(
-      { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
-        "acceptance" => ["a"], "test_plan" => ["unit"],
-        "checks_run" => ["[unit] x", "[integration] y"] },
-      "--json"
-    )
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(
+        { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
+          "acceptance" => ["a"], "test_plan" => ["unit"],
+          "checks_run" => ["[unit] x", "[integration] y"] },
+        "--json"
+      )
+    end
     assert_equal 0, code, out
     verdict = JSON.parse(out)
     assert verdict["ready"]
@@ -301,12 +308,14 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_tier_tag_accepts_colon_and_spacing
-    out, code = check(
-      "shape" => "backend",
-      "repositories" => ["m"], "risk_tags" => ["x"], "acceptance" => ["a"],
-      "test_plan" => ["unit"],
-      "checks_run" => ["[ unit : ] bin/rails test", "[integration] flow"]
-    )
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(
+        "shape" => "backend",
+        "repositories" => ["m"], "risk_tags" => ["x"], "acceptance" => ["a"],
+        "test_plan" => ["unit"],
+        "checks_run" => ["[ unit : ] bin/rails test", "[integration] flow"]
+      )
+    end
     assert_equal 0, code, out
   end
 

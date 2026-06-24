@@ -204,7 +204,14 @@ Rails.application.routes.draw do
       resources :agents, only: [:index, :show, :update], param: :slug
       # Stages move via PATCH update (task: { stage: ... }); no named-transition
       # endpoints — one path for the CLI, the board, and external callers.
-      resources :tasks, only: [:index, :show, :create, :update, :destroy], param: :slug
+      resources :tasks, only: [:index, :show, :create, :update, :destroy], param: :slug do
+        member do
+          # Record an INTENT — an agent STARTING a stage's work (review pair picked,
+          # Steffon QA started, Avi ship e2e started) — so the board + task timeline
+          # show who's on it with a live ticker before the transition lands.
+          post :intent
+        end
+      end
       resources :activities, only: [:index, :create]
       resources :usages, only: [:index, :create]
     end

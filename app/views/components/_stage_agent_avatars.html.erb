@@ -110,7 +110,7 @@
       ticks a LIVE counter while the task is still being built. The detail page
       (:detailed) still shows every stage per-usual.
     %>
-    <% columns = crew_columns(task, entries, board: board, mascot: mascot) %>
+    <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events) %>
     <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
         on the roomier Build board; the stack overlap tracks the size to keep a small peek
         of each face — 8px on Build (sm = w-10 face, -space-x-8 = 32px) and 4px on Deploy

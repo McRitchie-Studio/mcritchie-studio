@@ -7,8 +7,8 @@ module Api
       # `stage`, not `status`). `page`/`per_page` are read by Api::Paginatable.
       INDEX_PARAMS = %w[stage agent_slug page per_page].freeze
 
-      before_action :capture_task_event_context, only: [:create, :update]
-      before_action :set_task, only: [:show, :update, :destroy]
+      before_action :capture_task_event_context, only: [:create, :update, :intent]
+      before_action :set_task, only: [:show, :update, :destroy, :intent]
 
       def index
         return if reject_unsupported_index_params!
@@ -47,6 +47,26 @@ module Api
         rescue_and_log(target: @task) do
           @task.destroy!
           head :no_content
+        end
+      rescue StandardError => e
+        render_error(e.message)
+      end
+
+      # Record an INTENT event: an agent (or the two-senior review pair) STARTING
+      # the work that will produce `to_stage`, so the board/timeline can show who's
+      # on it with a live ticker BEFORE the transition lands. Append-only +
+      # idempotent (an identical open intent is reused), and a no-op once the
+      # transition has already landed — so a re-run from a retry never stacks rows.
+      def intent
+        to_stage = params[:to_stage].to_s.strip
+        if to_stage.blank?
+          return render_error("to_stage is required", status: :bad_request, error_code: "MISSING_PARAM")
+        end
+
+        reviewers = Array(params[:reviewers]).map { |r| r.respond_to?(:to_unsafe_h) ? r.to_unsafe_h : r }
+        rescue_and_log(target: @task) do
+          @task.record_intent_event(to_stage: to_stage, actor: params[:actor].presence, reviewers: reviewers)
+          render_data(@task)
         end
       rescue StandardError => e
         render_error(e.message)

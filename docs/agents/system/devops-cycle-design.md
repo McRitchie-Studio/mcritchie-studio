@@ -433,7 +433,10 @@ each `submitted` task (`bin/task list` or the board):
    **excludes the QA owner** (Steffon, who QAs the assembled RC — no self-gating).
    `alex-docs` is Alex's launchable Documentation reviewer persona, distinct from
    the `alex` orchestrator seat. (`--qa-owner SLUG` excludes a different soul when
-   Steffon isn't the one QAing this task; `--json` for a machine-readable pick.)
+   Steffon isn't the one QAing this task; `--json` for a machine-readable pick;
+   **`--record`** writes the picked pair onto the task as a **review intent** so
+   /deployments + the task timeline show the two seniors reviewing live — a green
+   ticking timer — the moment Avi kicks off review, before `→reviewed` lands.)
 3. **Run the two reviews in parallel.** Avi spawns the two named seniors as review
    agents — each is a launchable subagent. Each judges **diff-vs-acceptance + code
    standards + code smell + scalability** at its depth: HEAVY does the deep pass
@@ -444,6 +447,22 @@ each `submitted` task (`bin/task list` or the board):
    (membership flips `reviewed → assembled`). Any reviewer blocks → **`bin/task
    block <task> --kind rework --feedback "…"`** (one complete send-back). Bias to
    action: two green approvals = go (`release` reverts cleanly).
+
+**Agentic intent — the live "who's on it now".** Each event carries the agent
+that STARTED it, not only the one that completed it, so /deployments and the
+task's consolidated **Stage Timeline** show who's working *right now* with a
+green ticking timer — the Deploy mirror of the build lane's live counter. These
+are append-only `TaskEvent`s of `kind: intent` (completed transitions stay
+`kind: transition`, and an intent never enters the duration spine); an intent is
+"open" until its stage's transition lands, then the completed event supersedes
+it. Build-lane intent = the task's Pokémon mascot (assigned at create). The
+review pair is recorded by **`bin/reviewer-select <task> --record`** (step 2);
+Steffon's QA and Avi's ship intents by **`bin/task intent <task> --to assembled
+--actor steffon`** / **`--to shipped --actor avi`** (or `POST
+/api/v1/tasks/<slug>/intent`) — both append-only + idempotent, a no-op once the
+stage has landed. Actor-less conductor moves on `assembled`/`shipped` still
+attribute to their role owners (Steffon QAs `assembled`, Avi ships) so the Deploy
+crew never goes blank.
 
 **`Prepare release`**  *(reviewed → assembled — an RC for QA)*
 Two deterministic steps:
