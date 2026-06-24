@@ -6,14 +6,15 @@ require "test_helper"
 # the card is tagged data-stage="blocked". The old onEnd read oldStage from the
 # CARD, so an in-place reorder of a blocked card computed oldStage="blocked" vs
 # newStage="building" and silently PATCHed the task un-blocked; a failed PATCH then
-# reverted to a non-existent dropzone-blocked and stranded the card. Blocked also
-# rides the Building lane, which collapsed below ~1250px on the Deploy board —
-# hiding a needs-attention task by default.
+# reverted to a non-existent dropzone-blocked and stranded the card. Blocked tasks
+# ride the Building lane, which collapses below ~1250px on the Deploy board — so a
+# needs-attention task is reachable via "All Stages" at narrow.
 #
 # The drag itself is SortableJS (mouse-driven, not native DnD) and is not exercised
 # by the minitest harness, so the regression is locked at the integration tier:
 # the rendered DOM is stage-consistent, the drag handler carries the same-zone
-# guard that prevents the un-blocking PATCH, and the Building lane stays visible.
+# guard that prevents the un-blocking PATCH, and the narrow Deploy board collapses
+# Building behind "All Stages".
 class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
   test "a blocked task renders inside the Building dropzone and no Blocked column exists" do
     task = Task.create!(title: "stalled needs attention", stage: "blocked")
@@ -51,18 +52,21 @@ class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
     refute_includes js, "getElementById('dropzone-' + oldStage)"
   end
 
-  test "the Building lane stays visible on the narrow Deploy board" do
+  test "the Building lane collapses on the narrow Deploy board behind All Stages" do
     get deployments_path
     assert_response :success
     doc = Nokogiri::HTML(@response.body)
 
     building_col = doc.at_css("#dropzone-building").parent
     designed_col = doc.at_css("#dropzone-designed").parent
+    reviewed_col = doc.at_css("#dropzone-reviewed").parent
 
-    # An upstream lane (designed) still collapses below ~1250px behind All Stages…
+    # Below ~1250px the upstream lanes collapse behind All Stages — and Building is
+    # no longer exempt. Blocked tasks ride Building, so a stalled task is reachable
+    # via the toggle at narrow rather than pinned visible.
     assert_includes designed_col[":class"].to_s, "max-[1250px]:hidden"
-    # …but Building is exempt from the collapse — a blocked task riding it must
-    # never hide on a narrow screen.
-    refute_includes building_col[":class"].to_s, "max-[1250px]:hidden"
+    assert_includes building_col[":class"].to_s, "max-[1250px]:hidden"
+    # …while the last three lanes (reviewed · assembled · shipped) stay visible.
+    refute_includes reviewed_col[":class"].to_s, "max-[1250px]:hidden"
   end
 end

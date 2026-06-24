@@ -261,10 +261,10 @@ function kanbanBoard() {
       <% column_tasks = @tasks_by_stage[stage] || [] %>
       <% column_tasks = (@tasks_by_stage["blocked"] || []) + column_tasks if stage == "building" %>
       <%# On a six-lane board (Deployments) the upstream lanes collapse below ~1250px
-          unless "All Stages" is on, leaving Building (it carries blocked,
-          needs-attention tasks) plus the last three (reviewed · assembled · shipped).
-          Building is exempt from the collapse so a stalled task never hides. %>
-      <% collapsible = columns.size > 4 && idx < columns.size - 3 && stage != "building" %>
+          unless "All Stages" is on, leaving just the last three (reviewed · assembled
+          · shipped). Building collapses with them; blocked/needs-attention tasks ride
+          the Building lane, so a stalled task stays reachable via "All Stages" at narrow. %>
+      <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
       <div class="flex-1 min-w-[190px]"
            <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1250px]:hidden'"<% end %>>
