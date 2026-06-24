@@ -614,8 +614,119 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_e2e_real_migration_diff_passes_with_command
+    # A NARROW dedicated rake task (not a bare db:seed — see the safety gate below).
+    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
+      out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails widgets:backfill"))
+      assert_equal 0, code, out
+      assert_match(/DoR-to-Merge met/, out)
+    end
+  end
+
+  # --- post-deploy SAFETY gate: reject a bare full-suite seed command ----------
+  # bin/release runs devops.post_deploy_cmd VERBATIM against PRODUCTION. A bare
+  # db:seed loads db/seeds.rb → EVERY db/seeds/*.rb (demo data + any non-idempotent
+  # file), so it's rejected; a NARROW scoped-runner / dedicated-rake command is
+  # required. Real near-miss: merge-docs-reviewer-into-alex shipped 'bin/rails
+  # db:seed'. A non-data code diff (app/models) isolates the safety gate as the
+  # sole failure (no post-deploy NUDGE, which only fires on db/seeds|db/migrate).
+
+  REJECTED_POST_DEPLOY_CMDS = [
+    "bin/rails db:seed",
+    "rails db:seed",
+    "bundle exec rails db:seed",
+    "bin/rails db:seed:replant",
+    "rake db:seed",
+    "bundle exec rails db:seed RAILS_ENV=production"
+  ].freeze
+
+  ACCEPTED_POST_DEPLOY_CMDS = [
+    "rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'",
+    "bin/rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'",
+    "bin/rails pokemon:seed",
+    "bin/rails pokemon:resync_mascots",
+    "bin/rails db:migrate",
+    "none"
+  ].freeze
+
+  def test_bare_full_suite_seed_commands_are_rejected
+    REJECTED_POST_DEPLOY_CMDS.each do |cmd|
+      out, code = with_changed_files("app/models/agent.rb") do
+        check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
+      end
+      assert_equal 1, code, "expected REJECT for #{cmd.inspect}\n#{out}"
+      assert_match(/bare full-suite seed/, out, "why-message missing for #{cmd.inspect}")
+      assert_match(/PRODUCTION/, out, "prod-safety rationale missing for #{cmd.inspect}")
+      assert_match(/rails runner|dedicated/, out, "narrow pattern missing for #{cmd.inspect}")
+    end
+  end
+
+  def test_narrow_post_deploy_commands_are_accepted
+    ACCEPTED_POST_DEPLOY_CMDS.each do |cmd|
+      out, code = with_changed_files("app/models/agent.rb") do
+        check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
+      end
+      assert_equal 0, code, "expected ACCEPT for #{cmd.inspect}\n#{out}"
+      assert_match(/DoR-to-Merge met/, out, cmd)
+    end
+  end
+
+  def test_blank_post_deploy_cmd_is_not_gated
+    # No post_deploy_cmd at all → the safety gate is silent (non-data diff, so the
+    # NUDGE doesn't fire either) → the contract passes.
+    out, code = with_changed_files("app/models/agent.rb") { check(BACKEND_CONTRACT) }
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    refute_match(/bare full-suite seed/, out)
+  end
+
+  def test_seed_diff_with_bare_seed_command_is_rejected_by_safety_not_nudge
+    # The command IS present (so the NUDGE is satisfied) but it's the dangerous
+    # bare seed — the SAFETY gate is the failure, not the blank-command nudge.
+    out, code = with_changed_files("db/seeds/54_demo.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails db:seed"))
+    end
+    assert_equal 1, code, out
+    assert_match(/bare full-suite seed/, out)
+    refute_match(/post_deploy_cmd is blank/, out)
+  end
+
+  def test_build_gate_also_rejects_a_bare_seed_command
+    # The value is dangerous regardless of gate, so the build gate rejects it too.
+    out, code = check(
+      { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
+        "acceptance" => ["a"], "test_plan" => ["unit"], "checks_run" => [],
+        "post_deploy_cmd" => "bin/rails db:seed" },
+      "--gate", "build"
+    )
+    assert_equal 1, code, out
+    assert_match(/bare full-suite seed/, out)
+  end
+
+  def test_bare_seed_command_surfaces_in_json_verdict
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "bundle exec rails db:seed"), "--json")
+    end
+    assert_equal 1, code, out
+    verdict = JSON.parse(out)
+    refute verdict["ready"]
+    assert(verdict["errors"].any? { |e| e =~ /bare full-suite seed/ })
+  end
+
+  # --- [integration] real git working-tree, bad vs good post_deploy_cmd --------
+
+  def test_e2e_migration_diff_rejects_bare_seed_command
     with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
       out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails db:seed"))
+      assert_equal 1, code, out
+      assert_match(/DoR-to-Merge NOT met/, out)
+      assert_match(/bare full-suite seed/, out)
+    end
+  end
+
+  def test_e2e_migration_diff_accepts_scoped_runner_command
+    with_git_repo(untracked: ["db/migrate/20260623120000_add_widgets.rb"]) do |dir|
+      cmd = "rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'"
+      out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
       assert_equal 0, code, out
       assert_match(/DoR-to-Merge met/, out)
     end

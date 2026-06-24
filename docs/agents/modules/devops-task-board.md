@@ -228,6 +228,18 @@ Supported fields:
 | `acceptance` | Acceptance criteria, one item per line |
 | `test_plan` | Checks the feature agent expects to run, one item per line |
 | `checks_run` | Checks actually completed before the current handoff, one item per line |
+| `post_deploy_cmd` | Command `bin/release` runs **verbatim against the deployed app** (QA on `prepare`, prod on `ship`) after migrations, so a seed/backfill isn't run by hand. Must be **narrow, prod-safe, and idempotent** — **never a bare `db:seed`** (see safety rule below). Set to `none` to acknowledge a schema-only migration that needs no command. |
+
+**`post_deploy_cmd` safety rule.** Because `bin/release` runs the command
+verbatim against PRODUCTION, `bin/dor-check` **rejects** a bare full-suite seed
+(`bin/rails db:seed`, `rails db:seed`, `bundle exec rails db:seed`,
+`db:seed:replant`, `rake db:seed`): `db/seeds.rb` loads **every** `db/seeds/*.rb`,
+so it would inject demo News/Content/Tasks into prod and abort the release on the
+first non-idempotent seed file. Declare a **scoped single-file runner**
+(`rails runner 'load Rails.root.join("db/seeds/NN_x.rb").to_s'`) or a **dedicated
+idempotent rake task** (e.g. `bin/rails pokemon:seed`) instead. (Near-miss:
+`merge-docs-reviewer-into-alex` shipped `post_deploy_cmd='bin/rails db:seed'`,
+caught only when QA aborted because reviewers read the diff, not the metadata.)
 
 Example API payload:
 
@@ -360,12 +372,15 @@ Use the decision recommendations conservatively:
 
 1. Find `pr_review` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.
-3. Check `risk_tags` for Steffon/infra gate needs.
-4. Merge only ready PRs.
-5. Deploy merged `origin/main` to QA.
-6. Move the task to `qa_review` with QA URL, QA release SHA, and `checks_run`.
-7. Move accepted QA tasks to `prod_ready`.
-8. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
+3. **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
+   against prod on ship. Reject a bare `db:seed`; require a narrow, idempotent
+   command (`bin/dor-check` enforces this, but read it yourself).
+4. Check `risk_tags` for Steffon/infra gate needs.
+5. Merge only ready PRs.
+6. Deploy merged `origin/main` to QA.
+7. Move the task to `qa_review` with QA URL, QA release SHA, and `checks_run`.
+8. Move accepted QA tasks to `prod_ready`.
+9. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
    approves release work.
 
 If the PR is not ready, Avi leaves `qa_feedback` on the task conversation with

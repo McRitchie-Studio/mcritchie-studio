@@ -684,6 +684,19 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
   seed/backfill isn't run by hand post-ship. Heroku's release phase auto-runs
   `db:migrate` but **not** `db:seed` or a backfill rake; set `post_deploy_cmd` to
   `none` to acknowledge a schema-only migration that needs no command.
+- **`post_deploy_cmd` safety rule (both gates):** `bin/release` runs the command
+  **verbatim against PRODUCTION**, so it must be **narrow, prod-safe, and
+  idempotent**. A declared `post_deploy_cmd` is **rejected** when it is a bare
+  full-suite seed — `bin/rails db:seed`, `rails db:seed`, `bundle exec rails
+  db:seed`, `db:seed:replant`, or `rake db:seed`. `db/seeds.rb` loads **every**
+  `db/seeds/*.rb`, so a bare seed would inject demo News/Content/Tasks into prod
+  **and** abort the release on the first non-idempotent seed file. Declare a
+  narrow command instead: a **scoped single-file runner** —
+  `rails runner 'load Rails.root.join("db/seeds/NN_x.rb").to_s'` — or a
+  **dedicated idempotent rake task** (e.g. `bin/rails pokemon:seed`). This is the
+  fix for a real near-miss: `merge-docs-reviewer-into-alex` shipped
+  `post_deploy_cmd='bin/rails db:seed'` and was caught only when QA aborted,
+  because reviewers read the code diff, not the deploy metadata.
 
 This is **deterministic** — a `bin/` gate (`bin/dor-check <task>`, default
 `--gate merge`), not a judgment call. There is also a lighter `--gate build`
