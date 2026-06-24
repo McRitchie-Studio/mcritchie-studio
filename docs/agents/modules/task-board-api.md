@@ -98,8 +98,14 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `POST` | `/tasks/:slug/fail_task` | Stage → `failed` (accepts `error_message`) |
 | `POST` | `/tasks/:slug/archive` | Stage → `archived` |
 
-`GET /tasks` accepts `?stage=<stage>` and `?agent_slug=<slug>` filters and
-returns `{ "data": [...], "meta": { page, per_page, total, total_pages } }`.
+`GET /tasks` accepts `?stage=<stage>` and `?agent_slug=<slug>` filters (plus
+`?page` / `?per_page`) and returns `{ "data": [...], "meta": { page, per_page,
+total, total_pages } }`. Each list item includes its `stage`, so callers can
+filter/triage without a per-task `show`. **The filter param is `stage`, not
+`status`** — an unsupported query param is rejected with `400
+{ "error": "unsupported query param(s): …", "error_code": "UNSUPPORTED_PARAM" }`
+rather than silently ignored (which used to return every task). A `GET
+/tasks/:slug` for an unknown slug returns `404 { "error": "task not found" }`.
 (There are also `agents`, `activities`, and `usages` resources; out of scope
 here.)
 

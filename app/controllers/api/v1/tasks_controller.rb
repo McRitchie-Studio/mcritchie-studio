@@ -1,9 +1,18 @@
 module Api
   module V1
     class TasksController < BaseController
+      # The filter/query params `GET /api/v1/tasks` understands. Anything else is
+      # rejected with a 400 rather than silently ignored — a `?status=submitted`
+      # used to fall through to "no filter" and return EVERY task (the param is
+      # `stage`, not `status`). `page`/`per_page` are read by Api::Paginatable.
+      INDEX_PARAMS = %w[stage agent_slug page per_page].freeze
+
       before_action :capture_task_event_context, only: [:create, :update]
+      before_action :set_task, only: [:show, :update, :destroy]
 
       def index
+        return if reject_unsupported_index_params!
+
         tasks = Task.recent
         tasks = tasks.by_stage(params[:stage]) if params[:stage].present?
         tasks = tasks.where(agent_slug: params[:agent_slug]) if params[:agent_slug].present?
@@ -12,8 +21,7 @@ module Api
       end
 
       def show
-        task = Task.find_by!(slug: params[:slug])
-        render_data(task)
+        render_data(@task)
       end
 
       def create
@@ -27,19 +35,17 @@ module Api
       end
 
       def update
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.update!(task_params)
-          render_data(task)
+        rescue_and_log(target: @task) do
+          @task.update!(task_params)
+          render_data(@task)
         end
       rescue StandardError => e
         render_error(e.message)
       end
 
       def destroy
-        task = Task.find_by!(slug: params[:slug])
-        rescue_and_log(target: task) do
-          task.destroy!
+        rescue_and_log(target: @task) do
+          @task.destroy!
           head :no_content
         end
       rescue StandardError => e
@@ -47,6 +53,33 @@ module Api
       end
 
       private
+
+      # Guarded lookup so a missing slug returns a clean 404 with a JSON error
+      # body, never a 500. (The base controller's rescue_from RecordNotFound is the
+      # systemic backstop; this gives the tasks endpoints a task-specific message.)
+      def set_task
+        @task = Task.find_by(slug: params[:slug])
+        return if @task
+
+        render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      # Reject query params the index doesn't support instead of silently ignoring
+      # them (a silent ignore on a filter param returns ALL tasks — a footgun). The
+      # most common slip is `status` for `stage`, so hint toward it. Returns true
+      # when it rendered an error, so the caller can halt.
+      def reject_unsupported_index_params!
+        unknown = request.query_parameters.keys.map(&:to_s) - INDEX_PARAMS
+        return false if unknown.empty?
+
+        hint = unknown.include?("status") ? " (did you mean 'stage'?)" : ""
+        render_error(
+          "unsupported query param(s): #{unknown.join(', ')}#{hint}. supported: #{INDEX_PARAMS.join(', ')}",
+          status: :bad_request,
+          error_code: "UNSUPPORTED_PARAM"
+        )
+        true
+      end
 
       # Drain an optional `event` payload into Current so Task#record_stage_event
       # can annotate the transition it's about to write with the agent-reported,

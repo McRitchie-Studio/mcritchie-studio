@@ -5,9 +5,14 @@ module Api
 
       before_action :authenticate_api!
 
-      rescue_from ActiveRecord::RecordNotFound, with: :not_found
-      rescue_from ActiveRecord::RecordInvalid, with: :unprocessable
+      # rescue_from matches handlers in REVERSE registration order (the
+      # last-declared wins). So the broad StandardError catch-all MUST be declared
+      # FIRST — otherwise it shadows the specific handlers below it and a plain
+      # RecordNotFound renders a 500 instead of a 404 (it did: `bin/reviewer-select`
+      # got a 500 for an unknown slug). Keep specific handlers AFTER the catch-all.
       rescue_from StandardError, with: :handle_unexpected_error
+      rescue_from ActiveRecord::RecordInvalid, with: :unprocessable
+      rescue_from ActiveRecord::RecordNotFound, with: :not_found
 
       private
 
