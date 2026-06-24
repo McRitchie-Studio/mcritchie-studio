@@ -69,6 +69,21 @@ module ApplicationHelper
     end
   end
 
+  # Release-card status badge label. Folds the bare state and its relative time
+  # into one pill ("Shipped 7 minutes ago" / "Assembled 2 hours ago") so the card
+  # no longer repeats the state and a separate "shipped X ago" line. Falls back to
+  # the capitalized state when no timestamp applies (e.g. an in-progress
+  # "Assembling" release, or a shipped release with no recorded shipped_at).
+  def release_state_label(release, current: false)
+    if release.shipped_at
+      "Shipped #{time_ago_in_words(release.shipped_at)} ago"
+    elsif current && release.assembled_at
+      "Assembled #{time_ago_in_words(release.assembled_at)} ago"
+    else
+      release.state.to_s.capitalize
+    end
+  end
+
   # Canonical app/repo slug → emoji map for the compact app indicators on task
   # cards and current-release member pills. Mirrors the glyphs in
   # ReleaseNotes::Formatter::APP_GROUPS (kept independent so views don't reach
