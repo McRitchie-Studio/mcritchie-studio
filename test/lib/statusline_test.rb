@@ -21,15 +21,15 @@ class StatuslineTest < Minitest::Test
   # real Claude Code shape) so render() runs from a known context file. The
   # context carries ALL fields a real worktree context has (sparse ones trip
   # bash's IFS-whitespace tab collapsing). `session` nil deletes the env var.
-  def render_in(session:)
+  def render_in(session:, extra: {})
     Dir.mktmpdir do |dir|
-      File.write(File.join(dir, ".agent-context.json"), JSON.generate(
+      File.write(File.join(dir, ".agent-context.json"), JSON.generate({
         "app" => "mcritchie-studio",
         "worktree_slug" => "session-resume-v1",
         "task_record_slug" => "session-resume-on-tasks",
         "task_url" => "https://mcritchie.studio/tasks/session-resume-on-tasks",
         "stage" => "building"
-      ))
+      }.merge(extra)))
       env = { "CLAUDE_CODE_SESSION_ID" => session }
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
@@ -47,6 +47,33 @@ class StatuslineTest < Minitest::Test
     out = render_in(session: nil)
     refute_includes out, "…a617", "no session → no last-4 segment"
     assert_includes out, "[building]", "the no-session path must still render the stage"
+  end
+
+  # --- Mascot tint: ⊙<mascot> wears its least-common type color ----------------
+
+  def test_mascot_handle_is_tinted_with_its_type_color
+    # Dragonite's signature (dragon) color #6F35FC → nearest xterm-256 cube = 63.
+    # 256-color (not truecolor): the default Terminal.app supports 256, not 24-bit.
+    out = render_in(session: SESSION, extra: { "mascot" => "dragonite", "mascot_color" => "#6F35FC" })
+    assert_includes out, "\e[38;5;63m", "mascot handle should use the type's 256-color"
+    assert_includes out, "⊙ Dragonite", "the mascot handle still renders"
+    refute_includes out, "[38;2;", "no 24-bit truecolor (unsupported in Terminal.app)"
+  end
+
+  def test_mascot_falls_back_to_default_tint_without_a_color
+    out = render_in(session: SESSION, extra: { "mascot" => "snorlax" })
+    assert_includes out, "\e[38;5;213m", "no color → the default mascot tint"
+  end
+
+  # Even with an EMPTY middle field (no task_url), the mascot_color must still
+  # land on the mascot — the US-separator join keeps fields from shifting.
+  def test_mascot_color_survives_a_sparse_context
+    # Bug #A6B91A → nearest xterm-256 cube = 142.
+    out = render_in(session: SESSION, extra: {
+      "task_url" => "", "mascot" => "parasect", "mascot_color" => "#A6B91A"
+    })
+    assert_includes out, "\e[38;5;142m", "bug 256-color lands despite the empty url field"
+    assert_includes out, "⊙ Parasect"
   end
 
   # --- Heartbeat wiring (V2): the status line renews the active build claim ----

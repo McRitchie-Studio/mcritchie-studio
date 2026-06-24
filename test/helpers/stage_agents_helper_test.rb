@@ -369,6 +369,27 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[heavy light], live.agents.map(&:weight)
   end
 
+  test "stage_timeline build-lane mascot wears its type (signature) color, not the name palette" do
+    # Dragon (rarer) outranks Flying, so Dragonite's signature color is Dragon's.
+    Studio::Enumeral.create!(category: "pokemon_type", key: "dragon", color: "#6F35FC", rank: 1500)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", color: "#A98FF3", rank: 400)
+    mon = Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", generation: 1,
+                          types: %w[dragon flying], sprite_url: "https://example.test/dragonite-sprite.png")
+    assert_equal "#6F35FC", mon.signature_color, "guard: the seeded mascot has a type color"
+
+    task = Task.create!(title: "timeline mascot color task", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 2.hours.ago, actor: "carl")
+
+    block = stage_timeline(task.reload, @agents, mascot: mon).find { |b| b.to_stage == "designed" }
+    avatar_color = block.agents.first.avatar_color
+
+    # The consolidated /tasks/:id timeline must match the build board: the mascot
+    # wears its signature TYPE color, not the name-derived palette fallback.
+    assert_equal "#6F35FC", avatar_color, "the timeline mascot wears its type color"
+    assert_not_includes Agent::AVATAR_COLORS, avatar_color, "not the name-palette fallback"
+  end
+
   # --- in_progress_work + the board live injection ----------------------------
 
   test "in_progress_work reads the Steffon QA intent while reviewed" do

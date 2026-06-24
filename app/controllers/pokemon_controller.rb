@@ -6,5 +6,9 @@ class PokemonController < ApplicationController
 
   def index
     @pokemon = Pokemon.by_dex
+    # One query for every type's enumeral (color + emoji); the badges read it
+    # from this map so the list/grid don't query per cell. {} when the enumerals
+    # aren't seeded yet.
+    @type_enumerals = Pokemon.type_enumerals
   end
 end

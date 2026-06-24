@@ -71,4 +71,74 @@ class PokemonTest < ActiveSupport::TestCase
     capture_io { load seed }
     assert_equal 160, snorlax.reload.hp
   end
+
+  # --- Type colors (shared Studio::Enumeral) ---
+
+  test "type_colors maps each seeded type to its color in one query" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "fire",  color: "#EE8130", position: 0)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "water", color: "#6390F0", position: 1)
+    assert_equal({ "fire" => "#EE8130", "water" => "#6390F0" }, Pokemon.type_colors)
+  end
+
+  test "type_enumerals returns the enumeral records keyed by type" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "fire", color: "#EE8130",
+                             metadata: { "emoji" => "🔥" })
+    enumerals = Pokemon.type_enumerals
+    assert_equal "#EE8130", enumerals["fire"].color
+    assert_equal "🔥", enumerals["fire"].emoji
+    assert_nil enumerals["ghost"]
+  end
+
+  test "signature picks the least common (highest rank) type" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "dragon", color: "#6F35FC", rank: 1500)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", color: "#A98FF3", rank: 400)
+    dragonite = Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: %w[dragon flying])
+    # Dragon is rarer than Flying, so Dragonite wears Dragon.
+    assert_equal "dragon",  dragonite.signature_type
+    assert_equal "#6F35FC", dragonite.signature_color
+  end
+
+  test "signature falls back to the first type / nil color when unseeded" do
+    bulbasaur = Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", types: %w[grass poison])
+    assert_nil bulbasaur.signature_color
+    assert_equal "grass", bulbasaur.signature_type
+  end
+
+  test "type_color returns the color for a type, or nil" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "fire", color: "#EE8130")
+    charizard = make(6, "charizard")
+    assert_equal "#EE8130", charizard.type_color("fire")
+    assert_nil charizard.type_color("ghost")
+  end
+
+  test "type color seed loads the 18 canonical types idempotently" do
+    seed = Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s
+
+    assert_difference -> { Studio::Enumeral.in_category("pokemon_type").count }, 18 do
+      capture_io { load seed }
+    end
+    assert_no_difference -> { Studio::Enumeral.in_category("pokemon_type").count } do
+      capture_io { load seed }
+    end
+
+    assert_equal "#EE8130", Studio::Enumeral.color_for("pokemon_type", "fire")
+  end
+
+  test "type color seed ranks types by commonality in steps of 100" do
+    seed = Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s
+    capture_io { load seed }
+
+    # poison is the most common type across the original 151; water second.
+    assert_equal 100, Studio::Enumeral.lookup("pokemon_type", "poison").rank
+    assert_equal 200, Studio::Enumeral.lookup("pokemon_type", "water").rank
+    # Dark is absent from the 151, so it ranks last.
+    assert_equal 1800, Studio::Enumeral.lookup("pokemon_type", "dark").rank
+
+    # Every rank is a distinct multiple of 100, 100..1800.
+    ranks = Studio::Enumeral.in_category("pokemon_type").pluck(:rank).sort
+    assert_equal (1..18).map { |i| i * 100 }, ranks
+
+    # Each type also carries its emoji (in metadata).
+    assert_equal "🔥", Studio::Enumeral.lookup("pokemon_type", "fire").emoji
+  end
 end

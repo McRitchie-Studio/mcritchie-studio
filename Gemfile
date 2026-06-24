@@ -78,4 +78,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.8"
+gem "studio-engine", "~> 0.9" # Studio::Enumeral, /l short-token links, shared auth/theme/email
