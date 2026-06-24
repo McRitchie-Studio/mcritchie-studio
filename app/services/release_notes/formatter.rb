@@ -6,7 +6,8 @@ module ReleaseNotes
       { key: "turf-monster", label: "Turf Monster", emoji: "🐊", aliases: ["turf-monster"] },
       { key: "studio-engine", label: "Studio Engine", emoji: "💎", aliases: ["studio-engine"] },
       { key: "vault", label: "Vault", emoji: "🏛️", aliases: ["turf-vault", "vault"] },
-      { key: "solana-studio", label: "Solana Studio", emoji: "🧱", aliases: ["solana-studio"] }
+      { key: "solana-studio", label: "Solana Studio", emoji: "🧱", aliases: ["solana-studio"] },
+      { key: "rolio", label: "Rolio", emoji: "📇", aliases: ["rolio"] }
     ].freeze
 
     def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_train: nil)
