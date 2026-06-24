@@ -37,7 +37,7 @@ class Task < ApplicationRecord
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor block_kind agent_context session_id session_provider mascot
-    claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
+    mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
   ].freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
