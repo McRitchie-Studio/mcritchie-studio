@@ -89,34 +89,40 @@ function kanbanBoard(live) {
     // a brand-new task is inserted at the top of its column and faded in. Alpine
     // auto-initialises the inserted node (x-data/x-show/@click) via its observer.
     applyLiveUpdate(payload) {
-      if (!payload || !payload.slug) return;
-      const tmpl = document.createElement('template');
-      tmpl.innerHTML = (payload.html || '').trim();
-      const fresh = tmpl.content.firstElementChild;
-      const existing = document.getElementById('card-' + payload.slug);
-      const targetZone = this.zoneForStage(payload.stage);
+      try {
+        if (!payload || !payload.slug) return;
+        const tmpl = document.createElement('template');
+        tmpl.innerHTML = (payload.html || '').trim();
+        const fresh = tmpl.content.firstElementChild;
+        const existing = document.getElementById('card-' + payload.slug);
+        const targetZone = this.zoneForStage(payload.stage);
 
-      if (!targetZone) { // stage not shown here (archived/hidden) → it left the active board
-        if (existing) { existing.remove(); this.refreshCounts(); }
-        return;
-      }
-      if (!fresh) return;
-
-      if (existing) {
-        if (existing.parentElement === targetZone) {
-          existing.replaceWith(fresh); // in place — intent ticker / same-column change
-          this.flash(fresh);
-        } else {
-          const first = existing.getBoundingClientRect(); // FLIP from the old slot…
-          existing.remove();
-          targetZone.prepend(fresh);
-          this.flipFrom(fresh, first); // …to the new column
+        if (!targetZone) { // stage not shown here (archived/hidden) → it left the active board
+          if (existing) { existing.remove(); this.updateCounts(); }
+          return;
         }
-      } else {
-        targetZone.prepend(fresh); // brand-new card
-        this.enter(fresh);
+        if (!fresh) return;
+
+        if (existing) {
+          if (existing.parentElement === targetZone) {
+            existing.replaceWith(fresh); // in place — intent ticker / same-column change
+            this.flash(fresh);
+          } else {
+            const first = existing.getBoundingClientRect(); // FLIP from the old slot…
+            existing.remove();
+            targetZone.prepend(fresh);
+            this.flipFrom(fresh, first); // …to the new column
+          }
+        } else {
+          targetZone.prepend(fresh); // brand-new card
+          this.enter(fresh);
+        }
+        this.updateCounts(); // refresh the per-column count badges + empty-states
+      } catch (e) {
+        // A malformed payload or DOM hiccup must never break the board (the
+        // "cable failure must never break the board" principle) — warn, don't throw.
+        console.warn('deployments live update skipped:', e);
       }
-      this.refreshCounts();
     },
 
     // FLIP: paint the moved card at its OLD position, then transition the offset to
