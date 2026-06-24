@@ -9,8 +9,11 @@ class TasksController < ApplicationController
     return render json: { error: "slugs required" }, status: :unprocessable_entity unless slugs.is_a?(Array)
 
     rescue_and_log(target: nil) do
+      # `slugs` arrives top-to-bottom in DOM order. Under the `position DESC` sort
+      # the top card must hold the HIGHEST rank, so the first slug gets the largest
+      # value; 100-spacing leaves gaps for the next drag insert (News/Content scheme).
       slugs.each_with_index do |slug, index|
-        Task.where(slug: slug).update_all(position: index)
+        Task.where(slug: slug).update_all(position: (slugs.length - index) * 100)
       end
       render json: { success: true }
     end

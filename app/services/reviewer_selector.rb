@@ -13,10 +13,10 @@
 # recorded pick, even on a genuine tie. Different tasks still spread the picks.
 #
 # The pool is {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
-# alex-docs=Documentation} (alex-docs is Alex's launchable reviewer persona, the
-# Documentation seat — distinct from the `alex` orchestrator seat, which does not
-# review). The QA owner (Steffon, who QAs the assembled RC at the `assembled`
-# step) is EXCLUDED so one soul never both reviews AND QAs the same change —
+# alex=Documentation} (Alex is both the orchestrator and the pool's Documentation
+# seat — one identity, seeded in db/seeds/02_agents.rb). The QA owner (Steffon,
+# who QAs the assembled RC at the `assembled` step) is EXCLUDED so one soul never
+# both reviews AND QAs the same change —
 # "no self-gating" (§1.2). Steffon stays a valid reviewer for other PRs; pass a
 # different `qa_owner:` when he isn't the one QAing this task.
 #
@@ -39,9 +39,9 @@
 require "zlib"
 
 class ReviewerSelector
-  # The senior reviewer pool (slugs). `alex-docs` is the Documentation reviewer
-  # persona (seeded in db/seeds/02_agents.rb), NOT the `alex` orchestrator seat.
-  POOL = %w[shannon carl jasper steffon alex-docs].freeze
+  # The senior reviewer pool (slugs). `alex` is the orchestrator who also holds the
+  # Documentation review seat (one identity, seeded in db/seeds/02_agents.rb).
+  POOL = %w[shannon carl jasper steffon alex].freeze
 
   # The soul who QAs the assembled RC at the `assembled` step — excluded from the
   # pool by default so a reviewer never gates their own QA (§1.2 "no self-gating").
@@ -54,11 +54,11 @@ class ReviewerSelector
   # Fallback domain tags per reviewer when an Agent row has no metadata["domains"].
   # Keep aligned with the seeded `domains` in db/seeds/02_agents.rb.
   DEFAULT_DOMAINS = {
-    "shannon"   => %w[ui],
-    "carl"      => %w[backend],
-    "jasper"    => %w[web3 onchain],
-    "steffon"   => %w[devops platform],
-    "alex-docs" => %w[docs documentation]
+    "shannon" => %w[ui],
+    "carl"    => %w[backend],
+    "jasper"  => %w[web3 onchain],
+    "steffon" => %w[devops platform],
+    "alex"    => %w[docs documentation]
   }.freeze
 
   # Neutral weight when an Agent row has no metadata["review_weight"].

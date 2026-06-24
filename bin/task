@@ -49,6 +49,11 @@
 #       non-expired instance already holds it — pass --steal to take it over. An
 #       expired / dead-session lease is reclaimed automatically. )
 #   bin/task heartbeat <slug>                         # renew this instance's build-claim lease (bin/statusline calls it)
+#   bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]
+#     ( records an agentic INTENT — an agent STARTING a stage's work — so the board +
+#       timeline show who's on it with a live ticker before the transition lands.
+#       --actor for a single owner (Steffon QA → assembled, Avi ship → shipped);
+#       repeat --reviewer for the senior pair (usually via bin/reviewer-select --record). )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
@@ -61,14 +66,19 @@ require "json"
 require "uri"
 require "fileutils"
 require "digest"
+require "shellwords"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/claim_lease"
 require_relative "../lib/stale_check"
+require_relative "../lib/feature_marker"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
-PROJECTS_DIR = File.expand_path("../..", __dir__)
+# Honors CLAUDE_PROJECTS_DIR (as bin/statusline does) so a session and its status
+# line agree on the marker location — and so tests can isolate it; defaults to the
+# repo's parent (the projects root) when unset.
+PROJECTS_DIR = (dir = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(dir)
 
 # Per-session active-feature marker path, keyed by CLAUDE_CODE_SESSION_ID so each
 # session shows its OWN feature (no cross-session leak). nil when there's no
@@ -420,12 +430,52 @@ def write_feature_marker(task)
     "worktree_slug" => dv["worktree_slug"],
     "task_url" => "#{BASE_URL}/tasks/#{slug}",
     "stage" => task["stage"],
-    "mascot" => dv["mascot"], # bin/statusline renders ⊙<mascot> — the session's Pokémon handle
+    "mascot" => marker_mascot(task, path), # bin/statusline renders ⊙<mascot> — the session's Pokémon handle
     "mascot_color" => dv["mascot_color"] # …tinted with the mascot's least-common type color
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{JSON.pretty_generate(marker)}\n")
+rescue StandardError
+  nil
+end
+
+# The marker's mascot, resolved so a single mascot-less API response never blanks
+# a known one out from under bin/statusline (see lib/feature_marker.rb). Order:
+# this response → the last-good value already on disk → a best-effort board read.
+# The board read is lazy — it only fires when neither earlier source has one.
+def marker_mascot(task, path)
+  FeatureMarker.mascot(
+    task.dig("metadata", "devops", "mascot"),
+    -> { existing_marker_mascot(path) },
+    -> { board_mascot(task["slug"]) }
+  )
+end
+
+def existing_marker_mascot(path)
+  return nil unless path && File.exist?(path)
+
+  JSON.parse(File.read(path))["mascot"]
+rescue StandardError
+  nil
+end
+
+# The board's devops.mascot, read in a SUBPROCESS via `bin/task field` — never
+# in-process. The board read is the last, lowest-priority fallback source, so it
+# must NEVER be able to abort the command that's only writing a marker: an
+# in-process api() call would, on a transient non-2xx board read, hit api's die!
+# → exit 1 → SystemExit, which is NOT a StandardError and so escapes both this
+# rescue and write_feature_marker's — killing the move/create AFTER its server
+# op already succeeded. Shelling out contains any `exit` in the child (the
+# backtick yields "" on a child failure), the same isolation
+# bin/agent-worktree.resolve_mascot relies on. `field` is silent + exit 0 when
+# the mascot is unset, so a clean "no mascot" reads back as "".
+def board_mascot(slug)
+  slug = slug.to_s
+  return nil if slug.empty?
+
+  mascot = `#{__dir__}/task field #{slug.shellescape} mascot 2>/dev/null`.to_s.strip
+  mascot.empty? ? nil : mascot
 rescue StandardError
   nil
 end
@@ -597,6 +647,38 @@ when "move"
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   write_feature_marker(task)
   print_task(task)
+when "intent"
+  # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's
+  # work, the moment it begins — so /deployments + the task timeline show who's on
+  # it with a live ticker BEFORE the →stage transition lands. Append-only +
+  # idempotent server-side, and a no-op once the target stage already landed. Used
+  # for the Steffon QA (--to assembled --actor steffon) and Avi ship (--to shipped
+  # --actor avi) intents; the review pair (--to reviewed) is normally recorded by
+  # `bin/reviewer-select --record`.
+  slug = ARGV.shift || die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]")
+  to_stage = nil
+  actor = nil
+  reviewers = []
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--to"       then to_stage = ARGV.shift || die!("--to needs a stage")
+    when "--actor"    then actor = ARGV.shift || die!("--actor needs a value")
+    when "--reviewer"
+      raw = ARGV.shift || die!("--reviewer needs slug[:weight]")
+      s, w = raw.split(":", 2)
+      reviewers << { "slug" => s, "weight" => w }
+    else die!("unknown flag #{flag.inspect} for intent (usage flags: --to, --actor, --reviewer)")
+    end
+  end
+  die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
+  die!("unknown stage #{to_stage.inspect}; one of: #{STAGES.join(", ")}") unless STAGES.include?(to_stage)
+  body = { "to_stage" => to_stage, "event" => { "source" => "cli" } }
+  body["actor"] = actor if actor
+  body["reviewers"] = reviewers if reviewers.any?
+  task = api(:post, "/api/v1/tasks/#{slug}/intent", body)["data"]
+  crew = [actor, *reviewers.map { |r| "#{r["slug"]}/#{r["weight"]}" }].compact.join(" · ")
+  puts "intent recorded on #{slug}: → #{to_stage}#{crew.empty? ? "" : " · #{crew}"}"
+  print_task(task) if task
 when "heartbeat"
   # The live-terminal lease renewal — bin/statusline calls this each render
   # (throttled) so a crashed/closed session's claim lapses after the TTL and the

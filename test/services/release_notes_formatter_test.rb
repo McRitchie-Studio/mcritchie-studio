@@ -50,5 +50,15 @@ module ReleaseNotes
 
       assert_includes message, "🏛️ Vault\n• [Mainnet vault proof](https://mcritchie.studio/tasks/task-eee555)"
     end
+
+    # Mirror of ApplicationHelper::APP_EMOJIS["rolio"] — the two glyph maps are
+    # kept in sync by hand, so rolio must carry the same 📇 here for grouping.
+    test "APP_GROUPS registers rolio with the 📇 glyph" do
+      rolio = Formatter::APP_GROUPS.find { |group| group[:aliases].include?("rolio") }
+
+      assert rolio, "expected an APP_GROUPS entry aliased to rolio"
+      assert_equal "📇", rolio[:emoji]
+      assert_equal "Rolio", rolio[:label]
+    end
   end
 end
