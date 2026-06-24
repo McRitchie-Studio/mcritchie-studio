@@ -45,6 +45,14 @@ mack = Agent.create!(
   description: "Versatile worker handling data scraping and processing."
 )
 
+# Senior reviewers + the deploy-lane owners, so the consolidated timeline can
+# resolve avatars for the review pair (Carl/Shannon), Steffon (QA → assembled),
+# and Avi (ship → shipped).
+Agent.create!(name: "Carl", slug: "carl", status: "active", agent_type: "specialist", title: "Backend Expert")
+Agent.create!(name: "Shannon", slug: "shannon", status: "active", agent_type: "specialist", title: "UI Expert")
+Agent.create!(name: "Steffon", slug: "steffon", status: "active", agent_type: "specialist", title: "Platform Engineer")
+Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product", title: "Product Owner")
+
 # Skills
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
 rails_dev = Skill.create!(name: "Rails Development", slug: "rails-development", category: "development", description: "Build Rails applications")
@@ -141,5 +149,24 @@ timeline_task.task_events.delete_all # replace the auto-genesis with a curated, 
     tokens_in: e[:tin], tokens_out: e[:tout], cost: e[:cost]
   )
 end
+
+# Agentic-intent demo: a SUBMITTED task whose review has started — Avi picked the
+# pair, recorded as an OPEN review intent — so the consolidated timeline shows a
+# live in-progress block with both seniors ticking, before the →reviewed
+# transition lands. Drives the intent/live-ticker assertions.
+intent_task = Task.create!(
+  title: "Agentic intent live review",
+  slug: "intent-demo",
+  description: "Fixture for the agentic-intent live block — the senior pair reviewing now.",
+  stage: "submitted",
+  priority: 1,
+  agent_slug: "alex",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+intent_task.record_intent_event(
+  to_stage: "reviewed",
+  reviewers: [{ "slug" => "carl", "weight" => "heavy" }, { "slug" => "shannon", "weight" => "light" }],
+  source: "cli"
+)
 
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"

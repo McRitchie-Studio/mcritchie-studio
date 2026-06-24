@@ -35,7 +35,39 @@
 <% mascot = local_assigns.fetch(:mascot) { Pokemon.find_by(slug: task.devops["mascot"].to_s.presence) } %>
 <% entries = stage_agent_groups(task, agents, events: events, mascot: mascot) %>
 <% if entries.any? %>
-  <% if variant.to_sym == :detailed %>
+  <% if variant.to_sym == :strip %>
+    <%#
+      Footer-floating crew strip (the board card): the FILLED crew faces only —
+      no grid, no empty-stage placeholders, no duration badges — as one compact
+      overlapping row that pins to the footer's right edge and fades to the left
+      over the meta beneath it, mirroring the app-emoji badge on the slug row.
+      Build-lane stages collapse to a single mascot face (dedup by name+avatar);
+      faces read left→right oldest→newest, so the newest stays crisp on the right.
+      Capped at STRIP_CAP newest faces with a leading "+N" pill for the rest, so
+      the strip stays narrow and the footer's timestamp + gem stay readable.
+      Per-stage durations + the live build counter stay on the task detail page.
+    %>
+    <% strip_faces = entries.uniq { |e| [e.name, e.avatar] } %>
+    <% cap = 3 %>
+    <% hidden = strip_faces.first([strip_faces.size - cap, 0].max) %>
+    <% shown  = strip_faces.last(cap) %>
+    <div class="absolute inset-y-0 right-0 z-10 flex items-center pl-6 -space-x-1.5
+                bg-gradient-to-l from-surface via-surface to-transparent"
+         data-test="stage-agent-avatars">
+      <% if hidden.any? %>
+        <div class="w-6 h-6 rounded-full ring-2 ring-surface relative flex items-center justify-center
+                    bg-surface-alt text-secondary border border-subtle text-[9px] font-bold tabular-nums"
+             data-test="crew-overflow"
+             title="<%= hidden.map(&:name).join(', ') %>">+<%= hidden.size %></div>
+      <% end %>
+      <% shown.each do |entry| %>
+        <div class="rounded-full ring-2 ring-surface relative"
+             title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
+          <%= render "components/agent_avatar", agent: entry, size: "2xs" %>
+        </div>
+      <% end %>
+    </div>
+  <% elsif variant.to_sym == :detailed %>
     <div class="bg-surface-alt rounded-lg p-3" data-test="stage-agent-avatars">
       <p class="label-upper mb-3">Stage crew</p>
       <div class="space-y-3">
@@ -78,7 +110,7 @@
       ticks a LIVE counter while the task is still being built. The detail page
       (:detailed) still shows every stage per-usual.
     %>
-    <% columns = crew_columns(task, entries, board: board, mascot: mascot) %>
+    <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events) %>
     <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
         on the roomier Build board; the stack overlap tracks the size to keep a small peek
         of each face — 8px on Build (sm = w-10 face, -space-x-8 = 32px) and 4px on Deploy

@@ -1,0 +1,14 @@
+<%# Compact elapsed label for live "ticking" counters: s → m → h → d → w. Defined
+    on window so any Alpine x-text — the board crew AND the task timeline — shares
+    one formatter. Idempotent (the `||` guard) so rendering it on a page that also
+    has the board never clobbers the definition. %>
+<script>
+  window.elapsedLabel = window.elapsedLabel || function (e) {
+    e = Math.max(0, e | 0);
+    if (e < 60) return e + 's';
+    if (e < 3600) return Math.floor(e / 60) + 'm';
+    if (e < 86400) return Math.floor(e / 3600) + 'h';
+    if (e < 604800) return Math.floor(e / 86400) + 'd';
+    return Math.floor(e / 604800) + 'w';
+  };
+</script>

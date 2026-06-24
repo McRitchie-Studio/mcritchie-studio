@@ -526,7 +526,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     task
   end
 
-  test "deployments board card shows the deploy crew with avatars and compact durations" do
+  test "deployments board card floats the deploy crew as a capped footer strip" do
     task = seed_deploy_crew_task(steffon_avatar: "https://example.com/steffon.png")
 
     get deployments_path
@@ -534,48 +534,46 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     card = "#card-#{task.slug}"
     assert_select "#{card} [data-test='stage-agent-avatars']"
-    # Steffon's image avatar renders (the others fall back to initials)
+    # The board crew is now the compact footer strip — faces only, deduped, capped at
+    # the 3 NEWEST with a "+N" pill for the rest; the per-stage duration pills moved
+    # off the card (they live on the task detail page). This seed is 4 distinct souls
+    # (shannon, carl, steffon, avi) → 3 shown + a "+1". Steffon is among the newest 3,
+    # so his image avatar still renders; the oldest reviewer (Shannon) rolls into +N.
+    assert_select "#{card} [data-test='crew-duration']", count: 0
+    assert_select "#{card} [data-test='crew-overflow']", text: "+1", count: 1
     assert_select "#{card} img[src='https://example.com/steffon.png']"
-    # The Deploy lane is SPLIT into separate compartments (review · assembled ·
-    # shipped), each carrying its OWN compact corner pill — assembled (Steffon) and
-    # shipped (Avi) are NOT collapsed into one combined deploy duration. This seed has
-    # no build-lane events, so three pills land, asserted on the real crew-duration
-    # markers (not loose body text): 7200s → 2h (longer review), 1800s → 30m
-    # (assembled, its own pill), 600s → 10m (shipped, its own pill).
-    pills = "#{card} [data-test='crew-duration']"
-    assert_select pills, count: 3
-    assert_select pills, text: /2h/  # review compartment (max of the two reviewers)
-    assert_select pills, text: /30m/ # assembled compartment (Steffon) — its own pill
-    assert_select pills, text: /10m/ # shipped compartment (Avi) — its own pill
+    assert_select "#{card} [data-test='stage-agent-avatars'] div[title^='Avi']" # newest, crisp on the right
   end
 
-  test "task show renders the detailed deploy crew with stage badges, names, weights and durations" do
+  test "task show renders the consolidated stage timeline with crew, names, weights and durations" do
     task = seed_deploy_crew_task
 
     get task_path(task.slug)
     assert_response :success
 
-    assert_select "[data-test='stage-agent-avatars']"
-    # The detail crew header is "Stage crew" (the whole-journey label) — asserted on
-    # the REAL rendered header. The old `response.body` include of "Deploy crew" only
-    # passed incidentally because this seed task's TITLE contains "Deploy crew", so it
-    # no longer reflected the rendered UI after the header was renamed.
-    assert_select "[data-test='stage-agent-avatars'] p.label-upper", text: /Stage crew/
-    # one studio-engine badge per completed stage group (reviewed, assembled, shipped)
-    assert_select "[data-test='stage-agent-avatars'] span.badge", count: 3
-    # every soul is named
-    %w[Shannon Carl Steffon Avi].each { |name| assert_includes response.body, name }
+    # The detailed "Stage crew" panel + the separate "Stage Timeline" are now ONE
+    # consolidated timeline — every block carries the crew that handled its stage.
+    assert_select "[data-test='stage-timeline']"
+    assert_select "[data-test='stage-timeline'] p.label-upper", text: /Stage Timeline/
+    assert_select "[data-test='timeline-block']", minimum: 3 # reviewed · assembled · shipped
+    timeline = css_select("[data-test='stage-timeline']").to_s
+    # every soul is named on its block
+    %w[Shannon Carl Steffon Avi].each { |name| assert_includes timeline, name }
     # heavy/light review weights surface
-    assert_select "[data-test='stage-agent-avatars']", text: /heavy/
-    assert_select "[data-test='stage-agent-avatars']", text: /light/
-    # full humanized durations (7200s → about 2 hours), labelled by the stage left
-    assert_select "[data-test='stage-agent-avatars']", text: /about 2 hours in Submitted/
+    assert_includes timeline, "heavy"
+    assert_includes timeline, "light"
+    # full humanized duration (7200s → about 2 hours), labelled by the stage left
+    assert_includes timeline, "about 2 hours in Submitted"
   end
 
-  test "task show omits the deploy crew for an old-flow task lacking reviewers and actors" do
-    # a shipped task whose Deploy events were conductor-driven (no actor) and that
-    # predates the two-senior model (no reviewers metadata) shows no crew.
-    task = Task.create!(title: "Old flow crewless task", stage: "shipped")
+  test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do
+    # A shipped task whose Deploy moves were conductor-driven (blank actor) and that
+    # predates the two-senior model (no reviewers metadata): the consolidated timeline
+    # still attributes assembled→Steffon and shipped→Avi BY ROLE, so the Deploy crew
+    # never goes blank (the Steffon/Avi fix). The review block simply shows no pair.
+    Agent.create!(name: "Steffon", slug: "steffon")
+    Agent.create!(name: "Avi", slug: "avi")
+    task = Task.create!(title: "Old flow conductor task", stage: "shipped")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 2.hours.ago, seconds_in_from: 600)
@@ -586,8 +584,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     get task_path(task.slug)
     assert_response :success
-    assert_select "[data-test='stage-agent-avatars']", count: 0
-    assert_not_includes response.body, "Deploy crew"
+    timeline = css_select("[data-test='stage-timeline']").to_s
+    assert_includes timeline, "Steffon", "assembled backfills to its role owner"
+    assert_includes timeline, "Avi", "shipped backfills to its role owner"
   end
 
   test "build-lane board cards render no deploy-crew avatars" do
@@ -847,21 +846,23 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   # === Reorder ===
 
-  test "reorder sets positions in order" do
+  test "reorder writes the 100-spaced rank, top card highest" do
     log_in_as(@admin)
     # Create two tasks in same stage
     t1 = Task.create!(title: "reorder task a here", stage: "designed")
     t2 = Task.create!(title: "reorder task b here", stage: "designed")
 
-    # Reorder: B before A
+    # DOM order top→bottom = [t2, t1]; under `position DESC` the top card must hold
+    # the highest rank, 100-spaced (index 0 → len*100, index 1 → (len-1)*100).
     post reorder_tasks_path(format: :json),
          params: { slugs: [t2.slug, t1.slug] }, as: :json
     assert_response :success
 
     t1.reload
     t2.reload
-    assert_equal 1, t1.position
-    assert_equal 0, t2.position
+    assert_equal 200, t2.position, "top card (index 0) gets (len - 0) * 100"
+    assert_equal 100, t1.position, "next card (index 1) gets (len - 1) * 100"
+    assert_operator t2.position, :>, t1.position
   end
 
   test "reorder requires admin" do

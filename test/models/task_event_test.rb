@@ -179,4 +179,34 @@ class TaskEventTest < ActiveSupport::TestCase
       task.destroy!
     end
   end
+
+  # --- kind: transition vs intent --------------------------------------------
+
+  test "stage transitions default to the transition kind" do
+    task = Task.create!(title: "kind default task", stage: "designed")
+    task.build!
+
+    assert task.task_events.chronological.all?(&:transition?), "every stage move is a transition"
+    assert_equal "transition", task.task_events.chronological.last.kind
+  end
+
+  test "the kind scopes split intents from transitions" do
+    task = Task.create!(title: "kind scope task", stage: "submitted")
+    intent = task.record_intent_event(to_stage: "reviewed",
+                                      reviewers: [{ "slug" => "carl", "weight" => "heavy" },
+                                                  { "slug" => "shannon", "weight" => "light" }])
+
+    assert intent.intent?
+    assert_equal [intent.id], task.task_events.intents.pluck(:id)
+    assert_not_includes task.task_events.transitions.pluck(:id), intent.id
+    assert task.task_events.transitions.exists?(from_stage: nil), "the genesis stays a transition"
+  end
+
+  test "kind must be transition or intent" do
+    task = Task.create!(title: "kind validation task", stage: "designed")
+    bad = task.task_events.build(to_stage: "building", occurred_at: Time.current, kind: "bogus")
+
+    assert_not bad.valid?
+    assert_includes bad.errors[:kind], "is not included in the list"
+  end
 end

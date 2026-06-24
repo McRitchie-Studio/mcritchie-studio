@@ -49,6 +49,11 @@
 #       non-expired instance already holds it — pass --steal to take it over. An
 #       expired / dead-session lease is reclaimed automatically. )
 #   bin/task heartbeat <slug>                         # renew this instance's build-claim lease (bin/statusline calls it)
+#   bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]
+#     ( records an agentic INTENT — an agent STARTING a stage's work — so the board +
+#       timeline show who's on it with a live ticker before the transition lands.
+#       --actor for a single owner (Steffon QA → assembled, Avi ship → shipped);
+#       repeat --reviewer for the senior pair (usually via bin/reviewer-select --record). )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
@@ -596,6 +601,38 @@ when "move"
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   write_feature_marker(task)
   print_task(task)
+when "intent"
+  # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's
+  # work, the moment it begins — so /deployments + the task timeline show who's on
+  # it with a live ticker BEFORE the →stage transition lands. Append-only +
+  # idempotent server-side, and a no-op once the target stage already landed. Used
+  # for the Steffon QA (--to assembled --actor steffon) and Avi ship (--to shipped
+  # --actor avi) intents; the review pair (--to reviewed) is normally recorded by
+  # `bin/reviewer-select --record`.
+  slug = ARGV.shift || die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]")
+  to_stage = nil
+  actor = nil
+  reviewers = []
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--to"       then to_stage = ARGV.shift || die!("--to needs a stage")
+    when "--actor"    then actor = ARGV.shift || die!("--actor needs a value")
+    when "--reviewer"
+      raw = ARGV.shift || die!("--reviewer needs slug[:weight]")
+      s, w = raw.split(":", 2)
+      reviewers << { "slug" => s, "weight" => w }
+    else die!("unknown flag #{flag.inspect} for intent (usage flags: --to, --actor, --reviewer)")
+    end
+  end
+  die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
+  die!("unknown stage #{to_stage.inspect}; one of: #{STAGES.join(", ")}") unless STAGES.include?(to_stage)
+  body = { "to_stage" => to_stage, "event" => { "source" => "cli" } }
+  body["actor"] = actor if actor
+  body["reviewers"] = reviewers if reviewers.any?
+  task = api(:post, "/api/v1/tasks/#{slug}/intent", body)["data"]
+  crew = [actor, *reviewers.map { |r| "#{r["slug"]}/#{r["weight"]}" }].compact.join(" · ")
+  puts "intent recorded on #{slug}: → #{to_stage}#{crew.empty? ? "" : " · #{crew}"}"
+  print_task(task) if task
 when "heartbeat"
   # The live-terminal lease renewal — bin/statusline calls this each render
   # (throttled) so a crashed/closed session's claim lapses after the TTL and the

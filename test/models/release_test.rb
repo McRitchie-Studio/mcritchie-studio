@@ -59,10 +59,25 @@ class ReleaseTest < ActiveSupport::TestCase
     rel.assemble!
     assert_equal "assembled", rel.state
 
-    rel.add(reviewed_task)
+    late = reviewed_task
+    rel.add(late)
 
     assert_equal "assembling", rel.reload.state, "a late merge reopens the candidate"
+    assert_equal "assembled", late.reload.stage, "the late member must flip to assembled, not stay reviewed"
     assert_equal 1, rel.tasks.count
+  end
+
+  test "add onto an assembled RC is atomic — a failed member flip rolls back the reopen" do
+    rel = Release.open!
+    rel.assemble!
+    task = reviewed_task
+    # Blow up the member flip AFTER reopen! would have run, so a non-atomic `add`
+    # leaves the RC reopened (assembling) with the member never attached.
+    def task.update!(*); raise "boom"; end
+
+    assert_raises(RuntimeError) { rel.add(task) }
+    assert_equal "assembled", rel.reload.state,
+                 "the reopen must roll back when the member flip fails — no half-reopened RC"
   end
 
   test "add still refuses from a terminal release" do

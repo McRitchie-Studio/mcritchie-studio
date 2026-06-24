@@ -11,7 +11,6 @@
 <%# Blocked tasks live in the Building column (a block means more building to do), so the
     board never renders a standalone Blocked column on either page. %>
 <% columns = (archived ? (stages + ["archived"]) : stages).reject { |s| s == "blocked" } %>
-<% agent_avatars = @agents.index_by(&:slug).transform_values(&:avatar) %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
 <%# Build board (/tasks) splits the build steps; Deploy board (/deployments) shows the pipeline. %>
@@ -19,21 +18,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 
+<%= render "components/elapsed_label_script" %>
 <%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
 <script>
-// Compact elapsed label for the live crew counter: s → m → h → d → w.
-window.elapsedLabel = function (e) {
-  e = Math.max(0, e | 0);
-  if (e < 60) return e + 's';
-  if (e < 3600) return Math.floor(e / 60) + 'm';
-  if (e < 86400) return Math.floor(e / 3600) + 'h';
-  if (e < 604800) return Math.floor(e / 86400) + 'd';
-  return Math.floor(e / 604800) + 'w';
-};
 function kanbanBoard() {
   return {
     _pendingMoves: {},
     agentFilter: '',
+    hiddenApps: [],
     showArchived: false,
     showAllCols: false,
     toasts: [],
@@ -42,6 +34,21 @@ function kanbanBoard() {
 
     matchesFilter(agent) {
       return !this.agentFilter || agent === this.agentFilter;
+    },
+
+    // App filter — a toggled-off app hides all its cards (exclusion). Each card
+    // carries its repos as a comma string and hides if ANY of them is toggled off.
+    // Mirrors the agentFilter pattern: client-side only, resets on reload.
+    toggleApp(app) {
+      const i = this.hiddenApps.indexOf(app);
+      if (i === -1) { this.hiddenApps.push(app); } else { this.hiddenApps.splice(i, 1); }
+    },
+    appHidden(app) {
+      return this.hiddenApps.includes(app);
+    },
+    appVisible(csv) {
+      if (!csv) return true; // a task with no mapped repo always shows
+      return !csv.split(',').some(a => this.hiddenApps.includes(a));
     },
 
     init() {
@@ -253,6 +260,26 @@ function kanbanBoard() {
     </div>
   <% end %>
 
+  <%# App filter — toggle a repo to hide all its cards (client-side, like the agent
+      filter). Built from the repos actually present on the board, so an app only
+      appears once it has a task; unmapped slugs (e.g. rolio, pre-emoji) still show
+      as a text chip. Sits right above the stage-header row. %>
+  <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
+  <% if board_apps.any? %>
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+      <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
+      <% board_apps.each do |app| %>
+        <button type="button"
+                @click="toggleApp('<%= app %>')"
+                :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
+          <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
+          <span><%= app %></span>
+        </button>
+      <% end %>
+    </div>
+  <% end %>
+
   <!-- Kanban Board -->
   <div class="flex gap-4 overflow-x-auto pb-4">
     <% columns.each_with_index do |stage, idx| %>
@@ -303,9 +330,10 @@ function kanbanBoard() {
                  data-slug="<%= task.slug %>"
                  data-stage="<%= task.stage %>"
                  data-agent="<%= task.agent_slug %>"
+                 data-apps="<%= task.devops_repositories.join(",") %>"
                  data-href="<%= task_path(task.slug) %>"
                  x-data="{ hovered: false, mx: 0, my: 0 }"
-                 x-show="matchesFilter('<%= task.agent_slug %>')"
+                 x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= task.devops_repositories.join(",") %>')"
                  @mouseenter="hovered = true"
                  @mouseleave="hovered = false"
                  @mousedown="mx = $event.clientX; my = $event.clientY"
@@ -330,10 +358,8 @@ function kanbanBoard() {
                 <%= app_emoji_badge(task.devops_repositories, css: "absolute inset-y-0 right-0 z-10 flex items-center pl-5 text-xs leading-none bg-gradient-to-l from-surface via-surface to-transparent") %>
               </div>
 
-              <%# Stage crew (agent-events summary) sits directly under the slug — build-lane
-                  stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
-                  shipped. Renders nothing when there are no events. %>
-              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
+              <%# The stage crew now FLOATS on the footer row (app-emoji style: pinned
+                  right, overflowing the meta with a left fade) — see the footer below. %>
 
               <%# Session resume + live cue live on the task READ view now (off the board
                   cards). The board signals "live" via the pulsing crew time badge. %>
@@ -344,20 +370,8 @@ function kanbanBoard() {
                 <% elsif task.priority == 1 %>
                   <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-900/50 text-yellow-300 border border-yellow-700/50">HIGH</span>
                 <% end %>
-                <% if task.agent_slug.present? %>
-                  <div class="flex items-center gap-1">
-                    <% if agent_avatars[task.agent_slug].present? %>
-                      <img src="<%= agent_avatars[task.agent_slug] %>" alt="<%= task.agent_slug %>" class="w-5 h-5 rounded-full object-cover">
-                    <% else %>
-                      <div class="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center">
-                        <span class="text-primary text-[9px] font-bold"><%= task.agent_slug.first.upcase %></span>
-                      </div>
-                    <% end %>
-                    <span class="text-xs text-muted"><%= task.agent_slug %></span>
-                  </div>
-                <% end %>
-                <%# (The mascot is already shown by the stage crew above the slug — no
-                    separate mascot chip here.) %>
+                <%# Assignee chip removed: the floating stage crew on the footer already
+                    attributes who handled the task, so the separate name chip was noise. %>
                 <div class="ml-auto flex items-center gap-1">
                   <% if task.po_size.present? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
@@ -371,15 +385,12 @@ function kanbanBoard() {
                 </div>
               </div>
 
-              <%# Secondary meta row — gem / release-train badges + QA/Prod links — only
-                  when there's something to show. The kind badge is gone (features are
-                  implicit; bug/docs surface as an emoji on the footer line), and Local/PR
-                  moved down to the timestamp line. %>
-              <% if task.devops? && (task.gem_release? || task.devops_release_train.present? || task.devops_url("qa") || task.devops_url("production")) %>
+              <%# Secondary meta row — release-train badge + QA/Prod links — only when
+                  there's something to show. The kind/gem badges are gone (features are
+                  implicit; bug/docs/gem surface as an emoji on the footer line), and
+                  Local/PR moved down to the timestamp line. %>
+              <% if task.devops? && (task.devops_release_train.present? || task.devops_url("qa") || task.devops_url("production")) %>
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
-                  <% if task.gem_release? %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50" title="Gem release — published to RubyGems producer-first (before consuming apps)">💎 gem</span>
-                  <% end %>
                   <% if task.devops_release_train.present? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= task.devops_release_train %></span>
                   <% end %>
@@ -397,39 +408,50 @@ function kanbanBoard() {
               <% end %>
 
               <% if (latest_activity = @latest_task_activities[task.slug]) %>
-                <div class="mt-2">
-                  <%# Activity type (+ note count) as a small plain-text header
-                      above the block — no chip background. %>
-                  <div class="flex items-center gap-1.5 mb-0.5">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                <%# The activity type (+ note count) now rides INSIDE the message
+                    box, top-left, as a small white label; the message scrolls on
+                    a single line below it (fades at the overflow, steady scroll on
+                    hover). %>
+                <div class="mt-2 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
+                  <div class="flex items-center gap-1.5 mb-1">
+                    <span class="text-[9px] font-semibold uppercase tracking-wide text-heading">
                       <%= latest_activity.activity_type_label %>
                     </span>
                     <% if (activity_count = @task_activity_counts[task.slug].to_i) > 1 %>
-                      <span class="text-[10px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
+                      <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
                     <% end %>
                   </div>
-                  <%# The message on a single line — fades at the overflow and
-                      scrolls to its end while the card is hovered. %>
-                  <div class="rounded-md border border-subtle bg-inset/60 px-2 py-1.5">
-                    <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
-                          class: "text-[11px] text-secondary" %>
-                  </div>
+                  <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
+                        class: "text-[11px] text-secondary" %>
                 </div>
               <% end %>
 
-              <%# Footer meta line: Local + PR links inline with the relative time, plus a
-                  right-aligned kind emoji for bug (🐛) / docs (📚). Features stay unmarked. %>
-              <div class="flex items-center gap-2 mt-1 text-[10px]">
+              <%# Footer meta line. Type emojis lead on the LEFT — gem (💎) for a gem
+                  release, then bug (🐛) / docs (📚) for the kind — so they stay readable
+                  even when the crew floats over the right. Then Local + PR links and the
+                  relative time. The stage crew floats on the RIGHT (pinned right, capped,
+                  overflowing the time with a left fade); min-h reserves room for the
+                  faces. Plain features stay unmarked. %>
+              <div class="relative flex items-center gap-2 mt-1 min-h-7 text-[10px]">
+                <% kind_emoji = { "bug" => "🐛", "docs" => "📚" }[task.devops_kind] %>
+                <% if task.gem_release? || kind_emoji %>
+                  <span class="flex items-center gap-1.5 leading-none">
+                    <% if task.gem_release? %>
+                      <span title="Gem release — published to RubyGems producer-first (before consuming apps)">💎</span>
+                    <% end %>
+                    <% if kind_emoji %>
+                      <span title="<%= task.devops_kind %> task"><%= kind_emoji %></span>
+                    <% end %>
+                  </span>
+                <% end %>
                 <% if task.devops? && (local_url = task.devops_url("local")) %>
                   <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
                 <% end %>
                 <% if task.devops? && (pr_url = task.devops_url("pr")) %>
                   <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
                 <% end %>
-                <span class="text-muted"><%= time_ago_in_words(task.created_at) %> ago</span>
-                <% if (kind_emoji = { "bug" => "🐛", "docs" => "📚" }[task.devops_kind]) %>
-                  <span class="ml-auto" title="<%= task.devops_kind %> task"><%= kind_emoji %></span>
-                <% end %>
+                <span class="text-muted whitespace-nowrap"><%= time_ago_in_words(task.created_at) %> ago</span>
+                <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :strip, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
               </div>
 
               <%# Footer — archive + delete actions. Bleeds to the card edges with

@@ -187,10 +187,12 @@ end
 
 # --- main -----------------------------------------------------------------
 
-options = { json: false, file: nil, qa_owner: nil, builder: nil }
+options = { json: false, file: nil, qa_owner: nil, builder: nil, record: false }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--qa-owner SLUG] [--builder SLUG] | bin/reviewer-select --file task.json"
+  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--record] [--qa-owner SLUG] [--builder SLUG] | bin/reviewer-select --file task.json"
   o.on("--json", "Emit a machine-readable decision (single-line JSON)") { options[:json] = true }
+  o.on("--record", "Record the picked pair as a review INTENT on the task (board write) so the " \
+                   "board + timeline show them reviewing live, before the →reviewed transition lands") { options[:record] = true }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (steffon)") { |v| options[:qa_owner] = v }
   o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by)") { |v| options[:builder] = v }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching from the board") { |v| options[:file] = v }
@@ -217,9 +219,28 @@ log = CaptureLogger.new
 decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, logger: log).decision
 pr_url = devops["pr_url"].to_s.strip
 
+# --record: write the picked pair onto the task as a review INTENT (a board write)
+# so /deployments + the task timeline show the two seniors reviewing live, with a
+# ticking timer, the moment Avi kicks off the review — before the →reviewed
+# transition lands. Idempotent + a no-op once the task is already reviewed.
+recorded = nil
+if options[:record]
+  if options[:file]
+    warn!("--record needs the board (skipped in --file mode)")
+  elsif slug.to_s.empty?
+    warn!("--record needs a task slug")
+  else
+    heavy, light = decision["reviewers"]
+    recorded = [{ "slug" => heavy["slug"], "weight" => "heavy" }, { "slug" => light["slug"], "weight" => "light" }]
+    api(:post, "/api/v1/tasks/#{slug}/intent",
+        { to_stage: "reviewed", reviewers: recorded, event: { source: "cli" } })
+  end
+end
+
 if options[:json]
-  puts JSON.generate(decision.merge("pr_url" => pr_url.empty? ? nil : pr_url))
+  puts JSON.generate(decision.merge("pr_url" => pr_url.empty? ? nil : pr_url, "intent_recorded" => !recorded.nil?))
 else
   print_human(decision, pr_url, log.lines.last)
+  puts "intent:          recorded (#{recorded.map { |r| "#{r["slug"]}/#{r["weight"]}" }.join(' + ')}) — they now show reviewing live" if recorded
 end
 exit 0

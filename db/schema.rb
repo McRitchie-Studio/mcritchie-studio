@@ -939,6 +939,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_24_053010) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "kind", default: "transition", null: false
+    t.index ["task_slug", "kind"], name: "index_task_events_on_task_slug_and_kind"
     t.index ["task_slug", "occurred_at"], name: "index_task_events_on_task_slug_and_occurred_at"
   end
 

@@ -44,4 +44,60 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_match "claude-opus-4-8", response.body
   end
+
+  # [integration] recording a review INTENT via the API appends a kind=intent
+  # event and surfaces the pair as a live in-progress block on the show page.
+  test "api intent records a review intent and the show page shows the live pair" do
+    Agent.create!(name: "Carl", slug: "carl")
+    Agent.create!(name: "Shannon", slug: "shannon")
+    task = Task.create!(title: "Timeline intent task", stage: "submitted")
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+
+    assert_difference -> { task.task_events.intents.count }, 1 do
+      post "/api/v1/tasks/#{task.slug}/intent",
+           params: { to_stage: "reviewed",
+                     reviewers: [{ slug: "carl", weight: "heavy" }, { slug: "shannon", weight: "light" }],
+                     event: { source: "cli" } },
+           headers: { "Authorization" => "Bearer #{token}" }, as: :json
+    end
+    assert_response :success
+
+    intent = task.task_events.intents.last
+    assert_equal "reviewed", intent.to_stage
+    assert_equal "cli", intent.source
+    assert_equal %w[carl shannon], intent.metadata["reviewers"].map { |r| r["slug"] }
+
+    get task_path(task.slug)
+    assert_response :success
+    assert_select "[data-test='timeline-inprogress']"
+    assert_select "[data-test='timeline-live']"
+    assert_match "Carl", response.body
+    assert_match "Shannon", response.body
+  end
+
+  # [integration] the intent endpoint is append-only + a no-op once the target
+  # stage has already landed (a retry never stacks duplicate rows).
+  test "api intent is a no-op once the target stage has already landed" do
+    task = Task.create!(title: "Timeline intent noop task", stage: "reviewed")
+    task.update!(stage: "assembled")
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+
+    assert_no_difference -> { task.task_events.intents.count } do
+      post "/api/v1/tasks/#{task.slug}/intent",
+           params: { to_stage: "assembled", actor: "steffon", event: { source: "cli" } },
+           headers: { "Authorization" => "Bearer #{token}" }, as: :json
+    end
+    assert_response :success
+  end
+
+  # [integration] a bad request (no to_stage) is a clean 400, never a 500.
+  test "api intent without to_stage is a 400" do
+    task = Task.create!(title: "Timeline intent bad task", stage: "submitted")
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+
+    post "/api/v1/tasks/#{task.slug}/intent",
+         params: { actor: "steffon" }, headers: { "Authorization" => "Bearer #{token}" }, as: :json
+
+    assert_response :bad_request
+  end
 end

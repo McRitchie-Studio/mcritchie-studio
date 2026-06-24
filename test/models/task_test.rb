@@ -224,24 +224,41 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal task.slug, task.to_param
   end
 
-  # --- Position ---
+  # --- Position (event-driven rank: newest on top, 100-gap spacing) ---
 
   test "position is auto-set on create" do
     task = Task.create!(title: "Auto position test", stage: "designed")
     assert_not_nil task.position
   end
 
-  test "position resets when stage changes" do
-    task = tasks(:new_task)
-    task.update!(stage: "building")
-    assert_equal "building", task.stage
-    assert_not_nil task.position
+  test "a new task ranks above earlier tasks in its stage (top of column)" do
+    existing = Task.where(stage: "designed").maximum(:position) || 0
+    task = Task.create!(title: "fresh designed task here", stage: "designed")
+    # max + 100 wins the `position DESC` sort, so a new card lands on top.
+    assert_equal existing + 100, task.position
   end
 
-  test "new tasks get appended to end of stage" do
+  test "a stage move bumps the task to the top of the target stage" do
+    task = tasks(:new_task)
+    existing = Task.where(stage: "building").maximum(:position) || 0
+    task.update!(stage: "building")
+    assert_equal "building", task.stage
+    assert_equal existing + 100, task.position
+  end
+
+  test "successive new tasks each rank above the previous (100-spaced)" do
     t1 = Task.create!(title: "first designed task here", stage: "designed")
     t2 = Task.create!(title: "second designed task here", stage: "designed")
     assert t2.position > t1.position
+    assert_equal t1.position + 100, t2.position
+  end
+
+  test "ordered scope returns highest position first" do
+    top = Task.create!(title: "top of designed column", stage: "designed")
+    designed = Task.ordered.where(stage: "designed").to_a
+    assert_equal top, designed.first, "the freshest (highest-position) task sorts first"
+    positions = designed.map(&:position)
+    assert_equal positions.sort.reverse, positions, "ordered is position DESC"
   end
 
   test "tasks default to the designed stage" do
