@@ -160,4 +160,89 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal "ccc", S.frozen_sha({ "studio-engine" => "ccc" }, :"studio-engine")
     assert_equal "ddd", S.frozen_sha({ "studio-engine": "ddd" }, "studio-engine")
   end
+
+  # --- preflight_offenders: every app checkout must be on a clean `main` ----
+  #
+  # The pure decision behind bin/release's ship_preflight: ship ff's each app
+  # repo's main → frozen SHA, so a checkout left on a pr-NNN branch or with a
+  # dirty tree (stale schema.rb) breaks the ff mid-ship. The preflight catches
+  # that BEFORE any ff; this is its decision half (the git I/O lives in the CLI).
+
+  def state(repo, branch: "main", dirty_files: [])
+    { "repo" => repo, "branch" => branch, "dirty_files" => dirty_files }
+  end
+
+  test "preflight_offenders is empty when every app checkout is on a clean main" do
+    states = [state("mcritchie-studio"), state("turf-monster")]
+    assert_empty S.preflight_offenders(states), "clean main checkouts are safe to ff"
+  end
+
+  test "preflight_offenders flags a checkout on the wrong branch" do
+    offenders = S.preflight_offenders([state("mcritchie-studio", branch: "pr-161")])
+    assert_equal 1, offenders.size
+    o = offenders.first
+    assert_equal "mcritchie-studio", o["repo"]
+    assert_equal "pr-161", o["branch"]
+    assert_not o["on_main"]
+    assert_not o["dirty"]
+  end
+
+  test "preflight_offenders flags a dirty main checkout with its files" do
+    offenders = S.preflight_offenders([state("mcritchie-studio", dirty_files: ["db/schema.rb"])])
+    assert_equal 1, offenders.size
+    o = offenders.first
+    assert o["on_main"]
+    assert o["dirty"]
+    assert_equal ["db/schema.rb"], o["dirty_files"]
+  end
+
+  test "preflight_offenders flags a checkout that is BOTH off-main AND dirty" do
+    o = S.preflight_offenders([state("turf-monster", branch: "wip", dirty_files: ["a.rb"])]).first
+    assert_not o["on_main"]
+    assert o["dirty"]
+  end
+
+  test "preflight_offenders infers dirty from a non-empty dirty_files when no dirty flag" do
+    o = S.preflight_offenders([{ "repo" => "x", "branch" => "main", "dirty_files" => ["f.rb"] }]).first
+    assert o["dirty"], "dirty is inferred from the file list when not given explicitly"
+  end
+
+  test "preflight_offenders honors an explicit dirty flag over the file list" do
+    o = S.preflight_offenders([{ "repo" => "x", "branch" => "main", "dirty" => true, "dirty_files" => [] }]).first
+    assert o["dirty"], "an explicit dirty:true marks an offender even with no listed files"
+  end
+
+  test "preflight_offenders returns only the offenders out of a mixed batch" do
+    states = [
+      state("clean-app"),
+      state("branch-app", branch: "pr-9"),
+      state("dirty-app", dirty_files: ["x.rb"])
+    ]
+    assert_equal %w[branch-app dirty-app], S.preflight_offenders(states).map { |o| o["repo"] }
+  end
+
+  test "preflight_offenders accepts symbol-keyed states too" do
+    offenders = S.preflight_offenders([{ repo: "x", branch: "pr-1", dirty_files: [] }])
+    assert_equal "x", offenders.first["repo"]
+  end
+
+  # --- preflight_message: the loud, actionable abort text -------------------
+
+  test "preflight_message names each offender, why, and the fix" do
+    offenders = S.preflight_offenders([
+      state("mcritchie-studio", branch: "pr-161"),
+      state("turf-monster", dirty_files: %w[db/schema.rb app/x.rb])
+    ])
+    msg = S.preflight_message(offenders)
+    assert_match(/ship preflight failed/, msg)
+    assert_match(/mcritchie-studio: on 'pr-161', not 'main'/, msg)
+    assert_match(/turf-monster:.*dirty tree: db\/schema\.rb/, msg)
+    assert_match(/re-run `bin\/release ship`/, msg)
+  end
+
+  test "preflight_message truncates a long dirty file list" do
+    files = (1..9).map { |i| "f#{i}.rb" }
+    msg = S.preflight_message(S.preflight_offenders([state("x", dirty_files: files)]))
+    assert_match(/\(\+4 more\)/, msg, "only the first 5 files are listed, then a +N more")
+  end
 end

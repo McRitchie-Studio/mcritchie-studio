@@ -83,6 +83,63 @@ class Release
       sha.empty? ? nil : sha
     end
 
+    # --- ship preflight: every app checkout on a clean `main` before any ff ----
+    #
+    # `bin/release ship` fast-forwards each app repo's `main` up to the QA-frozen
+    # SHA, then runs the suite on that tree (avi_ship_gate) — both assume the
+    # checkout is ON `main` with a CLEAN tree. A review agent that left a checkout
+    # on a `pr-NNN` branch, or a stale uncommitted `schema.rb`, breaks the ff
+    # mid-ship (after gems publish / the operator gate — the worst time). This is
+    # the PURE decision half of the preflight: the I/O (git rev-parse / status)
+    # lives in bin/release's ship_preflight, which hands the gathered states here.
+    #
+    # `states` is an array of string-keyed hashes, one per app repo:
+    #   { "repo" => ..., "branch" => <current branch>,
+    #     "dirty" => <bool>, "dirty_files" => [paths] }
+    # `dirty` is optional — if absent it's inferred from a non-empty dirty_files.
+    # Returns the OFFENDERS (repos not on `main` OR with a dirty tree), each as:
+    #   { "repo" =>, "branch" =>, "on_main" => <bool>, "dirty" => <bool>,
+    #     "dirty_files" => [paths] }
+    # An empty result means every checkout is on a clean `main` — safe to ff.
+    def preflight_offenders(states)
+      Array(states).filter_map do |s|
+        branch = (s["branch"] || s[:branch]).to_s
+        files  = Array(s["dirty_files"] || s[:dirty_files]).map(&:to_s).reject(&:empty?)
+        dirty  = if s.key?("dirty") || s.key?(:dirty)
+                   !!(s["dirty"] || s[:dirty])
+                 else
+                   files.any?
+                 end
+        on_main = branch == "main"
+        next if on_main && !dirty
+
+        { "repo" => (s["repo"] || s[:repo]).to_s, "branch" => branch,
+          "on_main" => on_main, "dirty" => dirty, "dirty_files" => files }
+      end
+    end
+
+    # The loud, actionable abort text for a non-empty preflight_offenders list —
+    # names each offending repo with WHY (off-main branch and/or the first dirty
+    # files) and the one-line fix. Pure string building so it's unit-tested
+    # alongside the decision.
+    def preflight_message(offenders)
+      lines = Array(offenders).map do |o|
+        reasons = []
+        reasons << "on '#{o['branch']}', not 'main'" unless o["on_main"]
+        if o["dirty"]
+          files = Array(o["dirty_files"])
+          sample = files.first(5).join(", ")
+          more = files.size > 5 ? " (+#{files.size - 5} more)" : ""
+          reasons << "dirty tree#{sample.empty? ? '' : ": #{sample}#{more}"}"
+        end
+        "  - #{o['repo']}: #{reasons.join('; ')}"
+      end
+      "ship preflight failed — app checkout(s) not on a clean `main` before the fast-forward:\n" \
+        "#{lines.join("\n")}\n" \
+        "  Fix each (git -C <repo> checkout main && git pull; commit/stash/discard local changes), " \
+        "then re-run `bin/release ship`."
+    end
+
     # --- internals -----------------------------------------------------------
 
     def group_repo(group)

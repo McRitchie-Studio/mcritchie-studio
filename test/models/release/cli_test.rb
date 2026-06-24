@@ -65,4 +65,33 @@ class Release::CliTest < ActiveSupport::TestCase
     args = ["prepare", "--task"]
     assert_equal [], Release::Cli.opt_values(args, "--task")
   end
+
+  # --- positional_slugs: the one-or-more task slugs `merge` accepts ---
+
+  test "positional_slugs returns a single slug (backward-compatible)" do
+    assert_equal %w[my-task], Release::Cli.positional_slugs(%w[my-task])
+  end
+
+  test "positional_slugs returns every non-flag token in order" do
+    assert_equal %w[task-a task-b task-c],
+                 Release::Cli.positional_slugs(%w[task-a task-b task-c])
+  end
+
+  test "positional_slugs excludes any flag-shaped token" do
+    # By the time merge reads ARGV, load-time flags are gone — but a stray flag
+    # must never be mistaken for a slug.
+    assert_equal %w[task-a task-b],
+                 Release::Cli.positional_slugs(%w[task-a --dry-run task-b])
+  end
+
+  test "positional_slugs is NON-mutating (leaves args intact)" do
+    args = %w[task-a task-b]
+    Release::Cli.positional_slugs(args)
+    assert_equal %w[task-a task-b], args, "merge reads nothing else from args, so it doesn't consume them"
+  end
+
+  test "positional_slugs returns [] for no positional tokens" do
+    assert_equal [], Release::Cli.positional_slugs([])
+    assert_equal [], Release::Cli.positional_slugs(%w[--dry-run])
+  end
 end

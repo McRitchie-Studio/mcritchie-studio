@@ -360,6 +360,26 @@ Rules:
   included production rollout.
 - The conductor reports production URLs and verification results before cleanup.
 
+`bin/release` mechanics the conductor relies on (born from real session friction):
+
+- **Batched merge.** `bin/release merge <slug> [<slug> …]` takes one OR many
+  slugs: it `gh pr merge`s each, then adopts them ALL in a **single `heroku run`**
+  (one dyno spin-up, N `reviewed → assembled` flips) instead of a cold-start
+  `heroku run` per PR — which used to blow the 2-min timeout and, on a mid-loop
+  timeout, leave a PR *merged* but its task stuck `reviewed`. The adopt runs in an
+  `ensure`, so a partial-failure batch still records every PR that merged.
+  Single-slug behavior is unchanged.
+- **Overlap planner (warning only).** With ≥2 slugs, `merge` fetches each PR's
+  changed files and prints the pairwise file collisions, a suggested merge order
+  (smallest-footprint first), and which PRs will likely need a post-merge rebase.
+  It never blocks — use it to choose merge order and pre-empt the "siblings all
+  touched `task.rb`" conflict that otherwise surfaces on `release` after review.
+- **Ship preflight.** `bin/release ship` asserts every **app checkout is on a
+  clean `main`** before any fast-forward and aborts loudly (naming the offending
+  branch / dirty files) if not — a review agent that left a checkout on a `pr-NNN`
+  branch or with a stale `schema.rb` would otherwise break the ff mid-ship. Keep
+  primary checkouts on a clean `main` before running `ship`.
+
 ## QA Deployment
 
 QA deployment sits between PR merge and production deploy.
@@ -369,7 +389,10 @@ The intended cycle is:
 1. Feature agent opens a PR.
 2. Feature agent moves the task to `pr_review`.
 3. Avi reviews and merges approved PRs into `release` when ready
-   (`bin/release merge <task>` does the `gh pr merge` + membership flip).
+   (`bin/release merge <task> [<task> …]` does the `gh pr merge` + membership
+   flip — it takes **one OR many** slugs, merges each, then adopts them all in a
+   **single `heroku run`**; with ≥2 slugs it first prints an **overlap planner**:
+   colliding files + suggested order + likely rebases, warning-only).
 4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
 5. Avi or Steffon deploys the `release` ref to the app's QA server with

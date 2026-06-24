@@ -749,4 +749,224 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "ABORTED", "an unroutable declared command aborts rather than silently skipping"
   end
+
+  # --- batched merge: N slugs, ONE heroku-run adopt (the timeout fix) -------
+  # The old `merge` did `gh pr merge` + a COLD-START `heroku run` adopt PER PR; 3
+  # in a loop blew the 2-min tool timeout and a mid-run timeout left a PR merged
+  # but its task stuck `reviewed`. Now `bin/release merge a b c` resolves all PRs
+  # in ONE read, then runs ALL the adopts in ONE `heroku run` (single dyno, N
+  # flips). These drive the real shell orchestration with conductor/sh/gh stubbed.
+
+  # A stub that ECHOES the adopt vs resolve conductor calls so we can count them
+  # and inspect the embedded slugs from the subprocess's stdout. The (read-only)
+  # resolve returns two reviewed PRs; the (write) adopt returns the release.
+  MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        $stdout.puts("RESOLVE-CALL")
+        { "tasks" => [
+          { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
+          { "slug" => "task-b", "pr_url" => "https://gh/pr/2", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+        ] }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(pr_url)
+      pr_url.end_with?("1") ? ["app/models/task.rb", "a-only.rb"] : ["app/models/task.rb", "b-only.rb"]
+    end
+  RUBY
+
+  def test_merge_runs_all_adopts_in_a_single_heroku_run
+    out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
+
+    # The whole batch resolves in ONE read and adopts in ONE write — not one
+    # heroku-run per PR (the cold-start that blew the timeout).
+    assert_equal 1, out.scan("RESOLVE-CALL").size, "all PRs resolve in ONE read conductor call"
+    assert_equal 1, out.scan("ADOPT-CALL").size, "all adopts run in ONE write conductor call (single dyno)"
+
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "task-a", "the single adopt call covers task-a"
+    assert_includes adopt, "task-b", "the single adopt call covers task-b"
+    assert_includes adopt, "adopt!", "the batched call drives Release::Conductor.adopt!"
+  end
+
+  # A resolve that returns exactly ONE reviewed PR — for the single-slug path.
+  SINGLE_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+          { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+        ] }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_single_slug_is_backward_compatible
+    out = run_cli(%w[task-a], call: "merge", setup: SINGLE_MERGE_STUB)
+    # Single slug still works: one adopt, summary names the task.
+    assert_equal 1, out.scan("ADOPT-CALL").size
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "task-a"
+    assert_includes out, "Merged task-a"
+  end
+
+  def test_merge_with_no_slug_aborts_with_usage
+    out = run_cli([], call: "begin; merge; rescue SystemExit => e; puts('ABORTED: ' + e.message); end",
+                  setup: MERGE_STUB)
+    assert_includes out, "ABORTED"
+    assert_includes out, "usage: bin/release merge", "no slug → usage abort"
+  end
+
+  # The ensure-adopt is the half-state killer: if a LATER gh pr merge fails, the
+  # batched adopt STILL records the PRs that DID merge (so none is left "merged
+  # but stuck reviewed"), then the command aborts.
+  def test_merge_adopts_the_already_merged_prs_even_when_a_later_merge_fails
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
+            { "slug" => "task-b", "pr_url" => "https://gh/pr/2", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+          ] }
+        else
+          $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+        end
+      end
+      $merge_n = 0
+      def sh(*a, **_k)
+        return ["release", true] if a.include?("baseRefName")
+        $merge_n += 1            # a `gh pr merge` call
+        $merge_n >= 2 ? ["", false] : ["", true]  # first merge ok, second FAILS
+      end
+      def gh_pr_files(_pr) = []
+    RUBY
+    out = run_cli(%w[task-a task-b], setup: setup,
+                  call: "begin; merge; rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "ABORTED", "a failed gh pr merge aborts the command"
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    refute_nil adopt, "the merged PR(s) are still adopted via the ensure block"
+    assert_includes adopt, "task-a", "the PR that DID merge is adopted (no half-state)"
+    refute_includes adopt, "task-b", "the PR that never merged is NOT adopted"
+  end
+
+  # --- overlap planner: pairwise file overlap, suggested order, rebase ------
+  # WARNING ONLY — it never blocks the merge. With both PRs touching task.rb it
+  # must print the collision, a suggested order, and the post-merge rebase note.
+  def test_merge_prints_the_overlap_planner_when_prs_collide
+    out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
+
+    assert_includes out, "overlap planner", "the planner runs before the batch merge"
+    assert_includes out, "app/models/task.rb", "the shared file is named"
+    assert_includes out, "suggested merge order", "a suggested order is printed"
+    assert_includes out, "rebase", "the post-merge rebase heads-up is printed"
+    assert_includes out, "warning only", "the planner never blocks the merge"
+    # Warning-only: the merge still proceeds (the adopt still runs).
+    assert_equal 1, out.scan("ADOPT-CALL").size
+  end
+
+  def test_merge_overlap_planner_reports_no_collision_when_files_are_disjoint
+    # Re-define gh_pr_files AFTER MERGE_STUB (later def wins) so the two PRs touch
+    # disjoint files — the planner must then report independence.
+    setup = MERGE_STUB + %(\ndef gh_pr_files(pr_url); pr_url.end_with?("1") ? ["a-only.rb"] : ["b-only.rb"]; end)
+    out = run_cli(%w[task-a task-b], call: "merge", setup: setup)
+    assert_includes out, "no overlapping files", "disjoint batches report independence"
+  end
+
+  # --- batch_adopt_ruby / batch_resolve_ruby: pure snippet builders ---------
+  # These build the ONE-shot conductor snippets the batched merge runs; unit-test
+  # them directly (eval_helper) so the single-call guarantee + slug embedding are
+  # pinned independent of the orchestration.
+
+  def test_batch_adopt_ruby_embeds_every_slug_in_one_runner_snippet
+    out = eval_helper(%(batch_adopt_ruby(["task-a", "task-b", "task-c"])))
+    assert_includes out, "task-a"
+    assert_includes out, "task-b"
+    assert_includes out, "task-c"
+    assert_includes out, "Release::Conductor.adopt!", "the snippet drives adopt!"
+    assert_equal 1, out.scan("puts(").size, "the snippet emits exactly ONE JSON line for the whole batch"
+  end
+
+  def test_batch_resolve_ruby_embeds_every_slug_and_reads_one_line
+    out = eval_helper(%(batch_resolve_ruby(["task-a", "task-b"])))
+    assert_includes out, "task-a"
+    assert_includes out, "task-b"
+    assert_includes out, "devops_url", "the resolve snippet reads each task's PR url"
+    assert_equal 1, out.scan("puts(").size, "the resolve snippet emits ONE JSON line for the batch"
+  end
+
+  # --- ship preflight: every app checkout on a clean `main` before any ff ----
+  # ship ff's each app repo's main → frozen SHA; a checkout left on a pr-NNN
+  # branch (review agent) or with a stale schema.rb breaks the ff mid-ship. The
+  # preflight catches it BEFORE any ff. Drive ship_preflight directly with
+  # repo_git_state stubbed (DRY=false via --yes) so no real sibling git runs.
+  APP_GROUPS = %q([{ "repo" => "mcritchie-studio" }, { "repo" => "turf-monster" }])
+
+  def test_ship_preflight_aborts_when_a_checkout_is_off_main
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        if repo == "turf-monster"
+          { "repo" => repo, "branch" => "pr-161", "dirty" => false, "dirty_files" => [] }
+        else
+          { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [] }
+        end
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "an off-main checkout aborts ship at the preflight"
+    assert_includes out, "turf-monster", "the abort names the offending repo"
+    assert_includes out, "pr-161", "the abort names the offending branch"
+    refute_includes out, "PASSED", "ship must not proceed past a failed preflight"
+  end
+
+  def test_ship_preflight_aborts_on_a_dirty_main_tree
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        files = repo == "mcritchie-studio" ? ["db/schema.rb"] : []
+        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED"
+    assert_includes out, "db/schema.rb", "the abort names the dirty file"
+  end
+
+  def test_ship_preflight_passes_when_all_checkouts_are_on_clean_main
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [] }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "PASSED", "a clean-main batch passes the preflight"
+    refute_includes out, "ABORTED"
+  end
+
+  def test_ship_dry_run_previews_the_preflight_without_touching_git
+    # In dry-run the preflight prints its plan and runs NO real git (so a dry-run
+    # never aborts on a legitimately-dirty dev sibling). repo_git_state raises if
+    # consulted, proving the DRY branch skips it.
+    setup = SHIP_STUB + %(\ndef repo_git_state(*); raise "git consulted in dry-run preflight"; end)
+    out = run_cli(["--dry-run"], call: "ship", setup: setup)
+    assert_includes out, "ship preflight", "ship previews the preflight in dry-run"
+  end
 end
