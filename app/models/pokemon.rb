@@ -82,6 +82,14 @@ class Pokemon < ApplicationRecord
     signature_enumeral(by_key)&.color
   end
 
+  # This Pokémon's type emoji(s) — each of its types' enumeral emoji, in type
+  # order, concatenated (1-2): Dugtrio → "🏔", Charizard → "🔥💨". "" when no type
+  # is seeded. bin/statusline shows this in place of the 🛠 ⊙ glyphs.
+  def type_emoji(by_key = nil)
+    by_key ||= self.class.type_enumerals
+    types.filter_map { |type| by_key[type]&.emoji }.join
+  end
+
   def to_param
     slug
   end
