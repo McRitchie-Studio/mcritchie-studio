@@ -2,7 +2,10 @@ development:
   adapter: async
 
 test:
-  adapter: test
+  # `test` adapter by default so minitest can assert_broadcasts; the Playwright
+  # e2e server overrides CABLE_ADAPTER=async for REAL in-process delivery to the
+  # browser (the test adapter captures broadcasts but never pushes them to clients).
+  adapter: <%= ENV.fetch("CABLE_ADAPTER", "test") %>
 
 production:
   adapter: redis

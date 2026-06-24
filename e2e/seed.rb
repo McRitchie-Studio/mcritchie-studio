@@ -169,4 +169,39 @@ intent_task.record_intent_event(
   source: "cli"
 )
 
+# Live-updates demo: a submitted task that WALKED designed→building→submitted with
+# an actor (so its deploy card renders a crew) but has NO intent yet — so its card
+# starts WITHOUT a live ticker. The /deployments websockets e2e records a review
+# intent against it after page load and asserts the ticker appears with no reload.
+Current.task_event_actor = "carl"
+live_task = Task.create!(
+  title: "Live cable update demo",
+  slug: "live-cable-demo",
+  description: "Fixture for the /deployments live-update round-trip (record an intent → card updates live).",
+  stage: "designed",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+live_task.update!(stage: "building")
+live_task.update!(stage: "submitted")
+Current.reset
+
+# A second submitted task for the live STAGE-CHANGE round-trip: the e2e moves it
+# submitted→reviewed and asserts the card FLIPs columns AND the per-column count
+# badges update (the regression guard for the updateCounts() call in applyLiveUpdate).
+Current.task_event_actor = "carl"
+move_task = Task.create!(
+  title: "Live cable move demo",
+  slug: "live-cable-move-demo",
+  description: "Fixture for the /deployments live stage-change round-trip (move → card FLIPs + counts update).",
+  stage: "designed",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+move_task.update!(stage: "building")
+move_task.update!(stage: "submitted")
+Current.reset
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"

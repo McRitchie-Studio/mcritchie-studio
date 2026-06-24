@@ -36,6 +36,12 @@ class TaskEvent < ApplicationRecord
   scope :transitions, -> { where(kind: TRANSITION) }
   scope :intents, -> { where(kind: INTENT) }
 
+  # Live-update the /deployments board the moment an event commits — a transition
+  # moves the card, an intent updates it in place. AFTER commit so subscribers only
+  # ever see persisted state; best-effort inside the broadcaster so a transport
+  # failure never breaks the move. Bulk historical backfill rows don't broadcast.
+  after_create_commit :broadcast_to_deployments_board
+
   def transition?
     kind == TRANSITION
   end
@@ -73,5 +79,13 @@ class TaskEvent < ApplicationRecord
   # task_events:backfill task (approximate history, flagged so the UI can say so).
   def backfilled?
     metadata["backfilled"] == true
+  end
+
+  private
+
+  def broadcast_to_deployments_board
+    return if backfilled? # a bulk historical backfill shouldn't spam the board
+
+    DeploymentsBroadcaster.task_event(self)
   end
 end
