@@ -29,6 +29,13 @@ Weak handoff shape:
 
 If a command is safe and relevant, the agent runs it. This includes local servers, tests, migrations, scripts, linters, browser checks, targeted searches, and read-only credential lookups.
 
+**Start every session from a current `main`.** Pull the primary checkout up to
+`origin/main` *before* spinning off a worktree or branch. `bin/task`, the release
+scripts, the seeds, and the operating model itself all live in the repo, so a
+checkout sitting behind `origin/main` silently hands the session **stale tooling** —
+you run an old `bin/task`, miss a just-shipped fix, or branch from yesterday's code.
+Sync first, then branch: every session gets a clean, current start.
+
 Before making code or active-doc edits, move into an isolated task worktree with
 an allocated port. Do not make Mr. McRitchie coordinate local ports or untangle
 which agent changed a primary checkout.
