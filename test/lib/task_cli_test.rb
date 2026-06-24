@@ -450,4 +450,126 @@ class TaskCliTest < Minitest::Test
     assert status.success?
     assert_nil patch_of(requests), "no session → no claim write"
   end
+
+  # --- show --json / --verbose (the visibility wins) --------------------------
+
+  # --json prints the FULL fetched record as valid JSON — the machine-readable
+  # path that retires the curl + auth-token dance.
+  def test_show_json_emits_valid_json_of_the_fetched_data
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--json"],
+      stub_devops: { "kind" => "feature", "acceptance" => ["a", "b"] }
+    )
+    assert status.success?
+    parsed = JSON.parse(out) # raises (fails the test) if --json emitted non-JSON
+    assert_equal "demo-task", parsed["slug"]
+    assert_equal "building", parsed["stage"]
+    assert_equal ["a", "b"], parsed.dig("metadata", "devops", "acceptance")
+  end
+
+  # --verbose expands the acceptance BULLETS (not just the count) and prints
+  # agent_context — the human-readable expansion.
+  def test_show_verbose_prints_acceptance_bullets_and_agent_context
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"],
+      stub_devops: {
+        "kind" => "feature",
+        "acceptance" => ["first bullet here", "second bullet here"],
+        "agent_context" => "the why behind it"
+      }
+    )
+    assert status.success?
+    assert_match(/- first bullet here/, out)
+    assert_match(/- second bullet here/, out)
+    assert_match(/agent_context: the why behind it/, out)
+  end
+
+  # The default `show` stays terse — it counts the acceptance items, it does not
+  # expand them (so the verbose path is the only one that does).
+  def test_show_default_stays_terse
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task"],
+      stub_devops: { "acceptance" => ["only bullet"] }
+    )
+    assert status.success?
+    assert_match(/acceptance: 1 item/, out)
+    refute_match(/- only bullet/, out)
+  end
+
+  # --- stale (the stale war) --------------------------------------------------
+
+  def git!(dir, cmd)
+    out = `git -C #{dir} #{cmd} 2>&1`
+    raise "git #{cmd} failed in #{dir}:\n#{out}" unless $?.success?
+
+    out
+  end
+
+  # Build a throwaway repo wired to a LOCAL bare origin (no network), seeded into
+  # one of three states for the task's feat/demo-task branch. Yields the working
+  # checkout for TASK_GIT_DIR so bin/task's git checks run against it.
+  def with_git_repo(branch_state)
+    Dir.mktmpdir do |root|
+      origin = File.join(root, "origin.git")
+      work = File.join(root, "work")
+      git!(".", "init --quiet --bare #{origin}")
+      FileUtils.mkdir_p(work)
+      git!(work, "init --quiet")
+      git!(work, "config user.email t@t.t")
+      git!(work, "config user.name Tester")
+      git!(work, "config commit.gpgsign false")
+      File.write(File.join(work, "README"), "x")
+      git!(work, "add -A")
+      git!(work, "commit --quiet -m init")
+      git!(work, "branch -M main")
+      git!(work, "remote add origin #{origin}")
+      git!(work, "push --quiet -u origin main")
+
+      case branch_state
+      when :on_main # feat branch == main → its commits are already on main
+        git!(work, "branch feat/demo-task main")
+        git!(work, "push --quiet origin feat/demo-task")
+      when :not_merged # feat branch carries a commit main does not have
+        git!(work, "checkout --quiet -b feat/demo-task")
+        File.write(File.join(work, "feature.txt"), "y")
+        git!(work, "add -A")
+        git!(work, "commit --quiet -m feat")
+        git!(work, "push --quiet origin feat/demo-task")
+        git!(work, "checkout --quiet main")
+      when :no_branch then nil # leave feat/demo-task absent
+      end
+      yield work
+    end
+  end
+
+  # The headline case: a task whose branch already merged to origin/main (fixed
+  # out-of-band) while it lags at building → flagged, with the move suggestion.
+  def test_stale_flags_a_branch_already_on_main
+    with_git_repo(:on_main) do |work|
+      _requests, out, _err, status = run_task(["stale", "demo-task"], env: { "TASK_GIT_DIR" => work })
+      assert status.success?
+      assert_match(/work already on main/i, out)
+      assert_match(/move demo-task shipped/, out)
+      assert_match(/archived/, out)
+    end
+  end
+
+  # A branch with un-merged commits is active, not stale — no false positive.
+  def test_stale_reports_a_not_yet_merged_branch_as_active
+    with_git_repo(:not_merged) do |work|
+      _requests, out, _err, status = run_task(["stale", "demo-task"], env: { "TASK_GIT_DIR" => work })
+      assert status.success?
+      assert_match(/not yet on main/i, out)
+      refute_match(/already on main/i, out)
+    end
+  end
+
+  # No pushed branch → degrade cleanly (skip), never crash and never false-flag.
+  def test_stale_degrades_when_the_branch_does_not_exist
+    with_git_repo(:no_branch) do |work|
+      _requests, out, _err, status = run_task(["stale", "demo-task"], env: { "TASK_GIT_DIR" => work })
+      assert status.success?
+      assert_match(%r{no origin/feat/demo-task branch}i, out)
+    end
+  end
 end
