@@ -1074,6 +1074,43 @@ def shell_context_from_payload(context)
   }
 end
 
+# Resolve the session's Pokemon mascot with a fallback chain so a context
+# regeneration can never downgrade a known mascot to blank (the observed
+# "Jigglypuff -> task link" flip-flop, where a from-scratch values rebuild —
+# `new`, test-DB provisioning — overwrote the bound mascot). Order:
+#   1. values["TASK_MASCOT"]      — set by bind-task, persisted in .env.agent-stack
+#   2. the mascot already on disk  — last good .agent-context.json value
+#   3. the task record            — devops.mascot via `bin/task field` (best-effort)
+def resolve_mascot(values, dir, task)
+  from_values = compact_value(values["TASK_MASCOT"])
+  return from_values if from_values
+
+  on_disk = existing_context_mascot(dir)
+  return on_disk if on_disk
+
+  record_mascot(task_record_slug(values) || task)
+end
+
+def existing_context_mascot(dir)
+  path = context_path(dir)
+  return nil unless File.exist?(path)
+
+  compact_value(JSON.parse(File.read(path))["mascot"])
+rescue JSON::ParserError
+  nil
+end
+
+# Best-effort devops.mascot lookup for the first context paint (before bind-task
+# has persisted TASK_MASCOT). Mirrors run_bind_task's fetch; never raises or
+# blocks a context write — an unreachable board just leaves the mascot unset.
+def record_mascot(record_slug)
+  slug = compact_value(record_slug)
+  return nil unless slug
+
+  mascot = `#{__dir__}/task field #{slug.shellescape} mascot 2>/dev/null`.to_s.strip
+  mascot.empty? ? nil : mascot
+end
+
 def context_payload(app, task, values, dir, record: nil, stage: nil)
   port = values["APP_PORT"].to_s
   redis_db = redis_db_from_url(values["REDIS_URL"])
@@ -1094,7 +1131,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "worktree_slug" => task,
     "task_record_slug" => task_record,
     "task_url" => task_record_url,
-    "mascot" => compact_value(values["TASK_MASCOT"]),
+    "mascot" => resolve_mascot(values, dir, task),
     "branch" => branch,
     "head" => head,
     "repo" => app.fetch("repo"),
