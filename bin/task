@@ -66,14 +66,19 @@ require "json"
 require "uri"
 require "fileutils"
 require "digest"
+require "shellwords"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/claim_lease"
 require_relative "../lib/stale_check"
+require_relative "../lib/feature_marker"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
-PROJECTS_DIR = File.expand_path("../..", __dir__)
+# Honors CLAUDE_PROJECTS_DIR (as bin/statusline does) so a session and its status
+# line agree on the marker location — and so tests can isolate it; defaults to the
+# repo's parent (the projects root) when unset.
+PROJECTS_DIR = (dir = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(dir)
 
 # Per-session active-feature marker path, keyed by CLAUDE_CODE_SESSION_ID so each
 # session shows its OWN feature (no cross-session leak). nil when there's no
@@ -425,11 +430,51 @@ def write_feature_marker(task)
     "worktree_slug" => dv["worktree_slug"],
     "task_url" => "#{BASE_URL}/tasks/#{slug}",
     "stage" => task["stage"],
-    "mascot" => dv["mascot"] # bin/statusline renders ⊙<mascot> — the session's Pokémon handle
+    "mascot" => marker_mascot(task, path) # bin/statusline renders ⊙<mascot> — the session's Pokémon handle
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{JSON.pretty_generate(marker)}\n")
+rescue StandardError
+  nil
+end
+
+# The marker's mascot, resolved so a single mascot-less API response never blanks
+# a known one out from under bin/statusline (see lib/feature_marker.rb). Order:
+# this response → the last-good value already on disk → a best-effort board read.
+# The board read is lazy — it only fires when neither earlier source has one.
+def marker_mascot(task, path)
+  FeatureMarker.mascot(
+    task.dig("metadata", "devops", "mascot"),
+    -> { existing_marker_mascot(path) },
+    -> { board_mascot(task["slug"]) }
+  )
+end
+
+def existing_marker_mascot(path)
+  return nil unless path && File.exist?(path)
+
+  JSON.parse(File.read(path))["mascot"]
+rescue StandardError
+  nil
+end
+
+# The board's devops.mascot, read in a SUBPROCESS via `bin/task field` — never
+# in-process. The board read is the last, lowest-priority fallback source, so it
+# must NEVER be able to abort the command that's only writing a marker: an
+# in-process api() call would, on a transient non-2xx board read, hit api's die!
+# → exit 1 → SystemExit, which is NOT a StandardError and so escapes both this
+# rescue and write_feature_marker's — killing the move/create AFTER its server
+# op already succeeded. Shelling out contains any `exit` in the child (the
+# backtick yields "" on a child failure), the same isolation
+# bin/agent-worktree.resolve_mascot relies on. `field` is silent + exit 0 when
+# the mascot is unset, so a clean "no mascot" reads back as "".
+def board_mascot(slug)
+  slug = slug.to_s
+  return nil if slug.empty?
+
+  mascot = `#{__dir__}/task field #{slug.shellescape} mascot 2>/dev/null`.to_s.strip
+  mascot.empty? ? nil : mascot
 rescue StandardError
   nil
 end
