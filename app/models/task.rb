@@ -77,9 +77,12 @@ class Task < ApplicationRecord
 
   before_validation :generate_slug, on: :create
   before_validation :default_devops_handles_from_slug, on: :create
-  before_validation :assign_mascot, on: :create
+  before_validation :sync_session_mascot, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
+  # Per-session mascot: re-derive on each build-phase transition (designed/building/
+  # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
+  before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -134,6 +137,40 @@ class Task < ApplicationRecord
       log.save!
     end
     assigned
+  end
+
+  # Migrate a board from the old per-TASK mascots to the per-SESSION rule: every live
+  # task carrying a session_id adopts its session's Pokémon (the first one seen for that
+  # session wins; sessions stay unique among themselves). Session-less tasks keep theirs.
+  # Idempotent; a failed row is captured to ErrorLog and skipped. Returns the count.
+  def self.resync_session_mascots!
+    by_session = {}
+    taken = active_mascots.to_set
+    restamped = 0
+    live.find_each do |task|
+      sid = task.metadata&.dig("devops", "session_id").to_s
+      next if sid.blank?
+
+      slug = by_session[sid] ||= (task.metadata.dig("devops", "mascot").presence || Pokemon.draw(exclude: taken.to_a)&.slug)
+      next unless slug
+      taken << slug
+
+      dev = task.metadata["devops"] || {}
+      next if dev["mascot"] == slug && dev["mascot_session"] == sid
+
+      merged = task.metadata.deep_dup
+      d = (merged["devops"] ||= {})
+      d["mascot"] = slug
+      d["mascot_session"] = sid
+      task.update_columns(metadata: merged)
+      restamped += 1
+    rescue StandardError => e
+      log = ErrorLog.capture!(e)
+      log.target = task
+      log.target_name = task.slug
+      log.save!
+    end
+    restamped
   end
 
   def devops
@@ -604,14 +641,34 @@ class Task < ApplicationRecord
   # recycles a Pokémon once its task ships or is archived. No-ops gracefully when
   # the deck isn't seeded (or the table doesn't exist yet) so task creation never
   # depends on Pokémon being present.
-  def assign_mascot
+  def sync_session_mascot
+    return unless Pokemon.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
-    return if devops["mascot"].present?
-    return unless Pokemon.table_exists?
+    sid = devops["session_id"].to_s
+    # Reassign only when there's no mascot yet, or this session differs from the one
+    # the current mascot belongs to (an agent handoff). A session-less task keeps it.
+    needs = devops["mascot"].blank? || (sid.present? && devops["mascot_session"].to_s != sid)
+    return unless needs
 
-    pick = Pokemon.draw(exclude: Task.active_mascots)
-    devops["mascot"] = pick.slug if pick
+    slug = session_mascot_slug(sid)
+    return unless slug
+    devops["mascot"] = slug
+    devops["mascot_session"] = sid
+  end
+
+  # The Pokémon for a session: reuse the one its other LIVE tasks already carry (so
+  # every task an agent builds shares its handle), else draw a fresh one — unique
+  # among live sessions. With no session, draw a one-off so the task isn't mascot-less.
+  def session_mascot_slug(sid)
+    if sid.present?
+      peer = Task.live.detect do |t|
+        t.id != id && t.metadata&.dig("devops", "session_id").to_s == sid &&
+          t.metadata&.dig("devops", "mascot").present?
+      end
+      return peer.metadata.dig("devops", "mascot") if peer
+    end
+    Pokemon.draw(exclude: Task.active_mascots)&.slug
   end
 
   def word_count(text)

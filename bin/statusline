@@ -101,14 +101,18 @@ render() {  # app feature task url stage mascot
     out="${out} ${A}${app}${X}"
   fi
   [ -n "$feat" ] && out="${out}${DOT}${F}${feat}${X}"
-  if [ -n "$url" ]; then
-    if osc8_supported; then
-      out="${out}${DOT}↗ $(link "$url" "${task:-task}")"          # clean clickable slug
-    else
-      out="${out}${DOT}${D}${url}${X}"                            # Terminal.app: plain URL is Cmd-clickable
+  # With a mascot present, the Pokémon name IS the session handle — drop the task link
+  # so the line stays "⊙ Snorlax · app · feature". Fall back to the link with no mascot.
+  if [ -z "$mascot" ]; then
+    if [ -n "$url" ]; then
+      if osc8_supported; then
+        out="${out}${DOT}↗ $(link "$url" "${task:-task}")"        # clean clickable slug
+      else
+        out="${out}${DOT}${D}${url}${X}"                          # Terminal.app: plain URL is Cmd-clickable
+      fi
+    elif [ -n "$task" ]; then
+      out="${out}${DOT}${task}"
     fi
-  elif [ -n "$task" ]; then
-    out="${out}${DOT}${task}"
   fi
   [ -n "$stage" ] && out="${out}  ${D}[${stage}]${X}"
   # Session last-4 (e.g. …12ab) — which terminal/session this is, for resume.

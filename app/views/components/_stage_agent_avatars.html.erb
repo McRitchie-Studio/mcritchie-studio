@@ -96,7 +96,9 @@
     <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
          data-test="stage-agent-avatars" title="Stage crew">
       <% columns.each_with_index do |cluster, ci| %>
-        <div class="flex justify-start">
+        <%# Filled compartments hug the left (the real crew); an empty slot centers in
+            its column so the dashed placeholders read as a tidy centered row. %>
+        <div class="flex <%= cluster.stacked.any? ? "justify-start" : "justify-center" %>">
           <% if cluster.stacked.any? %>
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
               <%# Stack runs lead-FIRST (highest on the LEFT): the lead is leftmost and lifted
@@ -132,7 +134,7 @@
             </div>
           <% else %>
             <%# Unreached pipeline stage — a dashed placeholder circle marks the slot. %>
-            <div class="rounded-full border-2 border-dashed border-subtle/60 <%= crew_size == "sm" ? "w-10 h-10" : "w-8 h-8" %>"
+            <div class="rounded-full border-2 border-dashed border-muted/50 <%= crew_size == "sm" ? "w-10 h-10" : "w-8 h-8" %>"
                  data-test="crew-empty" data-lane="<%= cluster.lane %>"></div>
           <% end %>
         </div>
