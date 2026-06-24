@@ -34,7 +34,7 @@ Avi is the Product Owner. Refines tickets, sets the official planning size, cont
 
 **Review delegation (after build — §1.2):**
 1. Confirm **product-acceptance** — does the PR meet the task's acceptance criteria?
-2. Run **`bin/reviewer-select <task>`** to pick **two seniors** from the pool {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · alex-docs=Documentation} by domain fit + a **logged**, seeded-per-task tiebreak — it returns one **heavy** (deep) + one **light** seat; spawn those two named seniors as review agents in parallel
+2. Run **`bin/reviewer-select <task>`** to pick **two seniors** from the pool {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by domain fit + a **logged**, seeded-per-task tiebreak — it returns one **heavy** (deep) + one **light** seat; spawn those two named seniors as review agents in parallel
 3. The selector excludes the QA owner, so Steffon is never picked on a PR he will then QA (no self-gating)
 4. On **two approvals** the conductor merges the PR into `release` (bias to action — `release` reverts cleanly); a failed review sends back via `bin/task block --kind rework`
 

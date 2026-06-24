@@ -28,29 +28,14 @@ agents_data = [
     status: "active",
     agent_type: "orchestrator",
     title: "Lead Orchestrator",
-    description: "Coordinates all agents, manages task assignment, and oversees system operations. The central brain of McRitchie Studio. Documentation domain expert — review duties run through the dedicated `alex-docs` reviewer persona, not this orchestrator seat.",
+    description: "Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool's Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.",
     avatar: "/agents/alex.png",
     position: 0,
-    metadata: {
-      "review_role" => "orchestrator",
-      "reviewer" => false
-    }
-  },
-  {
-    name: "Alex (Docs)",
-    slug: "alex-docs",
-    status: "active",
-    agent_type: "specialist",
-    title: "Documentation Reviewer",
-    description: "Alex's Deploy-flow reviewer persona — the Documentation seat in the senior review pool, distinct from the orchestrator seat. Reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.",
-    avatar: "/agents/alex-docs.png",
-    position: 9,
     metadata: {
       "review_role" => "reviewer",
       "reviewer" => true,
       "domains" => ["documentation", "docs", "runbooks", "agent-operating-model", "readme"],
-      "review_weight" => 2.0,
-      "persona_of" => "alex"
+      "review_weight" => 2.0
     }
   },
   {
@@ -195,4 +180,14 @@ agents_data.each do |data|
   )
   agent.save! if agent.new_record? || agent.changed?
   puts "Agent: #{agent.name} (#{agent.agent_type}) — #{agent.title}"
+end
+
+# The Documentation reviewer used to be a separate `alex-docs` persona; it's now
+# folded into the single `alex` identity (orchestrator + the pool's docs seat).
+# Retire the old row so the board roster and the reviewer pool show one Alex.
+# Idempotent — a no-op once the row is gone. (Historical reviewer references in
+# TaskEvent/Task metadata are rewritten alex-docs→alex by the matching migration.)
+if (retired = Agent.find_by(slug: "alex-docs"))
+  retired.destroy!
+  puts "Agent: retired alex-docs (folded into alex)"
 end
