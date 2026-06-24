@@ -61,6 +61,7 @@ require "json"
 require "uri"
 require "fileutils"
 require "digest"
+require "shellwords"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/claim_lease"
 require_relative "../lib/stale_check"
@@ -453,11 +454,22 @@ rescue StandardError
   nil
 end
 
+# The board's devops.mascot, read in a SUBPROCESS via `bin/task field` — never
+# in-process. The board read is the last, lowest-priority fallback source, so it
+# must NEVER be able to abort the command that's only writing a marker: an
+# in-process api() call would, on a transient non-2xx board read, hit api's die!
+# → exit 1 → SystemExit, which is NOT a StandardError and so escapes both this
+# rescue and write_feature_marker's — killing the move/create AFTER its server
+# op already succeeded. Shelling out contains any `exit` in the child (the
+# backtick yields "" on a child failure), the same isolation
+# bin/agent-worktree.resolve_mascot relies on. `field` is silent + exit 0 when
+# the mascot is unset, so a clean "no mascot" reads back as "".
 def board_mascot(slug)
   slug = slug.to_s
   return nil if slug.empty?
 
-  (api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", "mascot")
+  mascot = `#{__dir__}/task field #{slug.shellescape} mascot 2>/dev/null`.to_s.strip
+  mascot.empty? ? nil : mascot
 rescue StandardError
   nil
 end

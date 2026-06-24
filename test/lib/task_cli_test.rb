@@ -27,11 +27,14 @@ class TaskCliTest < Minitest::Test
   # `env` overrides merge onto a clean base (auth secret + base url + skip marker);
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
-  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil)
+  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil)
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
     @stub_stage = stub_stage
+    # When set, GET /api/v1/tasks/<slug> returns this non-2xx status — used to
+    # force the board-mascot fallback read to fail (a transient 429 / 5xx).
+    @fail_get = fail_get
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -74,8 +77,8 @@ class TaskCliTest < Minitest::Test
       body = len ? client.read(len.to_i) : ""
       requests << { method: method, path: path, body: body }
 
-      payload = response_for(path)
-      client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
+      status, payload = response_for(method, path)
+      client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
     end
@@ -83,16 +86,23 @@ class TaskCliTest < Minitest::Test
     # server closed — stop serving
   end
 
-  def response_for(path)
-    return JSON.generate("token" => "stub-token") if path == "/api/v1/auth"
+  # Returns [status_line, json_body]. Defaults to 200; @fail_get forces the board
+  # read (GET /api/v1/tasks/<slug>) to a non-2xx so the board-mascot fallback is
+  # exercised under a transient failure — without breaking auth or the PATCH/POST.
+  def response_for(method, path)
+    return ["200 OK", JSON.generate("token" => "stub-token")] if path == "/api/v1/auth"
+
+    if @fail_get && method == "GET" && path.start_with?("/api/v1/tasks/")
+      return ["#{@fail_get} Service Unavailable", JSON.generate("error" => "stubbed board read failure")]
+    end
 
     # The GET in the move read-merge returns an existing task carrying prior
     # devops (configurable per-test via stub_devops), so the test can prove the
     # session stamp / claim is MERGED, not a wipe, and seed an existing claim.
-    JSON.generate("data" => {
+    ["200 OK", JSON.generate("data" => {
       "slug" => "demo-task", "stage" => @stub_stage,
       "metadata" => { "devops" => @stub_devops }
-    })
+    })]
   end
 
   def devops_of(request)
@@ -581,15 +591,16 @@ class TaskCliTest < Minitest::Test
   # Run bin/task with the per-session marker ENABLED, isolated to a throwaway
   # projects dir (CLAUDE_PROJECTS_DIR) and a non-worktree cwd (chdir there) so the
   # `/.worktrees/` skip-guard doesn't suppress the write. `pre_marker` seeds an
-  # existing on-disk marker. Returns the parsed marker hash (or nil if unwritten).
-  def run_with_marker(args, stub_devops:, pre_marker: nil)
+  # existing on-disk marker; `fail_get` forces the board read to a non-2xx.
+  # Returns [parsed marker hash (or nil if unwritten), process status].
+  def run_with_marker(args, stub_devops:, pre_marker: nil, fail_get: nil)
     Dir.mktmpdir do |projects|
       sessions = File.join(projects, ".agents", "sessions")
       FileUtils.mkdir_p(sessions)
       marker_path = File.join(sessions, "#{MARKER_SESSION}.json")
       File.write(marker_path, JSON.generate(pre_marker)) if pre_marker
 
-      run_task(
+      _requests, _out, _err, status = run_task(
         args,
         env: {
           "CLAUDE_CODE_SESSION_ID" => MARKER_SESSION,
@@ -597,10 +608,12 @@ class TaskCliTest < Minitest::Test
           "TASK_SKIP_MARKER" => nil # nil deletes it from the child → the marker writes
         },
         stub_devops: stub_devops,
-        chdir: projects # a non-worktree cwd so write_feature_marker doesn't skip
+        chdir: projects, # a non-worktree cwd so write_feature_marker doesn't skip
+        fail_get: fail_get
       )
 
-      File.exist?(marker_path) ? JSON.parse(File.read(marker_path)) : nil
+      marker = File.exist?(marker_path) ? JSON.parse(File.read(marker_path)) : nil
+      [marker, status]
     end
   end
 
@@ -609,7 +622,7 @@ class TaskCliTest < Minitest::Test
   # its ⊙<mascot> handle to the bare task-link fallback. The last-good on-disk
   # value is kept instead.
   def test_marker_keeps_a_known_mascot_when_the_response_lacks_one
-    marker = run_with_marker(
+    marker, = run_with_marker(
       ["move", "demo-task", "building"],
       stub_devops: { "kind" => "feature" }, # response carries no mascot
       pre_marker: { "slug" => "demo-task", "mascot" => "snorlax" } # last-good on disk
@@ -621,11 +634,33 @@ class TaskCliTest < Minitest::Test
   # Baseline: a response that DOES carry a mascot writes it straight through (and
   # wins over any stale on-disk value — a real handoff updates the handle).
   def test_marker_writes_the_response_mascot_when_present
-    marker = run_with_marker(
+    marker, = run_with_marker(
       ["move", "demo-task", "building"],
       stub_devops: { "kind" => "feature", "mascot" => "gengar" },
       pre_marker: { "slug" => "demo-task", "mascot" => "snorlax" }
     )
     assert_equal "gengar", marker["mascot"]
+  end
+
+  # The board-fallback path: when BOTH the response and the on-disk marker lack a
+  # mascot, marker_mascot falls through to a board API read (board_mascot). That
+  # read MUST NOT be able to abort the command. board_mascot used to call api()
+  # in-process, so a non-2xx board read → api's die! → exit 1 → SystemExit, which
+  # is NOT a StandardError and so escaped BOTH board_mascot's and
+  # write_feature_marker's `rescue StandardError` — killing the whole move with
+  # exit 1 AFTER its stage PATCH had already landed (a false command failure on a
+  # transient board 429 / 5xx). A non-building move isolates the board read as the
+  # only task GET, so fail_get hits exactly that read. Regression for PR #158.
+  def test_a_board_read_failure_never_aborts_the_command
+    marker, status = run_with_marker(
+      ["move", "demo-task", "reviewed"],     # non-building: the board read is the only task GET
+      stub_devops: { "kind" => "feature" },  # response carries no mascot → fall through
+      pre_marker: nil,                       # nothing on disk → the board lambda is reached
+      fail_get: 503                          # the board GET fails (a transient 5xx / 429)
+    )
+    assert status.success?, "a failed board read must not abort the command (expected exit 0)"
+    refute_nil marker, "the marker must still be written despite the failed board read"
+    assert_nil marker["mascot"], "an unreachable board cleanly yields no mascot (no downgrade, no abort)"
+    assert_equal "demo-task", marker["slug"]
   end
 end
