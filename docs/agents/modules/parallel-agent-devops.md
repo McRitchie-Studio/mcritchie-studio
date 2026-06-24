@@ -124,6 +124,34 @@ McRitchie Studio task record.
 
 Avi owns PR intake and merge safety.
 
+### Picking the two senior reviewers (`bin/reviewer-select`)
+
+Avi runs `bin/reviewer-select <task>` to choose the **1 HEAVY + 1 LIGHT** pair by
+domain fit with a logged, seeded-per-task tiebreak. Three exclusions keep review
+honest, and **none of them needs a manual flag in the common case**:
+
+- **QA owner** (Steffon by default) — never reviews a PR he then QAs. Override
+  with `--qa-owner SLUG` when someone else QAs this task.
+- **Builder** — a soul never reviews their own work. The builder is read from
+  `devops.built_by`, which is **auto-stamped on the move to building**: a bare
+  `bin/task move <slug> building` records the task's assigned `agent_slug` (an
+  explicit `--actor <soul>` move wins over it). So the builder drops out with **no
+  `--builder` flag** — pass `--builder SLUG` only to override the recorded value.
+- **Busy souls** — agents mid-build or mid-review on OTHER in-flight tasks
+  shouldn't be handed a review. Name them with **`--busy a,b,c`** (repeatable),
+  and/or add **`--busy-auto`** to also exclude every agent on a `stage=building`
+  task (a board query; skipped in `--file` mode and degrades to a no-op if the
+  board read fails).
+
+**Keep-rather-than-starve:** the pool is never shrunk below a HEAVY+LIGHT pair.
+If the builder + QA-owner + busy exclusions would leave too few candidates, the
+least-bad ones (best domain fit) are KEPT eligible and the decision/log flags
+them — a pair is always returned. Because `--busy` / a custom `--qa-owner` shift
+the candidate pool, the bare preview is then **advisory**; `bin/reviewer-select
+<task> --record` writes the busy-aware pair as the live review intent so the
+board + timeline show the actual reviewers.
+
+
 Start conductor sessions by generating the PR/worktree queue from McRitchie
 Studio:
 

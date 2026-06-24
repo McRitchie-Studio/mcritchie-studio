@@ -37,10 +37,12 @@ class TaskTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  test "a building move with no actor leaves built_by unset" do
-    # A model-method / conductor move carries no Current actor — nothing to stamp,
-    # and an existing value must never be clobbered to nil.
+  test "a building move with no actor and no assignee leaves built_by unset" do
+    # new_task has no Current actor AND no agent_slug — neither the actor nor the
+    # assigned-agent fallback can resolve a soul, so nothing is stamped and an
+    # existing value is never clobbered to nil.
     task = tasks(:new_task)
+    assert_nil task.agent_slug, "guards the assumption: no assignee to fall back to"
     task.build!
 
     assert_nil task.reload.devops_built_by
@@ -115,6 +117,79 @@ class TaskTest < ActiveSupport::TestCase
       "a no-actor re-claim leaves the prior builder untouched"
   ensure
     Current.reset
+  end
+
+  test "a plain build move records the assigned agent_slug as built_by (no --actor)" do
+    # FIX (a): a bare `bin/task move <slug> building` defaults the event actor to
+    # the session UUID (not a soul), so the actor path can't stamp. The task's
+    # assigned agent_slug is the automatic, no-flag builder source — so
+    # reviewer-select auto-excludes the builder WITHOUT the operator passing
+    # --builder by hand every time.
+    task = Task.create!(title: "assigned builder auto stamp", agent_slug: "carl",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build! # no Current actor — the bare-CLI build path
+
+    assert_equal "carl", task.reload.devops_built_by,
+      "the assigned agent is recorded as the builder automatically"
+  end
+
+  test "a session-id actor still falls back to the assigned agent_slug" do
+    # The real bare-CLI move sets the actor to the session UUID. That's not a
+    # soul, so it never stamps — but the assigned agent_slug now backstops it.
+    Current.task_event_actor = "942a9824-375f-4d13-b60e-85be79ee9880"
+    task = Task.create!(title: "session actor assignee stamp", agent_slug: "carl",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build!
+
+    assert_equal "carl", task.reload.devops_built_by,
+      "a non-soul actor falls back to the assigned builder rather than stamping nothing"
+  ensure
+    Current.reset
+  end
+
+  test "a soul build actor wins over the assigned agent_slug" do
+    # An explicit --actor <soul> attribution beats the agent_slug default.
+    Current.task_event_actor = "shannon"
+    task = Task.create!(title: "actor beats assignee task", agent_slug: "carl",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build!
+
+    assert_equal "shannon", task.reload.devops_built_by, "the explicit actor wins"
+  ensure
+    Current.reset
+  end
+
+  test "the agent_slug default never clobbers an existing built_by" do
+    # Once stamped, a no-actor re-claim of an assigned task keeps the recorded
+    # builder — the agent_slug default only fills a BLANK built_by, it never
+    # overwrites (only an explicit --actor re-points on a re-claim).
+    Current.task_event_actor = "shannon"
+    task = Task.create!(title: "no clobber existing builder", agent_slug: "carl",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build!
+    assert_equal "shannon", task.reload.devops_built_by
+    Current.reset
+
+    task.update!(stage: "blocked")
+    task.update!(stage: "building") # no actor; agent_slug is carl
+
+    assert_equal "shannon", task.reload.devops_built_by,
+      "the agent_slug default fills only a blank built_by, never overwrites"
+  ensure
+    Current.reset
+  end
+
+  test "an assigned build auto-excludes the builder from review end-to-end" do
+    # The whole point of FIX (a): assign carl, do a plain build (no actor/flag),
+    # and the reviewer pool excludes carl with no manual --builder.
+    task = Task.create!(title: "assigned end to end exclude", agent_slug: "carl",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build!
+
+    decision = ReviewerSelector.explain(task.reload)
+    assert_equal "carl", decision["builder"], "the assigned builder is read from devops.built_by"
+    assert_equal "carl", decision["excluded_builder"]
+    refute_includes decision["candidates"], "carl", "carl never reviews the PR carl built"
   end
 
   # --- Workflow 2: Deploy transitions ---

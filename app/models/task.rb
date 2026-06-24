@@ -210,13 +210,14 @@ class Task < ApplicationRecord
     devops.fetch("agent_context", "").presence
   end
 
-  # The soul who BUILT this task — stamped from the build-claim actor on the move
-  # to `building` WHEN that actor resolves to a soul slug (see #stamp_builder), so
-  # the reviewer pool can exclude the builder (a soul shouldn't review their own
-  # work). nil when the build lane recorded no actor (a model-method / conductor
-  # move) or only a session id (a bare CLI move with no --actor <soul>).
-  # ReviewerSelector also falls back to the `→ building` TaskEvent actor when this
-  # scalar is blank.
+  # The soul who BUILT this task — stamped on the move to `building` (see
+  # #stamp_builder) so the reviewer pool can exclude the builder (a soul shouldn't
+  # review their own work). Source precedence: an explicit soul-slug build-claim
+  # actor (`--actor <soul>`), else the task's assigned agent_slug — so a bare
+  # `bin/task move <slug> building` records the assigned builder WITHOUT a manual
+  # flag. nil only when neither resolves to a soul (no soul actor AND a blank /
+  # non-soul agent_slug). ReviewerSelector also falls back to the `→ building`
+  # TaskEvent actor when this scalar is blank.
   def devops_built_by
     devops.fetch("built_by", "").presence
   end
@@ -635,25 +636,40 @@ class Task < ApplicationRecord
 
   # Stamp WHO built this task onto devops.built_by — the soul the reviewer pool
   # later excludes (ReviewerSelector) so a soul never reviews their own work. The
-  # value MUST be a soul SLUG to match the soul-keyed pool. The build-claim actor
-  # (Current.task_event_actor) is a soul slug ONLY when the move passed
-  # --actor <soul> (the real build path); a bare `bin/task move <slug> building`
-  # DEFAULTS the actor to the session id (a UUID), which is NOT a soul and would
-  # never match the pool — stamping it would make the audit name a builder that
-  # can't be excluded (the feature no-ops while the log lies). So stamp the actor
-  # only when it's a soul slug; a session id / non-soul actor stamps NOTHING and
-  # exclusion degrades to domain-only (truthful). A no-actor move (model method /
-  # conductor) and an unresolvable actor both leave any existing built_by
-  # untouched — never clobbered to nil. A rework re-claim by a different soul
-  # re-points it. Runs inside set_stage_timestamp (a before-save), so the new
-  # metadata persists in the same UPDATE as the stage change.
+  # value MUST be a soul SLUG to match the soul-keyed pool. Resolved by
+  # #builder_to_stamp (precedence below); nil leaves any existing built_by
+  # untouched — never clobbered. Runs inside set_stage_timestamp (a before-save),
+  # so the new metadata persists in the same UPDATE as the stage change.
   def stamp_builder
-    soul = Current.task_event_actor.presence
-    return unless soul&.match?(SOUL_SLUG)
+    soul = builder_to_stamp
+    return if soul.nil?
 
     merged = metadata.deep_dup
-    (merged["devops"] ||= {})["built_by"] = soul.to_s
+    (merged["devops"] ||= {})["built_by"] = soul
     self.metadata = merged
+  end
+
+  # The soul to record as the builder, or nil to leave built_by as-is. Precedence:
+  #   1. The build-claim actor (Current.task_event_actor) when it's a soul SLUG —
+  #      an explicit `--actor <soul>` move (or a web action by a soul). This always
+  #      wins, so a rework re-claim by a different soul RE-POINTS built_by.
+  #   2. else KEEP an existing built_by — a no-actor / non-soul re-claim never
+  #      clobbers a recorded builder (only an explicit --actor re-points it).
+  #   3. else the task's assigned agent_slug when it's a soul SLUG — the automatic,
+  #      no-flag default. A bare `bin/task move <slug> building` defaults the actor
+  #      to the session id (a UUID, not a soul), so rule 1 can't fire; backing the
+  #      stamp with the assigned agent records the builder WITHOUT the operator
+  #      passing a flag every time (the FIX behind reviewer-select-exclude). The
+  #      assignee fills only a BLANK built_by (rule 2 guards re-claims).
+  # nil when none apply (non-soul actor, no existing builder, non-soul/blank
+  # agent_slug) — exclusion then degrades to domain-only (truthful).
+  def builder_to_stamp
+    actor = Current.task_event_actor.presence
+    return actor if actor&.match?(SOUL_SLUG)
+    return nil if devops["built_by"].present?
+
+    assigned = agent_slug.to_s
+    assigned.match?(SOUL_SLUG) ? assigned : nil
   end
 
   def set_initial_position
