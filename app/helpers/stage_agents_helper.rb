@@ -159,7 +159,7 @@ module StageAgentsHelper
     # intent boards render exactly as before.
     if agents
       by_slug = agents.index_by(&:slug)
-      mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url)
+      mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
       intents = Array(events || task.task_events).select(&:intent?)
       work = in_progress_work(task, by_slug, mascot_agent, intents)
       if work && %i[review assembled shipped].include?(work[:lane]) && by_lane[work[:lane]].nil?
@@ -268,7 +268,7 @@ module StageAgentsHelper
     events = Array(events || task.task_events)
     by_slug = agents.index_by(&:slug)
     mascot ||= Pokemon.find_by(slug: task.devops["mascot"].to_s.presence)
-    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url)
+    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
 
     transitions = events.select { |e| e.transition? && e.to_stage }.sort_by { |e| [e.occurred_at, e.id.to_i] }
     intents = events.select(&:intent?)
