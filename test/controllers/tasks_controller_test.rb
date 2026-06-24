@@ -91,6 +91,25 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
                   "the redundant 'release' branch label must be gone from the Last Release card"
   end
 
+  test "deployments rides the Archive completed tasks chip inline with the Last Release pills" do
+    Release.delete_all
+    shipped = Release.open!(branch: "release")
+    @new_task.update!(stage: "reviewed")
+    shipped.add(@new_task)
+    shipped.assemble!
+    shipped.ship!
+
+    get deployments_path
+    assert_response :success
+
+    # Last Release gets its own copy/paste kickoff chip ("Archive completed tasks"),
+    # inline (right) with the task pills, same style as the Next Release chip.
+    assert_select "#last-release [data-test='release-members-row']" do
+      assert_select "a[href=?]", task_path(@new_task.slug)  # the task pill
+      assert_select "code", text: /Archive completed tasks/ # the kickoff chip
+    end
+  end
+
   test "board header toggle shows building / reviewed / assembled count badges" do
     # Counts are global (load_board groups every stage), so derive the expected
     # numbers the same way the view does — robust to whatever the fixtures hold.
