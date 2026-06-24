@@ -719,9 +719,31 @@ end
 # the suite behaves like CI — the "order-dependent" mailer/delivery failures were
 # really the stack's APP_PORT / LOCAL_EMAIL_CAPTURE leaking in.
 def run_worktree_tests(dir, app, values, args)
+  clear_orphan_test_procs(dir)
   prepare_test_db(dir, app, values)
   env = test_command_env(app, values).merge("PARALLEL_WORKERS" => "1")
   sh("bin/rails", "test", *args, chdir: dir, env: env)
+end
+
+# Kill leftover `rails test` processes from a prior killed/hung run whose working
+# directory is THIS worktree — they hold the worktree's test DB and would deadlock
+# the next run (the friction that surfaced single-process in the first place).
+# Scoped by BOTH the command line ("rails test") and the cwd, so it never touches
+# the worktree's dev server (a puma/"rails server" proc) or another worktree's run.
+def clear_orphan_test_procs(dir)
+  target = File.expand_path(dir)
+  pids = `pgrep -f "rails test" 2>/dev/null`.split.map(&:to_i).reject(&:zero?)
+  pids.each do |pid|
+    next if pid == Process.pid
+
+    cwd_line = `lsof -a -p #{pid} -d cwd -Fn 2>/dev/null`.lines.find { |line| line.start_with?("n") }
+    next unless cwd_line && cwd_line[1..].strip == target
+
+    warn "clearing orphaned test proc #{pid} (cwd #{target})"
+    Process.kill("KILL", pid)
+  rescue Errno::ESRCH, Errno::EPERM
+    # already gone, or not ours to kill — skip
+  end
 end
 
 def start_generic_rails(dir, app, values)
