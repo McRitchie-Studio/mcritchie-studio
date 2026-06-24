@@ -1,10 +1,11 @@
 require "test_helper"
 
 # Component tier (ui-only shape): render the real shared _board partial through
-# BOTH board controllers and assert the per-stage crew avatars surface on the
-# card — for a Build-lane task (/tasks) and a Deploy task (/deployments). The two
-# pages render the same app/views/tasks/_board.html.erb, so a single partial
-# change lands on both.
+# BOTH board controllers and assert the per-stage crew now surfaces as the compact
+# FOOTER strip — the filled faces only (no grid, no empty-stage slots, no duration
+# badges), deduped, capped at the 3 newest with a "+N" overflow pill. For a
+# Build-lane task (/tasks) and a Deploy task (/deployments). Both pages render the
+# same app/views/tasks/_board.html.erb, so one partial change lands on both.
 class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
   setup do
     @shannon = Agent.create!(name: "Shannon", slug: "shannon")
@@ -13,7 +14,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     @avi     = Agent.create!(name: "Avi", slug: "avi")
   end
 
-  test "tasks board card splits the build into its stage steps" do
+  test "build-lane card floats the build crew as a footer strip (the old grid is gone)" do
     task = Task.create!(title: "build lane crewed card", stage: "building")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed",
@@ -24,20 +25,18 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    # the Build board splits the build into its three steps (designed · building ·
-    # submitted) with NO QA spots — a three-column row
-    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].grid-cols-3", count: 1
-
+    # the old per-stage grid + empty-slot placeholders are gone — one floating strip
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].grid-cols-3", count: 0
+    assert_select "#card-#{task.slug} [data-test='crew-empty']", count: 0
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']", count: 1
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "[data-test='crew-cluster']", count: 2 # designed + building reached; submitted blank
-      assert_select "span.text-white", count: 2            # the designer + the builder, each its own column
-      assert_select "div[title^='Carl']"                   # designer's own column
-      assert_select "div[title^='Shannon']"                # builder's own column
-      assert_select "[data-test='crew-live']"              # ticking counter on the current (building) step
+      assert_select "div[title^='Carl']"                       # designer
+      assert_select "div[title^='Shannon']"                    # builder
+      assert_select "[data-test='crew-overflow']", count: 0    # only 2 faces, no +N
     end
   end
 
-  test "deployments board card shows reviewer + Steffon + Avi avatars" do
+  test "deploy card caps the crew at the three newest faces plus a +N pill" do
     task = Task.create!(title: "deploy crew shipped card", stage: "shipped")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
@@ -52,47 +51,16 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
+    # 4 distinct souls (shannon, carl, steffon, avi) → 3 shown + a "+1" pill; the
+    # newest (Steffon/Avi) stay crisp on the right, the oldest reviewer rolls into +N.
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "span.text-white", count: 4 # 2 reviewers + Steffon + Avi
+      assert_select "[data-test='crew-overflow']", text: "+1", count: 1
       assert_select "div[title^='Steffon']"
       assert_select "div[title^='Avi']"
     end
   end
 
-  test "the full crew collapses to four lane compartments (build / review / assembled / shipped)" do
-    # A full journey: designer, builder, submitter (build), 2 reviewers, Steffon,
-    # Avi = 7 faces — all shown, in four lane compartments.
-    task = Task.create!(title: "crowded crew shipped card", stage: "shipped")
-    task.task_events.delete_all
-    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl")
-    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
-                      occurred_at: 6.hours.ago, seconds_in_from: 3600, actor: "shannon")
-    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
-                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
-    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
-                      occurred_at: 4.hours.ago, seconds_in_from: 3600,
-                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
-                                                   { "slug" => "carl", "weight" => "light" }] })
-    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
-                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")
-    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
-                      occurred_at: 1.hour.ago, seconds_in_from: 600, actor: "avi")
-
-    get deployments_path
-    assert_response :success
-
-    # the lane row is a fixed four-column grid (25% each) so the full crew is one
-    # solid row in the narrow kanban column, never wrapping
-    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].grid-cols-4", count: 1
-
-    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "[data-test='crew-cluster']", count: 4  # build · review · assembled · shipped
-      assert_select "span.text-white", count: 7             # all 7 faces, just stacked
-      assert_select "[data-test='crew-duration']", count: 4 # one duration per compartment
-    end
-  end
-
-  test "build-lane card crew wears the task mascot instead of the actor initial" do
+  test "build-lane card crew collapses to the task mascot face (deduped)" do
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
                     sprite_url: "https://example.test/snorlax-sprite.png")
     task = Task.create!(title: "mascot crew board card", stage: "building",
@@ -106,9 +74,11 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
+    # the two build stages collapse to ONE mascot face (dedup), not two actor bubbles
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
-      assert_select "img[src='https://example.test/snorlax-sprite.png']" # the mascot face, not "C"
+      assert_select "img[src='https://example.test/snorlax-sprite.png']"
       assert_select "div[title^='Snorlax']"
+      assert_select "[data-test='crew-overflow']", count: 0
     end
   end
 end
