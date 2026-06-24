@@ -44,7 +44,30 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    # no standalone assignee name chip — the floating crew strip attributes work now
+    # no standalone assignee name chip — the stage crew under the slug attributes work
     assert_select "#card-#{task.slug} span.text-xs.text-muted", text: "shannon", count: 0
+  end
+
+  test "the URG / HIGH priority badges are dropped" do
+    urgent = Task.create!(title: "urgent priority polish card", stage: "building", priority: 2)
+    high   = Task.create!(title: "high priority polish card", stage: "building", priority: 1)
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{urgent.slug} span", text: "URG", count: 0
+    assert_select "#card-#{high.slug} span", text: "HIGH", count: 0
+  end
+
+  test "the slug and footer meta are single-line with clipped overflow" do
+    task = Task.create!(title: "single line polish card", stage: "submitted")
+
+    get tasks_path
+    assert_response :success
+
+    # slug fades/clips on one line (no wrap) — mask handles the fade
+    assert_select "#card-#{task.slug} code.whitespace-nowrap.overflow-hidden", count: 1
+    # the footer meta wrapper is a single non-wrapping clipped line too
+    assert_select "#card-#{task.slug} div.whitespace-nowrap.overflow-hidden", minimum: 1
   end
 end
