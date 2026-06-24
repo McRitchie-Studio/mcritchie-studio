@@ -350,29 +350,30 @@ function kanbanBoard() {
                       class: "text-heading font-semibold text-sm" %>
               </a>
 
-              <%# Slug (left) + affected-app emojis (right). The slug spans the
-                  full width and truncates; the emojis overlay the right edge on
-                  top (z + surface fade) so they win any overlap. %>
-              <div class="relative mt-0.5 mb-1.5">
-                <code class="block text-[10px] font-mono text-muted truncate"><%= task.slug %></code>
-                <%= app_emoji_badge(task.devops_repositories, css: "absolute inset-y-0 right-0 z-10 flex items-center pl-5 text-xs leading-none bg-gradient-to-l from-surface via-surface to-transparent") %>
+              <%# Slug (left) + affected-app emojis (right) on one line. The slug fades on
+                  the right when it overflows (transparency mask, same as the footer) and
+                  the emojis sit OUTSIDE the fade as a normal flex item — no solid bg
+                  gradient, so nothing mismatches the card colour on hover. %>
+              <div class="flex items-center gap-1 mt-0.5 mb-1.5">
+                <code class="block text-[10px] font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
+                      style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)"><%= task.slug %></code>
+                <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
               </div>
 
-              <%# The stage crew now FLOATS on the footer row (app-emoji style: pinned
-                  right, overflowing the meta with a left fade) — see the footer below. %>
+              <%# Stage crew (agent-events summary) sits directly under the slug — build-lane
+                  stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
+                  shipped. Renders nothing when there are no events. %>
+              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
 
               <%# Session resume + live cue live on the task READ view now (off the board
                   cards). The board signals "live" via the pulsing crew time badge. %>
 
-              <div class="flex items-center gap-2 mb-1">
-                <% if task.priority == 2 %>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-900/50 text-red-300 border border-red-700/50">URG</span>
-                <% elsif task.priority == 1 %>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-900/50 text-yellow-300 border border-yellow-700/50">HIGH</span>
-                <% end %>
-                <%# Assignee chip removed: the floating stage crew on the footer already
-                    attributes who handled the task, so the separate name chip was noise. %>
-                <div class="ml-auto flex items-center gap-1">
+              <%# Planning badges (size / MIG / REL), right-aligned — only rendered when
+                  one is present, so the card never carries an empty meta row. The URG /
+                  HIGH priority badges and the assignee chip were dropped; the crew above
+                  and the stage attribute the rest. %>
+              <% if task.po_size.present? || task.requires_migration || task.requires_release_conductor? %>
+                <div class="flex items-center justify-end gap-1 mb-1">
                   <% if task.po_size.present? %>
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
                   <% end %>
@@ -383,7 +384,7 @@ function kanbanBoard() {
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_train lane">REL</span>
                   <% end %>
                 </div>
-              </div>
+              <% end %>
 
               <%# Secondary meta row — release-train badge + QA/Prod links — only when
                   there's something to show. The kind/gem badges are gone (features are
@@ -413,7 +414,7 @@ function kanbanBoard() {
                     a single line below it (fades at the overflow, steady scroll on
                     hover). %>
                 <div class="mt-2 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
-                  <div class="flex items-center gap-1.5 mb-1">
+                  <div class="flex items-center gap-1.5 mb-0.5">
                     <span class="text-[9px] font-semibold uppercase tracking-wide text-heading">
                       <%= latest_activity.activity_type_label %>
                     </span>
@@ -426,16 +427,24 @@ function kanbanBoard() {
                 </div>
               <% end %>
 
-              <%# Footer meta line. Type emojis lead on the LEFT — gem (💎) for a gem
-                  release, then bug (🐛) / docs (📚) for the kind — so they stay readable
-                  even when the crew floats over the right. Then Local + PR links and the
-                  relative time. The stage crew floats on the RIGHT (pinned right, capped,
-                  overflowing the time with a left fade); min-h reserves room for the
-                  faces. Plain features stay unmarked. %>
-              <div class="relative flex items-center gap-2 mt-1 min-h-7 text-[10px]">
+              <%# Footer meta line: Local + PR links + relative time on a SINGLE line that
+                  fades on the right when it overflows the column (mirrors the slug row, so
+                  the timestamp never wraps). The type emojis — gem (💎) then bug (🐛) /
+                  docs (📚) — sit OUTSIDE the fade so they stay crisp. Features stay unmarked. %>
+              <div class="flex items-center gap-2 mt-1 text-[10px]">
+                <div class="flex items-center gap-2 min-w-0 flex-1 whitespace-nowrap overflow-hidden"
+                     style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)">
+                  <% if task.devops? && (local_url = task.devops_url("local")) %>
+                    <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <% if task.devops? && (pr_url = task.devops_url("pr")) %>
+                    <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+                  <% end %>
+                  <span class="text-muted"><%= time_ago_in_words(task.created_at) %> ago</span>
+                </div>
                 <% kind_emoji = { "bug" => "🐛", "docs" => "📚" }[task.devops_kind] %>
                 <% if task.gem_release? || kind_emoji %>
-                  <span class="flex items-center gap-1.5 leading-none">
+                  <span class="flex items-center gap-1.5 leading-none shrink-0">
                     <% if task.gem_release? %>
                       <span title="Gem release — published to RubyGems producer-first (before consuming apps)">💎</span>
                     <% end %>
@@ -444,14 +453,6 @@ function kanbanBoard() {
                     <% end %>
                   </span>
                 <% end %>
-                <% if task.devops? && (local_url = task.devops_url("local")) %>
-                  <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-                <% end %>
-                <% if task.devops? && (pr_url = task.devops_url("pr")) %>
-                  <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-                <% end %>
-                <span class="text-muted whitespace-nowrap"><%= time_ago_in_words(task.created_at) %> ago</span>
-                <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :strip, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
               </div>
 
               <%# Footer — archive + delete actions. Bleeds to the card edges with
