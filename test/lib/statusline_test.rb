@@ -76,6 +76,31 @@ class StatuslineTest < Minitest::Test
     assert_includes out, "⊙ Parasect"
   end
 
+  # --- Mascot type emoji: leads + replaces the 🛠 ⊙ glyphs ----------------------
+
+  def test_mascot_type_emoji_replaces_the_tool_and_dot
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "dugtrio", "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔"
+    })
+    assert_includes out, "🏔", "the type emoji leads the mascot handle"
+    assert_includes out, "Dugtrio"
+    refute_includes out, "⊙", "the ⊙ dot is dropped when a type emoji is present"
+    refute_includes out, "🛠", "and the 🛠 is replaced by the type emoji"
+  end
+
+  def test_dual_type_mascot_leads_with_both_emojis
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "charizard", "mascot_color" => "#A98FF3", "mascot_emoji" => "🔥💨"
+    })
+    assert_includes out, "🔥💨", "both type emojis lead"
+    assert_includes out, "Charizard"
+  end
+
+  def test_mascot_without_an_emoji_keeps_the_tool_and_dot
+    out = render_in(session: SESSION, extra: { "mascot" => "snorlax" })
+    assert_includes out, "⊙ Snorlax", "no type emoji (agent/unseeded) → keep the 🛠 ⊙ fallback"
+  end
+
   # --- Heartbeat wiring (V2): the status line renews the active build claim ----
 
   # Run statusline with a stub `task` binary (records its args) wired in via

@@ -83,11 +83,11 @@ osc8_supported() {
   return 1
 }
 
-read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color
+read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color mascot_emoji
   # Joined with the unit separator (U+001F), NOT a tab: a tab is IFS-whitespace,
   # so an empty middle field (e.g. a missing task_url) would collapse and shift
   # every later field left. US is non-whitespace, so empty fields are preserved.
-  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // "")] | join("")' "$1" 2>/dev/null
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // "")] | join("")' "$1" 2>/dev/null
 }
 
 # Nearest xterm-256 cube index (16..231) for an r,g,b triple. We use 256-color,
@@ -120,8 +120,8 @@ mascot_tint() {  # hex -> ANSI escape (echoed)
   fi
 }
 
-render() {  # app feature task url stage mascot mascot_color
-  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" out="🛠 "
+render() {  # app feature task url stage mascot mascot_color mascot_emoji
+  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" mascot_emoji="$8" out="🛠 "
   # Per-mascot tint overrides the default M when the context carries a color.
   local M="$M"
   [ -n "$mascot_color" ] && M=$(mascot_tint "$mascot_color")
@@ -131,7 +131,13 @@ render() {  # app feature task url stage mascot mascot_color
     local first rest
     first=$(printf '%s' "$mascot" | cut -c1 | tr '[:lower:]' '[:upper:]')
     rest=$(printf '%s' "${mascot:1}" | tr '-' ' ')
-    out="${out} ${M}⊙ ${first}${rest}${X}"
+    # The mascot's type emoji(s) LEAD and replace the 🛠 + ⊙ glyphs; a mascot with
+    # no type emoji (an agent face, or unseeded types) keeps the tool + dot.
+    if [ -n "$mascot_emoji" ]; then
+      out="${mascot_emoji} ${M}${first}${rest}${X}"
+    else
+      out="${out} ${M}⊙ ${first}${rest}${X}"
+    fi
     [ -n "$app" ] && out="${out}${DOT}${A}${app}${X}"
   elif [ -n "$app" ]; then
     out="${out} ${A}${app}${X}"
@@ -168,8 +174,8 @@ if [ -z "$src" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
 fi
 
 if [ -n "$src" ]; then
-  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color < <(read_ctx "$src")
-  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color"
+  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji < <(read_ctx "$src")
+  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji"
   heartbeat_claim "$task" "$stage"   # keep this terminal's build-claim lease fresh
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)

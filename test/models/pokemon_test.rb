@@ -111,6 +111,15 @@ class PokemonTest < ActiveSupport::TestCase
     assert_nil charizard.type_color("ghost")
   end
 
+  test "type_emoji concatenates the types' emojis in type order" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "fire",   metadata: { "emoji" => "🔥" })
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", metadata: { "emoji" => "💨" })
+    charizard = Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", types: %w[fire flying])
+    assert_equal "🔥💨", charizard.type_emoji
+    # an unseeded type contributes nothing (blank, not a crash)
+    assert_equal "", Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", types: %w[grass]).type_emoji
+  end
+
   test "type color seed loads the 18 canonical types idempotently" do
     seed = Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s
 
@@ -138,7 +147,10 @@ class PokemonTest < ActiveSupport::TestCase
     ranks = Studio::Enumeral.in_category("pokemon_type").pluck(:rank).sort
     assert_equal (1..18).map { |i| i * 100 }, ranks
 
-    # Each type also carries its emoji (in metadata).
+    # Each type also carries its emoji (in metadata) — the operator's chosen set.
     assert_equal "🔥", Studio::Enumeral.lookup("pokemon_type", "fire").emoji
+    assert_equal "🔶", Studio::Enumeral.lookup("pokemon_type", "normal").emoji
+    assert_equal "👊", Studio::Enumeral.lookup("pokemon_type", "fighting").emoji
+    assert_equal "🏔", Studio::Enumeral.lookup("pokemon_type", "ground").emoji
   end
 end

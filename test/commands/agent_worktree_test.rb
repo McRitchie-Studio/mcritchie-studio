@@ -62,17 +62,18 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       "a context regen must fall back to the on-disk mascot, not blank it"
   end
 
-  test "context regeneration preserves a known mascot color the board read lacks" do
-    # The COLOR analog of the mascot-preservation test above. In the sandbox the
-    # devops.mascot_color board read returns empty, so before the fix a context
-    # rebuild blanked the color (→ bin/statusline reverted ⊙<mascot> to the default
-    # pink) even though the name stuck. The color must ride with the name.
+  test "context regeneration preserves a known mascot color + emoji the board read lacks" do
+    # The COLOR/EMOJI analog of the mascot-preservation test above. In the sandbox
+    # the devops board reads return empty, so before the fix a context rebuild
+    # blanked the color/emoji (→ bin/statusline reverted to the default pink + 🛠 ⊙)
+    # even though the name stuck. The display attributes must ride with the name.
     agent_worktree!("bind-task", "mcritchie-studio", @task, "task-mascot-color")
 
     ctx_path = File.join(@worktree_dir, ".agent-context.json")
     context = JSON.parse(File.read(ctx_path))
     context["mascot"] = "dugtrio"       # last-good name, only on disk
     context["mascot_color"] = "#E2BF65" # …and its color
+    context["mascot_emoji"] = "🏔"      # …and its type emoji
     File.write(ctx_path, "#{JSON.pretty_generate(context)}\n")
 
     agent_worktree!("whereami", "mcritchie-studio", @task)
@@ -81,6 +82,8 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal "dugtrio", regenerated["mascot"], "the name still sticks"
     assert_equal "#E2BF65", regenerated["mascot_color"],
       "and its color rides with the name — not blanked to the default tint"
+    assert_equal "🏔", regenerated["mascot_emoji"],
+      "and its type emoji rides with the name — not blanked to the 🛠 ⊙ glyphs"
   end
 
   test "whereami shell output ignores tampered shell content from context file" do

@@ -422,7 +422,7 @@ def write_feature_marker(task)
   return if slug.empty?
 
   dv = task.dig("metadata", "devops") || {}
-  mascot, mascot_color = marker_mascot_pair(task, path)
+  mascot, mascot_color, mascot_emoji = marker_mascot_attrs(task, path)
   marker = {
     "slug" => slug,
     "task_slug" => slug,
@@ -431,8 +431,9 @@ def write_feature_marker(task)
     "worktree_slug" => dv["worktree_slug"],
     "task_url" => "#{BASE_URL}/tasks/#{slug}",
     "stage" => task["stage"],
-    "mascot" => mascot,             # bin/statusline renders ⊙<mascot> — the session's Pokémon handle
-    "mascot_color" => mascot_color  # …tinted with the mascot's least-common type color, riding with the name
+    "mascot" => mascot,             # bin/statusline renders <type-emoji> <mascot> — the session's Pokémon handle
+    "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
+    "mascot_emoji" => mascot_emoji  # …and prefixed with its type emoji(s), also riding with the name
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
   FileUtils.mkdir_p(File.dirname(path))
@@ -441,20 +442,21 @@ rescue StandardError
   nil
 end
 
-# The marker's mascot AND its color, resolved TOGETHER from the same source, so a
-# single mascot-less API response never blanks a known mascot out from under
-# bin/statusline (see lib/feature_marker.rb) AND its color rides with the name —
-# never drifting to the default tint on a momentary blank, never a stale color on
-# a changed mascot. Order: this response → the last-good on-disk marker → a
-# best-effort board read (name only; no color). Returns [mascot, color].
-def marker_mascot_pair(task, path)
+# The marker's mascot AND its display attributes (color + type emoji), resolved
+# TOGETHER from the same source, so a single mascot-less API response never blanks
+# a known mascot out from under bin/statusline (see lib/feature_marker.rb) AND its
+# color/emoji ride with the name — never drifting on a momentary blank, never a
+# stale tint/glyph on a changed mascot. Order: this response → the last-good
+# on-disk marker → a best-effort board read (name only; no color/emoji). Returns
+# [mascot, color, emoji].
+def marker_mascot_attrs(task, path)
   dv = task.dig("metadata", "devops") || {}
-  return [dv["mascot"], dv["mascot_color"]] if FeatureMarker.present?(dv["mascot"])
+  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"]] if FeatureMarker.present?(dv["mascot"])
 
   disk = existing_marker(path)
-  return [disk["mascot"], disk["mascot_color"]] if disk && FeatureMarker.present?(disk["mascot"])
+  return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"]] if disk && FeatureMarker.present?(disk["mascot"])
 
-  [board_mascot(task["slug"]), nil] # a board read carries the name only → default tint
+  [board_mascot(task["slug"]), nil, nil] # a board read carries the name only
 end
 
 def existing_marker(path)

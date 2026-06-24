@@ -639,36 +639,44 @@ class TaskCliTest < Minitest::Test
   def test_marker_keeps_a_known_mascot_color_when_the_response_lacks_one
     marker, = run_with_marker(
       ["move", "demo-task", "building"],
-      stub_devops: { "kind" => "feature" }, # response carries neither mascot nor color
-      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio", "mascot_color" => "#E2BF65" }
+      stub_devops: { "kind" => "feature" }, # response carries no mascot, color, or emoji
+      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio",
+                    "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔" }
     )
     assert_equal "dugtrio", marker["mascot"], "the name still sticks"
     assert_equal "#E2BF65", marker["mascot_color"],
                  "and its color rides with it — no revert to the default tint"
+    assert_equal "🏔", marker["mascot_emoji"],
+                 "and its type emoji rides with it too — no revert to the 🛠 ⊙ glyphs"
   end
 
-  # The color rides from the SAME source as the name: a response bringing a NEW
-  # mascot wears ITS color (here none → no color), never the previous mascot's — so
-  # a handoff to a different Pokémon/agent can't inherit a stale tint.
+  # The color/emoji ride from the SAME source as the name: a response bringing a NEW
+  # mascot wears ITS attributes (here none), never the previous mascot's — so a
+  # handoff to a different Pokémon/agent can't inherit a stale tint or glyph.
   def test_a_changed_mascot_never_inherits_the_previous_color
     marker, = run_with_marker(
       ["move", "demo-task", "building"],
-      stub_devops: { "kind" => "feature", "mascot" => "gengar" }, # new mascot, no color
-      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio", "mascot_color" => "#E2BF65" }
+      stub_devops: { "kind" => "feature", "mascot" => "gengar" }, # new mascot, no color/emoji
+      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio",
+                    "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔" }
     )
     assert_equal "gengar", marker["mascot"]
     assert_nil marker["mascot_color"], "a new mascot must not borrow the old one's color"
+    assert_nil marker["mascot_emoji"], "…nor its emoji"
   end
 
-  # A response carrying both a new mascot and its color writes them straight through.
+  # A response carrying a new mascot with its color + emoji writes them straight through.
   def test_marker_writes_the_response_mascot_color_when_present
     marker, = run_with_marker(
       ["move", "demo-task", "building"],
-      stub_devops: { "kind" => "feature", "mascot" => "gengar", "mascot_color" => "#735797" },
-      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio", "mascot_color" => "#E2BF65" }
+      stub_devops: { "kind" => "feature", "mascot" => "gengar",
+                     "mascot_color" => "#735797", "mascot_emoji" => "👻" },
+      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio",
+                    "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔" }
     )
     assert_equal "gengar", marker["mascot"]
     assert_equal "#735797", marker["mascot_color"]
+    assert_equal "👻", marker["mascot_emoji"]
   end
 
   # Baseline: a response that DOES carry a mascot writes it straight through (and

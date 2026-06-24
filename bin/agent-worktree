@@ -1111,23 +1111,27 @@ def record_mascot(record_slug)
   mascot.empty? ? nil : mascot
 end
 
-# The mascot's color, resolved to RIDE WITH the mascot and never downgrade to the
-# default tint — the same no-downgrade guarantee resolve_mascot gives the name.
-# The last-good on-disk color wins over a fresh board read, but ONLY when it
-# belongs to the SAME mascot we're about to write: so a momentary blank board read
-# — or a task that never re-stamped mascot_color — keeps the known color instead
-# of flipping ⊙<mascot> back to pink, while a DIFFERENT mascot never inherits the
-# old color. (This is why the slug AND its color both need the fallback chain.)
+# The mascot's display attributes (color + type emoji), each resolved to RIDE WITH
+# the mascot and never downgrade — the same no-downgrade guarantee resolve_mascot
+# gives the name. The last-good on-disk value wins over a fresh board read, but
+# ONLY when it belongs to the SAME mascot we're about to write: so a momentary
+# blank board read — or a task that never re-stamped the attribute — keeps the
+# known value instead of flipping ⊙<mascot> back to the default tint/glyphs, while
+# a DIFFERENT mascot never inherits the old one's. (This is why the slug AND its
+# display attributes all need the fallback chain.)
 def resolve_mascot_color(values, dir, task, mascot)
-  on_disk = existing_context_color(dir, mascot)
-  return on_disk if on_disk
-
-  record_mascot_color(task_record_slug(values) || task)
+  existing_context_attr(dir, mascot, "mascot_color") ||
+    record_mascot_field(task_record_slug(values) || task, "mascot_color")
 end
 
-# The on-disk context's mascot_color, but only when its mascot matches `mascot`,
-# so a color can never be stale-paired to a changed mascot.
-def existing_context_color(dir, mascot)
+def resolve_mascot_emoji(values, dir, task, mascot)
+  existing_context_attr(dir, mascot, "mascot_emoji") ||
+    record_mascot_field(task_record_slug(values) || task, "mascot_emoji")
+end
+
+# The on-disk context's <key>, but only when its mascot matches `mascot`, so an
+# attribute can never be stale-paired to a changed mascot.
+def existing_context_attr(dir, mascot, key)
   return nil unless compact_value(mascot)
 
   path = context_path(dir)
@@ -1136,19 +1140,19 @@ def existing_context_color(dir, mascot)
   data = JSON.parse(File.read(path))
   return nil unless compact_value(data["mascot"]) == mascot
 
-  compact_value(data["mascot_color"])
+  compact_value(data[key])
 rescue JSON::ParserError
   nil
 end
 
-# The board's devops.mascot_color, read best-effort via `bin/task field` — the
-# last-resort source (first paint, before any color is on disk).
-def record_mascot_color(record_slug)
+# A best-effort devops.<field> board read via `bin/task field` — the last-resort
+# source (first paint, before the attribute is on disk).
+def record_mascot_field(record_slug, field)
   slug = compact_value(record_slug)
   return nil unless slug
 
-  color = `#{__dir__}/task field #{slug.shellescape} mascot_color 2>/dev/null`.to_s.strip
-  color.empty? ? nil : color
+  value = `#{__dir__}/task field #{slug.shellescape} #{field.shellescape} 2>/dev/null`.to_s.strip
+  value.empty? ? nil : value
 end
 
 def context_payload(app, task, values, dir, record: nil, stage: nil)
@@ -1175,6 +1179,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "task_url" => task_record_url,
     "mascot" => mascot,
     "mascot_color" => resolve_mascot_color(values, dir, task, mascot),
+    "mascot_emoji" => resolve_mascot_emoji(values, dir, task, mascot),
     "branch" => branch,
     "head" => head,
     "repo" => app.fetch("repo"),

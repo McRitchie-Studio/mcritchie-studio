@@ -14,24 +14,24 @@ puts "\n--- Pokémon type colors (enumerals) ---"
 # is the array index so a UI can list them in this familiar order. The emoji is
 # decorative, so it rides in `metadata` rather than its own column.
 POKEMON_TYPE_COLORS = [
-  ["normal",   "Normal",   "#A8A77A", "⚪"],
+  ["normal",   "Normal",   "#A8A77A", "🔶"],
   ["fire",     "Fire",     "#EE8130", "🔥"],
   ["water",    "Water",    "#6390F0", "💧"],
-  ["electric", "Electric", "#F7D02C", "⚡"],
+  ["electric", "Electric", "#F7D02C", "⚡️"],
   ["grass",    "Grass",    "#7AC74C", "🍃"],
   ["ice",      "Ice",      "#96D9D6", "❄️"],
-  ["fighting", "Fighting", "#C22E28", "🥊"],
-  ["poison",   "Poison",   "#A33EA1", "☠️"],
-  ["ground",   "Ground",   "#E2BF65", "🏜️"],
-  ["flying",   "Flying",   "#A98FF3", "🦅"],
-  ["psychic",  "Psychic",  "#F95587", "🔮"],
-  ["bug",      "Bug",      "#A6B91A", "🐛"],
-  ["rock",     "Rock",     "#B6A136", "🪨"],
+  ["fighting", "Fighting", "#C22E28", "👊"],
+  ["poison",   "Poison",   "#A33EA1", "🍄"],
+  ["ground",   "Ground",   "#E2BF65", "🏔"],
+  ["flying",   "Flying",   "#A98FF3", "💨"],
+  ["psychic",  "Psychic",  "#F95587", "👁️"],
+  ["bug",      "Bug",      "#A6B91A", "🕸"],
+  ["rock",     "Rock",     "#B6A136", "🗿"],
   ["ghost",    "Ghost",    "#735797", "👻"],
-  ["dragon",   "Dragon",   "#6F35FC", "🐉"],
-  ["dark",     "Dark",     "#705746", "🌑"],
+  ["dragon",   "Dragon",   "#6F35FC", "🐲"],
+  ["dark",     "Dark",     "#705746", "🌙"],
   ["steel",    "Steel",    "#B7B7CE", "⚙️"],
-  ["fairy",    "Fairy",    "#D685AD", "🧚"]
+  ["fairy",    "Fairy",    "#D685AD", "🌈"]
 ].freeze
 
 # Rank the types by how common they are in the seeded list (the original 151),
