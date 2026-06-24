@@ -358,20 +358,23 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "2 notes"
   end
 
-  test "board card shows the session last-4 and a full resume copy control" do
+  test "the resume control lives on the task read view, not the board cards" do
     @in_progress_task.update!(metadata: { "devops" => {
       "kind" => "feature",
       "session_id" => "2aa216f6-7565-4bf4-bd01-70793c8ba617",
       "session_provider" => "claude"
     } })
 
+    # the board card no longer carries the resume command (decluttered)
     get tasks_path
     assert_response :success
+    assert_select "#card-#{@in_progress_task.slug}" # the card still renders
+    assert_not_includes response.body, "claude --resume"
 
-    card = "#card-#{@in_progress_task.slug}"
-    # the copy control DISPLAYS the truncated command (ending in the last-4 …a617)…
-    assert_select card, text: /claude --resume …a617/
-    # …and CARRIES the FULL resume command for the clipboard
+    # …it renders on the task read view instead — truncated display + full clipboard copy
+    get task_path(@in_progress_task.slug)
+    assert_response :success
+    assert_select "code", text: /claude --resume …a617/
     assert_includes response.body, "claude --resume 2aa216f6-7565-4bf4-bd01-70793c8ba617"
   end
 

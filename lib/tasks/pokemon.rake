@@ -39,6 +39,12 @@ namespace :pokemon do
     puts "backfilled #{count} mascot(s)"
   end
 
+  desc "Re-derive mascots under the per-SESSION rule — every live task in a session shares its Pokémon (idempotent)"
+  task resync_mascots: :environment do
+    count = Task.resync_session_mascots!
+    puts "re-stamped #{count} task mascot(s) by session"
+  end
+
   desc "Pull the original 151 from PokéAPI into db/seeds/data/pokemon.json"
   task fetch: :environment do
     rows = DEX_RANGE.map do |dex|

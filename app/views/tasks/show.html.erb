@@ -26,6 +26,28 @@
       <span class="text-xs text-muted font-mono"><%= @task.slug %></span>
     </div>
 
+    <%# Session resume — moved here from the board cards. The control DISPLAYS the
+        truncated command (…<last4>) and COPIES the full resume command (hidden span);
+        the live build-claim cue shows when a session looks active in another terminal. %>
+    <% if @task.devops_session_id.present? %>
+      <div x-data="{ copied: false }" class="flex items-center gap-2 mb-4">
+        <button type="button"
+                @click="navigator.clipboard.writeText($refs.resumeCmd.textContent); copied = true; setTimeout(() => copied = false, 1400)"
+                class="inline-flex items-center gap-1.5 rounded-md border border-subtle bg-inset px-2 py-1 whitespace-nowrap hover:border-primary/40 transition"
+                :title="copied ? 'Copied!' : 'Copy resume command'">
+          <code class="text-xs text-body normal-case font-normal tracking-normal"><%= @task.resume_command_display %></code>
+          <span class="text-xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
+        </button>
+        <span x-ref="resumeCmd" class="hidden"><%= @task.resume_command %></span>
+        <% if @task.claim_live? %>
+          <span class="inline-flex items-center gap-1 text-xs text-mint-300"
+                title="Build claim is live — a session looks active in another terminal (last heartbeat ~<%= @task.claim_heartbeat_seconds_ago %>s ago). Resume anyway?">
+            <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse"></span>live
+          </span>
+        <% end %>
+      </div>
+    <% end %>
+
     <% if @task.description.present? %>
       <div class="mb-4">
         <p class="text-body text-sm whitespace-pre-wrap"><%= @task.description %></p>

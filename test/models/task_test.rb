@@ -784,4 +784,47 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal errors_before + 1, ErrorLog.count, "the failure is captured to ErrorLog"
     assert_equal bad.slug, ErrorLog.last.target_name
   end
+
+  # --- per-session mascot -----------------------------------------------------
+
+  test "tasks from the same session share one mascot" do
+    Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", generation: 1)
+    Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander", generation: 1)
+    a = Task.create!(title: "session mascot a", metadata: { "devops" => { "session_id" => "sess-X" } })
+    b = Task.create!(title: "session mascot b", metadata: { "devops" => { "session_id" => "sess-X" } })
+
+    assert a.devops["mascot"].present?
+    assert_equal a.devops["mascot"], b.devops["mascot"], "same session → same Pokémon"
+  end
+
+  test "a task picked up by a different session swaps its mascot on a build transition" do
+    3.times { |i| Pokemon.create!(dex: i + 1, name: "Mon#{i}", slug: "mon#{i}", generation: 1) }
+    t = Task.create!(title: "handoff new session task", stage: "building",
+                     metadata: { "devops" => { "session_id" => "sess-A" } })
+    first = t.devops["mascot"]
+    assert first.present?
+
+    # another agent claims it (new session) and makes a build-phase move
+    t.update!(stage: "submitted", metadata: t.metadata.deep_merge("devops" => { "session_id" => "sess-B" }))
+
+    assert_not_equal first, t.reload.devops["mascot"], "new session → new Pokémon"
+  end
+
+  test "a session-less task still gets a one-off mascot" do
+    Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", generation: 1)
+    assert Task.create!(title: "no session task").devops["mascot"].present?
+  end
+
+  test "resync_session_mascots! collapses a session's tasks onto one Pokemon" do
+    3.times { |i| Pokemon.create!(dex: i + 1, name: "M#{i}", slug: "m#{i}", generation: 1) }
+    a = Task.create!(title: "old session task a", metadata: { "devops" => { "session_id" => "S" } })
+    b = Task.create!(title: "old session task b", metadata: { "devops" => { "session_id" => "S" } })
+    # force the OLD per-task world: same session, DIFFERENT mascots, no session tag
+    a.update_columns(metadata: { "devops" => { "session_id" => "S", "mascot" => "m0" } })
+    b.update_columns(metadata: { "devops" => { "session_id" => "S", "mascot" => "m1" } })
+
+    Task.resync_session_mascots!
+
+    assert_equal a.reload.devops["mascot"], b.reload.devops["mascot"], "one mascot per session"
+  end
 end
