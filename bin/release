@@ -20,10 +20,13 @@
 #     One-time (idempotent) per repo: create the persistent `release` branch from
 #     `origin/main` in every gem + app repo that doesn't already have one.
 #
-#   bin/release merge <task-slug> [--prod] [--dry-run]
-#     Record a PR merge INTO `release`: resolve the task's PR, `gh pr merge` it
-#     (its base MUST be `release`), then adopt the task onto the active release
-#     (reviewed→assembled, opening/reopening the candidate as needed).
+#   bin/release merge <task-slug> [<task-slug> ...] [--prod] [--dry-run]
+#     Record one-or-more PR merges INTO `release`: resolve every task's PR in ONE
+#     read, `gh pr merge` each (base MUST be `release`), then adopt ALL of them in
+#     a SINGLE `heroku run` (reviewed→assembled, opening/reopening the candidate).
+#     With ≥2 slugs it first prints an overlap planner (colliding files +
+#     suggested order + likely rebases; warning-only). The batched adopt runs in
+#     an `ensure`, so a PR that merged is recorded even if a later merge aborts.
 #
 #   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
 #     Assemble the active release + deploy it to QA. Keeps each app's `release`
@@ -1479,7 +1482,7 @@ if __FILE__ == $PROGRAM_NAME
   when "archive" then archive
   when "retro"   then retro
   else
-    warn "usage: bin/release {init|merge <task-slug>|prepare|ship|archive|retro} " \
+    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|ship|archive|retro} " \
          "[--task SLUG ...] [--slug REL] [--by NAME] " \
          "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
     exit 1
