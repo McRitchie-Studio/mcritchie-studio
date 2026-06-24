@@ -597,6 +597,24 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{@in_progress_task.slug} [data-test='stage-agent-avatars']", count: 0
   end
 
+  test "a freshly-created designed task shows its mascot on the board card" do
+    # Regression: a `designed` task has only a blank-actor genesis event, so the
+    # crew helper is empty — but its mascot is the feature agent's face and must
+    # show immediately (it used to appear only after the move to building).
+    Pokemon.create!(dex: 51, name: "Dugtrio", slug: "dugtrio", generation: 1,
+                    sprite_url: "https://example.test/dugtrio.png")
+    task = Task.create!(title: "Fresh designed mascot task", stage: "designed",
+                        metadata: { "devops" => { "mascot" => "dugtrio" } })
+    assert_equal "dugtrio", task.reload.devops_field("mascot"), "guard: the mascot persisted"
+
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']", { count: 1 },
+                  "a designed task must show its mascot the moment it's created"
+    assert_includes css_select("#card-#{task.slug}").to_s, "https://example.test/dugtrio.png",
+                    "the mascot's sprite renders on the card"
+  end
+
   # === Kanban stage moves via JSON PATCH (the one path: board, bin/task, API) ===
 
   test "move task to any stage via PATCH JSON" do

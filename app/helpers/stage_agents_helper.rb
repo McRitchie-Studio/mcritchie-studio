@@ -145,10 +145,28 @@ module StageAgentsHelper
   # a shipped task earns the fourth (shipped) lane; blocked mirrors Assembled's three
   # (a block lands from reviewed or assembled). Returns an ordered array of CrewCluster;
   # the partial renders one fixed grid column per entry (an empty entry reserves its slot).
+  # True when this board renders the split build steps (each wearing the mascot)
+  # rather than the collapsed Deploy clusters: always for designed/building, and
+  # through submitted on the Build board (/tasks). The mascot is painted from
+  # `devops.mascot` here independent of any crew entries — so a card on such a
+  # board shows its mascot even before the first actored stage event lands.
+  def build_step_board?(task, board)
+    %w[designed building].include?(task.stage) || (board == :build && task.stage != "blocked")
+  end
+
+  # Whether the stage-crew partial should render at all. The board card (stack)
+  # shows the build-lane mascot the moment a task is created — a fresh `designed`
+  # task has only a blank-actor genesis event, so `stage_agent_groups` is empty,
+  # but its mascot is the feature agent's face and `build_step_columns` paints it
+  # without entries. The detail (:detailed) panel still needs real crew entries.
+  def stage_crew_renderable?(task, entries, mascot:, variant:, board:)
+    return entries.any? if variant.to_sym == :detailed
+
+    entries.any? || (mascot.present? && build_step_board?(task, board))
+  end
+
   def crew_columns(task, entries, board:, mascot: nil, agents: nil, events: nil)
-    if %w[designed building].include?(task.stage) || (board == :build && task.stage != "blocked")
-      return build_step_columns(task, entries, mascot)
-    end
+    return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
 
