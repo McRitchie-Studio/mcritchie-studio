@@ -36,8 +36,11 @@ class Release
     #                     (qa-server key → { "heroku_app", "production_app", … }).
     # `target`          — :qa (run on the QA heroku app) or :prod (run on prod).
     #
-    # Returns one entry PER member that declares a non-blank post_deploy_cmd, in
-    # plan (producer-first) order:
+    # Returns one entry PER member that declares a real post_deploy_cmd, in
+    # plan (producer-first) order. A blank/whitespace-only command is skipped, as
+    # is the literal "none" — the no-op sentinel the dor-check gate hands authors
+    # of schema-only migrations (so the sentinel honored on the gate side is
+    # honored end-to-end here, not run as `heroku run none`).
     #   { "task" => slug, "repo" => repo, "app" => heroku-app, "cmd" => command }
     # `app` is "" when the repo has no registered target for `target` — the CLI
     # treats a blank app as a hard abort (a declared command with nowhere to run),
@@ -49,7 +52,10 @@ class Release
         app = target_app(qa_environments, group["qa_app"], target)
         Array(group["members"]).filter_map do |member|
           cmd = member["post_deploy_cmd"].to_s.strip
-          next if cmd.empty?
+          # "none" is the explicit no-op sentinel the dor-check gate hands authors
+          # of schema-only migrations — honor it here too, or `bin/release` would
+          # run `heroku run none` and abort the whole release on the common path.
+          next if cmd.empty? || cmd.casecmp?("none")
 
           { "task" => member["slug"].to_s, "repo" => group["repo"].to_s,
             "app" => app, "cmd" => cmd }
