@@ -549,33 +549,35 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select pills, text: /10m/ # shipped compartment (Avi) — its own pill
   end
 
-  test "task show renders the detailed deploy crew with stage badges, names, weights and durations" do
+  test "task show renders the consolidated stage timeline with crew, names, weights and durations" do
     task = seed_deploy_crew_task
 
     get task_path(task.slug)
     assert_response :success
 
-    assert_select "[data-test='stage-agent-avatars']"
-    # The detail crew header is "Stage crew" (the whole-journey label) — asserted on
-    # the REAL rendered header. The old `response.body` include of "Deploy crew" only
-    # passed incidentally because this seed task's TITLE contains "Deploy crew", so it
-    # no longer reflected the rendered UI after the header was renamed.
-    assert_select "[data-test='stage-agent-avatars'] p.label-upper", text: /Stage crew/
-    # one studio-engine badge per completed stage group (reviewed, assembled, shipped)
-    assert_select "[data-test='stage-agent-avatars'] span.badge", count: 3
-    # every soul is named
-    %w[Shannon Carl Steffon Avi].each { |name| assert_includes response.body, name }
+    # The detailed "Stage crew" panel + the separate "Stage Timeline" are now ONE
+    # consolidated timeline — every block carries the crew that handled its stage.
+    assert_select "[data-test='stage-timeline']"
+    assert_select "[data-test='stage-timeline'] p.label-upper", text: /Stage Timeline/
+    assert_select "[data-test='timeline-block']", minimum: 3 # reviewed · assembled · shipped
+    timeline = css_select("[data-test='stage-timeline']").to_s
+    # every soul is named on its block
+    %w[Shannon Carl Steffon Avi].each { |name| assert_includes timeline, name }
     # heavy/light review weights surface
-    assert_select "[data-test='stage-agent-avatars']", text: /heavy/
-    assert_select "[data-test='stage-agent-avatars']", text: /light/
-    # full humanized durations (7200s → about 2 hours), labelled by the stage left
-    assert_select "[data-test='stage-agent-avatars']", text: /about 2 hours in Submitted/
+    assert_includes timeline, "heavy"
+    assert_includes timeline, "light"
+    # full humanized duration (7200s → about 2 hours), labelled by the stage left
+    assert_includes timeline, "about 2 hours in Submitted"
   end
 
-  test "task show omits the deploy crew for an old-flow task lacking reviewers and actors" do
-    # a shipped task whose Deploy events were conductor-driven (no actor) and that
-    # predates the two-senior model (no reviewers metadata) shows no crew.
-    task = Task.create!(title: "Old flow crewless task", stage: "shipped")
+  test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do
+    # A shipped task whose Deploy moves were conductor-driven (blank actor) and that
+    # predates the two-senior model (no reviewers metadata): the consolidated timeline
+    # still attributes assembled→Steffon and shipped→Avi BY ROLE, so the Deploy crew
+    # never goes blank (the Steffon/Avi fix). The review block simply shows no pair.
+    Agent.create!(name: "Steffon", slug: "steffon")
+    Agent.create!(name: "Avi", slug: "avi")
+    task = Task.create!(title: "Old flow conductor task", stage: "shipped")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 2.hours.ago, seconds_in_from: 600)
@@ -586,8 +588,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     get task_path(task.slug)
     assert_response :success
-    assert_select "[data-test='stage-agent-avatars']", count: 0
-    assert_not_includes response.body, "Deploy crew"
+    timeline = css_select("[data-test='stage-timeline']").to_s
+    assert_includes timeline, "Steffon", "assembled backfills to its role owner"
+    assert_includes timeline, "Avi", "shipped backfills to its role owner"
   end
 
   test "build-lane board cards render no deploy-crew avatars" do

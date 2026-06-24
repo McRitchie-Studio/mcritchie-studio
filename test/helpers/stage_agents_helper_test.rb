@@ -89,9 +89,15 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[steffon], groups.map { |g| g.agent&.slug }
   end
 
-  test "assembled / shipped events with no actor are skipped" do
-    task = deploy_task(stage: "shipped", reviewers: nil, assembled_actor: nil, shipped_actor: nil)
-    assert_empty stage_agent_groups(task, @agents)
+  test "actor-less assembled / shipped fall back to their canonical role owners (Steffon / Avi)" do
+    # A conductor/model move records only the spine (blank actor); the Deploy crew
+    # must still show who OWNS the stage by role — Steffon QAs assembled, Avi ships —
+    # so they never go faceless. (A PRESENT but unresolved actor is NOT overridden;
+    # see the session-id stand-in test below.)
+    groups = stage_agent_groups(deploy_task(stage: "shipped", reviewers: nil, assembled_actor: nil, shipped_actor: nil), @agents)
+
+    assert_equal %w[assembled shipped], groups.map(&:stage)
+    assert_equal %w[steffon avi], groups.map { |g| g.agent&.slug }
   end
 
   test "an unresolved actor falls back to a palette stand-in without crashing" do
@@ -328,5 +334,75 @@ class StageAgentsHelperTest < ActionView::TestCase
     cols = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy)
 
     assert_equal %i[designed building submitted], cols.map(&:lane), "build steps show even on the deploy board"
+  end
+
+  # --- stage_timeline (consolidated /tasks/:id timeline) ----------------------
+
+  test "stage_timeline yields one block per transition with the completing crew + usage" do
+    task = deploy_task(stage: "shipped", reviewers: REVIEWERS)
+    blocks = stage_timeline(task, @agents)
+
+    assert_equal %w[reviewed assembled shipped], blocks.reject(&:in_progress?).map(&:to_stage),
+                 "one block per completed transition, newest last"
+    shipped = blocks.find { |b| b.to_stage == "shipped" }
+    assert_equal %w[avi], shipped.agents.map { |a| a.agent&.slug }
+    assert_equal 600, shipped.seconds
+  end
+
+  test "stage_timeline backfills Steffon/Avi on actor-less assembled/shipped blocks" do
+    task = deploy_task(stage: "shipped", reviewers: REVIEWERS, assembled_actor: nil, shipped_actor: nil)
+    by_stage = stage_timeline(task, @agents).index_by(&:to_stage)
+
+    assert_equal %w[steffon], by_stage["assembled"].agents.map { |a| a.agent&.slug }
+    assert_equal %w[avi], by_stage["shipped"].agents.map { |a| a.agent&.slug }
+  end
+
+  test "stage_timeline appends a live in-progress block for an open review intent" do
+    task = Task.create!(title: "timeline live review task", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    live = stage_timeline(task.reload, @agents).find(&:in_progress?)
+
+    assert_not_nil live, "an open review intent surfaces as a live block"
+    assert_equal "reviewed", live.to_stage
+    assert_not_nil live.live_since
+    assert_equal %w[shannon carl], live.agents.map { |a| a.agent&.slug }
+    assert_equal %w[heavy light], live.agents.map(&:weight)
+  end
+
+  # --- in_progress_work + the board live injection ----------------------------
+
+  test "in_progress_work reads the Steffon QA intent while reviewed" do
+    task = Task.create!(title: "qa intent task", stage: "reviewed")
+    task.record_intent_event(to_stage: "assembled", actor: "steffon")
+    work = in_progress_work(task.reload, @by_slug, nil, task.task_events.select(&:intent?))
+
+    assert_equal :assembled, work[:lane]
+    assert_equal %w[steffon], work[:agents].map { |a| a.agent&.slug }
+    assert_not_nil work[:live_since]
+  end
+
+  test "in_progress_work returns nil for a shipped (idle) task" do
+    assert_nil in_progress_work(deploy_task(stage: "shipped", reviewers: REVIEWERS), @by_slug, nil, [])
+  end
+
+  test "crew_columns surfaces an open review intent as a live ticking cluster on the deploy board" do
+    task = Task.create!(title: "board live review task", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    task.reload
+
+    review = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+            .find { |c| c.lane == :review }
+
+    assert review.stacked.any?, "the review lane shows the in-progress pair"
+    assert_not_nil review.live_since, "and ticks a live counter"
+  end
+
+  test "crew_columns without an agent map skips the live injection (legacy callers unchanged)" do
+    task = Task.create!(title: "board no-agents task", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    task.reload
+
+    review = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy).find { |c| c.lane == :review }
+    assert_empty review.stacked, "no agents passed → no live cluster, exactly as before"
   end
 end

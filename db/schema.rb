@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_23_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_24_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -939,6 +939,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_23_120000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "kind", default: "transition", null: false
+    t.index ["task_slug", "kind"], name: "index_task_events_on_task_slug_and_kind"
     t.index ["task_slug", "occurred_at"], name: "index_task_events_on_task_slug_and_occurred_at"
   end
 

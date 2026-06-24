@@ -203,59 +203,8 @@
       </div>
     <% end %>
 
-    <!-- Per-completed-stage agents (reviewers + Steffon + Avi) -->
-    <% deploy_crew = capture do %>
-      <%= render "components/stage_agent_avatars", task: @task, agents: @agents, variant: :detailed, events: @task_events %>
-    <% end %>
-    <% if deploy_crew.strip.present? %>
-      <div class="mb-4"><%= deploy_crew %></div>
-    <% end %>
-
-    <!-- Stage Timeline -->
-    <div class="bg-surface-alt rounded-lg p-3 mb-4" data-test="stage-timeline">
-      <div class="flex items-center justify-between gap-3 mb-3">
-        <div>
-          <p class="label-upper">Stage Timeline</p>
-          <p class="text-xs text-muted mt-1">Every stage change, with time spent (measured) and the model cost the agent reported (best-effort).</p>
-        </div>
-      </div>
-
-      <% if @task_events.present? %>
-        <ol class="space-y-2">
-          <% @task_events.each do |event| %>
-            <li class="bg-surface rounded p-3 border border-subtle">
-              <div class="flex flex-wrap items-center gap-2 mb-1">
-                <%= render "components/badge", text: event.from_label, scheme: event.from_stage.present? ? stage_scheme(event.from_stage) : "neutral" %>
-                <span class="text-muted text-xs">&rarr;</span>
-                <%= render "components/badge", text: event.to_label, scheme: stage_scheme(event.to_stage) %>
-                <span class="text-xs text-muted" title="<%= event.occurred_at.strftime("%b %d, %Y %H:%M") %>">
-                  <%= event.occurred_at.strftime("%b %d, %H:%M") %> &middot; <%= time_ago_in_words(event.occurred_at) %> ago
-                </span>
-                <% if event.backfilled? %>
-                  <span class="text-[10px] text-muted uppercase tracking-wide" title="Reconstructed from legacy stage timestamps">reconstructed</span>
-                <% end %>
-              </div>
-              <div class="flex flex-wrap items-center gap-2 text-xs">
-                <% if (spent = humanize_stage_duration(event.seconds_in_from)) %>
-                  <span class="text-secondary" title="Measured server-side">&#9201; <%= spent %> in <%= event.from_label %></span>
-                <% end %>
-                <% if event.usage? %>
-                  <span class="px-1.5 py-0.5 rounded bg-surface-alt text-muted border border-subtle font-mono"
-                        title="Reported by the agent for the work in this stage (best-effort, per transition)">
-                    <%= event.model.presence || "model ?" %><% if event.tokens_total %> &middot; <%= number_with_delimiter(event.tokens_total) %> tok<% end %><% if event.cost.present? %> &middot; ~$<%= format("%.2f", event.cost) %><% end %>
-                  </span>
-                <% end %>
-                <% if event.source.present? %>
-                  <span class="text-[10px] text-muted uppercase tracking-wide"><%= event.source %></span>
-                <% end %>
-              </div>
-            </li>
-          <% end %>
-        </ol>
-      <% else %>
-        <p class="text-sm text-muted">No stage changes recorded yet.</p>
-      <% end %>
-    </div>
+    <!-- Consolidated stage timeline (crew + timeline merged into one visual) -->
+    <%= render "tasks/consolidated_timeline", task: @task, agents: @agents, events: @task_events %>
 
     <!-- Conversation -->
     <div class="bg-surface-alt rounded-lg p-3 mb-4">
