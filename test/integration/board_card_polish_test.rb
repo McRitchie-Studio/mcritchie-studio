@@ -70,4 +70,44 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     # the footer meta wrapper is a single non-wrapping clipped line too
     assert_select "#card-#{task.slug} div.whitespace-nowrap.overflow-hidden", minimum: 1
   end
+
+  test "the release-train badge is dropped from the board card" do
+    task = Task.create!(title: "release train polish card", stage: "submitted",
+                        metadata: { "devops" => { "release_train" => "2026-06-23-devops-intent-ui" } })
+
+    get tasks_path
+    assert_response :success
+
+    # the release-train pill no longer rides the card — it's pipeline plumbing, not a
+    # high-level glance signal (it still shows on the task detail view)
+    assert_select "#card-#{task.slug} span", text: "2026-06-23-devops-intent-ui", count: 0
+  end
+
+  test "QA and Prod quick links still ride the card when present" do
+    task = Task.create!(title: "qa prod links polish card", stage: "submitted",
+                        metadata: { "devops" => {
+                          "qa_url" => "https://qa.example.com",
+                          "production_url" => "https://prod.example.com",
+                        } })
+
+    get tasks_path
+    assert_response :success
+
+    # dropping the release-train badge must not take the QA/Prod links with it
+    assert_select "#card-#{task.slug} a", text: "QA", count: 1
+    assert_select "#card-#{task.slug} a", text: "Prod", count: 1
+  end
+
+  test "the activity box hugs the card with a slim top margin" do
+    task = Task.create!(title: "activity margin polish card", stage: "submitted")
+    Activity.create!(task_slug: task.slug, activity_type: "handoff",
+                     description: "Increment 2 (websocket live updates) handed off.")
+
+    get tasks_path
+    assert_response :success
+
+    # the box sits tight under the crew (mt-1), not the old mt-2 gap
+    assert_select "#card-#{task.slug} [data-test='activity-box'].mt-1", count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-box'].mt-2", count: 0
+  end
 end
