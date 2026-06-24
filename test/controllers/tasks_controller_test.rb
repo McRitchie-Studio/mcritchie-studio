@@ -843,21 +843,23 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   # === Reorder ===
 
-  test "reorder sets positions in order" do
+  test "reorder writes the 100-spaced rank, top card highest" do
     log_in_as(@admin)
     # Create two tasks in same stage
     t1 = Task.create!(title: "reorder task a here", stage: "designed")
     t2 = Task.create!(title: "reorder task b here", stage: "designed")
 
-    # Reorder: B before A
+    # DOM order top→bottom = [t2, t1]; under `position DESC` the top card must hold
+    # the highest rank, 100-spaced (index 0 → len*100, index 1 → (len-1)*100).
     post reorder_tasks_path(format: :json),
          params: { slugs: [t2.slug, t1.slug] }, as: :json
     assert_response :success
 
     t1.reload
     t2.reload
-    assert_equal 1, t1.position
-    assert_equal 0, t2.position
+    assert_equal 200, t2.position, "top card (index 0) gets (len - 0) * 100"
+    assert_equal 100, t1.position, "next card (index 1) gets (len - 1) * 100"
+    assert_operator t2.position, :>, t1.position
   end
 
   test "reorder requires admin" do

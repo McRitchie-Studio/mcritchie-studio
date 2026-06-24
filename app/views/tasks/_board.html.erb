@@ -33,6 +33,7 @@ function kanbanBoard() {
   return {
     _pendingMoves: {},
     agentFilter: '',
+    hiddenApps: [],
     showArchived: false,
     showAllCols: false,
     toasts: [],
@@ -41,6 +42,21 @@ function kanbanBoard() {
 
     matchesFilter(agent) {
       return !this.agentFilter || agent === this.agentFilter;
+    },
+
+    // App filter — a toggled-off app hides all its cards (exclusion). Each card
+    // carries its repos as a comma string and hides if ANY of them is toggled off.
+    // Mirrors the agentFilter pattern: client-side only, resets on reload.
+    toggleApp(app) {
+      const i = this.hiddenApps.indexOf(app);
+      if (i === -1) { this.hiddenApps.push(app); } else { this.hiddenApps.splice(i, 1); }
+    },
+    appHidden(app) {
+      return this.hiddenApps.includes(app);
+    },
+    appVisible(csv) {
+      if (!csv) return true; // a task with no mapped repo always shows
+      return !csv.split(',').some(a => this.hiddenApps.includes(a));
     },
 
     init() {
@@ -252,6 +268,26 @@ function kanbanBoard() {
     </div>
   <% end %>
 
+  <%# App filter — toggle a repo to hide all its cards (client-side, like the agent
+      filter). Built from the repos actually present on the board, so an app only
+      appears once it has a task; unmapped slugs (e.g. rolio, pre-emoji) still show
+      as a text chip. Sits right above the stage-header row. %>
+  <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
+  <% if board_apps.any? %>
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+      <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
+      <% board_apps.each do |app| %>
+        <button type="button"
+                @click="toggleApp('<%= app %>')"
+                :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
+          <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
+          <span><%= app %></span>
+        </button>
+      <% end %>
+    </div>
+  <% end %>
+
   <!-- Kanban Board -->
   <div class="flex gap-4 overflow-x-auto pb-4">
     <% columns.each_with_index do |stage, idx| %>
@@ -302,9 +338,10 @@ function kanbanBoard() {
                  data-slug="<%= task.slug %>"
                  data-stage="<%= task.stage %>"
                  data-agent="<%= task.agent_slug %>"
+                 data-apps="<%= task.devops_repositories.join(",") %>"
                  data-href="<%= task_path(task.slug) %>"
                  x-data="{ hovered: false, mx: 0, my: 0 }"
-                 x-show="matchesFilter('<%= task.agent_slug %>')"
+                 x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= task.devops_repositories.join(",") %>')"
                  @mouseenter="hovered = true"
                  @mouseleave="hovered = false"
                  @mousedown="mx = $event.clientX; my = $event.clientY"
