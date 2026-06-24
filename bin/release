@@ -93,6 +93,7 @@ require "shellwords"
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
+require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/cli"
 
 APP = "mcritchie-studio"
@@ -447,56 +448,151 @@ def init
 end
 
 # --- merge -----------------------------------------------------------------
-# Record a PR merge INTO the persistent `release` branch: resolve the task's PR,
-# verify its base is `release`, `gh pr merge` it, then adopt the task onto the
-# active release (reviewed→assembled). This is the conductor's membership-at-merge
-# command — conflicts now surface here (at PR-merge), not in prepare.
-def merge
-  task_slug = ARGV.shift
-  abort!("usage: bin/release merge <task-slug>") if task_slug.to_s.empty?
+# Record one-or-more PR merges INTO the persistent `release` branch. For each
+# task: resolve its PR, verify its base is `release`, `gh pr merge` it; then adopt
+# ALL the merged tasks onto the active release in ONE `heroku run` (reviewed→
+# assembled). This is the conductor's membership-at-merge command — conflicts
+# surface here (at PR-merge), not in prepare.
+#
+# BATCHED (the per-PR cold-start fix): the OLD merge did a `gh pr merge` + a
+# cold-start `heroku run` adopt PER PR; 3 in a loop blew the 2-min tool timeout
+# and a mid-run timeout left a PR merged but its task stuck `reviewed`. Now the
+# resolve is ONE read and the adopts are ONE write (single dyno spin-up, N flips),
+# and the adopt runs in an `ensure` so any PR that merged is recorded even if a
+# later step aborts — the half-state can't recur. Single-slug stays identical.
 
-  say("Merge #{task_slug} into `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+# The one-shot read snippet that resolves EVERY merge slug's PR in a SINGLE
+# conductor call (one heroku-run spin-up for the whole batch). Pure string
+# builder (slugs are alnum/hyphen, safe under .inspect — same as the existing
+# single-slug `slug.inspect` literals). Emits ONE JSON line:
+#   { "tasks": [ { slug, pr_url, repo, stage } | { slug, missing: true } ] }
+def batch_resolve_ruby(slugs)
+  "slugs = #{slugs.inspect}; " \
+  "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
+  "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage } " \
+  ": { slug: s, missing: true } }; " \
+  "puts({ tasks: rows }.to_json)"
+end
 
-  # 1. Resolve the task's PR url + repo from the board (a read — runs in dry-run).
-  step("record (read-only): resolve task PR")
-  info = conductor(
-    "t = Task.find_by(slug: #{task_slug.inspect}); " \
-    "puts((t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage } : {}).to_json)",
-    read_only: true
-  )
-  abort!("task #{task_slug} not found on the board") if info["slug"].to_s.empty?
-  pr_url = info["pr_url"].to_s
-  repo   = info["repo"].to_s
-  abort!("task #{task_slug} has no PR url (devops.pr_url) — set it before merging") if pr_url.empty?
-  say("  task #{task_slug} (#{info['stage']}) · #{repo} · #{pr_url}")
+# The one-shot write snippet that adopts EVERY merged slug in a SINGLE `heroku
+# run` — N reviewed→assembled flips on one dyno, instead of a cold `heroku run`
+# per PR. adopt! is idempotent/self-healing (see Release::Conductor), so a re-run
+# is safe. Emits ONE JSON line: { "adopted": [...], "slug": <last release>, "state" }.
+def batch_adopt_ruby(slugs)
+  "slugs = #{slugs.inspect}; " \
+  "results = slugs.map { |s| r = Release::Conductor.adopt!(Task.find_by!(slug: s)); " \
+  "{ task: s, release: r.slug, state: r.state } }; " \
+  "last = results.last; " \
+  "puts({ adopted: results, slug: (last && last[:release]), state: (last && last[:state]) }.to_json)"
+end
 
-  # 2. The PR's base MUST be `release` — this command only records merges INTO it.
-  base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
-  base = base.strip
-  # Fail CLOSED: if the base can't be read, don't proceed to an unverified merge.
-  abort!("could not read the PR base for #{pr_url} (gh pr view failed) — verify the PR exists and targets `#{RELEASE_BRANCH}`") if !DRY && !base_ok
-  if !DRY && base != RELEASE_BRANCH
-    abort!("PR #{pr_url} targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it to `#{RELEASE_BRANCH}` " \
-           "(feature PRs merge INTO release now), then re-run `bin/release merge #{task_slug}`.")
-  end
+# A PR's changed-file paths (read-only; goes straight to Open3 so it runs even in
+# --dry-run, like git_capture / conductor read_only). [] when gh fails / none.
+def gh_pr_files(pr_url)
+  out, status = Open3.capture2e("gh", "pr", "view", pr_url, "--json", "files", "-q", ".files[].path")
+  return [] unless status.success?
 
-  # 3. Merge the PR (base is release).
-  step("gh pr merge #{pr_url} --merge")
-  _, merged = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
-  abort!("gh pr merge failed for #{pr_url} — resolve on GitHub (conflicts/checks), then re-run `bin/release merge #{task_slug}`.") unless merged || DRY
+  out.lines.map(&:strip).reject(&:empty?)
+end
 
-  # 4. Record membership: adopt the task onto the active release (reviewed→
-  #    assembled, opening/reopening the candidate as needed). A board WRITE →
-  #    suppressed in dry-run.
-  step("record: Release::Conductor.adopt!(#{task_slug})")
-  result = conductor(
-    "r = Release::Conductor.adopt!(Task.find_by!(slug: #{task_slug.inspect})); " \
-    "puts({slug: r.slug, state: r.state, task: #{task_slug.inspect}}.to_json)"
-  )
+# Overlap planner (WARNING ONLY — never blocks): before merging a batch, fetch
+# each PR's changed files and print the pairwise file collisions, a suggested
+# (smallest-footprint-first) merge order, and which PRs will likely need a
+# post-merge rebase (they share a file with an earlier-merged same-repo PR). Born
+# from real rework: siblings that all touched task.rb/docs/a shared helper passed
+# review independently, then conflicted on `release`. The pure decision lives in
+# Release::MergePlan; this owns only the gh I/O + printing. A single PR has
+# nothing to compare, so it's skipped.
+def merge_overlap_report(infos)
+  return if infos.size < 2
 
   say("")
-  say("✓ Merged #{task_slug} (#{repo}) into `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
-  say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` to QA it.") unless DRY
+  step("overlap planner: #{infos.size} PRs — fetching changed files (gh pr view)")
+  prs = infos.map do |info|
+    { "slug" => info["slug"], "repo" => info["repo"], "files" => gh_pr_files(info["pr_url"]) }
+  end
+  plan = Release::MergePlan.compute(prs)
+
+  if plan["overlaps"].empty?
+    say("  ✓ no overlapping files across the batch — merges are independent")
+    return
+  end
+
+  plan["overlaps"].each do |o|
+    files = o["files"].first(8).join(", ")
+    more  = o["files"].size > 8 ? " (+#{o['files'].size - 8} more)" : ""
+    say("  ⚠ #{o['a']} ∩ #{o['b']} → #{files}#{more}")
+  end
+  say("  suggested merge order (smallest-footprint first): #{plan['suggested_order'].join(', ')}")
+  if plan["rebase"].any?
+    say("  post-merge rebase likely (shares files with an earlier-merged PR): #{plan['rebase'].join(', ')}")
+  end
+  say("  (warning only — `bin/release merge` proceeds in the order given)")
+end
+
+def merge
+  slugs = Release::Cli.positional_slugs(ARGV)
+  abort!("usage: bin/release merge <task-slug> [<task-slug> ...]") if slugs.empty?
+
+  say("Merge #{slugs.join(', ')} into `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+
+  # 1. Resolve ALL the tasks' PRs in ONE read (one heroku-run spin-up for the
+  #    whole batch; a read — runs even in dry-run).
+  step("record (read-only): resolve #{slugs.size} task PR(s)")
+  resolved = conductor(batch_resolve_ruby(slugs), read_only: true)
+  infos = resolved["tasks"] || []
+
+  missing = infos.select { |i| i["missing"] }.map { |i| i["slug"] }
+  abort!("task(s) not found on the board: #{missing.join(', ')}") if missing.any?
+  no_pr = infos.select { |i| i["pr_url"].to_s.empty? }.map { |i| i["slug"] }
+  abort!("task(s) have no PR url (devops.pr_url) — set it before merging: #{no_pr.join(', ')}") if no_pr.any?
+  infos.each { |i| say("  task #{i['slug']} (#{i['stage']}) · #{i['repo']} · #{i['pr_url']}") }
+
+  # 2. Overlap planner (warning only) — BEFORE any merge, so the operator sees the
+  #    file collisions + suggested order first.
+  merge_overlap_report(infos)
+
+  # 3. Verify EVERY PR's base is `release` up front (fail-fast: nothing merged
+  #    yet, so a wrong base can't leave a half-merged batch).
+  infos.each do |info|
+    pr_url = info["pr_url"]
+    base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
+    base = base.strip
+    # Fail CLOSED: if the base can't be read, don't proceed to an unverified merge.
+    abort!("could not read the PR base for #{pr_url} (#{info['slug']}; gh pr view failed) — verify it targets `#{RELEASE_BRANCH}`") if !DRY && !base_ok
+    if !DRY && base != RELEASE_BRANCH
+      abort!("PR #{pr_url} (#{info['slug']}) targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it " \
+             "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
+    end
+  end
+
+  # 4. Merge each PR (bases verified). Track which actually merged so the BATCHED
+  #    adopt (step 5, in `ensure`) records every merged PR even if a later merge
+  #    aborts — closing the "PR merged, task stuck reviewed" half-state for good.
+  merged = []
+  begin
+    infos.each do |info|
+      pr_url = info["pr_url"]
+      step("gh pr merge #{pr_url} --merge")
+      _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
+      abort!("gh pr merge failed for #{pr_url} (#{info['slug']}) — resolve on GitHub (conflicts/checks), " \
+             "then re-run `bin/release merge` for the remaining slug(s).") unless ok || DRY
+      merged << info["slug"]
+    end
+  ensure
+    # 5. BATCHED adopt: ALL merged slugs in ONE `heroku run` (single dyno spin-up,
+    #    N flips) — the core fix. In `ensure` so a partial-failure batch still
+    #    records the PRs that DID merge. A board WRITE → suppressed in dry-run.
+    if merged.any?
+      step("record: Release::Conductor.adopt! ×#{merged.size} in ONE run (#{merged.join(', ')})")
+      @merge_result = conductor(batch_adopt_ruby(merged))
+    end
+  end
+
+  result = @merge_result || {}
+  say("")
+  say("✓ Merged #{merged.join(', ')} into `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` to QA it.") unless DRY || result.empty?
 end
 
 # --- prepare ---------------------------------------------------------------
@@ -1024,6 +1120,41 @@ def deploy_app(group, frozen)
   @ship_live << "app #{repo} deployed to production"
 end
 
+# --- ship preflight: every app checkout on a clean `main` before any ff -----
+# ship ff's each app repo's `main` up to the QA-frozen SHA (avi_ship_gate +
+# deploy_app), which assumes the checkout is ON `main` with a CLEAN tree. Twice
+# this session a review agent left a checkout on a leftover `pr-NNN` branch / a
+# stale uncommitted schema.rb, and the ff broke MID-ship (after gems published +
+# the operator gate — the worst time). This preflight catches that BEFORE any ff,
+# aborting loudly with the offending branch / dirty files. The PURE decision
+# (offenders + message) lives in Release::ShipSequence; this owns only the git
+# reads. A dry-run prints the plan and runs NO git (so a preview never aborts on a
+# legitimately-dirty dev sibling).
+
+# The current branch + dirty-file list for a checkout (live git reads). Split out
+# as the I/O seam ship_preflight calls per app repo (stubbed in tests).
+def repo_git_state(repo, path)
+  branch, = git_capture("-C", path, "rev-parse", "--abbrev-ref", "HEAD")
+  status, = git_capture("-C", path, "status", "--porcelain")
+  files = status.to_s.lines.map { |l| l[3..].to_s.strip }.reject(&:empty?)
+  { "repo" => repo, "branch" => branch.to_s.strip, "dirty" => files.any?, "dirty_files" => files }
+end
+
+def ship_preflight(app_groups)
+  say("")
+  step("ship preflight: each app checkout must be on a clean `main` before any ff")
+  if DRY
+    app_groups.each { |g| say("  [dry-run] check #{g['repo']} (#{repo_path(g['repo'])}) is on a clean main") }
+    return
+  end
+
+  states = app_groups.map { |g| repo_git_state(g["repo"], repo_path(g["repo"])) }
+  offenders = Release::ShipSequence.preflight_offenders(states)
+  abort!(Release::ShipSequence.preflight_message(offenders)) if offenders.any?
+
+  say("  ✓ #{states.size} app checkout(s) on a clean `main`")
+end
+
 # --- ship -------------------------------------------------------------------
 def ship
   by = opt_value("--by") || ENV["USER"] || "operator"
@@ -1054,6 +1185,11 @@ def ship
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
   say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
   say("  partial-ship: abort on first failure; re-run resumes (gems skip, ff no-ops, re-pins idempotent)")
+
+  # PREFLIGHT — BEFORE any ff (avi_ship_gate is the first): assert every app
+  # checkout is on a clean `main`. A leftover review branch / dirty schema.rb
+  # would otherwise break the ff mid-ship; abort loudly here instead.
+  ship_preflight(app_groups)
 
   # The QA-frozen SHA to ship per repo (advanced by a re-pin commit in step 4).
   ship_sha = {}

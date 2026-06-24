@@ -38,5 +38,14 @@ class Release
       end
       vals.compact
     end
+
+    # The positional (non-flag) tokens — the one-or-more task slugs `bin/release
+    # merge` accepts. NON-mutating (unlike the flag parsers above): `merge` reads
+    # nothing else from args afterward, so there's no consumed-flag to hide from a
+    # later parser. Any `-`-prefixed token is treated as a flag and excluded, so a
+    # stray flag never lands in the slug list.
+    def positional_slugs(args)
+      Array(args).reject { |a| a.to_s.start_with?("-") }
+    end
   end
 end

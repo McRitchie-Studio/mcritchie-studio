@@ -156,10 +156,14 @@ task-to-task edges. See "Gem members & producer-first ordering" below.
 **Membership flips at merge; QA is a deploy of `origin/release`.** Feature PRs
 already target `release`, so there is no branch-cut and no PR-base retarget. For
 each `reviewed` member the conductor merges its PR into `release`
-(`bin/release merge <task>` → `gh pr merge` + `Release::Conductor.adopt!`), which
-records the task onto the active candidate and flips it `reviewed → assembled`. A
-merge conflict surfaces **at this PR-merge step** (resolve on GitHub, or block
-the task for rework) — `release` never force-pushes. Once the desired members are
+(`bin/release merge <task> [<task> …]` → `gh pr merge` + `Release::Conductor.adopt!`),
+which records the task onto the active candidate and flips it `reviewed →
+assembled`. **`merge` is batched** — it takes one OR many slugs, `gh pr merge`s
+each, then adopts them all in **one `heroku run`** (the cold-start-per-PR adopt
+otherwise blew the tool timeout and left half-states); with ≥2 slugs it also
+prints an **overlap planner** (colliding files + suggested order + likely
+rebases, warning-only). A merge conflict surfaces **at this PR-merge step**
+(resolve on GitHub, or block the task for rework) — `release` never force-pushes. Once the desired members are
 merged and **Steffon's integration + e2e-smoke suite** is green on
 `origin/release`, `bin/release prepare` deploys `origin/release` to **QA** +
 records the QA URL → the release is **`assembled`** (the QA candidate). A late PR
@@ -467,15 +471,30 @@ crew never goes blank.
 **`Prepare release`**  *(reviewed → assembled — an RC for QA)*
 Two deterministic steps:
 
-1. **Merge each approved PR into `release`.** Run **`bin/release merge <task-slug>
-   --yes [--prod]`** per `reviewed` task (run the pre-merge checklist first —
-   `gh pr ready <n>` to un-draft, `gh pr edit <n> --base release` to retarget):
-   it resolves the task's PR, verifies its base
-   is `release`, `gh pr merge`s it, then `Release::Conductor.adopt!`s the task
-   onto the active candidate — flipping it `reviewed → assembled` and
-   opening/reopening the singleton release as needed. A merge **conflict surfaces
-   here** (resolve on GitHub or block the task for rework); `release` is never
-   force-pushed. Gem PRs merge into their own repo's `release` like any other.
+1. **Merge approved PRs into `release` (BATCHED).** Run **`bin/release merge
+   <task-slug> [<task-slug> …] --yes [--prod]`** — it accepts **one OR many**
+   slugs (run the pre-merge checklist first — `gh pr ready <n>` to un-draft,
+   `gh pr edit <n> --base release` to retarget). It resolves every task's PR in
+   **one** board read, verifies each base is `release`, `gh pr merge`s each, then
+   `Release::Conductor.adopt!`s **all of them in a SINGLE `heroku run`** (one dyno
+   spin-up, N `reviewed → assembled` flips) — opening/reopening the singleton
+   release as needed. A merge **conflict surfaces here** (resolve on GitHub or
+   block the task for rework); `release` is never force-pushed. Gem PRs merge into
+   their own repo's `release` like any other.
+   - **Why batched:** the old one-slug-at-a-time loop did a cold-start `heroku
+     run` adopt **per PR** — three in a row blew the 2-min tool timeout, and a
+     mid-loop timeout left a PR *merged* but its task stuck `reviewed` (a
+     half-state). Batching collapses the adopts to one dyno; the adopt also runs
+     in an **`ensure`**, so every PR that *did* merge is still adopted even if a
+     later `gh pr merge` aborts — the half-state can't recur.
+   - **Overlap planner (warning only).** With ≥2 slugs, before merging it fetches
+     each PR's changed files (`gh pr view <n> --json files`), then prints the
+     pairwise **file collisions**, a **suggested merge order**
+     (smallest-footprint first), and which PRs will likely need a **post-merge
+     rebase** (they touch a file an earlier same-repo PR already merged). It
+     **never blocks** — merges proceed in the order given; it just surfaces the
+     "siblings all touched `task.rb`" rework *before* it happens. Pure logic:
+     `Release::MergePlan.compute`.
 2. **Deploy the candidate to QA.** Run **`bin/release prepare --yes [--task SLUG ...]
    [--slug rel-…] [--prod]`** (`Release::Conductor.prepare!`): finds the active
    release, runs a per-app **merge-forward guard** (keeps each repo's `release`
@@ -495,7 +514,14 @@ Two deterministic steps:
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
 Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
-before deploying. **Producer-first:** before any app deploy, it publishes every
+before deploying. **Preflight FIRST (before any fast-forward):** ship asserts
+every **app checkout** is on a **clean `main`** and aborts loudly — naming the
+offending branch / dirty files — if any isn't. ship ff's each repo's `main` up to
+the QA-frozen SHA, so a checkout a review agent left on a leftover `pr-NNN` branch
+or with an uncommitted stale `schema.rb` would otherwise break the ff *mid-ship*
+(after gems published + the operator gate — the worst time). The preflight catches
+it up front, before anything irreversible. Pure decision:
+`Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Producer-first:** before any app deploy, it publishes every
 **gem member** to RubyGems in order — for each it prints the gem + target
 version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
 `--yes` / `--dry-run`), runs the gem's build (studio-engine: `bin/release-check
@@ -742,14 +768,14 @@ for each task in {submitted}:
 
 # Workflow 2 — the ONE active release (singleton).
 release.assembling:
-  pick next reviewed member honoring dependencies + lanes (§4.2)
-  bin/release merge <task>: gh pr merge PR (base release) + adopt!  — conflict ⇒ block task (resolve on GitHub)
-  member → assembled; when desired members in + integration + e2e-smoke green on origin/release (Steffon):
+  pick next reviewed member(s) honoring dependencies + lanes (§4.2)
+  bin/release merge <task...>: overlap planner (warn) → gh pr merge each (base release) → adopt ALL in ONE heroku run (ensure)  — conflict ⇒ block task (resolve on GitHub)
+  member(s) → assembled; when desired members in + integration + e2e-smoke green on origin/release (Steffon):
   bin/release prepare → deploy origin/release → QA + Discord notes → release.assembled
   # full e2e + highest tier runs at ship, on the FROZEN ship SHA (Avi) — §1.2
 release.assembled:
   Avi: full e2e + highest tier on the FROZEN ship SHA          # §1.2 — closes "shipped ≠ tested"
-  if operator_made_the_release: bin/release ship → ff release → main, bin/deploy → production_smoke → notes → members shipped  # ONLY here
+  if operator_made_the_release: bin/release ship → PREFLIGHT (each app on clean main, else abort) → ff release → main, bin/deploy → production_smoke → notes → members shipped  # ONLY here
   else: no-op (HARD STOP — wait for the operator to Make the release)
 
 update last_heartbeat_at, current_command, blocked_reason; emit progress
@@ -770,6 +796,12 @@ Properties that give resilience + scale:
 
 The heartbeat agent will not merge-race conflicting work:
 
+- **Overlap planner (pre-merge heads-up).** A batched `bin/release merge a b c`
+  prints, before merging, the **files each PR shares with the others**, a
+  suggested merge order (smallest-footprint first), and which PRs will need a
+  post-merge rebase — so siblings that all touched `task.rb` / a shared helper /
+  the docs don't conflict on `release` *after* passing review. Warning-only (it
+  never blocks); the conductor reads it to choose order / rebase the loser.
 - **Migrations:** two tasks touching `db/schema.rb` or migrations → serialize
   via the existing `backend_migration` advisory lock; second one holds with a
   note.
