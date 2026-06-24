@@ -27,7 +27,7 @@ class TaskCliTest < Minitest::Test
   # `env` overrides merge onto a clean base (auth secret + base url + skip marker);
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
-  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building")
+  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil)
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
@@ -48,7 +48,8 @@ class TaskCliTest < Minitest::Test
       "CODEX_THREAD_ID" => nil
     }.merge(env)
 
-    out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, *args)
+    spawn_opts = chdir ? { chdir: chdir } : {}
+    out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, *args, **spawn_opts)
     [requests, out, err, status]
   ensure
     server&.close
@@ -571,5 +572,60 @@ class TaskCliTest < Minitest::Test
       assert status.success?
       assert_match(%r{no origin/feat/demo-task branch}i, out)
     end
+  end
+
+  # --- Active-feature marker: the no-downgrade mascot guarantee ----------------
+
+  MARKER_SESSION = "5c5c5c5c-1111-2222-3333-444455556666"
+
+  # Run bin/task with the per-session marker ENABLED, isolated to a throwaway
+  # projects dir (CLAUDE_PROJECTS_DIR) and a non-worktree cwd (chdir there) so the
+  # `/.worktrees/` skip-guard doesn't suppress the write. `pre_marker` seeds an
+  # existing on-disk marker. Returns the parsed marker hash (or nil if unwritten).
+  def run_with_marker(args, stub_devops:, pre_marker: nil)
+    Dir.mktmpdir do |projects|
+      sessions = File.join(projects, ".agents", "sessions")
+      FileUtils.mkdir_p(sessions)
+      marker_path = File.join(sessions, "#{MARKER_SESSION}.json")
+      File.write(marker_path, JSON.generate(pre_marker)) if pre_marker
+
+      run_task(
+        args,
+        env: {
+          "CLAUDE_CODE_SESSION_ID" => MARKER_SESSION,
+          "CLAUDE_PROJECTS_DIR" => projects,
+          "TASK_SKIP_MARKER" => nil # nil deletes it from the child → the marker writes
+        },
+        stub_devops: stub_devops,
+        chdir: projects # a non-worktree cwd so write_feature_marker doesn't skip
+      )
+
+      File.exist?(marker_path) ? JSON.parse(File.read(marker_path)) : nil
+    end
+  end
+
+  # The bug: a move whose API response carries NO mascot must NOT blank an
+  # already-known mascot out of the marker — that flip-flops bin/statusline off
+  # its ⊙<mascot> handle to the bare task-link fallback. The last-good on-disk
+  # value is kept instead.
+  def test_marker_keeps_a_known_mascot_when_the_response_lacks_one
+    marker = run_with_marker(
+      ["move", "demo-task", "building"],
+      stub_devops: { "kind" => "feature" }, # response carries no mascot
+      pre_marker: { "slug" => "demo-task", "mascot" => "snorlax" } # last-good on disk
+    )
+    refute_nil marker, "the marker must still be written"
+    assert_equal "snorlax", marker["mascot"], "a mascot-less response must not downgrade the marker"
+  end
+
+  # Baseline: a response that DOES carry a mascot writes it straight through (and
+  # wins over any stale on-disk value — a real handoff updates the handle).
+  def test_marker_writes_the_response_mascot_when_present
+    marker = run_with_marker(
+      ["move", "demo-task", "building"],
+      stub_devops: { "kind" => "feature", "mascot" => "gengar" },
+      pre_marker: { "slug" => "demo-task", "mascot" => "snorlax" }
+    )
+    assert_equal "gengar", marker["mascot"]
   end
 end
