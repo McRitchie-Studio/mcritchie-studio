@@ -16,7 +16,15 @@
 #
 # Usage:
 #   bin/task list [--stage S] [--agent A]
-#   bin/task show <slug>
+#   bin/task show <slug> [--json | --verbose|-v]
+#     ( default is terse; --json prints the full fetched record as pretty JSON
+#       (no token dance); --verbose/-v expands the acceptance BULLETS, agent_context,
+#       test_plan, checks_run, claim state, and pr_url/local_url for a human read. )
+#   bin/task stale [<slug>]
+#     ( flags a task whose work is already on origin/main (fixed out-of-band) while
+#       the task isn't shipped/archived. Resolves the branch (devops.branch or
+#       feat/<slug>), git-fetches, and reports if origin/<branch> is an ancestor of
+#       origin/main. With NO slug it scans every open task and lists the stale ones. )
 #   bin/task field <slug> <devops-key>       # machine-readable single value (e.g. mascot)
 #   bin/task create --title T [--slug readable-handle] [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
@@ -55,6 +63,7 @@ require "fileutils"
 require "digest"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/claim_lease"
+require_relative "../lib/stale_check"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
@@ -312,6 +321,84 @@ def print_task(task)
   puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
 end
 
+# Print a labeled bullet list (the actual acceptance/test_plan/checks lines), or
+# "label: -" when empty — so a human read of a task never needs the curl + token
+# dance just to see the acceptance bullets the terse view only counts.
+def print_bullets(label, items)
+  items = Array(items)
+  if items.empty?
+    puts "  #{label}: -"
+  else
+    puts "  #{label}:"
+    items.each { |item| puts "    - #{item}" }
+  end
+end
+
+# The human-readable expansion behind `show --verbose`: the terse header plus the
+# fields an agent otherwise had to hand-curl — acceptance BULLETS (not just a
+# count), agent_context, test_plan, checks_run, the build-claim state, and the
+# PR / local URLs.
+def print_task_verbose(task)
+  print_task(task)
+  dv = task.dig("metadata", "devops") || {}
+  puts
+  print_bullets("acceptance", dv["acceptance"])
+  puts "  agent_context: #{dv["agent_context"] || "-"}"
+  print_bullets("test_plan", dv["test_plan"])
+  print_bullets("checks_run", dv["checks_run"])
+  puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
+  puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
+end
+
+# --- Stale check: is a task's work already on origin/main? ------------------
+# The directory the stale check runs git in. Defaults to the CLI's own checkout
+# (any clone/worktree that shares origin's tracking refs); TASK_GIT_DIR overrides
+# it so tests can point git at a throwaway repo with no network.
+def git_dir
+  dir = ENV["TASK_GIT_DIR"].to_s.strip
+  dir.empty? ? File.expand_path("..", __dir__) : dir
+end
+
+# Run a git command in git_dir, swallowing stderr. Returns [stdout, success?].
+def git(*args)
+  out = IO.popen(["git", "-C", git_dir, *args], err: File::NULL, &:read).to_s.strip
+  [out, $?.success?]
+end
+
+# Resolve a task's STALE disposition — its branch already merged to origin/main
+# (work shipped out-of-band) while the task itself hasn't reached shipped/archived.
+# The git I/O lives here; the decision is delegated to the pure StaleCheck module.
+# Pure of network on its own: the CALLER git-fetches first (once, even for a board
+# scan). Returns a result hash {slug:, branch:, stage:, status:} where status is
+# one of :terminal :no_branch :on_main :not_merged. A git error leaves on_main
+# false, so it NEVER falsely claims "already on main".
+def stale_check(task)
+  branch = StaleCheck.branch_for(task)
+  result = { slug: task["slug"], branch: branch, stage: task["stage"] }
+  return result.merge(status: :terminal) if StaleCheck::TERMINAL_STAGES.include?(task["stage"])
+
+  remote_branch = "refs/remotes/origin/#{branch}"
+  _ref, exists = git("rev-parse", "--verify", "--quiet", remote_branch)
+  on_main = exists && git("merge-base", "--is-ancestor", remote_branch, "refs/remotes/origin/main")[1]
+  result.merge(status: StaleCheck.status(task, branch_exists: exists, on_main: on_main))
+end
+
+def render_stale(result)
+  slug = result[:slug]
+  branch = result[:branch]
+  case result[:status]
+  when :on_main
+    puts "⚠  #{slug}: work already on main — origin/#{branch} is an ancestor of origin/main"
+    puts "   stage is #{result[:stage]} → consider: bin/task move #{slug} shipped   (or archived)"
+  when :not_merged
+    puts "#{slug}: origin/#{branch} not yet on main (active — not stale)"
+  when :no_branch
+    puts "#{slug}: no origin/#{branch} branch to compare — skipped"
+  when :terminal
+    puts "#{slug}: already #{result[:stage]} — not stale by definition"
+  end
+end
+
 # Genesis trickle-down: the task slug is the single source. Creating/advancing a
 # task writes the active-feature marker that bin/statusline (and the terminal
 # indicator) read — no worktree required. Worktree sessions override it via their
@@ -407,8 +494,16 @@ when "list"
   tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
   puts "(#{tasks.size} task(s))"
 when "show"
-  slug = ARGV.shift || die!("usage: bin/task show <slug>")
-  print_task(api(:get, "/api/v1/tasks/#{slug}")["data"])
+  slug = ARGV.shift || die!("usage: bin/task show <slug> [--json | --verbose|-v]")
+  data = api(:get, "/api/v1/tasks/#{slug}")["data"]
+  if ARGV.include?("--json")
+    # The full fetched record, machine-readable — no curl + auth-token dance.
+    puts JSON.pretty_generate(data)
+  elsif ARGV.include?("--verbose") || ARGV.include?("-v")
+    print_task_verbose(data)
+  else
+    print_task(data)
+  end
 when "field"
   # Machine-readable single devops field — e.g. `bin/task field <slug> mascot`.
   # Prints just the value (no decoration) so scripts can capture it; silent +
@@ -417,6 +512,22 @@ when "field"
   key  = ARGV.shift || die!("usage: bin/task field <slug> <devops-key>")
   value = (api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", key)
   print value unless value.nil? || value.is_a?(Enumerable)
+when "stale"
+  # Flag work that's already on origin/main while its task lags behind (fixed
+  # out-of-band). One `git fetch` then a local ancestry check. With a slug, check
+  # that one task; with none, scan every open task and list the stale ones.
+  slug = ARGV.shift
+  git("fetch", "-q", "origin")
+  if slug
+    render_stale(stale_check(api(:get, "/api/v1/tasks/#{slug}")["data"]))
+  else
+    tasks = api(:get, "/api/v1/tasks")["data"] || []
+    stale = tasks.reject { |t| StaleCheck::TERMINAL_STAGES.include?(t["stage"]) }
+                 .map { |t| stale_check(t) }
+                 .select { |r| r[:status] == :on_main }
+    stale.each { |r| render_stale(r) }
+    puts "(#{stale.size} stale task(s) — work on main but not shipped/archived)"
+  end
 when "create"
   _pos, scalars, lists, top = parse_flags(ARGV)
   die!("create needs --title") unless top["title"]
