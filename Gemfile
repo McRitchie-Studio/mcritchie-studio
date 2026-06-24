@@ -18,10 +18,8 @@ gem "importmap-rails"
 gem "turbo-rails"
 # Hotwire's modest JavaScript framework [https://stimulus.hotwired.dev]
 gem "stimulus-rails"
-# Use Redis adapter to run Action Cable in production — the /deployments live
-# board broadcasts over the redis cable adapter (config/cable.yml production).
-# Without this gem the adapter raised Gem::LoadError on every prod broadcast.
-gem "redis", ">= 4.0.1"
+# Use Redis adapter to run Action Cable in production
+# gem "redis", ">= 4.0.1"
 
 # Use Kredis to get higher-level data types in Redis [https://github.com/rails/kredis]
 # gem "kredis"

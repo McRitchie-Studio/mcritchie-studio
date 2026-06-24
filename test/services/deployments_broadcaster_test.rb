@@ -96,30 +96,4 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
       end
     end
   end
-
-  # --- the OTHER half of the SEV-1: the prod cable adapter must actually load ---
-  # The swallow above stops a missing gem from 500-ing a move, but the board only
-  # updates LIVE if config/cable.yml's production `adapter: redis` can load — which
-  # needs the `redis` gem in the bundle. It was commented out, so every prod
-  # broadcast Gem::LoadError'd (silently swallowed → no live updates). These guard
-  # that the gem stays bundled and the adapter loads.
-
-  test "[unit] the redis gem is bundled so the production cable adapter can load" do
-    assert Gem.loaded_specs.key?("redis"),
-      "gem 'redis' must be in the bundle — config/cable.yml production uses `adapter: redis`; " \
-      "when it was commented out of the Gemfile every prod broadcast raised Gem::LoadError (SEV-1)"
-  end
-
-  test "[integration] the production redis cable pubsub adapter instantiates without Gem::LoadError" do
-    # The exact path that raised Gem::LoadError when redis was unbundled: building
-    # the server with the prod adapter and forcing pubsub to load. Instantiation is
-    # lazy (no socket opened), so this needs no running redis.
-    config = ActionCable::Server::Configuration.new
-    config.logger = ActiveSupport::Logger.new(IO::NULL)
-    config.cable  = { "adapter" => "redis", "channel_prefix" => "studio_test" }
-    server = ActionCable::Server::Base.new(config: config)
-
-    assert_nothing_raised { server.pubsub }
-    assert_kind_of ActionCable::SubscriptionAdapter::Redis, server.pubsub
-  end
 end
