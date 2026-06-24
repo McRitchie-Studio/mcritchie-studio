@@ -257,8 +257,23 @@ def opt_value(flag)  = Release::Cli.opt_value(ARGV, flag)
 
 def confirm(prompt)
   return true if ASSUME_YES || DRY
+
+  # A non-interactive shell (no TTY) has no human to answer the prompt. The old
+  # code read `$stdin.gets` → nil (EOF) → "" casecmp "y" → FALSE, so callers that
+  # `return unless confirm(...)` (prepare) SILENTLY no-op'd — "looked like it ran
+  # but nothing deployed", the SOP's flagged "dangerous one". Fail LOUDLY instead:
+  # abort with the --yes escape hatch so a hands-off run must OPT IN to skipping
+  # the gate rather than silently skipping the ACTION. This makes prepare's confirm
+  # path consistent with ship/archive (which already `abort! unless confirm`).
+  # --yes/--dry-run returned above, so they never reach here — the bypass is intact.
+  abort!("non-interactive shell — pass --yes to run this non-interactively") unless $stdin.tty?
+
   $stdout.print("#{prompt} [y/N] ")
-  $stdin.gets.to_s.strip.casecmp("y").zero?
+  answer = $stdin.gets
+  # EOF (Ctrl-D) on an otherwise-interactive stdin: still no answer — abort, never
+  # fold it into a false that a caller mistakes for a deliberate "no".
+  abort!("EOF on stdin — pass --yes to run this non-interactively") if answer.nil?
+  answer.strip.casecmp("y").zero?
 end
 
 # Poll <url>/up until it returns 200 (the dyno booted) or the attempts run out,
