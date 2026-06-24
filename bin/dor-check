@@ -25,6 +25,12 @@
 # Non-code kinds (devops.kind chore/cleanup/docs) carry no shape and no test
 # tiers, so the shape gate does not apply: they PASS with a "DoR n/a" note.
 #
+# Post-deploy nudge (merge gate): if the branch diff touches a seed or a
+# data-migration (db/seeds, db/migrate/), the task must declare
+# devops.post_deploy_cmd — the command bin/release runs on the deployed app so a
+# seed/backfill isn't run by hand post-ship. Set it to "none" to acknowledge a
+# schema-only migration the release phase auto-runs.
+#
 # Auth: AGENT_API_SECRET from ENV, else 1Password, else repo .env (same as
 # bin/task). Base URL via TASK_API_BASE (default https://mcritchie.studio).
 #
@@ -56,6 +62,16 @@ EXEMPT_KINDS = %w[chore cleanup docs].freeze
 # the canonical chore the exemption serves, and adding tests isn't shipping
 # behavior. Revisit if a Gemfile-only chore ever needs the gate.
 CODE_PATH_PREFIXES = %w[app/ lib/ bin/ config/ db/].freeze
+# Path prefixes whose changes ship DATA, not just schema/behavior: a new seed or
+# a data-migration (a backfill) needs a one-off rake AFTER the deploy — Heroku's
+# release phase auto-runs `db:migrate`, but NOT `db:seed` or a backfill task. The
+# mechanism to run it on ship already exists end-to-end (devops.post_deploy_cmd,
+# which bin/release executes against the deployed app, aborting on non-zero), but
+# features that add a seed/migration routinely forget to DECLARE it, so someone
+# runs the rake by hand post-ship (pokemon:seed, pokemon:resync_mascots, …). The
+# merge gate nudges: a diff under these prefixes must carry a post_deploy_cmd (or
+# declare "none" to acknowledge a schema-only migration the release phase runs).
+DATA_CHANGE_PREFIXES = %w[db/migrate/ db/seeds].freeze
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
@@ -246,6 +262,13 @@ def code_changed_files
   changed_files.select { |f| CODE_PATH_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
 end
 
+# The subset of changed files that ship a seed or a data-migration (under
+# DATA_CHANGE_PREFIXES) — the diff that should declare a post-deploy command so
+# the conductor runs it on ship instead of someone running the rake by hand.
+def data_changed_files
+  changed_files.select { |f| DATA_CHANGE_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
+end
+
 # Resolver/debug seam: print the committed-diff base this repo would diff against
 # and exit, before any task fetch. Honors DOR_CHECK_DIFF_ROOT/_BASE like changed_files.
 if options[:diff_base]
@@ -327,6 +350,27 @@ missing_meta = required_meta.reject { |field| present?(devops[field]) }
 
 checks = Array(devops["checks_run"])
 missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
+
+# Post-deploy nudge (merge gate only). A diff that adds or edits a seed or a
+# data-migration should declare devops.post_deploy_cmd so the conductor runs it
+# on ship (bin/release) instead of someone running the rake by hand afterward.
+# Like local_url and the test tiers, the command is a BUILD artifact — you only
+# know it once the migration exists — so the build gate (spec-complete, no code
+# yet) never asks for it. Escape hatch, consistent with the chore gate (satisfy
+# the contract; don't bypass it): declare the command, OR set post_deploy_cmd to
+# "none" to acknowledge a schema-only migration the release phase auto-runs. The
+# explicit "none" is the point — it forces a conscious decision instead of a
+# silent omission.
+if gate != "build"
+  data_files = data_changed_files
+  if data_files.any? && !present?(devops["post_deploy_cmd"])
+    sample = data_files.first(3).join(", ") + (data_files.size > 3 ? ", …" : "")
+    errors << "diff touches a seed/migration (#{sample}) but devops.post_deploy_cmd is blank — this " \
+      "change should declare a post-deploy command so the conductor runs it on ship and nobody runs the " \
+      "rake by hand (e.g. bin/task update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails db:seed'); " \
+      "set it to 'none' if no command is needed (a schema-only migration the release phase auto-runs)"
+  end
+end
 
 ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?
 

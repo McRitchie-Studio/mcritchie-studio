@@ -62,6 +62,27 @@ class Release::PostDeployTest < ActiveSupport::TestCase
     assert_empty PD.plan(repos, qa_environments: QA_ENVS, target: :qa)
   end
 
+  # The downstream half of the dor-check "none" escape hatch: the gate lets an
+  # author of a schema-only migration declare post_deploy_cmd "none" to opt out,
+  # so the CONSUMER must treat "none" as a no-op (skip it) exactly like blank —
+  # otherwise bin/release runs `heroku run none` on QA/prod and aborts the whole
+  # release on the common (schema-only) path.
+  test "plan skips the literal 'none' sentinel but still plans a real command" do
+    repos = [
+      { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
+        "members" => [
+          { "slug" => "schema-only", "post_deploy_cmd" => "none" },
+          { "slug" => "needs-none-cased", "post_deploy_cmd" => "  NONE  " },
+          { "slug" => "real-backfill", "post_deploy_cmd" => "rake data:backfill" }
+        ] }
+    ]
+    plan = PD.plan(repos, qa_environments: QA_ENVS, target: :qa)
+
+    assert_equal %w[real-backfill], plan.map { |e| e["task"] },
+                 "'none' (any case/padding) is a no-op sentinel; only the real command is planned"
+    assert_equal "rake data:backfill", plan.first["cmd"]
+  end
+
   test "plan trims surrounding whitespace from the command" do
     repos = [{ "repo" => "turf-monster", "kind" => "app", "qa_app" => "turf-monster",
                "members" => [{ "slug" => "t", "post_deploy_cmd" => "  rake foo:bar  " }] }]
