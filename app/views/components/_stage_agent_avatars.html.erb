@@ -134,7 +134,7 @@
             </div>
           <% else %>
             <%# Unreached pipeline stage — a dashed placeholder circle marks the slot. %>
-            <div class="rounded-full border-2 border-dashed border-muted/20 <%= crew_size == "sm" ? "w-10 h-10" : "w-8 h-8" %>"
+            <div class="rounded-full border-2 border-dashed border-white/15 <%= crew_size == "sm" ? "w-10 h-10" : "w-8 h-8" %>"
                  data-test="crew-empty" data-lane="<%= cluster.lane %>"></div>
           <% end %>
         </div>
