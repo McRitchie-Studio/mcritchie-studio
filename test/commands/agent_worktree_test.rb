@@ -38,6 +38,30 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal "https://mcritchie.studio/tasks/task-abc123", context.fetch("task_url")
   end
 
+  test "context regeneration preserves a mascot the rebuilt values lack" do
+    # bind-task provisions .env.agent-stack + .agent-context.json. In the sandbox
+    # the devops.mascot fetch returns empty, so TASK_MASCOT is absent — exactly the
+    # condition under which a from-scratch context rebuild used to blank the Pokemon
+    # (the observed Jigglypuff -> task-link flip-flop on a live worktree).
+    agent_worktree!("bind-task", "mcritchie-studio", @task, "task-mascot")
+
+    env_path = File.join(@worktree_dir, ".env.agent-stack")
+    refute_includes File.read(env_path), "TASK_MASCOT",
+      "premise: the rebuilt stack values must lack the mascot"
+
+    ctx_path = File.join(@worktree_dir, ".agent-context.json")
+    context = JSON.parse(File.read(ctx_path))
+    context["mascot"] = "pikachu" # a mascot drawn earlier, now only on disk
+    File.write(ctx_path, "#{JSON.pretty_generate(context)}\n")
+
+    # `whereami <app> <task>` rewrites the context from load_stack_env (no TASK_MASCOT).
+    agent_worktree!("whereami", "mcritchie-studio", @task)
+
+    regenerated = JSON.parse(File.read(ctx_path))
+    assert_equal "pikachu", regenerated["mascot"],
+      "a context regen must fall back to the on-disk mascot, not blank it"
+  end
+
   test "whereami shell output ignores tampered shell content from context file" do
     agent_worktree!("bind-task", "mcritchie-studio", @task, "task-shell")
     path = File.join(@worktree_dir, ".agent-context.json")
