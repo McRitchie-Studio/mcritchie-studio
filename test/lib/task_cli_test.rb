@@ -27,11 +27,14 @@ class TaskCliTest < Minitest::Test
   # `env` overrides merge onto a clean base (auth secret + base url + skip marker);
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
-  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil)
+  def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
+               stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶" })
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
     @stub_stage = stub_stage
+    # The POST /api/v1/sessions/:id/mascot response (the eager session-mascot draw).
+    @stub_session_mascot = stub_session_mascot
     # When set, GET /api/v1/tasks/<slug> returns this non-2xx status — used to
     # force the board-mascot fallback read to fail (a transient 429 / 5xx).
     @fail_get = fail_get
@@ -91,6 +94,10 @@ class TaskCliTest < Minitest::Test
   # exercised under a transient failure — without breaking auth or the PATCH/POST.
   def response_for(method, path)
     return ["200 OK", JSON.generate("token" => "stub-token")] if path == "/api/v1/auth"
+
+    if method == "POST" && path =~ %r{\A/api/v1/sessions/.+/mascot\z}
+      return ["200 OK", JSON.generate("data" => @stub_session_mascot)]
+    end
 
     if @fail_get && method == "GET" && path.start_with?("/api/v1/tasks/")
       return ["#{@fail_get} Service Unavailable", JSON.generate("error" => "stubbed board read failure")]
@@ -710,5 +717,66 @@ class TaskCliTest < Minitest::Test
     refute_nil marker, "the marker must still be written despite the failed board read"
     assert_nil marker["mascot"], "an unreachable board cleanly yields no mascot (no downgrade, no abort)"
     assert_equal "demo-task", marker["slug"]
+  end
+
+  # --- session-mascot: paint the session's mascot before any task exists -------
+
+  # The SessionStart-hook command draws the session's mascot from the board and
+  # writes it (with color + emoji) to the per-session marker, so bin/statusline
+  # shows it in seconds — no task required.
+  def test_session_mascot_writes_the_session_marker
+    Dir.mktmpdir do |projects|
+      FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
+      marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
+
+      _req, _out, _err, status = run_task(
+        ["session-mascot"],
+        env: { "CLAUDE_CODE_SESSION_ID" => MARKER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+
+      assert status.success?
+      assert File.exist?(marker_path), "the session marker is written before any task"
+      marker = JSON.parse(File.read(marker_path))
+      assert_equal "snorlax", marker["mascot"]
+      assert_equal "#A8A77A", marker["mascot_color"]
+      assert_equal "🔶", marker["mascot_emoji"]
+    end
+  end
+
+  # No session → a clean no-op (the hook must never break or delay session start).
+  def test_session_mascot_is_a_noop_without_a_session
+    Dir.mktmpdir do |projects|
+      _req, _out, _err, status = run_task(
+        ["session-mascot"],
+        env: { "CLAUDE_CODE_SESSION_ID" => nil,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+      assert status.success?, "no session id → silent success, no crash"
+    end
+  end
+
+  # It MERGES into an existing marker (a task already wrote one), never wiping the
+  # app/feature/task context — only setting the mascot trio.
+  def test_session_mascot_merges_into_an_existing_marker
+    Dir.mktmpdir do |projects|
+      FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
+      marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
+      File.write(marker_path, JSON.generate("slug" => "demo-task", "app" => "mcritchie-studio"))
+
+      run_task(
+        ["session-mascot"],
+        env: { "CLAUDE_CODE_SESSION_ID" => MARKER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+
+      marker = JSON.parse(File.read(marker_path))
+      assert_equal "demo-task", marker["slug"], "existing context is preserved"
+      assert_equal "mcritchie-studio", marker["app"]
+      assert_equal "snorlax", marker["mascot"], "…and the mascot is set"
+    end
   end
 end

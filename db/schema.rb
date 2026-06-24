@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_24_053010) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_24_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -702,6 +702,14 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_24_053010) do
     t.index ["league", "active"], name: "index_seasons_on_league_and_active"
     t.index ["slug"], name: "index_seasons_on_slug", unique: true
     t.index ["year", "league"], name: "index_seasons_on_year_and_league", unique: true
+  end
+
+  create_table "session_mascots", force: :cascade do |t|
+    t.string "session_id", null: false
+    t.string "mascot_slug", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["session_id"], name: "index_session_mascots_on_session_id", unique: true
   end
 
   create_table "signing_requests", force: :cascade do |t|
