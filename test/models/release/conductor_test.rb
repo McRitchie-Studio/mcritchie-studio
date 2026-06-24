@@ -67,6 +67,26 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Release::Conductor.adopt!(designed) }
   end
 
+  test "adopt! reconciles a stranded member whose stage regressed off assembled" do
+    rel = Release::Conductor.adopt!(reviewed_task("anchor"))
+    late = reviewed_task("late")
+    Release::Conductor.adopt!(late)
+    Release::Conductor.prepare! # QA: assemble the RC
+    assert_equal "assembled", rel.reload.state
+
+    # A re-review touch reverts the member's stage but KEEPS its release_slug —
+    # the exact live half-state (release_slug set, stage "reviewed").
+    late.review!
+    assert_equal "reviewed", late.reload.stage
+    assert_equal rel.slug, late.release_slug
+
+    # Re-adopting must self-heal — the old `unless exists?` guard no-op'd here,
+    # leaving the member stuck at reviewed on an assembled RC (hand-fixed in prod).
+    Release::Conductor.adopt!(late)
+    assert_equal "assembled", late.reload.stage
+    assert_equal "assembling", rel.reload.state # reopened to re-assemble + re-QA
+  end
+
   test "prepare! is additive — extends the active release instead of opening a second" do
     first = reviewed_task("first")
     rel1 = Release::Conductor.prepare!(task_slugs: [first.slug], slug: "rel-test-a")

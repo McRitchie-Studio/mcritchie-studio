@@ -9,12 +9,24 @@ class Release
     # Record a PR-merge INTO the persistent `release` branch: attach the task to
     # the active release (opening one if none is active), flipping the TASK from
     # `reviewed` to `assembled`. This is the membership-at-merge entrypoint that
-    # `bin/release merge` calls after `gh pr merge`. Idempotent: a task already
-    # on the release is left untouched. Returns the release. Raises (via
-    # Release#add) if the task isn't `reviewed`.
+    # `bin/release merge` calls after `gh pr merge`. Returns the release. Raises
+    # (via Release#add) if the task isn't `reviewed`.
+    #
+    # Idempotent AND self-healing: a member already riding the train at
+    # `assembled` is left untouched, but a member still ATTACHED (release_slug
+    # set) whose stage has regressed off `assembled` — e.g. a re-review reverted
+    # the stage while keeping membership, the live half-state — is RECONCILED back
+    # to `assembled` (reopening the RC if it had assembled). The old
+    # `unless exists?` guard no-op'd that case, so the half-state could never
+    # self-heal and had to be fixed by hand.
     def adopt!(task)
       release = Release.current_or_open!
-      release.add(task) unless release.tasks.exists?(slug: task.slug)
+      member = release.tasks.find_by(slug: task.slug)
+      if member.nil?
+        release.add(task)
+      elsif member.stage != "assembled"
+        release.add(member)
+      end
       release
     end
 
