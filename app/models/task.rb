@@ -559,7 +559,7 @@ class Task < ApplicationRecord
     self.position = (Task.where(stage: stage).maximum(:position) || -1) + 1 unless new_record?
   end
 
-  # A soul SLUG is a short human handle (carl, alex-docs) — lowercase letters with
+  # A soul SLUG is a short human handle (carl, shannon) — lowercase letters with
   # optional internal hyphens, NO digits. That format distinguishes it from a
   # session id (the UUID `bin/task move <slug> building` defaults the actor to,
   # which always carries digits), so the check needs no Agent-table lookup and

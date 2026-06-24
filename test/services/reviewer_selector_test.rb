@@ -72,14 +72,13 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_includes slugs(result), "jasper", "the turf-vault repo pulls the Web3 reviewer in"
   end
 
-  # --- the documentation persona is the pool's docs seat (alex-docs, not alex) ---
+  # --- the documentation seat is Alex (the orchestrator also wears the docs hat) ---
 
-  test "a docs change selects the documentation persona (alex-docs), not the orchestrator" do
-    # `docs` is the only needed domain → only the docs persona fits → heavy seat.
+  test "a docs change selects Alex as the documentation reviewer" do
+    # `docs` is the only needed domain → only Alex (the docs seat) fits → heavy seat.
     result = ReviewerSelector.select(task_for(shape: nil, risks: ["docs"]))
-    assert_includes slugs(result), "alex-docs", "the docs persona is the pool's documentation seat"
-    refute_includes slugs(result), "alex", "the orchestrator seat never reviews"
-    assert_equal "heavy", weight_of(result, "alex-docs"), "the docs-domain owner takes the heavy seat"
+    assert_includes slugs(result), "alex", "Alex holds the pool's documentation seat"
+    assert_equal "heavy", weight_of(result, "alex"), "the docs-domain owner takes the heavy seat"
   end
 
   # --- no self-gating: the QA owner (steffon) is never a reviewer ---

@@ -26,8 +26,7 @@ AGENTS = [
   { slug: "jasper",    initials: "J",  bg: "#8E82FE", fg: "#FFFFFF", note: "Blockchain / violet" },
   { slug: "carl",      initials: "C",  bg: "#4BAF50", fg: "#FFFFFF", note: "Backend / primary green" },
   { slug: "avi",       initials: "A",  bg: "#FF7C47", fg: "#FFFFFF", note: "Product Owner / orange" },
-  { slug: "steffon",   initials: "St", bg: "#475569", fg: "#FFFFFF", note: "Platform Engineer / slate" },
-  { slug: "alex-docs", initials: "AD", bg: "#0EA5E9", fg: "#FFFFFF", note: "Documentation reviewer / sky" }
+  { slug: "steffon",   initials: "St", bg: "#475569", fg: "#FFFFFF", note: "Platform Engineer / slate" }
 ].freeze
 
 SIZE       = 340

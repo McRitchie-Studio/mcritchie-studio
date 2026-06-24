@@ -14,7 +14,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
   test "seeds the full roster and is idempotent" do
     run_seed
     first = Agent.count
-    assert_operator first, :>=, 10, "expected the full soul roster"
+    assert_operator first, :>=, 9, "expected the full soul roster"
     run_seed
     assert_equal first, Agent.count, "re-running the seed must not create duplicates"
   end
@@ -49,11 +49,11 @@ class AgentsSeedTest < ActiveSupport::TestCase
   test "senior reviewers carry domains + a numeric review_weight" do
     run_seed
     {
-      "shannon"   => "ui",
-      "carl"      => "backend",
-      "jasper"    => "web3",
-      "steffon"   => "devops",
-      "alex-docs" => "documentation"
+      "shannon" => "ui",
+      "carl"    => "backend",
+      "jasper"  => "web3",
+      "steffon" => "devops",
+      "alex"    => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
       assert agent.metadata["reviewer"], "#{slug} must be a senior pool reviewer"
@@ -66,19 +66,15 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "the docs-reviewer persona resolves, distinct from the orchestrator seat" do
+  test "Alex is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "alex-docs", docs.slug
-    assert_equal "alex", docs.metadata["persona_of"], "docs persona links back to Alex"
-
-    orchestrator = Agent.find_by!(slug: "alex")
-    assert_equal "orchestrator", orchestrator.metadata["review_role"]
-    refute orchestrator.metadata["reviewer"], "the orchestrator seat is not itself a reviewer"
-    refute_equal docs.slug, orchestrator.slug, "docs reviewer is a distinct seat"
+    assert_equal "alex", docs.slug, "Alex holds the documentation seat (no separate persona)"
+    assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
+    refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into alex)"
   end
 
   test "every soul has an avatar path" do
