@@ -30,6 +30,14 @@
 # a pool builder would leave fewer than two candidates the builder is KEPT (the
 # decision/log flags it) so a pair is always returned.
 #
+# BUSY souls are excluded too — agents currently mid-build or mid-review on OTHER
+# in-flight tasks shouldn't be handed a review while they're heads-down elsewhere.
+# Pass `busy:` (bin/reviewer-select's `--busy a,b,c`, and/or its board query of
+# agents on stage=building tasks). Like the builder, the busy drop YIELDS rather
+# than starve: if removing the builder + QA owner + every busy soul would leave
+# fewer than a HEAVY+LIGHT pair, the least-bad (best domain fit) busy souls are
+# KEPT eligible (the decision/log flags them) so a pair is always returned.
+#
 # Reads each reviewer's Agent.metadata["domains"] + ["review_weight"]; DEGRADES
 # GRACEFULLY to built-in defaults when the Agent row or those keys are absent, so
 # selection works even before the reviewer souls are seeded.
@@ -120,10 +128,16 @@ class ReviewerSelector
 
   # `builder:` overrides who built the task (else it's derived from the task —
   # see #builder). Pass it when the caller already knows the build agent.
-  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, logger: nil, random: nil)
+  # `busy:` is a set of souls currently mid-build / mid-review on OTHER in-flight
+  # tasks; they're excluded from the candidate pool too, so review never lands on
+  # an agent who's already heads-down elsewhere — UNLESS excluding them would
+  # starve the pool below a HEAVY+LIGHT pair, in which case the least-bad busy
+  # souls are KEPT back (see #excluded_busy), mirroring the builder keep rule.
+  def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, busy: [], logger: nil, random: nil)
     @task = task
     @qa_owner = qa_owner.to_s
     @builder_override = builder.to_s.strip.presence
+    @busy = Array(busy).map { |s| s.to_s.strip }.reject(&:empty?).uniq
     @logger = logger || Rails.logger
     # Default the tiebreak RNG to a STABLE per-task seed. The default selection
     # must be reproducible across processes: bin/reviewer-select prints
@@ -135,7 +149,7 @@ class ReviewerSelector
     # post-exclusion pool (the CLI preview always matches the recorded pick), while
     # different tasks still spread the picks. Tests pass an explicit `random:` to
     # pin a scenario.
-    @random = random || Random.new(seed_for(@task, @qa_owner, builder_excluded? ? builder : nil))
+    @random = random || Random.new(seed_for(@task, @qa_owner, builder_excluded? ? builder : nil, excluded_busy))
   end
 
   # Exactly two entries — [{ "slug" =>, "weight" => "heavy" }, { … "light" }] —
@@ -164,6 +178,9 @@ class ReviewerSelector
       "excluded_qa_owner" => qa_owner,
       "builder" => builder,
       "excluded_builder" => builder_excluded? ? builder : nil,
+      "busy" => busy,
+      "excluded_busy" => excluded_busy,
+      "kept_busy" => kept_busy,
       "candidates" => candidate_slugs,
       "reviewers" => [seat(heavy, needs, "heavy"), seat(light, needs, "light")],
       "ranked" => ordered.map { |c| ranked_view(c) }
@@ -172,7 +189,7 @@ class ReviewerSelector
 
   private
 
-  attr_reader :task, :qa_owner, :logger, :random
+  attr_reader :task, :qa_owner, :busy, :logger, :random
 
   # The full reviewer pool. A seam (returns POOL) so tests can shrink it to
   # exercise the too-few-candidates fallback without mutating the frozen constant.
@@ -189,17 +206,61 @@ class ReviewerSelector
   # persisted recorder) from sharing a seed over different pools, which would
   # diverge. A slug-less in-memory stand-in falls back to a constant key (still
   # reproducible).
-  def seed_for(task, qa_owner, excluded_builder)
-    Zlib.crc32("#{task.try(:slug)}:#{qa_owner}:#{excluded_builder}")
+  def seed_for(task, qa_owner, excluded_builder, excluded_busy_list = [])
+    key = "#{task.try(:slug)}:#{qa_owner}:#{excluded_builder}"
+    # Fold the excluded busy souls in (only when present, so the no-busy seed is
+    # byte-for-byte the historical one and the default pick never shifts). Two
+    # passes over the SAME post-exclusion pool then roll identically.
+    key += ":#{excluded_busy_list.sort.join(',')}" if excluded_busy_list.any?
+    Zlib.crc32(key)
   end
 
-  # The selectable pool — the five souls minus the QA owner (no self-gating) and
-  # minus the builder (a soul never reviews their own work). The builder drop is
-  # skipped when it would leave too few candidates (#builder_excluded?), so a
-  # heavy+light pair is always returnable.
+  # The selectable pool — the five souls minus the QA owner (no self-gating),
+  # minus the builder (a soul never reviews their own work), minus the busy souls
+  # (mid-build / mid-review elsewhere). Each drop yields rather than starve the
+  # pool: the builder is kept when removing it would leave too few candidates
+  # (#builder_excluded?), and the busy filter keeps the least-bad busy souls back
+  # the same way (#excluded_busy) — so a HEAVY+LIGHT pair is always returnable.
   def candidate_slugs
+    busy_base - excluded_busy
+  end
+
+  # The pool AFTER the QA-owner + builder drops but BEFORE the busy filter — the
+  # floor the busy filter protects. The builder-keep rule already guarantees this
+  # is >= MIN_CANDIDATES.
+  def busy_base
+    return @busy_base if defined?(@busy_base)
+
     base = pool - [qa_owner]
-    builder_excluded? ? base - [builder] : base
+    @busy_base = builder_excluded? ? base - [builder] : base
+  end
+
+  # The busy souls actually removed. Only a busy soul that's a real candidate (in
+  # busy_base) is removable; removing every removable busy soul can starve the
+  # pool, so the filter removes the LEAST useful ones first (worst domain fit, then
+  # a stable slug order) and STOPS once the remaining candidate count would fall
+  # below MIN_CANDIDATES — keeping the best-fitting (least-bad) busy souls eligible
+  # (#kept_busy). This mirrors the builder keep-rather-than-starve rule. Memoized;
+  # pure of the tiebreak RNG, so it's safe to compute for the seed.
+  def excluded_busy
+    return @excluded_busy if defined?(@excluded_busy)
+
+    removable = busy & busy_base
+    room = [busy_base.size - MIN_CANDIDATES, 0].max
+    drop = [removable.size, room].min
+    @excluded_busy = removable.sort_by { |slug| [busy_domain_fit(slug), slug] }.first(drop)
+  end
+
+  # Busy souls that WERE candidates but had to stay eligible to keep a formable
+  # pair (the keep-rather-than-starve remainder). Empty in the common case.
+  def kept_busy
+    (busy & busy_base) - excluded_busy
+  end
+
+  # A busy soul's domain fit — used only to order which busy souls to drop first
+  # (worst fit) when the pool can't afford to exclude them all.
+  def busy_domain_fit(slug)
+    (needed_domains & reviewer_domains(slug)).size
   end
 
   # Who built this task: the explicit override, else devops.built_by (stamped from
@@ -364,7 +425,7 @@ class ReviewerSelector
     chosen = ordered.first(2).map { |c| c[:slug] }
     logger.info(
       "[reviewer-selector] task=#{task.try(:slug)} needs=#{needs.join('/').presence || '-'} " \
-      "excluded=#{qa_owner} builder=#{builder_log_token} " \
+      "excluded=#{qa_owner} builder=#{builder_log_token} busy=#{busy_log_token} " \
       "rolls=#{ordered.map { |c| "#{c[:slug]}:#{c[:roll].round(4)}" }.join(',')} " \
       "ranked=#{ordered.map { |c| "#{c[:slug]}(fit#{c[:fit]},w#{c[:weight]})" }.join('>')} " \
       "chosen=#{chosen.join('+')}"
@@ -381,5 +442,13 @@ class ReviewerSelector
     return "#{builder}(not-a-candidate)" unless builder_candidate?
 
     "#{builder}(#{builder_excluded? ? 'excluded' : 'kept:too-few'})"
+  end
+
+  # The busy souls, annotated for the audit log: "-" when none were passed, else
+  # the excluded ones, with any kept-back (starve-guard) souls flagged "(kept)".
+  def busy_log_token
+    return "-" if busy.empty?
+
+    (excluded_busy + kept_busy.map { |s| "#{s}(kept)" }).join(",").presence || "-"
   end
 end

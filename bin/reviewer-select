@@ -23,11 +23,21 @@
 # or a local JSON via --file (offline / tests). Degrades gracefully — a missing
 # Agent row (or no DB at all) falls back to ReviewerSelector's domain defaults.
 #
+# The BUILDER is auto-excluded too (read from the task's devops.built_by, stamped
+# on the move to building) so a soul never reviews their own work — no manual flag
+# needed. BUSY souls (agents mid-build / mid-review on OTHER in-flight tasks) are
+# excluded via `--busy a,b,c` and/or `--busy-auto` (which reads the board's
+# stage=building tasks). Both the builder and the busy drops YIELD rather than
+# starve: if the exclusions would leave fewer than a HEAVY+LIGHT pair, the
+# least-bad ones are KEPT back so a pair is always returned (flagged in the audit).
+#
 # Usage:
 #   bin/reviewer-select <task-slug>                 # fetch from the board, print the pair
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
-#   bin/reviewer-select <task-slug> --builder carl  # exclude a specific builder
+#   bin/reviewer-select <task-slug> --builder carl  # override the recorded built_by
+#   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
+#   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents on stage=building tasks
 #   bin/reviewer-select --file task.json            # evaluate a local task JSON
 #
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error.
@@ -118,6 +128,20 @@ rescue Errno::ENOENT
   die!("file not found: #{file}")
 end
 
+# The souls currently mid-build on OTHER tasks — every agent attributed to a
+# stage=building task (its devops.built_by + agent_slug), minus the task we're
+# selecting for. Best-effort: a board read failure (incl. api's die! → SystemExit)
+# degrades to an empty set so --busy-auto can NEVER abort the pick — explicit
+# --busy still applies.
+def in_flight_busy(exclude_slug)
+  res = api(:get, "/api/v1/tasks?stage=building")
+  Array(res["data"]).reject { |t| t["slug"].to_s == exclude_slug.to_s }.flat_map do |t|
+    [t.dig("metadata", "devops", "built_by"), t["agent_slug"]]
+  end.map(&:to_s).reject(&:empty?).uniq
+rescue SystemExit, StandardError
+  []
+end
+
 # Captures ReviewerSelector's structured tiebreak log line so the CLI can echo
 # the audited roll instead of leaving it only in the Rails log.
 class CaptureLogger
@@ -147,7 +171,8 @@ end
 
 # The auditable "who's out" line: the QA owner always, plus the builder when
 # known — flagged "(builder)" when excluded, or "(builder — KEPT: …)" when it was
-# kept because excluding it would leave too few candidates.
+# kept because excluding it would leave too few candidates — plus any busy souls
+# (excluded, or KEPT when excluding them would have starved the pool).
 def excluded_line(decision)
   parts = ["#{decision["excluded_qa_owner"]} (QA owner — never reviews a PR he then QAs)"]
   builder = decision["builder"].to_s
@@ -158,6 +183,8 @@ def excluded_line(decision)
       "#{builder} (builder — KEPT: excluding would leave too few candidates)"
     end
   end
+  Array(decision["excluded_busy"]).each { |s| parts << "#{s} (busy — mid-build/review elsewhere)" }
+  Array(decision["kept_busy"]).each { |s| parts << "#{s} (busy — KEPT: excluding would leave too few candidates)" }
   parts.join("; ")
 end
 
@@ -187,14 +214,18 @@ end
 
 # --- main -----------------------------------------------------------------
 
-options = { json: false, file: nil, qa_owner: nil, builder: nil, record: false }
+options = { json: false, file: nil, qa_owner: nil, builder: nil, busy: [], busy_auto: false, record: false }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--record] [--qa-owner SLUG] [--builder SLUG] | bin/reviewer-select --file task.json"
+  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--record] [--qa-owner SLUG] [--builder SLUG] [--busy a,b,c] [--busy-auto] | bin/reviewer-select --file task.json"
   o.on("--json", "Emit a machine-readable decision (single-line JSON)") { options[:json] = true }
   o.on("--record", "Record the picked pair as a review INTENT on the task (board write) so the " \
                    "board + timeline show them reviewing live, before the →reviewed transition lands") { options[:record] = true }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (steffon)") { |v| options[:qa_owner] = v }
   o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by)") { |v| options[:builder] = v }
+  o.on("--busy LIST", "Exclude these busy souls — mid-build/review elsewhere (comma/space separated; repeatable)") do |v|
+    options[:busy].concat(v.split(/[\s,]+/))
+  end
+  o.on("--busy-auto", "Also treat agents on stage=building tasks as busy (board query; skipped with --file)") { options[:busy_auto] = true }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching from the board") { |v| options[:file] = v }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -215,8 +246,22 @@ qa_owner = ReviewerSelector::DEFAULT_QA_OWNER if qa_owner.empty?
 builder = options[:builder].to_s.strip
 builder = nil if builder.empty?
 
+# The busy set: explicit --busy souls, plus (with --busy-auto, board-only) the
+# agents on OTHER stage=building tasks. The selector excludes them from review but
+# never starves the pool below a HEAVY+LIGHT pair (least-bad kept back).
+busy = options[:busy].map { |s| s.to_s.strip }.reject(&:empty?).uniq
+if options[:busy_auto]
+  if options[:file]
+    warn!("--busy-auto needs the board (skipped in --file mode)")
+  elsif slug.to_s.empty?
+    warn!("--busy-auto needs a task slug")
+  else
+    busy = (busy + in_flight_busy(slug)).uniq
+  end
+end
+
 log = CaptureLogger.new
-decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, logger: log).decision
+decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, busy: busy, logger: log).decision
 pr_url = devops["pr_url"].to_s.strip
 
 # --record: write the picked pair onto the task as a review INTENT (a board write)

@@ -81,4 +81,39 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_equal "shannon", decision["builder"], "--builder wins over devops.built_by"
     refute_includes decision["candidates"], "shannon"
   end
+
+  # --- busy exclusion (--busy): agents mid-build/review on OTHER tasks ----------
+
+  def test_busy_souls_and_the_builder_are_omitted_end_to_end
+    # The auto-read builder (built_by=carl) AND the --busy soul both drop out of
+    # the pool, and a HEAVY+LIGHT pair still forms — no manual --builder flag.
+    out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--busy jasper --json")
+    assert_equal 0, code, out
+
+    line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+    decision = JSON.parse(line)
+    assert_equal "carl", decision["excluded_builder"], "built_by auto-excluded (no --builder)"
+    assert_equal ["jasper"], decision["excluded_busy"], "the --busy soul is excluded"
+    pair = decision["reviewers"].map { |r| r["slug"] }
+    assert_equal 2, pair.uniq.size, "a pair still forms"
+    %w[carl jasper steffon].each { |s| refute_includes pair, s, "#{s} is not assigned the review" }
+  end
+
+  def test_busy_filter_keeps_a_pair_rather_than_starve_the_pool
+    # built_by carl excluded; marking the rest busy can't drop below a formable
+    # pair — the least-bad busy souls are KEPT eligible (starve guard).
+    out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--busy shannon,jasper,alex --json")
+    assert_equal 0, code, out
+
+    line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+    decision = JSON.parse(line)
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair survives over-exclusion"
+    assert decision["kept_busy"].any?, "the starve guard kept the least-bad busy souls eligible"
+  end
+
+  def test_human_output_names_the_excluded_busy_souls
+    out, code = select({ "shape" => "backend" }, "--busy jasper")
+    assert_equal 0, code, out
+    assert_match(/jasper \(busy/, out, "a busy soul is named on the excluded line")
+  end
 end

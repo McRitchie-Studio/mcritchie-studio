@@ -204,6 +204,99 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
       "a known builder outside the pool is flagged not-a-candidate, never kept:too-few")
   end
 
+  # --- busy exclusion: agents mid-build / mid-review on OTHER tasks ---
+
+  test "a busy agent passed to the selector is excluded from candidates" do
+    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: ["jasper"]).decision
+    refute_includes decision["candidates"], "jasper", "a busy soul is not a review candidate"
+    assert_equal ["jasper"], decision["excluded_busy"]
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "jasper"
+  end
+
+  test "the busy set is auto-excluded with no manual flag and reported in the audit" do
+    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[jasper alex]).decision
+    %w[jasper alex].each { |slug| refute_includes decision["candidates"], slug }
+    assert_equal %w[alex jasper], decision["excluded_busy"].sort
+    assert_equal [], decision["kept_busy"]
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size
+  end
+
+  test "the busy filter keeps the least-bad busy back rather than starve the pool" do
+    # TinyPool {carl, shannon, jasper}; QA owner steffon isn't in it, so the base
+    # is all three. Marking ALL THREE busy can't drop the pool below a HEAVY+LIGHT
+    # pair — the filter keeps MIN_CANDIDATES back (kept_busy), mirroring the
+    # builder keep-rather-than-starve rule.
+    decision = TinyPoolSelector.new(task_for(shape: "backend"), busy: %w[carl shannon jasper]).decision
+
+    assert_equal 2, decision["candidates"].size, "a formable pair is always kept back"
+    assert_equal 1, decision["excluded_busy"].size, "only the surplus busy soul is removed"
+    assert_equal 2, decision["kept_busy"].size, "the least-bad busy souls are kept eligible"
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair is still returned"
+  end
+
+  test "a busy soul that isn't a candidate excludes nobody and reports none" do
+    # `mack` isn't in the pool and `steffon` is the already-excluded QA owner —
+    # neither is a removable candidate, so the busy filter is a no-op for them.
+    baseline = ReviewerSelector.explain(task_for(shape: "backend"))["candidates"]
+    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[mack steffon]).decision
+
+    assert_equal [], decision["excluded_busy"], "a non-candidate busy soul removes nobody"
+    assert_equal baseline.sort, decision["candidates"].sort, "the candidate set is unchanged"
+  end
+
+  test "the builder, the QA owner, and a busy soul are all excluded together" do
+    # All three exclusion sources at once on the full pool — and a pair still forms.
+    decision = ReviewerSelector.new(task_for(shape: "backend"),
+                                    qa_owner: "steffon", builder: "carl", busy: ["jasper"]).decision
+
+    %w[steffon carl jasper].each do |slug|
+      refute_includes decision["candidates"], slug, "#{slug} is excluded"
+    end
+    assert_equal "carl", decision["excluded_builder"]
+    assert_equal ["jasper"], decision["excluded_busy"]
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size
+  end
+
+  test "the busy set folds into the seed so a busy-aware pick is reproducible" do
+    task = task_for(shape: "backend")
+    a = ReviewerSelector.new(task, busy: ["jasper"]).reviewers
+    b = ReviewerSelector.new(task, busy: ["jasper"]).reviewers
+    assert_equal a, b, "two passes with the same busy set roll identically"
+  end
+
+  test "an empty busy set leaves selection unchanged (default behavior)" do
+    task = task_for(shape: "backend")
+    with_busy = ReviewerSelector.new(task, busy: []).decision
+    without = ReviewerSelector.explain(task)
+    assert_equal [], with_busy["busy"]
+    assert_equal [], with_busy["excluded_busy"]
+    assert_equal without["reviewers"], with_busy["reviewers"],
+      "an empty busy set must not perturb the seeded pick"
+  end
+
+  test "the audit log names the busy exclusions" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), busy: ["jasper"], logger: logger).reviewers
+    assert_match(/busy=jasper/, logger.lines.last, "the excluded busy souls are logged")
+  end
+
+  # Integration: the real build flow (move-to-building auto-stamps built_by from
+  # the assigned agent) feeding the selector with a busy set — end-to-end the pair
+  # omits BOTH the builder and the busy soul and still forms a HEAVY+LIGHT pair.
+  test "the move-to-building builder and a busy soul are both omitted end-to-end" do
+    task = Task.create!(title: "build flow exclude integration", agent_slug: "carl",
+                        metadata: { "devops" => { "shape" => "backend" } })
+    task.build! # the real move-to-building path stamps devops.built_by = carl
+
+    assert_equal "carl", task.reload.devops_built_by, "built_by stamped through the build move"
+
+    decision = ReviewerSelector.explain(task, busy: ["jasper"])
+    assert_equal "carl", decision["excluded_builder"], "the assigned builder is excluded"
+    assert_equal ["jasper"], decision["excluded_busy"], "the busy soul is excluded"
+    %w[carl jasper steffon].each { |slug| refute_includes decision["candidates"], slug }
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair still forms"
+  end
+
   # --- logged random tiebreak ---
 
   test "the random tiebreak is logged (auditable review spread)" do
