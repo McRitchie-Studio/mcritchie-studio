@@ -12,19 +12,29 @@
 <% text        = local_assigns.fetch(:text) %>
 <% text_class  = local_assigns.fetch(:class, "") %>
 <% scroll_when = local_assigns.fetch(:scroll_when, "false").to_s.presence || "false" %>
+<%# scroll_speed: constant marquee pace in px/sec, so longer text simply takes
+    longer (steady to read) instead of racing the same fixed duration. %>
+<% scroll_speed = local_assigns.fetch(:scroll_speed, 60).to_i %>
 <div class="relative overflow-hidden min-w-0"
      x-data="{
+       overflowPx: 0,
        overflows: false,
+       speed: <%= scroll_speed %>,
        fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)',
        fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)',
-       measure() { this.overflows = this.$refs.fadeInner.scrollWidth > this.$el.clientWidth + 1 }
+       measure() {
+         this.overflowPx = Math.max(0, this.$refs.fadeInner.scrollWidth - this.$el.clientWidth)
+         this.overflows = this.overflowPx > 1
+       }
      }"
      x-init="$nextTick(() => measure())"
      @resize.window.debounce.150ms="measure()"
      :style="!overflows ? '' : ((<%= scroll_when %>) ? fadeLeft : fadeRight)">
+  <%# Duration tracks the distance (overflowPx / speed) so the glyphs always travel
+      at the same px/sec — a steady read, not a same-time dash to the end. %>
   <span x-ref="fadeInner"
-        class="inline-block whitespace-nowrap will-change-transform transition-transform duration-[1100ms] ease-linear <%= text_class %>"
-        :style="(overflows && (<%= scroll_when %>)) ? ('transform: translateX(-' + ($refs.fadeInner.scrollWidth - $el.parentElement.clientWidth) + 'px)') : 'transform: translateX(0)'">
+        class="inline-block whitespace-nowrap will-change-transform transition-transform ease-linear <%= text_class %>"
+        :style="'transition-duration: ' + Math.round(overflowPx / speed * 1000) + 'ms; transform: translateX(' + ((overflows && (<%= scroll_when %>)) ? -overflowPx : 0) + 'px)'">
     <%= text %>
   </span>
 </div>

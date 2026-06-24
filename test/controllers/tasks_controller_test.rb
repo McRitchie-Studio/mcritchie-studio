@@ -526,7 +526,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     task
   end
 
-  test "deployments board card shows the deploy crew with avatars and compact durations" do
+  test "deployments board card floats the deploy crew as a capped footer strip" do
     task = seed_deploy_crew_task(steffon_avatar: "https://example.com/steffon.png")
 
     get deployments_path
@@ -534,19 +534,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     card = "#card-#{task.slug}"
     assert_select "#{card} [data-test='stage-agent-avatars']"
-    # Steffon's image avatar renders (the others fall back to initials)
+    # The board crew is now the compact footer strip — faces only, deduped, capped at
+    # the 3 NEWEST with a "+N" pill for the rest; the per-stage duration pills moved
+    # off the card (they live on the task detail page). This seed is 4 distinct souls
+    # (shannon, carl, steffon, avi) → 3 shown + a "+1". Steffon is among the newest 3,
+    # so his image avatar still renders; the oldest reviewer (Shannon) rolls into +N.
+    assert_select "#{card} [data-test='crew-duration']", count: 0
+    assert_select "#{card} [data-test='crew-overflow']", text: "+1", count: 1
     assert_select "#{card} img[src='https://example.com/steffon.png']"
-    # The Deploy lane is SPLIT into separate compartments (review · assembled ·
-    # shipped), each carrying its OWN compact corner pill — assembled (Steffon) and
-    # shipped (Avi) are NOT collapsed into one combined deploy duration. This seed has
-    # no build-lane events, so three pills land, asserted on the real crew-duration
-    # markers (not loose body text): 7200s → 2h (longer review), 1800s → 30m
-    # (assembled, its own pill), 600s → 10m (shipped, its own pill).
-    pills = "#{card} [data-test='crew-duration']"
-    assert_select pills, count: 3
-    assert_select pills, text: /2h/  # review compartment (max of the two reviewers)
-    assert_select pills, text: /30m/ # assembled compartment (Steffon) — its own pill
-    assert_select pills, text: /10m/ # shipped compartment (Avi) — its own pill
+    assert_select "#{card} [data-test='stage-agent-avatars'] div[title^='Avi']" # newest, crisp on the right
   end
 
   test "task show renders the detailed deploy crew with stage badges, names, weights and durations" do
