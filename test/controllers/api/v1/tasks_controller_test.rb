@@ -141,6 +141,77 @@ module Api
         slug = JSON.parse(response.body).dig("data", "slug")
         assert_equal "gyarados", Task.find_by!(slug: slug).devops["mascot"]
       end
+
+      # --- Fix (A): a missing slug returns a clean 404, not a 500 ---------------
+
+      test "show returns 404 with a JSON error for an unknown slug" do
+        get api_v1_task_path("does-not-exist-slug"), headers: @headers, as: :json
+
+        assert_response :not_found
+        assert_equal "task not found", JSON.parse(response.body)["error"]
+      end
+
+      test "show returns 200 for a known slug" do
+        get api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal @task.slug, JSON.parse(response.body).dig("data", "slug")
+      end
+
+      test "update returns 404 for an unknown slug" do
+        patch api_v1_task_path("nope-not-here"),
+              params: { title: "renamed task title here" }, headers: @headers, as: :json
+
+        assert_response :not_found
+        assert_equal "task not found", JSON.parse(response.body)["error"]
+      end
+
+      test "destroy returns 404 for an unknown slug" do
+        delete api_v1_task_path("nope-not-here"), headers: @headers, as: :json
+
+        assert_response :not_found
+      end
+
+      # --- Fix (B): list includes stage + rejects unsupported filter params -----
+
+      test "index includes each task's stage so callers skip a per-task show" do
+        get api_v1_tasks_path, headers: @headers, as: :json
+
+        assert_response :success
+        items = JSON.parse(response.body)["data"]
+        assert items.any?, "expected fixtures to produce list items"
+        items.each { |item| assert item.key?("stage"), "list item missing stage: #{item['slug']}" }
+        in_progress = items.find { |item| item["slug"] == tasks(:in_progress_task).slug }
+        assert_equal "building", in_progress["stage"]
+      end
+
+      test "index filters by stage" do
+        get api_v1_tasks_path(stage: "building"), headers: @headers, as: :json
+
+        assert_response :success
+        items = JSON.parse(response.body)["data"]
+        assert items.any?, "expected at least one building task"
+        assert(items.all? { |item| item["stage"] == "building" })
+      end
+
+      test "index rejects an unsupported filter param instead of returning all" do
+        get api_v1_tasks_path(status: "submitted"), headers: @headers, as: :json
+
+        assert_response :bad_request
+        body = JSON.parse(response.body)
+        assert_equal "UNSUPPORTED_PARAM", body["error_code"]
+        assert_match(/status/, body["error"])
+        assert_match(/did you mean 'stage'/, body["error"])
+      end
+
+      test "index still accepts pagination params" do
+        get api_v1_tasks_path(page: 1, per_page: 2), headers: @headers, as: :json
+
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert_operator body["data"].size, :<=, 2
+        assert_equal 2, body.dig("meta", "per_page")
+      end
     end
   end
 end
