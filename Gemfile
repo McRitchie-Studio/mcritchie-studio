@@ -80,4 +80,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.9" # Studio::Enumeral, /l short-token links, shared auth/theme/email
+gem "studio-engine", "~> 0.10" # cable primitive (Studio::Redis/Cable/Broadcastable) + redis dep — PR studio-engine#9; lockfile finalizes via `bundle update studio-engine` when 0.10.0 publishes
