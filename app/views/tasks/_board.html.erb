@@ -17,12 +17,26 @@
 <% crew_board = stages.include?("reviewed") ? :deploy : :build %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+<% if crew_board == :deploy %>
+  <%# /deployments live updates: the ActionCable UMD client (exposes window.ActionCable),
+      consumed by kanbanBoard().subscribeLive(). The @rails/actioncable npm versions don't
+      track the gem (no 7.2.x); the wire protocol is stable, so we pin a published build.
+      Loaded like SortableJS above; graceful — if it can't load, the board still works,
+      just without realtime. %>
+  <script src="https://cdn.jsdelivr.net/npm/@rails/actioncable@8.1.300/app/assets/javascripts/actioncable.js"></script>
+  <%# TEST-ONLY: lets the Playwright live-update e2e POST an intent to trigger a real
+      broadcast. Gated to the test env — never rendered in development or production. %>
+  <% if Rails.env.test? %>
+    <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth) %>">
+  <% end %>
+<% end %>
 
 <%= render "components/elapsed_label_script" %>
 <%# kanbanBoard must be defined inline (before Alpine CDN defer evaluates x-data) %>
 <script>
-function kanbanBoard() {
+function kanbanBoard(live) {
   return {
+    live: !!live, // /deployments only: subscribe to DeploymentsChannel for realtime card updates
     _pendingMoves: {},
     agentFilter: '',
     hiddenApps: [],
@@ -53,6 +67,87 @@ function kanbanBoard() {
 
     init() {
       this.$nextTick(() => this.initSortables());
+      if (this.live) this.subscribeLive();
+    },
+
+    // --- /deployments live updates (DeploymentsChannel) -----------------------
+    // Subscribe to the board's cable stream; each message is one re-rendered card
+    // the server pushed (a stage change or an intent). Graceful: no ActionCable on
+    // the page → static board, no errors.
+    subscribeLive() {
+      if (!window.ActionCable) return;
+      try {
+        window.ActionCable.createConsumer().subscriptions.create(
+          { channel: 'DeploymentsChannel' },
+          { received: (data) => this.applyLiveUpdate(data) }
+        );
+      } catch (e) { /* best-effort: a cable failure must never break the board */ }
+    },
+
+    // Apply one pushed card: a task that left the board is removed; an existing
+    // card is moved (FLIP across columns) or replaced in place (intent / same-stage);
+    // a brand-new task is inserted at the top of its column and faded in. Alpine
+    // auto-initialises the inserted node (x-data/x-show/@click) via its observer.
+    applyLiveUpdate(payload) {
+      if (!payload || !payload.slug) return;
+      const tmpl = document.createElement('template');
+      tmpl.innerHTML = (payload.html || '').trim();
+      const fresh = tmpl.content.firstElementChild;
+      const existing = document.getElementById('card-' + payload.slug);
+      const targetZone = this.zoneForStage(payload.stage);
+
+      if (!targetZone) { // stage not shown here (archived/hidden) → it left the active board
+        if (existing) { existing.remove(); this.refreshCounts(); }
+        return;
+      }
+      if (!fresh) return;
+
+      if (existing) {
+        if (existing.parentElement === targetZone) {
+          existing.replaceWith(fresh); // in place — intent ticker / same-column change
+          this.flash(fresh);
+        } else {
+          const first = existing.getBoundingClientRect(); // FLIP from the old slot…
+          existing.remove();
+          targetZone.prepend(fresh);
+          this.flipFrom(fresh, first); // …to the new column
+        }
+      } else {
+        targetZone.prepend(fresh); // brand-new card
+        this.enter(fresh);
+      }
+      this.refreshCounts();
+    },
+
+    // FLIP: paint the moved card at its OLD position, then transition the offset to
+    // zero so it glides into its new column instead of teleporting.
+    flipFrom(el, firstRect) {
+      const last = el.getBoundingClientRect();
+      const dx = firstRect.left - last.left, dy = firstRect.top - last.top;
+      el.style.transition = 'none';
+      el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform 350ms cubic-bezier(0.2,0.8,0.2,1)';
+        el.style.transform = '';
+      });
+      el.addEventListener('transitionend', () => { el.style.transition = ''; el.style.transform = ''; }, { once: true });
+      this.flash(el);
+    },
+
+    enter(el) {
+      el.style.opacity = '0';
+      el.style.transform = 'scale(0.96)';
+      requestAnimationFrame(() => {
+        el.style.transition = 'opacity 300ms ease, transform 300ms ease';
+        el.style.opacity = '';
+        el.style.transform = '';
+      });
+      el.addEventListener('transitionend', () => { el.style.transition = ''; }, { once: true });
+    },
+
+    flash(el) {
+      el.classList.add('ring-2', 'ring-primary');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-primary'), 900);
     },
 
     initSortables() {
@@ -217,7 +312,7 @@ function kanbanBoard() {
 }
 </script>
 
-<section x-data="kanbanBoard()" class="min-h-screen">
+<section x-data="kanbanBoard(<%= (crew_board == :deploy).to_json %>)" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">
@@ -324,159 +419,10 @@ function kanbanBoard() {
              class="kanban-dropzone rounded-xl border-2 border-dashed min-h-[calc(100vh-220px)] p-2 space-y-2 transition-colors duration-150 border-subtle">
 
           <% column_tasks.each do |task| %>
-            <%# Blocked cards wear a reddish hue (the crew also flags the stall point). %>
-            <% card_tone = task.blocked? ? "bg-red-950/40 border-red-800/60 hover:border-red-600/70 hover:bg-red-900/40" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt" %>
-            <div id="card-<%= task.slug %>"
-                 data-slug="<%= task.slug %>"
-                 data-stage="<%= task.stage %>"
-                 data-agent="<%= task.agent_slug %>"
-                 data-apps="<%= task.devops_repositories.join(",") %>"
-                 data-href="<%= task_path(task.slug) %>"
-                 x-data="{ hovered: false, mx: 0, my: 0 }"
-                 x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= task.devops_repositories.join(",") %>')"
-                 @mouseenter="hovered = true"
-                 @mouseleave="hovered = false"
-                 @mousedown="mx = $event.clientX; my = $event.clientY"
-                 @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
-                 class="kanban-card relative <%= card_tone %> rounded-lg border p-3 cursor-pointer transition group">
-
-              <%# Title — spans the full card width, fades at the overflowing edge
-                  and scrolls to its end while the card is hovered (feature 1).
-                  Archive/delete moved to the footer so nothing covers it. %>
-              <a href="<%= task_path(task.slug) %>"
-                 class="block mb-1.5 hover:text-primary transition"
-                 title="<%= task.title %>">
-                <%= render "components/overflow_fade", text: task.title, scroll_when: "hovered",
-                      class: "text-heading font-semibold text-sm" %>
-              </a>
-
-              <%# Slug (left) + affected-app emojis (right) on one line. The slug fades on
-                  the right when it overflows (transparency mask, same as the footer) and
-                  the emojis sit OUTSIDE the fade as a normal flex item — no solid bg
-                  gradient, so nothing mismatches the card colour on hover. %>
-              <div class="flex items-center gap-1 mt-0.5 mb-1.5">
-                <code class="block text-[10px] font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
-                      style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)"><%= task.slug %></code>
-                <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
-              </div>
-
-              <%# Stage crew (agent-events summary) sits directly under the slug — build-lane
-                  stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
-                  shipped. Renders nothing when there are no events. %>
-              <%= render "components/stage_agent_avatars", task: task, agents: @agents, variant: :stack, board: crew_board, mascot: pokemon_by_slug[task.devops_field("mascot")] %>
-
-              <%# Session resume + live cue live on the task READ view now (off the board
-                  cards). The board signals "live" via the pulsing crew time badge. %>
-
-              <%# Planning badges (size / MIG / REL), right-aligned — only rendered when
-                  one is present, so the card never carries an empty meta row. The URG /
-                  HIGH priority badges and the assignee chip were dropped; the crew above
-                  and the stage attribute the rest. %>
-              <% if task.po_size.present? || task.requires_migration || task.requires_release_conductor? %>
-                <div class="flex items-center justify-end gap-1 mb-1">
-                  <% if task.po_size.present? %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
-                  <% end %>
-                  <% if task.requires_migration %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
-                  <% end %>
-                  <% if task.requires_release_conductor? %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_train lane">REL</span>
-                  <% end %>
-                </div>
-              <% end %>
-
-              <%# Secondary meta row — release-train badge + QA/Prod links — only when
-                  there's something to show. The kind/gem badges are gone (features are
-                  implicit; bug/docs/gem surface as an emoji on the footer line), and
-                  Local/PR moved down to the timestamp line. %>
-              <% if task.devops? && (task.devops_release_train.present? || task.devops_url("qa") || task.devops_url("production")) %>
-                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
-                  <% if task.devops_release_train.present? %>
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= task.devops_release_train %></span>
-                  <% end %>
-                  <% if (qa_url = task.devops_url("qa")) %>
-                    <%= link_to "QA", qa_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-                  <% end %>
-                  <% if (production_url = task.devops_url("production")) %>
-                    <%= link_to "Prod", production_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-                  <% end %>
-                </div>
-              <% end %>
-
-              <% if task.stage == 'failed' && task.error_message.present? %>
-                <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
-              <% end %>
-
-              <% if (latest_activity = @latest_task_activities[task.slug]) %>
-                <%# The activity type (+ note count) now rides INSIDE the message
-                    box, top-left, as a small white label; the message scrolls on
-                    a single line below it (fades at the overflow, steady scroll on
-                    hover). %>
-                <div class="mt-2 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
-                  <div class="flex items-center gap-1.5 mb-0.5">
-                    <span class="text-[9px] font-semibold uppercase tracking-wide text-heading">
-                      <%= latest_activity.activity_type_label %>
-                    </span>
-                    <% if (activity_count = @task_activity_counts[task.slug].to_i) > 1 %>
-                      <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
-                    <% end %>
-                  </div>
-                  <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
-                        class: "text-[11px] text-secondary" %>
-                </div>
-              <% end %>
-
-              <%# Footer meta line: Local + PR links + relative time on a SINGLE line that
-                  fades on the right when it overflows the column (mirrors the slug row, so
-                  the timestamp never wraps). The type emojis — gem (💎) then bug (🐛) /
-                  docs (📚) — sit OUTSIDE the fade so they stay crisp. Features stay unmarked. %>
-              <div class="flex items-center gap-2 mt-1 text-[10px]">
-                <div class="flex items-center gap-2 min-w-0 flex-1 whitespace-nowrap overflow-hidden"
-                     style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)">
-                  <% if task.devops? && (local_url = task.devops_url("local")) %>
-                    <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-                  <% end %>
-                  <% if task.devops? && (pr_url = task.devops_url("pr")) %>
-                    <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-                  <% end %>
-                  <span class="text-muted"><%= time_ago_in_words(task.created_at) %> ago</span>
-                </div>
-                <% kind_emoji = { "bug" => "🐛", "docs" => "📚" }[task.devops_kind] %>
-                <% if task.gem_release? || kind_emoji %>
-                  <span class="flex items-center gap-1.5 leading-none shrink-0">
-                    <% if task.gem_release? %>
-                      <span title="Gem release — published to RubyGems producer-first (before consuming apps)">💎</span>
-                    <% end %>
-                    <% if kind_emoji %>
-                      <span title="<%= task.devops_kind %> task"><%= kind_emoji %></span>
-                    <% end %>
-                  </span>
-                <% end %>
-              </div>
-
-              <%# Footer — archive + delete actions. Bleeds to the card edges with
-                  a slightly inset background; each tints on hover. @click.stop
-                  keeps them from triggering the card-open click (feature 2). %>
-              <div class="-mx-3 -mb-3 mt-2 flex border-t border-subtle bg-inset/60 rounded-b-lg overflow-hidden">
-                <% if task.stage != 'archived' %>
-                  <button type="button" @click.stop="archiveTask('<%= task.slug %>')"
-                          class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium text-muted hover:text-yellow-300 hover:bg-yellow-900/20 transition" title="Archive">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
-                    </svg>
-                    <span>Archive</span>
-                  </button>
-                <% end %>
-                <button type="button" @click.stop="deleteTask('<%= task.slug %>')"
-                        class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-medium text-muted hover:text-red-300 hover:bg-red-900/20 transition <%= 'border-l border-subtle' unless task.stage == 'archived' %>" title="Delete">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                  </svg>
-                  <span>Delete</span>
-                </button>
-              </div>
-            </div>
+            <%= render "tasks/task_card", task: task, agents: @agents, crew_board: crew_board,
+                  mascot: pokemon_by_slug[task.devops_field("mascot")],
+                  latest_activity: @latest_task_activities[task.slug],
+                  activity_count: @task_activity_counts[task.slug].to_i %>
           <% end %>
 
           <!-- Empty State -->

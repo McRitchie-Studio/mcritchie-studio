@@ -24,7 +24,10 @@ if (!externalBaseURL) {
     url: `http://127.0.0.1:${port}/up`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
-    env: { RAILS_ENV: "test", LOCAL_EMAIL_CAPTURE: "1" },
+    // CABLE_ADAPTER=async gives the e2e server REAL in-process ActionCable delivery
+    // to the browser (the default `test` adapter only captures broadcasts for
+    // minitest assertions), so the /deployments live-update round-trip works.
+    env: { RAILS_ENV: "test", LOCAL_EMAIL_CAPTURE: "1", CABLE_ADAPTER: "async" },
   };
 }
 

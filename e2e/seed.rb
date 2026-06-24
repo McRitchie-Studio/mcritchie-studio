@@ -169,4 +169,22 @@ intent_task.record_intent_event(
   source: "cli"
 )
 
+# Live-updates demo: a submitted task that WALKED designed→building→submitted with
+# an actor (so its deploy card renders a crew) but has NO intent yet — so its card
+# starts WITHOUT a live ticker. The /deployments websockets e2e records a review
+# intent against it after page load and asserts the ticker appears with no reload.
+Current.task_event_actor = "carl"
+live_task = Task.create!(
+  title: "Live cable update demo",
+  slug: "live-cable-demo",
+  description: "Fixture for the /deployments live-update round-trip (record an intent → card updates live).",
+  stage: "designed",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+live_task.update!(stage: "building")
+live_task.update!(stage: "submitted")
+Current.reset
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"
