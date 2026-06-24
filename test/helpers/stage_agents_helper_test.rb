@@ -426,4 +426,35 @@ class StageAgentsHelperTest < ActionView::TestCase
     review = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy).find { |c| c.lane == :review }
     assert_empty review.stacked, "no agents passed → no live cluster, exactly as before"
   end
+
+  # --- stage_crew_renderable? (a fresh designed card shows its mascot) ----------
+
+  test "stage_crew_renderable? shows the build-lane mascot even with no crew entries" do
+    mascot = Pokemon.new(slug: "dugtrio")
+    designed = Task.new(stage: "designed")
+
+    # The fix: a fresh designed/building task (empty crew entries) still shows its
+    # mascot on the board card, on either board.
+    assert stage_crew_renderable?(designed, [], mascot: mascot, variant: :stack, board: :build)
+    assert stage_crew_renderable?(designed, [], mascot: mascot, variant: :stack, board: :deploy)
+    assert stage_crew_renderable?(Task.new(stage: "building"), [], mascot: mascot, variant: :stack, board: :deploy)
+
+    # No mascot → nothing to paint, exactly as before.
+    assert_not stage_crew_renderable?(designed, [], mascot: nil, variant: :stack, board: :build)
+    # The detail panel still requires real crew entries.
+    assert_not stage_crew_renderable?(designed, [], mascot: mascot, variant: :detailed, board: :build)
+    # A deploy-stage card with no entries shows nothing even with a mascot (no build steps).
+    assert_not stage_crew_renderable?(Task.new(stage: "reviewed"), [], mascot: mascot, variant: :stack, board: :deploy)
+    # Real entries always render.
+    assert stage_crew_renderable?(designed, [Object.new], mascot: nil, variant: :stack, board: :deploy)
+  end
+
+  test "build_step_board? matches when the build steps (and mascot) are painted" do
+    assert build_step_board?(Task.new(stage: "designed"), :deploy)
+    assert build_step_board?(Task.new(stage: "building"), :deploy)
+    assert build_step_board?(Task.new(stage: "submitted"), :build), "build board keeps the split through submitted"
+    assert_not build_step_board?(Task.new(stage: "submitted"), :deploy)
+    assert_not build_step_board?(Task.new(stage: "reviewed"), :deploy)
+    assert_not build_step_board?(Task.new(stage: "blocked"), :build)
+  end
 end
