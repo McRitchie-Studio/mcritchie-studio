@@ -31,6 +31,16 @@
 # seed/backfill isn't run by hand post-ship. Set it to "none" to acknowledge a
 # schema-only migration the release phase auto-runs.
 #
+# Post-deploy SAFETY gate (both gates): bin/release runs devops.post_deploy_cmd
+# VERBATIM against PRODUCTION, so it must be a NARROW, prod-safe, idempotent
+# command. A bare full-suite seed (bin/rails db:seed / db:seed:replant / rake
+# db:seed) is REJECTED: db/seeds.rb loads EVERY db/seeds/*.rb — it would inject
+# demo News/Content/Tasks into prod AND abort the release on a non-idempotent
+# seed file. Require a scoped single-file runner (rails runner 'load
+# Rails.root.join("db/seeds/NN_x.rb").to_s') or a dedicated rake task instead.
+# Near-miss: merge-docs-reviewer-into-alex shipped post_deploy_cmd='bin/rails
+# db:seed' because reviewers read the diff, not the deploy metadata.
+#
 # Auth: AGENT_API_SECRET from ENV, else 1Password, else repo .env (same as
 # bin/task). Base URL via TASK_API_BASE (default https://mcritchie.studio).
 #
@@ -72,6 +82,16 @@ CODE_PATH_PREFIXES = %w[app/ lib/ bin/ config/ db/].freeze
 # merge gate nudges: a diff under these prefixes must carry a post_deploy_cmd (or
 # declare "none" to acknowledge a schema-only migration the release phase runs).
 DATA_CHANGE_PREFIXES = %w[db/migrate/ db/seeds].freeze
+# A devops.post_deploy_cmd that runs the FULL seed suite. bin/release executes
+# post_deploy_cmd VERBATIM against the deployed app (prod on ship), and Rails'
+# db:seed task loads db/seeds.rb — which in this app loads EVERY db/seeds/*.rb
+# (demo News/Content/Tasks + any non-idempotent file). So the bare task is
+# forbidden as a post-deploy command; a scoped runner or a dedicated rake task is
+# required instead. This matches the rake TASK token `db:seed` (and
+# `db:seed:replant` / any `db:seed:*` subtask) as a standalone word — the COLON is
+# the tell: `db:seed` is the rake task; the safe scoped form `db/seeds/NN.rb`
+# (slash) must NOT match, nor a dedicated task like `pokemon:seed`.
+BARE_SEED_TASK = %r{(?<![\w:/])db:seed(?::\w+)?(?![\w:/])}i
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
@@ -269,6 +289,14 @@ def data_changed_files
   changed_files.select { |f| DATA_CHANGE_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
 end
 
+# True when a post_deploy_cmd is a bare full-suite seed (db:seed / db:seed:replant
+# / rake db:seed / bundle exec rails db:seed), which loads ALL of db/seeds.rb. The
+# safe forms — a scoped runner (`rails runner 'load …db/seeds/NN.rb…'`) and a
+# dedicated rake task (`pokemon:seed`) — do NOT match (no `db:seed` colon-token).
+def bare_full_suite_seed?(cmd)
+  BARE_SEED_TASK.match?(cmd.to_s)
+end
+
 # Resolver/debug seam: print the committed-diff base this repo would diff against
 # and exit, before any task fetch. Honors DOR_CHECK_DIFF_ROOT/_BASE like changed_files.
 if options[:diff_base]
@@ -367,9 +395,29 @@ if gate != "build"
     sample = data_files.first(3).join(", ") + (data_files.size > 3 ? ", …" : "")
     errors << "diff touches a seed/migration (#{sample}) but devops.post_deploy_cmd is blank — this " \
       "change should declare a post-deploy command so the conductor runs it on ship and nobody runs the " \
-      "rake by hand (e.g. bin/task update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails db:seed'); " \
+      "rake by hand (e.g. bin/task update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails pokemon:seed'); " \
       "set it to 'none' if no command is needed (a schema-only migration the release phase auto-runs)"
   end
+end
+
+# Post-deploy SAFETY gate (BOTH gates — value-based, so gate-independent). A
+# declared post_deploy_cmd is run VERBATIM against PRODUCTION by bin/release, so it
+# must be NARROW, prod-safe, and idempotent. Reject a bare full-suite seed: db:seed
+# (and db:seed:replant) loads db/seeds.rb → EVERY db/seeds/*.rb, which would inject
+# demo News/Content/Tasks into prod AND abort the release on a non-idempotent seed
+# file. The near-miss: merge-docs-reviewer-into-alex shipped post_deploy_cmd=
+# 'bin/rails db:seed'; reviewers read the diff, not the deploy metadata, so it only
+# surfaced when QA aborted. (An exempt no-code task short-circuits above and never
+# reaches here; any task that actually ships a seed/migration touches db/ → non-
+# exempt → gated.)
+post_deploy_cmd = devops["post_deploy_cmd"].to_s
+if present?(post_deploy_cmd) && bare_full_suite_seed?(post_deploy_cmd)
+  errors << "devops.post_deploy_cmd #{post_deploy_cmd.inspect} is a bare full-suite seed — bin/release " \
+    "runs it VERBATIM against PRODUCTION, and db:seed loads db/seeds.rb which loads EVERY db/seeds/*.rb: it " \
+    "would inject demo News/Content/Tasks into prod AND abort the release if any seed file is non-idempotent " \
+    "(the merge-docs-reviewer-into-alex near-miss). Declare a NARROW command instead — a scoped single-file " \
+    "runner, e.g. rails runner 'load Rails.root.join(\"db/seeds/NN_x.rb\").to_s', or a dedicated idempotent " \
+    "rake task (e.g. bin/rails pokemon:seed)"
 end
 
 ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?

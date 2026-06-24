@@ -22,6 +22,10 @@ release conductor handles production effects.
    `checks_run`. The task moves to `pr_review`.
 2. **PR review by Avi** — Avi reviews task metadata, PR body, diff, docs,
    migrations, merge safety, CI, local proof, and overlap with other agents.
+   **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
+   against prod on ship, so a bare `db:seed` (loads all of `db/seeds.rb` →
+   demo data + a non-idempotent abort) must be rejected for a narrow, idempotent
+   command; `bin/dor-check` enforces this, but read the metadata yourself.
    Avi classifies check failures by lane before deciding whether to merge,
    wait, or send `qa_feedback`.
 3. **QA testing** — After merging approved PRs into the persistent `release`
