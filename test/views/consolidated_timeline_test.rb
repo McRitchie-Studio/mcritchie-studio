@@ -23,10 +23,17 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
 
     assert_select "[data-test='stage-timeline']"
+    assert_select "[data-test='timeline-grid']"
     assert_select "[data-test='timeline-block']", minimum: 3
+    # every card carries the uniform Model/Tokens/Cost/Duration metric block
+    assert_select "[data-test='timeline-metrics']", minimum: 3
     assert_includes rendered, "claude-opus-4-8"
     assert_includes rendered, "5.40"
-    assert_includes rendered, "in Building"
+    assert_includes rendered, "3,000"          # tokens_total (1000 + 2000), delimited
+    # Started → Completed footer, and an em dash for any unreported metric
+    assert_includes rendered, "Started"
+    assert_includes rendered, "Completed"
+    assert_includes rendered, "—"
   end
 
   test "renders a live in-progress block with a ticker for an open review intent" do

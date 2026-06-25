@@ -594,8 +594,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # heavy/light review weights surface
     assert_includes timeline, "heavy"
     assert_includes timeline, "light"
-    # full humanized duration (7200s → about 2 hours), labelled by the stage left
-    assert_includes timeline, "about 2 hours in Submitted"
+    # full humanized duration (7200s → about 2 hours) in the card's Duration metric
+    assert_includes timeline, "about 2 hours"
   end
 
   test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do
