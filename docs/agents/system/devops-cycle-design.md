@@ -113,6 +113,12 @@ crosses the ship gate autonomously** — the operator's single OK on the RC is t
 one human gate. The task API is on production, so the airgapped box only needs an
 internet connection — no separate pull/sync layer.
 
+**Open every cycle by assessing the board BY STAGE** — `bin/task list --stage
+reviewed|assembled|shipped|submitted|building`, never the default flat `bin/task
+list` (it caps at the 20 newest tasks across all stages with no truncation
+warning, so older actionable work silently falls off). See
+[`parallel-agent-devops.md` → Step 0](../modules/parallel-agent-devops.md#step-0--assess-the-queue-by-stage).
+
 ### 1.1 The Release model + the persistent `release` branch
 
 **Release** (singleton model) coordinates one candidate from assembly through
