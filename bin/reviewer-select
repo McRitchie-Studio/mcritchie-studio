@@ -63,11 +63,29 @@ require "net/http"
 require "json"
 require "uri"
 require "optparse"
+require_relative "../lib/task_usage_baseline"
 
 ROOT = File.expand_path("..", __dir__)
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+
+# Seed the per-(session, slug) usage baseline at the review INTENT so the
+# reviewer's submitted→reviewed move records a true token delta instead of a
+# zeroed first-touch baseline (the model-only chip bug). Shares storage with
+# bin/task — same dir resolution + JSON format — so the later `bin/task move
+# reviewed` in the same session reads this baseline. Idempotent + best-effort:
+# a failure never affects the printed reviewer pick.
+def seed_review_usage_baseline(slug)
+  session = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  return if session.empty? || slug.to_s.strip.empty?
+
+  projects = (d = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(d)
+  dir = (u = ENV["TASK_USAGE_DIR"].to_s.strip).empty? ? File.join(projects, ".agents", "task-usage") : u
+  TaskUsageBaseline.new(session: session, dir: dir).seed(slug)
+rescue StandardError
+  nil
+end
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -303,6 +321,7 @@ if options[:record]
       api(:post, "/api/v1/tasks/#{slug}/intent",
           { to_stage: "reviewed", reviewers: pair, event: { source: "cli" } })
       recorded = pair
+      seed_review_usage_baseline(slug)
     rescue SystemExit, StandardError => e
       warn!("intent not recorded — board write failed (#{e.message}); selection is advisory")
     end

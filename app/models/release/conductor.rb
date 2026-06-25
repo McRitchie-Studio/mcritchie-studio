@@ -27,7 +27,15 @@ class Release
     # flip writes (Current.task_event_review_bypass → Task#write_stage_event), so the
     # override leaves a `review_bypassed` paper-trail row — never a silent skip. The
     # flag is reset in `ensure` so it can't leak onto a later (in-process) transition.
-    def adopt!(task, override: false)
+    #
+    # `usage:` is the best-effort per-transition usage (model/tokens/cost) for the
+    # reviewed→assembled flip, captured by `bin/release merge` from the conductor's
+    # LOCAL session transcript and threaded in (the flip itself runs on prod via
+    # `heroku run`, where there is no transcript). It rides onto the assembled
+    # TaskEvent via Current.with_task_event_usage, which clears it after the flip so
+    # a batched adopt can't mis-attribute the next task. nil → spine-only (web /
+    # transcript-less moves degrade gracefully; usage is never fabricated).
+    def adopt!(task, override: false, usage: nil)
       release = Release.current_or_open!
       stamp_session_mascot(release)
       member = release.tasks.find_by(slug: task.slug)
@@ -36,15 +44,17 @@ class Release
       # already-`assembled`) target changes nothing, so it records no skip.
       Current.task_event_review_bypass = true if override && !%w[reviewed assembled].include?(target.stage)
 
-      if member.nil?
-        release.add(task, override: override)
-      elsif member.stage != "assembled"
-        # Hand any non-`assembled` member back to `add` — NOT a narrower
-        # `== "reviewed"` check. `add` heals a `reviewed` one and deliberately
-        # RAISES for any other stage (blocked, etc.), mirroring the nil → add(task)
-        # path above. Narrowing to `== "reviewed"` here would silently no-op those
-        # off-path members, reintroducing the asymmetry the review flagged.
-        release.add(member, override: override)
+      Current.with_task_event_usage(usage) do
+        if member.nil?
+          release.add(task, override: override)
+        elsif member.stage != "assembled"
+          # Hand any non-`assembled` member back to `add` — NOT a narrower
+          # `== "reviewed"` check. `add` heals a `reviewed` one and deliberately
+          # RAISES for any other stage (blocked, etc.), mirroring the nil → add(task)
+          # path above. Narrowing to `== "reviewed"` here would silently no-op those
+          # off-path members, reintroducing the asymmetry the review flagged.
+          release.add(member, override: override)
+        end
       end
       release
     ensure
@@ -222,13 +232,18 @@ class Release
     end
 
     # Stamp the deployed commit + flip the RC (and its member tasks) to shipped.
-    def ship!(release:, deployed_sha:, by: nil, production_url: nil)
+    # `usage_by_slug` is the optional best-effort per-member usage (model/tokens/
+    # cost), captured by `bin/release ship` from the conductor's LOCAL session
+    # transcript and keyed by task slug. It rides onto each member's shipped
+    # TaskEvent (Release#ship! sets Current.with_task_event_usage per task). A
+    # missing/blank entry → that member's shipped event records the spine only.
+    def ship!(release:, deployed_sha:, by: nil, production_url: nil, usage_by_slug: {})
       Release.transaction do
         release.update!(
           deployed_sha: deployed_sha,
           production_url: production_url.presence || release.production_url
         )
-        release.ship!(by: by)
+        release.ship!(by: by, usage_by_slug: usage_by_slug)
       end
       # Re-stamp AFTER the ship commits so the read-only "Last Release" wears the
       # mascot of whoever actually ran the deploy (a handoff swaps it). Defensive
