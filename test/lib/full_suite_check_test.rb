@@ -9,10 +9,40 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require_relative "../../bin/lib/full_suite_gate"
 
 class FullSuiteCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/full-suite-check", __dir__)
   DOR = File.expand_path("../../bin/dor-check", __dir__)
+
+  # --- [unit] merge_evidence: the writer must PRESERVE tier tags ---------------
+  # bin/task update --checks REPLACES the whole list, so the runner merges. This
+  # pure function is the merge: keep tier tags + bypass, replace prior evidence.
+
+  def test_merge_evidence_preserves_tier_tags_and_replaces_prior_evidence
+    existing = [
+      "[unit] bin/rails test test/foo_test.rb",
+      "[integration] request->db",
+      "[full-suite@oldfp] stale tests",
+      "[rubocop@oldfp] stale lint",
+      "[full-suite-bypass] tracked elsewhere"
+    ]
+    fresh = ["[full-suite@newfp] tests green", "[rubocop@newfp] lint clean"]
+    merged = FullSuiteGate.merge_evidence(existing, fresh)
+
+    assert_includes merged, "[unit] bin/rails test test/foo_test.rb"
+    assert_includes merged, "[integration] request->db"
+    assert_includes merged, "[full-suite-bypass] tracked elsewhere"
+    assert_includes merged, "[full-suite@newfp] tests green"
+    assert_includes merged, "[rubocop@newfp] lint clean"
+    refute_includes merged, "[full-suite@oldfp] stale tests"
+    refute_includes merged, "[rubocop@oldfp] stale lint"
+  end
+
+  def test_merge_evidence_handles_empty_existing
+    merged = FullSuiteGate.merge_evidence([], ["[full-suite@fp] x", "[rubocop@fp] y"])
+    assert_equal ["[full-suite@fp] x", "[rubocop@fp] y"], merged
+  end
 
   # A temp git repo with one commit; yields its dir.
   def with_repo

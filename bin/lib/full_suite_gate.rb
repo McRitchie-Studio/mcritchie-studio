@@ -58,6 +58,19 @@ module FullSuiteGate
     "[#{lane}@#{fingerprint}] #{detail}"
   end
 
+  # Pattern for a recorded evidence line of EITHER lane ("[full-suite@..]" /
+  # "[rubocop@..]"), at the start of a checks_run line.
+  EVIDENCE_RE = /\A\s*\[\s*(?:#{LANES.map { |l| Regexp.escape(l) }.join("|")})\s*@/i
+
+  # Merge fresh evidence lines into an existing checks_run, REPLACING any prior
+  # full-suite/rubocop evidence (so re-runs don't accumulate stale lines) while
+  # PRESERVING tier tags ("[unit] ..."), bypass records, and everything else. The
+  # writer (bin/full-suite-check) needs this because `bin/task update --checks`
+  # REPLACES the whole list — a naive write would wipe the agent's tier tags.
+  def merge_evidence(existing, fresh_lines)
+    Array(existing).reject { |line| line.to_s.match?(EVIDENCE_RE) } + Array(fresh_lines)
+  end
+
   # Freshness of one lane against `fingerprint`: :fresh (a tag matches the current
   # fingerprint), :stale (tagged, but every tag is for a different fingerprint),
   # or :missing (no tag for this lane at all).

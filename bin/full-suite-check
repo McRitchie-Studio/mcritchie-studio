@@ -32,6 +32,7 @@
 # fingerprint (nothing certified).
 
 require "optparse"
+require "json"
 require_relative "lib/full_suite_gate"
 
 ROOT = File.expand_path("..", __dir__)
@@ -57,6 +58,19 @@ def run_lane(label, cmd, root)
   ok = system(cmd, chdir: root)
   warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   ok
+end
+
+# The task's current checks_run (Array), or nil if it can't be read — so the
+# caller can MERGE new evidence into it (bin/task update --checks REPLACES). nil
+# is the "don't risk wiping it" signal, distinct from [] (a task with none yet).
+def fetch_checks(task_bin, slug)
+  out = IO.popen([task_bin, "show", slug, "--json"], err: File::NULL, &:read)
+  return nil unless $?.success?
+
+  record = JSON.parse(out)
+  Array(record.dig("metadata", "devops", "checks_run"))
+rescue JSON::ParserError, SystemCallError
+  nil
 end
 
 test_ok = run_lane("full-suite", test_cmd, root)
@@ -93,16 +107,25 @@ if options[:print] || slug.nil?
   exit 0
 end
 
-# Record the green evidence on the task. bin/task --checks APPENDS, so a re-run at
-# a new fingerprint adds fresh lines (the old ones go stale and are ignored by
-# dor-check). Recording is best-effort-fatal: if the board write fails, say so.
-record_args = passed_lines.flat_map { |line| ["--checks", line] }
-ok = system(TASK_BIN, "update", slug, *record_args)
-unless ok
-  warn "full-suite-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). " \
-       "Re-run, or record by hand: bin/task update #{slug} #{record_args.map { |a| a.start_with?("--") ? a : a.inspect }.join(" ")}"
+# Record the green evidence on the task. `bin/task update --checks` REPLACES the
+# whole checks_run list, so we first read the existing lines and MERGE — keeping
+# the agent's tier tags / bypass records and dropping only PRIOR full-suite/rubocop
+# evidence (so re-runs replace stale lines, never accumulate). If the current list
+# can't be read, ABORT rather than risk wiping checks_run.
+existing = fetch_checks(TASK_BIN, slug)
+if existing.nil?
+  warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task " \
+       "show). Not writing (a blind --checks would wipe your tier tags). Re-run, or record by hand alongside your " \
+       "existing checks: bin/task update #{slug} #{passed_lines.map { |l| "--checks #{l.inspect}" }.join(" ")}"
   exit 1
 end
 
-warn "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug}."
+final = FullSuiteGate.merge_evidence(existing, passed_lines)
+record_args = final.flat_map { |line| ["--checks", line] }
+unless system(TASK_BIN, "update", slug, *record_args)
+  warn "full-suite-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
+  exit 1
+end
+
+warn "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug} (tier tags preserved)."
 exit 0
