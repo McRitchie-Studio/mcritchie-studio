@@ -103,19 +103,53 @@ class Release
     # An empty result means every checkout is on a clean `main` — safe to ff.
     def preflight_offenders(states)
       Array(states).filter_map do |s|
-        branch = (s["branch"] || s[:branch]).to_s
-        files  = Array(s["dirty_files"] || s[:dirty_files]).map(&:to_s).reject(&:empty?)
-        dirty  = if s.key?("dirty") || s.key?(:dirty)
-                   !!(s["dirty"] || s[:dirty])
-                 else
-                   files.any?
-                 end
+        branch    = (s["branch"] || s[:branch]).to_s
+        all_files = Array(s["dirty_files"] || s[:dirty_files]).map(&:to_s).reject(&:empty?)
+        # Drop KNOWN-GENERATED artifacts (a `bin/release retro` doc, the
+        # agent-worktree ledger) — they routinely sit uncommitted in the deploy
+        # checkout and counting them as dirt blocked EVERY ship's fast-forward.
+        # Narrow allowlist (see GENERATED_ARTIFACT_GLOBS), NOT a blanket docs/
+        # ignore — any other dirty file still gates the ship.
+        files = all_files.reject { |f| generated_artifact?(f) }
+        dirty = if all_files.any?
+                  # A concrete file list is authoritative: dirty IFF a non-
+                  # generated file remains after the allowlist.
+                  files.any?
+                elsif s.key?("dirty") || s.key?(:dirty)
+                  # No file list given — honor an explicit dirty flag (legacy shape).
+                  !!(s["dirty"] || s[:dirty])
+                else
+                  false
+                end
         on_main = branch == "main"
         next if on_main && !dirty
 
         { "repo" => (s["repo"] || s[:repo]).to_s, "branch" => branch,
           "on_main" => on_main, "dirty" => dirty, "dirty_files" => files }
       end
+    end
+
+    # Generated artifacts that routinely sit UNCOMMITTED in a deploy checkout but
+    # are NOT real code dirt, so the ship preflight must not count them as dirty
+    # (they blocked EVERY ship's fast-forward otherwise):
+    #   * docs/agents/audits/retro-rel-*.md     — written by `bin/release retro`
+    #   * docs/agents/maintenance/delete-later.md — the `bin/agent-worktree` ledger
+    # A NARROW allowlist of globs, NOT a blanket docs/ ignore: any other dirty
+    # file — including other docs — still gates the ship.
+    GENERATED_ARTIFACT_GLOBS = [
+      "docs/agents/audits/retro-rel-*.md",
+      "docs/agents/maintenance/delete-later.md"
+    ].freeze
+
+    # Whether a repo-root-relative `path` (as `git status --porcelain` emits it)
+    # is a known generated artifact. Pure string match (File.fnmatch touches no
+    # filesystem); FNM_PATHNAME keeps `*` from spanning `/`, so the glob can't
+    # over-ignore a nested path. A blank path is never an artifact.
+    def generated_artifact?(path)
+      p = path.to_s.strip
+      return false if p.empty?
+
+      GENERATED_ARTIFACT_GLOBS.any? { |glob| File.fnmatch?(glob, p, File::FNM_PATHNAME) }
     end
 
     # The loud, actionable abort text for a non-empty preflight_offenders list —
