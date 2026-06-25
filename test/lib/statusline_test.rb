@@ -49,20 +49,22 @@ class StatuslineTest < Minitest::Test
     assert_includes out, "[building]", "the no-session path must still render the stage"
   end
 
-  # --- Mascot tint: ⊙<mascot> wears its least-common type color ----------------
+  # --- Mascot tint: the <mascot> name wears its least-common type color --------
 
   def test_mascot_handle_is_tinted_with_its_type_color
     # Dragonite's signature (dragon) color #6F35FC → nearest xterm-256 cube = 63.
     # 256-color (not truecolor): the default Terminal.app supports 256, not 24-bit.
+    # No type emoji here → the tint lands on the bare name (no ⊙ glyph).
     out = render_in(session: SESSION, extra: { "mascot" => "dragonite", "mascot_color" => "#6F35FC" })
-    assert_includes out, "\e[38;5;63m", "mascot handle should use the type's 256-color"
-    assert_includes out, "⊙ Dragonite", "the mascot handle still renders"
+    assert_includes out, "\e[38;5;63mDragonite", "the name wears the type's 256-color"
+    refute_includes out, "⊙", "no ⊙ glyph — the name stands on its own"
     refute_includes out, "[38;2;", "no 24-bit truecolor (unsupported in Terminal.app)"
   end
 
-  def test_mascot_falls_back_to_default_tint_without_a_color
+  def test_mascot_falls_back_to_neutral_tint_without_a_color_never_pink
     out = render_in(session: SESSION, extra: { "mascot" => "snorlax" })
-    assert_includes out, "\e[38;5;213m", "no color → the default mascot tint"
+    assert_includes out, "\e[38;5;250mSnorlax", "no color → the neutral default tint on the name"
+    refute_includes out, "\e[38;5;213m", "never the old pink mascot default (213)"
   end
 
   # Even with an EMPTY middle field (no task_url), the mascot_color must still
@@ -72,8 +74,8 @@ class StatuslineTest < Minitest::Test
     out = render_in(session: SESSION, extra: {
       "task_url" => "", "mascot" => "parasect", "mascot_color" => "#A6B91A"
     })
-    assert_includes out, "\e[38;5;142m", "bug 256-color lands despite the empty url field"
-    assert_includes out, "⊙ Parasect"
+    assert_includes out, "\e[38;5;142mParasect", "bug 256-color lands on the name despite the empty url field"
+    refute_includes out, "⊙", "no ⊙ glyph"
   end
 
   # --- Mascot type emoji: leads + replaces the 🛠 ⊙ glyphs ----------------------
@@ -96,9 +98,14 @@ class StatuslineTest < Minitest::Test
     assert_includes out, "Charizard"
   end
 
-  def test_mascot_without_an_emoji_keeps_the_tool_and_dot
+  def test_mascot_without_an_emoji_renders_clean_name_not_pink_fallback
+    # The reported bug: a board-served mascot with no color/emoji rendered the pink
+    # "🛠 ⊙ <name>". Now it's just the name in the neutral tint — never the glyphs.
     out = render_in(session: SESSION, extra: { "mascot" => "snorlax" })
-    assert_includes out, "⊙ Snorlax", "no type emoji (agent/unseeded) → keep the 🛠 ⊙ fallback"
+    assert_includes out, "Snorlax", "the name still renders"
+    refute_includes out, "⊙", "no ⊙ dot"
+    refute_includes out, "🛠", "no tool glyph"
+    refute_includes out, "\e[38;5;213m", "and never the old pink tint"
   end
 
   # --- Heartbeat wiring (V2): the status line renews the active build claim ----

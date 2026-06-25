@@ -450,18 +450,36 @@ rescue StandardError
 end
 
 # The marker's mascot AND its display attributes (color + type emoji), resolved
-# TOGETHER from the same source, so a single mascot-less API response never blanks
-# a known mascot out from under bin/statusline (see lib/feature_marker.rb) AND its
-# color/emoji ride with the name — never drifting on a momentary blank, never a
-# stale tint/glyph on a changed mascot. Order: this response → the last-good
-# on-disk marker → a best-effort board read (name only; no color/emoji). Returns
-# [mascot, color, emoji].
+# TOGETHER so the color/emoji always ride with the name. Returns [mascot, color,
+# emoji].
+#
+# The session's mascot is STICKY — once the per-session marker carries one, a later
+# `create`/`move` updates the app/feature/stage context (write_feature_marker) but
+# does NOT swap in the MOVED task's mascot. Why: a task's devops carries `mascot`
+# (a DEVOPS_KEY) but the board does NOT serve mascot_color/mascot_emoji with it
+# (they're server-owned, NOT DEVOPS_KEYS — see Task::DEVOPS_SCALAR_KEYS), so
+# adopting a task's mascot dropped bin/statusline to its color/emoji-less pink
+# 🛠 ⊙ fallback every time you reviewed someone else's task. The reliable source
+# of a mascot WITH its color+emoji is the session marker that `bin/task
+# session-mascot` writes from the /sessions/:id/mascot endpoint (which DOES return
+# them). So: pin that. Order:
+#   1. a PERSONA ("act as <soul>") on this task — a deliberate identity change the
+#      server stamped with the soul's name+color+emoji; let it override.
+#   2. the last-good on-disk marker — the sticky session mascot (its color/emoji).
+#   3. this task response — only when disk has none yet (a fresh session that
+#      skipped the session-mascot hook); SessionMascot makes it the session handle
+#      anyway, and any missing color/emoji renders clean (never the pink glyphs).
+#   4. a best-effort board read (name only).
 def marker_mascot_attrs(task, path)
   dv = task.dig("metadata", "devops") || {}
-  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"]] if FeatureMarker.present?(dv["mascot"])
+  if FeatureMarker.present?(dv["persona"]) && FeatureMarker.present?(dv["mascot"])
+    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"]]
+  end
 
   disk = existing_marker(path)
   return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"]] if disk && FeatureMarker.present?(disk["mascot"])
+
+  return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"]] if FeatureMarker.present?(dv["mascot"])
 
   [board_mascot(task["slug"]), nil, nil] # a board read carries the name only
 end
