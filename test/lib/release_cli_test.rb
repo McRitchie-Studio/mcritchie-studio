@@ -13,6 +13,7 @@
 
 require "minitest/autorun"
 require "shellwords"
+require "open3"
 # Several payload tests decode/parse the runner snippet (JSON + url-safe Base64).
 # Require both here so they don't depend on test seed order (a prior test having
 # pulled them in first) — without this, a seed that runs a payload test before any
@@ -23,31 +24,77 @@ require "base64"
 class ReleaseCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/release", __dir__)
 
-  # Evaluate a bin/release helper in a clean subprocess. `load` defines the
-  # script's helpers WITHOUT dispatching a command (it's guarded on
-  # __FILE__ == $PROGRAM_NAME), so we exercise the real CLI logic in isolation.
-  # stderr is discarded so rubygems "already initialized" warnings (emitted under
-  # `bin/rails test`'s bundler env) don't corrupt the printed value.
+  # How many times to re-spawn a helper whose subprocess EXITED NONZERO / was
+  # killed before we treat it as a genuine failure. Each helper drives the same
+  # deterministic CLI logic (it `load`s the static script and prints a pure value),
+  # so a nonzero/killed spawn is a transient worth retrying — see run_ruby.
+  SUBPROCESS_ATTEMPTS = 3
+
+  # Run `ruby -e script` in a clean subprocess and return its stdout.
+  #
+  # `load`ing bin/release defines the script's helpers WITHOUT dispatching a
+  # command (it's guarded on __FILE__ == $PROGRAM_NAME), so each caller exercises
+  # the real CLI logic in isolation and `print`s a deterministic value.
+  #
+  # The old helpers used `IO.popen([..., { err: File::NULL }], &:read)`, which
+  # discarded BOTH the child's stderr AND its exit status. Under CI's parallel-fork
+  # harness a child occasionally got reaped/killed before flushing stdout, and with
+  # the status thrown away that transient surfaced as a bare, undiagnosable
+  # empty-output assertion failure — the identical flake hardened in
+  # agent_worktree_test.rb (PR #186).
+  #
+  # GENTLER than the #186 guard on purpose: there every check returned non-empty,
+  # so flunk-on-empty-stdout was safe; HERE it is not —
+  # test_unparsed_flag_returns_nil_through_the_bin_boundary LEGITIMATELY asserts
+  # "" (empty output is the correct result). So we key the guard on EXIT STATUS,
+  # never on emptiness:
+  #   * Open3.capture3 blocking-reads stdout AND stderr and waits for the child to
+  #     exit — no early-read / unflushed-output race.
+  #   * A CLEAN exit is authoritative: return its stdout as-is (empty or not).
+  #   * ONLY a nonzero exit / signal (the spawn transient, or a genuine load error)
+  #     is retried up to SUBPROCESS_ATTEMPTS; a real error exits nonzero on every
+  #     attempt, so the retry cannot mask a regression.
+  #   * If every attempt exits nonzero it FLUNKS with the captured exit/signal +
+  #     stderr, so the swallowed-failure mode can never again recur silently.
+  #     (rubygems "already initialized" warnings land on the child's stderr but are
+  #     ignored on success — stderr is only surfaced when flunking.)
+  def run_ruby(script)
+    last = nil
+    SUBPROCESS_ATTEMPTS.times do
+      out, err, status = Open3.capture3("ruby", "-e", script)
+      return out if status.success?
+
+      last = { out: out, err: err, status: status }
+    end
+
+    status = last[:status]
+    flunk <<~MSG
+      bin/release subprocess exited nonzero after #{SUBPROCESS_ATTEMPTS} attempts.
+        exit=#{status.exitstatus.inspect} signal=#{status.termsig.inspect}
+        stdout=#{last[:out].inspect}
+        stderr:
+      #{last[:err].to_s.gsub(/^/, "    ")}
+    MSG
+  end
+
+  # Evaluate a bin/release helper in a clean subprocess (see run_ruby).
   def eval_helper(expr)
-    script = %(load #{BIN.inspect}; print(#{expr}))
-    IO.popen(["ruby", "-e", script, { err: File::NULL }], &:read)
+    run_ruby(%(load #{BIN.inspect}; print(#{expr})))
   end
 
   # Like eval_helper, but sets ARGV BEFORE load so the DRY/PROD/ASSUME_YES
   # constants (read from ARGV at load time) reflect the given flags.
   def eval_with_argv(argv, expr)
-    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; print(#{expr}))
-    IO.popen(["ruby", "-e", script, { err: File::NULL }], &:read)
+    run_ruby(%(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; print(#{expr})))
   end
 
   # Run a bin/release subcommand in a clean subprocess with the given argv (which
   # MUST include --dry-run — DRY/PROD are read from ARGV at load time, so argv is
   # set before `load`). `setup` is extra ruby injected AFTER load (e.g. to stub
   # `conductor` so the shell orchestration runs WITHOUT Rails/a DB), `call` is the
-  # entrypoint method to invoke. stderr is discarded (method-redefined warnings).
+  # entrypoint method to invoke.
   def run_cli(argv, call:, setup: "")
-    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{setup}; #{call})
-    IO.popen(["ruby", "-e", script, { err: File::NULL }], &:read)
+    run_ruby(%(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{setup}; #{call}))
   end
 
   # A canned multi-repo deploy plan (gem + two apps) so `prepare` exercises the
@@ -1280,5 +1327,33 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "ABORTED", "real code dirt still gates the ship"
     assert_includes out, "db/schema.rb", "the abort names the real dirty file"
     refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
+  end
+
+  # --- regression: the silent swallowed-subprocess flake ------------------------
+  #
+  # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced — it
+  # must never slip through as a bare `Actual: ""` (how the original
+  # agent_worktree_test CI flake masqueraded, because the old
+  # `IO.popen(err: File::NULL)` helper discarded stderr + exit status). We force
+  # that mode deterministically: a script that writes to stderr and exits nonzero
+  # on every attempt. The old helper returned "" silently (no raise) and would fail
+  # THIS assertion; the hardened run_ruby flunks with the stderr included.
+  def test_run_ruby_flunks_loudly_when_subprocess_exits_nonzero
+    error = assert_raises(Minitest::Assertion) do
+      run_cli([], call: "STDERR.puts 'forced-subprocess-failure'; exit 1")
+    end
+    assert_match(/forced-subprocess-failure/, error.message,
+                 "the swallowed subprocess stderr must surface in the failure message")
+    assert_match(/exited nonzero/, error.message)
+    assert_match(/exit=1/, error.message, "the captured exit status is reported")
+  end
+
+  # The GENTLER half of the guard: a CLEAN exit with EMPTY stdout is a VALID
+  # result, NOT a flake. This is the canary for over-guarding — it must return ""
+  # without retrying or flunking, mirroring
+  # test_unparsed_flag_returns_nil_through_the_bin_boundary at the helper level.
+  def test_run_ruby_returns_empty_stdout_on_a_clean_exit_without_flunking
+    assert_equal "", run_cli([], call: "print('')"),
+                 "empty stdout with a zero exit is a legitimate, returnable result"
   end
 end
