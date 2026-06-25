@@ -212,6 +212,25 @@ module Api
         assert_operator body["data"].size, :<=, 2
         assert_equal 2, body.dig("meta", "per_page")
       end
+
+      # The persona round-trip over the API — what `bin/task --persona <soul>` drives:
+      # setting it stamps the soul as the status-line mascot, and `--persona none`
+      # reverts to a session Pokémon (the mid-task clear path).
+      test "persona via the API stamps the soul, and persona none reverts to a Pokemon" do
+        Agent.create!(name: "Jasper", slug: "jasper", status: "active",
+                      metadata: { "emoji" => "🧪", "color" => "#9945FF" })
+        Pokemon.create!(dex: 9001, name: "Snorlax", slug: "snorlax", generation: 1)
+
+        patch api_v1_task_path(@task.slug), params: { devops: { persona: "jasper" } }, headers: @headers, as: :json
+        assert_response :success
+        assert_equal "Jasper", @task.reload.devops["mascot"], "the soul becomes the mascot"
+        assert_equal "🧪", @task.devops["mascot_emoji"]
+
+        patch api_v1_task_path(@task.slug), params: { devops: { persona: "none" } }, headers: @headers, as: :json
+        assert_response :success
+        assert_equal "snorlax", @task.reload.devops["mascot"], "persona none reverts to the Pokemon"
+        assert_nil @task.devops["persona"], "the persona key is dropped"
+      end
     end
   end
 end
