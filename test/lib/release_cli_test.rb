@@ -661,6 +661,12 @@ class ReleaseCliTest < Minitest::Test
   # conductor_payload would put a raw paren / Rails.root.join on the heroku command
   # line (the old bug); reaching "Assembled" proves every snippet rode shell-safe.
   PAREN_POST_DEPLOY_PREP_STUB = <<~'RUBY'
+    # CI has no sibling repo checkouts, so the real repo_path → Dir.exist? guard in
+    # `prepare` (bin/release: "app repo not found at #{path}") would abort before the
+    # post-deploy/assemble step this test proves. Resolve the repo to an always-present
+    # dir (Dir.pwd) — the git/qa-server I/O against it is already fully stubbed by `sh`,
+    # so the repo's identity on disk is irrelevant to what this test asserts.
+    def repo_path(_repo) = Dir.pwd
     def conductor(ruby, read_only: false)
       payload = conductor_payload(ruby)               # the REAL shell-safe encoder
       $stdout.puts("UNSAFE-PAYLOAD") if payload.include?("Rails.root.join") || payload.include?("(%q(")
