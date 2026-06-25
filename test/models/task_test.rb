@@ -797,6 +797,23 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "snorlax", task.devops["mascot"], "no such soul → keep the session Pokemon"
   end
 
+  test "persona none reverts the mascot to the session Pokemon mid-task" do
+    seed_pokemon("snorlax", "pikachu")
+    Agent.create!(name: "Jasper", slug: "jasper", status: "active",
+                  metadata: { "emoji" => "🧪", "color" => "#9945FF" })
+    task = Task.create!(title: "Revert persona task",
+                        metadata: { "devops" => { "persona" => "jasper" } })
+    assert_equal "Jasper", task.devops["mascot"], "starts as the soul"
+
+    # Simulate the CLI read-modify-write: the prior soul rides back with persona=none,
+    # so the clear path must actively nil the stale mascot, not just drop the key.
+    task.update!(metadata: { "devops" => { "mascot" => "Jasper", "persona" => "none" } })
+    task.reload
+    assert_includes %w[snorlax pikachu], task.devops["mascot"], "reverts to a Pokemon"
+    assert_nil task.devops["persona"], "the persona key is dropped"
+    assert_nil task.devops["mascot_emoji"], "the soul's glyph is cleared"
+  end
+
   # --- reviewers (two-senior review metadata) ---------------------------------
 
   test "reviewers is empty for an old-flow task without the metadata" do

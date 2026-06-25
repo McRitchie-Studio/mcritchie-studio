@@ -28,8 +28,9 @@ To "act as" a soul instead of the session's Pokémon, set a **persona**:
 agent's name + glyph + tint (`Agent#emoji` / `Agent#status_color`, seeded in
 `db/seeds/02_agents.rb`) as the status-line mascot, and `bin/statusline` sets the
 terminal tab title to the same emoji + name. A new task without `--persona`
-reverts to the session's Pokémon. `--persona` is distinct from `--agent`, which
-sets the task owner (`agent_slug`).
+reverts to the session's Pokémon, and `bin/task update <slug> --persona none`
+(also `clear`/`off`/`-`) reverts mid-task. `--persona` is distinct from `--agent`,
+which sets the task owner (`agent_slug`).
 
 ## Current Decisions
 
