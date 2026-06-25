@@ -221,7 +221,12 @@ builders = [
 ]
 
 builders.each do |data|
-  builder = TrackedGithubBuilder.find_or_initialize_by(github_login: data[:github_login])
+  # TrackedGithubBuilder downcases github_login in a before_validation, so the lookup
+  # MUST be normalized too — otherwise a mixed-case login (e.g. "MagMueller") never
+  # matches its stored "magmueller" row on re-seed, a fresh record is built, and save!
+  # raises "Github login has already been taken" (this is what aborted db:seed).
+  login = TrackedGithubBuilder.normalize_login_value(data[:github_login])
+  builder = TrackedGithubBuilder.find_or_initialize_by(github_login: login)
   builder.assign_attributes(
     display_name: data[:display_name],
     cohort: data[:cohort],
