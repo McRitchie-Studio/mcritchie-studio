@@ -1,0 +1,188 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/full-suite-check — run the FULL test suite + FULL rubocop, then record
+# fingerprint-bound evidence on a task so bin/dor-check can credit it.
+#
+# This is the WRITE half of the full-suite gate (bin/dor-check is the READ half;
+# the shared format lives in bin/lib/full_suite_gate.rb). It exists because the
+# devops retro found builds passing only the FILES they touched while the full
+# suite or rubocop broke — surfacing post-merge. Running this before handoff is
+# the one command that proves the WHOLE suite + lint is green on the EXACT code
+# you're shipping.
+#
+# It runs two lanes, from the repo root:
+#   full-suite : bin/rails test      (NO file args = the entire suite)
+#   rubocop    : bin/rubocop         (NO path args = the whole repo)
+# For each lane that passes it stamps a checks_run line tagged with the current
+# code fingerprint, e.g. "[full-suite@<tree-hash>] ...". A lane that FAILS is not
+# recorded (no green evidence), and the command exits non-zero.
+#
+# Usage:
+#   bin/full-suite-check <task-slug>     # run both lanes; record evidence on the task
+#   bin/full-suite-check <task-slug> --print   # run + print the evidence lines, don't record
+#   bin/full-suite-check --print               # run standalone (no task), just print
+#
+# Test/CI seams (so the orchestration is exercisable without a real multi-minute run):
+#   FULL_SUITE_TEST_CMD     override the test lane command   (default: bin/rails test)
+#   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
+#   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
+#
+# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
+# fingerprint (nothing certified).
+
+require "optparse"
+require "json"
+require_relative "lib/full_suite_gate"
+
+ROOT = File.expand_path("..", __dir__)
+TASK_BIN = File.expand_path("task", __dir__)
+
+options = { print: false }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/full-suite-check <task-slug> [--print] | --install-hook | --uninstall-hook"
+  o.on("--print", "Print the evidence lines instead of recording them on the task") { options[:print] = true }
+  o.on("--install-hook", "Install an opt-in pre-push hook that runs this gate before each push") { options[:install_hook] = true }
+  o.on("--uninstall-hook", "Remove the pre-push hook installed by --install-hook") { options[:uninstall_hook] = true }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+slug = ARGV.shift
+root = ENV.fetch("FULL_SUITE_ROOT", ROOT)
+
+# --- opt-in pre-push hook installer -------------------------------------------
+# "Pre-commit hooks always run" (git-protocol.md) — but a FULL suite on every
+# commit is untenable, so the gate ships as an OPT-IN pre-push hook (the house
+# convention favours pre-push for heavy checks). Nothing is wired by default; you
+# run the installer. The hook runs this same gate (full suite + rubocop) and
+# blocks the push if red — the push-time mirror of bin/dor-check's merge gate.
+HOOK_MARKER = "# managed by: bin/full-suite-check --install-hook"
+
+def hooks_dir(root)
+  out = IO.popen(["git", "-C", root, "rev-parse", "--git-path", "hooks"], err: File::NULL, &:read).to_s.strip
+  out.empty? ? nil : File.absolute_path(out, root)
+end
+
+def install_pre_push_hook(root)
+  dir = hooks_dir(root) or abort "full-suite-check: not a git repo at #{root} — can't install the hook."
+  require "fileutils"
+  FileUtils.mkdir_p(dir)
+  path = File.join(dir, "pre-push")
+  if File.exist?(path) && !File.read(path).include?(HOOK_MARKER)
+    abort "full-suite-check: #{path} already exists and isn't ours — leaving it. Inspect it, then add " \
+          "`exec bin/full-suite-check --print` yourself (or move it aside and re-run --install-hook)."
+  end
+  File.write(path, <<~HOOK)
+    #!/bin/sh
+    #{HOOK_MARKER}
+    # Opt-in: runs the FULL test suite + FULL rubocop before every push and blocks
+    # the push if either is red — the same gate bin/dor-check enforces at handoff.
+    # Remove with `bin/full-suite-check --uninstall-hook`. Never bypass (--no-verify).
+    exec bin/full-suite-check --print
+  HOOK
+  FileUtils.chmod("+x", path)
+  warn "full-suite-check: installed opt-in pre-push hook → #{path}"
+  warn "full-suite-check: it runs the full suite + rubocop before each push; disable with --uninstall-hook."
+end
+
+def uninstall_pre_push_hook(root)
+  dir = hooks_dir(root)
+  path = dir && File.join(dir, "pre-push")
+  if path && File.exist?(path) && File.read(path).include?(HOOK_MARKER)
+    File.delete(path)
+    warn "full-suite-check: removed the opt-in pre-push hook → #{path}"
+  else
+    warn "full-suite-check: no managed pre-push hook to remove."
+  end
+end
+
+if options[:install_hook]
+  install_pre_push_hook(root)
+  exit 0
+elsif options[:uninstall_hook]
+  uninstall_pre_push_hook(root)
+  exit 0
+end
+
+test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")
+rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
+
+def run_lane(label, cmd, root)
+  warn "== #{label}: #{cmd} =="
+  ok = system(cmd, chdir: root)
+  warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
+  ok
+end
+
+# The task's current checks_run (Array), or nil if it can't be read — so the
+# caller can MERGE new evidence into it (bin/task update --checks REPLACES). nil
+# is the "don't risk wiping it" signal, distinct from [] (a task with none yet).
+def fetch_checks(task_bin, slug)
+  out = IO.popen([task_bin, "show", slug, "--json"], err: File::NULL, &:read)
+  return nil unless $?.success?
+
+  record = JSON.parse(out)
+  Array(record.dig("metadata", "devops", "checks_run"))
+rescue JSON::ParserError, SystemCallError
+  nil
+end
+
+test_ok = run_lane("full-suite", test_cmd, root)
+rubocop_ok = run_lane("rubocop", rubocop_cmd, root)
+
+fingerprint = FullSuiteGate.fingerprint(root)
+if fingerprint.nil?
+  warn "full-suite-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
+  exit 1
+end
+
+lanes = { FullSuiteGate::TEST_LANE => test_ok, FullSuiteGate::RUBOCOP_LANE => rubocop_ok }
+details = {
+  FullSuiteGate::TEST_LANE => "#{test_cmd} green",
+  FullSuiteGate::RUBOCOP_LANE => "#{rubocop_cmd} clean"
+}
+
+passed_lines = lanes.select { |_, ok| ok }.map do |lane, _|
+  FullSuiteGate.evidence_line(lane, fingerprint, details[lane])
+end
+
+# Print the green evidence lines on stdout (parseable; the rest is on stderr).
+passed_lines.each { |line| puts line }
+
+unless lanes.values.all?
+  failed = lanes.reject { |_, ok| ok }.keys.join(", ")
+  warn "full-suite-check: lane(s) RED: #{failed}. Fix, then re-run — no evidence recorded for the red lane(s)."
+  exit 1
+end
+
+if options[:print] || slug.nil?
+  warn "full-suite-check: both lanes green at #{fingerprint[0, 12]}." \
+       "#{slug.nil? ? " (no task slug — evidence printed, not recorded)" : " (--print: not recorded)"}"
+  exit 0
+end
+
+# Record the green evidence on the task. `bin/task update --checks` REPLACES the
+# whole checks_run list, so we first read the existing lines and MERGE — keeping
+# the agent's tier tags / bypass records and dropping only PRIOR full-suite/rubocop
+# evidence (so re-runs replace stale lines, never accumulate). If the current list
+# can't be read, ABORT rather than risk wiping checks_run.
+existing = fetch_checks(TASK_BIN, slug)
+if existing.nil?
+  warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task " \
+       "show). Not writing (a blind --checks would wipe your tier tags). Re-run, or record by hand alongside your " \
+       "existing checks: bin/task update #{slug} #{passed_lines.map { |l| "--checks #{l.inspect}" }.join(" ")}"
+  exit 1
+end
+
+final = FullSuiteGate.merge_evidence(existing, passed_lines)
+record_args = final.flat_map { |line| ["--checks", line] }
+unless system(TASK_BIN, "update", slug, *record_args)
+  warn "full-suite-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
+  exit 1
+end
+
+warn "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug} (tier tags preserved)."
+exit 0

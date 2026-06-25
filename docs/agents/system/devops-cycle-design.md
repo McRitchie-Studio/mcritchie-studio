@@ -247,7 +247,7 @@ so we don't fear merging there.
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
-| **→ submitted** (task, entry) | Feature agent | Feature agent | Pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
+| **→ submitted** (task, entry) | Feature agent | Feature agent | `bin/full-suite-check` (certify FULL suite + rubocop) → pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
 | **submitted** (task) — REVIEW | **Avi** (delegator) | Avi assigns; **two seniors** review in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 HEAVY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a HEAVY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + heavy/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Each senior confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance** → `blocked` (rework, with `qa_feedback`) **OR** `reviewed` ✅ on **2 approvals** | **2 senior approvals** (HEAVY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — MERGE (task) | the **two seniors' approval** | DevOps conductor *executes* | **2 approvals → merge the PR into `release`** (`bin/release merge`) honoring `dependencies` + lanes; membership flips at merge → member `assembled`. **Bias to action: green tests = go** (`release` reverts cleanly; we don't fear merging there) | deterministic merge (conflicts surface at PR-merge); **no separate Avi gate** |
 | **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* | Run the **next tier — integration + an e2e smoke** on `origin/release`; green → `bin/release prepare` deploys it to QA → **Discord QA-deployment note** → release `assembled` | deterministic suite; ⛔ regression → block the task. **`prepare` retries/waits-for-boot** (the `/up`-smoke race): `bin/release prepare` polls `<qa_url>/up` via `wait_for_boot` and **defers the assemble** (`Release::Conductor.curate!` then `assemble!`) until QA returns 200, so a slow dyno can't strand the RC `assembling` |
@@ -712,6 +712,19 @@ the per-task judgment call that currently lets thin PRs through.
 A task **may not advance `submitted → reviewed`** unless, for its shape:
 
 - every required tier is present and green, recorded in `checks_run`;
+- the **FULL test suite and a FULL `rubocop`** are certified green against the
+  *exact code being shipped* — not the touched-file subset. The shape's tier tags
+  prove the agent *wrote* unit/integration; they do not prove nothing *else*
+  broke. `bin/full-suite-check <task>` runs `bin/rails test` and `bin/rubocop` in
+  full and stamps fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]`
+  `checks_run` lines; `bin/dor-check` re-grades them against the current code
+  fingerprint (a git tree hash — content-addressed, so it is **stable across the
+  pre-commit→commit boundary** and identical in a reviewer's fresh checkout), so a
+  **stale** (edited-since) or **partial** (one-lane / touched-files) record is
+  **refused**. Escape hatch — a *record*, exactly like `post_deploy_cmd: none`: a
+  reasoned `[full-suite-bypass] <why>` `checks_run` line passes the gate but is
+  flagged **loudly** in the verdict (use it for a pre-existing, unrelated red
+  tracked elsewhere — never to wave through your own break);
 - required `metadata["devops"]` fields are populated (existing contract);
 - a local proof URL exists when the shape touches UI;
 - if the branch diff touches a **seed or data-migration** (`db/seeds`,
@@ -738,10 +751,24 @@ This is **deterministic** — a `bin/` gate (`bin/dor-check <task>`, default
 `--gate merge`), not a judgment call. There is also a lighter `--gate build`
 (spec-complete, no tiers) for the `designed → building` entry. The feature agent
 runs it before handoff; the heartbeat agent re-runs `--gate merge` as gate zero
-of review. A failed DoR is an *immediate, cheap*
-send-back that never consumes review-judgment tokens. This is the structural
-fix for the review ping-pong: most "PR not ready" churn becomes a pre-PR
-mechanical check.
+of review (the fingerprint-bound full-suite evidence is checkout-independent, so
+gate-zero credits the same evidence the feature agent recorded). A failed DoR is
+an *immediate, cheap* send-back that never consumes review-judgment tokens. This
+is the structural fix for the review ping-pong: most "PR not ready" churn becomes
+a pre-PR mechanical check.
+
+`bin/dor-check` itself stays a **fast, deterministic verdict** — it does *not*
+run the suite; `bin/full-suite-check` is the (slower, run-once-before-handoff)
+runner that produces the evidence (format + fingerprint live in
+`bin/lib/full_suite_gate.rb`). It closes the retro gap where a build passed only
+the **files it touched** while the full suite or `rubocop` broke post-merge. For
+those who want the lanes wired locally, `bin/full-suite-check --install-hook`
+installs an **opt-in pre-push** hook (off by default; runs the gate before each
+push, blocks a red push; remove with `--uninstall-hook`) — pre-push, not
+pre-commit, because a full suite on every commit is untenable. But the
+**authoritative** gate is `bin/dor-check` validating the recorded evidence: the
+hook is a convenience, and evidence on the task record survives a fresh checkout
+where a local hook artifact would not.
 
 ### 3.4 Test ownership & timing — *who writes what, when*
 
@@ -751,6 +778,7 @@ mechanical check.
 | Component | Feature agent | Before `submitted` |
 | Integration | Feature agent | Before `submitted` (mandatory for any `migration`/`solana`/`payment`/`auth` risk tag) |
 | E2E (happy path) | Feature agent | Before `submitted` for ui+db / vertical shapes |
+| **Full suite + rubocop** | Feature agent | Before `submitted` — `bin/full-suite-check <task>` certifies the WHOLE suite + lint (not the touched-file subset); records fingerprint-bound evidence `bin/dor-check` re-grades |
 | E2E (edge/regression) | QA lane (Avi/Steffon) | May add during review; becomes a follow-up task if large |
 | Manual | **Mr. McRitchie** | At the release QA stop (this *is* the manual tier) |
 
@@ -783,7 +811,7 @@ Runs on the OpenClaw box every ~10 minutes. Builds directly on the
 # Workflow 1 — per task (review).  Each submitted task, one safe step.
 for each task in {submitted}:
   acquire lease (claimed_by, claim_expires_at)   # resilience: reclaimable
-  1. bin/dor-check --gate merge (deterministic gate-zero)       — fail ⇒ block(rework) + qa_feedback, release
+  1. bin/dor-check --gate merge (gate-zero: metadata + tiers + FRESH full-suite/rubocop evidence) — fail ⇒ block(rework) + qa_feedback, release
   2. run pr_review_gate suite (base: unit/component)            — fail ⇒ classify, block(rework), release
   3. Avi delegates: 2 seniors (domain fit + LOGGED tiebreak), 1 HEAVY + 1 LIGHT — §1.2
      each: diff-vs-acceptance + standards/smell/scalability     — changes ⇒ ONE complete qa_feedback + block
