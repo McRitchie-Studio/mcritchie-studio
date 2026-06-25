@@ -37,6 +37,38 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
+  test "[integration] deployments shows the conductor mascot + in-progress timing on the Next Release card" do
+    Release.delete_all
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
+                    sprite_url: "https://example.test/snorlax.png")
+    rel = Release.open!
+    rel.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-x" } })
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#current-release [data-test='release-mascot'] img[src=?]", "https://example.test/snorlax.png"
+    assert_select "#current-release [data-test='release-mascot']", text: /Snorlax/
+    assert_select "#current-release [data-test='release-timing']", text: /\Ain progress · /
+  end
+
+  test "[integration] deployments shows the conductor mascot + 'took' duration on the Last Release card" do
+    Release.delete_all
+    Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: %w[dragon flying], generation: 1,
+                    sprite_url: "https://example.test/dragonite.png")
+    shipped = Release.open!
+    shipped.update!(metadata: { "devops" => { "mascot" => "dragonite", "mascot_session" => "sess-y" } })
+    shipped.ship!
+    shipped.update_columns(created_at: 18.minutes.ago, shipped_at: Time.current)
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-mascot'] img[src=?]", "https://example.test/dragonite.png"
+    assert_select "#last-release [data-test='release-mascot']", text: /Dragonite/
+    assert_select "#last-release [data-test='release-timing']", text: /\Atook /
+  end
+
   test "deployments rides the Build and Deploy QA Release chip inline (right) with the task pills" do
     Release.delete_all
     rel = Release.open!(branch: "release/qa-kickoff")

@@ -769,4 +769,50 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal 0, second[:count]
     assert_empty second[:archived]
   end
+
+  # --- conductor mascot: the deployment wears the running session's Pokémon -----
+  # bin/release injects Current.conductor_session_id into the heroku-run payload;
+  # the conductor drains it onto the release so the board shows who's working it.
+
+  def seed_pokemon
+    %w[bulbasaur charmander squirtle pikachu snorlax dragonite].each_with_index.map do |slug, i|
+      Pokemon.create!(dex: 320 + i, name: slug.capitalize, slug: slug, types: %w[normal], generation: 1)
+    end
+  end
+
+  test "adopt! stamps the conductor session's mascot onto the release" do
+    seed_pokemon
+    Current.conductor_session_id = "sess-conductor"
+    rel = Release::Conductor.adopt!(reviewed_task)
+
+    assert_equal SessionMascot.for("sess-conductor").mascot_slug, rel.reload.devops_field("mascot")
+    assert_equal "sess-conductor", rel.devops_field("mascot_session")
+  ensure
+    Current.conductor_session_id = nil
+  end
+
+  test "adopt! leaves the release unmascoted when no conductor session is in context" do
+    seed_pokemon
+    Current.conductor_session_id = nil
+    rel = Release::Conductor.adopt!(reviewed_task)
+    assert_nil rel.reload.devops_field("mascot"), "non-conductor callers never stamp"
+  end
+
+  test "ship! re-stamps the mascot for the session that ran the deploy (handoff)" do
+    seed_pokemon
+    Current.conductor_session_id = "sess-merge"
+    rel = Release::Conductor.adopt!(reviewed_task)
+    rel.assemble!
+    merged_face = rel.reload.devops_field("mascot")
+    assert merged_face.present?, "the merging session stamped a face"
+
+    Current.conductor_session_id = "sess-ship"
+    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234")
+
+    assert_equal "shipped", rel.reload.state
+    assert_equal "sess-ship", rel.devops_field("mascot_session"), "the shipping session takes the face"
+    refute_equal merged_face, rel.devops_field("mascot")
+  ensure
+    Current.conductor_session_id = nil
+  end
 end

@@ -29,4 +29,11 @@ class Current < ActiveSupport::CurrentAttributes
   # flip writes (metadata["review_bypassed"] = true), so the review skip lands on
   # the same audit spine `bin/task move` writes — the override's paper trail.
   attribute :task_event_review_bypass
+  # The Claude/Codex SESSION id of the conductor running `bin/release`, injected
+  # into every conductor record op's `heroku run rails runner` payload (see
+  # bin/release#conductor_payload) — local shell env doesn't cross the heroku-run
+  # boundary, so the CLI passes it in-band. Release::Conductor (adopt!/curate!/
+  # ship!) drains it onto the release via Release#stamp_conductor_mascot!, so the
+  # deployment wears the SESSION's Pokémon mascot — the agent working it.
+  attribute :conductor_session_id
 end

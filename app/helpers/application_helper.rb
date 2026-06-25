@@ -84,6 +84,32 @@ module ApplicationHelper
     end
   end
 
+  # The single timing line shown next to a release's conductor mascot: how long an
+  # ACTIVE release has been in progress since it began ("in progress · 23m"), or
+  # how long a SHIPPED release took begin→ship ("took 18m"). nil when neither
+  # applies (a not-yet-shipped, non-active state, or missing timestamps) so the
+  # card renders no timing. Reuses compact_stage_duration for the tight one-token
+  # form. `now` is injectable for deterministic tests.
+  def release_timing_label(release, now: Time.current)
+    if release.active?
+      elapsed = elapsed_seconds(release.created_at, now)
+      label = compact_stage_duration(elapsed)
+      label && "in progress · #{label}"
+    elsif release.shipped_at
+      took = elapsed_seconds(release.created_at, release.shipped_at)
+      label = compact_stage_duration(took)
+      label && "took #{label}"
+    end
+  end
+
+  # Whole, non-negative seconds between two times, or nil when either is missing.
+  # Clamps a (clock-skew) negative span to 0 rather than rendering a bogus past.
+  def elapsed_seconds(from, to)
+    return nil unless from && to
+
+    [(to - from).to_i, 0].max
+  end
+
   # Canonical app/repo slug → emoji map for the compact app indicators on task
   # cards and current-release member pills. Mirrors the glyphs in
   # ReleaseNotes::Formatter::APP_GROUPS (kept independent so views don't reach

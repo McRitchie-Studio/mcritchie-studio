@@ -29,6 +29,25 @@
           state pill AND the separate muted "shipped X ago" line. %>
       <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>" data-test="release-state-badge"><%= release_state_label(rel, current: current) %></span>
     </div>
+    <%# Conductor mascot row — the Pokémon of the SESSION running bin/release (the
+        agent working this deployment), plus how long it has taken: "in progress ·
+        23m" while active, "took 18m" once shipped. Mirrors the per-task mascot
+        chip. Omitted entirely when there is no mascot and no timing. %>
+    <% mascot = rel.mascot %>
+    <% timing = release_timing_label(rel) %>
+    <% if mascot || timing %>
+      <div class="mt-2 flex items-center gap-2 text-xs <%= meta_color %>" data-test="release-mascot-row">
+        <% if mascot %>
+          <span class="flex items-center gap-1.5 min-w-0" data-test="release-mascot" title="Conductor: <%= mascot.name %>">
+            <% if mascot.sprite_url.present? %>
+              <img src="<%= mascot.sprite_url %>" alt="<%= mascot.name %>" width="24" height="24" loading="lazy" class="w-6 h-6 shrink-0" style="image-rendering: pixelated;">
+            <% end %>
+            <span class="font-medium truncate" style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= mascot.name %></span>
+          </span>
+        <% end %>
+        <% if timing %><span class="shrink-0" data-test="release-timing"><%= timing %></span><% end %>
+      </div>
+    <% end %>
     <%# Second row: release meta — task count, QA/Prod links, deployed SHA. %>
     <div class="mt-1 flex items-center gap-4 text-xs <%= meta_color %> flex-wrap">
         <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>
