@@ -31,14 +31,19 @@
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
 #                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T] \
-#                   [--post-deploy-cmd "rake foo:bar"]
+#                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
+#   ( --po-size/--dev-size/--pm-size set the size trio: small|medium|large|xl.
+#     Avi seeds --po-size at creation (the default sizer, not a hard gate);
+#     actual_size is auto-derived from measured usage at ship. )
 #   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
-#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--steal]
+#     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal]
+#     ( --dev-size (small|medium|large|xl) records the builder's own estimate as it
+#       claims the task at `building` — optional; absent is fine. )
 #     ( best-effort per-transition usage the agent burned in the stage it's
 #       leaving — recorded on this move's TaskEvent. With NO usage flags, a
 #       Claude session auto-captures model + token delta + cost from its
@@ -224,6 +229,13 @@ SCALAR_FLAGS = {
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
 NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze
+# The size trio, set as TOP-LEVEL Task columns (not devops). Avi seeds po_size at
+# creation (the default sizer — not a hard gate), the builder Pokémon stamps
+# dev_size when it claims the task at `building`, pm_size is an optional extra
+# estimate; actual_size is auto-derived from measured usage at ship. Every value
+# is validated against SIZES before the request goes out.
+SIZES = %w[small medium large xl].freeze
+SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
 STAGES = %w[designed building submitted reviewed assembled shipped blocked archived].freeze
@@ -236,6 +248,15 @@ end
 def die!(msg)
   warn!("error: #{msg}")
   exit 1
+end
+
+# Reject a size value the model would refuse, with a clear message — so a typo'd
+# --po-size never reaches the API as a 422. Shared by create/update (parse_flags)
+# and the building claim's --dev-size.
+def validate_size!(flag, value)
+  return if SIZES.include?(value)
+
+  die!("#{flag} must be one of: #{SIZES.join(", ")} (got #{value.inspect})")
 end
 
 def agent_secret
@@ -302,6 +323,10 @@ def parse_flags(argv)
       scalars[SCALAR_FLAGS[arg]] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
     elsif LIST_FLAGS.key?(arg)
       lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
+    elsif SIZE_FLAGS.key?(arg)
+      value = argv[i + 1] || die!("#{arg} needs a value")
+      validate_size!(arg, value)
+      top[SIZE_FLAGS[arg]] = value; i += 2
     elsif %w[--slug --title --description --agent --priority --stage].include?(arg)
       top[arg.delete_prefix("--")] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
     else
@@ -326,6 +351,8 @@ def top_body(top)
   body["agent_slug"] = top["agent"] if top["agent"]
   body["priority"] = top["priority"].to_i if top["priority"]
   body["stage"] = top["stage"] if top["stage"]
+  # The size trio (top-level Task columns) — already validated in parse_flags.
+  SIZE_FLAGS.each_value { |col| body[col] = top[col] if top[col] }
   body
 end
 
@@ -647,6 +674,9 @@ when "move"
   mover_session = session_identity.first
   event["actor"] = mover_session unless mover_session.nil?
   steal = false
+  # The builder Pokémon's own size estimate, stamped as it CLAIMS the task at
+  # `building` (optional — absent is fine). Set as a top-level Task column.
+  dev_size = nil
   while ARGV.any?
     case (flag = ARGV.shift)
     when "--model"      then event["model"]      = ARGV.shift || die!("--model needs a value")
@@ -654,8 +684,9 @@ when "move"
     when "--tokens-out" then event["tokens_out"] = (ARGV.shift || die!("--tokens-out needs a value")).to_i
     when "--cost"       then event["cost"]       = ARGV.shift || die!("--cost needs a value")
     when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
+    when "--dev-size"   then dev_size = ARGV.shift || die!("--dev-size needs a value"); validate_size!("--dev-size", dev_size)
     when "--steal"      then steal = true # override the build-claim gate (take a live foreign claim)
-    else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor, --steal)")
+    else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor, --dev-size, --steal)")
     end
   end
   # No explicit usage flags → auto-capture the per-transition delta (model +
@@ -663,6 +694,7 @@ when "move"
   # paper trail. Best-effort; a missing transcript leaves the event spine-only.
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
   body = { "stage" => stage, "event" => event }
+  body["dev_size"] = dev_size if dev_size # the builder's estimate, set alongside the stage move
   # Claim the task on the move to building. The gate refuses (loudly, overridable
   # with --steal) when a DIFFERENT live instance already holds it; otherwise it
   # claims/renews the lease. Read-merge-write so the claim + session fields ride

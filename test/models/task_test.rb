@@ -1001,4 +1001,81 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "graveler", result["mascot"]
     assert_equal "sess-1", result["mascot_session"], "mascot_session must survive normalization"
   end
+
+  # --- Auto-derived actual_size (the measured leg of the size trio) -----------
+
+  # Stamp `count` measured tokens onto a task as a single TaskEvent (split across
+  # in/out so tokens_total sums them). update_column avoids re-triggering callbacks.
+  def stamp_tokens(task, count)
+    task.task_events.create!(to_stage: task.stage, occurred_at: Time.current,
+                             tokens_in: count / 2, tokens_out: count - (count / 2))
+  end
+
+  test "derive_actual_size maps total tokens through the threshold map" do
+    cases = {
+      500_000     => "small",   # < 1M
+      999_999     => "small",   # just under the small ceiling
+      1_000_000   => "medium",  # the small ceiling is EXCLUSIVE → medium
+      4_999_999   => "medium",  # just under the medium ceiling
+      5_000_000   => "large",   # the medium ceiling is EXCLUSIVE → large
+      14_999_999  => "large",   # just under the large ceiling
+      15_000_000  => "xl",      # the large ceiling is EXCLUSIVE → xl
+      40_000_000  => "xl"       # well into xl
+    }
+    cases.each do |tokens, expected|
+      task = Task.create!(title: "size boundary task #{tokens}", stage: "building")
+      stamp_tokens(task, tokens)
+      assert_equal expected, task.derive_actual_size, "#{tokens} tokens → #{expected}"
+    end
+  end
+
+  test "derive_actual_size is nil with no measured usage (honest, not small)" do
+    task = Task.create!(title: "no usage size task", stage: "building")
+    # The genesis event carries no tokens, so the measured total is zero.
+    assert_equal 0, task.measured_tokens_total
+    assert_nil task.derive_actual_size, "zero measured tokens can't be sized → nil, never a false 'small'"
+  end
+
+  test "measured_tokens_total sums tokens_total across all events" do
+    task = Task.create!(title: "token sum task", stage: "building")
+    stamp_tokens(task, 2_000_000)
+    stamp_tokens(task, 3_000_000)
+    assert_equal 5_000_000, task.measured_tokens_total
+  end
+
+  test "shipping auto-derives actual_size from measured usage when blank" do
+    task = Task.create!(title: "ship derives size task", stage: "assembled")
+    stamp_tokens(task, 6_000_000) # → large (≥5M, <15M)
+    assert_nil task.actual_size
+
+    task.ship!
+
+    assert_equal "large", task.reload.actual_size, "ship stamps the measured size onto a blank actual_size"
+  end
+
+  test "shipping never clobbers a manually set actual_size" do
+    task = Task.create!(title: "manual size wins task", stage: "assembled", actual_size: "small")
+    stamp_tokens(task, 40_000_000) # would derive xl
+
+    task.ship!
+
+    assert_equal "small", task.reload.actual_size, "a manual size is never overwritten by the auto-derivation"
+  end
+
+  test "shipping with no measured usage leaves actual_size blank" do
+    task = Task.create!(title: "ship no usage task", stage: "assembled")
+
+    task.ship!
+
+    assert_nil task.reload.actual_size, "no usage → no size; the ship still completes"
+  end
+
+  test "actual_size is only derived at shipped, not earlier stages" do
+    task = Task.create!(title: "size only at ship task", stage: "building")
+    stamp_tokens(task, 6_000_000)
+
+    task.update!(stage: "submitted")
+
+    assert_nil task.reload.actual_size, "a non-ship transition must not stamp actual_size"
+  end
 end

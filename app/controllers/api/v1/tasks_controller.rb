@@ -130,6 +130,15 @@ module Api
           :priority,
           :agent_slug,
           :stage,
+          # The size trio (po/dev are forecasts; actual is measured). bin/task sets
+          # po/dev/pm via --*-size on create/update + --dev-size on the building
+          # claim; actual_size is normally auto-derived at ship but stays settable
+          # for a manual override (mirrors the /sizing admin editor). The model
+          # validates each against SIZES.
+          :pm_size,
+          :po_size,
+          :dev_size,
+          :actual_size,
           required_skills: [],
           metadata: {}
         )
