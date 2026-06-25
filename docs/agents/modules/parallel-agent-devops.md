@@ -158,6 +158,40 @@ the actual reviewers. Pass `--no-record` (or `--dry`) for an advisory-only run
 that writes nothing.
 
 
+### Step 0 — assess the queue by stage
+
+Open every Build-and-Deploy cycle by enumerating the board **by stage** — not
+with the default flat `bin/task list`:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/task list --stage reviewed    # merge queue — approved, awaiting bin/release merge
+bin/task list --stage assembled   # members of the current release candidate (RC)
+bin/task list --stage shipped     # baseline / reconciliation (recent ships)
+bin/task list --stage submitted   # review intake — the Build → Deploy seam
+bin/task list --stage building    # in-flight builds — who is working what
+```
+
+The first three are the **Deploy landscape** (merge queue + current RC +
+baseline); the last two cover the **Build half** (review intake + in-flight).
+Run them all so nothing actionable is invisible at the start of the cycle, then
+generate the queue below.
+
+**Why per-stage, and never the flat list:** `bin/task list` with no `--stage`
+returns only the **20 most-recently-CREATED tasks across ALL stages** — the API
+paginates at `per_page=20` (`Api::Paginatable`), ordered `created_at DESC`
+(`Task.recent`), and `bin/task list` **discards the response's `meta` block**, so
+it prints `(20 task(s))` with **no "showing 20 of N" truncation warning**. A
+truncated list looks complete. An older actionable task — especially in a quieter
+app that hasn't moved lately — silently falls off the bottom. This is not
+hypothetical: a 2026-06-25 conductor assessed the board with the flat list and
+**missed the only `reviewed` task** (an older one in a quieter app) AND a
+stranded `assembled` zombie; both surfaced instantly under `--stage`. Filtering
+to a small actionable stage (`reviewed` / `assembled` / `submitted` / `building`
+each normally hold a handful) keeps the result under the 20-row cap, so you see
+the whole stage. (`shipped` is itself unbounded, so `--stage shipped` is still a
+recent-20 window — exactly what you want for a baseline/reconciliation glance.)
+
 Start conductor sessions by generating the PR/worktree queue from McRitchie
 Studio:
 

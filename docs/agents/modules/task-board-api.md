@@ -104,7 +104,12 @@ total, total_pages } }`. Each list item includes its `stage`, so callers can
 filter/triage without a per-task `show`. **The filter param is `stage`, not
 `status`** — an unsupported query param is rejected with `400
 { "error": "unsupported query param(s): …", "error_code": "UNSUPPORTED_PARAM" }`
-rather than silently ignored (which used to return every task). A `GET
+rather than silently ignored (which used to return every task). **The default is
+`per_page=20`** (capped at 100), ordered newest-CREATED first (`Task.recent` =
+`created_at DESC`) **across all stages** — so an unpaginated, unfiltered read
+returns only the 20 most recent tasks. `meta.total` is the real count; a client
+that ignores `meta` sees no truncation signal. To enumerate a stage in full,
+filter with `?stage=` (an actionable stage holds far fewer than 20 rows). A `GET
 /tasks/:slug` for an unknown slug returns `404 { "error": "task not found" }`.
 (There are also `agents`, `activities`, and `usages` resources; out of scope
 here.)
@@ -362,6 +367,14 @@ bin/task move <slug> <stage>                   # any of the 8 two-workflow stage
 bin/task move <slug> submitted \               # optional per-transition usage →
   --model M --tokens-in N --tokens-out N --cost D --actor A   #   recorded on the TaskEvent
 ```
+
+> ⚠️ **`bin/task list` caps at 20 rows, recency-ordered across all stages, with
+> no truncation warning.** It surfaces only the API's default page (`per_page=20`,
+> `created_at DESC`) and discards `meta`, so it prints `(20 task(s))` even when
+> more exist — older tasks in quiet apps silently fall off. **`bin/task list
+> --stage <stage>` is the reliable enumeration** (an actionable stage holds far
+> fewer than 20); enumerate the Deploy queue by stage at the start of every cycle
+> (see [`parallel-agent-devops.md` → Step 0](parallel-agent-devops.md#step-0--assess-the-queue-by-stage)).
 
 List flags are **repeatable** (one value per flag), so commas inside an
 `acceptance`/`test_plan` item are safe. Fall back to the raw API above only when
