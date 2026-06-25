@@ -72,10 +72,17 @@ npm test
 > not load `direnv`, so `ruby` resolves to the wrong version (brew `ruby@3.1` or
 > system 2.6) and `bundle`/`rails` fail with `bundler RubyVersionMismatch`. The
 > apps pin **3.3.11** — prepend the pinned Ruby first:
-> `export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"`. The suite parallelizes by
-> forking, which can intermittently **segfault the `pg` gem on macOS** (a Ruby
-> crash report, not a test failure); if it crashes, run single-process:
-> `PARALLEL_WORKERS=1 OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES bundle exec rails test`.
+> `export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"`. Parallel test workers
+> fork-clone the test DB, which **deadlocks or segfaults the `pg` gem on macOS**
+> (a Ruby crash report, not a test failure) — pg fork-safety. So as of PR #169 the
+> suite runs **single-process locally by default** (`test_helper.rb` →
+> `TestParallelism.worker_count`: parallel only when `CI` is set; `PARALLEL_WORKERS`
+> overrides), so a plain `bin/rails test` is reliable locally while CI keeps the
+> parallel speedup. `bin/agent-worktree test <app> <slug>` also runs single-process
+> **and clears orphaned `rails test` procs first** — a killed/hung run leaves
+> workers holding the test DB and deadlocks the next run (otherwise
+> `pkill -f "rails test"`, never the dev server). Don't pipe a run through `| tail`
+> (it buffers to EOF, so a hang looks identical to "working") — write to a logfile.
 
 ## Turf Monster
 
