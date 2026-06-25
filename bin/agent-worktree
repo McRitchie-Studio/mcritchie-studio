@@ -1260,6 +1260,31 @@ def record_mascot_field(record_slug, field)
   value.empty? ? nil : value
 end
 
+# The app's status-line tint (App#color, stamped server-side onto devops.app_color),
+# resolved to ride with the app slug and never downgrade — the same no-downgrade
+# guarantee resolve_mascot_color gives, keyed on the app. The last-good on-disk
+# value wins over a fresh board read, but ONLY when it belongs to the SAME app, so
+# an offline `bin/task field` (or a task that hasn't re-stamped) keeps the known
+# tint while a DIFFERENT app never inherits the old one's.
+def resolve_app_color(values, dir, task, app_slug)
+  existing_context_app_color(dir, app_slug) ||
+    record_mascot_field(task_record_slug(values) || task, "app_color")
+end
+
+def existing_context_app_color(dir, app_slug)
+  return nil unless compact_value(app_slug)
+
+  path = context_path(dir)
+  return nil unless File.exist?(path)
+
+  data = JSON.parse(File.read(path))
+  return nil unless compact_value(data["app"]) == app_slug
+
+  compact_value(data["app_color"])
+rescue JSON::ParserError
+  nil
+end
+
 def context_payload(app, task, values, dir, record: nil, stage: nil)
   port = values["APP_PORT"].to_s
   redis_db = redis_db_from_url(values["REDIS_URL"])
@@ -1278,6 +1303,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "generated_at" => Time.now.utc.iso8601,
     "app" => app.fetch("slug"),
     "app_name" => app.fetch("display_name", app.fetch("slug")),
+    "app_color" => resolve_app_color(values, dir, task, app.fetch("slug")),
     "task_slug" => task,
     "worktree_slug" => task,
     "task_record_slug" => task_record,

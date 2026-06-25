@@ -38,6 +38,7 @@ class Task < ApplicationRecord
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
     requires_release_conductor block_kind agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
+    persona
   ].freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
@@ -77,12 +78,20 @@ class Task < ApplicationRecord
 
   before_validation :generate_slug, on: :create
   before_validation :default_devops_handles_from_slug, on: :create
+  # Persona BEFORE the Pokémon draw: when a session "acts as" a soul (devops.persona),
+  # stamp the agent's name/color/emoji as the mascot and skip the Pokémon entirely.
+  before_validation :sync_persona_identity, on: :create
   before_validation :sync_session_mascot, on: :create
+  # Stamp the app's status-line tint (App#color) from the first repository, so
+  # bin/statusline can color the app slug without DB access. Cheap, idempotent.
+  before_validation :sync_app_identity, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
   # Per-session mascot: re-derive on each build-phase transition (designed/building/
   # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
+  before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
+  before_save :sync_app_identity
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -732,6 +741,9 @@ class Task < ApplicationRecord
     return unless Pokemon.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
+    # A persona (acting as a soul) owns the mascot fields — never overwrite it with
+    # a Pokémon. sync_persona_identity has already stamped the agent's identity.
+    return if devops["persona"].to_s.strip.present?
     sid = devops["session_id"].to_s
     # Reassign only when there's no mascot yet, or this session differs from the one
     # the current mascot belongs to (an agent handoff). A session-less task keeps it.
@@ -750,6 +762,48 @@ class Task < ApplicationRecord
     pokemon = Pokemon.find_by(slug: slug)
     devops["mascot_color"] = pokemon&.signature_color
     devops["mascot_emoji"] = pokemon&.type_emoji.presence
+  end
+
+  # Persona override: when a task carries devops.persona (an agent slug — "act as
+  # Jasper"), the status-line mascot becomes that SOUL (name + glyph + tint) instead
+  # of the session's Pokémon. Idempotent and re-stamped on every save so it survives
+  # the client's read-modify-write (mascot_color/emoji aren't client keys). An
+  # unknown/blank persona is a no-op, leaving the Pokémon path to run.
+  def sync_persona_identity
+    return unless Agent.table_exists?
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+    slug = devops["persona"].to_s.strip
+    return if slug.empty?
+
+    agent = Agent.find_by(slug: slug)
+    # Unknown soul (a typo) → drop the persona so sync_session_mascot falls back to
+    # the Pokémon. The agent then SEES the line stay a Pokémon (not the soul) —
+    # visual feedback that the persona didn't take, rather than a mascot-less line.
+    unless agent
+      devops.delete("persona")
+      return
+    end
+
+    devops["mascot"] = agent.name
+    devops["mascot_color"] = agent.status_color
+    devops["mascot_emoji"] = agent.emoji
+  end
+
+  # Stamp the app's status-line tint from its first repository, so bin/statusline
+  # can color the app slug without DB access (it and bin/agent-worktree are API
+  # clients). app_color is server-owned (not a DEVOPS_KEY), so it's re-derived each
+  # save — never lost to the client's read-modify-write. No-ops when the apps table
+  # isn't present or the repo has no App row (the slug then renders in the default tint).
+  def sync_app_identity
+    return unless App.table_exists?
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+    app_slug = self.class.normalize_devops_list(devops["repositories"]).first
+    return if app_slug.blank?
+
+    app = App.find_by(slug: app_slug)
+    devops["app_color"] = app&.color
   end
 
   # The Pokémon for a session: ADOPT the session's stable mascot (SessionMascot —

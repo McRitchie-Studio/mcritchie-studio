@@ -23,6 +23,14 @@ module Api
         assert_equal "🔶", data["mascot_emoji"]
       end
 
+      test "POST mascot also returns the default app so a fresh session shows it" do
+        post "/api/v1/sessions/sess-1/mascot", headers: @headers
+
+        data = JSON.parse(response.body)["data"]
+        assert_equal "mcritchie-studio", data["app"], "a brand-new session defaults to McRitchie Studio"
+        assert_equal "#B57EDC", data["app_color"], "with its lavender status-line tint"
+      end
+
       test "POST mascot is idempotent for a session" do
         post "/api/v1/sessions/sess-1/mascot", headers: @headers
         first = JSON.parse(response.body)["data"]["mascot"]

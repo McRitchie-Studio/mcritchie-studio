@@ -757,6 +757,46 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil task.devops["mascot"]
   end
 
+  # --- App identity (status-line color) + agent persona ----------------------
+
+  test "create stamps the app's status-line color from the first repository" do
+    task = Task.create!(title: "App color stamp task",
+                        metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+    assert_equal "#22C55E", task.devops["app_color"], "a Turf Monster task carries green"
+  end
+
+  test "app_color is re-stamped on update and follows a repository change" do
+    task = Task.create!(title: "App color update task",
+                        metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+    task.update!(metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    assert_equal "#B57EDC", task.reload.devops["app_color"], "the tint follows the new repo"
+  end
+
+  test "app_color is left unset for a repo with no App row" do
+    task = Task.create!(title: "Unknown repo color task",
+                        metadata: { "devops" => { "repositories" => ["mystery-app"] } })
+    assert_nil task.devops["app_color"], "an unknown app → default tint at render time"
+  end
+
+  test "a persona makes the mascot the soul (glyph + tint), not a Pokemon" do
+    seed_pokemon("snorlax", "pikachu")
+    Agent.create!(name: "Jasper", slug: "jasper", status: "active",
+                  metadata: { "emoji" => "🧪", "color" => "#9945FF" })
+    task = Task.create!(title: "Act as Jasper task",
+                        metadata: { "devops" => { "persona" => "jasper" } })
+    assert_equal "Jasper", task.devops["mascot"], "the mascot becomes the soul"
+    assert_equal "🧪", task.devops["mascot_emoji"]
+    assert_equal "#9945FF", task.devops["mascot_color"]
+    refute_includes %w[snorlax pikachu], task.devops["mascot"], "the Pokemon is not drawn over it"
+  end
+
+  test "an unknown persona falls through to the Pokemon path" do
+    seed_pokemon("snorlax")
+    task = Task.create!(title: "Unknown persona task",
+                        metadata: { "devops" => { "persona" => "nobody" } })
+    assert_equal "snorlax", task.devops["mascot"], "no such soul → keep the session Pokemon"
+  end
+
   # --- reviewers (two-senior review metadata) ---------------------------------
 
   test "reviewers is empty for an old-flow task without the metadata" do

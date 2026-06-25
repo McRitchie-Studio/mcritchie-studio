@@ -83,4 +83,22 @@ class AgentsSeedTest < ActiveSupport::TestCase
       assert agent.avatar.to_s.start_with?("/agents/"), "#{agent.slug} is missing an avatar path"
     end
   end
+
+  # Status-line persona identity: when a session "acts as" a soul, bin/statusline
+  # shows the agent's glyph + name + tint in place of the Pokémon (see Task#sync_
+  # persona_identity). The seed owns each soul's emoji + an explicit color.
+  test "each senior soul carries a status-line emoji and an explicit color" do
+    run_seed
+    %w[alex avi carl shannon jasper steffon].each do |slug|
+      agent = Agent.find_by!(slug: slug)
+      assert agent.emoji.present?, "#{slug} must have a status-line emoji"
+      assert_match(/\A#\h{6}\z/, agent.status_color, "#{slug} must carry an explicit hex color")
+    end
+  end
+
+  test "personas do not collide on the same color (distinct from the avatar fallback)" do
+    run_seed
+    colors = %w[jasper shannon carl steffon].map { |s| Agent.find_by!(slug: s).status_color }
+    assert_equal colors.uniq, colors, "each reviewer soul gets a distinct persona tint"
+  end
 end

@@ -83,11 +83,11 @@ osc8_supported() {
   return 1
 }
 
-read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color mascot_emoji
+read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color mascot_emoji app_color
   # Joined with the unit separator (U+001F), NOT a tab: a tab is IFS-whitespace,
   # so an empty middle field (e.g. a missing task_url) would collapse and shift
   # every later field left. US is non-whitespace, so empty fields are preserved.
-  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // "")] | join("")' "$1" 2>/dev/null
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // ""), (.app_color // "")] | join("")' "$1" 2>/dev/null
 }
 
 # Nearest xterm-256 cube index (16..231) for an r,g,b triple. We use 256-color,
@@ -108,39 +108,49 @@ rgb_to_256() {  # r g b -> index
   printf '%d' "$out"
 }
 
-# The ⊙<mascot> handle wears its least-common type's color. The context carries
-# that color as #RRGGBB; emit the nearest 256-color as an escape, falling back to
-# the default mascot tint (M) when absent or not a 6-hex-digit color.
-mascot_tint() {  # hex -> ANSI escape (echoed)
+# Quantize a #RRGGBB to the nearest xterm-256 escape, falling back to $2 (a default
+# ANSI escape) when the color is absent or not 6 hex digits. Used for BOTH the
+# ⊙<mascot> handle (its least-common type color) AND the app slug (App#color — MS
+# lavender, TM green, …); the context carries each as #RRGGBB.
+tint() {  # hex fallback_escape -> ANSI escape (echoed)
   local hex="${1#\#}"
   if [ ${#hex} -eq 6 ]; then
     printf '%s[38;5;%dm' $'\033' "$(rgb_to_256 "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))")"
   else
-    printf '%s' "$M"
+    printf '%s' "$2"
   fi
 }
 
-render() {  # app feature task url stage mascot mascot_color mascot_emoji
-  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" mascot_emoji="$8" out="🛠 "
+render() {  # app feature task url stage mascot mascot_color mascot_emoji app_color
+  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" mascot_emoji="$8" app_color="$9" out="🛠 "
   # Per-mascot tint overrides the default M when the context carries a color.
   local M="$M"
-  [ -n "$mascot_color" ] && M=$(mascot_tint "$mascot_color")
+  [ -n "$mascot_color" ] && M=$(tint "$mascot_color" "$M")
+  # Per-app tint overrides the default app color (A): MS lavender, TM green, …
+  # (App#color, quantized to xterm-256). Absent/malformed → the default $A.
+  local AC="$A"
+  [ -n "$app_color" ] && AC=$(tint "$app_color" "$A")
+  local title=""   # OSC 0 terminal-tab title (emoji + name), emitted with the line
   if [ -n "$mascot" ]; then
     # title-case the slug, BSD-sed / bash-3.2 safe: cap first char, hyphens->spaces
-    # (snorlax -> "Snorlax"; nidoran-f -> "Nidoran f").
-    local first rest
+    # (snorlax -> "Snorlax"; nidoran-f -> "Nidoran f"; an agent name like "Jasper"
+    # is already cased). This name is ALSO the terminal tab title.
+    local first rest name
     first=$(printf '%s' "$mascot" | cut -c1 | tr '[:lower:]' '[:upper:]')
     rest=$(printf '%s' "${mascot:1}" | tr '-' ' ')
+    name="${first}${rest}"
     # The mascot's type emoji(s) LEAD and replace the 🛠 + ⊙ glyphs; a mascot with
     # no type emoji (an agent face, or unseeded types) keeps the tool + dot.
     if [ -n "$mascot_emoji" ]; then
-      out="${mascot_emoji} ${M}${first}${rest}${X}"
+      out="${mascot_emoji} ${M}${name}${X}"
+      title=$'\033]0;'"${mascot_emoji} ${name}"$'\007'   # tab: "🗿🏔 Golem" / "🧪 Jasper"
     else
-      out="${out} ${M}⊙ ${first}${rest}${X}"
+      out="${out} ${M}⊙ ${name}${X}"
+      title=$'\033]0;'"${name}"$'\007'
     fi
-    [ -n "$app" ] && out="${out}${DOT}${A}${app}${X}"
+    [ -n "$app" ] && out="${out}${DOT}${AC}${app}${X}"
   elif [ -n "$app" ]; then
-    out="${out} ${A}${app}${X}"
+    out="${out} ${AC}${app}${X}"
   fi
   [ -n "$feat" ] && out="${out}${DOT}${F}${feat}${X}"
   # With a mascot present, the Pokémon name IS the session handle — drop the task link
@@ -162,7 +172,11 @@ render() {  # app feature task url stage mascot mascot_color mascot_emoji
   if [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
     out="${out} ${D}…${CLAUDE_CODE_SESSION_ID#${CLAUDE_CODE_SESSION_ID%????}}${X}"
   fi
-  printf '%s' "$out"
+  # Lead with the OSC 0 tab title (zero-width: the terminal sets the tab, Claude
+  # renders the visible rest). OSC 8 hyperlinks already pass through Claude's status
+  # line, so OSC 0 does too. Emitted every render but idempotent, so the tab only
+  # visibly changes when the mascot/persona does — session start, task create, swap.
+  printf '%s%s' "$title" "$out"
 }
 
 ctx="$cwd/.agent-context.json"
@@ -174,8 +188,8 @@ if [ -z "$src" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
 fi
 
 if [ -n "$src" ]; then
-  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji < <(read_ctx "$src")
-  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji"
+  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji app_color < <(read_ctx "$src")
+  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji" "$app_color"
   heartbeat_claim "$task" "$stage"   # keep this terminal's build-claim lease fresh
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
