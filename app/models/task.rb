@@ -97,6 +97,9 @@ class Task < ApplicationRecord
   # transition on update.
   after_create :record_genesis_event
   after_update :record_transition_event, if: :saved_change_to_stage?
+  # A destroy fires no TaskEvent, so the live /deployments board never hears about
+  # it — broadcast the card removal explicitly so every viewer's board drops it.
+  after_destroy_commit :broadcast_removal_to_deployments_board
 
   def to_param
     slug
@@ -567,6 +570,11 @@ class Task < ApplicationRecord
   # change can never land without its event.
   def record_genesis_event
     write_stage_event(from: nil)
+  end
+
+  # Drop this task's card from the live /deployments board for every viewer.
+  def broadcast_removal_to_deployments_board
+    DeploymentsBroadcaster.task_removed(slug)
   end
 
   def record_transition_event

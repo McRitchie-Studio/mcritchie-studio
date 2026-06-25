@@ -1,0 +1,201 @@
+<%# Live /deployments board animations, driven by the real DeploymentsBroadcaster
+    Turbo Streams (turbo_stream_from "deployments") for EVERY connected viewer:
+      • create (prepend a new card)      → pop + type-coloured glow flash + bubbles
+      • move   (remove old + prepend new)→ old card shrinks out & its column reclaims
+                                           the gap (FLIP), then the new card grows in
+      • delete/archive (remove)          → card shrinks out, column reclaims the gap
+      • replace (intent / in-place)      → a subtle glow pulse, no bubbles
+    Event type is read from the Turbo Stream action itself (no buttons). Glow colour
+    comes from the card's data-glow (its mascot's primary type colour). Only rendered
+    on the deploy board (where the live socket is). %>
+<style>
+  .lbfx-pop { animation: lbfxPop .5s cubic-bezier(.2, 1.4, .3, 1); }
+  @keyframes lbfxPop { 0% { transform: scale(.85); } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+  /* A flash, not a bloom — brightest on frame one, then fades. Colour from
+     --lbfx-glow (the card's mascot type colour); falls back to a warm orange. */
+  .lbfx-glow { animation: lbfxGlow .8s ease-out; }
+  @keyframes lbfxGlow {
+    0%   { box-shadow: 0 0 18px 4px rgb(var(--lbfx-glow, 249 115 22) / .95), 0 0 44px 12px rgb(var(--lbfx-glow, 249 115 22) / .5);
+           border-color: rgb(var(--lbfx-glow, 249 115 22) / 1); }
+    100% { box-shadow: 0 0 0 0 rgb(var(--lbfx-glow, 249 115 22) / 0); border-color: rgb(var(--lbfx-glow, 249 115 22) / 0); }
+  }
+</style>
+<script>
+  // Installed once; survives Turbo navigations.
+  window.LiveBoardFx = window.LiveBoardFx || (function () {
+    const BUBBLE_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
+
+    // Per-card coordination between the `remove` stream (intercepted) and the
+    // `prepend` that follows it on a MOVE.
+    const collapsing = new Map();     // cardId → Promise (resolves when its collapse-out finishes)
+    const pendingAction = new Map();  // cardId → 'prepend' | 'append' | 'replace' (the just-seen stream)
+
+    // "#78C850" → "120 200 80" (for `rgb(var() / a)`); null if unparseable.
+    function hexToRgb(hex) {
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+      if (!m) return null;
+      const n = parseInt(m[1], 16);
+      return ((n >> 16) & 255) + " " + ((n >> 8) & 255) + " " + (n & 255);
+    }
+
+    // Tint + flash the glow from the card's data-glow (mascot type colour).
+    function glow(card) {
+      const rgb = hexToRgb(card.dataset.glow);
+      if (rgb) card.style.setProperty("--lbfx-glow", rgb);
+      card.classList.add("lbfx-glow");
+      setTimeout(() => { card.classList.remove("lbfx-glow"); card.style.removeProperty("--lbfx-glow"); }, 850);
+    }
+
+    // A ring of little coloured bubbles bursting up-and-out from (cx, cy).
+    function spawnBubbles(cx, cy) {
+      const N = 22;
+      for (let i = 0; i < N; i++) {
+        const b = document.createElement("div");
+        const size = 4 + Math.random() * 9;
+        b.style.cssText =
+          "position:fixed;left:" + cx + "px;top:" + cy + "px;width:" + size + "px;height:" + size +
+          "px;border-radius:9999px;pointer-events:none;z-index:60;background:" +
+          BUBBLE_COLORS[i % BUBBLE_COLORS.length] + ";box-shadow:0 0 8px rgba(255,255,255,.35);";
+        document.body.appendChild(b);
+        const angle = (Math.PI * 2 * i) / N + (Math.random() - 0.5) * 0.6;
+        const dist = 36 + Math.random() * 80;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist - 26;
+        b.animate(
+          [
+            { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+            { transform: "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px)) scale(0)", opacity: 0 }
+          ],
+          { duration: 650 + Math.random() * 450, easing: "cubic-bezier(.2,.7,.3,1)" }
+        ).onfinish = () => b.remove();
+      }
+    }
+
+    // The full arrival flourish: glow + bubbles, and (unless the caller drives its
+    // own scale, e.g. the move grow-in) a pop.
+    function burst(card, pop) {
+      const r = card.getBoundingClientRect();
+      if (!r.width) return;
+      if (pop !== false) card.classList.add("lbfx-pop");
+      glow(card);
+      if (pop !== false) setTimeout(() => card.classList.remove("lbfx-pop"), 520);
+      spawnBubbles(r.left + r.width / 2, r.top + r.height / 2);
+    }
+
+    // Remove a card while its column reclaims the gap smoothly — FLIP the siblings
+    // (transform between measured before/after positions) so the dropzone's space-y
+    // margins can't cause a pause/snap. Resolves so a move's incoming card can wait.
+    function collapseOut(card, done) {
+      let signalDone;
+      const promise = new Promise((res) => { signalDone = res; });
+      const finish = () => { if (done) done(); signalDone(); };
+      if (!card) { finish(); return promise; }
+
+      const zone = card.parentElement;
+      const siblings = zone ? Array.from(zone.querySelectorAll(":scope > .kanban-card")).filter((c) => c !== card) : [];
+      const beforeTop = siblings.map((c) => c.getBoundingClientRect().top);
+
+      const rect = card.getBoundingClientRect();
+      const zr = zone.getBoundingClientRect();
+      const zs = getComputedStyle(zone);
+      const restorePos = zone.style.position;
+      if (zs.position === "static") zone.style.position = "relative";
+      Object.assign(card.style, {
+        position: "absolute",
+        width: rect.width + "px",
+        height: rect.height + "px",
+        top: (rect.top - zr.top - (parseFloat(zs.borderTopWidth) || 0) + zone.scrollTop) + "px",
+        left: (rect.left - zr.left - (parseFloat(zs.borderLeftWidth) || 0) + zone.scrollLeft) + "px",
+        margin: "0", zIndex: "5", pointerEvents: "none", transformOrigin: "center top"
+      });
+
+      siblings.forEach((c, i) => {
+        const delta = beforeTop[i] - c.getBoundingClientRect().top;
+        if (!delta) return;
+        c.style.transition = "none";
+        c.style.transform = "translateY(" + delta + "px)";
+        requestAnimationFrame(() => {
+          c.style.transition = "transform .45s linear";
+          c.style.transform = "";
+          const clear = () => { c.style.transition = ""; c.style.transform = ""; c.removeEventListener("transitionend", clear); };
+          c.addEventListener("transitionend", clear);
+        });
+      });
+
+      card.animate(
+        [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.55)" }],
+        { duration: 450, easing: "linear", fill: "forwards" }
+      ).onfinish = () => { zone.style.position = restorePos; finish(); };
+      return promise;
+    }
+
+    // A move's incoming card: hold it invisible + out of flow (Alpine x-show owns
+    // `display`, so use visibility + position) until the outgoing card has gone,
+    // then grow it in with the burst.
+    function holdThenGrowIn(card, ready) {
+      card.style.visibility = "hidden";
+      card.style.position = "absolute";
+      card.style.pointerEvents = "none";
+      Promise.race([ready, new Promise((res) => setTimeout(res, 1000))]).then(() => {
+        if (!document.body.contains(card)) return;
+        card.style.transition = ""; card.style.transform = "";
+        card.style.transformOrigin = "center";
+        card.style.opacity = "0";
+        card.style.visibility = ""; card.style.position = ""; card.style.pointerEvents = "";
+        const grow = card.animate(
+          [
+            { opacity: 0, transform: "scale(.5)" },
+            { opacity: 1, transform: "scale(1.05)", offset: 0.65 },
+            { opacity: 1, transform: "scale(1)" }
+          ],
+          { duration: 380, easing: "ease-out", fill: "both" }
+        );
+        grow.onfinish = () => { card.style.opacity = ""; card.style.transformOrigin = ""; grow.cancel(); };
+        burst(card, false);
+      });
+    }
+
+    // Called by the board's observeLive for each freshly patched-in card.
+    function onAdd(node) {
+      if (!node.id || !node.id.startsWith("card-")) return;
+      // A local drag moves a card's node into a new column — that's not a live
+      // event, so don't burst it. (The drag's own broadcast move echo arrives after
+      // the PATCH, once the flag has cleared, and animates normally.)
+      if (window.__lbfxDragging) return;
+      const wasMoving = collapsing.get(node.id);
+      const action = pendingAction.get(node.id);
+      pendingAction.delete(node.id);
+      if (wasMoving) {                       // MOVE arrival
+        collapsing.delete(node.id);
+        holdThenGrowIn(node, wasMoving);
+      } else if (action === "replace") {     // in-place update
+        requestAnimationFrame(() => glow(node));
+      } else {                                // CREATE
+        requestAnimationFrame(() => burst(node, true));
+      }
+    }
+
+    // Classify every incoming deployments stream from its action; intercept removes
+    // to collapse-out first (a move's old card and a delete/archive share this path).
+    document.addEventListener("turbo:before-stream-render", (event) => {
+      const stream = event.target;
+      const action = stream.getAttribute("action");
+      const target = stream.getAttribute("target") || "";
+      if (!target.startsWith("card-")) return;
+      if (action === "remove") {
+        const removeNow = event.detail.render;
+        event.detail.render = (el) => {
+          const p = collapseOut(document.getElementById(target), () => removeNow(el));
+          collapsing.set(target, p);
+          setTimeout(() => collapsing.delete(target), 1200); // not a move if no prepend follows
+        };
+      } else {
+        pendingAction.set(target, action);
+        setTimeout(() => pendingAction.delete(target), 1200);
+      }
+    });
+
+    return { onAdd };
+  })();
+</script>

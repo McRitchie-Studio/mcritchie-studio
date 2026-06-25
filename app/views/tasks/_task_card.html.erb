@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, latest_activity: nil, activity_count: 0) %>
+<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
   server-side and pushed over Turbo Streams (the "deployments" stream) for live
@@ -15,6 +15,8 @@
      data-agent="<%= task.agent_slug %>"
      data-apps="<%= task.devops_repositories.join(",") %>"
      data-href="<%= task_path(task.slug) %>"
+     <%# Mascot's primary type colour — the live board tints its create/move glow with it. %>
+     data-glow="<%= mascot&.signature_color(type_enumerals) %>"
      x-data="{ hovered: false, mx: 0, my: 0 }"
      x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= task.devops_repositories.join(",") %>')"
      @mouseenter="hovered = true"
