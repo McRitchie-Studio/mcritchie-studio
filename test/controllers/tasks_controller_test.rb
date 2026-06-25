@@ -185,6 +185,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release", count: 0
   end
 
+  test "[integration] deployments cards carry a data-glow attribute for the live glow" do
+    # The live board tints each card's create/move glow from data-glow (the mascot's
+    # type colour); it's present on every card (empty when the task has no mascot).
+    task = Task.create!(title: "A glowing board task", stage: "designed")
+    get deployments_path
+    assert_response :success
+    assert_select "#card-#{task.slug}[data-glow]"
+  end
+
   test "deployments shows a Last Release section + Current empty state when nothing is active" do
     Release.delete_all
     shipped = Release.open!(branch: "release/last-test",
