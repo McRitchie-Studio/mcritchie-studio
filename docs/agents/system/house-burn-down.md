@@ -45,7 +45,7 @@ bin/setup-1pass-token
 
 # 4. Second pass — picks up at Phase 4 with the token now set, restores .env
 #    from Heroku + 1Password, clones the other 4 repos, bundles + DBs + Anchor,
-#    installs the root AGENTS.md, bounces both Rails servers.
+#    installs the root AGENTS.md + the user-global Claude skills, bounces both Rails servers.
 bin/ecosystem-build
 ```
 
@@ -439,7 +439,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise activation, Solana, Cargo), `~/.zprofile` chmod 600 |
 | 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN` works; pulls `agent.heroku` from 1Password into `HEROKU_API_KEY`; restores `.env` for active Rails apps from provider config |
 | 5. Sibling repos | `gh repo clone` for `turf-monster`, `studio-engine`, `solana-studio`, `turf-vault` (skips ones already present) |
-| 5b. Agent docs | Installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md) |
+| 5b. Agent docs + skills | Runs `bin/install-agent-docs`, which installs `/Users/alex/projects/AGENTS.md` + `CLAUDE.md` from `mcritchie-studio/docs/agents/{index,claude}.md` (Claude Code reads CLAUDE.md, not AGENTS.md) **and** mirrors the user-global Claude skills `docs/agents/skills/*` → `~/.claude/skills/*` (copy + drift-check, e.g. `/wrap`), so a wiped machine restores them too |
 | 5c. Secrets replay | Re-runs Phase 4 after sibling repos exist so newly-cloned active satellites get `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |
 | 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no AWS creds needed. |

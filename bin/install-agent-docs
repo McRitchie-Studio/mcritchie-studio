@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# Install the projects-level agent entrypoints from McRitchie Studio.
+# Install the projects-level agent entrypoints + user-global skills from McRitchie Studio.
 #
 # Sources of truth:
-#   docs/agents/index.md   -> $PROJECTS_DIR/AGENTS.md   (Codex reads this natively)
-#   docs/agents/claude.md  -> $PROJECTS_DIR/CLAUDE.md   (Claude Code adapter; @imports AGENTS.md)
+#   docs/agents/index.md        -> $PROJECTS_DIR/AGENTS.md        (Codex reads this natively)
+#   docs/agents/claude.md       -> $PROJECTS_DIR/CLAUDE.md        (Claude Code adapter; @imports AGENTS.md)
+#   docs/agents/skills/<name>/  -> $HOME/.claude/skills/<name>/   (user-global Claude Code skills)
 #
 # Claude Code auto-loads CLAUDE.md (and its @imports) but NOT AGENTS.md, so both
 # files are required to give every agent the same operating model. This keeps the
 # durable docs in GitHub while giving sessions a stable first file at the root.
+#
+# The skills under docs/agents/skills/ are USER-GLOBAL (they load in every session,
+# regardless of CWD), so the platform owns them here exactly like the root docs:
+# they survive a wiped machine and travel with the repo. This is distinct from the
+# PROJECT-scoped skills in mcritchie-studio/.claude/skills/ (which load only when CWD
+# is the studio) — those are deliberately NOT touched by this installer.
 
 set -euo pipefail
 
@@ -30,13 +37,48 @@ PAIRS=(
   "$ROOT/docs/agents/claude.md:$PROJECTS_DIR/CLAUDE.md"
 )
 
+# User-global skills: mirror every file under each docs/agents/skills/<name>/ tree
+# into $HOME/.claude/skills/<name>/. A skill can carry more than a SKILL.md (helper
+# scripts, reference files), so we expand the tree into the SAME "source:target"
+# file pairs the docs use — install + check then share one code path. Built
+# dynamically from whatever is tracked, so adding a skill needs no script change.
+SKILLS_SRC_DIR="$ROOT/docs/agents/skills"
+SKILLS_DEST_DIR="$HOME/.claude/skills"
+SKILL_PAIRS=()
+if [ -d "$SKILLS_SRC_DIR" ]; then
+  # -mindepth 2: only mirror files INSIDE a <name>/ skill dir, so a top-level
+  # README.md documenting the source tree never lands in ~/.claude/skills as a
+  # stray non-skill.
+  while IFS= read -r src; do
+    rel="${src#"$SKILLS_SRC_DIR"/}"
+    SKILL_PAIRS+=("$src:$SKILLS_DEST_DIR/$rel")
+  done < <(find "$SKILLS_SRC_DIR" -mindepth 2 -type f | sort)
+fi
+
 usage() {
   cat <<USAGE
 Usage: bin/install-agent-docs [install|check]
 
-install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md).
-check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md match the tracked sources.
+install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md)
+         and the user-global skills to ~/.claude/skills.
+check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md and ~/.claude/skills match
+         the tracked sources.
 USAGE
+}
+
+# Compare one source against its installed target. Missing target counts as drift
+# (a wiped ~/.claude). Quiet on stdout; the callers narrate OK/ERROR.
+check_pair() {
+  local src="$1" tgt="$2"
+  [ -f "$tgt" ] && cmp -s "$src" "$tgt"
+}
+
+# Copy one source onto its target, creating intermediate dirs (skill subdirs, and
+# $PROJECTS_DIR for the root docs — mkdir -p is idempotent for both).
+install_pair() {
+  local src="$1" tgt="$2"
+  mkdir -p "$(dirname "$tgt")"
+  cp "$src" "$tgt"
 }
 
 case "$MODE" in
@@ -53,11 +95,18 @@ for pair in "${PAIRS[@]}"; do
   fi
 done
 
+# Iterate PAIRS, then SKILL_PAIRS. SKILL_PAIRS may be empty (no skills tracked
+# yet); guard the expansion so `set -u` on bash 3.2 doesn't choke on "${arr[@]}".
+ALL_PAIRS=("${PAIRS[@]}")
+if [ "${#SKILL_PAIRS[@]}" -gt 0 ]; then
+  ALL_PAIRS+=("${SKILL_PAIRS[@]}")
+fi
+
 if [ "$MODE" = "check" ]; then
   status=0
-  for pair in "${PAIRS[@]}"; do
+  for pair in "${ALL_PAIRS[@]}"; do
     src="${pair%%:*}"; tgt="${pair##*:}"
-    if cmp -s "$src" "$tgt"; then
+    if check_pair "$src" "$tgt"; then
       echo "OK: $tgt matches $src"
     else
       echo "ERROR: $tgt is out of date with $src" >&2
@@ -70,9 +119,9 @@ fi
 
 mkdir -p "$PROJECTS_DIR"
 echo "Installed:"
-for pair in "${PAIRS[@]}"; do
+for pair in "${ALL_PAIRS[@]}"; do
   src="${pair%%:*}"; tgt="${pair##*:}"
-  cp "$src" "$tgt"
+  install_pair "$src" "$tgt"
   echo "  $tgt (from $src)"
 done
 

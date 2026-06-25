@@ -370,9 +370,9 @@ phase_repos() {
   done
 }
 
-# ─── Phase 5b: Agent docs ───────────────────────────────────────────────────
+# ─── Phase 5b: Agent docs + skills ──────────────────────────────────────────
 phase_agent_docs() {
-  log_phase "Phase 5b: Agent docs"
+  log_phase "Phase 5b: Agent docs + skills"
 
   local installer="$PROJECTS_DIR/mcritchie-studio/bin/install-agent-docs"
   if [ ! -x "$installer" ]; then
@@ -380,8 +380,11 @@ phase_agent_docs() {
     return 1
   fi
 
+  # Installs the root AGENTS.md/CLAUDE.md AND the user-global skills
+  # (docs/agents/skills/* -> ~/.claude/skills/*) in one pass.
   "$installer" >/dev/null
   log_ok "projects/AGENTS.md" "installed from mcritchie-studio/docs/agents/index.md"
+  log_ok "~/.claude/skills" "installed from mcritchie-studio/docs/agents/skills/"
 }
 
 # ─── Phase 6: Bundles + databases ───────────────────────────────────────────
