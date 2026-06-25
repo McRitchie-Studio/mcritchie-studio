@@ -562,10 +562,42 @@ def allocate_port(app)
   abort "no free worktree port in #{app.fetch("range_start")}-#{app.fetch("range_end")}"
 end
 
+# PostgreSQL truncates identifiers to NAMEDATALEN-1 = 63 bytes. A worktree's
+# DEV database name (`<app>_development_<slug>`) is the LONGEST identifier we mint
+# — its `_development_` marker is longer than the `_test_` marker that
+# test_database_url rewrites it to — so bounding the dev name keeps BOTH the dev
+# name AND its derived test name <= 63 with an identical <slug> base, which is
+# what lets db:test:prepare resolve the same DB. Names that already fit pass
+# through byte-for-byte (no churn to existing worktrees). See task
+# worktree-db-name-overflow: at 64 bytes Postgres truncated the stored datname
+# while Rails still looked it up by the full literal string, so the lookup missed.
+MAX_PG_IDENTIFIER = 63
+DB_SLUG_HASH_LEN = 8
+
+# Fit <slug> into max_len bytes. A slug that fits is returned unchanged. An
+# overflowing slug is truncated and suffixed with `_` + the first
+# DB_SLUG_HASH_LEN hex of its SHA256 so distinct long slugs stay unique and the
+# mapping is deterministic (same slug -> same DB name across runs).
+def bounded_db_slug(slug, max_len)
+  return slug if slug.length <= max_len
+
+  digest = Digest::SHA256.hexdigest(slug)[0, DB_SLUG_HASH_LEN]
+  keep = max_len - DB_SLUG_HASH_LEN - 1 # reserve room for the "_" separator + digest
+  keep = 0 if keep.negative?
+  "#{slug[0, keep]}_#{digest}"[0, max_len]
+end
+
+# The worktree's DEV database name, bounded under Postgres' 63-byte identifier
+# limit with headroom reserved for the longest env marker (`_development_`).
+def worktree_db_name(app_slug, task)
+  prefix = "#{app_slug.tr("-", "_")}_development_"
+  "#{prefix}#{bounded_db_slug(task.tr("-", "_"), MAX_PG_IDENTIFIER - prefix.length)}"
+end
+
 def stack_values(app, task, requested_port = nil)
   port = requested_port || allocate_port(app)
   redis_db = allocate_redis_db
-  db_name = "#{app.fetch("slug").tr("-", "_")}_development_#{task.tr("-", "_")}"
+  db_name = worktree_db_name(app.fetch("slug"), task)
   session_key = "#{app.fetch("session_key")}_#{task.tr("-", "_")}"
 
   {

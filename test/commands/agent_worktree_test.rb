@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require "uri"
 require "yaml"
 
 class AgentWorktreeCommandTest < ActiveSupport::TestCase
@@ -457,7 +458,145 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_no_match(/development/, out)
   end
 
+  # --- worktree DB-name overflow (PG 63-byte identifier limit) ---------------
+
+  # [unit] Reproduces the bug at the lowest tier: a long worktree slug used to
+  # mint a 64-char DEV database name (`<app>_development_<slug>`), one byte over
+  # Postgres' 63-byte identifier limit, so the stored datname was truncated while
+  # Rails looked it up by the full literal string. worktree_db_name must now keep
+  # the dev name <= 63 AND keep the derived test name (the `_development_` ->
+  # `_test_` rewrite) <= 63 sharing an IDENTICAL <slug> base, so db:test:prepare
+  # resolves the same DB.
+  test "[unit] worktree_db_name bounds a long slug; dev and test share a <=63 base" do
+    long = "mascot-marker-no-downgrade-fallback-extra-long-slug" # > 40 chars
+    out = script_eval(<<~RUBY).strip
+      require "json"
+      dev  = worktree_db_name("mcritchie-studio", "#{long}")
+      test = test_database_url("DATABASE_URL" => "postgresql://localhost/\#{dev}").split("/").last
+      print JSON.generate("dev" => dev, "test" => test)
+    RUBY
+    parsed = JSON.parse(out)
+    dev = parsed.fetch("dev")
+    test = parsed.fetch("test")
+
+    assert_operator dev.length, :<=, 63, "dev DB name must fit Postgres' 63-byte identifier limit"
+    assert_operator test.length, :<=, 63, "derived test DB name must fit too"
+    assert dev.start_with?("mcritchie_studio_development_"), dev
+    assert test.start_with?("mcritchie_studio_test_"), test
+
+    # The shared <slug> base is what makes db:test:prepare resolve the same DB the
+    # dev URL points at — dev and test must differ ONLY in the env marker.
+    dev_slug = dev.sub("mcritchie_studio_development_", "")
+    test_slug = test.sub("mcritchie_studio_test_", "")
+    assert_equal dev_slug, test_slug, "dev and test DB names must share an identical slug base"
+    assert_match(/_[0-9a-f]{8}\z/, dev_slug, "an overflowing slug is truncated + suffixed with a short digest")
+  end
+
+  # [unit] A slug that already fits passes through byte-for-byte: short-slug
+  # worktrees keep the exact name they use today (no churn / no surprise reprovision).
+  test "[unit] worktree_db_name leaves a fitting slug byte-for-byte unchanged" do
+    out = script_eval(%(print worktree_db_name("mcritchie-studio", "terminal-context"))).strip
+    assert_equal "mcritchie_studio_development_terminal_context", out
+  end
+
+  # [unit] The truncation+hash mapping is deterministic (same slug -> same name
+  # across runs) and unique (two long slugs differing past the truncation point
+  # must not collide), with every result still <= 63.
+  test "[unit] worktree_db_name is deterministic and collision-resistant for long slugs" do
+    base = "alpha-marker-no-downgrade-fallback-very-long-worktree-slug"
+    a1 = script_eval(%(print worktree_db_name("mcritchie-studio", "#{base}"))).strip
+    a2 = script_eval(%(print worktree_db_name("mcritchie-studio", "#{base}"))).strip
+    b = script_eval(%(print worktree_db_name("mcritchie-studio", "#{base}X"))).strip
+
+    assert_equal a1, a2, "same slug must yield the same DB name (deterministic digest)"
+    refute_equal a1, b, "long slugs differing past the truncation point must not collide"
+    assert_operator a1.length, :<=, 63
+    assert_operator b.length, :<=, 63
+  end
+
+  # [integration] The real regression, end-to-end: db:test:prepare must succeed
+  # for a LONG-slug worktree and the test DB it provisions must be findable by its
+  # full literal name. At 64 bytes Postgres truncated the stored datname to 63
+  # while the literal pg_database lookup used the un-truncated name -> miss. With
+  # the fix the bounded name is <= 63, so the stored name and the lookup match.
+  #
+  # CI portability: the dev/test URLs and the psql/dropdb cleanup are derived from
+  # a template connection URL (swapping ONLY the database-name segment) so the
+  # real credentials ride through. CI's Postgres needs a password — a hardcoded
+  # `postgresql://localhost/...` + a PATH-only psql env die at connect with
+  # `fe_sendauth: no password supplied` BEFORE the regression runs. Prefer
+  # DATABASE_URL (CI sets it with creds); fall back to TEST_DATABASE_URL (a local
+  # worktree sets that one, trust-auth localhost) so the test runs in both places.
+  test "[integration] db:test:prepare provisions a findable long-slug test DB" do
+    template = pg_template_url
+    skip "no DATABASE_URL/TEST_DATABASE_URL to derive Postgres credentials from" if template.blank?
+    template_uri = URI.parse(template)
+
+    long_slug = "regression-very-long-worktree-slug-db-name-overflow-probe"
+    dev_name = script_eval(%(print worktree_db_name("mcritchie-studio", "#{long_slug}"))).strip
+    test_name = script_eval(
+      %(print test_database_url("DATABASE_URL" => "postgresql://localhost/#{dev_name}").split("/").last)
+    ).strip
+
+    assert_operator dev_name.length, :<=, 63
+    assert_operator test_name.length, :<=, 63
+
+    pg_env = pg_conn_env(template_uri)
+    begin
+      out, err, status = Open3.capture3(
+        {
+          "RAILS_ENV" => "test",
+          "DATABASE_URL" => db_url_with_name(template_uri, dev_name),
+          "TEST_DATABASE_URL" => db_url_with_name(template_uri, test_name),
+          "PATH" => ENV.fetch("PATH", "")
+        },
+        RbConfig.ruby, Rails.root.join("bin/rails").to_s, "db:test:prepare",
+        chdir: Rails.root.to_s
+      )
+      assert status.success?, "db:test:prepare failed for a long-slug worktree:\n#{out}\n#{err}"
+
+      found, ferr, fstatus = Open3.capture3(
+        pg_env, "psql", "-Atqc",
+        "SELECT 1 FROM pg_database WHERE datname = '#{test_name}'", "postgres"
+      )
+      assert fstatus.success?, ferr
+      assert_equal "1", found.strip,
+        "the provisioned test DB must be findable by its full literal name (no truncation drift)"
+    ensure
+      system(pg_env, "dropdb", "--if-exists", test_name, out: File::NULL, err: File::NULL)
+    end
+  end
+
   private
+
+  # Template Postgres connection URL to derive host/port/user/password from.
+  # CI sets DATABASE_URL (with credentials); a local worktree sets TEST_DATABASE_URL
+  # (trust-auth localhost). Blank means no database is reachable -> the caller skips.
+  def pg_template_url
+    url = ENV["DATABASE_URL"].to_s
+    url = ENV["TEST_DATABASE_URL"].to_s if url.strip.empty?
+    url.strip
+  end
+
+  # Rebuild a connection URL from a template URI, swapping ONLY the database-name
+  # path segment. Scheme/userinfo/host/port/query are preserved, so the derived
+  # dev/test URLs carry the template's real credentials.
+  def db_url_with_name(template_uri, db_name)
+    uri = template_uri.dup
+    uri.path = "/#{db_name}"
+    uri.to_s
+  end
+
+  # Subprocess env for bare psql/dropdb, derived from the template URI so the
+  # cleanup connects with the same credentials (a PATH-only env -> fe_sendauth on CI).
+  def pg_conn_env(template_uri)
+    env = { "PATH" => ENV.fetch("PATH", "") }
+    env["PGHOST"] = template_uri.host if template_uri.host.present?
+    env["PGPORT"] = template_uri.port.to_s if template_uri.port
+    env["PGUSER"] = template_uri.user if template_uri.user.present?
+    env["PGPASSWORD"] = template_uri.password if template_uri.password.present?
+    env
+  end
 
   # Load bin/agent-worktree as a library in a hermetic subprocess (the
   # $PROGRAM_NAME == __FILE__ dispatch guard keeps `load` side-effect-free) and
