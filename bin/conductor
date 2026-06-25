@@ -1,0 +1,450 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/conductor — a DETERMINISTIC driver for the Build-and-Deploy QA Release
+# cycle. "More rails, less model judgment": it codifies the documented SOP
+# (docs/agents/system/devops-cycle-design.md §1 + the "Step 0 — assess the queue
+# by stage" subsection in docs/agents/modules/parallel-agent-devops.md) so a
+# conductor session can't skip Step 0 or miss an actionable task.
+#
+# WHY IT EXISTS (the gap): the flat `bin/task list` returns only the 20
+# most-recently-CREATED tasks ACROSS ALL stages (`Api::Paginatable` per_page=20,
+# `Task.recent`), with no truncation warning — so on 2026-06-25 a conductor
+# assessing the board with the flat list MISSED the only `reviewed` task and a
+# stranded `assembled` zombie. The fix is per-stage enumeration; this turns that
+# SOP into a script.
+#
+# A THIN ORCHESTRATOR, NOT A REIMPLEMENTATION. conductor never touches the board
+# API itself — it shells out to the existing tools and reads their output:
+#   * bin/task list --stage <S>   — per-stage enumeration (the Step-0 fix)
+#   * bin/task show <slug> --json — repos + release_slug + devops for a task
+#   * bin/reviewer-select --json  — preview the heavy+light pair (plan --reviewers)
+#   * bin/release merge|prepare   — the actual Deploy writes (drive subcommands only)
+# It COMPLEMENTS bin/qa-intake (PR<->worktree join + labels) rather than
+# overlapping it: conductor answers "what is in each Deploy stage and what is the
+# next deterministic command", qa-intake answers "what is the local PR/worktree
+# state of a given PR". Use qa-intake when you need PR mergeability/CI; use
+# conductor for the stage-by-stage cycle landscape.
+#
+# Subcommands:
+#   bin/conductor [survey]   Default, READ-ONLY. Step 0 — enumerate the Deploy
+#                            queue BY STAGE, name the active release candidate +
+#                            its members, and print a brief prod health line.
+#   bin/conductor plan       survey + the recommended NEXT deterministic action
+#                            per stage (submitted→reviewer-select; reviewed→
+#                            release merge; assembled→prepare then the operator
+#                            ship gate). Flags blocked + non-pipeline (rolio)
+#                            tasks separately. `--reviewers` previews the picked
+#                            pair per submitted task.
+#   bin/conductor merge [--run]   Thin drive: bin/release merge <reviewed pipeline
+#                            slugs>. Default prints the command; --run executes it.
+#   bin/conductor qa [--run]      Thin drive: bin/release prepare (deploy
+#                            origin/release to QA). Default prints; --run executes.
+#   bin/conductor ship       REFUSES. Production deploy is operator-gated —
+#                            conductor NEVER auto-ships. Prints the gate + command
+#                            and exits non-zero.
+#
+# GATES (load-bearing):
+#   * The 2-senior REVIEW needs AGENTS. A script can't render a verdict, so
+#     conductor only surfaces the reviewer-select assignment + the handoff; it
+#     NEVER fabricates a review outcome.
+#   * The prod SHIP is OPERATOR-gated. conductor never invokes `bin/release ship`
+#     — not in survey, not in plan, not in any drive. `conductor ship` refuses.
+#
+# Board: PROD by default (inherited — bin/task defaults to https://mcritchie.studio
+# and bin/release defaults to the prod board).
+#
+# Binary overrides (tests inject fakes on a tmpdir, same pattern as bin/pr-status's
+# GH_BIN): TASK_BIN, RELEASE_BIN, REVIEWER_SELECT_BIN, CURL_BIN.
+
+require "json"
+require "open3"
+require "time"
+require "yaml"
+
+SCRIPT_DIR = __dir__
+
+# Resolve a helper binary: an explicit env override (for tests) wins, else the
+# sibling script next to this one (the real tool in production).
+def bin_for(env_key, default_name)
+  override = ENV[env_key].to_s.strip
+  return override unless override.empty?
+
+  File.join(SCRIPT_DIR, default_name)
+end
+
+TASK_BIN     = bin_for("TASK_BIN", "task")
+RELEASE_BIN  = bin_for("RELEASE_BIN", "release")
+REVIEWER_BIN = bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
+CURL_BIN     = ENV["CURL_BIN"].to_s.strip.empty? ? "curl" : ENV["CURL_BIN"].strip
+
+# The Deploy-queue stages, in cycle order. The first three ARE the Deploy queue
+# (review intake → merge queue → current RC); building + blocked are surfaced so
+# nothing actionable is invisible (building = Build half in-flight; blocked = the
+# side state that needs attention, not in the pipeline's court).
+DEPLOY_STAGES = %w[submitted reviewed assembled].freeze
+CONTEXT_STAGES = %w[building blocked].freeze
+ALL_STAGES = (DEPLOY_STAGES + CONTEXT_STAGES).freeze
+
+STAGE_BLURB = {
+  "submitted" => "review intake (Build → Deploy seam)",
+  "reviewed"  => "merge queue — approved, awaiting bin/release merge",
+  "assembled" => "current release candidate (RC) members",
+  "building"  => "Build half — in-flight builds",
+  "blocked"   => "needs attention — not in the pipeline's court"
+}.freeze
+
+# The release pipeline's repos — the single source of truth `bin/release` reads
+# (config/release_repos.yml). A task whose repos don't intersect this set (e.g.
+# rolio, which is its own app, not a mcritchie release member) is NON-PIPELINE
+# and must not be merged via bin/release. Read locally (cheap, no network); the
+# fallback covers a missing/unreadable config.
+PIPELINE_REPOS =
+  begin
+    cfg = YAML.load_file(File.expand_path("../config/release_repos.yml", SCRIPT_DIR)) || {}
+    (Array(cfg["gems"]&.keys) + Array(cfg["apps"]&.keys)).map(&:to_s).reject(&:empty?)
+  rescue StandardError
+    %w[mcritchie-studio turf-monster tax-studio chain-ops studio-engine solana-studio]
+  end
+
+# The prod URL to smoke for the brief health line. Read from the hub app's
+# prod_deploy.smoke_url in the release registry, with a known fallback.
+PROD_SMOKE_URL =
+  begin
+    cfg = YAML.load_file(File.expand_path("../config/release_repos.yml", SCRIPT_DIR)) || {}
+    cfg.dig("apps", "mcritchie-studio", "prod_deploy", "smoke_url")
+  rescue StandardError
+    nil
+  end || "https://app.mcritchie.studio"
+
+# --- shelling out ----------------------------------------------------------
+
+# Run a helper binary, return [stdout, ok?]. stderr is captured separately so a
+# subprocess's bundler/rubygems warnings never corrupt a JSON parse. Best-effort:
+# a launch failure degrades to ["", false] with a warning rather than crashing the
+# survey — a board hiccup must not take the whole landscape down.
+def run_bin(bin, *args)
+  out, _err, status = Open3.capture3(bin, *args)
+  [out, status.success?]
+rescue StandardError => e
+  warn "conductor: #{File.basename(bin.to_s)} #{args.join(' ')} failed: #{e.message}"
+  ["", false]
+end
+
+# Stream a helper binary's output straight to the terminal (drive subcommands).
+# Returns the child's success boolean.
+def exec_bin(bin, *args)
+  system(bin, *args)
+end
+
+# --- bin/task reads --------------------------------------------------------
+
+# `bin/task list --stage X` prints one `slug  [stage]  title` line per task plus a
+# trailing `(N task(s))` summary. Parse the task lines, ignore the summary.
+TASK_LINE = /\A(\S+)\s+\[([^\]]+)\]\s+(.*)\z/
+
+def list_stage(stage)
+  out, ok = run_bin(TASK_BIN, "list", "--stage", stage)
+  return [] unless ok
+
+  out.each_line.filter_map do |line|
+    m = TASK_LINE.match(line.strip)
+    next unless m
+
+    { "slug" => m[1], "stage" => m[2], "title" => m[3].strip }
+  end
+end
+
+# `bin/task show <slug> --json` prints the full task record (slug, stage, title,
+# release_slug, metadata.devops). Cached so an enrich pass never double-fetches.
+def show_task(slug)
+  @show_cache ||= {}
+  @show_cache[slug] ||= begin
+    out, ok = run_bin(TASK_BIN, "show", slug, "--json")
+    ok ? (JSON.parse(out) rescue {}) : {}
+  end
+end
+
+def task_repos(task)
+  Array(task.dig("metadata", "devops", "repositories")).map(&:to_s).reject(&:empty?)
+end
+
+# Non-pipeline = has repos, NONE of which are release members (rolio etc.). An
+# empty/unknown repo set is treated as pipeline so it is never silently hidden.
+def non_pipeline?(task)
+  repos = task_repos(task)
+  !repos.empty? && repos.none? { |r| PIPELINE_REPOS.include?(r) }
+end
+
+# --- survey ----------------------------------------------------------------
+
+def now_iso
+  Time.now.utc.iso8601
+end
+
+def print_stage_block(stage, tasks)
+  puts "  #{stage} — #{STAGE_BLURB.fetch(stage, stage)} (#{tasks.size})"
+  if tasks.empty?
+    puts "    (none)"
+  else
+    tasks.each { |t| puts "    - #{t['slug']}  #{t['title']}" }
+  end
+end
+
+# Best-effort one-line prod health (curl HEAD-ish). Fast timeout, never blocks the
+# survey: any failure → an "unknown"-class label, never an abort.
+def health_line(url)
+  out, _err, status = Open3.capture3(
+    CURL_BIN, "-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "4", url
+  )
+  return "unreachable" unless status.success?
+
+  code = out.strip
+  return "ok (#{code})" if code.start_with?("2", "3")
+
+  "DEGRADED (#{code})"
+rescue StandardError
+  "unknown"
+end
+
+# The active release candidate, derived from the BOARD (the cheap, CI-portable
+# read): the assembled-stage members carry a shared `release_slug` (the Task→
+# Release FK). NOTE: the candidate's QA-deploy state + qa_url live on the Release
+# RECORD, which has no cheap board endpoint (only `Release.current` via a
+# heroku-run). conductor therefore names the candidate + lists members from the
+# board and leaves the QA/ship decision to the operator gate (which ship requires
+# anyway). Returns { slug:, members: [slugs] } or nil.
+def active_candidate(assembled)
+  enriched = assembled.map { |t| show_task(t["slug"]).merge("slug" => t["slug"], "title" => t["title"]) }
+  members = enriched.reject { |t| non_pipeline?(t) }
+  return nil if members.empty?
+
+  slugs = members.map { |t| t["release_slug"].to_s }.reject(&:empty?).uniq
+  { "slug" => (slugs.first || "(active — unnamed; read Release.current to confirm)"),
+    "extra_slugs" => slugs.drop(1),
+    "members" => members.map { |t| t["slug"] } }
+end
+
+def survey(health: true)
+  lists = ALL_STAGES.to_h { |s| [s, list_stage(s)] }
+
+  puts "== conductor — Build-and-Deploy survey (PROD board) =="
+  puts "generated: #{now_iso}"
+  puts
+  puts "Deploy queue (per stage — never the flat 20-row list):"
+  DEPLOY_STAGES.each { |s| print_stage_block(s, lists[s]) }
+  puts
+
+  candidate = active_candidate(lists["assembled"])
+  if candidate
+    puts "Active release candidate: #{candidate['slug']}"
+    candidate["extra_slugs"].each { |s| puts "  (also saw release_slug #{s} — expected a singleton; verify)" }
+    puts "  members (#{candidate['members'].size}): #{candidate['members'].join(', ')}"
+    puts "  (qa_url + assembling/assembled state live on the Release record — confirm QA on the QA app before the ship gate)"
+  else
+    puts "Active release candidate: none (no assembled members)"
+  end
+  puts
+
+  puts "Build half + side state:"
+  CONTEXT_STAGES.each { |s| print_stage_block(s, lists[s]) }
+  puts
+
+  if health
+    puts "Health: prod #{PROD_SMOKE_URL} → #{health_line(PROD_SMOKE_URL)}"
+    puts "  (QA health is per-RC on the QA app — check it at the ship gate, not here)"
+  else
+    puts "Health: skipped (--no-health)"
+  end
+
+  lists
+end
+
+# --- plan ------------------------------------------------------------------
+
+# Partition a stage's tasks into pipeline vs non-pipeline (rolio etc.) after
+# enriching each with its repos.
+def partition_pipeline(tasks)
+  enriched = tasks.map { |t| show_task(t["slug"]).merge("slug" => t["slug"], "title" => t["title"]) }
+  enriched.partition { |t| !non_pipeline?(t) }
+end
+
+# Preview the heavy+light reviewer pair for a submitted task (plan --reviewers).
+# Advisory: --no-record so the preview never writes the intent. Degrades to nil on
+# any failure — the recommended command is printed regardless.
+def reviewer_preview(slug)
+  out, ok = run_bin(REVIEWER_BIN, slug, "--json", "--no-record")
+  return nil unless ok
+
+  decision = JSON.parse(out) rescue nil
+  pair = Array(decision && decision["reviewers"])
+  return nil if pair.size < 2
+
+  heavy, light = pair
+  "#{heavy['slug']} (heavy) + #{light['slug']} (light)"
+rescue StandardError
+  nil
+end
+
+def plan(reviewers: false, health: true)
+  lists = survey(health: health)
+  puts
+  puts "== next deterministic action per stage =="
+  puts
+
+  non_pipeline = []
+
+  # submitted → REVIEW (needs agents — surface the assignment, never a verdict).
+  sub_pipeline, sub_other = partition_pipeline(lists["submitted"])
+  non_pipeline.concat(sub_other)
+  puts "submitted → REVIEW (2 senior agents — a script cannot render verdicts):"
+  if sub_pipeline.empty?
+    puts "  (none)"
+  else
+    sub_pipeline.each do |t|
+      puts "  - #{t['slug']}: bin/reviewer-select #{t['slug']}   # records the heavy+light intent, then spawn that pair"
+      if reviewers
+        pair = reviewer_preview(t["slug"])
+        puts "      picked: #{pair}" if pair
+      end
+    end
+    puts "  GATE: reviewers are AGENTS — conductor surfaces the assignment + handoff, never the verdict."
+  end
+  puts
+
+  # reviewed → MERGE into release (membership flips reviewed→assembled at merge).
+  rev_pipeline, rev_other = partition_pipeline(lists["reviewed"])
+  non_pipeline.concat(rev_other)
+  puts "reviewed → MERGE into release (reviewed→assembled at merge):"
+  if rev_pipeline.empty?
+    puts "  (none)"
+  else
+    slugs = rev_pipeline.map { |t| t["slug"] }
+    puts "  bin/release merge #{slugs.join(' ')}   # bin/release computes the safe smallest-footprint overlap order"
+    puts "  (or: bin/conductor merge --run)"
+  end
+  puts
+
+  # assembled → QA then the operator SHIP gate. conductor NEVER ships.
+  asm_pipeline, asm_other = partition_pipeline(lists["assembled"])
+  non_pipeline.concat(asm_other)
+  puts "assembled → QA then SHIP (the RC members):"
+  if asm_pipeline.empty?
+    puts "  (none)"
+  else
+    puts "  members: #{asm_pipeline.map { |t| t['slug'] }.join(', ')}"
+    puts "  1. bin/release prepare        # deploy origin/release to QA (cut/refresh the QA app)"
+    puts "  2. review the QA app + get operator sign-off"
+    puts "  3. SHIP GATE (operator-only): bin/release ship"
+    puts "  conductor NEVER ships — production deploy is operator-gated."
+  end
+  puts
+
+  # blocked + non-pipeline, flagged separately (not in the pipeline's court).
+  blocked = lists["blocked"]
+  puts "blocked → needs attention (not the pipeline's court):"
+  if blocked.empty?
+    puts "  (none)"
+  else
+    blocked.each { |t| puts "  - #{t['slug']}  #{t['title']}" }
+  end
+  puts
+
+  puts "non-pipeline → not a mcritchie release member; handle in its own app:"
+  if non_pipeline.empty?
+    puts "  (none)"
+  else
+    non_pipeline.uniq { |t| t["slug"] }.each do |t|
+      puts "  - #{t['slug']}  #{t['title']}  [#{task_repos(t).join(', ')}]"
+    end
+  end
+end
+
+# --- drive subcommands (thin) ----------------------------------------------
+
+# merge: gather the reviewed PIPELINE slugs and hand them to `bin/release merge`
+# (which owns the review-gate guard + overlap order). Default DRY (print the
+# command); --run executes it.
+def drive_merge(run:)
+  reviewed = list_stage("reviewed")
+  pipeline, = partition_pipeline(reviewed)
+  slugs = pipeline.map { |t| t["slug"] }
+
+  if slugs.empty?
+    puts "conductor merge: no reviewed pipeline tasks to merge."
+    return
+  end
+
+  if run
+    puts "→ bin/release merge #{slugs.join(' ')}"
+    ok = exec_bin(RELEASE_BIN, "merge", *slugs)
+    exit(ok ? 0 : 1)
+  else
+    puts "bin/release merge #{slugs.join(' ')}"
+    puts "(dry — re-run with --run to execute; bin/release applies the review-gate guard + overlap order)"
+  end
+end
+
+# qa: hand off to `bin/release prepare` (deploy origin/release to QA). Default DRY.
+def drive_qa(run:)
+  if run
+    puts "→ bin/release prepare"
+    ok = exec_bin(RELEASE_BIN, "prepare")
+    exit(ok ? 0 : 1)
+  else
+    puts "bin/release prepare"
+    puts "(dry — re-run with --run to execute)"
+  end
+end
+
+# ship: the load-bearing refusal. conductor NEVER auto-ships — production deploy
+# is operator-gated. Print the gate + the command and exit non-zero so no
+# automation can treat this as a ship.
+def refuse_ship
+  warn "conductor: ship is OPERATOR-GATED — conductor never auto-ships."
+  warn "  Production deploy is run by the operator, after QA sign-off, with:"
+  warn "    bin/release ship"
+  exit 2
+end
+
+def usage
+  puts <<~TXT
+    usage: bin/conductor [survey|plan|merge|qa|ship]
+
+      survey            (default) read-only — enumerate the Deploy queue by stage,
+                        name the RC + members, brief prod health.
+      plan              survey + the next deterministic action per stage.
+        --reviewers     also preview the picked heavy+light pair per submitted task.
+      merge [--run]     bin/release merge <reviewed pipeline slugs> (dry unless --run).
+      qa    [--run]     bin/release prepare (dry unless --run).
+      ship              REFUSES — production deploy is operator-gated.
+
+      --no-health       skip the prod health curl (survey/plan).
+
+    Board defaults to PROD (via bin/task / bin/release). Tests override the helper
+    binaries with TASK_BIN / RELEASE_BIN / REVIEWER_SELECT_BIN / CURL_BIN.
+  TXT
+end
+
+# --- dispatch (guarded so the file can be required for unit coverage) ------
+
+if __FILE__ == $PROGRAM_NAME
+  args = ARGV.dup
+  cmd = (args.first && !args.first.start_with?("-")) ? args.shift : "survey"
+  no_health = args.delete("--no-health")
+  reviewers = !args.delete("--reviewers").nil?
+  run = !args.delete("--run").nil?
+
+  case cmd
+  when "survey" then survey(health: no_health.nil?)
+  when "plan"   then plan(reviewers: reviewers, health: no_health.nil?)
+  when "merge"  then drive_merge(run: run)
+  when "qa"     then drive_qa(run: run)
+  when "ship"   then refuse_ship
+  when "help", "-h", "--help" then usage
+  else
+    warn "conductor: unknown command #{cmd.inspect}"
+    usage
+    exit 1
+  end
+end

@@ -192,6 +192,41 @@ each normally hold a handful) keeps the result under the 20-row cap, so you see
 the whole stage. (`shipped` is itself unbounded, so `--stage shipped` is still a
 recent-20 window — exactly what you want for a baseline/reconciliation glance.)
 
+#### `bin/conductor` — the deterministic Step-0 driver
+
+`bin/conductor` codifies this whole per-stage assessment as a script ("more
+rails, less model judgment"), so a conductor session can't skip Step 0 or miss
+an actionable task. It is a THIN orchestrator — it shells out to `bin/task list
+--stage`, `bin/task show --json`, `bin/reviewer-select`, and `bin/release`; it
+never re-implements the board API.
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/conductor                 # survey (default, READ-ONLY): the Deploy queue BY
+                              # stage, the active RC + its members, brief prod health
+bin/conductor plan            # survey + the next deterministic action per stage
+bin/conductor plan --reviewers   # also preview the picked heavy+light pair
+bin/conductor merge [--run]   # thin drive: bin/release merge <reviewed pipeline slugs>
+bin/conductor qa    [--run]   # thin drive: bin/release prepare (deploy origin/release to QA)
+```
+
+`plan` maps each stage to its deterministic next command: `submitted` →
+`bin/reviewer-select <slug>` (then spawn the pair — the **2-senior review needs
+AGENTS**, so conductor surfaces the assignment, it never fabricates a verdict);
+`reviewed` → `bin/release merge <slugs>`; `assembled` → `bin/release prepare`
+then the **operator** ship gate. It flags `blocked` + non-pipeline (rolio) tasks
+separately. **`bin/conductor` NEVER auto-ships** — the prod deploy is
+operator-gated; `bin/conductor ship` refuses and prints `bin/release ship`. It
+defaults to the PROD board (like `bin/release`).
+
+`bin/conductor` **complements `bin/qa-intake`**: conductor answers "what is in
+each Deploy stage and what is the next deterministic command"; `qa-intake`
+answers "what is the local PR/worktree + CI/mergeability state of a given PR".
+Run `bin/conductor` for the stage-by-stage landscape, `bin/qa-intake` when you
+need a PR's merge signal. (`bin/devops-cycle` below is the older legacy-stage
+snapshot + scout system; it predates the current `submitted/reviewed/assembled`
+model.)
+
 Start conductor sessions by generating the PR/worktree queue from McRitchie
 Studio:
 
