@@ -49,5 +49,10 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "Carl"
     assert_includes rendered, "Shannon"
     assert_includes rendered, "heavy"
+    # Light-mode contrast (regression guard for the PR #207 QA block): the live
+    # ticker must be a bounded, theme-aware pill — not bare text-green-200 that is
+    # invisible on the white light-mode surface (light is the no-JS default).
+    assert_includes rendered, "text-green-700"
+    assert_includes rendered, "dark:text-green-200"
   end
 end

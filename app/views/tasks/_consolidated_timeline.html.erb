@@ -42,7 +42,7 @@
             <%= render "components/badge", text: block.to_label, scheme: stage_scheme(block.to_stage) %>
             <% if block.in_progress? %>
               <span class="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1
-                           bg-green-500/20 text-green-200 border border-green-400/50" data-test="timeline-inprogress">
+                           bg-green-500/20 text-green-700 dark:text-green-200 border border-green-400/50" data-test="timeline-inprogress">
                 <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> in progress
               </span>
             <% elsif block.backfilled %>
@@ -85,7 +85,8 @@
               <dt class="text-[10px] uppercase tracking-wide text-muted">Duration</dt>
               <dd class="text-secondary">
                 <% if block.in_progress? && block.live_since %>
-                  <span class="tabular-nums inline-flex items-center gap-1 text-green-200" data-test="timeline-live"
+                  <span class="tabular-nums inline-flex items-center gap-1 px-1.5 py-0.5 rounded
+                               bg-green-500/15 border border-green-400/50 text-green-700 dark:text-green-200" data-test="timeline-live"
                         x-data="{ start: <%= block.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
                         x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)">
                     &#9201; <span x-text="window.elapsedLabel(now - start)">…</span>
