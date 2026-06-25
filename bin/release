@@ -898,12 +898,38 @@ end
 def gem_meta_for(repo) = RELEASE_REPOS.dig("gems", repo) || {}
 def app_meta_for(repo) = RELEASE_REPOS.dig("apps", repo) || {}
 
-# A gem's publish version: prefer member_plan's value, resolve locally if nil
-# (e.g. under --prod, where the sibling repo isn't checked out on the box).
-def gem_version_for(repo, group)
-  member  = (group["members"] || []).find { |m| !m["version"].to_s.empty? }
-  version = member ? member["version"].to_s : ""
-  version.empty? ? gem_version_local(repo) : version
+# A gem's declared version AT a git ref — `git show <ref>:<version_file>`, parsed
+# the same way as the local read. This is the read that fixes the publish-skip:
+# ship BUILDS + PUBLISHES the gem from the QA-frozen commit, so the version that
+# decides "already live? skip : publish" MUST come from THERE — not the pre-ff
+# local checkout, which still sits on stale `main` and reports the PREVIOUS version
+# (the 0.10.0/0.11.0 skip that shipped a release without ever publishing the bumped
+# gem). A pure read (git_capture) so it runs even in --dry-run, letting the dry-run
+# plan + label show the version that will actually publish. Returns "" when the ref
+# or version_file is blank, the repo isn't checked out, or git can't read the blob.
+def gem_version_from_ref(repo, ref)
+  version_file = gem_meta_for(repo)["version_file"].to_s
+  return "" if version_file.empty? || ref.to_s.empty?
+
+  out, ok = git_capture("-C", repo_path(repo), "show", "#{ref}:#{version_file}")
+  return "" unless ok
+
+  out[/version\s*=\s*["']([\w.\-]+)["']/i, 1].to_s
+end
+
+# A gem's publish version, resolved from the version that will ACTUALLY build at
+# ship — read at the QA-frozen SHA (`frozen_ref`), NOT the pre-ff local checkout.
+# Reading the frozen ref is the fix for the publish-skip bug; member_plan's recorded
+# version and the local checkout stay as fallbacks for when there's no ref to read
+# (a release prepared before SHA recording, or an un-frozen preview).
+def gem_version_for(repo, group, frozen_ref = nil)
+  from_ref = gem_version_from_ref(repo, frozen_ref)
+  return from_ref unless from_ref.empty?
+
+  member = (group["members"] || []).find { |m| !m["version"].to_s.empty? }
+  return member["version"].to_s if member
+
+  gem_version_local(repo)
 end
 
 # The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
@@ -1124,7 +1150,7 @@ def whats_live(repos, qa_shas)
   repos.each do |group|
     repo = group["repo"]
     if group["kind"] == "gem"
-      version = gem_version_for(repo, group)
+      version = gem_version_for(repo, group, frozen_sha_for(repo, qa_shas))
       live    = !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo))
       say("    gem #{repo} #{version}: #{live ? 'LIVE on RubyGems — will skip' : 'not published — will publish'}")
     else
@@ -1295,7 +1321,7 @@ def ship
   published_gems = {} # repo => version — every gem now live; consumers re-pin to these
   gem_groups.each do |group|
     repo    = group["repo"]
-    version = gem_version_for(repo, group)
+    version = gem_version_for(repo, group, ship_sha[repo])
     ship_gem(repo, version, ship_sha[repo])
     published_gems[repo] = version
   end
