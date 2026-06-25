@@ -8,16 +8,55 @@
 #   ruby -Itest test/lib/agent_worktree_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 require "minitest/autorun"
+require "open3"
 
 class AgentWorktreeTest < Minitest::Test
   BIN = File.expand_path("../../bin/agent-worktree", __dir__)
 
+  # How many times to re-spawn a check whose subprocess produced no usable output.
+  # See run_in_script for why a deterministic computation is safe to retry.
+  SUBPROCESS_ATTEMPTS = 3
+
   # Load the script (dispatch suppressed by its main guard), run `body`, return
-  # the printed value. stderr is discarded so rubygems "already initialized"
-  # warnings (under bin/rails test's bundler env) don't corrupt the result.
+  # the printed value.
+  #
+  # The COMPUTATION here is deterministic — every check stubs the I/O helpers and
+  # exercises pure allocation logic over the static APP_OVERRIDES/satellites config,
+  # so a correct run ALWAYS prints the same thing. The PROCESS SPAWN is not: under
+  # CI's parallel-fork harness a child occasionally got reaped/killed before it
+  # flushed stdout, and the old helper discarded both stderr (`err: File::NULL`) and
+  # the exit status, so that transient surfaced as a bare, undiagnosable `Actual: ""`
+  # (the flake this test was named for).
+  #
+  # Hardening, both halves:
+  #   * Open3.capture3 blocking-reads stdout AND stderr and waits for the child to
+  #     exit, so there is no early-read / unflushed-output race.
+  #   * Because the output is deterministic, a transient empty/failed spawn is
+  #     RETRIED up to SUBPROCESS_ATTEMPTS times. A real logic error fails every
+  #     attempt (deterministically), so the retry cannot mask a genuine regression —
+  #     it only absorbs the non-deterministic spawn hiccup.
+  #   * If every attempt yields no usable output it FLUNKS with the captured
+  #     exit/signal + stderr, so the empty-output mode can never again recur
+  #     silently. (rubygems "already initialized" warnings land on the child's
+  #     stderr but are ignored on success — we only surface stderr when flunking.)
   def run_in_script(body)
     script = "load #{BIN.inspect}\n#{body}"
-    IO.popen(["ruby", "-e", script, { err: File::NULL }], &:read).to_s.strip
+    last = nil
+    SUBPROCESS_ATTEMPTS.times do
+      out, err, status = Open3.capture3("ruby", "-e", script)
+      return out.strip if status.success? && !out.strip.empty?
+
+      last = { out: out, err: err, status: status }
+    end
+
+    status = last[:status]
+    flunk <<~MSG
+      agent-worktree subprocess produced no usable output after #{SUBPROCESS_ATTEMPTS} attempts.
+        exit=#{status.exitstatus.inspect} signal=#{status.termsig.inspect}
+        stdout=#{last[:out].inspect}
+        stderr:
+      #{last[:err].to_s.gsub(/^/, "    ")}
+    MSG
   end
 
   # --- allocate_port: reserved_ports are skipped, not just live listeners ------
@@ -81,5 +120,23 @@ class AgentWorktreeTest < Minitest::Test
       print [app["reserved_ports"], allocate_port(app)].inspect
     RUBY
     assert_equal "[[3020], 3021]", out, "rolio's 3020 is reserved in the real config and skipped"
+  end
+
+  # --- regression: the silent empty-output flake --------------------------------
+  #
+  # A subprocess that produces NO usable output must fail LOUD with its stderr
+  # surfaced — it must never slip through as a bare `Actual: ""` (how the original
+  # CI flake masqueraded, because the old helper discarded stderr + exit status).
+  # We force that mode deterministically: a body that writes to stderr and exits
+  # nonzero on every attempt. The old IO.popen(err: File::NULL) helper would return
+  # "" silently (no raise) and fail THIS assertion; the hardened helper flunks with
+  # the stderr included.
+  def test_run_in_script_flunks_loudly_when_subprocess_yields_no_output
+    error = assert_raises(Minitest::Assertion) do
+      run_in_script("STDERR.puts 'forced-subprocess-failure'; exit 1")
+    end
+    assert_match(/forced-subprocess-failure/, error.message,
+                 "the swallowed subprocess stderr must surface in the failure message")
+    assert_match(/no usable output/, error.message)
   end
 end
