@@ -333,6 +333,31 @@ def suite_evidence_error(eval, slug)
     "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."
 end
 
+# The FRAGILE post_deploy_cmd shape: a rails runner that LOADs a seed file via
+# `Rails.root.join(...)`, e.g. `bin/rails runner "load Rails.root.join(%q(db/
+# seeds/54.rb)).to_s"`. It WORKS, but its parens + quotes are exactly what made
+# the `heroku run` round-trip brittle (the seed-54 ship-blocker): bin/release's
+# conductor interpolates this command and heroku's remote re-quoting choked on
+# the `(`. `rails runner` accepts a FILE PATH directly, so the paren-free
+# `runner <path>` form is canonical and robust. This is a SUGGESTION matcher
+# only — the command stays valid; we never reject it on this basis.
+FRAGILE_RUNNER_LOAD = %r{runner\s+['"]?\s*load\s+Rails\.root\.join\(}i
+
+def fragile_runner_load?(cmd)
+  FRAGILE_RUNNER_LOAD.match?(cmd.to_s)
+end
+
+# Best-effort: the seed path inside `Rails.root.join(...)`, so the suggestion can
+# show the exact canonical command. Pulls each quoted / %q() segment AFTER the
+# `Rails.root.join` token and joins them with `/` (handles a single "a/b.rb" arg
+# AND a multi-segment join("a", "b", "c.rb")). nil when nothing extractable, so
+# the caller falls back to a generic `<path>` placeholder.
+def canonical_runner_path(cmd)
+  after = cmd.to_s.split("Rails.root.join", 2)[1].to_s
+  segs = after.scan(/%q[(\[{<]([^)\]}>]+)[)\]}>]|"([^"]+)"|'([^']+)'/).map { |m| m.compact.first }
+  segs.empty? ? nil : segs.join("/")
+end
+
 # Resolver/debug seam: print the committed-diff base this repo would diff against
 # and exit, before any task fetch. Honors DOR_CHECK_DIFF_ROOT/_BASE like changed_files.
 if options[:diff_base]
@@ -381,6 +406,7 @@ if EXEMPT_KINDS.include?(kind)
         exempt: true,
         note: note,
         errors: [],
+        suggestions: [],
         missing_metadata: [],
         missing_tiers: []
       )
@@ -484,6 +510,21 @@ end
 
 ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?
 
+# Non-blocking SUGGESTIONS (never affect `ready`). The canonical post_deploy_cmd
+# form is the paren-free `bin/rails runner <path>` — `rails runner` accepts a
+# file path directly. A valid-but-fragile `runner "load Rails.root.join(...)"`
+# command is the shape that made the seed-54 ship brittle through `heroku run`,
+# so we nudge toward the canonical form WITHOUT rejecting the (working) command.
+suggestions = []
+if present?(post_deploy_cmd) && fragile_runner_load?(post_deploy_cmd)
+  path = canonical_runner_path(post_deploy_cmd)
+  canonical = path ? "bin/rails runner #{path}" : "bin/rails runner <path>"
+  suggestions << "devops.post_deploy_cmd uses the fragile `runner \"load Rails.root.join(...)\"` form — " \
+    "rails runner accepts a file path directly, so the canonical paren-free command is `#{canonical}` " \
+    "(the parens/quotes are what made the seed-54 ship brittle through `heroku run`). Suggestion only — " \
+    "the current command is valid and not blocking."
+end
+
 # --- output ---------------------------------------------------------------
 
 if options[:json]
@@ -493,6 +534,7 @@ if options[:json]
     gate: gate,
     ready: ready,
     errors: errors,
+    suggestions: suggestions,
     missing_metadata: missing_meta,
     missing_tiers: missing_tiers,
     full_suite: suite_eval && {
@@ -507,6 +549,7 @@ if options[:json]
 end
 
 title = task["title"] || task["slug"] || slug || "(task)"
+print_suggestions = -> { suggestions.each { |s| puts "  ⓘ suggestion: #{s}" } unless suggestions.empty? }
 if ready
   puts "✓ #{gate_label} met for #{title.inspect} (shape: #{shape})"
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
@@ -516,6 +559,7 @@ if ready
     puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
   end
   puts "  → ready to advance #{boundary}"
+  print_suggestions.call
   exit 0
 end
 
@@ -530,4 +574,5 @@ unless missing_tiers.empty?
   missing_tiers.each { |t| puts "    - #{t}" }
 end
 puts "  → not ready to advance #{boundary}; resolve the above"
+print_suggestions.call
 exit 1

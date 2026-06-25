@@ -13,6 +13,9 @@
 <% columns = (archived ? (stages + ["archived"]) : stages).reject { |s| s == "blocked" } %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
+<%# Type-colour map built once, so each card's data-glow (mascot type colour, used by
+    the live animations) is a hash lookup, not a per-card query. %>
+<% type_enumerals = Pokemon.type_enumerals %>
 <%# Build board (/tasks) splits the build steps; Deploy board (/deployments) shows the pipeline. %>
 <% crew_board = stages.include?("reviewed") ? :deploy : :build %>
 
@@ -23,6 +26,8 @@
       broadcast (DeploymentsBroadcaster), so no custom cable client is needed.
       kanbanBoard().observeLive() animates the patched cards + refreshes the counts. %>
   <%= turbo_stream_from "deployments" %>
+  <%# Live create / move / delete animations, driven by the broadcasts above. %>
+  <%= render "deployments_live_fx" %>
   <%# TEST-ONLY: lets the Playwright live-update e2e POST an intent/move to trigger a
       real broadcast. Gated to the test env — never rendered in development or production. %>
   <% if Rails.env.test? %>
@@ -83,7 +88,9 @@ function kanbanBoard(live) {
         for (const m of mutations) {
           m.addedNodes.forEach((node) => {
             if (node.nodeType === 1 && node.classList && node.classList.contains('kanban-card')) {
-              this.animateIn(node);
+              // The rich create/move/replace flourishes live in LiveBoardFx (rendered
+              // on the deploy board); fall back to the basic fade if it's absent.
+              if (window.LiveBoardFx) { window.LiveBoardFx.onAdd(node); } else { this.animateIn(node); }
             }
           });
         }
@@ -116,7 +123,11 @@ function kanbanBoard(live) {
           ghostClass: 'opacity-30',
           draggable: '.kanban-card',
           filter: '.kanban-empty',
-          onEnd: (evt) => this.handleSortEnd(evt)
+          // Flag local drags so LiveBoardFx doesn't read a dragged card landing in a
+          // new column as a "create" burst. Cleared a frame after drop, so the move's
+          // own broadcast echo (which arrives after the PATCH) still animates.
+          onStart: () => { window.__lbfxDragging = true; },
+          onEnd: (evt) => { this.handleSortEnd(evt); requestAnimationFrame(() => { window.__lbfxDragging = false; }); }
         });
       });
     },
@@ -381,7 +392,7 @@ function kanbanBoard(live) {
 
           <% column_tasks.each do |task| %>
             <%= render "tasks/task_card", task: task, agents: @agents, crew_board: crew_board,
-                  mascot: pokemon_by_slug[task.devops_field("mascot")],
+                  mascot: pokemon_by_slug[task.devops_field("mascot")], type_enumerals: type_enumerals,
                   latest_activity: @latest_task_activities[task.slug],
                   activity_count: @task_activity_counts[task.slug].to_i %>
           <% end %>

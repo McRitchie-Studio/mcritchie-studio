@@ -13,6 +13,12 @@
 
 require "minitest/autorun"
 require "shellwords"
+# Several payload tests decode/parse the runner snippet (JSON + url-safe Base64).
+# Require both here so they don't depend on test seed order (a prior test having
+# pulled them in first) — without this, a seed that runs a payload test before any
+# json-requiring test errored with `uninitialized constant JSON`.
+require "json"
+require "base64"
 
 class ReleaseCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/release", __dir__)
@@ -648,6 +654,52 @@ class ReleaseCliTest < Minitest::Test
                      "prepare runs the post-deploy command on the QA heroku app with --exit-code"
   end
 
+  # [integration] The seed-54 blocker, end-to-end through the record path: a member
+  # declares a paren/quote post_deploy_cmd, and prepare must RUN the QA post-deploy
+  # hook, record it, and REACH assemble! — without the paren cmd corrupting any
+  # conductor snippet. The conductor stub flags any snippet whose REAL
+  # conductor_payload would put a raw paren / Rails.root.join on the heroku command
+  # line (the old bug); reaching "Assembled" proves every snippet rode shell-safe.
+  PAREN_POST_DEPLOY_PREP_STUB = <<~'RUBY'
+    # CI has no sibling repo checkouts, so the real repo_path → Dir.exist? guard in
+    # `prepare` (bin/release: "app repo not found at #{path}") would abort before the
+    # post-deploy/assemble step this test proves. Resolve the repo to an always-present
+    # dir (Dir.pwd) — the git/qa-server I/O against it is already fully stubbed by `sh`,
+    # so the repo's identity on disk is irrelevant to what this test asserts.
+    def repo_path(_repo) = Dir.pwd
+    def conductor(ruby, read_only: false)
+      payload = conductor_payload(ruby)               # the REAL shell-safe encoder
+      $stdout.puts("UNSAFE-PAYLOAD") if payload.include?("Rails.root.join") || payload.include?("(%q(")
+      if ruby.include?("repo_plan")
+        { "slug" => "rel-paren", "state" => "assembling", "branch" => "release", "repos" => [
+          { "repo" => "turf-monster", "kind" => "app", "release_branch" => "release",
+            "qa_app" => "turf-monster",
+            "members" => [{ "slug" => "t-turf", "branch" => "feat/turf",
+              "post_deploy_cmd" => %q{bin/rails runner "load Rails.root.join(%q(db/seeds/54_demo.rb)).to_s"} }] }
+        ] }
+      elsif ruby.include?("assemble!")
+        $stdout.puts("ASSEMBLE-REACHED")
+        { "state" => "assembled" }
+      else
+        {}
+      end
+    end
+    def sh(*a, **_k)
+      a.join(" ").include?("curl") ? ["200", true] : ["", true]
+    end
+  RUBY
+
+  def test_prepare_reaches_assemble_with_a_paren_post_deploy_cmd
+    out = run_cli(["--yes"], call: "prepare", setup: PAREN_POST_DEPLOY_PREP_STUB)
+
+    refute_includes out, "UNSAFE-PAYLOAD",
+                     "every conductor snippet (incl. the paren/quote post_deploy_cmd record) rides shell-safe"
+    assert_includes out, "post-deploy hooks (QA)", "the QA post-deploy hook ran for the paren cmd"
+    assert_includes out, "ASSEMBLE-REACHED",
+                     "prepare reaches Release::Conductor.assemble! even with a paren/quote post_deploy_cmd"
+    assert_includes out, "Assembled rel-paren", "the release assembles cleanly"
+  end
+
   def test_prepare_dry_run_has_no_post_deploy_hook_when_no_member_declares_one
     # STUB_CONDUCTOR's members carry no post_deploy_cmd — the hook is opt-in.
     out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
@@ -886,6 +938,85 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "no overlapping files", "disjoint batches report independence"
   end
 
+  # --- review-gate guard: refuse an unreviewed merge unless --override ---------
+  # The decision is Release::Conductor.screen_merge's (unit-tested in
+  # conductor_test); these exercise the CLI ENTRY PATH — the guard renders the
+  # screen, aborts BEFORE any gh pr merge on a block, and threads the audited
+  # bypass through to the batched adopt on --override. The (stubbed) resolve now
+  # returns a `screen` block alongside `tasks`.
+
+  # A resolve whose single task is NOT reviewed → the screen blocks it.
+  BLOCKED_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+          ],
+          "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "blocked" }],
+                        "blocked" => ["task-a"], "overridden" => [], "missing" => [], "proceed" => false } }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_refuses_an_unreviewed_task_without_override
+    # abort writes the message to STDERR (discarded by run_cli) AND raises
+    # SystemExit carrying it — capture e.message, mirroring the usage-abort test.
+    out = run_cli(%w[task-a], setup: BLOCKED_MERGE_STUB,
+                  call: "begin; merge; rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "an unreviewed task aborts the merge"
+    assert_includes out, "review gate", "the abort names the review gate"
+    assert_includes out, "task-a (submitted)", "it prints exactly which task is in which stage"
+    assert_includes out, "--override", "the abort points to the override escape hatch"
+    assert_equal 0, out.scan("ADOPT-CALL").size, "nothing is merged or adopted — the guard runs BEFORE gh pr merge"
+  end
+
+  # The same unreviewed task, now with --override → the run proceeds and the
+  # bypass threads into the adopt snippet.
+  OVERRIDE_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+          ],
+          "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "overridden" }],
+                        "blocked" => [], "overridden" => ["task-a"], "missing" => [], "proceed" => true } }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_override_merges_an_unreviewed_task_and_threads_the_bypass_to_adopt
+    out = run_cli(%w[task-a --override], call: "merge", setup: OVERRIDE_MERGE_STUB)
+
+    assert_includes out, "OVERRIDE", "the override banner is printed"
+    assert_includes out, "review_bypassed", "the banner names the audit event it records"
+    assert_equal 1, out.scan("ADOPT-CALL").size, "the override proceeds to merge + adopt"
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "override: true", "the adopt snippet threads the audited bypass"
+  end
+
+  def test_merge_default_threads_no_override_into_adopt
+    # MERGE_STUB returns reviewed tasks + NO screen → the guard is a no-op and the
+    # normal path threads override: false (no bypass).
+    out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "override: false", "a normal merge threads NO bypass"
+  end
+
   # --- batch_adopt_ruby / batch_resolve_ruby: pure snippet builders ---------
   # These build the ONE-shot conductor snippets the batched merge runs; unit-test
   # them directly (eval_helper) so the single-call guarantee + slug embedding are
@@ -900,12 +1031,68 @@ class ReleaseCliTest < Minitest::Test
     assert_equal 1, out.scan("puts(").size, "the snippet emits exactly ONE JSON line for the whole batch"
   end
 
+  def test_batch_adopt_ruby_threads_the_override_flag
+    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"]))), "override: false",
+                    "adopt defaults to NO override"
+    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"], override: true))), "override: true",
+                    "the audited bypass threads into the adopt snippet"
+  end
+
   def test_batch_resolve_ruby_embeds_every_slug_and_reads_one_line
     out = eval_helper(%(batch_resolve_ruby(["task-a", "task-b"])))
     assert_includes out, "task-a"
     assert_includes out, "task-b"
     assert_includes out, "devops_url", "the resolve snippet reads each task's PR url"
     assert_equal 1, out.scan("puts(").size, "the resolve snippet emits ONE JSON line for the batch"
+  end
+
+  def test_batch_resolve_ruby_runs_the_review_gate_screen
+    out = eval_helper(%(batch_resolve_ruby(["task-a"], override: true)))
+    assert_includes out, "screen_merge", "the resolve snippet runs the review-gate screen in the same read"
+    assert_includes out, "override: true", "the override flag threads into the screen"
+    assert_equal 1, out.scan("puts(").size, "resolve + screen still emit ONE JSON line"
+  end
+
+  # --- conductor_payload: the shell-safe rails-runner bootstrap (the blocker) --
+  # record_post_deploy_check interpolated a post_deploy_cmd via cmd.inspect; a
+  # seed-54-style `bin/rails runner "load Rails.root.join(%q(...)).to_s"` arrived
+  # as escaped quotes + parens, heroku's remote re-quoting ATE the \"-escaping, and
+  # the exposed `(` triggered `bash: syntax error near unexpected token '('` —
+  # conductor then hit "record op returned no JSON" and aborted prepare BEFORE
+  # assemble!. conductor_payload base64-wraps the WHOLE snippet at the shared seam
+  # so EVERY conductor caller rides shell-safe.
+
+  def test_conductor_payload_is_a_shell_safe_base64_bootstrap_for_paren_quote_snippets
+    require "base64"
+    # The exact shape record_post_deploy_check builds: the cmd interpolated via
+    # .inspect — escaped quotes + parens, the bytes that broke `heroku run`.
+    cmd = %q{bin/rails runner "load Rails.root.join(%q(db/seeds/54_demo.rb)).to_s"}
+    snippet = %{c = Release::Conductor.record_post_deploy_check(cmd: #{cmd.inspect}, ok: true); puts({ checks: c.size }.to_json)}
+    out = eval_helper(%(conductor_payload(#{snippet.inspect}))).strip
+
+    # The command line carries ONLY a url-safe Base64 eval bootstrap — between the
+    # quotes is nothing but [A-Za-z0-9_-]=, so heroku's re-quoting can't mangle it.
+    assert_match(/\Aeval\(Base64\.urlsafe_decode64\("[A-Za-z0-9_\-=]+"\)\)\z/, out,
+                 "the payload is a single shell-safe Base64 eval bootstrap: #{out}")
+    refute_includes out, "Rails.root.join", "the raw paren/quote snippet must not reach the command line"
+    refute_includes out, "%q(", "no payload parens reach the command line (remote bash syntax error)"
+
+    # And it round-trips byte-for-byte: the blob decodes to the wrapped snippet
+    # (the cmd rides inside via .inspect, so the seed path survives intact).
+    b64 = out[/urlsafe_decode64\("([A-Za-z0-9_\-=]+)"\)/, 1]
+    decoded = Base64.urlsafe_decode64(b64).force_encoding("UTF-8")
+    assert_equal "require 'json'; #{snippet}", decoded,
+                 "the wrapped snippet round-trips byte-for-byte through the payload encoding"
+    assert_includes decoded, "db/seeds/54_demo.rb", "the seed path survives in the payload"
+  end
+
+  def test_conductor_payload_round_trips_an_ordinary_snippet
+    require "base64"
+    out = eval_helper(%(conductor_payload("puts({ok: true}.to_json)"))).strip
+    b64 = out[/urlsafe_decode64\("([A-Za-z0-9_\-=]+)"\)/, 1]
+    refute_nil b64, out
+    assert_equal "require 'json'; puts({ok: true}.to_json)", Base64.urlsafe_decode64(b64),
+                 "an ordinary snippet round-trips unchanged through the payload encoding"
   end
 
   # --- ship preflight: every app checkout on a clean `main` before any ff ----
@@ -968,5 +1155,41 @@ class ReleaseCliTest < Minitest::Test
     setup = SHIP_STUB + %(\ndef repo_git_state(*); raise "git consulted in dry-run preflight"; end)
     out = run_cli(["--dry-run"], call: "ship", setup: setup)
     assert_includes out, "ship preflight", "ship previews the preflight in dry-run"
+  end
+
+  # --- ship preflight: generated artifacts are NOT counted as dirt -----------
+  # A retro-*.md (bin/release retro) and the delete-later.md ledger (agent-worktree)
+  # routinely sit uncommitted in the deploy checkout and blocked EVERY ship's ff.
+  # The preflight now ignores those (allowlist) while STILL gating on real dirt.
+
+  def test_ship_preflight_passes_when_only_generated_artifacts_are_dirty
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        files = repo == "mcritchie-studio" ?
+          ["docs/agents/audits/retro-rel-20260624-b2f18e.md", "docs/agents/maintenance/delete-later.md"] : []
+        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "PASSED", "a retro doc + the worktree ledger are generated artifacts, not real dirt"
+    refute_includes out, "ABORTED"
+  end
+
+  def test_ship_preflight_still_aborts_on_real_dirt_beside_a_generated_artifact
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        files = repo == "mcritchie-studio" ?
+          ["docs/agents/audits/retro-rel-1.md", "db/schema.rb"] : []
+        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "real code dirt still gates the ship"
+    assert_includes out, "db/schema.rb", "the abort names the real dirty file"
+    refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
   end
 end

@@ -469,7 +469,8 @@ are append-only `TaskEvent`s of `kind: intent` (completed transitions stay
 `kind: transition`, and an intent never enters the duration spine); an intent is
 "open" until its stage's transition lands, then the completed event supersedes
 it. Build-lane intent = the task's Pokémon mascot (assigned at create). The
-review pair is recorded by **`bin/reviewer-select <task> --record`** (step 2);
+review pair is recorded by **`bin/reviewer-select <task>`** (step 2 — recording
+is the DEFAULT now; pass `--no-record`/`--dry` for an advisory-only preview);
 Steffon's QA and Avi's ship intents by **`bin/task intent <task> --to assembled
 --actor steffon`** / **`--to shipped --actor avi`** (or `POST
 /api/v1/tasks/<slug>/intent`) — both append-only + idempotent, a no-op once the

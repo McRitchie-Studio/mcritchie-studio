@@ -112,4 +112,32 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
       end
     end
   end
+
+  # --- delete: a destroy fires no TaskEvent, so removal is broadcast separately ---
+
+  test "[unit] task_removed broadcasts a card remove to the deployments stream" do
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_removed("some-slug") }
+    assert_equal 1, streams.size
+    assert_equal "remove", streams.first["action"]
+    assert_equal "card-some-slug", streams.first["target"]
+  end
+
+  test "[unit] task_removed is guarded — a dead cable can't break the destroy" do
+    Turbo::StreamsChannel.stub(:broadcast_remove_to, ->(*_a, **_k) { raise Gem::LoadError, "redis not in bundle" }) do
+      assert_nothing_raised { DeploymentsBroadcaster.task_removed("some-slug") }
+    end
+  end
+
+  test "[integration] destroying a task broadcasts the card removal to the live board" do
+    task = Task.create!(title: "Doomed board task here", stage: "designed")
+    streams = capture_turbo_stream_broadcasts("deployments") { task.send(:broadcast_removal_to_deployments_board) }
+    assert_equal 1, streams.size
+    assert_equal "remove", streams.first["action"]
+    assert_equal "card-#{task.slug}", streams.first["target"]
+  end
+
+  test "[integration] Task wires the removal broadcast on after_destroy_commit" do
+    assert Task._commit_callbacks.any? { |c| c.filter == :broadcast_removal_to_deployments_board },
+      "Task must broadcast the card removal after a destroy commits"
+  end
 end

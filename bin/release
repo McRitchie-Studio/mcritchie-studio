@@ -20,10 +20,16 @@
 #     One-time (idempotent) per repo: create the persistent `release` branch from
 #     `origin/main` in every gem + app repo that doesn't already have one.
 #
-#   bin/release merge <task-slug> [<task-slug> ...] [--prod] [--dry-run]
+#   bin/release merge <task-slug> [<task-slug> ...] [--override] [--prod] [--dry-run]
 #     Record one-or-more PR merges INTO `release`: resolve every task's PR in ONE
 #     read, `gh pr merge` each (base MUST be `release`), then adopt ALL of them in
 #     a SINGLE `heroku run` (reviewed→assembled, opening/reopening the candidate).
+#     REVIEW-GATE GUARD: before any `gh pr merge`, every requested task must be in
+#     the `reviewed` stage — a not-yet-reviewed task ABORTS the whole run (naming
+#     which task is in which stage), so an unreviewed PR can't be merged onto
+#     `release` by accident. `--override` is the explicit escape hatch: it merges a
+#     not-yet-reviewed task anyway AND records a `review_bypassed` event on the task's
+#     audit spine (the same spine `bin/task move` writes) — the bypass is never silent.
 #     With ≥2 slugs it first prints an overlap planner (colliding files +
 #     suggested order + likely rebases; warning-only). The batched adopt runs in
 #     an `ensure`, so a PR that merged is recorded even if a later merge aborts.
@@ -232,17 +238,42 @@ def sh(*cmd, capture: false, chdir: nil)
   end
 end
 
+# The SHELL-SAFE `rails runner` payload for a conductor snippet. The snippet is
+# wrapped (`require 'json'`), Base64-encoded, and shipped as
+# `eval(Base64.urlsafe_decode64("<blob>"))` — so the command line carries ONLY a
+# url-safe Base64 literal (alphabet [A-Za-z0-9_-]=, zero shell metacharacters,
+# zero nested/escaped quotes) the remote runner decodes + evals.
+#
+# This closes the paren/quote ship-blocker at the SHARED seam, so EVERY conductor
+# caller is shell-safe: record_post_deploy_check interpolated `cmd.inspect` into
+# the snippet, and a seed-54-style post_deploy_cmd
+# (`bin/rails runner "load Rails.root.join(%q(...)).to_s"`) arrived as escaped
+# quotes + parens. `heroku run` re-quotes its remote command, and that re-quoting
+# ATE the \"-escaping — exposing the `(` as a remote `bash: syntax error near
+# unexpected token '('`, which made `conductor` hit abort! ("record op returned
+# no JSON") and aborted prepare BEFORE assemble! (and would abort ship after the
+# prod-deploy + gem-publish). The Base64 bootstrap is structurally identical to
+# the proven-safe `Base64.urlsafe_decode64("…")` literal retro_record_ruby
+# already rides through `heroku run`. Pure (no Rails) → unit-tested standalone.
+def conductor_payload(ruby)
+  wrapper = "require 'json'; #{ruby}"
+  blob = Base64.urlsafe_encode64(wrapper)
+  "eval(Base64.urlsafe_decode64(#{blob.inspect}))"
+end
+
 # Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.
-# The snippet must `puts` a single JSON line; we return the parsed Hash.
+# The snippet must `puts` a single JSON line; we return the parsed Hash. The
+# snippet rides as a shell-safe Base64 bootstrap (see conductor_payload) so any
+# quotes/parens/&& in it survive heroku's remote re-quoting intact.
 #
 # WRITES are suppressed in --dry-run (printed, not run). A read_only: query still
 # runs in dry-run — a read mutates nothing, so it honors "execute nothing" while
 # letting a dry-run PREVIEW the real plan. read_only goes straight to Open3 so
 # it bypasses sh's own dry-run gate.
 def conductor(ruby, read_only: false)
-  wrapper = "require 'json'; #{ruby}"
-  cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", wrapper]
-             : ["bin/rails", "runner", wrapper]
+  payload = conductor_payload(ruby)
+  cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
+             : ["bin/rails", "runner", payload]
   if DRY && !read_only
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
@@ -464,26 +495,34 @@ end
 # and the adopt runs in an `ensure` so any PR that merged is recorded even if a
 # later step aborts — the half-state can't recur. Single-slug stays identical.
 
-# The one-shot read snippet that resolves EVERY merge slug's PR in a SINGLE
-# conductor call (one heroku-run spin-up for the whole batch). Pure string
-# builder (slugs are alnum/hyphen, safe under .inspect — same as the existing
-# single-slug `slug.inspect` literals). Emits ONE JSON line:
-#   { "tasks": [ { slug, pr_url, repo, stage } | { slug, missing: true } ] }
-def batch_resolve_ruby(slugs)
+# The one-shot read snippet that resolves EVERY merge slug's PR AND runs the
+# review-gate screen in a SINGLE conductor call (one heroku-run spin-up for the
+# whole batch). Pure string builder (slugs are alnum/hyphen, safe under .inspect —
+# same as the existing single-slug `slug.inspect` literals; `override` is a bare
+# bool literal). The screen is a PURE read (Release::Conductor.screen_merge writes
+# nothing), so it's safe inside this read-only resolve and previews under --dry-run.
+# Emits ONE JSON line:
+#   { "tasks": [ { slug, pr_url, repo, stage } | { slug, missing: true } ],
+#     "screen": { rows:[…], blocked:[…], overridden:[…], missing:[…], proceed: } }
+def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
   "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage } " \
   ": { slug: s, missing: true } }; " \
-  "puts({ tasks: rows }.to_json)"
+  "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
+  "puts({ tasks: rows, screen: screen }.to_json)"
 end
 
 # The one-shot write snippet that adopts EVERY merged slug in a SINGLE `heroku
 # run` — N reviewed→assembled flips on one dyno, instead of a cold `heroku run`
 # per PR. adopt! is idempotent/self-healing (see Release::Conductor), so a re-run
-# is safe. Emits ONE JSON line: { "adopted": [...], "slug": <last release>, "state" }.
-def batch_adopt_ruby(slugs)
+# is safe. `override` threads the audited review-gate bypass through to adopt! —
+# harmless for already-`reviewed` members (records no skip), and for an unreviewed
+# member it both attaches it AND stamps the `review_bypassed` audit event.
+# Emits ONE JSON line: { "adopted": [...], "slug": <last release>, "state" }.
+def batch_adopt_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
-  "results = slugs.map { |s| r = Release::Conductor.adopt!(Task.find_by!(slug: s)); " \
+  "results = slugs.map { |s| r = Release::Conductor.adopt!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}); " \
   "{ task: s, release: r.slug, state: r.state } }; " \
   "last = results.last; " \
   "puts({ adopted: results, slug: (last && last[:release]), state: (last && last[:state]) }.to_json)"
@@ -533,16 +572,47 @@ def merge_overlap_report(infos)
   say("  (warning only — `bin/release merge` proceeds in the order given)")
 end
 
+# Review-gate guard for `bin/release merge`. The DECISION (which slugs are
+# blocked vs overridden) is Release::Conductor.screen_merge's — this only renders
+# it: it ABORTS the whole run when any requested task isn't `reviewed` (and no
+# --override), naming exactly which task is in which stage and how to override; or
+# prints a loud OVERRIDE banner for the bypassed tasks (whose skip adopt! records
+# on the audit spine). A `nil`/empty screen (e.g. a stub-less dry preview) is a
+# no-op. Both lists carry the offending task's actual stage, pulled from screen
+# rows, so the operator sees "task X is in stage Y" without re-reading the board.
+def enforce_review_gate!(screen)
+  rows  = Array(screen["rows"])
+  stage = ->(slug) { (rows.find { |r| r["slug"] == slug } || {})["stage"] || "unknown" }
+
+  blocked = Array(screen["blocked"])
+  if blocked.any?
+    named = blocked.map { |slug| "#{slug} (#{stage.call(slug)})" }.join(", ")
+    abort!("review gate: #{named} #{blocked.size == 1 ? 'is' : 'are'} not `reviewed` — " \
+           "get the PR(s) through review first, or pass --override to merge anyway " \
+           "(the skip is recorded as a `review_bypassed` audit event).")
+  end
+
+  overridden = Array(screen["overridden"])
+  return if overridden.empty?
+
+  named = overridden.map { |slug| "#{slug} (#{stage.call(slug)})" }.join(", ")
+  say("  ⚠ OVERRIDE: merging #{named} past the review gate — recording a `review_bypassed` audit event per task.")
+end
+
 def merge
+  # `--override` is the audited review-gate escape hatch — consume it BEFORE
+  # positional_slugs reads the rest (take_flag deletes it from ARGV so it's never
+  # mistaken for a slug).
+  override = Release::Cli.take_flag(ARGV, "--override")
   slugs = Release::Cli.positional_slugs(ARGV)
-  abort!("usage: bin/release merge <task-slug> [<task-slug> ...]") if slugs.empty?
+  abort!("usage: bin/release merge <task-slug> [<task-slug> ...] [--override]") if slugs.empty?
 
-  say("Merge #{slugs.join(', ')} into `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  say("Merge #{slugs.join(', ')} into `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{override ? ' (OVERRIDE)' : ''}#{DRY ? ' — DRY RUN' : ''}")
 
-  # 1. Resolve ALL the tasks' PRs in ONE read (one heroku-run spin-up for the
-  #    whole batch; a read — runs even in dry-run).
+  # 1. Resolve ALL the tasks' PRs AND run the review-gate screen in ONE read (one
+  #    heroku-run spin-up for the whole batch; a read — runs even in dry-run).
   step("record (read-only): resolve #{slugs.size} task PR(s)")
-  resolved = conductor(batch_resolve_ruby(slugs), read_only: true)
+  resolved = conductor(batch_resolve_ruby(slugs, override: override), read_only: true)
   infos = resolved["tasks"] || []
 
   missing = infos.select { |i| i["missing"] }.map { |i| i["slug"] }
@@ -550,6 +620,13 @@ def merge
   no_pr = infos.select { |i| i["pr_url"].to_s.empty? }.map { |i| i["slug"] }
   abort!("task(s) have no PR url (devops.pr_url) — set it before merging: #{no_pr.join(', ')}") if no_pr.any?
   infos.each { |i| say("  task #{i['slug']} (#{i['stage']}) · #{i['repo']} · #{i['pr_url']}") }
+
+  # 1b. REVIEW-GATE GUARD (the decision lives in Release::Conductor.screen_merge;
+  #     this only prints + aborts). Runs BEFORE any `gh pr merge`: a not-yet-
+  #     `reviewed` task ABORTS the whole run unless --override is given. With
+  #     --override, the offending tasks proceed but the skip is recorded as a
+  #     `review_bypassed` audit event when adopt! flips them (step 5).
+  enforce_review_gate!(resolved["screen"] || {})
 
   # 2. Overlap planner (warning only) — BEFORE any merge, so the operator sees the
   #    file collisions + suggested order first.
@@ -588,7 +665,7 @@ def merge
     #    records the PRs that DID merge. A board WRITE → suppressed in dry-run.
     if merged.any?
       step("record: Release::Conductor.adopt! ×#{merged.size} in ONE run (#{merged.join(', ')})")
-      @merge_result = conductor(batch_adopt_ruby(merged))
+      @merge_result = conductor(batch_adopt_ruby(merged, override: override))
     end
   end
 
@@ -1253,6 +1330,14 @@ def ship
   say("")
   say("🚀 Shipped #{rel_slug} → production#{DRY ? ' (DRY RUN — nothing executed)' : " (#{short(deployed_sha)})"}.")
   say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
+
+  # 7. Restore each app's PRIMARY checkout to a clean `main` — the COMPLEMENT of
+  #    ship_preflight's offender DETECTION. A review/QA cycle can leave a primary
+  #    on a leftover branch, so the NEXT session would integrate from the wrong
+  #    floor (retro-rel-20260623 line 54). Best-effort + non-fatal: the ship has
+  #    already succeeded; a primary carrying uncommitted/unpushed work is REFUSED
+  #    and left for the operator.
+  restore_primaries(app_groups)
 rescue SystemExit => e
   # Partial-ship recovery: abort! (Kernel#abort) raised SystemExit mid-train. The
   # abort message already printed; add what's live + the idempotent re-run path.
@@ -1266,6 +1351,27 @@ rescue SystemExit => e
     warn("  Re-run `bin/release ship` to resume: published gems skip, fast-forwards no-op, re-pins are idempotent.")
   end
   exit(e.respond_to?(:status) && e.status ? e.status : 1)
+end
+
+# Return each app's PRIMARY checkout to a clean `main` after a ship — the
+# COMPLEMENT of ship_preflight's offender DETECTION (Release::ShipSequence). A
+# review/QA cycle can leave a primary on a leftover `pr-NNN` branch, so the next
+# session integrates/deploys from the wrong floor (retro-rel-20260623 line 54).
+# Shells the same `bin/agent-worktree restore-primary` an operator runs by hand —
+# which REFUSES (non-zero) any primary with uncommitted/unpushed work — so this is
+# best-effort: a refusal is reported but NEVER fails an already-completed ship.
+# No-op under --dry-run (the ship deployed nothing to restore around).
+def restore_primaries(app_groups)
+  return if DRY
+
+  say("")
+  step("restore primaries: return each app checkout to a clean `main` for the next session")
+  Array(app_groups).each do |group|
+    repo = group["repo"]
+    out, status = Open3.capture2e("bin/agent-worktree", "restore-primary", repo)
+    print(out)
+    say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
+  end
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------

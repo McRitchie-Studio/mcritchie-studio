@@ -1005,4 +1005,52 @@ class DorCheckTest < Minitest::Test
       assert_equal 0, code, "post-commit (clean) should still validate the same evidence\n#{out}"
     end
   end
+
+  # --- canonical post_deploy_cmd SUGGESTION (warn, never reject) ----------------
+  # rails runner accepts a file path directly, so `bin/rails runner <path>` is the
+  # canonical, paren-free form. A valid-but-fragile `runner "load Rails.root.join
+  # (...)"` is the shape that made the seed-54 ship brittle through `heroku run`,
+  # so dor-check SUGGESTS the canonical form WITHOUT rejecting the (working) cmd.
+  # A non-data code diff isolates the suggestion (no post-deploy nudge fires).
+
+  def test_fragile_runner_load_is_accepted_with_a_canonical_suggestion
+    cmd = "bin/rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'"
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
+    end
+    assert_equal 0, code, out # SUGGESTION ONLY — never blocks
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/suggestion/i, out, "the fragile runner form earns a nudge")
+    assert_match(%r{bin/rails runner db/seeds/54_demo\.rb}, out, "suggests the canonical paren-free form")
+  end
+
+  def test_fragile_runner_with_percent_q_path_is_suggested
+    # The exact seed-54 %q(...) shape that broke the heroku-run round-trip.
+    cmd = 'bin/rails runner "load Rails.root.join(%q(db/seeds/54_demo.rb)).to_s"'
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
+    end
+    assert_equal 0, code, out
+    assert_match(%r{bin/rails runner db/seeds/54_demo\.rb}, out)
+  end
+
+  def test_canonical_runner_path_form_gets_no_suggestion
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => "bin/rails runner db/seeds/54_demo.rb"))
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    refute_match(/suggestion/i, out, "the canonical form needs no nudge")
+  end
+
+  def test_fragile_runner_suggestion_surfaces_in_json_verdict
+    cmd = "bin/rails runner 'load Rails.root.join(\"db/seeds/54_demo.rb\").to_s'"
+    out, code = with_changed_files("app/models/agent.rb") do
+      check(BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd), "--json")
+    end
+    assert_equal 0, code, out
+    verdict = JSON.parse(out)
+    assert verdict["ready"], "a suggestion never flips readiness"
+    assert(verdict["suggestions"].any? { |s| s =~ /canonical/ }, "the suggestion rides in the json verdict")
+  end
 end

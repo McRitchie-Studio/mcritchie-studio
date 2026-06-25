@@ -23,4 +23,10 @@ class Current < ActiveSupport::CurrentAttributes
   # the pair via ReviewerSelector — so the avatars populate no matter who drove
   # the transition; set it when Avi curated the pair explicitly.
   attribute :task_event_reviewers
+  # Set ONLY by Release::Conductor.adopt!(override: true) when an operator merges
+  # a NOT-yet-`reviewed` PR past the review gate (`bin/release merge --override`).
+  # Drained by Task#write_stage_event onto the very transition event the bypassed
+  # flip writes (metadata["review_bypassed"] = true), so the review skip lands on
+  # the same audit spine `bin/task move` writes — the override's paper trail.
+  attribute :task_event_review_bypass
 end

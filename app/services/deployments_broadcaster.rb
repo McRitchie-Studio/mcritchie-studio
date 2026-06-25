@@ -30,6 +30,15 @@ class DeploymentsBroadcaster
     Studio::Cable.safe_broadcast { new(event).deliver }
   end
 
+  # A task was destroyed — drop its card from the live board for every viewer. A
+  # `destroy` fires no TaskEvent (so #task_event never runs), hence this separate
+  # entry point, called from Task's after_destroy_commit. Guarded like the rest.
+  def self.task_removed(slug)
+    Studio::Cable.safe_broadcast do
+      Turbo::StreamsChannel.broadcast_remove_to(STREAM, target: "card-#{slug}")
+    end
+  end
+
   def initialize(event)
     @event = event
     @task = event.task
