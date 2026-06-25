@@ -9,6 +9,7 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/full_suite_gate"
 
 class FullSuiteCheckTest < Minitest::Test
@@ -126,11 +127,79 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+  def test_fingerprint_stable_across_commit_for_a_new_file
+    # The case `git stash create` silently broke: a change that ADDS a file must
+    # fingerprint the same before and after it is committed, or the evidence
+    # certified pre-commit reads STALE on the reviewer's post-commit checkout
+    # (a false REFUSE for the overwhelmingly common add-a-file change). Fails
+    # against the old stash-create fingerprint, passes against the temp-index one.
+    with_repo do |dir|
+      File.write(File.join(dir, "added.rb"), "brand new\n") # untracked, never add'd
+      dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
+      assert system("git -C #{dir} add -A >/dev/null 2>&1")
+      assert system("git -C #{dir} commit -q -m add-file >/dev/null 2>&1")
+      committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
+      assert_equal dirty_fp, committed_fp,
+                   "adding a file must not change the fingerprint across the commit boundary"
+    end
+  end
+
+  def test_fingerprint_changes_when_an_untracked_file_is_edited
+    # Freshness must fire for untracked files too: certify with an untracked file
+    # present, then edit it (still untracked) → the fingerprint must change so the
+    # recorded evidence goes STALE. The old stash-create fingerprint ignored
+    # untracked content, so this edit slipped past the staleness check.
+    with_repo do |dir|
+      File.write(File.join(dir, "scratch.rb"), "one\n") # untracked
+      first, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+      first_fp = first[/@([0-9a-f]{7,64})\]/, 1]
+      File.write(File.join(dir, "scratch.rb"), "two\n") # edit, still untracked
+      second, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+      second_fp = second[/@([0-9a-f]{7,64})\]/, 1]
+      refute_equal first_fp, second_fp,
+                   "editing an untracked file must change the fingerprint (staleness fires)"
+    end
+  end
+
   def test_no_fingerprint_outside_a_repo_exits_nonzero
     Dir.mktmpdir do |dir| # not a git repo
       out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
       assert_equal 1, code, out
       refute_match(/\[full-suite@/, out) # nothing certified without a fingerprint
+    end
+  end
+
+  # --- [integration] opt-in pre-push hook installer ----------------------------
+
+  def test_install_hook_writes_an_executable_opt_in_pre_push_hook
+    with_repo do |dir|
+      out = IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --install-hook 2>&1", &:read)
+      assert_equal 0, $?.exitstatus, out
+      hook = File.join(dir, ".git", "hooks", "pre-push")
+      assert File.exist?(hook), "pre-push hook should be installed: #{out}"
+      assert File.executable?(hook), "pre-push hook should be executable"
+      assert_includes File.read(hook), "exec bin/full-suite-check --print"
+      # Idempotent: re-running succeeds and leaves a single managed hook.
+      out2 = IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --install-hook 2>&1", &:read)
+      assert_equal 0, $?.exitstatus, out2
+      assert_equal 1, File.read(hook).scan("exec bin/full-suite-check --print").size
+      # Uninstall removes the managed hook.
+      IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --uninstall-hook 2>&1", &:read)
+      refute File.exist?(hook), "uninstall should remove the managed hook"
+    end
+  end
+
+  def test_install_hook_refuses_to_clobber_a_foreign_pre_push_hook
+    with_repo do |dir|
+      hooks = File.join(dir, ".git", "hooks")
+      FileUtils.mkdir_p(hooks)
+      foreign = File.join(hooks, "pre-push")
+      File.write(foreign, "#!/bin/sh\necho not-ours\n")
+      out = IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --install-hook 2>&1", &:read)
+      assert_equal 1, $?.exitstatus, "should refuse to clobber a foreign hook: #{out}"
+      assert_equal "#!/bin/sh\necho not-ours\n", File.read(foreign), "a foreign hook must be left untouched"
     end
   end
 end

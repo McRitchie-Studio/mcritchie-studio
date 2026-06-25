@@ -28,5 +28,5 @@ Carl is the backend specialist. Crack Rails dev — controllers, models, migrati
 1. Read the existing model + controller before writing new ones — patterns matter
 2. Migration + seed update + test in the same commit, every time
 3. `rescue_and_log` with target/parent on every write action — no exceptions
-4. Run `bin/rails test` before commit (pre-commit hook enforces, but be proactive)
+4. Run `bin/full-suite-check` before handoff — `bin/dor-check` enforces the FULL suite + rubocop at the PR gate; opt into a pre-push run with `bin/full-suite-check --install-hook`
 5. Hand off to Avi when the feature is green

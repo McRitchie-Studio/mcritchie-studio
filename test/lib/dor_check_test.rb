@@ -982,4 +982,27 @@ class DorCheckTest < Minitest::Test
       assert_equal 0, code, "post-commit (clean) should still validate the same evidence\n#{out}"
     end
   end
+
+  def test_e2e_fingerprint_is_stable_across_the_commit_boundary_for_a_new_file
+    # Same checkout-independence property, but for a change that ADDS a file —
+    # the case `git stash create` silently dropped (the new file was absent from
+    # the pre-commit fingerprint, present in the committed tree → false STALE on
+    # the reviewer's checkout). Certify with a new untracked file present, commit
+    # it, and the SAME evidence must still validate at the committed HEAD.
+    with_suite_repo do |dir, _committed_fp|
+      File.write(File.join(dir, "added_feature.rb"), "brand new\n") # untracked
+      dirty_fp = suite_fingerprint(dir)
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(dirty_fp))
+
+      out, code = check_real_suite(dir, devops)
+      assert_equal 0, code, "pre-commit (new file untracked) should validate\n#{out}"
+
+      assert system("git -C #{dir} add -A >/dev/null 2>&1")
+      assert system("git -C #{dir} commit -q -m add-feature >/dev/null 2>&1")
+      assert_equal dirty_fp, suite_fingerprint(dir), "fingerprint must be stable across committing a new file"
+
+      out, code = check_real_suite(dir, devops)
+      assert_equal 0, code, "post-commit (clean) should still validate the same evidence\n#{out}"
+    end
+  end
 end

@@ -13,13 +13,16 @@
 # and a FULL `bin/rubocop` have gone green against the EXACT code being shipped.
 #
 # The anti-stale mechanism is a content-addressed FINGERPRINT, not a SHA or a
-# free-text tag. `git stash create` yields a commit whose tree is the current
-# working state (tracked, staged+unstaged); a git tree hash is purely
-# content-addressed, so committing the same changes produces the SAME hash. That
-# gives two properties the retro needs:
-#   * Freshness — edit ANY tracked file after certifying and the fingerprint
-#     changes, so the recorded evidence goes STALE and dor-check refuses. You
-#     cannot certify a subset and then keep editing.
+# free-text tag. We stage the WHOLE working tree — tracked edits AND
+# untracked-but-not-ignored files — into a THROWAWAY git index (GIT_INDEX_FILE)
+# and hash it with `git write-tree`; a git tree hash is purely content-addressed,
+# so committing the same changes produces the SAME hash. (An earlier version used
+# `git stash create`, which silently DROPS untracked files — so a change that
+# ADDED a file fingerprinted differently before vs after the commit and was
+# wrongly read as STALE.) That gives two properties the retro needs:
+#   * Freshness — edit ANY tracked OR untracked-not-ignored file after certifying
+#     and the fingerprint changes, so the recorded evidence goes STALE and
+#     dor-check refuses. You cannot certify a subset and then keep editing.
 #   * Checkout-independence — the reviewer/heartbeat checkout at the committed
 #     HEAD recomputes the SAME fingerprint the feature agent certified pre-commit,
 #     so the evidence (carried on the task's devops.checks_run) validates there
@@ -33,6 +36,8 @@
 # defended against (honor system — "Trust over guardrails"); the point is to make
 # the honest path one command and to CATCH the easy mistake (touched-files subset
 # + a stale tag), which a content fingerprint does deterministically.
+require "tmpdir"
+
 module FullSuiteGate
   TEST_LANE = "full-suite"
   RUBOCOP_LANE = "rubocop"
@@ -41,16 +46,27 @@ module FullSuiteGate
 
   module_function
 
-  # Content-addressed fingerprint of the CURRENT code (tracked files, staged +
-  # unstaged), stable across the pre-commit→commit boundary. Returns a git tree
-  # hash, or nil when git can't read the tree (no repo / missing identity) — the
-  # caller treats nil as "unverifiable" and refuses, since this gate's job is to
-  # refuse what it cannot confirm. `root` is the repo dir (overridable in tests).
+  # Content-addressed fingerprint of the CURRENT code — tracked edits AND
+  # untracked-but-not-ignored files — stable across the pre-commit→commit
+  # boundary. Returns a git tree hash, or nil when git can't read the tree (no
+  # repo / missing identity) — the caller treats nil as "unverifiable" and
+  # refuses, since this gate's job is to refuse what it cannot confirm. `root` is
+  # the repo dir (overridable in tests).
+  #
+  # Implementation: stage everything into a THROWAWAY index (GIT_INDEX_FILE, never
+  # the real one) with `git add -A` — which honours .gitignore and DOES include
+  # new files — then `git write-tree`. This is "the tree you'd get by committing
+  # the whole working state", so it stays stable when an added file is later
+  # committed (`git stash create` dropped untracked files and broke that).
   def fingerprint(root)
-    stash = capture(["git", "-C", root.to_s, "stash", "create"]).strip
-    ref = stash.empty? ? "HEAD" : stash
-    tree = capture(["git", "-C", root.to_s, "rev-parse", "#{ref}^{tree}"]).strip
+    index = File.join(Dir.tmpdir, "fsg-index-#{Process.pid}-#{rand(1 << 32)}")
+    env = { "GIT_INDEX_FILE" => index }
+    return nil unless run(["git", "-C", root.to_s, "add", "-A"], env: env)
+
+    tree = capture(["git", "-C", root.to_s, "write-tree"], env: env).strip
     tree.empty? ? nil : tree
+  ensure
+    File.delete(index) if index && File.exist?(index)
   end
 
   # The checks_run line a passing lane records, embedding the fingerprint.
@@ -140,9 +156,17 @@ module FullSuiteGate
     end
   end
 
-  def capture(argv)
-    IO.popen(argv, err: File::NULL, &:read).to_s
+  def capture(argv, env: {})
+    IO.popen([env, *argv], err: File::NULL, &:read).to_s
   rescue SystemCallError
     ""
+  end
+
+  # Run a command for its exit status only (stdout/stderr discarded); true on a
+  # clean exit. Used to stage into the throwaway index without leaking output.
+  def run(argv, env: {})
+    system(env, *argv, out: File::NULL, err: File::NULL)
+  rescue SystemCallError
+    false
   end
 end
