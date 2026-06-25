@@ -289,6 +289,42 @@ def data_changed_files
   changed_files.select { |f| DATA_CHANGE_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
 end
 
+# The gem-publish seam (merge gate). When this branch touched the Gemfile, every
+# versioned `gem "name", "constraint"` whose constraint the Gemfile.lock CANNOT
+# satisfy — i.e. the Gemfile was bumped to a version the lock (and almost
+# certainly RubyGems) doesn't have yet. That is exactly the state that turned
+# mcritchie#157 CI fully red (a frozen/deployment `bundle install` can't resolve
+# an unpublished gem) and got it blocked in review: a shared-gem feature (engine
+# model + app consumer) whose consumer constraint was bumped BEFORE the gem
+# published. Deterministic + OFFLINE — Gemfile vs Gemfile.lock only, no RubyGems
+# call (fits the gate's no-network ethos). git/path sources (the local-dev bridge)
+# don't match the `name, "version"` shape, so they're never flagged. Returns
+# [{name, constraint, locked}].
+def gem_constraint_violations
+  return [] unless changed_files.include?("Gemfile")
+
+  root = ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT)
+  gemfile = File.join(root, "Gemfile")
+  lockfile = File.join(root, "Gemfile.lock")
+  return [] unless File.exist?(gemfile) && File.exist?(lockfile)
+
+  lock_text = File.read(lockfile)
+  File.read(gemfile).each_line.filter_map do |line|
+    m = line.match(/^\s*gem\s+["']([A-Za-z0-9_.\-]+)["']\s*,\s*["']([^"':]+)["']/)
+    next unless m
+
+    name = m[1]
+    constraint = m[2].strip
+    locked = lock_text[/^\s{4}#{Regexp.escape(name)} \(([^)]+)\)/, 1]
+    next unless locked # only gems pinned in the lock (skip git/path/new gems)
+
+    req = (Gem::Requirement.new(constraint) rescue nil)
+    next if req.nil? || req.satisfied_by?(Gem::Version.new(locked))
+
+    { "name" => name, "constraint" => constraint, "locked" => locked }
+  end
+end
+
 # True when a post_deploy_cmd is a bare full-suite seed (db:seed / db:seed:replant
 # / rake db:seed / bundle exec rails db:seed), which loads ALL of db/seeds.rb. The
 # safe forms — a scoped runner (`rails runner 'load …db/seeds/NN.rb…'`) and a
@@ -423,6 +459,18 @@ if gate != "build"
       "change should declare a post-deploy command so the conductor runs it on ship and nobody runs the " \
       "rake by hand (e.g. bin/task update #{task["slug"] || slug} --post-deploy-cmd 'bin/rails pokemon:seed'); " \
       "set it to 'none' if no command is needed (a schema-only migration the release phase auto-runs)"
+  end
+
+  # Gem-publish seam: a Gemfile bumped past what the lock can satisfy will fail CI
+  # (frozen bundle can't resolve an unpublished version). Catch it HERE, before
+  # submit, instead of as a red-CI surprise + a review block (the mcritchie#157
+  # studio-engine 0.9.0 case — see docs/agents/audits/session-retrospective-2026-06-25.md).
+  gem_constraint_violations.each do |v|
+    errors << "Gemfile sets #{v["name"]} #{v["constraint"].inspect} but Gemfile.lock pins #{v["locked"]}, " \
+      "which doesn't satisfy it — the new version is almost certainly NOT published, so CI will fail " \
+      "`bundle install --frozen` (the gem-publish seam). Sequence it: release/publish #{v["name"]} first, " \
+      "then `bundle update #{v["name"]}` to relock; OR hold the constraint bump until the gem ships; OR " \
+      "bridge the consumer via a git source. A shared-gem feature ships the gem BEFORE the app adopts it."
   end
 end
 

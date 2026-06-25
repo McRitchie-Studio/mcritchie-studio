@@ -11,6 +11,13 @@ class Release::ConductorTest < ActiveSupport::TestCase
                  metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
   end
 
+  # A NOT-yet-reviewed task (the incident shape: a PR awaiting review). Carries a
+  # known repo so it classifies + adopts cleanly once the review gate is bypassed.
+  def submitted_task(label = "default", repo: "mcritchie-studio")
+    Task.create!(title: "submitted #{label} demo task", stage: "submitted",
+                 metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
+  end
+
   test "prepare! opens a new release when none is active and assembles it" do
     t = reviewed_task
     rel = Release::Conductor.prepare!(task_slugs: [t.slug], slug: "rel-test-new")
@@ -99,6 +106,98 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "assembled", rel.reload.state, "re-adopting an assembled member must NOT reopen the QA'd RC"
     assert_equal "assembled", member.reload.stage
     assert_equal 1, rel.tasks.count
+  end
+
+  # --- screen_merge: the pre-flight review-gate decision (bin/release merge) ---
+  # The guard that stops an unreviewed PR being merged onto `release` by accident
+  # (the incident: PR #138 merged straight in during the scheduled wait).
+
+  test "screen_merge passes a reviewed task and reports proceed" do
+    t = reviewed_task
+    screen = Release::Conductor.screen_merge([t.slug])
+
+    assert_equal "reviewed", screen["rows"].first["status"]
+    assert_equal "reviewed", screen["rows"].first["stage"]
+    assert_empty screen["blocked"]
+    assert screen["proceed"]
+  end
+
+  test "screen_merge BLOCKS a not-yet-reviewed task and refuses to proceed" do
+    t = submitted_task
+    screen = Release::Conductor.screen_merge([t.slug])
+
+    assert_equal "blocked", screen["rows"].first["status"]
+    assert_equal "submitted", screen["rows"].first["stage"]
+    assert_equal [t.slug], screen["blocked"]
+    refute screen["proceed"], "an unreviewed task aborts the run"
+  end
+
+  test "screen_merge with override reclassifies an unreviewed task as overridden and proceeds" do
+    t = submitted_task
+    screen = Release::Conductor.screen_merge([t.slug], override: true)
+
+    assert_equal "overridden", screen["rows"].first["status"]
+    assert_equal [t.slug], screen["overridden"]
+    assert_empty screen["blocked"]
+    assert screen["proceed"]
+  end
+
+  test "screen_merge flags a missing slug" do
+    screen = Release::Conductor.screen_merge(["no-such-task"])
+
+    assert_equal "missing", screen["rows"].first["status"]
+    assert_equal ["no-such-task"], screen["missing"]
+  end
+
+  test "screen_merge — one unreviewed task in a mixed batch blocks the whole run" do
+    ok  = reviewed_task("ok")
+    bad = submitted_task("bad")
+    screen = Release::Conductor.screen_merge([ok.slug, bad.slug])
+
+    assert_equal [bad.slug], screen["blocked"]
+    refute screen["proceed"], "any blocked slug aborts the batch"
+  end
+
+  # --- adopt!(override:) — the audited review-gate bypass ---
+
+  test "adopt! still RAISES on a not-reviewed task without override" do
+    assert_raises(ArgumentError) { Release::Conductor.adopt!(submitted_task) }
+  end
+
+  test "adopt! with override attaches a not-reviewed task and flips it to assembled" do
+    t = submitted_task
+    rel = Release::Conductor.adopt!(t, override: true)
+
+    assert_equal "assembled", t.reload.stage
+    assert_includes rel.tasks.pluck(:slug), t.slug
+  end
+
+  test "adopt! with override records a review_bypassed event on the audit spine" do
+    t = submitted_task
+    Release::Conductor.adopt!(t, override: true)
+
+    ev = t.reload.task_events.transitions.where(to_stage: "assembled").order(:occurred_at).last
+    assert ev.metadata["review_bypassed"], "the bypassed flip is recorded on the task's spine"
+    assert_equal "submitted", ev.from_stage, "the event names the stage the gate was skipped from"
+  end
+
+  test "adopt! override on an already-reviewed task records NO bypass (override is a no-op there)" do
+    t = reviewed_task
+    Release::Conductor.adopt!(t, override: true)
+
+    ev = t.reload.task_events.transitions.where(to_stage: "assembled").last
+    refute ev.metadata["review_bypassed"], "a reviewed task flips normally — no bypass marker"
+  end
+
+  test "adopt! does not leak the bypass flag onto a later normal transition" do
+    Release::Conductor.adopt!(submitted_task("bypassed"), override: true)
+    # A subsequent NORMAL adopt (reviewed, no override) must not inherit the flag —
+    # the Current marker is reset in adopt!'s ensure.
+    normal = reviewed_task("normal")
+    Release::Conductor.adopt!(normal)
+
+    ev = normal.reload.task_events.transitions.where(to_stage: "assembled").last
+    refute ev.metadata["review_bypassed"], "Current flag is reset in ensure — no leak"
   end
 
   test "prepare! is additive — extends the active release instead of opening a second" do

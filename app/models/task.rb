@@ -97,6 +97,9 @@ class Task < ApplicationRecord
   # transition on update.
   after_create :record_genesis_event
   after_update :record_transition_event, if: :saved_change_to_stage?
+  # A destroy fires no TaskEvent, so the live /deployments board never hears about
+  # it — broadcast the card removal explicitly so every viewer's board drops it.
+  after_destroy_commit :broadcast_removal_to_deployments_board
 
   def to_param
     slug
@@ -569,6 +572,11 @@ class Task < ApplicationRecord
     write_stage_event(from: nil)
   end
 
+  # Drop this task's card from the live /deployments board for every viewer.
+  def broadcast_removal_to_deployments_board
+    DeploymentsBroadcaster.task_removed(slug)
+  end
+
   def record_transition_event
     write_stage_event(from: stage_before_last_save)
   end
@@ -590,7 +598,14 @@ class Task < ApplicationRecord
       tokens_in: Current.task_event_tokens_in,
       tokens_out: Current.task_event_tokens_out,
       cost: Current.task_event_cost,
-      metadata: stage_event_metadata(from: from)
+      # Merge the review-bypass marker (set only by Conductor.adopt!(override:true)
+      # for `bin/release merge --override`) onto THIS transition, so the review-gate
+      # skip is recorded on the same spine the move writes — not as a second, orphan
+      # event. Absent on every normal move (Current flag nil), so it never widens the
+      # default metadata.
+      metadata: stage_event_metadata(from: from).merge(
+        Current.task_event_review_bypass ? { "review_bypassed" => true } : {}
+      )
     )
   end
 

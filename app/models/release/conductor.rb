@@ -20,20 +20,68 @@ class Release
     # if it had assembled, and raises for any other stage per the top line). The
     # old `unless exists?` guard no-op'd that case, so the half-state could never
     # self-heal and had to be fixed by hand.
-    def adopt!(task)
+    #
+    # `override: true` is the audited `bin/release merge --override` escape hatch:
+    # it lets `add` attach a NOT-yet-`reviewed` task, AND it stamps the review skip
+    # onto the audit spine. The bypass marker rides on the SAME transition event the
+    # flip writes (Current.task_event_review_bypass → Task#write_stage_event), so the
+    # override leaves a `review_bypassed` paper-trail row — never a silent skip. The
+    # flag is reset in `ensure` so it can't leak onto a later (in-process) transition.
+    def adopt!(task, override: false)
       release = Release.current_or_open!
       member = release.tasks.find_by(slug: task.slug)
+      target = member || task
+      # Only flag a genuine bypass: an override on an already-`reviewed` (or
+      # already-`assembled`) target changes nothing, so it records no skip.
+      Current.task_event_review_bypass = true if override && !%w[reviewed assembled].include?(target.stage)
+
       if member.nil?
-        release.add(task)
+        release.add(task, override: override)
       elsif member.stage != "assembled"
         # Hand any non-`assembled` member back to `add` — NOT a narrower
         # `== "reviewed"` check. `add` heals a `reviewed` one and deliberately
         # RAISES for any other stage (blocked, etc.), mirroring the nil → add(task)
         # path above. Narrowing to `== "reviewed"` here would silently no-op those
         # off-path members, reintroducing the asymmetry the review flagged.
-        release.add(member)
+        release.add(member, override: override)
       end
       release
+    ensure
+      Current.task_event_review_bypass = nil
+    end
+
+    # Pre-flight REVIEW-GATE screen for `bin/release merge` — the decision the CLI
+    # runs over the requested slugs BEFORE any `gh pr merge`, so an unreviewed PR
+    # can't be merged onto `release` by accident (the incident: PR #138 merged
+    # straight in during the scheduled wait). A PURE read: it only CLASSIFIES; the
+    # bypass itself is RECORDED later, on the audit spine, when adopt! flips an
+    # overridden member (see adopt!). Each slug is one of:
+    #   "reviewed"   — passed review, safe to merge
+    #   "blocked"    — NOT reviewed and no --override → the run must abort
+    #   "overridden" — NOT reviewed but --override given → proceeds, audited at adopt!
+    #   "missing"    — no such task on the board
+    # Returns a JSON-serializable decision:
+    #   { rows: [{slug, stage, status}], blocked:[slug], overridden:[slug],
+    #     missing:[slug], proceed: bool }  (proceed=false iff any slug is blocked).
+    def screen_merge(slugs, override: false)
+      rows = Array(slugs).map do |slug|
+        task   = Task.find_by(slug: slug)
+        status =
+          if task.nil?                   then "missing"
+          elsif task.stage == "reviewed" then "reviewed"
+          elsif override                 then "overridden"
+          else                                "blocked"
+          end
+        { "slug" => slug, "stage" => task&.stage, "status" => status }
+      end
+      pick = ->(s) { rows.select { |r| r["status"] == s }.map { |r| r["slug"] } }
+      {
+        "rows"       => rows,
+        "blocked"    => pick.call("blocked"),
+        "overridden" => pick.call("overridden"),
+        "missing"    => pick.call("missing"),
+        "proceed"    => rows.none? { |r| r["status"] == "blocked" }
+      }
     end
 
     # Assemble the active release for QA. On the persistent-`release` model

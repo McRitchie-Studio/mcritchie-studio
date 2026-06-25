@@ -457,6 +457,95 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "DRY RUN", "a dry-run executes nothing"
   end
 
+  # --- gem version resolution: read the QA-frozen SHA, not the stale local checkout ---
+  # The publish-skip bug: gem_version_for read the version from the pre-ff LOCAL
+  # checkout (still on stale `main`), so a release that BUMPED the gem on its release
+  # SHA reported the OLD version → publish_needed? saw it "already live" → SKIPPED the
+  # real publish, shipping the release with the bumped gem never published. The fix
+  # reads the version at the QA-frozen ref (`git show <ref>:<version_file>`) — the
+  # exact commit ship builds + publishes from. `git_capture` is stubbed so the test
+  # needs NO on-disk sibling gem checkout (the #181/#191 CI-portability lesson).
+
+  GEM_VERSION_STUB = <<~RUBY
+    # The version_file AT the frozen SHA carries the BUMPED 0.11.0; the local checkout
+    # (gem_version_local) still sits on stale main at 0.10.0 — the bug's exact shape.
+    def git_capture(*args)
+      line = args.join(" ")
+      if line.include?("show") && line.include?("frozensha")
+        ['VERSION = "0.11.0"', true]
+      else
+        ["", false]
+      end
+    end
+    def gem_version_local(_repo) = "0.10.0"
+    GROUP = { "repo" => "studio-engine", "kind" => "gem",
+              "members" => [{ "slug" => "t-gem", "version" => nil }] }
+  RUBY
+
+  def test_gem_version_for_reads_the_frozen_ref_not_the_stale_local_checkout
+    out = run_cli(["--dry-run"], setup: GEM_VERSION_STUB,
+                  call: "print(gem_version_for('studio-engine', GROUP, 'frozensha'))")
+    assert_equal "0.11.0", out,
+                 "the gem version is read at the QA-frozen SHA (the version that publishes), not stale local main"
+  end
+
+  def test_gem_version_for_falls_back_to_the_local_checkout_without_a_frozen_ref
+    # No frozen ref to read (a release prepared before SHA recording) → the local
+    # checkout is the documented fallback. Proves the fix preserved the fallback.
+    out = run_cli(["--dry-run"], setup: GEM_VERSION_STUB,
+                  call: "print(gem_version_for('studio-engine', GROUP, nil))")
+    assert_equal "0.10.0", out, "with no frozen ref the resolver falls back to the local checkout"
+  end
+
+  # [integration] A release whose gem is version-bumped ABOVE the live version must
+  # PUBLISH (not skip) — driving the real `ship` flow end-to-end through the resolver
+  # + ship_gem's publish-vs-skip decision, with only the git/gem/heroku I/O seams
+  # stubbed (CI has no sibling checkout — the #181/#191 lesson). A gem-ONLY release
+  # keeps the app deploy/ff machinery out of the picture; `sh` is guarded to prove
+  # NO real shell I/O is reached.
+  PUBLISH_DECISION_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if ruby.include?("repo_plan")
+        { "slug" => "rel-pub", "state" => "assembled", "branch" => "release",
+          "qa_shas" => { "studio-engine" => "frozensha000000000000000000000000000000000" },
+          "repos" => [
+            { "repo" => "studio-engine", "kind" => "gem", "prod_deploy" => nil,
+              "members" => [{ "slug" => "t-gem", "version" => nil, "branch" => nil }] }
+          ] }
+      else
+        {} # the ship! record write (+ any other conductor call) is a no-op
+      end
+    end
+    # version_file AT the frozen SHA = BUMPED 0.11.0; the stale local checkout = 0.10.0.
+    def git_capture(*args)
+      line = args.join(" ")
+      if line.include?("show") && line.include?("frozensha")
+        ['VERSION = "0.11.0"', true]
+      else
+        ["deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", true] # rev-parse HEAD etc.
+      end
+    end
+    def gem_version_local(_repo) = "0.10.0"
+    def rubygems_versions(_gem) = [{ "number" => "0.10.0" }] # 0.10.0 LIVE, 0.11.0 not yet
+    # I/O seams stubbed — the test needs NO sibling gem checkout on disk.
+    def checkout_detached(_repo, _sha); end
+    def publish_gem(repo, version) = $stdout.puts("PUBLISH-CALLED " + repo + " " + version)
+    def ff_main_local(_repo, _sha); end
+    def push_origin_main(_repo); end
+    def sh(*a, **_k) = raise("no real shell I/O expected in this test: " + a.inspect)
+  RUBY
+
+  def test_ship_publishes_a_version_bumped_gem_instead_of_skipping_it
+    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB)
+
+    assert_includes out, "PUBLISH-CALLED studio-engine 0.11.0",
+                     "a gem bumped above the live version publishes (resolved from the frozen SHA)"
+    refute_includes out, "already live on RubyGems — skip publish",
+                     "the resolver must not read stale local 0.10.0 and skip the real publish"
+    # the pre-flight reflects the same truth — the bumped version will publish
+    assert_includes out, "studio-engine 0.11.0: not published — will publish"
+  end
+
   # --- archive --dry-run / run: the DevOps loop's conclusion (shipped → archived) ---
 
   # A dry-run archive must ONLY read (read_only conductor) + run the reclaim tool's
@@ -985,6 +1074,85 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "no overlapping files", "disjoint batches report independence"
   end
 
+  # --- review-gate guard: refuse an unreviewed merge unless --override ---------
+  # The decision is Release::Conductor.screen_merge's (unit-tested in
+  # conductor_test); these exercise the CLI ENTRY PATH — the guard renders the
+  # screen, aborts BEFORE any gh pr merge on a block, and threads the audited
+  # bypass through to the batched adopt on --override. The (stubbed) resolve now
+  # returns a `screen` block alongside `tasks`.
+
+  # A resolve whose single task is NOT reviewed → the screen blocks it.
+  BLOCKED_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+          ],
+          "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "blocked" }],
+                        "blocked" => ["task-a"], "overridden" => [], "missing" => [], "proceed" => false } }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_refuses_an_unreviewed_task_without_override
+    # abort writes the message to STDERR (discarded by run_cli) AND raises
+    # SystemExit carrying it — capture e.message, mirroring the usage-abort test.
+    out = run_cli(%w[task-a], setup: BLOCKED_MERGE_STUB,
+                  call: "begin; merge; rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "an unreviewed task aborts the merge"
+    assert_includes out, "review gate", "the abort names the review gate"
+    assert_includes out, "task-a (submitted)", "it prints exactly which task is in which stage"
+    assert_includes out, "--override", "the abort points to the override escape hatch"
+    assert_equal 0, out.scan("ADOPT-CALL").size, "nothing is merged or adopted — the guard runs BEFORE gh pr merge"
+  end
+
+  # The same unreviewed task, now with --override → the run proceeds and the
+  # bypass threads into the adopt snippet.
+  OVERRIDE_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+          ],
+          "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "overridden" }],
+                        "blocked" => [], "overridden" => ["task-a"], "missing" => [], "proceed" => true } }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_override_merges_an_unreviewed_task_and_threads_the_bypass_to_adopt
+    out = run_cli(%w[task-a --override], call: "merge", setup: OVERRIDE_MERGE_STUB)
+
+    assert_includes out, "OVERRIDE", "the override banner is printed"
+    assert_includes out, "review_bypassed", "the banner names the audit event it records"
+    assert_equal 1, out.scan("ADOPT-CALL").size, "the override proceeds to merge + adopt"
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "override: true", "the adopt snippet threads the audited bypass"
+  end
+
+  def test_merge_default_threads_no_override_into_adopt
+    # MERGE_STUB returns reviewed tasks + NO screen → the guard is a no-op and the
+    # normal path threads override: false (no bypass).
+    out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "override: false", "a normal merge threads NO bypass"
+  end
+
   # --- batch_adopt_ruby / batch_resolve_ruby: pure snippet builders ---------
   # These build the ONE-shot conductor snippets the batched merge runs; unit-test
   # them directly (eval_helper) so the single-call guarantee + slug embedding are
@@ -999,12 +1167,26 @@ class ReleaseCliTest < Minitest::Test
     assert_equal 1, out.scan("puts(").size, "the snippet emits exactly ONE JSON line for the whole batch"
   end
 
+  def test_batch_adopt_ruby_threads_the_override_flag
+    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"]))), "override: false",
+                    "adopt defaults to NO override"
+    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"], override: true))), "override: true",
+                    "the audited bypass threads into the adopt snippet"
+  end
+
   def test_batch_resolve_ruby_embeds_every_slug_and_reads_one_line
     out = eval_helper(%(batch_resolve_ruby(["task-a", "task-b"])))
     assert_includes out, "task-a"
     assert_includes out, "task-b"
     assert_includes out, "devops_url", "the resolve snippet reads each task's PR url"
     assert_equal 1, out.scan("puts(").size, "the resolve snippet emits ONE JSON line for the batch"
+  end
+
+  def test_batch_resolve_ruby_runs_the_review_gate_screen
+    out = eval_helper(%(batch_resolve_ruby(["task-a"], override: true)))
+    assert_includes out, "screen_merge", "the resolve snippet runs the review-gate screen in the same read"
+    assert_includes out, "override: true", "the override flag threads into the screen"
+    assert_equal 1, out.scan("puts(").size, "resolve + screen still emit ONE JSON line"
   end
 
   # --- conductor_payload: the shell-safe rails-runner bootstrap (the blocker) --

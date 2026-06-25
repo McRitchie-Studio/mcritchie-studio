@@ -36,8 +36,9 @@ module Dev
           "devops" => { "repositories" => ["mcritchie-studio"], "mascot" => mascot&.slug }.compact
         }
       )
-      # The client tints the spawn glow with the mascot's primary type color.
-      render json: { color: mascot&.signature_color }
+      # The card animates in live via the shared LiveBoardFx (off the genesis
+      # broadcast); the glow colour comes from the card's data-glow (mascot type).
+      head :no_content
     end
 
     # Advance the newest fixture one deploy-stage (wrapping shipped → designed) →
@@ -45,18 +46,14 @@ module Dev
     def move
       task = latest_fixture or return head(:no_content)
       task.update!(stage: next_stage(task.stage))
-      render json: { color: fixture_color(task) }
+      head :no_content
     end
 
-    # Drop the newest fixture. A destroy fires no TaskEvent, so broadcast the Turbo
-    # Stream remove explicitly (guarded so a dead cable can't break the request).
+    # Drop the newest fixture. Task#after_destroy_commit broadcasts the card removal
+    # to the live board (LiveBoardFx shrinks it out + reclaims the gap).
     def delete
       task = latest_fixture or return head(:no_content)
-      slug = task.slug
       task.destroy!
-      Studio::Cable.safe_broadcast do
-        Turbo::StreamsChannel.broadcast_remove_to(DeploymentsBroadcaster::STREAM, target: "card-#{slug}")
-      end
       head :no_content
     end
 
@@ -75,11 +72,6 @@ module Dev
     def next_stage(stage)
       zones = Task::DEPLOYMENTS_BOARD_STAGES
       zones[((zones.index(stage) || -1) + 1) % zones.size]
-    end
-
-    # The primary (signature) type color of a fixture's mascot, for the spawn glow.
-    def fixture_color(task)
-      Pokemon.find_by(slug: task.devops_field("mascot").to_s.presence)&.signature_color
     end
   end
 end
