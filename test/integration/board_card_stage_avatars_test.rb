@@ -92,6 +92,44 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "crew lanes grow from their column edge on hover (column-aware transform-origin)" do
+    # Same full four-lane shipped journey: build · review · assembled · shipped.
+    # On card hover each lane's stack scales up 1.5x and its grow DIRECTION is
+    # anchored to its column so an enlarged stack never spills off the card's near
+    # edge — the leftmost lane grows rightward (origin-left), the last lane grows
+    # leftward (origin-right), and the two middle lanes grow from center.
+    task = Task.create!(title: "origin crew shipped card", stage: "shipped")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 6.hours.ago, seconds_in_from: 3600, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600,
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
+                                                   { "slug" => "carl", "weight" => "light" }] })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 1.hour.ago, seconds_in_from: 600, actor: "avi")
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      # four filled lanes → leftmost anchors left, the two middles center, the last anchors right
+      assert_select ".origin-left",   count: 1
+      assert_select ".origin-center", count: 2
+      assert_select ".origin-right",  count: 1
+      # every lane's stack gets the bigger 1.5x hover bump (was a subtle scale-110)
+      assert_select "[class*='scale-150']", count: 4
+      # the two edge lanes also slide OUT into the card's side margins on hover
+      assert_select "[class*='group-hover:-translate-x-3']", count: 1 # leftmost slides further left
+      assert_select "[class*='group-hover:translate-x-3']",  count: 1 # rightmost slides further right
+    end
+  end
+
   test "build-lane card crew wears the task mascot instead of the actor initial" do
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
                     sprite_url: "https://example.test/snorlax-sprite.png")

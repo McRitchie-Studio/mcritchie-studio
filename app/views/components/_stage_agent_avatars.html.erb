@@ -103,9 +103,22 @@
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
               <%# Stack runs lead-FIRST (highest on the LEFT): the lead is leftmost and lifted
                   (z-30) so its glow sits on top; the next gets a subtler ring; deeper avatars
-                  blend and peek out to the right. The whole stack scales on card hover
+                  blend and peek out to the right. The whole stack scales up on card hover
                   (transform only, so siblings don't shift). %>
-              <div class="flex items-center <%= crew_overlap %> transition-transform duration-150 group-hover:scale-110">
+              <%# Grow DIRECTION + edge SPREAD track this lane's column in the row: the
+                  leftmost lane anchors its left edge and slides further LEFT on hover; the
+                  last lane (3rd on the Build grid, 4th once shipped) anchors its right edge
+                  and slides further RIGHT; the middle lanes just grow from center. So the
+                  enlarged crew fans OUT into the card's side margins (the dead space at the
+                  row's edges) instead of all piling toward the middle. %>
+              <% crew_pos = if ci.zero?
+                              "origin-left group-hover:-translate-x-3"
+                            elsif ci == columns.size - 1
+                              "origin-right group-hover:translate-x-3"
+                            else
+                              "origin-center"
+                            end %>
+              <div class="flex items-center <%= crew_overlap %> <%= crew_pos %> transition-transform duration-150 group-hover:scale-150">
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
                   <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
                        title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
