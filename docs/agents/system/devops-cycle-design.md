@@ -353,75 +353,86 @@ carries one non-stage meta-trigger — **`Build and Deploy QA Release`** — ren
 as a prominent chip in the current-release section (`#current-release`); it is
 the operator's main one-trigger that composes the per-stage commands below.
 
-**`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run)*
+**`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run — auto-ships to prod)*
 
 This is Mr. McRitchie's single trigger for the whole QA department: hand it to an
-agent and it walks the persistent-`release` model end to end, stopping only at the
-one human gate. It does **not** ship to production on its own.
+agent — **any model (Claude, Codex, …)** — and it walks the persistent-`release`
+model end to end **and ships the result to production**. The operator asked for a
+**hands-off auto-ship**, so this SOP has **no human gate**.
+
+> ⚠️ **THIS SOP SHIPS TO PROD WITH NO HUMAN CONFIRM.** A green review + green QA +
+> green ship-tests deploys straight to prod across every release repo
+> (mcritchie-studio + satellites). The **only** remaining gates are automated: the
+> two-senior review, QA, and `avi_ship_gate` (the ship-time test suite, which
+> aborts the ship on any failure). For a **human-gated** run instead, stop after
+> step 5 and hand the operator `bin/release ship` (the `Run Deployment` block).
 
 > **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
 > opens a fresh session with just `Build and Deploy QA Release`, follow **this**
 > SOP — *not* the feature-agent "⛔ STOP before writing code" flow in `CLAUDE.md`
 > (that is the **Build** lane). The conductor reviews, merges, and deploys work
-> that is **already** `reviewed`; it does not create a task, take a worktree, or
-> write feature code.
+> that is **already** built; it does not create a task, take a worktree, or write
+> feature code. Run every command from `/Users/alex/projects/mcritchie-studio`.
 
 > **A non-interactive agent MUST pass `--yes` where a command confirms.** An
 > agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as
-> **"no"**. The consequence differs per command, so know which you're running:
-> - **`prepare`** *silently no-ops* without `--yes` — it returns early on the
->   "no", so it looks like it ran but nothing deployed. This is the dangerous
->   one: always run `bin/release prepare --yes`.
-> - **`ship`** and **`archive`** *abort loudly* without `--yes` (they raise, not
->   no-op) — so they fail visibly; pass `--yes` only to run them hands-off.
-> - **`merge`** does not prompt at all today; its `--yes` is harmless,
->   future-proofing only — the examples below include it for consistency.
+> **"no"**. The consequence differs per command:
+> - **`prepare`** *silently no-ops* without `--yes` — looks like it ran but nothing
+>   deployed. The dangerous one: always run `bin/release prepare --yes`.
+> - **`ship`** and **`archive`** *abort loudly* without `--yes` — pass `--yes` to
+>   run them hands-off. **This SOP auto-ships, so step 6 runs `ship … --yes`.**
+> - **`merge`** does not prompt today; `--yes` is harmless future-proofing.
 >
-> So the agent-run commands below carry **`--yes`**. (`--prod` is already the
-> default — the board is prod — so don't add it redundantly. **`ship` stays the
-> operator-run human gate**: the operator answers the prompt interactively, so
-> this SOP does NOT pass `--yes` to ship; an agent that is ever explicitly
-> assigned the ship lane would need it too.)
+> `--yes` bypasses the **human confirm only** — it never skips a test gate
+> (`avi_ship_gate` runs and can still abort the ship). `--prod` is already the
+> default (the board is prod) — don't add it redundantly.
 
-1. **Assess the release.** Find the active release via `Release.current` (the
-   board features it via `Release.featured`, which falls back to the last
-   shipped when none is active) and list its current `assembled` members — the
-   candidate already riding the train.
-2. **Pull in the reviewed backlog.** For every eligible `reviewed` task,
-   `bin/release merge <task> --yes` it into `release` (membership flips `reviewed →
-   assembled` at merge). **Before each `bin/release merge` run this pre-merge
-   checklist** — older `reviewed` PRs commonly trip both, and either one makes the
-   merge fail:
-   - **Un-draft the PR.** A draft PR refuses merge (`gh pr merge` errors "Pull
-     Request is still a draft") — run `gh pr ready <n>` first.
-   - **Re-base it onto `release`.** PRs cut before the persistent-`release`
-     cutover (or by older tooling) target `main`, but `bin/release merge` needs
-     base `release` — run `gh pr edit <n> --base release` first (a no-op rebase
-     when `main` == `release`).
+**The block-and-move rule (every review below).** A reviewer block is **not** a
+stop: `bin/task block <slug> --kind rework --feedback "<one complete send-back>"`,
+then move on — one block never holds back the PRs that passed (rework is a separate
+feature-agent cycle). Surface every blocking event — a review send-back, a merge
+conflict that forces a task back, or a ship-time test/preflight abort — as a little
+**❌ Block Resolved** line (`❌ Block Resolved — <slug>: <reason>`; "resolved" =
+recorded and routed back, not fixed). List them in the handoff **only if at least
+one blocking event happened** — omit the section on a clean run.
 
-   The same two checks apply to every `bin/release merge` in step 3. **Avi's bias
-   is throughput — maximize what ships: get every task that passes QA into the
-   release, default to including, not deferring.** If no release is active, the
-   first merge creates the singleton candidate.
-3. **Work the `submitted` queue.** For each submitted PR run the **two-senior
-   review cascade** (the `Review submitted PRs` runbook below): spawn **Avi**, who
-   confirms product-acceptance, runs **`bin/reviewer-select <task>`** to pick the
-   two seniors (1 heavy + 1 light, QA owner excluded), and spawns them in parallel
-   to review. For each that earns **two approvals** and doesn't conflict, move it
-   `reviewed`, then run the step-2 pre-merge checklist and `bin/release merge
-   <task> --yes` it into `release` (flips `reviewed → assembled`, joins the
-   candidate); send back anything a reviewer blocks (`bin/task block … --kind
-   rework`).
-4. **Deploy the candidate to QA.** `bin/release prepare --yes` — deploys
-   `origin/release` to QA for every member's **app** (gem members ride the record
-   and are QA'd via a consuming app), records `release.qa_url`, and leaves the RC
-   `assembled` for the operator to eyeball. If `prepare` prints the recorded QA
-   URL with `(/up 000)` right after a Heroku release, that's usually the dyno
-   still booting, not a failure — re-check with a fresh `curl -s -o /dev/null -w
-   "%{http_code}" <url>/up` before treating it as broken.
-5. **Stop at the human gate.** Do **not** ship. Report the QA URL and the
-   candidate's members, then **ask the operator to make the production release**
-   (`bin/release ship`) — the one human gate (see `Run Deployment` below).
+1. **Survey + assess the candidate.** `bin/conductor plan` — enumerate the Deploy
+   queue **by stage**, name the active release candidate + its `assembled` members
+   (the "active pending release" you fold in), and flag `blocked` + non-pipeline
+   tasks (e.g. `rolio` — handle in its own app, never `bin/release merge` it).
+2. **Review round 1 — PARALLEL fan-out.** Fetch the submitted queue
+   (`bin/task list --stage submitted`) and review **all of it at once**: for each
+   pipeline task run the two-senior cascade (the `Review submitted PRs` runbook
+   below) — spawn **Avi** (product-acceptance), `bin/reviewer-select <task>
+   --busy-auto` (records the heavy+light pair), then spawn the two seniors **in
+   parallel**. Launch the whole batch concurrently — don't review one PR start to
+   finish before the next. Two approvals → `bin/task move <task> reviewed`; any
+   block → block-and-move.
+3. **Prepare the release.** Merge the round-1 `reviewed` tasks **plus any
+   pre-existing `reviewed` backlog** into the active candidate (or open it). Run the
+   pre-merge checklist per PR — `gh pr ready <n>` (un-draft), `gh pr edit <n> --base
+   release` (retarget; no-op when `main` == `release`) — then **batched**
+   `bin/release merge <slug> [<slug> …] --yes` (one dyno, N `reviewed → assembled`
+   flips; the overlap warning is advisory). Deploy to QA: `bin/release prepare
+   --yes` (records `release.qa_url`; a `/up 000` right after a Heroku release is
+   usually a still-booting dyno — re-check `curl -s -o /dev/null -w "%{http_code}"
+   <url>/up`). **Bias to throughput: default to including, not deferring.**
+4. **Review round 2 — stragglers.** Reviewing + preparing takes time; new PRs may
+   have landed in `submitted`. Re-fetch `bin/task list --stage submitted` and run
+   the same cascade + block-and-move on anything new. Empty → say so, skip to step 6.
+5. **Assemble again.** Pre-merge checklist + `bin/release merge <slug> … --yes` the
+   round-2 `reviewed` tasks into the same candidate, then `bin/release prepare
+   --yes` to refresh QA. Confirm the refreshed QA app is green.
+6. **Ship to production (NO human gate).** From a **primary checkout** (not a
+   worktree — gems resolve as siblings at the projects root): `bin/release ship
+   --by conductor --yes`. It runs preflight (clean-`main` assertion) →
+   `avi_ship_gate` (each app's test suite on the frozen ship SHA; **aborts on any
+   failure** before anything irreversible) → producer-first gem publish → ff each
+   repo's `release → main` → deploy + smoke `/up` → prod `post_deploy_cmd` →
+   members `shipped` → auto-posted release notes. `--yes` removes only the human
+   confirm; if a gate aborts, report it and don't force past.
+7. **Close the loop (optional).** `bin/release archive --yes` (shipped → archived +
+   reclaim worktrees) and `bin/release retro --yes` (durable learnings doc).
 
 The per-stage commands below are the building blocks this meta-trigger sequences:
 
