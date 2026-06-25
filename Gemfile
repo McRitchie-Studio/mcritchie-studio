@@ -3,7 +3,7 @@ source "https://rubygems.org"
 ruby "3.3.11"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 7.2.3"
+gem "rails", "~> 8.1"
 # The original asset pipeline for Rails [https://github.com/rails/sprockets-rails]
 gem "sprockets-rails"
 # Use postgresql as the database for Active Record
@@ -69,6 +69,9 @@ group :test do
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"
   gem "selenium-webdriver"
+  # minitest 6.0 dropped minitest/mock (Object#stub / Minitest::Mock); the suite
+  # relies on Object#stub. Rails only needs >= 5.15, so pin to the 5.x line.
+  gem "minitest", "~> 5.25"
 end
 gem "dotenv-rails", groups: [:development, :test]
 gem "redcarpet"
@@ -78,4 +81,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.10" # cable primitive (Studio::Redis/Cable/Broadcastable) + redis dep — PR studio-engine#9; lockfile finalizes via `bundle update studio-engine` when 0.10.0 publishes
+gem "studio-engine", "~> 0.11" # 0.11.0 widens the Rails bound to < 8.2 (enables Rails 8.1)

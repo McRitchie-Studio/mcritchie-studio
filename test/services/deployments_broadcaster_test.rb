@@ -1,5 +1,8 @@
 require "test_helper"
 require "minitest/mock"
+# Rails 8.1 defers turbo-rails' on_load(:action_cable) hook, which is what
+# normally requires this helper, so load it explicitly before the include below.
+require "turbo/broadcastable/test_helper"
 
 # DeploymentsBroadcaster: turns a TaskEvent into a Turbo Stream that patches the
 # /deployments board live — a replace (intent / same column), a remove+prepend
