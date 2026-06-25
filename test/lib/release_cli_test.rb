@@ -1231,6 +1231,30 @@ class ReleaseCliTest < Minitest::Test
                  "an ordinary snippet round-trips unchanged through the payload encoding"
   end
 
+  # --- with_conductor_session: tag the deployment with the running session -----
+  # The conductor's local session id lives in THIS shell's env and does NOT cross
+  # the `heroku run` boundary, so conductor() passes it in-band ahead of the
+  # snippet. The prod runner drains Current.conductor_session_id onto the release
+  # so the board shows which agent worked the deploy. `Current.try(:…=)` so an
+  # older prod (pre-attribute) ignores it instead of erroring mid-ship.
+
+  def test_with_conductor_session_prefixes_the_session_id_when_present
+    out = eval_helper(%{(ENV['CLAUDE_CODE_SESSION_ID']='sess-z'; with_conductor_session("puts :ok"))}).strip
+    assert_equal %(Current.try(:conductor_session_id=, "sess-z"); puts :ok), out,
+                 "the snippet is prefixed with the in-band session id so prod can stamp the mascot"
+  end
+
+  def test_with_conductor_session_falls_back_to_codex_thread_id
+    expr = %{(ENV.delete('CLAUDE_CODE_SESSION_ID'); ENV['CODEX_THREAD_ID']='codex-1'; with_conductor_session("puts :ok"))}
+    assert_equal %(Current.try(:conductor_session_id=, "codex-1"); puts :ok), eval_helper(expr).strip
+  end
+
+  def test_with_conductor_session_is_a_no_op_without_a_session
+    expr = %{(ENV.delete('CLAUDE_CODE_SESSION_ID'); ENV.delete('CODEX_THREAD_ID'); with_conductor_session("puts :ok"))}
+    assert_equal "puts :ok", eval_helper(expr).strip,
+                 "a session-less run passes the snippet through untouched"
+  end
+
   # --- ship preflight: every app checkout on a clean `main` before any ff ----
   # ship ff's each app repo's main → frozen SHA; a checkout left on a pr-NNN
   # branch (review agent) or with a stale schema.rb breaks the ff mid-ship. The

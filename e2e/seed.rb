@@ -18,6 +18,9 @@ CoachRanking.delete_all
 Coach.delete_all
 Team.delete_all
 Person.delete_all
+Release.delete_all
+SessionMascot.delete_all
+Pokemon.delete_all
 
 # Admin user
 admin = User.create!(
@@ -233,4 +236,25 @@ deploy_crew_task.task_events.delete_all # curated, time-spaced build → review 
   )
 end
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"
+# /deployments release cards: each release wears the conductor SESSION's Pokémon
+# mascot + a timing line. Drives the release_mascot e2e — an ACTIVE Next Release
+# (in progress) and a SHIPPED Last Release (took ~18m), each with a stamped mascot.
+# A 1x1 transparent GIF data URI so the browser renders the avatar with NO network
+# fetch — a real http(s) sprite would log an ERR_NAME_NOT_RESOLVED console error
+# that the strict deployments_live pageErrors assertion would (rightly) catch.
+sprite = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: ["normal"], generation: 1,
+                sprite_url: sprite)
+Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: ["dragon", "flying"], generation: 1,
+                sprite_url: sprite)
+
+# Shipped first (terminal) so the active release below satisfies the singleton.
+shipped_release = Release.open!
+shipped_release.update!(metadata: { "devops" => { "mascot" => "dragonite", "mascot_session" => "sess-ship" } })
+shipped_release.ship!
+shipped_release.update_columns(created_at: 18.minutes.ago, shipped_at: Time.current)
+
+active_release = Release.open!
+active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-active" } })
+
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases"

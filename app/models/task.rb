@@ -1,6 +1,34 @@
 class Task < ApplicationRecord
   SIZES = %w[small medium large xl].freeze
 
+  # --- Auto-derived actual_size (the "what it really cost" leg of the trio) ---
+  # The size trio is: po_size (Avi's estimate at creation), dev_size (the builder
+  # Pokémon's estimate at claim), and actual_size — the MEASURED outcome, derived
+  # at ship from the task's real usage. po/dev are forecasts; actual is the ground
+  # truth that scores them on the intelligence dashboard.
+  #
+  # SIGNAL: total tokens. We sum tokens_total across the task's TaskEvents — the
+  # measured spine of work the agents actually burned across every stage. Tokens
+  # (not cost, not wall-clock duration) is the cleanest size proxy: cost is just
+  # tokens × a model's per-token price (so it tracks model choice, not work
+  # volume), and duration is dominated by handoff/idle gaps between stages
+  # (wall-clock, not effort). Tokens measure the work itself. Cost and
+  # created_at→completed_at duration are both available on the record if a future
+  # calibration wants to factor them; tokens stay the single, tunable signal here.
+  #
+  # THRESHOLDS: size → the EXCLUSIVE upper bound (in total tokens) of that bucket;
+  # a task lands in the first bucket whose ceiling its token total falls under.
+  # These are deliberately ROUND starting points — the seed board carries no
+  # measured token usage yet, so they can't be fit to data; they're meant to be
+  # re-tuned once real shipped tasks accumulate a token distribution. Kept in one
+  # constant map so that re-tuning is a one-line edit.
+  ACTUAL_SIZE_THRESHOLDS = {
+    "small"  => 1_000_000,   # < 1M tokens  — a quick, contained change
+    "medium" => 5_000_000,   # < 5M tokens  — a normal feature
+    "large"  => 15_000_000,  # < 15M tokens — a heavy, multi-stage build
+    "xl"     => Float::INFINITY # ≥ 15M tokens — an epic
+  }.freeze
+
   # Two-workflow status model. See docs/agents/system/devops-cycle-design.md.
   #
   #   Workflow 1 — Build (feature agent):  designed → building → submitted
@@ -97,6 +125,12 @@ class Task < ApplicationRecord
   # transition on update.
   after_create :record_genesis_event
   after_update :record_transition_event, if: :saved_change_to_stage?
+  # When a task lands in `shipped`, stamp actual_size from its MEASURED usage.
+  # Registered AFTER record_transition_event so the shipping transition's own
+  # TaskEvent is already on the spine and counted in the token total. See
+  # #autoderive_actual_size — it only fills a BLANK actual_size (never clobbers a
+  # manual size) and never unwinds the ship if derivation fails.
+  after_update :autoderive_actual_size, if: :saved_change_to_stage?
   # A destroy fires no TaskEvent, so the live /deployments board never hears about
   # it — broadcast the card removal explicitly so every viewer's board drops it.
   after_destroy_commit :broadcast_removal_to_deployments_board
@@ -437,6 +471,26 @@ class Task < ApplicationRecord
     STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
 
+  # The MEASURED total tokens for this task — the sum of tokens_total across every
+  # TaskEvent on its spine (a missing token field counts as 0). The size signal
+  # behind #derive_actual_size. Computed in SQL off a fresh relation so it never
+  # reads a stale loaded-association cache mid-transaction.
+  def measured_tokens_total
+    TaskEvent.where(task_slug: slug)
+             .sum(Arel.sql("COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)"))
+  end
+
+  # The actual_size this task's measured usage maps to via ACTUAL_SIZE_THRESHOLDS,
+  # or nil when there's NO measured usage (zero tokens) — an honest "can't size it"
+  # rather than a misleading "small" for a task whose usage was simply never
+  # captured. Pure (no writes): callers decide whether to persist it.
+  def derive_actual_size
+    tokens = measured_tokens_total
+    return nil if tokens.zero?
+
+    ACTUAL_SIZE_THRESHOLDS.find { |_size, ceiling| tokens < ceiling }&.first
+  end
+
   def self.normalize_devops_metadata(raw)
     return {} if raw.blank?
 
@@ -579,6 +633,29 @@ class Task < ApplicationRecord
 
   def record_transition_event
     write_stage_event(from: stage_before_last_save)
+  end
+
+  # Stamp actual_size from the task's measured usage the moment it ships — closing
+  # the size trio (po/dev forecasts vs. the measured actual). Only fills a BLANK
+  # actual_size, so a manually set size (the /sizing editor) is never clobbered;
+  # only persists a real derivation (a no-usage task derives nil → left blank).
+  # Writes via update_column to skip the callback chain (no re-entrancy). The
+  # rescue is INTENTIONALLY swallow-and-log, not re-raise: this runs inside the
+  # ship transition, so a derivation bug must degrade to "no auto-size" rather
+  # than roll the ship back (mirrors stage_event_metadata + backfill_mascots!).
+  def autoderive_actual_size
+    return unless stage == "shipped"
+    return if actual_size.present?
+
+    size = derive_actual_size
+    return if size.blank?
+
+    update_column(:actual_size, size) # rubocop:disable Rails/SkipsModelValidations
+  rescue StandardError => e
+    log = ErrorLog.capture!(e)
+    log.target = self
+    log.target_name = slug
+    log.save!
   end
 
   def write_stage_event(from:)

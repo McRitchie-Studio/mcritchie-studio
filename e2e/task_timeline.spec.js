@@ -17,8 +17,9 @@ test("task show page renders the stage timeline with transitions, duration, and 
   await expect(timeline).toContainText("Submitted");
   await expect(timeline).toContainText("Reviewed");
 
-  // Measured duration (server-owned) and reported usage (agent-supplied)
-  await expect(timeline).toContainText("in Building");
+  // Uniform metric block: measured duration (server-owned) + reported usage (agent-supplied)
+  await expect(timeline).toContainText("Duration");
+  await expect(timeline).toContainText("Tokens");
   await expect(timeline).toContainText("claude-opus-4-8");
   await expect(timeline).toContainText("$5.40");
 });

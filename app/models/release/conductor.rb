@@ -29,6 +29,7 @@ class Release
     # flag is reset in `ensure` so it can't leak onto a later (in-process) transition.
     def adopt!(task, override: false)
       release = Release.current_or_open!
+      stamp_session_mascot(release)
       member = release.tasks.find_by(slug: task.slug)
       target = member || task
       # Only flag a genuine bypass: an override on an already-`reviewed` (or
@@ -131,6 +132,7 @@ class Release
         end
 
         release = Release.current
+        stamp_session_mascot(release)
 
         # Repo-aware eligibility: a release can't deploy a repo it doesn't know how
         # to deploy. An unknown-repo member raises here, rolling the whole curation
@@ -228,6 +230,11 @@ class Release
         )
         release.ship!(by: by)
       end
+      # Re-stamp AFTER the ship commits so the read-only "Last Release" wears the
+      # mascot of whoever actually ran the deploy (a handoff swaps it). Defensive
+      # by design (see stamp_session_mascot) — a mascot stamp must never undo a
+      # completed, irreversible prod ship.
+      stamp_session_mascot(release)
       release
     end
 
@@ -350,6 +357,28 @@ class Release
         Task.where(slug: slugs).find_each(&:archive!)
       end
       { archived: slugs, kept: kept, count: slugs.size }
+    end
+
+    # --- conductor mascot ------------------------------------------------------
+
+    # Stamp the running conductor SESSION's Pokémon mascot onto `release` so the
+    # deployments board shows who's working it. The session id rides in on
+    # Current.conductor_session_id (set by bin/release's heroku-run payload, since
+    # local shell env doesn't cross the boundary). A no-op when no session is in
+    # context — so non-conductor callers (the board, model-driven flows) never
+    # stamp. DEFENSIVE: the stamp runs alongside (and, at ship, AFTER) irreversible
+    # deploy ops, so any failure is swallowed + logged — a mascot must never break
+    # a release. Returns the release.
+    def stamp_session_mascot(release)
+      return release unless release
+
+      sid = Current.conductor_session_id.to_s.strip
+      return release if sid.empty?
+
+      release.stamp_conductor_mascot!(sid)
+    rescue StandardError => e
+      Rails.logger.warn("[release-mascot] stamp failed (non-fatal): #{e.class}: #{e.message}")
+      release
     end
   end
 end

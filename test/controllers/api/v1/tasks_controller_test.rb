@@ -231,6 +231,61 @@ module Api
         assert_equal "snorlax", @task.reload.devops["mascot"], "persona none reverts to the Pokemon"
         assert_nil @task.devops["persona"], "the persona key is dropped"
       end
+
+      # The size trio is permitted as top-level columns so bin/task's --po-size /
+      # --dev-size / --pm-size (and the building-claim --dev-size) actually persist.
+      test "update permits the size columns at top level" do
+        patch api_v1_task_path(@task.slug),
+              params: { po_size: "medium", dev_size: "large", pm_size: "small" },
+              headers: @headers, as: :json
+
+        assert_response :success
+        @task.reload
+        assert_equal "medium", @task.po_size
+        assert_equal "large", @task.dev_size
+        assert_equal "small", @task.pm_size
+      end
+
+      test "update rejects an out-of-range size with a 422" do
+        patch api_v1_task_path(@task.slug), params: { po_size: "huge" }, headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_nil @task.reload.po_size, "an invalid size is not persisted"
+      end
+
+      # End-to-end size lifecycle through the API: Avi creates + sizes (po_size) →
+      # the builder claims at building (dev_size) → ship auto-derives actual_size
+      # from the measured token total. The trio (po/dev/actual) all land.
+      test "size lifecycle: create po_size, claim dev_size, ship auto-derives actual_size" do
+        # 1) Avi creates and sizes the task (po_size — the default sizer).
+        post api_v1_tasks_path,
+             params: { title: "Sized lifecycle demo task", po_size: "medium", devops: { shape: "backend" } },
+             headers: @headers, as: :json
+        assert_response :created
+        slug = JSON.parse(response.body).dig("data", "slug")
+        task = Task.find_by!(slug: slug)
+        assert_equal "medium", task.po_size
+
+        # 2) The builder claims it at `building`, stamping its own dev_size.
+        patch api_v1_task_path(slug), params: { stage: "building", dev_size: "large" }, headers: @headers, as: :json
+        assert_response :success
+        task.reload
+        assert_equal "building", task.stage
+        assert_equal "large", task.dev_size
+
+        # Measured usage accumulates across the build (recorded on TaskEvents).
+        task.task_events.create!(to_stage: "building", occurred_at: Time.current,
+                                 tokens_in: 3_000_000, tokens_out: 3_000_000) # 6M total → large
+
+        # 3) Ship → actual_size auto-derives from the measured token total.
+        patch api_v1_task_path(slug), params: { stage: "shipped" }, headers: @headers, as: :json
+        assert_response :success
+        task.reload
+        assert_equal "shipped", task.stage
+        assert_equal "medium", task.po_size, "the PO forecast is retained"
+        assert_equal "large", task.dev_size, "the dev forecast is retained"
+        assert_equal "large", task.actual_size, "actual_size auto-derives from measured usage at ship"
+      end
     end
   end
 end

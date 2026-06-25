@@ -261,6 +261,30 @@ def conductor_payload(ruby)
   "eval(Base64.urlsafe_decode64(#{blob.inspect}))"
 end
 
+# This conductor's local SESSION id (Claude or Codex), or nil. Used to tag the
+# deployment with the agent working it — see with_conductor_session.
+def conductor_session_id
+  %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].each do |key|
+    value = ENV[key].to_s.strip
+    return value unless value.empty?
+  end
+  nil
+end
+
+# Prefix a conductor snippet with the local session id so the prod `rails runner`
+# can stamp the deployment's Pokémon mascot (Release stamps the SESSION's mascot —
+# the agent running bin/release). The session lives in THIS shell's env, which does
+# NOT cross the `heroku run` boundary, so we pass it in-band. `Current.try(:…=)` so
+# an older prod that predates the attribute ignores it instead of erroring mid-ship
+# — the stamp is best-effort, never load-bearing for a release op. A session-less
+# run (no env var) returns the snippet untouched. Pure → unit-tested standalone.
+def with_conductor_session(ruby)
+  sid = conductor_session_id
+  return ruby unless sid
+
+  "Current.try(:conductor_session_id=, #{sid.inspect}); #{ruby}"
+end
+
 # Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.
 # The snippet must `puts` a single JSON line; we return the parsed Hash. The
 # snippet rides as a shell-safe Base64 bootstrap (see conductor_payload) so any
@@ -271,7 +295,7 @@ end
 # letting a dry-run PREVIEW the real plan. read_only goes straight to Open3 so
 # it bypasses sh's own dry-run gate.
 def conductor(ruby, read_only: false)
-  payload = conductor_payload(ruby)
+  payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
              : ["bin/rails", "runner", payload]
   if DRY && !read_only

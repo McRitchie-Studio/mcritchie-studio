@@ -234,4 +234,60 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal "ship", Release.step_owning_tier("e2e-full")
     assert_nil Release.step_owning_tier("base-not-real")
   end
+
+  # --- conductor mascot (the agent working this deployment) -------------------
+
+  def seed_pokemon
+    %w[bulbasaur charmander squirtle pikachu snorlax dragonite].each_with_index.map do |slug, i|
+      Pokemon.create!(dex: 300 + i, name: slug.capitalize, slug: slug, types: %w[normal], generation: 1)
+    end
+  end
+
+  test "devops/devops_field/mascot are safe on a fresh, unstamped release" do
+    rel = Release.open!
+    assert_equal({}, rel.devops, "no devops metadata yet → empty hash, never nil")
+    assert_nil rel.devops_field("mascot")
+    assert_nil rel.mascot, "no mascot stamped → nil so the card degrades gracefully"
+  end
+
+  test "stamp_conductor_mascot! stamps the session's mascot into devops metadata" do
+    seed_pokemon
+    rel = Release.open!
+    rel.stamp_conductor_mascot!("sess-1")
+
+    expected = SessionMascot.for("sess-1").mascot_slug
+    assert_equal expected, rel.reload.devops_field("mascot"), "stamps the SESSION's mascot slug"
+    assert_equal "sess-1", rel.devops_field("mascot_session"), "records the owning session"
+    assert_equal expected, rel.mascot.slug, "#mascot resolves the stamped Pokémon"
+  end
+
+  test "stamp_conductor_mascot! is idempotent for the same session (never re-rolls)" do
+    seed_pokemon
+    rel = Release.open!
+    first = rel.stamp_conductor_mascot!("sess-1").devops_field("mascot")
+    rel.stamp_conductor_mascot!("sess-1")
+
+    assert_equal first, rel.reload.devops_field("mascot"), "same session keeps the same face"
+  end
+
+  test "stamp_conductor_mascot! swaps the mascot on a handoff (different session)" do
+    seed_pokemon
+    rel = Release.open!
+    rel.stamp_conductor_mascot!("sess-a")
+    before = rel.devops_field("mascot")
+
+    rel.stamp_conductor_mascot!("sess-b")
+
+    assert_equal "sess-b", rel.reload.devops_field("mascot_session"), "the new session takes ownership"
+    refute_equal before, rel.devops_field("mascot"), "two sessions never share a Pokémon → the face swaps"
+    assert_equal SessionMascot.for("sess-b").mascot_slug, rel.mascot.slug
+  end
+
+  test "stamp_conductor_mascot! is a no-op for a blank session" do
+    seed_pokemon
+    rel = Release.open!
+    rel.stamp_conductor_mascot!("")
+    rel.stamp_conductor_mascot!(nil)
+    assert_nil rel.reload.devops_field("mascot")
+  end
 end

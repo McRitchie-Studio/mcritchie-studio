@@ -1,6 +1,6 @@
 ---
 name: wrap
-description: Session-close ceremony / bumper. Invoke when a session is wrapping up — the user signals they're done or asks what's left ("anything else?", "we're good", "call it here", "wrap up", "/wrap"), or you're handing off. Walks memory hygiene, a documentation sweep, task-board reconciliation, worktree/stack status, and a handoff summary so end-of-session cleanup happens by ritual, not by luck.
+description: Session-close ceremony / bumper. Invoke when a session is wrapping up — the user signals they're done or asks what's left ("anything else?", "we're good", "call it here", "wrap up", "/wrap"), or you're handing off. First offers the highest-leverage work the session's warm context unlocks, then walks memory hygiene, a documentation sweep, task-board reconciliation, and worktree/stack status, and ends by handing the operator permission to close at a clean seam — so the warm context is spent well and end-of-session cleanup happens by ritual, not by luck.
 ---
 
 # /wrap — session-close ceremony
@@ -10,11 +10,35 @@ it plainly doesn't apply — and say so out loud rather than silently dropping i
 Each step should end in something inspectable. Keep it honest: "nothing to do" beats
 narrating busywork; surface operator-gated steps, don't perform them.
 
+**Ethos — doing the right thing is always the right answer.** A wrap is not a dash
+for the exit. It's the moment to spend the session's warm context *well* before it's
+gone: you hold this code, these patterns, this state loaded **right now**, and the
+next session starts cold. So a wrap pulls two ways at once, and both are the job —
+feel free to do each without waiting to be asked:
+- **Offer the work the warm context unlocks.** Don't just tidy and leave; name the
+  highest-leverage thing worth doing while you're still warm (Step 1).
+- **Earn, then hand over, the close.** When you reach a genuinely clean seam, tell
+  the operator plainly that they're clear to close (Step 8).
+
+**Always be closing** — toward the *right* close, never a hurried one.
+
 Absolute paths used below:
 - memory dir: `/Users/alex/.claude/projects/-Users-alex-projects/memory`
 - McRitchie studio: `/Users/alex/projects/mcritchie-studio`
 
-## 1. Capture learnings → memory
+## 1. Spend the warm context
+Before you tidy, ask what this session is uniquely positioned to do **right now**.
+You hold loaded context the next cold session won't — the files you read, the
+patterns you learned, the things you noticed in passing. Surface the highest-leverage
+moves it unlocks, ranked, and offer them; you don't need permission to suggest:
+- an adjacent fix, test, or doc you noticed but didn't do;
+- a backlog or `stale` task this context would make cheap;
+- the natural next increment of the work just done.
+The operator picks one (→ do it, then re-enter the wrap) or waves you on to close.
+Don't manufacture busywork: if there is genuinely nothing worth it, **say so** —
+"nothing worth doing warm" is a finding you looked for, not a step you skipped.
+
+## 2. Capture learnings → memory
 Ask: what did this session teach that is durable AND non-obvious — a gotcha, a
 decision, a project-state change, a stated preference? Write or update memory files
 in the memory dir.
@@ -25,7 +49,7 @@ in the memory dir.
   `- [Title](file.md) — <≤130-char hook>`. Detail lives in the topic file, never
   in the index. (See `feedback_memory_index_hygiene.md`.)
 
-## 2. Memory index hygiene
+## 3. Memory index hygiene
 Keep `MEMORY.md` under its size limit (~24KB) so the harness loads the whole index.
 The job: shorten the one-line hooks — never the links or the topic files — so every
 entry stays terse and the file stays under the cap.
@@ -48,7 +72,7 @@ entry stays terse and the file stays under the cap.
 - Verify either way: bytes down, entry count unchanged, and every index line still
   links — `grep -E '^- \[' MEMORY.md | grep -vc ']('` returns 0.
 
-## 3. Documentation sweep
+## 4. Documentation sweep
 Did this session change behavior, a workflow, ports, auth, env vars, deploy steps,
 or an agent process? If yes, update the OWNING active doc in this same wrap — stale
 docs are how the next session starts from a wrong map.
@@ -56,19 +80,28 @@ docs are how the next session starts from a wrong map.
   (task → worktree → PR into `release`), per `CLAUDE.md`. Do **not** edit McRitchie
   active docs on a primary checkout.
 
-## 4. Task-board reconciliation
+## 5. Task-board reconciliation
 - `cd /Users/alex/projects/mcritchie-studio && bin/task stale` — flags any task whose
   work already shipped but that isn't `shipped`/`archived`.
 - Confirm every task you touched is in its correct stage. Nothing stranded in
   `building` (a leaked claim) or left un-`submitted` when its PR is open.
 
-## 5. Worktree / stack status
+## 6. Worktree / stack status
 - Report any worktree stacks still serving (ports) so the operator can reclaim them.
   `bin/agent-worktree list` for the full picture.
 - Do **not** delete worktrees or branches whose PRs aren't merged or abandoned.
 
-## 6. Handoff
+## 7. Handoff
 Close with an inspectable summary:
 - Task URLs **before** PR URLs (lead from the task record), plus local/QA URLs.
 - What's done and verified vs. what's open and owed.
 - Any operator-gated next step (QA review, merge, deploy) — named, not taken.
+
+## 8. Clear to close
+Make the call — this is the last word, and it's yours to offer. If you're at a
+genuinely clean seam — work committed or safely parked, the board honest, nothing
+half-done that a cold session would fumble — say it plainly: **"Clean seam — you're
+clear to close."** If you're *not* there yet, name the single thing that would get
+there, so the operator is never left guessing whether it's safe to stop. Doing the
+right thing is always the right answer; sometimes that's one more move, and sometimes
+it's handing the operator a clean exit. Always be closing.

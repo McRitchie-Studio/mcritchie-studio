@@ -85,6 +85,58 @@ class Release < ApplicationRecord
     ACTIVE_STATES.include?(state)
   end
 
+  # --- conductor mascot (the agent working this deployment) -------------------
+  # A release wears the Pokémon mascot of the SESSION that ran `bin/release` on
+  # it (mirrors Task's per-session mascot). Stored loosely in metadata.devops —
+  # `mascot` (slug) + `mascot_session` (the owning session id) — so the board can
+  # show who's on the deployment and the same session keeps its face across
+  # merge/prepare/ship while a handoff swaps it.
+
+  # The metadata.devops sub-hash, always a Hash (never nil) for safe reads.
+  def devops
+    raw = metadata.is_a?(Hash) ? metadata["devops"] : nil
+    raw.is_a?(Hash) ? raw : {}
+  end
+
+  # One devops scalar, or nil when blank/absent.
+  def devops_field(key)
+    devops[key.to_s].presence
+  end
+
+  # The conductor's Pokémon, resolved from the stored mascot slug (nil when
+  # unstamped — old releases, or no session — so the card degrades gracefully).
+  def mascot
+    slug = devops_field("mascot")
+    return nil if slug.blank?
+
+    @mascot ||= Pokemon.find_by(slug: slug)
+  end
+
+  # Stamp the conductor session's mascot onto the release, drawing/reusing it via
+  # SessionMascot.for (the same race-safe lookup tasks use). Idempotent and
+  # handoff-aware, mirroring Task#sync_session_mascot: it (re)assigns only when no
+  # mascot is set yet OR a DIFFERENT session is now acting — so re-running the
+  # conductor in the same session is a no-op, but a handoff swaps the face. A
+  # blank session, an unseeded Pokémon table, or a draw that yields nothing all
+  # leave the release untouched (no mascot rather than a crash). Returns self.
+  def stamp_conductor_mascot!(session_id)
+    sid = session_id.to_s.strip
+    return self if sid.empty?
+    return self unless Pokemon.table_exists?
+    return self unless devops_field("mascot").blank? || devops_field("mascot_session") != sid
+
+    slug = SessionMascot.for(sid)&.mascot_slug
+    return self unless slug
+
+    meta = (metadata.presence || {}).deep_dup
+    d = (meta["devops"] ||= {})
+    d["mascot"] = slug
+    d["mascot_session"] = sid
+    update!(metadata: meta)
+    @mascot = nil # bust the memo so a re-read reflects the swap
+    self
+  end
+
   # Member tasks in PRODUCER-FIRST order: gems (published) before apps
   # (deployed), honoring task `dependencies` within that. This is the order the
   # conductor publishes/deploys in and the order `member_plan` reports.
