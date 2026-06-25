@@ -298,24 +298,28 @@ class Release
     end
 
     # Build + deliver release notes for a shipped release — reusing the exact
-    # Formatter + DiscordClient behind POST /api/v1/release_notes. Non-fatal by
-    # design: a missing webhook or delivery error returns the message without
-    # delivering, so it never fails an already-completed ship. Returns
-    # { message:, delivered: }.
+    # Formatter + DiscordClient behind POST /api/v1/release_notes. Delivers rich
+    # embeds (a summary + one card per task) when the release fits Discord's
+    # 10-embed cap, else the plain-text fallback — the Formatter#discord_payload
+    # chooser decides. Non-fatal by design: a missing webhook or delivery error
+    # returns the message without delivering, so it never fails an
+    # already-completed ship. Returns { message:, delivered: } (message is the
+    # text render, kept for preview regardless of which payload shipped).
     def post_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: false)
-      message = ReleaseNotes::Formatter.new(
+      formatter = ReleaseNotes::Formatter.new(
         app: app,
         environment: environment,
         release: release.slug,
         sha: release.deployed_sha,
         url: release.production_url,
         tasks: release.tasks.order(:position).to_a
-      ).message
+      )
+      message = formatter.message
 
       delivered = false
       unless dry_run
         begin
-          ReleaseNotes::DiscordClient.deliver(content: message)
+          ReleaseNotes::DiscordClient.deliver(**formatter.discord_payload)
           delivered = true
         rescue StandardError => e
           # Defense in depth: this runs AFTER an irreversible prod deploy + ship!,

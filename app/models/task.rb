@@ -480,6 +480,15 @@ class Task < ApplicationRecord
              .sum(Arel.sql("COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)"))
   end
 
+  # The MEASURED total cost for this task — the sum of `cost` (USD) across every
+  # TaskEvent on its spine. SQL SUM ignores NULL costs, so an unpriced event
+  # counts as 0; returns a BigDecimal, and 0 when the task has no events. Computed
+  # in SQL off a fresh relation (like #measured_tokens_total) so it never reads a
+  # stale loaded-association cache mid-transaction. Powers the release-notes card.
+  def total_cost
+    TaskEvent.where(task_slug: slug).sum(:cost)
+  end
+
   # The actual_size this task's measured usage maps to via ACTUAL_SIZE_THRESHOLDS,
   # or nil when there's NO measured usage (zero tokens) — an honest "can't size it"
   # rather than a misleading "small" for a task whose usage was simply never
