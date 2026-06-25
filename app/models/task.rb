@@ -769,19 +769,30 @@ class Task < ApplicationRecord
   # of the session's Pokémon. Idempotent and re-stamped on every save so it survives
   # the client's read-modify-write (mascot_color/emoji aren't client keys). An
   # unknown/blank persona is a no-op, leaving the Pokémon path to run.
+  # Explicit "revert to the session Pokémon" sentinels for devops.persona, so a
+  # mid-task `bin/task update <slug> --persona none` drops the soul. Case-insensitive.
+  PERSONA_CLEAR = %w[none clear off -].freeze
+
   def sync_persona_identity
     return unless Agent.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
-    slug = devops["persona"].to_s.strip
-    return if slug.empty?
+    raw = devops["persona"].to_s.strip
+    return if raw.empty?
 
-    agent = Agent.find_by(slug: slug)
-    # Unknown soul (a typo) → drop the persona so sync_session_mascot falls back to
-    # the Pokémon. The agent then SEES the line stay a Pokémon (not the soul) —
-    # visual feedback that the persona didn't take, rather than a mascot-less line.
-    unless agent
+    agent = Agent.find_by(slug: raw.downcase)
+    # Clear (--persona none) OR an unknown soul (a typo): drop the persona AND reset
+    # the mascot so the session's Pokémon is (re)drawn. Niling the mascot first is
+    # required — on a plain update (no stage change) sync_session_mascot's own
+    # before_save guard wouldn't fire, so call it inline to repaint the Pokémon now.
+    # (An unknown soul reverting is the right "your persona didn't take" feedback.)
+    if PERSONA_CLEAR.include?(raw.downcase) || agent.nil?
       devops.delete("persona")
+      devops["mascot"] = nil
+      devops["mascot_session"] = nil
+      devops["mascot_color"] = nil
+      devops["mascot_emoji"] = nil
+      sync_session_mascot
       return
     end
 
