@@ -78,4 +78,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.10" # cable primitive (Studio::Redis/Cable/Broadcastable) + redis dep — PR studio-engine#9; lockfile finalizes via `bundle update studio-engine` when 0.10.0 publishes
+gem "studio-engine", "~> 0.11" # shared engine: cable primitive (Studio::Redis/Cable/Broadcastable) + redis dep; 0.11 widens to Rails 8.1 (backward-compatible — mcritchie stays on Rails 7.x)
