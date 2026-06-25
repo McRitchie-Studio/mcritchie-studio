@@ -1,0 +1,63 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/pr-status — one-line PR health for a feature agent: is it mergeable, is CI
+# green, is it a draft?
+#
+# The point is the FIRST question to ask when CI "isn't running": a
+# CONFLICTING / DIRTY PR gets NO CI from GitHub — it can't build a test-merge —
+# so chasing "GitHub lag" is wasted. This surfaces that instantly (and the
+# 2026-06-25 gem-ship retro is exactly why it exists).
+#
+# Usage: bin/pr-status <pr-number> [--repo owner/name]
+# GH_BIN overrides the `gh` binary (tests inject a stub). Read-only, best-effort.
+
+require "json"
+
+gh = ENV["GH_BIN"].to_s.strip
+gh = "gh" if gh.empty?
+
+num = ARGV.shift
+abort "usage: bin/pr-status <pr-number> [--repo owner/name]" if num.nil? || num.strip.empty?
+
+repo = nil
+i = 0
+while i < ARGV.length
+  if ARGV[i] == "--repo"
+    repo = ARGV[i + 1]
+    i += 2
+  else
+    i += 1
+  end
+end
+
+repo_arg = repo ? "--repo #{repo} " : ""
+fields = "number,state,mergeable,mergeStateStatus,isDraft,statusCheckRollup"
+raw = `#{gh} pr view #{num} #{repo_arg}--json #{fields} 2>/dev/null`
+data = (JSON.parse(raw) rescue nil)
+abort "pr-status: could not read PR ##{num} (gh unavailable or no such PR)" if data.nil?
+
+# CI from the rollup: any failure → failure; any unfinished → pending; all done +
+# successful → success; empty → none (no checks registered — often the symptom of
+# an unmergeable PR).
+checks = data["statusCheckRollup"] || []
+ci =
+  if checks.empty?
+    "none"
+  elsif checks.any? { |c| (c["conclusion"] || c["state"]).to_s.upcase =~ /FAIL|ERROR|CANCEL|TIMED/ }
+    "failure"
+  elsif checks.any? { |c| c["status"] && c["status"].to_s.upcase != "COMPLETED" }
+    "pending"
+  elsif checks.all? { |c| (c["conclusion"] || c["state"]).to_s.upcase == "SUCCESS" }
+    "success"
+  else
+    "mixed"
+  end
+
+state = data["mergeStateStatus"].to_s
+puts "##{data["number"]} #{data["state"]} · mergeable=#{data["mergeable"]} · " \
+     "mergeState=#{state} · ci=#{ci} · draft=#{!!data["isDraft"]}"
+
+if state == "DIRTY"
+  puts "  ↳ CONFLICTING — GitHub skips CI on an unmergeable PR; merge origin/release to unblock."
+end
