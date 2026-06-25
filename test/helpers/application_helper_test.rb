@@ -140,6 +140,23 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes rendered, %(title="rolio"), "the badge is titled with the affected repo"
   end
 
+  # Component-tier: render the shared _release_summary partial for an active
+  # release carrying a conductor mascot and assert the mascot avatar (sprite +
+  # name) and the in-progress timing line both ride the card. No members → the
+  # task-pill loop is skipped, keeping this a focused render of MY additions.
+  test "[component] _release_summary renders the conductor mascot avatar + timing line" do
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
+                    sprite_url: "https://example.test/snorlax.png")
+    rel = Release.open!
+    rel.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "s" } })
+
+    render partial: "tasks/release_summary", locals: { release: rel, variant: :current }
+
+    assert_select "[data-test='release-mascot'] img[src=?]", "https://example.test/snorlax.png"
+    assert_select "[data-test='release-mascot']", text: /Snorlax/
+    assert_select "[data-test='release-timing']", text: /\Ain progress · /
+  end
+
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
     assert_nil compact_stage_duration(nil)
     assert_equal "<1m", compact_stage_duration(30)
@@ -186,6 +203,36 @@ class ApplicationHelperTest < ActionView::TestCase
     # a not-current (Last Release) card ignores assembled_at — only shipped_at promotes a time
     assert_equal "Assembled",
                  release_state_label(Release.new(state: "assembled", assembled_at: 1.hour.ago), current: false)
+  end
+
+  test "release_timing_label shows 'in progress · <dur>' for an active release" do
+    rel = Release.new(state: "assembling", created_at: Time.utc(2026, 1, 1, 0, 0, 0))
+    now = Time.utc(2026, 1, 1, 0, 23, 0)
+    assert_equal "in progress · 23m", release_timing_label(rel, now: now)
+
+    rel.created_at = Time.utc(2026, 1, 1, 0, 0, 0)
+    assert_equal "in progress · 3h", release_timing_label(rel, now: Time.utc(2026, 1, 1, 3, 0, 0))
+  end
+
+  test "release_timing_label shows 'took <dur>' for a shipped release (begin→ship)" do
+    rel = Release.new(state: "shipped",
+                      created_at: Time.utc(2026, 1, 1, 0, 0, 0),
+                      shipped_at: Time.utc(2026, 1, 1, 0, 18, 0))
+    assert_equal "took 18m", release_timing_label(rel)
+  end
+
+  test "release_timing_label is nil when no timing applies" do
+    assert_nil release_timing_label(Release.new(state: "shipped")), "shipped with no shipped_at → no duration"
+    assert_nil release_timing_label(Release.new(state: "abandoned", created_at: Time.utc(2026, 1, 1))),
+               "a terminal-but-unshipped release shows no timing"
+  end
+
+  test "elapsed_seconds is nil-safe and clamps clock skew to zero" do
+    assert_nil elapsed_seconds(nil, Time.current)
+    assert_nil elapsed_seconds(Time.current, nil)
+    t = Time.utc(2026, 1, 1, 0, 0, 0)
+    assert_equal 60, elapsed_seconds(t, t + 60)
+    assert_equal 0, elapsed_seconds(t, t - 60), "a negative span clamps to 0, never a bogus past"
   end
 
   test "devops_next_html badges whole-word stage names only" do
