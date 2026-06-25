@@ -1253,6 +1253,14 @@ def ship
   say("")
   say("🚀 Shipped #{rel_slug} → production#{DRY ? ' (DRY RUN — nothing executed)' : " (#{short(deployed_sha)})"}.")
   say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
+
+  # 7. Restore each app's PRIMARY checkout to a clean `main` — the COMPLEMENT of
+  #    ship_preflight's offender DETECTION. A review/QA cycle can leave a primary
+  #    on a leftover branch, so the NEXT session would integrate from the wrong
+  #    floor (retro-rel-20260623 line 54). Best-effort + non-fatal: the ship has
+  #    already succeeded; a primary carrying uncommitted/unpushed work is REFUSED
+  #    and left for the operator.
+  restore_primaries(app_groups)
 rescue SystemExit => e
   # Partial-ship recovery: abort! (Kernel#abort) raised SystemExit mid-train. The
   # abort message already printed; add what's live + the idempotent re-run path.
@@ -1266,6 +1274,27 @@ rescue SystemExit => e
     warn("  Re-run `bin/release ship` to resume: published gems skip, fast-forwards no-op, re-pins are idempotent.")
   end
   exit(e.respond_to?(:status) && e.status ? e.status : 1)
+end
+
+# Return each app's PRIMARY checkout to a clean `main` after a ship — the
+# COMPLEMENT of ship_preflight's offender DETECTION (Release::ShipSequence). A
+# review/QA cycle can leave a primary on a leftover `pr-NNN` branch, so the next
+# session integrates/deploys from the wrong floor (retro-rel-20260623 line 54).
+# Shells the same `bin/agent-worktree restore-primary` an operator runs by hand —
+# which REFUSES (non-zero) any primary with uncommitted/unpushed work — so this is
+# best-effort: a refusal is reported but NEVER fails an already-completed ship.
+# No-op under --dry-run (the ship deployed nothing to restore around).
+def restore_primaries(app_groups)
+  return if DRY
+
+  say("")
+  step("restore primaries: return each app checkout to a clean `main` for the next session")
+  Array(app_groups).each do |group|
+    repo = group["repo"]
+    out, status = Open3.capture2e("bin/agent-worktree", "restore-primary", repo)
+    print(out)
+    say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
+  end
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------
