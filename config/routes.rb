@@ -35,6 +35,18 @@ Rails.application.routes.draw do
   # are public-read like /tasks (mutations stay admin-gated in TasksController).
   get "deployments", to: "tasks#deployments", as: :deployments
   get "stages", to: "tasks#stages", as: :stages
+
+  # Local-only (development + test, NEVER production) board toys for demoing the
+  # live /deployments board: generate / move / delete a throwaway fixture task.
+  # Drawn only when local? so the routes simply do not exist in production; the
+  # controller re-checks Rails.env.local? as defense in depth. See Dev::BoardController.
+  if Rails.env.local?
+    namespace :dev do
+      post "board/generate", to: "board#generate", as: :board_generate
+      post "board/move",     to: "board#move",     as: :board_move
+      post "board/delete",   to: "board#delete",   as: :board_delete
+    end
+  end
   # Public link hub — general (non-admin) destinations. The admin counterpart
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).

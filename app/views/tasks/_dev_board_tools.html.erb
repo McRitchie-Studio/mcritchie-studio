@@ -1,0 +1,261 @@
+<%# LOCAL-ONLY board toys (development + test, NEVER production): spawn / advance /
+    remove a throwaway fixture task so the live /deployments board can be demoed
+    without real data or admin login. Mirrors the board's fetch + CSRF pattern; the
+    live card update arrives over Turbo Streams (turbo_stream_from "deployments"),
+    so there is no reload. Hidden entirely outside Rails.env.local?.
+
+    Flourishes (purely client-side, scoped to dev-fixture cards, gated on which
+    button fired so real cards are never touched):
+      • generate → the card pops in with a type-coloured glow flash + bubble burst
+      • move     → the outgoing card leaves while its column reclaims the gap, THEN
+                   the incoming card grows in with the same glow + bubbles
+      • delete   → the card shrinks out while its column reclaims the gap (FLIP) %>
+<% if Rails.env.local? %>
+  <div x-data="devBoardTools()" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
+    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400/90"
+          title="Dev/test only — never shipped to production">Dev</span>
+    <button type="button" @click="post('generate')" :disabled="busy"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Generate</button>
+    <button type="button" @click="post('move')" :disabled="busy"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Move</button>
+    <button type="button" @click="post('delete')" :disabled="busy"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-red-300 disabled:opacity-40 transition">Delete</button>
+  </div>
+
+  <style>
+    /* Generate / move pop: a quick scale bounce under the bubble burst. */
+    .dev-fizz-pop { animation: devPop .5s cubic-bezier(.2, 1.4, .3, 1); }
+    @keyframes devPop {
+      0%   { transform: scale(.85); }
+      55%  { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    /* Generate / move glow: a blurred halo flashes around the card border, then
+       fades. Colour is --glow-rgb (the mascot's primary type colour, set per-card in
+       JS); falls back to a warm orange. It's a flash, not a bloom — brightest on
+       frame one so the pulse leads the card, never trails it. */
+    .dev-fizz-glow { animation: devGlow .8s ease-out; }
+    @keyframes devGlow {
+      0%   { box-shadow: 0 0 18px 4px rgb(var(--glow-rgb, 249 115 22) / .95), 0 0 44px 12px rgb(var(--glow-rgb, 249 115 22) / .5);
+             border-color: rgb(var(--glow-rgb, 249 115 22) / 1); }
+      100% { box-shadow: 0 0 0 0 rgb(var(--glow-rgb, 249 115 22) / 0); border-color: rgb(var(--glow-rgb, 249 115 22) / 0); }
+    }
+  </style>
+
+  <script>
+    // Shared state — set by the button click (devBoardTools.post) and read by the
+    // Turbo-Stream animation wiring below; they live in separate scopes, so it rides
+    // on window.
+    window.DevBoard = window.DevBoard || {
+      action: null,       // 'generate' | 'move' | 'delete' — the in-flight click
+      glowColor: null,    // the spawned mascot's primary type colour (hex), for the glow
+      collapseDone: null  // Promise: resolves once an outgoing card has fully left
+    };
+
+    // x-data factory — must be defined inline before the deferred Alpine CDN runs.
+    function devBoardTools() {
+      return {
+        busy: false,
+        async post(action) {
+          if (this.busy) return;
+          this.busy = true;
+          DevBoard.action = action;
+          DevBoard.collapseDone = null;
+          try {
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+            const resp = await fetch("/dev/board/" + action, { method: "POST", headers: { "X-CSRF-Token": csrf } });
+            // generate / move return the spawned mascot's primary type colour.
+            const data = (resp.ok && resp.status !== 204) ? await resp.json().catch(() => ({})) : {};
+            DevBoard.glowColor = data.color || null;
+          } finally {
+            this.busy = false;
+            // Clear the action a beat after its broadcast has been handled.
+            setTimeout(() => { if (DevBoard.action === action) DevBoard.action = null; }, 1500);
+          }
+        }
+      };
+    }
+
+    // Turbo-Stream animation wiring — installed once, survives Turbo navigations.
+    (function () {
+      if (window.__devBoardFxReady) return;
+      window.__devBoardFxReady = true;
+
+      const FIXTURE_PREFIX = "card-dev-fixture-";
+      const BUBBLE_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
+      const isFixture = (id) => typeof id === "string" && id.startsWith(FIXTURE_PREFIX);
+
+      // "#78C850" → "120 200 80" (space-separated, for `rgb(var() / a)`); null if bad.
+      function hexToRgb(hex) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+        if (!m) return null;
+        const n = parseInt(m[1], 16);
+        return ((n >> 16) & 255) + " " + ((n >> 8) & 255) + " " + (n & 255);
+      }
+
+      // The arrival flourish: a type-coloured glow flash + a ring of fizzy bubbles,
+      // and (unless the caller drives its own scale) a pop. Pass pop=false when the
+      // entrance already animates the card's transform (the move's grow-in).
+      function burst(card, pop) {
+        const r = card.getBoundingClientRect();
+        if (!r.width) return;
+        const rgb = hexToRgb(DevBoard.glowColor);
+        if (rgb) card.style.setProperty("--glow-rgb", rgb);
+        if (pop !== false) card.classList.add("dev-fizz-pop");
+        card.classList.add("dev-fizz-glow");
+        setTimeout(() => {
+          card.classList.remove("dev-fizz-pop", "dev-fizz-glow");
+          card.style.removeProperty("--glow-rgb");
+        }, 950);
+        spawnBubbles(r.left + r.width / 2, r.top + r.height / 2);
+      }
+
+      // A ring of little coloured bubbles bursting up-and-out from (cx, cy).
+      function spawnBubbles(cx, cy) {
+        const N = 22;
+        for (let i = 0; i < N; i++) {
+          const b = document.createElement("div");
+          const size = 4 + Math.random() * 9;
+          b.style.cssText =
+            "position:fixed;left:" + cx + "px;top:" + cy + "px;width:" + size + "px;height:" + size +
+            "px;border-radius:9999px;pointer-events:none;z-index:60;background:" +
+            BUBBLE_COLORS[i % BUBBLE_COLORS.length] + ";box-shadow:0 0 8px rgba(255,255,255,.35);";
+          document.body.appendChild(b);
+          const angle = (Math.PI * 2 * i) / N + (Math.random() - 0.5) * 0.6;
+          const dist = 36 + Math.random() * 80;
+          const dx = Math.cos(angle) * dist;
+          const dy = Math.sin(angle) * dist - 26; // drift upward a touch
+          b.animate(
+            [
+              { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+              { transform: "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px)) scale(0)", opacity: 0 }
+            ],
+            { duration: 650 + Math.random() * 450, easing: "cubic-bezier(.2,.7,.3,1)" }
+          ).onfinish = () => b.remove();
+        }
+      }
+
+      // Remove a card while its column reclaims the gap smoothly. We FLIP the
+      // siblings (transform them between measured before/after positions) rather than
+      // collapsing the card's height — layout-driven reflow snagged on the dropzone's
+      // `space-y` margins (a pause/snap near the end); transforms don't. Resolves
+      // DevBoard.collapseDone so a move's incoming card can wait for it.
+      function collapseOut(card, done) {
+        let signalDone;
+        DevBoard.collapseDone = new Promise((res) => { signalDone = res; });
+        const finish = () => { if (done) done(); signalDone(); };
+        if (!card) return finish();
+
+        const zone = card.parentElement;
+        const siblings = zone ? Array.from(zone.querySelectorAll(":scope > .kanban-card")).filter((c) => c !== card) : [];
+        const beforeTop = siblings.map((c) => c.getBoundingClientRect().top); // FLIP — First
+
+        // Pin the card in place and lift it out of flow, so the column instantly
+        // settles to its true final layout (which we then animate the siblings into).
+        const rect = card.getBoundingClientRect();
+        const zr = zone.getBoundingClientRect();
+        const zs = getComputedStyle(zone);
+        const restorePos = zone.style.position;
+        if (zs.position === "static") zone.style.position = "relative";
+        Object.assign(card.style, {
+          position: "absolute",
+          width: rect.width + "px",
+          height: rect.height + "px",
+          top: (rect.top - zr.top - (parseFloat(zs.borderTopWidth) || 0) + zone.scrollTop) + "px",
+          left: (rect.left - zr.left - (parseFloat(zs.borderLeftWidth) || 0) + zone.scrollLeft) + "px",
+          margin: "0", zIndex: "5", pointerEvents: "none", transformOrigin: "center top"
+        });
+
+        // FLIP — Invert each sibling back to its old spot, then Play it to the new one
+        // at constant speed (linear: any ease-out tail reads as a pause near the end).
+        siblings.forEach((c, i) => {
+          const delta = beforeTop[i] - c.getBoundingClientRect().top; // Last
+          if (!delta) return;
+          c.style.transition = "none";
+          c.style.transform = "translateY(" + delta + "px)";
+          requestAnimationFrame(() => {
+            c.style.transition = "transform .45s linear";
+            c.style.transform = "";
+            const clear = () => { c.style.transition = ""; c.style.transform = ""; c.removeEventListener("transitionend", clear); };
+            c.addEventListener("transitionend", clear);
+          });
+        });
+
+        // The outgoing card shrinks + fades in place, then is really removed.
+        card.animate(
+          [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.55)" }],
+          { duration: 450, easing: "linear", fill: "forwards" }
+        ).onfinish = () => { zone.style.position = restorePos; finish(); };
+      }
+
+      // Hold a move's incoming card invisible AND out of flow until the outgoing card
+      // has fully gone, then grow it in with the burst. NB: the board cards use Alpine
+      // x-show, which OWNS `display` — a display:none gets wiped when Alpine inits the
+      // streamed card, flashing it visible for the whole wait. Hide with `visibility`
+      // + `position:absolute` (zero footprint) instead; Alpine leaves both alone.
+      function holdThenGrowIn(card) {
+        card.style.visibility = "hidden";
+        card.style.position = "absolute";
+        card.style.pointerEvents = "none";
+
+        const ready = Promise.race([
+          DevBoard.collapseDone || Promise.resolve(),
+          new Promise((res) => setTimeout(res, 900)) // safety net if no collapse fired
+        ]);
+        ready.then(() => {
+          if (!document.body.contains(card)) return;
+          card.classList.remove("ring-2", "ring-primary"); // drop the board's own entrance ring
+          card.style.transition = "";
+          card.style.transform = "";
+          card.style.transformOrigin = "center";
+          card.style.opacity = "0"; // floor — no full-size flash before the grow
+          card.style.visibility = "";
+          card.style.position = "";
+          card.style.pointerEvents = "";
+          // The card's ARRIVAL is the pulse: it grows from small as the glow flashes
+          // and bubbles burst, one motion. WAAPI so the board's inline x-show/transition
+          // styles can't coalesce it away.
+          const grow = card.animate(
+            [
+              { opacity: 0, transform: "scale(.5)" },
+              { opacity: 1, transform: "scale(1.05)", offset: 0.65 },
+              { opacity: 1, transform: "scale(1)" }
+            ],
+            { duration: 380, easing: "ease-out", fill: "both" }
+          );
+          grow.onfinish = () => { card.style.opacity = ""; card.style.transformOrigin = ""; grow.cancel(); };
+          burst(card, false); // glow + bubbles; the grow above is the entrance
+        });
+      }
+
+      // A new dev-fixture card landed: generate pops it in immediately; move holds it
+      // until the outgoing card has left, then grows it in. Scoped to dev fixtures and
+      // the in-flight action, so real cards / non-dev updates are never touched.
+      new MutationObserver((records) => {
+        const action = DevBoard.action;
+        if (action !== "generate" && action !== "move") return;
+        for (const rec of records) {
+          for (const node of rec.addedNodes) {
+            if (node.nodeType !== 1 || !isFixture(node.id)) continue;
+            if (action === "generate") requestAnimationFrame(() => burst(node));
+            else holdThenGrowIn(node);
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+
+      // Delete, and a move's OUTGOING card, arrive as a Turbo-Stream `remove`.
+      // Intercept it (dev fixtures only, during a dev delete/move) and run collapseOut
+      // first, so the real removal happens after the gap has been reclaimed.
+      document.addEventListener("turbo:before-stream-render", (event) => {
+        const stream = event.target;
+        if (stream.getAttribute("action") !== "remove") return;
+        const target = stream.getAttribute("target") || "";
+        const action = DevBoard.action;
+        if (!isFixture(target) || (action !== "delete" && action !== "move")) return;
+
+        const removeNow = event.detail.render;
+        event.detail.render = (streamEl) => collapseOut(document.getElementById(target), () => removeNow(streamEl));
+      });
+    })();
+  </script>
+<% end %>
