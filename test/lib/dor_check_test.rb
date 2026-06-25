@@ -1053,4 +1053,56 @@ class DorCheckTest < Minitest::Test
     assert verdict["ready"], "a suggestion never flips readiness"
     assert(verdict["suggestions"].any? { |s| s =~ /canonical/ }, "the suggestion rides in the json verdict")
   end
+
+  # --- Gem-publish seam guard (merge gate) -----------------------------------
+
+  # A minimal Gemfile.lock pinning studio-engine to `version`.
+  def lock_with(version)
+    "GEM\n  remote: https://rubygems.org/\n  specs:\n" \
+      "    studio-engine (#{version})\n\nDEPENDENCIES\n  studio-engine\n"
+  end
+
+  # A temp repo carrying a Gemfile + Gemfile.lock for the guard to read, with the
+  # branch diff pointed at Gemfile (the trigger).
+  def with_gemfile_diff(gemfile, lock)
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "Gemfile"), gemfile)
+      File.write(File.join(dir, "Gemfile.lock"), lock)
+      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_CHANGED_FILES" => "Gemfile") { yield }
+    end
+  end
+
+  def test_merge_gate_blocks_a_gemfile_bump_the_lock_cannot_satisfy
+    out, code = with_gemfile_diff(%(gem "studio-engine", "~> 0.9"\n), lock_with("0.8.0")) do
+      check(BACKEND_CONTRACT)
+    end
+    assert_equal 1, code, out
+    assert_match(/studio-engine.*Gemfile\.lock pins 0\.8\.0/, out)
+    assert_match(/gem-publish seam/, out)
+  end
+
+  def test_merge_gate_passes_when_the_lock_satisfies_the_bumped_constraint
+    out, code = with_gemfile_diff(%(gem "studio-engine", "~> 0.9"\n), lock_with("0.9.0")) do
+      check(BACKEND_CONTRACT)
+    end
+    assert_equal 0, code, out
+  end
+
+  def test_gem_guard_does_not_fire_when_the_branch_left_the_gemfile_alone
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "Gemfile"), %(gem "studio-engine", "~> 0.9"\n))
+      File.write(File.join(dir, "Gemfile.lock"), lock_with("0.8.0"))
+      out, code = with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_CHANGED_FILES" => "app/models/x.rb") do
+        check(BACKEND_CONTRACT)
+      end
+      assert_equal 0, code, out # Gemfile not in the diff → a pre-existing state, not this branch's
+    end
+  end
+
+  def test_gem_guard_ignores_a_path_or_git_source_bridge
+    out, code = with_gemfile_diff(%(gem "studio-engine", path: "../studio-engine"\n), lock_with("0.8.0")) do
+      check(BACKEND_CONTRACT)
+    end
+    assert_equal 0, code, out # the local-dev bridge isn't a versioned constraint
+  end
 end

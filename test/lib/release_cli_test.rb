@@ -410,6 +410,95 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "DRY RUN", "a dry-run executes nothing"
   end
 
+  # --- gem version resolution: read the QA-frozen SHA, not the stale local checkout ---
+  # The publish-skip bug: gem_version_for read the version from the pre-ff LOCAL
+  # checkout (still on stale `main`), so a release that BUMPED the gem on its release
+  # SHA reported the OLD version → publish_needed? saw it "already live" → SKIPPED the
+  # real publish, shipping the release with the bumped gem never published. The fix
+  # reads the version at the QA-frozen ref (`git show <ref>:<version_file>`) — the
+  # exact commit ship builds + publishes from. `git_capture` is stubbed so the test
+  # needs NO on-disk sibling gem checkout (the #181/#191 CI-portability lesson).
+
+  GEM_VERSION_STUB = <<~RUBY
+    # The version_file AT the frozen SHA carries the BUMPED 0.11.0; the local checkout
+    # (gem_version_local) still sits on stale main at 0.10.0 — the bug's exact shape.
+    def git_capture(*args)
+      line = args.join(" ")
+      if line.include?("show") && line.include?("frozensha")
+        ['VERSION = "0.11.0"', true]
+      else
+        ["", false]
+      end
+    end
+    def gem_version_local(_repo) = "0.10.0"
+    GROUP = { "repo" => "studio-engine", "kind" => "gem",
+              "members" => [{ "slug" => "t-gem", "version" => nil }] }
+  RUBY
+
+  def test_gem_version_for_reads_the_frozen_ref_not_the_stale_local_checkout
+    out = run_cli(["--dry-run"], setup: GEM_VERSION_STUB,
+                  call: "print(gem_version_for('studio-engine', GROUP, 'frozensha'))")
+    assert_equal "0.11.0", out,
+                 "the gem version is read at the QA-frozen SHA (the version that publishes), not stale local main"
+  end
+
+  def test_gem_version_for_falls_back_to_the_local_checkout_without_a_frozen_ref
+    # No frozen ref to read (a release prepared before SHA recording) → the local
+    # checkout is the documented fallback. Proves the fix preserved the fallback.
+    out = run_cli(["--dry-run"], setup: GEM_VERSION_STUB,
+                  call: "print(gem_version_for('studio-engine', GROUP, nil))")
+    assert_equal "0.10.0", out, "with no frozen ref the resolver falls back to the local checkout"
+  end
+
+  # [integration] A release whose gem is version-bumped ABOVE the live version must
+  # PUBLISH (not skip) — driving the real `ship` flow end-to-end through the resolver
+  # + ship_gem's publish-vs-skip decision, with only the git/gem/heroku I/O seams
+  # stubbed (CI has no sibling checkout — the #181/#191 lesson). A gem-ONLY release
+  # keeps the app deploy/ff machinery out of the picture; `sh` is guarded to prove
+  # NO real shell I/O is reached.
+  PUBLISH_DECISION_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if ruby.include?("repo_plan")
+        { "slug" => "rel-pub", "state" => "assembled", "branch" => "release",
+          "qa_shas" => { "studio-engine" => "frozensha000000000000000000000000000000000" },
+          "repos" => [
+            { "repo" => "studio-engine", "kind" => "gem", "prod_deploy" => nil,
+              "members" => [{ "slug" => "t-gem", "version" => nil, "branch" => nil }] }
+          ] }
+      else
+        {} # the ship! record write (+ any other conductor call) is a no-op
+      end
+    end
+    # version_file AT the frozen SHA = BUMPED 0.11.0; the stale local checkout = 0.10.0.
+    def git_capture(*args)
+      line = args.join(" ")
+      if line.include?("show") && line.include?("frozensha")
+        ['VERSION = "0.11.0"', true]
+      else
+        ["deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", true] # rev-parse HEAD etc.
+      end
+    end
+    def gem_version_local(_repo) = "0.10.0"
+    def rubygems_versions(_gem) = [{ "number" => "0.10.0" }] # 0.10.0 LIVE, 0.11.0 not yet
+    # I/O seams stubbed — the test needs NO sibling gem checkout on disk.
+    def checkout_detached(_repo, _sha); end
+    def publish_gem(repo, version) = $stdout.puts("PUBLISH-CALLED " + repo + " " + version)
+    def ff_main_local(_repo, _sha); end
+    def push_origin_main(_repo); end
+    def sh(*a, **_k) = raise("no real shell I/O expected in this test: " + a.inspect)
+  RUBY
+
+  def test_ship_publishes_a_version_bumped_gem_instead_of_skipping_it
+    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB)
+
+    assert_includes out, "PUBLISH-CALLED studio-engine 0.11.0",
+                     "a gem bumped above the live version publishes (resolved from the frozen SHA)"
+    refute_includes out, "already live on RubyGems — skip publish",
+                     "the resolver must not read stale local 0.10.0 and skip the real publish"
+    # the pre-flight reflects the same truth — the bumped version will publish
+    assert_includes out, "studio-engine 0.11.0: not published — will publish"
+  end
+
   # --- archive --dry-run / run: the DevOps loop's conclusion (shipped → archived) ---
 
   # A dry-run archive must ONLY read (read_only conductor) + run the reclaim tool's
