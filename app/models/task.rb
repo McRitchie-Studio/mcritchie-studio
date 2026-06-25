@@ -598,7 +598,14 @@ class Task < ApplicationRecord
       tokens_in: Current.task_event_tokens_in,
       tokens_out: Current.task_event_tokens_out,
       cost: Current.task_event_cost,
-      metadata: stage_event_metadata(from: from)
+      # Merge the review-bypass marker (set only by Conductor.adopt!(override:true)
+      # for `bin/release merge --override`) onto THIS transition, so the review-gate
+      # skip is recorded on the same spine the move writes — not as a second, orphan
+      # event. Absent on every normal move (Current flag nil), so it never widens the
+      # default metadata.
+      metadata: stage_event_metadata(from: from).merge(
+        Current.task_event_review_bypass ? { "review_bypassed" => true } : {}
+      )
     )
   end
 

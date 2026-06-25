@@ -100,10 +100,20 @@ class Release < ApplicationRecord
   # `assembled` (its PR is now riding the train) — the release's own state is
   # unchanged. The actual branch merge + per-merge tests are the conductor's job;
   # this is the membership + stage bookkeeping.
-  def add(task)
+  #
+  # `override: true` is the explicit, audited escape hatch for
+  # `bin/release merge --override` — it skips the `reviewed` precondition so an
+  # operator can carry a not-yet-reviewed PR onto the train. The review skip is
+  # itself recorded on the audit spine (Conductor.adopt! stamps
+  # Current.task_event_review_bypass, drained onto the assembled transition), so
+  # the bypass is never silent.
+  def add(task, override: false)
     # Validate the task BEFORE mutating release state, so adopting a non-reviewed
-    # task onto an assembled RC doesn't needlessly reopen it.
-    raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})" unless task.stage == "reviewed"
+    # task onto an assembled RC doesn't needlessly reopen it. `override` is the
+    # only path that may attach a non-reviewed task (audited by adopt!).
+    unless override || task.stage == "reviewed"
+      raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})"
+    end
 
     # On the durable `release` branch a PR can merge AFTER we've assembled (QA'd)
     # the candidate. That late merge must re-open the RC so it re-assembles and

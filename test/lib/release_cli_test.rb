@@ -938,6 +938,85 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "no overlapping files", "disjoint batches report independence"
   end
 
+  # --- review-gate guard: refuse an unreviewed merge unless --override ---------
+  # The decision is Release::Conductor.screen_merge's (unit-tested in
+  # conductor_test); these exercise the CLI ENTRY PATH — the guard renders the
+  # screen, aborts BEFORE any gh pr merge on a block, and threads the audited
+  # bypass through to the batched adopt on --override. The (stubbed) resolve now
+  # returns a `screen` block alongside `tasks`.
+
+  # A resolve whose single task is NOT reviewed → the screen blocks it.
+  BLOCKED_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+          ],
+          "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "blocked" }],
+                        "blocked" => ["task-a"], "overridden" => [], "missing" => [], "proceed" => false } }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_refuses_an_unreviewed_task_without_override
+    # abort writes the message to STDERR (discarded by run_cli) AND raises
+    # SystemExit carrying it — capture e.message, mirroring the usage-abort test.
+    out = run_cli(%w[task-a], setup: BLOCKED_MERGE_STUB,
+                  call: "begin; merge; rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "an unreviewed task aborts the merge"
+    assert_includes out, "review gate", "the abort names the review gate"
+    assert_includes out, "task-a (submitted)", "it prints exactly which task is in which stage"
+    assert_includes out, "--override", "the abort points to the override escape hatch"
+    assert_equal 0, out.scan("ADOPT-CALL").size, "nothing is merged or adopted — the guard runs BEFORE gh pr merge"
+  end
+
+  # The same unreviewed task, now with --override → the run proceeds and the
+  # bypass threads into the adopt snippet.
+  OVERRIDE_MERGE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      if read_only
+        { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+          ],
+          "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "overridden" }],
+                        "blocked" => [], "overridden" => ["task-a"], "missing" => [], "proceed" => true } }
+      else
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+    end
+    def sh(*a, **_k)
+      a.include?("baseRefName") ? ["release", true] : ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_merge_override_merges_an_unreviewed_task_and_threads_the_bypass_to_adopt
+    out = run_cli(%w[task-a --override], call: "merge", setup: OVERRIDE_MERGE_STUB)
+
+    assert_includes out, "OVERRIDE", "the override banner is printed"
+    assert_includes out, "review_bypassed", "the banner names the audit event it records"
+    assert_equal 1, out.scan("ADOPT-CALL").size, "the override proceeds to merge + adopt"
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "override: true", "the adopt snippet threads the audited bypass"
+  end
+
+  def test_merge_default_threads_no_override_into_adopt
+    # MERGE_STUB returns reviewed tasks + NO screen → the guard is a no-op and the
+    # normal path threads override: false (no bypass).
+    out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "override: false", "a normal merge threads NO bypass"
+  end
+
   # --- batch_adopt_ruby / batch_resolve_ruby: pure snippet builders ---------
   # These build the ONE-shot conductor snippets the batched merge runs; unit-test
   # them directly (eval_helper) so the single-call guarantee + slug embedding are
@@ -952,12 +1031,26 @@ class ReleaseCliTest < Minitest::Test
     assert_equal 1, out.scan("puts(").size, "the snippet emits exactly ONE JSON line for the whole batch"
   end
 
+  def test_batch_adopt_ruby_threads_the_override_flag
+    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"]))), "override: false",
+                    "adopt defaults to NO override"
+    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"], override: true))), "override: true",
+                    "the audited bypass threads into the adopt snippet"
+  end
+
   def test_batch_resolve_ruby_embeds_every_slug_and_reads_one_line
     out = eval_helper(%(batch_resolve_ruby(["task-a", "task-b"])))
     assert_includes out, "task-a"
     assert_includes out, "task-b"
     assert_includes out, "devops_url", "the resolve snippet reads each task's PR url"
     assert_equal 1, out.scan("puts(").size, "the resolve snippet emits ONE JSON line for the batch"
+  end
+
+  def test_batch_resolve_ruby_runs_the_review_gate_screen
+    out = eval_helper(%(batch_resolve_ruby(["task-a"], override: true)))
+    assert_includes out, "screen_merge", "the resolve snippet runs the review-gate screen in the same read"
+    assert_includes out, "override: true", "the override flag threads into the screen"
+    assert_equal 1, out.scan("puts(").size, "resolve + screen still emit ONE JSON line"
   end
 
   # --- conductor_payload: the shell-safe rails-runner bootstrap (the blocker) --
