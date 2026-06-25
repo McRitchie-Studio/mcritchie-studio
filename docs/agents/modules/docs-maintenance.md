@@ -30,7 +30,8 @@ Use this before handing a feature back:
 1. Check `git status --short --branch` in every repo you touched.
 2. Run the narrowest meaningful tests or smoke checks yourself.
 3. Run `bin/install-agent-docs check` from McRitchie Studio if
-   `docs/agents/index.md` or generated root guidance changed.
+   `docs/agents/index.md`, generated root guidance, or a user-global skill under
+   `docs/agents/skills/` changed.
 4. Run `bin/register-satellite --list` after app registry changes.
 5. Run `bin/agent-worktree doctor` after worktree lifecycle changes.
 6. Return an inspectable result: local URL, local inbox URL, screenshot, test
