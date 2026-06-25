@@ -19,6 +19,15 @@
 #
 # Known tiers: unit, component, integration, e2e, e2e_onchain
 #
+# SEPARATE from these tier tags, the merge gate also requires FULL-suite + FULL-
+# rubocop evidence, recorded as fingerprint-bound checks_run lines the tier-tag
+# parser deliberately ignores (the `@<fingerprint>` is the tell):
+#   [full-suite@<git-tree-hash>] bin/rails test green
+#   [rubocop@<git-tree-hash>]    bin/rubocop clean
+# `bin/full-suite-check <task>` runs both lanes IN FULL and stamps them; bin/dor-
+# check re-grades them against the current code fingerprint so a touched-files
+# subset or a since-edited tree is refused. See bin/lib/full_suite_gate.rb.
+#
 # This file is the single source of "how much testing is enough" per change
 # shape. Tune it here; bin/dor-check and the heartbeat agent pick it up with no
 # code change.

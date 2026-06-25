@@ -25,9 +25,26 @@ class DorCheckTest < Minitest::Test
       # subprocess inherits bundler's env and emits rubygems "already
       # initialized constant" warnings to STDERR — merging them (2>&1) would
       # corrupt the JSON parse. Discarding stderr keeps the verdict clean.
-      out = IO.popen("#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
-      [out, $?.exitstatus]
+      with_default_suite_evidence do
+        out = IO.popen("#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
+        [out, $?.exitstatus]
+      end
     end
+  end
+
+  # The merge gate now also demands fingerprint-bound FULL-suite + rubocop evidence
+  # for a shaped feature (see "--- FULL-suite gate" tests below). Default it to
+  # fresh-green so the EXISTING shape/tier/post-deploy tests stay focused on THEIR
+  # subject. A test that exercises the full-suite gate itself sets
+  # DOR_CHECK_SUITE_EVIDENCE — to a token (ok|missing|stale|tests_stale|
+  # rubocop_stale|unverifiable), or to "" to take the REAL fingerprint path — and
+  # then this default steps aside (the key is already present on entry).
+  def with_default_suite_evidence
+    had = ENV.key?("DOR_CHECK_SUITE_EVIDENCE")
+    ENV["DOR_CHECK_SUITE_EVIDENCE"] = "ok" unless had
+    yield
+  ensure
+    ENV.delete("DOR_CHECK_SUITE_EVIDENCE") unless had
   end
 
   # Inject a deterministic branch diff for the duration of a check. The subprocess
@@ -729,6 +746,240 @@ class DorCheckTest < Minitest::Test
       out, code = check_against(dir, BACKEND_CONTRACT.merge("post_deploy_cmd" => cmd))
       assert_equal 0, code, out
       assert_match(/DoR-to-Merge met/, out)
+    end
+  end
+
+  # --- [unit] FULL-suite gate: fingerprint-bound evidence required at merge ------
+  # The headline retro fix (lines 54 + 58): the dor_tiers tags prove the agent
+  # WROTE unit/integration, but a tag is free text — running only the touched FILES
+  # satisfies it. The merge gate ALSO demands FRESH full-suite + full-rubocop
+  # evidence (bin/full-suite-check records it). These unit tests drive the verdict
+  # via the DOR_CHECK_SUITE_EVIDENCE seam; the [integration] block below exercises
+  # the REAL git fingerprint. The contract is otherwise complete so the suite gate
+  # is the sole variable.
+  SUITE_CONTRACT = {
+    "shape" => "backend", "repositories" => ["mcritchie-studio"],
+    "risk_tags" => ["devops"], "acceptance" => ["enforce the full suite"],
+    "test_plan" => ["unit", "integration"],
+    "checks_run" => ["[unit] x", "[integration] y"]
+  }.freeze
+
+  # Run check with the suite gate set to a specific state (token or "" for real).
+  def check_suite(devops, evidence, *args)
+    with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence) { check(devops, *args) }
+  end
+
+  def test_full_suite_evidence_missing_refuses_merge_gate
+    # The touched-files-only PR: [unit]/[integration] tagged, but the FULL suite +
+    # rubocop were never certified → REFUSED. This is the whole point of the gate.
+    out, code = check_suite(SUITE_CONTRACT, "missing")
+    assert_equal 1, code, out
+    assert_match(/FULL suite \+ FULL rubocop are not certified/, out)
+    assert_match(/full-suite: MISSING/, out)
+    assert_match(/rubocop: MISSING/, out)
+    assert_match(%r{bin/full-suite-check}, out)
+  end
+
+  def test_full_suite_evidence_fresh_passes_merge_gate
+    out, code = check_suite(SUITE_CONTRACT, "ok")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_full_suite_evidence_stale_refuses
+    # Certified, then the code changed → STALE → REFUSED (can't certify a subset
+    # and keep editing).
+    out, code = check_suite(SUITE_CONTRACT, "stale")
+    assert_equal 1, code, out
+    assert_match(/full-suite: STALE/, out)
+    assert_match(/rubocop: STALE/, out)
+  end
+
+  def test_full_suite_rubocop_lane_failure_refuses
+    # The "fails full rubocop" outcome: tests certified, lint not → REFUSED.
+    out, code = check_suite(SUITE_CONTRACT, "rubocop_stale")
+    assert_equal 1, code, out
+    assert_match(/rubocop: STALE/, out)
+    refute_match(/full-suite: (STALE|MISSING)/, out)
+  end
+
+  def test_full_suite_unverifiable_refuses
+    # No git fingerprint computable → the gate REFUSES rather than waving through
+    # what it cannot confirm.
+    out, code = check_suite(SUITE_CONTRACT, "unverifiable")
+    assert_equal 1, code, out
+    assert_match(/unverifiable/, out)
+  end
+
+  def test_full_suite_bypass_record_passes_even_with_no_evidence
+    # The escape hatch is a RECORD (like post_deploy "none"): a reasoned
+    # [full-suite-bypass] line passes the gate even when evidence is MISSING — but
+    # it's flagged LOUDLY in the verdict, never silent.
+    devops = SUITE_CONTRACT.merge(
+      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass] pre-existing mailer-host failure, tracked in task-x"]
+    )
+    out, code = check_suite(devops, "missing")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/FULL-SUITE GATE BYPASSED: pre-existing mailer-host failure/, out)
+  end
+
+  def test_full_suite_bypass_needs_a_reason
+    # A bare [full-suite-bypass] with no reason is NOT honored — the hatch forces a
+    # conscious, recorded justification.
+    devops = SUITE_CONTRACT.merge(
+      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass]"]
+    )
+    out, code = check_suite(devops, "missing")
+    assert_equal 1, code, out
+    assert_match(/not certified/, out)
+  end
+
+  def test_full_suite_gate_skipped_on_build_gate
+    # No code yet at design time → the build gate never asks for suite evidence.
+    out, code = check_suite(
+      { "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
+        "acceptance" => ["a"], "test_plan" => ["unit"], "checks_run" => [] },
+      "missing", "--gate", "build"
+    )
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Build met/, out)
+  end
+
+  def test_full_suite_gate_not_required_for_exempt_no_code_chore
+    # An exempt no-code chore short-circuits before the suite gate — a docs chore
+    # is never asked to certify the full suite.
+    out, code = with_changed_files("") { check_suite({ "kind" => "chore" }, "missing") }
+    assert_equal 0, code, out
+    assert_match(/DoR n\/a/, out)
+  end
+
+  def test_full_suite_gate_surfaces_in_json_verdict
+    out, code = check_suite(SUITE_CONTRACT, "missing", "--json")
+    assert_equal 1, code, out
+    verdict = JSON.parse(out)
+    refute verdict["ready"]
+    refute verdict["full_suite"]["ok"]
+    assert_equal "missing", verdict["full_suite"]["lanes"]["full-suite"]
+    assert(verdict["errors"].any? { |e| e =~ /not certified/ })
+  end
+
+  def test_full_suite_bypass_surfaces_in_json_verdict
+    devops = SUITE_CONTRACT.merge(
+      "checks_run" => SUITE_CONTRACT["checks_run"] + ["[full-suite-bypass] env blocker, see task-x"]
+    )
+    out, code = check_suite(devops, "missing", "--json")
+    assert_equal 0, code, out
+    verdict = JSON.parse(out)
+    assert verdict["ready"]
+    assert verdict["full_suite"]["ok"]
+    assert_match(/env blocker/, verdict["full_suite"]["bypass"])
+  end
+
+  # --- [integration] FULL-suite gate over the REAL git fingerprint --------------
+  # No DOR_CHECK_SUITE_EVIDENCE seam: dor-check recomputes the code fingerprint
+  # (git tree hash) from a temp repo and grades the embedded evidence tags against
+  # it — the actual production path.
+
+  # A temp repo with one commit; yields [dir, fingerprint] for the CURRENT tree.
+  def with_suite_repo
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      File.write(File.join(dir, "app.rb"), "base\n")
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      git.call("add -A")
+      git.call("commit -q -m init")
+      yield dir, suite_fingerprint(dir)
+    end
+  end
+
+  # The fingerprint dor-check would validate against for `dir` (its real resolver).
+  def suite_fingerprint(dir)
+    fp = nil
+    with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
+      fp = IO.popen("#{BIN} --suite-fingerprint 2>/dev/null", &:read).strip
+    end
+    fp
+  end
+
+  # Run check on the REAL fingerprint path against `dir` (SUITE_EVIDENCE="" disables
+  # the default-ok seam so the git fingerprint is computed for real).
+  def check_real_suite(dir, devops, *args)
+    with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+             "DOR_CHECK_SUITE_EVIDENCE" => "", "DOR_CHECK_CHANGED_FILES" => nil) do
+      check(devops, *args)
+    end
+  end
+
+  def suite_evidence(fp, lanes: %w[full-suite rubocop])
+    lanes.map { |lane| "[#{lane}@#{fp}] certified" }
+  end
+
+  def test_e2e_fresh_fingerprint_evidence_passes
+    with_suite_repo do |dir, fp|
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
+      out, code = check_real_suite(dir, devops)
+      assert_equal 0, code, out
+      assert_match(/DoR-to-Merge met/, out)
+      assert_match(/certified green at #{fp[0, 12]}/, out)
+    end
+  end
+
+  def test_e2e_evidence_goes_stale_after_an_edit
+    with_suite_repo do |dir, fp|
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
+      # Edit a tracked file: the fingerprint changes, the embedded evidence is now
+      # for older code → REFUSED.
+      File.write(File.join(dir, "app.rb"), "base\nedited\n")
+      out, code = check_real_suite(dir, devops)
+      assert_equal 1, code, out
+      assert_match(/STALE/, out)
+    end
+  end
+
+  def test_e2e_touched_files_only_pr_is_refused
+    # The retro case in the real path: [unit]/[integration] tagged, but NO
+    # full-suite/rubocop evidence at all → both lanes MISSING → REFUSED.
+    with_suite_repo do |dir, _fp|
+      out, code = check_real_suite(dir, SUITE_CONTRACT)
+      assert_equal 1, code, out
+      assert_match(/full-suite: MISSING/, out)
+      assert_match(/rubocop: MISSING/, out)
+    end
+  end
+
+  def test_e2e_partial_evidence_missing_rubocop_is_refused
+    # Tests certified but rubocop never run → rubocop MISSING → REFUSED.
+    with_suite_repo do |dir, fp|
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp, lanes: %w[full-suite]))
+      out, code = check_real_suite(dir, devops)
+      assert_equal 1, code, out
+      assert_match(/rubocop: MISSING/, out)
+      refute_match(/full-suite: (MISSING|STALE)/, out)
+    end
+  end
+
+  def test_e2e_fingerprint_is_stable_across_the_commit_boundary
+    # The checkout-independence property: certify on a DIRTY tree (the pre-commit
+    # SOP), then COMMIT the same change — the recomputed fingerprint is identical
+    # (a git tree hash is content-addressed), so the SAME evidence still validates.
+    # This is why a reviewer's checkout at the committed HEAD credits the evidence.
+    with_suite_repo do |dir, _committed_fp|
+      File.write(File.join(dir, "app.rb"), "base\nfeature change\n")
+      dirty_fp = suite_fingerprint(dir)
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(dirty_fp))
+
+      out, code = check_real_suite(dir, devops)
+      assert_equal 0, code, "pre-commit (dirty) should validate\n#{out}"
+
+      assert system("git -C #{dir} add -A >/dev/null 2>&1")
+      assert system("git -C #{dir} commit -q -m feature >/dev/null 2>&1")
+      assert_equal dirty_fp, suite_fingerprint(dir), "fingerprint must be stable across the commit"
+
+      out, code = check_real_suite(dir, devops)
+      assert_equal 0, code, "post-commit (clean) should still validate the same evidence\n#{out}"
     end
   end
 end

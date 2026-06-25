@@ -7,8 +7,9 @@
 # task is ready to cross a workflow boundary. Two gates (pick with --gate):
 #
 #   --gate merge (default) — DoR-to-Merge, at submitted → reviewed.
-#       Requires the shape's full required_metadata AND its dor_tiers green
-#       (tagged in devops.checks_run, e.g. "[unit] ...").
+#       Requires the shape's full required_metadata, its dor_tiers green (tagged
+#       in devops.checks_run, e.g. "[unit] ..."), AND — for a shaped code feature
+#       — FRESH full-suite + full-rubocop evidence (the FULL-suite gate below).
 #   --gate build           — DoR-to-Build, at designed → building.
 #       Lighter: the spec must be complete (shape + acceptance + repositories +
 #       risk_tags + test_plan). No test tiers yet — there's no code to test.
@@ -19,8 +20,21 @@
 #   * Feature agents run --gate build before coding, --gate merge before handoff.
 #   * The heartbeat DevOps agent re-runs --gate merge as gate-zero of review.
 #
-# It does NOT run the tests — it confirms the right tiers were claimed and the
-# required metadata is present. The authoritative green is CI at the merge.
+# FULL-suite gate (merge gate, shaped code feature): the dor_tiers tags prove the
+# agent WROTE the right tiers, but a tag is free text — an agent can satisfy a
+# tier by running only the FILES it touched, so the full suite or rubocop breaks
+# post-merge (devops retro, lines 54 + 58). So this gate ALSO demands fingerprint-
+# bound evidence that a FULL `bin/rails test` and a FULL `bin/rubocop` went green
+# against the EXACT code being shipped. bin/full-suite-check runs both lanes and
+# records "[full-suite@<fp>]" / "[rubocop@<fp>]" checks_run lines; here we re-grade
+# them against the local code fingerprint (a git tree hash, stable across the
+# commit boundary), so a STALE (post-edit) or PARTIAL (one-lane / touched-files)
+# record is REFUSED. Escape hatch = a RECORD, like the post_deploy "none" hatch: a
+# "[full-suite-bypass] <reason>" checks_run line is honored but flagged loudly.
+# Format + fingerprint live in bin/lib/full_suite_gate.rb.
+#
+# dor-check still does NOT run the suite itself — it stays a fast, deterministic
+# verdict; bin/full-suite-check is the (slower) runner that produces the evidence.
 #
 # Non-code kinds (devops.kind chore/cleanup/docs) carry no shape and no test
 # tiers, so the shape gate does not apply: they PASS with a "DoR n/a" note.
@@ -57,6 +71,7 @@ require "json"
 require "uri"
 require "yaml"
 require "optparse"
+require_relative "lib/full_suite_gate"
 
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
@@ -105,13 +120,14 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, file: nil, gate: "merge", diff_base: false }
+options = { json: false, file: nil, gate: "merge", diff_base: false, suite_fingerprint: false }
 GATES = %w[merge build].freeze
 OptionParser.new do |o|
   o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--json] | bin/dor-check --file task.json"
   o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
   o.on("--diff-base", "Resolve and print the committed-diff base for this repo, then exit (debug/resolver seam)") { options[:diff_base] = true }
+  o.on("--suite-fingerprint", "Print the code fingerprint the full-suite gate would validate against, then exit (debug/resolver seam)") { options[:suite_fingerprint] = true }
   o.on("--file PATH", "Evaluate a local task JSON instead of fetching") { |v| options[:file] = v }
   o.on("-h", "--help", "Show this help") do
     puts o
@@ -297,10 +313,37 @@ def bare_full_suite_seed?(cmd)
   BARE_SEED_TASK.match?(cmd.to_s)
 end
 
+# Human-readable refusal for the full-suite gate, from FullSuiteGate.evaluate's
+# verdict. Spells out which lane is stale/missing and how to fix it — and that the
+# fix REFUSES a touched-files subset or a lint-red tree, the whole point.
+def suite_evidence_error(eval, slug)
+  unless eval[:verifiable]
+    return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
+      "Run bin/full-suite-check from inside the repo so the FULL suite + rubocop are certified."
+  end
+  parts = eval[:lanes].filter_map do |lane, state|
+    case state
+    when :stale then "#{lane}: STALE (certified for older code — re-run after your latest edits)"
+    when :missing then "#{lane}: MISSING (never certified for this exact code)"
+    end
+  end
+  "the FULL suite + FULL rubocop are not certified green for this code — #{parts.join("; ")}. " \
+    "Run `bin/full-suite-check #{slug}` (runs `bin/rails test` + `bin/rubocop` IN FULL and records " \
+    "fingerprint-bound evidence) — it REFUSES a touched-files subset or a lint-red tree. " \
+    "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."
+end
+
 # Resolver/debug seam: print the committed-diff base this repo would diff against
 # and exit, before any task fetch. Honors DOR_CHECK_DIFF_ROOT/_BASE like changed_files.
 if options[:diff_base]
   puts diff_base(ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT))
+  exit 0
+end
+
+# Resolver/debug seam: print the code fingerprint the full-suite gate validates
+# against (a git tree hash), then exit. Honors DOR_CHECK_DIFF_ROOT like the gate.
+if options[:suite_fingerprint]
+  puts FullSuiteGate.fingerprint(ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT))
   exit 0
 end
 
@@ -420,6 +463,25 @@ if present?(post_deploy_cmd) && bare_full_suite_seed?(post_deploy_cmd)
     "rake task (e.g. bin/rails pokemon:seed)"
 end
 
+# FULL-suite gate (merge gate, shaped code feature only). The dor_tiers tags above
+# prove the agent WROTE the right tiers; this proves the WHOLE suite + a FULL
+# rubocop went green against the EXACT code being shipped — the retro gap where a
+# touched-FILES subset passed but the full suite/lint broke post-merge (lines 54 +
+# 58). Evidence is recorded by bin/full-suite-check as fingerprint-bound checks_run
+# lines; FullSuiteGate.evaluate re-grades them against the local code fingerprint,
+# so a stale (post-edit) or partial (one-lane / touched-files) record is REFUSED.
+# Skips the build gate (no code yet) and unshaped tasks (already errored above).
+# DOR_CHECK_SUITE_EVIDENCE injects the verdict for tests (see the script header).
+suite_eval = nil
+if gate != "build" && shape_def && !dor_tiers.empty?
+  suite_eval = FullSuiteGate.evaluate(
+    checks: checks,
+    root: ENV.fetch("DOR_CHECK_DIFF_ROOT", ROOT),
+    injected: ENV["DOR_CHECK_SUITE_EVIDENCE"]
+  )
+  errors << suite_evidence_error(suite_eval, task["slug"] || slug) unless suite_eval[:ok]
+end
+
 ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?
 
 # --- output ---------------------------------------------------------------
@@ -432,7 +494,14 @@ if options[:json]
     ready: ready,
     errors: errors,
     missing_metadata: missing_meta,
-    missing_tiers: missing_tiers
+    missing_tiers: missing_tiers,
+    full_suite: suite_eval && {
+      ok: suite_eval[:ok],
+      bypass: suite_eval[:bypass],
+      verifiable: suite_eval[:verifiable],
+      fingerprint: suite_eval[:fingerprint],
+      lanes: suite_eval[:lanes]
+    }
   )
   exit(ready ? 0 : 1)
 end
@@ -441,6 +510,11 @@ title = task["title"] || task["slug"] || slug || "(task)"
 if ready
   puts "✓ #{gate_label} met for #{title.inspect} (shape: #{shape})"
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
+  if suite_eval && suite_eval[:bypass]
+    puts "  ⚠ FULL-SUITE GATE BYPASSED: #{suite_eval[:bypass]}"
+  elsif suite_eval && suite_eval[:fingerprint]
+    puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
+  end
   puts "  → ready to advance #{boundary}"
   exit 0
 end

@@ -1,0 +1,108 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/full-suite-check — run the FULL test suite + FULL rubocop, then record
+# fingerprint-bound evidence on a task so bin/dor-check can credit it.
+#
+# This is the WRITE half of the full-suite gate (bin/dor-check is the READ half;
+# the shared format lives in bin/lib/full_suite_gate.rb). It exists because the
+# devops retro found builds passing only the FILES they touched while the full
+# suite or rubocop broke — surfacing post-merge. Running this before handoff is
+# the one command that proves the WHOLE suite + lint is green on the EXACT code
+# you're shipping.
+#
+# It runs two lanes, from the repo root:
+#   full-suite : bin/rails test      (NO file args = the entire suite)
+#   rubocop    : bin/rubocop         (NO path args = the whole repo)
+# For each lane that passes it stamps a checks_run line tagged with the current
+# code fingerprint, e.g. "[full-suite@<tree-hash>] ...". A lane that FAILS is not
+# recorded (no green evidence), and the command exits non-zero.
+#
+# Usage:
+#   bin/full-suite-check <task-slug>     # run both lanes; record evidence on the task
+#   bin/full-suite-check <task-slug> --print   # run + print the evidence lines, don't record
+#   bin/full-suite-check --print               # run standalone (no task), just print
+#
+# Test/CI seams (so the orchestration is exercisable without a real multi-minute run):
+#   FULL_SUITE_TEST_CMD     override the test lane command   (default: bin/rails test)
+#   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
+#   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
+#
+# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
+# fingerprint (nothing certified).
+
+require "optparse"
+require_relative "lib/full_suite_gate"
+
+ROOT = File.expand_path("..", __dir__)
+TASK_BIN = File.expand_path("task", __dir__)
+
+options = { print: false }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/full-suite-check <task-slug> [--print]"
+  o.on("--print", "Print the evidence lines instead of recording them on the task") { options[:print] = true }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+slug = ARGV.shift
+root = ENV.fetch("FULL_SUITE_ROOT", ROOT)
+test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")
+rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
+
+def run_lane(label, cmd, root)
+  warn "== #{label}: #{cmd} =="
+  ok = system(cmd, chdir: root)
+  warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
+  ok
+end
+
+test_ok = run_lane("full-suite", test_cmd, root)
+rubocop_ok = run_lane("rubocop", rubocop_cmd, root)
+
+fingerprint = FullSuiteGate.fingerprint(root)
+if fingerprint.nil?
+  warn "full-suite-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
+  exit 1
+end
+
+lanes = { FullSuiteGate::TEST_LANE => test_ok, FullSuiteGate::RUBOCOP_LANE => rubocop_ok }
+details = {
+  FullSuiteGate::TEST_LANE => "#{test_cmd} green",
+  FullSuiteGate::RUBOCOP_LANE => "#{rubocop_cmd} clean"
+}
+
+passed_lines = lanes.select { |_, ok| ok }.map do |lane, _|
+  FullSuiteGate.evidence_line(lane, fingerprint, details[lane])
+end
+
+# Print the green evidence lines on stdout (parseable; the rest is on stderr).
+passed_lines.each { |line| puts line }
+
+unless lanes.values.all?
+  failed = lanes.reject { |_, ok| ok }.keys.join(", ")
+  warn "full-suite-check: lane(s) RED: #{failed}. Fix, then re-run — no evidence recorded for the red lane(s)."
+  exit 1
+end
+
+if options[:print] || slug.nil?
+  warn "full-suite-check: both lanes green at #{fingerprint[0, 12]}." \
+       "#{slug.nil? ? " (no task slug — evidence printed, not recorded)" : " (--print: not recorded)"}"
+  exit 0
+end
+
+# Record the green evidence on the task. bin/task --checks APPENDS, so a re-run at
+# a new fingerprint adds fresh lines (the old ones go stale and are ignored by
+# dor-check). Recording is best-effort-fatal: if the board write fails, say so.
+record_args = passed_lines.flat_map { |line| ["--checks", line] }
+ok = system(TASK_BIN, "update", slug, *record_args)
+unless ok
+  warn "full-suite-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). " \
+       "Re-run, or record by hand: bin/task update #{slug} #{record_args.map { |a| a.start_with?("--") ? a : a.inspect }.join(" ")}"
+  exit 1
+end
+
+warn "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug}."
+exit 0
