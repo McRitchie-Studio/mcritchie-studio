@@ -8,6 +8,16 @@
 # product-acceptance, he runs `bin/reviewer-select <task>` to choose the pair,
 # then spawns those two named seniors in parallel as review agents.
 #
+# RECORDING IS THE DEFAULT. Producing the assignment also POSTs the picked pair as
+# the `--to reviewed` review INTENT — an idempotent board write to
+# /api/v1/tasks/<slug>/intent, the SAME endpoint `bin/task intent` uses — so
+# /deployments + the task timeline show the two seniors reviewing LIVE (the crew
+# ticker) the moment Avi runs this, before the →reviewed transition lands. Pass
+# `--no-record` (or `--dry`) for the old advisory-only behavior (print the pick,
+# write NOTHING). The board write is best-effort: a failure warns but never blocks
+# the printed pick, and `--file` mode is always advisory (offline — nothing to
+# write to).
+#
 # It loads the Rails app and calls `ReviewerSelector` for the task — scoring the
 # senior pool {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
 # alex=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
@@ -32,13 +42,15 @@
 # least-bad ones are KEPT back so a pair is always returned (flagged in the audit).
 #
 # Usage:
-#   bin/reviewer-select <task-slug>                 # fetch from the board, print the pair
+#   bin/reviewer-select <task-slug>                 # print the pair AND record the review intent (default)
+#   bin/reviewer-select <task-slug> --no-record     # advisory only — print the pick, record nothing
+#   bin/reviewer-select <task-slug> --dry           # alias for --no-record
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
 #   bin/reviewer-select <task-slug> --builder carl  # override the recorded built_by
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
 #   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents on stage=building tasks
-#   bin/reviewer-select --file task.json            # evaluate a local task JSON
+#   bin/reviewer-select --file task.json            # evaluate a local task JSON (advisory — never records)
 #
 # Exit code: 0 = a pair was selected, 1 = task not found / usage error.
 
@@ -214,12 +226,19 @@ end
 
 # --- main -----------------------------------------------------------------
 
-options = { json: false, file: nil, qa_owner: nil, builder: nil, busy: [], busy_auto: false, record: false }
+# record defaults to TRUE — selecting the pair also writes the review intent so the
+# deploy-lane crew ticker shows them live. --no-record / --dry opt back out.
+options = { json: false, file: nil, qa_owner: nil, builder: nil, busy: [], busy_auto: false, record: true }
 OptionParser.new do |o|
-  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--record] [--qa-owner SLUG] [--builder SLUG] [--busy a,b,c] [--busy-auto] | bin/reviewer-select --file task.json"
+  o.banner = "Usage: bin/reviewer-select <task-slug> [--json] [--no-record|--dry] [--qa-owner SLUG] [--builder SLUG] [--busy a,b,c] [--busy-auto] | bin/reviewer-select --file task.json"
   o.on("--json", "Emit a machine-readable decision (single-line JSON)") { options[:json] = true }
-  o.on("--record", "Record the picked pair as a review INTENT on the task (board write) so the " \
-                   "board + timeline show them reviewing live, before the →reviewed transition lands") { options[:record] = true }
+  # --[no-]record gives both forms: --record (the default; kept as a back-compat
+  # no-op) and --no-record (opt out of the board write — advisory only).
+  o.on("--[no-]record", "Record (DEFAULT) / don't record the picked pair as a review INTENT on the task " \
+                        "(board write) so the board + timeline show them reviewing live, before →reviewed lands") do |v|
+    options[:record] = v
+  end
+  o.on("--dry", "--dry-run", "Advisory only — print the pick, record NOTHING (alias for --no-record)") { options[:record] = false }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (steffon)") { |v| options[:qa_owner] = v }
   o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by)") { |v| options[:builder] = v }
   o.on("--busy LIST", "Exclude these busy souls — mid-build/review elsewhere (comma/space separated; repeatable)") do |v|
@@ -264,21 +283,29 @@ log = CaptureLogger.new
 decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, busy: busy, logger: log).decision
 pr_url = devops["pr_url"].to_s.strip
 
-# --record: write the picked pair onto the task as a review INTENT (a board write)
-# so /deployments + the task timeline show the two seniors reviewing live, with a
-# ticking timer, the moment Avi kicks off the review — before the →reviewed
-# transition lands. Idempotent + a no-op once the task is already reviewed.
+# Record (the DEFAULT) the picked pair onto the task as a review INTENT (a board
+# write) so /deployments + the task timeline show the two seniors reviewing live,
+# with a ticking timer, the moment Avi kicks off the review — before the →reviewed
+# transition lands. Hits the SAME idempotent endpoint as `bin/task intent` (a
+# no-op once the task is already reviewed). Best-effort: a board-write failure
+# (incl. api's die! → SystemExit) WARNS but never blocks the printed pick — the
+# conductor always gets the assignment. --file mode is offline → always advisory.
 recorded = nil
 if options[:record]
   if options[:file]
-    warn!("--record needs the board (skipped in --file mode)")
+    warn!("intent not recorded — --file mode is offline (selection is advisory)")
   elsif slug.to_s.empty?
-    warn!("--record needs a task slug")
+    warn!("intent not recorded — no task slug (selection is advisory)")
   else
     heavy, light = decision["reviewers"]
-    recorded = [{ "slug" => heavy["slug"], "weight" => "heavy" }, { "slug" => light["slug"], "weight" => "light" }]
-    api(:post, "/api/v1/tasks/#{slug}/intent",
-        { to_stage: "reviewed", reviewers: recorded, event: { source: "cli" } })
+    pair = [{ "slug" => heavy["slug"], "weight" => "heavy" }, { "slug" => light["slug"], "weight" => "light" }]
+    begin
+      api(:post, "/api/v1/tasks/#{slug}/intent",
+          { to_stage: "reviewed", reviewers: pair, event: { source: "cli" } })
+      recorded = pair
+    rescue SystemExit, StandardError => e
+      warn!("intent not recorded — board write failed (#{e.message}); selection is advisory")
+    end
   end
 end
 

@@ -151,9 +151,11 @@ honest, and **none of them needs a manual flag in the common case**:
 If the builder + QA-owner + busy exclusions would leave too few candidates, the
 least-bad ones (best domain fit) are KEPT eligible and the decision/log flags
 them — a pair is always returned. Because `--busy` / a custom `--qa-owner` shift
-the candidate pool, the bare preview is then **advisory**; `bin/reviewer-select
-<task> --record` writes the busy-aware pair as the live review intent so the
-board + timeline show the actual reviewers.
+the candidate pool, the printed pair may differ from the app's default-seed
+preview, but `bin/reviewer-select <task>` **records by default** — it writes the
+chosen (busy-aware) pair as the live review intent so the board + timeline show
+the actual reviewers. Pass `--no-record` (or `--dry`) for an advisory-only run
+that writes nothing.
 
 
 Start conductor sessions by generating the PR/worktree queue from McRitchie

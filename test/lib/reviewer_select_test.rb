@@ -12,6 +12,9 @@
 require "minitest/autorun"
 require "json"
 require "tmpdir"
+require "socket"
+require "open3"
+require "rbconfig"
 
 class ReviewerSelectCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/reviewer-select", __dir__)
@@ -115,5 +118,151 @@ class ReviewerSelectCliTest < Minitest::Test
     out, code = select({ "shape" => "backend" }, "--busy jasper")
     assert_equal 0, code, out
     assert_match(/jasper \(busy/, out, "a busy soul is named on the excluded line")
+  end
+
+  # --- recording flags (unit): --file mode is offline, so the CLI never records,
+  # and the auditable pick/tiebreak block is byte-identical with or without the
+  # opt-out flag — the recording change must not perturb the advisory output. ---
+
+  # The auditable block the operator reads: the tiebreak header down through PR.
+  def decision_block(out)
+    out[/tiebreak \(auditable.*/m]
+  end
+
+  def test_file_mode_is_always_advisory_and_records_nothing
+    out, code = select({ "shape" => "backend" }, "--json")
+    assert_equal 0, code, out
+    line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+    refute JSON.parse(line)["intent_recorded"], "--file mode is offline → never records (even by default)"
+  end
+
+  def test_no_record_leaves_the_pick_and_tiebreak_output_unchanged
+    default, c1 = select("shape" => "backend")            # recording is the default
+    no_record, c2 = select({ "shape" => "backend" }, "--no-record")
+    assert_equal 0, c1, default
+    assert_equal 0, c2, no_record
+    refute_nil decision_block(default), "the tiebreak block is present"
+    assert_equal decision_block(default), decision_block(no_record),
+      "--no-record must not perturb the seeded pick/tiebreak output"
+  end
+
+  def test_recording_flags_all_parse_and_exit_zero_back_compat
+    # --record is the legacy synonym (now the default), --no-record / --dry / --dry-run opt out.
+    %w[--record --no-record --dry --dry-run].each do |flag|
+      out, code = select({ "shape" => "backend" }, flag)
+      assert_equal 0, code, "#{flag} should parse and exit 0:\n#{out}"
+      assert_match(/HEAVY/, out, "#{flag} still prints the pick")
+    end
+  end
+
+  # --- board recording (integration): a localhost stub board, no real network ---
+  # Mirrors test/lib/task_cli_test.rb's TCPServer stub. Runs bin/reviewer-select in
+  # BOARD mode (no --file) against canned auth + task-GET + intent-POST endpoints,
+  # proving the DEFAULT run writes the review intent — exactly once, with the picked
+  # pair — and that --no-record/--dry suppress it, all without touching prod.
+  BOARD_SLUG = "cli-board-sample"
+
+  # Runs bin/reviewer-select <slug> <args> against a one-shot stub board; returns
+  # [recorded_requests, stdout, status]. stderr is dropped (it carries bundler /
+  # rubygems warnings under the test sweep, never the asserted output).
+  def run_board(devops, *args)
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    requests = []
+    thread = Thread.new { serve(server, requests, devops) }
+
+    env = {
+      "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+      "AGENT_API_SECRET" => "test-secret",
+      "RAILS_ENV" => "test"
+    }
+    out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
+    [requests, out, status]
+  ensure
+    server&.close
+    thread&.join(1)
+  end
+
+  # Minimal HTTP/1.1 stub: records each request, returns canned JSON. The CLI opens
+  # one connection per call (auth, the task GET, then the intent POST).
+  def serve(server, requests, devops)
+    loop do
+      client = server.accept
+      line = client.gets
+      (client.close; next) if line.nil?
+
+      method, path, = line.split(" ")
+      headers = {}
+      while (h = client.gets) && h != "\r\n"
+        k, v = h.split(":", 2)
+        headers[k.strip.downcase] = v.strip if v
+      end
+      len = headers["content-length"]
+      body = len ? client.read(len.to_i) : ""
+      requests << { method: method, path: path, body: body }
+
+      payload = response_for(method, path, devops)
+      client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
+                   "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+      client.close
+    end
+  rescue IOError, Errno::EBADF, Errno::ECONNRESET
+    # server closed — stop serving
+  end
+
+  def response_for(method, path, devops)
+    return JSON.generate("token" => "stub-token") if path == "/api/v1/auth"
+    if method == "POST" && path == "/api/v1/tasks/#{BOARD_SLUG}/intent"
+      return JSON.generate("data" => { "slug" => BOARD_SLUG })
+    end
+
+    JSON.generate("data" => { "slug" => BOARD_SLUG, "metadata" => { "devops" => devops } })
+  end
+
+  def intent_posts(requests)
+    requests.select { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks/#{BOARD_SLUG}/intent" }
+  end
+
+  def json_decision(out)
+    line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
+    refute_nil line, "expected a JSON object on stdout, got:\n#{out}"
+    JSON.parse(line)
+  end
+
+  def test_default_board_run_records_exactly_one_review_intent
+    requests, out, status = run_board({ "shape" => "backend" }, "--json")
+    assert_equal 0, status.exitstatus, out
+
+    posts = intent_posts(requests)
+    assert_equal 1, posts.size, "the default run posts exactly one review intent"
+
+    body = JSON.parse(posts.first[:body])
+    assert_equal "reviewed", body["to_stage"], "the intent targets the reviewed stage"
+    assert_equal %w[heavy light], body["reviewers"].map { |r| r["weight"] }, "one heavy + one light"
+    refute_includes body["reviewers"].map { |r| r["slug"] }, "steffon", "the QA owner is never recorded"
+
+    decision = json_decision(out)
+    assert_equal decision["reviewers"].map { |r| r["slug"] }, body["reviewers"].map { |r| r["slug"] },
+      "the recorded pair is exactly the printed pick (heavy/light order included)"
+    assert decision["intent_recorded"], "the decision reports the intent was recorded"
+  end
+
+  def test_no_record_suppresses_the_review_intent
+    requests, out, status = run_board({ "shape" => "backend" }, "--no-record", "--json")
+    assert_equal 0, status.exitstatus, out
+    assert_equal 0, intent_posts(requests).size, "--no-record writes no intent"
+    refute json_decision(out)["intent_recorded"], "--no-record reports no intent recorded"
+  end
+
+  def test_dry_run_suppresses_the_review_intent
+    requests, out, status = run_board({ "shape" => "backend" }, "--dry", "--json")
+    assert_equal 0, status.exitstatus, out
+    assert_equal 0, intent_posts(requests).size, "--dry is advisory only — writes nothing"
+  end
+
+  def test_record_flag_is_a_back_compat_synonym_for_the_default
+    requests, out, status = run_board({ "shape" => "backend" }, "--record", "--json")
+    assert_equal 0, status.exitstatus, out
+    assert_equal 1, intent_posts(requests).size, "the legacy --record flag still records (now the default)"
   end
 end
