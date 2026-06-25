@@ -7,8 +7,10 @@
 #     "command": "/Users/alex/projects/mcritchie-studio/bin/statusline",
 #     "padding": 1, "refreshInterval": 5 }
 #
-# Renders:  🛠  ⊙<mascot> · <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
-#           (the ⊙<mascot> segment shows only when the context carries one)
+# Renders:  <type-emoji> <mascot> · <app-slug> · <feature-slug> · ↗<task>   (+ [stage] when known)
+#           (the mascot leads with its type emoji(s); a mascot the board served
+#            color/emoji-less renders as the bare name — never a pink 🛠 ⊙ fallback.
+#            With no mascot at all the line is 🛠 <app-slug> · …)
 #
 # Sources, in priority:
 #   1. <cwd>/.agent-context.json              — the active worktree (bin/agent-worktree)
@@ -36,7 +38,7 @@ A=$'\033[38;5;75m'    # app slug
 F=$'\033[38;5;179m'   # feature slug
 G=$'\033[38;5;108m'   # git branch
 D=$'\033[2m'; X=$'\033[0m'
-M=$'\033[38;5;213m'   # mascot (Pokémon)
+M=$'\033[38;5;250m'   # mascot (Pokémon) — neutral default; a real type color overrides it
 DOT="${D} · ${X}"
 
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
@@ -139,13 +141,16 @@ render() {  # app feature task url stage mascot mascot_color mascot_emoji app_co
     first=$(printf '%s' "$mascot" | cut -c1 | tr '[:lower:]' '[:upper:]')
     rest=$(printf '%s' "${mascot:1}" | tr '-' ' ')
     name="${first}${rest}"
-    # The mascot's type emoji(s) LEAD and replace the 🛠 + ⊙ glyphs; a mascot with
-    # no type emoji (an agent face, or unseeded types) keeps the tool + dot.
+    # The mascot's type emoji(s) LEAD the handle. A mascot WITHOUT a type emoji (an
+    # agent face, or a Pokémon the board served color/emoji-less) renders as the
+    # bare name in its tint — NOT the old pink "🛠 ⊙ <name>" fallback, which the
+    # missing color+emoji produced and which read as a jarring revert. No emoji →
+    # just the name; the "· app" separator already sets it apart from the app slug.
     if [ -n "$mascot_emoji" ]; then
       out="${mascot_emoji} ${M}${name}${X}"
       title=$'\033]0;'"${mascot_emoji} ${name}"$'\007'   # tab: "🗿🏔 Golem" / "🧪 Jasper"
     else
-      out="${out} ${M}⊙ ${name}${X}"
+      out="${M}${name}${X}"
       title=$'\033]0;'"${name}"$'\007'
     fi
     [ -n "$app" ] && out="${out}${DOT}${AC}${app}${X}"

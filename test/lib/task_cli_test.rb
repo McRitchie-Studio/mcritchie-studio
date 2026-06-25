@@ -591,7 +591,12 @@ class TaskCliTest < Minitest::Test
     end
   end
 
-  # --- Active-feature marker: the no-downgrade mascot guarantee ----------------
+  # --- Active-feature marker: the pinned, no-downgrade session mascot -----------
+  # The session's mascot is STICKY. write_feature_marker keeps the last-good on-disk
+  # mascot (name + color + emoji) over the MOVED task's, which the board serves
+  # WITHOUT mascot_color/mascot_emoji (server-owned, not DEVOPS_KEYS) — the gap that
+  # dropped bin/statusline to its pink "🛠 ⊙" fallback when you reviewed someone
+  # else's task. A persona ("act as <soul>") is the one deliberate override.
 
   MARKER_SESSION = "5c5c5c5c-1111-2222-3333-444455556666"
 
@@ -657,44 +662,63 @@ class TaskCliTest < Minitest::Test
                  "and its type emoji rides with it too — no revert to the 🛠 ⊙ glyphs"
   end
 
-  # The color/emoji ride from the SAME source as the name: a response bringing a NEW
-  # mascot wears ITS attributes (here none), never the previous mascot's — so a
-  # handoff to a different Pokémon/agent can't inherit a stale tint or glyph.
-  def test_a_changed_mascot_never_inherits_the_previous_color
+  # The core user scenario: reviewing/moving ANOTHER session's task. Its response
+  # carries that task's mascot — name only, no color/emoji (the board doesn't serve
+  # them). The pinned session mascot must stay, name + color + emoji intact; the
+  # stray mascot is ignored, never replacing the pin with a pink-fallback handle.
+  def test_a_stray_response_mascot_never_replaces_the_pinned_session_mascot
     marker, = run_with_marker(
-      ["move", "demo-task", "building"],
-      stub_devops: { "kind" => "feature", "mascot" => "gengar" }, # new mascot, no color/emoji
+      ["move", "demo-task", "reviewed"],
+      stub_devops: { "kind" => "bug", "mascot" => "rhyhorn" }, # another task's mascot, no color/emoji
       pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio",
                     "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔" }
     )
-    assert_equal "gengar", marker["mascot"]
-    assert_nil marker["mascot_color"], "a new mascot must not borrow the old one's color"
-    assert_nil marker["mascot_emoji"], "…nor its emoji"
+    assert_equal "dugtrio", marker["mascot"], "the pinned session mascot stays"
+    assert_equal "#E2BF65", marker["mascot_color"], "its color rides with it"
+    assert_equal "🏔", marker["mascot_emoji"], "and its emoji"
+    refute_equal "rhyhorn", marker["mascot"], "the stray task mascot is ignored"
   end
 
-  # A response carrying a new mascot with its color + emoji writes them straight through.
-  def test_marker_writes_the_response_mascot_color_when_present
+  # Even a FULLY attributed stray (color + emoji and all) does not override the pin —
+  # the session's own mascot owns the line; another task's identity never hijacks it.
+  def test_even_a_fully_attributed_stray_mascot_does_not_override_the_pin
     marker, = run_with_marker(
-      ["move", "demo-task", "building"],
-      stub_devops: { "kind" => "feature", "mascot" => "gengar",
+      ["move", "demo-task", "reviewed"],
+      stub_devops: { "kind" => "bug", "mascot" => "gengar",
                      "mascot_color" => "#735797", "mascot_emoji" => "👻" },
       pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio",
                     "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔" }
     )
-    assert_equal "gengar", marker["mascot"]
-    assert_equal "#735797", marker["mascot_color"]
-    assert_equal "👻", marker["mascot_emoji"]
+    assert_equal "dugtrio", marker["mascot"], "the pin holds even over a colored stray"
+    assert_equal "#E2BF65", marker["mascot_color"]
+    assert_equal "🏔", marker["mascot_emoji"]
   end
 
-  # Baseline: a response that DOES carry a mascot writes it straight through (and
-  # wins over any stale on-disk value — a real handoff updates the handle).
-  def test_marker_writes_the_response_mascot_when_present
+  # No pin yet (a fresh session that skipped the session-mascot hook): with nothing
+  # on disk to keep, the response's mascot IS adopted — SessionMascot makes it the
+  # session handle anyway, and any missing color/emoji renders clean, never pink.
+  def test_marker_adopts_the_response_mascot_when_no_disk_marker
     marker, = run_with_marker(
-      ["move", "demo-task", "building"],
-      stub_devops: { "kind" => "feature", "mascot" => "gengar" },
-      pre_marker: { "slug" => "demo-task", "mascot" => "snorlax" }
+      ["move", "demo-task", "reviewed"],
+      stub_devops: { "kind" => "bug", "mascot" => "gengar" },
+      pre_marker: nil
     )
-    assert_equal "gengar", marker["mascot"]
+    assert_equal "gengar", marker["mascot"], "no pin → adopt the response mascot"
+  end
+
+  # The one deliberate override: "act as <soul>" stamps the soul's name+color+emoji
+  # and carries a `persona` flag, which DOES replace the pinned Pokémon.
+  def test_a_persona_response_overrides_the_pinned_session_mascot
+    marker, = run_with_marker(
+      ["move", "demo-task", "reviewed"],
+      stub_devops: { "kind" => "bug", "persona" => "jasper", "mascot" => "Jasper",
+                     "mascot_color" => "#22D3EE", "mascot_emoji" => "🧪" },
+      pre_marker: { "slug" => "demo-task", "mascot" => "dugtrio",
+                    "mascot_color" => "#E2BF65", "mascot_emoji" => "🏔" }
+    )
+    assert_equal "Jasper", marker["mascot"], "a persona overrides the pin"
+    assert_equal "#22D3EE", marker["mascot_color"]
+    assert_equal "🧪", marker["mascot_emoji"]
   end
 
   # The board-fallback path: when BOTH the response and the on-disk marker lack a
