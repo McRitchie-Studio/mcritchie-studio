@@ -7,6 +7,30 @@ port ranges, deploy provider, production URL, SSO role, and lifecycle status.
 McRitchie Studio itself is the implicit hub at `3000-3099`; it does not appear
 in `config/satellites.yml`.
 
+## Status-line identity (App model)
+
+Per-app **status-line color + emoji** live in the `App` model
+(`app/models/app.rb`, seeded by `db/seeds/00_apps.rb`) — the canonical source
+`bin/statusline` uses to tint the app slug so a glance tells you the app:
+McRitchie Studio lavender, Turf Monster green, etc. This is *separate* from
+`config/satellites.yml` / the `APP_OVERRIDES` hash in `bin/agent-worktree` (ports
++ deploy metadata): edit colors here, ports there.
+
+The color rides to the status line without DB access (`bin/task` and
+`bin/agent-worktree` are API clients): `Task#sync_app_identity` stamps
+`devops.app_color` from the task's first repository on every save, so the marker
+and `.agent-context.json` carry it the same way the Pokémon mascot's signature
+color does. A brand-new session (no task yet) adopts `App.default`
+(`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
+
+To "act as" a soul instead of the session's Pokémon, set a **persona**:
+`bin/task create --persona jasper` (also on `update`). The server stamps the
+agent's name + glyph + tint (`Agent#emoji` / `Agent#status_color`, seeded in
+`db/seeds/02_agents.rb`) as the status-line mascot, and `bin/statusline` sets the
+terminal tab title to the same emoji + name. A new task without `--persona`
+reverts to the session's Pokémon. `--persona` is distinct from `--agent`, which
+sets the task owner (`agent_slug`).
+
 ## Current Decisions
 
 | App | Registry status | Primary port | Reserved range | Notes |

@@ -153,4 +153,41 @@ class StatuslineTest < Minitest::Test
     assert_empty heartbeat_calls(stage: "building", session: nil),
                  "no session → no claim to renew"
   end
+
+  # --- App slug tint: each app wears its App#color (MS lavender, TM green, …) ----
+
+  def test_app_slug_is_tinted_with_its_app_color
+    # Turf Monster green #22C55E → nearest xterm-256 cube = 41 (256-color, not 24-bit).
+    out = render_in(session: SESSION, extra: { "app" => "turf-monster", "app_color" => "#22C55E" })
+    assert_includes out, "\e[38;5;41mturf-monster", "the app slug wears its App#color 256-color"
+    refute_includes out, "[38;2;", "no 24-bit truecolor (unsupported in Terminal.app)"
+  end
+
+  def test_app_slug_falls_back_to_default_tint_without_a_color
+    out = render_in(session: SESSION, extra: { "app" => "mcritchie-studio" })
+    assert_includes out, "\e[38;5;75mmcritchie-studio", "no app_color → the default app tint (75)"
+  end
+
+  # --- Terminal tab title (OSC 0): emoji then name, set live from the status line -
+
+  def test_emits_osc_tab_title_emoji_then_name
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "golem", "mascot_emoji" => "🗿🏔", "mascot_color" => "#B6A136"
+    })
+    assert_includes out, "\e]0;🗿🏔 Golem\a", "the tab title leads with the type emoji then the name"
+  end
+
+  def test_osc_tab_title_for_an_agent_persona
+    # A persona stamps the agent NAME as the mascot + the agent's glyph/tint.
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "Jasper", "mascot_emoji" => "🧪", "mascot_color" => "#9945FF"
+    })
+    assert_includes out, "\e]0;🧪 Jasper\a", "acting as a soul sets the tab to its glyph + name"
+    assert_includes out, "🧪 ", "and the persona leads the in-pane line too"
+  end
+
+  def test_no_osc_tab_title_without_a_mascot
+    out = render_in(session: SESSION, extra: { "app" => "mcritchie-studio" })
+    refute_includes out, "\e]0;", "no mascot → no tab-title override (don't fight the terminal)"
+  end
 end
