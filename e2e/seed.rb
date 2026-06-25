@@ -204,4 +204,33 @@ move_task.update!(stage: "building")
 move_task.update!(stage: "submitted")
 Current.reset
 
+# Live deploy-crew demo: an ASSEMBLED task that walked the full build → review →
+# assembled journey (with actors) but has NO ship intent yet — so its card renders the
+# fixed four-lane crew with the fourth (deploy) slot RESERVED but EMPTY. The
+# /deployments live-update e2e records a ship intent (Avi deploying) against it after
+# page load and asserts the deploy slot fills with a live ticker, with no page reload.
+deploy_crew_task = Task.create!(
+  title: "Live deploy crew demo",
+  slug: "live-deploy-crew-demo",
+  description: "Fixture for the assembled-column deploy-crew live-update (record a ship intent → 4th slot fills live).",
+  stage: "assembled",
+  priority: 1,
+  agent_slug: "shannon",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+)
+deploy_crew_task.task_events.delete_all # curated, time-spaced build → review → assembled spine
+[
+  { from: nil,         to: "designed",  at: 7.hours.ago,    secs: nil,  actor: "carl" },
+  { from: "designed",  to: "building",  at: 6.hours.ago,    secs: 3600, actor: "shannon" },
+  { from: "building",  to: "submitted", at: 5.hours.ago,    secs: 5400, actor: "shannon" },
+  { from: "submitted", to: "reviewed",  at: 4.hours.ago,    secs: 3600,
+    meta: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" }, { "slug" => "carl", "weight" => "light" }] } },
+  { from: "reviewed",  to: "assembled", at: 35.minutes.ago, secs: 1800, actor: "steffon" }
+].each do |e|
+  deploy_crew_task.task_events.create!(
+    from_stage: e[:from], to_stage: e[:to], occurred_at: e[:at], seconds_in_from: e[:secs],
+    source: "cli", actor: e[:actor], metadata: e[:meta] || {}
+  )
+end
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches"
