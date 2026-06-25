@@ -69,15 +69,13 @@
     </div>
   <% end %>
 
-  <%# Secondary meta row — release-train badge + QA/Prod links — only when
-      there's something to show. The kind/gem badges are gone (features are
-      implicit; bug/docs/gem surface as an emoji on the footer line), and
-      Local/PR moved down to the timestamp line. %>
-  <% if task.devops? && (task.devops_release_train.present? || task.devops_url("qa") || task.devops_url("production")) %>
+  <%# Secondary meta row — QA/Prod quick links, only when present. The release-train
+      badge was dropped from the card: it's pipeline plumbing, not useful at the
+      board's high-level glance (it still shows on the task detail view). The kind/gem
+      badges are gone too (features are implicit; bug/docs/gem surface as a footer
+      emoji), and Local/PR moved down to the timestamp line. %>
+  <% if task.devops? && (task.devops_url("qa") || task.devops_url("production")) %>
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
-      <% if task.devops_release_train.present? %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle"><%= task.devops_release_train %></span>
-      <% end %>
       <% if (qa_url = task.devops_url("qa")) %>
         <%= link_to "QA", qa_url, class: "text-[10px] text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
       <% end %>
@@ -96,7 +94,7 @@
         box, top-left, as a small white label; the message scrolls on
         a single line below it (fades at the overflow, steady scroll on
         hover). %>
-    <div class="mt-2 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
+    <div class="mt-1 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
       <div class="flex items-center gap-1.5 mb-0.5">
         <span class="text-[9px] font-semibold uppercase tracking-wide text-heading">
           <%= latest_activity.activity_type_label %>
