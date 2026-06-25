@@ -701,6 +701,112 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     dir
   end
 
+  # --- restore-primary: return a drifted primary checkout to a clean main ----
+  # The real bin run against a temp git repo (PROJECTS_DIR/@hub_dir is the
+  # primary). GIT_SSH_COMMAND=/usr/bin/false makes the allow_fail `git fetch
+  # origin` (ssh-form origin) fail INSTANTLY offline, so restore proceeds against
+  # the local refs/remotes/origin/main setup_repo registers — no network, no hang.
+
+  test "restore-primary returns a clean checkout drifted onto a review branch to main" do
+    # Primary drifted onto a leftover review branch; origin/main advanced past it.
+    advanced = advance_origin_main_ahead
+    git!(@hub_dir, "branch", "pr-181", "main") # a review branch at old main (all pushed)
+    git!(@hub_dir, "checkout", "pr-181")
+
+    out, err, status = agent_worktree("restore-primary", "mcritchie-studio", env: offline_git)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_equal "main", head_branch(@hub_dir), "primary restored to main"
+    assert_equal advanced, rev(@hub_dir, "main"), "main fast-forwarded to origin/main"
+    assert_match(/restored primary pr-181 .* main/, err)
+  end
+
+  test "restore-primary fast-forwards a clean main that is behind origin" do
+    advanced = advance_origin_main_ahead # primary stays on main, now behind origin
+    refute_equal advanced, rev(@hub_dir, "main"), "premise: main is behind origin/main"
+
+    out, err, status = agent_worktree("restore-primary", "mcritchie-studio", env: offline_git)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_equal "main", head_branch(@hub_dir)
+    assert_equal advanced, rev(@hub_dir, "main"), "behind-main fast-forwarded up to origin/main"
+    assert_match(/already on main; fast-forwarded/, err)
+  end
+
+  test "restore-primary REFUSES a dirty tree and preserves the uncommitted change" do
+    File.write(File.join(@hub_dir, "README.md"), "# Locally edited, uncommitted\n")
+
+    out, err, status = agent_worktree("restore-primary", "mcritchie-studio", env: offline_git)
+
+    refute status.success?, "must exit non-zero on a dirty primary\n#{out}"
+    assert_match(/refusing to restore mcritchie-studio/, err)
+    assert_match(/uncommitted/, err)
+    assert_equal "# Locally edited, uncommitted\n", File.read(File.join(@hub_dir, "README.md")),
+      "the uncommitted change must NOT be discarded"
+  end
+
+  test "restore-primary REFUSES a branch carrying unpushed commits" do
+    git!(@hub_dir, "checkout", "-b", "wip-local") # a local commit on no remote
+    File.write(File.join(@hub_dir, "wip.txt"), "wip\n")
+    git!(@hub_dir, "add", "wip.txt")
+    git!(@hub_dir, "commit", "-m", "Local-only WIP")
+    head_before = rev(@hub_dir, "HEAD")
+
+    out, err, status = agent_worktree("restore-primary", "mcritchie-studio", env: offline_git)
+
+    refute status.success?, "must exit non-zero on unpushed work\n#{out}"
+    assert_match(/refusing to restore mcritchie-studio/, err)
+    assert_match(/unpushed/, err)
+    assert_equal "wip-local", head_branch(@hub_dir), "must NOT switch away from unpushed work"
+    assert_equal head_before, rev(@hub_dir, "HEAD"), "the local commit must be preserved"
+  end
+
+  test "restore-primary --dry-run reports the plan and mutates nothing" do
+    git!(@hub_dir, "branch", "pr-9", "main")
+    git!(@hub_dir, "checkout", "pr-9")
+
+    out, err, status = agent_worktree("restore-primary", "mcritchie-studio", "--dry-run", env: offline_git)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_match(/would restore primary/, err)
+    assert_equal "pr-9", head_branch(@hub_dir), "dry-run leaves the checkout untouched"
+  end
+
+  # Force the ssh-form origin fetch to fail instantly offline (restore is then
+  # against the local origin/main ref), the same trick the removal tests use.
+  def offline_git
+    { "GIT_SSH_COMMAND" => "/usr/bin/false" }
+  end
+
+  def head_branch(dir)
+    out, = Open3.capture3("git", "rev-parse", "--abbrev-ref", "HEAD", chdir: dir)
+    out.strip
+  end
+
+  def rev(dir, ref)
+    out, = Open3.capture3("git", "rev-parse", ref, chdir: dir)
+    out.strip
+  end
+
+  # Advance refs/remotes/origin/main ONE commit past the local main (origin moved
+  # ahead) without disturbing the feature worktree. Returns the new origin/main
+  # SHA. Mirrors register_release_ref_ahead_of_main.
+  def advance_origin_main_ahead
+    build = File.join(@projects_dir, "origin-build")
+    git!(@hub_dir, "worktree", "add", "-b", "origin-build", build, "main")
+    git!(build, "config", "user.email", "agent-test@example.com")
+    git!(build, "config", "user.name", "Agent Test")
+    File.write(File.join(build, "origin.txt"), "origin\n")
+    git!(build, "add", "origin.txt")
+    git!(build, "commit", "-m", "Origin-only commit")
+    sha, _err, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: build)
+    assert status.success?, "could not resolve origin-build HEAD"
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/main", sha.strip)
+    git!(@hub_dir, "worktree", "remove", build, "--force")
+    git!(@hub_dir, "branch", "-D", "origin-build")
+    sha.strip
+  end
+
   def setup_repo
     FileUtils.mkdir_p(@hub_dir)
     # delete-later.md lives here; teardown_worktree appends a removal row to it.
@@ -715,7 +821,10 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     # Mirror the real repos: agent stack/context files are gitignored so a
     # provisioned worktree reads as clean (otherwise every worktree is "dirty"
     # and un-removable). Committed on main before the worktree branch is cut.
-    File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n")
+    # Mirror the real repo's .gitignore: /.worktrees/ is ignored so the parent
+    # checkout reads CLEAN with a feature worktree provisioned under it (otherwise
+    # `git status` in @hub_dir flags .worktrees/ as untracked → "dirty").
+    File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n/.worktrees/\n")
     git!(@hub_dir, "add", ".gitignore")
     git!(@hub_dir, "commit", "-m", "Ignore agent stack files")
     # SSH-form origin so github_repo_slug still resolves "amcritchie/mcritchie-studio",
