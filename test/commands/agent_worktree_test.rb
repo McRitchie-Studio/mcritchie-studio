@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require "uri"
 require "yaml"
 
 class AgentWorktreeCommandTest < ActiveSupport::TestCase
@@ -518,7 +519,19 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # full literal name. At 64 bytes Postgres truncated the stored datname to 63
   # while the literal pg_database lookup used the un-truncated name -> miss. With
   # the fix the bounded name is <= 63, so the stored name and the lookup match.
+  #
+  # CI portability: the dev/test URLs and the psql/dropdb cleanup are derived from
+  # a template connection URL (swapping ONLY the database-name segment) so the
+  # real credentials ride through. CI's Postgres needs a password — a hardcoded
+  # `postgresql://localhost/...` + a PATH-only psql env die at connect with
+  # `fe_sendauth: no password supplied` BEFORE the regression runs. Prefer
+  # DATABASE_URL (CI sets it with creds); fall back to TEST_DATABASE_URL (a local
+  # worktree sets that one, trust-auth localhost) so the test runs in both places.
   test "[integration] db:test:prepare provisions a findable long-slug test DB" do
+    template = pg_template_url
+    skip "no DATABASE_URL/TEST_DATABASE_URL to derive Postgres credentials from" if template.blank?
+    template_uri = URI.parse(template)
+
     long_slug = "regression-very-long-worktree-slug-db-name-overflow-probe"
     dev_name = script_eval(%(print worktree_db_name("mcritchie-studio", "#{long_slug}"))).strip
     test_name = script_eval(
@@ -528,13 +541,13 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_operator dev_name.length, :<=, 63
     assert_operator test_name.length, :<=, 63
 
-    psql_env = { "PATH" => ENV.fetch("PATH", "") }
+    pg_env = pg_conn_env(template_uri)
     begin
       out, err, status = Open3.capture3(
         {
           "RAILS_ENV" => "test",
-          "DATABASE_URL" => "postgresql://localhost/#{dev_name}",
-          "TEST_DATABASE_URL" => "postgresql://localhost/#{test_name}",
+          "DATABASE_URL" => db_url_with_name(template_uri, dev_name),
+          "TEST_DATABASE_URL" => db_url_with_name(template_uri, test_name),
           "PATH" => ENV.fetch("PATH", "")
         },
         RbConfig.ruby, Rails.root.join("bin/rails").to_s, "db:test:prepare",
@@ -543,18 +556,47 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       assert status.success?, "db:test:prepare failed for a long-slug worktree:\n#{out}\n#{err}"
 
       found, ferr, fstatus = Open3.capture3(
-        psql_env, "psql", "-Atqc",
+        pg_env, "psql", "-Atqc",
         "SELECT 1 FROM pg_database WHERE datname = '#{test_name}'", "postgres"
       )
       assert fstatus.success?, ferr
       assert_equal "1", found.strip,
         "the provisioned test DB must be findable by its full literal name (no truncation drift)"
     ensure
-      system(psql_env, "dropdb", "--if-exists", test_name, out: File::NULL, err: File::NULL)
+      system(pg_env, "dropdb", "--if-exists", test_name, out: File::NULL, err: File::NULL)
     end
   end
 
   private
+
+  # Template Postgres connection URL to derive host/port/user/password from.
+  # CI sets DATABASE_URL (with credentials); a local worktree sets TEST_DATABASE_URL
+  # (trust-auth localhost). Blank means no database is reachable -> the caller skips.
+  def pg_template_url
+    url = ENV["DATABASE_URL"].to_s
+    url = ENV["TEST_DATABASE_URL"].to_s if url.strip.empty?
+    url.strip
+  end
+
+  # Rebuild a connection URL from a template URI, swapping ONLY the database-name
+  # path segment. Scheme/userinfo/host/port/query are preserved, so the derived
+  # dev/test URLs carry the template's real credentials.
+  def db_url_with_name(template_uri, db_name)
+    uri = template_uri.dup
+    uri.path = "/#{db_name}"
+    uri.to_s
+  end
+
+  # Subprocess env for bare psql/dropdb, derived from the template URI so the
+  # cleanup connects with the same credentials (a PATH-only env -> fe_sendauth on CI).
+  def pg_conn_env(template_uri)
+    env = { "PATH" => ENV.fetch("PATH", "") }
+    env["PGHOST"] = template_uri.host if template_uri.host.present?
+    env["PGPORT"] = template_uri.port.to_s if template_uri.port
+    env["PGUSER"] = template_uri.user if template_uri.user.present?
+    env["PGPASSWORD"] = template_uri.password if template_uri.password.present?
+    env
+  end
 
   # Load bin/agent-worktree as a library in a hermetic subprocess (the
   # $PROGRAM_NAME == __FILE__ dispatch guard keeps `load` side-effect-free) and
