@@ -91,6 +91,22 @@ if command -v jq >/dev/null 2>&1; then
       rm -f "$tmp"
     fi
   fi
+
+  # Wire the SessionStart hook so a brand-new session paints its random Pokémon +
+  # the default app (mcritchie-studio) onto the status line within seconds:
+  # bin/task session-mascot seeds the per-session marker before any task exists.
+  # Idempotent — appended only when our command isn't already a SessionStart hook,
+  # so it never duplicates our entry or clobbers the user's other hooks.
+  hook_cmd="$ROOT/bin/task session-mascot"
+  if ! jq -e --arg cmd "$hook_cmd" '[(.hooks.SessionStart // [])[]?.hooks[]?.command] | index($cmd)' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$hook_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks: [{type: "command", command: $cmd}]}])' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (added SessionStart hook -> $hook_cmd)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
 fi
 
 echo

@@ -53,7 +53,8 @@
 #     ( records an agentic INTENT — an agent STARTING a stage's work — so the board +
 #       timeline show who's on it with a live ticker before the transition lands.
 #       --actor for a single owner (Steffon QA → assembled, Avi ship → shipped);
-#       repeat --reviewer for the senior pair (usually via bin/reviewer-select --record). )
+#       repeat --reviewer for the senior pair (the review pair is normally recorded
+#       automatically by bin/reviewer-select, which records by default). )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
@@ -214,7 +215,12 @@ SCALAR_FLAGS = {
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
   "--release-train" => "release_train", "--block-kind" => "block_kind",
-  "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd"
+  "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd",
+  # "act as <soul>": the status-line mascot becomes that agent (name + glyph + tint)
+  # in place of the session's Pokémon. The server stamps the identity (Task#sync_
+  # persona_identity); a new task without --persona reverts to the Pokémon. Distinct
+  # from --agent, which sets the task OWNER (agent_slug).
+  "--persona" => "persona"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
 NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze
@@ -433,7 +439,8 @@ def write_feature_marker(task)
     "stage" => task["stage"],
     "mascot" => mascot,             # bin/statusline renders <type-emoji> <mascot> — the session's Pokémon handle
     "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
-    "mascot_emoji" => mascot_emoji  # …and prefixed with its type emoji(s), also riding with the name
+    "mascot_emoji" => mascot_emoji, # …and prefixed with its type emoji(s), also riding with the name
+    "app_color" => dv["app_color"]  # the app's status-line tint (App#color, stamped server-side by Task#sync_app_identity)
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
   FileUtils.mkdir_p(File.dirname(path))
@@ -661,7 +668,7 @@ when "intent"
   # idempotent server-side, and a no-op once the target stage already landed. Used
   # for the Steffon QA (--to assembled --actor steffon) and Avi ship (--to shipped
   # --actor avi) intents; the review pair (--to reviewed) is normally recorded by
-  # `bin/reviewer-select --record`.
+  # `bin/reviewer-select` (which records by default).
   slug = ARGV.shift || die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]")
   to_stage = nil
   actor = nil
@@ -725,7 +732,15 @@ when "session-mascot"
           "mascot" => data["mascot"],
           "mascot_color" => data["mascot_color"],
           "mascot_emoji" => data["mascot_emoji"]
-        ).reject { |_, v| v.nil? || v.to_s.strip.empty? }
+        )
+        # Seed the DEFAULT app (mcritchie-studio) only when the marker has no app
+        # yet — a brand-new session reads "<Pokémon> · mcritchie-studio". Once a task
+        # sets the app (write_feature_marker), never override it here.
+        if marker["app"].to_s.strip.empty?
+          marker["app"] = data["app"]
+          marker["app_color"] = data["app_color"]
+        end
+        marker = marker.reject { |_, v| v.nil? || v.to_s.strip.empty? }
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, "#{JSON.pretty_generate(marker)}\n")
       end

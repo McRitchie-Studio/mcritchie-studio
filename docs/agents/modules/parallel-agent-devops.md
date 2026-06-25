@@ -151,9 +151,11 @@ honest, and **none of them needs a manual flag in the common case**:
 If the builder + QA-owner + busy exclusions would leave too few candidates, the
 least-bad ones (best domain fit) are KEPT eligible and the decision/log flags
 them — a pair is always returned. Because `--busy` / a custom `--qa-owner` shift
-the candidate pool, the bare preview is then **advisory**; `bin/reviewer-select
-<task> --record` writes the busy-aware pair as the live review intent so the
-board + timeline show the actual reviewers.
+the candidate pool, the printed pair may differ from the app's default-seed
+preview, but `bin/reviewer-select <task>` **records by default** — it writes the
+chosen (busy-aware) pair as the live review intent so the board + timeline show
+the actual reviewers. Pass `--no-record` (or `--dry`) for an advisory-only run
+that writes nothing.
 
 
 Start conductor sessions by generating the PR/worktree queue from McRitchie
@@ -193,6 +195,28 @@ comfortably hold in context. The plan separates:
 The plan is still read-only. It does not merge, deploy, update tasks, or create
 sub-agents. The conductor uses it to decide which work can safely happen in
 parallel and which tasks must be bundled or sequenced.
+
+### Re-fetch the queue before every act — the board moves under you
+
+The board is continuously fed: feature agents push new `submitted` PRs while you
+work, and other conductor sessions merge/ship in parallel. A queue snapshot goes
+stale fast — a real session shipped a **one-PR release against a snapshot that
+was already three PRs behind**, and later shipped against a release whose frozen
+QA SHA lagged the train because tasks merged after the last `prepare`. So treat
+the queue as live state, not a fixture:
+
+- **Re-run `bin/task list --stage submitted` (or `bin/qa-intake --refresh`)
+  immediately before every `bin/release merge`, every `prepare`, and every
+  `ship`.** Never act on a queue older than your own last write — re-confirm what
+  is actually `submitted` / `assembled` right now at each seam.
+- **Before `ship`, confirm the frozen QA SHA matches the train** — if any task
+  merged into `release` since the last `prepare`, the release is back to
+  `assembling`; re-run `prepare` so `qa_shas` == `origin/release` HEAD before you
+  ship (else you deploy stale code while running newer post-deploy hooks).
+- **Don't trust GitHub `mergeable` right after you change the base.** Merging a PR
+  into `release` flips every other open PR to `mergeable=UNKNOWN` while GitHub
+  recomputes asynchronously. Use `git merge-tree --write-tree origin/release
+  origin/<branch>` as the reliable local conflict check instead of polling `gh`.
 
 Use `bin/devops-cycle --decisions` after scout reports begin landing. The
 decision summary aggregates `qa-intake` status, latest task conversation state,

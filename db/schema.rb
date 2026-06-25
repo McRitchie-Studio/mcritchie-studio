@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_06_24_140000) do
+ActiveRecord::Schema[7.2].define(version: 2026_06_25_034743) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -74,6 +74,19 @@ ActiveRecord::Schema[7.2].define(version: 2026_06_24_140000) do
     t.integer "position", default: 0
     t.index ["slug"], name: "index_agents_on_slug", unique: true
     t.index ["status"], name: "index_agents_on_status"
+  end
+
+  create_table "apps", force: :cascade do |t|
+    t.string "slug", null: false
+    t.string "name", null: false
+    t.string "color"
+    t.string "emoji"
+    t.text "description"
+    t.integer "position", default: 0
+    t.string "status", default: "active"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_apps_on_slug", unique: true
   end
 
   create_table "arenas", force: :cascade do |t|

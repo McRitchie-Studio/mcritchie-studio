@@ -226,6 +226,45 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal "x", offenders.first["repo"]
   end
 
+  # --- generated-artifact allowlist: a retro doc / the worktree ledger ------
+  # ship_preflight must NOT count KNOWN-GENERATED files as dirt (a retro-*.md or
+  # the delete-later.md ledger routinely sit uncommitted in the deploy checkout
+  # and blocked EVERY ship's ff). Narrow allowlist — real code dirt still gates.
+
+  test "generated_artifact? matches a retro doc and the worktree ledger only" do
+    assert S.generated_artifact?("docs/agents/audits/retro-rel-20260624-b2f18e.md")
+    assert S.generated_artifact?("docs/agents/maintenance/delete-later.md")
+    # NOT a blanket docs/ ignore — any other doc/code still counts as dirt.
+    assert_not S.generated_artifact?("docs/agents/audits/some-other-audit.md")
+    assert_not S.generated_artifact?("docs/agents/maintenance/keep-this.md")
+    assert_not S.generated_artifact?("app/models/release.rb")
+    assert_not S.generated_artifact?("")
+  end
+
+  test "preflight_offenders ignores a clean-main checkout dirty ONLY with generated artifacts" do
+    states = [state("mcritchie-studio", dirty_files: [
+      "docs/agents/audits/retro-rel-20260624-b2f18e.md",
+      "docs/agents/maintenance/delete-later.md"
+    ])]
+    assert_empty S.preflight_offenders(states),
+                 "a retro doc + the worktree ledger are generated artifacts, not real dirt"
+  end
+
+  test "preflight_offenders still flags REAL dirt alongside a generated artifact" do
+    o = S.preflight_offenders([state("mcritchie-studio", dirty_files: [
+      "docs/agents/audits/retro-rel-1.md", "db/schema.rb"
+    ])]).first
+    assert o["dirty"], "a real dirty file still gates the ship"
+    assert_equal ["db/schema.rb"], o["dirty_files"],
+                 "the generated artifact is filtered out of the reported dirty files"
+  end
+
+  test "preflight_offenders still flags an off-main checkout even with only generated artifacts" do
+    o = S.preflight_offenders([state("turf-monster", branch: "pr-9",
+                                      dirty_files: ["docs/agents/maintenance/delete-later.md"])]).first
+    assert_not o["on_main"], "off-main is still an offender regardless of the artifact allowlist"
+  end
+
   # --- preflight_message: the loud, actionable abort text -------------------
 
   test "preflight_message names each offender, why, and the fix" do

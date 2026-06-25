@@ -30,6 +30,11 @@ require "socket"
 require "time"
 require "yaml"
 
+# The IO-free restore-primary safety decision (refuse-on-dirty/unpushed, else ff
+# to main). Pure Ruby with no Rails deps — the same `require_relative` shape
+# bin/release uses to pull in Release::ShipSequence (its detect-side complement).
+require_relative "../app/models/release/restore_primary"
+
 def default_projects_dir
   candidate = File.expand_path("../..", __dir__)
   return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
@@ -120,6 +125,7 @@ def usage
       test <app> <task-slug> [-- rails-test-args]
       status <app> <task-slug>
       finish <app> <task-slug> [--push] [--pr]
+      restore-primary <app> [--dry-run]
       doctor [app]
       snapshot [app] [--write]
       cleanup [app] [--write]
@@ -1260,6 +1266,31 @@ def record_mascot_field(record_slug, field)
   value.empty? ? nil : value
 end
 
+# The app's status-line tint (App#color, stamped server-side onto devops.app_color),
+# resolved to ride with the app slug and never downgrade — the same no-downgrade
+# guarantee resolve_mascot_color gives, keyed on the app. The last-good on-disk
+# value wins over a fresh board read, but ONLY when it belongs to the SAME app, so
+# an offline `bin/task field` (or a task that hasn't re-stamped) keeps the known
+# tint while a DIFFERENT app never inherits the old one's.
+def resolve_app_color(values, dir, task, app_slug)
+  existing_context_app_color(dir, app_slug) ||
+    record_mascot_field(task_record_slug(values) || task, "app_color")
+end
+
+def existing_context_app_color(dir, app_slug)
+  return nil unless compact_value(app_slug)
+
+  path = context_path(dir)
+  return nil unless File.exist?(path)
+
+  data = JSON.parse(File.read(path))
+  return nil unless compact_value(data["app"]) == app_slug
+
+  compact_value(data["app_color"])
+rescue JSON::ParserError
+  nil
+end
+
 def context_payload(app, task, values, dir, record: nil, stage: nil)
   port = values["APP_PORT"].to_s
   redis_db = redis_db_from_url(values["REDIS_URL"])
@@ -1278,6 +1309,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "generated_at" => Time.now.utc.iso8601,
     "app" => app.fetch("slug"),
     "app_name" => app.fetch("display_name", app.fetch("slug")),
+    "app_color" => resolve_app_color(values, dir, task, app.fetch("slug")),
     "task_slug" => task,
     "worktree_slug" => task,
     "task_record_slug" => task_record,
@@ -2166,6 +2198,91 @@ def pr_body(record)
   BODY
 end
 
+# --- restore-primary: return a primary checkout to a clean canonical `main` ---
+#
+# The COMPLEMENT of Release::ShipSequence.preflight_offenders. The conductor's
+# ship preflight DETECTS a primary that drifted off a clean `main` during a
+# review/QA cycle (retro-rel-20260623 line 54: a primary left on a stray review
+# branch, so the next session integrated/deployed from the wrong floor). This
+# FIXES it: it REFUSES (loud, non-zero) any checkout with uncommitted or unpushed
+# work — never discarding it — and otherwise checks out `main` and fast-forwards
+# to origin. The safety call is the IO-free Release::RestorePrimary.decision; this
+# owns only the git reads/writes.
+
+# The current branch + dirty-file list + unpushed-commit list for a checkout (live
+# git reads), the I/O seam — mirrors bin/release's repo_git_state. `unpushed` is
+# commits reachable from HEAD but on NO remote branch — the work a restore would
+# leave behind; empty for a checked-out remote branch whose commits are all
+# pushed.
+def restore_primary_state(repo)
+  _b_ok, branch, = capture_status("git", "rev-parse", "--abbrev-ref", "HEAD", chdir: repo)
+  _s_ok, status, = capture_status("git", "status", "--porcelain", chdir: repo)
+  files = status.to_s.lines.map { |line| line[3..].to_s.strip }.reject(&:empty?)
+  _u_ok, unpushed, = capture_status("git", "log", "--format=%h %s", "HEAD", "--not", "--remotes", chdir: repo)
+  commits = unpushed.to_s.lines.map(&:strip).reject(&:empty?)
+  { "branch" => branch.to_s.strip, "dirty_files" => files, "unpushed" => commits }
+end
+
+# Restore an app's PRIMARY checkout to a clean `main`. Returns true on a
+# successful restore (or safe no-op), false on a refusal or a git failure — so the
+# CLI exit code and the conductor can react. With dry: true it reports the plan
+# and runs no mutating git.
+def run_restore_primary(app, dry: false)
+  repo  = app.fetch("repo")
+  label = app.fetch("slug")
+
+  # Fetch is best-effort: an offline/unreachable origin still lets us restore to
+  # the last-known origin/main ref (mirrors run_finish/run_remove's allow_fail
+  # fetch). A failure only means "may not be the very latest origin/main".
+  unless sh("git", "fetch", "origin", "--quiet", chdir: repo, allow_fail: true)
+    log_fail("#{label}: git fetch origin failed — restoring against the last-known origin/main")
+  end
+
+  plan = Release::RestorePrimary.decision(restore_primary_state(repo))
+
+  if Release::RestorePrimary.refuse?(plan)
+    warn(Release::RestorePrimary.refusal_message(label, plan))
+    return false
+  end
+
+  target     = plan["branch"]            # "main"
+  remote_ref = "origin/#{target}"
+  from       = plan["from_branch"]
+
+  unless capture_status("git", "rev-parse", "--verify", "--quiet", remote_ref, chdir: repo).first
+    log_fail("#{label}: #{remote_ref} not found — cannot restore #{repo}")
+    return false
+  end
+
+  if dry
+    note = plan["already_on_canonical"] ? "ff #{target} to #{remote_ref}" : "checkout #{target} (from #{from}) + ff to #{remote_ref}"
+    log_ok("#{label}: would restore primary — #{note}")
+    return true
+  end
+
+  # Switch to the canonical branch first (git DWIM creates the tracking branch
+  # from origin/main when there is no local main). Skipped when already on it.
+  unless plan["already_on_canonical"]
+    return false unless sh("git", "checkout", target, chdir: repo, allow_fail: true)
+  end
+
+  # --ff-only can never create a merge commit; the unpushed guard above means main
+  # has no local-only commits, so this fast-forward always applies cleanly. If main
+  # itself somehow diverged, ff-only REFUSES rather than clobbering it — the same
+  # never-discard-work guarantee, fail-closed.
+  unless sh("git", "merge", "--ff-only", remote_ref, chdir: repo, allow_fail: true)
+    log_fail("#{label}: fast-forward to #{remote_ref} failed (diverged?) — left on #{target}; resolve by hand")
+    return false
+  end
+
+  if plan["already_on_canonical"]
+    log_ok("#{label}: primary already on #{target}; fast-forwarded to #{remote_ref}")
+  else
+    log_ok("#{label}: restored primary #{from} → clean #{target} (ff to #{remote_ref})")
+  end
+  true
+end
+
 def run_finish(app, task, push: false, pr: false)
   dir = worktree_dir(app, task)
   abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
@@ -2499,6 +2616,12 @@ if $PROGRAM_NAME == __FILE__
     app = app_for(app_name)
     task = clean_slug(raw_task)
     run_finish(app, task, push: !!push, pr: !!pr)
+  when "restore-primary"
+    dry = ARGV.delete("--dry-run")
+    app_name = ARGV[0]
+    usage unless app_name
+    app = app_for(app_name)
+    exit(run_restore_primary(app, dry: !!dry) ? 0 : 1)
   when "doctor"
     app = ARGV[0] ? app_for(ARGV[0]) : nil
     run_doctor(app)

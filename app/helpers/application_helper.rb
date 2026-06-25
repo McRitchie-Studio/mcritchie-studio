@@ -122,6 +122,16 @@ module ApplicationHelper
     tag.span(emojis.join(" "), class: css, title: Array(repos).join(", "))
   end
 
+  # Single source for the right-edge fade mask used on the task card's single-line
+  # rows (the slug + the footer meta): a transparency mask so the text fades out on
+  # overflow without a solid bg gradient that would mismatch the card colour on
+  # hover. +stop+ is the opaque cutoff (% before the fade). Mirrored — not shared —
+  # by components/_overflow_fade, which drives its own L/R mask through Alpine.
+  def right_fade_style(stop: 88)
+    "mask-image: linear-gradient(to right, #000 #{stop}%, transparent); " \
+      "-webkit-mask-image: linear-gradient(to right, #000 #{stop}%, transparent)"
+  end
+
   # The non-stage key for the "Build and Deploy QA Release" meta-trigger in
   # +devops_kickoffs+ (see below). Not a board stage, so it never renders on a
   # column header — only the current-release section reaches for it.

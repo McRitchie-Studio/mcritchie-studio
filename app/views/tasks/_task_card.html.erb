@@ -39,7 +39,7 @@
       gradient, so nothing mismatches the card colour on hover. %>
   <div class="flex items-center gap-1 mt-0.5 mb-1.5">
     <code class="block text-[10px] font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
-          style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)"><%= task.slug %></code>
+          style="<%= right_fade_style %>"><%= task.slug %></code>
     <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
   </div>
 
@@ -114,7 +114,7 @@
       docs (📚) — sit OUTSIDE the fade so they stay crisp. Features stay unmarked. %>
   <div class="flex items-center gap-2 mt-1 text-[10px]">
     <div class="flex items-center gap-2 min-w-0 flex-1 whitespace-nowrap overflow-hidden"
-         style="mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent)">
+         style="<%= right_fade_style %>">
       <% if task.devops? && (local_url = task.devops_url("local")) %>
         <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
       <% end %>

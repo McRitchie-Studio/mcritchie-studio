@@ -1,6 +1,14 @@
 require "test_helper"
 
 class ApplicationHelperTest < ActionView::TestCase
+  test "right_fade_style emits both mask-image properties with the given stop" do
+    style = right_fade_style
+    assert_includes style, "mask-image: linear-gradient(to right, #000 88%, transparent)"
+    assert_includes style, "-webkit-mask-image: linear-gradient(to right, #000 88%, transparent)"
+
+    assert_includes right_fade_style(stop: 70), "#000 70%, transparent", "stop is configurable"
+  end
+
   test "environment banner shows in non-production rails environments" do
     assert show_environment_banner?(
       qa_environment: false,

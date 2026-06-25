@@ -163,11 +163,28 @@ agents_data = [
   }
 ]
 
+# Each soul's status-line identity — glyph + tint — shown by bin/statusline when a
+# session "acts as" this agent (a task persona) in place of its Pokémon. Read by
+# Agent#emoji / Agent#status_color. Explicit colors so two souls never collide on
+# the 8-bucket deterministic avatar palette (status_color falls back to it).
+AGENT_EMOJI = {
+  "alex" => "🧭", "avi" => "📋", "carl" => "🛠", "shannon" => "🎨",
+  "jasper" => "🧪", "steffon" => "🚀", "turf-monster" => "🐲",
+  "mack" => "📦", "mason" => "📣"
+}.freeze
+AGENT_COLOR = {
+  "alex" => "#818CF8", "avi" => "#FB7185", "carl" => "#F97316", "shannon" => "#EC4899",
+  "jasper" => "#9945FF", "steffon" => "#06B6D4", "turf-monster" => "#84CC16",
+  "mack" => "#9CA3AF", "mason" => "#EF4444"
+}.freeze
+
 agents_data.each do |data|
   agent = Agent.find_or_initialize_by(slug: data[:slug])
   # Merge (not replace) metadata so any runtime-written keys survive a re-seed;
   # the keys this seed owns are still authoritatively set/overwritten.
   merged_metadata = (agent.metadata || {}).merge(data.fetch(:metadata, {}))
+  merged_metadata["emoji"] = AGENT_EMOJI[data[:slug]] if AGENT_EMOJI.key?(data[:slug])
+  merged_metadata["color"] = AGENT_COLOR[data[:slug]] if AGENT_COLOR.key?(data[:slug])
   agent.assign_attributes(
     name: data[:name],
     status: data[:status],
