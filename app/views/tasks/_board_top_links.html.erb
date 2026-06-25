@@ -11,4 +11,6 @@
   <%= link_to "Stages", stages_path,
         "aria-current": (current == "stages" ? "page" : nil),
         class: "transition #{current == 'stages' ? 'text-primary font-medium' : 'text-muted hover:text-heading'}" %>
+  <%= link_to "Intelligence", intelligence_path,
+        class: "text-muted hover:text-heading transition" %>
 </nav>
