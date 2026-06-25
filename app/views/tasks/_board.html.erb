@@ -123,7 +123,11 @@ function kanbanBoard(live) {
           ghostClass: 'opacity-30',
           draggable: '.kanban-card',
           filter: '.kanban-empty',
-          onEnd: (evt) => this.handleSortEnd(evt)
+          // Flag local drags so LiveBoardFx doesn't read a dragged card landing in a
+          // new column as a "create" burst. Cleared a frame after drop, so the move's
+          // own broadcast echo (which arrives after the PATCH) still animates.
+          onStart: () => { window.__lbfxDragging = true; },
+          onEnd: (evt) => { this.handleSortEnd(evt); requestAnimationFrame(() => { window.__lbfxDragging = false; }); }
         });
       });
     },

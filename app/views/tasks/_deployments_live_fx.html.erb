@@ -159,6 +159,10 @@
     // Called by the board's observeLive for each freshly patched-in card.
     function onAdd(node) {
       if (!node.id || !node.id.startsWith("card-")) return;
+      // A local drag moves a card's node into a new column — that's not a live
+      // event, so don't burst it. (The drag's own broadcast move echo arrives after
+      // the PATCH, once the flag has cleared, and animates normally.)
+      if (window.__lbfxDragging) return;
       const wasMoving = collapsing.get(node.id);
       const action = pendingAction.get(node.id);
       pendingAction.delete(node.id);
