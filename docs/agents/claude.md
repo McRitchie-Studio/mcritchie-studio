@@ -51,6 +51,14 @@ fast-forwarding `release → main` (`bin/release ship`). `blocked` = needs
 attention; `archived` = terminal.
 Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
+**Sizing trio (po/dev/actual).** Avi is the default sizer — he sets `po_size` at
+creation (`bin/task create … --po-size small|medium|large|xl`), a forecast, not a
+gate (backfill later with `bin/task update --po-size`). The per-task Pokémon
+stamps its `dev_size` as it claims the task (`bin/task move <task> building
+--dev-size <size>`; optional). At ship, `actual_size` auto-derives from MEASURED
+usage (total tokens across the task's TaskEvents) when blank — powering the sizing
+intelligence dashboard.
+
 **Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
 explicitly assigns you that lane in this session.
 

@@ -803,4 +803,67 @@ class TaskCliTest < Minitest::Test
       assert_equal "snorlax", marker["mascot"], "…and the mascot is set"
     end
   end
+
+  # --- Size trio flags (--po-size / --dev-size / --pm-size) -------------------
+
+  # Avi (the default sizer) seeds po_size at creation; the sizes are TOP-LEVEL
+  # Task columns, sent as top-level body keys (not nested under devops).
+  def test_create_sends_size_columns_at_top_level
+    requests, = run_task(["create", "--title", "Sized new task", "--po-size", "medium", "--pm-size", "small"])
+    create = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }
+    refute_nil create
+    body = JSON.parse(create[:body])
+    assert_equal "medium", body["po_size"], "po_size rides as a top-level column, not in devops"
+    assert_equal "small", body["pm_size"]
+    refute body.dig("devops", "po_size"), "sizes must NOT leak into devops"
+  end
+
+  # update can backfill a size later (size isn't required at creation).
+  def test_update_sends_size_columns_at_top_level
+    requests, = run_task(["update", "demo-task", "--po-size", "large"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    assert_equal "large", JSON.parse(patch[:body])["po_size"]
+  end
+
+  # An invalid size is rejected client-side (exit 1, clear message) BEFORE any
+  # request goes out — never reaching the API as a 422.
+  def test_create_rejects_an_invalid_size
+    requests, _out, err, status = run_task(["create", "--title", "Bad size task", "--po-size", "huge"])
+    refute status.success?, "an invalid size must fail fast"
+    assert_match(/--po-size must be one of: small, medium, large, xl/, err)
+    assert_nil requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" },
+               "a rejected size must not POST the task"
+  end
+
+  # AC #3: the builder Pokémon stamps its own dev_size as it claims the task at
+  # `building` — a top-level column alongside the stage move + claim devops.
+  def test_move_to_building_with_dev_size_sets_the_column
+    requests, = run_task(
+      ["move", "demo-task", "building", "--dev-size", "medium"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    parsed = JSON.parse(patch[:body])
+    assert_equal "building", parsed["stage"]
+    assert_equal "medium", parsed["dev_size"], "the builder's estimate rides as a top-level column"
+    assert_equal SESSION, parsed.dig("devops", "claimed_session"), "the claim still lands alongside it"
+  end
+
+  # A bare building move (no --dev-size) sends no dev_size — it's optional.
+  def test_move_to_building_without_dev_size_omits_the_column
+    requests, = run_task(["move", "demo-task", "building"], env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute JSON.parse(patch[:body]).key?("dev_size"), "absent --dev-size sends no dev_size"
+  end
+
+  def test_move_rejects_an_invalid_dev_size
+    _requests, _out, err, status = run_task(
+      ["move", "demo-task", "building", "--dev-size", "enormous"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+    refute status.success?
+    assert_match(/--dev-size must be one of: small, medium, large, xl/, err)
+  end
 end

@@ -82,6 +82,17 @@ The task lifecycle is two workflows (full spec:
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
 
+**Sizing the work — the po/dev/actual trio.** Avi is the default sizer: he sets
+`po_size` when he creates and grooms the task (`bin/task create … --po-size
+small|medium|large|xl`). It is a forecast, **not** a hard gate — a task can be
+created without one and backfilled later (`bin/task update <task> --po-size …`).
+The per-task Pokémon stamps its own `dev_size` as it CLAIMS the task (`bin/task
+move <task> building --dev-size <size>`; optional). At ship, `actual_size`
+**auto-derives** from the task's MEASURED usage (total tokens across its
+TaskEvents, bucketed by `Task::ACTUAL_SIZE_THRESHOLDS`) — only when blank, never
+clobbering a manual size. The trio (PO forecast vs. dev forecast vs. measured
+actual) powers the sizing intelligence dashboard.
+
 **The task slug is the genesis.** Creating it in step 1 trickles down to
 everything: the worktree (bound by slug), the task URL
 (`https://mcritchie.studio/tasks/<slug>`), and the terminal feature indicator —
