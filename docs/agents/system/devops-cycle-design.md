@@ -760,12 +760,14 @@ a pre-PR mechanical check.
 run the suite; `bin/full-suite-check` is the (slower, run-once-before-handoff)
 runner that produces the evidence (format + fingerprint live in
 `bin/lib/full_suite_gate.rb`). It closes the retro gap where a build passed only
-the **files it touched** while the full suite or `rubocop` broke post-merge. The
-runner is also wireable as a `pre-commit` hook (`.git/hooks/pre-commit` →
-`exec bin/full-suite-check`) for teams that want the lanes on every commit, but
-the **authoritative** gate is `bin/dor-check` validating the recorded evidence —
-there is no installed hook to depend on, and evidence on the task record survives
-a fresh checkout where a local hook artifact would not.
+the **files it touched** while the full suite or `rubocop` broke post-merge. For
+those who want the lanes wired locally, `bin/full-suite-check --install-hook`
+installs an **opt-in pre-push** hook (off by default; runs the gate before each
+push, blocks a red push; remove with `--uninstall-hook`) — pre-push, not
+pre-commit, because a full suite on every commit is untenable. But the
+**authoritative** gate is `bin/dor-check` validating the recorded evidence: the
+hook is a convenience, and evidence on the task record survives a fresh checkout
+where a local hook artifact would not.
 
 ### 3.4 Test ownership & timing — *who writes what, when*
 
