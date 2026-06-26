@@ -561,11 +561,12 @@ def usage_baseline_for(session)
 end
 
 # Seed the per-(session, slug) baseline from the session's current cumulative
-# totals when the session first TOUCHES the task — at the build CLAIM
-# (move→building) and at a review/deploy INTENT. Idempotent (never resets an
-# in-progress baseline) and best-effort. Seeding here is what makes the first
-# real WORK transition record a true delta instead of the zeroed first-move
-# baseline (the cause of the model-only Submitted→Reviewed chip).
+# totals when the session first TOUCHES the task — at CREATE (so the design phase
+# is measured), at the build CLAIM (move→building), and at a review/deploy INTENT.
+# Idempotent (never resets an in-progress baseline) and best-effort. Seeding here
+# is what makes the first real WORK transition record a true delta instead of the
+# zeroed first-move baseline (the cause of the model-only Submitted→Reviewed chip,
+# and its design-phase twin, the model-only Designed→Building chip).
 def seed_usage_baseline(slug)
   usage_baseline_for(ENV["CLAUDE_CODE_SESSION_ID"])&.seed(slug)
 rescue StandardError
@@ -648,6 +649,13 @@ when "create"
   body = top_body(top)
   body["devops"] = devops unless devops.empty?
   task = api(:post, "/api/v1/tasks", body)["data"]
+  # Seed the usage baseline at CREATE so the design phase is measured: the first
+  # work transition (designed→building) then diffs against the session's totals
+  # AT creation and records the real design-phase token delta — instead of the
+  # zeroed first-move baseline that dropped the "Designed → Building" card to a
+  # model-only chip (TOKENS — / COST —). Same fix shape as the build-claim and
+  # intent seeds; idempotent + best-effort, and a no-op without a transcript.
+  seed_usage_baseline(task["slug"]) if task.is_a?(Hash) && task["slug"]
   write_feature_marker(task)
   print_task(task)
 when "update"

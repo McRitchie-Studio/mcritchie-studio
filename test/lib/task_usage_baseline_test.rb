@@ -82,6 +82,38 @@ class TaskUsageBaselineTest < Minitest::Test
     end
   end
 
+  # The DESIGN-PHASE contract the `bin/task create` seed relies on: a baseline
+  # seeded fresh at create (from the session's CURRENT totals, no prior baseline),
+  # then captured at the first build move, yields the FULL chip the "Designed →
+  # Building" card needs — model + a real token delta + a non-nil cost — not the
+  # model-only chip the un-seeded path produces. Guards the create→build-move
+  # sequence at the lib level (the existing isolate test asserts tokens + advance
+  # but not the model/cost the card renders).
+  def test_design_phase_seed_then_build_move_records_the_full_chip
+    Dir.mktmpdir do |root|
+      Dir.mktmpdir do |state|
+        # create-time totals (docs read / feature shaped) — seed the baseline here.
+        write_transcript(root, [assistant_line(input: 1000, output: 2000, cc: 0, cr: 5000)])
+        b = baseline(dir: state, root: root)
+        assert b.seed(SLUG), "create seeds a fresh baseline from current totals"
+
+        # The design work lands (turn 2), then the build move captures the delta.
+        write_transcript(root, [
+          assistant_line(input: 1000, output: 2000, cc: 0, cr: 5000),
+          assistant_line(input: 100, output: 4000, cc: 50, cr: 6000)
+        ])
+        result = b.capture_delta(SLUG)
+
+        assert_equal "claude-opus-4-8", result.model, "the card's MODEL"
+        assert result.usage?, "a real design-phase delta, not the model-only chip"
+        assert_equal 6150, result.tokens_in
+        assert_equal 4000, result.tokens_out
+        refute_nil result.cost, "a priced model yields a real design-phase COST"
+        assert_operator result.cost, :>, 0, "the COST chip is non-zero"
+      end
+    end
+  end
+
   def test_first_capture_with_no_baseline_reports_model_only_then_advances
     Dir.mktmpdir do |root|
       Dir.mktmpdir do |state|
