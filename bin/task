@@ -50,7 +50,7 @@
 #       claims the task at `building` — optional; absent is fine. )
 #     ( best-effort per-transition usage the agent burned in the stage it's
 #       leaving — recorded on this move's TaskEvent. With NO usage flags, a
-#       Claude session auto-captures model + token delta + cost from its
+#       Claude/Codex session auto-captures model + token delta + cost from its
 #       transcript, so a bare move still leaves a full paper trail; flags
 #       override. The from/to/duration spine is recorded server-side regardless. )
 #     ( the move to `building` CLAIMS the task for this live instance (session id +
@@ -621,11 +621,11 @@ end
 
 # The baseline store for THIS session, or nil when there's no session (a plain
 # shell / CI run has no transcript to diff anyway).
-def usage_baseline_for(session)
+def usage_baseline_for(session, provider: "claude")
   session = session.to_s.strip
   return nil if session.empty?
 
-  TaskUsageBaseline.new(session: session, dir: usage_dir)
+  TaskUsageBaseline.new(session: session, provider: provider, dir: usage_dir)
 end
 
 # Seed the per-(session, slug) baseline from the session's current cumulative
@@ -636,7 +636,8 @@ end
 # zeroed first-move baseline (the cause of the model-only Submitted→Reviewed chip,
 # and its design-phase twin, the model-only Designed→Building chip).
 def seed_usage_baseline(slug)
-  usage_baseline_for(ENV["CLAUDE_CODE_SESSION_ID"])&.seed(slug)
+  session, provider = session_identity
+  usage_baseline_for(session, provider: provider)&.seed(slug)
 rescue StandardError
   nil
 end
@@ -646,7 +647,8 @@ end
 # session, no transcript, or no baseline yet → record at most the model; the
 # deterministic spine is recorded server-side regardless.
 def autofill_move_usage(event, slug)
-  baseline = usage_baseline_for(ENV["CLAUDE_CODE_SESSION_ID"])
+  session, provider = session_identity
+  baseline = usage_baseline_for(session, provider: provider)
   return unless baseline
 
   capture = baseline.capture_delta(slug)

@@ -7,8 +7,8 @@ require "fileutils"
 # Per-(session, task-slug) baseline of cumulative token usage — the state behind
 # best-effort per-transition usage capture for the task-board timeline.
 #
-# A Claude session transcript is CUMULATIVE across the whole session (every task
-# it touches), so to isolate the work done for ONE task's ONE stage we diff the
+# An agent transcript is CUMULATIVE across the whole session (every task it
+# touches), so to isolate the work done for ONE task's ONE stage we diff the
 # session's current cumulative totals against a baseline snapshot taken when that
 # session first TOUCHED the task. Three touch points seed the baseline:
 #
@@ -30,12 +30,13 @@ require "fileutils"
 class TaskUsageBaseline
   # +session+ is the agent session id; +dir+ is where the per-session baseline
   # JSON lives (callers resolve it — defaults under <projects>/.agents/task-usage;
-  # tests point it at a tmp path). +transcript_root+ defaults to the Claude
-  # projects dir AgentSessionUsage reads.
-  def initialize(session:, dir:, transcript_root: AgentSessionUsage.default_root)
+  # tests point it at a tmp path). +provider+ selects the transcript format
+  # (claude/codex). +transcript_root+ defaults to that provider's transcript dir.
+  def initialize(session:, dir:, provider: "claude", transcript_root: nil)
     @session = session.to_s.strip
     @dir = dir.to_s
-    @transcript_root = transcript_root
+    @provider = AgentSessionUsage.normalize_provider(provider)
+    @transcript_root = transcript_root || AgentSessionUsage.default_root(@provider)
   end
 
   # The state file for THIS session: a JSON object keyed by task slug, each value
@@ -79,7 +80,7 @@ class TaskUsageBaseline
     return false if blank?
     return false unless read(slug).nil?
 
-    result = AgentSessionUsage.capture(session_id: @session, transcript_root: @transcript_root)
+    result = AgentSessionUsage.capture(session_id: @session, provider: @provider, transcript_root: @transcript_root)
     return false unless result
 
     write(slug, result.totals)
@@ -98,6 +99,7 @@ class TaskUsageBaseline
 
     result = AgentSessionUsage.capture(
       session_id: @session,
+      provider: @provider,
       baseline: read(slug),
       transcript_root: @transcript_root
     )

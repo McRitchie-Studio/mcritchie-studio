@@ -123,4 +123,26 @@ class AgentSessionUsageTest < Minitest::Test
     buckets = { "input" => 1_000_000, "output" => 0, "cache_creation" => 0, "cache_read" => 0 }
     assert_in_delta 5.0, AgentSessionUsage.price(buckets, "claude-opus-4-8[1m]"), 0.0001
   end
+
+  def test_codex_transcript_uses_latest_cumulative_usage
+    Dir.mktmpdir do |root|
+      dir = File.join(root, "2026", "06", "26")
+      FileUtils.mkdir_p(dir)
+      File.write(File.join(dir, "rollout-2026-06-26T13-04-23-#{SESSION}.jsonl"), <<~JSONL)
+        {"type":"turn_context","payload":{"model":"gpt-5.5"}}
+        {"type":"event_msg","payload":{"info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":300,"output_tokens":200,"reasoning_output_tokens":50,"total_tokens":1200}}}}
+        {"type":"event_msg","payload":{"info":{"total_token_usage":{"input_tokens":1500,"cached_input_tokens":500,"output_tokens":280,"reasoning_output_tokens":80,"total_tokens":1780}}}}
+      JSONL
+
+      baseline = { "input" => 700, "output" => 200, "cache_creation" => 0, "cache_read" => 300 }
+      result = AgentSessionUsage.capture(session_id: SESSION, provider: "codex", baseline: baseline, transcript_root: root)
+
+      assert result.usage?
+      assert_equal "gpt-5.5", result.model
+      assert_equal({ "input" => 1000, "output" => 280, "cache_creation" => 0, "cache_read" => 500 }, result.totals)
+      assert_equal 500, result.tokens_in
+      assert_equal 80, result.tokens_out
+      assert_equal 0.004, result.cost
+    end
+  end
 end

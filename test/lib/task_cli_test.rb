@@ -272,6 +272,40 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  def with_codex_session_transcript(turns)
+    Dir.mktmpdir do |home|
+      proj = File.join(home, ".codex", "sessions", "2026", "06", "26")
+      FileUtils.mkdir_p(proj)
+      lines = [{ "type" => "turn_context", "payload" => { "model" => "gpt-5.5" } }]
+      totals = { input: 0, output: 0, cached: 0 }
+      turns.each do |u|
+        totals[:input] += u[:input]
+        totals[:output] += u[:output]
+        totals[:cached] += u[:cached]
+        lines << {
+          "type" => "event_msg",
+          "payload" => {
+            "info" => {
+              "total_token_usage" => {
+                "input_tokens" => totals[:input],
+                "cached_input_tokens" => totals[:cached],
+                "output_tokens" => totals[:output],
+                "reasoning_output_tokens" => u.fetch(:reasoning, 0),
+                "total_tokens" => totals[:input] + totals[:output]
+              }
+            }
+          }
+        }
+      end
+      File.write(
+        File.join(proj, "rollout-2026-06-26T13-04-23-#{SESSION}.jsonl"),
+        "#{lines.map { |line| JSON.generate(line) }.join("\n")}\n"
+      )
+      usage_dir = File.join(home, "usage-state")
+      yield({ "CODEX_THREAD_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => usage_dir }, usage_dir)
+    end
+  end
+
   def test_move_auto_captures_the_usage_delta_from_the_transcript
     turns = [
       { input: 1000, output: 2000, cc: 0,  cr: 5000 },
@@ -291,6 +325,28 @@ class TaskCliTest < Minitest::Test
       assert_equal 6150, event["tokens_in"]   # 100 + 50 + 6000
       assert_equal 4000, event["tokens_out"]
       assert_equal "0.1038", event["cost"]     # (100*5 + 4000*25 + 50*5*1.25 + 6000*5*0.1)/1e6
+      assert_equal SESSION, event["actor"]
+    end
+  end
+
+  def test_codex_move_auto_captures_the_usage_delta_from_the_transcript
+    turns = [
+      { input: 1000, output: 200, cached: 300 },
+      { input: 500,  output: 80,  cached: 200 }
+    ]
+    with_codex_session_transcript(turns) do |env, usage_dir|
+      FileUtils.mkdir_p(usage_dir)
+      File.write(File.join(usage_dir, "#{SESSION}.json"),
+                 JSON.generate("demo-task" => { "input" => 700, "output" => 200,
+                                                "cache_creation" => 0, "cache_read" => 300 }))
+
+      requests, = run_task(["move", "demo-task", "submitted"], env: env)
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+
+      assert_equal "gpt-5.5", event["model"]
+      assert_equal 500, event["tokens_in"]
+      assert_equal 80, event["tokens_out"]
+      assert_equal "0.0040", event["cost"]
       assert_equal SESSION, event["actor"]
     end
   end

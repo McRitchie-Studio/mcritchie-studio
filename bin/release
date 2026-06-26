@@ -271,11 +271,15 @@ end
 # This conductor's local SESSION id (Claude or Codex), or nil. Used to tag the
 # deployment with the agent working it — see with_conductor_session.
 def conductor_session_id
+  conductor_session_identity.first
+end
+
+def conductor_session_identity
   %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].each do |key|
     value = ENV[key].to_s.strip
-    return value unless value.empty?
+    return [value, key == "CODEX_THREAD_ID" ? "codex" : "claude"] unless value.empty?
   end
-  nil
+  [nil, "claude"]
 end
 
 # Prefix a conductor snippet with the local session id so the prod `rails runner`
@@ -349,10 +353,10 @@ end
 # session / transcript / delta. String keys + scalar values, so it's safe inside
 # the Ruby-literal conductor snippet (Base64-encoded by conductor_payload).
 def capture_move_usage(slug)
-  session = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
-  return {} if session.empty?
+  session, provider = conductor_session_identity
+  return {} if session.to_s.empty?
 
-  capture = TaskUsageBaseline.new(session: session, dir: release_usage_dir).capture_delta(slug)
+  capture = TaskUsageBaseline.new(session: session, provider: provider, dir: release_usage_dir).capture_delta(slug)
   return {} unless capture
 
   usage = {}
