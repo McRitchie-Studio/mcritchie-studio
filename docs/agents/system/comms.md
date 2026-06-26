@@ -5,11 +5,12 @@
 All agents communicate with McRitchie Studio via the JSON API at `/api/v1/`.
 
 ### Claiming a Task
-1. `GET /api/v1/tasks?stage=queued&agent_slug=AGENT` — Check for assigned queued tasks
-2. `POST /api/v1/tasks/:slug/start` — Claim and start the task
-3. Do the work
-4. `POST /api/v1/tasks/:slug/complete` — Report success with result data
-5. OR `POST /api/v1/tasks/:slug/fail_task` — Report failure with error message
+1. `GET /api/v1/tasks?stage=designed&agent_slug=AGENT` — Check for assigned designed tasks
+2. `PATCH /api/v1/tasks/:slug` with `{ "stage": "building" }` — Claim and start the task
+3. `POST /api/v1/tasks/:slug/intent` — Optionally record an intended next stage or reviewer assignment
+4. Do the work
+5. `PATCH /api/v1/tasks/:slug` with `{ "stage": "submitted" }` — Hand the task to review
+6. OR `PATCH /api/v1/tasks/:slug` with `{ "stage": "blocked" }` plus a `qa_feedback` activity — Report rework, dependency, or environment blockers
 
 ### Logging Activity
 After significant actions, agents should log activity:

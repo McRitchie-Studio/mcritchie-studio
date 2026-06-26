@@ -89,8 +89,8 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 ## JSON API (`/api/v1/`)
 
 - `GET/POST /api/v1/tasks` — List/create tasks
-- `GET/PATCH /api/v1/tasks/:slug` — Read/update task
-- `POST /api/v1/tasks/:slug/{queue,start,complete,fail_task}` — Stage transitions
+- `GET/PATCH /api/v1/tasks/:slug` — Read/update task, including `stage`
+- `POST /api/v1/tasks/:slug/intent` — Record an intended next stage or reviewer assignment
 - `POST /api/v1/release_notes` — Format and send canonical Discord Release Notes for deployed task slugs
 - `GET/PATCH /api/v1/agents/:slug` — Read/update agent
 - `GET/POST /api/v1/activities` — List/create activities

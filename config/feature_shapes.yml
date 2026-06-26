@@ -5,7 +5,7 @@
 # enter `submitted`, plus the metadata the task must carry. `bin/dor-check`
 # reads this file.
 #
-# Tiers map onto the pyramid in docs/agents/system/devops-cycle.md (§3) and the
+# Tiers map onto the pyramid in docs/agents/system/devops-cycle-design.md (§3) and the
 # lanes in config/devops_test_suites.yml. `manual` (operator visual acceptance)
 # is NOT a DoR tier — it is gated at the release QA stop, not before `submitted`.
 #
