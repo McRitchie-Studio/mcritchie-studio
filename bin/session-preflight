@@ -1,0 +1,564 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/session-preflight — deterministic start-of-session task check.
+#
+# This is the front gate that complements bin/dor-check:
+#   * session-preflight runs BEFORE work starts and asks "what can bite me?"
+#   * dor-check runs BEFORE handoff and asks "is this ready to review?"
+#
+# It stays read-only. Network-backed checks degrade to warnings when unavailable,
+# while local deterministic drift checks can fail the preflight.
+#
+# Usage:
+#   bin/session-preflight <task-slug>
+#   bin/session-preflight <task-slug> --json
+#   bin/session-preflight --file task.json --no-gh --no-install-docs --no-fetch
+
+require "json"
+require "open3"
+require "optparse"
+require "pathname"
+require "time"
+require "yaml"
+
+DEFAULT_ROOT = File.expand_path("..", __dir__)
+CHECK_STATES = {
+  "SUCCESS" => "pass",
+  "FAILURE" => "fail",
+  "CANCELLED" => "cancelled",
+  "TIMED_OUT" => "timed_out",
+  "ACTION_REQUIRED" => "action_required",
+  "SKIPPED" => "skipped"
+}.freeze
+BAD_MERGE_STATES = %w[DIRTY BEHIND BLOCKED].freeze
+STALE_PATTERNS = [
+  ["legacy queued stage query", /stage=queued/],
+  ["legacy task transition endpoint", %r{tasks/:slug/(?:start|complete|fail_task)}],
+  ["legacy grouped transition endpoint", /\{queue,start,complete,fail_task\}/],
+  ["legacy queued task wording", /queued tasks/i],
+  ["legacy completion wording", /mark task complete/i],
+  ["stale devops-cycle doc path", %r{docs/agents/system/devops-cycle\.md}],
+  ["stale release prepare no-op wording", /silently no-ops/i],
+  ["pre-config release policy wording", /Until it is backed by/i],
+  ["legacy review stage name", /\b(?:pr_review|qa_review|prod_ready)\b/]
+].freeze
+
+def warn!(message)
+  $stderr.puts(message)
+end
+
+def die!(message)
+  warn!("error: #{message}")
+  exit 1
+end
+
+def capture(*cmd, chdir: nil, env: {})
+  kwargs = {}
+  kwargs[:chdir] = chdir if chdir
+  out, err, status = Open3.capture3(env, *cmd, **kwargs)
+  [status.success?, out, err]
+rescue SystemCallError => e
+  [false, "", e.message]
+end
+
+def command_available?(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+    path = File.join(dir, name)
+    File.file?(path) && File.executable?(path)
+  end
+end
+
+def compact_lines(value, max: 5)
+  value.to_s.lines.map(&:strip).reject(&:empty?).first(max)
+end
+
+def truncate(value, length = 420)
+  text = value.to_s.gsub(/\s+/, " ").strip
+  text.length > length ? "#{text[0, length - 1]}..." : text
+end
+
+def present?(value)
+  case value
+  when nil then false
+  when Array then value.any? { |item| item.to_s.strip != "" }
+  else value.to_s.strip != ""
+  end
+end
+
+def normalize_task(raw)
+  raw.fetch("data", raw)
+end
+
+def load_task(slug, options)
+  if options[:file]
+    normalize_task(JSON.parse(File.read(options[:file])))
+  else
+    die!("usage: bin/session-preflight <task-slug>") if slug.to_s.strip.empty?
+
+    script = File.join(options[:root], "bin", "task")
+    ok, out, err = capture(script, "show", slug, "--json", chdir: options[:root])
+    die!("bin/task show failed: #{compact_lines([err, out].join("\n")).join("; ")}") unless ok
+
+    normalize_task(JSON.parse(out))
+  end
+rescue JSON::ParserError => e
+  die!("could not parse task JSON: #{e.message}")
+rescue Errno::ENOENT
+  die!("task file not found: #{options[:file]}")
+end
+
+def task_devops(task)
+  task.dig("metadata", "devops") || task["devops"] || {}
+end
+
+def load_shapes(root)
+  path = File.join(root, "config", "feature_shapes.yml")
+  return [{}, "missing #{path}"] unless File.exist?(path)
+
+  [YAML.load_file(path), nil]
+rescue Psych::Exception => e
+  [{}, "could not parse #{path}: #{e.message}"]
+end
+
+def git_fetch_release(root)
+  capture("git", "-C", root, "fetch", "origin", "release", "--quiet")
+end
+
+def git_ref_exists?(root, ref)
+  ok, = capture("git", "-C", root, "rev-parse", "--verify", ref)
+  ok
+end
+
+def default_base_ref(root)
+  return "origin/release" if git_ref_exists?(root, "origin/release")
+  return "origin/main" if git_ref_exists?(root, "origin/main")
+
+  nil
+end
+
+def current_branch(root)
+  ok, out, = capture("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD")
+  ok ? out.strip : nil
+end
+
+def branch_drift(root, base)
+  return { "base" => nil, "warning" => "no origin/release or origin/main ref found" } unless base
+
+  ok, out, err = capture("git", "-C", root, "rev-list", "--left-right", "--count", "#{base}...HEAD")
+  return { "base" => base, "warning" => compact_lines(err).join("; ") } unless ok
+
+  behind, ahead = out.split(/\s+/, 2).map { |value| value.to_i }
+  {
+    "base" => base,
+    "branch" => current_branch(root),
+    "behind" => behind,
+    "ahead" => ahead
+  }
+end
+
+def working_tree_dirty?(root)
+  ok, out, = capture("git", "-C", root, "status", "--porcelain")
+  ok && !out.strip.empty?
+end
+
+def changed_files(root, base)
+  files = []
+  [%w[diff --cached --name-only], %w[diff --name-only], %w[ls-files --others --exclude-standard]].each do |args|
+    ok, out, = capture("git", "-C", root, *args)
+    files.concat(out.split("\n")) if ok
+  end
+  if base
+    ok, out, = capture("git", "-C", root, "diff", "--name-only", "#{base}...HEAD")
+    files.concat(out.split("\n")) if ok
+  end
+  files.map(&:strip).reject(&:empty?).uniq
+end
+
+def pr_ref_from(devops, branch)
+  url = devops["pr_url"].to_s
+  return Regexp.last_match(1) if url.match(%r{/pull/(\d+)\b})
+
+  branch_value = devops["branch"].to_s.strip
+  return branch_value unless branch_value.empty?
+
+  branch.to_s.strip.empty? ? nil : branch
+end
+
+def summarize_rollup(items)
+  Array(items).map do |item|
+    name = item["name"].to_s
+    conclusion = item["conclusion"].to_s
+    status = item["status"].to_s
+    state = conclusion.empty? ? status.downcase : CHECK_STATES.fetch(conclusion, conclusion.downcase)
+    { "name" => name, "state" => state, "url" => item["detailsUrl"].to_s }
+  end
+end
+
+def gh_pr_view(ref, root)
+  fields = "number,title,url,headRefName,mergeStateStatus,statusCheckRollup"
+  ok, out, err = capture("gh", "pr", "view", ref.to_s, "--json", fields, chdir: root)
+  return [nil, compact_lines(err).join("; ")] unless ok
+
+  [JSON.parse(out), nil]
+rescue JSON::ParserError => e
+  [nil, e.message]
+end
+
+def gh_pr_list(root, state, limit)
+  fields = "number,title,url,headRefName,updatedAt"
+  ok, out, err = capture("gh", "pr", "list", "--state", state, "--limit", limit.to_s, "--json", fields, chdir: root)
+  return [[], compact_lines(err).join("; ")] unless ok
+
+  [JSON.parse(out), nil]
+rescue JSON::ParserError => e
+  [[], e.message]
+end
+
+def gh_pr_files(root, number)
+  ok, out, err = capture("gh", "pr", "view", number.to_s, "--json", "files", chdir: root)
+  return [[], compact_lines(err).join("; ")] unless ok
+
+  files = JSON.parse(out).fetch("files", []).map { |file| file["path"].to_s }.reject(&:empty?)
+  [files, nil]
+rescue JSON::ParserError => e
+  [[], e.message]
+end
+
+def overlap_report(root, current_files, current_pr_number)
+  return [{ "items" => [], "warnings" => ["no branch files to compare"] }, []] if current_files.empty?
+
+  warnings = []
+  candidates = []
+  [%w[open 20], %w[merged 10]].each do |state, limit|
+    prs, warning = gh_pr_list(root, state, limit)
+    warnings << "#{state} PR list: #{warning}" if warning
+    prs.each { |pr| candidates << pr.merge("state" => state) }
+  end
+
+  items = []
+  candidates.each do |pr|
+    next if current_pr_number && pr["number"].to_i == current_pr_number.to_i
+
+    files, warning = gh_pr_files(root, pr["number"])
+    warnings << "PR ##{pr["number"]} files: #{warning}" if warning
+    overlap = current_files & files
+    next if overlap.empty?
+
+    items << {
+      "number" => pr["number"],
+      "title" => pr["title"],
+      "url" => pr["url"],
+      "state" => pr["state"],
+      "files" => overlap.sort
+    }
+  end
+  [{ "items" => items, "warnings" => warnings }, warnings]
+end
+
+def install_docs_check(root)
+  script = File.join(root, "bin", "install-agent-docs")
+  return { "status" => "skipped", "message" => "missing #{script}" } unless File.executable?(script)
+
+  ok, out, err = capture(script, "check", chdir: root)
+  {
+    "status" => ok ? "pass" : "fail",
+    "message" => compact_lines(ok ? out : [err, out].join("\n"), max: 8).join("; ")
+  }
+end
+
+def active_stale_scan_files(root, changed)
+  globs = [
+    "docs/agents/index.md",
+    "docs/agents/claude.md",
+    "docs/agents/modules/**/*.md",
+    "docs/agents/system/**/*.md",
+    "docs/agents/skills/**/*.md",
+    "docs/topics/**/*.md",
+    "config/feature_shapes.yml"
+  ]
+  files = globs.flat_map { |glob| Dir.glob(File.join(root, glob)) }
+  changed.each do |rel|
+    next unless rel.start_with?("docs/", "config/")
+
+    files << File.join(root, rel)
+  end
+  files.select { |path| File.file?(path) }
+       .reject { |path| path.include?("/docs/agents/audits/") || path.include?("/docs/agents/maintenance/") }
+       .reject { |path| File.basename(path).match?(/audit-\d{4}-\d{2}-\d{2}/) }
+       .uniq
+       .sort
+end
+
+def stale_scan(root, files)
+  hits = []
+  files.each do |path|
+    rel = path.delete_prefix("#{root}/")
+    File.readlines(path).each_with_index do |line, index|
+      STALE_PATTERNS.each do |label, pattern|
+        next unless line.match?(pattern)
+
+        hits << {
+          "file" => rel,
+          "line" => index + 1,
+          "label" => label,
+          "text" => line.strip
+        }
+      end
+    end
+  rescue ArgumentError, Encoding::InvalidByteSequenceError, Encoding::UndefinedConversionError
+    next
+  end
+  hits
+end
+
+def latest_feedback(task)
+  activity = task["latest_activity"] || {}
+  description = activity["description"].to_s.strip
+  return nil if description.empty?
+
+  {
+    "activity_type" => activity["activity_type"].to_s,
+    "created_at" => activity["created_at"].to_s,
+    "description" => truncate(description)
+  }
+end
+
+def shape_report(root, task, warnings)
+  config, warning = load_shapes(root)
+  warnings << warning if warning
+  devops = task_devops(task)
+  shape = devops["shape"].to_s
+  shapes = config.fetch("shapes", {})
+  defaults = config.fetch("defaults", {})
+  shape_def = shapes.fetch(shape, {})
+  required = shape_def.fetch("required_metadata", defaults.fetch("required_metadata", []))
+  tiers = shape_def.fetch("dor_tiers", [])
+  {
+    "shape" => shape.empty? ? nil : shape,
+    "description" => shape_def["description"],
+    "required_metadata" => required,
+    "missing_metadata" => required.reject { |field| present?(devops[field]) },
+    "dor_tiers" => tiers,
+    "checks_run" => Array(devops["checks_run"])
+  }
+end
+
+def print_human(report)
+  task = report.fetch("task")
+  puts "Session preflight for #{task["title"] || task["slug"]} (#{task["slug"]})"
+  puts "Task: #{task["url"]}" if task["url"]
+  puts
+
+  feedback = report["latest_feedback"]
+  if feedback
+    puts "Latest feedback: #{feedback["activity_type"]} #{feedback["created_at"]}".strip
+    puts "  #{feedback["description"]}"
+  else
+    puts "Latest feedback: none"
+  end
+
+  drift = report.fetch("branch")
+  puts "Branch: #{drift["branch"] || "unknown"} vs #{drift["base"] || "unknown"}"
+  if drift["warning"]
+    puts "  WARN #{drift["warning"]}"
+  else
+    puts "  ahead #{drift["ahead"]}, behind #{drift["behind"]}"
+  end
+  puts "  WARN working tree has uncommitted changes" if drift["dirty"]
+
+  pr = report["pr"]
+  if pr["status"] == "skipped"
+    puts "PR: skipped (#{pr["message"]})"
+  elsif pr["status"] == "missing"
+    puts "PR: not found (#{pr["message"]})"
+  else
+    puts "PR: ##{pr["number"]} #{pr["merge_state"]} #{pr["url"]}"
+    pr.fetch("checks", []).each { |check| puts "  #{check["state"]}: #{check["name"]}" }
+  end
+
+  overlap = report["overlap"]
+  if overlap["items"].empty?
+    puts "File overlap: none"
+  else
+    puts "File overlap:"
+    overlap["items"].each do |item|
+      puts "  PR ##{item["number"]} #{item["state"]}: #{item["title"]}"
+      item["files"].each { |file| puts "    - #{file}" }
+    end
+  end
+
+  docs = report["installed_docs"]
+  puts "Installed docs: #{docs["status"]}#{docs["message"].to_s.empty? ? "" : " - #{docs["message"]}"}"
+
+  stale = report["stale_terms"]
+  if stale.empty?
+    puts "Stale terminology: none"
+  else
+    puts "Stale terminology:"
+    stale.each { |hit| puts "  #{hit["file"]}:#{hit["line"]} #{hit["label"]} - #{hit["text"]}" }
+  end
+
+  shape = report["shape"]
+  puts "Required tiers: #{shape["shape"] || "none"} => #{shape["dor_tiers"].join(", ")}"
+  unless shape["required_metadata"].empty?
+    puts "Required metadata: #{shape["required_metadata"].join(", ")}"
+  end
+  unless shape["missing_metadata"].empty?
+    puts "Missing metadata: #{shape["missing_metadata"].join(", ")}"
+  end
+
+  unless report["warnings"].empty?
+    puts
+    puts "Warnings:"
+    report["warnings"].each { |warning| puts "  - #{warning}" }
+  end
+
+  puts
+  if report["ok"]
+    puts "OK session preflight passed"
+  else
+    puts "FAIL session preflight found blockers"
+    report["errors"].each { |error| puts "  - #{error}" }
+  end
+end
+
+options = {
+  root: DEFAULT_ROOT,
+  file: nil,
+  json: false,
+  gh: true,
+  install_docs: true,
+  fetch: true,
+  stale_paths: []
+}
+
+OptionParser.new do |opts|
+  opts.banner = "Usage: bin/session-preflight <task-slug> [options]"
+  opts.on("--file PATH", "Read task JSON from a local file") { |path| options[:file] = path }
+  opts.on("--root PATH", "Repo root to inspect (default: this repo)") { |path| options[:root] = File.expand_path(path) }
+  opts.on("--stale-path PATH", "Additional stale-scan path, repeatable") { |path| options[:stale_paths] << path }
+  opts.on("--no-gh", "Skip GitHub CLI checks") { options[:gh] = false }
+  opts.on("--no-install-docs", "Skip bin/install-agent-docs check") { options[:install_docs] = false }
+  opts.on("--no-fetch", "Skip git fetch origin release") { options[:fetch] = false }
+  opts.on("--json", "Emit machine-readable JSON") { options[:json] = true }
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit 0
+  end
+end.parse!
+
+slug = ARGV.shift
+task = load_task(slug, options)
+devops = task_devops(task)
+errors = []
+warnings = []
+
+if task["stage"].to_s == "blocked"
+  errors << "task is blocked; read latest feedback before editing"
+end
+
+if options[:fetch]
+  ok, _out, err = git_fetch_release(options[:root])
+  warnings << "git fetch origin release failed: #{compact_lines(err).join("; ")}" unless ok
+end
+
+base = default_base_ref(options[:root])
+branch = branch_drift(options[:root], base)
+branch["dirty"] = working_tree_dirty?(options[:root])
+errors << "branch is #{branch["behind"]} commit(s) behind #{branch["base"]}; rebase before work or handoff" if branch["behind"].to_i.positive?
+warnings << "working tree has uncommitted changes" if branch["dirty"]
+changed = changed_files(options[:root], base)
+
+pr = { "status" => "skipped", "message" => "GitHub checks disabled" }
+if options[:gh]
+  if command_available?("gh")
+    ref = pr_ref_from(devops, branch["branch"])
+    if ref
+      gh_pr, warning = gh_pr_view(ref, options[:root])
+      if gh_pr
+        checks = summarize_rollup(gh_pr["statusCheckRollup"])
+        failed = checks.select { |check| %w[fail cancelled timed_out action_required].include?(check["state"]) }
+        merge_state = gh_pr["mergeStateStatus"].to_s
+        pr = {
+          "status" => "found",
+          "number" => gh_pr["number"],
+          "title" => gh_pr["title"],
+          "url" => gh_pr["url"],
+          "head" => gh_pr["headRefName"],
+          "merge_state" => merge_state,
+          "checks" => checks
+        }
+        errors << "PR merge state is #{merge_state}" if BAD_MERGE_STATES.include?(merge_state)
+        failed.each { |check| errors << "PR check #{check["name"]} is #{check["state"]}" }
+      else
+        pr = { "status" => "missing", "message" => warning.to_s.empty? ? "no PR for #{ref}" : warning }
+      end
+    else
+      pr = { "status" => "missing", "message" => "task has no pr_url or branch" }
+    end
+  else
+    pr = { "status" => "skipped", "message" => "gh CLI is unavailable" }
+  end
+end
+
+overlap = { "items" => [], "warnings" => [] }
+if options[:gh] && command_available?("gh")
+  current_pr_number = pr["number"]
+  overlap, overlap_warnings = overlap_report(options[:root], changed, current_pr_number)
+  overlap_warnings.each { |warning| warnings << warning }
+  warnings << "same-file PR overlap found" unless overlap["items"].empty?
+end
+
+installed_docs = if options[:install_docs]
+  install_docs_check(options[:root])
+else
+  { "status" => "skipped", "message" => "disabled by --no-install-docs" }
+end
+errors << "installed docs/skills drift: #{installed_docs["message"]}" if installed_docs["status"] == "fail"
+
+scan_files = active_stale_scan_files(options[:root], changed)
+options[:stale_paths].each do |path|
+  scan_files << (Pathname.new(path).absolute? ? path : File.join(options[:root], path))
+end
+stale_hits = stale_scan(options[:root], scan_files).first(40)
+errors << "stale terminology found in #{stale_hits.size} location(s)" unless stale_hits.empty?
+
+shape = shape_report(options[:root], task, warnings)
+if shape["shape"].nil?
+  errors << "devops.shape is missing; required tiers cannot be selected"
+elsif shape["description"].nil?
+  errors << "unknown devops.shape #{shape["shape"].inspect}"
+end
+errors << "required metadata missing: #{shape["missing_metadata"].join(", ")}" unless shape["missing_metadata"].empty?
+
+task_url = task["task_url"] || task.dig("devops", "task_url")
+task_url ||= "https://mcritchie.studio/tasks/#{task["slug"]}" if task["slug"]
+
+report = {
+  "ok" => errors.empty?,
+  "task" => {
+    "slug" => task["slug"] || slug,
+    "title" => task["title"],
+    "stage" => task["stage"],
+    "url" => task_url
+  },
+  "latest_feedback" => latest_feedback(task),
+  "branch" => branch,
+  "changed_files" => changed,
+  "pr" => pr,
+  "overlap" => overlap,
+  "installed_docs" => installed_docs,
+  "stale_terms" => stale_hits,
+  "shape" => shape,
+  "warnings" => warnings.uniq,
+  "errors" => errors.uniq
+}
+
+if options[:json]
+  puts JSON.pretty_generate(report)
+else
+  print_human(report)
+end
+
+exit(report["ok"] ? 0 : 1)

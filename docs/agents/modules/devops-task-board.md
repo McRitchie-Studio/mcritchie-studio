@@ -38,6 +38,13 @@ creates a flat production task from the ask before allocating a worktree or
 editing files. If a task already exists, the agent updates that task instead of
 creating a duplicate.
 
+After the task is created and the isolated worktree is bound, run
+`bin/session-preflight <task-slug>` before editing. It is the start-of-session
+counterpart to `bin/dor-check`: it reads latest task feedback, branch drift
+against `origin/release`, PR merge/check state, same-file overlap with open or
+recent PRs, installed docs/skills drift, stale terminology, and the required
+test tiers from `config/feature_shapes.yml`.
+
 Feature agents should first identify the feature and accumulate acceptance
 criteria until the agent and Mr. McRitchie are aligned on the goal. The task is
 the durable version of that alignment. Exceptions are narrow conductor sessions

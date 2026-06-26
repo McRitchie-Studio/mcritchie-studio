@@ -49,10 +49,13 @@ Before editing a single file:
    `Solana::*`) · `onchain-vertical` (wallet+DB+UI+program).
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
+3. **Run `bin/session-preflight <task>`** from the worktree before editing. Fix
+   branch drift, latest blocker feedback, generated-doc drift, stale terminology,
+   or PR overlap it reports before spending implementation time.
 
 While building:
 
-3. Write the **test tiers your shape requires as you go**, unit-first — this is
+4. Write the **test tiers your shape requires as you go**, unit-first — this is
    how bugs get caught before PR, not after. Record them tier-tagged:
    `bin/task update <task> --checks "[unit] ..." --checks "[integration] ..."`.
    For a **bug**, write the failing regression test FIRST, at the lowest tier
@@ -60,9 +63,9 @@ While building:
 
 Before handoff:
 
-4. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
+5. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
    under-tested PR.
-5. Commit on the feature branch, push, open a PR **into `release`** (base
+6. Commit on the feature branch, push, open a PR **into `release`** (base
    `release`, not `main`) whose body **leads with the task URL**, then
    `bin/task move <task> submitted`.
 
@@ -135,13 +138,16 @@ launch flow is:
    the worktree with `bin/agent-worktree bind-task <app> <worktree-slug> <task-slug-or-url>`
    so `whereami`, terminal context, snapshots, and PR bodies can lead from the
    task record.
-6. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
+6. Run `bin/session-preflight <task-slug>` from the worktree before editing; it
+   surfaces latest task feedback, release-branch drift, PR state, same-file PR
+   overlap, generated-doc drift, stale terminology, and required test tiers.
+7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
    `3100-3199`, Tax Studio reserved at `3200-3299`, next app `3300-3399`.
-7. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
+8. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
    local URL to react to.
-8. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
+9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
-9. Run `bin/dor-check <task-slug>` and resolve anything it flags. Then commit
+10. Run `bin/dor-check <task-slug>` and resolve anything it flags. Then commit
    and push the feature branch, and run `bin/agent-worktree finish <app>
    <task-slug>` to prepare PR/QA handoff. Update the task with branch, PR URL,
    local URL, tier-tagged `devops["checks_run"]` (e.g. `[unit] ...`,
@@ -158,13 +164,14 @@ Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Create the production McRitchie Studio task FIRST with kind=feature, the shape
 (ui-only|ui+db|backend|library|onchain|onchain-vertical), acceptance criteria,
 affected repos, risk tags, and expected checks in devops["test_plan"]. Use an
-isolated worktree and allocated port before editing. Write the test tiers your
-shape requires as you go (unit-first); record them tier-tagged in
-devops["checks_run"]. Give me a local URL to review and update docs if behavior
-changes. Before handoff run bin/dor-check <task> and fix what it flags, then
-commit, push the branch, open a PR led by the task URL, and move the task to
-submitted for Avi QA. Do not merge or deploy unless I explicitly assigned that
-lane.
+isolated worktree and allocated port before editing. Run bin/session-preflight
+<task> from the worktree and fix any blockers it reports before implementation.
+Write the test tiers your shape requires as you go (unit-first); record them
+tier-tagged in devops["checks_run"]. Give me a local URL to review and update
+docs if behavior changes. Before handoff run bin/dor-check <task> and fix what
+it flags, then commit, push the branch, open a PR led by the task URL, and move
+the task to submitted for Avi QA. Do not merge or deploy unless I explicitly
+assigned that lane.
 ```
 
 ## Start Here
@@ -243,6 +250,7 @@ cd /Users/alex/projects/mcritchie-studio
 bin/agent-worktree plan turf-monster task-slug
 bin/agent-worktree new turf-monster task-slug
 bin/agent-worktree bind-task turf-monster task-slug task-abc123def456
+bin/session-preflight task-slug
 bin/agent-worktree up turf-monster task-slug
 bin/agent-worktree finish turf-monster task-slug
 ```
