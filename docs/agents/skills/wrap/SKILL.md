@@ -70,7 +70,10 @@ entry stays terse and the file stays under the cap.
   When the tool is absent, do the same edit by hand: shorten the longest index
   hooks to ≤130 chars until the file is back under the cap.
 - Verify either way: bytes down, entry count unchanged, and every index line still
-  links — `grep -E '^- \[' MEMORY.md | grep -vc ']('` returns 0.
+  links — `grep -E '^- \[' MEMORY.md | grep -v '](' | wc -l` prints `0` (the count
+  of link-less index lines). Use `wc -l`, **not** `grep -c`/`-vc`: a zero `grep -c`
+  count exits non-zero — the success case — which short-circuits the check when you
+  chain it under `&&`.
 
 ## 4. Documentation sweep
 Did this session change behavior, a workflow, ports, auth, env vars, deploy steps,
@@ -87,8 +90,10 @@ docs are how the next session starts from a wrong map.
   `building` (a leaked claim) or left un-`submitted` when its PR is open.
 
 ## 6. Worktree / stack status
-- Report any worktree stacks still serving (ports) so the operator can reclaim them.
-  `bin/agent-worktree list` for the full picture.
+- Report **this session's** worktree stacks in full — any still serving (ports), so
+  the operator can reclaim them. `bin/agent-worktree list` for the picture.
+- Other sessions' stacks holding ports get a **one-line note** (count + ports), not
+  a full audit — on a shared machine the list runs long and most of it isn't yours.
 - Do **not** delete worktrees or branches whose PRs aren't merged or abandoned.
 
 ## 7. Handoff
