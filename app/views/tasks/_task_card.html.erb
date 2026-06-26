@@ -35,20 +35,21 @@
           class: "text-heading font-semibold text-sm" %>
   </a>
 
-  <%# Slug (left) + affected-app emojis (right) on one line. The slug fades on
-      the right when it overflows (transparency mask, same as the footer) and
-      the emojis sit OUTSIDE the fade as a normal flex item — no solid bg
-      gradient, so nothing mismatches the card colour on hover. %>
-  <div class="flex items-center gap-1 mt-0.5 mb-1.5">
+  <%# Stage crew (agent-events summary) sits directly under the title — build-lane
+      stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
+      shipped. Renders nothing when there are no events. %>
+  <%= render "components/stage_agent_avatars", task: task, agents: agents, variant: :stack, board: crew_board, mascot: mascot %>
+
+  <%# Slug (left) + affected-app emojis (right) now sits between the crew and
+      footer timestamp. The slug fades on the right when it overflows
+      (transparency mask, same as the footer) and the emojis sit OUTSIDE the fade
+      as a normal flex item — no solid bg gradient, so nothing mismatches the card
+      colour on hover. %>
+  <div class="flex items-center gap-1 mt-0.5 mb-1.5" data-test="task-slug-row">
     <code class="block text-[10px] font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
           style="<%= right_fade_style %>"><%= task.slug %></code>
     <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
   </div>
-
-  <%# Stage crew (agent-events summary) sits directly under the slug — build-lane
-      stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
-      shipped. Renders nothing when there are no events. %>
-  <%= render "components/stage_agent_avatars", task: task, agents: agents, variant: :stack, board: crew_board, mascot: mascot %>
 
   <%# Session resume + live cue live on the task READ view now (off the board
       cards). The board signals "live" via the pulsing crew time badge. %>
@@ -111,6 +112,7 @@
       docs (📚) — sit OUTSIDE the fade so they stay crisp. Features stay unmarked. %>
   <div class="flex items-center gap-2 mt-1 text-[10px]">
     <div class="flex items-center gap-2 min-w-0 flex-1 whitespace-nowrap overflow-hidden"
+         data-test="task-card-updated-row"
          style="<%= right_fade_style %>">
       <% if task.devops? && (local_url = task.devops_url("local")) %>
         <%= link_to "Local", local_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
