@@ -800,12 +800,15 @@ def prepare
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
 
-  # 1b. Record the Steffon → assembled QA intent for every member so /deployments
-  #     shows him QA-ing the RC live the moment prepare starts — the Deploy mirror of
+  # 1b. Record the Steffon assembled QA intent for every member so /deployments shows
+  #     him QA-ing the RC live the moment prepare starts — the Deploy mirror of
   #     bin/reviewer-select's review intent (no more hand-run `bin/task intent --to
-  #     assembled --actor steffon`). Append-only + idempotent (record_intent_event
-  #     reuses an open intent and no-ops once a member's assembled transition has
-  #     landed). A board WRITE → suppressed in --dry-run (conductor prints the plan).
+  #     assembled --actor steffon`). In the STANDARD flow the merge already flipped the
+  #     member to `assembled`, so record_deploy_intents! routes through
+  #     Release::Conductor#record_qa_intent (the QA intent rides toward `shipped` with a
+  #     `qa` marker — superseded by the SHIP, not the merge — and the board re-homes it
+  #     to the assembled lane). Append-only + idempotent. A board WRITE → suppressed in
+  #     --dry-run (conductor prints the plan).
   step("record: Steffon assembled QA intent (live crew ticker)")
   conductor(
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'steffon'); " \

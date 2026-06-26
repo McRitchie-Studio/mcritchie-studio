@@ -937,20 +937,45 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal 1, member.reload.task_events.intents.where(to_stage: "shipped").count
   end
 
-  test "record_deploy_intents! no-ops once the stage has landed" do
-    rel = Release::Conductor.adopt!(reviewed_task) # members are now `assembled`
+  test "prepare's QA intent records on an ALREADY-assembled member (the standard flow)" do
+    # The reviewer's blocker: in the standard pipeline the merge (adopt!) already
+    # flipped the member to `assembled`, so prepare's QA call must NOT no-op. It
+    # records a QA intent that rides toward `shipped` (superseded by the SHIP, not the
+    # merge) carrying the `qa` marker, so the board can render Steffon QA-ing live.
+    rel = Release::Conductor.adopt!(reviewed_task) # member → assembled at merge
+    member = rel.tasks.first
+    assert_equal "assembled", member.stage, "guard: the merge flipped it to assembled"
 
-    # toward assembled: the merge already landed the assembled transition → no-op
-    # (this is prepare's call in the standard flow — idempotent, never duplicates).
-    assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
-    assert_nil rel.tasks.first.open_intent_for("assembled")
+    slugs = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
+    assert_equal [member.slug], slugs, "the QA intent is recorded even though the assembled transition landed"
 
-    # and the shipped intent is superseded once ship! lands the shipped transition.
+    qa = member.reload.open_intent_for("shipped")
+    assert qa.present?, "the QA intent rides toward shipped — superseded by the ship, not the merge"
+    assert_equal "steffon", qa.actor
+    assert qa.metadata["qa"], "marked as the QA-lane intent, distinct from Avi's ship intent"
+
+    # Idempotent: a re-run reuses the open QA intent, never stacks a second row.
+    again = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
+    assert_equal slugs, again
+    assert_equal 1, member.reload.task_events.intents.where(to_stage: "shipped").count
+  end
+
+  test "record_deploy_intents! is superseded by the real transition (QA by the ship, ship by ship!)" do
+    rel = Release::Conductor.adopt!(reviewed_task) # member → assembled
+    member = rel.tasks.first
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon") # QA intent
     rel.assemble!
-    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")       # ship intent
+    assert member.reload.open_intent_for("shipped").present?, "an open intent toward shipped while still assembled"
+
     Release::Conductor.ship!(release: rel.reload, deployed_sha: "abc1234")
-    assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
-    assert_nil rel.tasks.first.open_intent_for("shipped")
+
+    # The shipped transition supersedes BOTH the QA intent and the ship intent.
+    assert_nil member.reload.open_intent_for("shipped"), "ship! supersedes every open shipped intent"
+    assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi"),
+                 "a shipped member's ship call no-ops"
+    assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon"),
+                 "a shipped member's QA call no-ops too (toward assembled, transition long landed)"
   end
 
   test "record_deploy_intents! returns [] for a nil release" do

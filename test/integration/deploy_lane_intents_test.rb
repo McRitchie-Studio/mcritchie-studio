@@ -23,8 +23,16 @@ class DeployLaneIntentsTest < ActionView::TestCase
   end
 
   def ship_slot(task)
+    deploy_slot(task, :shipped)
+  end
+
+  def assembled_slot(task)
+    deploy_slot(task, :assembled)
+  end
+
+  def deploy_slot(task, lane)
     crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
-      .find { |c| c.lane == :shipped }
+      .find { |c| c.lane == lane }
   end
 
   # What `bin/release ship` does: record the Avi shipped intent over the assembled
@@ -43,9 +51,33 @@ class DeployLaneIntentsTest < ActionView::TestCase
     assert slot.live_since.present?, "the ship slot ticks live from the recorded intent"
   end
 
-  # What `bin/release prepare` does: record the Steffon assembled QA intent. It
-  # drives the live ticker for a member whose assembled transition hasn't landed yet
-  # (a member still attached at `reviewed` — the not-yet-merged / half-state window).
+  # THE STANDARD FLOW — the reviewer's blocker. `bin/release merge` (Release::Conductor
+  # .adopt!) already flips the member `reviewed → assembled` AT MERGE, so by the time
+  # `bin/release prepare` runs the assembled transition EXISTS. The prepare intent path
+  # must STILL show Steffon QA-ing LIVE on /deployments — driven only by
+  # record_deploy_intents!, with NO hand-run `bin/task intent`.
+  test "prepare's QA intent shows Steffon QA live on /deployments for an already-assembled member" do
+    rel    = Release::Conductor.adopt!(member_task("std")) # bin/release merge semantics: member → assembled
+    member = rel.tasks.first
+    assert_equal "assembled", member.stage, "guard: the merge landed the assembled transition (the standard flow)"
+
+    before = assembled_slot(member)
+    assert_equal %w[steffon], before.stacked.map { |a| a.agent&.slug }, "Steffon owns the assembled column"
+    assert_nil before.live_since, "static (no live ticker) until prepare records the QA intent"
+
+    # EXACTLY what `bin/release prepare` fires — no manual `bin/task intent`.
+    slugs = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
+    assert_equal [member.slug], slugs, "the QA intent records even though the member is already assembled"
+
+    live = assembled_slot(member)
+    assert live.live_since.present?, "/deployments shows the assembled QA cluster ticking LIVE — Steffon QA-ing"
+    assert_equal %w[steffon], live.stacked.map { |a| a.agent&.slug }, "Steffon shown QA-ing live, no manual intent"
+    # The reserved ship slot stays empty while only QA is live (Avi hasn't started).
+    assert_empty ship_slot(member).stacked, "the ship slot stays empty until Avi's ship intent lands"
+  end
+
+  # The rare half-state: a member still attached at `reviewed` at prepare time (not yet
+  # merged). The plain toward-`assembled` QA intent drives the live ticker there too.
   test "prepare's Steffon intent drives the live QA ticker for a reviewed member" do
     rel    = Release.open!(slug: "rel-qa-intent")
     member = member_task("qa")
@@ -57,6 +89,19 @@ class DeployLaneIntentsTest < ActionView::TestCase
     refute_nil work, "the recorded QA intent surfaces as live work"
     assert_equal :assembled, work[:lane]
     assert_equal %w[steffon], work[:agents].map { |a| a.agent&.slug }, "Steffon QA-ing live"
+  end
+
+  # Once Avi's ship intent is open, HE outranks Steffon — actively shipping — and the
+  # live ticker moves to the ship lane, leaving the assembled column static again.
+  test "Avi's open ship intent outranks the QA intent on an assembled member" do
+    rel    = Release::Conductor.adopt!(member_task("handoff"))
+    member = rel.tasks.first
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon") # QA live
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")       # ship starts
+
+    assert_equal %w[avi], ship_slot(member).stacked.map { |a| a.agent&.slug }, "the ship slot ticks Avi"
+    assert ship_slot(member).live_since.present?
+    assert_nil assembled_slot(member).live_since, "QA yields the live ticker to the ship in progress"
   end
 
   # The intent is OPEN only until the real transition lands — then it's superseded

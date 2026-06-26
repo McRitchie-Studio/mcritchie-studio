@@ -184,9 +184,24 @@ module StageAgentsHelper
       mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
       intents = Array(events || task.task_events).select(&:intent?)
       work = in_progress_work(task, by_slug, mascot_agent, intents)
-      if work && %i[review assembled shipped].include?(work[:lane]) && by_lane[work[:lane]].nil?
-        by_lane[work[:lane]] = CrewCluster.new(lane: work[:lane], stacked: work[:agents],
-                                               seconds: nil, live_since: work[:live_since])
+      if work && %i[review assembled shipped].include?(work[:lane])
+        existing = by_lane[work[:lane]]
+        by_lane[work[:lane]] =
+          if existing.nil?
+            CrewCluster.new(lane: work[:lane], stacked: work[:agents], seconds: nil, live_since: work[:live_since])
+          elsif work[:lane] == :assembled && existing.live_since.nil?
+            # Standard-flow QA: the member is already `assembled` (the merge flipped
+            # it), so the assembled column is ALREADY filled (Steffon, static, with
+            # the merge-wait duration). Mark it LIVE in place — Steffon is QA-ing the
+            # RC right now (the prepare window) — keeping its avatars + static time
+            # instead of discarding them. (Without this, the pre-filled assembled slot
+            # would swallow the live QA ticker and Steffon would never tick on the
+            # board in the standard flow — the reviewer's blocker.)
+            CrewCluster.new(lane: :assembled, stacked: existing.stacked,
+                            seconds: existing.seconds, live_since: work[:live_since])
+          else
+            existing
+          end
       end
     end
 
@@ -359,14 +374,46 @@ module StageAgentsHelper
       { to_stage: stage, lane: :build, live_since: since,
         agents: [StageAgent.new(stage: stage, agent: mascot_agent)] }
     else
-      target = NEXT_PIPELINE_STAGE[stage]
-      intent = intents.select { |e| e.to_stage == target }.max_by { |e| [e.occurred_at, e.id.to_i] }
+      intent, render_stage = open_deploy_intent(stage, intents)
       return nil if intent.nil?
 
-      agents = intent_stage_agents(intent, by_slug, target)
+      agents = intent_stage_agents(intent, by_slug, render_stage)
       return nil if agents.empty?
 
-      { to_stage: target, lane: stage_lane(target), live_since: intent.occurred_at, agents: agents }
+      { to_stage: render_stage, lane: stage_lane(render_stage), live_since: intent.occurred_at, agents: agents }
+    end
+  end
+
+  # True for the Steffon assembled-QA intent — recorded toward `shipped` (so the SHIP
+  # supersedes it) but marked `qa` so the board renders it in the ASSEMBLED lane, not
+  # the ship lane. See Release::Conductor#record_qa_intent + Task#record_intent_event.
+  def qa_intent?(event)
+    event.metadata.is_a?(Hash) && !!event.metadata["qa"]
+  end
+
+  # The open deploy-lane intent driving the live ticker for a non-build `stage`, plus
+  # the stage it RENDERS as (its lane + avatar role). Returns [intent_or_nil, stage]:
+  #   submitted → the review pair, toward `reviewed`.
+  #   reviewed  → Steffon's QA, toward `assembled` — the rare half-state (a member
+  #               attached for QA before its merge has flipped it to assembled).
+  #   assembled → Avi's SHIP if a (non-QA) ship intent is open — he's actively
+  #               shipping, so that outranks QA and renders in the SHIPPED lane; else
+  #               Steffon's QA intent (marked, toward `shipped`) rendered in the
+  #               ASSEMBLED lane. This is THE standard flow: by prepare time the merge
+  #               already landed the assembled transition, so the QA intent can't ride
+  #               toward `assembled` (it would no-op + read off the wrong stage) — it
+  #               rides toward `shipped` and is re-homed to the assembled lane here.
+  def open_deploy_intent(stage, intents)
+    if stage == "assembled"
+      toward_shipped = intents.select { |e| e.to_stage == "shipped" }
+      ship = toward_shipped.reject { |e| qa_intent?(e) }.max_by { |e| [e.occurred_at, e.id.to_i] }
+      return [ship, "shipped"] if ship
+
+      qa = toward_shipped.select { |e| qa_intent?(e) }.max_by { |e| [e.occurred_at, e.id.to_i] }
+      [qa, "assembled"]
+    else
+      target = NEXT_PIPELINE_STAGE[stage]
+      [intents.select { |e| e.to_stage == target }.max_by { |e| [e.occurred_at, e.id.to_i] }, target]
     end
   end
 
