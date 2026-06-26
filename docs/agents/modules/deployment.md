@@ -165,6 +165,15 @@ already-approved rollout prompt. Gem publishes specifically are **part of**
 "Run Deployment" — they ride a release as first-class members and are published
 producer-first by `bin/release ship` (see below), not as a separate ad-hoc step.
 
+## Release builder autonomy
+
+QA assembly autonomy is deterministic config, not agent judgment. The policy
+lives in `config/release_builder.yml` and is read by `Release::BuilderPolicy`:
+one reviewed task, one repo, and no blocked risk tags can proceed to QA assembly
+automatically; anything broader is a proposal that waits for operator
+confirmation. Production ship remains operator-gated regardless of that QA
+decision.
+
 ## Releasing a gem (producer-first)
 
 Gems (`studio-engine`, `solana-studio`) are **producers**; the apps that depend
