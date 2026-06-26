@@ -10,7 +10,7 @@ Rework verification: 2026-06-26, after QA block on PR #230.
 
 The documentation direction is sound: `mcritchie-studio` is the bootstrap anchor, `/Users/alex/projects/AGENTS.md` is the cross-agent entrypoint, and root `CLAUDE.md` is a thin adapter that imports `AGENTS.md`. App-level Claude files are no longer active truth in the managed repos.
 
-The main risk is not that the docs are too Claude-specific. The main risk is stale duplicated SOP text competing with deterministic tooling. The live code and newer docs have moved to the two-workflow stages (`designed -> building -> submitted -> reviewed -> assembled -> shipped`) and an operator-gated production ship, while several active docs and one Claude skill still describe legacy stages or an auto-ship conductor path.
+The main risk is not that the docs are too Claude-specific. The main risk is stale duplicated SOP text competing with deterministic tooling. The live code and newer installed docs have moved to the two-workflow stages (`designed -> building -> submitted -> reviewed -> assembled -> shipped`) and an operator-gated production ship. The stale legacy-stage and auto-ship facts below are findings against this audit branch's tracked source files, not against the currently installed projects-root docs or installed Claude skill state.
 
 The strongest deterministic pieces already exist: `bin/task`, `bin/dor-check`, `bin/full-suite-check`, `bin/conductor`, `bin/release`, `bin/install-agent-docs`, and `bin/agent-worktree`. The next cleanup should make those tools the visible source of truth and shrink prose that restates their behavior.
 
@@ -18,42 +18,54 @@ The strongest deterministic pieces already exist: `bin/task`, `bin/dor-check`, `
 
 - Generated root docs and installed Claude skills must be evaluated against the
   tracked source branch that ran the check. From this audit branch,
-  `bin/install-agent-docs check` now reports:
+  `bin/install-agent-docs check` reports:
   `/Users/alex/projects/CLAUDE.md` and installed `wrap` match this branch, while
   `/Users/alex/projects/AGENTS.md` and installed `qa-release` differ from this
-  branch. That drift is expected after the follow-up cleanup branch synced the
-  local generated files from newer source docs, but it proves the original audit
+  branch. That drift is expected after follow-up cleanup work synced the local
+  generated files from newer source docs, and it proves the original audit
   wording was too broad.
+- The currently installed `/Users/alex/projects/AGENTS.md` already uses
+  `submitted` for feature handoff, uses the valid
+  `mcritchie-studio/docs/agents/modules/worktrees.md` path, and says a root
+  `CLAUDE.md` adapter is required. Those are not remaining installed-doc
+  defects.
+- The currently installed `~/.claude/skills/qa-release/SKILL.md` stops at the
+  production ship gate and only permits `ship --yes` when the session explicitly
+  assigns production shipping. The stale auto-ship policy is in this audit
+  branch's tracked source skill and DevOps SOP.
 - Root `CLAUDE.md` is thin and platform-adapter shaped: it contains a short DevOps gate and `@AGENTS.md`, not duplicated app facts.
 - Active app docs mostly point to `AGENTS.md` or neutral topic docs. A cross-repo search found no active app-level `CLAUDE.md` entrypoint in the managed repos.
 - The task model and `bin/task` use the new stage set: `designed`, `building`, `submitted`, `reviewed`, `assembled`, `shipped`, `blocked`, `archived`.
 - `bin/dor-check` is already deterministic and correctly exempts true non-code chores while gating chores that ship code.
 - Fresh-machine recovery is mostly deterministic through `bin/ecosystem-build`, which installs root `AGENTS.md`, root `CLAUDE.md`, and user-global Claude skills.
-- Local hygiene is not clean: `bin/agent-worktree cleanup` now finds ten safe
-  cleanup candidates, `bin/agent-worktree doctor` now finds 43 issues when run
-  with Ruby 3.3, and one unmanaged clean worktree exists at
-  `/Users/alex/projects/mcritchie-studio-ai-builder-cache`.
+- Local hygiene is not clean: the latest read-only rerun from this PR worktree
+  found 56 `bin/agent-worktree doctor` issues under Ruby 3.3 and 13 cleanup
+  candidates. This is live local state, so counts can move as other task
+  worktrees are created, pushed, merged, or dirtied.
 - `bin/task stale` found zero tasks whose work appears shipped on main but still open.
 
 ## Findings
 
 ### F1 - High - Ship Policy Contradiction
 
-`docs/agents/system/devops-cycle-design.md` states production ship is always operator-gated, then later says the `Build and Deploy QA Release` SOP auto-ships to production with no human gate. The implementation backs the operator-gated interpretation: `bin/conductor ship` refuses, and the `/stages` helper copy says the operator gate is at ship.
+This audit branch's tracked `docs/agents/system/devops-cycle-design.md` states production ship is always operator-gated, then later says the `Build and Deploy QA Release` SOP auto-ships to production with no human gate. The implementation and currently installed `qa-release` skill back the operator-gated interpretation: `bin/conductor ship` refuses, the installed skill stops at the production gate, and the `/stages` helper copy says the operator gate is at ship.
 
 Evidence:
 
 - `docs/agents/system/devops-cycle-design.md` lines 336-337: production ship is always operator-gated.
 - `docs/agents/system/devops-cycle-design.md` lines 356-368 and 426-433: the QA release SOP auto-ships with no human gate.
-- `docs/agents/skills/qa-release/SKILL.md` lines 2-3 and 20-24 repeat the auto-ship behavior.
+- This audit branch's `docs/agents/skills/qa-release/SKILL.md` lines 2-3 and
+  20-24 repeat the auto-ship behavior.
+- The installed `~/.claude/skills/qa-release/SKILL.md` already says the run stops
+  at the production ship gate.
 - `bin/conductor` lines 43-52 and 400-407 refuses production ship.
 - `app/helpers/application_helper.rb` lines 194-198 and 253-259 describe stopping for the prod ship/operator gate.
 
-Recommendation: make one policy canonical. Based on code and most current role docs, treat production as operator-gated and rewrite the `Build and Deploy QA Release` SOP plus `qa-release` skill to stop after QA unless Mr. McRitchie explicitly chooses auto-ship for that session.
+Recommendation: make one policy canonical in tracked source. Based on code and currently installed role docs, treat production as operator-gated and rewrite the branch source SOP plus source `qa-release` skill to stop after QA unless Mr. McRitchie explicitly assigns production shipping for that session.
 
 ### F2 - High - Stage Names Are Split Across Eras
 
-The live task model and CLI use `designed/building/submitted/reviewed/assembled/shipped`, but active docs still instruct agents to move tasks to `in_progress`, `pr_review`, `qa_review`, `prod_ready`, and `done`.
+The live task model and CLI use `designed/building/submitted/reviewed/assembled/shipped`, but this audit branch's tracked source docs still instruct agents to move tasks to `in_progress`, `pr_review`, `qa_review`, `prod_ready`, and `done`. The currently installed projects-root `AGENTS.md` has already been refreshed to the live `submitted` handoff.
 
 Evidence:
 
@@ -61,34 +73,44 @@ Evidence:
 - `bin/task` lines 242 and 667 enforce the new stage set.
 - `docs/agents/modules/devops-task-board.md` lines 73-90 and 190-205 still use legacy stages.
 - `docs/agents/modules/worktrees.md` lines 44 and 51-54 tell agents to move to `in_progress` and `pr_review`.
-- `/Users/alex/projects/AGENTS.md` lines 267-271 still says to move task to `pr_review`.
+- This audit branch's `docs/agents/index.md` still says to move task to
+  `pr_review`; installed `/Users/alex/projects/AGENTS.md` no longer does.
 - `config/feature_shapes.yml` lines 3-10 still comments in terms of `pr_review`.
 
 Recommendation: collapse the legacy-stage prose into a short compatibility note and make every active instruction use live stages. Add old-stage suggestions to `bin/task` errors if useful, e.g. `pr_review -> submitted`, `in_progress -> building`.
 
 ### F3 - Medium - Adapter Policy Has Internal Drift
 
-The adapter policy module correctly says root `CLAUDE.md` is required for Claude Code, but its smoke-test success criteria and generated `AGENTS.md` still say not to create root `CLAUDE.md` by default.
+The adapter policy module correctly says root `CLAUDE.md` is required for Claude Code, but this audit branch's smoke-test success criteria and tracked generated-root source still say not to create root `CLAUDE.md` by default. The currently installed `/Users/alex/projects/AGENTS.md` already says a root `CLAUDE.md` adapter is required.
 
 Evidence:
 
 - `docs/agents/modules/llm-adapters.md` lines 7-15 and 26-29 say root `CLAUDE.md` is required.
 - The same file lines 43-55 still says success means root `CLAUDE.md` should not be created and suggests adding it only if the test fails.
-- `/Users/alex/projects/AGENTS.md` lines 328-330 says not to create root `CLAUDE.md` by default, despite the generated root `CLAUDE.md` existing and matching source.
+- This audit branch's `docs/agents/index.md` lines 328-330 says not to create
+  root `CLAUDE.md` by default, despite the generated root `CLAUDE.md` existing
+  and matching source.
+- Installed `/Users/alex/projects/AGENTS.md` already says root `CLAUDE.md` is
+  required and thin.
 
 Recommendation: update policy to: `AGENTS.md` is canonical, root `CLAUDE.md` is a required thin adapter for Claude Code, root `CODEX.md` is not used unless a future platform requires it, app-level LLM files stay non-canonical.
 
 ### F4 - Medium - Generated Root Link Is Broken
 
-The generated root `AGENTS.md` contains a relative link to `modules/worktrees.md`, but from `/Users/alex/projects/AGENTS.md` that path does not exist. The canonical file is `mcritchie-studio/docs/agents/modules/worktrees.md`.
+This audit branch's tracked generated-root source contains a relative link to `modules/worktrees.md`, but from `/Users/alex/projects/AGENTS.md` that path would not exist. The canonical file is `mcritchie-studio/docs/agents/modules/worktrees.md`. The currently installed `/Users/alex/projects/AGENTS.md` already uses the valid path.
 
 Evidence:
 
-- `/Users/alex/projects/AGENTS.md` line 315 links to `modules/worktrees.md`.
+- This audit branch's `docs/agents/index.md` line 315 links to
+  `modules/worktrees.md`.
 - `/Users/alex/projects/modules/worktrees.md` does not exist.
 - `/Users/alex/projects/mcritchie-studio/docs/agents/modules/worktrees.md` does exist.
+- Installed `/Users/alex/projects/AGENTS.md` line 315 points to
+  `mcritchie-studio/docs/agents/modules/worktrees.md`.
 
-Recommendation: generated root docs should use paths valid from `/Users/alex/projects`, or use plain literal paths instead of Markdown links when the source file is copied into a different directory.
+Recommendation: keep the tracked generated-root source on paths valid from
+`/Users/alex/projects`, or use plain literal paths instead of Markdown links
+when the source file is copied into a different directory.
 
 ### F5 - Medium - Fresh-Machine Skill Drift Is Detectable But Present
 
@@ -103,10 +125,11 @@ branch:
   this branch.
 
 Interpretation: the installed/generated state has been refreshed from newer
-docs work, while this audit branch still contains the older source text. The
-important cleanup is not "wrap is stale"; it is that generated state, tracked
-source docs, and installed global skills need one deterministic drift check in
-closeout.
+docs work, while this audit branch still contains older source text. The
+important cleanup is not "the installed root docs are stale"; it is that tracked
+source docs, generated root docs, and installed global skills need one
+deterministic drift check in closeout, with the branch being checked named
+explicitly.
 
 Recommendation: run `bin/install-agent-docs` as a cleanup action. Also consider making the closeout path run `bin/install-agent-docs check` and surface the exact install command when any generated skill drifts.
 
@@ -130,16 +153,18 @@ Local worktree state will make the next session noisier than necessary.
 Evidence from the refreshed `bin/agent-worktree cleanup` run:
 
 - Cleanup candidates: `autocommit-release-artifacts`, `cap-session-concurrency`,
-  `close-handoff-label-gap`, `commit-backlogged-retros`,
-  `live-animate-release-deploy`, `prune-cached-commit-observations`,
-  `seed-usage-baseline-at-create`, `task-slug-row`, `timeline-sizing-strip`, and
-  Turf Monster `buy-usdc-account-buttons`.
+  `close-handoff-label-gap`, `codex-session-mascots`,
+  `commit-backlogged-retros`, `live-animate-release-deploy`,
+  `prune-cached-commit-observations`, `seed-usage-baseline-at-create`,
+  `shared-wrap-skill`, `task-slug-row`, `timeline-sizing-strip`, Turf Monster
+  `buy-usdc-account-buttons`, and Turf Monster `fix-off-board-auth-modal`.
 
 Evidence from `bin/agent-worktree doctor`:
 
-- 43 lifecycle issues total.
-- Dirty worktrees: `deployments-live-updates`, `deployments-turbo-streams`, and
-  Turf Monster `fix-off-board-auth-modal`.
+- 56 lifecycle issues total.
+- Dirty worktrees: `blocked-task-websocket`, `deployments-live-updates`,
+  `deployments-turbo-streams`, `skip-self-claim-on-create`, and
+  `worktree-hygiene-cleanup`.
 - `deployments-turbo-streams` is serving on port 3025 but `/up` returns 500.
 - Several clean unmerged branches are behind `origin/release`.
 - Orphan git worktree: `/Users/alex/projects/mcritchie-studio-ai-builder-cache`, branch `feat/ai-builder-cache-run`, clean but unmanaged.
@@ -182,7 +207,10 @@ Recommendation: keep Claude skills as adapters, but move durable behavior into n
 
 ## Residual Risk
 
-- This audit did not modify the release policy itself. Until PR #232 or an equivalent cleanup lands, agents following the `qa-release` skill may try to run a no-human-confirm production ship even though conductor tooling refuses that path.
+- This audit branch still documents stale tracked-source findings. The currently
+  installed `qa-release` skill stops at the production ship gate, but the branch
+  source must stay aligned so future `bin/install-agent-docs` runs do not
+  reinstall old auto-ship wording.
 - This audit did not delete or reclaim any worktrees. The next session will still see the existing cleanup candidates and dirty stacks.
 
 ## Follow-Up Ledger
@@ -195,10 +223,16 @@ Recommendation: keep Claude skills as adapters, but move durable behavior into n
 ## Commands Run
 
 - `bin/task create/update/move/show cross-llm-docs-audit`
-- `bin/install-agent-docs check` (initial audit and 2026-06-26 rework pass)
+- `bin/install-agent-docs check` (initial audit, 2026-06-26 rework pass, and
+  current blocker pass)
 - `bin/agent-worktree list`
-- `bin/agent-worktree doctor` (initial audit: failed under Ruby 2.6, succeeded under Ruby 3.3 path; rework pass: Ruby 3.3 path reported 43 issues)
-- `bin/agent-worktree cleanup` (initial audit and 2026-06-26 rework pass)
-- `bin/task stale` (0 stale tasks on both passes)
+- `bin/agent-worktree doctor` (initial audit: failed under Ruby 2.6, succeeded
+  under Ruby 3.3 path; rework pass reported 43 issues; current blocker pass
+  reported 56 issues)
+- `bin/agent-worktree cleanup` (initial audit, 2026-06-26 rework pass, and
+  current blocker pass)
+- `bin/task stale` (0 stale tasks on all passes)
+- `git diff --check`
+- `bin/dor-check cross-llm-docs-audit` (non-code chore gate n/a)
 - `git status --short --branch` across managed repos
 - Targeted `rg`, `sed`, and `nl` reads for agent docs, DevOps SOPs, task tooling, release tooling, and bootstrap docs
