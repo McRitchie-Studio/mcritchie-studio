@@ -142,16 +142,20 @@ bin/agent-worktree scale status
 - `cleanup` is a dry run. It prints clean worktree candidates whose branch is
   either contained in the base ref (`origin/release`, else `origin/main`) or has
   an empty final diff against the base ref after a squash merge. A branch merged
-  into `release` but not yet shipped to `main` therefore counts as done.
+  into `release` but not yet shipped to `main` therefore counts as done. Each
+  candidate prints the exact safety class (`merged` or `base-equivalent`), base
+  ref, ahead/behind count, stack health, `/up` code, pidfile state, Redis DB,
+  database state, and the exact `bin/agent-worktree remove … --yes` command. Use
+  that dry run as the approval packet before deleting anything.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
 - `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
   auto-remove — clean **and** either contained in the base ref or
   base-equivalent (the same `cleanup_ready?` criteria as `cleanup`) — and prints
-  each candidate with its Redis DB. It never lists a dirty or unmerged worktree,
-  and the candidate set is sourced from `.worktrees/*` only, so the primary
-  checkout is never a candidate.
+  the same safety evidence and removal command as `cleanup`. It never lists a
+  dirty or unmerged worktree, and the candidate set is sourced from
+  `.worktrees/*` only, so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
   safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup
   ledger, remove the Git worktree, delete the stale local branch), re-verifying

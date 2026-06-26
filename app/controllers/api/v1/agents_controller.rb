@@ -9,7 +9,8 @@ module Api
 
       def show
         agent = Agent.find_by!(slug: params[:slug])
-        render_data(agent.as_json(include: { skills: { only: [:name, :slug, :category] } }))
+        render_data(agent.as_json(methods: [:emoji, :status_color],
+                                  include: { skills: { only: [:name, :slug, :category] } }))
       end
 
       def update

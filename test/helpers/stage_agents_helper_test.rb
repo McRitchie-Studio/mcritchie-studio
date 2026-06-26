@@ -382,6 +382,60 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %i[designed building submitted], cols.map(&:lane), "build steps show even on the deploy board"
   end
 
+  # --- the self-claim fix: only an active `building` claim ticks live -----------
+
+  # The bug Steffon flagged: a freshly-filed `designed`/unowned task still wears its
+  # mascot, and the build-step UI rendered that designed step with a green live
+  # ticker — a false "someone is building this right now" intent. The mascot column
+  # must still render (identity), but with NO live_since on any build step.
+  test "build_step_columns gives a designed task its mascot but no live ticker" do
+    mon = Pokemon.create!(dex: 50, name: "Diglett", slug: "diglett", generation: 1,
+                          sprite_url: "https://example.test/diglett-sprite.png")
+    designed = Task.create!(title: "freshly filed designed task", stage: "designed",
+                            metadata: { "devops" => { "mascot" => "diglett" } })
+
+    cols = crew_columns(designed.reload, stage_agent_groups(designed, @agents, mascot: mon),
+                        board: :deploy, mascot: mon)
+
+    assert_equal %i[designed building submitted], cols.map(&:lane)
+    assert cols[0].stacked.any?, "the designed step still wears the mascot (identity preserved)"
+    assert cols.all? { |c| c.live_since.nil? }, "an unclaimed designed task ticks NO live build counter"
+  end
+
+  # The counterpart: a real claim (`building`) still ticks the live build counter on
+  # the building step — the fix must not flatten a legitimately-owned build.
+  test "build_step_columns keeps the live ticker for a building-claimed task" do
+    mon = Pokemon.create!(dex: 51, name: "Dugtrio", slug: "dugtrio", generation: 1,
+                          sprite_url: "https://example.test/dugtrio-sprite.png")
+    task = Task.create!(title: "claimed building task", stage: "building",
+                        metadata: { "devops" => { "mascot" => "dugtrio" } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 2.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "carl")
+
+    cols = crew_columns(task.reload, stage_agent_groups(task, @agents, mascot: mon),
+                        board: :deploy, mascot: mon)
+    building = cols.find { |c| c.lane == :building }
+
+    assert_not_nil building.live_since, "an active `building` claim still ticks a live counter"
+    assert_nil cols.find { |c| c.lane == :designed }.live_since, "the completed designed step is not live"
+  end
+
+  # The timeline mirror: a `designed`/unclaimed task surfaces NO live in-progress
+  # build block (in_progress_work returns nil), while a `building` task still does.
+  test "in_progress_work returns nil for a designed (unclaimed) task" do
+    mascot = MascotAgent.new(name: "Diglett", avatar: "x", color: "#fff")
+    designed = Task.create!(title: "designed idle timeline task", stage: "designed")
+    assert_nil in_progress_work(designed.reload, @by_slug, mascot, []),
+               "a filed-but-unclaimed designed task is idle — no live build block"
+
+    building = Task.create!(title: "building live timeline task", stage: "building")
+    work = in_progress_work(building.reload, @by_slug, mascot, [])
+    assert_equal :build, work[:lane], "a real building claim is still live build work"
+    assert_not_nil work[:live_since]
+  end
+
   # --- stage_timeline (consolidated /tasks/:id timeline) ----------------------
 
   test "stage_timeline yields one block per transition with the completing crew + usage" do

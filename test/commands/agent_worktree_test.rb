@@ -297,6 +297,50 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_equal a, orphan_label_for("mcritchie-studio", "/a/foo"), "label must be deterministic"
   end
 
+  # --- cleanup/reclaim hygiene output ---------------------------------------
+
+  test "[integration] cleanup dry-run prints actionable candidate details" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: command_env)
+
+    assert status.success?, err
+    assert_includes out, "cleanup candidates:"
+    assert_includes out, "mcritchie-studio/terminal-context"
+    assert_includes out, "safe: merged on origin/main (clean, +0/-0)"
+    assert_includes out, "branch: feat/terminal-context"
+    assert_includes out, "stack: down"
+    assert_includes out, "redis=9"
+    assert_includes out, "db=mcritchie_studio_development_terminal_context"
+    assert_includes out, "remove: bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+  end
+
+  test "[integration] reclaim dry-run prints the same safety evidence" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", env: removal_env)
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_includes out, "reclaim candidates:"
+    assert_includes out, "safe: merged on origin/main (clean, +0/-0)"
+    assert_includes out, "stack: down"
+    assert_includes out, "redis=9"
+    assert_includes out, "remove: bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+  end
+
+  test "[integration] cleanup write records operational context in the ledger" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--write", env: command_env)
+
+    assert status.success?, "#{out}\n#{err}"
+    ledger = File.read(File.join(@hub_dir, "docs", "agents", "maintenance", "delete-later.md"))
+    assert_includes ledger, "health down, Redis DB 9"
+    assert_includes ledger, "database mcritchie_studio_development_terminal_context"
+    assert_includes ledger, "bin/agent-worktree remove mcritchie-studio terminal-context --yes"
+  end
+
   # --- remove --force (merge-verified) --------------------------------------
 
   # [unit] The pure decision force_clears_content_blocker? loaded as a library in
@@ -699,6 +743,10 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     RUBY
     File.chmod(0o755, path)
     dir
+  end
+
+  def mark_worktree_merged_to_origin_main
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/main", rev(@worktree_dir, "HEAD"))
   end
 
   # --- restore-primary: return a drifted primary checkout to a clean main ----

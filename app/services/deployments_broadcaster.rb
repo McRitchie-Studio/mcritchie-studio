@@ -6,8 +6,9 @@
 #
 # It broadcasts the SAME `tasks/_task_card` partial the board loop renders, as a
 # Turbo Stream action chosen by the event:
-#   intent / same-column change          → REPLACE the card in place
+#   intent                               → REPLACE the card in place
 #   cross-column stage move              → REMOVE the old card + PREPEND a fresh one
+#   building↔blocked stage move          → REMOVE + PREPEND into Building
 #   brand-new task (genesis)             → PREPEND to the Designed column
 #   leaves the active board (→ archived) → REMOVE
 # Subscribers run `turbo_stream_from "deployments"`; Turbo patches the DOM and a
@@ -80,10 +81,10 @@ class DeploymentsBroadcaster
       remove_card           # → archived: drop it from the active board
     elsif new_card?
       prepend_card          # genesis: a brand-new card at the top of Designed
-    elsif @event.intent? || same_zone?
-      replace_card          # in place: intent ticker, or a building↔blocked re-tint
+    elsif @event.intent?
+      replace_card          # in place: intent ticker
     else
-      move_card             # cross-column move: remove the old card, prepend a fresh one
+      move_card             # stage move: remove the old card, prepend a fresh one
     end
   end
 
@@ -123,10 +124,6 @@ class DeploymentsBroadcaster
 
   def new_card?
     @event.transition? && @event.from_stage.nil?
-  end
-
-  def same_zone?
-    zone(@event.from_stage) == zone(@task.stage)
   end
 
   # The same locals the board loop renders the card with — the deploy-board variant.

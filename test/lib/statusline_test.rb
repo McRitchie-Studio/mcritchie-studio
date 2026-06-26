@@ -12,6 +12,7 @@ require "minitest/autorun"
 require "json"
 require "open3"
 require "tmpdir"
+require "fileutils"
 
 class StatuslineTest < Minitest::Test
   BIN = File.expand_path("../../bin/statusline", __dir__)
@@ -21,7 +22,7 @@ class StatuslineTest < Minitest::Test
   # real Claude Code shape) so render() runs from a known context file. The
   # context carries ALL fields a real worktree context has (sparse ones trip
   # bash's IFS-whitespace tab collapsing). `session` nil deletes the env var.
-  def render_in(session:, extra: {})
+  def render_in(session:, extra: {}, provider: :claude)
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, ".agent-context.json"), JSON.generate({
         "app" => "mcritchie-studio",
@@ -30,8 +31,33 @@ class StatuslineTest < Minitest::Test
         "task_url" => "https://mcritchie.studio/tasks/session-resume-on-tasks",
         "stage" => "building"
       }.merge(extra)))
-      env = { "CLAUDE_CODE_SESSION_ID" => session }
+      env = if provider == :codex
+              { "CODEX_THREAD_ID" => session, "CLAUDE_CODE_SESSION_ID" => nil }
+            else
+              { "CLAUDE_CODE_SESSION_ID" => session, "CODEX_THREAD_ID" => nil }
+            end
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
+      out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+      out
+    end
+  end
+
+  def render_session_marker_in(session:, extra: {}, provider: :codex)
+    Dir.mktmpdir do |projects|
+      sessions = File.join(projects, ".agents", "sessions")
+      FileUtils.mkdir_p(sessions)
+      File.write(File.join(sessions, "#{session}.json"), JSON.generate({
+        "app" => "mcritchie-studio",
+        "mascot" => "arcanine",
+        "mascot_color" => "#EE8130",
+        "mascot_emoji" => "🔥"
+      }.merge(extra)))
+      env = if provider == :codex
+              { "CODEX_THREAD_ID" => session, "CLAUDE_CODE_SESSION_ID" => nil, "CLAUDE_PROJECTS_DIR" => projects }
+            else
+              { "CLAUDE_CODE_SESSION_ID" => session, "CODEX_THREAD_ID" => nil, "CLAUDE_PROJECTS_DIR" => projects }
+            end
+      stdin = JSON.generate("workspace" => { "current_dir" => projects })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
     end
@@ -47,6 +73,14 @@ class StatuslineTest < Minitest::Test
     out = render_in(session: nil)
     refute_includes out, "…a617", "no session → no last-4 segment"
     assert_includes out, "[building]", "the no-session path must still render the stage"
+  end
+
+  def test_reads_codex_session_marker
+    out = render_session_marker_in(session: SESSION, provider: :codex)
+    assert_includes out, "🔥", "the Codex marker's type emoji leads"
+    assert_includes out, "Arcanine"
+    assert_includes out, "mcritchie-studio"
+    assert_includes out, "…a617", "Codex thread id gets the same last-4 suffix"
   end
 
   # --- Mascot tint: the <mascot> name wears its least-common type color --------
@@ -129,6 +163,7 @@ class StatuslineTest < Minitest::Test
 
       env = {
         "CLAUDE_CODE_SESSION_ID" => session,
+        "CODEX_THREAD_ID" => nil,
         "TASK_BIN" => stub,
         "STATUSLINE_HEARTBEAT_FG" => "1",
         "CLAUDE_PROJECTS_DIR" => File.join(dir, "projects")
@@ -159,6 +194,72 @@ class StatuslineTest < Minitest::Test
   def test_statusline_does_not_heartbeat_without_a_session
     assert_empty heartbeat_calls(stage: "building", session: nil),
                  "no session → no claim to renew"
+  end
+
+  # A WORKTREE build desk legitimately carries no stage (.agent-context.json is
+  # written with stage:nil → ""). Its claim must STILL renew — the empty-stage
+  # renew is load-bearing for worktrees and must not regress.
+  def test_statusline_still_heartbeats_an_empty_stage_worktree_desk
+    assert_equal ["heartbeat session-claim-lease-gate"], heartbeat_calls(stage: ""),
+                 "an empty-stage worktree desk is a real build — its claim renews"
+  end
+
+  # --- Per-session marker: filing/owning a task is NOT a build desk -----------
+
+  # The per-session marker (sessions/<id>.json, where `bin/task create` writes) is
+  # display context, NOT a build desk. Run statusline with that marker as the only
+  # source — a cwd WITHOUT a worktree .agent-context.json — and a stub `task` that
+  # records its invocations. Returns the recorded `task` calls.
+  def session_marker_heartbeat_calls(stage:, session: SESSION, slug: "skip-self-claim-demo")
+    Dir.mktmpdir do |dir|
+      projects = File.join(dir, "projects")
+      FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
+      File.write(File.join(projects, ".agents", "sessions", "#{session}.json"), JSON.generate(
+        "app" => "mcritchie-studio",
+        "worktree_slug" => slug,
+        "task_slug" => slug,
+        "task_url" => "https://mcritchie.studio/tasks/#{slug}",
+        "stage" => stage
+      ))
+      cwd = File.join(dir, "cwd") # NO .agent-context.json → src falls to the session marker
+      FileUtils.mkdir_p(cwd)
+      calls = File.join(dir, "calls.log")
+      stub = File.join(dir, "task")
+      File.write(stub, "#!/bin/bash\necho \"$@\" >> #{calls.inspect}\n")
+      File.chmod(0o755, stub)
+
+      env = {
+        "CLAUDE_CODE_SESSION_ID" => session,
+        "TASK_BIN" => stub,
+        "STATUSLINE_HEARTBEAT_FG" => "1",
+        "CLAUDE_PROJECTS_DIR" => projects
+      }
+      stdin = JSON.generate("workspace" => { "current_dir" => cwd })
+      Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+      File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
+    end
+  end
+
+  # The bug: `bin/task create` repoints the creator's per-session marker to the new
+  # `designed` task; the heartbeat then forged a live build-claim on a task nobody
+  # was building (the creator's mascot ticking green on an unowned task).
+  def test_statusline_does_not_heartbeat_a_designed_session_marker
+    assert_empty session_marker_heartbeat_calls(stage: "designed"),
+                 "a freshly-filed `designed` task in the per-session marker must not forge a claim"
+  end
+
+  # The empty-stage loophole, scoped: a per-session marker with no stage (a create
+  # response that omitted it) is NOT a build desk — it must not renew.
+  def test_statusline_does_not_heartbeat_an_empty_stage_session_marker
+    assert_empty session_marker_heartbeat_calls(stage: ""),
+                 "an empty/missing stage in the per-session marker is not a build desk"
+  end
+
+  # A REAL builder claim (`move building`) from the primary checkout writes the
+  # per-session marker with stage=building — that still renews, filling the slot.
+  def test_statusline_heartbeats_a_building_session_marker
+    assert_equal ["heartbeat skip-self-claim-demo"], session_marker_heartbeat_calls(stage: "building"),
+                 "a real move→building claim still renews from the per-session marker"
   end
 
   # --- App slug tint: each app wears its App#color (MS lavender, TM green, …) ----

@@ -20,8 +20,15 @@ The color rides to the status line without DB access (`bin/task` and
 `bin/agent-worktree` are API clients): `Task#sync_app_identity` stamps
 `devops.app_color` from the task's first repository on every save, so the marker
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
-color does. A brand-new session (no task yet) adopts `App.default`
+color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
+Codex sessions expose `CODEX_THREAD_ID`; run the kickoff wrapper when you want a
+McRitchie session handle before the first task:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/session-kickoff
+```
 
 To "act as" a soul instead of the session's Pokémon, set a **persona**:
 `bin/task create --persona jasper` (also on `update`). The server stamps the
@@ -29,8 +36,15 @@ agent's name + glyph + tint (`Agent#emoji` / `Agent#status_color`, seeded in
 `db/seeds/02_agents.rb`) as the status-line mascot, and `bin/statusline` sets the
 terminal tab title to the same emoji + name. A new task without `--persona`
 reverts to the session's Pokémon, and `bin/task update <slug> --persona none`
-(also `clear`/`off`/`-`) reverts mid-task. `--persona` is distinct from `--agent`,
-which sets the task owner (`agent_slug`).
+(also `clear`/`off`/`-`) reverts mid-task. For a session-level Codex/Claude marker
+before a task exists, use:
+
+```bash
+bin/session-kickoff jasper   # show Jasper now
+bin/session-kickoff pokemon  # return to the Pokémon
+```
+
+`--persona` is distinct from `--agent`, which sets the task owner (`agent_slug`).
 
 ## Current Decisions
 

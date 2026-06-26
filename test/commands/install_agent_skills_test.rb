@@ -7,7 +7,7 @@
 #
 # CRITICAL: every run sandboxes HOME and PROJECTS_DIR into a throwaway tmp dir, so
 # the installer copies into the sandbox and NEVER touches the operator's real
-# ~/.claude/skills or projects-root AGENTS.md/CLAUDE.md.
+# ~/.claude/skills, ~/.codex/skills, or projects-root AGENTS.md/CLAUDE.md.
 #
 # Tier split (backend shape → unit + integration):
 #   test_unit_*        — isolated source/CLI-contract assertions (no install round trip)
@@ -42,7 +42,17 @@ class InstallAgentSkillsTest < Minitest::Test
     )
   end
 
-  def installed_wrap = File.join(@home, ".claude", "skills", "wrap", "SKILL.md")
+  def installed_claude_wrap
+    File.join(@home, ".claude", "skills", "wrap", "SKILL.md")
+  end
+
+  def installed_codex_wrap
+    File.join(@home, ".codex", "skills", "wrap", "SKILL.md")
+  end
+
+  def installed_wraps
+    [installed_claude_wrap, installed_codex_wrap]
+  end
 
   # ── unit ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +62,15 @@ class InstallAgentSkillsTest < Minitest::Test
       "(docs/agents/skills/wrap/SKILL.md) so it survives a wiped machine"
     body = File.read(WRAP_SRC)
     assert_match(/^name:\s*wrap\s*$/, body, "canonical /wrap must carry its skill frontmatter")
+  end
+
+  def test_unit_wrap_skill_is_shared_between_claude_and_codex
+    body = File.read(WRAP_SRC)
+    assert_match(/Claude/, body, "the shared wrap skill should still support Claude")
+    assert_match(/Codex/, body, "the shared wrap skill should explicitly support Codex")
+    assert_match(/AGENTS\.md/, body, "active-doc routing should point at the shared agent entry")
+    refute_match(/per `CLAUDE\.md`/, body,
+      "the shared wrap skill must not route active-doc work solely through CLAUDE.md")
   end
 
   def test_unit_wrap_degrades_gracefully_without_personal_trimmer
@@ -73,53 +92,68 @@ class InstallAgentSkillsTest < Minitest::Test
 
   # ── integration ───────────────────────────────────────────────────────────
 
-  def test_integration_install_lands_skill_in_home_claude_skills
+  def test_integration_install_lands_skill_in_home_agent_skills
     _out, err, status = run_installer("install")
     assert status.success?, "install failed: #{err}"
-    assert File.file?(installed_wrap),
-      "install must place the /wrap skill at ~/.claude/skills/wrap/SKILL.md"
-    assert_equal File.read(WRAP_SRC), File.read(installed_wrap),
-      "the installed skill must be a byte-for-byte copy of the canonical source"
+    installed_wraps.each do |path|
+      assert File.file?(path),
+        "install must place the /wrap skill at #{path}"
+      assert_equal File.read(WRAP_SRC), File.read(path),
+        "the installed skill must be a byte-for-byte copy of the canonical source"
+    end
   end
 
   def test_integration_does_not_install_top_level_readme
     # Only files inside a <name>/ skill dir are skills; a top-level README in the
-    # canonical source documents the tree and must NOT land in ~/.claude/skills.
+    # canonical source documents the tree and must NOT land in an agent skills dir.
     run_installer("install")
-    refute File.exist?(File.join(@home, ".claude", "skills", "README.md")),
-      "a top-level docs/agents/skills/README.md must not be mirrored as a skill"
+    [".claude", ".codex"].each do |runtime_dir|
+      refute File.exist?(File.join(@home, runtime_dir, "skills", "README.md")),
+        "a top-level docs/agents/skills/README.md must not be mirrored as a skill"
+    end
   end
 
   def test_integration_install_is_idempotent
     run_installer("install")
-    first = File.read(installed_wrap)
+    first = installed_wraps.to_h { |path| [path, File.read(path)] }
     _out, err, status = run_installer("install")
     assert status.success?, "second install failed: #{err}"
-    assert_equal first, File.read(installed_wrap),
-      "re-running install must be a no-op on an already-current skill"
+    first.each do |path, body|
+      assert_equal body, File.read(path),
+        "re-running install must be a no-op on an already-current skill"
+    end
   end
 
   def test_integration_check_passes_after_install
     run_installer("install")
     out, _err, status = run_installer("check")
     assert status.success?, "check should pass immediately after a clean install"
-    assert_match(%r{OK:.*skills/wrap/SKILL\.md}, out,
-      "check should report the installed skill as matching")
+    assert_match(%r{OK:.*\.claude/skills/wrap/SKILL\.md}, out,
+      "check should report the Claude skill as matching")
+    assert_match(%r{OK:.*\.codex/skills/wrap/SKILL\.md}, out,
+      "check should report the Codex skill as matching")
   end
 
-  def test_integration_check_fails_when_local_skill_modified
-    run_installer("install")
-    File.write(installed_wrap, "#{File.read(installed_wrap)}\nlocal drift\n")
-    _out, err, status = run_installer("check")
-    refute status.success?, "check must fail when a local skill drifts from the source"
-    assert_match(%r{ERROR:.*skills/wrap/SKILL\.md}, err)
+  def test_integration_check_fails_when_any_local_skill_modified
+    installed_wraps.each do |path|
+      run_installer("install")
+      File.write(path, "#{File.read(path)}\nlocal drift\n")
+      _out, err, status = run_installer("check")
+      refute status.success?, "check must fail when a local skill drifts from the source"
+      assert_includes err, "ERROR: #{path} is out of date with #{WRAP_SRC}"
+    end
   end
 
-  def test_integration_check_fails_when_local_skill_missing
-    run_installer("install")
-    FileUtils.rm_rf(File.join(@home, ".claude", "skills", "wrap"))
-    _out, err, status = run_installer("check")
-    refute status.success?, "check must fail when a tracked skill is missing locally"
-    assert_match(%r{ERROR:.*skills/wrap/SKILL\.md}, err)
+  def test_integration_check_fails_when_any_local_skill_missing
+    [
+      File.join(@home, ".claude", "skills", "wrap"),
+      File.join(@home, ".codex", "skills", "wrap")
+    ].each do |path|
+      run_installer("install")
+      FileUtils.rm_rf(path)
+      _out, err, status = run_installer("check")
+      refute status.success?, "check must fail when a tracked skill is missing locally"
+      assert_match(%r{ERROR:.*skills/wrap/SKILL\.md}, err)
+    end
   end
 end

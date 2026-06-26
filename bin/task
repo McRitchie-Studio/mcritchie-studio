@@ -31,8 +31,12 @@
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
 #                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T] \
-#                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"]
+#                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
+#   ( --no-claim files the task WITHOUT repointing this session's active-feature
+#     marker at it — filing a task is not building it. Use it when a conductor /
+#     batch opens follow-up tasks it is not about to build (only an explicit
+#     `move building` claims). )
 #   ( --po-size/--dev-size/--pm-size set the size trio: small|medium|large|xl.
 #     Avi seeds --po-size at creation (the default sizer, not a hard gate);
 #     actual_size is auto-derived from measured usage at ship. )
@@ -54,6 +58,9 @@
 #       non-expired instance already holds it — pass --steal to take it over. An
 #       expired / dead-session lease is reclaimed automatically. )
 #   bin/task heartbeat <slug>                         # renew this instance's build-claim lease (bin/statusline calls it)
+#   bin/task session-mascot [--persona SLUG|none] [--print]
+#     ( draw this Claude/Codex session's Pokémon marker before a task exists.
+#       --persona jasper temporarily shows a soul instead; --persona none reverts. )
 #   bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]
 #     ( records an agentic INTENT — an agent STARTING a stage's work — so the board +
 #       timeline show who's on it with a live ticker before the transition lands.
@@ -82,17 +89,27 @@ require_relative "../lib/feature_marker"
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+def default_projects_dir
+  candidate = File.expand_path("../..", __dir__)
+  if File.basename(candidate) == ".worktrees"
+    File.expand_path("../..", candidate)
+  else
+    candidate
+  end
+end
+
 # Honors CLAUDE_PROJECTS_DIR (as bin/statusline does) so a session and its status
 # line agree on the marker location — and so tests can isolate it; defaults to the
-# repo's parent (the projects root) when unset.
-PROJECTS_DIR = (dir = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(dir)
+# projects root even when this script runs from an isolated worktree.
+PROJECTS_DIR = (dir = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? default_projects_dir : File.expand_path(dir)
 
-# Per-session active-feature marker path, keyed by CLAUDE_CODE_SESSION_ID so each
+# Per-session active-feature marker path, keyed by Claude/Codex session id so each
 # session shows its OWN feature (no cross-session leak). nil when there's no
-# session id (e.g. Codex — it surfaces the feature via the announce SOP instead).
+# agent session id.
 def feature_marker_path
-  sid = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  sid = session_identity.first.to_s.strip
   return nil if sid.empty?
+
   File.join(PROJECTS_DIR, ".agents", "sessions", "#{sid.gsub(/[^A-Za-z0-9._-]/, "")}.json")
 end
 
@@ -121,6 +138,20 @@ def stamp_session(devops)
   merged["session_id"] = id
   merged["session_provider"] = provider
   merged
+end
+
+def titleize_marker_name(value)
+  raw = value.to_s.tr("-", " ").strip
+  return "" if raw.empty?
+
+  raw[0].upcase + raw[1..].to_s
+end
+
+def print_session_marker(marker)
+  mascot = titleize_marker_name(marker["mascot"])
+  head = [marker["mascot_emoji"], mascot].map(&:to_s).map(&:strip).reject(&:empty?).join(" ").strip
+  parts = [head, marker["app"], marker["worktree_slug"] || marker["feature"]].map(&:to_s).map(&:strip).reject(&:empty?)
+  puts parts.join(" · ")
 end
 
 # --- Build claim lease (V2: the enforcement gate) --------------------------
@@ -241,6 +272,7 @@ SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" 
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
 STAGES = %w[designed building submitted reviewed assembled shipped blocked archived].freeze
 BLOCK_KINDS = %w[environment rework dependency].freeze
+PERSONA_CLEAR = %w[none clear off -].freeze
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -468,6 +500,7 @@ def write_feature_marker(task)
     "mascot" => mascot,             # bin/statusline renders <type-emoji> <mascot> — the session's Pokémon handle
     "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
     "mascot_emoji" => mascot_emoji, # …and prefixed with its type emoji(s), also riding with the name
+    "persona" => dv["persona"],     # present only for a deliberate "act as <soul>" override
     "app_color" => dv["app_color"]  # the app's status-line tint (App#color, stamped server-side by Task#sync_app_identity)
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
@@ -505,6 +538,10 @@ def marker_mascot_attrs(task, path)
   end
 
   disk = existing_marker(path)
+  if disk && FeatureMarker.present?(disk["persona"]) &&
+     !FeatureMarker.present?(dv["persona"]) && FeatureMarker.present?(dv["mascot"])
+    return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"]]
+  end
   return [disk["mascot"], disk["mascot_color"], disk["mascot_emoji"]] if disk && FeatureMarker.present?(disk["mascot"])
 
   return [dv["mascot"], dv["mascot_color"], dv["mascot_emoji"]] if FeatureMarker.present?(dv["mascot"])
@@ -643,6 +680,12 @@ when "stale"
     puts "(#{stale.size} stale task(s) — work on main but not shipped/archived)"
   end
 when "create"
+  # --no-claim: file the task WITHOUT repointing this session's active-feature
+  # marker at it. Filing a task is not building it — a conductor (bin/release)
+  # opening a batch of follow-ups must not drag its status line (and its live
+  # build-claim) onto each fresh `designed` task. Stripped before parse_flags so
+  # it never lands in positionals or the request body.
+  no_claim = !ARGV.delete("--no-claim").nil?
   _pos, scalars, lists, top = parse_flags(ARGV)
   die!("create needs --title") unless top["title"]
   devops = stamp_session(build_devops({}, scalars, lists))
@@ -656,7 +699,7 @@ when "create"
   # model-only chip (TOKENS — / COST —). Same fix shape as the build-claim and
   # intent seeds; idempotent + best-effort, and a no-op without a transcript.
   seed_usage_baseline(task["slug"]) if task.is_a?(Hash) && task["slug"]
-  write_feature_marker(task)
+  write_feature_marker(task) unless no_claim
   print_task(task)
 when "update"
   slug = ARGV.shift || die!("usage: bin/task update <slug> [flags]")
@@ -777,11 +820,21 @@ when "heartbeat"
     session = session_identity.first
     unless session.nil?
       current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
-      devops = current.dig("metadata", "devops") || {}
-      decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
-      unless decision == :held_by_other # don't steal a live foreign claim via a heartbeat
-        merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce))
-        api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+      # The heartbeat renews a BUILD claim, and a build claim only exists once the
+      # task is actually `building` — forged solely by an explicit `move building`.
+      # A task still in `designed` (or any non-build stage) is unclaimed by
+      # definition: `bin/task create` repoints the creator's session marker to the
+      # new task, so renewing here would forge a live claim on a task nobody is
+      # building (the creator's mascot ticking on an unowned `designed` task). This
+      # is the authoritative guard — bin/statusline already skips firing for a
+      # non-building per-session marker; this refuses even a stray call.
+      if current["stage"] == "building"
+        devops = current.dig("metadata", "devops") || {}
+        decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
+        unless decision == :held_by_other # don't steal a live foreign claim via a heartbeat
+          merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce))
+          api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+        end
       end
     end
   rescue SystemExit, StandardError
@@ -791,10 +844,27 @@ when "session-mascot"
   # Eagerly paint the session's Pokémon mascot onto the per-session marker so
   # bin/statusline shows it in SECONDS — fired by a SessionStart hook, before any
   # task exists. Idempotent server-side (SessionMascot), and the board task adopts
-  # the same mascot later. Best-effort: no session, no marker path, or any API /
-  # transport failure → silent no-op (it must never delay or break session start).
+  # the same mascot later. Also works as a manual Codex kickoff:
+  #   bin/task session-mascot --print
+  #   bin/task session-mascot --persona jasper --print
+  #   bin/task session-mascot --persona none --print
+  # Best-effort: no session, no marker path, or any API / transport failure →
+  # silent no-op unless --print was requested.
   begin
-    sid = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+    print_marker = false
+    persona = nil
+    until ARGV.empty?
+      case (arg = ARGV.shift)
+      when "--print"
+        print_marker = true
+      when "--persona"
+        persona = ARGV.shift || die!("--persona needs a value")
+      else
+        die!("unknown flag #{arg.inspect} for session-mascot (use --persona SLUG|none and/or --print)")
+      end
+    end
+
+    sid = session_identity.first.to_s.strip
     path = feature_marker_path
     unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty? || path.nil?
       data = api(:post, "/api/v1/sessions/#{sid}/mascot")["data"]
@@ -812,9 +882,22 @@ when "session-mascot"
           marker["app"] = data["app"]
           marker["app_color"] = data["app_color"]
         end
+        raw_persona = persona.to_s.strip
+        unless raw_persona.empty?
+          if PERSONA_CLEAR.include?(raw_persona.downcase)
+            marker.delete("persona")
+          else
+            agent = api(:get, "/api/v1/agents/#{raw_persona.downcase}")["data"] || {}
+            marker["persona"] = raw_persona.downcase
+            marker["mascot"] = agent["name"].to_s.strip.empty? ? raw_persona : agent["name"]
+            marker["mascot_color"] = agent["status_color"] || agent.dig("metadata", "color")
+            marker["mascot_emoji"] = agent["emoji"] || agent.dig("metadata", "emoji")
+          end
+        end
         marker = marker.reject { |_, v| v.nil? || v.to_s.strip.empty? }
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, "#{JSON.pretty_generate(marker)}\n")
+        print_session_marker(marker) if print_marker
       end
     end
   rescue SystemExit, StandardError

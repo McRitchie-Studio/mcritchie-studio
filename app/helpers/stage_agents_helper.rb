@@ -104,7 +104,9 @@ module StageAgentsHelper
 
     [].tap do |clusters|
       if (build = by_lane[:build])
-        building = %w[designed building].include?(task.stage)
+        # Live only while actively `building` (a real claim) — a `designed`/unclaimed
+        # task is not being built, so it carries no green ticker.
+        building = task.stage == "building"
         done = build.any? { |e| e.stage == "submitted" }
         clusters << CrewCluster.new(
           lane: :build,
@@ -199,8 +201,9 @@ module StageAgentsHelper
   end
 
   # /tasks build board: the three build steps split out, each wearing the task's
-  # mascot + the time spent IN that step (live for the current step). Unreached
-  # steps render an empty, reserved column.
+  # mascot + the time spent IN that step. Only the `building` step ticks a LIVE
+  # counter (a real, active claim); a `designed`/unclaimed step shows the mascot
+  # with no ticker. Unreached steps render an empty, reserved column.
   def build_step_columns(task, entries, mascot)
     face = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
     by_to_stage = entries.index_by(&:stage)
@@ -209,12 +212,19 @@ module StageAgentsHelper
     %w[designed building submitted].map do |stage|
       reached = reached_idx >= Task::STAGES.index(stage)
       current = task.stage == stage
+      # The green LIVE ticker means "an agent is actively building this right now",
+      # so it fires ONLY while the task is `building` — a real claim (move →
+      # building). A `designed` task is filed but UNCLAIMED (nobody has picked it
+      # up — e.g. a conductor's bin/release follow-up), and a `submitted` task has
+      # handed off to the deploy lane; neither is being built, so each shows just
+      # the mascot face (its identity) with no live counter — no false intent.
+      building_now = current && stage == "building"
       agent = face || by_to_stage[stage]&.agent # the mascot, else this step's own actor
       CrewCluster.new(
         lane: stage.to_sym,
         stacked: (reached && agent ? [StageAgent.new(stage: stage, agent: agent)] : []),
         seconds: (by_to_stage[BUILD_STEP_NEXT[stage]]&.seconds.to_i if reached && !current),
-        live_since: ((task.public_send(BUILD_STEP_START[stage]) || task.created_at) if reached && current)
+        live_since: ((task.public_send(BUILD_STEP_START[stage]) || task.created_at) if building_now)
       )
     end
   end
@@ -328,18 +338,21 @@ module StageAgentsHelper
   end
 
   # The work in progress on `task` right now — who's on it + when they started — or
-  # nil when the task is idle (shipped/blocked/archived, or awaiting a not-yet-
-  # recorded intent). Build stages derive from the mascot + the stage's entry time;
-  # deploy stages read the OPEN intent (review pair / Steffon QA / Avi ship). Shape:
+  # nil when the task is idle (designed/unclaimed, shipped/blocked/archived, or
+  # awaiting a not-yet-recorded intent). The build lane is live only while
+  # `building` (mascot + entry time); deploy stages read the OPEN intent (review
+  # pair / Steffon QA / Avi ship). Shape:
   # { to_stage:, lane:, agents: [StageAgent], live_since: Time }.
   def in_progress_work(task, by_slug, mascot_agent, intents)
     stage = task.stage
     return nil unless NEXT_PIPELINE_STAGE.key?(stage)
 
-    # Only designed/building are "still building" (mascot + entry time). Once
-    # submitted the build is done and the in-progress work is the DEPLOY lane —
-    # the review pair, then Steffon's QA, then Avi's ship — read off the open intent.
-    if %w[designed building].include?(stage)
+    # Only `building` is "still building" — an active claim (mascot + entry time).
+    # A `designed` task is filed but UNCLAIMED, so it is NOT live build work (no
+    # green ticker on the timeline). Once submitted the build is done and the
+    # in-progress work is the DEPLOY lane — the review pair, then Steffon's QA,
+    # then Avi's ship — read off the open intent.
+    if stage == "building"
       return nil unless mascot_agent
 
       since = (STAGE_ENTERED_AT[stage] && task.public_send(STAGE_ENTERED_AT[stage])) || task.created_at

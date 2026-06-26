@@ -1732,7 +1732,9 @@ def retro
     task_bin = File.expand_path("../bin/task", __dir__)
     followups.each do |f|
       title = f.split(/\s+/).first(5).join(" ")
-      _, ok = sh(task_bin, "create", "--title", title, "--kind", "chore",
+      # --no-claim: filing a retro follow-up must not repoint the conductor's
+      # active-feature marker (and its live build-claim) onto each fresh task.
+      _, ok = sh(task_bin, "create", "--no-claim", "--title", title, "--kind", "chore",
                  "--agent-context", "Retro follow-up from #{resolved}: #{f}", capture: true)
       say("  - #{ok ? '✓' : '✗'} #{title}")
     end
