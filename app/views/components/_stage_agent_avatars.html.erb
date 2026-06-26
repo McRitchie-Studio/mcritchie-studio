@@ -89,9 +89,11 @@
         (a block lands from reviewed or assembled) — its timer turns into a red ✕. %>
     <% blocked = task.stage == "blocked" %>
     <% block_idx = (columns.rindex { |c| c.stacked.any? } if blocked) %>
-    <%# Fixed grid (3 columns, or 4 only once shipped — blocked mirrors Assembled's
-        three) so the crew is one solid row; each compartment centered in its column,
-        an unreached stage left blank. The Build board (/tasks) splits the build
+    <%# Fixed grid (3 columns, or 4 on the assembled + shipped columns — blocked
+        mirrors the earlier three) so the crew is one solid row; each compartment
+        centered in its column, an unreached stage left blank. On an assembled card the
+        fourth slot is reserved (empty placeholder, or Avi's live deploy intent) so the
+        card never reflows when it ships. The Build board (/tasks) splits the build
         steps; Deploy collapses them. %>
     <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
          data-test="stage-agent-avatars" title="Stage crew">

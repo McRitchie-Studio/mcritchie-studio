@@ -141,9 +141,11 @@ module StageAgentsHelper
   # Board-aware crew columns. The upstream build stages (designed · building) always
   # split into the design + building agents, on either board; the Build board (/tasks)
   # keeps that split through submitted. Everything else is Deploy-style: the build
-  # collapses into one circle and the pipeline shows build · review · assembled. Only
-  # a shipped task earns the fourth (shipped) lane; blocked mirrors Assembled's three
-  # (a block lands from reviewed or assembled). Returns an ordered array of CrewCluster;
+  # collapses into one circle and the pipeline shows build · review · assembled. The
+  # assembled AND shipped columns both carry the fourth (deploy/ship) lane — assembled
+  # reserves it (and fills it from an open ship intent) so the card doesn't reflow when
+  # it ships; blocked mirrors the earlier three (a block lands from reviewed or
+  # assembled). Returns an ordered array of CrewCluster;
   # the partial renders one fixed grid column per entry (an empty entry reserves its slot).
   # True when this board renders the split build steps (each wearing the mascot)
   # rather than the collapsed Deploy clusters: always for designed/building, and
@@ -187,7 +189,12 @@ module StageAgentsHelper
     end
 
     lanes = %i[build review assembled]
-    lanes << :shipped if task.stage == "shipped"
+    # The deploy/ship lane is reserved on the assembled column too — not just once
+    # shipped. An assembled card holds the empty fourth slot so it never reflows when
+    # the ship lands, and the open ship intent (Avi deploying) surfaced by
+    # in_progress_work above fills that slot with a LIVE ticker. Blocked keeps the
+    # earlier three (a block lands from reviewed or assembled).
+    lanes << :shipped if %w[assembled shipped].include?(task.stage)
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
   end
 

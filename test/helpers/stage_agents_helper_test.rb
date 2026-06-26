@@ -308,14 +308,60 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert cols[1].live_since, "the current step (building) ticks live"
   end
 
-  test "crew_columns on the Deploy board is three columns until shipped, four once shipped" do
+  test "crew_columns reserves the fourth (deploy) lane on the assembled column, empty until shipped" do
+    # The assembled column now carries the 4th (ship) lane so the card holds its width
+    # and never reflows when it ships — but with no ship intent that slot stays EMPTY.
     assembled = deploy_task(stage: "assembled", reviewers: REVIEWERS)
-    assert_equal %i[build review assembled],
-                 crew_columns(assembled, stage_agent_groups(assembled, @agents), board: :deploy).map(&:lane)
+    cols = crew_columns(assembled, stage_agent_groups(assembled, @agents), board: :deploy)
+    assert_equal %i[build review assembled shipped], cols.map(&:lane), "four fixed lanes on the assembled column"
+    ship = cols.find { |c| c.lane == :shipped }
+    assert_empty ship.stacked, "the reserved deploy slot is empty until a ship intent lands"
+    assert_nil ship.live_since, "no live ticker on an unfilled deploy slot"
 
     shipped = deploy_task(stage: "shipped", reviewers: REVIEWERS)
-    assert_equal %i[build review assembled shipped],
-                 crew_columns(shipped, stage_agent_groups(shipped, @agents), board: :deploy).map(&:lane)
+    shipped_cols = crew_columns(shipped, stage_agent_groups(shipped, @agents), board: :deploy)
+    assert_equal %i[build review assembled shipped], shipped_cols.map(&:lane)
+    assert shipped_cols.find { |c| c.lane == :shipped }.stacked.any?, "a shipped task fills the deploy slot"
+  end
+
+  test "crew_columns fills the assembled card's deploy slot from an open ship intent (Avi, live)" do
+    # Avi records a ship intent while the task is still assembled — his avatar + a live
+    # ticker fill the reserved 4th slot, the Deploy mirror of the build-lane counter.
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    intent = task.record_intent_event(to_stage: "shipped", actor: "avi")
+    cols = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+
+    assert_equal %i[build review assembled shipped], cols.map(&:lane), "still four fixed lanes"
+    ship = cols.find { |c| c.lane == :shipped }
+    assert_equal %w[avi], ship.stacked.map { |a| a.agent&.slug }, "Avi's deploy intent populates the 4th slot"
+    assert_equal intent.occurred_at.to_i, ship.live_since.to_i, "the deploy slot ticks live from the ship intent"
+  end
+
+  test "crew_columns is additive — rendering the deploy crew never mutates the task's mascot" do
+    Pokemon.create!(dex: 70, name: "Weepinbell", slug: "weepinbell", generation: 1,
+                    sprite_url: "https://example.test/weepinbell-sprite.png")
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.update!(metadata: { "devops" => { "mascot" => "weepinbell", "mascot_session" => "sess-x" } })
+    task.record_intent_event(to_stage: "shipped", actor: "avi")
+    before = task.reload.devops.deep_dup
+
+    crew_columns(task, stage_agent_groups(task, @agents), board: :deploy, agents: @agents,
+                                                          mascot: Pokemon.find_by(slug: "weepinbell"))
+
+    assert_equal before, task.reload.devops,
+                 "the existing mascot (and every devops field) survives the deploy crew render verbatim"
+  end
+
+  test "crew_columns backfills Avi on an actor-less ship intent over an assembled task" do
+    # A conductor-recorded ship intent (no actor) still surfaces a face — the ship
+    # lane's canonical owner, Avi — so the assembled card never goes faceless mid-deploy.
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.record_intent_event(to_stage: "shipped", actor: nil)
+    ship = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+           .find { |c| c.lane == :shipped }
+
+    assert_equal %w[avi], ship.stacked.map { |a| a.agent&.slug }, "actor-less ship intent backfills Avi"
+    assert_not_nil ship.live_since
   end
 
   test "crew_columns gives a blocked task Assembled's three columns" do

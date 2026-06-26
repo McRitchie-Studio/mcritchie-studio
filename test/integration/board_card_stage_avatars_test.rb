@@ -59,6 +59,86 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Seed a full build → review → assembled journey (no ship yet) so the card's
+  # build / review / assembled lanes are all filled and only the deploy slot is open.
+  def assembled_journey(title)
+    task = Task.create!(title: title, stage: "assembled")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 6.hours.ago, seconds_in_from: 3600, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600,
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
+                                                   { "slug" => "carl", "weight" => "light" }] })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")
+    task.reload
+  end
+
+  test "an assembled card reserves an empty fourth (deploy) slot so it never reflows" do
+    task = assembled_journey("assembled reserved deploy slot")
+
+    get deployments_path
+    assert_response :success
+
+    # the lane row is already a fixed four-column grid before the task ships
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].grid-cols-4", count: 1
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "[data-test='crew-cluster']", count: 3 # build · review · assembled filled
+      assert_select "[data-test='crew-empty'][data-lane='shipped']", count: 1 # the reserved deploy slot
+      assert_select "[data-test='crew-live']", count: 0 # nobody deploying yet
+    end
+  end
+
+  test "an open ship intent fills the assembled card's deploy slot with Avi + a live ticker" do
+    task = assembled_journey("assembled deploy intent card")
+    # Avi starts the deploy while the task is still assembled (bin/task intent --to
+    # shipped --actor avi) — his avatar + a live counter take the reserved 4th slot.
+    task.record_intent_event(to_stage: "shipped", actor: "avi")
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars'].grid-cols-4", count: 1
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "[data-test='crew-cluster']", count: 4              # build · review · assembled · shipped
+      assert_select "[data-test='crew-empty']", count: 0               # the deploy slot is now filled
+      assert_select "[data-test='crew-cluster'][data-lane='shipped'] div[title^='Avi']", count: 1
+      assert_select "[data-test='crew-cluster'][data-lane='shipped'] [data-test='crew-live']", count: 1
+    end
+  end
+
+  test "the deploy crew is additive — an existing mascot survives render + ship intent" do
+    # The 4th slot may only ADD the deploy face; the task's existing mascot (the
+    # build-lane face) must never be re-derived, replaced, or reassigned.
+    Pokemon.create!(dex: 70, name: "Weepinbell", slug: "weepinbell", generation: 1,
+                    sprite_url: "https://example.test/weepinbell-sprite.png")
+    task = assembled_journey("mascot preserved deploy card")
+    task.update!(metadata: { "devops" => { "mascot" => "weepinbell", "mascot_session" => "sess-x" } })
+    before = task.reload.devops["mascot"]
+
+    # Recording the ship intent must not touch the mascot.
+    task.record_intent_event(to_stage: "shipped", actor: "avi")
+    assert_equal before, task.reload.devops["mascot"], "ship intent leaves the mascot untouched"
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      # build-lane face is STILL the mascot, and the deploy slot ADDS Avi (not the mascot)
+      assert_select "img[src='https://example.test/weepinbell-sprite.png']"
+      assert_select "[data-test='crew-cluster'][data-lane='shipped'] div[title^='Avi']", count: 1
+    end
+
+    # Rendering the deploy crew did not mutate the mascot either.
+    assert_equal before, task.reload.devops["mascot"], "rendering the deploy crew leaves the mascot untouched"
+  end
+
   test "the full crew collapses to four lane compartments (build / review / assembled / shipped)" do
     # A full journey: designer, builder, submitter (build), 2 reviewers, Steffon,
     # Avi = 7 faces — all shown, in four lane compartments.
