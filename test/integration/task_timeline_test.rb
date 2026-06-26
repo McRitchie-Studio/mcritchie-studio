@@ -69,8 +69,9 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
 
     get task_path(task.slug)
     assert_response :success
-    assert_select "[data-test='timeline-inprogress']"
-    assert_select "[data-test='timeline-live']"
+    assert_select "[data-test='timeline-inprogress']", count: 0 # pill removed
+    assert_select "[data-test='timeline-pulse']"                # pulsing backdrop signals live work
+    assert_select "[data-test='timeline-live']"                 # ticking duration
     assert_match "Carl", response.body
     assert_match "Shannon", response.body
   end
