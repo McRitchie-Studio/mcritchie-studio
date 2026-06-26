@@ -26,6 +26,12 @@
   window.LiveBoardFx = window.LiveBoardFx || (function () {
     const BUBBLE_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
 
+    // The release modules above the board (replaced on a release state change) —
+    // the dropzone observer never sees them, so they're flashed straight from the
+    // stream handler: a celebratory burst on the just-shipped Last Release, a subtle
+    // glow on the Next Release reset.
+    const RELEASE_FX = { "last-release": "burst", "current-release": "glow" };
+
     // Per-card coordination between the `remove` stream (intercepted) and the
     // `prepend` that follows it on a MOVE.
     const collapsing = new Map();     // cardId → Promise (resolves when its collapse-out finishes)
@@ -182,6 +188,18 @@
       const stream = event.target;
       const action = stream.getAttribute("action");
       const target = stream.getAttribute("target") || "";
+      // Release-module swap (#current-release / #last-release): let Turbo replace
+      // the slot, then flash the FRESH element. burst = a deploy just landed in Last;
+      // glow = the Next slot reset. data-glow on the card tints the flash colour.
+      if (RELEASE_FX[target] && (action === "replace" || action === "update")) {
+        const renderNow = event.detail.render;
+        event.detail.render = (el) => {
+          renderNow(el);
+          const fresh = document.getElementById(target);
+          if (fresh) requestAnimationFrame(() => (RELEASE_FX[target] === "burst" ? burst(fresh, true) : glow(fresh)));
+        };
+        return;
+      }
       if (!target.startsWith("card-")) return;
       if (action === "remove") {
         const removeNow = event.detail.render;

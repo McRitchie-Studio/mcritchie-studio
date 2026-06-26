@@ -57,7 +57,28 @@ module Dev
       head :no_content
     end
 
+    # Ship the active release (opening a throwaway one first if none is active) →
+    # Release#after_commit broadcasts the swapped Next/Last modules, so the live
+    # board animates the deploy with NO reload: the just-shipped release bursts into
+    # the Last Release slot and the Next Release resets to its "none active" card.
+    # The trigger for the release-ship e2e and the dev-tools "Ship" button.
+    def ship_release
+      release = Release.current || open_fixture_release
+      release.update!(deployed_sha: SecureRandom.hex(20))
+      release.ship!(by: "dev")
+      head :no_content
+    end
+
     private
+
+    # A throwaway active release (marked so it never reads as real) carrying a random
+    # mascot — only used when nothing is active, so the Ship toy still has something
+    # to deploy.
+    def open_fixture_release
+      Release.open!.tap do |release|
+        release.update!(metadata: { FIXTURE_MARK => true, "devops" => { "mascot" => Pokemon.draw&.slug }.compact })
+      end
+    end
 
     def ensure_local!
       head :forbidden unless Rails.env.local?

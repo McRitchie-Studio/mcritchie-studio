@@ -143,4 +143,41 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert Task._commit_callbacks.any? { |c| c.filter == :broadcast_removal_to_deployments_board },
       "Task must broadcast the card removal after a destroy commits"
   end
+
+  # --- release modules: the Next/Last cards live-update on a release change ----
+
+  test "[unit] release_modules REPLACES both the current-release and last-release slots" do
+    shipped = Release.open!
+    shipped.ship!          # terminal → frees the singleton AND becomes last_shipped
+    Release.open!          # a fresh active release fills the current slot
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
+
+    assert_equal %w[current-release last-release], streams.map { |s| s["target"] }.sort
+    streams.each { |s| assert_equal "replace", s["action"] }
+    assert_includes streams.find { |s| s["target"] == "last-release" }.to_html, shipped.slug
+  end
+
+  test "[integration] after a ship, release_modules resets Next to empty + swaps Last to the just-shipped" do
+    active = Release.open!
+    active.ship!(by: "avi") # now shipped: Release.current is nil, last_shipped == active
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
+
+    current = streams.find { |s| s["target"] == "current-release" }
+    last = streams.find { |s| s["target"] == "last-release" }
+    assert_includes current.to_html, "none active", "Next Release resets to its fresh empty card"
+    assert_includes last.to_html, active.slug, "Last Release wears the just-shipped release"
+  end
+
+  test "[integration] Release wires the module broadcast on after_commit" do
+    assert Release._commit_callbacks.any? { |c| c.filter == :broadcast_release_modules },
+      "Release must broadcast the live release modules after a commit"
+  end
+
+  test "[unit] release_modules is guarded — a dead cable can't break the release write" do
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*_a, **_k) { raise Gem::LoadError, "redis not in bundle" }) do
+      assert_nothing_raised { assert_nil DeploymentsBroadcaster.release_modules }
+    end
+  end
 end

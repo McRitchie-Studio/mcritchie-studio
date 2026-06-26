@@ -28,6 +28,8 @@
   <%= turbo_stream_from "deployments" %>
   <%# Live create / move / delete animations, driven by the broadcasts above. %>
   <%= render "deployments_live_fx" %>
+  <%# Ticks the active Next Release in-progress timer down to the second. %>
+  <%= render "release_ticker" %>
   <%# TEST-ONLY: lets the Playwright live-update e2e POST an intent/move to trigger a
       real broadcast. Gated to the test env — never rendered in development or production. %>
   <% if Rails.env.test? %>

@@ -235,6 +235,29 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal 0, elapsed_seconds(t, t - 60), "a negative span clamps to 0, never a bogus past"
   end
 
+  test "format_elapsed_clock renders a seconds-precision H/M/S clock, zero-padded" do
+    assert_equal "0s", format_elapsed_clock(0)
+    assert_equal "45s", format_elapsed_clock(45)
+    assert_equal "7m 23s", format_elapsed_clock(7 * 60 + 23)
+    assert_equal "7m 03s", format_elapsed_clock(7 * 60 + 3), "trailing units zero-pad for a stable width"
+    assert_equal "1h 04m 09s", format_elapsed_clock(3600 + 4 * 60 + 9)
+  end
+
+  test "release_elapsed_clock counts seconds from the release's created_at" do
+    rel = Release.new(state: "assembling", created_at: Time.utc(2026, 1, 1, 0, 0, 0))
+    assert_equal "0s", release_elapsed_clock(rel, now: Time.utc(2026, 1, 1, 0, 0, 0))
+    assert_equal "7m 23s", release_elapsed_clock(rel, now: Time.utc(2026, 1, 1, 0, 7, 23))
+  end
+
+  test "[component] _current_release renders a glow hook + a live in-progress ticker" do
+    rel = Release.open!
+    render partial: "tasks/current_release", locals: { release: rel }
+
+    assert_select "#current-release[data-glow]" # the live-flash tint hook rides the card
+    assert_select "#current-release [data-release-ticker][data-since=?]", rel.created_at.to_i.to_s
+    assert_select "#current-release [data-test='release-timing']", text: /\Ain progress · /
+  end
+
   test "devops_next_html badges whole-word stage names only" do
     html = devops_next_html("pulls it into the next release → assembled")
     assert_includes html, "<span"

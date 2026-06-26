@@ -1,0 +1,33 @@
+<%# Live in-progress timer for the Next Release card. The ACTIVE release's timing
+    span carries data-release-ticker + data-since (created_at epoch) + data-prefix;
+    this advances it every second so the operator watches the clock climb. It
+    re-queries the DOM each tick, so a Turbo-Streamed card swap (DeploymentsBroadcaster
+    → LiveBoardFx) is picked up automatically with no re-wiring. Installed once and
+    survives Turbo navigations. fmt() MUST match ApplicationHelper#format_elapsed_clock
+    so the server-rendered initial value and the first tick agree. %>
+<script>
+  (function () {
+    if (window.__releaseTicker) return;
+    window.__releaseTicker = true;
+
+    function fmt(secs) {
+      if (secs < 60) return secs + "s";
+      var m = Math.floor(secs / 60), s = secs % 60;
+      if (m < 60) return m + "m " + String(s).padStart(2, "0") + "s";
+      var h = Math.floor(m / 60), mm = m % 60;
+      return h + "h " + String(mm).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
+    }
+
+    function tick() {
+      var now = Math.floor(Date.now() / 1000);
+      document.querySelectorAll("[data-release-ticker]").forEach(function (el) {
+        var since = parseInt(el.dataset.since || "0", 10);
+        if (!since) return;
+        el.textContent = (el.dataset.prefix || "") + fmt(Math.max(0, now - since));
+      });
+    }
+
+    setInterval(tick, 1000);
+    tick();
+  })();
+</script>

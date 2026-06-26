@@ -39,6 +39,28 @@ class DeploymentsBroadcaster
     end
   end
 
+  # Re-render the Next + Last release modules to every /deployments viewer after a
+  # release state change (open / assemble / ship / abandon, or a mascot stamp), so
+  # the cards reflect Release.current / Release.last_shipped with no reload. Two
+  # REPLACE actions targeting the stable #current-release / #last-release slots; the
+  # board's LiveBoardFx flashes each swapped slot (a subtle glow on Next, a
+  # celebratory burst on the just-shipped Last). Computed fresh from the singleton —
+  # on a ship, Release.current is nil so Next re-renders its "none active" empty
+  # card. Called from Release#after_save_commit and guarded by safe_broadcast so a
+  # cable failure can NEVER break the release write that triggered it (SEV-1 guard).
+  def self.release_modules
+    Studio::Cable.safe_broadcast do
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "current-release",
+        partial: "tasks/current_release", locals: { release: Release.current }
+      )
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "last-release",
+        partial: "tasks/last_release", locals: { release: Release.last_shipped }
+      )
+    end
+  end
+
   def initialize(event)
     @event = event
     @task = event.task

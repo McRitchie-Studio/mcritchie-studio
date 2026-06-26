@@ -7,12 +7,14 @@
     pills row. %>
 <% rel = local_assigns.fetch(:release, nil) %>
 <% if rel %>
-  <div id="current-release" class="rounded-xl border border-subtle bg-surface p-4">
+  <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
+      type colour; blank → the fx falls back to its default warm-orange pulse. %>
+  <div id="current-release" data-glow="<%= rel.mascot&.signature_color %>" class="rounded-xl border border-subtle bg-surface p-4">
     <%# Operator's one-trigger QA-department workflow chip rides inline with the task
         pills: assess the active release, pull every reviewed/passing task in, deploy
         QA, then stop for ship. %>
-    <% kickoff = render "kickoff_chip", command: qa_release_kickoff %>
-    <%= render "release_summary", release: rel, variant: :current, trailing: kickoff -%>
+    <% kickoff = render "tasks/kickoff_chip", command: qa_release_kickoff %>
+    <%= render "tasks/release_summary", release: rel, variant: :current, trailing: kickoff -%>
   </div>
 <% else %>
   <%# No active release: muted empty state mirroring the active card — the section
@@ -24,7 +26,7 @@
     </div>
     <p class="mt-2 text-xs text-muted">Merge a reviewed task (or kick off below) to establish one.</p>
     <div class="mt-3 flex justify-end">
-      <%= render "kickoff_chip", command: qa_release_kickoff %>
+      <%= render "tasks/kickoff_chip", command: qa_release_kickoff %>
     </div>
   </div>
 <% end %>

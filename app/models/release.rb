@@ -38,6 +38,13 @@ class Release < ApplicationRecord
 
   before_validation :generate_slug, on: :create
   before_save :set_state_timestamp, if: :state_changed?
+  # Live /deployments: re-render the Next + Last release modules to every viewer
+  # after ANY release commit (open / assemble / ship / abandon / mascot stamp), so
+  # the board's release cards stay current with no reload. after_*_commit (not
+  # after_save) so the new singleton state is fully committed before we read
+  # Release.current / .last_shipped in the broadcast — and so a rolled-back
+  # transaction never broadcasts a state that didn't land.
+  after_commit :broadcast_release_modules, on: %i[create update]
 
   scope :active, -> { where(state: ACTIVE_STATES) }
 
@@ -262,5 +269,12 @@ class Release < ApplicationRecord
 
   def generate_slug
     self.slug ||= "rel-#{Time.current.strftime('%Y%m%d')}-#{SecureRandom.hex(3)}"
+  end
+
+  # Push the refreshed release modules to the live /deployments board. Delegates to
+  # the broadcaster, which is itself wrapped in Studio::Cable.safe_broadcast, so
+  # this after_commit can never raise into the release write.
+  def broadcast_release_modules
+    DeploymentsBroadcaster.release_modules
   end
 end
