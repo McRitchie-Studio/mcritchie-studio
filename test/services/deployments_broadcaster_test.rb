@@ -96,6 +96,29 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert(streams.any? { |s| s["action"] == "prepend" && s["target"] == "dropzone-building" }, "prepends blocked cards into Building")
   end
 
+  test "a building→blocked transition sends one ordered websocket payload" do
+    task = Task.create!(title: "Blocked websocket race task", stage: "designed")
+    Current.task_event_actor = "carl"
+    task.update!(stage: "building")
+    Current.reset
+    task.update!(stage: "blocked")
+    event = task.task_events.transitions.last # building → blocked
+    broadcasts = []
+
+    Turbo::StreamsChannel.stub(:broadcast_stream_to, ->(*streamables, content:) {
+      broadcasts << { streamables:, content: content.to_s }
+    }) do
+      DeploymentsBroadcaster.task_event(event)
+    end
+
+    assert_equal 1, broadcasts.size
+    assert_equal ["deployments"], broadcasts.first.fetch(:streamables)
+    streams = Nokogiri::HTML5.fragment(broadcasts.first.fetch(:content)).css("turbo-stream")
+    assert_equal %w[remove prepend], streams.map { |stream| stream["action"] }
+    assert_equal "card-#{task.slug}", streams.first["target"]
+    assert_equal "dropzone-building", streams[1]["target"]
+  end
+
   # --- [unit] the hook + the SEV-1 guard --------------------------------------
 
   test "the after-commit hook skips backfilled (bulk history) events" do
