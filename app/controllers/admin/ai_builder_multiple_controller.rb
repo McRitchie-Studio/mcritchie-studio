@@ -9,7 +9,7 @@ module Admin
       @index_weeks = report_index_weeks.first(@limit)
       @chart_weeks = @index_weeks.reverse
       @latest_week = @index_weeks.first&.week_start_date
-      @observed_through_date = GithubCommitObservation.maximum(:committed_at)&.to_date
+      @observed_through_date = observed_through_date
       @latest_metrics = @latest_week ? GithubBuilderWeeklyMetric.for_week(@latest_week).order(:cohort, :github_login).to_a : []
       @builder_metrics_week = representative_metrics_week
       @builder_metrics = @builder_metrics_week ? GithubBuilderWeeklyMetric.for_week(@builder_metrics_week).order(:cohort, :github_login).to_a : []
@@ -37,7 +37,7 @@ module Admin
       @builder_limit = [[params.fetch(:builder_limit, 1_000).to_i, 1].max, 1_000].min
       @index_weeks = report_index_weeks
       @latest_week = @index_weeks.first&.week_start_date
-      @observed_through_date = GithubCommitObservation.maximum(:committed_at)&.to_date
+      @observed_through_date = observed_through_date
       @builder_metrics_week = representative_metrics_week
       @commit_log_ranges = commit_log_ranges(limit: nil)
       @commit_log_rows = commit_log_rows
@@ -84,6 +84,20 @@ module Admin
       return false unless @latest_week && @observed_through_date
 
       @observed_through_date < @latest_week + 6.days
+    end
+
+    # Latest commit timestamp we have ingested. Prefer live staging rows; once the
+    # batch runner has pruned them, fall back to the durable watermark so partial-
+    # week boundary protection keeps working. Nil only on a truly empty pipeline.
+    def observed_through_at
+      return @observed_through_at if defined?(@observed_through_at)
+
+      @observed_through_at = GithubCommitObservation.maximum(:committed_at) ||
+        GithubObservationWindow.observed_through_at
+    end
+
+    def observed_through_date
+      observed_through_at&.to_date
     end
 
     def commit_log_ranges(limit:)
@@ -139,13 +153,13 @@ module Admin
       {
         active_builders_count: TrackedGithubBuilder.active.count,
         active_repos_count: TrackedGithubBuilderRepo.active.count,
-        commit_observations_count: GithubCommitObservation.count,
+        commit_observations_count: GithubBuilderCommitRangeCache.for_cache_key.sum(:commits_count),
         weekly_metrics_count: report_weekly_metrics_count,
         index_weeks_count: total_index_weeks,
         complete_index_weeks_count: complete_index_weeks,
         incomplete_index_weeks_count: total_index_weeks - complete_index_weeks,
         latest_complete_week_start_date: latest_complete_week&.week_start_date,
-        latest_observed_commit_at: GithubCommitObservation.maximum(:committed_at),
+        latest_observed_commit_at: observed_through_at,
         last_index_update_at: report_index_weeks.filter_map(&:updated_at).max
       }
     end
@@ -161,18 +175,27 @@ module Admin
         {}
       end
       latest_metrics_by_login = @builder_metrics.index_by(&:github_login)
+      cached_commits_by_builder = GithubBuilderCommitRangeCache
+        .for_cache_key
+        .group(:tracked_github_builder_id)
+        .sum(:commits_count)
+      latest_cached_week_by_builder = GithubBuilderCommitRangeCache
+        .for_cache_key
+        .where("commits_count > 0")
+        .joins(:github_commit_range)
+        .group(:tracked_github_builder_id)
+        .maximum("github_commit_ranges.week_start_date")
 
       ranked_active_builders(recent_totals).first(@builder_limit).map do |builder|
-        observations = GithubCommitObservation.for_login(builder.github_login)
         metrics = GithubBuilderWeeklyMetric.where(github_login: builder.github_login)
         {
           builder: builder,
           latest_metric: latest_metrics_by_login[builder.github_login],
           active_repos_count: builder.tracked_github_builder_repos.active.size,
-          observations_count: observations.count,
+          observations_count: cached_commits_by_builder.fetch(builder.id, 0),
           metric_weeks_count: metrics.count,
           complete_metric_weeks_count: metrics.complete.count,
-          latest_commit_at: observations.maximum(:committed_at)
+          latest_commit_at: latest_cached_week_by_builder[builder.id]
         }
       end
     end

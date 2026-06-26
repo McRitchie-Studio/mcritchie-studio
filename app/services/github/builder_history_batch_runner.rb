@@ -79,13 +79,15 @@ module Github
 
       fetch_result = fetch_with_segment_cache(builder, window)
       cache_summary = cache_summary(builder, week_starts)
+      pruned_observations = prune_observations_if_complete(builder, cache_summary)
       elapsed_seconds = (Time.current - started_at).round(2)
       report(
         "AI Builder Multiple fetched login=#{builder.github_login} " \
         "stored=#{fetch_result[:stored].to_i} cache_rows=#{cache_summary[:cache_rows]} " \
-        "commits=#{cache_summary[:total_cached_commits]} elapsed=#{elapsed_seconds}s"
+        "commits=#{cache_summary[:total_cached_commits]} pruned=#{pruned_observations} " \
+        "elapsed=#{elapsed_seconds}s"
       )
-      fetch_result.merge(cache_summary).merge(elapsed_seconds: elapsed_seconds)
+      fetch_result.merge(cache_summary).merge(pruned_observations: pruned_observations, elapsed_seconds: elapsed_seconds)
     rescue Github::Client::HttpError => e
       elapsed_seconds = (Time.current - started_at).round(2)
       report("AI Builder Multiple fetch failed login=#{builder.github_login} error=#{e.class}: #{e.message}")
@@ -149,6 +151,25 @@ module Github
         bot_adjusted_commits: caches.sum(:bot_adjusted_commits_count),
         complete: caches.distinct.count(:github_commit_range_id) >= week_starts.size
       }
+    end
+
+    # Observations are a disposable staging area: once every week in the window is
+    # cached (metrics + commit_shas persisted in GithubBuilderCommitRangeCache),
+    # the raw rows are no longer read. Prune them so the table can't grow unbounded
+    # (root cause of the 2026-06-25 outage). Gated on a COMPLETE cache so we never
+    # delete history the trailing-90-day baseline still needs mid-run; a re-run
+    # simply re-fetches from GitHub.
+    def prune_observations_if_complete(builder, cache_summary)
+      return 0 unless cache_summary[:complete]
+
+      scope = GithubCommitObservation.for_login(builder.github_login)
+      # Persist the day-granular observed-through watermark BEFORE deleting, so the
+      # dashboard keeps its partial-week boundary protection once the staging rows
+      # are gone (the weekly caches are too coarse to reconstruct it).
+      GithubObservationWindow.advance_to(scope.maximum(:committed_at))
+      deleted = scope.delete_all
+      report("  pruned #{deleted} staged observations login=#{builder.github_login}") if deleted.positive?
+      deleted
     end
 
     def normalize_batch_size(value)

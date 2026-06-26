@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_26_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_26_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -524,6 +524,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_120000) do
     t.date "week_start_date", null: false
     t.index ["week_end_date"], name: "index_github_commit_ranges_on_week_end_date"
     t.index ["week_start_date"], name: "index_github_commit_ranges_on_week_start_date", unique: true
+  end
+
+  create_table "github_observation_windows", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "observed_through_at"
+    t.datetime "updated_at", null: false
   end
 
   create_table "image_caches", force: :cascade do |t|
