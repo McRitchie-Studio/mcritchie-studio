@@ -586,7 +586,11 @@ single confirm). Idempotent — a re-run finds nothing new to archive. Archiving
 only flips a task's stage, never its `release_slug`, so the board's Last Release
 section keeps linking to its members even after they're later archived,
 preserving the release history. `shipped` is therefore **no longer terminal** —
-the Deploy loop now closes at `archived`.
+the Deploy loop now closes at `archived`. **The ledger commits itself:** after the
+reclaim appends to `delete-later.md`, archive commits that update to `release`
+(best-effort, only when the ledger is the *sole* uncommitted change — pure guard
+`Release::ArtifactCommit`), so it ships next round instead of piling up as
+ship-preflight stash dirt the conductor has to park.
 
 **`Release retro`**  *(post-ship "review & learn" — completely NON-BLOCKING)*
 Run **`bin/release retro [release-slug] [--worked "…"] [--friction "…"] [--followup
@@ -597,7 +601,10 @@ timing from `TaskEvents`, rework rounds = bounces into `blocked`, reviewers, and
 recorded `checks_run`), prompts a few judgment questions (what worked / what caused
 friction / follow-ups — `--worked`/`--friction`/`--followup` supply them from args,
 `--yes` runs fully non-interactive), and **writes a durable doc** at
-`docs/agents/audits/retro-<slug>.md`. `--file-tasks` opens each follow-up via
+`docs/agents/audits/retro-<slug>.md`, then **commits that doc to `release`**
+(best-effort, non-fatal, only when the doc is the *sole* uncommitted change —
+`Release::ArtifactCommit`) so the generated retro ships next round rather than
+becoming ship-preflight stash dirt. `--file-tasks` opens each follow-up via
 `bin/task create`. The gather + render rule is the pure, unit-tested
 `Release::Retro` (`.gather` / `.render` / `.write_doc`); the CLI reaches it through
 the same read-only `conductor` runner and writes the returned markdown to the local
