@@ -71,6 +71,23 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} div.whitespace-nowrap.overflow-hidden", minimum: 1
   end
 
+  test "the size badge leads the slug row instead of the footer meta row" do
+    task = Task.create!(title: "size badge polish card", stage: "submitted", po_size: "small")
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='task-slug-row'] [data-test='task-size-badge']",
+                  text: "S", count: 1
+    assert_select "#card-#{task.slug} [data-test='task-card-updated-row'] [data-test='task-size-badge']",
+                  count: 0
+
+    card_html = css_select("#card-#{task.slug}").first.to_html
+    size_index = card_html.index('data-test="task-size-badge"')
+    slug_code_index = card_html.index("<code")
+    assert_operator size_index, :<, slug_code_index
+  end
+
   test "the release-train badge is dropped from the board card" do
     task = Task.create!(title: "release train polish card", stage: "submitted",
                         metadata: { "devops" => { "release_train" => "2026-06-23-devops-intent-ui" } })
@@ -98,7 +115,7 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} a", text: "Prod", count: 1
   end
 
-  test "the activity box hugs the card with a slim top margin" do
+  test "the activity box follows the updated row with tight internal spacing" do
     task = Task.create!(title: "activity margin polish card", stage: "submitted")
     Activity.create!(task_slug: task.slug, activity_type: "handoff",
                      description: "Increment 2 (websocket live updates) handed off.")
@@ -106,8 +123,15 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    # the box sits tight under the crew (mt-1), not the old mt-2 gap
+    card_html = css_select("#card-#{task.slug}").first.to_html
+    updated_index = card_html.index('data-test="task-card-updated-row"')
+    activity_index = card_html.index('data-test="activity-box"')
+
+    assert_operator updated_index, :<, activity_index
+    # the box sits tight under the metadata row and trims header/message gap
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-1", count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-box'].py-1", count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-box'] div.mb-0.leading-none", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-2", count: 0
   end
 end

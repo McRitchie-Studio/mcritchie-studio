@@ -46,6 +46,9 @@
       as a normal flex item — no solid bg gradient, so nothing mismatches the card
       colour on hover. %>
   <div class="flex items-center gap-1 mt-0.5 mb-1.5" data-test="task-slug-row">
+    <% if task.po_size.present? %>
+      <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)" data-test="task-size-badge"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
+    <% end %>
     <code class="block text-[10px] font-mono text-muted whitespace-nowrap overflow-hidden min-w-0 flex-1"
           style="<%= right_fade_style %>"><%= task.slug %></code>
     <%= app_emoji_badge(task.devops_repositories, css: "shrink-0 text-xs leading-none") %>
@@ -89,23 +92,6 @@
     <p class="text-xs text-red-400/80 truncate mt-1"><%= task.error_message %></p>
   <% end %>
 
-  <% if latest_activity %>
-    <%# The activity type (+ note count) now rides INSIDE the message
-        box, top-left, as a small white label; the message scrolls on
-        a single line below it (fades at the overflow, steady scroll on
-        hover). %>
-    <div class="mt-1 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
-      <div class="flex items-center gap-1.5 mb-0.5">
-        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"><%= latest_activity.activity_type_label %></span>
-        <% if activity_count.to_i > 1 %>
-          <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
-        <% end %>
-      </div>
-      <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
-            class: "text-[11px] text-secondary" %>
-    </div>
-  <% end %>
-
   <%# Footer meta line: Local + PR links + relative time on a SINGLE line that
       fades on the right when it overflows the column (mirrors the slug row, so
       the timestamp never wraps). The type emojis — gem (💎) then bug (🐛) /
@@ -119,9 +105,6 @@
       <% end %>
       <% if task.devops? && (pr_url = task.devops_url("pr")) %>
         <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
-      <% end %>
-      <% if task.po_size.present? %>
-        <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
       <% end %>
       <span class="text-muted"><%= time_ago_in_words(task.created_at) %> ago</span>
     </div>
@@ -137,6 +120,20 @@
       </span>
     <% end %>
   </div>
+
+  <% if latest_activity %>
+    <%# Activity note follows the slug + updated rows so status metadata stays grouped. %>
+    <div class="mt-1 rounded-md border border-subtle bg-inset/60 px-2 py-1" data-test="activity-box">
+      <div class="flex items-center gap-1.5 mb-0 leading-none">
+        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"><%= latest_activity.activity_type_label %></span>
+        <% if activity_count.to_i > 1 %>
+          <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
+        <% end %>
+      </div>
+      <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
+            class: "text-[11px] leading-tight text-secondary" %>
+    </div>
+  <% end %>
 
   <%# Footer — archive + delete actions. Bleeds to the card edges with
       a slightly inset background; each tints on hover. @click.stop
