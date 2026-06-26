@@ -44,7 +44,7 @@ Alex (PM)
   ↔  Avi (PO) ── refine + assign ──> Devs (Carl, Shannon, Jasper)
                                           │ open PR (base release)
                                           ▼
-        Avi delegates review ──> 2 seniors (1 heavy + 1 light)
+        Avi delegates review ──> 2 seniors (1 primary + 1 light)
                                           │ 2 approvals
                                           ▼ merge into release
                           Steffon (Platform Engineer)
@@ -70,7 +70,7 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
 - **Avi** opens **review** as delegator — confirms product-acceptance, then picks
   **two seniors** from the pool {Shannon = UI · Carl = backend · Jasper = Web3 ·
   Steffon = DevOps/Platform · Alex = Documentation} by **domain fit + a logged,
-  seeded-per-task tiebreak**, assigning **one heavy (deep) and one light** review in
+  seeded-per-task tiebreak**, assigning **one primary (deep) and one light** review in
   parallel. The seed makes the pick reproducible — `bin/reviewer-select`'s preview
   matches the pair recorded on the `submitted→reviewed` event. **Two approvals
   merge the PR into `release`** (bias to action — `release` reverts cleanly).

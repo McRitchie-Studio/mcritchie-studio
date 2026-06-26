@@ -131,7 +131,7 @@ Avi owns PR intake and merge safety.
 
 ### Picking the two senior reviewers (`bin/reviewer-select`)
 
-Avi runs `bin/reviewer-select <task>` to choose the **1 HEAVY + 1 LIGHT** pair by
+Avi runs `bin/reviewer-select <task>` to choose the **1 PRIMARY + 1 LIGHT** pair by
 domain fit with a logged, seeded-per-task tiebreak. Three exclusions keep review
 honest, and **none of them needs a manual flag in the common case**:
 
@@ -148,7 +148,7 @@ honest, and **none of them needs a manual flag in the common case**:
   task (a board query; skipped in `--file` mode and degrades to a no-op if the
   board read fails).
 
-**Keep-rather-than-starve:** the pool is never shrunk below a HEAVY+LIGHT pair.
+**Keep-rather-than-starve:** the pool is never shrunk below a PRIMARY+LIGHT pair.
 If the builder + QA-owner + busy exclusions would leave too few candidates, the
 least-bad ones (best domain fit) are KEPT eligible and the decision/log flags
 them — a pair is always returned. Because `--busy` / a custom `--qa-owner` shift
@@ -206,7 +206,7 @@ cd /Users/alex/projects/mcritchie-studio
 bin/conductor                 # survey (default, READ-ONLY): the Deploy queue BY
                               # stage, the active RC + its members, brief prod health
 bin/conductor plan            # survey + the next deterministic action per stage
-bin/conductor plan --reviewers   # also preview the picked heavy+light pair
+bin/conductor plan --reviewers   # also preview the picked primary+light pair
 bin/conductor merge [--run]   # thin drive: bin/release merge <reviewed pipeline slugs>
 bin/conductor qa    [--run]   # thin drive: bin/release prepare (deploy origin/release to QA)
 ```
