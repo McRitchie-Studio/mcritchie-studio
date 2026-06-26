@@ -196,4 +196,70 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "👊", Studio::Enumeral.lookup("pokemon_type", "fighting").emoji
     assert_equal "🏔", Studio::Enumeral.lookup("pokemon_type", "ground").emoji
   end
+
+  # --- Primary type cache (assign_primary_types!) ---
+
+  test "assign_primary_types! caches each Pokémon's identifying (least-common) type" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "dragon",   color: "#6F35FC", rank: 1500)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying",   color: "#A98FF3", rank: 400)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "electric", color: "#F7D02C", rank: 300)
+    dragonite = Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: %w[dragon flying])
+    electrode = Pokemon.create!(dex: 101, name: "Electrode", slug: "electrode", types: %w[electric])
+
+    assert_equal 2, Pokemon.assign_primary_types!
+    assert_equal "dragon",   dragonite.reload.primary_type # rarer of dragon/flying
+    assert_equal "electric", electrode.reload.primary_type # single-type → itself
+  end
+
+  test "assign_primary_types! is idempotent — a second run writes nothing" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "dragon", color: "#6F35FC", rank: 1500)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", color: "#A98FF3", rank: 400)
+    Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: %w[dragon flying])
+
+    assert_equal 1, Pokemon.assign_primary_types!
+    assert_equal 0, Pokemon.assign_primary_types!
+  end
+
+  test "assign_primary_types! no-ops (returns 0) without seeded type ranks" do
+    Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: %w[dragon flying])
+    assert_equal 0, Pokemon.assign_primary_types!
+    assert_nil Pokemon.find_by!(slug: "dragonite").primary_type
+  end
+
+  test "signature reads the cached primary_type over re-ranking" do
+    # normal is the more common (lower rank) type; live ranking would pick flying.
+    Studio::Enumeral.create!(category: "pokemon_type", key: "normal", color: "#A8A77A", rank: 100)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", color: "#A98FF3", rank: 400)
+    pidgeot = Pokemon.create!(dex: 18, name: "Pidgeot", slug: "pidgeot", types: %w[normal flying])
+
+    # Force the cache to disagree with the live computation to prove it is read.
+    pidgeot.update_column(:primary_type, "normal")
+    assert_equal "normal",  pidgeot.signature_type
+    assert_equal "#A8A77A", pidgeot.signature_color
+    assert_equal "normal",  pidgeot.signature_enumeral.key
+
+    # Clearing the cache falls back to the live least-common pick (flying).
+    pidgeot.update_column(:primary_type, nil)
+    assert_equal "flying",  pidgeot.signature_type
+    assert_equal "#A98FF3", pidgeot.signature_color
+  end
+
+  test "primary type seed caches the identifying type for all 151 (behavior-preserving)" do
+    capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
+    capture_io { load Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s }
+    capture_io { load Rails.root.join("db/seeds/58_pokemon_primary_types.rb").to_s }
+
+    pokemon = Pokemon.order(:dex).to_a
+    assert_equal 151, pokemon.size
+    assert pokemon.all? { |p| p.primary_type.present? }, "every Pokémon should have a cached primary_type"
+
+    # Pidgeot is normal/flying; flying is rarer across the 151, so it identifies it
+    # — exactly what the live computation returned before the cache (no recolor).
+    pidgeot = Pokemon.find_by!(slug: "pidgeot")
+    assert_equal "flying", pidgeot.primary_type
+    assert_equal Studio::Enumeral.color_for("pokemon_type", "flying"), pidgeot.signature_color
+
+    # Re-running the cache (the seed's class method) changes nothing.
+    assert_equal 0, Pokemon.assign_primary_types!
+  end
 end

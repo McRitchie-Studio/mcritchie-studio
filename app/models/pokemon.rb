@@ -58,26 +58,60 @@ class Pokemon < ApplicationRecord
     Studio::Enumeral.color_for(TYPE_ENUMERAL_CATEGORY, type)
   end
 
-  # Among this Pokémon's types, the enumeral of its LEAST common one — the type
-  # with the highest commonality rank (rank counts up as a type gets rarer). This
-  # is the type that best identifies the Pokémon, so a dual-type wears the rarer
-  # side: Dragonite (dragon/flying) → dragon, not flying. Pass a prebuilt
-  # {key => Enumeral} map (Pokemon.type_enumerals) to rank many Pokémon without a
-  # query each; falls back to one query for a single Pokémon. Nil when no type is
-  # seeded.
+  # The RAW primary type — this Pokémon's LEAST common one, the type with the
+  # highest commonality rank (rank counts up as a type gets rarer). This is the
+  # type that best identifies the Pokémon, so a dual-type wears the rarer side:
+  # Dragonite (dragon/flying) → dragon, not flying. Computed live from the seeded
+  # ranks (ignores the primary_type cache); the first listed type when none is
+  # seeded. This is the source of truth .assign_primary_types! persists; the reader
+  # methods below prefer that cache. Pass a prebuilt {key => Enumeral} map
+  # (Pokemon.type_enumerals) to rank many Pokémon without a query each.
+  def computed_primary_type(by_key = nil)
+    by_key ||= self.class.type_enumerals
+    types.filter_map { |type| by_key[type] }.max_by { |enumeral| enumeral.rank || -1 }&.key ||
+      types.first
+  end
+
+  # Compute and CACHE every Pokémon's primary_type (its identifying least-common
+  # type) onto the column, so color lookups read a value instead of re-ranking on
+  # each call. Idempotent and re-runnable: call it again after adding Pokémon (or
+  # changing the type ranks) to refresh the cache — only rows whose value actually
+  # changes are written. Requires the pokemon_type enumerals (ranks) to be seeded;
+  # without them every Pokémon would fall back to its first-listed type, so it
+  # no-ops (returns 0) when the enumeral table is empty. Returns the rows updated.
+  def self.assign_primary_types!
+    by_key = type_enumerals
+    return 0 if by_key.empty?
+
+    updated = 0
+    find_each do |pokemon|
+      key = pokemon.computed_primary_type(by_key)
+      next if key.blank? || pokemon.primary_type == key
+
+      pokemon.update_column(:primary_type, key)
+      updated += 1
+    end
+    updated
+  end
+
+  # The enumeral representing this Pokémon — its primary (identifying) type's
+  # enumeral, the one its color + emoji come from. Reads the cached primary_type
+  # when present (a single lookup, no ranking); falls back to the live least-common
+  # computation for rows not yet backfilled. Pass Pokemon.type_enumerals to avoid a
+  # query per Pokémon. Nil when the primary type has no seeded enumeral.
   def signature_enumeral(by_key = nil)
     by_key ||= self.class.type_enumerals
-    types.filter_map { |type| by_key[type] }.max_by { |enumeral| enumeral.rank || -1 }
+    by_key[primary_type.presence || computed_primary_type(by_key)]
   end
 
-  # The least-common type key (e.g. "dragon" for Dragonite); the first listed type
-  # when none is seeded.
+  # The least-common ("identifying") type key — the cached primary_type, or the
+  # live computation when not yet backfilled.
   def signature_type(by_key = nil)
-    signature_enumeral(by_key)&.key || types.first
+    primary_type.presence || computed_primary_type(by_key)
   end
 
-  # The color that represents this Pokémon — its least-common type's color. Nil
-  # when no type is seeded, so callers fall back to their own default.
+  # The color that represents this Pokémon — its primary type's color. Nil when
+  # that type has no seeded enumeral, so callers fall back to their own default.
   def signature_color(by_key = nil)
     signature_enumeral(by_key)&.color
   end
