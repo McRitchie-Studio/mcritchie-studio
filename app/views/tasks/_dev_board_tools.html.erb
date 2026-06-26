@@ -13,6 +13,9 @@
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Move</button>
     <button type="button" @click="post('delete')" :disabled="busy"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-red-300 disabled:opacity-40 transition">Delete</button>
+    <button type="button" @click="post('ship_release')" :disabled="busy"
+            title="Ship the active release → Last Release bursts in, Next Release resets"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-mint-300 disabled:opacity-40 transition">Ship</button>
   </div>
   <script>
     // x-data factory — defined inline before the deferred Alpine CDN runs.

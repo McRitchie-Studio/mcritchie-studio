@@ -48,4 +48,20 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
       assert_response :forbidden
     end
   end
+
+  test "[integration] ship_release ships the active release" do
+    rel = Release.open!
+    post dev_board_ship_release_path
+    assert_response :no_content
+    assert_equal "shipped", rel.reload.state
+    assert_nil Release.current, "shipping the active release clears the Next slot"
+  end
+
+  test "[integration] ship_release opens and ships a fixture when none is active" do
+    assert_nil Release.current
+    assert_difference -> { Release.where(state: "shipped").count }, 1 do
+      post dev_board_ship_release_path
+    end
+    assert_response :no_content
+  end
 end

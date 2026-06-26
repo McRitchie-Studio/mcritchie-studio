@@ -34,8 +34,13 @@
         23m" while active, "took 18m" once shipped. Mirrors the per-task mascot
         chip. Omitted entirely when there is no mascot and no timing. %>
     <% mascot = rel.mascot %>
-    <% timing = release_timing_label(rel) %>
-    <% if mascot || timing %>
+    <%# Active release ticks LIVE down to the second ("in progress · 7m 23s") so the
+        operator watches the clock climb — data-since drives the _release_ticker JS,
+        and the server-rendered value avoids a flash before the first tick. A shipped
+        release shows the frozen "took Xm" (no tick). %>
+    <% ticking = rel.active? && rel.created_at.present? %>
+    <% static_timing = ticking ? nil : release_timing_label(rel) %>
+    <% if mascot || ticking || static_timing %>
       <div class="mt-2 flex items-center gap-2 text-xs <%= meta_color %>" data-test="release-mascot-row">
         <% if mascot %>
           <span class="flex items-center gap-1.5 min-w-0" data-test="release-mascot" title="Conductor: <%= mascot.name %>">
@@ -45,7 +50,11 @@
             <span class="font-medium truncate" style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= mascot.name %></span>
           </span>
         <% end %>
-        <% if timing %><span class="shrink-0" data-test="release-timing"><%= timing %></span><% end %>
+        <% if ticking %>
+          <span class="shrink-0 tabular-nums" data-test="release-timing" data-release-ticker data-since="<%= rel.created_at.to_i %>" data-prefix="in progress · ">in progress · <%= release_elapsed_clock(rel) %></span>
+        <% elsif static_timing %>
+          <span class="shrink-0" data-test="release-timing"><%= static_timing %></span>
+        <% end %>
       </div>
     <% end %>
     <%# Second row: release meta — task count, QA/Prod links, deployed SHA. %>

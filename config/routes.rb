@@ -45,9 +45,10 @@ Rails.application.routes.draw do
   # controller re-checks Rails.env.local? as defense in depth. See Dev::BoardController.
   if Rails.env.local?
     namespace :dev do
-      post "board/generate", to: "board#generate", as: :board_generate
-      post "board/move",     to: "board#move",     as: :board_move
-      post "board/delete",   to: "board#delete",   as: :board_delete
+      post "board/generate",     to: "board#generate",     as: :board_generate
+      post "board/move",         to: "board#move",         as: :board_move
+      post "board/delete",       to: "board#delete",       as: :board_delete
+      post "board/ship_release", to: "board#ship_release", as: :board_ship_release
     end
   end
   # Public link hub — general (non-admin) destinations. The admin counterpart
