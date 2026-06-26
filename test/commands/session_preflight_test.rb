@@ -112,6 +112,21 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+  def test_live_task_show_contract_reports_latest_feedback
+    write_fake_task_cli(latest_activity: {
+      "activity_type" => "qa_feedback",
+      "created_at" => "2026-06-26T18:55:11Z",
+      "description" => "Live board feedback should be visible."
+    })
+
+    out, err, status = run_preflight("add-session-preflight", "--no-gh", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal "qa_feedback", report.dig("latest_feedback", "activity_type")
+    assert_equal "Live board feedback should be visible.", report.dig("latest_feedback", "description")
+  end
+
   private
 
   def run_preflight(*args, env: {})
@@ -124,6 +139,11 @@ class SessionPreflightTest < Minitest::Test
 
   def write_task(stage: "building", devops: default_devops, latest_activity: nil)
     path = File.join(@sandbox, "task.json")
+    File.write(path, "#{JSON.pretty_generate("data" => task_payload(stage: stage, devops: devops, latest_activity: latest_activity))}\n")
+    path
+  end
+
+  def task_payload(stage: "building", devops: default_devops, latest_activity: nil)
     payload = {
       "slug" => "add-session-preflight",
       "title" => "Add Session Preflight",
@@ -132,8 +152,20 @@ class SessionPreflightTest < Minitest::Test
       "task_url" => "https://mcritchie.studio/tasks/add-session-preflight"
     }
     payload["latest_activity"] = latest_activity if latest_activity
-    File.write(path, "#{JSON.pretty_generate(payload)}\n")
-    path
+    payload
+  end
+
+  def write_fake_task_cli(latest_activity:)
+    write_file("bin/task", <<~RUBY)
+      #!/usr/bin/env ruby
+      if ARGV == ["show", "add-session-preflight", "--json"]
+        puts #{JSON.generate("data" => task_payload(latest_activity: latest_activity)).inspect}
+      else
+        warn "unexpected task args: \#{ARGV.join(" ")}"
+        exit 1
+      end
+    RUBY
+    File.chmod(0o755, File.join(@repo, "bin", "task"))
   end
 
   def default_devops
