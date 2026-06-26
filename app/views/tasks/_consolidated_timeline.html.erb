@@ -80,9 +80,11 @@
           </div>
 
           <%# 2 — crew: one discrete column per agent — avatar OVER name (+ review
-              weight), each column center-justified. A review pair reads as the two
-              avatar-over-name columns side by side, centered as a group. %>
-          <div class="flex flex-wrap items-start justify-center gap-x-6 gap-y-3 mb-3 min-h-[4rem]" data-test="timeline-crew">
+              weight), each column center-justified. A review PAIR splits into two
+              equal 50% columns, each agent centered in its own half; a single agent
+              stays one centered column. %>
+          <% crew_layout = block.agents.size == 2 ? "grid grid-cols-2" : "flex flex-wrap justify-center" %>
+          <div class="<%= crew_layout %> items-start gap-x-4 gap-y-3 mb-3 min-h-[4rem]" data-test="timeline-crew" data-crew-count="<%= block.agents.size %>">
             <% if block.agents.present? %>
               <% block.agents.each do |entry| %>
                 <div class="flex flex-col items-center gap-1.5 min-w-0 text-center" data-test="timeline-crew-member"

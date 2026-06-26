@@ -676,6 +676,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # Change 3: the senior review pair renders as TWO side-by-side columns in one row.
     pair = css_select("[data-test='timeline-block'][data-stage='reviewed'] [data-test='timeline-crew-member']")
     assert_equal 2, pair.size, "the review pair shows two avatar-over-name columns side by side"
+    # Change 3b: a TWO-agent crew splits into equal 50% columns (grid-cols-2), each
+    # agent centered in its own half; a single-agent stage stays one centered column.
+    assert_select "[data-test='timeline-block'][data-stage='reviewed'] [data-test='timeline-crew'].grid.grid-cols-2", 1
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew'].grid-cols-2", 0
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew'].justify-center", 1
   end
 
   test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do
