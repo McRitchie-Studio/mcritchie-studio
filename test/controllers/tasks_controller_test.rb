@@ -663,6 +663,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes css_select(inprogress).to_s, "Avi", "the live ship card is owned by Avi"
   end
 
+  test "[component] timeline centers the transition badges and stacks crew avatar-over-name" do
+    task = seed_deploy_crew_task
+
+    get task_path(task.slug)
+    assert_response :success
+
+    # Change 1: the from → to stage badges are center-justified.
+    assert_select "[data-test='timeline-transition'].justify-center", minimum: 1
+    # Change 2: each crew member is an avatar-OVER-name centered column.
+    assert_select "[data-test='timeline-crew-member'].flex-col.items-center", minimum: 1
+    # Change 3: the senior review pair renders as TWO side-by-side columns in one row.
+    pair = css_select("[data-test='timeline-block'][data-stage='reviewed'] [data-test='timeline-crew-member']")
+    assert_equal 2, pair.size, "the review pair shows two avatar-over-name columns side by side"
+  end
+
   test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do
     # A shipped task whose Deploy moves were conductor-driven (blank actor) and that
     # predates the two-senior model (no reviewers metadata): the consolidated timeline
