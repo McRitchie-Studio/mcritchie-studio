@@ -269,4 +269,20 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='crew-live']", count: 1 # the active claim DOES tick
     end
   end
+
+  test "a blocked card keeps a build crew face and blocked marker" do
+    Pokemon.create!(dex: 52, name: "Meowth", slug: "meowth", generation: 1,
+                    sprite_url: "https://example.test/meowth-sprite.png")
+    task = Task.create!(title: "blocked crew marker", stage: "blocked",
+                        metadata: { "devops" => { "mascot" => "meowth" } })
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#dropzone-building #card-#{task.slug}[data-stage='blocked']" do
+      assert_select "[data-test='stage-agent-avatars'].grid-cols-3", count: 1
+      assert_select "img[src='https://example.test/meowth-sprite.png']"
+      assert_select "[data-test='crew-blocked']", count: 1
+    end
+  end
 end

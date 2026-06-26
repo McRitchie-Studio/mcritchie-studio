@@ -220,6 +220,19 @@ Task.create!(
   metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
 )
 
+# Same blocked transition, but with the card still visible in the Building
+# dropzone. This guards the same-dropzone duplicate-id path: a delayed animated
+# remove must not delete the freshly prepended blocked replacement card.
+Task.create!(
+  title: "Live blocked visible demo",
+  slug: "live-blocked-visible-demo",
+  description: "Fixture for the /deployments visible-card building→blocked round-trip.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+
 # Same regression, but on the Build board. /tasks used to render the card on page
 # load but never subscribed to the live stream, so a building→blocked move in
 # another session left the open board stale.

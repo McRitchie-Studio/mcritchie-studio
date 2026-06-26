@@ -37,6 +37,19 @@
     const collapsing = new Map();     // cardId → Promise (resolves when its collapse-out finishes)
     const pendingAction = new Map();  // cardId → 'prepend' | 'append' | 'replace' (the just-seen stream)
 
+    function followingStreamCardIds(stream) {
+      const ids = [];
+      let next = stream.nextElementSibling;
+      while (next && next.tagName && next.tagName.toLowerCase() === "turbo-stream") {
+        const template = next.querySelector("template");
+        if (template) {
+          template.content.querySelectorAll(".kanban-card").forEach((card) => ids.push(card.id));
+        }
+        next = next.nextElementSibling;
+      }
+      return ids;
+    }
+
     // "#78C850" → "120 200 80" (for `rgb(var() / a)`); null if unparseable.
     function hexToRgb(hex) {
       const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
@@ -204,6 +217,16 @@
       if (action === "remove") {
         const removeNow = event.detail.render;
         event.detail.render = (el) => {
+          // A move arrives as one payload: remove old card, then prepend the
+          // freshly rendered replacement with the same id. Delaying the remove
+          // would let it delete that replacement, so move removes run immediately.
+          if (followingStreamCardIds(stream).includes(target)) {
+            collapsing.set(target, Promise.resolve());
+            removeNow(el);
+            setTimeout(() => collapsing.delete(target), 1200);
+            return;
+          }
+
           const p = collapseOut(document.getElementById(target), () => removeNow(el));
           collapsing.set(target, p);
           setTimeout(() => collapsing.delete(target), 1200); // not a move if no prepend follows
