@@ -161,18 +161,28 @@ class ApplicationHelperTest < ActionView::TestCase
     rel = Release.open!
     assert_equal %i[active pending pending pending pending],
                  release_tracker_steps(rel).map { |step| step[:state] }
+    assert_equal [ "Testing", "Assembling", "Deploying", "Testing", "Deploying" ],
+                 release_tracker_steps(rel).map { |step| step[:label] }
+    assert_equal %i[active pending pending pending pending],
+                 release_tracker_steps(rel).map { |step| step[:connector_state] }
 
     tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
     assert_equal %i[complete active pending pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
+    assert_equal [ "Tested", "Assembling", "Deploying", "Testing", "Deploying" ],
+                 release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.update!(qa_url: "https://qa.mcritchie.studio")
     assert_equal %i[complete complete active pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
+    assert_equal [ "Tested", "Assembled", "Deploying", "Testing", "Deploying" ],
+                 release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.assemble!
     assert_equal %i[complete complete complete active pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
+    assert_equal [ "Tested", "Assembled", "Live on QA", "Testing", "Deploying" ],
+                 release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.reopen!
     assert_equal %i[complete complete active pending pending],
@@ -183,10 +193,14 @@ class ApplicationHelperTest < ActionView::TestCase
     rel.update!(confirmed_at: Time.current)
     assert_equal %i[complete complete complete complete active],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
+    assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deploying" ],
+                 release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.update!(state: "shipped")
     assert_equal %i[complete complete complete complete complete],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
+    assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deployed" ],
+                 release_tracker_steps(rel.reload).map { |step| step[:label] }
   end
 
   test "[component] _release_summary renders the current release tracker stages" do
@@ -199,13 +213,17 @@ class ApplicationHelperTest < ActionView::TestCase
 
     assert_select "[data-test='release-tracker']"
     assert_select "[data-test='release-tracker-step']", 5
-    %w[Merging Testing Assembling Confirming Deploying].each do |label|
+    [ "Tested", "Assembled", "Live on QA", "Testing", "Deploying" ].each do |label|
       assert_select "[data-test='release-tracker-label']", text: label
     end
+    assert_select "[data-test='release-tracker-label']", { text: /✅/, count: 0 }
+    assert_select "[data-test='release-tracker-label']", { text: "Merging", count: 0 }
+    assert_select "[data-test='release-tracker-label']", { text: "Confirming", count: 0 }
     assert_select "[data-test='release-tracker-step'][data-state='complete']", 3
     assert_select "[data-test='release-tracker-step'][data-state='active'][data-stage='confirming']"
     assert_select "[data-test='release-tracker-step'][data-state='active'] [aria-current=?]", "step"
     assert_select "[data-test='release-tracker-step'][data-state='active'] [data-test='release-tracker-label'].text-amber-700.dark\\:text-amber-200"
+    assert_select "[data-test='release-tracker-step'][data-state='active'] [data-test='release-tracker-connector'][data-state='active'].animate-pulse"
   end
 
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
