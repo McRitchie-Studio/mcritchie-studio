@@ -208,7 +208,11 @@ core of it for **zero effort**:
   only action required; the duration is measured server-side, never passed.
 - **Optional (agent-reported usage).** To attribute model cost to the work you
   did in the stage you're leaving, pass it on the move. It is **best-effort and
-  per-transition** — null when omitted, and for non-agent moves.
+  per-transition** — null when omitted, and for non-agent moves. `bin/task`
+  auto-captures this usage for Claude (`CLAUDE_CODE_SESSION_ID`) and Codex
+  (`CODEX_THREAD_ID`) sessions from the local transcript when explicit usage
+  flags are absent; missing transcripts or unpriced models degrade to the
+  deterministic spine only.
 
 ```bash
 bin/task move <slug> submitted \
@@ -357,7 +361,7 @@ bin/task show <slug>
 bin/task create --title T [--kind K] [--repo R ...] [--risk R ...] \
                 [--accept "..." ...] [--test "..." ...] [--agent A]
 bin/task update <slug> --branch B --pr-url U   # merges into existing devops
-bin/task move <slug> <stage>                   # any of the 8 two-workflow stages
+bin/task move <slug> <stage>                   # bare Claude/Codex moves auto-capture usage
 bin/task move <slug> submitted \               # optional per-transition usage →
   --model M --tokens-in N --tokens-out N --cost D --actor A   #   recorded on the TaskEvent
 ```

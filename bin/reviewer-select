@@ -77,14 +77,24 @@ SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 # reviewed` in the same session reads this baseline. Idempotent + best-effort:
 # a failure never affects the printed reviewer pick.
 def seed_review_usage_baseline(slug)
-  session = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  session, provider = agent_session_identity
   return if session.empty? || slug.to_s.strip.empty?
 
   projects = (d = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(d)
   dir = (u = ENV["TASK_USAGE_DIR"].to_s.strip).empty? ? File.join(projects, ".agents", "task-usage") : u
-  TaskUsageBaseline.new(session: session, dir: dir).seed(slug)
+  TaskUsageBaseline.new(session: session, provider: provider, dir: dir).seed(slug)
 rescue StandardError
   nil
+end
+
+def agent_session_identity
+  claude = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  return [claude, "claude"] unless claude.empty?
+
+  codex = ENV["CODEX_THREAD_ID"].to_s.strip
+  return [codex, "codex"] unless codex.empty?
+
+  ["", "claude"]
 end
 
 def warn!(msg)
