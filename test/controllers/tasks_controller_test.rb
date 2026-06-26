@@ -630,6 +630,39 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes timeline, "about 2 hours"
   end
 
+  test "[component] task show's live assembled card reads Assembled -> Shipped (Avi), not a no-op" do
+    Agent.create!(name: "Shannon", slug: "shannon")
+    Agent.create!(name: "Carl", slug: "carl")
+    Agent.create!(name: "Steffon", slug: "steffon")
+    Agent.create!(name: "Avi", slug: "avi")
+
+    task = Task.create!(title: "Live QA timeline task", stage: "assembled")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 2.hours.ago, seconds_in_from: 600,
+                      metadata: { "reviewers" => [
+                        { "slug" => "shannon", "weight" => "heavy" },
+                        { "slug" => "carl", "weight" => "light" }
+                      ] })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 1.hour.ago, seconds_in_from: 1800, actor: "steffon")
+    # The standard QA window: Steffon's QA intent rides toward `shipped` (qa-marked),
+    # re-homed to the assembled LANE on the board. The /tasks/:id timeline must frame
+    # it as the real transition — Assembled → Shipped, owned by Avi — never the old
+    # nonsensical "Assembled → Assembled" no-op.
+    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+
+    get task_path(task.slug)
+    assert_response :success
+
+    inprogress = "[data-test='timeline-block'][data-in-progress='true']"
+    assert_select "#{inprogress}[data-stage='shipped']", count: 1, # badge target = shipped, not assembled
+                  message: "the live assembled card targets the shipped stage"
+    assert_select "#{inprogress}[data-stage='assembled']", count: 0,
+                  message: "no Assembled → Assembled no-op block"
+    assert_includes css_select(inprogress).to_s, "Avi", "the live ship card is owned by Avi"
+  end
+
   test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do
     # A shipped task whose Deploy moves were conductor-driven (blank actor) and that
     # predates the two-senior model (no reviewers metadata): the consolidated timeline
