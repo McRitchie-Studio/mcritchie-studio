@@ -40,7 +40,11 @@ Both News and Content badges now resolve to the shared engine palette introduced
 | `stage-shipped` | emerald | Content.posted |
 | `stage-closed` | gray | News.archived / Content.reviewed |
 
-Task stage badges use the existing scheme names (blue=new, yellow=queued, mint=in_progress, green=done, red=failed, gray=archived) — Task is a workflow, not a pipeline, and isn't in the shared palette.
+Task stage badges use `ApplicationHelper#stage_scheme` over the live
+`Task::STAGES` workflow: `designed` renders as `info`, `submitted` as
+`warning`, `building`/`reviewed`/`assembled`/`shipped` as `success`,
+`blocked` as `danger`, and `archived` as the neutral fallback. Task is a
+workflow, not a pipeline, and is not in the News/Content shared palette.
 
 ## Button System
 

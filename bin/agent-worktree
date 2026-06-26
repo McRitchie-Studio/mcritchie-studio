@@ -1624,14 +1624,12 @@ def git_worktree_dirs(repo)
   ok, out, = capture_status("git", "-C", repo, "worktree", "list", "--porcelain")
   return [] unless ok
 
-  dirs = []
-  out.lines.each do |line|
+  out.lines.each_with_object([]) do |line, dirs|
     line = line.chomp
     next unless line.start_with?("worktree ")
 
     dirs << canonical_path(line.delete_prefix("worktree "))
   end
-  dirs
 end
 
 # Pure reconciliation (set difference): any git-registered worktree that is

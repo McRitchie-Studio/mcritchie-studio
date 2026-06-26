@@ -54,7 +54,10 @@ If `false`: the lane is held. Your task transitions to `lane_queued` status. Cha
 
 ### Releasing
 
-On task done/failed, advisory locks release automatically when the session closes. Belt-and-suspenders: also call `pg_advisory_unlock(hashtext('backend_migration'))` explicitly on the transition out.
+On task `shipped`/`blocked`/`archived`, advisory locks release automatically when
+the session closes. Belt-and-suspenders: also call
+`pg_advisory_unlock(hashtext('backend_migration'))` explicitly on the transition
+out.
 
 ## Carl's captaincy
 

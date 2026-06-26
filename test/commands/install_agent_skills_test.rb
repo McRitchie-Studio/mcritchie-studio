@@ -17,6 +17,7 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require "json"
 
 class InstallAgentSkillsTest < Minitest::Test
   ROOT     = File.expand_path("../..", __dir__)
@@ -35,9 +36,9 @@ class InstallAgentSkillsTest < Minitest::Test
   end
 
   # Run bin/install-agent-docs with HOME + PROJECTS_DIR pinned into the sandbox.
-  def run_installer(mode)
+  def run_installer(mode, env = {})
     Open3.capture3(
-      { "HOME" => @home, "PROJECTS_DIR" => @projects },
+      { "HOME" => @home, "PROJECTS_DIR" => @projects }.merge(env),
       SCRIPT, mode
     )
   end
@@ -52,6 +53,14 @@ class InstallAgentSkillsTest < Minitest::Test
 
   def installed_wraps
     [installed_claude_wrap, installed_codex_wrap]
+  end
+
+  def installed_settings
+    File.join(@home, ".claude", "settings.json")
+  end
+
+  def jq_available?
+    system("command -v jq >/dev/null 2>&1")
   end
 
   # ── unit ──────────────────────────────────────────────────────────────────
@@ -155,5 +164,49 @@ class InstallAgentSkillsTest < Minitest::Test
       refute status.success?, "check must fail when a tracked skill is missing locally"
       assert_match(%r{ERROR:.*skills/wrap/SKILL\.md}, err)
     end
+  end
+
+  def test_integration_global_hooks_use_runtime_root_override
+    skip "jq is required for settings hook install" unless jq_available?
+
+    runtime_root = "/stable/mcritchie-studio"
+    _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => runtime_root)
+
+    assert status.success?, "install failed: #{err}"
+    settings = JSON.parse(File.read(installed_settings))
+    assert_equal "#{runtime_root}/bin/statusline", settings.dig("statusLine", "command")
+    commands = settings.fetch("hooks").fetch("SessionStart").flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
+    assert_includes commands, "#{runtime_root}/bin/task session-mascot"
+    refute commands.any? { |command| command.include?("/.worktrees/") }
+  end
+
+  def test_integration_install_prunes_stale_worktree_session_hooks
+    skip "jq is required for settings hook install" unless jq_available?
+
+    FileUtils.mkdir_p(File.dirname(installed_settings))
+    File.write(installed_settings, JSON.pretty_generate(
+      "hooks" => {
+        "SessionStart" => [
+          {
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => "/repo/.worktrees/docs-gate-cleanup/bin/task session-mascot"
+              }
+            ]
+          }
+        ]
+      }
+    ))
+
+    runtime_root = "/stable/mcritchie-studio"
+    _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => runtime_root)
+
+    assert status.success?, "install failed: #{err}"
+    commands = JSON.parse(File.read(installed_settings)).fetch("hooks").fetch("SessionStart").flat_map do |entry|
+      entry.fetch("hooks").map { |hook| hook.fetch("command") }
+    end
+    refute commands.any? { |command| command.include?("/.worktrees/") }
+    assert_includes commands, "#{runtime_root}/bin/task session-mascot"
   end
 end

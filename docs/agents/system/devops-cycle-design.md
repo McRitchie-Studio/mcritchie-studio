@@ -343,11 +343,11 @@ Change thresholds in `config/release_builder.yml`, then run
 decides QA assembly autonomy; `bin/release ship` remains separately
 operator-gated.
 
-### 1.4 Kickoff commands — board → Claude session
+### 1.4 Kickoff commands — board → agent session
 
 The `/deployments` board and `/stages` page surface a short copy-paste command
 per DevOps stage (source of truth: `ApplicationHelper#devops_kickoffs`). Pasted
-into a Claude session run from `/Users/alex/projects`, each kicks off that
+into an agent session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
 each command to a deterministic runbook. The same `devops_kickoffs` source also

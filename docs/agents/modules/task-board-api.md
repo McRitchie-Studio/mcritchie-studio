@@ -92,11 +92,7 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `POST` | `/tasks` | Create a task |
 | `PATCH`/`PUT` | `/tasks/:slug` | Update a task |
 | `DELETE` | `/tasks/:slug` | Delete a task |
-| `POST` | `/tasks/:slug/queue` | Stage → `queued` |
-| `POST` | `/tasks/:slug/start` | Stage → `in_progress` |
-| `POST` | `/tasks/:slug/complete` | Stage → `done` (accepts `result`) |
-| `POST` | `/tasks/:slug/fail_task` | Stage → `failed` (accepts `error_message`) |
-| `POST` | `/tasks/:slug/archive` | Stage → `archived` |
+| `POST` | `/tasks/:slug/intent` | Record live agent intent for a target stage |
 
 `GET /tasks` accepts `?stage=<stage>` and `?agent_slug=<slug>` filters (plus
 `?page` / `?per_page`) and returns `{ "data": [...], "meta": { page, per_page,
@@ -186,17 +182,14 @@ terminal context and PR bodies can lead from the task record.
 
 ## Stages
 
-Nine stages (`Task::STAGES`):
-`new` → `queued` → `in_progress` → `pr_review` → `qa_review` → `prod_ready` →
-`done`, plus `failed` and `archived`.
+Eight stages (`Task::STAGES`):
+`designed` → `building` → `submitted` → `reviewed` → `assembled` → `shipped`,
+plus `blocked` and `archived`.
 
-Only five have transition endpoints: `queue` (queued), `start` (in_progress),
-`complete` (done), `fail_task` (failed), `archive` (archived). **There is no
-endpoint for `pr_review`, `qa_review`, or `prod_ready`** — move into those with a
-raw update:
+There are no named transition endpoints. Move stages with a raw update:
 
 ```
-PATCH /api/v1/tasks/:slug   { "stage": "pr_review" }
+PATCH /api/v1/tasks/:slug   { "stage": "submitted" }
 ```
 
 Stage is also directly settable on create/update; transitions are **not**
@@ -301,12 +294,12 @@ api POST /api/v1/tasks '{
 }'   # -> returns the created task with slug "task-<hex>"
 
 # 2. Claim it (creates/enters the worktree first, then:)
-api POST /api/v1/tasks/task-XXXX/start
+api PATCH /api/v1/tasks/task-XXXX '{"stage": "building"}'
 
-# 3. Move to PR review — NO transition endpoint, so PATCH the stage and
+# 3. Submit for review — PATCH the stage and
 #    RE-SEND the full devops (update overwrites it) plus branch + pr_url:
 api PATCH /api/v1/tasks/task-XXXX '{
-  "stage": "pr_review",
+  "stage": "submitted",
   "devops": {
     "kind": "feature",
     "worktree_slug": "admin-users-sticky-header",
@@ -320,11 +313,12 @@ api PATCH /api/v1/tasks/task-XXXX '{
   }
 }'
 
-# 4. Avi merges + deploys to QA, then moves it on:
-api PATCH /api/v1/tasks/task-XXXX '{"stage": "qa_review"}'   # devops preserved (no devops param)
+# 4. Review/merge/QA progression uses the same update path:
+api PATCH /api/v1/tasks/task-XXXX '{"stage": "reviewed"}'
+api PATCH /api/v1/tasks/task-XXXX '{"stage": "assembled"}'   # devops preserved (no devops param)
 
-# 5. Done (after approved deploy + post-deploy check):
-api POST /api/v1/tasks/task-XXXX/complete '{"result": {"summary": "shipped", "production_url": "..."}}'
+# 5. Shipped (after approved deploy + post-deploy check):
+api PATCH /api/v1/tasks/task-XXXX '{"stage": "shipped"}'
 
 # 6. Production release notes (dry-run first, then repeat without dry_run):
 api POST /api/v1/release_notes '{

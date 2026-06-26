@@ -15,7 +15,7 @@ Tasks separate planned checks from completed checks:
   QA, and release handoff.
 
 Feature agents fill `test_plan` before coding and update `checks_run` before
-moving to `pr_review`. Avi and release conductors append QA and production
+moving to `submitted`. Avi and release conductors append QA and production
 checks to `checks_run` as each stage completes.
 
 ## Test Lanes

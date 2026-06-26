@@ -2,7 +2,7 @@
 
 McRitchie Studio is the central task management and orchestration hub for the McRitchie AI agent system. It provides:
 
-1. **Task Pipeline** — Create, assign, track, and transition tasks through stages (new → queued → in_progress → done/failed → archived)
+1. **Task Pipeline** — Create, assign, track, and transition tasks through stages (designed → building → submitted → reviewed → assembled → shipped, plus blocked/archived)
 2. **Agent Registry** — Monitor agent status, skills, activity, and usage
 3. **Activity Logging** — Track all agent actions for auditability and debugging
 4. **Usage Tracking** — Monitor API costs, token consumption, and task throughput per agent

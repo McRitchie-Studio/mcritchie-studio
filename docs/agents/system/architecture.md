@@ -25,8 +25,8 @@ All foreign keys use slug strings (not integer IDs).
 
 ### Task Pipeline
 ```
-new → queued → in_progress → done
-                            → failed
+designed → building → submitted → reviewed → assembled → shipped
+                     ↘ blocked
          any stage → archived
 ```
 
@@ -34,7 +34,8 @@ new → queued → in_progress → done
 
 JSON API at `/api/v1/` for programmatic agent access:
 - `GET/POST /api/v1/tasks` — List and create tasks
-- `POST /api/v1/tasks/:slug/queue|start|complete|fail_task` — Stage transitions
+- `PATCH /api/v1/tasks/:slug` — Stage transitions through the `stage` field
+- `POST /api/v1/tasks/:slug/intent` — Live agent intent for a target stage
 - `POST /api/v1/release_notes` — Format and send canonical Discord Release Notes
 - `GET/PATCH /api/v1/agents/:slug` — Read and update agent status
 - `POST /api/v1/activities` — Log agent activity

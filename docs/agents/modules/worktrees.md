@@ -41,7 +41,7 @@ When a new agent session starts actual implementation work:
    `bin/agent-worktree bind-task <app> <task-slug> <task-record-slug-or-url>`
    so `whereami`, terminal context, snapshots, and PR bodies can lead from the
    task record.
-7. Move the task to `in_progress`.
+7. Move the task to `building`.
 8. Run `bin/agent-worktree up <app> <task-slug>` when a browser or local URL is
    needed.
 9. Make edits only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
@@ -50,7 +50,7 @@ When a new agent session starts actual implementation work:
    packet.
 12. Update the task with branch, PR URL, local URL, `checks_run`, and any
    changed acceptance criteria. Add a task conversation `handoff` note with the
-   change summary, verification, and review focus. Move it to `pr_review` when
+   change summary, verification, and review focus. Move it to `submitted` when
    the PR is ready for Avi.
 13. Return the task URL first, then the PR URL, branch, worktree path, local
    URL, tests, and PR/QA recommendation in the handoff. Do not merge to `main`

@@ -2,12 +2,12 @@
 #
 # The adaptive testing pyramid, as data. Maps a task's `devops.shape` → the test
 # tiers that MUST be green (recorded in `devops.checks_run`) before the task may
-# enter `pr_review`, plus the metadata the task must carry. `bin/dor-check`
+# enter `submitted`, plus the metadata the task must carry. `bin/dor-check`
 # reads this file.
 #
-# Tiers map onto the pyramid in docs/agents/system/devops-cycle.md (§3) and the
+# Tiers map onto the pyramid in docs/agents/system/devops-cycle-design.md (§3) and the
 # lanes in config/devops_test_suites.yml. `manual` (operator visual acceptance)
-# is NOT a DoR tier — it is gated at the release QA stop, not before pr_review.
+# is NOT a DoR tier — it is gated at the release QA stop, not before `submitted`.
 #
 # CONVENTION — tag each satisfying `checks_run` line with its tier in leading
 # square brackets so the gate can credit it deterministically:

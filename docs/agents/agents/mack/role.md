@@ -22,8 +22,8 @@ Mack is the reliable workhorse of the system. Handles data scraping, processing,
 - Database Management
 
 ## Workflow
-1. Check for queued tasks assigned to me
+1. Check for designed tasks assigned to me
 2. Start the task, log activity
 3. Execute the work with progress logging
-4. Report results and mark task complete
-5. If blocked, fail the task with a clear error message
+4. Report results and move the task to submitted
+5. If blocked, move the task to blocked with clear feedback

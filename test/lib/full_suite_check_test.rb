@@ -45,6 +45,14 @@ class FullSuiteCheckTest < Minitest::Test
     assert_equal ["[full-suite@fp] x", "[rubocop@fp] y"], merged
   end
 
+  def test_lane_status_grades_missing_stale_and_fresh_evidence
+    checks = ["[full-suite@abc1234] tests green", "[rubocop@def5678] lint clean"]
+
+    assert_equal :fresh, FullSuiteGate.lane_status(checks, "full-suite", "abc1234")
+    assert_equal :stale, FullSuiteGate.lane_status(checks, "full-suite", "fffffff")
+    assert_equal :missing, FullSuiteGate.lane_status(checks, "e2e", "abc1234")
+  end
+
   # A temp git repo with one commit; yields its dir.
   def with_repo
     Dir.mktmpdir do |dir|

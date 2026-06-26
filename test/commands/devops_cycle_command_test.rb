@@ -15,9 +15,9 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_includes out, "DevOps Cycle Snapshot"
-    assert_includes out, "PR Review (4)"
-    assert_includes out, "QA Review (1)"
-    assert_includes out, "Prod Ready (1)"
+    assert_includes out, "Submitted (4)"
+    assert_includes out, "Reviewed (1)"
+    assert_includes out, "Assembled (1)"
     assert_includes out, "Ship sidebar recovery (task-pr123)"
     assert_includes out, "https://www.mcritchie.studio/tasks/task-pr123"
     assert_includes out, "qa-intake: avi-ready amcritchie/mcritchie-studio#123"
@@ -41,11 +41,11 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_includes out, "Batch Plan"
-    assert_includes out, "Parallel PR Review (2)"
+    assert_includes out, "Parallel Review (2)"
     assert_includes out, "Serialized / Conductor Review (1)"
     assert_includes out, "Blocked / Return To Agent (1)"
-    assert_includes out, "QA Review (1)"
-    assert_includes out, "Production Ready (1)"
+    assert_includes out, "Ready To Assemble (1)"
+    assert_includes out, "Assembled Release (1)"
     assert_includes out, "task-engine789 Ship shared engine table headers"
     assert_includes out, "reason=multiple repositories: studio-engine + turf-monster"
     assert_includes out, "task-block000 Fix stale worktree handoff"
@@ -57,11 +57,11 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     snapshot = JSON.parse(out)
-    assert_equal 2, snapshot.dig("plan", "summary", "parallel_pr_review")
-    assert_equal 1, snapshot.dig("plan", "summary", "serialized_pr_review")
+    assert_equal 2, snapshot.dig("plan", "summary", "parallel_review")
+    assert_equal 1, snapshot.dig("plan", "summary", "serialized_review")
     assert_equal 1, snapshot.dig("plan", "summary", "blocked_or_return")
-    assert_equal 1, snapshot.dig("plan", "summary", "qa_review")
-    assert_equal 1, snapshot.dig("plan", "summary", "production_ready")
+    assert_equal 1, snapshot.dig("plan", "summary", "ready_to_assemble")
+    assert_equal 1, snapshot.dig("plan", "summary", "assembled_release")
 
     blocked = snapshot.dig("plan", "groups").find { |group| group.fetch("key") == "blocked_or_return" }
     assert_equal "task-block000", blocked.fetch("tasks").first.fetch("slug")
@@ -90,7 +90,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert status.success?, err
     snapshot = JSON.parse(out)
     assert_equal 3, snapshot.fetch("scout_packets").size
-    assert_equal 2, snapshot.dig("plan", "summary", "parallel_pr_review")
+    assert_equal 2, snapshot.dig("plan", "summary", "parallel_review")
 
     parallel = snapshot.fetch("scout_packets").find { |packet| packet.fetch("packet_id") == "scout-task-pr123" }
     assert_equal "parallel_scout", parallel.fetch("mode")
@@ -291,9 +291,9 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_includes out, "Needs Changes (2)"
     assert_includes out, "task-pr123 Ship sidebar recovery"
     assert_includes out, "task-block000 Fix stale worktree handoff"
-    assert_includes out, "QA Acceptance (1)"
+    assert_includes out, "Ready To Assemble (1)"
     assert_includes out, "task-qa456 QA contest entry flow"
-    assert_includes out, "Production Ready (1)"
+    assert_includes out, "Assembled Release (1)"
     assert_includes out, "task-prod999 Release accepted QA work"
   end
 

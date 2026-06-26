@@ -3,7 +3,7 @@
     {
       "slug": "task-pr123",
       "title": "Ship sidebar recovery",
-      "stage": "pr_review",
+      "stage": "submitted",
       "priority": 2,
       "agent_slug": "avi",
       "created_at": "2026-06-18T14:00:00Z",
@@ -25,7 +25,7 @@
     {
       "slug": "task-engine789",
       "title": "Ship shared engine table headers",
-      "stage": "pr_review",
+      "stage": "submitted",
       "priority": 2,
       "agent_slug": "avi",
       "created_at": "2026-06-18T14:30:00Z",
@@ -46,7 +46,7 @@
     {
       "slug": "task-block000",
       "title": "Fix stale worktree handoff",
-      "stage": "pr_review",
+      "stage": "submitted",
       "priority": 1,
       "agent_slug": "avi",
       "created_at": "2026-06-18T14:45:00Z",
@@ -67,7 +67,7 @@
     {
       "slug": "task-ready222",
       "title": "Ship focused DevOps helper",
-      "stage": "pr_review",
+      "stage": "submitted",
       "priority": 1,
       "agent_slug": "avi",
       "created_at": "2026-06-18T14:50:00Z",
@@ -88,7 +88,7 @@
     {
       "slug": "task-qa456",
       "title": "QA contest entry flow",
-      "stage": "qa_review",
+      "stage": "reviewed",
       "priority": 1,
       "agent_slug": "avi",
       "created_at": "2026-06-18T15:00:00Z",
@@ -110,7 +110,7 @@
     {
       "slug": "task-prod999",
       "title": "Release accepted QA work",
-      "stage": "prod_ready",
+      "stage": "assembled",
       "priority": 2,
       "agent_slug": "avi",
       "created_at": "2026-06-18T16:00:00Z",

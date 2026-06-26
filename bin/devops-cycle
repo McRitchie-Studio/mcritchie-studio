@@ -13,12 +13,12 @@ require "time"
 require "uri"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
-DEFAULT_STAGES = %w[pr_review qa_review prod_ready].freeze
+DEFAULT_STAGES = %w[submitted reviewed assembled].freeze
 DEFAULT_APPS = %w[mcritchie-studio turf-monster].freeze
 STAGE_LABELS = {
-  "pr_review" => "PR Review",
-  "qa_review" => "QA Review",
-  "prod_ready" => "Prod Ready"
+  "submitted" => "Submitted",
+  "reviewed" => "Reviewed",
+  "assembled" => "Assembled"
 }.freeze
 SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze
 DECISION_ORDER = %w[request-changes wait-for-ci conductor-review merge-ready].freeze
@@ -476,7 +476,7 @@ def qa_status(task)
   task.dig("qa_intake", "status").to_s
 end
 
-def blocked_for_pr_review?(task)
+def blocked_for_submitted_review?(task)
   REVIEW_NOT_READY_QA_STATUSES.include?(qa_status(task))
 end
 
@@ -484,7 +484,7 @@ def plan_reason(task)
   metadata = task.fetch("devops", {})
   repos = Array(task.fetch("repositories"))
   tags = Array(metadata["risk_tags"]).map(&:to_s)
-  return "qa-intake status #{qa_status(task)}" if blocked_for_pr_review?(task)
+  return "qa-intake status #{qa_status(task)}" if blocked_for_submitted_review?(task)
   return "multiple repositories: #{repos.join(" + ")}" if repos.size > 1
   return "no matching qa-intake PR/worktree; conductor must inspect manually" unless task["qa_intake"]
   return "release conductor required" if metadata["requires_release_conductor"].to_s == "true"
@@ -568,7 +568,7 @@ end
 
 def build_decisions(tasks)
   tasks
-    .select { |task| task.fetch("stage") == "pr_review" }
+    .select { |task| task.fetch("stage") == "submitted" }
     .sort_by { |task| [-PRIORITY_LABELS.key(task_priority(task)).to_i, task.fetch("repositories").join(","), task.fetch("slug")] }
     .map do |task|
       recommendation, reasons = conductor_decision(task)
@@ -609,13 +609,13 @@ end
 def build_plan(tasks)
   groups = [
     {
-      "key" => "parallel_pr_review",
-      "title" => "Parallel PR Review",
+      "key" => "parallel_review",
+      "title" => "Parallel Review",
       "policy" => "Can be reviewed by separate Avi scout sessions at the same time. Keep final merge decisions with the conductor.",
       "tasks" => []
     },
     {
-      "key" => "serialized_pr_review",
+      "key" => "serialized_review",
       "title" => "Serialized / Conductor Review",
       "policy" => "Review one at a time or intentionally bundle. These may affect multiple repos, release order, or high-risk surfaces.",
       "tasks" => []
@@ -627,15 +627,15 @@ def build_plan(tasks)
       "tasks" => []
     },
     {
-      "key" => "qa_review",
-      "title" => "QA Review",
-      "policy" => "Already merged to QA. Mr. McRitchie reviews URLs and Avi records acceptance or follow-up.",
+      "key" => "ready_to_assemble",
+      "title" => "Ready To Assemble",
+      "policy" => "Reviewed PRs are approved; merge them into release with bin/release merge.",
       "tasks" => []
     },
     {
-      "key" => "production_ready",
-      "title" => "Production Ready",
-      "policy" => "Release conductor can deploy only after explicit production approval.",
+      "key" => "assembled_release",
+      "title" => "Assembled Release",
+      "policy" => "Merged into release and part of the QA candidate. Production remains operator-gated.",
       "tasks" => []
     }
   ]
@@ -643,20 +643,20 @@ def build_plan(tasks)
 
   tasks.each do |task|
     case task.fetch("stage")
-    when "pr_review"
-      if blocked_for_pr_review?(task)
+    when "submitted"
+      if blocked_for_submitted_review?(task)
         by_key.fetch("blocked_or_return").fetch("tasks") << plan_task(task, owner: "feature_agent", reason: plan_reason(task))
       elsif !task["qa_intake"]
-        by_key.fetch("serialized_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+        by_key.fetch("serialized_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
       elsif high_risk?(task)
-        by_key.fetch("serialized_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+        by_key.fetch("serialized_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
       else
-        by_key.fetch("parallel_pr_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
+        by_key.fetch("parallel_review").fetch("tasks") << plan_task(task, owner: "avi", reason: plan_reason(task))
       end
-    when "qa_review"
-      by_key.fetch("qa_review").fetch("tasks") << plan_task(task, owner: "mr_mcritchie", reason: "needs QA acceptance or follow-up")
-    when "prod_ready"
-      by_key.fetch("production_ready").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "awaiting explicit production approval")
+    when "reviewed"
+      by_key.fetch("ready_to_assemble").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "approved and ready for release merge")
+    when "assembled"
+      by_key.fetch("assembled_release").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "QA candidate assembled; production is operator-gated")
     end
   end
 
@@ -674,12 +674,12 @@ end
 
 def scout_source_groups(plan)
   Array(plan&.fetch("groups", [])).select do |group|
-    %w[parallel_pr_review serialized_pr_review].include?(group.fetch("key"))
+    %w[parallel_review serialized_review].include?(group.fetch("key"))
   end
 end
 
 def scout_mode(group)
-  group.fetch("key") == "parallel_pr_review" ? "parallel_scout" : "serialized_scout"
+  group.fetch("key") == "parallel_review" ? "parallel_scout" : "serialized_scout"
 end
 
 def compact_activity(activity)
@@ -1040,8 +1040,8 @@ def build_readiness(tasks, decisions, scout_coverage)
     ["needs_conductor_review", "Needs Conductor Review", "Avi must inspect directly before merge or feedback."],
     ["needs_changes", "Needs Changes", "Return to the feature agent with task feedback or PR review comments."],
     ["waiting", "Waiting", "Checks, scout reports, or external confirmation are not settled."],
-    ["qa_acceptance", "QA Acceptance", "Merged to QA; Mr. McRitchie reviews the QA URL and Avi records acceptance or follow-up."],
-    ["production_ready", "Production Ready", "Deploy only after explicit production approval."],
+    ["ready_to_assemble", "Ready To Assemble", "Reviewed PRs are approved and waiting for release merge."],
+    ["assembled_release", "Assembled Release", "Merged into release and part of the QA candidate; production remains operator-gated."],
     ["scout_gaps", "Scout Gaps", "Scout packets that need reports or have conflicting evidence."]
   ].map { |key, title, policy| { "key" => key, "title" => title, "policy" => policy, "tasks" => [] } }
   by_key = groups.to_h { |group| [group.fetch("key"), group] }
@@ -1049,7 +1049,7 @@ def build_readiness(tasks, decisions, scout_coverage)
 
   tasks.each do |task|
     case task.fetch("stage")
-    when "pr_review"
+    when "submitted"
       decision = decisions_by_slug[task.fetch("slug")]
       recommendation = decision&.fetch("recommendation") || "conductor-review"
       item = readiness_task(task, recommendation: recommendation, reasons: Array(decision&.fetch("reasons")))
@@ -1063,10 +1063,10 @@ def build_readiness(tasks, decisions, scout_coverage)
       else
         by_key.fetch("needs_conductor_review").fetch("tasks") << item
       end
-    when "qa_review"
-      by_key.fetch("qa_acceptance").fetch("tasks") << readiness_task(task, recommendation: "qa-review")
-    when "prod_ready"
-      by_key.fetch("production_ready").fetch("tasks") << readiness_task(task, recommendation: "production-ready")
+    when "reviewed"
+      by_key.fetch("ready_to_assemble").fetch("tasks") << readiness_task(task, recommendation: "ready-to-assemble")
+    when "assembled"
+      by_key.fetch("assembled_release").fetch("tasks") << readiness_task(task, recommendation: "assembled-release")
     end
   end
 
