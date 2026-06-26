@@ -104,7 +104,42 @@ class Github::BuilderHistoryBatchRunnerTest < ActiveSupport::TestCase
     assert_equal "failed", result.dig(:results, "second-builder", :strategy)
   end
 
+  test "prunes a builder's observations once its full history is cached" do
+    builder = TrackedGithubBuilder.create!(github_login: "prune-me", cohort: "ai_builder")
+    create_complete_cache(builder)
+    create_observation(builder, sha: "abc123")
+    create_observation(builder, sha: "def456")
+    fetcher = FakeFetcher.new([])
+
+    result = runner(fetcher: fetcher).run!(today: TODAY, batch_size: 1, skip_complete: false)
+
+    assert_equal 0, GithubCommitObservation.for_login("prune-me").count
+    assert_equal 2, result.dig(:results, "prune-me", :pruned_observations)
+  end
+
+  test "retains observations when the builder's cache is incomplete" do
+    builder = TrackedGithubBuilder.create!(github_login: "keep-me", cohort: "ai_builder")
+    create_observation(builder, sha: "abc123")
+    fetcher = FakeFetcher.new([])
+
+    result = runner(fetcher: fetcher).run!(today: TODAY, batch_size: 1, skip_complete: false)
+
+    assert_equal 1, GithubCommitObservation.for_login("keep-me").count
+    assert_equal 0, result.dig(:results, "keep-me", :pruned_observations)
+  end
+
   private
+
+  def create_observation(builder, sha:, committed_at: TODAY.to_time)
+    GithubCommitObservation.create!(
+      github_login: builder.github_login,
+      repo_full_name: "acme/app",
+      sha: sha,
+      committed_at: committed_at,
+      authored_at: committed_at,
+      source_strategy: "search"
+    )
+  end
 
   def runner(fetcher:, aggregator: FakeAggregator.new([]), reporter: nil)
     Github::BuilderHistoryBatchRunner.new(
