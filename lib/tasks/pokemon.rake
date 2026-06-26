@@ -33,9 +33,14 @@ namespace :pokemon do
     "farfetchd" => "Farfetch'd"
   }.freeze
 
-  desc "Seed/refresh the 151 Pokémon rows from the committed JSON (idempotent; safe on QA/prod)"
+  desc "Seed/refresh the 151 Pokémon rows + cache their primary types (idempotent; safe on QA/prod)"
   task seed: :environment do
     load Rails.root.join("db/seeds/56_pokemon.rb").to_s
+    # Cache the identifying (least-common) type onto primary_type. Needs the
+    # pokemon_type enumerals (ranks) — a no-op until those are seeded (they are
+    # persistent on QA/prod via enumerals:seed), so reads fall back to live ranking.
+    updated = Pokemon.assign_primary_types!
+    puts "  primary_type: #{updated} updated (#{Pokemon.where.not(primary_type: nil).count}/#{Pokemon.count} cached)"
   end
 
   desc "Assign a mascot to every task lacking one (idempotent; safe to re-run on prod/QA)"
