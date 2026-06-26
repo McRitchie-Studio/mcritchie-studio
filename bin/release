@@ -104,6 +104,12 @@ require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/cli"
+# Deploy-side usage capture: read the conductor's LOCAL session transcript and
+# diff it against the per-(session, slug) baseline (shared verbatim with bin/task
+# + bin/reviewer-select) so reviewed→assembled / assembled→shipped flips carry
+# the model/token/cost the agent actually burned. Plain Ruby (no Rails).
+require_relative "../lib/agent_session_usage"
+require_relative "../lib/task_usage_baseline"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -307,6 +313,54 @@ def conductor(ruby, read_only: false)
   line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
   abort!("record op returned no JSON:\n#{out}") unless line
   JSON.parse(line)
+end
+
+# --- deploy-side usage capture (best-effort) --------------------------------
+# The conductor flips task stages on PROD via `heroku run`, where there is NO
+# local transcript — so we capture the per-transition usage delta HERE (locally,
+# in the release conductor's own session) and thread model/tokens/cost into the
+# conductor snippet, which sets Current.task_event_* before the flip so the
+# resulting TaskEvent carries usage. Mirrors bin/task's autofill: diff the
+# session's cumulative totals against the baseline seeded at the matching
+# `bin/task intent`, then advance the baseline. Resolves the same baseline dir as
+# bin/task (honors TASK_USAGE_DIR; else <projects>/.agents/task-usage).
+def release_usage_dir
+  dir = ENV["TASK_USAGE_DIR"].to_s.strip
+  dir.empty? ? File.join(projects_root, ".agents", "task-usage") : dir
+end
+
+# The captured per-transition usage for one task slug, or {} when there's no
+# session / transcript / delta. String keys + scalar values, so it's safe inside
+# the Ruby-literal conductor snippet (Base64-encoded by conductor_payload).
+def capture_move_usage(slug)
+  session = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  return {} if session.empty?
+
+  capture = TaskUsageBaseline.new(session: session, dir: release_usage_dir).capture_delta(slug)
+  return {} unless capture
+
+  usage = {}
+  usage["model"] = capture.model if capture.model
+  if capture.usage?
+    usage["tokens_in"]  = capture.tokens_in
+    usage["tokens_out"] = capture.tokens_out
+    usage["cost"]       = format("%.4f", capture.cost) if capture.cost
+  end
+  usage
+rescue StandardError
+  {}
+end
+
+# The { slug => usage } map for a set of slugs (slugs with no capturable usage
+# are dropped, keeping the snippet small). A no-op in --dry-run: capture_delta
+# ADVANCES the baseline, and a dry-run must mutate nothing.
+def move_usage_map(slugs)
+  return {} if DRY
+
+  Array(slugs).each_with_object({}) do |slug, map|
+    usage = capture_move_usage(slug)
+    map[slug] = usage unless usage.empty?
+  end
 end
 
 # Thin wrappers over the pure, unit-tested Release::Cli parsers — they consume
@@ -543,10 +597,14 @@ end
 # is safe. `override` threads the audited review-gate bypass through to adopt! —
 # harmless for already-`reviewed` members (records no skip), and for an unreviewed
 # member it both attaches it AND stamps the `review_bypassed` audit event.
+# `usage_map` ({ slug => {model, tokens_in, tokens_out, cost} }, captured locally
+# by move_usage_map) rides each flip's assembled TaskEvent via adopt!(usage:); a
+# slug absent from the map records the deterministic spine only.
 # Emits ONE JSON line: { "adopted": [...], "slug": <last release>, "state" }.
-def batch_adopt_ruby(slugs, override: false)
+def batch_adopt_ruby(slugs, usage_map = {}, override: false)
   "slugs = #{slugs.inspect}; " \
-  "results = slugs.map { |s| r = Release::Conductor.adopt!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}); " \
+  "usage = #{usage_map.inspect}; " \
+  "results = slugs.map { |s| r = Release::Conductor.adopt!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}, usage: usage[s]); " \
   "{ task: s, release: r.slug, state: r.state } }; " \
   "last = results.last; " \
   "puts({ adopted: results, slug: (last && last[:release]), state: (last && last[:state]) }.to_json)"
@@ -689,7 +747,7 @@ def merge
     #    records the PRs that DID merge. A board WRITE → suppressed in dry-run.
     if merged.any?
       step("record: Release::Conductor.adopt! ×#{merged.size} in ONE run (#{merged.join(', ')})")
-      @merge_result = conductor(batch_adopt_ruby(merged, override: override))
+      @merge_result = conductor(batch_adopt_ruby(merged, move_usage_map(merged), override: override))
     end
   end
 
@@ -1369,10 +1427,13 @@ def ship
   #    post release notes in one runner call (Release.current is nil post-ship).
   deployed_sha = ship_sha[APP].to_s
   deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "HEAD").first.strip if deployed_sha.empty? && !DRY
+  # Best-effort per-member usage for the assembled→shipped flips, captured from
+  # the conductor's LOCAL transcript (the flips run on prod, transcript-less).
+  ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
   step("record: Release::Conductor.ship! + post_release_notes")
   shipped = conductor(
     "r = Release.current; " \
-    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}); " \
+    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
     "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
   )

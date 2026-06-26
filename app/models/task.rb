@@ -377,6 +377,12 @@ class Task < ApplicationRecord
   # and/or `reviewers` metadata (the heavy/light pair at review). Append-only +
   # idempotent: an identical open intent (same target + same crew) is returned
   # as-is rather than stacked, and it is a no-op once to_stage has already landed.
+  #
+  # An intent row is intentionally USAGELESS — it marks work STARTING, not a
+  # completed transition, so it carries no model/tokens/cost. The work the agent
+  # burns between an intent and its transition is captured on the TRANSITION
+  # event instead: the intent SEEDS the per-session usage baseline (bin/task
+  # intent / bin/reviewer-select), and the later move/flip records the delta.
   def record_intent_event(to_stage:, actor: nil, reviewers: nil, source: nil)
     return nil if task_events.transitions.exists?(to_stage: to_stage)
 
@@ -631,6 +637,12 @@ class Task < ApplicationRecord
   # `building`, so inheriting it would mis-attribute later reviewed/assembled/
   # shipped moves to the build agent. Runs inside the save transaction so a stage
   # change can never land without its event.
+  # The genesis (Created→Designed) event is intentionally USAGELESS: it fires
+  # inside Task.create — before any session/usage context exists (no build claim,
+  # no transcript, no Current.task_event_*) — so it can only ever carry the
+  # deterministic spine. This is correct by design, NOT a capture gap: the
+  # timeline renders genesis without model/token/cost chips, and the usage
+  # backfill (lib/tasks/task_events.rake) leaves it alone.
   def record_genesis_event
     write_stage_event(from: nil)
   end

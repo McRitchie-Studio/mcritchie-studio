@@ -36,4 +36,32 @@ class Current < ActiveSupport::CurrentAttributes
   # ship!) drains it onto the release via Release#stamp_conductor_mascot!, so the
   # deployment wears the SESSION's Pokémon mascot — the agent working it.
   attribute :conductor_session_id
+
+  # Set the per-transition usage attributes from a captured-usage hash for the
+  # duration of the block, then clear them — so a conductor/release flip that
+  # runs OUTSIDE the request layer (Release::Conductor.adopt!, Release#ship!,
+  # driven by bin/release capturing the delta from its local transcript) can
+  # stamp model/tokens/cost onto the TaskEvent it's about to write, exactly like
+  # a `bin/task move` does via the controller. Clearing after each task is what
+  # keeps a BATCHED flip (N tasks in one runner process) from mis-attributing
+  # task B's event with task A's usage. A nil/blank usage is a no-op (the flip
+  # records the deterministic spine only — never fabricated). Tolerates string OR
+  # symbol keys so both the bin/release snippet and in-process callers work.
+  def self.with_task_event_usage(usage)
+    usage = usage.presence
+    return yield unless usage
+
+    self.task_event_model      = (usage[:model] || usage["model"]).presence
+    self.task_event_tokens_in  = (usage[:tokens_in] || usage["tokens_in"]).presence&.to_i
+    self.task_event_tokens_out = (usage[:tokens_out] || usage["tokens_out"]).presence&.to_i
+    self.task_event_cost       = (usage[:cost] || usage["cost"]).presence&.to_d
+    yield
+  ensure
+    if usage
+      self.task_event_model = nil
+      self.task_event_tokens_in = nil
+      self.task_event_tokens_out = nil
+      self.task_event_cost = nil
+    end
+  end
 end

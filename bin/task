@@ -74,6 +74,7 @@ require "fileutils"
 require "digest"
 require "shellwords"
 require_relative "../lib/agent_session_usage"
+require_relative "../lib/task_usage_baseline"
 require_relative "../lib/claim_lease"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
@@ -540,46 +541,48 @@ rescue StandardError
 end
 
 # --- Auto-captured move usage (best-effort) --------------------------------
-# Per-session baseline of cumulative token usage, keyed by task slug, so each
-# move computes the delta since the previous move. Lives under .agents (not
-# committed); TASK_USAGE_DIR overrides the dir (tests point it at a tmp path).
-def usage_state_path(session)
+# Per-(session, slug) baselines of cumulative token usage live under .agents
+# (not committed); TASK_USAGE_DIR overrides the dir (tests point it at a tmp
+# path). The storage + delta math is shared with bin/release + bin/reviewer-select
+# via lib/task_usage_baseline.rb so every move/intent path computes deltas the
+# same way.
+def usage_dir
   dir = ENV["TASK_USAGE_DIR"].to_s.strip
-  dir = File.join(PROJECTS_DIR, ".agents", "task-usage") if dir.empty?
-  File.join(dir, "#{session.gsub(/[^A-Za-z0-9._-]/, "")}.json")
+  dir.empty? ? File.join(PROJECTS_DIR, ".agents", "task-usage") : dir
 end
 
-def read_usage_baseline(session, slug)
-  path = usage_state_path(session)
-  return nil unless File.exist?(path)
+# The baseline store for THIS session, or nil when there's no session (a plain
+# shell / CI run has no transcript to diff anyway).
+def usage_baseline_for(session)
+  session = session.to_s.strip
+  return nil if session.empty?
 
-  (JSON.parse(File.read(path)) || {})[slug]
-rescue StandardError
-  nil
+  TaskUsageBaseline.new(session: session, dir: usage_dir)
 end
 
-def write_usage_baseline(session, slug, totals)
-  path = usage_state_path(session)
-  FileUtils.mkdir_p(File.dirname(path))
-  data = File.exist?(path) ? (JSON.parse(File.read(path)) rescue {}) : {}
-  data[slug] = totals
-  File.write(path, "#{JSON.generate(data)}\n")
+# Seed the per-(session, slug) baseline from the session's current cumulative
+# totals when the session first TOUCHES the task — at the build CLAIM
+# (move→building) and at a review/deploy INTENT. Idempotent (never resets an
+# in-progress baseline) and best-effort. Seeding here is what makes the first
+# real WORK transition record a true delta instead of the zeroed first-move
+# baseline (the cause of the model-only Submitted→Reviewed chip).
+def seed_usage_baseline(slug)
+  usage_baseline_for(ENV["CLAUDE_CODE_SESSION_ID"])&.seed(slug)
 rescue StandardError
   nil
 end
 
 # Fill the event's model/tokens/cost from the session transcript (the delta since
-# the last move), then advance the baseline. No session, no transcript, or the
-# first move for a task (no baseline yet) → record at most the model; the
+# the last touch — claim, intent, or prior move), then advance the baseline. No
+# session, no transcript, or no baseline yet → record at most the model; the
 # deterministic spine is recorded server-side regardless.
 def autofill_move_usage(event, slug)
-  session = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
-  return if session.empty?
+  baseline = usage_baseline_for(ENV["CLAUDE_CODE_SESSION_ID"])
+  return unless baseline
 
-  capture = AgentSessionUsage.capture(session_id: session, baseline: read_usage_baseline(session, slug))
+  capture = baseline.capture_delta(slug)
   return unless capture
 
-  write_usage_baseline(session, slug, capture.totals)
   event["model"] = capture.model if capture.model
   return unless capture.usage?
 
@@ -588,7 +591,7 @@ def autofill_move_usage(event, slug)
   event["cost"]       = format("%.4f", capture.cost) if capture.cost
 rescue StandardError
   # A capture failure must degrade to spine-only, never abort the move (and its
-  # stage-transition PATCH). Matches read_usage_baseline/write_usage_baseline.
+  # stage-transition PATCH). The lib swallows IO errors; this is belt-and-braces.
   nil
 end
 
@@ -704,6 +707,11 @@ when "move"
     current = api(:get, "/api/v1/tasks/#{slug}")["data"]
     current_devops = current.dig("metadata", "devops") || {}
     enforce_claim_gate!(slug, current_devops, mover_session, steal: steal)
+    # Seed the usage baseline at the CLAIM so the build work transition
+    # (building→submitted) records a true token delta. Idempotent: a no-op when
+    # autofill above already wrote a baseline this move (e.g. a bare move), it
+    # matters when explicit usage flags skipped autofill.
+    seed_usage_baseline(slug)
     merged = stamp_session(current_devops)
     merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce))
     body["devops"] = merged
@@ -740,6 +748,12 @@ when "intent"
   body["actor"] = actor if actor
   body["reviewers"] = reviewers if reviewers.any?
   task = api(:post, "/api/v1/tasks/#{slug}/intent", body)["data"]
+  # Seed the usage baseline the moment this session STARTS the stage's work (the
+  # intent), so the matching work transition (e.g. submitted→reviewed for a
+  # reviewer, or a deploy-side move read by bin/release) records a true delta
+  # instead of a zeroed first-touch baseline. Best-effort; only after the intent
+  # landed server-side.
+  seed_usage_baseline(slug)
   crew = [actor, *reviewers.map { |r| "#{r["slug"]}/#{r["weight"]}" }].compact.join(" · ")
   puts "intent recorded on #{slug}: → #{to_stage}#{crew.empty? ? "" : " · #{crew}"}"
   print_task(task) if task

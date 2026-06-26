@@ -326,6 +326,48 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  def transcript_line(input:, output:, cc:, cr:)
+    JSON.generate("type" => "assistant", "message" => {
+      "model" => "claude-opus-4-8",
+      "usage" => {
+        "input_tokens" => input, "output_tokens" => output,
+        "cache_creation_input_tokens" => cc, "cache_read_input_tokens" => cr
+      }
+    })
+  end
+
+  # The fix for the zeroed first-move baseline: a review INTENT seeds the baseline
+  # at the session's CURRENT totals, so the reviewer's FIRST move (submitted→
+  # reviewed) records the real work delta instead of model-only. Contrast with
+  # test_first_move_with_no_baseline_records_model_only (no intent → model only),
+  # which is exactly the Submitted→Reviewed chip bug this task fixes. End-to-end
+  # through bin/task against the stub board, sharing the on-disk usage baseline
+  # across the two invocations (same HOME + TASK_USAGE_DIR).
+  def test_intent_seeds_baseline_so_first_review_move_records_a_delta
+    Dir.mktmpdir do |home|
+      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      FileUtils.mkdir_p(proj)
+      transcript = File.join(proj, "#{SESSION}.jsonl")
+      env = { "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => File.join(home, "usage-state") }
+
+      # The reviewer's session has burned turn-1 tokens by the time they pick up
+      # the review and record the intent — which seeds the baseline here.
+      File.write(transcript, "#{transcript_line(input: 1000, output: 2000, cc: 0, cr: 5000)}\n")
+      _req, _out, _err, status = run_task(["intent", "demo-task", "--to", "reviewed"], env: env)
+      assert status.success?, "the intent should record + seed cleanly"
+
+      # The review work happens (turn 2), then the reviewer moves to reviewed.
+      File.open(transcript, "a") { |f| f.puts transcript_line(input: 100, output: 4000, cc: 50, cr: 6000) }
+      requests, = run_task(["move", "demo-task", "reviewed"], env: env)
+
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+      assert_equal "claude-opus-4-8", event["model"]
+      assert_equal 6150, event["tokens_in"], "delta is turn 2 only — the review work since the intent"
+      assert_equal 4000, event["tokens_out"]
+      assert event.key?("cost"), "a real delta records cost too"
+    end
+  end
+
   def test_move_without_a_transcript_records_spine_only
     Dir.mktmpdir do |home| # $HOME with no transcript file present
       requests, = run_task(["move", "demo-task", "submitted"],

@@ -42,6 +42,74 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
+  # --- deploy-side usage capture (model/tokens/cost on the conductor flips) ---
+  # bin/release captures the per-transition delta from its LOCAL transcript and
+  # threads it in; these prove it lands on the assembled/shipped TaskEvents.
+
+  test "adopt! stamps the assembled TaskEvent with the threaded usage" do
+    t = reviewed_task
+    Release::Conductor.adopt!(
+      t, usage: { "model" => "claude-opus-4-8", "tokens_in" => 1200, "tokens_out" => 300, "cost" => "0.0125" }
+    )
+
+    event = t.reload.task_events.transitions.find_by(to_stage: "assembled")
+    refute_nil event
+    assert event.usage?
+    assert_equal "claude-opus-4-8", event.model
+    assert_equal 1200, event.tokens_in
+    assert_equal 300, event.tokens_out
+    assert_equal "0.0125".to_d, event.cost
+  end
+
+  test "adopt! without usage records the assembled spine only (no fabrication)" do
+    t = reviewed_task
+    Release::Conductor.adopt!(t)
+
+    event = t.reload.task_events.transitions.find_by(to_stage: "assembled")
+    refute event.usage?, "no usage threaded → deterministic spine only"
+  end
+
+  test "adopt! clears the usage after the flip so it can't leak to a later transition" do
+    Release::Conductor.adopt!(
+      reviewed_task, usage: { "model" => "claude-opus-4-8", "tokens_in" => 10, "tokens_out" => 5 }
+    )
+
+    assert_nil Current.task_event_model, "usage is reset after the flip (batched adopt safety)"
+    assert_nil Current.task_event_tokens_in
+  end
+
+  test "ship! stamps each member's shipped TaskEvent with its own usage" do
+    a = reviewed_task("alpha")
+    b = reviewed_task("bravo")
+    rel = Release::Conductor.prepare!(task_slugs: [a.slug, b.slug])
+
+    Release::Conductor.ship!(
+      release: rel, deployed_sha: "abc1234", by: "avi",
+      usage_by_slug: {
+        a.slug => { "model" => "claude-opus-4-8", "tokens_in" => 500, "tokens_out" => 100, "cost" => "0.005" },
+        b.slug => { "model" => "claude-sonnet-4-6", "tokens_in" => 200, "tokens_out" => 50 }
+      }
+    )
+
+    ea = a.reload.task_events.transitions.find_by(to_stage: "shipped")
+    eb = b.reload.task_events.transitions.find_by(to_stage: "shipped")
+    assert_equal "claude-opus-4-8", ea.model
+    assert_equal 500, ea.tokens_in
+    assert_equal "0.005".to_d, ea.cost
+    assert_equal "claude-sonnet-4-6", eb.model
+    assert_equal 200, eb.tokens_in
+    assert_nil eb.cost, "no cost given for b → not fabricated"
+  end
+
+  test "ship! with no usage map records the shipped spine only" do
+    t = reviewed_task
+    rel = Release::Conductor.prepare!(task_slugs: [t.slug])
+    Release::Conductor.ship!(release: rel, deployed_sha: "deadbee", by: "avi")
+
+    event = t.reload.task_events.transitions.find_by(to_stage: "shipped")
+    refute event.usage?
+  end
+
   test "adopt! attaches to the existing active release" do
     first = reviewed_task("first")
     rel = Release::Conductor.adopt!(first)

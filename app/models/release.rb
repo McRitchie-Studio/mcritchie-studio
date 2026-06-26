@@ -198,12 +198,22 @@ class Release < ApplicationRecord
 
   # The operator "Makes the release" → ship to prod; members flip to `shipped`.
   # Allowed from an active release (assembling or assembled); never from terminal.
-  def ship!(by: nil)
+  #
+  # `usage_by_slug` is the optional { slug => {model, tokens_in, tokens_out, cost} }
+  # best-effort per-member usage for the assembled→shipped transition (captured by
+  # bin/release from the conductor's local transcript). Each member's ship! runs
+  # inside Current.with_task_event_usage, which stamps that member's shipped
+  # TaskEvent and clears the fields afterward so the next member isn't
+  # mis-attributed. A member with no entry records the deterministic spine only.
+  def ship!(by: nil, usage_by_slug: {})
     raise ArgumentError, "release #{slug} is already terminal (state: #{state})" unless active?
 
+    usage_by_slug ||= {}
     transaction do
       update!(state: "shipped", confirmed_by: by, confirmed_at: Time.current)
-      tasks.to_a.each(&:ship!)
+      tasks.to_a.each do |task|
+        Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }
+      end
     end
   end
 
