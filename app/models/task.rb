@@ -383,17 +383,31 @@ class Task < ApplicationRecord
   # burns between an intent and its transition is captured on the TRANSITION
   # event instead: the intent SEEDS the per-session usage baseline (bin/task
   # intent / bin/reviewer-select), and the later move/flip records the delta.
-  def record_intent_event(to_stage:, actor: nil, reviewers: nil, source: nil)
+  #
+  # `qa: true` marks the Steffon assembled-QA intent (see
+  # Release::Conductor#record_qa_intent): in the standard flow the merge already
+  # flipped the member to `assembled`, so the QA intent rides toward `shipped`
+  # (superseded by the SHIP, not the merge) and is distinguished from Avi's ship
+  # intent — same target — by this marker. Idempotency therefore matches on the
+  # FULL identity (target + actor + reviewers + qa), not merely the last intent for
+  # the target, so two distinct open intents toward the same stage never collide.
+  def record_intent_event(to_stage:, actor: nil, reviewers: nil, source: nil, qa: false)
     return nil if task_events.transitions.exists?(to_stage: to_stage)
 
     pair  = reviewers.present? ? self.class.normalize_reviewers(reviewers).presence : nil
     actor = actor.to_s.strip.presence
+    qa    = !!qa
 
-    existing = task_events.intents.where(to_stage: to_stage).chronological.last
-    if existing && existing.actor == actor &&
-       self.class.normalize_reviewers(existing.metadata["reviewers"]).presence == pair
-      return existing
+    existing = task_events.intents.where(to_stage: to_stage).chronological.to_a.reverse.find do |e|
+      e.actor == actor &&
+        self.class.normalize_reviewers(e.metadata["reviewers"]).presence == pair &&
+        !!e.metadata["qa"] == qa
     end
+    return existing if existing
+
+    metadata = {}
+    metadata["reviewers"] = pair if pair
+    metadata["qa"] = true if qa
 
     task_events.create!(
       kind: TaskEvent::INTENT,
@@ -403,7 +417,7 @@ class Task < ApplicationRecord
       seconds_in_from: nil,
       source: (source.presence || Current.task_event_source).presence,
       actor: actor,
-      metadata: pair ? { "reviewers" => pair } : {}
+      metadata: metadata
     )
   end
 

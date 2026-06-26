@@ -890,4 +890,95 @@ class Release::ConductorTest < ActiveSupport::TestCase
   ensure
     Current.conductor_session_id = nil
   end
+
+  # --- record_deploy_intents! (the live Deploy-lane crew ticker) ----------------
+  # bin/release prepare auto-records the Steffon → assembled QA intent; bin/release
+  # ship the Avi → shipped intent. The Deploy mirror of bin/reviewer-select's review
+  # intent — so /deployments shows who's on it live with NO hand-run bin/task intent
+  # (the 2026-06-25 unfilled-ship-slot incident).
+
+  test "record_deploy_intents! records the Avi shipped intent for every member (what ship fires)" do
+    rel = Release::Conductor.adopt!(reviewed_task("alpha")) # members → assembled at merge
+    Release::Conductor.adopt!(reviewed_task("beta"))
+
+    slugs = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
+
+    assert_equal rel.tasks.pluck(:slug).sort, slugs.sort, "every member gets an open shipped intent"
+    rel.tasks.each do |t|
+      intent = t.open_intent_for("shipped")
+      assert intent.present?, "#{t.slug} carries an open shipped intent"
+      assert_equal "avi", intent.actor
+    end
+  end
+
+  test "record_deploy_intents! defaults the actor to the stage's role owner (Avi ships, Steffon QAs)" do
+    rel = Release::Conductor.adopt!(reviewed_task("shipper"))
+    member = rel.tasks.first
+
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped") # actor nil → avi
+    assert_equal "avi", member.reload.open_intent_for("shipped").actor
+
+    # A member still at `reviewed` (no assembled transition yet — what prepare's
+    # assembled intent fires over) defaults to Steffon, the QA owner.
+    pending = reviewed_task("pending")
+    pending.update!(release_slug: rel.slug) # attached, still reviewed
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled") # actor nil → steffon
+    assert_equal "steffon", pending.reload.open_intent_for("assembled").actor
+  end
+
+  test "record_deploy_intents! is idempotent — a re-run reuses the open intent, never stacks" do
+    rel = Release::Conductor.adopt!(reviewed_task)
+    member = rel.tasks.first
+
+    first  = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
+    second = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
+
+    assert_equal first, second, "the same open intent is reused"
+    assert_equal 1, member.reload.task_events.intents.where(to_stage: "shipped").count
+  end
+
+  test "prepare's QA intent records on an ALREADY-assembled member (the standard flow)" do
+    # The reviewer's blocker: in the standard pipeline the merge (adopt!) already
+    # flipped the member to `assembled`, so prepare's QA call must NOT no-op. It
+    # records a QA intent that rides toward `shipped` (superseded by the SHIP, not the
+    # merge) carrying the `qa` marker, so the board can render Steffon QA-ing live.
+    rel = Release::Conductor.adopt!(reviewed_task) # member → assembled at merge
+    member = rel.tasks.first
+    assert_equal "assembled", member.stage, "guard: the merge flipped it to assembled"
+
+    slugs = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
+    assert_equal [member.slug], slugs, "the QA intent is recorded even though the assembled transition landed"
+
+    qa = member.reload.open_intent_for("shipped")
+    assert qa.present?, "the QA intent rides toward shipped — superseded by the ship, not the merge"
+    assert_equal "steffon", qa.actor
+    assert qa.metadata["qa"], "marked as the QA-lane intent, distinct from Avi's ship intent"
+
+    # Idempotent: a re-run reuses the open QA intent, never stacks a second row.
+    again = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
+    assert_equal slugs, again
+    assert_equal 1, member.reload.task_events.intents.where(to_stage: "shipped").count
+  end
+
+  test "record_deploy_intents! is superseded by the real transition (QA by the ship, ship by ship!)" do
+    rel = Release::Conductor.adopt!(reviewed_task) # member → assembled
+    member = rel.tasks.first
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon") # QA intent
+    rel.assemble!
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")       # ship intent
+    assert member.reload.open_intent_for("shipped").present?, "an open intent toward shipped while still assembled"
+
+    Release::Conductor.ship!(release: rel.reload, deployed_sha: "abc1234")
+
+    # The shipped transition supersedes BOTH the QA intent and the ship intent.
+    assert_nil member.reload.open_intent_for("shipped"), "ship! supersedes every open shipped intent"
+    assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi"),
+                 "a shipped member's ship call no-ops"
+    assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon"),
+                 "a shipped member's QA call no-ops too (toward assembled, transition long landed)"
+  end
+
+  test "record_deploy_intents! returns [] for a nil release" do
+    assert_empty Release::Conductor.record_deploy_intents!(nil, to_stage: "shipped", actor: "avi")
+  end
 end

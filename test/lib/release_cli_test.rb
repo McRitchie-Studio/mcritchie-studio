@@ -1380,4 +1380,91 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "", run_cli([], call: "print('')"),
                  "empty stdout with a zero exit is a legitimate, returnable result"
   end
+
+  # --- crew-ticker intents are BEST-EFFORT — never abort a deploy (PR #229 QA rework) ---
+  #
+  # `prepare` (Steffon assembled QA intent) and `ship` (Avi shipped intent) auto-record
+  # a COSMETIC /deployments crew-ticker intent. conductor() abort!s (→ SystemExit) on ANY
+  # non-zero heroku-run exit, so a transient prod-board outage — the documented 2026-06-25
+  # essential-PG "too many connections" incidents — on this cosmetic write would otherwise
+  # abort a production deploy. record_deploy_intent wraps the write best-effort (rescue
+  # SystemExit, StandardError → warn → continue), mirroring bin/reviewer-select's
+  # best-effort review-intent write. These stubs make conductor abort! on the intent
+  # snippet ONLY (the exact production failure mode) and prove the deploy still proceeds.
+
+  # The repo plan succeeds; the crew-ticker intent write abort!s (transient prod-board).
+  INTENT_FAIL_PREPARE_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      abort!("record op failed:\\nFATAL: remaining connection slots are reserved") if ruby.include?("record_deploy_intents!")
+      { "slug" => "rel-cli", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "studio-engine", "kind" => "gem",
+          "members" => [{ "slug" => "t-gem", "branch" => nil }] },
+        { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "t-studio", "branch" => "feat/studio" }] },
+        { "repo" => "turf-monster", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "turf-monster", "members" => [{ "slug" => "t-turf", "branch" => "feat/turf" }] }
+      ] }
+    end
+  RUBY
+
+  def test_prepare_continues_when_the_crew_ticker_intent_write_fails
+    out = run_cli(["--dry-run"], call: "prepare", setup: INTENT_FAIL_PREPARE_STUB)
+
+    assert_includes out, "crew-ticker board write failed",
+                     "the cosmetic intent write WARNS on a transient prod-board failure (it does not abort)"
+    assert_includes out, "deploy continues",
+                     "the warning states the deploy is not aborted"
+    assert_includes out, "bin/qa-server deploy mcritchie-studio origin/release",
+                     "prepare PROCEEDS to the QA deploy — the failed cosmetic intent's SystemExit did NOT abort it"
+  end
+
+  # SHIP_STUB's full plan + the intent write abort!ing (the prod-board failure).
+  INTENT_FAIL_SHIP_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      abort!("record op failed:\\nFATAL: remaining connection slots are reserved") if ruby.include?("record_deploy_intents!")
+      return {} unless ruby.include?("repo_plan")
+      { "slug" => "rel-ship", "state" => "assembled", "branch" => "release",
+        "qa_shas" => {
+          "studio-engine" => "aaaaaaa1111111111111111111111111111111111",
+          "turf-monster" => "ccccccc3333333333333333333333333333333333",
+          "mcritchie-studio" => "bbbbbbb2222222222222222222222222222222222"
+        },
+        "repos" => [
+          { "repo" => "studio-engine", "kind" => "gem", "prod_deploy" => nil,
+            "members" => [{ "slug" => "t-gem", "version" => "0.9.0", "branch" => nil }] },
+          { "repo" => "turf-monster", "kind" => "app", "qa_app" => "turf-monster",
+            "members" => [{ "slug" => "t-turf", "version" => nil, "branch" => "feat/turf" }],
+            "prod_deploy" => { "strategy" => "repo_script", "command" => "bin/deploy", "args" => ["--yes"] } },
+          { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
+            "members" => [{ "slug" => "t-studio", "version" => nil, "branch" => "feat/studio" }],
+            "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku",
+                               "branch" => "main", "smoke_url" => "https://app.mcritchie.studio" } }
+        ] }
+    end
+  RUBY
+
+  def test_ship_continues_when_the_crew_ticker_intent_write_fails
+    out = run_cli(["--dry-run"], call: "ship", setup: INTENT_FAIL_SHIP_STUB)
+
+    assert_includes out, "crew-ticker board write failed",
+                     "the cosmetic ship-slot intent write WARNS on a transient prod-board failure"
+    assert_includes out, "deploy continues",
+                     "the warning states the production deploy is not aborted"
+    assert_includes out, "push heroku main",
+                     "ship PROCEEDS to the production deploy — the failed cosmetic intent's SystemExit did NOT abort it"
+  end
+
+  # Guard against over-broadening: making the COSMETIC intent best-effort must NOT swallow
+  # real deploy errors. A non-intent conductor failure (here the deploy-critical repo-plan
+  # read) is FATAL and must STILL abort — record_deploy_intent's rescue is scoped to the
+  # intent write alone, never the deploy path.
+  def test_real_deploy_conductor_failures_still_abort_prepare
+    setup = %(def conductor(ruby, read_only: false); abort!("record op failed: prod board down"); end)
+    out = run_cli(["--dry-run"], setup: setup,
+                  call: "begin; prepare; puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "a real (non-intent) conductor failure still aborts the deploy"
+    assert_includes out, "prod board down", "the abort surfaces the real failure cause"
+    refute_includes out, "NO-ABORT", "the best-effort rescue must not swallow a deploy-critical conductor failure"
+  end
 end

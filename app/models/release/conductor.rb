@@ -300,6 +300,75 @@ class Release
       release
     end
 
+    # The canonical role owner of each Deploy-lane stage — the actor stamped on the
+    # OPEN intent when the CLI doesn't pass one. Mirrors StageAgentsHelper::STAGE_OWNER
+    # (the view-layer backfill for actor-less completed transitions): Steffon
+    # (Platform Engineer) QAs the assembled RC, Avi runs the ship. Kept here, on the
+    # record side, so `record_deploy_intents!` defaults the actor without reaching
+    # into a helper.
+    DEPLOY_LANE_ACTORS = { "assembled" => "steffon", "shipped" => "avi" }.freeze
+
+    # Record the Deploy-lane OPEN intents that drive the live "who's on it now" crew
+    # ticker on /deployments + the consolidated Stage Timeline
+    # (StageAgentsHelper#in_progress_work reads the open intent for the member's NEXT
+    # pipeline stage): who is QA-ing the RC (Steffon → assembled) and who is shipping
+    # it (Avi → shipped) RIGHT NOW, recorded the moment `bin/release prepare` / `ship`
+    # starts that lane's work. This is the Deploy mirror of `bin/reviewer-select`,
+    # which records the heavy/light pair → reviewed by default. Without it the QA/ship
+    # crew slots render as empty dashed placeholders until the transition lands — the
+    # 2026-06-25 incident where the conductor had to hand-run `bin/task intent --to
+    # shipped --actor avi` and an unfilled ship slot slipped through mid-deploy.
+    #
+    # Records an OPEN intent for EVERY member of `release`. Append-only + idempotent
+    # BY CONSTRUCTION (record_intent_event): an identical OPEN intent is REUSED rather
+    # than stacked, and it is superseded once the member's REAL transition lands — so a
+    # re-run never duplicates a row. `actor` defaults to the stage's canonical role
+    # owner (DEPLOY_LANE_ACTORS). Returns the slugs that carry a (new or reused) intent.
+    #
+    # The two lanes record DIFFERENTLY because the QA window does not map cleanly onto a
+    # pipeline transition:
+    #   * shipped (what `bin/release ship` fires) → a plain Avi → shipped intent,
+    #     superseded when `ship!` lands the shipped transition.
+    #   * assembled (what `bin/release prepare` fires) → the Steffon QA intent via
+    #     #record_qa_intent. In the STANDARD flow the merge already flipped the member
+    #     to `assembled`, so a toward-`assembled` intent would no-op (transition exists)
+    #     and never render — the reviewer's blocker. record_qa_intent records it the way
+    #     the board reads as LIVE QA on an already-assembled member instead.
+    def record_deploy_intents!(release, to_stage:, actor: nil)
+      return [] unless release
+
+      to_stage = to_stage.to_s
+      actor = (actor.presence || DEPLOY_LANE_ACTORS[to_stage]).to_s.strip.presence
+      release.ordered_members.filter_map do |task|
+        event = to_stage == "assembled" ? record_qa_intent(task, actor: actor) : task.record_intent_event(to_stage: to_stage, actor: actor)
+        task.slug if event
+      end
+    end
+
+    # The Steffon assembled-QA intent — the live "who's QA-ing the RC now" ticker that
+    # `bin/release prepare` fires. The catch the reviewer flagged: in the standard
+    # pipeline the merge (adopt!) ALREADY flipped the member `reviewed → assembled`, so
+    # by prepare time the assembled transition exists. A naive toward-`assembled` intent
+    # would (a) no-op in record_intent_event and (b) read off the wrong (next) stage on
+    # the board — so Steffon never showed live during the QA window. Instead:
+    #   * already `assembled` (THE standard flow) → record the QA intent toward
+    #     `shipped` with the `qa` marker. It is superseded by the SHIP — the real
+    #     transition that ENDS QA, not the merge that started the window — and the board
+    #     (StageAgentsHelper#open_deploy_intent) re-homes the marked intent into the
+    #     ASSEMBLED lane, distinct from Avi's unmarked ship intent.
+    #   * still `reviewed` (the rare half-state: attached for QA before the merge
+    #     flipped it) → the plain toward-`assembled` intent still renders, since
+    #     NEXT_PIPELINE_STAGE[reviewed] == assembled and no assembled transition exists.
+    # Idempotent + superseded-on-real-transition either way. Returns the intent (nil
+    # once the member has shipped, so a shipped member's prepare call no-ops).
+    def record_qa_intent(task, actor:)
+      if task.stage == "assembled"
+        task.record_intent_event(to_stage: "shipped", actor: actor, qa: true)
+      else
+        task.record_intent_event(to_stage: "assembled", actor: actor)
+      end
+    end
+
     # Record a [post-deploy] outcome line on a member task's devops.checks_run —
     # the audit trail for the command the release pipeline ran on the deployed app
     # (`bin/release prepare` → QA app, `ship` → prod app). IDEMPOTENT: a re-run

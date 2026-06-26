@@ -502,6 +502,42 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_not_nil work[:live_since]
   end
 
+  test "in_progress_work surfaces the marked QA intent (toward shipped) as live ASSEMBLED work" do
+    # The standard flow: the member is already `assembled`, so the QA intent rides
+    # toward `shipped` with the `qa` marker — it must render in the assembled lane,
+    # NOT the ship lane (that would read as Steffon shipping).
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+    work = in_progress_work(task.reload, @by_slug, nil, task.task_events.select(&:intent?))
+
+    assert_equal :assembled, work[:lane], "a marked QA intent renders in the assembled lane"
+    assert_equal %w[steffon], work[:agents].map { |a| a.agent&.slug }
+    assert_not_nil work[:live_since]
+  end
+
+  test "in_progress_work — an open ship intent (Avi) outranks the QA intent" do
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true) # QA first
+    task.record_intent_event(to_stage: "shipped", actor: "avi")               # ship starts later
+    work = in_progress_work(task.reload, @by_slug, nil, task.task_events.select(&:intent?))
+
+    assert_equal :shipped, work[:lane], "once Avi is actively shipping the ship lane wins"
+    assert_equal %w[avi], work[:agents].map { |a| a.agent&.slug }
+  end
+
+  test "crew_columns marks the assembled column LIVE from an open QA intent (Steffon)" do
+    # The reviewer's board assertion: an already-assembled member whose QA intent is
+    # open shows the assembled cluster ticking — Steffon QA-ing — keeping his avatar.
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+    cols = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+
+    assembled = cols.find { |c| c.lane == :assembled }
+    assert_equal %w[steffon], assembled.stacked.map { |a| a.agent&.slug }, "Steffon still owns the assembled column"
+    assert_not_nil assembled.live_since, "and it now ticks LIVE — QA in progress"
+    assert_empty cols.find { |c| c.lane == :shipped }.stacked, "ship slot stays empty while only QA is live"
+  end
+
   test "in_progress_work returns nil for a shipped (idle) task" do
     assert_nil in_progress_work(deploy_task(stage: "shipped", reviewers: REVIEWERS), @by_slug, nil, [])
   end

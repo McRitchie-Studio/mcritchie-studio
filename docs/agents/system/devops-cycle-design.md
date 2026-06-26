@@ -501,12 +501,20 @@ are append-only `TaskEvent`s of `kind: intent` (completed transitions stay
 it. Build-lane intent = the task's Pokémon mascot (assigned at create). The
 review pair is recorded by **`bin/reviewer-select <task>`** (step 2 — recording
 is the DEFAULT now; pass `--no-record`/`--dry` for an advisory-only preview);
-Steffon's QA and Avi's ship intents by **`bin/task intent <task> --to assembled
---actor steffon`** / **`--to shipped --actor avi`** (or `POST
-/api/v1/tasks/<slug>/intent`) — both append-only + idempotent, a no-op once the
-stage has landed. Actor-less conductor moves on `assembled`/`shipped` still
-attribute to their role owners (Steffon QAs `assembled`, Avi ships) so the Deploy
-crew never goes blank.
+Steffon's QA and Avi's ship intents are **auto-recorded by the deploy CLI** —
+**`bin/release prepare`** fires the `assembled` intent (`actor: steffon`) and
+**`bin/release ship`** the `shipped` intent (`actor: avi`), both via
+`Release::Conductor.record_deploy_intents!` over every release member (the Deploy
+mirror of `bin/reviewer-select`'s default review-intent write). So the conductor
+no longer hand-runs them — the 2026-06-25 unfilled-ship-slot incident (a missed
+manual `bin/task intent --to shipped --actor avi` left the ship crew slot blank
+mid-deploy). The manual **`bin/task intent <task> --to assembled --actor
+steffon`** / **`--to shipped --actor avi`** (or `POST
+/api/v1/tasks/<slug>/intent`) stays as the fallback / one-off path. All of them
+are append-only + idempotent — an identical open intent is reused, and the call is
+a no-op once the stage has landed. Actor-less conductor moves on
+`assembled`/`shipped` still attribute to their role owners (Steffon QAs
+`assembled`, Avi ships) so the Deploy crew never goes blank.
 
 **`Prepare release`**  *(reviewed → assembled — an RC for QA)*
 Two deterministic steps:
@@ -537,10 +545,14 @@ Two deterministic steps:
      `Release::MergePlan.compute`.
 2. **Deploy the candidate to QA.** Run **`bin/release prepare --yes [--task SLUG ...]
    [--slug rel-…] [--prod]`** (`Release::Conductor.prepare!`): finds the active
-   release, runs a per-app **merge-forward guard** (keeps each repo's `release`
-   ahead of `main`), then `bin/qa-server deploy <qa_app> origin/release` for each
-   **app** member — **gem members are skipped** (no app artifact; they ride the
-   record and are QA'd via a consuming app). It records `release.qa_url` +
+   release, **auto-records the Steffon → `assembled` QA intent** for every member
+   (`Release::Conductor.record_deploy_intents!(r, to_stage: "assembled", actor:
+   "steffon")`, append-only + idempotent — a no-op for any member already past
+   `assembled`) so /deployments shows Steffon QA-ing the RC live with no hand-run
+   `bin/task intent`, runs a per-app **merge-forward guard** (keeps each repo's
+   `release` ahead of `main`), then `bin/qa-server deploy <qa_app> origin/release`
+   for each **app** member — **gem members are skipped** (no app artifact; they ride
+   the record and are QA'd via a consuming app). It records `release.qa_url` +
    per-repo QA SHAs and leaves the RC `assembled`. `--task` is operator curation
    (adopt the named tasks first); it does **not** auto-adopt every reviewed task.
    Record ops run on the **prod board by default** (the board IS production) via
@@ -561,7 +573,15 @@ the QA-frozen SHA, so a checkout a review agent left on a leftover `pr-NNN` bran
 or with an uncommitted stale `schema.rb` would otherwise break the ff *mid-ship*
 (after gems published + the operator gate — the worst time). The preflight catches
 it up front, before anything irreversible. Pure decision:
-`Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Producer-first:** before any app deploy, it publishes every
+`Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Live ship
+crew:** right after the one operator gate (so a declined ship never shows it), ship
+**auto-records the Avi → `shipped` intent** for every member
+(`Release::Conductor.record_deploy_intents!(r, to_stage: "shipped", actor:
+"avi")`) so /deployments shows Avi shipping live — a green ticking timer — through
+the whole deploy instead of an empty dashed ship slot until `ship!` lands (the
+2026-06-25 incident). Append-only + idempotent (`ship!` supersedes it; a
+partial-ship abort leaves it open — correct, Avi is still shipping — and a re-run
+reuses it). **Producer-first:** before any app deploy, it publishes every
 **gem member** to RubyGems in order — for each it prints the gem + target
 version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
 `--yes` / `--dry-run`), runs the gem's build (studio-engine: `bin/release-check
