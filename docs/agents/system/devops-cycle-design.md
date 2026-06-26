@@ -378,8 +378,8 @@ tests pass, stop and hand the operator the `Run Deployment` gate.
 > **A non-interactive agent MUST pass `--yes` only for approved non-production confirms.** An
 > agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as
 > **"no"**. The consequence differs per command:
-> - **`prepare`** *silently no-ops* without `--yes` — looks like it ran but nothing
->   deployed. The dangerous one: always run `bin/release prepare --yes`.
+> - **`prepare`** aborts without confirmation in a non-interactive shell. Always
+>   run `bin/release prepare --yes` for the approved QA deploy step.
 > - **`ship`** *aborts loudly* without confirmation — that is intentional. Do not
 >   pass `--yes` unless Mr. McRitchie explicitly gives the production ship go in
 >   this session or an already-approved rollout prompt.
