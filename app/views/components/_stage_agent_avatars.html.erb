@@ -75,7 +75,8 @@
       the row also flex-wraps as a final guard against spilling a narrow column.
       Each cluster stacks its faces (priority on top) and shows the one duration that
       matters for the lane (build total / longer review / QA→prod). The build lane
-      ticks a LIVE counter while the task is still being built. The detail page
+      ticks a LIVE counter only while the task is actively `building` (a real claim) —
+      a `designed`/unclaimed card shows its mascot with no ticker. The detail page
       (:detailed) still shows every stage per-usual.
     %>
     <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events) %>
