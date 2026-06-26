@@ -102,9 +102,8 @@ lanes:
         gate: regression blocks the task
       - type: merge
         label: Main Branch
-        expectation: "(Diagram step) merge main forward into the release line."
-        gate: "—"
-        diverges: "Today main only fast-forwards to release at SHIP (Avi's lane). Assemble deploys origin/release to QA; main does not move here."
+        expectation: "Merge-forward guard: if main moved ahead, merge main into release so release always keeps main as an ancestor (stays shippable). Main itself does NOT move here — it advances only at ship, when release fast-forwards into main."
+        gate: "release stays ahead of main"
       - type: deploy
         label: QA
         expectation: "bin/release prepare: deploy origin/release to the QA app, then poll /up."
