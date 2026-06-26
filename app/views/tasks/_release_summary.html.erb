@@ -79,3 +79,27 @@
         <% if trailing %><div class="shrink-0"><%= trailing %></div><% end %>
       </div>
     <% end %>
+    <% if current %>
+      <% tracker_steps = release_tracker_steps(rel) %>
+      <div class="mt-4 pt-3 border-t border-subtle/70" data-test="release-tracker" aria-label="Release progress">
+        <div class="grid grid-cols-5 gap-1">
+          <% tracker_steps.each_with_index do |step, index| %>
+            <div class="relative flex min-w-0 flex-col items-center gap-1" data-test="release-tracker-step" data-stage="<%= step[:key] %>" data-state="<%= step[:state] %>">
+              <% unless index == tracker_steps.length - 1 %>
+                <span aria-hidden="true" class="absolute top-2.5 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
+              <% end %>
+              <span class="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= 'aria-current="step"' if step[:state] == :active %>>
+                <% if step[:state] == :complete %>
+                  <span aria-hidden="true">&check;</span>
+                <% elsif step[:state] == :active %>
+                  <span aria-hidden="true" class="h-2.5 w-2.5 rounded-full bg-current"></span>
+                <% else %>
+                  <%= step[:index] %>
+                <% end %>
+              </span>
+              <span class="max-w-16 text-center text-[10px] font-semibold leading-tight <%= release_tracker_label_classes(step[:state]) %>" data-test="release-tracker-label"><%= step[:label] %></span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>

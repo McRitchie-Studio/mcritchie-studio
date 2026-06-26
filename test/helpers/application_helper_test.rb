@@ -157,6 +157,49 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='release-timing']", text: /\Ain progress · /
   end
 
+  test "[unit] release_tracker_steps maps release train updates" do
+    rel = Release.open!
+    assert_equal %i[active pending pending pending pending],
+                 release_tracker_steps(rel).map { |step| step[:state] }
+
+    tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
+    assert_equal %i[complete active pending pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+
+    rel.update!(qa_url: "https://qa.mcritchie.studio")
+    assert_equal %i[complete complete active pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+
+    rel.assemble!
+    assert_equal %i[complete complete complete active pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+
+    rel.update!(confirmed_at: Time.current)
+    assert_equal %i[complete complete complete complete active],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+
+    rel.update!(state: "shipped")
+    assert_equal %i[complete complete complete complete complete],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+  end
+
+  test "[component] _release_summary renders the current release tracker stages" do
+    rel = Release.open!
+    tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
+    rel.update!(qa_url: "https://qa.mcritchie.studio")
+    rel.assemble!
+
+    render partial: "tasks/release_summary", locals: { release: rel, variant: :current }
+
+    assert_select "[data-test='release-tracker']"
+    assert_select "[data-test='release-tracker-step']", 5
+    %w[Merging Testing Assembling Confirming Deploying].each do |label|
+      assert_select "[data-test='release-tracker-label']", text: label
+    end
+    assert_select "[data-test='release-tracker-step'][data-state='complete']", 3
+    assert_select "[data-test='release-tracker-step'][data-state='active'][data-stage='confirming']"
+  end
+
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
     assert_nil compact_stage_duration(nil)
     assert_equal "<1m", compact_stage_duration(30)
