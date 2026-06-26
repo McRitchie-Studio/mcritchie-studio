@@ -70,15 +70,18 @@
                   class="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-green-500/15 animate-pulse"></span>
           <% end %>
 
-          <%# 1 — stage transition (from → to), centered. A reconstructed (backfilled)
-              row carries a small trailing tag; live work is shown by the pulsing
-              backdrop + the ticking duration, not a pill. %>
+          <%# 1 — stage transition, centered. While the stage is still IN PROGRESS we
+              show ONLY the current stage badge — the arrow + next-step badge appear
+              once the transition lands (a completed card). Live work is otherwise
+              shown by the pulsing backdrop + ticking duration. %>
           <div class="flex flex-wrap items-center justify-center gap-2 mb-3" data-test="timeline-transition">
             <%= render "components/badge", text: block.from_label, scheme: block.from_stage.present? ? stage_scheme(block.from_stage) : "neutral" %>
-            <span class="text-muted text-xs">&rarr;</span>
-            <%= render "components/badge", text: block.to_label, scheme: stage_scheme(block.to_stage) %>
-            <% if block.backfilled %>
-              <span class="text-[10px] text-muted uppercase tracking-wide" title="Reconstructed from legacy stage timestamps">reconstructed</span>
+            <% unless block.in_progress? %>
+              <span class="text-muted text-xs">&rarr;</span>
+              <%= render "components/badge", text: block.to_label, scheme: stage_scheme(block.to_stage) %>
+              <% if block.backfilled %>
+                <span class="text-[10px] text-muted uppercase tracking-wide" title="Reconstructed from legacy stage timestamps">reconstructed</span>
+              <% end %>
             <% end %>
           </div>
 

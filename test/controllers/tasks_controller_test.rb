@@ -661,6 +661,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{inprogress}[data-stage='assembled']", count: 0,
                   message: "no Assembled → Assembled no-op block"
     assert_includes css_select(inprogress).to_s, "Avi", "the live ship card is owned by Avi"
+
+    # While the stage is still in progress, the transition row shows ONLY the
+    # current stage (Assembled) — no arrow, no next-step (Shipped) badge. Those
+    # appear once the transition lands (the li still TARGETS shipped via data-stage).
+    live_row = css_select("#{inprogress} [data-test='timeline-transition']").to_s
+    assert_includes live_row, "Assembled", "in-progress card shows the current stage"
+    assert_not_includes live_row, "Shipped", "in-progress card hides the next-step badge + arrow"
   end
 
   test "[component] timeline centers the transition badges and stacks crew avatar-over-name" do
