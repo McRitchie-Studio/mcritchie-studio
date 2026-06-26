@@ -326,20 +326,22 @@ two seniors** (not his solo gate); `assembled` is owned by **Steffon** (titled
 on the **frozen ship SHA** *before* the operator's Make-the-release action — so
 the human gate sits **after test confirmation, before the deploy**.
 
-**RC assembly autonomy is the one evolving policy** — so it lives in a single,
-clearly-marked, tunable place: `config/release_builder.yml`. Starting policy:
+**RC assembly autonomy is the one evolving policy** — so it lives in one
+tunable config file, `config/release_builder.yml`, read by
+`Release::BuilderPolicy`. Current policy:
 
-- **Auto-assemble + auto-deploy-to-QA** a release that is a *single* task,
-  *single* repo, with **no** `migration`/`payment`/`solana` risk tag.
-- **Propose for operator confirmation** any multi-task, cross-repo, or
-  risk-tagged release: the agent drafts it, posts the plan to Discord, and waits.
-- Production ship is **always** operator-gated (Make the release on the
-  `assembled` RC), regardless.
+- **Auto-assemble + auto-deploy-to-QA** only when the reviewed queue is one
+  task, one repo, with no `migration`/`payment`/`solana` risk tag.
+- **Propose for operator confirmation** for an empty queue, multi-task release,
+  cross-repo release, or blocked-risk release. The conductor can draft the plan,
+  but waits before changing release state.
+- Production ship remains **always operator-gated** (`production_ship.operator_gated`
+  is `true`), regardless of QA autonomy.
 
-The agent reads this file every heartbeat; changing the thresholds changes
-behavior with no code edit. Keys + defaults are documented at the top of the
-file and mirrored in `deployment.md` when this lands — that is the one place to
-modify the release builder's autonomy.
+Change thresholds in `config/release_builder.yml`, then run
+`bin/rails test test/models/release/builder_policy_test.rb`. This policy only
+decides QA assembly autonomy; `bin/release ship` remains separately
+operator-gated.
 
 ### 1.4 Kickoff commands — board → Claude session
 

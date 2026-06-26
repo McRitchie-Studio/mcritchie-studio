@@ -1,0 +1,19 @@
+# Release builder autonomy policy.
+#
+# Read by Release::BuilderPolicy. This config decides whether a reviewed-task
+# queue is eligible for automatic QA assembly, or whether the release conductor
+# should only propose the plan and wait for operator confirmation.
+#
+# This file never grants production shipping authority. Production deploys stay
+# separately gated by production_ship.operator_gated.
+
+auto_qa:
+  max_tasks: 1
+  max_repos: 1
+  blocked_risk_tags:
+    - migration
+    - payment
+    - solana
+
+production_ship:
+  operator_gated: true

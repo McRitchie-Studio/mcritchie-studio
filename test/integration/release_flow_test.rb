@@ -1,4 +1,5 @@
 require "test_helper"
+require "minitest/mock"
 
 # Integration: the Release lifecycle across multiple Task records and the DB —
 # assemble reviewed tasks, ship the candidate, members flip; abandon frees them.
