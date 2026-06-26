@@ -30,9 +30,11 @@ Load-bearing reminders (full detail in §1.4):
   (`prepare`/`ship`/`archive`). `--yes` drops the human confirm only, never a test
   gate.
 - **Review round 1 in parallel** (fan out Avi + the `reviewer-select` heavy/light
-  pair across *all* submitted PRs at once), **block-and-move** (one block never
-  halts the batch), a **second review round** for stragglers that arrive during
-  `prepare`, then assemble and ship.
+  pair across the submitted PRs), but **cap the fan-out at 5 concurrent agents**
+  (the board DB's connection budget — see "Concurrency cap" in the operating
+  model); a queue larger than 5 reviews in **waves of ≤5**. **Block-and-move** (one
+  block never halts the batch), a **second review round** for stragglers that
+  arrive during `prepare`, then assemble and ship.
 - Surface any blocking event as **❌ Block Resolved — <slug>: <reason>** in the
   handoff; omit that section entirely on a clean run.
 - Ship from a **primary checkout**, not a worktree (gems resolve as siblings at the

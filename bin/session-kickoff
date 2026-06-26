@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TASK_BIN="${TASK_BIN:-$ROOT/bin/task}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  bin/session-kickoff              # print this session's Pokemon marker
+  bin/session-kickoff jasper       # show Jasper for this session
+  bin/session-kickoff pokemon      # return to the Pokemon marker
+  bin/session-kickoff --persona jasper
+
+Requires CLAUDE_CODE_SESSION_ID or CODEX_THREAD_ID.
+USAGE
+}
+
+fail() {
+  printf 'session-kickoff: %s\n' "$1" >&2
+  printf 'Try: bin/session-kickoff --help\n' >&2
+  exit 64
+}
+
+runtime_fail() {
+  printf 'session-kickoff: %s\n' "$1" >&2
+  exit 1
+}
+
+if [ -z "${CLAUDE_CODE_SESSION_ID:-}${CODEX_THREAD_ID:-}" ]; then
+  fail "no Claude/Codex session id found"
+fi
+
+persona=""
+case "${1:-}" in
+  "")
+    ;;
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  --persona)
+    shift
+    [ $# -gt 0 ] || fail "--persona needs a value"
+    persona="$1"
+    shift
+    ;;
+  pokemon|Pokemon|none|clear|off|-)
+    persona="none"
+    shift
+    ;;
+  --pokemon)
+    persona="none"
+    shift
+    ;;
+  --*)
+    fail "unknown flag $1"
+    ;;
+  *)
+    persona="$1"
+    shift
+    ;;
+esac
+
+[ $# -eq 0 ] || fail "too many arguments: $*"
+
+args=(session-mascot)
+[ -n "$persona" ] && args+=(--persona "$persona")
+args+=(--print)
+
+if ! output="$("$TASK_BIN" "${args[@]}")"; then
+  runtime_fail "bin/task session-mascot failed"
+fi
+
+if [ -z "${output//[[:space:]]/}" ]; then
+  runtime_fail "no marker printed; check task API access"
+fi
+
+printf '%s\n' "$output"

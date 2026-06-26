@@ -224,6 +224,16 @@ lane.
 
 ## Parallel Work Quick Start
 
+> **Concurrency cap — 5 at a time.** Cap parallel work at **5 concurrent
+> operations per session** — at most 5 agents / `heroku run` dynos / parallel
+> board-writing commands in flight at once. The prod board Postgres (essential-0)
+> has a **20 hard-connection limit**, and a heavy fan-out (parallel review agents +
+> the ship's `heroku run` dynos + `bin/task`/`bin/release` CLI + web/worker pools)
+> once spiked past it → `FATAL: too many connections` → the board briefly 500'd.
+> Parallelism stays first-class (fan-out is still the default for devops) — just
+> **bounded**: fan out reviews and any other batch in **waves of ≤5**, never all at
+> once; when a queue is larger than 5, run it in successive waves.
+
 For feature work, active-doc edits, or any task that might be committed, start
 from McRitchie Studio, create or update the task-board item, then allocate a
 worktree:

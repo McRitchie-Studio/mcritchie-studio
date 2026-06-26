@@ -28,13 +28,16 @@ class TaskCliTest < Minitest::Test
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
-               stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶" })
+               stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
+                                      "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
+               stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
     @stub_stage = stub_stage
     # The POST /api/v1/sessions/:id/mascot response (the eager session-mascot draw).
     @stub_session_mascot = stub_session_mascot
+    @stub_agent = stub_agent
     # When set, GET /api/v1/tasks/<slug> returns this non-2xx status — used to
     # force the board-mascot fallback read to fail (a transient 429 / 5xx).
     @fail_get = fail_get
@@ -97,6 +100,10 @@ class TaskCliTest < Minitest::Test
 
     if method == "POST" && path =~ %r{\A/api/v1/sessions/.+/mascot\z}
       return ["200 OK", JSON.generate("data" => @stub_session_mascot)]
+    end
+
+    if method == "GET" && path =~ %r{\A/api/v1/agents/[^/]+\z}
+      return ["200 OK", JSON.generate("data" => @stub_agent)]
     end
 
     if @fail_get && method == "GET" && path.start_with?("/api/v1/tasks/")
@@ -847,6 +854,25 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  def test_session_mascot_writes_a_codex_session_marker_and_prints_it
+    Dir.mktmpdir do |projects|
+      marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
+
+      _req, out, _err, status = run_task(
+        ["session-mascot", "--print"],
+        env: { "CODEX_THREAD_ID" => MARKER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+
+      assert status.success?
+      marker = JSON.parse(File.read(marker_path))
+      assert_equal "snorlax", marker["mascot"]
+      assert_equal "mcritchie-studio", marker["app"]
+      assert_equal "🔶 Snorlax · mcritchie-studio", out.strip
+    end
+  end
+
   # No session → a clean no-op (the hook must never break or delay session start).
   def test_session_mascot_is_a_noop_without_a_session
     Dir.mktmpdir do |projects|
@@ -879,6 +905,38 @@ class TaskCliTest < Minitest::Test
       assert_equal "demo-task", marker["slug"], "existing context is preserved"
       assert_equal "mcritchie-studio", marker["app"]
       assert_equal "snorlax", marker["mascot"], "…and the mascot is set"
+    end
+  end
+
+  def test_session_mascot_persona_temporarily_replaces_then_reverts
+    Dir.mktmpdir do |projects|
+      marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
+
+      _req, out, _err, status = run_task(
+        ["session-mascot", "--persona", "jasper", "--print"],
+        env: { "CODEX_THREAD_ID" => MARKER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+
+      assert status.success?
+      marker = JSON.parse(File.read(marker_path))
+      assert_equal "jasper", marker["persona"]
+      assert_equal "Jasper", marker["mascot"]
+      assert_equal "🧪 Jasper · mcritchie-studio", out.strip
+
+      _req, out, _err, status = run_task(
+        ["session-mascot", "--persona", "none", "--print"],
+        env: { "CODEX_THREAD_ID" => MARKER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+
+      assert status.success?
+      marker = JSON.parse(File.read(marker_path))
+      refute marker.key?("persona")
+      assert_equal "snorlax", marker["mascot"]
+      assert_equal "🔶 Snorlax · mcritchie-studio", out.strip
     end
   end
 

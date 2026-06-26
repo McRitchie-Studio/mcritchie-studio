@@ -400,12 +400,14 @@ one blocking event happened** — omit the section on a clean run.
    queue **by stage**, name the active release candidate + its `assembled` members
    (the "active pending release" you fold in), and flag `blocked` + non-pipeline
    tasks (e.g. `rolio` — handle in its own app, never `bin/release merge` it).
-2. **Review round 1 — PARALLEL fan-out.** Fetch the submitted queue
-   (`bin/task list --stage submitted`) and review **all of it at once**: for each
+2. **Review round 1 — PARALLEL fan-out (≤5 concurrent).** Fetch the submitted
+   queue (`bin/task list --stage submitted`) and review it in parallel: for each
    pipeline task run the two-senior cascade (the `Review submitted PRs` runbook
    below) — spawn **Avi** (product-acceptance), `bin/reviewer-select <task>
    --busy-auto` (records the heavy+light pair), then spawn the two seniors **in
-   parallel**. Launch the whole batch concurrently — don't review one PR start to
+   parallel**. **Cap the fan-out at 5 concurrent agents** (the board DB's
+   connection budget — see "Concurrency cap" in the operating model): launch in
+   **waves of ≤5**, not the whole queue at once, and don't review one PR start to
    finish before the next. Two approvals → `bin/task move <task> reviewed`; any
    block → block-and-move.
 3. **Prepare the release.** Merge the round-1 `reviewed` tasks **plus any
@@ -471,7 +473,10 @@ each `submitted` task (`bin/task list` or the board):
    agents — each is a launchable subagent. Each judges **diff-vs-acceptance + code
    standards + code smell + scalability** at its depth: HEAVY does the deep pass
    (Opus on `migration`/`payment`/`solana`/`auth`), LIGHT a focused pass; both
-   confirm the shape's **base** tiers are green.
+   confirm the shape's **base** tiers are green. **Honor the ≤5-concurrent cap**
+   (operating model): across all PRs in flight, keep at most 5 review agents
+   running at once — a queue wider than ~2 PRs reviews in **waves of ≤5**, never
+   the whole batch at once.
 4. **Resolve.** On **two approvals** → `bin/task move <task> reviewed`, then the
    conductor merges the PR into `release` with **`bin/release merge <task>`**
    (membership flips `reviewed → assembled`). Any reviewer blocks → **`bin/task
