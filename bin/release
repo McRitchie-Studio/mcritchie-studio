@@ -316,6 +316,21 @@ def conductor(ruby, read_only: false)
   JSON.parse(line)
 end
 
+# Record a deploy-lane crew-ticker intent on the board — a COSMETIC write that only
+# paints the live /deployments "who's on it now" badge; nothing the deploy depends on.
+# So it is BEST-EFFORT: conductor() abort!s (→ SystemExit) on ANY non-zero heroku-run
+# exit, and a transient prod-board outage (e.g. the documented 2026-06-25 essential-PG
+# "too many connections" incidents) on this cosmetic ticker must WARN and CONTINUE —
+# it must NEVER abort a real `prepare`/`ship`. Mirrors bin/reviewer-select's best-effort
+# review-intent write (rescue SystemExit, StandardError → warn → continue, ~lines 325-326).
+# Scoped narrowly to the intent write ONLY — every deploy-critical conductor() call stays
+# FATAL, so real deploy errors still abort.
+def record_deploy_intent(label, ruby)
+  conductor(ruby)
+rescue SystemExit, StandardError => e
+  say("  ⚠ #{label} not recorded — crew-ticker board write failed (#{e.message}); deploy continues (cosmetic only)")
+end
+
 # --- deploy-side usage capture (best-effort) --------------------------------
 # The conductor flips task stages on PROD via `heroku run`, where there is NO
 # local transcript — so we capture the per-transition usage delta HERE (locally,
@@ -808,9 +823,12 @@ def prepare
   #     Release::Conductor#record_qa_intent (the QA intent rides toward `shipped` with a
   #     `qa` marker — superseded by the SHIP, not the merge — and the board re-homes it
   #     to the assembled lane). Append-only + idempotent. A board WRITE → suppressed in
-  #     --dry-run (conductor prints the plan).
+  #     --dry-run (conductor prints the plan). BEST-EFFORT (record_deploy_intent): this
+  #     cosmetic ticker write must never abort the QA deploy on a transient prod-board
+  #     failure — it warns and continues.
   step("record: Steffon assembled QA intent (live crew ticker)")
-  conductor(
+  record_deploy_intent(
+    "Steffon assembled QA intent",
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'steffon'); " \
     "puts({ intent: 'assembled', actor: 'steffon', members: n.size }.to_json)"
   )
@@ -1463,9 +1481,12 @@ def ship
   #     so a declined ship never shows Avi shipping. Append-only + idempotent
   #     (record_intent_event reuses the open intent; `ship!` supersedes it). On a
   #     partial-ship abort the intent stays open — correct (Avi is still shipping) and
-  #     a re-run reuses it. A board WRITE → suppressed in --dry-run.
+  #     a re-run reuses it. A board WRITE → suppressed in --dry-run. BEST-EFFORT
+  #     (record_deploy_intent): a transient prod-board failure on this cosmetic ship-slot
+  #     write must never abort the production deploy — it warns and continues.
   step("record: Avi shipped intent (live crew ticker)")
-  conductor(
+  record_deploy_intent(
+    "Avi shipped intent",
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'avi'); " \
     "puts({ intent: 'shipped', actor: 'avi', members: n.size }.to_json)"
   )
