@@ -33,8 +33,8 @@ class TaskCardTest < ActionView::TestCase
       "uppercase tracking-wide label must have no surrounding whitespace, else it shows a gap before the count"
   end
 
-  test "the slug row renders between the crew and updated age row" do
-    task = Task.create!(title: "Slug position task", stage: "building")
+  test "the slug row renders between the crew and updated age row with size first" do
+    task = Task.create!(title: "Slug position task", stage: "building", po_size: "small")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
                       occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "carl")
@@ -43,13 +43,34 @@ class TaskCardTest < ActionView::TestCase
 
     crew_index = rendered.index('data-test="stage-agent-avatars"')
     slug_index = rendered.index('data-test="task-slug-row"')
+    size_index = rendered.index('data-test="task-size-badge"')
+    slug_text_index = rendered.index("<code")
     updated_index = rendered.index('data-test="task-card-updated-row"')
 
     assert crew_index, "stage crew must render for the ordering assertion"
     assert slug_index, "slug row must expose its stable test hook"
+    assert size_index, "size badge must expose its stable test hook"
     assert updated_index, "updated age row must expose its stable test hook"
     assert_operator crew_index, :<, slug_index
+    assert_operator size_index, :<, slug_text_index
     assert_operator slug_index, :<, updated_index
+  end
+
+  test "the activity box renders after the updated age row" do
+    task = Task.create!(title: "Activity position task", stage: "submitted")
+    activity = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                                description: "PR does not meet acceptance yet.")
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     latest_activity: activity, activity_count: 1 }
+
+    updated_index = rendered.index('data-test="task-card-updated-row"')
+    activity_index = rendered.index('data-test="activity-box"')
+
+    assert updated_index, "updated age row must expose its stable test hook"
+    assert activity_index, "activity box must expose its stable test hook"
+    assert_operator updated_index, :<, activity_index
   end
 
   test "the partial is self-contained (no board @ivars) — renders with only its locals" do
