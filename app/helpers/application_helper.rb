@@ -103,7 +103,7 @@ module ApplicationHelper
   def release_tracker_done_count(release)
     return RELEASE_TRACKER_STAGES.size if release.shipped?
     return 4 if release.confirmed_at.present?
-    return 3 if release.state == "assembled" || release.assembled_at.present?
+    return 3 if release.state == "assembled"
     return 2 if release.qa_url.present? || release_tracker_qa_shas?(release)
     return 1 if release.tasks.any?
 
@@ -126,7 +126,7 @@ module ApplicationHelper
   def release_tracker_label_classes(state)
     case state.to_sym
     when :complete then "text-heading"
-    when :active   then "text-amber-200"
+    when :active   then "text-amber-700 dark:text-amber-200"
     else                "text-muted"
     end
   end

@@ -88,7 +88,7 @@
               <% unless index == tracker_steps.length - 1 %>
                 <span aria-hidden="true" class="absolute top-2.5 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
               <% end %>
-              <span class="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= 'aria-current="step"' if step[:state] == :active %>>
+              <span class="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= raw('aria-current="step"') if step[:state] == :active %>>
                 <% if step[:state] == :complete %>
                   <span aria-hidden="true">&check;</span>
                 <% elsif step[:state] == :active %>

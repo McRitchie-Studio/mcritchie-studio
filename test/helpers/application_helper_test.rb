@@ -174,6 +174,12 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal %i[complete complete complete active pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
 
+    rel.reopen!
+    assert_equal %i[complete complete active pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] },
+                 "a reopened release must not over-advance from sticky assembled_at"
+
+    rel.assemble!
     rel.update!(confirmed_at: Time.current)
     assert_equal %i[complete complete complete complete active],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
@@ -198,6 +204,8 @@ class ApplicationHelperTest < ActionView::TestCase
     end
     assert_select "[data-test='release-tracker-step'][data-state='complete']", 3
     assert_select "[data-test='release-tracker-step'][data-state='active'][data-stage='confirming']"
+    assert_select "[data-test='release-tracker-step'][data-state='active'] [aria-current=?]", "step"
+    assert_select "[data-test='release-tracker-step'][data-state='active'] [data-test='release-tracker-label'].text-amber-700.dark\\:text-amber-200"
   end
 
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
