@@ -229,4 +229,44 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "div[title^='Snorlax']"
     end
   end
+
+  # --- the self-claim fix: a freshly-filed `designed` task is NOT live ----------
+  # `bin/task create` still stamps the task a mascot (its identity), and a conductor
+  # bin/release follow-up files it `designed`/unowned. The card must show that mascot
+  # face WITHOUT the green live build ticker — filing a task is not building it.
+  test "a freshly filed designed task shows its mascot but no live build ticker on the deploy board" do
+    Pokemon.create!(dex: 50, name: "Diglett", slug: "diglett", generation: 1,
+                    sprite_url: "https://example.test/diglett-sprite.png")
+    task = Task.create!(title: "conductor follow up task", stage: "designed",
+                        metadata: { "devops" => { "mascot" => "diglett" } })
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "img[src='https://example.test/diglett-sprite.png']" # identity preserved
+      assert_select "[data-test='crew-live']", count: 0                  # but NO false live build intent
+    end
+  end
+
+  # The counterpart the reviewer demanded: a REAL claim (move → building) still ticks
+  # the live build counter — the fix must not flatten a legitimately-owned build.
+  test "a building-claimed task still ticks a live build counter on the deploy board" do
+    Pokemon.create!(dex: 51, name: "Dugtrio", slug: "dugtrio", generation: 1,
+                    sprite_url: "https://example.test/dugtrio-sprite.png")
+    task = Task.create!(title: "claimed build task", stage: "building",
+                        metadata: { "devops" => { "mascot" => "dugtrio" } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 2.hours.ago, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "carl")
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "img[src='https://example.test/dugtrio-sprite.png']"
+      assert_select "[data-test='crew-live']", count: 1 # the active claim DOES tick
+    end
+  end
 end
