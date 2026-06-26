@@ -10,16 +10,18 @@ require "fileutils"
 # A Claude session transcript is CUMULATIVE across the whole session (every task
 # it touches), so to isolate the work done for ONE task's ONE stage we diff the
 # session's current cumulative totals against a baseline snapshot taken when that
-# session first TOUCHED the task. Two touch points seed the baseline:
+# session first TOUCHED the task. Three touch points seed the baseline:
 #
+#   * task CREATE             — `bin/task create` (so the DESIGN phase is measured)
 #   * the build CLAIM         — `bin/task move <slug> building`
 #   * a review/deploy INTENT  — `bin/task intent <slug> --to <stage>` and
 #                               `bin/reviewer-select` (the review intent)
 #
-# so the first real WORK transition (building→submitted, submitted→reviewed,
-# reviewed→assembled, assembled→shipped) computes a true non-zero delta instead
-# of the zeroed first-move baseline that made `Submitted→Reviewed` show a model
-# name with zero tokens/cost.
+# so the first real WORK transition (designed→building, building→submitted,
+# submitted→reviewed, reviewed→assembled, assembled→shipped) computes a true
+# non-zero delta instead of the zeroed first-move baseline that made the
+# `Designed→Building` and `Submitted→Reviewed` chips show a model name with zero
+# tokens/cost.
 #
 # Plain Ruby (no Rails) so the standalone CLIs (bin/task, bin/release,
 # bin/reviewer-select) can require it directly. Best-effort by design: every

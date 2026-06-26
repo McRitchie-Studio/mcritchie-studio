@@ -368,6 +368,42 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  # The DESIGN-PHASE analog of the intent-seed fix: `bin/task create` seeds the
+  # baseline at the session's CURRENT totals, so the FIRST work transition
+  # (designed→building) records the real design-phase delta instead of model-only.
+  # Before this fix the create handler seeded nothing, so the designed→building
+  # move had no baseline to diff and dropped to the model-only chip — TOKENS — /
+  # COST — on the "Designed → Building" card even though MODEL/DURATION populated.
+  # End-to-end through bin/task against the stub board (whose create POST returns
+  # slug "demo-task"), sharing the on-disk baseline across the two invocations
+  # (same HOME + TASK_USAGE_DIR). Contrast test_first_move_with_no_baseline_records_
+  # model_only — that's the bug this closes for the build CLAIM move.
+  def test_create_seeds_baseline_so_first_build_move_records_a_delta
+    Dir.mktmpdir do |home|
+      proj = File.join(home, ".claude", "projects", "-Users-alex-projects")
+      FileUtils.mkdir_p(proj)
+      transcript = File.join(proj, "#{SESSION}.jsonl")
+      env = { "CLAUDE_CODE_SESSION_ID" => SESSION, "HOME" => home, "TASK_USAGE_DIR" => File.join(home, "usage-state") }
+
+      # The agent has burned turn-1 tokens (reading the docs, shaping the feature)
+      # by the time it creates the task — which seeds the baseline here.
+      File.write(transcript, "#{transcript_line(input: 1000, output: 2000, cc: 0, cr: 5000)}\n")
+      _req, _out, _err, status = run_task(["create", "--title", "Design phase task", "--kind", "feature"], env: env)
+      assert status.success?, "the create should record + seed the baseline cleanly"
+
+      # The design work happens (turn 2 — worktree setup, reading the code, the
+      # plan), then the agent claims the task at building.
+      File.open(transcript, "a") { |f| f.puts transcript_line(input: 100, output: 4000, cc: 50, cr: 6000) }
+      requests, = run_task(["move", "demo-task", "building"], env: env)
+
+      event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
+      assert_equal "claude-opus-4-8", event["model"]
+      assert_equal 6150, event["tokens_in"], "delta is turn 2 only — the design work since create"
+      assert_equal 4000, event["tokens_out"]
+      assert event.key?("cost"), "a real design-phase delta records cost too"
+    end
+  end
+
   def test_move_without_a_transcript_records_spine_only
     Dir.mktmpdir do |home| # $HOME with no transcript file present
       requests, = run_task(["move", "demo-task", "submitted"],
