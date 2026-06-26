@@ -70,11 +70,11 @@ module ApplicationHelper
   end
 
   RELEASE_TRACKER_STAGES = [
-    { key: "testing", active_label: "Testing", complete_label: "Tested ✅" },
-    { key: "assembling", active_label: "Assembling", complete_label: "Assembled ✅" },
-    { key: "qa_deploying", active_label: "Deploying", complete_label: "Live on QA ✅" },
-    { key: "confirming", active_label: "Testing", complete_label: "Confirmed ✅" },
-    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed ✅" }
+    { key: "testing", active_label: "Testing", complete_label: "Tested" },
+    { key: "assembling", active_label: "Assembling", complete_label: "Assembled" },
+    { key: "qa_deploying", active_label: "Deploying", complete_label: "Live on QA" },
+    { key: "confirming", active_label: "Testing", complete_label: "Confirmed" },
+    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed" }
   ].freeze
 
   # Pizza-tracker progress for the active release card, derived from the durable
