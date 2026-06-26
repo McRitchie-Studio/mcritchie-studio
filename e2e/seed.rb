@@ -257,4 +257,44 @@ shipped_release.update_columns(created_at: 18.minutes.ago, shipped_at: Time.curr
 active_release = Release.open!
 active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-active" } })
 
+# /intelligence demo: two SHIPPED tasks that each walked the full lifecycle with
+# priced/sized transitions and an actual_size at ship — so the dashboard's cycle
+# time, estimate-vs-actual, tokens, cost and model-mix charts all have signal in
+# the e2e env (timeline-demo alone never ships, so cycle/estimate would be empty).
+[
+  { slug: "intel-shipped-a", title: "Intelligence demo shipped a",
+    po: "medium", dev: "large", actual: "xl",
+    created: 12.days.ago, shipped: 9.days.ago,
+    events: [
+      { from: "designed",  to: "building",  secs: 3_600,  tin: 20_000,  tout: 30_000,  cost: "0.80", model: "claude-opus-4-8" },
+      { from: "building",  to: "submitted", secs: 86_400, tin: 180_000, tout: 90_000,  cost: "6.20", model: "claude-opus-4-8" },
+      { from: "submitted", to: "reviewed",  secs: 7_200,  tin: 12_000,  tout: 6_000,   cost: "0.40", model: "claude-haiku-4" },
+      { from: "reviewed",  to: "assembled", secs: 3_600,  tin: 4_000,   tout: 2_000,   cost: "0.15", model: "claude-haiku-4" },
+      { from: "assembled", to: "shipped",   secs: 1_800,  tin: nil,     tout: nil,     cost: nil,    model: nil }
+    ] },
+  { slug: "intel-shipped-b", title: "Intelligence demo shipped b",
+    po: "small", dev: "medium", actual: "small",
+    created: 6.days.ago, shipped: 4.days.ago,
+    events: [
+      { from: "designed",  to: "building",  secs: 1_800,  tin: 8_000,   tout: 12_000,  cost: "0.35", model: "claude-sonnet-4-5" },
+      { from: "building",  to: "submitted", secs: 28_800, tin: 60_000,  tout: 40_000,  cost: "2.10", model: "claude-sonnet-4-5" },
+      { from: "submitted", to: "reviewed",  secs: 5_400,  tin: 6_000,   tout: 3_000,   cost: "0.20", model: "claude-haiku-4" },
+      { from: "reviewed",  to: "assembled", secs: 2_400,  tin: 3_000,   tout: 1_500,   cost: "0.10", model: "claude-haiku-4" },
+      { from: "assembled", to: "shipped",   secs: 1_200,  tin: nil,     tout: nil,     cost: nil,    model: nil }
+    ] }
+].each do |spec|
+  t = Task.create!(title: spec[:title], slug: spec[:slug], stage: "shipped", priority: 1,
+                   po_size: spec[:po], dev_size: spec[:dev], actual_size: spec[:actual],
+                   metadata: { "devops" => { "kind" => "feature", "shape" => "ui+db", "repositories" => ["mcritchie-studio"] } })
+  t.task_events.delete_all
+  at = spec[:created]
+  spec[:events].each do |e|
+    at += e[:secs].seconds
+    t.task_events.create!(from_stage: e[:from], to_stage: e[:to], occurred_at: at,
+                          seconds_in_from: e[:secs], tokens_in: e[:tin], tokens_out: e[:tout],
+                          cost: e[:cost], model: e[:model], source: "cli", actor: "shannon")
+  end
+  t.update_columns(created_at: spec[:created], completed_at: spec[:shipped], updated_at: at)
+end
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases"

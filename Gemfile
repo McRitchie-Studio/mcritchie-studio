@@ -49,6 +49,12 @@ gem "bootsnap", require: false
 gem "image_processing", "~> 1.2"
 gem "aws-sdk-s3", require: false
 
+# Charts for the /intelligence task-development trends dashboard. Chartkick
+# renders Chart.js (pinned via importmap, no build step); Groupdate powers the
+# time-series (group_by_week) trend aggregations.
+gem "chartkick"
+gem "groupdate"
+
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri mswin mswin64 mingw x64_mingw ], require: "debug/prelude"

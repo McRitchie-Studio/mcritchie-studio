@@ -1,0 +1,212 @@
+<% content_for(:title, "Task Intelligence") %>
+<%
+  intel = @intel
+  s = intel.summary
+
+  # Theme palette hex — these pop on both the dark and light surfaces (axis text
+  # and gridlines are themed globally in application.js).
+  c_violet  = "#8E82FE"
+  c_mint    = "#06D6A0"
+  c_ember   = "#FF8C69"
+  c_gold    = "#FFD166"
+  c_magenta = "#F72585"
+  c_sky     = "#38BDF8"
+
+  tiles = [
+    { label: "Tasks tracked",   value: number_with_delimiter(s[:total_tasks]),            accent: "text-heading" },
+    { label: "Shipped",         value: number_with_delimiter(s[:shipped_tasks]),          accent: "text-mint" },
+    { label: "Total spend",     value: number_to_currency(s[:total_spend]),               accent: "text-primary" },
+    { label: "Tokens burned",   value: number_with_delimiter(s[:total_tokens]),           accent: "text-heading" },
+    { label: "Avg cycle time",  value: "#{s[:avg_cycle_hours]}h",                         accent: "text-heading" },
+    { label: "Avg cost / task", value: number_to_currency(s[:avg_cost_per_task]),         accent: "text-primary" },
+    { label: "Stage events",    value: number_with_delimiter(s[:total_events]),           accent: "text-secondary" },
+    { label: "Estimate hit rate", value: s[:estimate_hit_rate] ? "#{s[:estimate_hit_rate]}%" : "—", accent: "text-heading" }
+  ]
+%>
+
+<section data-test="intelligence-dashboard" class="space-y-8">
+  <header class="space-y-1">
+    <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Sections">
+      <%= link_to "← Dashboard", dashboard_path, class: "text-muted hover:text-heading transition" %>
+      <%= link_to "Deployments", deployments_path, class: "text-muted hover:text-heading transition" %>
+    </nav>
+    <h1 class="text-2xl md:text-3xl font-bold text-heading">Task Intelligence</h1>
+    <p class="text-muted text-sm max-w-2xl">
+      How work flows through the pipeline — stage speed, cycle time, token and dollar
+      spend, and how our sealed-bid estimates hold up against what shipping actually took.
+    </p>
+  </header>
+
+  <%# ── Headline tiles ─────────────────────────────────────────────────────── %>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3" data-test="summary-tiles">
+    <% tiles.each do |tile| %>
+      <div class="card p-4">
+        <p class="text-[11px] uppercase tracking-wide text-muted"><%= tile[:label] %></p>
+        <p class="text-2xl font-bold mt-1 <%= tile[:accent] %>"><%= tile[:value] %></p>
+      </div>
+    <% end %>
+  </div>
+  <% if s[:slowest_stage] %>
+    <p class="text-xs text-secondary -mt-4">
+      Slowest stage right now:
+      <span class="text-heading font-semibold"><%= s[:slowest_stage][:stage] %></span>
+      (avg <%= s[:slowest_stage][:hours] %>h before moving on).
+    </p>
+  <% end %>
+
+  <%# ── Speed + cycle time ─────────────────────────────────────────────────── %>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Stage speed</h2>
+      <p class="text-muted text-xs mb-4">Average vs median hours a task waits in each stage before moving on.</p>
+      <%= column_chart intel.stage_speed_series, id: "chart-stage-speed",
+            colors: [c_violet, c_mint], suffix: "h", round: 2 %>
+    </div>
+
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Cycle time by task</h2>
+      <p class="text-muted text-xs mb-4">Hours from created to shipped, longest first (top <%= TaskIntelligence::TOP_N %>).</p>
+      <%= column_chart intel.cycle_time_per_task, id: "chart-cycle-time",
+            colors: [c_sky], suffix: "h", round: 1 %>
+    </div>
+  </div>
+
+  <div class="card p-5">
+    <h2 class="text-heading font-bold text-base">Cycle time trend</h2>
+    <p class="text-muted text-xs mb-4">Average task cycle time (hours) by the week it shipped.</p>
+    <%= line_chart intel.cycle_time_trend, id: "chart-cycle-trend",
+          colors: [c_mint], suffix: "h", round: 1, discrete: true %>
+  </div>
+
+  <%# ── Tokens ─────────────────────────────────────────────────────────────── %>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Tokens per task</h2>
+      <p class="text-muted text-xs mb-4">Total tokens (in + out) reported per task (top <%= TaskIntelligence::TOP_N %>).</p>
+      <%= column_chart intel.tokens_per_task, id: "chart-tokens-task", colors: [c_violet] %>
+    </div>
+
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Tokens by stage</h2>
+      <p class="text-muted text-xs mb-4">Where the tokens burn — total reported per stage worked.</p>
+      <%= column_chart intel.tokens_by_stage, id: "chart-tokens-stage", colors: [c_gold] %>
+    </div>
+  </div>
+
+  <div class="card p-5">
+    <h2 class="text-heading font-bold text-base">Tokens over time</h2>
+    <p class="text-muted text-xs mb-4">Tokens reported across all stage events, by week.</p>
+    <%= line_chart intel.tokens_trend, id: "chart-tokens-trend", colors: [c_violet], discrete: true %>
+  </div>
+
+  <%# ── Cost ───────────────────────────────────────────────────────────────── %>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Cost per task</h2>
+      <p class="text-muted text-xs mb-4">Total agent dollar spend per task (top <%= TaskIntelligence::TOP_N %>).</p>
+      <%= column_chart intel.cost_per_task, id: "chart-cost-task",
+            colors: [c_ember], prefix: "$", round: 2 %>
+    </div>
+
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Spend over time</h2>
+      <p class="text-muted text-xs mb-4">Dollar spend across all stage events, by week.</p>
+      <%= line_chart intel.cost_trend, id: "chart-cost-trend",
+            colors: [c_ember], prefix: "$", round: 2, discrete: true %>
+    </div>
+  </div>
+
+  <%# ── Estimate vs actual + model mix ─────────────────────────────────────── %>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="card p-5 lg:col-span-2">
+      <h2 class="text-heading font-bold text-base">Estimate vs actual</h2>
+      <p class="text-muted text-xs mb-4">
+        Sealed-bid sizes vs what shipping took, in points (1&nbsp;S · 2&nbsp;M · 3&nbsp;L · 4&nbsp;XL).
+        Sparse until tasks ship with a derived actual size.
+      </p>
+      <%= column_chart intel.estimate_accuracy_series, id: "chart-estimate-accuracy",
+            colors: [c_sky, c_violet, c_mint], max: 4 %>
+    </div>
+
+    <div class="card p-5">
+      <h2 class="text-heading font-bold text-base">Model mix</h2>
+      <p class="text-muted text-xs mb-4">Dollar spend share by model.</p>
+      <%= pie_chart intel.model_mix, id: "chart-model-mix",
+            colors: [c_violet, c_mint, c_ember, c_gold, c_magenta, c_sky],
+            prefix: "$", round: 2, donut: true %>
+    </div>
+  </div>
+
+  <%# ── Leaderboards ───────────────────────────────────────────────────────── %>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="card overflow-hidden" data-test="priciest-tasks">
+      <div class="px-5 py-4 border-b border-subtle">
+        <h2 class="text-heading font-bold text-base">Priciest tasks</h2>
+        <p class="text-muted text-xs">Most expensive work, by total agent spend.</p>
+      </div>
+      <% if intel.priciest_tasks.any? %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-alt text-muted text-xs uppercase tracking-wide">
+              <tr>
+                <th class="text-left font-semibold px-5 py-2.5">Task</th>
+                <th class="text-right font-semibold px-5 py-2.5">Tokens</th>
+                <th class="text-right font-semibold px-5 py-2.5">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% intel.priciest_tasks.each do |row| %>
+                <tr class="border-t border-subtle/50 hover:bg-surface-alt/50">
+                  <td class="px-5 py-2.5">
+                    <%= link_to row[:title], task_path(row[:slug]), class: "text-body hover:text-primary transition" %>
+                  </td>
+                  <td class="px-5 py-2.5 text-right text-secondary"><%= number_with_delimiter(row[:tokens]) %></td>
+                  <td class="px-5 py-2.5 text-right text-primary font-mono"><%= number_to_currency(row[:cost]) %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="p-5"><%= render "components/empty_state", message: "No spend recorded yet." %></div>
+      <% end %>
+    </div>
+
+    <div class="card overflow-hidden" data-test="estimate-misses">
+      <div class="px-5 py-4 border-b border-subtle">
+        <h2 class="text-heading font-bold text-base">Biggest estimate misses</h2>
+        <p class="text-muted text-xs">Dev estimate vs actual size, largest gap first.</p>
+      </div>
+      <% if intel.biggest_estimate_misses.any? %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-surface-alt text-muted text-xs uppercase tracking-wide">
+              <tr>
+                <th class="text-left font-semibold px-5 py-2.5">Task</th>
+                <th class="text-center font-semibold px-5 py-2.5">Dev</th>
+                <th class="text-center font-semibold px-5 py-2.5">Actual</th>
+                <th class="text-right font-semibold px-5 py-2.5">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% intel.biggest_estimate_misses.each do |row| %>
+                <tr class="border-t border-subtle/50 hover:bg-surface-alt/50">
+                  <td class="px-5 py-2.5">
+                    <%= link_to row[:title], task_path(row[:slug]), class: "text-body hover:text-primary transition" %>
+                  </td>
+                  <td class="px-5 py-2.5 text-center text-secondary uppercase"><%= row[:dev_size] %></td>
+                  <td class="px-5 py-2.5 text-center text-secondary uppercase"><%= row[:actual_size] %></td>
+                  <td class="px-5 py-2.5 text-right font-mono <%= row[:delta].positive? ? 'text-ember' : (row[:delta].negative? ? 'text-mint' : 'text-muted') %>">
+                    <%= row[:delta].positive? ? "+#{row[:delta]}" : row[:delta] %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="p-5"><%= render "components/empty_state", message: "No actual sizes recorded yet.", detail: "Charts fill in as tasks ship with a derived actual size." %></div>
+      <% end %>
+    </div>
+  </div>
+</section>

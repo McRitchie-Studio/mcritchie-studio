@@ -81,7 +81,7 @@ test("malformed magic link request stays on signin", async ({ page }) => {
 test("nav links work without errors", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("link", { name: /Meet the Agents/ }).first().click();
+  await page.getByRole("link", { name: /Agents/ }).first().click();
   await expect(page).toHaveURL("/activities");
 
   await page.goto("/");

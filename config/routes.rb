@@ -27,6 +27,9 @@ Rails.application.routes.draw do
   get "e/c/:token", to: "email_tracking#click", as: :email_click
 
   get "dashboard", to: "dashboard#index"
+  # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
+  # estimate-vs-actual). Public-read like the other board surfaces.
+  get "intelligence", to: "intelligence#index", as: :intelligence
   # Pokémon reference-data inspector — read-only grid of the seeded 151 (data
   # shape + bundled sprites). Public-read like the board pages.
   get "pokemon", to: "pokemon#index", as: :pokemon
