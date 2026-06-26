@@ -623,21 +623,25 @@ class Release::ConductorTest < ActiveSupport::TestCase
     rel
   end
 
-  test "post_release_notes builds a message and delivers it" do
+  test "post_release_notes builds rich embeds and hands them to the client" do
     rel = shipped_release
     delivered = nil
-    ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { delivered = content }) do
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { delivered = { content: content, embeds: embeds } }) do
       result = Release::Conductor.post_release_notes(release: rel)
       assert result[:delivered]
-      assert result[:message].present?
+      assert result[:message].present?, "still returns the text render for preview"
     end
-    assert delivered.present?, "DiscordClient.deliver should have been called"
+    assert delivered[:embeds].present?, "a fitting release ships rich embeds"
+    assert_nil delivered[:content], "the embeds path sends no plain content"
+    # Summary embed (index 0) + the one member card.
+    assert_equal 2, delivered[:embeds].size
+    assert_equal 0x57F287, delivered[:embeds].first[:color], "the lead summary embed is green"
   end
 
   test "post_release_notes dry_run builds the message without delivering" do
     rel = shipped_release
     called = false
-    ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { called = true }) do
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { called = true }) do
       result = Release::Conductor.post_release_notes(release: rel, dry_run: true)
       assert_not result[:delivered]
       assert result[:message].present?
@@ -647,7 +651,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
   test "post_release_notes is non-fatal when the webhook is missing" do
     rel = shipped_release
-    raiser = ->(content:) { raise ReleaseNotes::DiscordClient::MissingWebhook, "no webhook" }
+    raiser = ->(content: nil, embeds: nil) { raise ReleaseNotes::DiscordClient::MissingWebhook, "no webhook" }
     ReleaseNotes::DiscordClient.stub(:deliver, raiser) do
       result = Release::Conductor.post_release_notes(release: rel)
       assert_not result[:delivered]
@@ -658,7 +662,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
   test "post_release_notes survives any delivery error (defense-in-depth)" do
     rel = shipped_release
     # Even a raw transport error (the gap Avi caught) must not fail a completed ship.
-    raiser = ->(content:) { raise Net::OpenTimeout, "boom" }
+    raiser = ->(content: nil, embeds: nil) { raise Net::OpenTimeout, "boom" }
     ReleaseNotes::DiscordClient.stub(:deliver, raiser) do
       result = Release::Conductor.post_release_notes(release: rel)
       assert_not result[:delivered]

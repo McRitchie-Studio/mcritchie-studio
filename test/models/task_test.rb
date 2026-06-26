@@ -1043,6 +1043,23 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal 5_000_000, task.measured_tokens_total
   end
 
+  # --- total_cost (the release-notes card $cost) ------------------------------
+
+  test "total_cost sums the cost across all events, ignoring nil costs" do
+    task = Task.create!(title: "cost sum task here", stage: "building")
+    # The genesis event carries no cost (nil) — SQL SUM must skip it.
+    task.task_events.create!(to_stage: task.stage, occurred_at: Time.current, cost: BigDecimal("0.50"))
+    task.task_events.create!(to_stage: task.stage, occurred_at: Time.current, cost: BigDecimal("0.37"))
+
+    assert_equal BigDecimal("0.87"), task.total_cost
+  end
+
+  test "total_cost is zero for a task with no priced events" do
+    task = Task.create!(title: "zero cost task here", stage: "building")
+    # Only the (cost-less) genesis event exists.
+    assert task.total_cost.zero?, "an unpriced task totals zero, not nil"
+  end
+
   test "shipping auto-derives actual_size from measured usage when blank" do
     task = Task.create!(title: "ship derives size task", stage: "assembled")
     stamp_tokens(task, 6_000_000) # → large (≥5M, <15M)

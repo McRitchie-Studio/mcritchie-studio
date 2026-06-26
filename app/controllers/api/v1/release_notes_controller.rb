@@ -12,7 +12,7 @@ module Api
           return render_error("Unknown task slug(s): #{missing.join(', ')}", error_code: "UNKNOWN_TASKS")
         end
 
-        message = ReleaseNotes::Formatter.new(
+        formatter = ReleaseNotes::Formatter.new(
           app: payload["app"],
           environment: payload["environment"],
           release: payload["release"],
@@ -21,14 +21,16 @@ module Api
           release_train: payload["release_train"],
           checks: payload["checks"],
           tasks: tasks
-        ).message
+        )
+        message = formatter.message
 
-        delivery = deliver_release_notes(payload, message)
+        delivery = deliver_release_notes(payload, formatter)
 
         render_data(
           {
             delivered: delivery.present?,
             dry_run: dry_run?(payload),
+            embedded: formatter.embeddable?,
             message: message,
             task_slugs: task_slugs
           }
@@ -73,10 +75,10 @@ module Api
         task_slugs.filter_map { |slug| tasks_by_slug[slug] }
       end
 
-      def deliver_release_notes(payload, message)
+      def deliver_release_notes(payload, formatter)
         return nil if dry_run?(payload)
 
-        ReleaseNotes::DiscordClient.deliver(content: message)
+        ReleaseNotes::DiscordClient.deliver(**formatter.discord_payload)
       end
 
       def dry_run?(payload)

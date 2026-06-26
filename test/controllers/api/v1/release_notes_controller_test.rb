@@ -41,7 +41,7 @@ module Api
         assert_includes body.dig("data", "message"), "• [Dynamic sticky table propagation](https://mcritchie.studio/tasks/task-ddd444)"
       end
 
-      test "delivers release notes when not a dry run" do
+      test "delivers rich embeds when not a dry run" do
         task = tasks(:queued_task)
         task.update!(
           title: "Admin users sticky table header",
@@ -51,7 +51,7 @@ module Api
 
         # The happy path must NOT touch ErrorLog — we only log delivery failures.
         assert_no_difference -> { ErrorLog.count } do
-          ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { delivered << content }) do
+          ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { delivered << { content: content, embeds: embeds } }) do
             post api_v1_release_notes_path,
                  params: {
                    app: "mcritchie-studio",
@@ -70,9 +70,13 @@ module Api
         assert_response :success
         body = JSON.parse(response.body)
         assert_equal true, body.dig("data", "delivered")
+        assert_equal true, body.dig("data", "embedded")
         assert_equal ["task-bbb222"], body.dig("data", "task_slugs")
         assert_equal 1, delivered.size
-        assert_includes delivered.first, "Admin users sticky table header"
+        embeds = delivered.first[:embeds]
+        assert embeds.present?, "the controller hands rich embeds to the client"
+        assert_nil delivered.first[:content], "the embeds path sends no plain content"
+        assert(embeds.any? { |embed| embed[:title] == "Admin users sticky table header" }, "the task card carries the title")
       end
 
       test "rejects missing task slugs" do
@@ -107,7 +111,7 @@ module Api
       test "reports missing webhook for live delivery and records it to ErrorLog" do
         task = tasks(:new_task)
         assert_difference -> { ErrorLog.count }, 1 do
-          ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { raise ReleaseNotes::DiscordClient::MissingWebhook, "Release notes webhook is not configured" }) do
+          ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { raise ReleaseNotes::DiscordClient::MissingWebhook, "Release notes webhook is not configured" }) do
             post api_v1_release_notes_path,
                  params: {
                    app: "mcritchie-studio",
@@ -131,7 +135,7 @@ module Api
       test "reports a discord delivery error for live delivery and records it to ErrorLog" do
         task = tasks(:new_task)
         assert_difference -> { ErrorLog.count }, 1 do
-          ReleaseNotes::DiscordClient.stub(:deliver, ->(content:) { raise ReleaseNotes::DiscordClient::DeliveryError, "Discord returned 500" }) do
+          ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { raise ReleaseNotes::DiscordClient::DeliveryError, "Discord returned 500" }) do
             post api_v1_release_notes_path,
                  params: {
                    app: "mcritchie-studio",
