@@ -18,18 +18,21 @@
 <% type_enumerals = Pokemon.type_enumerals %>
 <%# Build board (/tasks) splits the build steps; Deploy board (/deployments) shows the pipeline. %>
 <% crew_board = stages.include?("reviewed") ? :deploy : :build %>
+<% live_updates = local_assigns.fetch(:live_updates, true) %>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
-<% if crew_board == :deploy %>
-  <%# /deployments live updates over TURBO STREAMS: subscribe to the "deployments"
+<% if live_updates %>
+  <%# Board live updates over TURBO STREAMS: subscribe to the shared "deployments"
       stream — Turbo auto-wires the ActionCable consumer and patches the DOM on every
       broadcast (DeploymentsBroadcaster), so no custom cable client is needed.
-      kanbanBoard().observeLive() animates the patched cards + refreshes the counts. %>
+      kanbanBoard().observeLive() animates patched cards + refreshes the counts. %>
   <%= turbo_stream_from "deployments" %>
-  <%# Live create / move / delete animations, driven by the broadcasts above. %>
-  <%= render "deployments_live_fx" %>
-  <%# Ticks the active Next Release in-progress timer down to the second. %>
-  <%= render "release_ticker" %>
+  <% if crew_board == :deploy %>
+    <%# Live create / move / delete animations, driven by the broadcasts above. %>
+    <%= render "deployments_live_fx" %>
+    <%# Ticks the active Next Release in-progress timer down to the second. %>
+    <%= render "release_ticker" %>
+  <% end %>
   <%# TEST-ONLY: lets the Playwright live-update e2e POST an intent/move to trigger a
       real broadcast. Gated to the test env — never rendered in development or production. %>
   <% if Rails.env.test? %>
@@ -42,7 +45,7 @@
 <script>
 function kanbanBoard(live) {
   return {
-    live: !!live, // /deployments only: animate Turbo-Streamed card updates (turbo_stream_from "deployments")
+    live: !!live, // animate Turbo-Streamed card updates (turbo_stream_from "deployments")
     _pendingMoves: {},
     agentFilter: '',
     hiddenApps: [],
@@ -78,7 +81,7 @@ function kanbanBoard(live) {
       });
     },
 
-    // --- /deployments live updates (Turbo Streams) ----------------------------
+    // --- Board live updates (Turbo Streams) -----------------------------------
     // The board subscribes via `turbo_stream_from "deployments"`; Turbo auto-wires
     // the ActionCable consumer and patches the DOM on every broadcast
     // (DeploymentsBroadcaster replaces / removes / prepends the task card). This
@@ -283,7 +286,7 @@ function kanbanBoard(live) {
 }
 </script>
 
-<section x-data="kanbanBoard(<%= (crew_board == :deploy).to_json %>)" class="min-h-screen">
+<section x-data="kanbanBoard(<%= live_updates.to_json %>)" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">

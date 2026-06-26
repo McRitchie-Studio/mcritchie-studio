@@ -194,3 +194,56 @@ test("a live block transition inserts a missing card into the Building column", 
 
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
+
+test("a live block transition keeps an already-visible Building card visible", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+
+  await page.goto("/deployments");
+
+  const card = page.locator("#dropzone-building #card-live-blocked-visible-demo");
+  await expect(card).toBeVisible();
+
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const res = await page.request.patch("/api/v1/tasks/live-blocked-visible-demo", {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    data: { stage: "blocked", event: { source: "cli", actor: "avi" } },
+  });
+  expect(res.ok()).toBeTruthy();
+
+  await expect(card).toBeVisible({ timeout: 10_000 });
+  await expect(card).toHaveAttribute("data-stage", "blocked");
+  await expect(card).toHaveAttribute("class", /bg-red/);
+  await page.waitForTimeout(1_500);
+  await expect(card).toBeVisible();
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
+
+test("the tasks board updates a blocked card live in the Building column", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+
+  await page.goto("/tasks");
+
+  const card = page.locator("#dropzone-building #card-tasks-live-blocked-demo");
+  await expect(card).toBeVisible();
+  await card.evaluate((node) => node.remove());
+  await expect(page.locator("#card-tasks-live-blocked-demo")).toHaveCount(0);
+
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const res = await page.request.patch("/api/v1/tasks/tasks-live-blocked-demo", {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    data: { stage: "blocked", event: { source: "cli", actor: "avi" } },
+  });
+  expect(res.ok()).toBeTruthy();
+
+  const blockedCard = page.locator("#dropzone-building #card-tasks-live-blocked-demo");
+  await expect(blockedCard).toBeVisible({ timeout: 10_000 });
+  await expect(blockedCard).toHaveAttribute("data-stage", "blocked");
+  await expect(blockedCard).toHaveAttribute("class", /bg-red/);
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});

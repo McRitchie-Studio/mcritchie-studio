@@ -52,6 +52,14 @@ class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
     refute_includes js, "getElementById('dropzone-' + oldStage)"
   end
 
+  test "the Build board subscribes live so blocked transitions patch into Building" do
+    get tasks_path
+    assert_response :success
+
+    assert_select "turbo-cable-stream-source", count: 1
+    assert_includes response.body, "kanbanBoard(true)"
+  end
+
   test "the Building lane collapses on the narrow Deploy board behind All Stages" do
     get deployments_path
     assert_response :success

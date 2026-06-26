@@ -166,13 +166,14 @@ module StageAgentsHelper
   def stage_crew_renderable?(task, entries, mascot:, variant:, board:)
     return entries.any? if variant.to_sym == :detailed
 
-    entries.any? || (mascot.present? && build_step_board?(task, board))
+    entries.any? || (mascot.present? && (build_step_board?(task, board) || task.blocked?))
   end
 
   def crew_columns(task, entries, board:, mascot: nil, agents: nil, events: nil)
     return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
+    by_lane[:build] ||= blocked_build_crew(mascot) if task.blocked?
 
     # Surface LIVE deploy-stage work (review picked · Steffon QA · Avi ship) as a
     # ticking cluster in its lane before the transition lands — the Deploy mirror of
@@ -213,6 +214,22 @@ module StageAgentsHelper
     # earlier three (a block lands from reviewed or assembled).
     lanes << :shipped if %w[assembled shipped].include?(task.stage)
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
+  end
+
+  def blocked_build_crew(mascot)
+    return nil unless mascot
+
+    CrewCluster.new(
+      lane: :build,
+      stacked: [
+        StageAgent.new(
+          stage: "building",
+          agent: MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
+        )
+      ],
+      seconds: nil,
+      live_since: nil
+    )
   end
 
   # /tasks build board: the three build steps split out, each wearing the task's

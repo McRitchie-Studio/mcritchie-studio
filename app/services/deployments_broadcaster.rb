@@ -7,7 +7,7 @@
 # It broadcasts the SAME `tasks/_task_card` partial the board loop renders, as a
 # Turbo Stream action chosen by the event:
 #   intent                               → REPLACE the card in place
-#   cross-column stage move              → REMOVE the old card + PREPEND a fresh one
+#   cross-column stage move              → REMOVE + PREPEND in one ordered payload
 #   building↔blocked stage move          → REMOVE + PREPEND into Building
 #   brand-new task (genesis)             → PREPEND to the Designed column
 #   leaves the active board (→ archived) → REMOVE
@@ -18,6 +18,8 @@
 # failure can NEVER break the task write that triggered it — the SEV-1 guard, now
 # shared in studio-engine (rescues StandardError AND ScriptError/Gem::LoadError).
 class DeploymentsBroadcaster
+  include Turbo::Streams::ActionHelper
+
   STREAM = "deployments"
   PARTIAL = "tasks/task_card"
   # The stages the deploy board shows as columns. `blocked` rides the Building
@@ -75,7 +77,7 @@ class DeploymentsBroadcaster
 
   private
 
-  # One Turbo Stream action, picked from the event kind + the from/to columns.
+  # One websocket payload, picked from the event kind + the from/to columns.
   def broadcast
     if left_board?
       remove_card           # → archived: drop it from the active board
@@ -101,8 +103,18 @@ class DeploymentsBroadcaster
   end
 
   def move_card
-    remove_card
-    prepend_card
+    Turbo::StreamsChannel.broadcast_stream_to(STREAM, content: move_stream_content)
+  end
+
+  def move_stream_content
+    [
+      turbo_stream_action_tag(:remove, target: card_id),
+      turbo_stream_action_tag(:prepend, target: dropzone_id, template: rendered_card)
+    ].join
+  end
+
+  def rendered_card
+    ApplicationController.render(partial: PARTIAL, formats: [:html], locals: card_locals)
   end
 
   def card_id
