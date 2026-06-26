@@ -47,6 +47,21 @@ class Task < ApplicationRecord
     "blocked"   => "Blocked",
     "archived"  => "Archived"
   }.freeze
+  # The ACTIVE (gerund) form of each stage — "what's happening right now" — for UI
+  # that shows a stage still UNDERWAY, where the past-tense noun reads wrong: a card
+  # for the assembled stage in progress says "Assembling", not "Assembled". First
+  # use is the /tasks/:id live timeline card; kept beside STAGE_LABELS so other
+  # surfaces can share it. Use Task.active_stage_label for a safe fallback.
+  STAGE_ACTIVE_LABELS = {
+    "designed"  => "Designing",
+    "building"  => "Building",
+    "submitted" => "Submitting",
+    "reviewed"  => "Reviewing",
+    "assembled" => "Assembling",
+    "shipped"   => "Shipping",
+    "blocked"   => "Blocking",
+    "archived"  => "Archiving"
+  }.freeze
   STAGES = STAGE_LABELS.keys.freeze
   # The two workflows, split at the `submitted` seam (which belongs to both):
   # Build is the feature agent's, Deploy is DevOps's.
@@ -489,6 +504,13 @@ class Task < ApplicationRecord
 
   def stage_label
     STAGE_LABELS.fetch(stage, stage.to_s.humanize)
+  end
+
+  # The active (gerund) label for a stage — e.g. "Assembling" for `assembled` —
+  # for UI showing that stage still in progress. Falls back to the noun label,
+  # then a humanized key, so an unknown stage never blanks out.
+  def self.active_stage_label(stage)
+    STAGE_ACTIVE_LABELS[stage] || STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
 
   # The MEASURED total tokens for this task — the sum of tokens_total across every

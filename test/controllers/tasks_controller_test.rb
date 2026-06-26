@@ -69,6 +69,42 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release [data-test='release-timing']", text: /\Atook /
   end
 
+  test "[component] deployments shows a 🟢 smoke-seal badge on a green-sealed Last Release" do
+    Release.delete_all
+    shipped = Release.open!
+    shipped.ship!
+    shipped.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs prod"))
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-smoke-seal-badge'][data-seal-status='green']", text: /🟢 Seal/
+  end
+
+  test "[component] deployments shows a 🔴 smoke-seal badge on a red-sealed Last Release" do
+    Release.delete_all
+    shipped = Release.open!
+    shipped.ship!
+    shipped.record_smoke_seal!(Release::SmokeSeal.from_result(passed: false, summary: "2 specs failed"))
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-smoke-seal-badge'][data-seal-status='red']", text: /🔴 Seal/
+  end
+
+  test "[component] an unsealed release renders NO smoke-seal badge" do
+    Release.delete_all
+    shipped = Release.open!
+    shipped.ship!
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-smoke-seal-badge']", count: 0
+    assert_select "#last-release [data-test='release-state-badge']", count: 1, text: /\AShipped/
+  end
+
   test "deployments rides the Build and Deploy QA Release chip inline (right) with the task pills" do
     Release.delete_all
     rel = Release.open!(branch: "release/qa-kickoff")
@@ -685,6 +721,34 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{inprogress}[data-stage='assembled']", count: 0,
                   message: "no Assembled → Assembled no-op block"
     assert_includes css_select(inprogress).to_s, "Avi", "the live ship card is owned by Avi"
+
+    # While the stage is still in progress, the transition row shows ONLY the
+    # current stage in its ACTIVE (gerund) form — "Assembling", not "Assembled" —
+    # with no arrow and no next-step (Shipped) badge. Those appear once the
+    # transition lands (the li still TARGETS shipped via data-stage).
+    live_row = css_select("#{inprogress} [data-test='timeline-transition']").to_s
+    assert_includes live_row, "Assembling", "in-progress card shows the active stage verb"
+    assert_not_includes live_row, "Shipped", "in-progress card hides the next-step badge + arrow"
+  end
+
+  test "[component] timeline centers the transition badges and stacks crew avatar-over-name" do
+    task = seed_deploy_crew_task
+
+    get task_path(task.slug)
+    assert_response :success
+
+    # Change 1: the from → to stage badges are center-justified.
+    assert_select "[data-test='timeline-transition'].justify-center", minimum: 1
+    # Change 2: each crew member is an avatar-OVER-name centered column.
+    assert_select "[data-test='timeline-crew-member'].flex-col.items-center", minimum: 1
+    # Change 3: the senior review pair renders as TWO side-by-side columns in one row.
+    pair = css_select("[data-test='timeline-block'][data-stage='reviewed'] [data-test='timeline-crew-member']")
+    assert_equal 2, pair.size, "the review pair shows two avatar-over-name columns side by side"
+    # Change 3b: a TWO-agent crew splits into equal 50% columns (grid-cols-2), each
+    # agent centered in its own half; a single-agent stage stays one centered column.
+    assert_select "[data-test='timeline-block'][data-stage='reviewed'] [data-test='timeline-crew'].grid.grid-cols-2", 1
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew'].grid-cols-2", 0
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew'].justify-center", 1
   end
 
   test "task show backfills Steffon/Avi by role on a conductor-driven old-flow task" do

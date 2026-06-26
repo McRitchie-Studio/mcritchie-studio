@@ -290,4 +290,46 @@ class ReleaseTest < ActiveSupport::TestCase
     rel.stamp_conductor_mascot!(nil)
     assert_nil rel.reload.devops_field("mascot")
   end
+
+  # --- production smoke seal --------------------------------------------------
+
+  test "[unit] a fresh release is unsealed (smoke_seal nil, not smoke_sealed?)" do
+    rel = Release.open!
+    assert_nil rel.smoke_seal
+    assert_not rel.smoke_sealed?
+  end
+
+  test "[unit] record_smoke_seal! persists the verdict + rehydrates it as a value object" do
+    rel = Release.open!
+    rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true, summary: "green vs prod"))
+
+    seal = rel.reload.smoke_seal
+    assert_instance_of Release::SmokeSeal, seal
+    assert seal.green?
+    assert_equal "green vs prod", seal.summary
+    assert seal.checked_at.present?
+    assert rel.smoke_sealed?
+  end
+
+  test "[unit] record_smoke_seal! stores a red verdict too" do
+    rel = Release.open!
+    rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: false, summary: "down"))
+    assert rel.reload.smoke_seal.red?
+  end
+
+  test "[unit] the seal persists across the ship flip" do
+    rel = Release.open!
+    rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true))
+    rel.ship!
+    assert rel.reload.smoke_seal.green?, "ship! never clobbers the recorded seal"
+  end
+
+  test "[unit] recording the seal re-renders the live board (after_commit broadcast)" do
+    rel = Release.open!
+    calls = 0
+    DeploymentsBroadcaster.stub(:release_modules, -> { calls += 1 }) do
+      rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true))
+    end
+    assert_operator calls, :>=, 1, "the seal write broadcasts the deployments modules"
+  end
 end

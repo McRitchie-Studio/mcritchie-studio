@@ -741,6 +741,36 @@ class Release::ConductorTest < ActiveSupport::TestCase
     end
   end
 
+  test "[integration] post_release_notes carries the recorded smoke seal verdict into the notes + Discord" do
+    rel = shipped_release
+    rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs prod"))
+
+    delivered = nil
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { delivered = { content: content, embeds: embeds } }) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert_includes result[:message], "🟢 Production smoke seal: passed — @qa-readonly green vs prod"
+    end
+    assert_includes delivered[:content], "🟢 Production smoke seal: passed", "the Discord header carries the seal"
+  end
+
+  test "[integration] post_release_notes surfaces a RED seal verdict" do
+    rel = shipped_release
+    rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: false, summary: "2 specs failed"))
+
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { }) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert_includes result[:message], "🔴 Production smoke seal: FAILED — 2 specs failed"
+    end
+  end
+
+  test "[integration] post_release_notes omits the seal line for an unsealed release" do
+    rel = shipped_release # never sealed
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { }) do
+      result = Release::Conductor.post_release_notes(release: rel)
+      assert_not_includes result[:message], "Production smoke seal"
+    end
+  end
+
   # --- archive_completed! / archivable_completed_slugs (DevOps loop conclusion) ---
   #
   # NOTE: `fixtures :all` seeds a release-less shipped task (tasks(:done_task)),

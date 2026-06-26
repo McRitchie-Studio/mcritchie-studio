@@ -85,6 +85,20 @@ module ApplicationHelper
     Devops::Vocabulary.node_type(type)
   end
 
+  # Pill classes for the post-ship production smoke SEAL badge (🟢/🔴) on a release
+  # card — green = the @qa-readonly suite passed against prod, red = it failed.
+  def release_smoke_seal_classes(seal)
+    seal&.green? ? "bg-green-900/50 text-green-300" : "bg-red-900/50 text-red-300"
+  end
+
+  # The hover tooltip for the seal badge: the verdict line + when it was checked.
+  def release_smoke_seal_title(seal)
+    return "" unless seal
+
+    when_text = seal.checked_at.present? ? " (checked #{time_ago_in_words(seal.checked_at)} ago)" : ""
+    "#{seal.verdict_line}#{when_text}"
+  end
+
   RELEASE_TRACKER_STAGES = [
     { key: "testing", active_label: "Testing", complete_label: "Tested" },
     { key: "assembling", active_label: "Assembling", complete_label: "Assembled" },

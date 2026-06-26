@@ -362,8 +362,10 @@ module StageAgentsHelper
       # is what keeps a re-homed QA intent from rendering "Assembled → Assembled":
       # it reads as the ship it rides toward, "Assembled → Shipped · Avi" (the board
       # still shows Steffon QA-ing the assembled lane off `work[:agents]`).
+      # The single badge on a live card shows the ACTIVE (gerund) form of the stage
+      # still underway — "Assembling", not "Assembled" — since the work isn't done.
       blocks << TimelineBlock.new(
-        event: nil, from_label: Task::STAGE_LABELS.fetch(task.stage, task.stage.to_s.humanize),
+        event: nil, from_label: Task.active_stage_label(task.stage),
         to_label: Task::STAGE_LABELS.fetch(work[:to_stage], work[:to_stage].to_s.humanize),
         from_stage: task.stage, to_stage: work[:to_stage], occurred_at: work[:live_since],
         seconds: nil, agents: work[:timeline_agents], model: nil, tokens: nil, cost: nil, source: nil,

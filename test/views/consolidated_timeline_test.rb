@@ -44,8 +44,9 @@ class ConsolidatedTimelineTest < ActionView::TestCase
 
     render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
 
-    assert_select "[data-test='timeline-inprogress']"
-    assert_select "[data-test='timeline-live']"
+    assert_select "[data-test='timeline-inprogress']", count: 0 # pill removed
+    assert_select "[data-test='timeline-pulse']"                # pulsing backdrop signals live work
+    assert_select "[data-test='timeline-live']"                 # ticking duration
     assert_includes rendered, "Carl"
     assert_includes rendered, "Shannon"
     assert_includes rendered, "heavy"

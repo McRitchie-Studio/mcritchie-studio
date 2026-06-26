@@ -21,7 +21,7 @@ module Api
       end
 
       def show
-        render_data(@task)
+        render_data(task_json(@task))
       end
 
       def create
@@ -82,6 +82,20 @@ module Api
         return if @task
 
         render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      def task_json(task)
+        task.as_json.merge(
+          "latest_activity" => latest_activity_json(task)
+        )
+      end
+
+      def latest_activity_json(task)
+        Activity.for_task(task.slug)
+                .where(activity_type: Activity::TASK_CONVERSATION_TYPES)
+                .recent
+                .first
+                &.as_json
       end
 
       # Reject query params the index doesn't support instead of silently ignoring

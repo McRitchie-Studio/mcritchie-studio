@@ -482,6 +482,7 @@ class StageAgentsHelperTest < ActionView::TestCase
 
     assert_not_nil live, "an open QA intent surfaces as a live block"
     assert_equal "assembled", live.from_stage
+    assert_equal "Assembling", live.from_label, "a live card shows the ACTIVE (gerund) stage form"
     assert_equal "shipped", live.to_stage, "badge reads toward the REAL next stage, not the re-homed lane"
     assert_equal "Shipped", live.to_label
     assert_equal %w[avi], live.agents.map { |a| a.agent&.slug }, "the ship owner (Avi) heads the live ship card"
