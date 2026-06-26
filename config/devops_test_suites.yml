@@ -2,7 +2,12 @@ apps:
   mcritchie-studio:
     display_name: McRitchie Studio
     qa_url: https://qa.mcritchie.studio
-    production_url: https://mcritchie.studio
+    # The operational prod host — matches config/qa_environments.yml production_url
+    # and config/release_repos.yml prod_deploy.smoke_url (the host bin/release's /up
+    # hard-gate AND bin/prod-smoke's seal both hit). The apex https://mcritchie.studio
+    # is a branded alias of the same dyno (also 200 on /up, no redirect); kept here
+    # in sync so the production_smoke lane below smokes the gate's host.
+    production_url: https://app.mcritchie.studio
     suites:
       - name: Rails unit and controller
         lane: pr_review_gate
@@ -39,11 +44,15 @@ apps:
       - name: Production read-only smoke
         lane: production_smoke
         environment: production
-        trigger: After approved production deploy
+        trigger: Post-ship, after the /up hard-gate (bin/release step 5c)
         command: bin/prod-smoke mcritchie-studio
         blocks_merge: false
         mutates: false
-        notes: Should not create content, send emails, or change provider state.
+        notes: >-
+          Runs the @qa-readonly suite (e2e/qa_readonly.spec.js) against prod and
+          records a 🟢/🔴 SEAL on the Release. A SEAL, not a gate — never aborts the
+          ship; a red seal alerts + recommends rollback. Creates no content, sends
+          no email, changes no provider state.
 
   turf-monster:
     display_name: Turf Monster

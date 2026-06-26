@@ -308,6 +308,11 @@ shipped_release.update!(metadata: { "devops" => { "mascot" => "dragonite", "masc
 ].each { |slug, title| release_member!(shipped_release, slug: slug, title: title) }
 shipped_release.ship!
 shipped_release.update_columns(created_at: 18.minutes.ago, shipped_at: Time.current)
+# A 🟢 post-ship production smoke seal on the Last Release, so the deployments e2e
+# can assert the seal badge renders (the @qa-readonly suite passed against prod).
+shipped_release.record_smoke_seal!(
+  Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs https://app.mcritchie.studio")
+)
 
 active_release = Release.open!
 active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-active" } })

@@ -69,6 +69,42 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release [data-test='release-timing']", text: /\Atook /
   end
 
+  test "[component] deployments shows a 🟢 smoke-seal badge on a green-sealed Last Release" do
+    Release.delete_all
+    shipped = Release.open!
+    shipped.ship!
+    shipped.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs prod"))
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-smoke-seal-badge'][data-seal-status='green']", text: /🟢 Seal/
+  end
+
+  test "[component] deployments shows a 🔴 smoke-seal badge on a red-sealed Last Release" do
+    Release.delete_all
+    shipped = Release.open!
+    shipped.ship!
+    shipped.record_smoke_seal!(Release::SmokeSeal.from_result(passed: false, summary: "2 specs failed"))
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-smoke-seal-badge'][data-seal-status='red']", text: /🔴 Seal/
+  end
+
+  test "[component] an unsealed release renders NO smoke-seal badge" do
+    Release.delete_all
+    shipped = Release.open!
+    shipped.ship!
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#last-release [data-test='release-smoke-seal-badge']", count: 0
+    assert_select "#last-release [data-test='release-state-badge']", count: 1, text: /\AShipped/
+  end
+
   test "deployments rides the Build and Deploy QA Release chip inline (right) with the task pills" do
     Release.delete_all
     rel = Release.open!(branch: "release/qa-kickoff")

@@ -23,7 +23,7 @@ module ReleaseNotes
     # completed_at render for the "shipped …" line (e.g. "3:28 PM").
     SHIPPED_TIME_FORMAT = "%-l:%M %p".freeze
 
-    def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_train: nil)
+    def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_train: nil, seal: nil)
       @app = app.presence || "mcritchie-studio"
       @environment = environment.presence || "production"
       @release = release.to_s.strip
@@ -32,6 +32,7 @@ module ReleaseNotes
       @tasks = Array(tasks)
       @checks = checks
       @release_train = release_train.to_s.strip
+      @seal = seal # a Release::SmokeSeal (post-ship @qa-readonly verdict) or nil
     end
 
     def message
@@ -41,6 +42,7 @@ module ReleaseNotes
       lines.concat(group_lines)
       lines << ""
       lines << checks_line if checks_text.present?
+      lines << seal_line if @seal
       lines.join("\n")
     end
 
@@ -71,13 +73,19 @@ module ReleaseNotes
 
     private
 
-    # The two-line markdown deploy header that leads the message `content` (NOT an
-    # embed):
+    # The markdown deploy header that leads the message `content` (NOT an embed):
     #   # 🚀 Production Deployment
     #   ### [<release tag> <distinct app emojis>](<production url>)
+    #   🟢 Production smoke seal: passed   (a third line ONLY when a seal exists)
     # Line 2 is an H3-sized masked link — Discord renders `### [text](url)` so.
     def header_content
-      ["# 🚀 Production Deployment", release_link_line].join("\n")
+      [["# 🚀 Production Deployment", release_link_line], (seal_line if @seal)].flatten.compact.join("\n")
+    end
+
+    # The post-ship production smoke verdict, appended to the release notes body +
+    # the Discord header. Rendered only when a seal is present.
+    def seal_line
+      @seal.verdict_line
     end
 
     def release_link_line

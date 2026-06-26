@@ -26,10 +26,19 @@
         <span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label_text %></span>
         <code class="<%= slug_class %>"><%= rel.slug %></code>
       </div>
-      <%# Consolidated status badge: one state-colored pill folding the bare state + its
-          relative time into "Shipped 7 minutes ago" — replaces the former left-side
-          state pill AND the separate muted "shipped X ago" line. %>
-      <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>" data-test="release-state-badge"><%= release_state_label(rel, current: current) %></span>
+      <%# Top-right badges: the post-ship production smoke SEAL (🟢/🔴, only once a
+          seal exists — i.e. on a shipped release) sits left of the consolidated
+          status badge. Plain server-rendered pills in a gap-2 flex (no Alpine
+          x-show, no own margins) so they never fight LiveBoardFx or the grid. %>
+      <div class="flex shrink-0 items-center gap-2">
+        <% if (seal = rel.smoke_seal) %>
+          <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_smoke_seal_classes(seal) %>" data-test="release-smoke-seal-badge" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %> Seal</span>
+        <% end %>
+        <%# Consolidated status badge: one state-colored pill folding the bare state + its
+            relative time into "Shipped 7 minutes ago" — replaces the former left-side
+            state pill AND the separate muted "shipped X ago" line. %>
+        <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>" data-test="release-state-badge"><%= release_state_label(rel, current: current) %></span>
+      </div>
     </div>
     <%# Conductor mascot row — the Pokémon of the SESSION running bin/release (the
         agent working this deployment), plus how long it has taken: "in progress ·
