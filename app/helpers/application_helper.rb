@@ -69,6 +69,72 @@ module ApplicationHelper
     end
   end
 
+  RELEASE_TRACKER_STAGES = [
+    { key: "merging", label: "Merging" },
+    { key: "testing", label: "Testing" },
+    { key: "assembling", label: "Assembling" },
+    { key: "confirming", label: "Confirming" },
+    { key: "deploying", label: "Deploying" }
+  ].freeze
+
+  # Pizza-tracker progress for the active release card, derived from the durable
+  # writes the conductor already makes during bin/release merge/prepare/ship.
+  def release_tracker_steps(release)
+    done_count = release_tracker_done_count(release)
+
+    RELEASE_TRACKER_STAGES.each_with_index.map do |stage, index|
+      state =
+        if index < done_count
+          :complete
+        elsif index == done_count && done_count < RELEASE_TRACKER_STAGES.size
+          :active
+        else
+          :pending
+        end
+
+      stage.merge(
+        index: index + 1,
+        state: state,
+        connector_state: index < done_count ? :complete : :pending
+      )
+    end
+  end
+
+  def release_tracker_done_count(release)
+    return RELEASE_TRACKER_STAGES.size if release.shipped?
+    return 4 if release.confirmed_at.present?
+    return 3 if release.state == "assembled"
+    return 2 if release.qa_url.present? || release_tracker_qa_shas?(release)
+    return 1 if release.tasks.any?
+
+    0
+  end
+
+  def release_tracker_qa_shas?(release)
+    shas = release.metadata.is_a?(Hash) ? release.metadata["qa_shas"] : nil
+    shas.is_a?(Hash) && shas.values.any?(&:present?)
+  end
+
+  def release_tracker_dot_classes(state)
+    case state.to_sym
+    when :complete then "bg-mint-500 border-mint-300 text-black shadow-sm shadow-mint-900/30"
+    when :active   then "bg-amber-300 border-amber-200 text-black ring-2 ring-amber-300/30"
+    else                "bg-inset border-subtle text-muted"
+    end
+  end
+
+  def release_tracker_label_classes(state)
+    case state.to_sym
+    when :complete then "text-heading"
+    when :active   then "text-amber-700 dark:text-amber-200"
+    else                "text-muted"
+    end
+  end
+
+  def release_tracker_connector_classes(state)
+    state.to_sym == :complete ? "bg-mint-400" : "bg-inset"
+  end
+
   # Release-card status badge label. Folds the bare state and its relative time
   # into one pill ("Shipped 7 minutes ago" / "Assembled 2 hours ago") so the card
   # no longer repeats the state and a separate "shipped X ago" line. Falls back to
