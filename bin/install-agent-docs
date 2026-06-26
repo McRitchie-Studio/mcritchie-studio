@@ -5,16 +5,17 @@
 #   docs/agents/index.md        -> $PROJECTS_DIR/AGENTS.md        (Codex reads this natively)
 #   docs/agents/claude.md       -> $PROJECTS_DIR/CLAUDE.md        (Claude Code adapter; @imports AGENTS.md)
 #   docs/agents/skills/<name>/  -> $HOME/.claude/skills/<name>/   (user-global Claude Code skills)
+#   docs/agents/skills/<name>/  -> $HOME/.codex/skills/<name>/    (user-global Codex skills)
 #
 # Claude Code auto-loads CLAUDE.md (and its @imports) but NOT AGENTS.md, so both
 # files are required to give every agent the same operating model. This keeps the
 # durable docs in GitHub while giving sessions a stable first file at the root.
 #
-# The skills under docs/agents/skills/ are USER-GLOBAL (they load in every session,
-# regardless of CWD), so the platform owns them here exactly like the root docs:
-# they survive a wiped machine and travel with the repo. This is distinct from the
-# PROJECT-scoped skills in mcritchie-studio/.claude/skills/ (which load only when CWD
-# is the studio) — those are deliberately NOT touched by this installer.
+# The skills under docs/agents/skills/ are USER-GLOBAL, so the platform owns them
+# here exactly like the root docs: they survive a wiped machine and travel with
+# the repo. This is distinct from PROJECT-scoped skills such as
+# mcritchie-studio/.claude/skills/ (which load only when CWD is the studio) —
+# those are deliberately NOT touched by this installer.
 
 set -euo pipefail
 
@@ -38,20 +39,26 @@ PAIRS=(
 )
 
 # User-global skills: mirror every file under each docs/agents/skills/<name>/ tree
-# into $HOME/.claude/skills/<name>/. A skill can carry more than a SKILL.md (helper
-# scripts, reference files), so we expand the tree into the SAME "source:target"
-# file pairs the docs use — install + check then share one code path. Built
-# dynamically from whatever is tracked, so adding a skill needs no script change.
+# into every supported runtime's user-global skill directory. A skill can carry
+# more than a SKILL.md (helper scripts, reference files), so we expand the tree
+# into the SAME "source:target" file pairs the docs use — install + check then
+# share one code path. Built dynamically from whatever is tracked, so adding a
+# skill needs no script change.
 SKILLS_SRC_DIR="$ROOT/docs/agents/skills"
-SKILLS_DEST_DIR="$HOME/.claude/skills"
+SKILLS_DEST_DIRS=(
+  "$HOME/.claude/skills"
+  "$HOME/.codex/skills"
+)
 SKILL_PAIRS=()
 if [ -d "$SKILLS_SRC_DIR" ]; then
   # -mindepth 2: only mirror files INSIDE a <name>/ skill dir, so a top-level
-  # README.md documenting the source tree never lands in ~/.claude/skills as a
+  # README.md documenting the source tree never lands in an agent skills dir as a
   # stray non-skill.
   while IFS= read -r src; do
     rel="${src#"$SKILLS_SRC_DIR"/}"
-    SKILL_PAIRS+=("$src:$SKILLS_DEST_DIR/$rel")
+    for dest_dir in "${SKILLS_DEST_DIRS[@]}"; do
+      SKILL_PAIRS+=("$src:$dest_dir/$rel")
+    done
   done < <(find "$SKILLS_SRC_DIR" -mindepth 2 -type f | sort)
 fi
 
@@ -60,14 +67,14 @@ usage() {
 Usage: bin/install-agent-docs [install|check]
 
 install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md)
-         and the user-global skills to ~/.claude/skills.
-check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md and ~/.claude/skills match
-         the tracked sources.
+         and the user-global skills to ~/.claude/skills + ~/.codex/skills.
+check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md plus ~/.claude/skills and
+         ~/.codex/skills match the tracked sources.
 USAGE
 }
 
 # Compare one source against its installed target. Missing target counts as drift
-# (a wiped ~/.claude). Quiet on stdout; the callers narrate OK/ERROR.
+# (a wiped ~/.claude or ~/.codex). Quiet on stdout; the callers narrate OK/ERROR.
 check_pair() {
   local src="$1" tgt="$2"
   [ -f "$tgt" ] && cmp -s "$src" "$tgt"

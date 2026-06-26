@@ -1,9 +1,9 @@
 ---
 name: wrap
-description: Session-close ceremony / bumper. Invoke when a session is wrapping up — the user signals they're done or asks what's left ("anything else?", "we're good", "call it here", "wrap up", "/wrap"), or you're handing off. First offers the highest-leverage work the session's warm context unlocks, then walks memory hygiene, a documentation sweep, task-board reconciliation, and worktree/stack status, and ends by handing the operator permission to close at a clean seam — so the warm context is spent well and end-of-session cleanup happens by ritual, not by luck.
+description: Shared session-close ceremony for Claude and Codex. Invoke when a session is wrapping up — the user signals they're done or asks what's left ("anything else?", "we're good", "call it here", "wrap up", "/wrap"), or you're handing off. First offers the highest-leverage work the session's warm context unlocks, then walks memory hygiene, a documentation sweep, task-board reconciliation, and worktree/stack status, and ends by handing the operator permission to close at a clean seam — so the warm context is spent well and end-of-session cleanup happens by ritual, not by luck.
 ---
 
-# /wrap — session-close ceremony
+# Shared /wrap — session-close ceremony
 
 A bumper for the end of a session. Work the steps top to bottom. Skip one only if
 it plainly doesn't apply — and say so out loud rather than silently dropping it.
@@ -23,8 +23,13 @@ feel free to do each without waiting to be asked:
 **Always be closing** — toward the *right* close, never a hurried one.
 
 Absolute paths used below:
-- memory dir: `/Users/alex/.claude/projects/-Users-alex-projects/memory`
 - McRitchie studio: `/Users/alex/projects/mcritchie-studio`
+- Claude memory dir, when running under Claude:
+  `/Users/alex/.claude/projects/-Users-alex-projects/memory`
+- Codex memory dir: none is platform-owned yet. Use only an explicitly provided
+  writable memory directory; otherwise capture durable facts in the task record,
+  active docs, or the final handoff.
+- `<memory dir>` means the selected runtime memory directory, when one exists.
 
 ## 1. Spend the warm context
 Before you tidy, ask what this session is uniquely positioned to do **right now**.
@@ -40,19 +45,24 @@ Don't manufacture busywork: if there is genuinely nothing worth it, **say so** �
 
 ## 2. Capture learnings → memory
 Ask: what did this session teach that is durable AND non-obvious — a gotcha, a
-decision, a project-state change, a stated preference? Write or update memory files
-in the memory dir.
+decision, a project-state change, a stated preference?
+- Select the memory target first. Under Claude, use the Claude memory dir above.
+  Under Codex, use an explicit writable memory dir only if one is provided; if no
+  memory target exists, say so and capture durable facts through the task record,
+  active docs, or handoff instead of inventing a private store.
+- When a memory dir exists, write or update memory files there.
 - **Consolidate** into an existing file rather than spawning a near-duplicate;
   **delete** memories that turned out wrong or superseded.
-- Don't save what the repo / git history / CLAUDE.md already records.
+- Don't save what the repo / git history / agent entry docs already record.
 - Every new or updated memory gets exactly ONE terse index line in `MEMORY.md`:
   `- [Title](file.md) — <≤130-char hook>`. Detail lives in the topic file, never
   in the index. (See `feedback_memory_index_hygiene.md`.)
 
 ## 3. Memory index hygiene
-Keep `MEMORY.md` under its size limit (~24KB) so the harness loads the whole index.
-The job: shorten the one-line hooks — never the links or the topic files — so every
-entry stays terse and the file stays under the cap.
+Run this only when a memory dir exists. Keep `MEMORY.md` under its size limit
+(~24KB) so the harness loads the whole index. The job: shorten the one-line
+hooks — never the links or the topic files — so every entry stays terse and the
+file stays under the cap.
 - `wc -c <memory dir>/MEMORY.md`
 - If it's near or over the cap, trim the index. A trimmer at
   `<memory dir>/bin/trim-index` automates it — **use it WHEN PRESENT**, but don't
@@ -80,8 +90,8 @@ Did this session change behavior, a workflow, ports, auth, env vars, deploy step
 or an agent process? If yes, update the OWNING active doc in this same wrap — stale
 docs are how the next session starts from a wrong map.
 - A McRitchie active-doc edit is a code diff → route it through the DevOps cycle
-  (task → worktree → PR into `release`), per `CLAUDE.md`. Do **not** edit McRitchie
-  active docs on a primary checkout.
+  (task → worktree → PR into `release`), per `AGENTS.md` and any generated
+  runtime adapter. Do **not** edit McRitchie active docs on a primary checkout.
 
 ## 5. Task-board reconciliation
 - `cd /Users/alex/projects/mcritchie-studio && bin/task stale` — flags any task whose

@@ -381,10 +381,10 @@ phase_agent_docs() {
   fi
 
   # Installs the root AGENTS.md/CLAUDE.md AND the user-global skills
-  # (docs/agents/skills/* -> ~/.claude/skills/*) in one pass.
+  # (docs/agents/skills/* -> ~/.claude/skills/* + ~/.codex/skills/*) in one pass.
   "$installer" >/dev/null
   log_ok "projects/AGENTS.md" "installed from mcritchie-studio/docs/agents/index.md"
-  log_ok "~/.claude/skills" "installed from mcritchie-studio/docs/agents/skills/"
+  log_ok "agent skills" "installed to ~/.claude/skills and ~/.codex/skills"
 }
 
 # ─── Phase 6: Bundles + databases ───────────────────────────────────────────
