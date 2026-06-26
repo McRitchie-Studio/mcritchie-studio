@@ -103,6 +103,7 @@ require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
+require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
 # Deploy-side usage capture: read the conductor's LOCAL session transcript and
 # diff it against the per-(session, slug) baseline (shared verbatim with bin/task
@@ -1118,6 +1119,48 @@ def checkout_branch(repo, branch)
   abort!("could not checkout #{branch} in #{repo} for re-pin") unless ok
 end
 
+# Best-effort: commit a generated doc (a `retro` doc or the `delete-later.md`
+# ledger `archive` updates) onto `release` so it stops landing as ship-preflight
+# dirt that the conductor has to stash every release. NON-FATAL — any problem
+# leaves the doc uncommitted (today's behavior; the preflight stashes it) and never
+# aborts retro/archive. The IO seam around the pure Release::ArtifactCommit:
+#   - commit ONLY when the doc is the SOLE uncommitted change (never sweep up dirt),
+#   - build on origin/release's tip (ff-only) so the push fast-forwards and the NEXT
+#     ship ff's main up to it — no main/release divergence,
+#   - ALWAYS restore the checkout to `main` (ensure), even on failure.
+def commit_artifact_to_release(repo, abs_path, message)
+  return if DRY
+
+  path = repo_path(repo)
+  rel  = abs_path.to_s.delete_prefix("#{path}/")
+
+  status, ok = git_capture("-C", path, "status", "--porcelain")
+  unless ok && Release::ArtifactCommit.safe_to_commit?(status, rel)
+    step("left #{rel} uncommitted (#{ok ? 'other changes present' : 'git status failed'}) — commit it via a docs PR")
+    return
+  end
+
+  sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, "--quiet", capture: true)
+
+  done = false
+  begin
+    _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
+    if co
+      _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
+      if ff
+        sh("git", "-C", path, "add", "--", rel, capture: true)
+        _, committed = sh("git", "-C", path, "commit", "-m", message, capture: true)
+        _, done = sh("git", "-C", path, "push", "origin", RELEASE_BRANCH, capture: true) if committed
+      end
+    end
+  ensure
+    sh("git", "-C", path, "checkout", "main", capture: true)
+  end
+
+  step(done ? "committed #{rel} to #{RELEASE_BRANCH} (ships on the next release)" \
+            : "left #{rel} uncommitted (commit/push failed) — commit it via a docs PR")
+end
+
 # Publish (or idempotently skip) one gem, then collapse its release → main at the
 # frozen SHA. Skip when the version is already LIVE. Yank safety is delegated to
 # `gem push` failing closed: a yanked number isn't in the listing → publish_needed?
@@ -1568,6 +1611,14 @@ def archive
   reclaim_out, = reclaim_worktrees(apply: true)
   reclaimed = reclaimed_count(reclaim_out)
 
+  # The reclaim appended to the delete-later ledger — commit it to `release` so it
+  # rides the next ship instead of becoming ship-preflight dirt (best-effort).
+  commit_artifact_to_release(
+    "mcritchie-studio",
+    File.join(repo_path("mcritchie-studio"), "docs/agents/maintenance/delete-later.md"),
+    "ledger: delete-later after archive (#{archived_count} archived, #{reclaimed} reclaimed)"
+  )
+
   # 7. Summary.
   say("")
   say("✓ Archived #{archived_count} tasks; reclaimed #{reclaimed} worktrees; SHIPPED → #{kept_count}")
@@ -1668,6 +1719,10 @@ def retro
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, markdown)
   say("✓ wrote #{path}")
+
+  # Commit the retro doc to `release` so it ships next round instead of becoming
+  # ship-preflight dirt (best-effort, non-fatal; see commit_artifact_to_release).
+  commit_artifact_to_release("mcritchie-studio", path, "retro: #{resolved}")
 
   # 3. Optionally file the follow-ups as tasks (gated by --file-tasks). The doc is
   #    already written, so a `bin/task create` hiccup just means fewer tasks filed.
