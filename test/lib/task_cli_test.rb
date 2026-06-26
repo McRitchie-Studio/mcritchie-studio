@@ -554,6 +554,35 @@ class TaskCliTest < Minitest::Test
     assert_nil patch_of(requests), "no session → no claim write"
   end
 
+  # The authoritative guard: a heartbeat renews a BUILD claim, and a build claim
+  # only exists once the task is actually `building`. A task still in `designed`
+  # (the create default) is unclaimed by definition — `bin/task create` repoints
+  # the creator's session marker to it, and a stray heartbeat must NOT forge a
+  # live claim there (the creator's mascot ticking on an unowned `designed` task).
+  def test_heartbeat_skips_a_designed_task
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
+      stub_devops: { "kind" => "feature" },
+      stub_stage: "designed"
+    )
+    assert status.success?, "the heartbeat stays best-effort and silent"
+    assert_nil patch_of(requests), "a non-building task is unclaimed — no claim is forged"
+  end
+
+  # And the same for any other non-build stage (e.g. an already-`submitted` task) —
+  # only the live BUILD stage is renewed.
+  def test_heartbeat_skips_a_submitted_task
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-A" },
+      stub_devops: { "kind" => "feature" },
+      stub_stage: "submitted"
+    )
+    assert status.success?
+    assert_nil patch_of(requests), "only a `building` task heartbeats — never a submitted one"
+  end
+
   # --- show --json / --verbose (the visibility wins) --------------------------
 
   # --json prints the FULL fetched record as valid JSON — the machine-readable
@@ -689,8 +718,10 @@ class TaskCliTest < Minitest::Test
   # projects dir (CLAUDE_PROJECTS_DIR) and a non-worktree cwd (chdir there) so the
   # `/.worktrees/` skip-guard doesn't suppress the write. `pre_marker` seeds an
   # existing on-disk marker; `fail_get` forces the board read to a non-2xx.
-  # Returns [parsed marker hash (or nil if unwritten), process status].
-  def run_with_marker(args, stub_devops:, pre_marker: nil, fail_get: nil)
+  # Returns [parsed marker hash (or nil if unwritten), process status]. `stub_stage`
+  # sets the stage the stub serves (the create/move response) — a created task is
+  # `designed`, so create tests pass stub_stage: "designed".
+  def run_with_marker(args, stub_devops:, pre_marker: nil, fail_get: nil, stub_stage: "building")
     Dir.mktmpdir do |projects|
       sessions = File.join(projects, ".agents", "sessions")
       FileUtils.mkdir_p(sessions)
@@ -705,6 +736,7 @@ class TaskCliTest < Minitest::Test
           "TASK_SKIP_MARKER" => nil # nil deletes it from the child → the marker writes
         },
         stub_devops: stub_devops,
+        stub_stage: stub_stage,
         chdir: projects, # a non-worktree cwd so write_feature_marker doesn't skip
         fail_get: fail_get
       )
@@ -712,6 +744,42 @@ class TaskCliTest < Minitest::Test
       marker = File.exist?(marker_path) ? JSON.parse(File.read(marker_path)) : nil
       [marker, status]
     end
+  end
+
+  # --- create + the active-feature marker (the self-claim fix) ----------------
+
+  # By DEFAULT, create repoints the session marker to the new task (genesis
+  # trickle-down — your status line shows what you just filed). But a created task
+  # is `designed`, so the marker carries stage=designed — which bin/statusline +
+  # `bin/task heartbeat` both refuse to renew. So create no longer self-CLAIMS,
+  # even though it still sets display context.
+  def test_create_repoints_the_marker_as_designed_not_building
+    marker, status = run_with_marker(
+      ["create", "--title", "A fresh follow-up", "--kind", "chore"],
+      stub_devops: { "kind" => "chore" },
+      stub_stage: "designed"
+    )
+    assert status.success?
+    refute_nil marker, "create still writes the display marker by default"
+    assert_equal "demo-task", marker["slug"]
+    assert_equal "designed", marker["stage"], "the marker carries the real `designed` stage — never a self-claim"
+  end
+
+  # --no-claim files the task WITHOUT touching the session marker at all — the
+  # conductor (bin/release) filing follow-ups must not drag its status line (and
+  # its live build-claim) off whatever it was onto each fresh `designed` task.
+  def test_create_no_claim_leaves_an_active_build_marker_untouched
+    active = { "slug" => "my-active-build", "task_slug" => "my-active-build",
+               "stage" => "building", "mascot" => "eevee" }
+    marker, status = run_with_marker(
+      ["create", "--no-claim", "--title", "A filed follow-up", "--kind", "chore"],
+      stub_devops: { "kind" => "chore" },
+      stub_stage: "designed",
+      pre_marker: active
+    )
+    assert status.success?
+    assert_equal "my-active-build", marker["slug"], "--no-claim must not repoint the marker"
+    assert_equal "building", marker["stage"], "the conductor's real build-claim context is preserved"
   end
 
   # The bug: a move whose API response carries NO mascot must NOT blank an
