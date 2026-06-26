@@ -72,3 +72,15 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-06-21 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/readable-task-slugs` | worktree | Hidden worktree; branch `feat/readable-task-slugs` is clean and HEAD f8f0cbf is contained in origin/main. | Removed with `bin/agent-worktree remove mcritchie-studio readable-task-slugs --yes` during approved lifecycle cleanup. | removed 2026-06-21 |
+
+<!-- agent-worktree remove 2026-06-25 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/cache-pokemon-primary-type` | worktree | Hidden worktree; branch `feat/cache-pokemon-primary-type` is clean and HEAD 7c738f0 is contained in origin/release. | Removed with `bin/agent-worktree remove mcritchie-studio cache-pokemon-primary-type --yes` during approved lifecycle cleanup. | removed 2026-06-25 |
+
+<!-- agent-worktree remove 2026-06-25 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-wrap-verify-and-scope` | worktree | Hidden worktree; branch `feat/fix-wrap-verify-and-scope` is clean and HEAD 167a730 is contained in origin/release. | Removed with `bin/agent-worktree remove mcritchie-studio fix-wrap-verify-and-scope --yes` during approved lifecycle cleanup. | removed 2026-06-25 |
+
+<!-- agent-worktree remove 2026-06-25 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/release-notes-header-refactor` | worktree | Hidden worktree; branch `feat/release-notes-header-refactor` is clean and HEAD 838a3e7 is contained in origin/release. | Removed with `bin/agent-worktree remove mcritchie-studio release-notes-header-refactor --yes` during approved lifecycle cleanup. | removed 2026-06-25 |
+
+<!-- agent-worktree remove 2026-06-25 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/task-intelligence-dashboard` | worktree | Hidden worktree; branch `feat/task-intelligence-dashboard` is clean and HEAD 97f9bd0 is contained in origin/release. | Removed with `bin/agent-worktree remove mcritchie-studio task-intelligence-dashboard --yes` during approved lifecycle cleanup. | removed 2026-06-25 |
