@@ -142,9 +142,16 @@ class TaskIntelligence
     end
   end
 
-  # Biggest estimate misses — |dev points − actual points|, largest first.
+  # Biggest estimate misses — |dev points − actual points|, largest first. Skip
+  # any task missing EITHER size BEFORE the arithmetic: sizing (#209) derives
+  # actual_size at ship even when the builder never stamped a dev_size, so
+  # dev_size is commonly nil — and size_points(nil) is nil, so `actual - dev`
+  # would raise a TypeError (this 500'd /intelligence on real data). filter_map
+  # drops the skipped tasks in one pass.
   def biggest_estimate_misses
-    sized_tasks.map do |task|
+    sized_tasks.filter_map do |task|
+      next unless task.dev_size && task.actual_size
+
       dev = size_points(task.dev_size)
       actual = size_points(task.actual_size)
       {
@@ -152,8 +159,7 @@ class TaskIntelligence
         dev_size: task.dev_size, actual_size: task.actual_size,
         delta: actual - dev
       }
-    end.select { |row| row[:dev_size] && row[:actual_size] }
-       .sort_by { |row| -row[:delta].abs }
+    end.sort_by { |row| -row[:delta].abs }
        .first(TOP_N)
   end
 

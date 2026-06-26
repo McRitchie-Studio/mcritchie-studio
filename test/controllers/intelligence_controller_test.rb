@@ -43,4 +43,25 @@ class IntelligenceControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='summary-tiles']"
     assert_select "[data-test='priciest-tasks']", text: /No spend recorded yet/
   end
+
+  # Regression: a shipped task with actual_size set but dev_size nil (the common
+  # sizing-#209 shape) must not 500 the dashboard.
+  test "renders 200 when a shipped task has actual_size but no dev_size" do
+    TaskEvent.delete_all
+    Task.delete_all
+
+    task = Task.create!(title: "Actual without dev", slug: "intel-ctrl-no-dev", stage: "shipped",
+                        po_size: nil, dev_size: nil, actual_size: "large")
+    task.task_events.delete_all
+    task.update_columns(created_at: 5.hours.ago, completed_at: Time.current)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: Time.current, seconds_in_from: 3_600,
+                      tokens_in: 100, tokens_out: 100, cost: 0.75,
+                      model: "claude-haiku-4", source: "cli", kind: TaskEvent::TRANSITION)
+
+    get intelligence_path
+
+    assert_response :success
+    assert_select "[data-test='estimate-misses']"
+  end
 end

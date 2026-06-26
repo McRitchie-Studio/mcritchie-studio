@@ -91,6 +91,36 @@ class TaskIntelligenceTest < ActiveSupport::TestCase
     assert_equal 1, misses.first[:delta]
   end
 
+  # Regression: sizing (#209) derives actual_size at ship even when the builder
+  # never stamped a dev_size, so dev_size is commonly nil. biggest_estimate_misses
+  # must SKIP such a task — not raise a TypeError on `actual - nil` (this 500'd
+  # /intelligence on real data).
+  test "biggest_estimate_misses skips a shipped task with actual_size but no dev_size" do
+    no_dev = build_task(
+      slug: "intel-no-dev", title: "Actual without dev estimate",
+      po: nil, dev: nil, actual: "large",
+      created: @week_anchor - 3.hours, completed: @week_anchor
+    )
+    add_event(no_dev, from: "building", to: "submitted", secs: 3_600, tin: 10, tout: 10, cost: 0.5, model: "claude-haiku-4")
+
+    intel = TaskIntelligence.new
+    misses = assert_nothing_raised { intel.biggest_estimate_misses }
+    slugs = misses.map { |row| row[:slug] }
+    assert_not_includes slugs, "intel-no-dev"
+    assert_includes slugs, "intel-t1" # the well-formed sibling is still ranked
+  end
+
+  # The summary tiles + estimate charts (same accuracy set) must also survive a
+  # dev_size-less shipped task without raising.
+  test "summary and estimate series survive a shipped task with actual_size but no dev_size" do
+    build_task(slug: "intel-no-dev-2", title: "Another actual no dev",
+               po: nil, dev: nil, actual: "medium",
+               created: @week_anchor - 2.hours, completed: @week_anchor)
+    intel = TaskIntelligence.new
+    assert_nothing_raised { intel.summary }
+    assert_nothing_raised { intel.estimate_accuracy_series }
+  end
+
   test "priciest tasks leaderboard ranks by total spend" do
     rows = @intel.priciest_tasks
     assert_equal "intel-t1", rows.first[:slug]
