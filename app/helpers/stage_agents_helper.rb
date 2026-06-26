@@ -357,11 +357,16 @@ module StageAgentsHelper
     end
 
     if (work = in_progress_work(task, by_slug, mascot_agent, intents))
+      # The timeline frames live work as the real pipeline TRANSITION it produces —
+      # `to_stage` is the next stage and `timeline_agents` is that stage's crew. This
+      # is what keeps a re-homed QA intent from rendering "Assembled → Assembled":
+      # it reads as the ship it rides toward, "Assembled → Shipped · Avi" (the board
+      # still shows Steffon QA-ing the assembled lane off `work[:agents]`).
       blocks << TimelineBlock.new(
         event: nil, from_label: Task::STAGE_LABELS.fetch(task.stage, task.stage.to_s.humanize),
         to_label: Task::STAGE_LABELS.fetch(work[:to_stage], work[:to_stage].to_s.humanize),
         from_stage: task.stage, to_stage: work[:to_stage], occurred_at: work[:live_since],
-        seconds: nil, agents: work[:agents], model: nil, tokens: nil, cost: nil, source: nil,
+        seconds: nil, agents: work[:timeline_agents], model: nil, tokens: nil, cost: nil, source: nil,
         live_since: work[:live_since], in_progress: true, backfilled: false
       )
     end
@@ -373,11 +378,20 @@ module StageAgentsHelper
   # nil when the task is idle (designed/unclaimed, shipped/blocked/archived, or
   # awaiting a not-yet-recorded intent). The build lane is live only while
   # `building` (mascot + entry time); deploy stages read the OPEN intent (review
-  # pair / Steffon QA / Avi ship). Shape:
-  # { to_stage:, lane:, agents: [StageAgent], live_since: Time }.
+  # pair / Steffon QA / Avi ship).
+  #
+  # The result serves TWO different views, which is why it carries two crews:
+  #   * BOARD (crew_columns) reads `lane` + `agents` — the re-homed LANE and the
+  #     soul physically working it (Steffon QA-ing the assembled lane).
+  #   * TIMELINE (stage_timeline) reads `to_stage` + `timeline_agents` — the real
+  #     pipeline TRANSITION this work produces (the next stage) and that stage's
+  #     crew. They coincide for every lane EXCEPT the re-homed QA intent, where the
+  #     board says "assembled · Steffon" but the timeline says "shipped · Avi".
+  # Shape: { to_stage:, lane:, agents: [StageAgent], timeline_agents: [StageAgent], live_since: Time }.
   def in_progress_work(task, by_slug, mascot_agent, intents)
     stage = task.stage
     return nil unless NEXT_PIPELINE_STAGE.key?(stage)
+    target = NEXT_PIPELINE_STAGE[stage] # the real next pipeline stage — the timeline badge target
 
     # Only `building` is "still building" — an active claim (mascot + entry time).
     # A `designed` task is filed but UNCLAIMED, so it is NOT live build work (no
@@ -388,8 +402,8 @@ module StageAgentsHelper
       return nil unless mascot_agent
 
       since = (STAGE_ENTERED_AT[stage] && task.public_send(STAGE_ENTERED_AT[stage])) || task.created_at
-      { to_stage: stage, lane: :build, live_since: since,
-        agents: [StageAgent.new(stage: stage, agent: mascot_agent)] }
+      crew = [StageAgent.new(stage: stage, agent: mascot_agent)] # the mascot heads both views
+      { to_stage: target, lane: :build, live_since: since, agents: crew, timeline_agents: crew }
     else
       intent, render_stage = open_deploy_intent(stage, intents)
       return nil if intent.nil?
@@ -397,8 +411,23 @@ module StageAgentsHelper
       agents = intent_stage_agents(intent, by_slug, render_stage)
       return nil if agents.empty?
 
-      { to_stage: render_stage, lane: stage_lane(render_stage), live_since: intent.occurred_at, agents: agents }
+      { to_stage: target, lane: stage_lane(render_stage), live_since: intent.occurred_at,
+        agents: agents, timeline_agents: deploy_timeline_agents(intent, render_stage, target, by_slug) }
     end
+  end
+
+  # The crew for the TIMELINE's live deploy card — which frames work as the real
+  # pipeline transition (→ `target`, the next stage). For every lane whose live
+  # intent already rides toward that next stage (the review pair → reviewed, the
+  # reviewed→assembled half-state, Avi's own ship intent) this is exactly the board
+  # crew. The one exception is the re-homed Steffon QA intent: it lives in the
+  # assembled LANE but rides toward `shipped`, so the timeline attributes its card to
+  # the ship owner (Avi) by role — NOT the QA actor — matching the eventual ship card.
+  def deploy_timeline_agents(intent, render_stage, target, by_slug)
+    return intent_stage_agents(intent, by_slug, target) if render_stage == target
+
+    owner = STAGE_OWNER[target] && by_slug[STAGE_OWNER[target]]
+    owner ? [StageAgent.new(stage: target, label: owner.slug, agent: owner)] : []
   end
 
   # True for the Steffon assembled-QA intent — recorded toward `shipped` (so the SHIP

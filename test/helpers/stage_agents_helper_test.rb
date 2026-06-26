@@ -469,6 +469,48 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[heavy light], live.agents.map(&:weight)
   end
 
+  test "stage_timeline's live assembled card reads Assembled -> Shipped owned by Avi" do
+    # The standard QA window: the member is already `assembled`, so prepare records
+    # Steffon's QA intent toward `shipped` (qa:true), RE-HOMED to the assembled LANE
+    # for the board. The timeline must NOT echo that re-homed lane as the badge
+    # target (the old nonsensical "Assembled -> Assembled" no-op) — it frames the
+    # live work as the real transition it rides toward, →shipped, owned by the ship
+    # owner Avi (operator decision: the timeline diverges from the board here).
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+    live = stage_timeline(task.reload, @agents).find(&:in_progress?)
+
+    assert_not_nil live, "an open QA intent surfaces as a live block"
+    assert_equal "assembled", live.from_stage
+    assert_equal "shipped", live.to_stage, "badge reads toward the REAL next stage, not the re-homed lane"
+    assert_equal "Shipped", live.to_label
+    assert_equal %w[avi], live.agents.map { |a| a.agent&.slug }, "the ship owner (Avi) heads the live ship card"
+    assert_not_nil live.live_since
+  end
+
+  test "stage_timeline's live assembled card stays Avi once his own ship intent is open" do
+    task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
+    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true) # QA first
+    task.record_intent_event(to_stage: "shipped", actor: "avi")               # ship starts later
+    live = stage_timeline(task.reload, @agents).find(&:in_progress?)
+
+    assert_equal "shipped", live.to_stage
+    assert_equal %w[avi], live.agents.map { |a| a.agent&.slug }
+  end
+
+  test "stage_timeline's live building card reads Building -> Submitted, not Building -> Building" do
+    mon = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                          sprite_url: "https://example.test/snorlax-sprite.png")
+    task = Task.create!(title: "timeline live building task", stage: "building")
+    live = stage_timeline(task.reload, @agents, mascot: mon).find(&:in_progress?)
+
+    assert_not_nil live, "an active building claim surfaces as a live block"
+    assert_equal "building", live.from_stage
+    assert_equal "submitted", live.to_stage, "badge reads toward the next stage, not a Building -> Building no-op"
+    assert_equal "Submitted", live.to_label
+    assert_equal "Snorlax", live.agents.first.name, "the mascot heads the live build card"
+  end
+
   test "stage_timeline build-lane mascot wears its type (signature) color, not the name palette" do
     # Dragon (rarer) outranks Flying, so Dragonite's signature color is Dragon's.
     Studio::Enumeral.create!(category: "pokemon_type", key: "dragon", color: "#6F35FC", rank: 1500)
