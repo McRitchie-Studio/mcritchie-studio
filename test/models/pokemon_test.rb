@@ -72,6 +72,49 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal 160, snorlax.reload.hp
   end
 
+  # --- Avatars (cropped primary + uncropped fallback) ---
+
+  test "carries a separate cropped primary and uncropped fallback avatar" do
+    p = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax",
+                        avatar_url: "https://s3/pokemon/143-snorlax-cropped.png",
+                        avatar_fallback_url: "https://s3/pokemon/143-snorlax.png",
+                        sprite_url: "https://s3/pokemon/143-snorlax-sprite.png")
+    p.reload
+    assert_equal "https://s3/pokemon/143-snorlax-cropped.png", p.avatar_url
+    assert_equal "https://s3/pokemon/143-snorlax.png", p.avatar_fallback_url
+  end
+
+  test "display_avatar prefers the cropped primary" do
+    p = make(143, "snorlax")
+    p.update!(avatar_url: "cropped.png", avatar_fallback_url: "orig.png", sprite_url: "sprite.png")
+    assert_equal "cropped.png", p.display_avatar
+  end
+
+  test "display_avatar falls back to the uncropped original, then the sprite" do
+    p = make(143, "snorlax")
+    p.update!(avatar_url: nil, avatar_fallback_url: "orig.png", sprite_url: "sprite.png")
+    assert_equal "orig.png", p.display_avatar
+
+    p.update!(avatar_fallback_url: nil)
+    assert_equal "sprite.png", p.display_avatar
+  end
+
+  test "seed populates both a cropped avatar_url and an uncropped fallback for all 151" do
+    seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
+    capture_io { load seed }
+
+    pokemon = Pokemon.order(:dex).to_a
+    assert_equal 151, pokemon.size
+    pokemon.each do |p|
+      assert p.avatar_url.present?, "##{p.dex} #{p.slug} missing avatar_url"
+      assert p.avatar_fallback_url.present?, "##{p.dex} #{p.slug} missing avatar_fallback_url"
+      # Primary is the crop; fallback is the original it was cropped from.
+      assert p.avatar_url.end_with?("-cropped.png"), "##{p.dex} avatar_url not the crop: #{p.avatar_url}"
+      assert_not p.avatar_fallback_url.end_with?("-cropped.png"), "##{p.dex} fallback should be the original"
+      assert_equal p.avatar_url.sub("-cropped.png", ".png"), p.avatar_fallback_url
+    end
+  end
+
   # --- Type colors (shared Studio::Enumeral) ---
 
   test "type_colors maps each seeded type to its color in one query" do

@@ -756,11 +756,13 @@ class DorCheckTest < Minitest::Test
   # evidence (bin/full-suite-check records it). These unit tests drive the verdict
   # via the DOR_CHECK_SUITE_EVIDENCE seam; the [integration] block below exercises
   # the REAL git fingerprint. The contract is otherwise complete so the suite gate
-  # is the sole variable.
+  # is the sole variable — including post_deploy_cmd, so a branch whose own working
+  # tree happens to touch a seed/migration (this check() runs against the live tree)
+  # doesn't trip the post-deploy gate and leak into these suite-gate assertions.
   SUITE_CONTRACT = {
     "shape" => "backend", "repositories" => ["mcritchie-studio"],
     "risk_tags" => ["devops"], "acceptance" => ["enforce the full suite"],
-    "test_plan" => ["unit", "integration"],
+    "test_plan" => ["unit", "integration"], "post_deploy_cmd" => "none",
     "checks_run" => ["[unit] x", "[integration] y"]
   }.freeze
 

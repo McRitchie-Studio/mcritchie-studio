@@ -90,6 +90,14 @@ class Pokemon < ApplicationRecord
     types.filter_map { |type| by_key[type]&.emoji }.join
   end
 
+  # The image to render for this Pokémon: the tightly-cropped primary
+  # (avatar_url), falling back to the original uncropped artwork
+  # (avatar_fallback_url) and finally the pixel sprite. Callers that want the
+  # explicit backup read avatar_fallback_url directly (e.g. an <img onerror>).
+  def display_avatar
+    avatar_url.presence || avatar_fallback_url.presence || sprite_url
+  end
+
   def to_param
     slug
   end
