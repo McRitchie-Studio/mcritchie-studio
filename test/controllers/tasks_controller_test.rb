@@ -455,6 +455,30 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "[component] sop renders the four accountability swimlanes" do
+    get sop_path
+
+    assert_response :success
+    assert_select "h2", "DevOps SOP"
+    # One lane per accountable owner (the four lanes from the vocabulary YAML).
+    [ "Builder", "Primary Reviewer", "Steffon", "Avi" ].each do |owner|
+      assert_includes response.body, owner, "expected the #{owner} lane"
+    end
+    # A representative step label + the single-source owner definition render.
+    assert_includes response.body, "Building"
+    assert_includes response.body, "Owner = the agent accountable for the whole lane"
+    # Each step has a node tile + an expand-on-click detail (Owner / Expectation / Gate).
+    assert_select "[data-sop-node]"
+    assert_select "dt", text: "Expectation"
+    assert_select "dt", text: "Gate"
+    assert_includes response.body, "Build to the accepted criteria" # an expand detail body
+  end
+
+  test "[component] sop is public (no login required)" do
+    get sop_path
+    assert_response :success
+  end
+
   test "each board page cross-links to the other boards" do
     # The active board hides its own (redundant) toggle button, so a page links
     # to the OTHER board(s); Stages stays reachable from the top-links nav.

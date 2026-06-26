@@ -220,7 +220,7 @@ class ApplicationHelperTest < ActionView::TestCase
     rel = Release.open!
     assert_equal %i[active pending pending pending pending],
                  release_tracker_steps(rel).map { |step| step[:state] }
-    assert_equal [ "Testing", "Assembling", "Deploying", "Testing", "Deploying" ],
+    assert_equal [ "Testing", "Assembling", "Deploying QA", "Confirming", "Deploying Prod" ],
                  release_tracker_steps(rel).map { |step| step[:label] }
     assert_equal %i[active pending pending pending pending],
                  release_tracker_steps(rel).map { |step| step[:connector_state] }
@@ -228,19 +228,19 @@ class ApplicationHelperTest < ActionView::TestCase
     tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
     assert_equal %i[complete active pending pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
-    assert_equal [ "Tested", "Assembling", "Deploying", "Testing", "Deploying" ],
+    assert_equal [ "Tested", "Assembling", "Deploying QA", "Confirming", "Deploying Prod" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.update!(qa_url: "https://qa.mcritchie.studio")
     assert_equal %i[complete complete active pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
-    assert_equal [ "Tested", "Assembled", "Deploying", "Testing", "Deploying" ],
+    assert_equal [ "Tested", "Assembled", "Deploying QA", "Confirming", "Deploying Prod" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.assemble!
     assert_equal %i[complete complete complete active pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
-    assert_equal [ "Tested", "Assembled", "Live on QA", "Testing", "Deploying" ],
+    assert_equal [ "Tested", "Assembled", "Live on QA", "Confirming", "Deploying Prod" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.reopen!
@@ -252,7 +252,7 @@ class ApplicationHelperTest < ActionView::TestCase
     rel.update!(confirmed_at: Time.current)
     assert_equal %i[complete complete complete complete active],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
-    assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deploying" ],
+    assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deploying Prod" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
 
     rel.update!(state: "shipped")
@@ -260,6 +260,15 @@ class ApplicationHelperTest < ActionView::TestCase
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
     assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deployed" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
+  end
+
+  test "[unit] release_tracker_steps yields five DISTINCT active labels" do
+    # At done_count 0 every step renders its active_label, so this is the full
+    # active-label set. The fix disambiguated the old repeats ("Testing" twice,
+    # "Deploying" twice) into Deploying QA / Confirming / Deploying Prod.
+    labels = release_tracker_steps(Release.open!).map { |step| step[:label] }
+    assert_equal [ "Testing", "Assembling", "Deploying QA", "Confirming", "Deploying Prod" ], labels
+    assert_equal labels.size, labels.uniq.size, "tracker active labels must be unambiguous"
   end
 
   test "[component] _release_summary renders the current release tracker stages" do
@@ -272,12 +281,15 @@ class ApplicationHelperTest < ActionView::TestCase
 
     assert_select "[data-test='release-tracker']"
     assert_select "[data-test='release-tracker-step']", 5
-    [ "Tested", "Assembled", "Live on QA", "Testing", "Deploying" ].each do |label|
+    [ "Tested", "Assembled", "Live on QA", "Confirming", "Deploying Prod" ].each do |label|
       assert_select "[data-test='release-tracker-label']", text: label
     end
     assert_select "[data-test='release-tracker-label']", { text: /✅/, count: 0 }
     assert_select "[data-test='release-tracker-label']", { text: "Merging", count: 0 }
-    assert_select "[data-test='release-tracker-label']", { text: "Confirming", count: 0 }
+    # The disambiguation: the confirming step no longer mislabels itself "Testing"
+    # (and the prod-deploy step is "Deploying Prod", not a bare "Deploying").
+    assert_select "[data-test='release-tracker-label']", { text: "Testing", count: 0 }
+    assert_select "[data-test='release-tracker-label']", { text: "Deploying", count: 0 }
     assert_select "[data-test='release-tracker-step'][data-state='complete']", 3
     assert_select "[data-test='release-tracker-step'][data-state='active'][data-stage='confirming']"
     assert_select "[data-test='release-tracker-step'][data-state='active'] [aria-current=?]", "step"

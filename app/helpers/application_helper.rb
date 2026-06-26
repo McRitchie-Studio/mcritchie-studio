@@ -69,12 +69,28 @@ module ApplicationHelper
     end
   end
 
+  # The DevOps SOP vocabulary — the owner definition, the node types, and the four
+  # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
+  # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term
+  # there and it flows to /stages/sop in one edit. These thin helpers keep the view API.
+  def sop_owner_definition
+    Devops::Vocabulary.owner_definition
+  end
+
+  def devops_sop_lanes
+    Devops::Vocabulary.lanes
+  end
+
+  def sop_node_type(type)
+    Devops::Vocabulary.node_type(type)
+  end
+
   RELEASE_TRACKER_STAGES = [
     { key: "testing", active_label: "Testing", complete_label: "Tested" },
     { key: "assembling", active_label: "Assembling", complete_label: "Assembled" },
-    { key: "qa_deploying", active_label: "Deploying", complete_label: "Live on QA" },
-    { key: "confirming", active_label: "Testing", complete_label: "Confirmed" },
-    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed" }
+    { key: "qa_deploying", active_label: "Deploying QA", complete_label: "Live on QA" },
+    { key: "confirming", active_label: "Confirming", complete_label: "Confirmed" },
+    { key: "production_deploying", active_label: "Deploying Prod", complete_label: "Deployed" }
   ].freeze
 
   # Pizza-tracker progress for the active release card, derived from the durable
@@ -133,7 +149,7 @@ module ApplicationHelper
   def release_tracker_dot_classes(state)
     case state.to_sym
     when :complete then "bg-mint-500 border-mint-300 text-black shadow-sm shadow-mint-900/30"
-    when :active   then "bg-amber-300 border-amber-200 text-black ring-2 ring-amber-300/30"
+    when :active   then "bg-amber-300 border-amber-200 text-black ring-4 ring-amber-300/40 shadow-lg shadow-amber-500/40 animate-pulse"
     else                "bg-inset border-subtle text-muted"
     end
   end

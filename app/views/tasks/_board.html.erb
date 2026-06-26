@@ -310,6 +310,7 @@ function kanbanBoard(live) {
         <%# Local-only board toys (generate / move / delete a fixture task) — dev/test
             only, hidden in production. Handy for demoing the live board. %>
         <%= render "dev_board_tools" %>
+        <%= render "dev_deploy_tools" %>
         <% if archived %>
           <button @click="showArchived = !showArchived"
                   :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"

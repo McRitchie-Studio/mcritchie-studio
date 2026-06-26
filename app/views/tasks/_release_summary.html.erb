@@ -101,13 +101,11 @@
           <% tracker_steps.each_with_index do |step, index| %>
             <div class="relative flex min-w-0 flex-col items-center gap-1" data-test="release-tracker-step" data-stage="<%= step[:key] %>" data-state="<%= step[:state] %>">
               <% unless index == tracker_steps.length - 1 %>
-                <span aria-hidden="true" data-test="release-tracker-connector" data-state="<%= step[:connector_state] %>" class="absolute top-2.5 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
+                <span aria-hidden="true" data-test="release-tracker-connector" data-state="<%= step[:connector_state] %>" class="absolute top-3 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
               <% end %>
-              <span class="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= raw('aria-current="step"') if step[:state] == :active %>>
+              <span class="relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= raw('aria-current="step"') if step[:state] == :active %>>
                 <% if step[:state] == :complete %>
                   <span aria-hidden="true">&check;</span>
-                <% elsif step[:state] == :active %>
-                  <span aria-hidden="true" class="h-2.5 w-2.5 rounded-full bg-current"></span>
                 <% else %>
                   <%= step[:index] %>
                 <% end %>
