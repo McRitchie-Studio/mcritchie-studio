@@ -157,6 +157,31 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='release-timing']", text: /\Ain progress · /
   end
 
+  test "[component] _release_summary stacks member pills into one overlapping row" do
+    Release.delete_all
+    rel = Release.open!(branch: "release/member-stack")
+    3.times do |index|
+      task = Task.create!(
+        title: "Stacked release member task #{index}",
+        stage: "reviewed",
+        metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }
+      )
+      rel.add(task)
+    end
+
+    render partial: "tasks/release_summary", locals: { release: rel.reload, variant: :last }
+
+    assert_select "[data-test='release-member-stack'].flex-nowrap.overflow-hidden", count: 1
+    assert_select "[data-test='release-member-stack'] [data-test='release-member-pill']", count: 3
+    assert_select "[data-test='release-member-pill'] span.truncate", count: 3
+
+    pills = css_select("[data-test='release-member-pill']")
+    assert_not_includes pills.first["class"], "-ml-20"
+    pills.drop(1).each { |pill| assert_includes pill["class"], "-ml-20" }
+    assert_includes pills[1]["style"], "z-index: 2;"
+    assert_includes pills[2]["style"], "z-index: 3;"
+  end
+
   test "[unit] release_tracker_steps maps release train updates" do
     rel = Release.open!
     assert_equal %i[active pending pending pending pending],
