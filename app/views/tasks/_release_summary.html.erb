@@ -86,7 +86,7 @@
           <% tracker_steps.each_with_index do |step, index| %>
             <div class="relative flex min-w-0 flex-col items-center gap-1" data-test="release-tracker-step" data-stage="<%= step[:key] %>" data-state="<%= step[:state] %>">
               <% unless index == tracker_steps.length - 1 %>
-                <span aria-hidden="true" class="absolute top-2.5 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
+                <span aria-hidden="true" data-test="release-tracker-connector" data-state="<%= step[:connector_state] %>" class="absolute top-2.5 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
               <% end %>
               <span class="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= raw('aria-current="step"') if step[:state] == :active %>>
                 <% if step[:state] == :complete %>
@@ -97,7 +97,7 @@
                   <%= step[:index] %>
                 <% end %>
               </span>
-              <span class="max-w-16 text-center text-[10px] font-semibold leading-tight <%= release_tracker_label_classes(step[:state]) %>" data-test="release-tracker-label"><%= step[:label] %></span>
+              <span class="max-w-20 text-center text-[10px] font-semibold leading-tight <%= release_tracker_label_classes(step[:state]) %>" data-test="release-tracker-label"><%= step[:label] %></span>
             </div>
           <% end %>
         </div>

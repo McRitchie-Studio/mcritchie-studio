@@ -70,11 +70,11 @@ module ApplicationHelper
   end
 
   RELEASE_TRACKER_STAGES = [
-    { key: "merging", label: "Merging" },
-    { key: "testing", label: "Testing" },
-    { key: "assembling", label: "Assembling" },
-    { key: "confirming", label: "Confirming" },
-    { key: "deploying", label: "Deploying" }
+    { key: "testing", active_label: "Testing", complete_label: "Tested ✅" },
+    { key: "assembling", active_label: "Assembling", complete_label: "Assembled ✅" },
+    { key: "qa_deploying", active_label: "Deploying", complete_label: "Live on QA ✅" },
+    { key: "confirming", active_label: "Testing", complete_label: "Confirmed ✅" },
+    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed ✅" }
   ].freeze
 
   # Pizza-tracker progress for the active release card, derived from the durable
@@ -94,9 +94,24 @@ module ApplicationHelper
 
       stage.merge(
         index: index + 1,
+        label: release_tracker_step_label(stage, state),
         state: state,
-        connector_state: index < done_count ? :complete : :pending
+        connector_state: release_tracker_connector_state(index, done_count)
       )
+    end
+  end
+
+  def release_tracker_step_label(stage, state)
+    state.to_sym == :complete ? stage[:complete_label] : stage[:active_label]
+  end
+
+  def release_tracker_connector_state(index, done_count)
+    if index < done_count
+      :complete
+    elsif index == done_count
+      :active
+    else
+      :pending
     end
   end
 
@@ -132,7 +147,11 @@ module ApplicationHelper
   end
 
   def release_tracker_connector_classes(state)
-    state.to_sym == :complete ? "bg-mint-400" : "bg-inset"
+    case state.to_sym
+    when :complete then "bg-mint-400"
+    when :active   then "bg-amber-200/60 dark:bg-amber-300/40 animate-pulse"
+    else                "bg-inset"
+    end
   end
 
   # Release-card status badge label. Folds the bare state and its relative time
