@@ -55,4 +55,28 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "text-green-700"
     assert_includes rendered, "dark:text-green-200"
   end
+
+  test "renders the sizing trio strip (Avi PO, Dev, Actual) and flags an estimate miss" do
+    task = Task.create!(title: "component sizing task", stage: "shipped",
+                        po_size: "medium", dev_size: "large", actual_size: "xl")
+
+    render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
+
+    assert_select "[data-test='timeline-sizing']"
+    assert_includes rendered, "Avi"     # PO forecast is Avi's, the default sizer
+    assert_includes rendered, "MEDIUM"  # po_size, upcased
+    assert_includes rendered, "LARGE"   # dev_size
+    assert_includes rendered, "XL"      # auto-derived actual_size
+    # actual (xl) != PO forecast (medium) → estimate-miss flag, theme-aware amber
+    assert_includes rendered, "forecast"
+    assert_includes rendered, "dark:text-yellow-400"
+  end
+
+  test "omits the sizing strip when the task carries no sizes" do
+    task = Task.create!(title: "component unsized task", stage: "designed")
+
+    render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
+
+    assert_select "[data-test='timeline-sizing']", false
+  end
 end

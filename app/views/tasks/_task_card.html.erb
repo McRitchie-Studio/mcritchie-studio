@@ -57,11 +57,8 @@
       one is present, so the card never carries an empty meta row. The URG /
       HIGH priority badges and the assignee chip were dropped; the crew above
       and the stage attribute the rest. %>
-  <% if task.po_size.present? || task.requires_migration || task.requires_release_conductor? %>
+  <% if task.requires_migration || task.requires_release_conductor? %>
     <div class="flex items-center justify-end gap-1 mb-1">
-      <% if task.po_size.present? %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
-      <% end %>
       <% if task.requires_migration %>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
       <% end %>
@@ -122,6 +119,9 @@
       <% end %>
       <% if task.devops? && (pr_url = task.devops_url("pr")) %>
         <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+      <% end %>
+      <% if task.po_size.present? %>
+        <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-alt text-secondary border border-subtle" title="po_size (official planning size)"><%= task.po_size == "xl" ? "XL" : task.po_size[0].upcase %></span>
       <% end %>
       <span class="text-muted"><%= time_ago_in_words(task.created_at) %> ago</span>
     </div>

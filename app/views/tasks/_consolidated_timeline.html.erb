@@ -25,6 +25,33 @@
   <div class="mb-3">
     <p class="label-upper">Stage Timeline</p>
     <p class="text-xs text-muted mt-1">Who handled each stage, the time it took (measured), and the model / tokens / cost reported (best-effort) — plus who's on it right now. <span class="text-secondary font-medium">&mdash;</span> means the agent didn't report that metric.</p>
+
+    <%# Sizing trio — Avi's PO forecast (default sizer, set at creation) · the
+        builder's Dev estimate (stamped at claim) · the auto-derived Actual (from
+        measured tokens at ship). Em dash for any size not set yet; an amber
+        "≠ forecast" flag when the measured Actual diverges from Avi's PO forecast. %>
+    <% if [task.po_size, task.dev_size, task.actual_size].any?(&:present?) %>
+      <% size_miss = task.po_size.present? && task.actual_size.present? && task.po_size != task.actual_size %>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs" data-test="timeline-sizing">
+        <span class="text-[10px] uppercase tracking-wide text-muted mr-0.5">Sizing</span>
+        <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-subtle bg-surface" title="Avi's product-owner forecast, set at task creation">
+          <span class="text-[10px] uppercase tracking-wide text-muted">Avi · PO</span>
+          <span class="font-mono font-semibold uppercase text-secondary"><%= task.po_size.presence&.upcase || "—" %></span>
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border border-subtle bg-surface" title="The builder's estimate, stamped when it claimed the task">
+          <span class="text-[10px] uppercase tracking-wide text-muted">Dev</span>
+          <span class="font-mono font-semibold uppercase text-secondary"><%= task.dev_size.presence&.upcase || "—" %></span>
+        </span>
+        <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border <%= size_miss ? "border-yellow-500/40 bg-yellow-500/10" : "border-subtle bg-surface" %>"
+              title="<%= size_miss ? "Auto-derived from measured usage — differs from Avi's forecast" : "Auto-derived from measured usage at ship" %>">
+          <span class="text-[10px] uppercase tracking-wide <%= size_miss ? "text-yellow-600 dark:text-yellow-400" : "text-muted" %>">Actual</span>
+          <span class="font-mono font-semibold uppercase <%= size_miss ? "text-yellow-700 dark:text-yellow-300" : "text-secondary" %>"><%= task.actual_size.presence&.upcase || "—" %></span>
+        </span>
+        <% if size_miss %>
+          <span class="text-[10px] text-yellow-600 dark:text-yellow-400" title="Measured actual size differs from Avi's PO forecast">&ne; forecast</span>
+        <% end %>
+      </div>
+    <% end %>
   </div>
 
   <% if blocks.present? %>
