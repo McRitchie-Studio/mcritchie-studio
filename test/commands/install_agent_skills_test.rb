@@ -37,8 +37,13 @@ class InstallAgentSkillsTest < Minitest::Test
 
   # Run bin/install-agent-docs with HOME + PROJECTS_DIR pinned into the sandbox.
   def run_installer(mode, env = {})
+    default_env = {
+      "HOME" => @home,
+      "PROJECTS_DIR" => @projects,
+      "CODEX_REQUIREMENTS_PATH" => installed_codex_requirements
+    }
     Open3.capture3(
-      { "HOME" => @home, "PROJECTS_DIR" => @projects }.merge(env),
+      default_env.merge(env),
       SCRIPT, mode
     )
   end
@@ -65,6 +70,10 @@ class InstallAgentSkillsTest < Minitest::Test
 
   def installed_codex_hooks
     File.join(@home, ".codex", "hooks.json")
+  end
+
+  def installed_codex_requirements
+    File.join(@sandbox, "etc", "codex", "requirements.toml")
   end
 
   def jq_available?
@@ -191,12 +200,16 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/status_line = \[[^\n]*"thread-title"/, config)
     assert_match(/terminal_title = \[[^\n]*"thread-title"/, config)
 
-    codex_hooks = JSON.parse(File.read(installed_codex_hooks))
-    codex_session_start = codex_hooks.fetch("hooks").fetch("SessionStart")
-    codex_commands = codex_session_start.flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
-    assert_includes codex_commands, "#{runtime_root}/bin/codex-session-title"
-    assert codex_session_start.any? { |entry| entry["matcher"] == "startup|resume" }
-    refute codex_commands.any? { |command| command.include?("/.worktrees/") }
+    refute File.exist?(installed_codex_hooks),
+      "Codex mascot startup must be managed, not a user hook that requires /hooks review"
+
+    requirements = File.read(installed_codex_requirements)
+    assert_includes requirements, "# BEGIN McRitchie Codex mascot managed hook"
+    assert_includes requirements, %(managed_dir = "#{runtime_root}")
+    assert_includes requirements, "[[hooks.SessionStart]]"
+    assert_includes requirements, 'matcher = "startup|resume"'
+    assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
+    assert_includes requirements, 'statusMessage = "Setting session mascot"'
   end
 
   def test_integration_install_prunes_stale_worktree_session_hooks
@@ -244,10 +257,55 @@ class InstallAgentSkillsTest < Minitest::Test
     refute commands.any? { |command| command.include?("/.worktrees/") }
     assert_includes commands, "#{runtime_root}/bin/task session-mascot"
 
-    codex_commands = JSON.parse(File.read(installed_codex_hooks)).fetch("hooks").fetch("SessionStart").flat_map do |entry|
-      entry.fetch("hooks").map { |hook| hook.fetch("command") }
+    codex_hooks = JSON.parse(File.read(installed_codex_hooks))
+    codex_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
+      entry.fetch("hooks", []).map { |hook| hook["command"] }
     end
-    refute codex_commands.any? { |command| command.include?("/.worktrees/") }
-    assert_includes codex_commands, "#{runtime_root}/bin/codex-session-title"
+    refute codex_commands.any? { |command| command.include?("/bin/codex-session-title") }
+
+    requirements = File.read(installed_codex_requirements)
+    assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
+  end
+
+  def test_integration_stages_admin_requirements_when_etc_unwritable
+    skip "jq is required for settings hook install" unless jq_available?
+
+    blocked_parent = File.join(@sandbox, "not-a-directory")
+    File.write(blocked_parent, "nope")
+
+    FileUtils.mkdir_p(File.dirname(installed_codex_hooks))
+    File.write(installed_codex_hooks, JSON.pretty_generate(
+      "hooks" => {
+        "SessionStart" => [
+          {
+            "matcher" => "startup|resume",
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => "/stable/mcritchie-studio/bin/codex-session-title"
+              }
+            ]
+          }
+        ]
+      }
+    ))
+
+    out, err, status = run_installer("install",
+      "CODEX_REQUIREMENTS_PATH" => File.join(blocked_parent, "requirements.toml"))
+
+    assert status.success?, "install should not fail when admin requirements need root: #{err}"
+    assert_includes out, "admin install required for organic Codex mascot"
+    assert_includes out, "Staged managed requirements:"
+    refute_includes out, "Review once inside Codex with /hooks"
+
+    staged = File.join(@home, ".codex", "mcritchie-requirements.toml")
+    assert File.file?(staged), "installer should stage the managed requirements for admin install"
+    assert_includes File.read(staged), "/bin/codex-session-title"
+
+    codex_hooks = JSON.parse(File.read(installed_codex_hooks))
+    codex_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
+      entry.fetch("hooks", []).map { |hook| hook["command"] }
+    end
+    refute codex_commands.any? { |command| command.to_s.include?("/bin/codex-session-title") }
   end
 end

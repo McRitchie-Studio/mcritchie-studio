@@ -22,10 +22,13 @@ The color rides to the status line without DB access (`bin/task` and
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
-Codex sessions expose `CODEX_THREAD_ID`; `bin/install-agent-docs` wires a Codex
-`SessionStart` hook to `bin/codex-session-title`, which mirrors the same marker
-into Codex's `thread-title` footer item on startup/resume. Review that hook once
-with `/hooks` after install so Codex trusts it.
+Codex sessions expose `CODEX_THREAD_ID`; `bin/install-agent-docs` keeps Codex's
+footer on the built-in `thread-title` item and installs a managed
+`SessionStart` hook to `bin/codex-session-title`. That hook mirrors the same
+marker into Codex's title on startup/resume and is trusted by Codex policy, so
+the mascot can appear in a fresh session without a `/hooks` review step. When
+`/etc/codex/requirements.toml` is not writable, the installer stages the managed
+requirements block under `~/.codex/` and prints the admin install note.
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:

@@ -37,6 +37,7 @@ runtime_root() {
 }
 PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
 RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
+CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
 MODE="${1:-install}"
 
 # "source:target" pairs (paths use /, so : is a safe delimiter).
@@ -210,6 +211,90 @@ File.write(path, updated) if updated != text
 RUBY
 }
 
+render_codex_managed_requirements() {
+  local cmd="$1" managed_dir="$2"
+  ruby - "$cmd" "$managed_dir" <<'RUBY'
+cmd = ARGV.fetch(0)
+managed_dir = ARGV.fetch(1)
+
+def toml_string(value)
+  %("#{value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').gsub("\n", "\\n")}")
+end
+
+puts <<~TOML
+  # BEGIN McRitchie Codex mascot managed hook
+  # Mirrors the session Pokemon/app marker into Codex's thread-title footer.
+  [hooks]
+  managed_dir = #{toml_string(managed_dir)}
+
+  [[hooks.SessionStart]]
+  matcher = "startup|resume"
+
+  [[hooks.SessionStart.hooks]]
+  type = "command"
+  command = #{toml_string(cmd)}
+  timeout = 5
+  statusMessage = "Setting session mascot"
+  # END McRitchie Codex mascot managed hook
+TOML
+RUBY
+}
+
+install_codex_managed_requirements() {
+  local requirements="$1" cmd="$2" managed_dir="$3" staged="$4"
+  mkdir -p "$(dirname "$staged")"
+  render_codex_managed_requirements "$cmd" "$managed_dir" > "$staged"
+
+  ruby - "$requirements" "$cmd" "$managed_dir" <<'RUBY'
+require "fileutils"
+
+path = ARGV.fetch(0)
+cmd = ARGV.fetch(1)
+managed_dir = ARGV.fetch(2)
+begin_marker = "# BEGIN McRitchie Codex mascot managed hook"
+end_marker = "# END McRitchie Codex mascot managed hook"
+
+def toml_string(value)
+  %("#{value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').gsub("\n", "\\n")}")
+end
+
+block = <<~TOML
+  #{begin_marker}
+  # Mirrors the session Pokemon/app marker into Codex's thread-title footer.
+  [hooks]
+  managed_dir = #{toml_string(managed_dir)}
+
+  [[hooks.SessionStart]]
+  matcher = "startup|resume"
+
+  [[hooks.SessionStart.hooks]]
+  type = "command"
+  command = #{toml_string(cmd)}
+  timeout = 5
+  statusMessage = "Setting session mascot"
+  #{end_marker}
+TOML
+
+begin
+  FileUtils.mkdir_p(File.dirname(path))
+  text = File.exist?(path) ? File.read(path) : ""
+  updated =
+    if text.include?(begin_marker) && text.include?(end_marker)
+      text.sub(/#{Regexp.escape(begin_marker)}.*?#{Regexp.escape(end_marker)}\n?/m, block)
+    elsif text.match?(/^\s*\[hooks\]\s*$/) || text.match?(/^\s*\[\[hooks\./)
+      exit 2
+    else
+      prefix = text.empty? ? "" : text.sub(/\s*\z/, "\n\n")
+      "#{prefix}#{block}"
+    end
+
+  File.write(path, updated) if updated != text
+rescue Errno::EACCES, Errno::EPERM, Errno::EROFS, Errno::ENOTDIR, Errno::EEXIST
+  exit 13
+end
+RUBY
+}
+
 # Make the Claude Code status line recoverable too — point it at the stable repo
 # script. When installing from a worktree, docs come from that worktree but global
 # hooks must point at the primary checkout so they survive worktree cleanup.
@@ -273,8 +358,9 @@ fi
 
 # Make Codex show the McRitchie marker in its footer early. Codex does not run
 # arbitrary status-line commands, but its footer can include the thread-title
-# item. A SessionStart hook paints that title from the same session mascot marker
-# Claude reads.
+# item. A managed SessionStart hook paints that title from the same session
+# mascot marker Claude reads. Managed hooks are trusted by policy, so a fresh
+# Codex session should not require the user-level /hooks review ceremony.
 codex_config="$HOME/.codex/config.toml"
 ensure_codex_tui_config "$codex_config"
 echo "  $codex_config (ensured status_line includes thread-title)"
@@ -282,44 +368,46 @@ echo "  $codex_config (ensured status_line includes thread-title)"
 codex_hooks="$HOME/.codex/hooks.json"
 if command -v jq >/dev/null 2>&1; then
   mkdir -p "$HOME/.codex"
-  [ -f "$codex_hooks" ] || echo '{"hooks":{}}' > "$codex_hooks"
 
-  tmp="$(mktemp)"
-  if jq 'if .hooks.SessionStart then
-        .hooks.SessionStart |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/codex-session-title") | not)))))
-          | map(select(((.hooks // []) | length) > 0))
-        )
-      else . end' "$codex_hooks" > "$tmp"; then
-    if ! cmp -s "$codex_hooks" "$tmp"; then
-      mv "$tmp" "$codex_hooks"
-      echo "  $codex_hooks (removed stale worktree SessionStart hooks)"
-    else
-      rm -f "$tmp"
-    fi
-  else
-    rm -f "$tmp"
-  fi
-
-  codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
-  if ! jq -e --arg cmd "$codex_hook_cmd" '[(.hooks.SessionStart // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$codex_hooks" >/dev/null 2>&1; then
+  if [ -f "$codex_hooks" ]; then
     tmp="$(mktemp)"
-    if jq --arg cmd "$codex_hook_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{
-          matcher: "startup|resume",
-          hooks: [{
-            type: "command",
-            command: $cmd,
-            timeout: 5,
-            statusMessage: "Setting session mascot"
-          }]
-        }])' "$codex_hooks" > "$tmp"; then
-      mv "$tmp" "$codex_hooks"
-      echo "  $codex_hooks (added SessionStart hook -> $codex_hook_cmd)"
-      echo "  Review once inside Codex with /hooks so the new hook can run."
+    if jq 'if .hooks.SessionStart then
+          .hooks.SessionStart |= (
+            map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+            | map(select(((.hooks // []) | length) > 0))
+          )
+          | if (.hooks.SessionStart | length) == 0 then del(.hooks.SessionStart) else . end
+        else . end' "$codex_hooks" > "$tmp"; then
+      if ! cmp -s "$codex_hooks" "$tmp"; then
+        mv "$tmp" "$codex_hooks"
+        echo "  $codex_hooks (removed user-level Codex mascot hooks)"
+      else
+        rm -f "$tmp"
+      fi
     else
       rm -f "$tmp"
     fi
   fi
+fi
+
+codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
+codex_requirements_staged="$HOME/.codex/mcritchie-requirements.toml"
+if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged"; then
+  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart hook -> $codex_hook_cmd)"
+else
+  case "$?" in
+    2)
+      echo "  $CODEX_REQUIREMENTS_PATH (already has Codex hooks; merge managed mascot hook manually)"
+      ;;
+    13)
+      echo "  $CODEX_REQUIREMENTS_PATH (admin install required for organic Codex mascot)"
+      ;;
+    *)
+      echo "  $CODEX_REQUIREMENTS_PATH (could not install Codex managed mascot hook)"
+      ;;
+  esac
+  echo "  Staged managed requirements: $codex_requirements_staged"
+  echo "  Install that file as admin, or merge its McRitchie block into $CODEX_REQUIREMENTS_PATH."
 fi
 
 echo
