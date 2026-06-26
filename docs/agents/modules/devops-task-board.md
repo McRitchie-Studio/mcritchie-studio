@@ -72,21 +72,20 @@ Minimum task setup before implementation:
 
 Stage movement:
 
-1. Create new captured work in `new`, or `queued` if the acceptance criteria are
-   clear and the work is ready to start.
-2. Move to `in_progress` when an agent claims the task and creates or enters the
+1. Create captured work in `designed` once acceptance criteria are clear enough
+   to track.
+2. Move to `building` when an agent claims the task and creates or enters the
    worktree.
-3. Move to `pr_review` only after the branch is pushed, the PR exists, the
+3. Move to `submitted` only after the branch is pushed, the PR exists, the
    local URL is recorded when applicable, and `checks_run` records actual
    feature-agent verification.
-4. Move to `qa_review` only after Avi merges the PR and deploys or starts the
-   accepted result on a QA/local review target. Record QA URL, deployed SHA, and
-   QA checks.
-5. Move to `prod_ready` after Mr. McRitchie accepts QA and production is waiting
-   on explicit release approval.
-6. Move to `done` only after the final approved target is deployed or otherwise
+4. Move to `reviewed` only after the review gate approves the PR.
+5. Move to `assembled` when the PR is merged into `release` and deployed or
+   ready to deploy on the QA candidate. Record QA URL, deployed SHA, and QA
+   checks when available.
+6. Move to `shipped` only after the final approved target is deployed or otherwise
    complete, post-deploy verification is recorded, and cleanup status is clear.
-7. Use `failed` for a real blocker that needs new action, and `archived` for
+7. Use `blocked` for a real blocker that needs new action, and `archived` for
    historical or cleaned-up work.
 
 Handoff connections:
@@ -157,7 +156,7 @@ the original agent; the PR comment is the code-review surface.
 When the feature agent returns, the agent should read the task conversation,
 address each open `qa_feedback` item, add a `handoff` note with what changed,
 update branch/PR/local URL/check metadata if needed, and move the task back to
-`pr_review` when ready.
+`submitted` when ready.
 
 Agents can read or write the same thread through the Activities API:
 
@@ -180,28 +179,23 @@ bearer token. The HTML task page remains the operator-friendly source of truth.
 > (`bin/release merge` flips the task at merge); the conductor then deploys
 > `origin/release` to QA (`bin/release prepare`) and ships by fast-forwarding
 > `release → main` (`bin/release ship`). Full spec:
-> [`devops-cycle-design.md`](../system/devops-cycle-design.md) §1. The legacy
-> stage names in the table and tooling sections below (`pr_review` / `qa_review` /
-> `prod_ready` / `done`) still describe `bin/devops-cycle`'s current snapshot and
-> are pending a separate migration to the names above.
+> [`devops-cycle-design.md`](../system/devops-cycle-design.md) §1.
 
 The board stages should mirror the release path, not generic activity buckets:
 
 | Stage | Use when |
 |---|---|
-| `new` | Work is captured but not accepted for an agent yet |
-| `queued` | Scope and acceptance criteria are clear enough for an agent to start |
-| `in_progress` | A feature agent is actively implementing or fixing the task |
-| `pr_review` | Branch is pushed and the PR is ready for Avi review |
-| `qa_review` | PR merged to main and deployed to QA/local review for Mr. McRitchie |
-| `prod_ready` | QA passed and the task is waiting for explicit production approval |
-| `done` | Production or final approved target is shipped and verified |
-| `failed` | Work is blocked by a real failure that needs new action |
+| `designed` | Scope and acceptance criteria are clear enough to track |
+| `building` | A feature agent is actively implementing or fixing the task |
+| `submitted` | Branch is pushed and the PR is ready for review |
+| `reviewed` | Review approved the PR for merge into `release` |
+| `assembled` | PR is merged into `release` and included in the QA candidate |
+| `shipped` | Production or final approved target is shipped and verified |
+| `blocked` | Work is blocked by a real failure that needs new action |
 | `archived` | Historical or cleaned-up work that should not appear on the active board |
 
-Do not skip `qa_review` for user-facing app changes. Do not move a task to
-`prod_ready` until the QA URL and checks are recorded. Do not move a task to
-`done` for production work until production has actually deployed and the
+Do not skip `assembled` for user-facing app changes. Do not move a task to
+`shipped` for production work until production has actually deployed and the
 post-deploy check has passed.
 
 ## Task Metadata Contract
@@ -317,7 +311,7 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
 `bin/devops-cycle` is the first-pass conductor view. It groups active
-`pr_review`, `qa_review`, and `prod_ready` tasks with task URLs, PR URLs,
+`submitted`, `reviewed`, and `assembled` tasks with task URLs, PR URLs,
 local/QA/production URLs, latest task conversation notes, and matching qa-intake
 status when available. `bin/devops-cycle --plan` adds a read-only batch plan
 that separates parallel PR reviews, serialized/high-risk work, blocked returns
@@ -370,18 +364,16 @@ Use the decision recommendations conservatively:
 - `merge-ready` means scout evidence and qa-intake are aligned; Avi still
   performs the final PR review before merging.
 
-1. Find `pr_review` tasks with PR URLs or branches.
+1. Find `submitted` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.
 3. **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
    against prod on ship. Reject a bare `db:seed`; require a narrow, idempotent
    command (`bin/dor-check` enforces this, but read it yourself).
 4. Check `risk_tags` for Steffon/infra gate needs.
 5. Merge only ready PRs.
-6. Deploy merged `origin/main` to QA.
-7. Move the task to `qa_review` with QA URL, QA release SHA, and `checks_run`.
-8. Move accepted QA tasks to `prod_ready`.
-9. Leave production tasks in `prod_ready` until Mr. McRitchie explicitly
-   approves release work.
+6. Merge approved PRs into `release`, then deploy `origin/release` to QA.
+7. Move the task to `assembled` with QA URL, QA release SHA, and `checks_run`.
+8. Leave production ship gated until Mr. McRitchie explicitly approves release work.
 
 If the PR is not ready, Avi leaves `qa_feedback` on the task conversation with
 the exact blocker, expected owner action, and any PR/CI link needed to reproduce

@@ -33,4 +33,6 @@
 ## Views
 - Tailwind CSS via CDN, Alpine.js for interactivity
 - Dark theme: navy background, mint accents, violet highlights
-- Stage badges: blue=new, yellow=queued, mint=in_progress, green=done, red=failed, gray=archived
+- Stage badges follow `Task::STAGE_LABELS` and the two-workflow stage model
+  (`designed`, `building`, `submitted`, `reviewed`, `assembled`, `shipped`,
+  `blocked`, `archived`).

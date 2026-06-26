@@ -230,6 +230,24 @@ class TaskCliTest < Minitest::Test
     refute event.key?("actor"), "a plain shell / CI run (no session) stamps no actor"
   end
 
+  def test_move_with_legacy_stage_name_suggests_the_live_stage
+    requests, _out, err, status = run_task(["move", "demo-task", "pr_review"])
+
+    refute status.success?
+    assert_empty requests, "stage validation should fail before auth or PATCH"
+    assert_match(/unknown stage "pr_review"/, err)
+    assert_match(/legacy stage; use "submitted"/, err)
+  end
+
+  def test_intent_with_legacy_stage_name_suggests_the_live_stage
+    requests, _out, err, status = run_task(["intent", "demo-task", "--to", "in_progress"])
+
+    refute status.success?
+    assert_empty requests, "stage validation should fail before auth or POST"
+    assert_match(/unknown stage "in_progress"/, err)
+    assert_match(/legacy stage; use "building"/, err)
+  end
+
   # --- Auto-captured move usage (from the session transcript) ----------------
 
   # Build a fake $HOME holding a Claude transcript for SESSION with the given

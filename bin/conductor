@@ -147,11 +147,11 @@ def list_stage(stage)
   out, ok = run_bin(TASK_BIN, "list", "--stage", stage)
   return [] unless ok
 
-  out.each_line.filter_map do |line|
+  out.each_line.each_with_object([]) do |line, rows|
     m = TASK_LINE.match(line.strip)
     next unless m
 
-    { "slug" => m[1], "stage" => m[2], "title" => m[3].strip }
+    rows << { "slug" => m[1], "stage" => m[2], "title" => m[3].strip }
   end
 end
 

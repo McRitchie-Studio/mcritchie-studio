@@ -14,13 +14,14 @@ they do not merge to `main`. Work graduates through a PR review lane where Avi
 protects integration, Steffon adds QA/deploy scrutiny when needed, and the
 release conductor handles production effects.
 
-## Four-Stage DevOps Cycle
+## Two-Workflow DevOps Cycle
 
-1. **Task PR submitted** — Feature agent owns this stage. The task has
+1. **Build: `designed → building → submitted`** — Feature agent owns this
+   workflow. The task has
    acceptance criteria, affected repos, risk tags, expected `test_plan`,
    worktree slug, branch, PR URL, local URL when relevant, and completed
-   `checks_run`. The task moves to `pr_review`.
-2. **PR review by Avi** — Avi reviews task metadata, PR body, diff, docs,
+   `checks_run`. The task moves to `submitted`.
+2. **Review: `submitted → reviewed`** — Avi reviews task metadata, PR body, diff, docs,
    migrations, merge safety, CI, local proof, and overlap with other agents.
    **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
    against prod on ship, so a bare `db:seed` (loads all of `db/seeds.rb` →
@@ -28,13 +29,13 @@ release conductor handles production effects.
    command; `bin/dor-check` enforces this, but read the metadata yourself.
    Avi classifies check failures by lane before deciding whether to merge,
    wait, or send `qa_feedback`.
-3. **QA testing** — After merging approved PRs into the persistent `release`
-   branch, Avi deploys `origin/release` to the QA app, records QA URL, deployed
-   SHA, release train, and QA checks in `checks_run`, then moves the task to
-   `qa_review` for Mr. McRitchie.
-4. **Production deployment** — Release conductor promotes only accepted QA
-   work after explicit approval. Production smoke results, production URL, and
-   release notes are recorded before the task moves to `done`.
+3. **Assemble + QA: `reviewed → assembled`** — After merging approved PRs into
+   the persistent `release` branch, Avi deploys `origin/release` to the QA app
+   and records QA URL, deployed SHA, release train, and QA checks in
+   `checks_run`.
+4. **Ship: `assembled → shipped`** — Release conductor promotes only accepted
+   QA work after explicit approval. Production smoke results, production URL,
+   and release notes are recorded before the task moves to `shipped`.
 
 ## Lanes
 
@@ -64,7 +65,7 @@ Default feature sessions are Feature lane only.
    [`devops-task-board.md`](devops-task-board.md) for the required metadata
    contract. This task is mandatory for feature, bug, QA, release, cleanup, and
    active-doc work that may produce a branch, PR, QA deploy, production deploy,
-   or cleanup follow-up. Set the task to `in_progress` once implementation
+   or cleanup follow-up. Set the task to `building` once implementation
    starts.
 4. **Allocate** a task worktree from McRitchie Studio:
 
@@ -97,7 +98,7 @@ Default feature sessions are Feature lane only.
    McRitchie Studio task slug/URL on the worktree. The command blocks unbound
    worktrees so PR review always leads back to the task board.
 
-10. **Handoff** the PR/QA packet by moving the task to `pr_review`. The PR
+10. **Handoff** the PR/QA packet by moving the task to `submitted`. The PR
    body and final handoff should lead with the task URL, and the task should
    link back to the PR. Add a task conversation `handoff` note summarizing what
    changed, what was verified, and what Avi should inspect first. Do not merge
@@ -223,9 +224,8 @@ defaults to the PROD board (like `bin/release`).
 each Deploy stage and what is the next deterministic command"; `qa-intake`
 answers "what is the local PR/worktree + CI/mergeability state of a given PR".
 Run `bin/conductor` for the stage-by-stage landscape, `bin/qa-intake` when you
-need a PR's merge signal. (`bin/devops-cycle` below is the older legacy-stage
-snapshot + scout system; it predates the current `submitted/reviewed/assembled`
-model.)
+need a PR's merge signal. `bin/devops-cycle` below is the scout-oriented queue
+snapshot.
 
 Start conductor sessions by generating the PR/worktree queue from McRitchie
 Studio:
@@ -245,7 +245,7 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 ```
 
 `bin/devops-cycle` is the high-level conductor snapshot. It reads the production
-task board, groups active `pr_review`, `qa_review`, and `prod_ready` tasks,
+task board, groups active `submitted`, `reviewed`, and `assembled` tasks,
 joins each task to latest task conversation notes, and attaches matching
 `bin/qa-intake` status when a local PR/worktree exists. Use it first in a fresh
 DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
@@ -258,8 +258,8 @@ comfortably hold in context. The plan separates:
 - serialized or conductor-owned tasks that touch multiple repos or high-risk
   surfaces
 - blocked tasks that should return to the feature agent before review
-- QA review tasks awaiting Mr. McRitchie's acceptance or follow-up
-- production-ready tasks awaiting explicit release approval
+- reviewed tasks ready for release merge
+- assembled tasks awaiting QA acceptance, follow-up, or explicit release approval
 
 The plan is still read-only. It does not merge, deploy, update tasks, or create
 sub-agents. The conductor uses it to decide which work can safely happen in
@@ -304,7 +304,7 @@ performs any merge, QA deploy, or feedback action.
 
 Use `bin/devops-cycle --scout-packets` when the conductor wants to hand
 review-only work to additional sessions. Scout packets are copy-paste prompts
-for the `parallel_pr_review` and `serialized_pr_review` lanes. They include the
+for the `parallel_review` and `serialized_review` lanes. They include the
 task URL, PR URL, repos, branch, risk tags, acceptance criteria, expected checks,
 completed checks, latest task note, qa-intake status, and explicit guardrails.
 
@@ -508,7 +508,7 @@ QA deployment sits between PR merge and production deploy.
 The intended cycle is:
 
 1. Feature agent opens a PR.
-2. Feature agent moves the task to `pr_review`.
+2. Feature agent moves the task to `submitted`.
 3. Avi reviews and merges approved PRs into `release` when ready
    (`bin/release merge <task> [<task> …]` does the `gh pr merge` + membership
    flip — it takes **one OR many** slugs, merges each, then adopts them all in a
@@ -519,12 +519,11 @@ The intended cycle is:
 5. Avi or Steffon deploys the `release` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/release --yes` (or `bin/release prepare`,
    which runs this for every app member).
-6. Avi or Steffon moves the task to `qa_review` and records the QA URL,
+6. Avi or Steffon moves the task to `assembled` and records the QA URL,
    deployed SHA, release-train tag when present, and QA checks run.
 7. Mr. McRitchie reviews the QA URL.
-8. Accepted QA work moves to `prod_ready`.
-9. Production deploy happens only after Mr. McRitchie explicitly approves it.
-10. Verified production work moves to `done`.
+8. Production deploy happens only after Mr. McRitchie explicitly approves it.
+9. Verified production work moves to `shipped`.
 
 QA servers are tracked in `config/qa_environments.yml` and operated through
 `bin/qa-server`. A QA deploy is allowed for the QA conductor lane, but it must
@@ -555,7 +554,7 @@ Run the parallel-agent DevOps cycle:
 - merge only PRs that are ready, into the persistent `release` branch (base
   `release`); leave task `qa_feedback` and PR comments on PRs that need changes
 - after merging, deploy origin/release to the relevant QA app with bin/qa-server deploy <app> origin/release --yes
-- move merged tasks to qa_review and update task-board metadata with QA URL, release train, deployed SHA, and checks_run
+- move merged tasks to assembled and update task-board metadata with QA URL, release train, deployed SHA, and checks_run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
@@ -662,7 +661,7 @@ Use the parallel-agent protocol:
 - commit your work on the feature branch
 - run bin/agent-worktree finish before handoff
 - push the branch and open/prepare a PR for Avi QA
-- update task devops.checks_run with completed checks and move the task to pr_review
+- update task devops.checks_run with completed checks and move the task to submitted
 
 Do not merge to main, publish gems, deploy, force-push, delete branches, or
 delete worktrees unless I explicitly approve that lane for this session.

@@ -29,7 +29,14 @@ default_projects_dir() {
     printf '%s\n' "$candidate"
   fi
 }
+runtime_root() {
+  case "$ROOT" in
+    */.worktrees/*) printf '%s\n' "${ROOT%%/.worktrees/*}" ;;
+    *) printf '%s\n' "$ROOT" ;;
+  esac
+}
 PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
+RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 MODE="${1:-install}"
 
 # "source:target" pairs (paths use /, so : is a safe delimiter).
@@ -132,7 +139,9 @@ for pair in "${ALL_PAIRS[@]}"; do
   echo "  $tgt (from $src)"
 done
 
-# Make the Claude Code status line recoverable too — point it at the repo script.
+# Make the Claude Code status line recoverable too — point it at the stable repo
+# script. When installing from a worktree, docs come from that worktree but global
+# hooks must point at the primary checkout so they survive worktree cleanup.
 # Idempotent: only added when absent, so it never clobbers user settings.
 settings="$HOME/.claude/settings.json"
 if command -v jq >/dev/null 2>&1; then
@@ -140,9 +149,17 @@ if command -v jq >/dev/null 2>&1; then
   [ -f "$settings" ] || echo '{}' > "$settings"
   if ! jq -e '.statusLine' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
-    if jq --arg cmd "$ROOT/bin/statusline" '.statusLine = {type:"command", command:$cmd, padding:1, refreshInterval:5}' "$settings" > "$tmp"; then
+    if jq --arg cmd "$RUNTIME_ROOT/bin/statusline" '.statusLine = {type:"command", command:$cmd, padding:1, refreshInterval:5}' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (added statusLine -> $ROOT/bin/statusline)"
+      echo "  $settings (added statusLine -> $RUNTIME_ROOT/bin/statusline)"
+    else
+      rm -f "$tmp"
+    fi
+  elif jq -e '.statusLine.command | contains("/.worktrees/")' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$RUNTIME_ROOT/bin/statusline" '.statusLine.command = $cmd' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (repointed statusLine -> $RUNTIME_ROOT/bin/statusline)"
     else
       rm -f "$tmp"
     fi
@@ -152,9 +169,27 @@ if command -v jq >/dev/null 2>&1; then
   # the default app (mcritchie-studio) onto the status line within seconds:
   # bin/task session-mascot seeds the per-session marker before any task exists.
   # Idempotent — appended only when our command isn't already a SessionStart hook,
-  # so it never duplicates our entry or clobbers the user's other hooks.
-  hook_cmd="$ROOT/bin/task session-mascot"
-  if ! jq -e --arg cmd "$hook_cmd" '[(.hooks.SessionStart // [])[]?.hooks[]?.command] | index($cmd)' "$settings" >/dev/null 2>&1; then
+  # so it never duplicates our entry or clobbers the user's other hooks. Stale
+  # worktree hooks are pruned because they break after cleanup.
+  tmp="$(mktemp)"
+  if jq 'if .hooks.SessionStart then
+        .hooks.SessionStart |= (
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/task session-mascot") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      else . end' "$settings" > "$tmp"; then
+    if ! cmp -s "$settings" "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (removed stale worktree SessionStart hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+
+  hook_cmd="$RUNTIME_ROOT/bin/task session-mascot"
+  if ! jq -e --arg cmd "$hook_cmd" '[(.hooks.SessionStart // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     if jq --arg cmd "$hook_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks: [{type: "command", command: $cmd}]}])' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"

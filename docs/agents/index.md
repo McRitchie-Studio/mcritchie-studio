@@ -278,7 +278,7 @@ Feature work graduates through PR/QA, not direct `main` pushes. Use
 `bin/agent-worktree finish <app> <task-slug> --push --pr` when the branch is
 ready for Avi review. The same handoff must update the task with the branch,
 PR URL, local URL, and `devops["checks_run"]`, then move the task to
-`pr_review`. Keep the worktree and branch until Avi confirms the PR was merged
+`submitted`. Keep the worktree and branch until Avi confirms the PR was merged
 or intentionally abandoned.
 
 For a dedicated review/merge/QA session, use the recurring QA intake prompt in
@@ -322,7 +322,7 @@ together. `cleanup --reclaim` is the scale-down-on-close batch flow: the dry run
 lists every worktree SAFE to auto-release (clean + merged/main-equivalent, never
 the primary) with its Redis DB, and `cleanup --reclaim --yes` runs that same full
 `remove` teardown for each candidate, then shrinks the Redis band toward the
-floor. See [worktrees module](modules/worktrees.md).
+floor. See `mcritchie-studio/docs/agents/modules/worktrees.md`.
 
 The worktree launcher uses an elastic Redis band starting at DB `9`. The band
 idles at `20` slots, auto-grows by `10` (restart-free) when full while physical
@@ -337,4 +337,7 @@ leave it for the QA/infra lane).
 
 ## LLM Adapters
 
-Do not create root `CLAUDE.md` or `CODEX.md` by default. Codex reads `AGENTS.md` natively. Claude compatibility should be tested with this generated `AGENTS.md` first; add a thin adapter only if a future Claude session proves it is needed. See `mcritchie-studio/docs/agents/modules/llm-adapters.md`.
+A generated root `CLAUDE.md` adapter is required because Claude Code auto-loads
+that file, not `AGENTS.md`. Keep it thin: inline the DevOps gate, then `@AGENTS.md`.
+Do not create root `CODEX.md`; Codex reads `AGENTS.md` natively. See
+`mcritchie-studio/docs/agents/modules/llm-adapters.md`.

@@ -44,12 +44,12 @@ Success criteria:
 
 1. Names `/Users/alex/projects/AGENTS.md` as the canonical agent entrypoint.
 2. Names `mcritchie-studio` as the documentation and bootstrap anchor.
-3. Says root `CLAUDE.md` / `CODEX.md` should not be created by default.
+3. Says root `CLAUDE.md` is a thin required adapter, while root `CODEX.md`
+   should not be created.
 4. Chooses current neutral docs such as `docs/ECOSYSTEM.md`,
    `docs/agents/modules/culture.md`, or task-relevant modules as next reads.
 5. Does not treat app `CLAUDE.md` files as active truth.
 
-If the smoke test passes, keep the no-adapter policy.
-
-If the smoke test fails because Claude ignores `AGENTS.md`, add the thin root
-`CLAUDE.md` adapter above and re-run the smoke test.
+If the smoke test fails because Claude ignores the root adapter or does not
+expand `@AGENTS.md`, fix `docs/agents/claude.md`, run `bin/install-agent-docs`,
+and re-run the smoke test.

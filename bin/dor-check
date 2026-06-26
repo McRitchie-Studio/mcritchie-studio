@@ -325,7 +325,7 @@ def gem_constraint_violations
   return [] unless File.exist?(gemfile) && File.exist?(lockfile)
 
   lock_text = File.read(lockfile)
-  File.read(gemfile).each_line.filter_map do |line|
+  File.read(gemfile).each_line.each_with_object([]) do |line, violations|
     m = line.match(/^\s*gem\s+["']([A-Za-z0-9_.\-]+)["']\s*,\s*["']([^"':]+)["']/)
     next unless m
 
@@ -337,7 +337,7 @@ def gem_constraint_violations
     req = (Gem::Requirement.new(constraint) rescue nil)
     next if req.nil? || req.satisfied_by?(Gem::Version.new(locked))
 
-    { "name" => name, "constraint" => constraint, "locked" => locked }
+    violations << { "name" => name, "constraint" => constraint, "locked" => locked }
   end
 end
 
@@ -357,10 +357,13 @@ def suite_evidence_error(eval, slug)
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
       "Run bin/full-suite-check from inside the repo so the FULL suite + rubocop are certified."
   end
-  parts = eval[:lanes].filter_map do |lane, state|
+  parts = []
+  eval[:lanes].each do |lane, state|
     case state
-    when :stale then "#{lane}: STALE (certified for older code — re-run after your latest edits)"
-    when :missing then "#{lane}: MISSING (never certified for this exact code)"
+    when :stale
+      parts << "#{lane}: STALE (certified for older code — re-run after your latest edits)"
+    when :missing
+      parts << "#{lane}: MISSING (never certified for this exact code)"
     end
   end
   "the FULL suite + FULL rubocop are not certified green for this code — #{parts.join("; ")}. " \

@@ -137,5 +137,3 @@ or review weight.
   `~/.claude/skills/*` + `~/.codex/skills/*`)
 - `bin/setup-1pass-token` — the Phase 4 token boundary
 - `config/satellites.yml` — the satellite registry the script reads
-</content>
-</invoke>

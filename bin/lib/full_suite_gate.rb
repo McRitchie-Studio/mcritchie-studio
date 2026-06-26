@@ -91,7 +91,10 @@ module FullSuiteGate
   # fingerprint), :stale (tagged, but every tag is for a different fingerprint),
   # or :missing (no tag for this lane at all).
   def lane_status(checks, lane, fingerprint)
-    seen = Array(checks).filter_map { |line| extract_fingerprint(line, lane) }
+    seen = Array(checks).each_with_object([]) do |line, values|
+      fp = extract_fingerprint(line, lane)
+      values << fp if fp
+    end
     return :missing if seen.empty?
 
     seen.include?(fingerprint) ? :fresh : :stale

@@ -122,6 +122,17 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "[[3020], 3021]", out, "rolio's 3020 is reserved in the real config and skipped"
   end
 
+  def test_git_worktree_dirs_parses_porcelain_without_filter_map_dependency
+    out = run_in_script(<<~RUBY)
+      def capture_status(*)
+        [true, "worktree /repo/main\\nHEAD abc123\\n\\nworktree /repo/.worktrees/task\\nHEAD def456\\n", ""]
+      end
+      def canonical_path(path); path; end
+      print git_worktree_dirs("/repo").inspect
+    RUBY
+    assert_equal '["/repo/main", "/repo/.worktrees/task"]', out
+  end
+
   # --- regression: the silent empty-output flake --------------------------------
   #
   # A subprocess that produces NO usable output must fail LOUD with its stderr
