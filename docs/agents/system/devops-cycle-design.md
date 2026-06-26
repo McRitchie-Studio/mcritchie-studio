@@ -307,9 +307,9 @@ Clarifications:
 - **The conductor merges even funds-touching work autonomously** into `release`
   on the two seniors' approval — the consequence of "Review + QA, gate prod".
   Risk raises *scrutiny* (the HEAVY review goes to Opus + full
-  integration/security suite), not a second human. *Knob:* flip
-  `payment`/`solana` `risk_tags` to require a human pre-**merge** pass — one
-  config line.
+  integration/security suite), not a second human. `config/release_builder.yml`
+  gates only QA assembly autonomy; adding a separate human pre-merge gate for
+  `payment`/`solana` would require a code/config change, not a doc-only knob.
 - **Humility valve:** low confidence → a reviewer marks `conductor-review` and
   routes to a *human* Avi/Steffon session instead of approving the merge into
   `release`.
@@ -355,19 +355,18 @@ carries one non-stage meta-trigger — **`Build and Deploy QA Release`** — ren
 as a prominent chip in the current-release section (`#current-release`); it is
 the operator's main one-trigger that composes the per-stage commands below.
 
-**`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run — auto-ships to prod)*
+**`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run — stops at the ship gate)*
 
 This is Mr. McRitchie's single trigger for the whole QA department: hand it to an
 agent — **any model (Claude, Codex, …)** — and it walks the persistent-`release`
-model end to end **and ships the result to production**. The operator asked for a
-**hands-off auto-ship**, so this SOP has **no human gate**.
+model through review, merge, QA deploy, and ship-readiness. It **does not ship to
+production without Mr. McRitchie's confirmation**; after the frozen-SHA ship
+tests pass, stop and hand the operator the `Run Deployment` gate.
 
-> ⚠️ **THIS SOP SHIPS TO PROD WITH NO HUMAN CONFIRM.** A green review + green QA +
-> green ship-tests deploys straight to prod across every release repo
-> (mcritchie-studio + satellites). The **only** remaining gates are automated: the
-> two-senior review, QA, and `avi_ship_gate` (the ship-time test suite, which
-> aborts the ship on any failure). For a **human-gated** run instead, stop after
-> step 5 and hand the operator `bin/release ship` (the `Run Deployment` block).
+> ⚠️ **THIS SOP STOPS BEFORE PROD.** A green review + green QA + green ship-tests
+> produces an assembled RC and a clear `bin/release ship` handoff. Production
+> deploy remains the one operator gate across every release repo
+> (mcritchie-studio + satellites).
 
 > **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
 > opens a fresh session with just `Build and Deploy QA Release`, follow **this**
@@ -376,13 +375,16 @@ model end to end **and ships the result to production**. The operator asked for 
 > that is **already** built; it does not create a task, take a worktree, or write
 > feature code. Run every command from `/Users/alex/projects/mcritchie-studio`.
 
-> **A non-interactive agent MUST pass `--yes` where a command confirms.** An
+> **A non-interactive agent MUST pass `--yes` only for approved non-production confirms.** An
 > agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as
 > **"no"**. The consequence differs per command:
 > - **`prepare`** *silently no-ops* without `--yes` — looks like it ran but nothing
 >   deployed. The dangerous one: always run `bin/release prepare --yes`.
-> - **`ship`** and **`archive`** *abort loudly* without `--yes` — pass `--yes` to
->   run them hands-off. **This SOP auto-ships, so step 6 runs `ship … --yes`.**
+> - **`ship`** *aborts loudly* without confirmation — that is intentional. Do not
+>   pass `--yes` unless Mr. McRitchie explicitly gives the production ship go in
+>   this session or an already-approved rollout prompt.
+> - **`archive`** can use `--yes` after the shipped release is verified and the
+>   operator has approved cleanup.
 > - **`merge`** does not prompt today; `--yes` is harmless future-proofing.
 >
 > `--yes` bypasses the **human confirm only** — it never skips a test gate
@@ -425,14 +427,18 @@ one blocking event happened** — omit the section on a clean run.
 5. **Assemble again.** Pre-merge checklist + `bin/release merge <slug> … --yes` the
    round-2 `reviewed` tasks into the same candidate, then `bin/release prepare
    --yes` to refresh QA. Confirm the refreshed QA app is green.
-6. **Ship to production (NO human gate).** From a **primary checkout** (not a
-   worktree — gems resolve as siblings at the projects root): `bin/release ship
-   --by conductor --yes`. It runs preflight (clean-`main` assertion) →
+6. **Ship-readiness handoff (operator gate).** From a **primary checkout** (not a
+   worktree — gems resolve as siblings at the projects root), run the ship-time
+   preflight/test gate if the operator assigned that lane, then stop for Mr.
+   McRitchie's production confirmation. The production command is
+   `bin/release ship --by conductor`; add `--yes` only after explicit approval in
+   this session or an already-approved rollout prompt. It runs preflight
+   (clean-`main` assertion) →
    `avi_ship_gate` (each app's test suite on the frozen ship SHA; **aborts on any
    failure** before anything irreversible) → producer-first gem publish → ff each
    repo's `release → main` → deploy + smoke `/up` → prod `post_deploy_cmd` →
-   members `shipped` → auto-posted release notes. `--yes` removes only the human
-   confirm; if a gate aborts, report it and don't force past.
+   members `shipped` → auto-posted release notes. If a gate aborts, report it and
+   don't force past.
 7. **Close the loop (optional).** `bin/release archive --yes` (shipped → archived +
    reclaim worktrees) and `bin/release retro --yes` (durable learnings doc).
 
