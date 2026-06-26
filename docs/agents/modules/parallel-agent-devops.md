@@ -259,7 +259,7 @@ comfortably hold in context. The plan separates:
   surfaces
 - blocked tasks that should return to the feature agent before review
 - reviewed tasks ready for release merge
-- assembled tasks awaiting QA acceptance, follow-up, or explicit release approval
+- assembled release work awaiting follow-up or explicit release approval
 
 The plan is still read-only. It does not merge, deploy, update tasks, or create
 sub-agents. The conductor uses it to decide which work can safely happen in
@@ -342,7 +342,7 @@ the scout lane as complete until coverage is explicit.
 
 Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
 groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
-QA acceptance, production-ready, and scout-gap lanes. Readiness is still
+Ready To Assemble, Assembled Release, and scout-gap lanes. Readiness is still
 advisory: Avi owns the final merge, deploy, QA feedback, and production gate.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate

@@ -315,7 +315,8 @@ bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
 local/QA/production URLs, latest task conversation notes, and matching qa-intake
 status when available. `bin/devops-cycle --plan` adds a read-only batch plan
 that separates parallel PR reviews, serialized/high-risk work, blocked returns
-to feature agents, QA review, and production-ready release work.
+to feature agents, reviewed work ready for release merge, and assembled release
+work waiting at the operator gate.
 `bin/devops-cycle --decisions` adds an Avi decision summary for PR-review tasks,
 combining qa-intake status, latest task activity, and scout report outcomes into
 `merge-ready`, `wait-for-ci`, `request-changes`, or `conductor-review`
@@ -344,9 +345,9 @@ scout report is back.
 view. It compares manifest packets with structured `scout_report` task comments
 and calls out missing reports or conflicting outcomes. `bin/devops-cycle
 --readiness` is the Phase 3D conductor view: it groups tasks into
-ready-to-merge, needs-conductor-review, needs-changes, waiting, QA acceptance,
-production-ready, and scout-gap lanes. These views accelerate review; they do
-not transfer final merge or deploy authority away from Avi.
+ready-to-merge, needs-conductor-review, needs-changes, waiting, Ready To
+Assemble, Assembled Release, and scout-gap lanes. These views accelerate
+review; they do not transfer final merge or deploy authority away from Avi.
 
 Scout reports are supporting evidence. Avi turns blocker findings into
 `qa_feedback` or PR review comments when the work must return to the feature
