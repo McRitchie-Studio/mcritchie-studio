@@ -22,8 +22,13 @@ The color rides to the status line without DB access (`bin/task` and
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
-Codex sessions expose `CODEX_THREAD_ID`; run the kickoff wrapper when you want a
-McRitchie session handle before the first task:
+Codex sessions expose `CODEX_THREAD_ID`; `bin/install-agent-docs` wires a Codex
+`SessionStart` hook to `bin/codex-session-title`, which mirrors the same marker
+into Codex's `thread-title` footer item on startup/resume. Review that hook once
+with `/hooks` after install so Codex trusts it.
+
+Run the kickoff wrapper manually only when you want to force or inspect the
+current marker:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio

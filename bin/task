@@ -493,6 +493,18 @@ def render_stale(result)
   end
 end
 
+def refresh_codex_session_title
+  return if ENV["CODEX_SESSION_TITLE_RUNNING"] == "1"
+  return if ENV["CODEX_THREAD_ID"].to_s.strip.empty?
+
+  script = File.expand_path("codex-session-title", __dir__)
+  return unless File.executable?(script)
+
+  system({ "CODEX_SESSION_TITLE_RUNNING" => "1" }, script, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
 # Genesis trickle-down: the task slug is the single source. Creating/advancing a
 # task writes the active-feature marker that bin/statusline (and the terminal
 # indicator) read — no worktree required. Worktree sessions override it via their
@@ -524,6 +536,7 @@ def write_feature_marker(task)
 
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{JSON.pretty_generate(marker)}\n")
+  refresh_codex_session_title
 rescue StandardError
   nil
 end
@@ -915,6 +928,7 @@ when "session-mascot"
         marker = marker.reject { |_, v| v.nil? || v.to_s.strip.empty? }
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, "#{JSON.pretty_generate(marker)}\n")
+        refresh_codex_session_title
         print_session_marker(marker) if print_marker
       end
     end

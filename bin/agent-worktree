@@ -1185,6 +1185,18 @@ def shell_context_from_payload(context)
   }
 end
 
+def refresh_codex_session_title(dir)
+  return if ENV["CODEX_SESSION_TITLE_RUNNING"] == "1"
+  return if ENV["CODEX_THREAD_ID"].to_s.strip.empty?
+
+  script = File.join(__dir__, "codex-session-title")
+  return unless File.executable?(script)
+
+  system({ "CODEX_SESSION_TITLE_RUNNING" => "1" }, script, out: File::NULL, err: File::NULL, chdir: dir)
+rescue StandardError
+  nil
+end
+
 # Resolve the session's Pokemon mascot with a fallback chain so a context
 # regeneration can never downgrade a known mascot to blank (the observed
 # "Jigglypuff -> task link" flip-flop, where a from-scratch values rebuild —
@@ -1340,6 +1352,7 @@ def write_context_marker(app, task, values, dir, record: nil, stage: nil)
   ensure_context_file_excluded(dir)
   payload = context_payload(app, task, values, dir, record: record, stage: stage)
   File.write(context_path(dir), "#{JSON.pretty_generate(payload)}\n")
+  refresh_codex_session_title(dir)
   payload
 end
 

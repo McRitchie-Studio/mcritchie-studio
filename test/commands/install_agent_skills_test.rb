@@ -59,6 +59,14 @@ class InstallAgentSkillsTest < Minitest::Test
     File.join(@home, ".claude", "settings.json")
   end
 
+  def installed_codex_config
+    File.join(@home, ".codex", "config.toml")
+  end
+
+  def installed_codex_hooks
+    File.join(@home, ".codex", "hooks.json")
+  end
+
   def jq_available?
     system("command -v jq >/dev/null 2>&1")
   end
@@ -178,6 +186,17 @@ class InstallAgentSkillsTest < Minitest::Test
     commands = settings.fetch("hooks").fetch("SessionStart").flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
     assert_includes commands, "#{runtime_root}/bin/task session-mascot"
     refute commands.any? { |command| command.include?("/.worktrees/") }
+
+    config = File.read(installed_codex_config)
+    assert_match(/status_line = \[[^\n]*"thread-title"/, config)
+    assert_match(/terminal_title = \[[^\n]*"thread-title"/, config)
+
+    codex_hooks = JSON.parse(File.read(installed_codex_hooks))
+    codex_session_start = codex_hooks.fetch("hooks").fetch("SessionStart")
+    codex_commands = codex_session_start.flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
+    assert_includes codex_commands, "#{runtime_root}/bin/codex-session-title"
+    assert codex_session_start.any? { |entry| entry["matcher"] == "startup|resume" }
+    refute codex_commands.any? { |command| command.include?("/.worktrees/") }
   end
 
   def test_integration_install_prunes_stale_worktree_session_hooks
@@ -198,6 +217,22 @@ class InstallAgentSkillsTest < Minitest::Test
         ]
       }
     ))
+    FileUtils.mkdir_p(File.dirname(installed_codex_hooks))
+    File.write(installed_codex_hooks, JSON.pretty_generate(
+      "hooks" => {
+        "SessionStart" => [
+          {
+            "matcher" => "startup|resume",
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => "/repo/.worktrees/docs-gate-cleanup/bin/codex-session-title"
+              }
+            ]
+          }
+        ]
+      }
+    ))
 
     runtime_root = "/stable/mcritchie-studio"
     _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => runtime_root)
@@ -208,5 +243,11 @@ class InstallAgentSkillsTest < Minitest::Test
     end
     refute commands.any? { |command| command.include?("/.worktrees/") }
     assert_includes commands, "#{runtime_root}/bin/task session-mascot"
+
+    codex_commands = JSON.parse(File.read(installed_codex_hooks)).fetch("hooks").fetch("SessionStart").flat_map do |entry|
+      entry.fetch("hooks").map { |hook| hook.fetch("command") }
+    end
+    refute codex_commands.any? { |command| command.include?("/.worktrees/") }
+    assert_includes codex_commands, "#{runtime_root}/bin/codex-session-title"
   end
 end
