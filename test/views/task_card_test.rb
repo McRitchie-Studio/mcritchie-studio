@@ -33,6 +33,25 @@ class TaskCardTest < ActionView::TestCase
       "uppercase tracking-wide label must have no surrounding whitespace, else it shows a gap before the count"
   end
 
+  test "the slug row renders between the crew and updated age row" do
+    task = Task.create!(title: "Slug position task", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "carl")
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    crew_index = rendered.index('data-test="stage-agent-avatars"')
+    slug_index = rendered.index('data-test="task-slug-row"')
+    updated_index = rendered.index('data-test="task-card-updated-row"')
+
+    assert crew_index, "stage crew must render for the ordering assertion"
+    assert slug_index, "slug row must expose its stable test hook"
+    assert updated_index, "updated age row must expose its stable test hook"
+    assert_operator crew_index, :<, slug_index
+    assert_operator slug_index, :<, updated_index
+  end
+
   test "the partial is self-contained (no board @ivars) — renders with only its locals" do
     task = Task.create!(title: "Standalone card task", stage: "designed")
 
