@@ -61,6 +61,29 @@ module ReleaseNotes
       assert_equal "Rolio", rolio[:label]
     end
 
+    # --- production smoke seal ---------------------------------------------
+
+    test "[unit] a green seal appends the verdict line to the message + Discord header" do
+      seal = Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs prod")
+      formatter = formatter_for(seal: seal)
+
+      assert_includes formatter.message, "🟢 Production smoke seal: passed — @qa-readonly green vs prod"
+      assert_includes formatter.discord_payload[:content], "🟢 Production smoke seal: passed"
+      # The seal line rides AFTER the H1+H3 deploy header (a third content line).
+      assert formatter.discord_payload[:content].start_with?("# 🚀 Production Deployment\n### [")
+    end
+
+    test "[unit] a red seal surfaces the FAILED verdict" do
+      formatter = formatter_for(seal: Release::SmokeSeal.from_result(passed: false, summary: "2 specs failed"))
+      assert_includes formatter.message, "🔴 Production smoke seal: FAILED — 2 specs failed"
+    end
+
+    test "[unit] no seal → no seal line (back-compat with unsealed releases)" do
+      formatter = formatter_for # seal: nil
+      assert_not_includes formatter.message, "Production smoke seal"
+      assert_not_includes formatter.discord_payload[:content], "Production smoke seal"
+    end
+
     # --- rich embeds -------------------------------------------------------
 
     # Seed the water-type tint + an Omanyte mascot row so signature_color and the

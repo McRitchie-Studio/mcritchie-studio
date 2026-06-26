@@ -407,7 +407,11 @@ class Release
         release: release.slug,
         sha: release.deployed_sha,
         url: release.production_url,
-        tasks: release.tasks.order(:position).to_a
+        tasks: release.tasks.order(:position).to_a,
+        # The post-ship smoke seal (bin/release step 5c recorded it BEFORE this), so
+        # the notes body + Discord carry the SAME 🟢/🔴 verdict the board shows. nil
+        # when unsealed (a manual / pre-seal ship) → the seal line is simply omitted.
+        seal: release.smoke_seal
       )
       message = formatter.message
 

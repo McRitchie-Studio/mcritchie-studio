@@ -105,6 +105,12 @@ require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
+# SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
+# red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
+# source the notes/board read on prod.
+require_relative "../app/models/release/smoke_seal"
+# ProdSmoke resolves the prod base URL for the seal smoke (bin/prod-smoke shares it).
+require_relative "../app/models/release/prod_smoke"
 # Deploy-side usage capture: read the conductor's LOCAL session transcript and
 # diff it against the per-(session, slug) baseline (shared verbatim with bin/task
 # + bin/reviewer-select) so reviewed→assembled / assembled→shipped flips carry
@@ -1423,6 +1429,72 @@ def ship_preflight(app_groups)
   say("  ✓ #{states.size} app checkout(s) on a clean `main`")
 end
 
+# --- step 5c: production smoke SEAL -----------------------------------------
+# AFTER every app deployed + the existing `/up` hard-gate passed (deploy_app), run
+# the read-only @qa-readonly suite against PROD (bin/prod-smoke) and record a
+# 🟢/🔴 SEAL on the release. A SEAL, NOT a gate: the deploy already happened, so a
+# red seal ALERTS + prints the EXACT rollback but NEVER aborts the ship or
+# auto-rolls-back — the operator stays the gate. Smokes the HUB only (the
+# @qa-readonly spec is the hub's; turf owns its own bin/post_deploy_smoke).
+#
+# Runs BEFORE step 6's post_release_notes so the notes/Discord/board all read the
+# SAME verdict (the seal write commits here; step 6 reloads Release.current). The
+# WRITE is best-effort: a prod-board blip on the seal record warns + continues —
+# the red alert still prints from the LOCAL verdict, independent of the write.
+def production_smoke_seal(app_groups, ship_sha)
+  step("production smoke seal: bin/prod-smoke #{APP} (@qa-readonly vs prod) — post-ship SEAL, non-blocking")
+
+  # Seal what we DEPLOYED: only when the hub (mcritchie-studio, whose @qa-readonly
+  # spec this is) was actually part of this ship. A gem-only / satellite-only ship
+  # changes nothing on the hub, so there is nothing to seal.
+  unless app_groups.any? { |g| g["repo"] == APP }
+    say("  (#{APP} not deployed in this ship — nothing to seal; skipped)")
+    return
+  end
+  unless PROD
+    say("  (local ship — the seal smokes the LIVE prod host only; skipped)")
+    return
+  end
+  if DRY
+    say("  [dry-run] bin/prod-smoke #{APP} → record 🟢/🔴 seal on Release.current (non-blocking)")
+    return
+  end
+
+  out, ok = sh("bin/prod-smoke", APP, capture: true)
+  print out unless out.to_s.empty?
+
+  host    = PROD_URL
+  summary = ok ? "@qa-readonly green vs #{host}" : "@qa-readonly FAILED vs #{host} — see ship log"
+  seal    = Release::SmokeSeal.from_result(passed: ok, summary: summary)
+
+  # Record the seal on prod (best-effort). conductor() abort!s on a heroku-run
+  # failure → SystemExit; the deploy already happened, so a board blip on this
+  # write must NOT abort the ship. The verdict + rollback below stand regardless.
+  begin
+    conductor(
+      "r = Release.current; abort('no active release to seal') unless r; " \
+      "r.record_smoke_seal!(Release::SmokeSeal.from_result(" \
+      "passed: #{ok ? 'true' : 'false'}, summary: #{summary.inspect}, checked_at: Time.current)); " \
+      "puts({ sealed: r.smoke_seal&.status }.to_json)"
+    )
+    say("  seal recorded on Release.current: #{seal.badge} #{seal.status}")
+  rescue SystemExit, StandardError => e
+    say("  ⚠ seal not recorded — board write failed (#{e.message}); the verdict below still stands")
+  end
+
+  return if ok
+
+  # RED SEAL — alert + the EXACT rollback. NON-BLOCKING: no abort, no auto-rollback.
+  # Release.current is still `assembled` here (step 6 ships it next), so
+  # Release#abandon! is still valid.
+  say("")
+  say("🔴 PRODUCTION SMOKE SEAL FAILED — #{host}")
+  say("   The deploy already landed; this is a post-ship SEAL, so the ship is NOT aborted.")
+  say("   Roll back ONLY if you decide to (the seal never auto-rolls-back):")
+  seal.rollback_commands(repo: APP, heroku_app: APP, deployed_sha: ship_sha[APP]).each { |c| say("     #{c}") }
+  say("")
+end
+
 # --- ship -------------------------------------------------------------------
 def ship
   by = opt_value("--by") || ENV["USER"] || "operator"
@@ -1518,6 +1590,12 @@ def ship
   #     stays `assembled` (recoverable) and a re-run resumes (the command is
   #     idempotent). dry-run prints the plan.
   run_post_deploy(repos, target: :prod)
+
+  # 5c. Post-ship production smoke SEAL — run the read-only @qa-readonly suite
+  #     against PROD and record a 🟢/🔴 seal on the release. NON-BLOCKING (a red
+  #     seal alerts + prints the rollback but never aborts the ship). BEFORE step 6
+  #     so post_release_notes reads the SAME verdict. See production_smoke_seal.
+  production_smoke_seal(app_groups, ship_sha)
 
   # 6. Record LAST — only after EVERY repo deployed, so a partial ship leaves the
   #    record `assembled` (recoverable). Stamp the hub's shipped SHA + ship! +

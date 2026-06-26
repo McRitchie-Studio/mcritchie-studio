@@ -144,6 +144,30 @@ class Release < ApplicationRecord
     self
   end
 
+  # --- production smoke seal --------------------------------------------------
+  # The post-ship @qa-readonly verdict (bin/prod-smoke), persisted on the release
+  # as the smoke_seal jsonb. The reader rehydrates the raw column into a
+  # Release::SmokeSeal value object (nil when unsealed); record_smoke_seal! stores
+  # one. Recorded in bin/release step 5c AFTER the deploy + /up gate, BEFORE
+  # post_release_notes — so the notes/Discord/board all read the SAME verdict.
+
+  # The seal as a value object, or nil when unsealed. Overrides the AR-generated
+  # attribute reader; `self[:smoke_seal]` still reads the raw jsonb underneath.
+  def smoke_seal
+    Release::SmokeSeal.from_h(self[:smoke_seal])
+  end
+
+  def smoke_sealed?
+    smoke_seal.present?
+  end
+
+  # Persist a Release::SmokeSeal (its {status, summary, checked_at} hash). The
+  # after_commit broadcast re-renders the board so the 🟢/🔴 badge appears live.
+  def record_smoke_seal!(seal)
+    update!(smoke_seal: seal.to_h)
+    self
+  end
+
   # Member tasks in PRODUCER-FIRST order: gems (published) before apps
   # (deployed), honoring task `dependencies` within that. This is the order the
   # conductor publishes/deploys in and the order `member_plan` reports.

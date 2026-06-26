@@ -1,0 +1,87 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/prod-smoke <app> — the production read-only SEAL smoke.
+#
+# Runs the EXISTING read-only Playwright suite (e2e/qa_readonly.spec.js, tagged
+# @qa-readonly: home/signin/tasks render + /up 200 + /devops & /devops/cycle 404)
+# against the app's PRODUCTION url instead of QA. Read-only BY CONSTRUCTION — it
+# creates no content, sends no email, and changes no provider state — so it is
+# safe to run against live prod after a deploy.
+#
+# This is the command config/devops_test_suites.yml's `production_smoke` lane
+# declares for mcritchie-studio, and the seal `bin/release ship` records post-ship
+# (step 5c) AFTER the existing `/up` hard-gate. It is a SEAL, not a gate: a red run
+# exits non-zero so the conductor records a 🔴 seal + surfaces a rollback, but the
+# ship is NOT aborted (the deploy already happened).
+#
+# HOST NUANCE (resolved): the prod base URL comes from the SAME source the ship's
+# `/up` gate trusts — config/release_repos.yml `prod_deploy.smoke_url`
+# (https://app.mcritchie.studio) — so a green gate and a green seal never disagree
+# on host. config/devops_test_suites.yml's apex `production_url`
+# (https://mcritchie.studio) is a branded alias of the same dyno and is
+# deliberately NOT the source (see Release::ProdSmoke). Override with --url.
+#
+# Usage:
+#   bin/prod-smoke                       # defaults to mcritchie-studio
+#   bin/prod-smoke mcritchie-studio
+#   bin/prod-smoke mcritchie-studio --url https://app.mcritchie.studio
+#   bin/prod-smoke --json                # machine-readable {app,url,passed} on exit
+#
+# Exit code: 0 = green (suite passed), non-zero = red (the seal verdict).
+
+require "yaml"
+require "json"
+require_relative "../app/models/release/prod_smoke"
+
+ROOT = File.expand_path("..", __dir__)
+
+def load_yaml(rel)
+  YAML.load_file(File.join(ROOT, rel)) || {}
+rescue StandardError
+  {}
+end
+
+args = ARGV.dup
+if args.include?("--help") || args.include?("-h")
+  puts File.read(__FILE__).lines.grep(/^# /).reject { |l| l.include?("frozen_string_literal") }.map { |l| l.sub(/^# ?/, "") }.join
+  exit 0
+end
+
+json_out = !args.delete("--json").nil?
+url_override =
+  if (i = args.index("--url"))
+    args.delete_at(i)
+    args.delete_at(i)
+  end
+
+app = args.shift || "mcritchie-studio"
+
+override = url_override.to_s.strip
+base_url =
+  if override.empty?
+    Release::ProdSmoke.base_url_for(
+      app,
+      release_repos: load_yaml("config/release_repos.yml"),
+      qa_environments: load_yaml("config/qa_environments.yml")
+    )
+  else
+    override
+  end
+
+warn "→ prod-smoke #{app}: @qa-readonly against #{base_url} (read-only)"
+
+# Run the read-only suite against prod. BASE_URL is the playwright.config.js
+# external-base hook (it skips the local webServer when set), so this hits the
+# live prod host with no local Rails boot. --grep keeps it to the @qa-readonly
+# tests even though the spec lives alongside mutating specs.
+env = { "BASE_URL" => base_url }
+ok = system(env, "npx", "playwright", "test", "--grep", "@qa-readonly", chdir: ROOT)
+
+if json_out
+  puts({ app: app, url: base_url, passed: ok ? true : false }.to_json)
+else
+  warn(ok ? "✓ prod-smoke #{app}: PASS @ #{base_url}" : "✗ prod-smoke #{app}: FAIL @ #{base_url}")
+end
+
+exit(ok ? 0 : 1)
