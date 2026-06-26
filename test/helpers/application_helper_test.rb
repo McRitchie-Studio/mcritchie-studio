@@ -157,7 +157,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='release-timing']", text: /\Ain progress · /
   end
 
-  test "[component] _release_summary stacks member pills into one overlapping row" do
+  test "[component] _release_summary stacks Last Release member pills into one overlapping row" do
     Release.delete_all
     rel = Release.open!(branch: "release/member-stack")
     3.times do |index|
@@ -178,11 +178,42 @@ class ApplicationHelperTest < ActionView::TestCase
     pills = css_select("[data-test='release-member-pill']")
     assert_not_includes pills.first["class"], "-ml-20"
     assert_not_includes pills.first["style"], "box-shadow"
-    pills.drop(1).each { |pill| assert_includes pill["class"], "-ml-20" }
+    pills.drop(1).each do |pill|
+      assert_includes pill["class"], "-ml-20"
+      assert_includes pill["class"], "border-l"
+    end
     assert_includes pills[1]["style"], "z-index: 2;"
-    assert_includes pills[1]["style"], "box-shadow: -10px 0 14px -12px rgba(0, 0, 0, 0.95);"
+    assert_includes pills[1]["style"], "box-shadow: -10px 0 14px -12px color-mix(in srgb, var(--color-text) 70%, transparent);"
+    assert_includes pills[1]["style"], "border-left-color: color-mix(in srgb, var(--color-text) 28%, var(--color-border));"
     assert_includes pills[2]["style"], "z-index: 3;"
-    assert_includes pills[2]["style"], "box-shadow: -10px 0 14px -12px rgba(0, 0, 0, 0.95);"
+    assert_includes pills[2]["style"], "box-shadow: -10px 0 14px -12px color-mix(in srgb, var(--color-text) 70%, transparent);"
+    assert_includes pills[2]["style"], "border-left-color: color-mix(in srgb, var(--color-text) 28%, var(--color-border));"
+  end
+
+  test "[component] _release_summary keeps Current Release member pills wrapping" do
+    Release.delete_all
+    rel = Release.open!(branch: "release/current-wrap")
+    3.times do |index|
+      task = Task.create!(
+        title: "Current release member task #{index}",
+        stage: "reviewed",
+        metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }
+      )
+      rel.add(task)
+    end
+
+    render partial: "tasks/release_summary", locals: { release: rel.reload, variant: :current }
+
+    assert_select "[data-test='release-member-list'].flex-wrap.gap-2", count: 1
+    assert_select "[data-test='release-member-stack']", count: 0
+
+    pills = css_select("[data-test='release-member-pill']")
+    assert_equal 3, pills.size
+    pills.each do |pill|
+      assert_not_includes pill["class"], "-ml-20"
+      assert_not_includes pill["class"], "border-l"
+      assert_not_includes pill["style"], "box-shadow"
+    end
   end
 
   test "[unit] release_tracker_steps maps release train updates" do

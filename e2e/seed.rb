@@ -261,14 +261,35 @@ Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: ["normal"], g
 Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: ["dragon", "flying"], generation: 1,
                 sprite_url: sprite)
 
+def release_member!(release, slug:, title:)
+  task = Task.create!(
+    title: title,
+    slug: slug,
+    stage: "reviewed",
+    priority: 1,
+    metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+  )
+  release.add(task)
+end
+
 # Shipped first (terminal) so the active release below satisfies the singleton.
 shipped_release = Release.open!
 shipped_release.update!(metadata: { "devops" => { "mascot" => "dragonite", "mascot_session" => "sess-ship" } })
+[
+  ["release-stack-last-a", "Release Autonomy Cleanup"],
+  ["release-stack-last-b", "Release Progress Tracker"],
+  ["release-stack-last-c", "Auto-record deploy lane intents"]
+].each { |slug, title| release_member!(shipped_release, slug: slug, title: title) }
 shipped_release.ship!
 shipped_release.update_columns(created_at: 18.minutes.ago, shipped_at: Time.current)
 
 active_release = Release.open!
 active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-active" } })
+[
+  ["release-stack-current-a", "Current release readiness review"],
+  ["release-stack-current-b", "Current release QA verification"],
+  ["release-stack-current-c", "Current release deploy confirmation"]
+].each { |slug, title| release_member!(active_release, slug: slug, title: title) }
 
 # /intelligence demo: two SHIPPED tasks that each walked the full lifecycle with
 # priced/sized transitions and an actual_size at ship — so the dashboard's cycle

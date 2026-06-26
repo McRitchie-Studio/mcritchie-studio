@@ -1,5 +1,43 @@
 const { test, expect } = require("@playwright/test");
 
+async function releaseMemberMetrics(locator) {
+  return locator.evaluateAll((els) => els.map((el) => {
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      className: el.className,
+      boxShadow: style.boxShadow,
+      borderLeftColor: style.borderLeftColor,
+    };
+  }));
+}
+
+async function assertLastReleaseStack(page) {
+  const stack = page.locator("#last-release [data-test='release-member-stack']");
+  await expect(stack).toBeVisible();
+  await expect(stack).toHaveCSS("flex-wrap", "nowrap");
+  await expect(stack).toHaveCSS("overflow-x", "hidden");
+
+  const pills = page.locator("#last-release [data-test='release-member-pill']");
+  await expect(pills).toHaveCount(3);
+  const metrics = await releaseMemberMetrics(pills);
+  const rowSpread = Math.max(...metrics.map((m) => m.y)) - Math.min(...metrics.map((m) => m.y));
+  expect(rowSpread).toBeLessThanOrEqual(1);
+
+  for (let index = 1; index < metrics.length; index += 1) {
+    const exposedLeft = metrics[index].x - metrics[index - 1].x;
+    expect(exposedLeft).toBeGreaterThan(24);
+    expect(exposedLeft).toBeLessThan(metrics[index - 1].width);
+    expect(metrics[index].className).toContain("-ml-20");
+    expect(metrics[index].className).toContain("border-l");
+    expect(metrics[index].boxShadow).not.toBe("none");
+    expect(metrics[index].borderLeftColor).not.toBe("rgba(0, 0, 0, 0)");
+  }
+}
+
 // /deployments live updates (DeploymentsChannel). The seeded `live-cable-demo`
 // task starts in `submitted` with a crew but NO intent — so its card shows no
 // live ticker. Recording a review intent against it (as if another session began
@@ -36,6 +74,30 @@ test("the deployments board updates a card live when an intent is recorded", asy
 
   // …with no uncaught error from the broadcast handler.
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
+
+test("Last Release stacks member pills while Current Release keeps readable wrapping", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const currentStack = page.locator("#current-release [data-test='release-member-stack']");
+  await expect(currentStack).toHaveCount(0);
+  const currentList = page.locator("#current-release [data-test='release-member-list']");
+  await expect(currentList).toBeVisible();
+  await expect(currentList).toHaveCSS("flex-wrap", "wrap");
+
+  const currentPills = page.locator("#current-release [data-test='release-member-pill']");
+  await expect(currentPills).toHaveCount(3);
+  const currentClasses = await currentPills.evaluateAll((els) => els.map((el) => el.className));
+  expect(currentClasses.every((className) => !className.includes("-ml-20"))).toBeTruthy();
+  expect(currentClasses.every((className) => !className.includes("border-l"))).toBeTruthy();
+
+  await assertLastReleaseStack(page);
+
+  const html = page.locator("html");
+  await expect(html).toHaveClass(/dark/);
+  await page.click('button[title="Toggle theme"]');
+  await expect(html).not.toHaveClass(/dark/);
+  await assertLastReleaseStack(page);
 });
 
 // Assembled-column deploy crew: an assembled card carries a fixed FOUR-lane crew with
