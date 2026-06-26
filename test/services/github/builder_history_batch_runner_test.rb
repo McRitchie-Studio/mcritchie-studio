@@ -128,6 +128,19 @@ class Github::BuilderHistoryBatchRunnerTest < ActiveSupport::TestCase
     assert_equal 0, result.dig(:results, "keep-me", :pruned_observations)
   end
 
+  test "advances the observation window watermark before pruning" do
+    builder = TrackedGithubBuilder.create!(github_login: "watermark-me", cohort: "ai_builder")
+    create_complete_cache(builder)
+    create_observation(builder, sha: "old", committed_at: Time.utc(2026, 5, 1, 12))
+    create_observation(builder, sha: "new", committed_at: Time.utc(2026, 6, 2, 12))
+    fetcher = FakeFetcher.new([])
+
+    runner(fetcher: fetcher).run!(today: TODAY, batch_size: 1, skip_complete: false)
+
+    assert_equal 0, GithubCommitObservation.for_login("watermark-me").count
+    assert_equal Time.utc(2026, 6, 2, 12), GithubObservationWindow.observed_through_at
+  end
+
   private
 
   def create_observation(builder, sha:, committed_at: TODAY.to_time)

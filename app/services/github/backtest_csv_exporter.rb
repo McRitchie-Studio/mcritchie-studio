@@ -149,6 +149,9 @@ module Github
     end
 
     def export_commit_sample(start_date, end_date, sample_limit)
+      # Best-effort raw-commit sample for offline backtest analysis. Observations
+      # are pruned once cached, so this sample only covers ranges still staged
+      # (empty after a full prune) — the aggregated truth lives in the caches.
       path = @output_dir.join("github_commit_observations_sample.csv")
       CSV.open(path, "w") do |csv|
         csv << SAMPLE_COLUMNS

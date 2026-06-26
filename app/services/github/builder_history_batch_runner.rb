@@ -162,7 +162,12 @@ module Github
     def prune_observations_if_complete(builder, cache_summary)
       return 0 unless cache_summary[:complete]
 
-      deleted = GithubCommitObservation.for_login(builder.github_login).delete_all
+      scope = GithubCommitObservation.for_login(builder.github_login)
+      # Persist the day-granular observed-through watermark BEFORE deleting, so the
+      # dashboard keeps its partial-week boundary protection once the staging rows
+      # are gone (the weekly caches are too coarse to reconstruct it).
+      GithubObservationWindow.advance_to(scope.maximum(:committed_at))
+      deleted = scope.delete_all
       report("  pruned #{deleted} staged observations login=#{builder.github_login}") if deleted.positive?
       deleted
     end

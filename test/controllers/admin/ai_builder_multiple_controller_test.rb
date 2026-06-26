@@ -139,7 +139,56 @@ class Admin::AiBuilderMultipleControllerTest < ActionDispatch::IntegrationTest
     assert_equal "builder", rows.first["github_login"]
   end
 
+  test "dashboard keeps partial-week boundary protection after observations are pruned" do
+    log_in_as(@admin)
+    prior_week = Date.new(2026, 5, 30)
+    latest_week = Date.new(2026, 6, 6)
+    builder = TrackedGithubBuilder.create!(github_login: "builder", cohort: "ai_builder", active: true)
+    builder.tracked_github_builder_repos.create!(repo_full_name: "example/repo", active: true)
+    # Observed-through only reaches the Saturday of the latest week, so the latest
+    # week is partial and must be excluded as the representative metrics week.
+    GithubCommitObservation.create!(
+      github_login: "builder", repo_full_name: "example/repo", sha: "abc123",
+      committed_at: latest_week.to_time, source_strategy: "repo_scoped"
+    )
+    [prior_week, latest_week].each { |week_start| seed_week(builder, week_start) }
+
+    # With staged observations present the boundary week is excluded.
+    get admin_ai_builder_multiple_path
+    assert_response :success
+    assert_match "boundary week is excluded", response.body
+
+    # Simulate the batch runner's prune: persist the watermark, drop staging rows.
+    GithubObservationWindow.advance_to(GithubCommitObservation.maximum(:committed_at))
+    GithubCommitObservation.delete_all
+
+    get admin_ai_builder_multiple_path
+    assert_response :success
+    assert_equal 0, GithubCommitObservation.count
+    assert_match "boundary week is excluded", response.body,
+      "partial-week protection must survive pruning via the observation window watermark"
+  end
+
   private
+
+  def seed_week(builder, week_start)
+    GithubBuilderIndexWeek.create!(
+      week_start_date: week_start, ai_builder_multiple: 2, control_builder_multiple: 1,
+      difficulty_adjusted_ai_builder_multiple: 2, ai_builder_count: 5, control_builder_count: 5
+    )
+    GithubBuilderWeeklyMetric.create!(
+      github_login: builder.github_login, cohort: builder.cohort, week_start_date: week_start,
+      commits_count: 2, non_merge_commits_count: 2, bot_adjusted_commits_count: 2,
+      active_repos_count: 1, trailing_90d_avg_weekly_commits: 1, builder_multiple: 2,
+      bot_adjusted_builder_multiple: 2
+    )
+    GithubBuilderCommitRangeCache.create!(
+      tracked_github_builder: builder, github_commit_range: GithubCommitRange.for_week_start(week_start),
+      github_login: builder.github_login, cohort: builder.cohort, commits_count: 2,
+      non_merge_commits_count: 2, bot_adjusted_commits_count: 2, active_repos_count: 1,
+      commit_shas: ["abc123"], cache_run_key: Github::CommitCacheKey.current, cached_at: Time.current
+    )
+  end
 
   def create_backtest_snapshot
     week_start = Date.new(2026, 6, 6)
