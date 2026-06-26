@@ -158,6 +158,27 @@ module Api
         assert_equal @task.slug, JSON.parse(response.body).dig("data", "slug")
       end
 
+      test "show includes latest task conversation activity" do
+        Activity.create!(
+          task_slug: @task.slug,
+          activity_type: "comment",
+          description: "Older note."
+        )
+        latest = Activity.create!(
+          task_slug: @task.slug,
+          activity_type: "qa_feedback",
+          description: "Latest blocker feedback."
+        )
+
+        get api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+        assert_response :success
+        activity = response.parsed_body.dig("data", "latest_activity")
+        assert_equal latest.id, activity.fetch("id")
+        assert_equal "qa_feedback", activity.fetch("activity_type")
+        assert_equal "Latest blocker feedback.", activity.fetch("description")
+      end
+
       test "update returns 404 for an unknown slug" do
         patch api_v1_task_path("nope-not-here"),
               params: { title: "renamed task title here" }, headers: @headers, as: :json
