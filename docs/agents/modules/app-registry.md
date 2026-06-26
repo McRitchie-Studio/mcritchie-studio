@@ -22,12 +22,12 @@ The color rides to the status line without DB access (`bin/task` and
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
-Codex sessions expose `CODEX_THREAD_ID`; run the same command manually at kickoff
-when you want a McRitchie session handle before the first task:
+Codex sessions expose `CODEX_THREAD_ID`; run the kickoff wrapper when you want a
+McRitchie session handle before the first task:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task session-mascot --print
+bin/session-kickoff
 ```
 
 To "act as" a soul instead of the session's Pokémon, set a **persona**:
@@ -40,8 +40,8 @@ reverts to the session's Pokémon, and `bin/task update <slug> --persona none`
 before a task exists, use:
 
 ```bash
-bin/task session-mascot --persona jasper --print  # show Jasper now
-bin/task session-mascot --persona none --print    # return to the Pokémon
+bin/session-kickoff jasper   # show Jasper now
+bin/session-kickoff pokemon  # return to the Pokémon
 ```
 
 `--persona` is distinct from `--agent`, which sets the task owner (`agent_slug`).
