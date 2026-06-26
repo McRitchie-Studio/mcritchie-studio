@@ -32,7 +32,7 @@ class StageAgentsHelperTest < ActionView::TestCase
     task.reload
   end
 
-  REVIEWERS = [{ "slug" => "shannon", "weight" => "heavy" }, { "slug" => "carl", "weight" => "light" }].freeze
+  REVIEWERS = [{ "slug" => "shannon", "weight" => "primary" }, { "slug" => "carl", "weight" => "light" }].freeze
 
   # --- resolve_actor_agent ----------------------------------------------------
 
@@ -68,7 +68,7 @@ class StageAgentsHelperTest < ActionView::TestCase
 
     assert_equal %w[reviewed reviewed assembled shipped], groups.map(&:stage)
     assert_equal %w[shannon carl steffon avi], groups.map { |g| g.agent&.slug }
-    assert_equal ["heavy", "light", nil, nil], groups.map(&:weight)
+    assert_equal ["primary", "light", nil, nil], groups.map(&:weight)
     # seconds_in_from of the event that COMPLETED each stage (reviewers share the
     # →reviewed event); 3600 = review, 1800 = assemble wait, 600 = QA wait
     assert_equal [3600, 3600, 1800, 600], groups.map(&:seconds)
@@ -171,12 +171,33 @@ class StageAgentsHelperTest < ActionView::TestCase
 
   test "the resolved reviewer carries its weight and from_label" do
     groups = stage_agent_groups(deploy_task(stage: "reviewed", reviewers: REVIEWERS), @agents)
-    heavy = groups.first
+    primary = groups.first
 
-    assert_equal @shannon, heavy.agent
-    assert heavy.heavy?
-    assert_equal "Submitted", heavy.from_label
-    assert_equal 3600, heavy.seconds
+    assert_equal @shannon, primary.agent
+    assert primary.primary?
+    assert_equal "Submitted", primary.from_label
+    assert_equal 3600, primary.seconds
+  end
+
+  # --- backward-compat: a review intent recorded BEFORE the HEAVY→PRIMARY rename
+  # still says weight "heavy". The avatars treat it as "primary" (predicate + the
+  # canonical display label) so old records render identically to new ones, with no
+  # data migration of the append-only TaskEvent metadata. ---
+  test "[unit] a legacy 'heavy' StageAgent is treated as primary and labeled 'primary'" do
+    legacy  = StageAgentsHelper::StageAgent.new(weight: "heavy")
+    current = StageAgentsHelper::StageAgent.new(weight: "primary")
+    light   = StageAgentsHelper::StageAgent.new(weight: "light")
+    none    = StageAgentsHelper::StageAgent.new(weight: nil)
+
+    assert legacy.primary?, "the legacy 'heavy' weight is the primary (deep) seat"
+    assert current.primary?, "the current 'primary' weight is the primary seat"
+    refute light.primary?
+    refute none.primary?
+
+    assert_equal "primary", legacy.role_label, "a legacy 'heavy' record displays as 'primary'"
+    assert_equal "primary", current.role_label
+    assert_equal "light", light.role_label
+    assert_nil none.role_label, "a non-review mover carries no role label"
   end
 
   # --- end-to-end seam: review! writes the pair to the EVENT, the avatars read it
@@ -187,7 +208,7 @@ class StageAgentsHelperTest < ActionView::TestCase
   # the two senior avatars rendered nothing in prod. Drive the REAL write path
   # (review! → Task#stage_event_metadata via Current) through the helper so the
   # whole seam is exercised, not a hand-seeded record.
-  test "review! records reviewers on the event and stage_agent_groups renders 2 seniors with heavy/light" do
+  test "review! records reviewers on the event and stage_agent_groups renders 2 seniors with primary/light" do
     task = Task.create!(title: "seam review crew task", stage: "submitted")
     Current.task_event_reviewers = REVIEWERS
     task.review! # submitted→reviewed: writes the pair onto the new TaskEvent's metadata
@@ -203,8 +224,8 @@ class StageAgentsHelperTest < ActionView::TestCase
 
     assert_equal 2, avatars.size, "both senior reviewers must render off the event"
     assert_equal %w[shannon carl], avatars.map { |g| g.agent&.slug }
-    assert_equal %w[heavy light], avatars.map(&:weight)
-    assert avatars.first.heavy?, "the heavy reviewer keeps its heavy pill"
+    assert_equal %w[primary light], avatars.map(&:weight)
+    assert avatars.first.primary?, "the primary reviewer keeps its primary pill"
   end
 
   # --- Build-lane mascot (the task's Pokémon is the feature agent's face) -------
@@ -276,14 +297,14 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_nil build.seconds, "no static build time until submitted"
   end
 
-  test "crew_clusters keeps review heavy-on-top and splits assembled/shipped with their own time" do
+  test "crew_clusters keeps review primary-on-top and splits assembled/shipped with their own time" do
     task = deploy_task(stage: "shipped", reviewers: REVIEWERS) # reviewed 3600, assembled 1800, shipped 600
     clusters = crew_clusters(task, stage_agent_groups(task, @agents))
     review = clusters.find { |c| c.lane == :review }
     assembled = clusters.find { |c| c.lane == :assembled }
     shipped = clusters.find { |c| c.lane == :shipped }
 
-    assert review.stacked.last.heavy?, "heavy reviewer is on top (rendered last)"
+    assert review.stacked.last.primary?, "primary reviewer is on top (rendered last)"
     assert_equal 3600, review.seconds, "the longer of the two reviews"
     assert_equal 1800, assembled.seconds, "Steffon's assembled time stands alone"
     assert_equal 600, shipped.seconds, "Avi's ship time stands alone"
@@ -466,7 +487,7 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal "reviewed", live.to_stage
     assert_not_nil live.live_since
     assert_equal %w[shannon carl], live.agents.map { |a| a.agent&.slug }
-    assert_equal %w[heavy light], live.agents.map(&:weight)
+    assert_equal %w[primary light], live.agents.map(&:weight)
   end
 
   test "stage_timeline's live assembled card reads Assembled -> Shipped owned by Avi" do

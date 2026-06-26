@@ -638,7 +638,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 3.hours.ago, seconds_in_from: 7200, # 2h review
                       metadata: { "reviewers" => [
-                        { "slug" => "shannon", "weight" => "heavy" },
+                        { "slug" => "shannon", "weight" => "primary" },
                         { "slug" => "carl", "weight" => "light" }
                       ] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
@@ -683,8 +683,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     timeline = css_select("[data-test='stage-timeline']").to_s
     # every soul is named on its block
     %w[Shannon Carl Steffon Avi].each { |name| assert_includes timeline, name }
-    # heavy/light review weights surface
-    assert_includes timeline, "heavy"
+    # primary/light review weights surface
+    assert_includes timeline, "primary"
     assert_includes timeline, "light"
     # full humanized duration (7200s → about 2 hours) in the card's Duration metric
     assert_includes timeline, "about 2 hours"
@@ -701,7 +701,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 2.hours.ago, seconds_in_from: 600,
                       metadata: { "reviewers" => [
-                        { "slug" => "shannon", "weight" => "heavy" },
+                        { "slug" => "shannon", "weight" => "primary" },
                         { "slug" => "carl", "weight" => "light" }
                       ] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",

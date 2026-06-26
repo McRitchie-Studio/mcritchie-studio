@@ -3,7 +3,7 @@
 # Boots bin/reviewer-select end-to-end — it loads the Rails app — against a
 # --file task payload, proving the CLI WIRING: it reads the task's devops shape +
 # risk tags, calls ReviewerSelector, and emits a machine-readable decision with a
-# heavy+light pair that excludes the QA owner. The selection LOGIC itself (domain
+# primary+light pair that excludes the QA owner. The selection LOGIC itself (domain
 # fit, tiebreak, graceful degradation) is unit-tested in
 # test/services/reviewer_selector_test.rb; this is the script regression guard.
 #
@@ -41,7 +41,7 @@ class ReviewerSelectCliTest < Minitest::Test
     refute_nil line, "expected a JSON object on stdout, got:\n#{out}"
     decision = JSON.parse(line)
 
-    assert_equal %w[heavy light], decision["reviewers"].map { |r| r["weight"] }, "one heavy + one light"
+    assert_equal %w[primary light], decision["reviewers"].map { |r| r["weight"] }, "one primary + one light"
     assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "two distinct seniors"
     refute_includes decision["candidates"], "steffon", "the QA owner is excluded (no self-gating)"
     assert(decision["ranked"].all? { |c| c["roll"].is_a?(Numeric) }, "the tiebreak rolls are emitted (auditable)")
@@ -50,7 +50,7 @@ class ReviewerSelectCliTest < Minitest::Test
   def test_human_output_names_the_pair_and_the_excluded_qa_owner
     out, code = select("shape" => "onchain")
     assert_equal 0, code, out
-    assert_match(/HEAVY\s+jasper/, out, "an onchain shape puts the Web3 senior in the heavy seat")
+    assert_match(/PRIMARY\s+jasper/, out, "an onchain shape puts the Web3 senior in the primary seat")
     assert_match(/excluded:\s+steffon/, out)
     assert_match(/tiebreak \(auditable/, out)
   end
@@ -89,7 +89,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   def test_busy_souls_and_the_builder_are_omitted_end_to_end
     # The auto-read builder (built_by=carl) AND the --busy soul both drop out of
-    # the pool, and a HEAVY+LIGHT pair still forms — no manual --builder flag.
+    # the pool, and a PRIMARY+LIGHT pair still forms — no manual --builder flag.
     out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--busy jasper --json")
     assert_equal 0, code, out
 
@@ -151,7 +151,7 @@ class ReviewerSelectCliTest < Minitest::Test
     %w[--record --no-record --dry --dry-run].each do |flag|
       out, code = select({ "shape" => "backend" }, flag)
       assert_equal 0, code, "#{flag} should parse and exit 0:\n#{out}"
-      assert_match(/HEAVY/, out, "#{flag} still prints the pick")
+      assert_match(/PRIMARY/, out, "#{flag} still prints the pick")
     end
   end
 
@@ -238,12 +238,12 @@ class ReviewerSelectCliTest < Minitest::Test
 
     body = JSON.parse(posts.first[:body])
     assert_equal "reviewed", body["to_stage"], "the intent targets the reviewed stage"
-    assert_equal %w[heavy light], body["reviewers"].map { |r| r["weight"] }, "one heavy + one light"
+    assert_equal %w[primary light], body["reviewers"].map { |r| r["weight"] }, "one primary + one light"
     refute_includes body["reviewers"].map { |r| r["slug"] }, "steffon", "the QA owner is never recorded"
 
     decision = json_decision(out)
     assert_equal decision["reviewers"].map { |r| r["slug"] }, body["reviewers"].map { |r| r["slug"] },
-      "the recorded pair is exactly the printed pick (heavy/light order included)"
+      "the recorded pair is exactly the printed pick (primary/light order included)"
     assert decision["intent_recorded"], "the decision reports the intent was recorded"
   end
 

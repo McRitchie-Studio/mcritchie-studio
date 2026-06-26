@@ -27,7 +27,7 @@ module StageAgentsHelper
                        "assembled" => :assembled_at }.freeze
   # One avatar to render: the soul (or an unresolved-actor stand-in), which
   # finished stage, the time spent in the stage it left, and (reviewers only)
-  # the heavy/light review weight. Quacks like an Agent (avatar/avatar_color/
+  # the primary/light review role. Quacks like an Agent (avatar/avatar_color/
   # avatar_initials/name) so it drops straight into the components/agent_avatar
   # primitive, falling back to the shared AVATAR_COLORS palette when no Agent
   # resolves.
@@ -48,8 +48,21 @@ module StageAgentsHelper
       agent&.name.presence || label
     end
 
-    def heavy?
-      weight.to_s.casecmp?("heavy")
+    # The deep-review seat. Recognizes the legacy "heavy" weight as "primary" too,
+    # so review intents recorded BEFORE the rename (TaskEvent.metadata still says
+    # "heavy") render identically to new "primary" ones — no data migration of the
+    # append-only event metadata.
+    def primary?
+      %w[primary heavy].include?(weight.to_s.strip.downcase)
+    end
+
+    # The canonical role label for display — normalizes a legacy "heavy" record to
+    # the current "primary" role so old and new records both read "Primary" in the
+    # UI. nil when this agent carries no review role (a build/deploy-lane mover).
+    def role_label
+      return nil if weight.blank?
+
+      primary? ? ReviewerSelector.primary_role : weight.to_s.strip.downcase
     end
   end
 
@@ -119,7 +132,7 @@ module StageAgentsHelper
       if (review = by_lane[:review])
         clusters << CrewCluster.new(
           lane: :review,
-          stacked: review.sort_by { |e| e.heavy? ? 1 : 0 }, # heavy last = on top
+          stacked: review.sort_by { |e| e.primary? ? 1 : 0 }, # primary last = on top
           seconds: review.map { |e| e.seconds.to_i }.max,
           live_since: nil
         )
@@ -266,7 +279,7 @@ module StageAgentsHelper
   #   designed/building/submitted → the actor of that event (the feature agent who
   #               did the build-lane move — designer, builder, submitter)
   #   reviewed  → the two senior reviewers (off the →reviewed event's metadata,
-  #               with heavy/light) — the canonical write target, NOT task.reviewers
+  #               with primary/light) — the canonical write target, NOT task.reviewers
   #   assembled → the actor of the →assembled event (Steffon, Platform Engineer)
   #   shipped   → the actor of the →shipped event (Avi)
   # When a stage has several landing events (e.g. blocked→building bounces) the

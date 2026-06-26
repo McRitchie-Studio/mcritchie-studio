@@ -4,7 +4,7 @@ require "test_helper"
 # pair) STARTING a stage's work, recorded the moment it begins so the board +
 # timeline can show who's on it with a live ticker before the transition lands.
 class TaskIntentTest < ActiveSupport::TestCase
-  REVIEWERS = [{ "slug" => "carl", "weight" => "heavy" }, { "slug" => "shannon", "weight" => "light" }].freeze
+  REVIEWERS = [{ "slug" => "carl", "weight" => "primary" }, { "slug" => "shannon", "weight" => "light" }].freeze
 
   test "record_intent_event appends an intent FROM the current stage TO the target" do
     task = Task.create!(title: "intent record task", stage: "submitted")

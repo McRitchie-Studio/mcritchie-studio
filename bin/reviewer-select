@@ -22,7 +22,7 @@
 # senior pool {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
 # alex=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
 # tags vs each soul's Agent.metadata["domains"]) with a LOGGED, SEEDED-PER-TASK
-# tiebreak (reproducible — not process-random), and splitting the pick 1 HEAVY
+# tiebreak (reproducible — not process-random), and splitting the pick 1 PRIMARY
 # (deep review) + 1 LIGHT. The QA owner (steffon by default) is EXCLUDED so one
 # soul never both reviews AND QAs the same change. Because the tiebreak is seeded
 # from the task identity, for the DEFAULT qa_owner this preview matches the pair
@@ -38,7 +38,7 @@
 # needed. BUSY souls (agents mid-build / mid-review on OTHER in-flight tasks) are
 # excluded via `--busy a,b,c` and/or `--busy-auto` (which reads the board's
 # stage=building tasks). Both the builder and the busy drops YIELD rather than
-# starve: if the exclusions would leave fewer than a HEAVY+LIGHT pair, the
+# starve: if the exclusions would leave fewer than a PRIMARY+LIGHT pair, the
 # least-bad ones are KEPT back so a pair is always returned (flagged in the audit).
 #
 # Usage:
@@ -229,20 +229,22 @@ def excluded_line(decision)
 end
 
 def print_human(decision, pr_url, log_line)
-  heavy, light = decision["reviewers"]
+  primary, light = decision["reviewers"]
   puts "reviewer-select  task=#{decision["task"] || "-"}  shape=#{decision["shape"] || "-"}  " \
        "repos=#{fmt_list(decision["repositories"])}  risks=#{fmt_list(decision["risk_tags"])}"
   puts "needs-domains:   #{fmt_list(decision["needed_domains"])}"
   puts "excluded:        #{excluded_line(decision)}"
   puts
-  puts seat_line("HEAVY", heavy)
-  puts seat_line("LIGHT", light)
+  # The seat labels echo the actual role names the decision carries (sourced from
+  # the vocabulary via ReviewerSelector), so the CLI never hardcodes the role.
+  puts seat_line(primary["weight"].to_s.upcase, primary)
+  puts seat_line(light["weight"].to_s.upcase, light)
   puts
   puts "tiebreak (auditable — also logged to Rails.logger):"
   puts "  candidates: #{decision["candidates"].join(", ")}"
   puts "  rolls:      #{decision["ranked"].map { |c| "#{c["slug"]}:#{format("%.4f", c["roll"])}" }.join("  ")}"
   puts "  ranked:     #{decision["ranked"].map { |c| "#{c["slug"]}(fit#{c["fit"]})" }.join(" > ")}"
-  puts "  chosen:     #{heavy["slug"]} (heavy) + #{light["slug"]} (light)"
+  puts "  chosen:     #{primary["slug"]} (#{primary["weight"]}) + #{light["slug"]} (#{light["weight"]})"
   puts "  log:        #{log_line}" if log_line
   puts
   if pr_url.empty?
@@ -295,7 +297,7 @@ builder = nil if builder.empty?
 
 # The busy set: explicit --busy souls, plus (with --busy-auto, board-only) the
 # agents on OTHER stage=building tasks. The selector excludes them from review but
-# never starves the pool below a HEAVY+LIGHT pair (least-bad kept back).
+# never starves the pool below a PRIMARY+LIGHT pair (least-bad kept back).
 busy = options[:busy].map { |s| s.to_s.strip }.reject(&:empty?).uniq
 if options[:busy_auto]
   if options[:file]
@@ -325,8 +327,9 @@ if options[:record]
   elsif slug.to_s.empty?
     warn!("intent not recorded — no task slug (selection is advisory)")
   else
-    heavy, light = decision["reviewers"]
-    pair = [{ "slug" => heavy["slug"], "weight" => "heavy" }, { "slug" => light["slug"], "weight" => "light" }]
+    primary, light = decision["reviewers"]
+    pair = [{ "slug" => primary["slug"], "weight" => primary["weight"] },
+            { "slug" => light["slug"], "weight" => light["weight"] }]
     begin
       api(:post, "/api/v1/tasks/#{slug}/intent",
           { to_stage: "reviewed", reviewers: pair, event: { source: "cli" } })

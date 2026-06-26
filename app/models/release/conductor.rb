@@ -314,7 +314,7 @@ class Release
     # pipeline stage): who is QA-ing the RC (Steffon → assembled) and who is shipping
     # it (Avi → shipped) RIGHT NOW, recorded the moment `bin/release prepare` / `ship`
     # starts that lane's work. This is the Deploy mirror of `bin/reviewer-select`,
-    # which records the heavy/light pair → reviewed by default. Without it the QA/ship
+    # which records the primary/light pair → reviewed by default. Without it the QA/ship
     # crew slots render as empty dashed placeholders until the transition lands — the
     # 2026-06-25 incident where the conductor had to hand-run `bin/task intent --to
     # shipped --actor avi` and an unfilled ship slot slipped through mid-deploy.

@@ -3,8 +3,11 @@
 # (docs/agents/system/devops-cycle-design.md §1.2). Selection is by DOMAIN FIT
 # (the task's shape + repositories + risk tags → the reviewer whose domains cover
 # the change) with a LOGGED tiebreak, so reviews spread across the pool instead
-# of always landing on the obvious domain owner. The pair is split 1 HEAVY (the
-# deep review) / 1 LIGHT, driven by each reviewer's review_weight.
+# of always landing on the obvious domain owner. The pair is split 1 PRIMARY (the
+# deep review) / 1 LIGHT, driven by each reviewer's review_weight. The two role
+# NAMES are sourced from the single vocabulary (config/devops_vocabulary.yml →
+# reviewer_roles) via .primary_role / .light_role so the role this stamps can't
+# drift from the SOP infographic + the docs.
 #
 # The tiebreak RNG is seeded per-task by default (see #seed_for), so the
 # selection is REPRODUCIBLE across processes: `bin/reviewer-select` (.decision)
@@ -35,7 +38,7 @@
 # Pass `busy:` (bin/reviewer-select's `--busy a,b,c`, and/or its board query of
 # agents on stage=building tasks). Like the builder, the busy drop YIELDS rather
 # than starve: if removing the builder + QA owner + every busy soul would leave
-# fewer than a HEAVY+LIGHT pair, the least-bad (best domain fit) busy souls are
+# fewer than a PRIMARY+LIGHT pair, the least-bad (best domain fit) busy souls are
 # KEPT eligible (the decision/log flags them) so a pair is always returned.
 #
 # Reads each reviewer's Agent.metadata["domains"] + ["review_weight"]; DEGRADES
@@ -55,9 +58,31 @@ class ReviewerSelector
   # pool by default so a reviewer never gates their own QA (§1.2 "no self-gating").
   DEFAULT_QA_OWNER = "steffon"
 
-  # A heavy + a light seat — the floor of candidates a selection needs. The
+  # A primary + a light seat — the floor of candidates a selection needs. The
   # builder exclusion is skipped (builder kept) rather than drop below this.
   MIN_CANDIDATES = 2
+
+  # The two reviewer-role NAMES, sourced from the single vocabulary
+  # (config/devops_vocabulary.yml → reviewer_roles) so the role this selector
+  # stamps stays in lockstep with the SOP infographic + the docs — rename a role
+  # in the YAML and it flows here in one edit. Order is the convention: the FIRST
+  # role is the deep/accountable seat (primary), the SECOND the focused second
+  # pass (light). Degrades to the built-in pair if the YAML can't be read, so
+  # selection never depends on the config loading.
+  ROLE_FALLBACK = %w[primary light].freeze
+
+  def self.reviewer_roles
+    names = Devops::Vocabulary.reviewer_roles.keys.map(&:to_s)
+    names.size >= 2 ? names : ROLE_FALLBACK
+  rescue StandardError
+    ROLE_FALLBACK
+  end
+
+  # The deep/accountable seat's role name (the "primary" reviewer).
+  def self.primary_role = reviewer_roles.first
+
+  # The focused second-pass seat's role name (the "light" reviewer).
+  def self.light_role = reviewer_roles.last
 
   # Fallback domain tags per reviewer when an Agent row has no metadata["domains"].
   # Keep aligned with the seeded `domains` in db/seeds/02_agents.rb.
@@ -72,10 +97,12 @@ class ReviewerSelector
   # Neutral weight when an Agent row has no metadata["review_weight"].
   DEFAULT_REVIEW_WEIGHT = 1.0
 
-  # The seeded review_weight LABELS → their numeric weight. The prod seeds
-  # (db/seeds/02_agents.rb) store the human label, not a number; a bare
-  # String#to_f would silently zero every label ("heavy".to_f == 0.0), so the
-  # label never drove the heavy seat — fit broke the tie instead. Mapping the
+  # The seeded review_weight LABELS → their numeric weight. This is the AGENT's
+  # tuning weight (Agent.metadata["review_weight"]) that DRIVES who takes the
+  # primary seat — a DIFFERENT axis from the OUTPUT role name (primary/light) the
+  # pick is stamped with; legacy label rows still read "heavy"/"light" here. A
+  # bare String#to_f would silently zero every label ("heavy".to_f == 0.0), so the
+  # label never drove the deep seat — fit broke the tie instead. Mapping the
   # labels here (heavy outranks light) makes the seeded weight actually
   # weight-driven, and keeps numeric weights (tests, future tuning) working too.
   WEIGHT_LABELS = { "heavy" => 2.0, "light" => 1.0 }.freeze
@@ -118,7 +145,7 @@ class ReviewerSelector
   end
 
   # The full, auditable decision record for the CLI (bin/reviewer-select): the
-  # chosen pair (heavy/light) PLUS the inputs, each reviewer's matched domains,
+  # chosen pair (primary/light) PLUS the inputs, each reviewer's matched domains,
   # the excluded QA owner, and the per-candidate rolls + ranking — produced in
   # ONE ranked pass (one roll set) so what the CLI prints is exactly what was
   # picked. `.select` stays the slim canonical pick the model records.
@@ -131,7 +158,7 @@ class ReviewerSelector
   # `busy:` is a set of souls currently mid-build / mid-review on OTHER in-flight
   # tasks; they're excluded from the candidate pool too, so review never lands on
   # an agent who's already heads-down elsewhere — UNLESS excluding them would
-  # starve the pool below a HEAVY+LIGHT pair, in which case the least-bad busy
+  # starve the pool below a PRIMARY+LIGHT pair, in which case the least-bad busy
   # souls are KEPT back (see #excluded_busy), mirroring the builder keep rule.
   def initialize(task, qa_owner: DEFAULT_QA_OWNER, builder: nil, busy: [], logger: nil, random: nil)
     @task = task
@@ -152,13 +179,14 @@ class ReviewerSelector
     @random = random || Random.new(seed_for(@task, @qa_owner, builder_excluded? ? builder : nil, excluded_busy))
   end
 
-  # Exactly two entries — [{ "slug" =>, "weight" => "heavy" }, { … "light" }] —
-  # string-keyed so it serializes straight into the jsonb event metadata.
+  # Exactly two entries — [{ "slug" =>, "weight" => "primary" }, { … "light" }] —
+  # string-keyed so it serializes straight into the jsonb event metadata. The role
+  # names come from the vocabulary (self.class.primary_role / .light_role).
   def reviewers
-    heavy, light = split_heavy_light(pick_two)
+    primary, light = split_primary_light(pick_two)
     [
-      { "slug" => heavy[:slug], "weight" => "heavy" },
-      { "slug" => light[:slug], "weight" => "light" }
+      { "slug" => primary[:slug], "weight" => self.class.primary_role },
+      { "slug" => light[:slug], "weight" => self.class.light_role }
     ]
   end
 
@@ -168,7 +196,7 @@ class ReviewerSelector
   def decision
     needs = needed_domains
     ordered = ranked
-    heavy, light = split_heavy_light(ordered.first(2))
+    primary, light = split_primary_light(ordered.first(2))
     {
       "task" => task.try(:slug),
       "shape" => task_shape,
@@ -182,7 +210,7 @@ class ReviewerSelector
       "excluded_busy" => excluded_busy,
       "kept_busy" => kept_busy,
       "candidates" => candidate_slugs,
-      "reviewers" => [seat(heavy, needs, "heavy"), seat(light, needs, "light")],
+      "reviewers" => [seat(primary, needs, self.class.primary_role), seat(light, needs, self.class.light_role)],
       "ranked" => ordered.map { |c| ranked_view(c) }
     }
   end
@@ -220,7 +248,7 @@ class ReviewerSelector
   # (mid-build / mid-review elsewhere). Each drop yields rather than starve the
   # pool: the builder is kept when removing it would leave too few candidates
   # (#builder_excluded?), and the busy filter keeps the least-bad busy souls back
-  # the same way (#excluded_busy) — so a HEAVY+LIGHT pair is always returnable.
+  # the same way (#excluded_busy) — so a PRIMARY+LIGHT pair is always returnable.
   def candidate_slugs
     busy_base - excluded_busy
   end
@@ -357,9 +385,9 @@ class ReviewerSelector
     ranked.first(2)
   end
 
-  # HEAVY = the heavier seat (higher review_weight) for the deep review; tie →
+  # PRIMARY = the heavier seat (higher review_weight) for the deep review; tie →
   # better domain fit; tie → the logged random roll. LIGHT = the other.
-  def split_heavy_light(pair)
+  def split_primary_light(pair)
     pair.sort_by { |c| [-c[:weight], -c[:fit], c[:roll]] }
   end
 
@@ -393,7 +421,7 @@ class ReviewerSelector
   end
 
   # Numeric review weight for a slug. Understands the seeded "heavy"/"light"
-  # LABELS (via WEIGHT_LABELS — so the label drives the heavy seat instead of
+  # LABELS (via WEIGHT_LABELS — so the label drives the primary seat instead of
   # silently becoming 0.0), a Numeric or numeric String (its own value), and a
   # missing/unknown value (the neutral default — never 0.0, which would sink a
   # reviewer below every default-weighted peer).

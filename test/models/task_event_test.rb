@@ -123,7 +123,7 @@ class TaskEventTest < ActiveSupport::TestCase
     assert_equal "reviewed", event.to_stage
     reviewers = event.metadata["reviewers"]
     assert_equal 2, reviewers.size, "two reviewers recorded for the avatars UI"
-    assert_equal %w[heavy light].sort, reviewers.map { |r| r["weight"] }.sort
+    assert_equal %w[primary light].sort, reviewers.map { |r| r["weight"] }.sort
     assert(reviewers.all? { |r| r["slug"].present? })
     refute_includes reviewers.map { |r| r["slug"] }, "steffon", "the QA owner is never a reviewer"
   end
@@ -141,7 +141,7 @@ class TaskEventTest < ActiveSupport::TestCase
   end
 
   test "an explicit Current.task_event_reviewers override is recorded verbatim" do
-    Current.task_event_reviewers = [{ "slug" => "carl", "weight" => "heavy" },
+    Current.task_event_reviewers = [{ "slug" => "carl", "weight" => "primary" },
                                     { "slug" => "alex", "weight" => "light" }]
     task = Task.create!(title: "reviewer override sample task", stage: "submitted")
     task.review!
@@ -193,7 +193,7 @@ class TaskEventTest < ActiveSupport::TestCase
   test "the kind scopes split intents from transitions" do
     task = Task.create!(title: "kind scope task", stage: "submitted")
     intent = task.record_intent_event(to_stage: "reviewed",
-                                      reviewers: [{ "slug" => "carl", "weight" => "heavy" },
+                                      reviewers: [{ "slug" => "carl", "weight" => "primary" },
                                                   { "slug" => "shannon", "weight" => "light" }])
 
     assert intent.intent?

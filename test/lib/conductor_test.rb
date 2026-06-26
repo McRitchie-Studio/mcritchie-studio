@@ -90,7 +90,7 @@ class ConductorTest < Minitest::Test
       echo "release-fake: $*"
       exit 0
     SH
-    # reviewer-select --json: canned heavy+light pair.
+    # reviewer-select --json: canned primary+light pair.
     write_exec("reviewer-select", <<~SH)
       #!/bin/bash
       echo '{"reviewers":[{"slug":"carl"},{"slug":"shannon"}]}'
@@ -208,7 +208,7 @@ class ConductorTest < Minitest::Test
   def test_plan_reviewers_flag_previews_the_picked_pair
     out, _err, _status = run_conductor("plan", "--reviewers", "--no-health")
 
-    assert_includes out, "picked: carl (heavy) + shannon (light)"
+    assert_includes out, "picked: carl (primary) + shannon (light)"
   end
 
   def test_plan_never_invokes_release

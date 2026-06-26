@@ -39,4 +39,19 @@ class Devops::VocabularyTest < ActiveSupport::TestCase
   test "[unit] owner_definition is present" do
     assert Devops::Vocabulary.owner_definition.present?
   end
+
+  test "[unit] reviewer_roles carries the primary + light roles (the single source)" do
+    roles = Devops::Vocabulary.reviewer_roles
+    assert_equal %i[primary light], roles.keys, "primary is the deep seat, light the second pass"
+    assert roles[:primary].present?, "the primary role has a description"
+    assert roles[:light].present?, "the light role has a description"
+  end
+
+  test "[unit] ReviewerSelector sources its role names from the vocabulary" do
+    assert_equal "primary", ReviewerSelector.primary_role, "the deep seat reads from reviewer_roles"
+    assert_equal "light", ReviewerSelector.light_role, "the light seat reads from reviewer_roles"
+    assert_equal Devops::Vocabulary.reviewer_roles.keys.map(&:to_s),
+                 [ReviewerSelector.primary_role, ReviewerSelector.light_role],
+                 "the selector role names ARE the vocabulary's reviewer_roles, in order"
+  end
 end
