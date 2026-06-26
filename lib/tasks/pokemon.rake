@@ -3,10 +3,15 @@
 # committed JSON this writes. Mirrors the headshot pattern in
 # db/seeds/32_headshot_links.rb (identity/URLs seeded; image bytes uploaded here).
 #
-#   rake pokemon:fetch          → pull the original 151 from PokéAPI into the JSON
-#   rake pokemon:upload_images  → mirror each Pokémon's two avatars into S3
+#   rake pokemon:fetch           → pull the original 151 from PokéAPI into the JSON
+#   rake pokemon:upload_images   → mirror each Pokémon's avatars + sprites into S3
+#   rake pokemon:crop_and_upload → trim each avatar's transparent margin and
+#                                  upload the crop to <dex>-<slug>-cropped.png
+#                                  (ADDITIVE — the original <dex>-<slug>.png is the
+#                                  backup and is never overwritten or deleted)
 require "net/http"
 require "json"
+require "fileutils"
 
 namespace :pokemon do
   POKEAPI = "https://pokeapi.co/api/v2"
@@ -63,7 +68,10 @@ namespace :pokemon do
         "special_defense" => stats["special-defense"],
         "speed" => stats["speed"],
         "generation" => 1,
-        "avatar_url" => "#{S3_BASE}/#{dex}-#{slug}.png",
+        # Primary = the tightly-cropped avatar (rake pokemon:crop_and_upload);
+        # fallback = the original uncropped official-artwork (rake pokemon:upload_images).
+        "avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-cropped.png",
+        "avatar_fallback_url" => "#{S3_BASE}/#{dex}-#{slug}.png",
         "sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-sprite.png"
       }
       warn "fetched ##{format('%03d', dex)} #{row['name']}"
@@ -90,8 +98,90 @@ namespace :pokemon do
     puts "mirrored 151 Pokémon avatars → s3://#{bucket}/pokemon/"
   end
 
+  # Tighten each avatar: download the ORIGINAL official-artwork from S3, trim its
+  # transparent margin to the character's bounding box, add a small uniform margin
+  # so it isn't edge-to-edge, and upload the crop to a NEW key
+  # (pokemon/<dex>-<slug>-cropped.png). ADDITIVE — the original <dex>-<slug>.png is
+  # never touched; it stays the backup (Pokemon#avatar_fallback_url). Crops are
+  # cached under tmp/pokemon_crops/ so a re-run skips re-downloading/re-cropping.
+  #
+  #   LIMIT=3 rake pokemon:crop_and_upload   # smoke-test the first three only
+  #   CROP_MARGIN=6% rake pokemon:crop_and_upload
+  desc "Crop each avatar to its non-transparent bbox (+margin); upload to <dex>-<slug>-cropped.png (additive)"
+  task crop_and_upload: :environment do
+    require "aws-sdk-s3"
+    bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
+    margin = ENV.fetch("CROP_MARGIN", "5%") # border added after the trim (≈ uniform 5%)
+    limit  = ENV["LIMIT"].to_i              # 0 = all 151; >0 crops only the first N
+    cache  = Rails.root.join("tmp/pokemon_crops")
+    FileUtils.mkdir_p(cache)
+
+    s3 = Aws::S3::Client.new(region: "us-east-2")
+    rows = JSON.parse(File.read(DATA_FILE))
+    rows = rows.first(limit) if limit.positive?
+
+    uploaded = 0
+    skipped = []
+    rows.each do |row|
+      dex = row.fetch("dex")
+      slug = row.fetch("slug")
+      original_url = "#{S3_BASE}/#{dex}-#{slug}.png"      # the backup — read only
+      src_path = cache.join("#{dex}-#{slug}.png")
+      out_path = cache.join("#{dex}-#{slug}-cropped.png")
+      key = "pokemon/#{dex}-#{slug}-cropped.png"          # the NEW crop key
+
+      begin
+        download_png(original_url, src_path) unless File.exist?(src_path)
+        crop_to_bbox(src_path, out_path, margin) unless File.exist?(out_path) && File.size(out_path).positive?
+        s3.put_object(
+          bucket: bucket,
+          key: key,
+          body: File.binread(out_path),
+          content_type: "image/png",
+          cache_control: "public, max-age=31536000, immutable"
+        )
+        uploaded += 1
+        warn "cropped+uploaded ##{format('%03d', dex)} #{slug} → #{key} (#{File.size(out_path)} B)"
+      rescue StandardError => e
+        skipped << "#{dex}-#{slug}: #{e.class}: #{e.message}"
+        warn "SKIPPED ##{format('%03d', dex)} #{slug}: #{e.class}: #{e.message}"
+      end
+    end
+
+    puts "cropped+uploaded #{uploaded}/#{rows.size} → s3://#{bucket}/pokemon/*-cropped.png"
+    unless skipped.empty?
+      puts "skipped #{skipped.size}:"
+      skipped.each { |s| puts "  - #{s}" }
+    end
+  end
+
   def get_json(url)
     JSON.parse(Net::HTTP.get(URI(url)))
+  end
+
+  # GET a PNG, verifying a 2xx + image content-type so an S3 error XML never gets
+  # written to disk (and then cropped into garbage).
+  def download_png(url, path)
+    uri = URI(url)
+    res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") { |http| http.get(uri.request_uri) }
+    raise "GET #{url} → HTTP #{res.code}" unless res.is_a?(Net::HTTPSuccess)
+    raise "GET #{url} → content-type #{res.content_type}" unless res.content_type.to_s.start_with?("image/")
+    raise "GET #{url} → empty body" if res.body.to_s.bytesize.zero?
+
+    File.binwrite(path, res.body)
+  end
+
+  # ImageMagick: trim the transparent padding to the character's bounding box,
+  # then pad back a small transparent border (margin) so it isn't edge-to-edge.
+  # +repage after each op resets the virtual canvas so the crop is the real frame.
+  def crop_to_bbox(src_path, out_path, margin)
+    ok = system(
+      "magick", src_path.to_s,
+      "-trim", "+repage",
+      "-bordercolor", "none", "-border", margin, "+repage",
+      out_path.to_s
+    )
+    raise "magick crop failed" unless ok && File.exist?(out_path) && File.size(out_path).positive?
   end
 
   def put_image(s3, bucket, key, source_url)

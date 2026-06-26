@@ -9,7 +9,7 @@ puts "\n--- Pokémon (original 151) ---"
 
 POKEMON_FIELDS = %w[
   name slug types hp attack defense special_attack special_defense speed
-  generation avatar_url sprite_url
+  generation avatar_url avatar_fallback_url sprite_url
 ].freeze
 
 JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json"))).each do |row|

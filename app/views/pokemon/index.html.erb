@@ -78,9 +78,11 @@
     <% @pokemon.each do |p| %>
       <div class="card p-3 flex flex-col items-center text-center">
         <div class="aspect-square w-full flex items-center justify-center">
-          <img src="<%= p.avatar_url %>" alt="<%= p.name %>"
+          <%# Primary = the tightly-cropped avatar; on load failure fall back to the
+              original uncropped artwork (avatar_fallback_url), then the pixel sprite. %>
+          <img src="<%= p.display_avatar %>" alt="<%= p.name %>"
                class="max-h-32 w-auto object-contain" loading="lazy"
-               onerror="this.onerror=null; this.src='<%= p.sprite_url %>'">
+               onerror="this.onerror=null; this.src='<%= p.avatar_fallback_url.presence || p.sprite_url %>'">
         </div>
         <div class="mt-2 text-muted text-xs tabular-nums">#<%= format("%03d", p.dex) %></div>
         <div class="text-heading font-medium text-sm"><%= p.name %></div>

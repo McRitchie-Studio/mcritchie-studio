@@ -14,7 +14,8 @@
     "special_defense": 65,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/1-bulbasaur.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/1-bulbasaur-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/1-bulbasaur.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/1-bulbasaur-sprite.png"
   },
   {
@@ -32,7 +33,8 @@
     "special_defense": 80,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/2-ivysaur.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/2-ivysaur-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/2-ivysaur.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/2-ivysaur-sprite.png"
   },
   {
@@ -50,7 +52,8 @@
     "special_defense": 100,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/3-venusaur.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/3-venusaur-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/3-venusaur.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/3-venusaur-sprite.png"
   },
   {
@@ -67,7 +70,8 @@
     "special_defense": 50,
     "speed": 65,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/4-charmander.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/4-charmander-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/4-charmander.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/4-charmander-sprite.png"
   },
   {
@@ -84,7 +88,8 @@
     "special_defense": 65,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/5-charmeleon.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/5-charmeleon-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/5-charmeleon.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/5-charmeleon-sprite.png"
   },
   {
@@ -102,7 +107,8 @@
     "special_defense": 85,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/6-charizard.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/6-charizard-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/6-charizard.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/6-charizard-sprite.png"
   },
   {
@@ -119,7 +125,8 @@
     "special_defense": 64,
     "speed": 43,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/7-squirtle.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/7-squirtle-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/7-squirtle.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/7-squirtle-sprite.png"
   },
   {
@@ -136,7 +143,8 @@
     "special_defense": 80,
     "speed": 58,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/8-wartortle.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/8-wartortle-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/8-wartortle.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/8-wartortle-sprite.png"
   },
   {
@@ -153,7 +161,8 @@
     "special_defense": 105,
     "speed": 78,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/9-blastoise.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/9-blastoise-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/9-blastoise.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/9-blastoise-sprite.png"
   },
   {
@@ -170,7 +179,8 @@
     "special_defense": 20,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/10-caterpie.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/10-caterpie-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/10-caterpie.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/10-caterpie-sprite.png"
   },
   {
@@ -187,7 +197,8 @@
     "special_defense": 25,
     "speed": 30,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/11-metapod.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/11-metapod-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/11-metapod.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/11-metapod-sprite.png"
   },
   {
@@ -205,7 +216,8 @@
     "special_defense": 80,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/12-butterfree.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/12-butterfree-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/12-butterfree.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/12-butterfree-sprite.png"
   },
   {
@@ -223,7 +235,8 @@
     "special_defense": 20,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/13-weedle.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/13-weedle-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/13-weedle.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/13-weedle-sprite.png"
   },
   {
@@ -241,7 +254,8 @@
     "special_defense": 25,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/14-kakuna.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/14-kakuna-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/14-kakuna.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/14-kakuna-sprite.png"
   },
   {
@@ -259,7 +273,8 @@
     "special_defense": 80,
     "speed": 75,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/15-beedrill.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/15-beedrill-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/15-beedrill.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/15-beedrill-sprite.png"
   },
   {
@@ -277,7 +292,8 @@
     "special_defense": 35,
     "speed": 56,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/16-pidgey.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/16-pidgey-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/16-pidgey.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/16-pidgey-sprite.png"
   },
   {
@@ -295,7 +311,8 @@
     "special_defense": 50,
     "speed": 71,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/17-pidgeotto.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/17-pidgeotto-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/17-pidgeotto.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/17-pidgeotto-sprite.png"
   },
   {
@@ -313,7 +330,8 @@
     "special_defense": 70,
     "speed": 101,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/18-pidgeot.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/18-pidgeot-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/18-pidgeot.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/18-pidgeot-sprite.png"
   },
   {
@@ -330,7 +348,8 @@
     "special_defense": 35,
     "speed": 72,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/19-rattata.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/19-rattata-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/19-rattata.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/19-rattata-sprite.png"
   },
   {
@@ -347,7 +366,8 @@
     "special_defense": 70,
     "speed": 97,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/20-raticate.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/20-raticate-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/20-raticate.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/20-raticate-sprite.png"
   },
   {
@@ -365,7 +385,8 @@
     "special_defense": 31,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/21-spearow.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/21-spearow-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/21-spearow.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/21-spearow-sprite.png"
   },
   {
@@ -383,7 +404,8 @@
     "special_defense": 61,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/22-fearow.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/22-fearow-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/22-fearow.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/22-fearow-sprite.png"
   },
   {
@@ -400,7 +422,8 @@
     "special_defense": 54,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/23-ekans.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/23-ekans-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/23-ekans.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/23-ekans-sprite.png"
   },
   {
@@ -417,7 +440,8 @@
     "special_defense": 79,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/24-arbok.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/24-arbok-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/24-arbok.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/24-arbok-sprite.png"
   },
   {
@@ -434,7 +458,8 @@
     "special_defense": 50,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/25-pikachu-sprite.png"
   },
   {
@@ -451,7 +476,8 @@
     "special_defense": 80,
     "speed": 110,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/26-raichu.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/26-raichu-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/26-raichu.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/26-raichu-sprite.png"
   },
   {
@@ -468,7 +494,8 @@
     "special_defense": 30,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/27-sandshrew.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/27-sandshrew-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/27-sandshrew.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/27-sandshrew-sprite.png"
   },
   {
@@ -485,7 +512,8 @@
     "special_defense": 55,
     "speed": 65,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/28-sandslash.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/28-sandslash-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/28-sandslash.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/28-sandslash-sprite.png"
   },
   {
@@ -502,7 +530,8 @@
     "special_defense": 40,
     "speed": 41,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/29-nidoran-f.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/29-nidoran-f-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/29-nidoran-f.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/29-nidoran-f-sprite.png"
   },
   {
@@ -519,7 +548,8 @@
     "special_defense": 55,
     "speed": 56,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/30-nidorina.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/30-nidorina-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/30-nidorina.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/30-nidorina-sprite.png"
   },
   {
@@ -537,7 +567,8 @@
     "special_defense": 85,
     "speed": 76,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/31-nidoqueen.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/31-nidoqueen-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/31-nidoqueen.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/31-nidoqueen-sprite.png"
   },
   {
@@ -554,7 +585,8 @@
     "special_defense": 40,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/32-nidoran-m.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/32-nidoran-m-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/32-nidoran-m.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/32-nidoran-m-sprite.png"
   },
   {
@@ -571,7 +603,8 @@
     "special_defense": 55,
     "speed": 65,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/33-nidorino.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/33-nidorino-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/33-nidorino.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/33-nidorino-sprite.png"
   },
   {
@@ -589,7 +622,8 @@
     "special_defense": 75,
     "speed": 85,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/34-nidoking.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/34-nidoking-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/34-nidoking.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/34-nidoking-sprite.png"
   },
   {
@@ -606,7 +640,8 @@
     "special_defense": 65,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/35-clefairy.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/35-clefairy-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/35-clefairy.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/35-clefairy-sprite.png"
   },
   {
@@ -623,7 +658,8 @@
     "special_defense": 90,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/36-clefable.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/36-clefable-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/36-clefable.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/36-clefable-sprite.png"
   },
   {
@@ -640,7 +676,8 @@
     "special_defense": 65,
     "speed": 65,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/37-vulpix.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/37-vulpix-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/37-vulpix.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/37-vulpix-sprite.png"
   },
   {
@@ -657,7 +694,8 @@
     "special_defense": 100,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/38-ninetales.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/38-ninetales-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/38-ninetales.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/38-ninetales-sprite.png"
   },
   {
@@ -675,7 +713,8 @@
     "special_defense": 25,
     "speed": 20,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/39-jigglypuff.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/39-jigglypuff-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/39-jigglypuff.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/39-jigglypuff-sprite.png"
   },
   {
@@ -693,7 +732,8 @@
     "special_defense": 50,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/40-wigglytuff.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/40-wigglytuff-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/40-wigglytuff.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/40-wigglytuff-sprite.png"
   },
   {
@@ -711,7 +751,8 @@
     "special_defense": 40,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/41-zubat.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/41-zubat-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/41-zubat.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/41-zubat-sprite.png"
   },
   {
@@ -729,7 +770,8 @@
     "special_defense": 75,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/42-golbat.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/42-golbat-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/42-golbat.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/42-golbat-sprite.png"
   },
   {
@@ -747,7 +789,8 @@
     "special_defense": 65,
     "speed": 30,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/43-oddish.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/43-oddish-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/43-oddish.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/43-oddish-sprite.png"
   },
   {
@@ -765,7 +808,8 @@
     "special_defense": 75,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/44-gloom.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/44-gloom-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/44-gloom.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/44-gloom-sprite.png"
   },
   {
@@ -783,7 +827,8 @@
     "special_defense": 90,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/45-vileplume.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/45-vileplume-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/45-vileplume.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/45-vileplume-sprite.png"
   },
   {
@@ -801,7 +846,8 @@
     "special_defense": 55,
     "speed": 25,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/46-paras.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/46-paras-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/46-paras.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/46-paras-sprite.png"
   },
   {
@@ -819,7 +865,8 @@
     "special_defense": 80,
     "speed": 30,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/47-parasect.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/47-parasect-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/47-parasect.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/47-parasect-sprite.png"
   },
   {
@@ -837,7 +884,8 @@
     "special_defense": 55,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/48-venonat.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/48-venonat-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/48-venonat.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/48-venonat-sprite.png"
   },
   {
@@ -855,7 +903,8 @@
     "special_defense": 75,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/49-venomoth.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/49-venomoth-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/49-venomoth.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/49-venomoth-sprite.png"
   },
   {
@@ -872,7 +921,8 @@
     "special_defense": 45,
     "speed": 95,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/50-diglett.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/50-diglett-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/50-diglett.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/50-diglett-sprite.png"
   },
   {
@@ -889,7 +939,8 @@
     "special_defense": 70,
     "speed": 120,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/51-dugtrio.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/51-dugtrio-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/51-dugtrio.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/51-dugtrio-sprite.png"
   },
   {
@@ -906,7 +957,8 @@
     "special_defense": 40,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/52-meowth.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/52-meowth-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/52-meowth.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/52-meowth-sprite.png"
   },
   {
@@ -923,7 +975,8 @@
     "special_defense": 65,
     "speed": 115,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/53-persian.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/53-persian-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/53-persian.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/53-persian-sprite.png"
   },
   {
@@ -940,7 +993,8 @@
     "special_defense": 50,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/54-psyduck.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/54-psyduck-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/54-psyduck.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/54-psyduck-sprite.png"
   },
   {
@@ -957,7 +1011,8 @@
     "special_defense": 80,
     "speed": 85,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/55-golduck.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/55-golduck-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/55-golduck.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/55-golduck-sprite.png"
   },
   {
@@ -974,7 +1029,8 @@
     "special_defense": 45,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/56-mankey.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/56-mankey-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/56-mankey.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/56-mankey-sprite.png"
   },
   {
@@ -991,7 +1047,8 @@
     "special_defense": 70,
     "speed": 95,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/57-primeape.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/57-primeape-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/57-primeape.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/57-primeape-sprite.png"
   },
   {
@@ -1008,7 +1065,8 @@
     "special_defense": 50,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/58-growlithe.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/58-growlithe-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/58-growlithe.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/58-growlithe-sprite.png"
   },
   {
@@ -1025,7 +1083,8 @@
     "special_defense": 80,
     "speed": 95,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/59-arcanine.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/59-arcanine-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/59-arcanine.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/59-arcanine-sprite.png"
   },
   {
@@ -1042,7 +1101,8 @@
     "special_defense": 40,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/60-poliwag.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/60-poliwag-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/60-poliwag.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/60-poliwag-sprite.png"
   },
   {
@@ -1059,7 +1119,8 @@
     "special_defense": 50,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/61-poliwhirl.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/61-poliwhirl-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/61-poliwhirl.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/61-poliwhirl-sprite.png"
   },
   {
@@ -1077,7 +1138,8 @@
     "special_defense": 90,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/62-poliwrath.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/62-poliwrath-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/62-poliwrath.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/62-poliwrath-sprite.png"
   },
   {
@@ -1094,7 +1156,8 @@
     "special_defense": 55,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/63-abra.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/63-abra-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/63-abra.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/63-abra-sprite.png"
   },
   {
@@ -1111,7 +1174,8 @@
     "special_defense": 70,
     "speed": 105,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/64-kadabra.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/64-kadabra-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/64-kadabra.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/64-kadabra-sprite.png"
   },
   {
@@ -1128,7 +1192,8 @@
     "special_defense": 95,
     "speed": 120,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/65-alakazam.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/65-alakazam-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/65-alakazam.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/65-alakazam-sprite.png"
   },
   {
@@ -1145,7 +1210,8 @@
     "special_defense": 35,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/66-machop.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/66-machop-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/66-machop.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/66-machop-sprite.png"
   },
   {
@@ -1162,7 +1228,8 @@
     "special_defense": 60,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/67-machoke.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/67-machoke-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/67-machoke.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/67-machoke-sprite.png"
   },
   {
@@ -1179,7 +1246,8 @@
     "special_defense": 85,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/68-machamp.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/68-machamp-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/68-machamp.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/68-machamp-sprite.png"
   },
   {
@@ -1197,7 +1265,8 @@
     "special_defense": 30,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/69-bellsprout.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/69-bellsprout-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/69-bellsprout.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/69-bellsprout-sprite.png"
   },
   {
@@ -1215,7 +1284,8 @@
     "special_defense": 45,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/70-weepinbell.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/70-weepinbell-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/70-weepinbell.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/70-weepinbell-sprite.png"
   },
   {
@@ -1233,7 +1303,8 @@
     "special_defense": 70,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/71-victreebel.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/71-victreebel-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/71-victreebel.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/71-victreebel-sprite.png"
   },
   {
@@ -1251,7 +1322,8 @@
     "special_defense": 100,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/72-tentacool.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/72-tentacool-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/72-tentacool.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/72-tentacool-sprite.png"
   },
   {
@@ -1269,7 +1341,8 @@
     "special_defense": 120,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/73-tentacruel.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/73-tentacruel-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/73-tentacruel.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/73-tentacruel-sprite.png"
   },
   {
@@ -1287,7 +1360,8 @@
     "special_defense": 30,
     "speed": 20,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/74-geodude.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/74-geodude-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/74-geodude.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/74-geodude-sprite.png"
   },
   {
@@ -1305,7 +1379,8 @@
     "special_defense": 45,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/75-graveler.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/75-graveler-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/75-graveler.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/75-graveler-sprite.png"
   },
   {
@@ -1323,7 +1398,8 @@
     "special_defense": 65,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/76-golem.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/76-golem-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/76-golem.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/76-golem-sprite.png"
   },
   {
@@ -1340,7 +1416,8 @@
     "special_defense": 65,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/77-ponyta.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/77-ponyta-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/77-ponyta.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/77-ponyta-sprite.png"
   },
   {
@@ -1357,7 +1434,8 @@
     "special_defense": 80,
     "speed": 105,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/78-rapidash.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/78-rapidash-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/78-rapidash.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/78-rapidash-sprite.png"
   },
   {
@@ -1375,7 +1453,8 @@
     "special_defense": 40,
     "speed": 15,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/79-slowpoke.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/79-slowpoke-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/79-slowpoke.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/79-slowpoke-sprite.png"
   },
   {
@@ -1393,7 +1472,8 @@
     "special_defense": 80,
     "speed": 30,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/80-slowbro.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/80-slowbro-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/80-slowbro.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/80-slowbro-sprite.png"
   },
   {
@@ -1411,7 +1491,8 @@
     "special_defense": 55,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/81-magnemite.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/81-magnemite-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/81-magnemite.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/81-magnemite-sprite.png"
   },
   {
@@ -1429,7 +1510,8 @@
     "special_defense": 70,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/82-magneton.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/82-magneton-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/82-magneton.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/82-magneton-sprite.png"
   },
   {
@@ -1447,7 +1529,8 @@
     "special_defense": 62,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/83-farfetchd.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/83-farfetchd-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/83-farfetchd.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/83-farfetchd-sprite.png"
   },
   {
@@ -1465,7 +1548,8 @@
     "special_defense": 35,
     "speed": 75,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/84-doduo.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/84-doduo-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/84-doduo.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/84-doduo-sprite.png"
   },
   {
@@ -1483,7 +1567,8 @@
     "special_defense": 60,
     "speed": 110,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/85-dodrio.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/85-dodrio-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/85-dodrio.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/85-dodrio-sprite.png"
   },
   {
@@ -1500,7 +1585,8 @@
     "special_defense": 70,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/86-seel.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/86-seel-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/86-seel.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/86-seel-sprite.png"
   },
   {
@@ -1518,7 +1604,8 @@
     "special_defense": 95,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/87-dewgong.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/87-dewgong-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/87-dewgong.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/87-dewgong-sprite.png"
   },
   {
@@ -1535,7 +1622,8 @@
     "special_defense": 50,
     "speed": 25,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/88-grimer.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/88-grimer-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/88-grimer.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/88-grimer-sprite.png"
   },
   {
@@ -1552,7 +1640,8 @@
     "special_defense": 100,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/89-muk.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/89-muk-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/89-muk.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/89-muk-sprite.png"
   },
   {
@@ -1569,7 +1658,8 @@
     "special_defense": 25,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/90-shellder.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/90-shellder-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/90-shellder.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/90-shellder-sprite.png"
   },
   {
@@ -1587,7 +1677,8 @@
     "special_defense": 45,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/91-cloyster.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/91-cloyster-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/91-cloyster.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/91-cloyster-sprite.png"
   },
   {
@@ -1605,7 +1696,8 @@
     "special_defense": 35,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/92-gastly.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/92-gastly-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/92-gastly.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/92-gastly-sprite.png"
   },
   {
@@ -1623,7 +1715,8 @@
     "special_defense": 55,
     "speed": 95,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/93-haunter.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/93-haunter-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/93-haunter.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/93-haunter-sprite.png"
   },
   {
@@ -1641,7 +1734,8 @@
     "special_defense": 75,
     "speed": 110,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/94-gengar.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/94-gengar-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/94-gengar.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/94-gengar-sprite.png"
   },
   {
@@ -1659,7 +1753,8 @@
     "special_defense": 45,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/95-onix.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/95-onix-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/95-onix.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/95-onix-sprite.png"
   },
   {
@@ -1676,7 +1771,8 @@
     "special_defense": 90,
     "speed": 42,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/96-drowzee.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/96-drowzee-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/96-drowzee.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/96-drowzee-sprite.png"
   },
   {
@@ -1693,7 +1789,8 @@
     "special_defense": 115,
     "speed": 67,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/97-hypno.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/97-hypno-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/97-hypno.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/97-hypno-sprite.png"
   },
   {
@@ -1710,7 +1807,8 @@
     "special_defense": 25,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/98-krabby.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/98-krabby-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/98-krabby.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/98-krabby-sprite.png"
   },
   {
@@ -1727,7 +1825,8 @@
     "special_defense": 50,
     "speed": 75,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/99-kingler.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/99-kingler-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/99-kingler.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/99-kingler-sprite.png"
   },
   {
@@ -1744,7 +1843,8 @@
     "special_defense": 55,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/100-voltorb.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/100-voltorb-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/100-voltorb.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/100-voltorb-sprite.png"
   },
   {
@@ -1761,7 +1861,8 @@
     "special_defense": 80,
     "speed": 150,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/101-electrode.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/101-electrode-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/101-electrode.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/101-electrode-sprite.png"
   },
   {
@@ -1779,7 +1880,8 @@
     "special_defense": 45,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/102-exeggcute.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/102-exeggcute-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/102-exeggcute.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/102-exeggcute-sprite.png"
   },
   {
@@ -1797,7 +1899,8 @@
     "special_defense": 75,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/103-exeggutor.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/103-exeggutor-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/103-exeggutor.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/103-exeggutor-sprite.png"
   },
   {
@@ -1814,7 +1917,8 @@
     "special_defense": 50,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/104-cubone.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/104-cubone-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/104-cubone.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/104-cubone-sprite.png"
   },
   {
@@ -1831,7 +1935,8 @@
     "special_defense": 80,
     "speed": 45,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/105-marowak.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/105-marowak-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/105-marowak.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/105-marowak-sprite.png"
   },
   {
@@ -1848,7 +1953,8 @@
     "special_defense": 110,
     "speed": 87,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee-sprite.png"
   },
   {
@@ -1865,7 +1971,8 @@
     "special_defense": 110,
     "speed": 76,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan-sprite.png"
   },
   {
@@ -1882,7 +1989,8 @@
     "special_defense": 75,
     "speed": 30,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/108-lickitung.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/108-lickitung-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/108-lickitung.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/108-lickitung-sprite.png"
   },
   {
@@ -1899,7 +2007,8 @@
     "special_defense": 45,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/109-koffing.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/109-koffing-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/109-koffing.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/109-koffing-sprite.png"
   },
   {
@@ -1916,7 +2025,8 @@
     "special_defense": 70,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/110-weezing.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/110-weezing-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/110-weezing.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/110-weezing-sprite.png"
   },
   {
@@ -1934,7 +2044,8 @@
     "special_defense": 30,
     "speed": 25,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/111-rhyhorn.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/111-rhyhorn-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/111-rhyhorn.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/111-rhyhorn-sprite.png"
   },
   {
@@ -1952,7 +2063,8 @@
     "special_defense": 45,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/112-rhydon.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/112-rhydon-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/112-rhydon.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/112-rhydon-sprite.png"
   },
   {
@@ -1969,7 +2081,8 @@
     "special_defense": 105,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/113-chansey.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/113-chansey-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/113-chansey.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/113-chansey-sprite.png"
   },
   {
@@ -1986,7 +2099,8 @@
     "special_defense": 40,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/114-tangela.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/114-tangela-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/114-tangela.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/114-tangela-sprite.png"
   },
   {
@@ -2003,7 +2117,8 @@
     "special_defense": 80,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/115-kangaskhan.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/115-kangaskhan-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/115-kangaskhan.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/115-kangaskhan-sprite.png"
   },
   {
@@ -2020,7 +2135,8 @@
     "special_defense": 25,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/116-horsea.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/116-horsea-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/116-horsea.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/116-horsea-sprite.png"
   },
   {
@@ -2037,7 +2153,8 @@
     "special_defense": 45,
     "speed": 85,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/117-seadra.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/117-seadra-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/117-seadra.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/117-seadra-sprite.png"
   },
   {
@@ -2054,7 +2171,8 @@
     "special_defense": 50,
     "speed": 63,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/118-goldeen.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/118-goldeen-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/118-goldeen.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/118-goldeen-sprite.png"
   },
   {
@@ -2071,7 +2189,8 @@
     "special_defense": 80,
     "speed": 68,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/119-seaking.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/119-seaking-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/119-seaking.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/119-seaking-sprite.png"
   },
   {
@@ -2088,7 +2207,8 @@
     "special_defense": 55,
     "speed": 85,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/120-staryu.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/120-staryu-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/120-staryu.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/120-staryu-sprite.png"
   },
   {
@@ -2106,7 +2226,8 @@
     "special_defense": 85,
     "speed": 115,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/121-starmie.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/121-starmie-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/121-starmie.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/121-starmie-sprite.png"
   },
   {
@@ -2124,7 +2245,8 @@
     "special_defense": 120,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/122-mr-mime.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/122-mr-mime-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/122-mr-mime.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/122-mr-mime-sprite.png"
   },
   {
@@ -2142,7 +2264,8 @@
     "special_defense": 80,
     "speed": 105,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/123-scyther.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/123-scyther-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/123-scyther.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/123-scyther-sprite.png"
   },
   {
@@ -2160,7 +2283,8 @@
     "special_defense": 95,
     "speed": 95,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/124-jynx.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/124-jynx-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/124-jynx.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/124-jynx-sprite.png"
   },
   {
@@ -2177,7 +2301,8 @@
     "special_defense": 85,
     "speed": 105,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/125-electabuzz.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/125-electabuzz-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/125-electabuzz.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/125-electabuzz-sprite.png"
   },
   {
@@ -2194,7 +2319,8 @@
     "special_defense": 85,
     "speed": 93,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/126-magmar.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/126-magmar-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/126-magmar.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/126-magmar-sprite.png"
   },
   {
@@ -2211,7 +2337,8 @@
     "special_defense": 70,
     "speed": 85,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/127-pinsir.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/127-pinsir-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/127-pinsir.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/127-pinsir-sprite.png"
   },
   {
@@ -2228,7 +2355,8 @@
     "special_defense": 70,
     "speed": 110,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/128-tauros.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/128-tauros-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/128-tauros.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/128-tauros-sprite.png"
   },
   {
@@ -2245,7 +2373,8 @@
     "special_defense": 20,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/129-magikarp.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/129-magikarp-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/129-magikarp.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/129-magikarp-sprite.png"
   },
   {
@@ -2263,7 +2392,8 @@
     "special_defense": 100,
     "speed": 81,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/130-gyarados.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/130-gyarados-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/130-gyarados.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/130-gyarados-sprite.png"
   },
   {
@@ -2281,7 +2411,8 @@
     "special_defense": 95,
     "speed": 60,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/131-lapras.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/131-lapras-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/131-lapras.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/131-lapras-sprite.png"
   },
   {
@@ -2298,7 +2429,8 @@
     "special_defense": 48,
     "speed": 48,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/132-ditto.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/132-ditto-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/132-ditto.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/132-ditto-sprite.png"
   },
   {
@@ -2315,7 +2447,8 @@
     "special_defense": 65,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/133-eevee.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/133-eevee-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/133-eevee.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/133-eevee-sprite.png"
   },
   {
@@ -2332,7 +2465,8 @@
     "special_defense": 95,
     "speed": 65,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/134-vaporeon.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/134-vaporeon-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/134-vaporeon.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/134-vaporeon-sprite.png"
   },
   {
@@ -2349,7 +2483,8 @@
     "special_defense": 95,
     "speed": 130,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/135-jolteon.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/135-jolteon-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/135-jolteon.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/135-jolteon-sprite.png"
   },
   {
@@ -2366,7 +2501,8 @@
     "special_defense": 110,
     "speed": 65,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/136-flareon.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/136-flareon-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/136-flareon.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/136-flareon-sprite.png"
   },
   {
@@ -2383,7 +2519,8 @@
     "special_defense": 75,
     "speed": 40,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/137-porygon.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/137-porygon-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/137-porygon.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/137-porygon-sprite.png"
   },
   {
@@ -2401,7 +2538,8 @@
     "special_defense": 55,
     "speed": 35,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte-sprite.png"
   },
   {
@@ -2419,7 +2557,8 @@
     "special_defense": 70,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/139-omastar.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/139-omastar-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/139-omastar.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/139-omastar-sprite.png"
   },
   {
@@ -2437,7 +2576,8 @@
     "special_defense": 45,
     "speed": 55,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/140-kabuto.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/140-kabuto-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/140-kabuto.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/140-kabuto-sprite.png"
   },
   {
@@ -2455,7 +2595,8 @@
     "special_defense": 70,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/141-kabutops.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/141-kabutops-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/141-kabutops.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/141-kabutops-sprite.png"
   },
   {
@@ -2473,7 +2614,8 @@
     "special_defense": 75,
     "speed": 130,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/142-aerodactyl.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/142-aerodactyl-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/142-aerodactyl.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/142-aerodactyl-sprite.png"
   },
   {
@@ -2490,7 +2632,8 @@
     "special_defense": 110,
     "speed": 30,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/143-snorlax.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/143-snorlax-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/143-snorlax.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/143-snorlax-sprite.png"
   },
   {
@@ -2508,7 +2651,8 @@
     "special_defense": 125,
     "speed": 85,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/144-articuno.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/144-articuno-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/144-articuno.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/144-articuno-sprite.png"
   },
   {
@@ -2526,7 +2670,8 @@
     "special_defense": 90,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/145-zapdos.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/145-zapdos-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/145-zapdos.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/145-zapdos-sprite.png"
   },
   {
@@ -2544,7 +2689,8 @@
     "special_defense": 85,
     "speed": 90,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/146-moltres.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/146-moltres-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/146-moltres.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/146-moltres-sprite.png"
   },
   {
@@ -2561,7 +2707,8 @@
     "special_defense": 50,
     "speed": 50,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/147-dratini.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/147-dratini-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/147-dratini.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/147-dratini-sprite.png"
   },
   {
@@ -2578,7 +2725,8 @@
     "special_defense": 70,
     "speed": 70,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/148-dragonair.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/148-dragonair-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/148-dragonair.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/148-dragonair-sprite.png"
   },
   {
@@ -2596,7 +2744,8 @@
     "special_defense": 100,
     "speed": 80,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/149-dragonite.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/149-dragonite-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/149-dragonite.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/149-dragonite-sprite.png"
   },
   {
@@ -2613,7 +2762,8 @@
     "special_defense": 90,
     "speed": 130,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/150-mewtwo.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/150-mewtwo-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/150-mewtwo.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/150-mewtwo-sprite.png"
   },
   {
@@ -2630,7 +2780,8 @@
     "special_defense": 100,
     "speed": 100,
     "generation": 1,
-    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/151-mew.png",
+    "avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/151-mew-cropped.png",
+    "avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/151-mew.png",
     "sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/151-mew-sprite.png"
   }
 ]
