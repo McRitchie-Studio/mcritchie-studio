@@ -16,13 +16,19 @@
 #   bin/session-preflight --file task.json --no-gh --no-install-docs --no-fetch
 
 require "json"
+require "net/http"
 require "open3"
 require "optparse"
 require "pathname"
 require "time"
+require "uri"
 require "yaml"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
+TASK_API_BASE = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+OP = "/opt/homebrew/bin/op"
+SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+TASK_CONVERSATION_TYPES = %w[comment qa_feedback handoff].freeze
 CHECK_STATES = {
   "SUCCESS" => "pass",
   "FAILURE" => "fail",
@@ -88,6 +94,66 @@ end
 
 def normalize_task(raw)
   raw.fetch("data", raw)
+end
+
+def agent_secret(root)
+  env = ENV["AGENT_API_SECRET"].to_s
+  return env unless env.empty?
+
+  if File.executable?(OP)
+    op = begin
+      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+    rescue SystemCallError
+      ""
+    end
+    return op unless op.empty?
+  end
+
+  dotenv = File.join(root, ".env")
+  return "" unless File.exist?(dotenv)
+
+  line = File.readlines(dotenv).find { |entry| entry.start_with?("AGENT_API_SECRET=") }
+  line.to_s.split("=", 2)[1].to_s.strip
+end
+
+def api_request(base_url, method, path, token: nil, body: nil)
+  uri = URI.join(base_url, path)
+  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
+  request = klass.new(uri)
+  request["Authorization"] = "Bearer #{token}" if token
+  if body
+    request["Content-Type"] = "application/json"
+    request.body = JSON.generate(body)
+  end
+
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = (uri.scheme == "https")
+  http.read_timeout = 30
+  response = http.request(request)
+  parsed = response.body.to_s.empty? ? {} : JSON.parse(response.body)
+  unless response.code.to_i.between?(200, 299)
+    raise "HTTP #{response.code}: #{parsed["error"] || response.body}"
+  end
+  parsed
+end
+
+def api_token(base_url, secret)
+  api_request(base_url, :post, "/api/v1/auth", body: { secret: secret }).fetch("token")
+end
+
+def fetch_latest_task_activity(slug, options)
+  secret = agent_secret(options[:root])
+  return [nil, "AGENT_API_SECRET not found for activities fallback"] if secret.empty?
+
+  token = api_token(TASK_API_BASE, secret)
+  query = URI.encode_www_form(task_slug: slug, per_page: 20)
+  response = api_request(TASK_API_BASE, :get, "/api/v1/activities?#{query}", token: token)
+  activity = Array(response["data"]).find do |item|
+    TASK_CONVERSATION_TYPES.include?(item["activity_type"].to_s)
+  end
+  [activity, nil]
+rescue StandardError => e
+  [nil, e.message]
 end
 
 def load_task(slug, options)
@@ -312,8 +378,14 @@ def stale_scan(root, files)
   hits
 end
 
-def latest_feedback(task)
-  activity = task["latest_activity"] || {}
+def activity_with_description(activity)
+  return nil unless activity.is_a?(Hash)
+
+  activity["description"].to_s.strip.empty? ? nil : activity
+end
+
+def latest_feedback(task, fallback_activity: nil)
+  activity = activity_with_description(task["latest_activity"]) || activity_with_description(fallback_activity) || {}
   description = activity["description"].to_s.strip
   return nil if description.empty?
 
@@ -470,6 +542,13 @@ errors << "branch is #{branch["behind"]} commit(s) behind #{branch["base"]}; reb
 warnings << "working tree has uncommitted changes" if branch["dirty"]
 changed = changed_files(options[:root], base)
 
+fallback_activity = nil
+if !options[:file] && activity_with_description(task["latest_activity"]).nil?
+  activity_slug = task["slug"].to_s.empty? ? slug : task["slug"]
+  fallback_activity, warning = fetch_latest_task_activity(activity_slug, options)
+  warnings << "latest task activity fallback failed: #{warning}" if warning
+end
+
 pr = { "status" => "skipped", "message" => "GitHub checks disabled" }
 if options[:gh]
   if command_available?("gh")
@@ -543,7 +622,7 @@ report = {
     "stage" => task["stage"],
     "url" => task_url
   },
-  "latest_feedback" => latest_feedback(task),
+  "latest_feedback" => latest_feedback(task, fallback_activity: fallback_activity),
   "branch" => branch,
   "changed_files" => changed,
   "pr" => pr,

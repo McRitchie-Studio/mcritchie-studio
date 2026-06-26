@@ -9,6 +9,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
+require "socket"
 require "tmpdir"
 
 class SessionPreflightTest < Minitest::Test
@@ -127,6 +128,32 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "Live board feedback should be visible.", report.dig("latest_feedback", "description")
   end
 
+  def test_live_task_show_falls_back_to_activities_api_for_latest_feedback
+    write_fake_task_cli
+    activity = {
+      "activity_type" => "qa_feedback",
+      "created_at" => "2026-06-26T19:41:52Z",
+      "description" => "Live activities feedback should be visible before serializer deploy."
+    }
+
+    with_activity_api(activity) do |base_url|
+      out, err, status = run_preflight(
+        "add-session-preflight", "--no-gh", "--no-fetch", "--json",
+        env: {
+          "AGENT_API_SECRET" => "test-secret",
+          "TASK_API_BASE" => base_url
+        }
+      )
+      assert status.success?, "#{out}\n#{err}"
+
+      report = JSON.parse(out)
+      assert_equal "qa_feedback", report.dig("latest_feedback", "activity_type")
+      assert_equal "Live activities feedback should be visible before serializer deploy.",
+                   report.dig("latest_feedback", "description")
+      assert_empty report.fetch("warnings").grep(/latest task activity fallback failed/)
+    end
+  end
+
   private
 
   def run_preflight(*args, env: {})
@@ -155,7 +182,7 @@ class SessionPreflightTest < Minitest::Test
     payload
   end
 
-  def write_fake_task_cli(latest_activity:)
+  def write_fake_task_cli(latest_activity: nil)
     write_file("bin/task", <<~RUBY)
       #!/usr/bin/env ruby
       if ARGV == ["show", "add-session-preflight", "--json"]
@@ -166,6 +193,49 @@ class SessionPreflightTest < Minitest::Test
       end
     RUBY
     File.chmod(0o755, File.join(@repo, "bin", "task"))
+  end
+
+  def with_activity_api(activity)
+    server = TCPServer.new("127.0.0.1", 0)
+    thread = Thread.new do
+      loop do
+        client = server.accept
+        request_line = client.gets.to_s
+        headers = {}
+        while (line = client.gets)
+          break if line == "\r\n"
+
+          key, value = line.split(":", 2)
+          headers[key.to_s.downcase] = value.to_s.strip
+        end
+        client.read(headers.fetch("content-length", "0").to_i)
+
+        body = if request_line.start_with?("POST /api/v1/auth ")
+          JSON.generate("token" => "test-token")
+        elsif request_line.start_with?("GET /api/v1/activities?")
+          JSON.generate("data" => [activity], "meta" => { "page" => 1, "per_page" => 20, "total" => 1 })
+        else
+          JSON.generate("error" => "unexpected request: #{request_line.strip}")
+        end
+        status = body.include?("unexpected request") ? "404 Not Found" : "200 OK"
+        client.write "HTTP/1.1 #{status}\r\n"
+        client.write "Content-Type: application/json\r\n"
+        client.write "Content-Length: #{body.bytesize}\r\n"
+        client.write "Connection: close\r\n\r\n"
+        client.write body
+        client.close
+      rescue IOError, Errno::EBADF
+        break
+      ensure
+        client&.close unless client&.closed?
+      end
+    end
+
+    yield "http://127.0.0.1:#{server.addr[1]}"
+  ensure
+    server&.close
+    thread&.join(1)
+    thread&.kill if thread&.alive?
   end
 
   def default_devops
