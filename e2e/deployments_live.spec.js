@@ -100,3 +100,35 @@ test("a live stage change FLIPs the card to its new column and updates the count
   // …and the Reviewed count badge updates (a stale badge means the handler threw).
   await expect(reviewedBadge).toHaveText(String(before + 1));
 });
+
+// Blocked has no standalone column; a blocked task rides the visual Building
+// dropzone. A building→blocked broadcast must therefore INSERT the blocked card
+// into Building, not only replace an existing DOM target. This test removes the
+// stale visible card first to match the bug: a page reload would show it, but a
+// replace-only websocket update leaves the open board empty.
+test("a live block transition inserts a missing card into the Building column", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+
+  await page.goto("/deployments");
+
+  const card = page.locator("#dropzone-building #card-live-blocked-demo");
+  await expect(card).toBeVisible();
+  await card.evaluate((node) => node.remove());
+  await expect(page.locator("#card-live-blocked-demo")).toHaveCount(0);
+
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const res = await page.request.patch("/api/v1/tasks/live-blocked-demo", {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    data: { stage: "blocked", event: { source: "cli", actor: "avi" } },
+  });
+  expect(res.ok()).toBeTruthy();
+
+  const blockedCard = page.locator("#dropzone-building #card-live-blocked-demo");
+  await expect(blockedCard).toBeVisible({ timeout: 10_000 });
+  await expect(blockedCard).toHaveAttribute("data-stage", "blocked");
+  await expect(blockedCard).toHaveAttribute("class", /bg-red/);
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});

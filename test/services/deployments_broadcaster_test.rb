@@ -81,7 +81,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal "card-#{task.slug}", streams.first["target"]
   end
 
-  test "a building→blocked re-tint REPLACES in place (blocked rides the Building column)" do
+  test "a building→blocked transition REMOVES then PREPENDS into the Building column" do
     task = Task.create!(title: "Blocked column re-tint task", stage: "designed")
     Current.task_event_actor = "carl"
     task.update!(stage: "building")
@@ -91,9 +91,9 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_event(event) }
 
-    assert_equal 1, streams.size
-    assert_equal "replace", streams.first["action"]
-    assert_equal "card-#{task.slug}", streams.first["target"]
+    assert_equal 2, streams.size
+    assert(streams.any? { |s| s["action"] == "remove" && s["target"] == "card-#{task.slug}" }, "removes any stale visible card")
+    assert(streams.any? { |s| s["action"] == "prepend" && s["target"] == "dropzone-building" }, "prepends blocked cards into Building")
   end
 
   # --- [unit] the hook + the SEV-1 guard --------------------------------------

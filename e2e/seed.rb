@@ -207,6 +207,19 @@ move_task.update!(stage: "building")
 move_task.update!(stage: "submitted")
 Current.reset
 
+# A Building task for the blocked-card websocket regression. The e2e removes its
+# stale DOM card before moving it building→blocked; the broadcast must still
+# prepend the blocked card back into the visual Building dropzone.
+Task.create!(
+  title: "Live blocked demo card",
+  slug: "live-blocked-demo",
+  description: "Fixture for the /deployments live block transition round-trip.",
+  stage: "building",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+
 # Live deploy-crew demo: an ASSEMBLED task that walked the full build → review →
 # assembled journey (with actors) but has NO ship intent yet — so its card renders the
 # fixed four-lane crew with the fourth (deploy) slot RESERVED but EMPTY. The
