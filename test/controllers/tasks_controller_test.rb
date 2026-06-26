@@ -663,10 +663,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes css_select(inprogress).to_s, "Avi", "the live ship card is owned by Avi"
 
     # While the stage is still in progress, the transition row shows ONLY the
-    # current stage (Assembled) — no arrow, no next-step (Shipped) badge. Those
-    # appear once the transition lands (the li still TARGETS shipped via data-stage).
+    # current stage in its ACTIVE (gerund) form — "Assembling", not "Assembled" —
+    # with no arrow and no next-step (Shipped) badge. Those appear once the
+    # transition lands (the li still TARGETS shipped via data-stage).
     live_row = css_select("#{inprogress} [data-test='timeline-transition']").to_s
-    assert_includes live_row, "Assembled", "in-progress card shows the current stage"
+    assert_includes live_row, "Assembling", "in-progress card shows the active stage verb"
     assert_not_includes live_row, "Shipped", "in-progress card hides the next-step badge + arrow"
   end
 

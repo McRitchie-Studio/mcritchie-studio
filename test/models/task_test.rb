@@ -264,6 +264,19 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "Blocked", Task::STAGE_LABELS.fetch("blocked")
   end
 
+  test "active_stage_label gives the gerund form for a stage still underway" do
+    assert_equal "Assembling", Task.active_stage_label("assembled")
+    assert_equal "Reviewing", Task.active_stage_label("reviewed")
+    assert_equal "Shipping", Task.active_stage_label("shipped")
+    assert_equal "Submitting", Task.active_stage_label("submitted")
+    assert_equal "Designing", Task.active_stage_label("designed")
+    assert_equal "Building", Task.active_stage_label("building")
+    # every stage carries an active form
+    assert_equal Task::STAGES.sort, Task::STAGE_ACTIVE_LABELS.keys.sort
+    # unknown stages fall back to a humanized key, never blank
+    assert_equal "Foo bar", Task.active_stage_label("foo_bar")
+  end
+
   test "build and deploy stage groups share the submitted seam" do
     assert_includes Task::BUILD_STAGES, "submitted"
     assert_includes Task::DEPLOY_STAGES, "submitted"
