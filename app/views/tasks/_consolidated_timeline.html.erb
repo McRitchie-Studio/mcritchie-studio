@@ -59,22 +59,25 @@
     <ol class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3" data-test="timeline-grid">
       <% blocks.each do |block| %>
         <% started_at = (block.occurred_at && block.seconds) ? block.occurred_at - block.seconds : nil %>
-        <li class="flex flex-col bg-surface rounded-lg p-3 border <%= block.in_progress? ? "border-green-400/40" : "border-subtle" %>"
+        <li class="relative isolate flex flex-col bg-surface rounded-lg p-3 border <%= block.in_progress? ? "border-green-400/50" : "border-subtle" %>"
             data-test="timeline-block" data-stage="<%= block.to_stage %>" data-in-progress="<%= block.in_progress? %>">
+          <% if block.in_progress? %>
+            <%# Live-work indicator: a soft green tint PULSING behind the card content
+                (replaces the old "in progress" pill — the duration ticker tells the
+                rest). isolate + -z-10 keep it above the card's own background but
+                beneath every content layer, so only the backdrop pulses. %>
+            <span aria-hidden="true" data-test="timeline-pulse"
+                  class="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-green-500/15 animate-pulse"></span>
+          <% end %>
 
-          <%# 1 — stage transition (from → to) + live/reconstructed status, centered.
-              The live/reconstructed chip rides the centered group (no ml-auto) so the
-              from → to badges stay centered on the card. %>
+          <%# 1 — stage transition (from → to), centered. A reconstructed (backfilled)
+              row carries a small trailing tag; live work is shown by the pulsing
+              backdrop + the ticking duration, not a pill. %>
           <div class="flex flex-wrap items-center justify-center gap-2 mb-3" data-test="timeline-transition">
             <%= render "components/badge", text: block.from_label, scheme: block.from_stage.present? ? stage_scheme(block.from_stage) : "neutral" %>
             <span class="text-muted text-xs">&rarr;</span>
             <%= render "components/badge", text: block.to_label, scheme: stage_scheme(block.to_stage) %>
-            <% if block.in_progress? %>
-              <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1
-                           bg-green-500/20 text-green-700 dark:text-green-200 border border-green-400/50" data-test="timeline-inprogress">
-                <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> in progress
-              </span>
-            <% elsif block.backfilled %>
+            <% if block.backfilled %>
               <span class="text-[10px] text-muted uppercase tracking-wide" title="Reconstructed from legacy stage timestamps">reconstructed</span>
             <% end %>
           </div>
@@ -117,11 +120,14 @@
               <dt class="text-[10px] uppercase tracking-wide text-muted">Duration</dt>
               <dd class="text-secondary">
                 <% if block.in_progress? && block.live_since %>
+                  <%# Live ticker counting up every second: M:SS, switching to H:MM
+                      once past 60 min. Formatted inline (NOT window.elapsedLabel,
+                      which the board's coarser ticker shares) so only this card changes. %>
                   <span class="tabular-nums inline-flex items-center gap-1 px-1.5 py-0.5 rounded
                                bg-green-500/15 border border-green-400/50 text-green-700 dark:text-green-200" data-test="timeline-live"
                         x-data="{ start: <%= block.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
                         x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)">
-                    &#9201; <span x-text="window.elapsedLabel(now - start)">…</span>
+                    &#9201; <span x-text="(() => { let e = Math.max(0, now - start); let h = Math.floor(e / 3600), m = Math.floor((e % 3600) / 60), s = e % 60; return h > 0 ? h + ':' + String(m).padStart(2, '0') : m + ':' + String(s).padStart(2, '0'); })()">…</span>
                   </span>
                 <% elsif (spent = humanize_stage_duration(block.seconds)) %>
                   <%= spent %>
