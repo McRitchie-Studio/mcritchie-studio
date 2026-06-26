@@ -139,6 +139,77 @@ for pair in "${ALL_PAIRS[@]}"; do
   echo "  $tgt (from $src)"
 done
 
+ensure_codex_tui_config() {
+  local config="$1"
+  mkdir -p "$(dirname "$config")"
+  ruby - "$config" <<'RUBY'
+path = ARGV.fetch(0)
+text = File.exist?(path) ? File.read(path) : ""
+lines = text.lines
+
+def find_section(lines, name)
+  start = lines.index { |line| line.match?(/^\s*\[#{Regexp.escape(name)}\]\s*$/) }
+  return nil unless start
+
+  finish = ((start + 1)...lines.length).find { |i| lines[i].match?(/^\s*\[[^\]]+\]\s*$/) } || lines.length
+  [start, finish]
+end
+
+def ensure_array_item(lines, range, key, item, default_items)
+  start, finish = range
+  key_re = /^\s*#{Regexp.escape(key)}\s*=/
+  index = (start + 1...finish).find { |i| lines[i].match?(key_re) }
+  default_line = %(#{key} = [#{default_items.map(&:inspect).join(", ")}]\n)
+
+  unless index
+    lines.insert(finish, default_line)
+    return [start, finish + 1]
+  end
+
+  return range if lines[index].include?(item)
+
+  line = lines[index]
+  if line.match?(/=\s*\[.*\]\s*(#.*)?$/)
+    comment = line[/\s+#.*$/]
+    body = comment ? line.sub(/\s+#.*$/, "") : line.chomp
+    prefix, values = body.split("[", 2)
+    values = values.sub(/\]\s*\z/, "").strip
+    inserted = values.empty? ? item.inspect : "#{values}, #{item.inspect}"
+    lines[index] = "#{prefix}[#{inserted}]#{comment}\n"
+  else
+    lines[index] = default_line
+  end
+
+  range
+end
+
+def ensure_scalar(lines, range, key, value)
+  start, finish = range
+  key_re = /^\s*#{Regexp.escape(key)}\s*=/
+  return range if (start + 1...finish).any? { |i| lines[i].match?(key_re) }
+
+  lines.insert(finish, "#{key} = #{value}\n")
+  [start, finish + 1]
+end
+
+range = find_section(lines, "tui")
+unless range
+  lines << "\n" unless lines.empty? || lines.last.end_with?("\n\n")
+  lines << "[tui]\n"
+  range = [lines.length - 1, lines.length]
+end
+
+range = ensure_array_item(lines, range, "status_line", "thread-title",
+                          ["model-with-reasoning", "current-dir", "thread-title"])
+range = ensure_array_item(lines, range, "terminal_title", "thread-title",
+                          ["thread-title"])
+ensure_scalar(lines, range, "status_line_use_colors", "true")
+
+updated = lines.join
+File.write(path, updated) if updated != text
+RUBY
+}
+
 # Make the Claude Code status line recoverable too — point it at the stable repo
 # script. When installing from a worktree, docs come from that worktree but global
 # hooks must point at the primary checkout so they survive worktree cleanup.
@@ -194,6 +265,57 @@ if command -v jq >/dev/null 2>&1; then
     if jq --arg cmd "$hook_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks: [{type: "command", command: $cmd}]}])' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"
       echo "  $settings (added SessionStart hook -> $hook_cmd)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
+fi
+
+# Make Codex show the McRitchie marker in its footer early. Codex does not run
+# arbitrary status-line commands, but its footer can include the thread-title
+# item. A SessionStart hook paints that title from the same session mascot marker
+# Claude reads.
+codex_config="$HOME/.codex/config.toml"
+ensure_codex_tui_config "$codex_config"
+echo "  $codex_config (ensured status_line includes thread-title)"
+
+codex_hooks="$HOME/.codex/hooks.json"
+if command -v jq >/dev/null 2>&1; then
+  mkdir -p "$HOME/.codex"
+  [ -f "$codex_hooks" ] || echo '{"hooks":{}}' > "$codex_hooks"
+
+  tmp="$(mktemp)"
+  if jq 'if .hooks.SessionStart then
+        .hooks.SessionStart |= (
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/codex-session-title") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      else . end' "$codex_hooks" > "$tmp"; then
+    if ! cmp -s "$codex_hooks" "$tmp"; then
+      mv "$tmp" "$codex_hooks"
+      echo "  $codex_hooks (removed stale worktree SessionStart hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+
+  codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
+  if ! jq -e --arg cmd "$codex_hook_cmd" '[(.hooks.SessionStart // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$codex_hooks" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$codex_hook_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{
+          matcher: "startup|resume",
+          hooks: [{
+            type: "command",
+            command: $cmd,
+            timeout: 5,
+            statusMessage: "Setting session mascot"
+          }]
+        }])' "$codex_hooks" > "$tmp"; then
+      mv "$tmp" "$codex_hooks"
+      echo "  $codex_hooks (added SessionStart hook -> $codex_hook_cmd)"
+      echo "  Review once inside Codex with /hooks so the new hook can run."
     else
       rm -f "$tmp"
     fi

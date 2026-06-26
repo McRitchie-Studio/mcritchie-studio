@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Codex SessionStart bridge.
+#
+# PR #233 gives Codex sessions a persisted McRitchie marker:
+#   <Pokemon> · <app> · <feature>
+#
+# Codex's footer can render arbitrary session context only through the built-in
+# thread-title item, so this hook resolves the marker early and mirrors it into
+# Codex's local thread title. It is intentionally best-effort: a missing session
+# id, unreachable task API, absent sqlite DB, or transient lock must never slow
+# or break a new Codex session.
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SESSION_KICKOFF="${SESSION_KICKOFF:-$ROOT/bin/session-kickoff}"
+SQLITE3="${SQLITE3:-sqlite3}"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+CODEX_STATE_DB="${CODEX_STATE_DB:-$CODEX_HOME/state_5.sqlite}"
+default_projects_dir() {
+  local candidate
+  candidate="$(cd "$ROOT/.." && pwd)"
+  if [ "$(basename "$candidate")" = ".worktrees" ]; then
+    cd "$candidate/../.." && pwd
+  else
+    printf '%s\n' "$candidate"
+  fi
+}
+PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(default_projects_dir)}"
+
+sid="${CODEX_THREAD_ID:-}"
+[ -n "$sid" ] || exit 0
+
+context_marker() {
+  ruby -rjson -e '
+    def context_path
+      dir = File.expand_path(Dir.pwd)
+      loop do
+        path = File.join(dir, ".agent-context.json")
+        return path if File.file?(path)
+        parent = File.dirname(dir)
+        return nil if parent == dir
+        dir = parent
+      end
+    end
+
+    def titleize(value)
+      raw = value.to_s.tr("-", " ").strip
+      return "" if raw.empty?
+      raw[0].upcase + raw[1..].to_s
+    end
+
+    path = context_path
+    exit 0 unless path
+
+    data = JSON.parse(File.read(path))
+    mascot = titleize(data["mascot"])
+    head = [data["mascot_emoji"], mascot].map(&:to_s).map(&:strip).reject(&:empty?).join(" ")
+    parts = [head, data["app"], data["worktree_slug"] || data["feature"]].map(&:to_s).map(&:strip).reject(&:empty?)
+    puts parts.join(" · ") unless parts.empty?
+  ' 2>/dev/null || true
+}
+
+marker="$(context_marker)"
+
+if [ -z "${marker//[[:space:]]/}" ]; then
+  marker="$(
+    PROJECTS_DIR="$PROJECTS_DIR" ruby -rjson -e '
+      def titleize(value)
+        raw = value.to_s.tr("-", " ").strip
+        return "" if raw.empty?
+        raw[0].upcase + raw[1..].to_s
+      end
+
+      sid = ENV.fetch("CODEX_THREAD_ID", "").gsub(/[^A-Za-z0-9._-]/, "")
+      exit 0 if sid.empty?
+
+      path = File.join(ENV.fetch("PROJECTS_DIR"), ".agents", "sessions", "#{sid}.json")
+      exit 0 unless File.file?(path)
+
+      data = JSON.parse(File.read(path))
+      mascot = titleize(data["mascot"])
+      head = [data["mascot_emoji"], mascot].map(&:to_s).map(&:strip).reject(&:empty?).join(" ")
+      parts = [head, data["app"], data["worktree_slug"] || data["feature"]].map(&:to_s).map(&:strip).reject(&:empty?)
+      puts parts.join(" · ") unless parts.empty?
+    ' 2>/dev/null || true
+  )"
+fi
+
+if [ -z "${marker//[[:space:]]/}" ]; then
+  [ -x "$SESSION_KICKOFF" ] || exit 0
+  if ! marker="$(CODEX_SESSION_TITLE_RUNNING=1 "$SESSION_KICKOFF" 2>/dev/null)"; then
+    exit 0
+  fi
+fi
+
+# Collapse accidental newlines while preserving emoji and normal spacing.
+marker="$(printf '%s' "$marker" | awk 'NF { gsub(/[[:space:]]+/, " "); print; exit }')"
+[ -n "$marker" ] || exit 0
+
+sql_quote() {
+  # SQLite string literal quoting: ' becomes ''.
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"
+}
+
+if command -v "$SQLITE3" >/dev/null 2>&1 && [ -f "$CODEX_STATE_DB" ]; then
+  q_sid="$(sql_quote "$sid")"
+  q_marker="$(sql_quote "$marker")"
+  "$SQLITE3" -cmd ".timeout 1000" "$CODEX_STATE_DB" \
+    "UPDATE threads SET title = $q_marker WHERE id = $q_sid;" >/dev/null 2>&1 || true
+fi
+
+exit 0
