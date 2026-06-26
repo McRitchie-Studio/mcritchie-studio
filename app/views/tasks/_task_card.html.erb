@@ -98,9 +98,7 @@
         hover). %>
     <div class="mt-1 rounded-md border border-subtle bg-inset/60 px-2 py-1.5" data-test="activity-box">
       <div class="flex items-center gap-1.5 mb-0.5">
-        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading">
-          <%= latest_activity.activity_type_label %>
-        </span>
+        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"><%= latest_activity.activity_type_label %></span>
         <% if activity_count.to_i > 1 %>
           <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
         <% end %>

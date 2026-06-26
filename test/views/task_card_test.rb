@@ -18,6 +18,21 @@ class TaskCardTest < ActionView::TestCase
     assert_includes rendered, "Card render task"
   end
 
+  test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do
+    task = Task.create!(title: "Activity label task", stage: "submitted")
+    activity = Activity.create!(task_slug: task.slug, activity_type: "handoff",
+                                description: "First note")
+    Activity.create!(task_slug: task.slug, activity_type: "comment", description: "Second note")
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     latest_activity: activity, activity_count: 2 }
+
+    label = css_select("[data-test='activity-box'] span").first
+    assert_equal "Handoff", label.text,
+      "uppercase tracking-wide label must have no surrounding whitespace, else it shows a gap before the count"
+  end
+
   test "the partial is self-contained (no board @ivars) — renders with only its locals" do
     task = Task.create!(title: "Standalone card task", stage: "designed")
 
