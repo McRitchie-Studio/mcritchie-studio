@@ -177,9 +177,12 @@ class ApplicationHelperTest < ActionView::TestCase
 
     pills = css_select("[data-test='release-member-pill']")
     assert_not_includes pills.first["class"], "-ml-20"
+    assert_not_includes pills.first["style"], "box-shadow"
     pills.drop(1).each { |pill| assert_includes pill["class"], "-ml-20" }
     assert_includes pills[1]["style"], "z-index: 2;"
+    assert_includes pills[1]["style"], "box-shadow: -10px 0 14px -12px rgba(0, 0, 0, 0.95);"
     assert_includes pills[2]["style"], "z-index: 3;"
+    assert_includes pills[2]["style"], "box-shadow: -10px 0 14px -12px rgba(0, 0, 0, 0.95);"
   end
 
   test "[unit] release_tracker_steps maps release train updates" do

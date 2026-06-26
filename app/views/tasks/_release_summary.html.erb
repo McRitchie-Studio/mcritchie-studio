@@ -74,9 +74,10 @@
         <div class="isolate flex min-w-0 max-w-full flex-nowrap overflow-hidden pr-2" data-test="release-member-stack">
           <% members.each_with_index do |t, index| %>
             <% overlap_class = index.zero? ? "" : "-ml-20" %>
+            <% overlap_style = index.zero? ? nil : "box-shadow: -10px 0 14px -12px rgba(0, 0, 0, 0.95);" %>
             <%= link_to task_path(t.slug),
                         class: [pill_class, stacked_pill_class, overlap_class].reject(&:blank?).join(" "),
-                        style: "z-index: #{index + 1};",
+                        style: ["z-index: #{index + 1};", overlap_style].compact.join(" "),
                         data: { test: "release-member-pill" } do %>
               <%= app_emoji_badge(t.devops_repositories) %>
               <span class="min-w-0 truncate"><%= truncate(t.title, length: 42) %></span>
