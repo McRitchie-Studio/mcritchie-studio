@@ -101,30 +101,53 @@ module ReleaseNotes
       }.merge(overrides))
     end
 
-    test "task embed matches the locked reference card exactly" do
+    test "task card matches the locked reference shape (clean task, no blocker glyph, no image field)" do
       task = reference_card_task
-      embed = formatter_for(task).embeds.last
+      embeds = formatter_for(task).embeds
+      # Exactly one embed — a task card; NO summary embed leads the array.
+      assert_equal 1, embeds.size
 
+      # The exact-hash assertion also locks that the card carries no width-lock
+      # `image`/spacer field — only these five keys.
       assert_equal(
         {
           title: "Pin session mascot statusline",
           url: "https://mcritchie.studio/tasks/pin-session-mascot-statusline",
           color: 6_525_168, # 0x6390F0 — Omanyte's water signature color as a Discord int
-          description: "🪎   ·   $0.87   ·   ✅\nshipped 3:28 PM",
+          description: "🪎   ·   $0.87\nshipped 3:28 PM",
           thumbnail: { url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte.png" }
         },
-        embed
+        embeds.first
       )
     end
 
-    test "summary embed leads the array, green, with the headline title and production url" do
-      embeds = formatter_for(tasks(:done_task)).embeds
-      summary = embeds.first
+    test "discord_payload header is the H1 + H3 masked link, and embeds are task cards only" do
+      task = tasks(:done_task)
+      task.update!(metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+      payload = formatter_for(task, release: "rel-20260626-f2b187", url: "https://mcritchie.studio/").discord_payload
 
-      assert_equal 0x57F287, summary[:color]
-      assert_equal "🚀 Production deployed: McRitchie Studio v200 (abcdef1)", summary[:title]
-      assert_equal "https://mcritchie.studio/", summary[:url]
-      assert_equal tasks(:done_task).title, embeds.last[:title], "task cards follow the summary"
+      assert_equal(
+        "# 🚀 Production Deployment\n### [rel-20260626-f2b187 🪎](https://mcritchie.studio/)",
+        payload[:content]
+      )
+      assert_equal 1, payload[:embeds].size, "embeds are task cards only — no leading summary embed"
+      assert_equal task.title, payload[:embeds].first[:title]
+      refute(payload[:embeds].any? { |embed| embed[:title].to_s.include?("deployed") }, "no summary embed is emitted")
+    end
+
+    test "header app emojis are DISTINCT across all tasks, in APP_GROUPS order" do
+      studio = tasks(:done_task)
+      studio.update!(metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+      turf = tasks(:queued_task)
+      turf.update!(metadata: { "devops" => { "repositories" => %w[turf-monster mcritchie-studio] } })
+      engine = tasks(:new_task)
+      engine.update!(metadata: { "devops" => { "repositories" => ["studio-engine"] } })
+
+      content = formatter_for(studio, turf, engine, release: "rel-x").discord_payload[:content]
+
+      # mcritchie-studio appears on two tasks but its 🪎 is deduped, and the glyphs
+      # follow APP_GROUPS order: mcritchie-studio 🪎, turf-monster 🐊, studio-engine 💎.
+      assert_includes content, "### [rel-x 🪎🐊💎]"
     end
 
     test "color and thumbnail fall back to neutral grey with no thumbnail when the task has no mascot" do
@@ -162,12 +185,16 @@ module ReleaseNotes
       assert_includes formatter_for(free).embeds.last[:description], "—", "a zero-cost task shows an em-dash"
     end
 
-    test "description blocker glyph is ❌ when blocked_at is set, ✅ otherwise" do
-      blocked = tasks(:failed_task) # fixture carries blocked_at
-      assert_includes formatter_for(blocked).embeds.last[:description].split("\n").first, "❌"
+    test "blocker glyph: a clean task shows NOTHING, a blocked task appends ' · ⚠️'" do
+      clear = tasks(:queued_task) # no blocked_at
+      clear_line1 = formatter_for(clear).embeds.first[:description].split("\n").first
+      refute_includes clear_line1, "⚠️", "a clean task ends after the cost — no blocker glyph"
+      refute_includes clear_line1, "✅", "the old check glyph is gone"
+      refute_includes clear_line1, "❌", "the old cross glyph is gone"
 
-      clear = tasks(:queued_task)
-      assert_includes formatter_for(clear).embeds.last[:description].split("\n").first, "✅"
+      blocked = tasks(:failed_task) # fixture carries blocked_at
+      blocked_line1 = formatter_for(blocked).embeds.first[:description].split("\n").first
+      assert blocked_line1.end_with?("   ·   ⚠️"), "a blocked task appends the warning: #{blocked_line1.inspect}"
     end
 
     test "the shipped line is included with completed_at and skipped without it" do
@@ -178,18 +205,20 @@ module ReleaseNotes
       refute_includes formatter_for(unshipped).embeds.last[:description], "shipped"
     end
 
-    test "discord_payload sends embeds within the 9-card cap and falls back to text beyond it" do
+    test "discord_payload sends task-card embeds within the 9-card cap and falls back to text beyond it" do
       task = tasks(:done_task)
 
       nine = formatter_for(*Array.new(9) { task })
       assert nine.embeddable?
-      assert nine.discord_payload.key?(:embeds)
-      assert_equal 10, nine.discord_payload[:embeds].size, "summary + 9 cards = Discord's 10-embed max"
+      payload = nine.discord_payload
+      assert_equal 9, payload[:embeds].size, "task cards only — no summary embed prepended"
+      assert payload[:content].start_with?("# 🚀 Production Deployment"), "the deploy header rides in content"
 
       ten = formatter_for(*Array.new(10) { task })
       refute ten.embeddable?
-      assert ten.discord_payload.key?(:content), "an over-cap release falls back to the plain-text message"
-      assert_equal ten.message, ten.discord_payload[:content]
+      fallback = ten.discord_payload
+      assert_equal ten.message, fallback[:content], "an over-cap release falls back to the plain-text message"
+      refute fallback.key?(:embeds), "the text fallback prepends no embeds"
     end
   end
 end

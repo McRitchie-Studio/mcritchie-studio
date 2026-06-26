@@ -73,10 +73,14 @@ module Api
         assert_equal true, body.dig("data", "embedded")
         assert_equal ["task-bbb222"], body.dig("data", "task_slugs")
         assert_equal 1, delivered.size
-        embeds = delivered.first[:embeds]
+        payload = delivered.first
+        embeds = payload[:embeds]
         assert embeds.present?, "the controller hands rich embeds to the client"
-        assert_nil delivered.first[:content], "the embeds path sends no plain content"
         assert(embeds.any? { |embed| embed[:title] == "Admin users sticky table header" }, "the task card carries the title")
+        # The deploy header now rides in `content` (H1 + H3 masked link), not as a
+        # summary embed.
+        assert_equal "# 🚀 Production Deployment\n### [v72 🪎](https://mcritchie.studio/)", payload[:content]
+        refute(embeds.any? { |embed| embed[:title].to_s.include?("deployed") }, "no summary embed is emitted")
       end
 
       test "rejects missing task slugs" do
