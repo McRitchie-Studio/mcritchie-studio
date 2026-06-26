@@ -289,6 +289,43 @@ class Release
       release
     end
 
+    # The canonical role owner of each Deploy-lane stage — the actor stamped on the
+    # OPEN intent when the CLI doesn't pass one. Mirrors StageAgentsHelper::STAGE_OWNER
+    # (the view-layer backfill for actor-less completed transitions): Steffon
+    # (Platform Engineer) QAs the assembled RC, Avi runs the ship. Kept here, on the
+    # record side, so `record_deploy_intents!` defaults the actor without reaching
+    # into a helper.
+    DEPLOY_LANE_ACTORS = { "assembled" => "steffon", "shipped" => "avi" }.freeze
+
+    # Record the Deploy-lane OPEN intents that drive the live "who's on it now" crew
+    # ticker on /deployments + the consolidated Stage Timeline
+    # (StageAgentsHelper#in_progress_work reads the open intent for the member's NEXT
+    # pipeline stage): who is QA-ing the RC (Steffon → assembled) and who is shipping
+    # it (Avi → shipped) RIGHT NOW, recorded the moment `bin/release prepare` / `ship`
+    # starts that lane's work. This is the Deploy mirror of `bin/reviewer-select`,
+    # which records the heavy/light pair → reviewed by default. Without it the QA/ship
+    # crew slots render as empty dashed placeholders until the transition lands — the
+    # 2026-06-25 incident where the conductor had to hand-run `bin/task intent --to
+    # shipped --actor avi` and an unfilled ship slot slipped through mid-deploy.
+    #
+    # Records `Task#record_intent_event(to_stage:, actor:)` for EVERY member of
+    # `release`. Append-only + idempotent BY CONSTRUCTION (record_intent_event):
+    # an identical OPEN intent (same target + same actor) is REUSED rather than
+    # stacked, and the call NO-OPS (returns nil) once the member's transition into
+    # `to_stage` has already landed — so a re-run, or a member already past
+    # `to_stage`, never duplicates a row. The real transition supersedes the intent.
+    # `actor` defaults to the stage's canonical role owner (DEPLOY_LANE_ACTORS).
+    # Returns the slugs that carry a (new or reused) open intent toward `to_stage`.
+    def record_deploy_intents!(release, to_stage:, actor: nil)
+      return [] unless release
+
+      to_stage = to_stage.to_s
+      actor = (actor.presence || DEPLOY_LANE_ACTORS[to_stage]).to_s.strip.presence
+      release.ordered_members.filter_map do |task|
+        task.slug if task.record_intent_event(to_stage: to_stage, actor: actor)
+      end
+    end
+
     # Record a [post-deploy] outcome line on a member task's devops.checks_run —
     # the audit trail for the command the release pipeline ran on the deployed app
     # (`bin/release prepare` → QA app, `ship` → prod app). IDEMPOTENT: a re-run

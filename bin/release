@@ -800,6 +800,18 @@ def prepare
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
 
+  # 1b. Record the Steffon → assembled QA intent for every member so /deployments
+  #     shows him QA-ing the RC live the moment prepare starts — the Deploy mirror of
+  #     bin/reviewer-select's review intent (no more hand-run `bin/task intent --to
+  #     assembled --actor steffon`). Append-only + idempotent (record_intent_event
+  #     reuses an open intent and no-ops once a member's assembled transition has
+  #     landed). A board WRITE → suppressed in --dry-run (conductor prints the plan).
+  step("record: Steffon assembled QA intent (live crew ticker)")
+  conductor(
+    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'steffon'); " \
+    "puts({ intent: 'assembled', actor: 'steffon', members: n.size }.to_json)"
+  )
+
   # 2. Per-app: keep the persistent `release` branch ahead of main (merge-forward
   #    guard), then deploy origin/release to that app's QA. The branch is
   #    populated by PR merges, so there's NO branch-cut/member-merge here. Gems
@@ -1440,6 +1452,20 @@ def ship
   #     any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
   step("operator gate: Avi's full e2e passed on the frozen SHA — awaiting operator approval to deploy")
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
+
+  # 2c. The ship is now authorized + proceeding — record the Avi → shipped intent for
+  #     every member so /deployments shows him shipping LIVE (a green ticking timer)
+  #     through the deploy, instead of an empty dashed ship slot until `ship!` lands
+  #     (the 2026-06-25 unfilled-ship-slot incident). Recorded AFTER the operator gate
+  #     so a declined ship never shows Avi shipping. Append-only + idempotent
+  #     (record_intent_event reuses the open intent; `ship!` supersedes it). On a
+  #     partial-ship abort the intent stays open — correct (Avi is still shipping) and
+  #     a re-run reuses it. A board WRITE → suppressed in --dry-run.
+  step("record: Avi shipped intent (live crew ticker)")
+  conductor(
+    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'avi'); " \
+    "puts({ intent: 'shipped', actor: 'avi', members: n.size }.to_json)"
+  )
 
   # 3. Gems FIRST (producer-first): publish (skip-if-live; yank safety = `gem push`
   #    fails closed on a yanked number) + ff.
