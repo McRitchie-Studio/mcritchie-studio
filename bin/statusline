@@ -33,6 +33,14 @@ s_in() { printf '%s' "$input" | "$JQ" -r "$1 // empty" 2>/dev/null; }
 cwd=$(s_in '.workspace.current_dir'); [ -z "$cwd" ] && cwd=$(s_in '.cwd'); [ -z "$cwd" ] && cwd="$PWD"
 model=$(s_in '.model.display_name')
 
+agent_session_id() {
+  if [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
+    printf '%s' "$CLAUDE_CODE_SESSION_ID"
+  elif [ -n "$CODEX_THREAD_ID" ]; then
+    printf '%s' "$CODEX_THREAD_ID"
+  fi
+}
+
 # ANSI
 A=$'\033[38;5;75m'    # app slug
 F=$'\033[38;5;179m'   # feature slug
@@ -51,13 +59,15 @@ link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperl
 TASK_BIN="${TASK_BIN:-$(dirname "$0")/task}"
 heartbeat_claim() {  # slug stage
   local slug="$1" stage="$2"
+  local sid
+  sid=$(agent_session_id)
   [ -z "$slug" ] && return 0
-  [ -z "$CLAUDE_CODE_SESSION_ID" ] && return 0
+  [ -z "$sid" ] && return 0
   [ -x "$TASK_BIN" ] || return 0
   # Only the live BUILD claim matters (stage empty ⇒ unknown context, still renew).
   case "$stage" in ""|building) ;; *) return 0 ;; esac
   local mdir="$PROJECTS/.agents/sessions"
-  local marker="$mdir/${CLAUDE_CODE_SESSION_ID}.heartbeat"
+  local marker="$mdir/${sid}.heartbeat"
   local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
   if [ -f "$marker" ]; then
     local mtime age
@@ -174,8 +184,10 @@ render() {  # app feature task url stage mascot mascot_color mascot_emoji app_co
   [ -n "$stage" ] && out="${out}  ${D}[${stage}]${X}"
   # Session last-4 (e.g. …12ab) — which terminal/session this is, for resume.
   # Portable last-4 (bash 3.2-safe): strip everything but the trailing 4 chars.
-  if [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
-    out="${out} ${D}…${CLAUDE_CODE_SESSION_ID#${CLAUDE_CODE_SESSION_ID%????}}${X}"
+  local sid
+  sid=$(agent_session_id)
+  if [ -n "$sid" ]; then
+    out="${out} ${D}…${sid#${sid%????}}${X}"
   fi
   # Lead with the OSC 0 tab title (zero-width: the terminal sets the tab, Claude
   # renders the visible rest). OSC 8 hyperlinks already pass through Claude's status
@@ -187,8 +199,9 @@ render() {  # app feature task url stage mascot mascot_color mascot_emoji app_co
 ctx="$cwd/.agent-context.json"
 src=""
 [ -f "$ctx" ] && src="$ctx"                                       # worktree session: per-worktree context
-if [ -z "$src" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ]; then
-  sm="$PROJECTS/.agents/sessions/$CLAUDE_CODE_SESSION_ID.json"    # per-session marker (no cross-session leak)
+sid=$(agent_session_id)
+if [ -z "$src" ] && [ -n "$sid" ]; then
+  sm="$PROJECTS/.agents/sessions/$sid.json"    # per-session marker (no cross-session leak)
   [ -f "$sm" ] && src="$sm"
 fi
 

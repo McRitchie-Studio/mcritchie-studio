@@ -12,6 +12,7 @@ require "minitest/autorun"
 require "json"
 require "open3"
 require "tmpdir"
+require "fileutils"
 
 class StatuslineTest < Minitest::Test
   BIN = File.expand_path("../../bin/statusline", __dir__)
@@ -21,7 +22,7 @@ class StatuslineTest < Minitest::Test
   # real Claude Code shape) so render() runs from a known context file. The
   # context carries ALL fields a real worktree context has (sparse ones trip
   # bash's IFS-whitespace tab collapsing). `session` nil deletes the env var.
-  def render_in(session:, extra: {})
+  def render_in(session:, extra: {}, provider: :claude)
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, ".agent-context.json"), JSON.generate({
         "app" => "mcritchie-studio",
@@ -30,8 +31,33 @@ class StatuslineTest < Minitest::Test
         "task_url" => "https://mcritchie.studio/tasks/session-resume-on-tasks",
         "stage" => "building"
       }.merge(extra)))
-      env = { "CLAUDE_CODE_SESSION_ID" => session }
+      env = if provider == :codex
+              { "CODEX_THREAD_ID" => session, "CLAUDE_CODE_SESSION_ID" => nil }
+            else
+              { "CLAUDE_CODE_SESSION_ID" => session, "CODEX_THREAD_ID" => nil }
+            end
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
+      out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+      out
+    end
+  end
+
+  def render_session_marker_in(session:, extra: {}, provider: :codex)
+    Dir.mktmpdir do |projects|
+      sessions = File.join(projects, ".agents", "sessions")
+      FileUtils.mkdir_p(sessions)
+      File.write(File.join(sessions, "#{session}.json"), JSON.generate({
+        "app" => "mcritchie-studio",
+        "mascot" => "arcanine",
+        "mascot_color" => "#EE8130",
+        "mascot_emoji" => "🔥"
+      }.merge(extra)))
+      env = if provider == :codex
+              { "CODEX_THREAD_ID" => session, "CLAUDE_CODE_SESSION_ID" => nil, "CLAUDE_PROJECTS_DIR" => projects }
+            else
+              { "CLAUDE_CODE_SESSION_ID" => session, "CODEX_THREAD_ID" => nil, "CLAUDE_PROJECTS_DIR" => projects }
+            end
+      stdin = JSON.generate("workspace" => { "current_dir" => projects })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
     end
@@ -47,6 +73,14 @@ class StatuslineTest < Minitest::Test
     out = render_in(session: nil)
     refute_includes out, "…a617", "no session → no last-4 segment"
     assert_includes out, "[building]", "the no-session path must still render the stage"
+  end
+
+  def test_reads_codex_session_marker
+    out = render_session_marker_in(session: SESSION, provider: :codex)
+    assert_includes out, "🔥", "the Codex marker's type emoji leads"
+    assert_includes out, "Arcanine"
+    assert_includes out, "mcritchie-studio"
+    assert_includes out, "…a617", "Codex thread id gets the same last-4 suffix"
   end
 
   # --- Mascot tint: the <mascot> name wears its least-common type color --------
@@ -129,6 +163,7 @@ class StatuslineTest < Minitest::Test
 
       env = {
         "CLAUDE_CODE_SESSION_ID" => session,
+        "CODEX_THREAD_ID" => nil,
         "TASK_BIN" => stub,
         "STATUSLINE_HEARTBEAT_FG" => "1",
         "CLAUDE_PROJECTS_DIR" => File.join(dir, "projects")
