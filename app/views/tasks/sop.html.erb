@@ -1,0 +1,101 @@
+<% content_for(:title, "DevOps SOP — Infographic") %>
+
+<section class="min-h-screen">
+  <div class="flex items-center gap-3 text-xs mb-3">
+    <%= link_to "← Stages", stages_path, class: "text-muted hover:text-primary" %>
+    <span class="text-subtle">·</span>
+    <%= link_to "Deployments", deployments_path, class: "text-muted hover:text-primary" %>
+  </div>
+
+  <div class="flex items-center gap-4 mb-2 flex-wrap">
+    <h2 class="text-2xl font-bold text-heading">DevOps SOP</h2>
+    <span class="text-xs text-muted uppercase tracking-wide">accountability swimlanes</span>
+  </div>
+  <p class="text-muted text-sm mb-3 max-w-3xl leading-relaxed">
+    The cycle as <b class="text-secondary">accountability lanes</b> — one row per owner, steps flowing
+    left → right. Node colors mark the <b class="text-secondary">kind</b> of step; amber
+    <b class="text-amber-700 dark:text-amber-300">◇ pulses</b> are live intent markers (who's on it
+    right now). <b class="text-secondary">Click any step</b> to expand its Owner, Expectation, and Gate.
+    A <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] align-middle">⚠</span>
+    flags where this picture differs from the implemented model.
+  </p>
+  <p class="text-[12.5px] text-body mb-4 max-w-3xl rounded-lg border border-subtle bg-surface-alt px-3 py-2 leading-relaxed">
+    <%= sop_owner_definition %>
+  </p>
+
+  <%# Legend — one chip per node type. %>
+  <div class="flex flex-wrap gap-2 mb-6 text-[11px]">
+    <% [:stage, :test, :review, :merge, :deploy, :pulse, :stage_update].each do |ty| %>
+      <% t = sop_node_type(ty) %>
+      <span class="inline-flex items-center gap-1 px-2 py-1 rounded border <%= t[:classes] %>">
+        <span><%= t[:icon] %></span><span><%= t[:kind] %></span>
+      </span>
+    <% end %>
+  </div>
+
+  <style>[x-cloak]{display:none !important}</style>
+  <%# Swimlanes — one row per accountable owner. Click any step to expand its detail. %>
+  <div class="space-y-4">
+    <% devops_sop_lanes.each do |lane| %>
+      <div x-data="{ open: null }" class="rounded-2xl border border-subtle bg-surface p-4">
+        <div class="flex items-start gap-4">
+          <%# Owner badge. %>
+          <div class="flex flex-col items-center gap-1 flex-shrink-0 w-24 pt-2 text-center" title="<%= lane[:owner_note] %>">
+            <div class="w-14 h-14 rounded-full border-2 border-primary/40 bg-primary/10 text-primary flex items-center justify-center text-lg font-bold">
+              <%= lane[:owner].first %>
+            </div>
+            <span class="text-xs font-semibold text-heading leading-tight"><%= lane[:owner] %></span>
+            <span class="text-[10px] text-muted uppercase tracking-wide"><%= lane[:lane] %></span>
+          </div>
+          <%# Steps — horizontal, scrolls on narrow screens. Each step is a button. %>
+          <div class="flex-1 overflow-x-auto pb-2">
+            <div class="flex items-center gap-1 min-w-max py-1">
+              <% lane[:steps].each_with_index do |step, i| %>
+                <% if i.positive? %>
+                  <div class="flex items-center text-muted px-1 flex-shrink-0 text-lg">→</div>
+                <% end %>
+                <button type="button" @click="open = (open === <%= i %> ? null : <%= i %>)"
+                        :class="open === <%= i %> ? 'ring-2 ring-primary/70 rounded-2xl' : (open !== null ? 'opacity-60' : '')"
+                        class="flex-shrink-0 cursor-pointer transition focus:outline-none">
+                  <%= render "tasks/sop_node", step: step %>
+                </button>
+              <% end %>
+            </div>
+          </div>
+        </div>
+
+        <%# Expand-on-click detail for the selected step (Owner / Expectation / Gate). %>
+        <% lane[:steps].each_with_index do |step, i| %>
+          <% t = sop_node_type(step[:type]) %>
+          <div x-show="open === <%= i %>" x-cloak class="mt-3 rounded-xl border border-subtle bg-surface-alt p-4">
+            <div class="flex items-center gap-2 mb-2.5">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] <%= t[:classes] %>"><%= t[:icon] %> <%= t[:kind] %></span>
+              <span class="font-bold text-heading text-sm"><%= step[:label] %></span>
+            </div>
+            <dl class="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2 text-sm">
+              <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Owner</dt>
+              <dd class="text-body"><span class="font-semibold text-primary"><%= lane[:owner] %></span> <span class="text-muted">(<%= lane[:owner_note] %>)</span></dd>
+              <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Expectation</dt>
+              <dd class="text-body"><%= step[:expectation] %></dd>
+              <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Gate</dt>
+              <dd class="text-secondary font-medium"><%= step[:gate] %></dd>
+              <% if step[:note].present? %>
+                <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Ref</dt>
+                <dd class="text-body"><%= step[:note] %></dd>
+              <% end %>
+              <% if step[:diverges].present? %>
+                <dt class="text-[11px] uppercase tracking-wide text-amber-600 dark:text-amber-400 font-semibold pt-0.5">⚠ Diverges</dt>
+                <dd class="text-amber-700 dark:text-amber-300"><%= step[:diverges] %></dd>
+              <% end %>
+            </dl>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <p class="text-[11px] text-muted mt-6 max-w-3xl leading-relaxed">
+    Click any step for its Owner · Expectation · Gate. The ⚠ points are where this model and the
+    implemented code still diverge — the diagram is where we reconcile them.
+  </p>
+</section>

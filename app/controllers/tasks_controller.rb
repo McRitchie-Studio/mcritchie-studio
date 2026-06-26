@@ -1,7 +1,7 @@
 class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show, :deployments, :stages]
-  before_action :require_admin, except: [:index, :show, :deployments, :stages]
+  skip_before_action :require_authentication, only: [:index, :show, :deployments, :stages, :sop]
+  before_action :require_admin, except: [:index, :show, :deployments, :stages, :sop]
   before_action :set_task, only: [:show, :edit, :update, :destroy, :comment]
 
   def reorder
@@ -36,6 +36,12 @@ class TasksController < ApplicationController
 
   # /stages — the two-workflow stage guide (vertical swimlanes, side by side).
   def stages
+  end
+
+  # /stages/sop — the operator's DevOps SOP as an accountability-swimlane
+  # infographic (one row per owner). Static guide; data lives in
+  # ApplicationHelper#devops_sop_lanes. Public-read like /stages.
+  def sop
   end
 
   def show

@@ -1,0 +1,33 @@
+<% t = sop_node_type(step[:type]) %>
+<% if step[:type] == :pulse %>
+  <%# Pulse = a live "intent" marker (who's on it now). Diamond with upright text. %>
+  <div class="flex-shrink-0 flex items-center justify-center" data-sop-node="pulse">
+    <div class="w-24 h-24 flex items-center justify-center border <%= t[:classes] %> animate-pulse"
+         style="clip-path: polygon(50% 4%, 96% 50%, 50% 96%, 4% 50%);">
+      <div class="text-center leading-tight px-2">
+        <div class="text-[9px] uppercase tracking-wide opacity-70">Pulse</div>
+        <div class="text-xs font-semibold"><%= step[:label] %></div>
+      </div>
+    </div>
+  </div>
+<% else %>
+  <div class="relative flex-shrink-0 w-36" data-sop-node="<%= step[:type] %>">
+    <div class="rounded-xl border <%= t[:classes] %> p-3 h-24 flex flex-col justify-center">
+      <div class="flex items-center gap-1 text-[9px] uppercase tracking-wider opacity-70 mb-1">
+        <span><%= t[:icon] %></span><span><%= t[:kind] %></span>
+      </div>
+      <% if step[:type] == :stage_update && step[:stage] %>
+        <span class="self-start px-2 py-0.5 rounded text-xs font-bold <%= task_stage_count_classes(step[:stage]) %>"><%= step[:label] %></span>
+      <% else %>
+        <div class="text-sm font-semibold leading-tight text-heading"><%= step[:label] %></div>
+      <% end %>
+      <% if step[:note] %>
+        <div class="text-[10px] text-muted mt-1 leading-tight"><%= step[:note] %></div>
+      <% end %>
+    </div>
+    <% if step[:diverges] %>
+      <span class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500 text-white text-[11px] flex items-center justify-center cursor-help shadow-md"
+            title="<%= step[:diverges] %>" data-sop-diverges>⚠</span>
+    <% end %>
+  </div>
+<% end %>

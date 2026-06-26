@@ -1,0 +1,152 @@
+# config/devops_vocabulary.yml
+#
+# SINGLE SOURCE OF TRUTH for the DevOps SOP vocabulary. Rendered at /stages/sop
+# (the operator-facing infographic) and read by ApplicationHelper via
+# Devops::Vocabulary. Rename a term HERE and it flows to the UI in one edit;
+# reviewer-select + the docs reference these same names so they cannot drift.
+#
+# Each lane has ONE accountable OWNER (the "primary"): checks in at the start
+# (a Pulse = an intent event), runs the tests + steps in the middle, and updates
+# the status at the end. A Pulse is drawn ONLY where a real intent event fires
+# (build mascot · review pair · Steffon@assemble · Avi@ship) — not per sub-step.
+
+owner_definition: >-
+  Owner = the agent accountable for the whole lane: checks in at the start (intent
+  event), runs the tests and steps in the middle, and updates the status at the end.
+
+# The two review roles (generalizable: "primary" = the accountable owner of any
+# step; "light" = a focused second pass where a step warrants one).
+reviewer_roles:
+  primary: The accountable owner of the step — most domain depth, usually the longest pass.
+  light: A focused second-pass approval.
+
+# Visual treatment per node type. Structure uses theme tokens (flip dark/light);
+# accents pair a translucent fill with a token-readable text color in both themes.
+node_types:
+  stage:        { kind: "Stage",        icon: "▦",  classes: "border-subtle bg-surface text-heading" }
+  test:         { kind: "Test Suite",   icon: "⌗",  classes: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300" }
+  review:       { kind: "Review",       icon: "👁", classes: "border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300" }
+  merge:        { kind: "Merge",        icon: "⇄",  classes: "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300" }
+  deploy:       { kind: "Deployment",   icon: "⊳",  classes: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" }
+  pulse:        { kind: "Pulse",        icon: "◇",  classes: "border-amber-500/50 bg-amber-400/15 text-amber-700 dark:text-amber-300" }
+  stage_update: { kind: "Stage Update", icon: "●",  classes: "border-subtle bg-surface-alt text-heading" }
+
+lanes:
+  - owner: Builder
+    lane: Build
+    end_stage: submitted
+    owner_note: the per-task agent; its Pokemon mascot IS the build intent
+    steps:
+      - type: pulse
+        label: Builder on it
+        expectation: "Live intent: the task's Pokemon mascot — the build is claimed and in flight."
+        gate: "—"
+      - type: stage
+        label: Building
+        expectation: "Build to the accepted criteria; write the shape's test tiers as you go (unit-first; a bug gets its red regression test first)."
+        gate: self-paced
+      - type: test
+        label: PR Review
+        expectation: "Certify the FULL suite + FULL rubocop green at the exact tree (fingerprint-bound)."
+        gate: bin/full-suite-check then bin/dor-check
+      - type: stage_update
+        label: Submitted
+        stage: submitted
+        expectation: "Open the PR (base release) led by the task URL; record checks_run; move to submitted."
+        gate: self-gate, then hands off to review
+
+  - owner: Primary Reviewer
+    lane: Review
+    end_stage: reviewed
+    owner_note: "the PRIMARY reviewer: the deep-pass senior picked per task (most domain depth, usually the longest step). The LIGHT reviewer is a second approval; Avi delegates and confirms product-acceptance."
+    steps:
+      - type: pulse
+        label: Reviewers on it
+        expectation: "Live intent: reviewer-select records the primary + light pair the moment Avi kicks off review."
+        gate: "—"
+      - type: test
+        label: PR Review
+        expectation: "Confirm the shape's base tiers (unit/component) are green for the change."
+        gate: base tiers green
+      - type: review
+        label: Visual
+        expectation: "Primary runs the deep pass: diff-vs-acceptance, code standards, smell, scalability. Light runs a focused pass."
+        gate: 2 approvals (primary + light), else block with qa_feedback
+      - type: merge
+        label: Release Branch
+        expectation: "Merge the PR into the persistent release branch; membership flips reviewed to assembled."
+        gate: deterministic; a conflict surfaces here
+        diverges: "Today the CONDUCTOR runs bin/release merge, not the reviewer. Your model gives the primary reviewer the whole lane."
+      - type: test
+        label: Merge Review
+        expectation: "Confirm the merge is clean on origin/release (integrating broke nothing)."
+        gate: green on origin/release
+      - type: stage_update
+        label: Reviewed
+        stage: reviewed
+        expectation: "The primary reviewer updates the status to Reviewed."
+        gate: 2 approvals (primary + light)
+
+  - owner: Steffon
+    lane: Assemble
+    end_stage: assembled
+    owner_note: "Platform Engineer. Owns from Reviewed: checks in, runs the QA tier and deploys, updates the status to Assembled. This lane IS the execution of 'assembling'."
+    steps:
+      - type: pulse
+        label: Steffon on it
+        expectation: "Live intent: bin/release prepare records Steffon's QA intent over every release member."
+        gate: "—"
+      - type: test
+        label: Merge Review
+        expectation: "Run the next tier (integration + an e2e-smoke) on origin/release."
+        gate: regression blocks the task
+      - type: merge
+        label: Main Branch
+        expectation: "(Diagram step) merge main forward into the release line."
+        gate: "—"
+        diverges: "Today main only fast-forwards to release at SHIP (Avi's lane). Assemble deploys origin/release to QA; main does not move here."
+      - type: deploy
+        label: QA
+        expectation: "bin/release prepare: deploy origin/release to the QA app, then poll /up."
+        gate: wait_for_boot returns 200
+      - type: test
+        label: QA Acceptance
+        expectation: "The QA tier (integration + e2e-smoke) is green on the deployed candidate."
+        gate: deterministic suite
+      - type: stage_update
+        label: Assembled
+        stage: assembled
+        expectation: "Steffon updates the status to Assembled: the QA candidate is ready."
+        gate: QA booted and suite green
+
+  - owner: Avi
+    lane: Ship
+    end_stage: shipped
+    owner_note: "Owns the ship: runs the full e2e on the frozen ship SHA, then stops for the operator's go before prod."
+    steps:
+      - type: pulse
+        label: Avi on it
+        expectation: "Live intent: bin/release ship records Avi's ship intent over every release member."
+        gate: "—"
+      - type: test
+        label: QA Acceptance
+        expectation: "Avi runs the full e2e + highest tier on the FROZEN ship SHA (the exact prod commit)."
+        gate: avi_ship_gate aborts on any failure
+      - type: review
+        label: Visual
+        expectation: "Avi re-confirms the acceptance criteria on the frozen SHA (checked twice by design)."
+        gate: "—"
+      - type: deploy
+        label: Prod
+        expectation: "Fast-forward release to main per repo, deploy, smoke /up, run post_deploy_cmd."
+        gate: "the ONE operator gate: after Avi's tests, before the deploy"
+      - type: stage_update
+        label: Shipped
+        stage: shipped
+        expectation: "Members flip to Shipped; release notes auto-post."
+        gate: production /up 200
+      - type: test
+        label: Smoke Test
+        note: PR #249
+        expectation: "production-smoke-seal kicks the tires on prod (read-only @qa-readonly) and stamps a seal."
+        gate: seal alert (non-blocking)
