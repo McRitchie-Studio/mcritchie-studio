@@ -10,16 +10,16 @@ module ReleaseNotes
       { key: "rolio", label: "Rolio", emoji: "📇", aliases: ["rolio"] }
     ].freeze
 
-    # Discord caps a single message at 10 embeds, so a rich render fits one summary
-    # embed + up to 9 task cards. A release with more shipped tasks than that falls
-    # back to the plain-text `message` layout (see #discord_payload).
-    DISCORD_MAX_EMBEDS = 10
-    MAX_TASK_EMBEDS = DISCORD_MAX_EMBEDS - 1
-    # Embed accent colors (Discord wants an integer, not a hex string).
-    SUMMARY_COLOR = 0x57F287 # green — the deploy headline
+    # Discord caps a single message at 10 embeds. The deploy header now rides in the
+    # message `content` (an H1 + an H3 masked link), NOT as a lead embed, so all 10
+    # slots could be task cards — but the operator keeps the render to at most 9
+    # cards; a bigger release falls back to the plain-text `message` layout (see
+    # #discord_payload).
+    MAX_TASK_EMBEDS = 9
     NEUTRAL_COLOR = 0x2B2D31 # Discord's card grey — a task with no mascot tint
-    # description line 1 joins app-emojis · cost · blocker with this spacer.
+    # description line 1 joins app-emojis · cost (· ⚠️ when blocked) with this spacer.
     FIELD_SEPARATOR = "   ·   ".freeze
+    BLOCKED_GLYPH = "⚠️".freeze
     # completed_at render for the "shipped …" line (e.g. "3:28 PM").
     SHIPPED_TIME_FORMAT = "%-l:%M %p".freeze
 
@@ -45,38 +45,57 @@ module ReleaseNotes
     end
 
     # The Discord message payload to deliver, ready to splat into
-    # DiscordClient.deliver. Rich embeds when the release fits Discord's 10-embed
-    # cap (summary + up to 9 task cards), otherwise the plain-text `message`
-    # fallback so a big release still ships its notes.
+    # DiscordClient.deliver. When the release fits the card cap: the two-line
+    # markdown deploy header in `content` (H1 + an H3 masked link to the deploy)
+    # plus one embed per shipped task. A bigger release falls back to the
+    # plain-text `message` as content with NO embeds.
     def discord_payload
-      embeddable? ? { embeds: embeds } : { content: message }
+      if embeddable?
+        { content: header_content, embeds: embeds }
+      else
+        { content: message }
+      end
     end
 
-    # True when the release fits the embed render — a summary embed plus one card
-    # per task, within Discord's 10-embed-per-message cap.
+    # True when the release fits the card render — at most MAX_TASK_EMBEDS cards.
     def embeddable?
       @tasks.size <= MAX_TASK_EMBEDS
     end
 
-    # The ordered embed array: the green summary headline FIRST (index 0), then one
-    # rich card per shipped task. Only meaningful when #embeddable? — a caller picks
-    # via #discord_payload.
+    # One rich card per shipped task — the deploy header rides in `content`, not as
+    # a lead embed, so this is task cards ONLY. Only meaningful when #embeddable? —
+    # a caller picks via #discord_payload.
     def embeds
-      [summary_embed] + @tasks.map { |task| task_embed(task) }
+      @tasks.map { |task| task_embed(task) }
     end
 
     private
 
-    # The leading deploy-summary embed — the headline + production url in green.
-    def summary_embed
-      embed = { title: headline, color: SUMMARY_COLOR }
-      embed[:url] = @url if @url.present?
-      embed
+    # The two-line markdown deploy header that leads the message `content` (NOT an
+    # embed):
+    #   # 🚀 Production Deployment
+    #   ### [<release tag> <distinct app emojis>](<production url>)
+    # Line 2 is an H3-sized masked link — Discord renders `### [text](url)` so.
+    def header_content
+      ["# 🚀 Production Deployment", release_link_line].join("\n")
+    end
+
+    def release_link_line
+      label = [@release.presence, release_app_emojis.presence].compact.join(" ")
+      @url.present? ? "### [#{label}](#{@url})" : "### #{label}"
+    end
+
+    # The DISTINCT app emojis across EVERY task in the release, in APP_GROUPS order
+    # — one glyph per app touched (deduped), concatenated. A single-app release
+    # yields one emoji.
+    def release_app_emojis
+      repos = @tasks.flat_map(&:devops_repositories).map { |repo| repo.to_s.strip }
+      APP_GROUPS.filter_map { |group| group[:emoji] if repos.any? { |repo| group[:aliases].include?(repo) } }.join
     end
 
     # One rich card for a shipped task: clickable title, mascot type-tint color,
-    # the mascot's HD avatar thumbnail, and the two-line app/cost/blocker + shipped
-    # description.
+    # the mascot's HD avatar thumbnail, and the two-line app/cost(/blocker) +
+    # shipped description.
     def task_embed(task)
       embed = {
         title: task.title,
@@ -89,10 +108,13 @@ module ReleaseNotes
       embed
     end
 
-    # Line 1: "{app_emojis}   ·   {cost}   ·   {blocker}". Line 2 (when shipped):
-    # "shipped {time}". Joined with a newline.
+    # Line 1: "{app_emojis}   ·   {cost}", with "   ·   ⚠️" appended ONLY when the
+    # task is blocked (a clean task ends after the cost — no glyph). Line 2 (when
+    # shipped): "shipped {time}". Joined with a newline.
     def task_description(task)
-      lines = [[app_emojis(task), task_cost(task), task_blocker(task)].join(FIELD_SEPARATOR)]
+      line1 = [app_emojis(task), task_cost(task)].join(FIELD_SEPARATOR)
+      line1 += "#{FIELD_SEPARATOR}#{BLOCKED_GLYPH}" if task.blocked_at.present?
+      lines = [line1]
       shipped = shipped_line(task)
       lines << shipped if shipped
       lines.join("\n")
@@ -110,10 +132,6 @@ module ReleaseNotes
       return "—" if cost.nil? || cost.zero?
 
       format("$%.2f", cost)
-    end
-
-    def task_blocker(task)
-      task.blocked_at.present? ? "❌" : "✅"
     end
 
     # "shipped 3:28 PM" from completed_at, or nil when the task never shipped (the

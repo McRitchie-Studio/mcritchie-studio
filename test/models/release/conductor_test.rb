@@ -691,7 +691,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     rel
   end
 
-  test "post_release_notes builds rich embeds and hands them to the client" do
+  test "post_release_notes builds the header content + task-card embeds and hands them to the client" do
     rel = shipped_release
     delivered = nil
     ReleaseNotes::DiscordClient.stub(:deliver, ->(content: nil, embeds: nil) { delivered = { content: content, embeds: embeds } }) do
@@ -700,10 +700,13 @@ class Release::ConductorTest < ActiveSupport::TestCase
       assert result[:message].present?, "still returns the text render for preview"
     end
     assert delivered[:embeds].present?, "a fitting release ships rich embeds"
-    assert_nil delivered[:content], "the embeds path sends no plain content"
-    # Summary embed (index 0) + the one member card.
-    assert_equal 2, delivered[:embeds].size
-    assert_equal 0x57F287, delivered[:embeds].first[:color], "the lead summary embed is green"
+    assert_equal 1, delivered[:embeds].size, "task cards ONLY — no summary embed prepended"
+    # The deploy header rides in `content`: H1 + an H3 masked link to the deploy.
+    header = delivered[:content]
+    assert header.start_with?("# 🚀 Production Deployment\n### ["), "H1 + H3 masked link"
+    assert_includes header, "🪎", "the single-app release shows its app glyph"
+    assert_includes header, rel.slug, "the H3 carries the release tag"
+    assert_includes header, "](https://example.test)", "the H3 links to the production url"
   end
 
   test "post_release_notes dry_run builds the message without delivering" do
