@@ -1624,12 +1624,14 @@ def git_worktree_dirs(repo)
   ok, out, = capture_status("git", "-C", repo, "worktree", "list", "--porcelain")
   return [] unless ok
 
-  out.lines.filter_map do |line|
+  dirs = []
+  out.lines.each do |line|
     line = line.chomp
     next unless line.start_with?("worktree ")
 
-    canonical_path(line.delete_prefix("worktree "))
+    dirs << canonical_path(line.delete_prefix("worktree "))
   end
+  dirs
 end
 
 # Pure reconciliation (set difference): any git-registered worktree that is
@@ -1901,16 +1903,42 @@ end
 
 def cleanup_reason(record)
   base = record[:base_ref] || "origin/main"
+  operational = "health #{stack_health(record)}, Redis DB #{record[:redis_db]}, database #{cleanup_database_summary(record)}"
   if record[:merged]
-    "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in #{base}."
+    "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in #{base}; #{operational}."
   else
-    "Hidden worktree; branch `#{record[:branch]}` is clean and its final diff against #{base} is empty, usually after a squash merge."
+    "Hidden worktree; branch `#{record[:branch]}` is clean and its final diff against #{base} is empty, usually after a squash merge; #{operational}."
   end
+end
+
+def cleanup_database_summary(record)
+  db = record[:db_name].to_s
+  return "unknown" if db.empty?
+  return db if record[:db_exists].nil?
+
+  "#{db}:#{record[:db_exists] ? "ok" : "missing"}"
+end
+
+def cleanup_safety_label(record)
+  record[:merged] ? "merged" : "base-equivalent"
+end
+
+def cleanup_command(record)
+  "bin/agent-worktree remove #{record[:app].fetch("slug")} #{record[:task]} --yes"
+end
+
+def print_cleanup_candidate(record)
+  puts "  - #{record[:app].fetch("slug")}/#{record[:task]}"
+  puts "    worktree: #{record[:dir]}"
+  puts "    safe: #{cleanup_safety_label(record)} on #{record[:base_ref]} (clean, +#{record[:ahead]}/-#{record[:behind]})"
+  puts "    branch: #{record[:branch]} @ #{record[:head]}"
+  puts "    stack: #{stack_health(record)} /up=#{record[:code]} pid=#{record[:pidfile_state]} redis=#{record[:redis_db]} db=#{cleanup_database_summary(record)}"
+  puts "    remove: #{cleanup_command(record)}"
 end
 
 def cleanup_row(record, status: "pending approval")
   path = record[:dir]
-  command = "bin/agent-worktree remove #{record[:app].fetch("slug")} #{record[:task]} --yes"
+  command = cleanup_command(record)
   condition = status.start_with?("removed") ? "Removed with `#{command}` during approved lifecycle cleanup." : "Remove with `#{command}` after operator approval."
   "| `#{path}` | worktree | #{cleanup_reason(record)} | #{condition} | #{status} |"
 end
@@ -1943,7 +1971,7 @@ def run_cleanup(app = nil, write: false)
   end
 
   puts "cleanup candidates:"
-  candidates.each { |record| puts "  - #{record[:app].fetch("slug")}/#{record[:task]} #{record[:dir]}" }
+  candidates.each { |record| print_cleanup_candidate(record) }
 
   unless write
     puts
@@ -2045,9 +2073,7 @@ def run_reclaim(app = nil, yes: false)
 
   unless yes
     puts "reclaim candidates:"
-    candidates.each do |record|
-      puts "  - #{record[:app].fetch("slug")}/#{record[:task]} redis=#{record[:redis_db]} #{record[:dir]}"
-    end
+    candidates.each { |record| print_cleanup_candidate(record) }
     puts
     puts "dry run only. Re-run with --reclaim --yes to stop each stack, flush its Redis DB, remove the worktree, delete the local branch, scale the band in, and refresh the registry."
     return
