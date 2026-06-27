@@ -132,6 +132,23 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-1", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].py-1", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'] div.mb-0.leading-none", count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-2", count: 0
+  end
+
+  test "long title and activity text are line-clamped instead of horizontally clipped" do
+    task = Task.create!(title: "Long Card Title", stage: "submitted")
+    task.update_column(:title, "Long Board Card Title That Must Stay Inside The Card")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                     description: "QA review found one remaining visual regression in the board card and the note should stay inside the activity box.")
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} > a.line-clamp-2.break-words", text: /Long Board Card Title/
+    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words",
+                  text: /QA review found one remaining visual regression/
+    assert_select "#card-#{task.slug} > a [x-ref='fadeInner']", count: 0
+    assert_select "#card-#{task.slug} [data-test='activity-box'] [x-ref='fadeInner']", count: 0
   end
 end

@@ -25,14 +25,13 @@
      @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
      class="kanban-card relative <%= card_tone %> rounded-lg border p-3 cursor-pointer transition group">
 
-  <%# Title — spans the full card width, fades at the overflowing edge
-      and scrolls to its end while the card is hovered (feature 1).
+  <%# Title — human-readable text gets a fixed two-line box so long task names
+      stay readable without horizontal clipping or hover-only marquee movement.
       Archive/delete moved to the footer so nothing covers it. %>
   <a href="<%= task_path(task.slug) %>"
-     class="block mb-1.5 hover:text-primary transition"
+     class="block mb-1.5 text-heading font-semibold text-sm leading-tight line-clamp-2 break-words hover:text-primary transition"
      title="<%= task.title %>">
-    <%= render "components/overflow_fade", text: task.title, scroll_when: "hovered",
-          class: "text-heading font-semibold text-sm" %>
+    <%= task.title %>
   </a>
 
   <%# Stage crew (agent-events summary) sits directly under the title — build-lane
@@ -123,15 +122,15 @@
 
   <% if latest_activity %>
     <%# Activity note follows the slug + updated rows so status metadata stays grouped. %>
-    <div class="mt-1 rounded-md border border-subtle bg-inset/60 px-2 py-1" data-test="activity-box">
-      <div class="flex items-center gap-1.5 mb-0 leading-none">
+    <div class="mt-1 min-w-0 rounded-md border border-subtle bg-inset/60 px-2 py-1" data-test="activity-box">
+      <div class="flex min-w-0 items-center gap-1.5 mb-0 leading-none">
         <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"><%= latest_activity.activity_type_label %></span>
         <% if activity_count.to_i > 1 %>
           <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
         <% end %>
       </div>
-      <%= render "components/overflow_fade", text: latest_activity.description, scroll_when: "hovered",
-            class: "text-[11px] leading-tight text-secondary" %>
+      <p class="mt-1 text-[11px] leading-snug text-secondary line-clamp-2 break-words"
+         title="<%= latest_activity.description %>"><%= latest_activity.description %></p>
     </div>
   <% end %>
 
