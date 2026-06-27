@@ -127,7 +127,10 @@ McRitchie Studio task record.
 
 ## QA / Avi Review
 
-Avi owns PR intake and merge safety.
+Avi owns PR **intake** as a thin delegation gate — product-acceptance + reviewer
+selection. The **PRIMARY reviewer** then owns the rest of the lane: the deep
+review, spawning the **LIGHT** as its own sub-agent, and the **merge** into
+`release` (`bin/release merge`).
 
 ### Picking the two senior reviewers (`bin/reviewer-select`)
 
@@ -212,10 +215,12 @@ bin/conductor qa    [--run]   # thin drive: bin/release prepare (deploy origin/r
 ```
 
 `plan` maps each stage to its deterministic next command: `submitted` →
-`bin/reviewer-select <slug>` (then spawn the pair — the **2-senior review needs
+`bin/reviewer-select <slug>` (then spawn the **nested cascade** — Avi (thin gate)
+→ the **PRIMARY** reviewer, which spawns the **LIGHT**; the **review needs
 AGENTS**, so conductor surfaces the assignment, it never fabricates a verdict);
-`reviewed` → `bin/release merge <slugs>`; `assembled` → `bin/release prepare`
-then the **operator** ship gate. It flags `blocked` + non-pipeline (rolio) tasks
+`reviewed` → `bin/release merge <slugs>` (the conductor's **backlog** path — a
+freshly-reviewed task's primary already ran its own merge); `assembled` →
+`bin/release prepare` then the **operator** ship gate. It flags `blocked` + non-pipeline (rolio) tasks
 separately. **`bin/conductor` NEVER auto-ships** — the prod deploy is
 operator-gated; `bin/conductor ship` refuses and prints `bin/release ship`. It
 defaults to the PROD board (like `bin/release`).
@@ -509,11 +514,13 @@ The intended cycle is:
 
 1. Feature agent opens a PR.
 2. Feature agent moves the task to `submitted`.
-3. Avi reviews and merges approved PRs into `release` when ready
-   (`bin/release merge <task> [<task> …]` does the `gh pr merge` + membership
-   flip — it takes **one OR many** slugs, merges each, then adopts them all in a
-   **single `heroku run`**; with ≥2 slugs it first prints an **overlap planner**:
-   colliding files + suggested order + likely rebases, warning-only).
+3. The review lane runs: Avi thin-delegates → the **PRIMARY** reviewer does the
+   deep review, spawns the LIGHT, and on two approvals runs **`bin/release merge`**
+   for its task to land it in `release` (the conductor batch-merges any pre-existing
+   `reviewed` backlog). `bin/release merge <task> [<task> …]` does the `gh pr merge`
+   + membership flip — it takes **one OR many** slugs, merges each, then adopts them
+   all in a **single `heroku run`**; with ≥2 slugs it first prints an **overlap
+   planner**: colliding files + suggested order + likely rebases, warning-only.
 4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
 5. Avi or Steffon deploys the `release` ref to the app's QA server with

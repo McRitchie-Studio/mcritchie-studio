@@ -318,9 +318,12 @@ class ApplicationHelperTest < ActionView::TestCase
     end
 
     deploy = guide["Deploy"].index_by { |row| row[:stage] }
-    # review is Avi-delegated to two seniors, scoped to base-tier tests
-    assert_match(/two senior/i, deploy["submitted"][:who])
+    # review is a NESTED chain: Avi thin-delegates → the PRIMARY owns the lane → the LIGHT, scoped to base-tier tests
+    assert_match(/primary/i, deploy["submitted"][:who])
+    assert_match(/light/i, deploy["submitted"][:who])
     assert_match(/base/i, deploy["submitted"][:tests])
+    # the PRIMARY reviewer owns the merge at the reviewed step (not the conductor)
+    assert_match(/primary/i, deploy["reviewed"][:who])
     # Steffon owns QA; Avi runs the frozen-SHA suite; the operator is the one gate
     assert_match(/steffon/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])

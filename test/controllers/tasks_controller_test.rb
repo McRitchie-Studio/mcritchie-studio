@@ -517,16 +517,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "[component] sop shows exactly one ⚠ divergence marker — the Review lane's Release Branch step" do
+  test "[component] sop shows no ⚠ divergence markers — the model is fully implemented" do
     get sop_path
 
     assert_response :success
-    # Steffon's Main Branch step was reconciled (merge-forward guard, not a divergence),
-    # so the only remaining ⚠ is the conductor-runs-merge gap on Review's Release Branch.
+    # Both prior divergences are reconciled: Assemble's Main Branch (merge-forward guard)
+    # and now Review's Release Branch (the PRIMARY reviewer owns the merge), so the SOP
+    # infographic carries no ⚠ marker.
     markers = css_select("[data-sop-diverges]")
-    assert_equal 1, markers.size, "exactly one SOP step should still diverge from the implemented model"
-    assert_match(/conductor runs bin\/release merge/i, markers.first["title"],
-      "the lone divergence must be the Review lane's Release Branch step")
+    assert_equal 0, markers.size,
+      "no SOP step should diverge from the implemented model (the primary now owns the merge)"
   end
 
   test "each board page cross-links to the other boards" do

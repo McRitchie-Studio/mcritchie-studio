@@ -58,7 +58,7 @@ lanes:
   - owner: Primary Reviewer
     lane: Review
     end_stage: reviewed
-    owner_note: "the PRIMARY reviewer: the deep-pass senior picked per task (most domain depth, usually the longest step). The LIGHT reviewer is a second approval; Avi delegates and confirms product-acceptance."
+    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task (most domain depth, usually the longest step) who spawns the LIGHT reviewer as its own sub-agent for a focused second pass, then on two approvals drives the task to Reviewed AND runs the merge. Avi is a thin delegation pre-step: he confirms product-acceptance and picks the pair, then hands the lane to the primary."
     steps:
       - type: pulse
         label: Reviewers on it
@@ -70,13 +70,12 @@ lanes:
         gate: base tiers green
       - type: review
         label: Visual
-        expectation: "Primary runs the deep pass: diff-vs-acceptance, code standards, smell, scalability. Light runs a focused pass."
+        expectation: "The PRIMARY runs the deep pass (diff-vs-acceptance, code standards, smell, scalability) and spawns the LIGHT reviewer as its own sub-agent for a focused pass."
         gate: 2 approvals (primary + light), else block with qa_feedback
       - type: merge
         label: Release Branch
-        expectation: "Merge the PR into the persistent release branch; membership flips reviewed to assembled."
+        expectation: "The PRIMARY reviewer runs bin/release merge to land the PR in the persistent release branch; membership flips reviewed to assembled. The primary owns the merge — not a separate conductor step."
         gate: deterministic; a conflict surfaces here
-        diverges: "Today the CONDUCTOR runs bin/release merge, not the reviewer. Your model gives the primary reviewer the whole lane."
       - type: test
         label: Merge Review
         expectation: "Confirm the merge is clean on origin/release (integrating broke nothing)."
@@ -84,7 +83,7 @@ lanes:
       - type: stage_update
         label: Reviewed
         stage: reviewed
-        expectation: "The primary reviewer updates the status to Reviewed."
+        expectation: "The PRIMARY reviewer drives the status to Reviewed, then runs the merge."
         gate: 2 approvals (primary + light)
 
   - owner: Steffon
