@@ -76,6 +76,41 @@ test("the deployments board updates a card live when an intent is recorded", asy
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
+// Re-review live updates: a resubmitted task already has a historical completed
+// review duration. Recording a fresh review intent after the rebuild must turn
+// that same review lane into the current live ticker, not leave the old static
+// duration badge in place.
+test("a resubmitted card replaces the old review duration with a live review ticker", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+
+  await page.goto("/deployments");
+
+  const card = page.locator("#card-live-rereview-demo");
+  await expect(card).toBeVisible();
+  const reviewLane = card.locator("[data-test='crew-cluster'][data-lane='review']");
+  await expect(reviewLane.locator("[data-test='crew-duration']")).toHaveCount(1);
+  await expect(reviewLane.locator("[data-test='crew-live']")).toHaveCount(0);
+
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const res = await page.request.post("/api/v1/tasks/live-rereview-demo/intent", {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    data: {
+      to_stage: "reviewed",
+      reviewers: [{ slug: "shannon", weight: "primary" }, { slug: "carl", weight: "light" }],
+      event: { source: "cli" },
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+
+  await expect(reviewLane.locator("[data-test='crew-live']")).toHaveCount(1, { timeout: 10_000 });
+  await expect(reviewLane.locator("[data-test='crew-duration']")).toHaveCount(0);
+  await expect(page.locator("#dropzone-submitted #card-live-rereview-demo")).toBeVisible();
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
+
 test("Last Release stacks member pills while Current Release keeps readable wrapping", async ({ page }) => {
   await page.goto("/deployments");
 

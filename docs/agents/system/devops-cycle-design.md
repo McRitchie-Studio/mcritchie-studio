@@ -503,8 +503,11 @@ task's consolidated **Stage Timeline** show who's working *right now* with a
 green ticking timer — the Deploy mirror of the build lane's live counter. These
 are append-only `TaskEvent`s of `kind: intent` (completed transitions stay
 `kind: transition`, and an intent never enters the duration spine); an intent is
-"open" until its stage's transition lands, then the completed event supersedes
-it. Build-lane intent = the task's Pokémon mascot (assigned at create). The
+"open" until a later transition into its target stage lands, then the completed
+event supersedes it. The guard is current-cycle scoped: if QA blocks a PR for
+rework and the feature agent rebuilds/resubmits it, Avi can record a fresh
+`→reviewed` intent for the second review round. Build-lane intent = the task's
+Pokémon mascot (assigned at create). The
 review pair is recorded by **`bin/reviewer-select <task>`** (step 2 — recording
 is the DEFAULT now; pass `--no-record`/`--dry` for an advisory-only preview);
 Steffon's QA and Avi's ship intents are **auto-recorded by the deploy CLI** —
@@ -518,9 +521,9 @@ mid-deploy). The manual **`bin/task intent <task> --to assembled --actor
 steffon`** / **`--to shipped --actor avi`** (or `POST
 /api/v1/tasks/<slug>/intent`) stays as the fallback / one-off path. All of them
 are append-only + idempotent — an identical open intent is reused, and the call is
-a no-op once the stage has landed. Actor-less conductor moves on
-`assembled`/`shipped` still attribute to their role owners (Steffon QAs
-`assembled`, Avi ships) so the Deploy crew never goes blank.
+a no-op once the target stage has landed in the current stage cycle. Actor-less
+conductor moves on `assembled`/`shipped` still attribute to their role owners
+(Steffon QAs `assembled`, Avi ships) so the Deploy crew never goes blank.
 
 **`Prepare release`**  *(reviewed → assembled — an RC for QA)*
 Two deterministic steps:

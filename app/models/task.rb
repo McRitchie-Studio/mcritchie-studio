@@ -67,6 +67,9 @@ class Task < ApplicationRecord
   # Build is the feature agent's, Deploy is DevOps's.
   BUILD_STAGES  = %w[designed building submitted].freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
+  NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
+                        "submitted" => "reviewed", "reviewed" => "assembled",
+                        "assembled" => "shipped" }.freeze
   # Board columns per page. /tasks is the feature-agent lane (Build + the blocked
   # side state). /deployments shows the full pipeline as swim lanes — the Deploy
   # workflow plus the upstream designed/building lanes (drag-and-drop; more later).
@@ -392,8 +395,11 @@ class Task < ApplicationRecord
   # transition lands. Appends a TaskEvent(kind: intent) FROM the current stage TO
   # to_stage, carrying `actor` (a single owner — Steffon at QA, Avi at ship)
   # and/or `reviewers` metadata (the primary/light pair at review). Append-only +
-  # idempotent: an identical open intent (same target + same crew) is returned
-  # as-is rather than stacked, and it is a no-op once to_stage has already landed.
+  # current-cycle scoped: only the current stage's immediate next target is
+  # recordable; an identical open intent (same target + same crew) is returned
+  # as-is rather than stacked; and it is a no-op once to_stage has landed in the
+  # current stage cycle. If rework sends a task back to `submitted`, a fresh
+  # `→reviewed` intent can open for that new cycle.
   #
   # An intent row is intentionally USAGELESS — it marks work STARTING, not a
   # completed transition, so it carries no model/tokens/cost. The work the agent
@@ -409,13 +415,15 @@ class Task < ApplicationRecord
   # FULL identity (target + actor + reviewers + qa), not merely the last intent for
   # the target, so two distinct open intents toward the same stage never collide.
   def record_intent_event(to_stage:, actor: nil, reviewers: nil, source: nil, qa: false)
-    return nil if task_events.transitions.exists?(to_stage: to_stage)
+    to_stage = to_stage.to_s
+    return nil unless NEXT_INTENT_STAGE[stage] == to_stage
+    return nil if target_landed_in_current_stage?(to_stage)
 
     pair  = reviewers.present? ? self.class.normalize_reviewers(reviewers).presence : nil
     actor = actor.to_s.strip.presence
     qa    = !!qa
 
-    existing = task_events.intents.where(to_stage: to_stage).chronological.to_a.reverse.find do |e|
+    existing = open_intents_for(to_stage).reverse.find do |e|
       e.actor == actor &&
         self.class.normalize_reviewers(e.metadata["reviewers"]).presence == pair &&
         !!e.metadata["qa"] == qa
@@ -439,12 +447,18 @@ class Task < ApplicationRecord
   end
 
   # The OPEN intent event for `to_stage` (work has STARTED toward that stage but no
-  # transition into it has landed yet), or nil once it's resolved by a transition —
-  # so a non-nil result means "work is in progress on this stage right now".
+  # later transition into it has landed yet), or nil once it's resolved by a
+  # transition — so a non-nil result means "work is in progress on this stage right
+  # now". Scope is cycle-aware: if QA blocks a task and it re-enters `submitted`, a
+  # fresh review intent can open even though an older `→reviewed` transition exists.
   def open_intent_for(to_stage)
-    return nil if task_events.transitions.exists?(to_stage: to_stage)
+    open_intents_for(to_stage).last
+  end
 
-    task_events.intents.where(to_stage: to_stage).chronological.last
+  def open_intents_for(to_stage)
+    task_events.intents.where(to_stage: to_stage).chronological.to_a.reject do |intent|
+      intent_superseded?(intent)
+    end
   end
 
   # The reviewer pair (normalized) recorded on the latest review intent, or nil —
@@ -452,6 +466,31 @@ class Task < ApplicationRecord
   def latest_intent_reviewers(to_stage = "reviewed")
     intent = task_events.intents.where(to_stage: to_stage).chronological.last
     intent && self.class.normalize_reviewers(intent.metadata["reviewers"]).presence
+  end
+
+  # Has the target transition already landed in the task's CURRENT stage cycle?
+  # This keeps retries idempotent after the target lands, while still allowing a
+  # reworked task to re-enter `submitted` and open a second `→reviewed` intent.
+  def target_landed_in_current_stage?(to_stage)
+    entry = current_stage_entry_event
+    landed = task_events.transitions.where(to_stage: to_stage)
+    return landed.exists? if entry.nil?
+
+    landed.where(
+      "occurred_at > ? OR (occurred_at = ? AND id >= ?)",
+      entry.occurred_at, entry.occurred_at, entry.id
+    ).exists?
+  end
+
+  def current_stage_entry_event
+    task_events.transitions.where(to_stage: stage).chronological.last
+  end
+
+  def intent_superseded?(intent)
+    task_events.transitions.where(to_stage: intent.to_stage).where(
+      "occurred_at > ? OR (occurred_at = ? AND id > ?)",
+      intent.occurred_at, intent.occurred_at, intent.id
+    ).exists?
   end
 
   def devops_url(name)

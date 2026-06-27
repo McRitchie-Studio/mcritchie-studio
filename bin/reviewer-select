@@ -317,9 +317,11 @@ pr_url = devops["pr_url"].to_s.strip
 # write) so /deployments + the task timeline show the two seniors reviewing live,
 # with a ticking timer, the moment Avi kicks off the review — before the →reviewed
 # transition lands. Hits the SAME idempotent endpoint as `bin/task intent` (a
-# no-op once the task is already reviewed). Best-effort: a board-write failure
-# (incl. api's die! → SystemExit) WARNS but never blocks the printed pick — the
-# conductor always gets the assignment. --file mode is offline → always advisory.
+# no-op once the task is already reviewed in the current cycle; a resubmitted
+# rework task can record a fresh review intent). Best-effort: a board-write
+# failure (incl. api's die! → SystemExit) WARNS but never blocks the printed pick
+# — the conductor always gets the assignment. --file mode is offline → always
+# advisory.
 recorded = nil
 if options[:record]
   if options[:file]
