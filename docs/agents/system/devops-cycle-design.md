@@ -26,8 +26,9 @@
 > was re-homed by role — review is **delegated by Avi to two seniors** (no longer
 > his solo gate), `assembled` is owned by **Steffon** (now titled **Platform
 > Engineer**), and `shipped` is owned by **Avi** (full e2e on the frozen ship
-> SHA) plus the one operator gate. **§1.2 is the rewritten spec.** It lands via
-> three build tasks: `deploy-flow-heartbeat-tooling` (planner/tooling + the
+> SHA) plus explicit ship authority: the default operator gate or the
+> `Merge, Assemble, Deploy` autonomous kickoff. **§1.2 is the rewritten spec.**
+> It lands via three build tasks: `deploy-flow-heartbeat-tooling` (planner/tooling + the
 > `prepare` retry/wait-for-boot fix), `stages-page-step-outlines` (the per-step
 > `/stages` outlines), and `seed-souls-prod-qa` (the reviewer souls, incl. a new
 > **Alex Documentation** reviewer persona distinct from the orchestrator seat).
@@ -95,12 +96,13 @@ lifecycles that meet at one seam — `submitted`.
   blocker lands it at **`blocked`** (rework, with a `qa_feedback` note).
   **Steffon** (Platform Engineer) QAs the RC with the next tier (integration +
   an e2e smoke) and deploys `origin/release` to QA; at ship **Avi** runs the
-  full e2e on the frozen ship SHA and, on the operator's OK, the conductor
-  fast-forwards `release → main` (`shipped`). `submitted` is the seam — the
-  feature agent hands the PR to DevOps there.
+  full e2e on the frozen ship SHA and, with explicit ship authority, the
+  conductor fast-forwards `release → main` (`shipped`). `submitted` is the seam
+  — the feature agent hands the PR to DevOps there.
 
 QA and production are properties of the **release**, not the individual task —
-so there is no per-task QA stage; the one operator gate is a single OK on the RC.
+so there is no per-task QA stage; ship authority is a single decision on the RC
+after the frozen-SHA gate.
 
 ```
 WORKFLOW 1 · Build (feature agent)         WORKFLOW 2 · Deploy (DevOps · Release model)
@@ -117,10 +119,11 @@ heartbeat agent routes it without re-reading the thread. `archived` is terminal.
 
 The RC is a **`Release` singleton** (only one assembles at a time). Member tasks
 carry its `release_slug`; it carries them through QA→prod and flips them to
-`shipped` when it ships. The airgapped agent runs both workflows but **never
-crosses the ship gate autonomously** — the operator's single OK on the RC is the
-one human gate. The task API is on production, so the airgapped box only needs an
-internet connection — no separate pull/sync layer.
+`shipped` when it ships. The airgapped agent runs both workflows and crosses the
+ship gate only when the session carries explicit production authority (`Merge,
+Assemble, Deploy`, direct ship approval, or an already-approved rollout prompt).
+The task API is on production, so the airgapped box only needs an internet
+connection — no separate pull/sync layer.
 
 **Open every cycle by assessing the board BY STAGE** — `bin/task list --stage
 reviewed|assembled|shipped|submitted|building`, never the default flat `bin/task
@@ -149,7 +152,7 @@ fast-forwards each repo's `release → main` and deploys prod. After a ship,
 | `slug` | Canonical id, e.g. `2026-06-20-s3-uploads`. |
 | `state` | `assembling` → `assembled` → `shipped` (+ `abandoned`). `assembled` = the QA candidate is built (members merged into `release`) **and** its suite checks out. |
 | `branch` | The persistent integration branch `release` (same name in every repo); feature PRs merge into it, QA deploys from it, and `ship` fast-forwards it into `main`. |
-| `confirmed_at` / `confirmed_by` | The operator **Make the release** action at `assembled → shipped` — the one human gate. |
+| `confirmed_at` / `confirmed_by` | The ship authorization at `assembled → shipped` — operator approval for the QA workflow, or the autonomous production kickoff. |
 | `qa_url` / `production_url` / `deployed_sha` / `release_notes_sent_at` | Deploy + notes record. |
 | has_many `tasks` | via `tasks.release_slug`. |
 
@@ -187,12 +190,13 @@ records the QA URL → the release is **`assembled`** (the QA candidate). A late
 merging in after that **reopens** the RC (`Release#reopen!`) so it re-QAs before
 shipping. At ship, **Avi** first runs the **full e2e + highest-tier suite on the
 frozen ship SHA** (the exact prod code — closing the merge-forward "shipped ≠
-tested" gap); on green he **stops for the operator**, who then **Makes the
-release** — an explicit action (surfaced as the current release on
+tested" gap); on green the ending depends on the trigger. `Build and Deploy QA
+Release` stops for the operator, while `Merge, Assemble, Deploy` continues with
+the already-authorized ship. The ship action (surfaced as the current release on
 `/deployments`, not a passive status): `bin/release ship` fast-forwards each
 repo's `main` up to `release` (so `release` collapses into `main`), deploys prod,
-and flips members to `shipped`. The operator's action — **after Avi's test
-confirmation, before the deploy** — is the one human gate.
+and flips members to `shipped`. Ship authority always lands **after Avi's test
+confirmation, before the deploy**.
 
 **Gem members & producer-first ordering.** A release is not apps-only — it can
 carry **gem** tasks (`studio-engine`, `solana-studio`) as first-class members
@@ -252,7 +256,7 @@ then hands the lane to the **PRIMARY reviewer**, who owns it end-to-end (the dee
 technical review, **spawning the LIGHT** as its own sub-agent, and the **merge**).
 **`assembled`** is owned by **Steffon** (now titled **Platform Engineer**); and
 **`shipped`** is owned by **Avi** (who runs the full e2e on the frozen ship SHA)
-ahead of the one operator gate. The senior reviewer pool is **{Shannon = UI ·
+ahead of explicit ship authority. The senior reviewer pool is **{Shannon = UI ·
 Carl = backend · Jasper = Web3 · Steffon = DevOps/Platform · Alex = Documentation}**
 (Alex is both the orchestrator and the pool's launchable Documentation review
 seat — one identity). Avi picks the pair with **`bin/reviewer-select <task>`**
@@ -273,7 +277,7 @@ batch-merges any pre-existing `reviewed` backlog). **Bias to action: green tests
 | **submitted** (task) — REVIEW | **PRIMARY** reviewer (Avi delegates) | Avi (thin gate) → **PRIMARY** owns lane → **LIGHT** | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 PRIMARY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a PRIMARY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + primary/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Avi then **hands the lane to the PRIMARY**, who runs the deep review and **spawns the LIGHT** as its own sub-agent; each confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker on either → the **PRIMARY** drives the task to `reviewed` ✅ AND runs the merge (next row); a blocker → `blocked` (rework, with `qa_feedback`) | **2 senior approvals** (PRIMARY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — MERGE (task) | the **PRIMARY** reviewer | the **PRIMARY** reviewer *executes* | On **2 approvals** (primary + light, neither blocking) the **PRIMARY** runs **`bin/release merge`** for its task — honoring `dependencies` + lanes; membership flips at merge → member `assembled`. The primary owns the merge; the conductor no longer runs it for a freshly-reviewed task (it still batch-merges any `reviewed` backlog). **Bias to action: green tests = go** (`release` reverts cleanly; we don't fear merging there) | deterministic merge (conflicts surface at PR-merge); **the primary owns it — no separate conductor/Avi gate** |
 | **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* | Run the **next tier — integration + an e2e smoke** on `origin/release`; green → `bin/release prepare` deploys it to QA → **Discord QA-deployment note** → release `assembled` | deterministic suite; ⛔ regression → block the task. **`prepare` retries/waits-for-boot** (the `/up`-smoke race): `bin/release prepare` polls `<qa_url>/up` via `wait_for_boot` and **defers the assemble** (`Release::Conductor.curate!` then `assemble!`) until QA returns 200, so a slow dyno can't strand the RC `assembling` |
-| **→ shipped** (release) | **Avi**, then **Mr. McRitchie** | Avi tests; operator approves; conductor deploys | Avi runs the **full e2e + highest-tier suite on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"). On green Avi **STOPS for the operator** → on go: `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → **Discord release notes** → members `shipped` | 🔒 **the one operator gate — after Avi's test confirmation, before deploy**; rollback on smoke fail |
+| **→ shipped** (release) | **Avi**, then ship authority | Avi tests; operator or autonomous kickoff authorizes; conductor deploys | Avi runs the **full e2e + highest-tier suite on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"). `Build and Deploy QA Release` stops here for the operator; `Merge, Assemble, Deploy` continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → **Discord release notes** → members `shipped` | 🔒 explicit ship authority — after Avi's test confirmation, before deploy; rollback on smoke fail |
 
 Clarifications:
 
@@ -288,14 +292,15 @@ Clarifications:
   lower tier the previous step already proved green. Encoded as
   `Release::STEP_TEST_TIERS` (ownership is disjoint by construction — a tier maps
   to exactly one step); ship runs Avi's full-e2e gate on the frozen SHA **before**
-  the operator gate (`bin/release ship` → `avi_ship_gate`, then `confirm`).
+  ship authorization (`bin/release ship` → `avi_ship_gate`, then `confirm`, unless
+  the authorized autonomous workflow passes `--yes`).
 - **`assembled` means slightly different things at the two scopes** — a *task* is
   `assembled` the moment its PR is merged into `release` (`bin/release merge`,
   driven by the **two seniors' approval**); the *release* is `assembled` once the
   desired members are in, **Steffon's integration + e2e-smoke** is green on
-  `origin/release`, and `prepare` has deployed it to QA. The operator gate is at
-  **ship** (after Avi's full-suite run on the frozen SHA), **not here** — at this
-  scope `assembled` is a state the conductor flips, not a human approval.
+  `origin/release`, and `prepare` has deployed it to QA. Production authority is
+  at **ship** (after Avi's full-suite run on the frozen SHA), **not here** — at
+  this scope `assembled` is a state the conductor flips, not a human approval.
 - **Review is a thin delegation, then a nested chain — not Avi's solo gate.** Avi
   opens review as a **thin delegator** — product-acceptance + reviewer selection —
   then **hands the lane to the PRIMARY**, who owns it end-to-end: the deep review,
@@ -341,12 +346,12 @@ Clarifications:
 Resolved: `release_train` → **`release_slug`** (one field/model); **feature PRs
 merge into a persistent per-repo `release` branch, membership flipping at merge**;
 no per-task QA stage; Release is its own singleton model — states `assembling →
-assembled → shipped`, where the operator **Makes the release** (a page action on
-the assembled RC). **Decided 2026-06-22 (§1.2):** review is **delegated by Avi to
+assembled → shipped`, where explicit ship authority **Makes the release** from
+the assembled RC. **Decided 2026-06-22 (§1.2):** review is **delegated by Avi to
 two seniors** (not his solo gate); `assembled` is owned by **Steffon** (titled
 **Platform Engineer**); and at `shipped` **Avi** runs the full e2e + highest tier
-on the **frozen ship SHA** *before* the operator's Make-the-release action — so
-the human gate sits **after test confirmation, before the deploy**.
+on the **frozen ship SHA** *before* ship authority is exercised — so the deploy
+gate sits **after test confirmation, before the deploy**.
 
 **RC assembly autonomy is the one evolving policy** — so it lives in one
 tunable config file, `config/release_builder.yml`, read by
@@ -357,13 +362,17 @@ tunable config file, `config/release_builder.yml`, read by
 - **Propose for operator confirmation** for an empty queue, multi-task release,
   cross-repo release, or blocked-risk release. The conductor can draft the plan,
   but waits before changing release state.
-- Production ship remains **always operator-gated** (`production_ship.operator_gated`
-  is `true`), regardless of QA autonomy.
+- Production ship remains **operator-gated by default**
+  (`production_ship.operator_gated` is `true`) for `Build and Deploy QA Release`.
+  The separate **`Merge, Assemble, Deploy`** kickoff is the explicit autonomous
+  production authorization; it uses the same frozen-SHA/test/smoke gates, then
+  passes `--yes` to the production ship command.
 
 Change thresholds in `config/release_builder.yml`, then run
 `bin/rails test test/models/release/builder_policy_test.rb`. This policy only
-decides QA assembly autonomy; `bin/release ship` remains separately
-operator-gated.
+decides QA assembly autonomy plus names the autonomous production kickoff;
+ordinary `bin/release ship` remains separately gated unless that kickoff or
+another explicit production rollout prompt grants ship authority.
 
 ### 1.4 Kickoff commands — board → agent session
 
@@ -373,9 +382,14 @@ into an agent session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
 each command to a deterministic runbook. The same `devops_kickoffs` source also
-carries one non-stage meta-trigger — **`Build and Deploy QA Release`** — rendered
-as a prominent chip in the current-release section (`#current-release`); it is
-the operator's main one-trigger that composes the per-stage commands below.
+carries two non-stage meta-triggers rendered as prominent chips in the
+current-release section (`#current-release`):
+
+- **`Build and Deploy QA Release`** — the QA-department run. It reviews,
+  assembles, deploys QA, runs ship-readiness, then stops before production.
+- **`Merge, Assemble, Deploy`** — the autonomous production run. It shares the
+  same review/assembly/QA phases, then runs production ship after the same gates
+  pass.
 
 **`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run — stops at the ship gate)*
 
@@ -387,29 +401,46 @@ tests pass, stop and hand the operator the `Run Deployment` gate.
 
 > ⚠️ **THIS SOP STOPS BEFORE PROD.** A green review + green QA + green ship-tests
 > produces an assembled RC and a clear `bin/release ship` handoff. Production
-> deploy remains the one operator gate across every release repo
+> deploy remains gated across every release repo
 > (mcritchie-studio + satellites).
 
-> **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
-> opens a fresh session with just `Build and Deploy QA Release`, follow **this**
-> SOP — *not* the feature-agent "⛔ STOP before writing code" flow in `CLAUDE.md`
-> (that is the **Build** lane). The conductor **orchestrates** the deploy run on
-> work that is **already** built: it **delegates review** (Avi confirms
-> product-acceptance + picks the pair; the **PRIMARY reviewer** does the deep
-> review, spawns the LIGHT, and runs `bin/release merge` for its task), then
-> **assembles** the QA candidate and **deploys** it. The conductor does **not**
-> review or run the per-task merge itself, and it does not create a task, take a
-> worktree, or write feature code. Run every command from
-> `/Users/alex/projects/mcritchie-studio`.
+**`Merge, Assemble, Deploy`**  *(the autonomous production run — shares the QA SOP, then ships)*
 
-> **A non-interactive agent MUST pass `--yes` only for approved non-production confirms.** An
+This is the production-authorized sibling workflow. It uses the same conductor
+runbook below through review, merge, QA deploy, straggler review, and refreshed
+QA. The difference is the final production decision: after the ship preflight and
+frozen-SHA `avi_ship_gate` pass, the agent runs
+`bin/conductor ship --run` (equivalent to `bin/release ship --by conductor
+--yes`). That `--yes` answers only the human confirmation prompt; it does **not**
+skip clean-main preflight, frozen-SHA tests, producer-first gem publish, deploy
+smoke, production `post_deploy_cmd`, or partial-ship recovery.
+
+> ⚠️ **THIS SOP IS PRODUCTION AUTHORITY.** Do not infer it from "prepare QA",
+> "review release", or `Build and Deploy QA Release`. The exact phrase
+> **`Merge, Assemble, Deploy`** (or another explicit production rollout prompt in
+> the session) is what grants the agent authority to cross the ship gate.
+
+> **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
+> opens a fresh session with just `Build and Deploy QA Release` or
+> `Merge, Assemble, Deploy`, follow **this** SOP — *not* the feature-agent
+> "⛔ STOP before writing code" flow in `CLAUDE.md` (that is the **Build** lane).
+> The conductor **orchestrates** the deploy run on work that is **already** built:
+> it **delegates review** (Avi confirms product-acceptance + picks the pair; the
+> **PRIMARY reviewer** does the deep review, spawns the LIGHT, and runs
+> `bin/release merge` for its task), then **assembles** the QA candidate and
+> **deploys** it. The conductor does **not** review or run the per-task merge
+> itself, and it does not create a task, take a worktree, or write feature code.
+> Run every command from `/Users/alex/projects/mcritchie-studio`.
+
+> **A non-interactive agent MUST pass `--yes` only for approved confirms.** An
 > agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as
 > **"no"**. The consequence differs per command:
 > - **`prepare`** aborts without confirmation in a non-interactive shell. Always
 >   run `bin/release prepare --yes` for the approved QA deploy step.
 > - **`ship`** *aborts loudly* without confirmation — that is intentional. Do not
->   pass `--yes` unless Mr. McRitchie explicitly gives the production ship go in
->   this session or an already-approved rollout prompt.
+>   pass `--yes` unless the session trigger is **`Merge, Assemble, Deploy`**, Mr.
+>   McRitchie explicitly gives the production ship go in this session, or an
+>   already-approved rollout prompt grants ship authority.
 > - **`archive`** can use `--yes` after the shipped release is verified and the
 >   operator has approved cleanup.
 > - **`merge`** does not prompt today; `--yes` is harmless future-proofing.
@@ -459,22 +490,26 @@ one blocking event happened** — omit the section on a clean run.
 5. **Assemble again.** Pre-merge checklist + `bin/release merge <slug> … --yes` the
    round-2 `reviewed` tasks into the same candidate, then `bin/release prepare
    --yes` to refresh QA. Confirm the refreshed QA app is green.
-6. **Ship-readiness handoff (operator gate).** From a **primary checkout** (not a
-   worktree — gems resolve as siblings at the projects root), run the ship-time
-   preflight/test gate if the operator assigned that lane, then stop for Mr.
-   McRitchie's production confirmation. The production command is
-   `bin/release ship --by conductor`; add `--yes` only after explicit approval in
-   this session or an already-approved rollout prompt. It runs preflight
-   (clean-`main` assertion) →
-   `avi_ship_gate` (each app's test suite on the frozen ship SHA; **aborts on any
-   failure** before anything irreversible) → producer-first gem publish → ff each
-   repo's `release → main` → deploy + smoke `/up` → prod `post_deploy_cmd` →
-   members `shipped` → auto-posted release notes. If a gate aborts, report it and
-   don't force past.
+6. **Ship decision — gated or autonomous.** From a **primary checkout** (not a
+   worktree — gems resolve as siblings at the projects root), choose the ending
+   that matches the session trigger:
+   - **`Build and Deploy QA Release`** → stop at the production gate and hand off
+     `bin/release ship --by conductor`. Add `--yes` only after explicit ship
+     approval in this session or an already-approved rollout prompt.
+   - **`Merge, Assemble, Deploy`** → run `bin/conductor ship --run`, which
+     executes `bin/release ship --by conductor --yes`.
+
+   Both paths run the same production sequence: preflight (clean-`main`
+   assertion) → `avi_ship_gate` (each app's test suite on the frozen ship SHA;
+   **aborts on any failure** before anything irreversible) → producer-first gem
+   publish → ff each repo's `release → main` → deploy + smoke `/up` → prod
+   `post_deploy_cmd` → members `shipped` → auto-posted release notes. If a gate
+   aborts, report it and don't force past.
 7. **Close the loop (optional).** `bin/release archive --yes` (shipped → archived +
    reclaim worktrees) and `bin/release retro --yes` (durable learnings doc).
 
-The per-stage commands below are the building blocks this meta-trigger sequences:
+The per-stage commands below are the building blocks both meta-triggers
+sequence:
 
 **One-time setup (per machine/clone).** Run **`bin/release init`** once: it
 creates the persistent `release` branch (= `origin/main`) on every gem + app repo
@@ -607,17 +642,20 @@ Two deterministic steps:
    resolution are the unit-tested `Release::PostDeploy.plan`.
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
-Run **`bin/release ship [--by NAME] --prod`** — the one human gate; it confirms
-before deploying. **Preflight FIRST (before any fast-forward):** ship asserts
-every **app checkout** is on a **clean `main`** and aborts loudly — naming the
-offending branch / dirty files — if any isn't. ship ff's each repo's `main` up to
-the QA-frozen SHA, so a checkout a review agent left on a leftover `pr-NNN` branch
-or with an uncommitted stale `schema.rb` would otherwise break the ff *mid-ship*
-(after gems published + the operator gate — the worst time). The preflight catches
-it up front, before anything irreversible. Pure decision:
+Run **`bin/release ship [--by NAME] --prod`**. Without `--yes` it confirms
+before deploying; with the **`Merge, Assemble, Deploy`** workflow (or another
+explicit production rollout prompt), use
+`bin/release ship --by conductor --yes`. `--yes` skips only the confirm prompt.
+**Preflight FIRST (before any fast-forward):** ship asserts every **app checkout**
+is on a **clean `main`** and aborts loudly — naming the offending branch / dirty
+files — if any isn't. ship ff's each repo's `main` up to the QA-frozen SHA, so a
+checkout a review agent left on a leftover `pr-NNN` branch or with an uncommitted
+stale `schema.rb` would otherwise break the ff *mid-ship* (after gems published +
+the ship authorization — the worst time). The preflight catches it up front,
+before anything irreversible. Pure decision:
 `Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Live ship
-crew:** right after the one operator gate (so a declined ship never shows it), ship
-**auto-records the Avi → `shipped` intent** for every member
+crew:** right after ship authorization (so a declined gated ship never shows it),
+ship **auto-records the Avi → `shipped` intent** for every member
 (`Release::Conductor.record_deploy_intents!(r, to_stage: "shipped", actor:
 "avi")`) so /deployments shows Avi shipping live — a green ticking timer — through
 the whole deploy instead of an empty dashed ship slot until `ship!` lands (the

@@ -161,7 +161,9 @@ Cutover sequence:
 Deploys, gem publishes, provider changes, and production env-var changes are
 Release-lane work. A feature agent can recommend deploy, but only the designated
 release conductor should run it after explicit approval from Mr. McRitchie or an
-already-approved rollout prompt. Gem publishes specifically are **part of**
+already-approved rollout prompt. The `Merge, Assemble, Deploy` release kickoff is
+one such pre-approved production prompt; `Build and Deploy QA Release` is not.
+Gem publishes specifically are **part of**
 "Run Deployment" — they ride a release as first-class members and are published
 producer-first by `bin/release ship` (see below), not as a separate ad-hoc step.
 
@@ -172,7 +174,8 @@ lives in `config/release_builder.yml` and is read by `Release::BuilderPolicy`:
 one reviewed task, one repo, and no blocked risk tags can proceed to QA assembly
 automatically; anything broader is a proposal that waits for operator
 confirmation. Production ship remains operator-gated regardless of that QA
-decision.
+decision unless the session uses the explicit `Merge, Assemble, Deploy`
+production kickoff or another already-approved rollout prompt.
 
 ## Releasing a gem (producer-first)
 

@@ -291,7 +291,8 @@ or intentionally abandoned.
 
 For a dedicated review/merge/QA session, use the recurring QA intake prompt in
 `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
-stops after QA deployment; production rollout needs a separate explicit prompt.
+stops after QA deployment; production rollout needs a separate explicit prompt
+such as `Merge, Assemble, Deploy`.
 The conductor queue starts with:
 
 ```bash
@@ -306,7 +307,7 @@ also prints an `action:` line; use it as the next owner handoff.
 
 QA servers, once provisioned, are operated with `mcritchie-studio/bin/qa-server`.
 They are release-candidate targets for Mr. McRitchie review before production;
-production deploy remains separately approval-gated.
+production deploy remains separately ship-authority gated.
 
 Before reusing or deleting worktrees, inspect lifecycle state:
 

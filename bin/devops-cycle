@@ -635,7 +635,7 @@ def build_plan(tasks)
     {
       "key" => "assembled_release",
       "title" => "Assembled Release",
-      "policy" => "Merged into release and part of the QA candidate. Production remains operator-gated.",
+      "policy" => "Merged into release and part of the QA candidate. Production requires explicit ship authority.",
       "tasks" => []
     }
   ]
@@ -656,7 +656,7 @@ def build_plan(tasks)
     when "reviewed"
       by_key.fetch("ready_to_assemble").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "approved and ready for release merge")
     when "assembled"
-      by_key.fetch("assembled_release").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "QA candidate assembled; production is operator-gated")
+      by_key.fetch("assembled_release").fetch("tasks") << plan_task(task, owner: "release_conductor", reason: "QA candidate assembled; production needs explicit ship authority")
     end
   end
 
@@ -1041,7 +1041,7 @@ def build_readiness(tasks, decisions, scout_coverage)
     ["needs_changes", "Needs Changes", "Return to the feature agent with task feedback or PR review comments."],
     ["waiting", "Waiting", "Checks, scout reports, or external confirmation are not settled."],
     ["ready_to_assemble", "Ready To Assemble", "Reviewed PRs are approved and waiting for release merge."],
-    ["assembled_release", "Assembled Release", "Merged into release and part of the QA candidate; production remains operator-gated."],
+    ["assembled_release", "Assembled Release", "Merged into release and part of the QA candidate; production needs explicit ship authority."],
     ["scout_gaps", "Scout Gaps", "Scout packets that need reports or have conflicting evidence."]
   ].map { |key, title, policy| { "key" => key, "title" => title, "policy" => policy, "tasks" => [] } }
   by_key = groups.to_h { |group| [group.fetch("key"), group] }

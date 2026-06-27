@@ -39,8 +39,8 @@ Steffon is the **Platform Engineer** — the QA tier and the operator of product
 4. Regression → block the offending task; the suite is a green/red signal (the operator OK at ship is the gate, not a Steffon approval ceremony)
 5. `prepare` must retry/wait-for-boot past the `/up`-smoke race so the state reliably advances (tracked in `deploy-flow-heartbeat-tooling`)
 
-**Deploy (the QA'd RC, at ship — Avi tests, operator approves):**
-1. Ship runs only after Avi's full e2e on the frozen SHA + the operator's go (the one human gate) — no deploy without it
+**Deploy (the QA'd RC, at ship — Avi tests, ship authority approves):**
+1. Ship runs only after Avi's full e2e on the frozen SHA plus explicit ship authority (`Build and Deploy QA Release` operator approval or `Merge, Assemble, Deploy` autonomy)
 2. Pre-flight: clean tree, tests green, env vars complete, IDL hash matches (if turf-monster)
 3. Deploy with `bin/deploy` / `bin/release ship`; watch logs through the release phase
 4. Verify the canary path on prod (login, one transactional flow)

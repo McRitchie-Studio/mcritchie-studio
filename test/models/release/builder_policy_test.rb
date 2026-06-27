@@ -59,6 +59,13 @@ class Release::BuilderPolicyTest < ActiveSupport::TestCase
     assert_equal true, decision.to_h.fetch("operator_gated_ship")
   end
 
+  test "production ship names the autonomous kickoff command" do
+    decision = Release::BuilderPolicy.evaluate([reviewed_task("autonomous", repos: ["mcritchie-studio"])])
+
+    assert_equal "Merge, Assemble, Deploy", decision.autonomous_ship_kickoff
+    assert_equal "Merge, Assemble, Deploy", decision.to_h.fetch("autonomous_ship_kickoff")
+  end
+
   test "hash inputs are supported for pure callers" do
     decision = Release::BuilderPolicy.evaluate([
       {

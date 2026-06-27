@@ -4,8 +4,9 @@
 # queue is eligible for automatic QA assembly, or whether the release conductor
 # should only propose the plan and wait for operator confirmation.
 #
-# This file never grants production shipping authority. Production deploys stay
-# separately gated by production_ship.operator_gated.
+# Production shipping authority is separate from QA assembly. The default path
+# remains gated; the autonomous_kickoff names the operator phrase that explicitly
+# grants agents production ship authority after the same deterministic gates pass.
 
 auto_qa:
   max_tasks: 1
@@ -17,3 +18,4 @@ auto_qa:
 
 production_ship:
   operator_gated: true
+  autonomous_kickoff: "Merge, Assemble, Deploy"

@@ -8,7 +8,7 @@
       conductor mascot colour; blank → the default warm-orange flash. %>
   <div id="last-release" data-glow="<%= rel.mascot&.signature_color %>" class="rounded-xl border border-subtle bg-surface p-4 opacity-75">
     <%# The shipped-stage kickoff chip ("Archive completed tasks") rides inline with the
-        task pills, mirroring the Next Release card's "Build and Deploy QA Release" chip. %>
+        task pills, mirroring the Next Release card's release workflow chips. %>
     <% archive_chip = render "tasks/kickoff_chip", command: devops_kickoffs["shipped"] %>
     <%= render "tasks/release_summary", release: rel, variant: :last, trailing: archive_chip -%>
   </div>
