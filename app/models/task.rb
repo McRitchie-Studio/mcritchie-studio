@@ -743,16 +743,18 @@ class Task < ApplicationRecord
     )
   end
 
-  # Extra, non-spine event metadata. On the submitted→reviewed transition this
-  # carries the TWO reviewers (+ heavy/light) so the avatars UI can render WHO
-  # reviewed — the single `actor` stays the primary mover. Every other transition
-  # records the column default ({}). An explicit Current.task_event_reviewers
-  # (set when Avi curated the pair) wins; otherwise the pair is selected here via
-  # ReviewerSelector, so the avatars populate no matter who drove the move. It
-  # NEVER blocks the stage change: a selection error is logged and the event
-  # records no reviewers (graceful degradation).
+  # Extra, non-spine event metadata. Build-lane transitions snapshot the mascot
+  # that owned THAT event, so a later rework handoff can repaint the current task
+  # mascot without rewriting history. On the submitted→reviewed transition this
+  # also carries the TWO reviewers (+ heavy/light) so the avatars UI can render
+  # WHO reviewed — the single `actor` stays the primary mover. An explicit
+  # Current.task_event_reviewers (set when Avi curated the pair) wins; otherwise
+  # the pair is selected here via ReviewerSelector, so the avatars populate no
+  # matter who drove the move. It NEVER blocks the stage change: a selection error
+  # is logged and the event records the metadata gathered so far.
   def stage_event_metadata(from:)
-    return {} unless from == "submitted" && stage == "reviewed"
+    metadata = stage_mascot_event_metadata
+    return metadata unless from == "submitted" && stage == "reviewed"
 
     # Prefer the pair that actually STARTED the review (stamped on the open review
     # intent) so the completed event shows the same two seniors the board showed
@@ -761,9 +763,30 @@ class Task < ApplicationRecord
     reviewers = Current.task_event_reviewers.presence ||
                 latest_intent_reviewers("reviewed") ||
                 ReviewerSelector.select(self)
-    reviewers.present? ? { "reviewers" => reviewers } : {}
+    reviewers.present? ? metadata.merge("reviewers" => reviewers) : metadata
   rescue StandardError => e
     Rails.logger.warn("[reviewer-selector] recording failed (non-fatal): #{e.class}: #{e.message}")
+    metadata || {}
+  end
+
+  def stage_mascot_event_metadata
+    return {} unless Task::BUILD_STAGES.include?(stage)
+
+    slug = devops["mascot"].presence
+    return {} unless slug
+
+    pokemon = Pokemon.find_by(slug: slug) if Pokemon.table_exists?
+    snapshot = {
+      "slug" => slug,
+      "name" => pokemon&.name.presence || slug,
+      "avatar" => pokemon&.display_avatar.presence,
+      "color" => devops["mascot_color"].presence || pokemon&.signature_color.presence,
+      "emoji" => devops["mascot_emoji"].presence
+    }.compact
+
+    { "mascot" => snapshot }
+  rescue StandardError => e
+    Rails.logger.warn("[task-event-mascot] recording failed (non-fatal): #{e.class}: #{e.message}")
     {}
   end
 

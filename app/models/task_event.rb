@@ -81,6 +81,13 @@ class TaskEvent < ApplicationRecord
     metadata["backfilled"] == true
   end
 
+  # Build-lane transitions snapshot the mascot that owned that event. Older rows
+  # lack it, so readers should fall back to the task's current mascot when needed.
+  def mascot_snapshot
+    snapshot = metadata["mascot"]
+    snapshot.is_a?(Hash) ? snapshot : {}
+  end
+
   private
 
   def broadcast_to_deployments_board
