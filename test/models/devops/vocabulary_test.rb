@@ -55,14 +55,24 @@ class Devops::VocabularyTest < ActiveSupport::TestCase
                  "the selector role names ARE the vocabulary's reviewer_roles, in order"
   end
 
-  test "[unit] exactly one step diverges — Review's Release Branch; Assemble's Main Branch was reconciled" do
+  test "[unit] no step diverges — Review's Release Branch reconciled (primary owns the merge)" do
     steps = Devops::Vocabulary.lanes.flat_map { |lane| lane[:steps] }
 
     diverging = steps.select { |step| step[:diverges].present? }
-    assert_equal 1, diverging.size, "exactly one step should still carry a :diverges note"
-    assert_equal "Release Branch", diverging.first[:label],
-      "the lone remaining divergence is the Review lane's Release Branch step"
+    assert_empty diverging,
+      "no step should carry a :diverges note — the implemented model now matches the SOP " \
+      "(#{diverging.map { |step| step[:label] }.inspect} still diverge)"
 
+    # The Review lane's Release Branch step: the PRIMARY reviewer runs the merge now,
+    # so the old "today the conductor runs it" divergence is gone.
+    release_branch = steps.find { |step| step[:label] == "Release Branch" }
+    assert_not_nil release_branch, "the Review lane's Release Branch step should still exist"
+    assert_nil release_branch[:diverges],
+      "Release Branch is now the primary reviewer's own merge, not a divergence — its :diverges note must be gone"
+    assert_match(/primary/i, release_branch[:expectation])
+    assert_match(/bin\/release merge/i, release_branch[:expectation])
+
+    # Assemble's Main Branch stays the reconciled merge-forward guard.
     main_branch = steps.find { |step| step[:label] == "Main Branch" }
     assert_not_nil main_branch, "the Assemble lane's Main Branch step should still exist"
     assert_nil main_branch[:diverges],

@@ -28,12 +28,16 @@ Load-bearing reminders (full detail in §1.4):
   SOP owns. Use `ship --yes` or `archive --yes` only when the session explicitly
   assigns production ship or archive work. `--yes` drops the human confirm only,
   never a test gate.
-- **Review round 1 in parallel** (fan out Avi + the `reviewer-select` primary/light
-  pair across the submitted PRs), but **cap the fan-out at 5 concurrent agents**
-  (the board DB's connection budget — see "Concurrency cap" in the operating
-  model); review larger queues in **waves of ≤5**. **Block-and-move** (one block
-  never halts the batch), a **second review round** for stragglers that arrive
-  during `prepare`, then assemble and stop at the ship gate.
+- **Review round 1 in parallel** — the **nested cascade**: fan out **Avi** as the
+  thin gate (product-acceptance + `reviewer-select` to pick the primary/light
+  pair), then spawn the **PRIMARY** reviewer per PR, which **spawns the LIGHT** as
+  its own sub-agent. **Cap the fan-out at 5 concurrent agents** (the board DB's
+  connection budget — see "Concurrency cap" in the operating model); review larger
+  queues in **waves of ≤5**. On two approvals with no blocker the **PRIMARY**
+  drives its task to `reviewed` AND runs `bin/release merge` (it owns the merge —
+  not the conductor). **Block-and-move** (one block never halts the batch), a
+  **second review round** for stragglers that arrive during `prepare`, then
+  assemble and stop at the ship gate.
 - Surface any blocking event as **❌ Block Resolved — <slug>: <reason>** in the
   handoff; omit that section entirely on a clean run.
 - Ship from a **primary checkout**, not a worktree (gems resolve as siblings at the

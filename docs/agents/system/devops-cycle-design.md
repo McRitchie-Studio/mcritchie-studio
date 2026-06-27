@@ -83,13 +83,16 @@ lifecycles that meet at one seam — `submitted`.
   (`building`), and opens a PR (`submitted`) — where the feature agent's part
   ends. A wall, bounced PR, or unready dependency parks it at **`blocked`**.
 - **Workflow 2 — Deploy (per release · DevOps):** `submitted → reviewed →
-  assembled → shipped`. **Avi delegates** review of the submitted PR — he
-  confirms **product-acceptance**, then assigns **two seniors** who judge it on
-  its merits (acceptance, base tests, standards, smell, scalability), landing it
-  at **`reviewed`** on **two approvals** or **`blocked`** (rework, with a
-  `qa_feedback` note); the release conductor then **merges each approved PR into
-  the persistent `release` branch** — which flips that task to `assembled`
-  (membership at merge) — assembling a single **release candidate (RC)**.
+  assembled → shipped`. Review is a **nested chain**: **Avi thin-delegates** the
+  submitted PR — he confirms **product-acceptance** and picks the **primary +
+  light** pair (`bin/reviewer-select`) — then hands the lane to the **PRIMARY
+  reviewer**, who owns it end-to-end. The PRIMARY does the deep review (acceptance,
+  base tests, standards, smell, scalability) and **spawns the LIGHT** reviewer as
+  its own sub-agent; on **two approvals** with no blocker the **PRIMARY** drives
+  the task to **`reviewed`** AND **merges its PR into the persistent `release`
+  branch** (`bin/release merge`) — which flips that task to `assembled`
+  (membership at merge) — assembling a single **release candidate (RC)**. A
+  blocker lands it at **`blocked`** (rework, with a `qa_feedback` note).
   **Steffon** (Platform Engineer) QAs the RC with the next tier (integration +
   an e2e smoke) and deploys `origin/release` to QA; at ship **Avi** runs the
   full e2e on the frozen ship SHA and, on the operator's OK, the conductor
@@ -167,9 +170,11 @@ task-to-task edges. See "Gem members & producer-first ordering" below.
 
 **Membership flips at merge; QA is a deploy of `origin/release`.** Feature PRs
 already target `release`, so there is no branch-cut and no PR-base retarget. For
-each `reviewed` member the conductor merges its PR into `release`
-(`bin/release merge <task> [<task> …]` → `gh pr merge` + `Release::Conductor.adopt!`),
-which records the task onto the active candidate and flips it `reviewed →
+each `reviewed` member its PR is merged into `release` — the **primary reviewer**
+runs `bin/release merge <task>` for the task it owns (the conductor batch-merges
+any pre-existing `reviewed` backlog with `bin/release merge <task> [<task> …]`),
+which `gh pr merge`s + `Release::Conductor.adopt!`s, records the task onto the
+active candidate, and flips it `reviewed →
 assembled`. **`merge` is batched** — it takes one OR many slugs, `gh pr merge`s
 each, then adopts them all in **one `heroku run`** (the cold-start-per-PR adopt
 otherwise blew the tool timeout and left half-states); with ≥2 slugs it also
@@ -239,29 +244,34 @@ from the **executor** (who moves it). The heartbeat agent executes by wearing
 each lane's hat; accountability maps to a soul; there is exactly **one operator
 gate** — the ship.
 
-**Redesigned `submitted → shipped` (decided, 2026-06-22).** The Deploy half is
-re-homed by role: **review is no longer Avi's solo gate** — Avi *delegates* it,
-confirming product-acceptance and then assigning **two seniors** who execute the
-review in parallel; **`assembled`** is owned by **Steffon** (now titled
-**Platform Engineer**); and **`shipped`** is owned by **Avi** (who runs the full
-e2e on the frozen ship SHA) ahead of the one operator gate. The senior reviewer
-pool is **{Shannon = UI · Carl = backend · Jasper = Web3 · Steffon =
-DevOps/Platform · Alex = Documentation}** (Alex is both the orchestrator and the
-pool's launchable Documentation review seat — one identity).
-Avi picks the pair with **`bin/reviewer-select <task>`** (wraps `ReviewerSelector`).
+**Redesigned `submitted → shipped` (decided, 2026-06-22; review lane re-homed
+2026-06-26).** The Deploy half is re-homed by role. Review is a **nested chain,
+not a flat peer spawn**: **Avi is a thin delegation pre-step** — he confirms
+product-acceptance and picks the **primary + light** pair (`bin/reviewer-select`),
+then hands the lane to the **PRIMARY reviewer**, who owns it end-to-end (the deep
+technical review, **spawning the LIGHT** as its own sub-agent, and the **merge**).
+**`assembled`** is owned by **Steffon** (now titled **Platform Engineer**); and
+**`shipped`** is owned by **Avi** (who runs the full e2e on the frozen ship SHA)
+ahead of the one operator gate. The senior reviewer pool is **{Shannon = UI ·
+Carl = backend · Jasper = Web3 · Steffon = DevOps/Platform · Alex = Documentation}**
+(Alex is both the orchestrator and the pool's launchable Documentation review
+seat — one identity). Avi picks the pair with **`bin/reviewer-select <task>`**
+(wraps `ReviewerSelector`).
 
 **Merge timing (decided):** a `reviewed` task is merged when its PR lands **into
 the persistent `release`** (`bin/release merge`), which flips it `reviewed →
 assembled`. The release branch is the live RC; `main` only moves when it ships.
-The merge is now triggered by **two senior approvals** (not Avi's solo gate) —
-**bias to action: green tests = go**, because `release` is recoverable by revert,
-so we don't fear merging there.
+The **PRIMARY reviewer runs the merge** — on **two approvals** (primary + light)
+with no blocker it drives the task to `reviewed` and runs `bin/release merge`. The
+conductor no longer runs the merge for a freshly-reviewed task (it still
+batch-merges any pre-existing `reviewed` backlog). **Bias to action: green tests
+= go**, because `release` is recoverable by revert, so we don't fear merging there.
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
 | **→ submitted** (task, entry) | Feature agent | Feature agent | `bin/full-suite-check` (certify FULL suite + rubocop) → pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
-| **submitted** (task) — REVIEW | **Avi** (delegator) | Avi assigns; **two seniors** review in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 PRIMARY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a PRIMARY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + primary/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Each senior confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance** → `blocked` (rework, with `qa_feedback`) **OR** `reviewed` ✅ on **2 approvals** | **2 senior approvals** (PRIMARY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
-| **reviewed** ✅ — MERGE (task) | the **two seniors' approval** | DevOps conductor *executes* | **2 approvals → merge the PR into `release`** (`bin/release merge`) honoring `dependencies` + lanes; membership flips at merge → member `assembled`. **Bias to action: green tests = go** (`release` reverts cleanly; we don't fear merging there) | deterministic merge (conflicts surface at PR-merge); **no separate Avi gate** |
+| **submitted** (task) — REVIEW | **PRIMARY** reviewer (Avi delegates) | Avi (thin gate) → **PRIMARY** owns lane → **LIGHT** | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 PRIMARY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a PRIMARY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + primary/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Avi then **hands the lane to the PRIMARY**, who runs the deep review and **spawns the LIGHT** as its own sub-agent; each confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker on either → the **PRIMARY** drives the task to `reviewed` ✅ AND runs the merge (next row); a blocker → `blocked` (rework, with `qa_feedback`) | **2 senior approvals** (PRIMARY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
+| **reviewed** ✅ — MERGE (task) | the **PRIMARY** reviewer | the **PRIMARY** reviewer *executes* | On **2 approvals** (primary + light, neither blocking) the **PRIMARY** runs **`bin/release merge`** for its task — honoring `dependencies` + lanes; membership flips at merge → member `assembled`. The primary owns the merge; the conductor no longer runs it for a freshly-reviewed task (it still batch-merges any `reviewed` backlog). **Bias to action: green tests = go** (`release` reverts cleanly; we don't fear merging there) | deterministic merge (conflicts surface at PR-merge); **the primary owns it — no separate conductor/Avi gate** |
 | **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* | Run the **next tier — integration + an e2e smoke** on `origin/release`; green → `bin/release prepare` deploys it to QA → **Discord QA-deployment note** → release `assembled` | deterministic suite; ⛔ regression → block the task. **`prepare` retries/waits-for-boot** (the `/up`-smoke race): `bin/release prepare` polls `<qa_url>/up` via `wait_for_boot` and **defers the assemble** (`Release::Conductor.curate!` then `assemble!`) until QA returns 200, so a slow dyno can't strand the RC `assembling` |
 | **→ shipped** (release) | **Avi**, then **Mr. McRitchie** | Avi tests; operator approves; conductor deploys | Avi runs the **full e2e + highest-tier suite on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"). On green Avi **STOPS for the operator** → on go: `bin/release ship` ff's `release → main` per repo, deploys → `production_smoke` → **Discord release notes** → members `shipped` | 🔒 **the one operator gate — after Avi's test confirmation, before deploy**; rollback on smoke fail |
 
@@ -286,8 +296,13 @@ Clarifications:
   `origin/release`, and `prepare` has deployed it to QA. The operator gate is at
   **ship** (after Avi's full-suite run on the frozen SHA), **not here** — at this
   scope `assembled` is a state the conductor flips, not a human approval.
-- **Review is no longer Avi's solo gate.** Avi opens review as **delegator** —
-  product-acceptance + reviewer selection — and the **two seniors execute** it.
+- **Review is a thin delegation, then a nested chain — not Avi's solo gate.** Avi
+  opens review as a **thin delegator** — product-acceptance + reviewer selection —
+  then **hands the lane to the PRIMARY**, who owns it end-to-end: the deep review,
+  **spawning the LIGHT** reviewer as its own sub-agent, and the **merge** into
+  `release` (`bin/release merge`) on two approvals. Avi does not do the deep
+  technical review himself, and the conductor no longer runs the merge for a
+  freshly-reviewed task.
   The selection tiebreak is **seeded per task** (reproducible, not
   process-random) and **logged** (auditable), so reviews spread across the pool
   instead of always landing on the obvious domain owner. Because the seed is
@@ -310,8 +325,9 @@ Clarifications:
   approval ceremony; the suite is a green/red *signal* and the operator OK at
   ship is the gate. QA + production are properties of the **release**, not the
   task.
-- **The conductor merges even funds-touching work autonomously** into `release`
-  on the two seniors' approval — the consequence of "Review + QA, gate prod".
+- **The PRIMARY merges even funds-touching work autonomously** into `release`
+  on the two approvals (primary + light) — the consequence of "Review + QA, gate
+  prod".
   Risk raises *scrutiny* (the PRIMARY review goes to Opus + full
   integration/security suite), not a second human. `config/release_builder.yml`
   gates only QA assembly autonomy; adding a separate human pre-merge gate for
@@ -412,16 +428,19 @@ one blocking event happened** — omit the section on a clean run.
    tasks (e.g. `rolio` — handle in its own app, never `bin/release merge` it).
 2. **Review round 1 — PARALLEL fan-out (≤5 concurrent).** Fetch the submitted
    queue (`bin/task list --stage submitted`) and review it in parallel: for each
-   pipeline task run the two-senior cascade (the `Review submitted PRs` runbook
-   below) — spawn **Avi** (product-acceptance), `bin/reviewer-select <task>
-   --busy-auto` (records the primary+light pair), then spawn the two seniors **in
-   parallel**. **Cap the fan-out at 5 concurrent agents** (the board DB's
-   connection budget — see "Concurrency cap" in the operating model): launch in
-   **waves of ≤5**, not the whole queue at once, and don't review one PR start to
-   finish before the next. Two approvals → `bin/task move <task> reviewed`; any
-   block → block-and-move.
-3. **Prepare the release.** Merge the round-1 `reviewed` tasks **plus any
-   pre-existing `reviewed` backlog** into the active candidate (or open it). Run the
+   pipeline task run the **nested cascade** (the `Review submitted PRs` runbook
+   below) — spawn **Avi** as the thin gate (product-acceptance + `bin/reviewer-select
+   <task> --busy-auto`, which records the primary+light pair), then spawn the
+   **PRIMARY** reviewer; the PRIMARY spawns the **LIGHT**. **Cap the fan-out at 5
+   concurrent agents** (the board DB's connection budget — see "Concurrency cap" in
+   the operating model): launch in **waves of ≤5**, not the whole queue at once,
+   and don't review one PR start to finish before the next. Both pass with no
+   blocker → the **PRIMARY** drives the task to `reviewed` AND runs **`bin/release
+   merge <task>`** (it owns the merge → `assembled`); any block → block-and-move.
+3. **Prepare the release.** The round-1 tasks are **already merged** — each
+   PRIMARY ran `bin/release merge` as the last act of owning its lane, so they are
+   already `assembled`. Batch-merge any **pre-existing `reviewed` backlog** the
+   cascade didn't own into the active candidate (or open it). Run the
    pre-merge checklist per PR — `gh pr ready <n>` (un-draft), `gh pr edit <n> --base
    release` (retarget; no-op when `main` == `release`) — then **batched**
    `bin/release merge <slug> [<slug> …] --yes` (one dyno, N `reviewed → assembled`
@@ -458,11 +477,14 @@ in `config/release_repos.yml` that doesn't already have one. Idempotent — a re
 that already has `origin/release` is skipped.
 
 **`Review submitted PRs`**  *(submitted → reviewed → assembled)*
-Review is **delegated by Avi to two seniors** (§1.2) — not a solo `avi` pass. For
-each `submitted` task (`bin/task list` or the board):
+Review is a **nested chain** (§1.2): **Avi thin-delegates**, then the **PRIMARY
+reviewer owns the lane** — it spawns the LIGHT and runs the merge. Not a solo
+`avi` pass, and **not a flat peer spawn**. For each `submitted` task
+(`bin/task list` or the board):
 
-1. **Spawn Avi.** He confirms **product-acceptance** — does the open PR (base
-   `release`) meet the task's acceptance criteria?
+1. **Spawn Avi (thin gate).** He confirms **product-acceptance** — does the open
+   PR (base `release`) meet the task's acceptance criteria? — and picks the pair
+   (step 2). He does **not** run the deep technical review.
 2. **Pick the two seniors.** Avi runs **`bin/reviewer-select <task>`** — it loads
    the app and scores the pool `{shannon, carl, jasper, steffon, alex}` by
    **domain fit** (the task's shape + repositories + risk tags vs each soul's
@@ -483,19 +505,23 @@ each `submitted` task (`bin/task list` or the board):
    before `→reviewed` lands. With a custom `--qa-owner` or a non-empty `--busy`
    set the preview is **advisory** — `--record` it so the busy-aware pair is the
    one the timeline shows.)
-3. **Run the two reviews in parallel.** Avi spawns the two named seniors as review
-   agents — each is a launchable subagent. Each judges **diff-vs-acceptance + code
-   standards + code smell + scalability** at its depth: PRIMARY does the deep pass
-   (Opus on `migration`/`payment`/`solana`/`auth`), LIGHT a focused pass; both
-   confirm the shape's **base** tiers are green. **Honor the ≤5-concurrent cap**
-   (operating model): across all PRs in flight, keep at most 5 review agents
-   running at once — a queue wider than ~2 PRs reviews in **waves of ≤5**, never
-   the whole batch at once.
-4. **Resolve.** On **two approvals** → `bin/task move <task> reviewed`, then the
-   conductor merges the PR into `release` with **`bin/release merge <task>`**
-   (membership flips `reviewed → assembled`). Any reviewer blocks → **`bin/task
-   block <task> --kind rework --feedback "…"`** (one complete send-back). Bias to
-   action: two green approvals = go (`release` reverts cleanly).
+3. **Spawn the PRIMARY; the PRIMARY spawns the LIGHT (nested).** Avi/the conductor
+   spawns the **PRIMARY** reviewer as a sub-agent, handed ALL the technical-review
+   goals and **ownership of the rest of the lane**. The PRIMARY does the deep pass
+   (Opus on `migration`/`payment`/`solana`/`auth`) — **diff-vs-acceptance + code
+   standards + code smell + scalability**, plus confirming the shape's **base**
+   tiers are green — and **spawns the LIGHT reviewer as its OWN sub-agent** for a
+   focused pass, so the primary already holds full context when the light's verdict
+   returns. **Honor the ≤5-concurrent cap** (operating model): across all PRs in
+   flight, keep at most 5 review agents running at once — a queue wider than ~2 PRs
+   reviews in **waves of ≤5**, never the whole batch at once.
+4. **Resolve — the PRIMARY owns the close.** Both complete and **neither flags a
+   blocker** → the **PRIMARY** drives the task to `reviewed` (`bin/task move <task>
+   reviewed`) AND runs **`bin/release merge <task>`** to land its PR in `release`
+   (membership flips `reviewed → assembled`) — the conductor no longer runs this
+   for a freshly-reviewed task. Any reviewer blocks → **`bin/task block <task>
+   --kind rework --feedback "…"`** (one complete send-back). Bias to action: two
+   green approvals = go (`release` reverts cleanly).
 
 **Agentic intent — the live "who's on it now".** Each event carries the agent
 that STARTED it, not only the one that completed it, so /deployments and the
