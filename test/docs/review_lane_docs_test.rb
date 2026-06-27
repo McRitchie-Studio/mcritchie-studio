@@ -40,6 +40,29 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       "no merge mechanics paragraph should attribute the per-task merge to the conductor")
   end
 
+  # Cross-doc tripwire: a freshly-reviewed task is reviewed AND merged by the
+  # PRIMARY, never by the conductor or Avi. Catches the "conductor reviews, merges,
+  # and deploys" / "Avi reviews and merges" framings (incl. the §1.4 cold-start
+  # block) that the per-file phrase checks above missed.
+  REVIEW_DOCS = %w[
+    agents/avi/role.md
+    system/devops-cycle-design.md
+    skills/qa-release/SKILL.md
+    modules/parallel-agent-devops.md
+  ].freeze
+
+  test "[static] no review doc says the conductor (or Avi) reviews + merges a freshly-reviewed task" do
+    REVIEW_DOCS.each do |rel|
+      body = norm(rel)
+      refute_match(/conductor reviews\b/i, body,
+        "#{rel}: the conductor no longer reviews — Avi thin-delegates, the PRIMARY reviews")
+      refute_match(/reviews,?\s+(and\s+)?merges/i, body,
+        "#{rel}: drop 'reviews, merges' — the review AND the per-task merge are the PRIMARY's, not the conductor's/Avi's")
+      refute_match(/conductor merges (its|the|each) (freshly-reviewed )?PR/i, body,
+        "#{rel}: the conductor no longer runs the per-task merge — the PRIMARY does")
+    end
+  end
+
   test "[static] the qa-release SKILL describes the nested primary→light cascade" do
     body = norm("skills/qa-release/SKILL.md")
     assert_match(/nested cascade/i, body)

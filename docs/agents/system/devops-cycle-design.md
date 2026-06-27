@@ -393,9 +393,14 @@ tests pass, stop and hand the operator the `Run Deployment` gate.
 > **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
 > opens a fresh session with just `Build and Deploy QA Release`, follow **this**
 > SOP — *not* the feature-agent "⛔ STOP before writing code" flow in `CLAUDE.md`
-> (that is the **Build** lane). The conductor reviews, merges, and deploys work
-> that is **already** built; it does not create a task, take a worktree, or write
-> feature code. Run every command from `/Users/alex/projects/mcritchie-studio`.
+> (that is the **Build** lane). The conductor **orchestrates** the deploy run on
+> work that is **already** built: it **delegates review** (Avi confirms
+> product-acceptance + picks the pair; the **PRIMARY reviewer** does the deep
+> review, spawns the LIGHT, and runs `bin/release merge` for its task), then
+> **assembles** the QA candidate and **deploys** it. The conductor does **not**
+> review or run the per-task merge itself, and it does not create a task, take a
+> worktree, or write feature code. Run every command from
+> `/Users/alex/projects/mcritchie-studio`.
 
 > **A non-interactive agent MUST pass `--yes` only for approved non-production confirms.** An
 > agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as

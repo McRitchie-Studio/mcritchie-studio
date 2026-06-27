@@ -514,11 +514,13 @@ The intended cycle is:
 
 1. Feature agent opens a PR.
 2. Feature agent moves the task to `submitted`.
-3. Avi reviews and merges approved PRs into `release` when ready
-   (`bin/release merge <task> [<task> …]` does the `gh pr merge` + membership
-   flip — it takes **one OR many** slugs, merges each, then adopts them all in a
-   **single `heroku run`**; with ≥2 slugs it first prints an **overlap planner**:
-   colliding files + suggested order + likely rebases, warning-only).
+3. The review lane runs: Avi thin-delegates → the **PRIMARY** reviewer does the
+   deep review, spawns the LIGHT, and on two approvals runs **`bin/release merge`**
+   for its task to land it in `release` (the conductor batch-merges any pre-existing
+   `reviewed` backlog). `bin/release merge <task> [<task> …]` does the `gh pr merge`
+   + membership flip — it takes **one OR many** slugs, merges each, then adopts them
+   all in a **single `heroku run`**; with ≥2 slugs it first prints an **overlap
+   planner**: colliding files + suggested order + likely rebases, warning-only.
 4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
 5. Avi or Steffon deploys the `release` ref to the app's QA server with
