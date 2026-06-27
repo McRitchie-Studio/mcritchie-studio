@@ -1,7 +1,7 @@
 require "test_helper"
 
 # ReviewerSelector picks the two senior reviewers for a submitted PR — by domain
-# fit, with a LOGGED random tiebreak, splitting the pair 1 heavy / 1 light, and
+# fit, with a LOGGED random tiebreak, splitting the pair 1 primary / 1 light, and
 # never picking the QA owner (no self-gating). It degrades gracefully when the
 # reviewer Agent rows aren't seeded.
 class ReviewerSelectorTest < ActiveSupport::TestCase
@@ -35,26 +35,26 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   # --- domain fit ---
 
-  test "a backend task puts the backend reviewer (carl) in the heavy seat" do
+  test "a backend task puts the backend reviewer (carl) in the primary seat" do
     result = ReviewerSelector.select(task_for(shape: "backend"))
 
     assert_equal 2, result.size
     assert_equal slugs(result).uniq, slugs(result), "two distinct reviewers"
     assert_includes slugs(result), "carl"
-    assert_equal "heavy", weight_of(result, "carl"), "the domain owner takes the heavy (deep) seat"
-    assert_equal %w[heavy light].sort, result.map { |r| r["weight"] }.sort, "exactly one heavy + one light"
+    assert_equal "primary", weight_of(result, "carl"), "the domain owner takes the primary (deep) seat"
+    assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort, "exactly one primary + one light"
   end
 
-  test "an onchain task selects the Web3 reviewer (jasper) as heavy" do
+  test "an onchain task selects the Web3 reviewer (jasper) as primary" do
     result = ReviewerSelector.select(task_for(shape: "onchain"))
     assert_includes slugs(result), "jasper"
-    assert_equal "heavy", weight_of(result, "jasper")
+    assert_equal "primary", weight_of(result, "jasper")
   end
 
-  test "a ui-only task selects the UI reviewer (shannon) as heavy" do
+  test "a ui-only task selects the UI reviewer (shannon) as primary" do
     result = ReviewerSelector.select(task_for(shape: "ui-only"))
     assert_includes slugs(result), "shannon"
-    assert_equal "heavy", weight_of(result, "shannon")
+    assert_equal "primary", weight_of(result, "shannon")
   end
 
   test "a risk tag pulls its domain owner in even on a different shape" do
@@ -75,10 +75,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # --- the documentation seat is Alex (the orchestrator also wears the docs hat) ---
 
   test "a docs change selects Alex as the documentation reviewer" do
-    # `docs` is the only needed domain → only Alex (the docs seat) fits → heavy seat.
+    # `docs` is the only needed domain → only Alex (the docs seat) fits → primary seat.
     result = ReviewerSelector.select(task_for(shape: nil, risks: ["docs"]))
     assert_includes slugs(result), "alex", "Alex holds the pool's documentation seat"
-    assert_equal "heavy", weight_of(result, "alex"), "the docs-domain owner takes the heavy seat"
+    assert_equal "primary", weight_of(result, "alex"), "the docs-domain owner takes the primary seat"
   end
 
   # --- no self-gating: the QA owner (steffon) is never a reviewer ---
@@ -108,7 +108,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "an explicit builder is excluded from the candidate pool" do
     result = ReviewerSelector.new(task_for(shape: "backend"), builder: "carl").reviewers
     refute_includes slugs(result), "carl", "the builder never reviews their own work"
-    assert_equal 2, result.size, "a heavy+light pair is still returned"
+    assert_equal 2, result.size, "a primary+light pair is still returned"
   end
 
   test "the builder recorded on devops.built_by is excluded" do
@@ -171,7 +171,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "the builder is KEPT when excluding it would leave too few candidates" do
     # Pool {carl, shannon, jasper}; qa_owner=jasper leaves {carl, shannon} (a
     # formable pair); excluding builder carl too would leave only {shannon} — so
-    # the builder is kept and a heavy+light pair is still returned.
+    # the builder is kept and a primary+light pair is still returned.
     selector = TinyPoolSelector.new(task_for(shape: "backend"), qa_owner: "jasper", builder: "carl")
     decision = selector.decision
 
@@ -223,7 +223,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   test "the busy filter keeps the least-bad busy back rather than starve the pool" do
     # TinyPool {carl, shannon, jasper}; QA owner steffon isn't in it, so the base
-    # is all three. Marking ALL THREE busy can't drop the pool below a HEAVY+LIGHT
+    # is all three. Marking ALL THREE busy can't drop the pool below a PRIMARY+LIGHT
     # pair — the filter keeps MIN_CANDIDATES back (kept_busy), mirroring the
     # builder keep-rather-than-starve rule.
     decision = TinyPoolSelector.new(task_for(shape: "backend"), busy: %w[carl shannon jasper]).decision
@@ -282,7 +282,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   # Integration: the real build flow (move-to-building auto-stamps built_by from
   # the assigned agent) feeding the selector with a busy set — end-to-end the pair
-  # omits BOTH the builder and the busy soul and still forms a HEAVY+LIGHT pair.
+  # omits BOTH the builder and the busy soul and still forms a PRIMARY+LIGHT pair.
   test "the move-to-building builder and a busy soul are both omitted end-to-end" do
     task = Task.create!(title: "build flow exclude integration", agent_slug: "carl",
                         metadata: { "devops" => { "shape" => "backend" } })
@@ -323,28 +323,28 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     result = ReviewerSelector.select(task_for(shape: "backend"))
     assert_equal 2, result.size
     assert_equal slugs(result).uniq, slugs(result)
-    assert_equal %w[heavy light].sort, result.map { |r| r["weight"] }.sort
+    assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort
     refute_includes slugs(result), "steffon"
   end
 
-  test "an unknown / blank shape still returns a valid heavy+light pair" do
+  test "an unknown / blank shape still returns a valid primary+light pair" do
     result = ReviewerSelector.select(Task.create!(title: "no shape sample task", stage: "submitted"))
     assert_equal 2, result.size
-    assert_equal %w[heavy light].sort, result.map { |r| r["weight"] }.sort
+    assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort
   end
 
   # --- reads Agent.metadata domains + review_weight ---
 
-  test "reads Agent.metadata domains for fit and review_weight for the heavy seat" do
+  test "reads Agent.metadata domains for fit and review_weight for the primary seat" do
     # Both reviewers are made to fit backend via metadata; the heavier review_weight
-    # takes the heavy seat — proving both metadata keys drive the decision.
+    # takes the primary seat — proving both metadata keys drive the decision.
     seed_agent("Carl", domains: ["backend"], review_weight: 9)
     seed_agent("Shannon", domains: ["backend"], review_weight: 1)
 
     result = ReviewerSelector.select(task_for(shape: "backend"))
 
     assert_equal %w[carl shannon], slugs(result).sort, "both metadata-fitted reviewers are picked"
-    assert_equal "heavy", weight_of(result, "carl"), "higher review_weight → heavy seat"
+    assert_equal "primary", weight_of(result, "carl"), "higher review_weight → primary seat"
     assert_equal "light", weight_of(result, "shannon")
   end
 
@@ -353,10 +353,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "explain returns the chosen pair, their matched domains, and the excluded QA owner" do
     decision = ReviewerSelector.explain(task_for(shape: "backend"))
 
-    assert_equal %w[heavy light], decision["reviewers"].map { |r| r["weight"] }, "one heavy + one light, heavy first"
-    heavy = decision["reviewers"].first
-    assert_equal "carl", heavy["slug"], "the backend owner takes the heavy seat"
-    assert_includes heavy["matched"], "backend", "the seat shows which needed domains it covers"
+    assert_equal %w[primary light], decision["reviewers"].map { |r| r["weight"] }, "one primary + one light, primary first"
+    primary = decision["reviewers"].first
+    assert_equal "carl", primary["slug"], "the backend owner takes the primary seat"
+    assert_includes primary["matched"], "backend", "the seat shows which needed domains it covers"
     assert_equal "steffon", decision["excluded_qa_owner"]
     refute_includes decision["candidates"], "steffon", "the QA owner is not a candidate (no self-gating)"
   end
@@ -379,7 +379,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   # --- weight + roll follow-ups (PR #123 review: reviewer-select-weight-followups) ---
 
-  test "string review_weight labels drive the heavy seat regardless of the roll" do
+  test "string review_weight labels drive the primary seat regardless of the roll" do
     # Regression: prod seeds (db/seeds/02_agents.rb) store review_weight as the
     # STRING "heavy"/"light". A bare String#to_f silently zeroed every label
     # (-> 0.0), so the label never drove the deep seat — fit (then the roll)
@@ -393,7 +393,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     8.times do |seed|
       result = ReviewerSelector.new(task, random: Random.new(seed)).reviewers
       assert_equal %w[carl shannon], slugs(result).sort, "both backend-fitted reviewers are picked"
-      assert_equal "heavy", weight_of(result, "shannon"), "the 'heavy' label must drive the deep seat (seed=#{seed})"
+      assert_equal "primary", weight_of(result, "shannon"), "the 'heavy' review_weight label must drive the primary (deep) seat (seed=#{seed})"
       assert_equal "light", weight_of(result, "carl")
     end
   end
@@ -413,7 +413,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal 1, recorded.uniq.size,
       "independent passes must pick one stable pair (no process-random divergence)"
     assert_equal cli_pair, recorded.first,
-      "the CLI .decision preview must match the recorded .select pick (heavy/light order included)"
+      "the CLI .decision preview must match the recorded .select pick (primary/light order included)"
   end
 
   test "the CLI preview and recorded pick agree on a tie WITH a builder excluded" do

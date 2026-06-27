@@ -39,7 +39,7 @@ class ConsolidatedTimelineTest < ActionView::TestCase
   test "renders a live in-progress block with a ticker for an open review intent" do
     task = Task.create!(title: "component live task", stage: "submitted")
     task.record_intent_event(to_stage: "reviewed",
-                             reviewers: [{ "slug" => "carl", "weight" => "heavy" },
+                             reviewers: [{ "slug" => "carl", "weight" => "primary" },
                                          { "slug" => "shannon", "weight" => "light" }])
 
     render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
@@ -49,12 +49,36 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[data-test='timeline-live']"                 # ticking duration
     assert_includes rendered, "Carl"
     assert_includes rendered, "Shannon"
-    assert_includes rendered, "heavy"
+    assert_includes rendered, "primary"
     # Light-mode contrast (regression guard for the PR #207 QA block): the live
     # ticker must be a bounded, theme-aware pill — not bare text-green-200 that is
     # invisible on the white light-mode surface (light is the no-JS default).
     assert_includes rendered, "text-green-700"
     assert_includes rendered, "dark:text-green-200"
+  end
+
+  # [integration] backward-compat: a →reviewed transition recorded BEFORE the
+  # HEAVY→PRIMARY rename still carries weight "heavy" in its event metadata. The
+  # timeline must render it identically to a new "primary" record — the deep-seat
+  # pill text reads "primary" (via StageAgent#role_label) and wears the primary
+  # styling — so no migration of the append-only metadata is needed.
+  test "renders a legacy 'heavy' review record as a Primary seat" do
+    task = Task.create!(title: "legacy heavy review task", stage: "reviewed")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600,
+                      metadata: { "reviewers" => [{ "slug" => "carl", "weight" => "heavy" },
+                                                  { "slug" => "shannon", "weight" => "light" }] })
+
+    render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
+
+    assert_includes rendered, "Carl"
+    assert_includes rendered, "Shannon"
+    # the legacy "heavy" weight surfaces as the canonical "primary" label, never "heavy"
+    assert_includes rendered, "primary", "a legacy heavy record displays the primary role"
+    refute_includes rendered, "heavy", "the stale 'heavy' label is normalized away in the UI"
+    # and it wears the primary (deep) seat tooltip + accent styling
+    assert_select "[title='Primary (deep) review']"
   end
 
   test "renders historical build mascots from event snapshots" do

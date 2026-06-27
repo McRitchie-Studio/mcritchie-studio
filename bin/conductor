@@ -18,7 +18,7 @@
 # API itself — it shells out to the existing tools and reads their output:
 #   * bin/task list --stage <S>   — per-stage enumeration (the Step-0 fix)
 #   * bin/task show <slug> --json — repos + release_slug + devops for a task
-#   * bin/reviewer-select --json  — preview the heavy+light pair (plan --reviewers)
+#   * bin/reviewer-select --json  — preview the primary+light pair (plan --reviewers)
 #   * bin/release merge|prepare   — the actual Deploy writes (drive subcommands only)
 # It COMPLEMENTS bin/qa-intake (PR<->worktree join + labels) rather than
 # overlapping it: conductor answers "what is in each Deploy stage and what is the
@@ -269,7 +269,7 @@ def partition_pipeline(tasks)
   enriched.partition { |t| !non_pipeline?(t) }
 end
 
-# Preview the heavy+light reviewer pair for a submitted task (plan --reviewers).
+# Preview the primary+light reviewer pair for a submitted task (plan --reviewers).
 # Advisory: --no-record so the preview never writes the intent. Degrades to nil on
 # any failure — the recommended command is printed regardless.
 def reviewer_preview(slug)
@@ -280,8 +280,10 @@ def reviewer_preview(slug)
   pair = Array(decision && decision["reviewers"])
   return nil if pair.size < 2
 
-  heavy, light = pair
-  "#{heavy['slug']} (heavy) + #{light['slug']} (light)"
+  # Echo the role each seat actually carries (sourced from the vocabulary via
+  # ReviewerSelector) rather than hardcoding the role label.
+  primary, light = pair
+  "#{primary['slug']} (#{primary['weight'] || 'primary'}) + #{light['slug']} (#{light['weight'] || 'light'})"
 rescue StandardError
   nil
 end
@@ -302,7 +304,7 @@ def plan(reviewers: false, health: true)
     puts "  (none)"
   else
     sub_pipeline.each do |t|
-      puts "  - #{t['slug']}: bin/reviewer-select #{t['slug']}   # records the heavy+light intent, then spawn that pair"
+      puts "  - #{t['slug']}: bin/reviewer-select #{t['slug']}   # records the primary+light intent, then spawn that pair"
       if reviewers
         pair = reviewer_preview(t["slug"])
         puts "      picked: #{pair}" if pair
@@ -414,7 +416,7 @@ def usage
       survey            (default) read-only — enumerate the Deploy queue by stage,
                         name the RC + members, brief prod health.
       plan              survey + the next deterministic action per stage.
-        --reviewers     also preview the picked heavy+light pair per submitted task.
+        --reviewers     also preview the picked primary+light pair per submitted task.
       merge [--run]     bin/release merge <reviewed pipeline slugs> (dry unless --run).
       qa    [--run]     bin/release prepare (dry unless --run).
       ship              REFUSES — production deploy is operator-gated.

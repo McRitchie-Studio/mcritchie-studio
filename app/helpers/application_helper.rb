@@ -349,10 +349,10 @@ module ApplicationHelper
       ],
       "Deploy" => [
         { stage: "submitted", kick: devops_kickoffs["submitted"],
-          what: "The intake queue — submitted PRs waiting for review. Review is no longer Avi's solo gate: he confirms product-acceptance, then assigns two seniors (1 HEAVY + 1 LIGHT) from {Shannon · Carl · Jasper · Steffon · Alex} by domain fit + a logged random tiebreak.",
+          what: "The intake queue — submitted PRs waiting for review. Review is no longer Avi's solo gate: he confirms product-acceptance, then assigns two seniors (1 PRIMARY + 1 LIGHT) from {Shannon · Carl · Jasper · Steffon · Alex} by domain fit + a logged random tiebreak.",
           who: "Avi (delegator) → two senior reviewers",
           tests: "Base tier — unit + component. Each senior confirms green, plus code standards, smell, scalability, and acceptance.",
-          gate: "Two senior approvals (HEAVY = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
+          gate: "Two senior approvals (PRIMARY = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
           nxt: "Two approvals → reviewed, or one senior sends it back blocked for rework" },
         { stage: "reviewed",  kick: devops_kickoffs["reviewed"],
           what: "Approved by two seniors and off the bench — the conductor merges each approved PR into the persistent release branch (membership flips at merge).",

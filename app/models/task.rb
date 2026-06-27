@@ -374,7 +374,9 @@ class Task < ApplicationRecord
   end
 
   # The two senior reviewers Avi assigned for the `submitted` review (the Deploy
-  # half's review step), each `{ "slug" => ..., "weight" => "heavy"|"light" }`,
+  # half's review step), each `{ "slug" => ..., "weight" => "primary"|"light" }`
+  # (legacy intents recorded before the rename still read "heavy" — treated as
+  # "primary"),
   # read off THIS task's own `metadata["reviewers"]`. NOTE: the canonical write
   # target for the avatars UI is the submitted→reviewed TaskEvent's metadata (see
   # #stage_event_metadata) — StageAgentsHelper#stage_agent_groups reads the event,
@@ -389,7 +391,7 @@ class Task < ApplicationRecord
   # the task timeline can show WHO is on it with a live ticker before the
   # transition lands. Appends a TaskEvent(kind: intent) FROM the current stage TO
   # to_stage, carrying `actor` (a single owner — Steffon at QA, Avi at ship)
-  # and/or `reviewers` metadata (the heavy/light pair at review). Append-only +
+  # and/or `reviewers` metadata (the primary/light pair at review). Append-only +
   # idempotent: an identical open intent (same target + same crew) is returned
   # as-is rather than stacked, and it is a no-op once to_stage has already landed.
   #
@@ -576,10 +578,13 @@ class Task < ApplicationRecord
   # Normalize a raw reviewers payload — from EITHER the submitted→reviewed
   # TaskEvent's metadata["reviewers"] (the canonical write target, see
   # #stage_event_metadata) OR a Task's own metadata["reviewers"] — into uniform
-  # `{ "slug" =>, "weight" => "heavy"|"light"|nil }` entries. Accepts a list of
-  # slug strings or of hashes, and tolerates the agent_slug/review_weight/depth
-  # aliases (review_weight is the per-agent key the souls seed + ReviewerSelector
-  # use), so the writer's exact shape isn't load-bearing. Blank-slug entries drop.
+  # `{ "slug" =>, "weight" => "primary"|"light"|nil }` entries. The weight is
+  # passed through verbatim (role-agnostic), so a legacy "heavy" record still
+  # normalizes — the UI maps it back to "primary" at render (StageAgent#role_label).
+  # Accepts a list of slug strings or of hashes, and tolerates the
+  # agent_slug/review_weight/depth aliases (review_weight is the per-agent key the
+  # souls seed + ReviewerSelector use), so the writer's exact shape isn't
+  # load-bearing. Blank-slug entries drop.
   def self.normalize_reviewers(raw)
     Array(raw).filter_map do |entry|
       if entry.is_a?(Hash)
@@ -746,7 +751,7 @@ class Task < ApplicationRecord
   # Extra, non-spine event metadata. Build-lane transitions snapshot the mascot
   # that owned THAT event, so a later rework handoff can repaint the current task
   # mascot without rewriting history. On the submitted→reviewed transition this
-  # also carries the TWO reviewers (+ heavy/light) so the avatars UI can render
+  # also carries the TWO reviewers (+ primary/light) so the avatars UI can render
   # WHO reviewed — the single `actor` stays the primary mover. An explicit
   # Current.task_event_reviewers (set when Avi curated the pair) wins; otherwise
   # the pair is selected here via ReviewerSelector, so the avatars populate no

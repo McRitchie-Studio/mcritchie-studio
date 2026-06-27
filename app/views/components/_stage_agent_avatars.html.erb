@@ -52,9 +52,9 @@
                     <%= entry.name %>
                     <% if entry.weight.present? %>
                       <span class="px-1 py-px rounded text-[9px] font-bold uppercase tracking-wide
-                                   <%= entry.heavy? ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-surface text-muted border border-subtle' %>"
-                            title="<%= entry.heavy? ? 'Heavy (deep) review' : 'Light review' %>">
-                        <%= entry.weight %>
+                                   <%= entry.primary? ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-surface text-muted border border-subtle' %>"
+                            title="<%= entry.primary? ? 'Primary (deep) review' : 'Light review' %>">
+                        <%= entry.role_label %>
                       </span>
                     <% end %>
                   </p>
@@ -124,7 +124,7 @@
               <div class="flex items-center <%= crew_overlap %> <%= crew_pos %> transition-transform duration-150 group-hover:scale-150">
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
                   <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
-                       title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(' ') %>">
+                       title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(' ') %>">
                     <%= render "components/agent_avatar", agent: entry, size: crew_size %>
                   </div>
                 <% end %>

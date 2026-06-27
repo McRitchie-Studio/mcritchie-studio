@@ -16,7 +16,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     Agent.create!(name: "Shannon", slug: "shannon")
   end
 
-  REVIEWERS = [{ "slug" => "carl", "weight" => "heavy" }, { "slug" => "shannon", "weight" => "light" }].freeze
+  REVIEWERS = [{ "slug" => "carl", "weight" => "primary" }, { "slug" => "shannon", "weight" => "light" }].freeze
 
   # A task that actually walked designed→building→submitted with an actor, so its
   # crew entries aren't empty and the deploy card renders its crew + intent ticker.

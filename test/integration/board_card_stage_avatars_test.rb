@@ -42,7 +42,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 3.hours.ago, seconds_in_from: 3600,
-                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
                                                    { "slug" => "carl", "weight" => "light" }] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")
@@ -71,7 +71,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
                       occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 4.hours.ago, seconds_in_from: 3600,
-                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
                                                    { "slug" => "carl", "weight" => "light" }] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")
@@ -151,7 +151,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
                       occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 4.hours.ago, seconds_in_from: 3600,
-                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
                                                    { "slug" => "carl", "weight" => "light" }] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")
@@ -187,7 +187,7 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
                       occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "shannon")
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 4.hours.ago, seconds_in_from: 3600,
-                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" },
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
                                                    { "slug" => "carl", "weight" => "light" }] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon")

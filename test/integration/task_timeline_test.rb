@@ -80,7 +80,7 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     assert_difference -> { task.task_events.intents.count }, 1 do
       post "/api/v1/tasks/#{task.slug}/intent",
            params: { to_stage: "reviewed",
-                     reviewers: [{ slug: "carl", weight: "heavy" }, { slug: "shannon", weight: "light" }],
+                     reviewers: [{ slug: "carl", weight: "primary" }, { slug: "shannon", weight: "light" }],
                      event: { source: "cli" } },
            headers: { "Authorization" => "Bearer #{token}" }, as: :json
     end

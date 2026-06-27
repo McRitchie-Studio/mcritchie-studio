@@ -28,7 +28,7 @@ Load-bearing reminders (full detail in §1.4):
   SOP owns. Use `ship --yes` or `archive --yes` only when the session explicitly
   assigns production ship or archive work. `--yes` drops the human confirm only,
   never a test gate.
-- **Review round 1 in parallel** (fan out Avi + the `reviewer-select` heavy/light
+- **Review round 1 in parallel** (fan out Avi + the `reviewer-select` primary/light
   pair across the submitted PRs), but **cap the fan-out at 5 concurrent agents**
   (the board DB's connection budget — see "Concurrency cap" in the operating
   model); review larger queues in **waves of ≤5**. **Block-and-move** (one block

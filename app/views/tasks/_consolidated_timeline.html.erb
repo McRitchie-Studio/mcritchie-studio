@@ -11,7 +11,7 @@
   current stage right now with a green live ticker.
 
   Cards are wide enough for the two-avatar crew case (the senior review pair, e.g.
-  Carl HEAVY + Shannon LIGHT). Usage is best-effort per transition — any metric the
+  Carl PRIMARY + Shannon LIGHT). Usage is best-effort per transition — any metric the
   agent did not report renders as an em dash (—) so the gap is visible, not hidden.
   Started = when the FROM stage was entered (occurred_at − measured seconds);
   Completed = when it transitioned (occurred_at). The live card shows Started only.
@@ -94,7 +94,7 @@
             <% if block.agents.present? %>
               <% block.agents.each do |entry| %>
                 <div class="flex flex-col items-center gap-1.5 min-w-0 text-center" data-test="timeline-crew-member"
-                     title="<%= [entry.name, (entry.weight.presence && "(#{entry.weight})")].compact.join(" ") %>">
+                     title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(" ") %>">
                   <div class="rounded-full ring-2 ring-surface shrink-0">
                     <%= render "components/agent_avatar", agent: entry, size: "sm" %>
                   </div>
@@ -102,8 +102,8 @@
                     <span class="truncate max-w-[8rem]"><%= entry.name %></span>
                     <% if entry.weight.present? %>
                       <span class="shrink-0 px-1 py-px rounded text-[9px] font-bold uppercase tracking-wide
-                                   <%= entry.heavy? ? "bg-primary/15 text-primary border border-primary/30" : "bg-surface-alt text-muted border border-subtle" %>"
-                            title="<%= entry.heavy? ? "Heavy (deep) review" : "Light review" %>"><%= entry.weight %></span>
+                                   <%= entry.primary? ? "bg-primary/15 text-primary border border-primary/30" : "bg-surface-alt text-muted border border-subtle" %>"
+                            title="<%= entry.primary? ? "Primary (deep) review" : "Light review" %>"><%= entry.role_label %></span>
                     <% end %>
                   </span>
                 </div>
