@@ -470,6 +470,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Assembled"
     assert_includes response.body, "Responsible"
     assert_includes response.body, "Run Deployment" # DevOps kickoff chip on the assembled card
+    # The stage guide points operators at the rendered SOP infographic.
+    assert_select "a[href=?]", sop_path, { minimum: 1 }, "stages should link to the SOP infographic"
   end
 
   test "stages page outlines tests-run and gate for the Deploy lane" do
@@ -513,6 +515,18 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[component] sop is public (no login required)" do
     get sop_path
     assert_response :success
+  end
+
+  test "[component] sop shows exactly one ⚠ divergence marker — the Review lane's Release Branch step" do
+    get sop_path
+
+    assert_response :success
+    # Steffon's Main Branch step was reconciled (merge-forward guard, not a divergence),
+    # so the only remaining ⚠ is the conductor-runs-merge gap on Review's Release Branch.
+    markers = css_select("[data-sop-diverges]")
+    assert_equal 1, markers.size, "exactly one SOP step should still diverge from the implemented model"
+    assert_match(/conductor runs bin\/release merge/i, markers.first["title"],
+      "the lone divergence must be the Review lane's Release Branch step")
   end
 
   test "each board page cross-links to the other boards" do

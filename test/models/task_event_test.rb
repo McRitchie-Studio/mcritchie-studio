@@ -99,6 +99,32 @@ class TaskEventTest < ActiveSupport::TestCase
     Current.reset
   end
 
+  test "build-lane transitions snapshot the current mascot on the event" do
+    Pokemon.create!(dex: 87, name: "Dewgong", slug: "dewgong", generation: 1,
+                    sprite_url: "https://example.test/dewgong.png")
+    Pokemon.create!(dex: 88, name: "Grimer", slug: "grimer", generation: 1,
+                    sprite_url: "https://example.test/grimer.png")
+    SessionMascot.create!(session_id: "sess-design", mascot_slug: "dewgong")
+    SessionMascot.create!(session_id: "sess-rework", mascot_slug: "grimer")
+
+    task = Task.create!(title: "mascot history event task",
+                        metadata: { "devops" => { "session_id" => "sess-design" } })
+    task.build!
+    task.submit!
+    task.block!
+    task.update!(stage: "building",
+                 metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+
+    transitions = task.task_events.transitions.chronological.to_a
+    designed, first_build, submitted, blocked, rework_build = transitions
+
+    assert_equal "dewgong", designed.metadata.dig("mascot", "slug")
+    assert_equal "dewgong", first_build.metadata.dig("mascot", "slug")
+    assert_equal "dewgong", submitted.metadata.dig("mascot", "slug")
+    assert_nil blocked.metadata["mascot"], "blocked is not a build-lane stage"
+    assert_equal "grimer", rework_build.metadata.dig("mascot", "slug")
+  end
+
   test "a transition does not inherit the claimant session as the actor" do
     # A task claimed at `building` carries devops.session_id. A later transition
     # with no Current actor (model-driven / conductor) must NOT backfill actor

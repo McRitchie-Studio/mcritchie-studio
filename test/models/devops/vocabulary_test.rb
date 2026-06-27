@@ -54,4 +54,19 @@ class Devops::VocabularyTest < ActiveSupport::TestCase
                  [ReviewerSelector.primary_role, ReviewerSelector.light_role],
                  "the selector role names ARE the vocabulary's reviewer_roles, in order"
   end
+
+  test "[unit] exactly one step diverges — Review's Release Branch; Assemble's Main Branch was reconciled" do
+    steps = Devops::Vocabulary.lanes.flat_map { |lane| lane[:steps] }
+
+    diverging = steps.select { |step| step[:diverges].present? }
+    assert_equal 1, diverging.size, "exactly one step should still carry a :diverges note"
+    assert_equal "Release Branch", diverging.first[:label],
+      "the lone remaining divergence is the Review lane's Release Branch step"
+
+    main_branch = steps.find { |step| step[:label] == "Main Branch" }
+    assert_not_nil main_branch, "the Assemble lane's Main Branch step should still exist"
+    assert_nil main_branch[:diverges],
+      "Main Branch is the merge-forward guard now, not a divergence — its :diverges note must be gone"
+    assert_match(/merge-forward guard/i, main_branch[:expectation])
+  end
 end

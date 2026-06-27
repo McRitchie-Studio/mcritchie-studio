@@ -81,6 +81,33 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[title='Primary (deep) review']"
   end
 
+  test "renders historical build mascots from event snapshots" do
+    Pokemon.create!(dex: 87, name: "Dewgong", slug: "dewgong", generation: 1)
+    Pokemon.create!(dex: 88, name: "Grimer", slug: "grimer", generation: 1)
+    task = Task.create!(title: "component mascot history task", stage: "building",
+                        metadata: { "devops" => { "mascot" => "grimer" } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 5.hours.ago,
+                      metadata: { "mascot" => { "slug" => "dewgong", "name" => "Dewgong" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600,
+                      metadata: { "mascot" => { "slug" => "dewgong", "name" => "Dewgong" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600,
+                      metadata: { "mascot" => { "slug" => "dewgong", "name" => "Dewgong" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "blocked",
+                      occurred_at: 2.hours.ago, seconds_in_from: 3600)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "blocked", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600,
+                      metadata: { "mascot" => { "slug" => "grimer", "name" => "Grimer" } })
+
+    render partial: "tasks/consolidated_timeline",
+           locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
+
+    assert_select "[data-test='timeline-crew-member'][title^='Dewgong']", minimum: 3
+    assert_select "[data-test='timeline-crew-member'][title^='Grimer']", minimum: 2
+  end
+
   test "renders the sizing trio strip (Avi PO, Dev, Actual) and flags an estimate miss" do
     task = Task.create!(title: "component sizing task", stage: "shipped",
                         po_size: "medium", dev_size: "large", actual_size: "xl")

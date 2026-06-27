@@ -45,6 +45,30 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     assert_match "claude-opus-4-8", response.body
   end
 
+  # [integration] a task reworked by a new session keeps the original build
+  # mascot on the completed historical cards and shows the new mascot only for
+  # the rework/current build cards.
+  test "task show keeps historical build mascots after rework handoff" do
+    Pokemon.create!(dex: 87, name: "Dewgong", slug: "dewgong", generation: 1)
+    Pokemon.create!(dex: 88, name: "Grimer", slug: "grimer", generation: 1)
+    SessionMascot.create!(session_id: "sess-design", mascot_slug: "dewgong")
+    SessionMascot.create!(session_id: "sess-rework", mascot_slug: "grimer")
+
+    task = Task.create!(title: "Timeline mascot history task",
+                        metadata: { "devops" => { "session_id" => "sess-design" } })
+    task.build!
+    task.submit!
+    task.block!
+    task.update!(stage: "building",
+                 metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+
+    get task_path(task.slug)
+
+    assert_response :success
+    assert_select "[data-test='timeline-crew-member'][title^='Dewgong']", minimum: 3
+    assert_select "[data-test='timeline-crew-member'][title^='Grimer']", minimum: 2
+  end
+
   # [integration] recording a review INTENT via the API appends a kind=intent
   # event and surfaces the pair as a live in-progress block on the show page.
   test "api intent records a review intent and the show page shows the live pair" do

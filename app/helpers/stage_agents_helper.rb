@@ -82,6 +82,20 @@ module StageAgentsHelper
     end
   end
 
+  def event_mascot_agent(evt, fallback)
+    return fallback unless Task::BUILD_STAGES.include?(evt.to_stage)
+
+    snapshot = evt.mascot_snapshot
+    name = snapshot["name"].presence || snapshot["slug"].presence
+    return fallback if name.blank?
+
+    MascotAgent.new(
+      name: name,
+      avatar: snapshot["avatar"].presence,
+      color: snapshot["color"].presence
+    )
+  end
+
   # Resolve a TaskEvent#actor — which may be an agent slug, a session id, or an
   # email — to an Agent, or nil when it matches no soul (a raw session id, an
   # external email). agents_by_slug is a prebuilt slug→Agent map so this never
@@ -264,7 +278,7 @@ module StageAgentsHelper
       # handed off to the deploy lane; neither is being built, so each shows just
       # the mascot face (its identity) with no live counter — no false intent.
       building_now = current && stage == "building"
-      agent = face || by_to_stage[stage]&.agent # the mascot, else this step's own actor
+      agent = by_to_stage[stage]&.agent || face # historical event mascot, else current task mascot
       CrewCluster.new(
         lane: stage.to_sym,
         stacked: (reached && agent ? [StageAgent.new(stage: stage, agent: agent)] : []),
@@ -305,14 +319,26 @@ module StageAgentsHelper
   # The avatar(s) for ONE completed (transition) event: the senior pair off a
   # →reviewed event's metadata (the canonical write target, NOT Task.metadata),
   # else the single mover. Build-lane stages wear the task's mascot (the feature
-  # agent's face); the Deploy tail keeps its real actor. An actor-LESS
-  # assembled/shipped move (a conductor/model transition that recorded only the
-  # spine) is attributed to the stage's canonical role owner (Steffon QAs
+  # agent's face) from the event snapshot when present, falling back to the current
+  # task mascot for legacy rows; the Deploy tail keeps its real actor. An
+  # actor-LESS assembled/shipped move (a conductor/model transition that recorded
+  # only the spine) is attributed to the stage's canonical role owner (Steffon QAs
   # `assembled`, Avi ships) so the Deploy crew never goes blank — but a PRESENT yet
   # unresolved actor (a raw session id) keeps its palette stand-in, not overridden.
   def event_stage_agents(evt, by_slug, mascot_agent)
     stage = evt.to_stage
-    if stage == "reviewed"
+    if Task::BUILD_STAGES.include?(stage)
+      if (agent = event_mascot_agent(evt, mascot_agent))
+        [StageAgent.new(stage: stage, from_label: evt.from_label,
+                        label: evt.actor.presence || evt.mascot_snapshot["slug"].presence || agent.name,
+                        weight: nil, agent: agent, seconds: evt.seconds_in_from)]
+      elsif evt.actor.present?
+        [StageAgent.new(stage: stage, from_label: evt.from_label, label: evt.actor, weight: nil,
+                        agent: resolve_actor_agent(evt.actor, by_slug), seconds: evt.seconds_in_from)]
+      else
+        []
+      end
+    elsif stage == "reviewed"
       Task.normalize_reviewers(evt.metadata["reviewers"]).map do |reviewer|
         StageAgent.new(stage: stage, from_label: evt.from_label, label: reviewer["slug"],
                        weight: reviewer["weight"], agent: resolve_actor_agent(reviewer["slug"], by_slug),
@@ -354,14 +380,7 @@ module StageAgentsHelper
     intents = events.select(&:intent?)
 
     blocks = transitions.map do |evt|
-      # Build-lane blocks always wear the mascot (the feature agent's face), even on
-      # a model-method create that left no actor — that's the "agent the moment a
-      # task is designed". The deploy tail uses the real per-event attribution.
-      agents_for = if Task::BUILD_STAGES.include?(evt.to_stage) && mascot_agent
-        [StageAgent.new(stage: evt.to_stage, from_label: evt.from_label, agent: mascot_agent, seconds: evt.seconds_in_from)]
-      else
-        event_stage_agents(evt, by_slug, mascot_agent)
-      end
+      agents_for = event_stage_agents(evt, by_slug, mascot_agent)
       TimelineBlock.new(event: evt, from_label: evt.from_label, to_label: evt.to_label,
                         from_stage: evt.from_stage, to_stage: evt.to_stage, occurred_at: evt.occurred_at,
                         seconds: evt.seconds_in_from, agents: agents_for, model: evt.model,
