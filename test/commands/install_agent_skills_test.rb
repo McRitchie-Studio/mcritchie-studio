@@ -295,6 +295,7 @@ class InstallAgentSkillsTest < Minitest::Test
 
     assert status.success?, "install should not fail when admin requirements need root: #{err}"
     assert_includes out, "admin install required for organic Codex mascot"
+    assert_includes out, "installed user-level Codex SessionStart fallback"
     assert_includes out, "Staged managed requirements:"
     refute_includes out, "Review once inside Codex with /hooks"
 
@@ -306,6 +307,7 @@ class InstallAgentSkillsTest < Minitest::Test
     codex_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
       entry.fetch("hooks", []).map { |hook| hook["command"] }
     end
-    refute codex_commands.any? { |command| command.to_s.include?("/bin/codex-session-title") }
+    runtime_root = ROOT.sub(%r{/\.worktrees/.*\z}, "")
+    assert_equal ["#{runtime_root}/bin/codex-session-title"], codex_commands
   end
 end

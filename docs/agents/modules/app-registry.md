@@ -28,7 +28,9 @@ footer on the built-in `thread-title` item and installs a managed
 marker into Codex's title on startup/resume and is trusted by Codex policy, so
 the mascot can appear in a fresh session without a `/hooks` review step. When
 `/etc/codex/requirements.toml` is not writable, the installer stages the managed
-requirements block under `~/.codex/` and prints the admin install note.
+requirements block under `~/.codex/`, prints the admin install note, and installs
+a user-level `~/.codex/hooks.json` fallback so organic sessions still get a
+mascot on machines without the managed file.
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:

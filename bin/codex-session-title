@@ -28,8 +28,27 @@ default_projects_dir() {
 }
 PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(default_projects_dir)}"
 
-sid="${CODEX_THREAD_ID:-}"
+hook_input="$(cat 2>/dev/null || true)"
+payload_sid="$(
+  CODEX_HOOK_INPUT="$hook_input" ruby -rjson -e '
+    raw = ENV.fetch("CODEX_HOOK_INPUT", "").strip
+    exit 0 if raw.empty?
+
+    data = JSON.parse(raw)
+    candidates = [
+      data["session_id"],
+      data["thread_id"],
+      data["id"],
+      data.dig("session", "id"),
+      data.dig("thread", "id")
+    ]
+    puts candidates.find { |value| !value.to_s.strip.empty? }.to_s
+  ' 2>/dev/null || true
+)"
+
+sid="${payload_sid:-${CODEX_THREAD_ID:-}}"
 [ -n "$sid" ] || exit 0
+export CODEX_THREAD_ID="$sid"
 
 context_marker() {
   ruby -rjson -e '
@@ -108,6 +127,16 @@ if command -v "$SQLITE3" >/dev/null 2>&1 && [ -f "$CODEX_STATE_DB" ]; then
   q_marker="$(sql_quote "$marker")"
   "$SQLITE3" -cmd ".timeout 1000" "$CODEX_STATE_DB" \
     "UPDATE threads SET title = $q_marker WHERE id = $q_sid;" >/dev/null 2>&1 || true
+  retry_delays="${CODEX_SESSION_TITLE_RETRY_DELAYS:-0.3 1 2}"
+  if [ -n "$retry_delays" ] && [ "$retry_delays" != "none" ]; then
+    (
+      for delay in $retry_delays; do
+        sleep "$delay" 2>/dev/null || sleep 1
+        "$SQLITE3" -cmd ".timeout 1000" "$CODEX_STATE_DB" \
+          "UPDATE threads SET title = $q_marker WHERE id = $q_sid;" >/dev/null 2>&1 || true
+      done
+    ) >/dev/null 2>&1 &
+  fi
 fi
 
 exit 0

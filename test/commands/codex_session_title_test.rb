@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "json"
 require "open3"
 require "tmpdir"
 require "fileutils"
@@ -37,16 +38,18 @@ class CodexSessionTitleTest < Minitest::Test
     IO.popen(["sqlite3", @db, "SELECT title FROM threads WHERE id = '#{id}';"], &:read).strip
   end
 
-  def run_script(env = {})
+  def run_script(env = {}, stdin_data = "")
     Open3.capture3(
       {
         "CODEX_THREAD_ID" => "thread-123",
         "CODEX_STATE_DB" => @db,
         "SESSION_KICKOFF" => @kickoff,
-        "CLAUDE_PROJECTS_DIR" => @tmp
+        "CLAUDE_PROJECTS_DIR" => @tmp,
+        "CODEX_SESSION_TITLE_RETRY_DELAYS" => "none"
       }.merge(env),
       SCRIPT,
-      chdir: @tmp
+      chdir: @tmp,
+      stdin_data: stdin_data
     )
   end
 
@@ -61,6 +64,55 @@ class CodexSessionTitleTest < Minitest::Test
     assert_empty out
     assert_equal ["called"], calls
     assert_equal "🔥 Arcanine · mcritchie-studio", title_for("thread-123")
+  end
+
+  def test_reads_session_id_from_session_start_payload
+    out, err, status = run_script(
+      {
+        "CODEX_THREAD_ID" => nil,
+        "KICKOFF_MARKER" => "🐲 Dragonair · mcritchie-studio"
+      },
+      JSON.generate({ "session_id" => "thread-123", "source" => "startup" })
+    )
+
+    assert status.success?, err
+    assert_empty out
+    assert_equal ["called"], calls
+    assert_equal "🐲 Dragonair · mcritchie-studio", title_for("thread-123")
+  end
+
+  def test_session_start_payload_wins_over_inherited_thread_id
+    out, err, status = run_script(
+      {
+        "CODEX_THREAD_ID" => "parent-thread",
+        "KICKOFF_MARKER" => "🐲 Dragonair · mcritchie-studio"
+      },
+      JSON.generate({ "session_id" => "thread-123", "source" => "startup" })
+    )
+
+    assert status.success?, err
+    assert_empty out
+    assert_equal ["called"], calls
+    assert_equal "🐲 Dragonair · mcritchie-studio", title_for("thread-123")
+  end
+
+  def test_retries_title_update_after_thread_row_appears
+    out, err, status = run_script(
+      {
+        "CODEX_THREAD_ID" => nil,
+        "KICKOFF_MARKER" => "🐲 Dragonair · mcritchie-studio",
+        "CODEX_SESSION_TITLE_RETRY_DELAYS" => "0.1 0.2"
+      },
+      JSON.generate({ "session_id" => "late-thread", "source" => "startup" })
+    )
+
+    assert status.success?, err
+    assert_empty out
+
+    sqlite(%(INSERT INTO threads (id, title) VALUES ('late-thread', 'late-thread');))
+    sleep 0.35
+
+    assert_equal "🐲 Dragonair · mcritchie-studio", title_for("late-thread")
   end
 
   def test_prefers_worktree_context_marker_when_present
