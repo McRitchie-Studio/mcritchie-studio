@@ -23,7 +23,7 @@ module ReleaseNotes
     # completed_at render for the "shipped …" line (e.g. "3:28 PM").
     SHIPPED_TIME_FORMAT = "%-l:%M %p".freeze
 
-    def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_train: nil, seal: nil)
+    def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_slug: nil, seal: nil)
       @app = app.presence || "mcritchie-studio"
       @environment = environment.presence || "production"
       @release = release.to_s.strip
@@ -31,7 +31,7 @@ module ReleaseNotes
       @url = url.to_s.strip
       @tasks = Array(tasks)
       @checks = checks
-      @release_train = release_train.to_s.strip
+      @release_slug = release_slug.to_s.strip
       @seal = seal # a Release::SmokeSeal (post-ship @qa-readonly verdict) or nil
     end
 

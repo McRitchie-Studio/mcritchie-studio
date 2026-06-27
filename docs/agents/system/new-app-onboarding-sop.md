@@ -14,11 +14,11 @@ runtime, deploy, and eventual handoff to a client.
 | Dimension | Managed satellite | Standalone / client app |
 |---|---|---|
 | Examples | turf-monster, the mcritchie-studio hub | Rolio |
-| Repo | own repo, inside the managed ecosystem | own repo, **outside** the ecosystem registry |
-| Registry | `config/satellites.yml` via `bin/register-satellite` | stays an **unmanaged candidate**; not in `satellites.yml` until promoted |
+| Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
+| Registry | `config/satellites.yml` via `bin/register-satellite` | optional `status: reserved` row only; not `planned`/`active` until promoted |
 | Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
-| Branch model | persistent `release` branch; feature PRs target `release` | no release train; feature PRs target **`main`** |
-| DoR | full `bin/dor-check` (shape-tiered) | **lite** — task + tests + error-logging; no release-train gates |
+| Branch model | persistent `release` branch; feature PRs target `release` | no release slug; feature PRs target **`main`** |
+| DoR | full `bin/dor-check` (shape-tiered) | **lite** — task + tests + error-logging; no release-slug gates |
 | Deploy owner | studio DevOps (Steffon); operator-gated ship | the app team / eventual **client** owns deploy |
 | QA / handoff | Avi QA → RC → operator ship | app-owned merge into `main`; **handoff to the client** |
 
@@ -41,9 +41,10 @@ deliberate decision, never a default.
 - **Managed satellite** → run `bin/register-satellite` (dry-run first), land it in
   `config/satellites.yml` at `status: planned`, then follow
   `studio-engine/docs/NEW_APP_SETUP.md` for the engine wiring.
-- **Standalone / client app** → do **not** register. It stays an *unmanaged
-  candidate*: app-specific docs live in its own repo, and it is excluded from
-  `bin/ecosystem-build` and the hub navbar. Record the decision in
+- **Standalone / client app** → do **not** mark it `planned` or `active`. It may
+  have a `status: reserved` row to protect a future port block, but remains an
+  *unmanaged candidate*: app-specific docs live in its own repo, and it is
+  excluded from `bin/ecosystem-build` and the hub navbar. Record the decision in
   [`../modules/app-registry.md`](../modules/app-registry.md) so the next agent
   doesn't re-litigate it.
 
@@ -67,12 +68,12 @@ deliberate decision, never a default.
   (`kind: chore`, e.g. "scaffold <app>") plus a small **backlog** of the first
   features. The slug is the genesis: it seeds the worktree, the `feat/<slug>`
   branch, and the task URL.
-- Standalone tasks carry `repo: <slug>` and no `release_slug` (no release train).
+- Standalone tasks carry `repo: <slug>` and no `release_slug`.
 
 ### 6. DoR tier
 - Managed → full `bin/dor-check <task>` (the shape's required tiers must be green).
 - Standalone → **lite DoR**: the task exists, tests are written as you go, and the
-  error-logging discipline below is present. There is no release-train gate, but
+  error-logging discipline below is present. There is no release-slug gate, but
   the *evergreen* conventions are non-negotiable.
 
 ### 7. Build conventions

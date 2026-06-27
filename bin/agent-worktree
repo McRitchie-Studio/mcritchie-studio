@@ -94,10 +94,10 @@ APP_OVERRIDES = {
     "sidekiq" => false,
     # Ports a FOREIGN app squats inside this band — never hand them to a worktree
     # even when the squatter is momentarily down (allocate_port's live-listener
-    # check can't see it then). The rolio app runs on 3020, which sits inside
-    # mcritchie's 3000-3099 band; the real fix is to move rolio to the 3300-3399
-    # "next app" band, but until then we reserve it out so a worktree never
-    # collides + then silently adopts rolio's server on `up`.
+    # check can't see it then). Older local Rolio stacks may still listen on
+    # 3020 inside mcritchie's 3000-3099 band. Rolio's managed reservation is now
+    # 3300-3399, but keep 3020 excluded so a worktree never collides with or
+    # silently adopts a legacy local server on `up`.
     "reserved_ports" => [3020]
   },
   "turf-monster" => {

@@ -250,14 +250,15 @@ def notify_discord_deploy(config, sha:, qa_code:)
   app = config.fetch("heroku_app")
   release = latest_release(app)
   tasks = ENV["DEPLOY_TASKS"].to_s.strip
-  release_train = ENV["RELEASE_TRAIN"].to_s.strip
+  release_slug = ENV["RELEASE_SLUG"].to_s.strip
+  release_slug = ENV["RELEASE_TRAIN"].to_s.strip if release_slug.empty?
   message = [
     "**QA deploy** #{config.fetch("display_name", config.fetch("slug"))}",
     "App: `#{app}`",
     "SHA: `#{sha[0, 8]}`",
     ("Release: `v#{release["version"]}`" if release && release["version"]),
     "URL: #{qa_url(config)} (`/up #{qa_code}`)",
-    ("Release train: `#{release_train}`" unless release_train.empty?),
+    ("Release slug: `#{release_slug}`" unless release_slug.empty?),
     ("Tasks: #{tasks}" unless tasks.empty?)
   ].compact.join("\n")
 

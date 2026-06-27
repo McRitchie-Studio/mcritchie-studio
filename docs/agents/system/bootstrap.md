@@ -1,6 +1,6 @@
 # Bootstrap
 
-> **Rebuilding a fresh Mac with all 5 repos?** Use `bin/ecosystem-build` instead.
+> **Rebuilding a fresh Mac with the ecosystem repos?** Use `bin/ecosystem-build` instead.
 > See [house-burn-down.md](house-burn-down.md) for the canonical recovery protocol.
 > This doc covers a quick single-app bringup once toolchain + `.env` are already in place.
 

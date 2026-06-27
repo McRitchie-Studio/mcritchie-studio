@@ -7,7 +7,7 @@ Task management and orchestration hub for the McRitchie AI agent system. McRitch
 Legacy Rails host: https://app.mcritchie.studio. Previous Squarespace site:
 https://v1.mcritchie.studio.
 
-McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/amcritchie/turf-monster), [studio-engine](https://github.com/amcritchie/studio-engine), [solana-studio](https://github.com/amcritchie/solana-studio), [turf-vault](https://github.com/amcritchie/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
+McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/amcritchie/turf-monster), [chain-ops](https://github.com/amcritchie/chain-ops), [studio-engine](https://github.com/amcritchie/studio-engine), [solana-studio](https://github.com/amcritchie/solana-studio), [turf-vault](https://github.com/amcritchie/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
 
 > **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the ecosystem.
 
@@ -37,7 +37,7 @@ bin/ecosystem-build
 bin/setup-1pass-token
 
 # 4. Second pass — picks up at Phase 4, pulls Heroku key + .env, clones the
-#    other 4 repos, installs the projects-level AGENTS.md, re-runs secret
+#    sibling repos, installs the projects-level AGENTS.md, re-runs secret
 #    restore for newly-cloned siblings, bundles + DBs + Anchor + Playwright,
 #    and bounces the Rails servers.
 bin/ecosystem-build
@@ -46,7 +46,7 @@ bin/ecosystem-build
 ~25–30 min wall time on a fresh machine. On every later run it's ~30 s — the script just walks ✓ checkmarks and re-bounces the servers, and only one invocation is needed because the siblings are already on disk and have populated `.env` files.
 
 **Where it puts things** (override with `PROJECTS_DIR=...`):
-- All 5 repos live under `~/projects/`
+- The ecosystem repos live under `~/projects/`
 - McRitchie Studio at http://localhost:3000
 - Turf Monster at http://localhost:3100
 - Login: magic link to `alex@mcritchie.studio`
@@ -91,11 +91,11 @@ to shared automation, validate its range and metadata:
 ```bash
 cd ~/projects/mcritchie-studio
 bin/register-satellite --list
-bin/register-satellite --slug rolio --port 3300 --description "Relationship operating workspace" --dry-run
+bin/register-satellite --slug next-app --port 3500 --description "One-line product summary" --dry-run
 ```
 
-Tax Studio remains reserved at `3200-3299`; Rolio stays unmanaged until it is
-promoted, at which point it should use `3300-3399`. See
+Tax Studio is planned at `3200-3299`, Rolio is reserved at `3300-3399`, and
+Chain Ops is planned at `3400-3499`. See
 [`docs/agents/modules/app-registry.md`](docs/agents/modules/app-registry.md).
 
 ---
@@ -156,7 +156,7 @@ scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
 
 ## Architecture
 
-- Rails 7.2 with ERB views, Tailwind CSS, Alpine.js
+- Rails 8.1 with ERB views, Tailwind CSS, Alpine.js
 - Shared [Studio engine](https://github.com/amcritchie/studio-engine) for auth, error handling, and theme system
 - Slug-based foreign keys throughout (not integer IDs)
 - All monetary values stored in cents, displayed in dollars

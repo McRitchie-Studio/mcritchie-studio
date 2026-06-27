@@ -319,7 +319,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
       "--outcome", "merge-ready",
       "--summary", "No blockers found.",
       "--finding", "Diff matches the PR body.",
-      "--question", "Should this deploy with the release train?",
+      "--question", "Should this deploy with the release slug?",
       "--check", "Reviewed changed files.",
       "--scout-agent", "casey",
       "--dry-run",

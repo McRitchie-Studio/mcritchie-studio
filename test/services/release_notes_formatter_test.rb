@@ -20,7 +20,7 @@ module ReleaseNotes
         release: "v71",
         sha: "ef693ab1abc",
         url: "https://mcritchie.studio/",
-        release_train: "2026-06-18-devops-tooling",
+        release_slug: "rel-2026-06-18-devops-tooling",
         checks: ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
         tasks: [studio_task, turf_task]
       ).message

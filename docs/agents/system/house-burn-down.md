@@ -8,8 +8,9 @@ How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is t
 
 | Repo | Role | Stack | Port |
 |------|------|-------|------|
-| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, agent docs, recovery scripts | Rails 7.2 / Postgres | 3000 |
-| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain | Rails 7.2 / Postgres / Redis / Sidekiq | 3100 |
+| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, agent docs, recovery scripts | Rails 8.1 / Postgres | 3000 |
+| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
+| [`chain-ops`](https://github.com/amcritchie/chain-ops) | Planned Solana environment control plane | Rails 8.1 / Postgres | 3400 |
 | [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache | Ruby gem | — |
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client (RPC, ed25519, borsh, txns) | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by Turf Monster | Anchor / Rust / Solana | — |
@@ -19,6 +20,7 @@ How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is t
 ```
 studio-engine gem ──┐
                     ├──> mcritchie-studio (flagship)
+                    ├──> chain-ops ─────> solana-studio gem
                     └──> turf-monster ──> solana-studio gem
                                        ──> turf-vault (devnet + mainnet deployments)
 ```
@@ -44,14 +46,14 @@ bin/ecosystem-build
 bin/setup-1pass-token
 
 # 4. Second pass — picks up at Phase 4 with the token now set, restores .env
-#    from Heroku + 1Password, clones the other 4 repos, bundles + DBs + Anchor,
-#    installs the root AGENTS.md + shared user-global agent skills, bounces both Rails servers.
+#    from Heroku + 1Password, clones sibling repos, bundles + DBs + Anchor,
+#    installs the root AGENTS.md + shared user-global agent skills, bounces active Rails servers.
 bin/ecosystem-build
 ```
 
 That's it. The only thing you actually do is copy the token and run the commands above. On every later machine a single pass just walks checkmarks and re-bounces the servers.
 
-**Re-running anytime:** `bin/ecosystem-build` is fully idempotent. Run it after pulling new commits, switching branches, or anytime you want to confirm "everything still works." It will reset both Rails servers to a clean dev state.
+**Re-running anytime:** `bin/ecosystem-build` is fully idempotent. Run it after pulling new commits, switching branches, or anytime you want to confirm "everything still works." It will reset active Rails servers to a clean dev state.
 
 **Custom project layout:** set `PROJECTS_DIR` to override `~/projects` (e.g. `PROJECTS_DIR=~/code bin/ecosystem-build`). The script clones siblings into that directory.
 
@@ -96,7 +98,7 @@ brew update && brew install \
 ~5 min. Installs:
 - **ruby@3.3** — Ruby 3.3.11 with the full stdlib for McRitchie Studio and ecosystem bootstrap
 - **mise** — version manager for Node (not Ruby — see above)
-- **postgresql@14** — local DB for both Rails apps
+- **postgresql@14** — local DB for Rails apps
 - **redis** — Sidekiq queue for Turf Monster and worktree stacks
 - **1password-cli** (`op`) — secret retrieval
 - **gh** — GitHub CLI
@@ -444,7 +446,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 6. Bundles + DBs | `bundle install` + `db:create db:migrate db:seed` for each Rails app; bundle for `solana-studio` |
 | 6b. NFL data (default) | Always runs. Chains `nfl:schedule_seed YEAR=2026` (real schedule from nflverse) + `espn:scrape_depth_charts` (live depth charts from ESPN JSON API) + `nfl:rosters_snapshot SEASON=2026-nfl` (snapshot fresh depth charts → current-week Rosters) + `nfl:rankings_compute SEASON=2026-nfl GRADES_FROM=2025-nfl` (preseason TeamRanking snapshot using last year's PFF grades, so `/games/2026/week/N/...` show pages render rank pills). ~3-5 min, network only — no AWS creds needed. |
 | 6c. NFL headshots (opt-in) | Only runs when `WITH_NFL_HEADSHOTS=1`. Chains `nfl:players_seed` (nflverse master CSV ~24k rows + S3 headshot cache ~1100 athletes) + `nfl:upload_headshots`. ~10-15 min, requires AWS creds in `.env`. Without this, `/nfl-rosters` shows position-labeled placeholder circles instead of player photos. |
-| 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` for both Rails apps; `npx playwright install chromium` (~90 MB cached for e2e tests) |
+| 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` for active Rails apps; `npx playwright install chromium` (~90 MB cached for e2e tests) |
 | 8. Servers | Always kills + restarts active Rails apps on their registered ports, curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` containing both apps' `.env` contents (raw, faithfully). Heroku-independent fallback for secret recovery. Gitignored, chmod 600. Skipped silently if no `.env` files exist yet. |
 

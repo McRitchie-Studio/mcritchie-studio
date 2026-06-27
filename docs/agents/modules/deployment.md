@@ -251,7 +251,7 @@ api POST /api/v1/release_notes '{
   "release": "v71",
   "sha": "ef693ab1",
   "url": "https://mcritchie.studio/",
-  "release_train": "2026-06-18-devops-tooling",
+  "release_slug": "rel-2026-06-18-devops-tooling",
   "task_slugs": ["task-abc123def456"],
   "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
   "dry_run": true

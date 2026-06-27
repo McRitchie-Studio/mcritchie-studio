@@ -4,7 +4,7 @@
 
 ## Stack
 
-- Ruby 3.1+ / Rails 7.2 / PostgreSQL
+- Ruby 3.3.11 / Rails 8.1 / PostgreSQL
 - ERB views, Tailwind CSS via CDN, Alpine.js
 - Import maps (no JS build step)
 - Montserrat font, dark navy/mint/violet theme

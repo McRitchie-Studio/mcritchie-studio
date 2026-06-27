@@ -12,8 +12,9 @@ Active rules live in:
 - `mcritchie-studio/config/satellites.yml`
 - `studio-engine/docs/NEW_APP_SETUP.md`
 
-Current decision: Tax Studio stays reserved at `3200-3299`. Rolio remains
-unmanaged unless promoted; if promoted, it should use `3300-3399`.
+Current decision: Tax Studio stays planned at `3200-3299`, Rolio is reserved at
+`3300-3399`, and Chain Ops is planned at `3400-3499`. A new managed app should
+start at the next open block unless the registry says otherwise.
 
 ## What it does
 
@@ -36,14 +37,14 @@ Future location: `mcritchie-studio/bin/new-app` (alongside `bin/ecosystem-build`
 
 ```
 $ bin/new-app
-Slug (lowercase, hyphen-separated, will be the GitHub repo name): rolio
-Display name: Rolio
+Slug (lowercase, hyphen-separated, will be the GitHub repo name): next-app
+Display name: Next App
 Emoji (optional):
-Local dev port: 3300
-Heroku app name (lowercase, hyphen-separated): rolio
-Production URL [https://rolio.mcritchie.studio]:
+Local dev port: 3500
+Heroku app name (lowercase, hyphen-separated): next-app
+Production URL [https://next-app.mcritchie.studio]:
 SSO role for new users [viewer]:
-One-line description: Relationship operating workspace
+One-line description: One-line product summary
 Deploy provider [heroku]:
 ```
 

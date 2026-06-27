@@ -67,12 +67,12 @@
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
       <% end %>
       <% if task.requires_release_conductor? %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_train lane">REL</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_slug lane">REL</span>
       <% end %>
     </div>
   <% end %>
 
-  <%# Secondary meta row — QA/Prod quick links, only when present. The release-train
+  <%# Secondary meta row — QA/Prod quick links, only when present. The release-slug
       badge was dropped from the card: it's pipeline plumbing, not useful at the
       board's high-level glance (it still shows on the task detail view). The kind/gem
       badges are gone too (features are implicit; bug/docs/gem surface as a footer

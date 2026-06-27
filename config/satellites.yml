@@ -11,7 +11,8 @@
 #        bin/register-satellite --slug <app> --port <range-start> \
 #          --description "One-line summary" --dry-run
 #   2. Append with --write once the dry run is correct.
-#   3. Keep status: planned until the repo, env, local stack, and docs are
+#   3. Use status: reserved to hold a future app's identity/range only.
+#      Keep status: planned until the repo, env, local stack, and docs are
 #      proven. Flip to active only when bin/ecosystem-build should manage it.
 #   4. The future bin/new-app generator should build on this registry contract;
 #      it should not become a second source of truth.
@@ -32,9 +33,10 @@
 #                                        operator hand-populates (or extends the script with
 #                                        a Fly/Render provider-specific block)
 #                      See ecosystem-audit-2026-05-17.md Tier 3 #25.
-#   status           — active | planned
+#   status           — active | planned | reserved
 #                      Only `active` satellites are touched by bin/ecosystem-build
-#                      and appear in the navbar.
+#                      and appear in the navbar. `reserved` protects a port range
+#                      without making the app managed.
 
 satellites:
   - slug: turf-monster
@@ -59,10 +61,21 @@ satellites:
     deploy_provider: heroku
     status: planned
 
+  - slug: rolio
+    display_name: "Rolio"
+    emoji: "📇"
+    port: 3300
+    heroku_app: "rolio"
+    production_url: "https://rolio.mcritchie.studio"
+    role: "viewer"
+    description: "Relationship operating workspace; reserved until promoted into the managed stack"
+    deploy_provider: "other"
+    status: "reserved"
+
   - slug: chain-ops
     display_name: "Chain Ops"
     emoji: "⛓️"
-    port: 3300
+    port: 3400
     heroku_app: "chain-ops"
     production_url: "https://chain.mcritchie.studio"
     role: "admin"

@@ -62,7 +62,7 @@ This design answers seven goals:
 | Task state machine — Build `designed→building→submitted→reviewed`, Deploy `reviewed→assembled→shipped`, plus `blocked`/`archived` | `Task` model, `devops-task-board.md` | The spine. Everything routes through the task. |
 | `kind` (feature/bug/chore/qa/release/cleanup), `metadata["devops"]` contract | `devops-task-board.md` | SOP routing key + handoff record. |
 | Activity log: `comment` / `qa_feedback` / `handoff` + scout reports | `Activity`, task-board API | The durable QA↔feature-agent channel. |
-| Sealed-bid sizing, `backend_migration` advisory-lock lane, `release_train` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
+| Sealed-bid sizing, `backend_migration` advisory-lock lane, `release_slug` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
 | Test lanes (pr_review_gate / local_proof / qa_acceptance / production_smoke / nightly_deep / quarantine) + `config/devops_test_suites.yml` + `bin/devops-tests` | `testing.md` | The *when/where* axis of the pyramid. |
 | `bin/qa-intake`, `bin/devops-cycle` (scout packets/decisions/readiness), `bin/agent-worktree`, `bin/qa-server`, `bin/deploy` | `parallel-agent-devops.md` | The conductor toolchain the heartbeat agent drives. |
 | Discord `POST /api/v1/release_notes` (dry-run, grouped-by-app, standardized) | release notes service | The standardized visibility primitive. |
@@ -134,7 +134,7 @@ warning, so older actionable work silently falls off). See
 ### 1.1 The Release model + the persistent `release` branch
 
 **Release** (singleton model) coordinates one candidate from assembly through
-ship. *Consolidation (decided):* the legacy `release_train` field becomes
+ship. *Consolidation (decided):* the legacy `release_train` field has become
 **`release_slug`** — one concept, one name.
 
 **The integration branch is PERSISTENT.** Every repo keeps a single `release`
@@ -223,7 +223,7 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   (or follow-up tasks). See `docs/agents/modules/deployment.md` →
   "Releasing a gem (producer-first)" for the operator runbook.
 
-This is the ordered `release_train` from §4.2 ("gem publish → consumer lockfile
+This is the ordered `release_slug` from §4.2 ("gem publish → consumer lockfile
 bump → app deploy"), now expressed as first-class release membership rather than
 a separate lane: the gem and its consumers can be members of the same release,
 sequenced by kind + `dependencies`.
@@ -779,12 +779,12 @@ deploy** and is eventually handed off to a client. It rides the same **Build**
 workflow (`designed → building → submitted`); the **Deploy** half is lighter:
 
 - **PRs target `main`, not `release`** — there is no persistent `release` branch
-  and no release train. `bin/agent-worktree` already falls back to `origin/main`
+  and no release slug. `bin/agent-worktree` already falls back to `origin/main`
   as the base for any repo without a `release` branch.
 - **The app team owns the merge** — an approved PR is merged into `main` by the
   app's owner; it is not assembled into a studio RC.
 - **Lite DoR** — task + tests-as-you-go + the non-optional error-logging
-  discipline; no release-train / shape-gated `bin/dor-check` ceremony. (Robust
+  discipline; no release-slug / shape-gated `bin/dor-check` ceremony. (Robust
   error/API-failure logging is evergreen for *both* tiers — managed apps via
   `studio-engine`'s `rescue_and_log`/`ErrorLog`, standalone apps via plain
   `Rails.logger` and/or their own tracker.)
@@ -994,11 +994,11 @@ The heartbeat agent will not merge-race conflicting work:
   via the existing `backend_migration` advisory lock; second one holds with a
   note.
 - **studio-engine + consumers:** gem publish → consumer lockfile bump → app
-  deploy is one ordered `release_train` (existing lane); the agent promotes the
+  deploy is one ordered `release_slug` lane; the agent promotes the
   train in order, never a consumer ahead of its gem.
 - **turf-vault program:** **new rule** — at most one in-flight task may change
   the Anchor program (same advisory-lock pattern as migrations). A vault change
-  and its turf-monster IDL re-pin form a `release_train` deployed *in order*
+  and its turf-monster IDL re-pin form a `release_slug` deployed *in order*
   (Squads program upgrade first, then app IDL re-pin via `bin/deploy`'s
   allow-list dance). The agent refuses to deploy two program upgrades
   concurrently.

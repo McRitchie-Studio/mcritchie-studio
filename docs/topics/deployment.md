@@ -7,6 +7,8 @@
 - **Port 3000** — `bin/rails server` (default)
 - Turf Monster runs on port 3100
 - Tax Studio is planned on port 3200
+- Rolio is reserved on port 3300
+- Chain Ops is planned on port 3400
 
 ## Deployment
 
@@ -61,11 +63,11 @@ site connection, primary-domain setting, disabled `www` prefix, and
 
 ## Tech Stack
 
-- Ruby 3.3.11 / Node 22.x / Rails 7.2 / PostgreSQL
+- Ruby 3.3.11 / Node 22.x / Rails 8.1 / PostgreSQL
 - Tailwind CSS via `tailwindcss-rails` gem (compiled with `@apply` support, not CDN)
 - Alpine.js via CDN for interactivity
 - Montserrat font (Google Fonts CDN)
 - ERB views, import maps, no JS frameworks
 - Passwordless auth via magic links, Google OAuth, and Solana wallet. `has_secure_password` remains on `User` only as a dormant compatibility fallback.
 - Email delivery uses `Studio::Email` with SES as the target transport and Resend as rollback. Cross-app operations live in `docs/agents/modules/email-operations.md`; McRitchie-specific wiring lives in `docs/email-delivery.md`.
-- **Studio engine gem** — `gem "studio-engine", "~> 0.5"` from RubyGems; release/adoption checklist lives in `studio-engine/docs/RELEASE.md`
+- **Studio engine gem** — `gem "studio-engine", "~> 0.11"` from RubyGems; release/adoption checklist lives in `studio-engine/docs/RELEASE.md`

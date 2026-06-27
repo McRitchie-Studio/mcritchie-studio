@@ -932,7 +932,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
             branch: "feat/contest-flow",
             pr_url: "https://github.com/amcritchie/turf-monster/pull/149",
             qa_url: "https://qa.turfmonster.media/contests",
-            release_train: "2026-06-17-turf",
+            release_slug: "rel-2026-06-17-turf",
             requires_release_conductor: "1",
             acceptance: "Contest creates on QA without errors\nEntry submits successfully on QA devnet",
             test_plan: "bin/rails test\nQA devnet mutating smoke",

@@ -8,7 +8,7 @@ require "yaml"
 ROOT = File.expand_path("..", __dir__)
 REGISTRY_PATH = File.join(ROOT, "config", "satellites.yml")
 
-VALID_STATUSES = %w[active planned].freeze
+VALID_STATUSES = %w[active planned reserved].freeze
 VALID_DEPLOY_PROVIDERS = %w[heroku fly render other].freeze
 IMPLICIT_APPS = {
   "mcritchie-studio" => {
@@ -86,7 +86,7 @@ parser = OptionParser.new do |opts|
   opts.banner = <<~TEXT
     Usage:
       bin/register-satellite --list
-      bin/register-satellite --slug APP --port 3300 --description "One-line summary" [options] [--write]
+      bin/register-satellite --slug APP --port 3500 --description "One-line summary" [options] [--write]
 
     The command validates a new satellite app against config/satellites.yml.
     It is dry-run by default. Pass --write to append the entry.
@@ -102,7 +102,7 @@ parser = OptionParser.new do |opts|
   opts.on("--role ROLE", "Default SSO role. Defaults to viewer") { |value| options[:role] = value }
   opts.on("--description TEXT", "One-line summary") { |value| options[:description] = value }
   opts.on("--deploy-provider NAME", "heroku, fly, render, or other. Defaults to heroku") { |value| options[:deploy_provider] = value }
-  opts.on("--status STATUS", "planned or active. Defaults to planned") { |value| options[:status] = value }
+  opts.on("--status STATUS", "reserved, planned, or active. Defaults to planned") { |value| options[:status] = value }
   opts.on("--write", "Append the entry to config/satellites.yml") { options[:dry_run] = false }
   opts.on("--dry-run", "Validate and print the entry without writing") { options[:dry_run] = true }
   opts.on("-h", "--help", "Show this help") do
@@ -134,7 +134,7 @@ abort_with "slug must match [a-z][a-z0-9-]*" unless slug.match?(/\A[a-z][a-z0-9-
 
 port = options[:port]
 abort_with "port is required" unless port
-abort_with "port must start a 100-port block, e.g. 3300" unless (port % 100).zero?
+abort_with "port must start a 100-port block, e.g. 3500" unless (port % 100).zero?
 abort_with "port must be 3000 or higher" if port < 3000
 
 display_name = options[:display_name].to_s.strip
@@ -216,5 +216,6 @@ end
 puts
 puts "Next:"
 puts "  - Create or update the app using studio-engine/docs/NEW_APP_SETUP.md"
+puts "  - Use status reserved for range-only holds"
 puts "  - Keep status planned until the repo, env, and local stack are proven"
 puts "  - Flip status active only when bin/ecosystem-build should manage it"

@@ -88,14 +88,14 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_operator size_index, :<, slug_code_index
   end
 
-  test "the release-train badge is dropped from the board card" do
-    task = Task.create!(title: "release train polish card", stage: "submitted",
-                        metadata: { "devops" => { "release_train" => "2026-06-23-devops-intent-ui" } })
+  test "the release-slug badge is dropped from the board card" do
+    task = Task.create!(title: "release slug polish card", stage: "submitted",
+                        metadata: { "devops" => { "release_slug" => "rel-2026-06-23-devops-intent-ui" } })
 
     get tasks_path
     assert_response :success
 
-    # the release-train pill no longer rides the card — it's pipeline plumbing, not a
+    # the release-slug pill no longer rides the card — it's pipeline plumbing, not a
     # high-level glance signal (it still shows on the task detail view)
     assert_select "#card-#{task.slug} span", text: "2026-06-23-devops-intent-ui", count: 0
   end
@@ -110,7 +110,7 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    # dropping the release-train badge must not take the QA/Prod links with it
+    # dropping the release-slug badge must not take the QA/Prod links with it
     assert_select "#card-#{task.slug} a", text: "QA", count: 1
     assert_select "#card-#{task.slug} a", text: "Prod", count: 1
   end

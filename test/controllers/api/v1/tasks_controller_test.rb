@@ -20,7 +20,7 @@ module Api
                   repositories: "mcritchie-studio",
                   local_url: "http://localhost:3004/tasks",
                   qa_url: "https://qa.mcritchie.studio/tasks",
-                  release_train: "2026-06-17-studio",
+                  release_slug: "rel-2026-06-17-studio",
                   requires_release_conductor: "true",
                   acceptance: ["Task card shows the devops metadata", "QA URL opens the QA board"],
                   test_plan: "bin/rails test",
