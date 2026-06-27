@@ -57,21 +57,16 @@ class CodexSessionTitleTest < Minitest::Test
     File.exist?(@calls) ? File.read(@calls).lines.map(&:strip) : []
   end
 
-  def assert_hook_context(out, marker)
-    payload = JSON.parse(out)
-    hook_output = payload.fetch("hookSpecificOutput")
-
-    assert_equal "SessionStart", hook_output.fetch("hookEventName")
-    assert_includes hook_output.fetch("additionalContext"), marker
-    assert_includes hook_output.fetch("additionalContext"), "session identity"
+  def assert_silent_success(out, err, status)
+    assert status.success?, err
+    assert_empty out
   end
 
   def test_updates_codex_thread_title_from_session_marker
     marker = "🔥 Arcanine · mcritchie-studio"
     out, err, status = run_script("KICKOFF_MARKER" => marker)
 
-    assert status.success?, err
-    assert_hook_context out, marker
+    assert_silent_success out, err, status
     assert_equal ["called"], calls
     assert_equal marker, title_for("thread-123")
   end
@@ -86,8 +81,7 @@ class CodexSessionTitleTest < Minitest::Test
       JSON.generate({ "session_id" => "thread-123", "source" => "startup" })
     )
 
-    assert status.success?, err
-    assert_hook_context out, marker
+    assert_silent_success out, err, status
     assert_equal ["called"], calls
     assert_equal marker, title_for("thread-123")
   end
@@ -102,8 +96,7 @@ class CodexSessionTitleTest < Minitest::Test
       JSON.generate({ "session_id" => "thread-123", "source" => "startup" })
     )
 
-    assert status.success?, err
-    assert_hook_context out, marker
+    assert_silent_success out, err, status
     assert_equal ["called"], calls
     assert_equal marker, title_for("thread-123")
   end
@@ -119,8 +112,7 @@ class CodexSessionTitleTest < Minitest::Test
       JSON.generate({ "session_id" => "late-thread", "source" => "startup" })
     )
 
-    assert status.success?, err
-    assert_hook_context out, marker
+    assert_silent_success out, err, status
 
     sqlite(%(INSERT INTO threads (id, title) VALUES ('late-thread', 'late-thread');))
     deadline = Time.now + 3
@@ -141,10 +133,9 @@ class CodexSessionTitleTest < Minitest::Test
 
     out, err, status = run_script("KICKOFF_MARKER" => "🔥 Arcanine · mcritchie-studio")
 
-    assert status.success?, err
+    assert_silent_success out, err, status
     assert_empty calls
     marker = "🍃🍄 Bulbasaur · mcritchie-studio · codex-mascot-kickoff"
-    assert_hook_context out, marker
     assert_equal marker, title_for("thread-123")
   end
 
@@ -160,10 +151,9 @@ class CodexSessionTitleTest < Minitest::Test
 
     out, err, status = run_script("KICKOFF_MARKER" => "🔥 Arcanine · mcritchie-studio")
 
-    assert status.success?, err
+    assert_silent_success out, err, status
     assert_empty calls
     marker = "🧪 Jasper · mcritchie-studio"
-    assert_hook_context out, marker
     assert_equal marker, title_for("thread-123")
   end
 
@@ -171,23 +161,22 @@ class CodexSessionTitleTest < Minitest::Test
     marker = "⚡ Farfetch'd · mcritchie-studio"
     out, err, status = run_script("KICKOFF_MARKER" => marker)
 
-    assert status.success?, err
-    assert_hook_context out, marker
+    assert_silent_success out, err, status
     assert_equal marker, title_for("thread-123")
   end
 
   def test_exits_zero_without_codex_thread_id
-    _out, err, status = run_script("CODEX_THREAD_ID" => nil)
+    out, err, status = run_script("CODEX_THREAD_ID" => nil)
 
-    assert status.success?, err
+    assert_silent_success out, err, status
     assert_empty calls
     assert_equal "thread-123", title_for("thread-123")
   end
 
   def test_kickoff_failure_does_not_break_session_start
-    _out, err, status = run_script("KICKOFF_FAIL" => "1")
+    out, err, status = run_script("KICKOFF_FAIL" => "1")
 
-    assert status.success?, err
+    assert_silent_success out, err, status
     assert_equal ["called"], calls
     assert_equal "thread-123", title_for("thread-123")
   end

@@ -8,9 +8,10 @@ set -euo pipefail
 #
 # Codex's live footer keeps the thread name in memory, so a SessionStart hook
 # cannot repaint it by only updating SQLite. This hook still persists the marker
-# for history/resume and emits supported SessionStart additional context so the
-# model knows the assigned mascot immediately. It is intentionally best-effort:
-# a missing session id, unreachable task API, absent sqlite DB, or transient lock
+# for history/resume. It deliberately prints nothing on success: Codex CLI 0.142.3
+# renders SessionStart additionalContext as visible "hook context" in the
+# transcript, so there is no clean hidden model-context channel for this marker.
+# A missing session id, unreachable task API, absent sqlite DB, or transient lock
 # must never slow or break a new Codex session.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -139,20 +140,5 @@ if command -v "$SQLITE3" >/dev/null 2>&1 && [ -f "$CODEX_STATE_DB" ]; then
     ) >/dev/null 2>&1 &
   fi
 fi
-
-CODEX_SESSION_MARKER="$marker" ruby -rjson -e '
-  marker = ENV.fetch("CODEX_SESSION_MARKER")
-  context = [
-    "McRitchie session marker: #{marker}.",
-    "Treat this marker as your session identity.",
-    "If asked what Pokemon or session mascot you are, answer from this marker instead of inventing one."
-  ].join(" ")
-  puts JSON.generate(
-    "hookSpecificOutput" => {
-      "hookEventName" => "SessionStart",
-      "additionalContext" => context
-    }
-  )
-'
 
 exit 0

@@ -26,16 +26,18 @@ Codex sessions expose a SessionStart payload; `bin/install-agent-docs` keeps
 Codex's footer configured with the built-in `thread-title` item and installs a
 managed `SessionStart` hook to `bin/codex-session-title`. That hook resolves the
 same marker on startup/resume, mirrors it into Codex's persisted local thread
-title, and emits SessionStart `additionalContext` so the model knows its assigned
-mascot before the first turn. Codex CLI 0.142.3 keeps the live footer thread name
-in memory after session configuration; a SQLite title update does not repaint
-that already-running footer. Use `/rename <marker>` in the TUI, or a
+title, and stays silent on success. Codex CLI 0.142.3 renders SessionStart
+`additionalContext` as visible `hook context`, so the hook does not use it for
+mascot identity. The live footer also keeps the thread name in memory after
+session configuration; a SQLite title update does not repaint that
+already-running footer. Use `/rename <marker>` in the TUI, or a
 `thread/name/set` app-server call against the same active session, when the live
-footer itself must change immediately. When `/etc/codex/requirements.toml` is not
-writable, the installer stages the managed requirements block under `~/.codex/`,
-prints the admin install note, and installs a user-level `~/.codex/hooks.json`
-fallback so organic sessions still get a mascot on machines without the managed
-file.
+footer itself must change immediately. A resumed session reloads the persisted
+title and should show the Pokémon marker. When `/etc/codex/requirements.toml` is
+not writable, the installer stages the managed requirements block under
+`~/.codex/`, prints the admin install note, and installs a user-level
+`~/.codex/hooks.json` fallback so organic sessions still get a mascot on machines
+without the managed file.
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:
