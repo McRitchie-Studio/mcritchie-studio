@@ -220,10 +220,11 @@ bin/conductor qa    [--run]   # thin drive: bin/release prepare (deploy origin/r
 AGENTS**, so conductor surfaces the assignment, it never fabricates a verdict);
 `reviewed` → `bin/release merge <slugs>` (the conductor's **backlog** path — a
 freshly-reviewed task's primary already ran its own merge); `assembled` →
-`bin/release prepare` then the **operator** ship gate. It flags `blocked` + non-pipeline (rolio) tasks
-separately. **`bin/conductor` NEVER auto-ships** — the prod deploy is
-operator-gated; `bin/conductor ship` refuses and prints `bin/release ship`. It
-defaults to the PROD board (like `bin/release`).
+`bin/release prepare` then the ship gate. It flags `blocked` + non-pipeline
+(rolio) tasks separately. **`bin/conductor` never ships implicitly** — plain
+`bin/conductor ship` prints the handoff command; the explicit autonomous path is
+`bin/conductor ship --run`, which runs `bin/release ship --by conductor --yes`
+after the same release gates. It defaults to the PROD board (like `bin/release`).
 
 `bin/conductor` **complements `bin/qa-intake`**: conductor answers "what is in
 each Deploy stage and what is the next deterministic command"; `qa-intake`

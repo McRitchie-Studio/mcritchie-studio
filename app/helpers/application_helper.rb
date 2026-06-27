@@ -295,10 +295,11 @@ module ApplicationHelper
       "-webkit-mask-image: linear-gradient(to right, #000 #{stop}%, transparent)"
   end
 
-  # The non-stage key for the "Build and Deploy QA Release" meta-trigger in
-  # +devops_kickoffs+ (see below). Not a board stage, so it never renders on a
-  # column header — only the current-release section reaches for it.
+  # Non-stage keys for the release-wide meta-triggers in +devops_kickoffs+ (see
+  # below). They never render on column headers — only the current-release
+  # section reaches for them.
   QA_RELEASE_KICKOFF_KEY = "release"
+  AUTONOMOUS_RELEASE_KICKOFF_KEY = "release_autonomous"
 
   # Canonical copy-paste kickoff commands for the DevOps (Deploy) lane — the
   # single source of truth shared by the /deployments column headers, the
@@ -306,14 +307,14 @@ module ApplicationHelper
   # keyed by DevOps board stage and kept terse (≤3 words) so each fits a column
   # header; the feature-agent lane has none.
   #
-  # Plus one non-stage meta-trigger under QA_RELEASE_KICKOFF_KEY: Mr. McRitchie's
-  # one-trigger "Build and Deploy QA Release" workflow (assess the active
-  # release, pull every reviewed/passing task in, deploy QA, then stop for the
-  # prod ship). It renders as a prominent chip in the current-release section,
-  # never on a column header, so it is exempt from the per-stage word cap.
+  # Plus two non-stage meta-triggers: the QA-only "Build and Deploy QA Release"
+  # workflow and the autonomous "Merge, Assemble, Deploy" workflow. They render
+  # as prominent chips in the current-release section, never on column headers,
+  # so they are exempt from the per-stage word cap.
   def devops_kickoffs
     {
       QA_RELEASE_KICKOFF_KEY => "Build and Deploy QA Release",
+      AUTONOMOUS_RELEASE_KICKOFF_KEY => "Merge, Assemble, Deploy",
       "submitted" => "Review submitted PRs",
       "reviewed"  => "Prepare release",
       "assembled" => "Run Deployment",
@@ -326,6 +327,20 @@ module ApplicationHelper
   # current-release section.
   def qa_release_kickoff
     devops_kickoffs.fetch(QA_RELEASE_KICKOFF_KEY)
+  end
+
+  # The autonomous production-release meta-trigger. It follows the same review
+  # and QA assembly path as +qa_release_kickoff+, then ships production with the
+  # release command's deterministic gates.
+  def autonomous_release_kickoff
+    devops_kickoffs.fetch(AUTONOMOUS_RELEASE_KICKOFF_KEY)
+  end
+
+  def release_kickoff_chips
+    [
+      { label: "QA", command: qa_release_kickoff },
+      { label: "Prod", command: autonomous_release_kickoff }
+    ]
   end
 
   # The two-workflow stage guide rendered on /stages (vertical swimlanes). One
@@ -365,13 +380,13 @@ module ApplicationHelper
           who: "Steffon (Platform Engineer)",
           tests: "Integration + an e2e smoke on origin/release (the next tier up from review).",
           gate: "Deterministic suite — a regression blocks the task. No human approval at this step.",
-          nxt: "Green → bin/release prepare deploys to QA + a Discord note. The operator gate is at ship, not here" },
+          nxt: "Green → bin/release prepare deploys to QA + a Discord note. The ship decision is at ship, not here" },
         { stage: "shipped",   kick: devops_kickoffs["shipped"],
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
-          who: "Avi (tests the frozen SHA) → Mr. McRitchie (operator gate)",
+          who: "Avi (tests the frozen SHA) → operator gate or autonomous deploy trigger",
           tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
-          gate: "🔒 The one operator gate — after Avi's test confirmation, before deploy. Rollback on a smoke fail.",
-          nxt: "On the operator's OK: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
+          gate: "🔒 Build and Deploy QA Release stops for the operator; Merge, Assemble, Deploy grants ship authority after the same gates pass.",
+          nxt: "On explicit ship authority: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }
   end

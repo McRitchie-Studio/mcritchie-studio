@@ -120,7 +120,7 @@ lanes:
   - owner: Avi
     lane: Ship
     end_stage: shipped
-    owner_note: "Owns the ship: runs the full e2e on the frozen ship SHA, then stops for the operator's go before prod."
+    owner_note: "Owns the ship: runs the full e2e on the frozen ship SHA, then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
     steps:
       - type: pulse
         label: Avi on it
@@ -137,7 +137,7 @@ lanes:
       - type: deploy
         label: Prod
         expectation: "Fast-forward release to main per repo, deploy, smoke /up, run post_deploy_cmd."
-        gate: "the ONE operator gate: after Avi's tests, before the deploy"
+        gate: "Build and Deploy QA Release stops here; Merge, Assemble, Deploy grants ship authority after Avi's tests"
       - type: stage_update
         label: Shipped
         stage: shipped

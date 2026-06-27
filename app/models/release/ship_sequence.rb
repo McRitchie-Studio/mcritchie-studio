@@ -89,7 +89,7 @@ class Release
     # SHA, then runs the suite on that tree (avi_ship_gate) — both assume the
     # checkout is ON `main` with a CLEAN tree. A review agent that left a checkout
     # on a `pr-NNN` branch, or a stale uncommitted `schema.rb`, breaks the ff
-    # mid-ship (after gems publish / the operator gate — the worst time). This is
+    # mid-ship (after gems publish / ship authority — the worst time). This is
     # the PURE decision half of the preflight: the I/O (git rev-parse / status)
     # lives in bin/release's ship_preflight, which hands the gathered states here.
     #

@@ -66,8 +66,12 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
-  test "devops_kickoffs covers every DevOps board stage plus the QA-release meta-trigger" do
-    stage_keys = devops_kickoffs.keys - [ApplicationHelper::QA_RELEASE_KICKOFF_KEY]
+  test "devops_kickoffs covers every DevOps board stage plus release meta-triggers" do
+    meta_keys = [
+      ApplicationHelper::QA_RELEASE_KICKOFF_KEY,
+      ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY
+    ]
+    stage_keys = devops_kickoffs.keys - meta_keys
     assert_equal Task::DEPLOY_STAGES.sort, stage_keys.sort
     # per-stage kickoffs stay terse enough for a column header (≤3 words)
     stage_keys.each { |k| assert_operator devops_kickoffs[k].split.size, :<=, 3 }
@@ -82,6 +86,15 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal qa_release_kickoff, devops_kickoffs[ApplicationHelper::QA_RELEASE_KICKOFF_KEY]
     # the meta-trigger is exempt from the per-stage word cap (prominent chip, not a header)
     assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::QA_RELEASE_KICKOFF_KEY
+  end
+
+  test "autonomous_release_kickoff is the production-authorized workflow command" do
+    assert_equal "Merge, Assemble, Deploy", autonomous_release_kickoff
+    assert_equal autonomous_release_kickoff, devops_kickoffs[ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY]
+    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY
+
+    commands = release_kickoff_chips.map { |chip| chip.fetch(:command) }
+    assert_equal [qa_release_kickoff, autonomous_release_kickoff], commands
   end
 
   test "app_emoji maps each canonical app slug to its glyph" do
@@ -324,10 +337,11 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_match(/base/i, deploy["submitted"][:tests])
     # the PRIMARY reviewer owns the merge at the reviewed step (not the conductor)
     assert_match(/primary/i, deploy["reviewed"][:who])
-    # Steffon owns QA; Avi runs the frozen-SHA suite; the operator is the one gate
+    # Steffon owns QA; Avi runs the frozen-SHA suite; production authority is explicit
     assert_match(/steffon/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
-    assert_match(/operator gate/i, deploy["shipped"][:gate])
+    assert_match(/Build and Deploy QA Release/i, deploy["shipped"][:gate])
+    assert_match(/Merge, Assemble, Deploy/i, deploy["shipped"][:gate])
   end
 
   test "release_state_label folds a shipped release into 'Shipped <time> ago'" do

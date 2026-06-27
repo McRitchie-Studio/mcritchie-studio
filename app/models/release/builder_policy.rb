@@ -10,6 +10,7 @@ class Release
 
     Decision = Struct.new(
       :action, :reason, :task_slugs, :repositories, :risk_tags, :operator_gated_ship,
+      :autonomous_ship_kickoff,
       keyword_init: true
     ) do
       def auto_qa?
@@ -31,7 +32,8 @@ class Release
           "task_slugs" => task_slugs,
           "repositories" => repositories,
           "risk_tags" => risk_tags,
-          "operator_gated_ship" => operator_gated_ship?
+          "operator_gated_ship" => operator_gated_ship?,
+          "autonomous_ship_kickoff" => autonomous_ship_kickoff
         }
       end
     end
@@ -59,7 +61,8 @@ class Release
         task_slugs: tasks.map { |task| task_slug(task) }.compact,
         repositories: repos,
         risk_tags: risk_tags,
-        operator_gated_ship: production_ship_operator_gated?
+        operator_gated_ship: production_ship_operator_gated?,
+        autonomous_ship_kickoff: production_ship_autonomous_kickoff
       )
     end
 
@@ -93,7 +96,15 @@ class Release
     end
 
     def production_ship_operator_gated?
-      config.fetch("production_ship", {}).fetch("operator_gated", true) == true
+      production_ship_config.fetch("operator_gated", true) == true
+    end
+
+    def production_ship_autonomous_kickoff
+      production_ship_config.fetch("autonomous_kickoff", nil).presence
+    end
+
+    def production_ship_config
+      config.fetch("production_ship", {})
     end
 
     def task_slug(task)

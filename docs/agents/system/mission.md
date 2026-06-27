@@ -22,7 +22,7 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
   Also the **Documentation** domain expert and a senior **reviewer** in the
   Deploy-flow review pool — via a dedicated reviewer persona distinct from the
   orchestrator seat (tracked in `seed-souls-prod-qa`).
-- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates. In the Deploy flow he is the **thin review delegator** — confirms **product-acceptance** and picks the **primary + light** pair, then hands the lane to the **PRIMARY reviewer** (who owns the deep review, spawns the LIGHT, and runs the merge) — and owns the **ship step** (full e2e on the frozen ship SHA, then the operator gate).
+- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates. In the Deploy flow he is the **thin review delegator** — confirms **product-acceptance** and picks the **primary + light** pair, then hands the lane to the **PRIMARY reviewer** (who owns the deep review, spawns the LIGHT, and runs the merge) — and owns the **ship step** (full e2e on the frozen ship SHA, then either the QA workflow's operator gate or the autonomous production kickoff).
 
 ### Dev specialists
 - **Carl** — Backend / Rails. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane. Senior **reviewer** for backend PRs in the Deploy-flow review pool.
@@ -51,8 +51,8 @@ Alex (PM)
                           integration + e2e-smoke → QA deploy
                                           │
                                           ▼
-        Avi: full e2e on frozen ship SHA ──> 🔒 operator gate
-                                          │ operator OK
+        Avi: full e2e on frozen ship SHA ──> 🔒 operator gate or autonomous kickoff
+                                          │ explicit ship authority
                                           ▼
                   conductor (Steffon's mechanics): prod deploy + smoke
                                           │
@@ -77,7 +77,8 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
 - **Steffon** (**Platform Engineer**) runs the **integration + e2e-smoke** tier
   and deploys `origin/release` to QA (`assembled`).
 - **Avi** runs the **full e2e + highest tier on the frozen ship SHA**, then
-  **stops for the operator** — the one human gate, after tests, before deploy.
+  either stops for the `Build and Deploy QA Release` operator gate or continues
+  under `Merge, Assemble, Deploy` ship authority.
 
 Lands via three build tasks: **`deploy-flow-heartbeat-tooling`** (planner +
 tooling, incl. the `prepare` retry/wait-for-boot fix), **`stages-page-step-outlines`**

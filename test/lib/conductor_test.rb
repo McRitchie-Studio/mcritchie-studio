@@ -9,9 +9,10 @@
 # Run directly:   ruby -Itest test/lib/conductor_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
-# The load-bearing assertion: conductor NEVER auto-invokes `bin/release ship`.
-# The fake `release` appends every call to RELEASE_CALL_LOG, so the tests can
-# prove survey/plan never touch release at all and `conductor ship` refuses.
+# The load-bearing assertion: conductor never ships implicitly. The fake
+# `release` appends every call to RELEASE_CALL_LOG, so the tests can prove
+# survey/plan/plain ship are dry while `ship --run` is the explicit autonomous
+# production path.
 require "minitest/autorun"
 require "json"
 require "open3"
@@ -186,13 +187,13 @@ class ConductorTest < Minitest::Test
       "the rolio (non-pipeline) reviewed task must not ride a mcritchie release merge"
   end
 
-  def test_plan_assembled_recommends_prepare_then_operator_ship_gate
+  def test_plan_assembled_recommends_prepare_then_ship_choices
     out, _err, _status = run_conductor("plan", "--no-health")
 
     assert_includes out, "assembled → QA then SHIP"
     assert_includes out, "bin/release prepare"
-    assert_includes out, "SHIP GATE (operator-only): bin/release ship"
-    assert_includes out, "conductor NEVER ships"
+    assert_includes out, "QA workflow handoff: bin/release ship --by conductor"
+    assert_includes out, "autonomous workflow: bin/conductor ship --run"
   end
 
   def test_plan_flags_blocked_and_non_pipeline_separately
@@ -217,17 +218,23 @@ class ConductorTest < Minitest::Test
     assert_empty release_log, "plan must be read-only — it must never call bin/release"
   end
 
-  # --- the load-bearing gate: ship is NEVER auto-invoked -------------------
+  # --- the load-bearing gate: ship is explicit, never implicit -------------
 
-  def test_ship_subcommand_refuses_and_never_calls_release
-    out, err, status = run_conductor("ship")
+  def test_ship_dry_prints_command_without_invoking_release
+    out, _err, status = run_conductor("ship")
 
-    refute status.success?, "conductor ship must exit non-zero (it refuses)"
-    assert_equal 2, status.exitstatus
-    combined = (out + err).downcase
-    assert_includes combined, "operator-gated"
-    assert_includes combined, "bin/release ship"
-    refute_includes release_log, "ship", "conductor must NEVER invoke bin/release ship"
+    assert status.success?
+    assert_includes out, "bin/release ship --by conductor"
+    assert_includes out, "dry"
+    assert_empty release_log, "plain conductor ship must not execute production deploy"
+  end
+
+  def test_ship_run_invokes_autonomous_release_ship
+    _out, _err, status = run_conductor("ship", "--run")
+
+    assert status.success?
+    assert_includes release_log, "ship --by conductor --yes",
+      "ship --run forwards the explicit autonomous production ship command"
   end
 
   # --- drive subcommands: dry by default, only --run executes --------------
@@ -246,7 +253,7 @@ class ConductorTest < Minitest::Test
     log = release_log
     assert_includes log, "merge feat-b", "merge --run forwards the reviewed pipeline slugs"
     refute_includes log, "rolio-r", "the non-pipeline reviewed task is excluded from the merge"
-    refute_includes log, "ship", "no drive path may ever ship"
+    refute_includes log, "ship", "merge --run must not ship"
   end
 
   def test_qa_dry_prints_prepare_without_invoking_release

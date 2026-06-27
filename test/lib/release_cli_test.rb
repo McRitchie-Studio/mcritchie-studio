@@ -385,20 +385,20 @@ class ReleaseCliTest < Minitest::Test
     assert_operator hub_at, :<, sat_at, "the hub deploys before the satellites"
   end
 
-  # --- Avi ship gate: full e2e on the FROZEN SHA, THEN the operator gate (§1.2) ---
+  # --- Avi ship gate: full e2e on the FROZEN SHA, THEN ship authority (§1.2) ---
 
-  def test_ship_runs_the_avi_e2e_gate_before_the_operator_gate_and_any_deploy
+  def test_ship_runs_the_avi_e2e_gate_before_ship_authority_and_any_deploy
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     gate_at   = out.index("Avi ship gate")
     e2e_at    = out.index("bin/rails test")            # the hub's highest-tier run on the frozen SHA
-    oper_at   = out.index("awaiting operator approval") # the operator gate step (unique marker)
+    ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
     deploy_at = out.index("push heroku main")
 
-    assert gate_at && e2e_at && oper_at && deploy_at, "gate, e2e, operator gate, and a deploy must all appear"
-    assert_operator gate_at, :<, oper_at, "the Avi gate precedes the operator gate"
-    assert_operator e2e_at, :<, oper_at, "the full suite runs on the frozen SHA BEFORE the operator approves"
-    assert_operator oper_at, :<, deploy_at, "the operator gate precedes any deploy"
+    assert gate_at && e2e_at && ship_at && deploy_at, "gate, e2e, ship authority, and a deploy must all appear"
+    assert_operator gate_at, :<, ship_at, "the Avi gate precedes ship authority"
+    assert_operator e2e_at, :<, ship_at, "the full suite runs on the frozen SHA BEFORE ship authority"
+    assert_operator ship_at, :<, deploy_at, "ship authority precedes any deploy"
   end
 
   def test_ship_avi_gate_runs_the_suite_on_the_frozen_sha

@@ -3,18 +3,17 @@
     Local: release (the Release, or nil for the empty state). The shipped
     release is NOT shown here; it renders read-only in _last_release.
     Layout: the status badge owns the top-right corner (in _release_summary);
-    the one-trigger QA-release kickoff chip rides inline (right) with the task
-    pills row. %>
+    release kickoff chips ride inline (right) with the task pills row. %>
 <% rel = local_assigns.fetch(:release, nil) %>
+<% release_kickoffs = tag.div(class: "flex flex-wrap justify-end gap-2") do
+     safe_join(release_kickoff_chips.map { |chip| render("tasks/kickoff_chip", command: chip[:command], label: chip[:label]) })
+   end %>
 <% if rel %>
   <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
       type colour; blank → the fx falls back to its default warm-orange pulse. %>
   <div id="current-release" data-glow="<%= rel.mascot&.signature_color %>" class="rounded-xl border border-subtle bg-surface p-4">
-    <%# Operator's one-trigger QA-department workflow chip rides inline with the task
-        pills: assess the active release, pull every reviewed/passing task in, deploy
-        QA, then stop for ship. %>
-    <% kickoff = render "tasks/kickoff_chip", command: qa_release_kickoff %>
-    <%= render "tasks/release_summary", release: rel, variant: :current, trailing: kickoff -%>
+    <%# Release-wide workflow chips ride inline with the task pills. %>
+    <%= render "tasks/release_summary", release: rel, variant: :current, trailing: release_kickoffs -%>
   </div>
 <% else %>
   <%# No active release: muted empty state mirroring the active card — the section
@@ -26,7 +25,7 @@
     </div>
     <p class="mt-2 text-xs text-muted">Merge a reviewed task (or kick off below) to establish one.</p>
     <div class="mt-3 flex justify-end">
-      <%= render "tasks/kickoff_chip", command: qa_release_kickoff %>
+      <%= release_kickoffs %>
     </div>
   </div>
 <% end %>

@@ -323,7 +323,7 @@ local/QA/production URLs, latest task conversation notes, and matching qa-intake
 status when available. `bin/devops-cycle --plan` adds a read-only batch plan
 that separates parallel PR reviews, serialized/high-risk work, blocked returns
 to feature agents, reviewed work ready for release merge, and assembled release
-work waiting at the operator gate.
+work waiting for explicit ship authority.
 `bin/devops-cycle --decisions` adds an Avi decision summary for PR-review tasks,
 combining qa-intake status, latest task activity, and scout report outcomes into
 `merge-ready`, `wait-for-ci`, `request-changes`, or `conductor-review`

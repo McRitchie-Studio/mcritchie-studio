@@ -40,16 +40,19 @@
 #                            slugs>. Default prints the command; --run executes it.
 #   bin/conductor qa [--run]      Thin drive: bin/release prepare (deploy
 #                            origin/release to QA). Default prints; --run executes.
-#   bin/conductor ship       REFUSES. Production deploy is operator-gated —
-#                            conductor NEVER auto-ships. Prints the gate + command
-#                            and exits non-zero.
+#   bin/conductor ship [--run]  Print the production ship command by default.
+#                            With --run, execute the autonomous production ship
+#                            path: bin/release ship --by conductor --yes.
 #
 # GATES (load-bearing):
 #   * The 2-senior REVIEW needs AGENTS. A script can't render a verdict, so
 #     conductor only surfaces the reviewer-select assignment + the handoff; it
 #     NEVER fabricates a review outcome.
-#   * The prod SHIP is OPERATOR-gated. conductor never invokes `bin/release ship`
-#     — not in survey, not in plan, not in any drive. `conductor ship` refuses.
+#   * The prod SHIP is never implicit. conductor never invokes `bin/release ship`
+#     during survey/plan, and plain `conductor ship` is a dry handoff. Only the
+#     explicit autonomous workflow uses `conductor ship --run`, which still runs
+#     the release command's preflight, frozen-SHA test gate, smoke, and recovery
+#     path.
 #
 # Board: PROD by default (inherited — bin/task defaults to https://mcritchie.studio
 # and bin/release defaults to the prod board).
@@ -212,8 +215,8 @@ end
 # Release FK). NOTE: the candidate's QA-deploy state + qa_url live on the Release
 # RECORD, which has no cheap board endpoint (only `Release.current` via a
 # heroku-run). conductor therefore names the candidate + lists members from the
-# board and leaves the QA/ship decision to the operator gate (which ship requires
-# anyway). Returns { slug:, members: [slugs] } or nil.
+# board and leaves the QA/ship decision to the selected workflow. Returns
+# { slug:, members: [slugs] } or nil.
 def active_candidate(assembled)
   enriched = assembled.map { |t| show_task(t["slug"]).merge("slug" => t["slug"], "title" => t["title"]) }
   members = enriched.reject { |t| non_pipeline?(t) }
@@ -327,7 +330,8 @@ def plan(reviewers: false, health: true)
   end
   puts
 
-  # assembled → QA then the operator SHIP gate. conductor NEVER ships.
+  # assembled → QA then the ship gate. Plain conductor stays dry; the autonomous
+  # workflow can run the production ship explicitly.
   asm_pipeline, asm_other = partition_pipeline(lists["assembled"])
   non_pipeline.concat(asm_other)
   puts "assembled → QA then SHIP (the RC members):"
@@ -336,9 +340,10 @@ def plan(reviewers: false, health: true)
   else
     puts "  members: #{asm_pipeline.map { |t| t['slug'] }.join(', ')}"
     puts "  1. bin/release prepare        # deploy origin/release to QA (cut/refresh the QA app)"
-    puts "  2. review the QA app + get operator sign-off"
-    puts "  3. SHIP GATE (operator-only): bin/release ship"
-    puts "  conductor NEVER ships — production deploy is operator-gated."
+    puts "  2. review the QA app + choose ship authority"
+    puts "  3a. QA workflow handoff: bin/release ship --by conductor"
+    puts "  3b. autonomous workflow: bin/conductor ship --run"
+    puts "  plain conductor ship is dry; --run executes bin/release ship --by conductor --yes."
   end
   puts
 
@@ -399,14 +404,17 @@ def drive_qa(run:)
   end
 end
 
-# ship: the load-bearing refusal. conductor NEVER auto-ships — production deploy
-# is operator-gated. Print the gate + the command and exit non-zero so no
-# automation can treat this as a ship.
-def refuse_ship
-  warn "conductor: ship is OPERATOR-GATED — conductor never auto-ships."
-  warn "  Production deploy is run by the operator, after QA sign-off, with:"
-  warn "    bin/release ship"
-  exit 2
+# ship: default dry handoff; --run is the explicit autonomous production path.
+# The release command owns every irreversible gate.
+def drive_ship(run:)
+  if run
+    puts "→ bin/release ship --by conductor --yes"
+    ok = exec_bin(RELEASE_BIN, "ship", "--by", "conductor", "--yes")
+    exit(ok ? 0 : 1)
+  else
+    puts "bin/release ship --by conductor"
+    puts "(dry — Build and Deploy QA Release stops here; Merge, Assemble, Deploy uses `bin/conductor ship --run`)"
+  end
 end
 
 def usage
@@ -419,7 +427,7 @@ def usage
         --reviewers     also preview the picked primary+light pair per submitted task.
       merge [--run]     bin/release merge <reviewed pipeline slugs> (dry unless --run).
       qa    [--run]     bin/release prepare (dry unless --run).
-      ship              REFUSES — production deploy is operator-gated.
+      ship  [--run]     dry by default; --run executes autonomous production ship.
 
       --no-health       skip the prod health curl (survey/plan).
 
@@ -442,7 +450,7 @@ if __FILE__ == $PROGRAM_NAME
   when "plan"   then plan(reviewers: reviewers, health: no_health.nil?)
   when "merge"  then drive_merge(run: run)
   when "qa"     then drive_qa(run: run)
-  when "ship"   then refuse_ship
+  when "ship"   then drive_ship(run: run)
   when "help", "-h", "--help" then usage
   else
     warn "conductor: unknown command #{cmd.inspect}"

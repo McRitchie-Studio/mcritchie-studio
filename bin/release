@@ -1331,14 +1331,14 @@ def whats_live(repos, qa_shas)
 end
 
 # Avi's ship gate: run each app's highest-tier suite (registry `test_cmd`) on the
-# FROZEN ship SHA — the exact code that ships — BEFORE the operator's deploy gate,
-# so an approval can never authorize untested code (§1.2 "fixes shipped ≠ tested").
+# FROZEN ship SHA — the exact code that ships — BEFORE the ship-authority gate,
+# so approval can never authorize untested code (§1.2 "fixes shipped ≠ tested").
 # ff main → frozen LOCALLY (no push) so the suite runs on the frozen tree; a red
 # gate scoped-aborts before the confirm, leaving origin untouched. Satellites
 # self-gate (their own deploy runs their suite) → no `test_cmd` → skipped.
 def avi_ship_gate(app_groups, ship_sha)
   say("")
-  step("Avi ship gate: full e2e + highest tier on the FROZEN ship SHA (before the operator gate)")
+  step("Avi ship gate: full e2e + highest tier on the FROZEN ship SHA (before ship authority)")
   app_groups.each do |group|
     repo = group["repo"]
     ff_main_local(repo, ship_sha[repo]) # local only — run the suite on the frozen tree
@@ -1347,7 +1347,7 @@ def avi_ship_gate(app_groups, ship_sha)
 end
 
 # Deploy one app to prod via its registry adapter. Common prelude: local ff main
-# → frozen (the test gate already ran in avi_ship_gate, before the operator gate),
+# → frozen (the test gate already ran in avi_ship_gate, before ship authority),
 # then push origin main. Then the strategy-specific mechanic + smoke policy.
 def deploy_app(group, frozen)
   repo    = group["repo"]
@@ -1399,7 +1399,7 @@ end
 # deploy_app), which assumes the checkout is ON `main` with a CLEAN tree. Twice
 # this session a review agent left a checkout on a leftover `pr-NNN` branch / a
 # stale uncommitted schema.rb, and the ff broke MID-ship (after gems published +
-# the operator gate — the worst time). This preflight catches that BEFORE any ff,
+# ship authority — the worst time). This preflight catches that BEFORE any ff,
 # aborting loudly with the offending branch / dirty files. The PURE decision
 # (offenders + message) lives in Release::ShipSequence; this owns only the git
 # reads. A dry-run prints the plan and runs NO git (so a preview never aborts on a
@@ -1535,25 +1535,25 @@ def ship
   ship_sha = {}
   repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
 
-  # 2. "What's already live" pre-flight, then Avi's ship gate, then the ONE
-  #    operator gate — turf included (its bin/deploy keeps its own smoke + rollback).
+  # 2. "What's already live" pre-flight, then Avi's ship gate, then explicit
+  #    ship authority — turf included (its bin/deploy keeps its own smoke + rollback).
   whats_live(repos, qa_shas)
 
   # 2a. Avi's ship gate (§1.2): run the FULL e2e + highest tier on the FROZEN ship
-  #     SHA — the exact prod code — BEFORE the operator gate, so "shipped" can
+  #     SHA — the exact prod code — BEFORE ship authority, so "shipped" can
   #     never mean "untested". A red gate scoped-aborts here, before the confirm
   #     and before any push, leaving origin untouched.
   avi_ship_gate(app_groups, ship_sha)
 
-  # 2b. The ONE operator gate — explicit, AFTER Avi's test confirmation and BEFORE
-  #     any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
-  step("operator gate: Avi's full e2e passed on the frozen SHA — awaiting operator approval to deploy")
+  # 2b. The ship-authority gate — explicit, AFTER Avi's test confirmation and
+  #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
+  step("ship authority: Avi's full e2e passed on the frozen SHA — confirming production deploy")
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
 
   # 2c. The ship is now authorized + proceeding — record the Avi → shipped intent for
   #     every member so /deployments shows him shipping LIVE (a green ticking timer)
   #     through the deploy, instead of an empty dashed ship slot until `ship!` lands
-  #     (the 2026-06-25 unfilled-ship-slot incident). Recorded AFTER the operator gate
+  #     (the 2026-06-25 unfilled-ship-slot incident). Recorded AFTER ship authority
   #     so a declined ship never shows Avi shipping. Append-only + idempotent
   #     (record_intent_event reuses the open intent; `ship!` supersedes it). On a
   #     partial-ship abort the intent stays open — correct (Avi is still shipping) and

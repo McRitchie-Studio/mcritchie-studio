@@ -105,7 +105,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release [data-test='release-state-badge']", count: 1, text: /\AShipped/
   end
 
-  test "deployments rides the Build and Deploy QA Release chip inline (right) with the task pills" do
+  test "deployments rides release workflow chips inline with the task pills" do
     Release.delete_all
     rel = Release.open!(branch: "release/qa-kickoff")
     @new_task.update!(stage: "reviewed")
@@ -118,7 +118,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # pill and the chip both live in the same release-members-row.
     assert_select "#current-release [data-test='release-members-row']" do
       assert_select "a[href=?]", task_path(@new_task.slug)  # the task pill
-      assert_select "code", text: /Build and Deploy QA Release/ # the kickoff chip
+      assert_select "code", text: /Build and Deploy QA Release/
+      assert_select "code", text: /Merge, Assemble, Deploy/
     end
   end
 
@@ -135,10 +136,14 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     card = css_select("#current-release").first.to_html
     badge_at = card.index("release-state-badge")
     chip_at  = card.index("Build and Deploy QA Release")
+    prod_chip_at = card.index("Merge, Assemble, Deploy")
     assert badge_at, "current card should render the status badge"
     assert chip_at, "current card should render the kickoff chip"
+    assert prod_chip_at, "current card should render the autonomous kickoff chip"
     assert badge_at < chip_at,
            "the top-right status badge must render before the inline kickoff chip"
+    assert badge_at < prod_chip_at,
+           "the top-right status badge must render before the inline autonomous kickoff chip"
   end
 
   test "deployments release cards omit the redundant 'release' branch label" do
@@ -278,7 +283,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # No active release → Current shows the muted empty state + kickoff chip,
     # NOT the shipped release dressed up as "current".
     assert_select "#current-release", text: /none active/
-    assert_select "#current-release", text: /Build and Deploy QA Release/ # kickoff chip
+    assert_select "#current-release", text: /Build and Deploy QA Release/
+    assert_select "#current-release", text: /Merge, Assemble, Deploy/
     assert_select "#current-release", { text: /#{Regexp.escape(shipped.slug)}/, count: 0 },
                   "shipped release must NOT appear under Current"
 
@@ -483,7 +489,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Gate"
     assert_includes response.body, "two senior reviewers"     # review delegated, not Avi-solo
     assert_includes response.body, "FROZEN ship SHA"          # Avi's ship-time suite
-    assert_includes response.body, "operator gate"            # the one human gate
+    assert_includes response.body, "Build and Deploy QA Release"
+    assert_includes response.body, "Merge, Assemble, Deploy"
   end
 
   test "deployments and stages are public (no login required)" do
