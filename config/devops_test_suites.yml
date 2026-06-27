@@ -2,12 +2,10 @@ apps:
   mcritchie-studio:
     display_name: McRitchie Studio
     qa_url: https://qa.mcritchie.studio
-    # The operational prod host — matches config/qa_environments.yml production_url
-    # and config/release_repos.yml prod_deploy.smoke_url (the host bin/release's /up
-    # hard-gate AND bin/prod-smoke's seal both hit). The apex https://mcritchie.studio
-    # is a branded alias of the same dyno (also 200 on /up, no redirect); kept here
-    # in sync so the production_smoke lane below smokes the gate's host.
-    production_url: https://app.mcritchie.studio
+    # Canonical production host. Keep this in sync with config/qa_environments.yml
+    # production_url and config/release_repos.yml prod_deploy.smoke_url so the
+    # /up hard-gate and post-ship smoke hit the same public server.
+    production_url: https://mcritchie.studio
     suites:
       - name: Rails unit and controller
         lane: pr_review_gate

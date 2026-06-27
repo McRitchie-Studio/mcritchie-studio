@@ -90,7 +90,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "git_push_heroku", adapter["strategy"]
     assert_equal "heroku", adapter["remote"]
     assert_equal "main", adapter["branch"]
-    assert_equal "https://app.mcritchie.studio", adapter["smoke_url"]
+    assert_equal "https://mcritchie.studio", adapter["smoke_url"]
   end
 
   test "prod_deploy returns the repo_script adapter for turf-monster" do

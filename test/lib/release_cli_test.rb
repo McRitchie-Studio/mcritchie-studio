@@ -323,7 +323,7 @@ class ReleaseCliTest < Minitest::Test
           { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
             "members" => [{ "slug" => "t-studio", "version" => nil, "branch" => "feat/studio" }],
             "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku",
-                               "branch" => "main", "smoke_url" => "https://app.mcritchie.studio" } }
+                               "branch" => "main", "smoke_url" => "https://mcritchie.studio" } }
         ] }
     end
   RUBY
@@ -352,7 +352,7 @@ class ReleaseCliTest < Minitest::Test
 
     # hub: git_push_heroku + smoke its smoke_url
     assert_includes out, "push heroku main"
-    assert_includes out, "https://app.mcritchie.studio/up"
+    assert_includes out, "https://mcritchie.studio/up"
     # satellite: repo_script runs the repo's own deploy; the repo owns smoke/rollback
     assert_includes out, "bin/deploy --yes"
     assert_includes out, "repo owns its smoke + rollback"
@@ -1438,7 +1438,7 @@ class ReleaseCliTest < Minitest::Test
           { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
             "members" => [{ "slug" => "t-studio", "version" => nil, "branch" => "feat/studio" }],
             "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku",
-                               "branch" => "main", "smoke_url" => "https://app.mcritchie.studio" } }
+                               "branch" => "main", "smoke_url" => "https://mcritchie.studio" } }
         ] }
     end
   RUBY

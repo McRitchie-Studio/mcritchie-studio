@@ -167,6 +167,20 @@ Gem publishes specifically are **part of**
 "Run Deployment" — they ride a release as first-class members and are published
 producer-first by `bin/release ship` (see below), not as a separate ad-hoc step.
 
+## QA And Production URLs
+
+`mcritchie-studio/config/qa_environments.yml` is the source of truth for stable
+QA servers and production URLs used by `bin/qa-server`, `bin/release`, and
+`bin/prod-smoke`.
+
+- QA servers use `https://qa.<canonical-host>` and set `QA_ENV=true` while still
+  running Rails in production mode.
+- Production URLs use the canonical public host: `https://mcritchie.studio` for
+  the hub and `https://turfmonster.media` for Turf Monster.
+- Legacy `app.*` hosts may stay in `APP_HOST_ALIASES` and provider dashboards
+  during migration, but they are aliases, not the production target in release
+  metadata or post-ship smoke checks.
+
 ## Release builder autonomy
 
 QA assembly autonomy is deterministic config, not agent judgment. The policy

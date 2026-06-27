@@ -23,7 +23,7 @@ qa_environments:
     custom_domains:
       - qa.mcritchie.studio
     production_app: mcritchie-studio
-    production_url: https://app.mcritchie.studio
+    production_url: https://mcritchie.studio
     deploy_provider: heroku
     addons:
       - heroku-postgresql:essential-0

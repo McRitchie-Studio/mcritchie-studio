@@ -15,17 +15,15 @@
 # exits non-zero so the conductor records a 🔴 seal + surfaces a rollback, but the
 # ship is NOT aborted (the deploy already happened).
 #
-# HOST NUANCE (resolved): the prod base URL comes from the SAME source the ship's
-# `/up` gate trusts — config/release_repos.yml `prod_deploy.smoke_url`
-# (https://app.mcritchie.studio) — so a green gate and a green seal never disagree
-# on host. config/devops_test_suites.yml's apex `production_url`
-# (https://mcritchie.studio) is a branded alias of the same dyno and is
-# deliberately NOT the source (see Release::ProdSmoke). Override with --url.
+# The prod base URL comes from the same canonical source the ship's `/up` gate
+# trusts: config/release_repos.yml `prod_deploy.smoke_url`. Keep it in sync with
+# config/qa_environments.yml `production_url`; legacy app.* hosts are aliases,
+# not the smoke target. Override with --url only for a deliberate one-off check.
 #
 # Usage:
 #   bin/prod-smoke                       # defaults to mcritchie-studio
 #   bin/prod-smoke mcritchie-studio
-#   bin/prod-smoke mcritchie-studio --url https://app.mcritchie.studio
+#   bin/prod-smoke mcritchie-studio --url https://mcritchie.studio
 #   bin/prod-smoke --json                # machine-readable {app,url,passed} on exit
 #
 # Exit code: 0 = green (suite passed), non-zero = red (the seal verdict).
