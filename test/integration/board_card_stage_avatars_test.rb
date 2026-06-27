@@ -140,6 +140,22 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a direct-blocked resubmitted card ignores the stale review intent" do
+    task = Task.create!(title: "direct blocked review card", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: [{ "slug" => "shannon", "weight" => "primary" },
+                                                               { "slug" => "carl", "weight" => "light" }])
+    task.block!
+    task.build!
+    task.submit!
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug}", count: 1
+    assert_select "#card-#{task.slug} [data-test='crew-cluster'][data-lane='review'] [data-test='crew-live']", count: 0
+    assert_select "#card-#{task.slug} [data-test='crew-cluster'][data-lane='review'] [data-test='crew-duration']", count: 0
+  end
+
   test "the deploy crew is additive — an existing mascot survives render + ship intent" do
     # The 4th slot may only ADD the deploy face; the task's existing mascot (the
     # build-lane face) must never be re-derived, replaced, or reassigned.

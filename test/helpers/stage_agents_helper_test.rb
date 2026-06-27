@@ -675,6 +675,20 @@ class StageAgentsHelperTest < ActionView::TestCase
                  "the active review pair owns the review lane"
   end
 
+  test "crew_columns ignores a stale review intent after direct rework block" do
+    task = Task.create!(title: "board direct block task", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    task.block!
+    task.build!
+    task.submit!
+
+    review = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+             .find { |c| c.lane == :review }
+
+    assert_empty review.stacked, "the old review pair must not still own the review lane"
+    assert_nil review.live_since, "the old review start must not keep ticking after resubmit"
+  end
+
   test "crew_columns without an agent map skips the live injection (legacy callers unchanged)" do
     task = Task.create!(title: "board no-agents task", stage: "submitted")
     task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)

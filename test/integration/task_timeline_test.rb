@@ -144,6 +144,34 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     Current.reset
   end
 
+  test "api intent records fresh review after direct rework block" do
+    Agent.create!(name: "Carl", slug: "carl")
+    Agent.create!(name: "Shannon", slug: "shannon")
+    reviewers = [{ slug: "carl", weight: "primary" }, { slug: "shannon", weight: "light" }]
+    task = Task.create!(title: "Timeline direct block task", stage: "submitted")
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+
+    post "/api/v1/tasks/#{task.slug}/intent",
+         params: { to_stage: "reviewed", reviewers: reviewers, event: { source: "cli" } },
+         headers: { "Authorization" => "Bearer #{token}" }, as: :json
+    assert_response :success
+
+    task.block!
+    task.build!
+    task.submit!
+    assert_nil task.reload.open_intent_for("reviewed"),
+               "the pre-block review intent is not open in the new submitted cycle"
+
+    assert_difference -> { task.reload.task_events.intents.where(to_stage: "reviewed").count }, 1 do
+      post "/api/v1/tasks/#{task.slug}/intent",
+           params: { to_stage: "reviewed", reviewers: reviewers, event: { source: "cli" } },
+           headers: { "Authorization" => "Bearer #{token}" }, as: :json
+    end
+    assert_response :success
+
+    assert task.reload.open_intent_for("reviewed").present?
+  end
+
   # [integration] a bad request (no to_stage) is a clean 400, never a 500.
   test "api intent without to_stage is a 400" do
     task = Task.create!(title: "Timeline intent bad task", stage: "submitted")

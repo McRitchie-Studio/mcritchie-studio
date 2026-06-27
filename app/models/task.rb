@@ -449,15 +449,19 @@ class Task < ApplicationRecord
   # The OPEN intent event for `to_stage` (work has STARTED toward that stage but no
   # later transition into it has landed yet), or nil once it's resolved by a
   # transition — so a non-nil result means "work is in progress on this stage right
-  # now". Scope is cycle-aware: if QA blocks a task and it re-enters `submitted`, a
-  # fresh review intent can open even though an older `→reviewed` transition exists.
+  # now". Scope is cycle-aware: if QA blocks a task and it re-enters `submitted`,
+  # old review intents from the prior submitted cycle are closed even if no
+  # `→reviewed` transition ever landed, and a fresh review intent can open.
   def open_intent_for(to_stage)
     open_intents_for(to_stage).last
   end
 
   def open_intents_for(to_stage)
+    to_stage = to_stage.to_s
+    return [] unless NEXT_INTENT_STAGE[stage] == to_stage
+
     task_events.intents.where(to_stage: to_stage).chronological.to_a.reject do |intent|
-      intent_superseded?(intent)
+      !intent_started_in_current_stage?(intent) || intent_superseded?(intent)
     end
   end
 
@@ -486,10 +490,27 @@ class Task < ApplicationRecord
     task_events.transitions.where(to_stage: stage).chronological.last
   end
 
+  def intent_started_in_current_stage?(intent)
+    return false unless intent.from_stage == stage
+
+    entry = current_stage_entry_event
+    return true if entry.nil?
+
+    intent.occurred_at > entry.occurred_at ||
+      (intent.occurred_at == entry.occurred_at && intent.id.to_i >= entry.id.to_i)
+  end
+
   def intent_superseded?(intent)
-    task_events.transitions.where(to_stage: intent.to_stage).where(
-      "occurred_at > ? OR (occurred_at = ? AND id > ?)",
-      intent.occurred_at, intent.occurred_at, intent.id
+    # An intent is live only while the task remains in its source-stage cycle.
+    # It closes when the target lands OR when any later transition leaves the
+    # source stage (direct QA block, archive, etc.).
+    task_events.transitions.where(
+      "(to_stage = :target OR from_stage = :source) AND " \
+        "(occurred_at > :occurred_at OR (occurred_at = :occurred_at AND id > :id))",
+      target: intent.to_stage,
+      source: intent.from_stage,
+      occurred_at: intent.occurred_at,
+      id: intent.id
     ).exists?
   end
 

@@ -111,6 +111,35 @@ test("a resubmitted card replaces the old review duration with a live review tic
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
+test("a direct-blocked card ignores stale review intent until a fresh one starts", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+
+  await page.goto("/deployments");
+
+  const card = page.locator("#card-live-direct-block-demo");
+  await expect(card).toBeVisible();
+  const reviewLive = card.locator("[data-test='crew-cluster'][data-lane='review'] [data-test='crew-live']");
+  await expect(reviewLive).toHaveCount(0);
+
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const res = await page.request.post("/api/v1/tasks/live-direct-block-demo/intent", {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    data: {
+      to_stage: "reviewed",
+      reviewers: [{ slug: "shannon", weight: "primary" }, { slug: "carl", weight: "light" }],
+      event: { source: "cli" },
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+
+  await expect(reviewLive).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.locator("#dropzone-submitted #card-live-direct-block-demo")).toBeVisible();
+
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
+
 test("Last Release stacks member pills while Current Release keeps readable wrapping", async ({ page }) => {
   await page.goto("/deployments");
 

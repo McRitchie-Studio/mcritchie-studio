@@ -807,9 +807,10 @@ when "intent"
   # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's
   # work, the moment it begins — so /deployments + the task timeline show who's on
   # it with a live ticker BEFORE the →stage transition lands. Append-only +
-  # idempotent server-side, and a no-op once the target stage landed in the
-  # current stage cycle. Rework can return a task to `submitted`, where a fresh
-  # `→reviewed` intent may open. Used for the Steffon QA (--to assembled --actor
+  # idempotent server-side within the current source-stage cycle, and a no-op once
+  # the target stage landed in that cycle. Leaving the source stage closes the old
+  # intent; rework can return a task to `submitted`, where a fresh `→reviewed`
+  # intent may open. Used for the Steffon QA (--to assembled --actor
   # steffon) and Avi ship (--to shipped --actor avi) intents; the review pair
   # (--to reviewed) is normally recorded by `bin/reviewer-select` (which records
   # by default).

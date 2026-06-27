@@ -64,6 +64,23 @@ class TaskIntentTest < ActiveSupport::TestCase
     Current.reset
   end
 
+  test "record_intent_event ignores a stale intent after direct rework block" do
+    task = Task.create!(title: "intent direct block task", stage: "submitted")
+    first = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    task.block!
+    task.build!
+    task.submit!
+
+    assert_nil task.reload.open_intent_for("reviewed"),
+               "an intent from the prior submitted cycle is not still open"
+
+    second = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+
+    assert second.present?, "the resubmitted cycle can record a fresh review intent"
+    assert_not_equal first.id, second.id
+    assert_equal second.id, task.reload.open_intent_for("reviewed").id
+  end
+
   test "record_intent_event rejects targets that are not the current next stage" do
     task = Task.create!(title: "intent invalid target task", stage: "shipped")
 
