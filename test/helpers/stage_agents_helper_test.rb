@@ -246,6 +246,38 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_not_equal "https://example.test/snorlax-sprite.png", by_stage["shipped"].first.avatar
   end
 
+  test "stage_timeline keeps historical build mascots after a rework handoff" do
+    Pokemon.create!(dex: 87, name: "Dewgong", slug: "dewgong", generation: 1,
+                    sprite_url: "https://example.test/dewgong.png")
+    Pokemon.create!(dex: 88, name: "Grimer", slug: "grimer", generation: 1,
+                    sprite_url: "https://example.test/grimer.png")
+    task = Task.create!(title: "mascot timeline handoff task", stage: "building",
+                        metadata: { "devops" => { "mascot" => "grimer" } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 5.hours.ago,
+                      metadata: { "mascot" => { "slug" => "dewgong", "name" => "Dewgong",
+                                                 "avatar" => "https://example.test/dewgong.png" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600,
+                      metadata: { "mascot" => { "slug" => "dewgong", "name" => "Dewgong",
+                                                 "avatar" => "https://example.test/dewgong.png" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600,
+                      metadata: { "mascot" => { "slug" => "dewgong", "name" => "Dewgong",
+                                                 "avatar" => "https://example.test/dewgong.png" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "blocked",
+                      occurred_at: 2.hours.ago, seconds_in_from: 3600)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "blocked", to_stage: "building",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600,
+                      metadata: { "mascot" => { "slug" => "grimer", "name" => "Grimer",
+                                                 "avatar" => "https://example.test/grimer.png" } })
+
+    blocks = stage_timeline(task.reload, @agents).reject(&:in_progress?)
+
+    assert_equal ["Dewgong", "Dewgong", "Dewgong", nil, "Grimer"],
+                 blocks.map { |block| block.agents.first&.name }
+  end
+
   # --- crew_clusters (board-card collapsing) ----------------------------------
 
   test "crew_clusters collapses the build lane to one circle with total build time once submitted" do
