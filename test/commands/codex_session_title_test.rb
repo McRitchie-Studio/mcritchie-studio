@@ -123,7 +123,8 @@ class CodexSessionTitleTest < Minitest::Test
     assert_hook_context out, marker
 
     sqlite(%(INSERT INTO threads (id, title) VALUES ('late-thread', 'late-thread');))
-    sleep 0.35
+    deadline = Time.now + 3
+    sleep 0.05 until title_for("late-thread") == marker || Time.now >= deadline
 
     assert_equal marker, title_for("late-thread")
   end
