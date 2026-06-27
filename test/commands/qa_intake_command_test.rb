@@ -107,13 +107,32 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     assert_includes info, "no action needed"
   end
 
+  test "[integration] qa-intake discovers release-managed apps outside the worktree registry" do
+    build_repo("rolio")
+    registry = write_registry_without_apps
+    fake_bin = write_fake_gh(branch: "feat/rolio-demo", merge_state: "CLEAN")
+
+    out, err, status = Open3.capture3(
+      { "PROJECTS_DIR" => @projects_dir, "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" },
+      RbConfig.ruby, @script, "--registry", registry, "--apps", "rolio", "--json",
+      chdir: @projects_dir
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    pr = JSON.parse(out).fetch("prs").first
+
+    assert_equal "rolio", pr.fetch("app")
+    assert_equal "amcritchie/rolio", pr.fetch("repo")
+    assert_equal "missing-local-branch", pr.fetch("status")
+  end
+
   private
 
-  def build_repo
-    repo_dir = File.join(@projects_dir, "mcritchie-studio")
+  def build_repo(slug = "mcritchie-studio")
+    repo_dir = File.join(@projects_dir, slug)
     FileUtils.mkdir_p(repo_dir)
     git(repo_dir, "init", "-q")
-    git(repo_dir, "remote", "add", "origin", "git@github.com:amcritchie/mcritchie-studio.git")
+    git(repo_dir, "remote", "add", "origin", "git@github.com:amcritchie/#{slug}.git")
     repo_dir
   end
 
@@ -137,6 +156,18 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
         "ahead_origin_main" => "2", "behind_origin_main" => behind,
         "issues" => ["branch is #{behind} commit(s) behind origin/release; rebase before QA handoff"]
       }]
+    )}\n")
+    path
+  end
+
+  def write_registry_without_apps
+    path = File.join(@projects_dir, ".agents", "empty-registry.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{JSON.pretty_generate(
+      "generated_at" => "2026-06-23T00:00:00Z",
+      "apps" => [],
+      "summary" => {},
+      "worktrees" => []
     )}\n")
     path
   end

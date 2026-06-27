@@ -8,12 +8,17 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 |------|------|-------|------|
 | [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, auth-capable Studio app, and ecosystem recovery scripts. | Rails 7.2 / Postgres | 3000 |
 | [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain via turf-vault. | Rails 7.2 / Postgres / Redis / Sidekiq | 3100 |
+| [`rolio`](https://github.com/amcritchie/rolio) | Relationship operating workspace. Release-managed standalone app with hosted QA/prod Heroku lanes. | Rails 8 / SQLite demo runtime | 3020 |
 | [`chain-ops`](https://github.com/amcritchie/chain-ops) | Planned Solana environment control plane. Starts with localnet validator support. | Rails 7.2 / Postgres | 3300 |
 | [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache. | Ruby gem | — |
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
 
-📇 `rolio` exists locally as a **standalone / client app** (own runtime + deploy), not yet in the managed ecosystem registry — see [`docs/agents/system/new-app-onboarding-sop.md`](agents/system/new-app-onboarding-sop.md) for the tier model. `tax-studio` remains reserved at `3200-3299` and `chain-ops` is planned at `3300-3399` in `config/satellites.yml`; if Rolio joins the managed stack, assign it `3400-3499` and move its primary port to `3400`.
+📇 `rolio` is **release-managed standalone**: it rides `config/release_repos.yml`
+and `config/qa_environments.yml` for QA/prod deploys, but it is not a
+Studio Engine SSO satellite and is not in `config/satellites.yml`. If Rolio later
+joins the managed satellite stack, assign it `3400-3499` and move its primary
+port to `3400`.
 
 ## Dependency graph
 
@@ -42,6 +47,10 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 
 - **mcritchie-studio** — The hub. Runs the NFL data ingest pipeline (Nflverse → Spotrac → ESPN → PFF → depth chart), News pipeline (intake → review → process → refine → conclude), and Content pipeline (idea → hook → script → assets → assembly → posted). Owns `bin/ecosystem-build`, the recovery protocol, and the agent-neutral documentation source.
 - **turf-monster** — Satellite product app. Sports pick'em UI + contest grading + Solana onchain settlement against `turf-vault`. Read: `README.md`, `docs/LOCAL_STACK.md`, and the topic files in `docs/` (`AUTH.md`, `SOLANA.md`, `FORMULAS.md`, `UI_PATTERNS.md`, `world_cup_2026.md`).
+- **rolio** — Release-managed standalone app. Uses the studio task board,
+  PR-review discipline, QA Heroku app (`rolio-qa`), and prod Heroku app
+  (`rolio-prod`), but owns its runtime and does not consume `studio-engine`.
+  Read: `README.md` and `docs/RUNBOOK.md`.
 - **chain-ops** — Planned satellite control plane for Solana environments. V1 manages a local `solana-test-validator` and prints the localnet env contract Turf Monster needs for local on-chain work. Read: `README.md`.
 - **studio-engine** — Engine. Provides `Studio::ErrorHandling` concern, ErrorLog model, passwordless auth primitives, theme system (7 role colors → CSS vars), modals, ImageCache, and reusable components. Consumed by mcritchie-studio + turf-monster + future apps. Read: `README.md` and `docs/`.
 - **solana-studio** — Gem. Primitives only: `Solana::Client` (JSON-RPC), `Solana::Borsh`, `Solana::Transaction` (Anchor discriminators + PDA derivation), `Solana::SplToken`, `Solana::Keypair`. Pure Ruby, ed25519 the only external dep. Consumed by turf-monster (which extends `Solana::Keypair` locally for encryption). Read: `README.md` + `RUNBOOK.md`.
@@ -50,7 +59,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 ## Secret + service surface
 
 - **1Password account**: `alex@mcritchie.studio` (`MWOV5OT5BRHATI4EGMN26C5DPA`), vault `agents`. Service-account token bootstraps everything else via `bin/setup-1pass-token`.
-- **Heroku apps**: `mcritchie-studio` → https://mcritchie.studio; `turf-monster-mainnet` → https://turfmonster.media. `app.mcritchie.studio` and `app.turfmonster.media` remain legacy Rails aliases, `v1.mcritchie.studio` is the previous McRitchie Studio Squarespace site, `v1.turfmonster.media` is the previous Turf Monster landing site, and QA runs at `qa.mcritchie.studio` / `qa.turfmonster.media`. `RAILS_MASTER_KEY` shared across apps via Heroku config.
+- **Heroku apps**: `mcritchie-studio` → https://mcritchie.studio; `turf-monster-mainnet` → https://turfmonster.media; `rolio-prod` → https://rolio-prod-82e96784b462.herokuapp.com. `app.mcritchie.studio` and `app.turfmonster.media` remain legacy Rails aliases, `v1.mcritchie.studio` is the previous McRitchie Studio Squarespace site, `v1.turfmonster.media` is the previous Turf Monster landing site, and QA runs at `qa.mcritchie.studio` / `qa.turfmonster.media` / https://rolio-qa-58beede9dc0b.herokuapp.com. `RAILS_MASTER_KEY` shared across Studio/Turf apps via Heroku config; Rolio uses its own `SECRET_KEY_BASE`.
 - **Solana**: devnet via Anza CLI (`release.anza.xyz/stable/install`). Local dev keypair at `~/.config/solana/id.json` — NOT one of the agent vault wallets. Agent wallets (Alex Bot / Mason / Mack / Turf Monster) stay in 1Password.
 - **AWS S3**: per-app buckets (`mcritchie-studio-{dev,production}`, `turf-monster-{dev,production}`) for ImageCache.
 - **AWS SES**: shared transactional email target. `studio-engine` owns transport selection plus `Studio::Email.deliver`; McRitchie uses `studio_email_deliveries`, while Turf routes the same facade into its existing `email_deliveries` table. The cross-app sender matrix, SES checklist, local inbox proof rules, and rollback policy live in `docs/agents/modules/email-operations.md`; credential item names live in `docs/agents/modules/credential-inventory.md`. Current proof: both sending domains are verified with DKIM success, but the SES account remains sandboxed; see `docs/agents/audits/ses-production-proof-2026-06-14.md`.
@@ -75,4 +84,4 @@ The current closeout audit is [`docs/agents/audits/final-closeout-2026-06-17.md`
 
 ---
 
-*Last updated: 2026-06-17. Update when repos, ports, production URLs, deploy targets, or agent entrypoints change.*
+*Last updated: 2026-06-27. Update when repos, ports, production URLs, deploy targets, or agent entrypoints change.*

@@ -8,12 +8,13 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | Turf Monster | 3100 | 3100-3199 |
 | Tax Studio | 3200 | 3200-3299 |
 | Chain Ops | 3300 | 3300-3399 |
-| Rolio | 3020 today | 3400-3499 if promoted |
+| Rolio | 3020 today | 3400-3499 if promoted to satellite |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Chain Ops is planned
-for localnet/QA/node operations. Rolio remains unmanaged for now; do not move it
-into the managed range until that product decision is explicit.
+for localnet/QA/node operations. Rolio is release-managed for Heroku QA/prod but
+not a managed satellite; do not move it into the `3400-3499` managed range until
+that product decision is explicit.
 
 ## Primary Ports
 

@@ -44,21 +44,23 @@ class ConductorTest < Minitest::Test
   end
 
   # --- the standard board state shared by the tests ------------------------
-  # submitted: feat-a (pipeline, mcritchie-studio) + rolio-x (non-pipeline)
-  # reviewed:  feat-b (pipeline) + rolio-r (non-pipeline)
+  # submitted: feat-a (pipeline, mcritchie-studio) + rolio-x (pipeline) + client-x (non-pipeline)
+  # reviewed:  feat-b (pipeline) + rolio-r (pipeline) + client-r (non-pipeline)
   # assembled: feat-c (pipeline, turf-monster, release_slug rel-2026-06-25-x)
   # building:  feat-d ; blocked: feat-e
   def write_board
-    list("submitted", [["feat-a", "Feature A"], ["rolio-x", "Rolio thing"]])
-    list("reviewed",  [["feat-b", "Feature B"], ["rolio-r", "Rolio review"]])
+    list("submitted", [["feat-a", "Feature A"], ["rolio-x", "Rolio thing"], ["client-x", "Client thing"]])
+    list("reviewed",  [["feat-b", "Feature B"], ["rolio-r", "Rolio review"], ["client-r", "Client review"]])
     list("assembled", [["feat-c", "Feature C"]])
     list("building",  [["feat-d", "Feature D"]])
     list("blocked",   [["feat-e", "Feature E"]])
 
     show("feat-a", stage: "submitted", title: "Feature A", repos: ["mcritchie-studio"])
     show("rolio-x", stage: "submitted", title: "Rolio thing", repos: ["rolio"])
+    show("client-x", stage: "submitted", title: "Client thing", repos: ["client-app"])
     show("feat-b", stage: "reviewed", title: "Feature B", repos: ["mcritchie-studio"])
     show("rolio-r", stage: "reviewed", title: "Rolio review", repos: ["rolio"])
+    show("client-r", stage: "reviewed", title: "Client review", repos: ["client-app"])
     show("feat-c", stage: "assembled", title: "Feature C", repos: ["turf-monster"],
                    release_slug: "rel-2026-06-25-x")
   end
@@ -175,6 +177,8 @@ class ConductorTest < Minitest::Test
     assert status.success?
     assert_includes out, "submitted → REVIEW"
     assert_includes out, "bin/reviewer-select feat-a"
+    assert_includes out, "bin/reviewer-select rolio-x"
+    refute_includes out, "bin/reviewer-select client-x"
     assert_includes out, "a script cannot render verdicts"
   end
 
@@ -182,9 +186,9 @@ class ConductorTest < Minitest::Test
     out, _err, _status = run_conductor("plan", "--no-health")
 
     assert_includes out, "reviewed → MERGE"
-    assert_includes out, "bin/release merge feat-b"
-    refute_includes out, "bin/release merge feat-b rolio-r",
-      "the rolio (non-pipeline) reviewed task must not ride a mcritchie release merge"
+    assert_includes out, "bin/release merge feat-b rolio-r"
+    refute_includes out, "bin/release merge feat-b rolio-r client-r",
+      "the client app (non-pipeline) reviewed task must not ride a release merge"
   end
 
   def test_plan_assembled_recommends_prepare_then_ship_choices
@@ -202,8 +206,10 @@ class ConductorTest < Minitest::Test
     assert_includes out, "blocked → needs attention"
     assert_includes out, "feat-e"
     assert_includes out, "non-pipeline → not a mcritchie release member"
-    assert_includes out, "rolio-x"
-    assert_includes out, "rolio-r"
+    assert_includes out, "client-x"
+    assert_includes out, "client-r"
+    refute_includes out, "rolio-x  Rolio thing  [rolio]"
+    refute_includes out, "rolio-r  Rolio review  [rolio]"
   end
 
   def test_plan_reviewers_flag_previews_the_picked_pair
@@ -243,7 +249,7 @@ class ConductorTest < Minitest::Test
     out, _err, status = run_conductor("merge")
 
     assert status.success?
-    assert_includes out, "bin/release merge feat-b"
+    assert_includes out, "bin/release merge feat-b rolio-r"
     assert_empty release_log, "merge without --run must not execute the merge"
   end
 
@@ -251,8 +257,8 @@ class ConductorTest < Minitest::Test
     _out, _err, _status = run_conductor("merge", "--run")
 
     log = release_log
-    assert_includes log, "merge feat-b", "merge --run forwards the reviewed pipeline slugs"
-    refute_includes log, "rolio-r", "the non-pipeline reviewed task is excluded from the merge"
+    assert_includes log, "merge feat-b rolio-r", "merge --run forwards the reviewed pipeline slugs"
+    refute_includes log, "client-r", "the non-pipeline reviewed task is excluded from the merge"
     refute_includes log, "ship", "merge --run must not ship"
   end
 

@@ -14,7 +14,7 @@ require "uri"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
 DEFAULT_STAGES = %w[submitted reviewed assembled].freeze
-DEFAULT_APPS = %w[mcritchie-studio turf-monster].freeze
+DEFAULT_APPS = %w[mcritchie-studio turf-monster rolio].freeze
 STAGE_LABELS = {
   "submitted" => "Submitted",
   "reviewed" => "Reviewed",

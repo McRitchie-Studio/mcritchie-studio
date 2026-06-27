@@ -14,6 +14,7 @@ require "open3"
 require "optparse"
 require "shellwords"
 require "time"
+require "yaml"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
 
@@ -26,6 +27,8 @@ end
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
 DEFAULT_REGISTRY = File.join(PROJECTS_DIR, ".agents", "worktree-registry.json")
+RELEASE_REPOS_CONFIG = File.join(SCRIPT_ROOT, "config", "release_repos.yml")
+QA_ENVIRONMENTS_CONFIG = File.join(SCRIPT_ROOT, "config", "qa_environments.yml")
 
 OPTIONS = {
   refresh: false,
@@ -113,8 +116,35 @@ def fetch_open_prs(apps, warnings)
   end
 end
 
+def release_managed_apps
+  release_apps = YAML.load_file(RELEASE_REPOS_CONFIG).fetch("apps", {})
+  qa_envs = YAML.load_file(QA_ENVIRONMENTS_CONFIG).fetch("qa_environments", {})
+  release_apps.keys.each_with_object([]) do |slug, apps|
+    repo = File.join(PROJECTS_DIR, slug)
+    next unless Dir.exist?(repo)
+
+    qa = qa_envs.fetch(slug, {})
+    apps << {
+      "slug" => slug,
+      "display_name" => qa.fetch("display_name", slug.split("-").map(&:capitalize).join(" ")),
+      "repo" => repo,
+      "status" => "release-managed"
+    }
+  end
+rescue StandardError
+  []
+end
+
+def known_apps(registry)
+  apps = registry.fetch("apps", []).each_with_object({}) do |app, index|
+    index[app.fetch("slug")] = app
+  end
+  release_managed_apps.each { |app| apps[app.fetch("slug")] ||= app }
+  apps.values
+end
+
 def selected_apps(registry)
-  apps = registry.fetch("apps", [])
+  apps = known_apps(registry)
   return apps unless OPTIONS[:apps]
 
   selected = OPTIONS[:apps]

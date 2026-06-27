@@ -69,11 +69,12 @@ bin/session-kickoff pokemon  # return to the Pokémon
 | Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
 | Chain Ops | planned satellite | 3300 | 3300-3399 | Solana environment control plane; v1 localnet utility |
-| 📇 Rolio | unmanaged candidate | 3020 today | 3400-3499 if promoted | Standalone/client app; promote deliberately — see the onboarding SOP |
+| 📇 Rolio | release-managed standalone | 3020 today | 3400-3499 if promoted | In `release_repos.yml` + `qa_environments.yml`; not a satellite |
 
 Do not reuse `3200-3299` or `3300-3399` for Rolio while Tax Studio and Chain Ops
-remain planned. If Rolio joins the managed stack, move it to `3400` as its
-primary port and add it to `config/satellites.yml`.
+remain planned. Rolio is release-managed for Heroku deploys now, but if it joins
+the managed satellite stack later, move it to `3400` as its primary port and add
+it to `config/satellites.yml`.
 
 ## Lifecycle Status
 
@@ -81,6 +82,9 @@ primary port and add it to `config/satellites.yml`.
   shows it in satellite links.
 - `planned`: the app has a reserved block and durable metadata, but the
   ecosystem build and hub UI ignore it.
+- `release-managed standalone`: the app is not a Studio Engine satellite, but
+  the release conductor knows its QA/prod deploy targets through
+  `config/release_repos.yml` and `config/qa_environments.yml`.
 - Unmanaged candidate: the app may exist locally, but it is not part of the
   rebuild contract. Keep app-specific docs in that repo and avoid adding it to
   shared automation until it is promoted.
@@ -90,11 +94,14 @@ primary port and add it to `config/satellites.yml`.
 An app starts life in one of two **tiers** (full decision table:
 [`../system/new-app-onboarding-sop.md`](../system/new-app-onboarding-sop.md)):
 
-- **Standalone / client app** — its own repo, **no `studio-engine`**, PRs into
-  `main`, lite DoR, owns its runtime + deploy, eventual handoff to a client. It
-  uses the studio task board + worktrees + process but is **never** added to
-  `config/satellites.yml`. It lives here as an **unmanaged candidate** so the
-  decision is recorded, not re-litigated. Rolio (📇) is the reference case.
+- **Standalone / client app** — its own repo, **no `studio-engine`**, lite DoR,
+  owns its runtime + deploy, eventual handoff to a client. It uses the studio
+  task board + worktrees + process but is **never** added to
+  `config/satellites.yml` until deliberately promoted.
+- **Release-managed standalone** — same runtime independence as standalone, but
+  hosted QA/prod are operated by the release conductor. Rolio (📇) is the
+  reference case: PRs target the persistent `release` branch, QA deploys through
+  `bin/qa-server`, and production ship uses `bin/release ship`.
 - **Managed satellite** — registered in `config/satellites.yml`, persistent
   `release` branch, studio infra (`studio-engine` + SSO), Avi QA, full
   `bin/dor-check`, studio DevOps owns the deploy.
@@ -120,9 +127,9 @@ bin/register-satellite --list
 bin/register-satellite \
   --slug rolio \
   --display-name Rolio \
-  --port 3300 \
+  --port 3400 \
   --heroku-app rolio \
-  --production-url https://rolio.mcritchie.studio \
+  --production-url https://rolio-prod-82e96784b462.herokuapp.com \
   --description "Relationship operating workspace" \
   --dry-run
 ```

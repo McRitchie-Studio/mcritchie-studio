@@ -114,7 +114,7 @@ class CodexSessionTitleTest < Minitest::Test
       {
         "CODEX_THREAD_ID" => nil,
         "KICKOFF_MARKER" => marker,
-        "CODEX_SESSION_TITLE_RETRY_DELAYS" => "0.1 0.2"
+        "CODEX_SESSION_TITLE_RETRY_DELAYS" => "0.5 1.0"
       },
       JSON.generate({ "session_id" => "late-thread", "source" => "startup" })
     )
