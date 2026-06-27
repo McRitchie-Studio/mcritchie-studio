@@ -22,15 +22,20 @@ The color rides to the status line without DB access (`bin/task` and
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
-Codex sessions expose `CODEX_THREAD_ID`; `bin/install-agent-docs` keeps Codex's
-footer on the built-in `thread-title` item and installs a managed
-`SessionStart` hook to `bin/codex-session-title`. That hook mirrors the same
-marker into Codex's title on startup/resume and is trusted by Codex policy, so
-the mascot can appear in a fresh session without a `/hooks` review step. When
-`/etc/codex/requirements.toml` is not writable, the installer stages the managed
-requirements block under `~/.codex/`, prints the admin install note, and installs
-a user-level `~/.codex/hooks.json` fallback so organic sessions still get a
-mascot on machines without the managed file.
+Codex sessions expose a SessionStart payload; `bin/install-agent-docs` keeps
+Codex's footer configured with the built-in `thread-title` item and installs a
+managed `SessionStart` hook to `bin/codex-session-title`. That hook resolves the
+same marker on startup/resume, mirrors it into Codex's persisted local thread
+title, and emits SessionStart `additionalContext` so the model knows its assigned
+mascot before the first turn. Codex CLI 0.142.3 keeps the live footer thread name
+in memory after session configuration; a SQLite title update does not repaint
+that already-running footer. Use `/rename <marker>` in the TUI, or a
+`thread/name/set` app-server call against the same active session, when the live
+footer itself must change immediately. When `/etc/codex/requirements.toml` is not
+writable, the installer stages the managed requirements block under `~/.codex/`,
+prints the admin install note, and installs a user-level `~/.codex/hooks.json`
+fallback so organic sessions still get a mascot on machines without the managed
+file.
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:
