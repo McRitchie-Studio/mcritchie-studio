@@ -217,6 +217,12 @@ module StageAgentsHelper
         by_lane[work[:lane]] =
           if existing.nil?
             CrewCluster.new(lane: work[:lane], stacked: work[:agents], seconds: nil, live_since: work[:live_since])
+          elsif work[:lane] == :review && existing.live_since.nil?
+            # Rework can send a task back to `submitted` after an earlier review
+            # completed. The old review cluster is historical; while a fresh review
+            # intent is open, the review lane must show the current pair ticking live.
+            CrewCluster.new(lane: :review, stacked: work[:agents], seconds: existing.seconds,
+                            live_since: work[:live_since])
           elsif work[:lane] == :assembled && existing.live_since.nil?
             # Standard-flow QA: the member is already `assembled` (the merge flipped
             # it), so the assembled column is ALREADY filled (Steffon, static, with
@@ -439,7 +445,7 @@ module StageAgentsHelper
       crew = [StageAgent.new(stage: stage, agent: mascot_agent)] # the mascot heads both views
       { to_stage: target, lane: :build, live_since: since, agents: crew, timeline_agents: crew }
     else
-      intent, render_stage = open_deploy_intent(stage, intents)
+      intent, render_stage = open_deploy_intent(task, stage, intents)
       return nil if intent.nil?
 
       agents = intent_stage_agents(intent, by_slug, render_stage)
@@ -483,9 +489,9 @@ module StageAgentsHelper
   #               already landed the assembled transition, so the QA intent can't ride
   #               toward `assembled` (it would no-op + read off the wrong stage) — it
   #               rides toward `shipped` and is re-homed to the assembled lane here.
-  def open_deploy_intent(stage, intents)
+  def open_deploy_intent(task, stage, intents)
     if stage == "assembled"
-      toward_shipped = intents.select { |e| e.to_stage == "shipped" }
+      toward_shipped = open_task_intents_for(task, "shipped", intents)
       ship = toward_shipped.reject { |e| qa_intent?(e) }.max_by { |e| [e.occurred_at, e.id.to_i] }
       return [ship, "shipped"] if ship
 
@@ -493,8 +499,14 @@ module StageAgentsHelper
       [qa, "assembled"]
     else
       target = NEXT_PIPELINE_STAGE[stage]
-      [intents.select { |e| e.to_stage == target }.max_by { |e| [e.occurred_at, e.id.to_i] }, target]
+      [open_task_intents_for(task, target, intents).max_by { |e| [e.occurred_at, e.id.to_i] }, target]
     end
+  end
+
+  def open_task_intents_for(task, to_stage, intents)
+    return task.open_intents_for(to_stage) if task.respond_to?(:open_intents_for)
+
+    Array(intents).select { |e| e.to_stage == to_stage }
   end
 
   # The avatar(s) for an OPEN intent: the senior pair (→reviewed) or the single

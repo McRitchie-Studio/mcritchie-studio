@@ -13,8 +13,11 @@
 #     a completion concept) and is NEVER part of the duration spine — the next
 #     transition measures back to the prior TRANSITION, skipping intents.
 #
-# Never updated after creation. An intent is "open" until a transition into its
-# target stage lands; thereafter it is superseded (the completed event wins).
+# Never updated after creation. An intent is "open" only while the task remains in
+# the same source-stage cycle and no later transition into its target stage has
+# landed. Leaving the source stage (for example, `submitted → blocked`) closes the
+# old intent even if the target never landed; a later re-entry can record a fresh
+# intent for the same target.
 class TaskEvent < ApplicationRecord
   # How the event arrived. Free-form (not validated) so a new caller can never
   # make a real stage change fail by recording an unrecognized source.

@@ -55,8 +55,10 @@ module Api
       # Record an INTENT event: an agent (or the two-senior review pair) STARTING
       # the work that will produce `to_stage`, so the board/timeline can show who's
       # on it with a live ticker BEFORE the transition lands. Append-only +
-      # idempotent (an identical open intent is reused), and a no-op once the
-      # transition has already landed — so a re-run from a retry never stacks rows.
+      # idempotent (an identical open intent in the current source-stage cycle is
+      # reused), and a no-op once the transition has landed in that cycle — so a
+      # retry never stacks rows, while a reworked task can be reviewed again after
+      # resubmission.
       def intent
         to_stage = params[:to_stage].to_s.strip
         if to_stage.blank?

@@ -113,6 +113,49 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a resubmitted card shows the active review intent instead of the old review duration" do
+    task = Task.create!(title: "resubmitted review card", stage: "submitted")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 5.hours.ago, seconds_in_from: 1800, actor: "shannon")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 4.hours.ago, seconds_in_from: 21.minutes,
+                      metadata: { "reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
+                                                   { "slug" => "carl", "weight" => "light" }] })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "blocked",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "blocked", to_stage: "building",
+                      occurred_at: 2.hours.ago, seconds_in_from: 3600)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 30.minutes.ago, seconds_in_from: 5400, actor: "shannon")
+    task.record_intent_event(to_stage: "reviewed", reviewers: [{ "slug" => "shannon", "weight" => "primary" },
+                                                               { "slug" => "carl", "weight" => "light" }])
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "[data-test='crew-cluster'][data-lane='review'] [data-test='crew-live']", count: 1
+      assert_select "[data-test='crew-cluster'][data-lane='review'] [data-test='crew-duration']", count: 0
+    end
+  end
+
+  test "a direct-blocked resubmitted card ignores the stale review intent" do
+    task = Task.create!(title: "direct blocked review card", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: [{ "slug" => "shannon", "weight" => "primary" },
+                                                               { "slug" => "carl", "weight" => "light" }])
+    task.block!
+    task.build!
+    task.submit!
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug}", count: 1
+    assert_select "#card-#{task.slug} [data-test='crew-cluster'][data-lane='review'] [data-test='crew-live']", count: 0
+    assert_select "#card-#{task.slug} [data-test='crew-cluster'][data-lane='review'] [data-test='crew-duration']", count: 0
+  end
+
   test "the deploy crew is additive — an existing mascot survives render + ship intent" do
     # The 4th slot may only ADD the deploy face; the task's existing mascot (the
     # build-lane face) must never be re-derived, replaced, or reassigned.

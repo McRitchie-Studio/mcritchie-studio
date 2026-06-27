@@ -44,6 +44,50 @@ class TaskIntentTest < ActiveSupport::TestCase
     assert_nil task.open_intent_for("assembled")
   end
 
+  test "record_intent_event reopens after rework returns to the source stage" do
+    task = Task.create!(title: "intent rework task", stage: "submitted")
+    first = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    Current.task_event_reviewers = REVIEWERS
+    task.review!
+    Current.reset
+    assert_nil task.open_intent_for("reviewed"), "the first review transition supersedes the first intent"
+
+    task.block!
+    task.build!
+    task.submit!
+    second = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+
+    assert second.present?, "a resubmitted task can start a new review cycle"
+    assert_not_equal first.id, second.id
+    assert_equal second.id, task.open_intent_for("reviewed").id
+  ensure
+    Current.reset
+  end
+
+  test "record_intent_event ignores a stale intent after direct rework block" do
+    task = Task.create!(title: "intent direct block task", stage: "submitted")
+    first = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    task.block!
+    task.build!
+    task.submit!
+
+    assert_nil task.reload.open_intent_for("reviewed"),
+               "an intent from the prior submitted cycle is not still open"
+
+    second = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+
+    assert second.present?, "the resubmitted cycle can record a fresh review intent"
+    assert_not_equal first.id, second.id
+    assert_equal second.id, task.reload.open_intent_for("reviewed").id
+  end
+
+  test "record_intent_event rejects targets that are not the current next stage" do
+    task = Task.create!(title: "intent invalid target task", stage: "shipped")
+
+    assert_nil task.record_intent_event(to_stage: "assembled", actor: "steffon")
+    assert_empty task.task_events.intents
+  end
+
   test "open_intent_for resolves once the transition into the target lands" do
     task = Task.create!(title: "intent open task", stage: "submitted")
     task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)

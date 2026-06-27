@@ -190,6 +190,66 @@ live_task.update!(stage: "building")
 live_task.update!(stage: "submitted")
 Current.reset
 
+# Re-review live-update demo: the task completed one review, got blocked for
+# rework, rebuilt, and re-entered `submitted`. Its card starts with a historical
+# static review duration; recording a fresh review intent must replace that with
+# the current live review ticker.
+rereview_task = Task.create!(
+  title: "Live rereview demo card",
+  slug: "live-rereview-demo",
+  description: "Fixture for resubmitted PR review intent replacing an old review duration.",
+  stage: "submitted",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+rereview_task.task_events.delete_all
+[
+  { from: nil,         to: "designed",  at: 6.hours.ago,      secs: nil,        actor: "carl" },
+  { from: "designed",  to: "building",  at: 5.hours.ago,      secs: 3600,       actor: "shannon" },
+  { from: "building",  to: "submitted", at: 4.hours.ago,      secs: 3600,       actor: "shannon" },
+  { from: "submitted", to: "reviewed",  at: 3.hours.ago,      secs: 21.minutes,
+    meta: { "reviewers" => [{ "slug" => "shannon", "weight" => "heavy" }, { "slug" => "carl", "weight" => "light" }] } },
+  { from: "reviewed",  to: "blocked",   at: 2.hours.ago,      secs: 3600 },
+  { from: "blocked",   to: "building",  at: 1.hour.ago,       secs: 3600,       actor: "carl" },
+  { from: "building",  to: "submitted", at: 20.minutes.ago,   secs: 2400,       actor: "carl" }
+].each do |e|
+  rereview_task.task_events.create!(
+    from_stage: e[:from], to_stage: e[:to], occurred_at: e[:at], seconds_in_from: e[:secs],
+    source: "cli", actor: e[:actor], metadata: e[:meta] || {}
+  )
+end
+
+# Direct-block stale-intent demo: review started, but the reviewer blocked the PR
+# directly from `submitted` before the reviewed transition landed. After rebuild
+# and resubmit, the old intent must be closed; the e2e posts a fresh review intent
+# and expects the live ticker to start only then.
+direct_block_task = Task.create!(
+  title: "Live direct block card",
+  slug: "live-direct-block-demo",
+  description: "Fixture for stale review intent invalidation after direct rework block.",
+  stage: "submitted",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+direct_block_task.task_events.delete_all
+reviewers = [{ "slug" => "shannon", "weight" => "primary" }, { "slug" => "carl", "weight" => "light" }]
+[
+  { kind: TaskEvent::TRANSITION, from: nil,         to: "designed",  at: 5.hours.ago,    secs: nil,  actor: "carl" },
+  { kind: TaskEvent::TRANSITION, from: "designed",  to: "building",  at: 4.hours.ago,    secs: 3600, actor: "shannon" },
+  { kind: TaskEvent::TRANSITION, from: "building",  to: "submitted", at: 3.hours.ago,    secs: 3600, actor: "shannon" },
+  { kind: TaskEvent::INTENT,     from: "submitted", to: "reviewed",  at: 2.hours.ago,    secs: nil,  meta: { "reviewers" => reviewers } },
+  { kind: TaskEvent::TRANSITION, from: "submitted", to: "blocked",   at: 90.minutes.ago, secs: 1800 },
+  { kind: TaskEvent::TRANSITION, from: "blocked",   to: "building",  at: 1.hour.ago,     secs: 1800, actor: "carl" },
+  { kind: TaskEvent::TRANSITION, from: "building",  to: "submitted", at: 20.minutes.ago, secs: 2400, actor: "carl" }
+].each do |e|
+  direct_block_task.task_events.create!(
+    kind: e[:kind], from_stage: e[:from], to_stage: e[:to], occurred_at: e[:at],
+    seconds_in_from: e[:secs], source: "cli", actor: e[:actor], metadata: e[:meta] || {}
+  )
+end
+
 # A second submitted task for the live STAGE-CHANGE round-trip: the e2e moves it
 # submitted→reviewed and asserts the card FLIPs columns AND the per-column count
 # badges update (the regression guard for the updateCounts() call in applyLiveUpdate).

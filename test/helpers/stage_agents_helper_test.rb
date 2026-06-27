@@ -650,6 +650,45 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_not_nil review.live_since, "and ticks a live counter"
   end
 
+  test "crew_columns lets a new review intent override an old completed review badge" do
+    task = Task.create!(title: "board rework review task", stage: "submitted")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 3.hours.ago, seconds_in_from: 1800, actor: "carl")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 2.hours.ago, seconds_in_from: 21.minutes,
+                      metadata: { "reviewers" => REVIEWERS })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "blocked",
+                      occurred_at: 90.minutes.ago, seconds_in_from: 30.minutes)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "blocked", to_stage: "building",
+                      occurred_at: 45.minutes.ago, seconds_in_from: 45.minutes)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 10.minutes.ago, seconds_in_from: 35.minutes, actor: "carl")
+    intent = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+
+    review = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+             .find { |c| c.lane == :review }
+
+    assert_equal intent.occurred_at.to_i, review.live_since.to_i,
+                 "the active re-review must tick instead of showing the old static review duration"
+    assert_equal %w[shannon carl], review.stacked.map { |a| a.agent&.slug },
+                 "the active review pair owns the review lane"
+  end
+
+  test "crew_columns ignores a stale review intent after direct rework block" do
+    task = Task.create!(title: "board direct block task", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+    task.block!
+    task.build!
+    task.submit!
+
+    review = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+             .find { |c| c.lane == :review }
+
+    assert_empty review.stacked, "the old review pair must not still own the review lane"
+    assert_nil review.live_since, "the old review start must not keep ticking after resubmit"
+  end
+
   test "crew_columns without an agent map skips the live injection (legacy callers unchanged)" do
     task = Task.create!(title: "board no-agents task", stage: "submitted")
     task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
