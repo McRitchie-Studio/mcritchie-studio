@@ -295,6 +295,72 @@ end
 RUBY
 }
 
+prune_codex_user_hook() {
+  local hooks="$1"
+  command -v jq >/dev/null 2>&1 || return 0
+  [ -f "$hooks" ] || return 0
+
+  local tmp
+  tmp="$(mktemp)"
+  if jq 'if .hooks.SessionStart then
+        .hooks.SessionStart |= (
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+        | if (.hooks.SessionStart | length) == 0 then del(.hooks.SessionStart) else . end
+      else . end' "$hooks" > "$tmp"; then
+    if ! cmp -s "$hooks" "$tmp"; then
+      mv "$tmp" "$hooks"
+      echo "  $hooks (removed user-level Codex mascot hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+}
+
+install_codex_user_hook() {
+  local hooks="$1" cmd="$2"
+  command -v jq >/dev/null 2>&1 || return 0
+
+  mkdir -p "$(dirname "$hooks")"
+  [ -f "$hooks" ] || echo '{"hooks":{}}' > "$hooks"
+
+  local tmp
+  tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+      .hooks //= {}
+      | .hooks.SessionStart = (
+          (.hooks.SessionStart // [])
+          | map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      | .hooks.SessionStart += [
+          {
+            matcher: "startup|resume",
+            hooks: [
+              {
+                type: "command",
+                command: $cmd,
+                timeout: 5,
+                statusMessage: "Setting session mascot"
+              }
+            ]
+          }
+        ]
+    ' "$hooks" > "$tmp"; then
+    if ! cmp -s "$hooks" "$tmp"; then
+      mv "$tmp" "$hooks"
+      echo "  $hooks (installed user-level Codex SessionStart fallback -> $cmd)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+}
+
 # Make the Claude Code status line recoverable too — point it at the stable repo
 # script. When installing from a worktree, docs come from that worktree but global
 # hooks must point at the primary checkout so they survive worktree cleanup.
@@ -366,41 +432,20 @@ ensure_codex_tui_config "$codex_config"
 echo "  $codex_config (ensured status_line includes thread-title)"
 
 codex_hooks="$HOME/.codex/hooks.json"
-if command -v jq >/dev/null 2>&1; then
-  mkdir -p "$HOME/.codex"
-
-  if [ -f "$codex_hooks" ]; then
-    tmp="$(mktemp)"
-    if jq 'if .hooks.SessionStart then
-          .hooks.SessionStart |= (
-            map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
-            | map(select(((.hooks // []) | length) > 0))
-          )
-          | if (.hooks.SessionStart | length) == 0 then del(.hooks.SessionStart) else . end
-        else . end' "$codex_hooks" > "$tmp"; then
-      if ! cmp -s "$codex_hooks" "$tmp"; then
-        mv "$tmp" "$codex_hooks"
-        echo "  $codex_hooks (removed user-level Codex mascot hooks)"
-      else
-        rm -f "$tmp"
-      fi
-    else
-      rm -f "$tmp"
-    fi
-  fi
-fi
-
 codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
 codex_requirements_staged="$HOME/.codex/mcritchie-requirements.toml"
 if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged"; then
   echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart hook -> $codex_hook_cmd)"
+  prune_codex_user_hook "$codex_hooks"
 else
-  case "$?" in
+  requirements_status="$?"
+  case "$requirements_status" in
     2)
       echo "  $CODEX_REQUIREMENTS_PATH (already has Codex hooks; merge managed mascot hook manually)"
       ;;
     13)
       echo "  $CODEX_REQUIREMENTS_PATH (admin install required for organic Codex mascot)"
+      install_codex_user_hook "$codex_hooks" "$codex_hook_cmd"
       ;;
     *)
       echo "  $CODEX_REQUIREMENTS_PATH (could not install Codex managed mascot hook)"
