@@ -7,12 +7,17 @@
     <h2 class="text-2xl font-bold text-heading">Stages</h2>
     <%= render "page_nav", current: "stages" %>
   </div>
-  <p class="text-muted text-sm mb-6 max-w-3xl">
+  <p class="text-muted text-sm mb-3 max-w-3xl">
     A task moves through <b class="text-secondary">two workflows</b>, split by owner. The
     <b class="text-secondary">feature agent</b> runs <b class="text-secondary">Build</b> up to
     <code class="text-xs">submitted</code>; <b class="text-secondary">DevOps</b> runs
     <b class="text-secondary">Deploy</b> from there. <code class="text-xs">submitted</code> is the
     shared seam, so it appears in both lanes.
+  </p>
+  <p class="mb-6">
+    <%= link_to sop_path, class: "inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline" do %>
+      See the SOP infographic — accountability swimlanes per owner <span aria-hidden="true">→</span>
+    <% end %>
   </p>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

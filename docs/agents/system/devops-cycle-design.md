@@ -32,7 +32,13 @@
 > `/stages` outlines), and `seed-souls-prod-qa` (the reviewer souls, incl. a new
 > **Alex Documentation** reviewer persona distinct from the orchestrator seat).
 >
-> Operator companion: the board stage guide at `/stages`; this document remains
+> Operator companion: the board stage guide at
+> [`/stages`](https://mcritchie.studio/stages), and the rendered **SOP
+> infographic** — the cycle drawn as accountability swimlanes, one row per owner —
+> at [`/stages/sop`](https://mcritchie.studio/stages/sop). Both render from
+> `config/devops_vocabulary.yml` (read via `Devops::Vocabulary`), the **single
+> source of truth** for the SOP vocabulary: rename a term there and it flows to the
+> UI in one edit, so the page and these docs cannot drift. This document remains
 > the canonical full SOP.
 
 This design answers seven goals:
