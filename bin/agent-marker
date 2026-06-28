@@ -1,0 +1,180 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Shared McRitchie agent marker provider.
+#
+# This command owns the cross-runtime marker lookup:
+#   <type emoji> <Pokemon/persona> · <app> · <feature>
+#
+# Runtime-specific adapters, such as bin/codex-session-title, should call this
+# command instead of reimplementing context/session/kickoff lookup rules.
+
+require "json"
+require "open3"
+require "optparse"
+
+ROOT = File.expand_path("..", __dir__)
+
+def default_projects_dir
+  candidate = File.expand_path("../..", __dir__)
+  if File.basename(candidate) == ".worktrees"
+    File.expand_path("../..", candidate)
+  else
+    candidate
+  end
+end
+
+def usage
+  <<~USAGE
+    Usage:
+      bin/agent-marker current [--format title|json] [--session-id ID] [--projects-dir DIR] [--cwd DIR] [--no-kickoff]
+
+    Prints the current McRitchie agent marker:
+      👻🍄 Haunter · rolio · rolio-demo-polish-rehearsal
+  USAGE
+end
+
+def compact(value)
+  value.to_s.strip
+end
+
+def titleize(value)
+  raw = compact(value).tr("-", " ")
+  return "" if raw.empty?
+
+  raw[0].upcase + raw[1..].to_s
+end
+
+def marker_from_data(data)
+  mascot = titleize(data["mascot"])
+  head = [data["mascot_emoji"], mascot].map { |value| compact(value) }.reject(&:empty?).join(" ")
+  parts = [head, data["app"], data["worktree_slug"] || data["feature"]].map { |value| compact(value) }.reject(&:empty?)
+  parts.join(" · ")
+end
+
+def context_path(start_dir)
+  dir = File.expand_path(start_dir)
+  loop do
+    path = File.join(dir, ".agent-context.json")
+    return path if File.file?(path)
+
+    parent = File.dirname(dir)
+    return nil if parent == dir
+
+    dir = parent
+  end
+end
+
+def read_json_marker(path)
+  return ["", nil] unless path && File.file?(path)
+
+  marker = marker_from_data(JSON.parse(File.read(path)))
+  [marker, path]
+rescue JSON::ParserError, SystemCallError
+  ["", nil]
+end
+
+def session_path(projects_dir, session_id)
+  return nil if compact(session_id).empty?
+
+  safe_id = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+  File.join(projects_dir, ".agents", "sessions", "#{safe_id}.json")
+end
+
+def env_session_id
+  claude = compact(ENV["CLAUDE_CODE_SESSION_ID"])
+  return claude unless claude.empty?
+
+  codex = compact(ENV["CODEX_THREAD_ID"])
+  return codex unless codex.empty?
+
+  ""
+end
+
+def kickoff_marker(session_id)
+  kickoff = ENV.fetch("SESSION_KICKOFF", File.join(ROOT, "bin", "session-kickoff"))
+  return ["", nil] unless File.executable?(kickoff)
+
+  env = ENV.to_h.merge("CODEX_SESSION_TITLE_RUNNING" => "1")
+  if compact(env["CLAUDE_CODE_SESSION_ID"]).empty? && compact(env["CODEX_THREAD_ID"]).empty? && !compact(session_id).empty?
+    env["CODEX_THREAD_ID"] = session_id
+  end
+
+  out, _err, status = Open3.capture3(env, kickoff)
+  return ["", nil] unless status.success?
+
+  marker = out.lines.find { |line| !compact(line).empty? }.to_s.strip
+  [marker, kickoff]
+rescue SystemCallError
+  ["", nil]
+end
+
+def resolve_marker(options)
+  marker, source_path = read_json_marker(context_path(options.fetch(:cwd)))
+  return [marker, "context", source_path] unless compact(marker).empty?
+
+  session_id = compact(options[:session_id])
+  marker, source_path = read_json_marker(session_path(options.fetch(:projects_dir), session_id))
+  return [marker, "session", source_path] unless compact(marker).empty?
+
+  return ["", "none", nil] if options[:no_kickoff]
+
+  marker, source_path = kickoff_marker(session_id)
+  return [marker, "kickoff", source_path] unless compact(marker).empty?
+
+  ["", "none", nil]
+end
+
+command = ARGV.shift || "current"
+
+case command
+when "-h", "--help", "help"
+  print usage
+  exit 0
+when "current"
+  options = {
+    format: "title",
+    session_id: env_session_id,
+    projects_dir: (dir = compact(ENV["CLAUDE_PROJECTS_DIR"])).empty? ? default_projects_dir : File.expand_path(dir),
+    cwd: Dir.pwd,
+    no_kickoff: false
+  }
+
+  parser = OptionParser.new do |opts|
+    opts.banner = usage
+    opts.on("--format FORMAT", "title or json") { |value| options[:format] = value }
+    opts.on("--session-id ID", "Claude/Codex session id") { |value| options[:session_id] = value }
+    opts.on("--projects-dir DIR", "Projects root containing .agents/sessions") { |value| options[:projects_dir] = File.expand_path(value) }
+    opts.on("--cwd DIR", "Directory used to locate .agent-context.json") { |value| options[:cwd] = File.expand_path(value) }
+    opts.on("--no-kickoff", "Do not call bin/session-kickoff fallback") { options[:no_kickoff] = true }
+    opts.on("-h", "--help", "Show help") do
+      print usage
+      exit 0
+    end
+  end
+  parser.parse!(ARGV)
+
+  unless %w[title json].include?(options[:format])
+    warn "agent-marker: unsupported format #{options[:format].inspect}"
+    exit 64
+  end
+
+  marker, source, source_path = resolve_marker(options)
+
+  if options[:format] == "json"
+    puts JSON.generate(
+      "title" => marker,
+      "source" => source,
+      "sourcePath" => source_path,
+      "sessionId" => compact(options[:session_id])
+    )
+  elsif !compact(marker).empty?
+    puts marker
+  end
+
+  exit 0
+else
+  warn "agent-marker: unknown command #{command.inspect}"
+  warn "Try: bin/agent-marker --help"
+  exit 64
+end

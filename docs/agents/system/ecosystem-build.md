@@ -76,7 +76,7 @@ clipboard.
 | 3. Shell config | `~/.zshrc` PATH lines (brew Ruby, mise, Solana, Cargo), `~/.zprofile` chmod 600 |
 | 4. Secrets | Verifies `OP_SERVICE_ACCOUNT_TOKEN`; pulls Heroku key from 1Password; restores each active Rails app's `.env`. **Bails here on the first pass if the OP token is missing.** |
 | 5. Sibling repos | `gh repo clone` for `studio-engine`, `solana-studio`, `turf-vault`, and any satellites (skips ones already present) |
-| 5b. Agent docs + skills | Runs `bin/install-agent-docs`, which installs **both** entrypoints to `$PROJECTS_DIR`: `AGENTS.md` (from `docs/agents/index.md`, read natively by Codex) and `CLAUDE.md` (from `docs/agents/claude.md`, the Claude Code adapter that `@import`s AGENTS.md). Claude Code auto-loads `CLAUDE.md` but not `AGENTS.md`, so both are required. It **also** mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*` (copy + drift-check), so the operator's global skills (e.g. `/wrap`) survive a wiped machine. |
+| 5b. Agent runtime | Runs `bin/agent-runtime install`, which installs **both** entrypoints to `$PROJECTS_DIR`: `AGENTS.md` (from `docs/agents/index.md`, read natively by Codex) and `CLAUDE.md` (from `docs/agents/claude.md`, the Claude Code adapter that `@import`s AGENTS.md). It mirrors the shared user-global agent skills `docs/agents/skills/*` → `~/.claude/skills/*` + `~/.codex/skills/*`, configures Codex marker hooks, and keeps `bin/install-agent-docs` as the lower-level copy/drift implementation. |
 | 5c. Secrets replay | Re-runs Phase 4 now that sibling repos exist, so newly cloned satellites get their `.env` before DB setup |
 | 6. Bundles + DBs | `bundle install` (only when `bundle check` fails) + `db:migrate` (existing DB) or `db:create db:migrate db:seed` (first run) for each Rails app; bundle for `solana-studio` |
 | 6b. NFL data | Always runs: live schedule + ESPN depth-chart scrape + current-week roster snapshot + preseason rankings (~3-5 min, network only) |
@@ -132,8 +132,8 @@ or review weight.
 
 - [house-burn-down.md](house-burn-down.md) — the detailed phase-by-phase manual
   fallback, gotchas (Appendix A), and tooling-version reference (Appendix C)
-- `bin/install-agent-docs` — installs the `AGENTS.md` + `CLAUDE.md` entrypoints
-  and the shared user-global agent skills (`docs/agents/skills/*` →
-  `~/.claude/skills/*` + `~/.codex/skills/*`)
+- `bin/agent-runtime` — installs and checks the `AGENTS.md` + `CLAUDE.md`
+  entrypoints, shared user-global agent skills (`docs/agents/skills/*` →
+  `~/.claude/skills/*` + `~/.codex/skills/*`), and Codex marker hooks
 - `bin/setup-1pass-token` — the Phase 4 token boundary
 - `config/satellites.yml` — the satellite registry the script reads

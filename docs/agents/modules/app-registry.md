@@ -22,12 +22,12 @@ The color rides to the status line without DB access (`bin/task` and
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
-Codex sessions expose hook payloads; `bin/install-agent-docs` keeps
-Codex's footer configured with the built-in `thread-title` item and installs a
-managed `SessionStart` hook plus a `PostToolUse` refresh hook to
-`bin/codex-session-title`. The hooks resolve the same marker on startup/resume
-and after Bash tools, mirror it into Codex's persisted local thread title, and
-stay silent on success by default. Stock Codex CLI 0.142.3 renders
+Codex sessions expose hook payloads; `bin/agent-runtime install` keeps Codex's
+footer configured with the built-in `thread-title` item and installs a managed
+`SessionStart` hook plus a `PostToolUse` refresh hook to
+`bin/codex-session-title`. That Codex adapter delegates marker resolution to the
+shared provider `bin/agent-marker current`, then mirrors the marker into Codex's
+persisted local thread title. Stock Codex CLI 0.142.3 renders
 SessionStart `additionalContext` as visible `hook context`, so the hook does not
 use it for mascot identity. Stock 0.142.3 also keeps the live footer thread name
 in memory after session configuration; a SQLite title update does not repaint
@@ -65,6 +65,19 @@ When `/etc/codex/requirements.toml` is not writable, the installer stages the
 managed requirements block under `~/.codex/`, prints the admin install note, and
 installs a user-level `~/.codex/hooks.json` fallback so organic sessions still
 get a mascot on machines without the managed file.
+
+Fresh-machine operator surface:
+
+```bash
+bin/agent-runtime install
+bin/agent-runtime doctor
+bin/agent-marker current --format title
+```
+
+`bin/install-agent-docs` remains the lower-level copy/drift implementation that
+`agent-runtime` calls. Request copy for official stock-Codex `threadName` hook
+support lives in
+[`codex-thread-title-request.md`](codex-thread-title-request.md).
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:

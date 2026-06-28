@@ -21,27 +21,31 @@ mirrors files inside a `<name>/` subdir.
 
 ## Install / drift-check
 
-`bin/install-agent-docs` mirrors this tree into `~/.claude/skills/*` and
-`~/.codex/skills/*` (copy, not symlink) alongside the root agent docs, and
-`bin/install-agent-docs check` flags any local drift. It runs automatically in
-`bin/ecosystem-build` (Phase 5b) on a fresh-machine rebuild.
+`bin/agent-runtime install` mirrors this tree into `~/.claude/skills/*` and
+`~/.codex/skills/*` (copy, not symlink) alongside the root agent docs and Codex
+hooks. `bin/agent-runtime check` flags local docs/skills drift. It runs
+automatically in `bin/ecosystem-build` (Phase 5b) on a fresh-machine rebuild.
 
 ```bash
-bin/install-agent-docs          # AGENTS.md + CLAUDE.md + skills -> local
-bin/install-agent-docs check    # verify local matches the tracked sources
+bin/agent-runtime install       # AGENTS.md + CLAUDE.md + skills + hooks -> local
+bin/agent-runtime check         # verify local docs/skills match tracked sources
+bin/agent-runtime doctor        # inspect marker/runtime hook state
 ```
+
+`bin/install-agent-docs` remains the lower-level copy/drift implementation that
+`agent-runtime` calls.
 
 ## User-global vs project-scoped
 
 These are **user-global** skills — fresh Claude and Codex sessions can load them
 regardless of CWD. Runtime-specific project-scoped skills, such as
 `mcritchie-studio/.claude/skills/`, are a **separate** mechanism and are
-deliberately not managed by `bin/install-agent-docs`.
+deliberately not managed by `bin/agent-runtime`.
 
 ## Adding a skill
 
 1. Create `docs/agents/skills/<name>/SKILL.md` (with `name:` + `description:`
    frontmatter).
-2. Run `bin/install-agent-docs` to install it locally.
+2. Run `bin/agent-runtime install` to install it locally.
 3. Commit through the normal DevOps cycle. A fresh machine restores it via
    `bin/ecosystem-build`.
