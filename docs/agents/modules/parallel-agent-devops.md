@@ -221,7 +221,7 @@ AGENTS**, so conductor surfaces the assignment, it never fabricates a verdict);
 `reviewed` → `bin/release merge <slugs>` (the conductor's **backlog** path — a
 freshly-reviewed task's primary already ran its own merge); `assembled` →
 `bin/release prepare` then the ship gate. It flags `blocked` + non-pipeline
-(rolio) tasks separately. **`bin/conductor` never ships implicitly** — plain
+tasks separately. **`bin/conductor` never ships implicitly** — plain
 `bin/conductor ship` prints the handoff command; the explicit autonomous path is
 `bin/conductor ship --run`, which runs `bin/release ship --by conductor --yes`
 after the same release gates. It defaults to the PROD board (like `bin/release`).
@@ -247,7 +247,7 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
 `bin/devops-cycle` is the high-level conductor snapshot. It reads the production
@@ -552,7 +552,7 @@ Work from /Users/alex/projects as the QA / Integration lane.
 Run the parallel-agent DevOps cycle:
 - read /Users/alex/projects/AGENTS.md and the app docs
 - pull latest main in mcritchie-studio and each affected app
-- run `bin/qa-intake --refresh --apps mcritchie-studio,turf-monster` from
+- run `bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio` from
   McRitchie Studio, adding any other app mentioned in the current work
 - use the QA intake queue to identify avi-ready, checks-review, merge-risk,
   needs-agent, missing-local-branch, ready-to-open-pr, and cleanup candidates;

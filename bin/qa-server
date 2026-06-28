@@ -349,7 +349,11 @@ def print_plan(config)
   domains.each do |domain|
     puts "  heroku domains:add #{domain} --app #{app}"
   end
-  puts "  heroku certs:auto:enable --app #{app}"
+  if domains.empty?
+    puts "  (no custom domains; keep the Heroku URL)"
+  else
+    puts "  heroku certs:auto:enable --app #{app}"
+  end
   puts
   puts "Set config vars without printing values:"
   (config.fetch("required_config", {}).keys + config.fetch("derived_config", {}).keys).each do |key|

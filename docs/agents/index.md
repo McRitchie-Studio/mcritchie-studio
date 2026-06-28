@@ -142,7 +142,9 @@ launch flow is:
    surfaces latest task feedback, release-branch drift, PR state, same-file PR
    overlap, generated-doc drift, stale terminology, and required test tiers.
 7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
-   `3100-3199`, Tax Studio reserved at `3200-3299`, next app `3300-3399`.
+   `3100-3199`, Tax Studio reserved at `3200-3299`, Chain Ops planned at
+   `3300-3399`, and Rolio on `3020` today (`3400-3499` only if promoted to a
+   managed satellite).
 8. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
    local URL to react to.
 9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
@@ -213,6 +215,7 @@ assigned that lane.
 |------|------|------------|
 | `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
 | `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
+| `rolio` | Release-managed standalone relationship workspace | 3020 |
 | `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3300 |
 | `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
 | `solana-studio` | Ruby Solana primitives | none |
@@ -297,7 +300,7 @@ The conductor queue starts with:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
 The command joins open GitHub PRs to the local worktree registry and labels
@@ -315,7 +318,7 @@ Before reusing or deleting worktrees, inspect lifecycle state:
 bin/agent-worktree list
 bin/agent-worktree doctor
 bin/agent-worktree snapshot --write
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 bin/agent-worktree cleanup
 bin/agent-worktree cleanup --reclaim [--yes]
 bin/agent-worktree remove <app> <task-slug> --yes
