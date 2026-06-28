@@ -241,6 +241,33 @@ class TaskCliTest < Minitest::Test
     refute event.key?("actor"), "a plain shell / CI run (no session) stamps no actor"
   end
 
+  def test_block_agent_flag_stamps_the_block_transition_actor
+    requests, = run_task(["block", "demo-task", "--kind", "rework", "--feedback", "Needs rework.", "--agent", "shannon"])
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    refute_nil patch, "expected a PATCH for the block"
+
+    parsed = JSON.parse(patch[:body])
+    assert_equal "blocked", parsed["stage"]
+    assert_equal "rework", parsed.dig("devops", "block_kind")
+    assert_equal "cli", parsed.dig("event", "source")
+    assert_equal "shannon", parsed.dig("event", "actor"), "--agent should persist on the blocked TaskEvent"
+
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    refute_nil note, "expected a qa_feedback activity"
+    assert_equal "shannon", JSON.parse(note[:body])["agent_slug"]
+  end
+
+  def test_block_defaults_event_actor_to_the_running_session
+    requests, = run_task(
+      ["block", "demo-task", "--kind", "dependency"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    event = JSON.parse(patch[:body]).fetch("event")
+    assert_equal "cli", event["source"]
+    assert_equal SESSION, event["actor"], "block should attribute to the blocker session"
+  end
+
   def test_move_with_legacy_stage_name_suggests_the_live_stage
     requests, _out, err, status = run_task(["move", "demo-task", "pr_review"])
 

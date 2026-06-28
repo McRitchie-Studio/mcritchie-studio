@@ -956,7 +956,12 @@ when "block"
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
   devops = (current.dig("metadata", "devops") || {}).dup
   devops["block_kind"] = kind if kind
-  body = { "stage" => "blocked" }
+  event = { "source" => "cli" }
+  blocker = agent.to_s.strip
+  blocker = session_identity.first.to_s.strip if blocker.empty?
+  event["actor"] = blocker unless blocker.empty?
+  autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
+  body = { "stage" => "blocked", "event" => event }
   body["devops"] = devops unless devops.empty?
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   if feedback

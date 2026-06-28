@@ -57,6 +57,19 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "dark:text-green-200"
   end
 
+  test "renders the blocking agent on a blocked transition card" do
+    task = Task.create!(title: "blocked actor timeline task", stage: "blocked")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "blocked",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600, source: "cli", actor: "shannon")
+
+    render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
+
+    assert_select "[data-test='timeline-block'][data-stage='blocked']" do
+      assert_select "[data-test='timeline-crew-member'][title^='Shannon']", count: 1
+    end
+  end
+
   # [integration] backward-compat: a →reviewed transition recorded BEFORE the
   # HEAVY→PRIMARY rename still carries weight "heavy" in its event metadata. The
   # timeline must render it identically to a new "primary" record — the deep-seat
