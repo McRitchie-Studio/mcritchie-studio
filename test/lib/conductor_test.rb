@@ -166,7 +166,7 @@ class ConductorTest < Minitest::Test
     out, _err, status = run_conductor("survey") # health ON, CURL_BIN stub returns 200
 
     assert status.success?
-    assert_includes out, "prod https://app.mcritchie.studio → ok (200)"
+    assert_includes out, "prod https://mcritchie.studio → ok (200)"
   end
 
   # --- plan: the correct next deterministic action per stage ---------------

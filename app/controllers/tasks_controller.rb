@@ -203,6 +203,7 @@ class TasksController < ApplicationController
         :local_url,
         :qa_url,
         :production_url,
+        :release_slug,
         :release_train,
         :requires_release_conductor,
         :post_deploy_cmd,

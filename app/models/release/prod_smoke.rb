@@ -2,15 +2,11 @@ class Release
   # Host resolution for `bin/prod-smoke <app>` — the production base URL the
   # read-only @qa-readonly suite smokes after a ship.
   #
-  # SINGLE SOURCE OF TRUTH (and the host-nuance resolution): the seal smokes the
-  # EXACT host the ship's `/up` hard-gate already trusts — config/release_repos.yml
-  # `apps.<app>.prod_deploy.smoke_url` (https://app.mcritchie.studio for the hub).
-  # So a green `/up` gate and a green seal can never disagree because of host
-  # routing. config/devops_test_suites.yml's `production_url` is the apex
-  # (https://mcritchie.studio) — a branded alias of the SAME dyno (both 200 on /up,
-  # no redirect), but it is NOT the gate's host, so it is deliberately NOT the
-  # resolution source here. Fallbacks: qa_environments.yml `production_url` (also
-  # app.mcritchie.studio for the hub), then DEFAULT_BASE_URL.
+  # SINGLE SOURCE OF TRUTH: the seal smokes the same canonical production host
+  # the ship's `/up` hard-gate already trusts — config/release_repos.yml
+  # `apps.<app>.prod_deploy.smoke_url`. Keep that value in sync with
+  # config/qa_environments.yml `production_url` and config/devops_test_suites.yml
+  # `production_url` so QA and production reporting all point to the same server.
   #
   # Pure + IO-free (like Release::Cli / Release::ShipSequence): it takes the loaded
   # YAML hashes in and returns a URL string out, so bin/prod-smoke can
@@ -18,7 +14,7 @@ class Release
   module ProdSmoke
     module_function
 
-    DEFAULT_BASE_URL = "https://app.mcritchie.studio".freeze
+    DEFAULT_BASE_URL = "https://mcritchie.studio".freeze
 
     # The production base URL for <app>, resolved release_repos → qa_environments →
     # default. `release_repos` / `qa_environments` are the loaded YAML hashes (the

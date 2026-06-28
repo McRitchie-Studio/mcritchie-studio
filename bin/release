@@ -195,7 +195,7 @@ QA_ENVIRONMENTS =
     {}
   end
 QA_REGISTRY = QA_ENVIRONMENTS[APP] || {}
-PROD_URL = QA_REGISTRY["production_url"] || "https://app.mcritchie.studio"
+PROD_URL = QA_REGISTRY["production_url"] || "https://mcritchie.studio"
 
 # The QA review URL for a qa-server app key (the group's `qa_app`). "" when the
 # app isn't registered — the summary just omits a link and falls back to the key.

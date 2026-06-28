@@ -3,7 +3,7 @@ require "test_helper"
 class Release
   class SmokeSealTest < ActiveSupport::TestCase
     test "[unit] from_result builds a green seal when the smoke passed" do
-      seal = SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs https://app.mcritchie.studio")
+      seal = SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs https://mcritchie.studio")
 
       assert seal.green?
       assert_not seal.red?

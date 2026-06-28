@@ -7,14 +7,14 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | McRitchie Studio | 3000 | 3000-3099 |
 | Turf Monster | 3100 | 3100-3199 |
 | Tax Studio | 3200 | 3200-3299 |
-| Chain Ops | 3300 | 3300-3399 |
-| Rolio | 3020 today | 3400-3499 if promoted to satellite |
+| Rolio | 3300 | 3300-3399 reserved |
+| Chain Ops | 3400 | 3400-3499 |
 
 The durable app registry decision surface is
-`mcritchie-studio/docs/agents/modules/app-registry.md`. Chain Ops is planned
-for localnet/QA/node operations. Rolio is release-managed for Heroku QA/prod but
-not a managed satellite; do not move it into the `3400-3499` managed range until
-that product decision is explicit.
+`mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
+reserved, and its hosted QA/prod deploy targets are managed by the release
+registries. It is not managed by rebuild/nav automation. Chain Ops is planned for
+localnet/QA/node operations.
 
 ## Primary Ports
 
@@ -50,8 +50,9 @@ bin/agent-worktree up turf-monster task-slug
 
 Keep callback-heavy flows on the primary stack unless the external provider has been configured for the alternate port.
 
-For parallel work, primary ports (`3000`, `3100`, `3200`) are stable review and
-callback lanes. Worktree ports (`3001+`, `3101+`, `3201+`) are isolated desks
+For parallel work, primary ports (`3000`, `3100`, `3200`, `3300`, `3400`) are
+stable review and callback lanes. Worktree ports (`3001+`, `3101+`, `3201+`,
+`3301+`, `3401+`) are isolated desks
 for agents to build, test, and hand back URLs without moving another agent's
 ground.
 

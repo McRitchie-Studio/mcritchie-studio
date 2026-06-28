@@ -104,14 +104,14 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_operator size_index, :<, slug_code_index
   end
 
-  test "the release-train badge is dropped from the board card" do
-    task = Task.create!(title: "release train polish card", stage: "submitted",
-                        metadata: { "devops" => { "release_train" => "2026-06-23-devops-intent-ui" } })
+  test "the release-slug badge is dropped from the board card" do
+    task = Task.create!(title: "release slug polish card", stage: "submitted",
+                        metadata: { "devops" => { "release_slug" => "rel-2026-06-23-devops-intent-ui" } })
 
     get tasks_path
     assert_response :success
 
-    # the release-train pill no longer rides the card — it's pipeline plumbing, not a
+    # the release-slug pill no longer rides the card — it's pipeline plumbing, not a
     # high-level glance signal (it still shows on the task detail view)
     assert_select "#card-#{task.slug} span", text: "2026-06-23-devops-intent-ui", count: 0
   end
@@ -126,7 +126,7 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    # dropping the release-train badge must not take the QA/Prod links with it
+    # dropping the release-slug badge must not take the QA/Prod links with it
     assert_select "#card-#{task.slug} a", text: "QA", count: 1
     assert_select "#card-#{task.slug} a", text: "Prod", count: 1
   end
@@ -148,6 +148,23 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-1", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].py-1", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'] div.mb-0.leading-none", count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-2", count: 0
+  end
+
+  test "long title and activity text are line-clamped instead of horizontally clipped" do
+    task = Task.create!(title: "Long Card Title", stage: "submitted")
+    task.update_column(:title, "Long Board Card Title That Must Stay Inside The Card")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                     description: "QA review found one remaining visual regression in the board card and the note should stay inside the activity box.")
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} > a.line-clamp-2.break-words", text: /Long Board Card Title/
+    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words",
+                  text: /QA review found one remaining visual regression/
+    assert_select "#card-#{task.slug} > a [x-ref='fadeInner']", count: 0
+    assert_select "#card-#{task.slug} [data-test='activity-box'] [x-ref='fadeInner']", count: 0
   end
 end

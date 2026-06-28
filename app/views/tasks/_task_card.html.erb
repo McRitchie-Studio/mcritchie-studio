@@ -25,10 +25,11 @@
      @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
      class="kanban-card relative <%= card_tone %> rounded-lg border p-3 cursor-pointer transition group">
 
-  <%# Title — keep it readable in narrow columns. Slug/footer metadata stay
-      single-line; the task title gets two compact lines before clamping. %>
+  <%# Title — human-readable text gets a fixed two-line box so long task names
+      stay readable without horizontal clipping or hover-only marquee movement.
+      Archive/delete moved to the footer so nothing covers it. %>
   <a href="<%= task_path(task.slug) %>"
-     class="block mb-1.5 hover:text-primary transition"
+     class="block mb-1.5 text-heading font-semibold text-sm leading-tight line-clamp-2 break-words hover:text-primary transition"
      title="<%= task.title %>">
     <span class="block text-heading font-semibold text-sm leading-tight line-clamp-2 break-words"
           data-test="task-card-title"><%= task.title %></span>
@@ -66,12 +67,12 @@
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires backend_migration lane">MIG</span>
       <% end %>
       <% if task.requires_release_conductor? %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_train lane">REL</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_slug lane">REL</span>
       <% end %>
     </div>
   <% end %>
 
-  <%# Secondary meta row — QA/Prod quick links, only when present. The release-train
+  <%# Secondary meta row — QA/Prod quick links, only when present. The release-slug
       badge was dropped from the card: it's pipeline plumbing, not useful at the
       board's high-level glance (it still shows on the task detail view). The kind/gem
       badges are gone too (features are implicit; bug/docs/gem surface as a footer
@@ -122,15 +123,16 @@
 
   <% if latest_activity %>
     <%# Activity note follows the slug + updated rows so status metadata stays grouped. %>
-    <div class="mt-1 rounded-md border border-subtle bg-inset/60 px-2 py-1" data-test="activity-box">
-      <div class="flex items-center gap-1.5 mb-0 leading-none">
+    <div class="mt-1 min-w-0 rounded-md border border-subtle bg-inset/60 px-2 py-1" data-test="activity-box">
+      <div class="flex min-w-0 items-center gap-1.5 mb-0 leading-none">
         <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"><%= latest_activity.activity_type_label %></span>
         <% if activity_count.to_i > 1 %>
           <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
         <% end %>
       </div>
-      <p class="text-[11px] leading-tight text-secondary line-clamp-2 break-words"
-         data-test="activity-description"><%= latest_activity.description %></p>
+      <p class="mt-1 text-[11px] leading-snug text-secondary line-clamp-2 break-words"
+         data-test="activity-description"
+         title="<%= latest_activity.description %>"><%= latest_activity.description %></p>
     </div>
   <% end %>
 

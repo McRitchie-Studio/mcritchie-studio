@@ -34,8 +34,9 @@ class BoardAppFilterTest < ActionDispatch::IntegrationTest
 
     rolio_chip = chips.find { |b| b[":class"].include?("appHidden('rolio')") }
     assert_includes rolio_chip.text.strip, "rolio"
+    assert_includes rolio_chip.text, "📇"
 
-    # turf-monster maps to an emoji; rolio has none yet → bare text chip.
+    # Known app slugs map to their ecosystem emoji.
     turf_chip = chips.find { |b| b[":class"].include?("appHidden('turf-monster')") }
     assert_includes turf_chip.text, "🐊"
 

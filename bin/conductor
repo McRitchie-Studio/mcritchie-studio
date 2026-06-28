@@ -117,7 +117,7 @@ PROD_SMOKE_URL =
     cfg.dig("apps", "mcritchie-studio", "prod_deploy", "smoke_url")
   rescue StandardError
     nil
-  end || "https://app.mcritchie.studio"
+  end || "https://mcritchie.studio"
 
 # --- shelling out ----------------------------------------------------------
 

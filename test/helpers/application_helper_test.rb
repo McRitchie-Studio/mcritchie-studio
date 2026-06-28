@@ -229,7 +229,7 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
-  test "[unit] release_tracker_steps maps release train updates" do
+  test "[unit] release_tracker_steps maps release slug updates" do
     rel = Release.open!
     assert_equal %i[active pending pending pending pending],
                  release_tracker_steps(rel).map { |step| step[:state] }

@@ -81,11 +81,12 @@ class Task < ApplicationRecord
   BLOCK_KINDS = %w[environment rework dependency].freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
-    kind shape worktree_slug branch pr_url local_url qa_url production_url release_train
+    kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor block_kind agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
     persona
   ].freeze
+  LEGACY_DEVOPS_KEY_ALIASES = { "release_train" => "release_slug" }.freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
     "claude" => "claude --resume %s",
@@ -262,8 +263,12 @@ class Task < ApplicationRecord
     devops.fetch("shape", "").presence
   end
 
+  def devops_release_slug
+    devops.fetch("release_slug", "").presence || devops.fetch("release_train", "").presence
+  end
+
   def devops_release_train
-    devops.fetch("release_train", "").presence
+    devops_release_slug
   end
 
   def devops_worktree_slug
@@ -608,11 +613,14 @@ class Task < ApplicationRecord
     return {} if raw.blank?
 
     raw.to_h.each_with_object({}) do |(key, value), normalized|
-      key = key.to_s
+      raw_key = key.to_s
+      key = LEGACY_DEVOPS_KEY_ALIASES.fetch(raw_key, raw_key)
       next unless DEVOPS_KEYS.include?(key)
 
       normalized_value = DEVOPS_LIST_KEYS.include?(key) ? normalize_devops_list(value) : value.to_s.strip
       next if normalized_value.blank?
+
+      next if normalized.key?(key) && LEGACY_DEVOPS_KEY_ALIASES.key?(raw_key)
 
       normalized[key] = normalized_value
     end

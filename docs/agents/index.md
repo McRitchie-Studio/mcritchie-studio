@@ -142,9 +142,8 @@ launch flow is:
    surfaces latest task feedback, release-branch drift, PR state, same-file PR
    overlap, generated-doc drift, stale terminology, and required test tiers.
 7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
-   `3100-3199`, Tax Studio reserved at `3200-3299`, Chain Ops planned at
-   `3300-3399`, and Rolio on `3020` today (`3400-3499` only if promoted to a
-   managed satellite).
+   `3100-3199`, Tax Studio planned at `3200-3299`, Rolio reserved at
+   `3300-3399`, and Chain Ops planned at `3400-3499`.
 8. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
    local URL to react to.
 9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
@@ -215,8 +214,8 @@ assigned that lane.
 |------|------|------------|
 | `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
 | `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
-| `rolio` | Release-managed standalone relationship workspace | 3020 |
-| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3300 |
+| `rolio` | Release-managed standalone workspace; satellite range reserved | 3300 |
+| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
 | `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
 | `solana-studio` | Ruby Solana primitives | none |
 | `turf-vault` | Anchor smart contract | none |
@@ -267,7 +266,7 @@ from it — the readable task URL — and seeds `metadata["devops"]["worktree_sl
 5-12 words**; verbose detail goes in `devops["agent_context"]`. Bind the task
 URL to the worktree.
 Use `metadata["devops"]` to record affected repos, branch, PR URL, local URL,
-QA URL, production URL when deployed, release train, risk tags, acceptance
+QA URL, production URL when deployed, release slug, risk tags, acceptance
 criteria, test plan, and checks run in `devops["checks_run"]`. `bin/qa-intake`
 helps Avi discover PR/worktree state, but it does not replace the task-board
 record.

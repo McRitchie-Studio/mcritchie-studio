@@ -16,11 +16,11 @@ Engine satellite; Rolio is the current reference case.
 | Dimension | Managed satellite | Standalone / client app |
 |---|---|---|
 | Examples | turf-monster, the mcritchie-studio hub | app-owned client demos; Rolio is release-managed standalone |
-| Repo | own repo, inside the managed ecosystem | own repo, **outside** the ecosystem registry |
-| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: **unmanaged candidate**; release-managed: `release_repos.yml` + `qa_environments.yml` |
+| Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
+| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` + `qa_environments.yml`; optional `status: reserved` row only |
 | Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
 | Branch model | persistent `release` branch; feature PRs target `release` | app-owned: PRs target **`main`**; release-managed: PRs target **`release`** |
-| DoR | full `bin/dor-check` (shape-tiered) | **lite** — task + tests + error-logging; no release-train gates |
+| DoR | full `bin/dor-check` (shape-tiered) | app-owned: **lite** — task + tests + error-logging; release-managed: release conductor gates apply |
 | Deploy owner | studio DevOps (Steffon); operator-gated ship | app-owned deploy or release-managed Heroku deploy |
 | QA / handoff | Avi QA → RC → operator ship | app-owned handoff or QA Heroku → operator ship |
 
@@ -43,11 +43,13 @@ deliberate decision, never a default.
 - **Managed satellite** → run `bin/register-satellite` (dry-run first), land it in
   `config/satellites.yml` at `status: planned`, then follow
   `studio-engine/docs/NEW_APP_SETUP.md` for the engine wiring.
-- **Standalone / client app** → do **not** register in `config/satellites.yml`.
-  It stays outside `bin/ecosystem-build` and the hub navbar. If it is app-owned,
-  keep it as an *unmanaged candidate*. If the studio owns QA/prod hosting, add it
-  to `config/release_repos.yml` and `config/qa_environments.yml` as a
-  **release-managed standalone** app. Record the decision in
+- **Standalone / client app** → do **not** mark it `planned` or `active`. It may
+  have a `status: reserved` row to protect a future port block, but remains an
+  *unmanaged candidate*: app-specific docs live in its own repo, and it is
+  excluded from `bin/ecosystem-build` and the hub navbar. If the studio owns
+  QA/prod hosting, add it to `config/release_repos.yml` and
+  `config/qa_environments.yml` as a **release-managed standalone** app. Record
+  the decision in
   [`../modules/app-registry.md`](../modules/app-registry.md) so the next agent
   doesn't re-litigate it.
 
@@ -75,14 +77,14 @@ deliberate decision, never a default.
   (`kind: chore`, e.g. "scaffold <app>") plus a small **backlog** of the first
   features. The slug is the genesis: it seeds the worktree, the `feat/<slug>`
   branch, and the task URL.
-- App-owned standalone tasks carry `repo: <slug>` and no `release_slug` (no
-  release train). Release-managed standalone tasks carry `repo: <slug>` and join
+- App-owned standalone tasks carry `repo: <slug>` and no `release_slug`.
+  Release-managed standalone tasks carry `repo: <slug>` and join
   the normal release record after review/merge.
 
 ### 6. DoR tier
 - Managed → full `bin/dor-check <task>` (the shape's required tiers must be green).
 - Standalone → **lite DoR**: the task exists, tests are written as you go, and the
-  error-logging discipline below is present. There is no release-train gate, but
+  error-logging discipline below is present. There is no release-slug gate, but
   the *evergreen* conventions are non-negotiable.
 
 ### 7. Build conventions

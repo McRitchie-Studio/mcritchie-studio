@@ -2,7 +2,7 @@ require "test_helper"
 
 # Component tier (ui-only shape): render the real board + current-release
 # partials through their controllers and assert the polished card behaviour —
-# the full-width overflow-fade title, the data-driven app emoji, the footer
+# the two-line clamped title, the data-driven app emoji, the footer
 # actions, the whole-card click target, and the removal of the → QA chip.
 class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
   test "kanban card: full-width title link, app emojis, footer actions, click target" do
@@ -19,9 +19,8 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
       # Feature 6: the whole card is the click target (carries its destination).
       assert_select "[data-href=?]", task_path(task.slug)
 
-      # Feature 1: the title is a single-line link carrying the task title (it
-      # wraps the overflow-fade component instead of a 2-line clamp).
-      assert_select "a[href=?]", task_path(task.slug) do |links|
+      # Feature 1: the title is a bounded two-line link carrying the task title.
+      assert_select "a[href=?].line-clamp-2.break-words", task_path(task.slug) do |links|
         assert links.first.text.include?(task.title), "title link should carry the task title"
       end
 

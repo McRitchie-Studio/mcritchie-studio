@@ -13,10 +13,10 @@ token, endpoints, writable fields, and the normalizer footguns — see
 ## Flat Tasks First
 
 Do not create parent/child task trees by default. Deliver increments of work as
-flat tasks. Big features can use the same `release_train` value across several
+flat tasks. Big features can use the same `release_slug` value across several
 tasks when they need to be promoted together.
 
-Use parent/child modeling only after flat tasks and release-train tags prove too
+Use parent/child modeling only after flat tasks and release-slug tags prove too
 weak in real operations.
 
 ## Required Task-Tracking Rule
@@ -55,7 +55,7 @@ handoff state.
 Use one task per independently reviewable increment. For a vertical feature
 that touches multiple repos and ships together, either use one task with all
 repos listed in `repositories`, or separate flat tasks that share the same
-`release_train` when the increments can be reviewed or promoted separately.
+`release_slug` when the increments can be reviewed or promoted separately.
 
 Minimum task setup before implementation:
 
@@ -71,7 +71,7 @@ Minimum task setup before implementation:
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
 - `checks_run` records the checks actually completed before handoff.
-- `release_train` groups related tasks that should move through QA/release
+- `release_slug` groups related tasks that should move through QA/release
   together. Leave it blank for a small independent task.
 - `requires_release_conductor` is `true` when production deploy, gem publish,
   provider config, env vars, data correction, credentials, or migration/backfill
@@ -108,7 +108,7 @@ Handoff connections:
 - `bin/qa-intake` should be used by Avi to discover worktree/PR state, but Avi
   should join that queue back to tasks and leave feedback on the task or PR when
   metadata is missing.
-- Final handoff should name the task, PR, release train when present, URLs,
+- Final handoff should name the task, PR, release slug when present, URLs,
   `checks_run`, deployment SHA/release, and cleanup decision.
 
 ## Task Conversation and QA Feedback
@@ -223,7 +223,7 @@ Supported fields:
 | `local_url` | Worktree review URL |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
-| `release_train` | Optional shared tag for tasks promoted together |
+| `release_slug` | Optional shared tag for tasks promoted together |
 | `requires_release_conductor` | `true` when production deploy, gem publish, provider config, or env change is involved |
 | `risk_tags` | Short tags such as `auth`, `email`, `solana`, `payment`, `migration`, `ui`, `provider` |
 | `acceptance` | Acceptance criteria, one item per line |
@@ -388,18 +388,18 @@ the exact blocker, expected owner action, and any PR/CI link needed to reproduce
 the issue. Also leave a GitHub PR comment when the blocker is code-review
 specific or should be visible on the PR.
 
-## Release Train Tags
+## Release Slug Tags
 
-Use `release_train` as a grouping label, not a hierarchy. A conductor can filter
-tasks by one release train and promote those accepted tasks together. Leave it
+Use `release_slug` as a grouping label, not a hierarchy. A conductor can filter
+tasks by one release slug and promote those accepted tasks together. Leave it
 blank for independent fixes that can be reviewed, QAed, released, and cleaned up
 alone.
 
-Good release-train examples:
+Good release-slug examples:
 
-- `2026-06-17-turf-admin-identity`
-- `studio-engine-0.6.1-adoption`
-- `qa-banner-rollout`
+- `rel-2026-06-17-turf-admin-identity`
+- `rel-studio-engine-0.11-adoption`
+- `rel-qa-banner-rollout`
 
 Each task still owns its own PR, acceptance criteria, and URLs.
 
@@ -473,7 +473,7 @@ api POST /api/v1/release_notes '{
   "release": "v71",
   "sha": "ef693ab1",
   "url": "https://mcritchie.studio/",
-  "release_train": "2026-06-18-devops-tooling",
+  "release_slug": "rel-2026-06-18-devops-tooling",
   "task_slugs": ["task-abc123def456"],
   "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
   "dry_run": true

@@ -149,6 +149,17 @@ class TaskCliTest < Minitest::Test
     assert_equal "feature", devops["kind"]
   end
 
+  def test_create_sends_release_slug_metadata
+    requests, = run_task(
+      ["create", "--title", "Release slug task", "--release-slug", "rel-2026-06-27-docs"]
+    )
+    create = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }
+    refute_nil create, "expected a POST /api/v1/tasks"
+    devops = devops_of(create)
+    assert_equal "rel-2026-06-27-docs", devops["release_slug"]
+    refute devops.key?("release_train")
+  end
+
   def test_move_to_building_stamps_session_and_preserves_devops
     requests, = run_task(
       ["move", "demo-task", "building"],

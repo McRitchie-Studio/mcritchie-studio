@@ -77,7 +77,7 @@ apps:
       strategy: git_push_heroku
       remote: heroku
       branch: main
-      smoke_url: https://app.mcritchie.studio
+      smoke_url: https://mcritchie.studio
   turf-monster:
     prod_deploy:
       strategy: repo_script

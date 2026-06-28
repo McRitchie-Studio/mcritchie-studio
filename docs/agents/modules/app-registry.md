@@ -97,13 +97,14 @@ bin/session-kickoff pokemon  # return to the Pokémon
 | McRitchie Studio | implicit active hub | 3000 | 3000-3099 | Bootstrap/docs anchor |
 | Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
-| Chain Ops | planned satellite | 3300 | 3300-3399 | Solana environment control plane; v1 localnet utility |
-| 📇 Rolio | release-managed standalone | 3020 today | 3400-3499 if promoted | In `release_repos.yml` + `qa_environments.yml`; not a satellite |
+| 📇 Rolio | release-managed standalone + reserved candidate | 3300 | 3300-3399 | QA/prod in release registries; satellite range protected until promoted |
+| Chain Ops | planned satellite | 3400 | 3400-3499 | Solana environment control plane; v1 localnet utility |
 
-Do not reuse `3200-3299` or `3300-3399` for Rolio while Tax Studio and Chain Ops
-remain planned. Rolio is release-managed for Heroku deploys now, but if it joins
-the managed satellite stack later, move it to `3400` as its primary port and add
-it to `config/satellites.yml`.
+Do not reuse `3200-3499`. Rolio is already in `config/satellites.yml` with
+`status: reserved`, which protects its port block without adding it to the
+managed rebuild or hub navigation. Rolio is also release-managed for Heroku
+deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
+that release metadata does not make it an active Studio Engine satellite.
 
 ## Lifecycle Status
 
@@ -111,6 +112,8 @@ it to `config/satellites.yml`.
   shows it in satellite links.
 - `planned`: the app has a reserved block and durable metadata, but the
   ecosystem build and hub UI ignore it.
+- `reserved`: the app has a protected slug/range only. It is not managed, built,
+  or linked until a later promotion flips it to `planned` or `active`.
 - `release-managed standalone`: the app is not a Studio Engine satellite, but
   the release conductor knows its QA/prod deploy targets through
   `config/release_repos.yml` and `config/qa_environments.yml`.
@@ -123,10 +126,11 @@ it to `config/satellites.yml`.
 An app starts life in one of two **tiers** (full decision table:
 [`../system/new-app-onboarding-sop.md`](../system/new-app-onboarding-sop.md)):
 
-- **Standalone / client app** — its own repo, **no `studio-engine`**, lite DoR,
-  owns its runtime + deploy, eventual handoff to a client. It uses the studio
-  task board + worktrees + process but is **never** added to
-  `config/satellites.yml` until deliberately promoted.
+- **Standalone / client app** — its own repo, **no `studio-engine`**, PRs into
+  `main`, lite DoR, owns its runtime + deploy, eventual handoff to a client. It
+  uses the studio task board + worktrees + process but is not added to shared
+  automation. It may have a `reserved` registry row to protect a future range,
+  but it is not managed until deliberately promoted.
 - **Release-managed standalone** — same runtime independence as standalone, but
   hosted QA/prod are operated by the release conductor. Rolio (📇) is the
   reference case: PRs target the persistent `release` branch, QA deploys through
@@ -140,10 +144,10 @@ flipping a candidate into the managed stack, the readiness checklist in the
 onboarding SOP must pass — repo on GitHub, boots on its primary port,
 `.env`/credential restore documented, README points back at
 `/Users/alex/projects/AGENTS.md`, parked operator identities seeded, real
-production target + DNS. Only then register it with `bin/register-satellite` at
-`status: planned` and follow the **Registering An App** steps below. When you do
-register a promoted app, carry its emoji into the `config/satellites.yml`
-`emoji:` field so the navbar matches the registry (on promotion, Rolio → `📇`).
+production target + DNS. Only then register it or flip its existing reserved row
+to `status: planned` and follow the **Registering An App** steps below. When you
+do register a promoted app, carry its emoji into the `config/satellites.yml`
+`emoji:` field so the navbar matches the registry.
 
 ## Registering An App
 
@@ -154,12 +158,12 @@ automation or hand-editing the registry.
 cd /Users/alex/projects/mcritchie-studio
 bin/register-satellite --list
 bin/register-satellite \
-  --slug rolio \
-  --display-name Rolio \
-  --port 3400 \
-  --heroku-app rolio \
-  --production-url https://rolio-prod-82e96784b462.herokuapp.com \
-  --description "Relationship operating workspace" \
+  --slug next-app \
+  --display-name "Next App" \
+  --port 3500 \
+  --heroku-app next-app \
+  --production-url https://next-app.mcritchie.studio \
+  --description "One-line product summary" \
   --dry-run
 ```
 

@@ -30,7 +30,7 @@
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
-#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-train T] \
+#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-slug T] \
 #                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --no-claim files the task WITHOUT repointing this session's active-feature
@@ -251,7 +251,7 @@ SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
-  "--release-train" => "release_train", "--block-kind" => "block_kind",
+  "--release-slug" => "release_slug", "--release-train" => "release_slug", "--block-kind" => "block_kind",
   "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd",
   # "act as <soul>": the status-line mascot becomes that agent (name + glyph + tint)
   # in place of the session's Pokémon. The server stamps the identity (Task#sync_

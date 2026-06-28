@@ -18,7 +18,7 @@ module Api
           release: payload["release"],
           sha: payload["sha"],
           url: payload["url"],
-          release_train: payload["release_train"],
+          release_slug: payload["release_slug"].presence || payload["release_train"],
           checks: payload["checks"],
           tasks: tasks
         )
@@ -55,6 +55,7 @@ module Api
           "release",
           "sha",
           "url",
+          "release_slug",
           "release_train",
           "checks",
           "task_slugs",

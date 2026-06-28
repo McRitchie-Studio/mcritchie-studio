@@ -71,9 +71,9 @@
 
       <div class="grid md:grid-cols-3 gap-4 mb-4">
         <div>
-          <label class="block text-sm text-secondary mb-2 font-medium">Release Train</label>
-          <%= text_field_tag "task[devops][release_train]", task.devops_release_train,
-                class: "input-field", placeholder: "Only when tasks ship together" %>
+          <label class="block text-sm text-secondary mb-2 font-medium">Release Slug</label>
+          <%= text_field_tag "task[devops][release_slug]", task.devops_release_slug,
+                class: "input-field", placeholder: "rel-2026-06-18-devops-tooling" %>
         </div>
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Branch</label>

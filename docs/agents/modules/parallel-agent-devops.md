@@ -31,7 +31,7 @@ release conductor handles production effects.
    wait, or send `qa_feedback`.
 3. **Assemble + QA: `reviewed → assembled`** — After merging approved PRs into
    the persistent `release` branch, Avi deploys `origin/release` to the QA app
-   and records QA URL, deployed SHA, release train, and QA checks in
+   and records QA URL, deployed SHA, release slug, and QA checks in
    `checks_run`.
 4. **Ship: `assembled → shipped`** — Release conductor promotes only accepted
    QA work after explicit approval. Production smoke results, production URL,
@@ -479,9 +479,9 @@ changing provider configuration are Release-lane actions.
 
 Rules:
 
-- Only one conductor owns a release train at a time.
+- Only one conductor owns a release slug at a time.
 - The conductor pulls latest `main` in every affected repo before release work.
-- Engine changes use their own release train: source commit, version bump,
+- Engine changes use their own release slug: source commit, version bump,
   release check, gem publish, consumer lockfile updates, app verification.
 - Deploys require explicit approval from Mr. McRitchie unless the prompt already
   included production rollout.
@@ -528,7 +528,7 @@ The intended cycle is:
    `bin/qa-server deploy <app> origin/release --yes` (or `bin/release prepare`,
    which runs this for every app member).
 6. Avi or Steffon moves the task to `assembled` and records the QA URL,
-   deployed SHA, release-train tag when present, and QA checks run.
+   deployed SHA, release-slug tag when present, and QA checks run.
 7. Mr. McRitchie reviews the QA URL.
 8. Production deploy happens only after Mr. McRitchie explicitly approves it.
 9. Verified production work moves to `shipped`.
@@ -562,7 +562,7 @@ Run the parallel-agent DevOps cycle:
 - merge only PRs that are ready, into the persistent `release` branch (base
   `release`); leave task `qa_feedback` and PR comments on PRs that need changes
 - after merging, deploy origin/release to the relevant QA app with bin/qa-server deploy <app> origin/release --yes
-- move merged tasks to assembled and update task-board metadata with QA URL, release train, deployed SHA, and checks_run
+- move merged tasks to assembled and update task-board metadata with QA URL, release slug, deployed SHA, and checks_run
 - run bin/qa-server status <app> and report the QA URL, /up status, release SHA, task list, and what Mr. McRitchie should review
 
 Do not deploy production, publish gems, delete worktrees, delete branches, or force-push unless Mr. McRitchie explicitly authorizes that lane in this session.
@@ -582,7 +582,7 @@ Promote the accepted QA work to production:
 - read /Users/alex/projects/AGENTS.md and the deployment docs
 - pull latest main in mcritchie-studio and each affected app
 - confirm the QA deployment SHA and production target app
-- confirm the task-board release train when present and accepted tasks included in the rollout
+- confirm the task-board release slug when present and accepted tasks included in the rollout
 - run the app-specific deployment command from the repo docs
 - verify production /up and the user-facing URL
 - update tasks with production URL/release SHA/check results
@@ -641,7 +641,7 @@ Known future ceilings and controls:
   mid-session. The band's normal grow/shrink needs no restart.
 - Browser-heavy flows on 100 ports will be CPU-bound before Git becomes the
   problem.
-- Shared dependency release trains, especially `studio-engine`, need a single
+- Shared dependency release slugs, especially `studio-engine`, need a single
   conductor and should not be merged casually by feature agents.
 - Stable QA servers should absorb release-candidate review so `main` can be
   ahead of production without forcing production deploys.

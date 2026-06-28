@@ -134,7 +134,7 @@ Request body:
   "release": "v71",
   "sha": "ef693ab1",
   "url": "https://mcritchie.studio/",
-  "release_train": "2026-06-18-devops-tooling",
+  "release_slug": "rel-2026-06-18-devops-tooling",
   "task_slugs": ["task-abc123def456"],
   "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"]
 }
@@ -149,7 +149,7 @@ api POST /api/v1/release_notes '{
   "release": "v71",
   "sha": "ef693ab1",
   "url": "https://mcritchie.studio/",
-  "release_train": "2026-06-18-devops-tooling",
+  "release_slug": "rel-2026-06-18-devops-tooling",
   "task_slugs": ["task-abc123def456"],
   "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
   "dry_run": true
@@ -245,7 +245,7 @@ Send `devops` as a top-level key; it is normalized
 keys survive (`Task::DEVOPS_KEYS`):
 
 - **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
-  `production_url`, `release_train`, `requires_release_conductor`
+  `production_url`, `release_slug`, `requires_release_conductor`
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
   `checks_run`
 
@@ -331,7 +331,7 @@ api POST /api/v1/release_notes '{
   "release": "v71",
   "sha": "ef693ab1",
   "url": "https://mcritchie.studio/",
-  "release_train": "2026-06-18-devops-tooling",
+  "release_slug": "rel-2026-06-18-devops-tooling",
   "task_slugs": ["task-XXXX"],
   "checks": ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
   "dry_run": true

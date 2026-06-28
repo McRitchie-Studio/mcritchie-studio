@@ -449,7 +449,7 @@ class TaskTest < ActiveSupport::TestCase
           "kind" => "bug",
           "worktree_slug" => "qa-contest-flow",
           "repositories" => ["turf-monster"],
-          "release_train" => "2026-06-17-turf",
+          "release_slug" => "rel-2026-06-17-turf",
           "qa_url" => "https://qa.turfmonster.media/contests",
           "requires_release_conductor" => "1",
           "test_plan" => ["bin/rails test"],
@@ -463,10 +463,21 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "bug", task.devops_kind
     assert_equal "qa-contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster"], task.devops_repositories
-    assert_equal "2026-06-17-turf", task.devops_release_train
+    assert_equal "rel-2026-06-17-turf", task.devops_release_slug
+    assert_equal "rel-2026-06-17-turf", task.devops_release_train
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
     assert_equal ["bin/rails test"], task.devops_test_plan
     assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
+  end
+
+  test "legacy release_train normalizes to release_slug" do
+    metadata = Task.normalize_devops_metadata(
+      "release_train" => "2026-06-17-turf",
+      "kind" => "feature"
+    )
+
+    assert_equal "2026-06-17-turf", metadata["release_slug"]
+    assert_not metadata.key?("release_train")
   end
 
   # --- Build claim lease (V2) ---

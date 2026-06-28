@@ -81,7 +81,7 @@ Rails.application.configure do
   # APP_HOST is the canonical public hostname for this deployment. Production
   # defaults to the public app host; QA/staging apps set APP_HOST explicitly so
   # magic links and host authorization point at the QA server.
-  app_host = ENV.fetch("APP_HOST", "app.mcritchie.studio")
+  app_host = ENV.fetch("APP_HOST", "mcritchie.studio")
   mailer_host = ENV.fetch("MAILER_HOST", app_host)
   app_host_aliases = ENV.fetch("APP_HOST_ALIASES", "")
     .split(",")
