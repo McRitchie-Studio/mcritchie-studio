@@ -3,9 +3,11 @@
 How to bring a brand-new app into the McRitchie operating model. The cycle in
 [`devops-cycle-design.md`](devops-cycle-design.md) implicitly assumes a **managed
 satellite** (turf-monster, the mcritchie-studio hub). A second tier exists: a
-**standalone / client app** (Rolio) that borrows the studio's *process* — the
-task board, worktrees, DoR, the multi-agent merge discipline — but owns its own
-runtime, deploy, and eventual handoff to a client.
+**standalone / client app** that borrows the studio's *process* — the task board,
+worktrees, DoR, the multi-agent merge discipline — but owns its own runtime and
+eventual handoff to a client. A standalone app can later become
+**release-managed standalone** for hosted QA/prod without becoming a Studio
+Engine satellite; Rolio is the current reference case.
 
 **Decide the tier first.** Almost everything downstream forks on it.
 
@@ -13,14 +15,14 @@ runtime, deploy, and eventual handoff to a client.
 
 | Dimension | Managed satellite | Standalone / client app |
 |---|---|---|
-| Examples | turf-monster, the mcritchie-studio hub | Rolio |
+| Examples | turf-monster, the mcritchie-studio hub | app-owned client demos; Rolio is release-managed standalone |
 | Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
-| Registry | `config/satellites.yml` via `bin/register-satellite` | optional `status: reserved` row only; not `planned`/`active` until promoted |
+| Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` + `qa_environments.yml`; optional `status: reserved` row only |
 | Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
-| Branch model | persistent `release` branch; feature PRs target `release` | no release slug; feature PRs target **`main`** |
-| DoR | full `bin/dor-check` (shape-tiered) | **lite** — task + tests + error-logging; no release-slug gates |
-| Deploy owner | studio DevOps (Steffon); operator-gated ship | the app team / eventual **client** owns deploy |
-| QA / handoff | Avi QA → RC → operator ship | app-owned merge into `main`; **handoff to the client** |
+| Branch model | persistent `release` branch; feature PRs target `release` | app-owned: PRs target **`main`**; release-managed: PRs target **`release`** |
+| DoR | full `bin/dor-check` (shape-tiered) | app-owned: **lite** — task + tests + error-logging; release-managed: release conductor gates apply |
+| Deploy owner | studio DevOps (Steffon); operator-gated ship | app-owned deploy or release-managed Heroku deploy |
+| QA / handoff | Avi QA → RC → operator ship | app-owned handoff or QA Heroku → operator ship |
 
 If you are unsure, default to **standalone**: it is the lighter contract, and an
 unmanaged candidate can always be **promoted to a managed satellite** later (see
@@ -44,7 +46,10 @@ deliberate decision, never a default.
 - **Standalone / client app** → do **not** mark it `planned` or `active`. It may
   have a `status: reserved` row to protect a future port block, but remains an
   *unmanaged candidate*: app-specific docs live in its own repo, and it is
-  excluded from `bin/ecosystem-build` and the hub navbar. Record the decision in
+  excluded from `bin/ecosystem-build` and the hub navbar. If the studio owns
+  QA/prod hosting, add it to `config/release_repos.yml` and
+  `config/qa_environments.yml` as a **release-managed standalone** app. Record
+  the decision in
   [`../modules/app-registry.md`](../modules/app-registry.md) so the next agent
   doesn't re-litigate it.
 
@@ -59,16 +64,22 @@ deliberate decision, never a default.
 ### 4. Branch model
 - Managed → `bin/release init` gives the repo its persistent `release` branch;
   feature PRs target `release`.
-- Standalone → **no release branch.** Feature PRs target **`main`**; the app team
-  merges its own PRs. (`bin/agent-worktree` already falls back to `origin/main` as
-  the base for any repo without a `release` branch — this is exactly that case.)
+- App-owned standalone → **no release branch.** Feature PRs target **`main`**;
+  the app team merges its own PRs. (`bin/agent-worktree` already falls back to
+  `origin/main` as the base for any repo without a `release` branch.)
+- Release-managed standalone → run `bin/release init` after adding the app to
+  `config/release_repos.yml`; feature PRs target **`release`**, QA deploys via
+  `bin/release prepare`, and production ships through the operator-gated
+  `bin/release ship`.
 
 ### 5. Seed the task board
 - Even a standalone app uses the studio task board. Create a **foundation task**
   (`kind: chore`, e.g. "scaffold <app>") plus a small **backlog** of the first
   features. The slug is the genesis: it seeds the worktree, the `feat/<slug>`
   branch, and the task URL.
-- Standalone tasks carry `repo: <slug>` and no `release_slug`.
+- App-owned standalone tasks carry `repo: <slug>` and no `release_slug`.
+  Release-managed standalone tasks carry `repo: <slug>` and join
+  the normal release record after review/merge.
 
 ### 6. DoR tier
 - Managed → full `bin/dor-check <task>` (the shape's required tiers must be green).
@@ -96,16 +107,20 @@ deliberate decision, never a default.
 
 **Standalone-specific:**
 - No `studio-engine`, no hub SSO — the app owns its auth, UI, and infra.
-- Feature PRs target **`main`**; the app team merges.
-- Match the studio's Ruby/Rails versions, but **own the deploy** — your own Heroku
-  app / pipeline / env vars, not the studio's `bin/release` train.
+- App-owned feature PRs target **`main`**; release-managed standalone PRs target
+  **`release`**.
+- Match the studio's Ruby/Rails versions. App-owned standalone apps own their
+  Heroku app / pipeline / env vars; release-managed standalone apps declare
+  those targets in `config/release_repos.yml` and `config/qa_environments.yml`.
 - **SQLite is fine for a demo**; move to Postgres when persistence matters.
 
 ### 8. Handoff
 - Managed → standard PR-into-`release` → Avi QA → RC → operator ship.
-- Standalone → PR-into-`main`; the **app team / client owns merge + deploy.** When
-  the engagement ends, **hand the repo off to the client** with its own README,
-  env contract, and deploy runbook — it must stand alone without the studio.
+- App-owned standalone → PR-into-`main`; the **app team / client owns merge +
+  deploy.** Release-managed standalone → PR-into-`release`, QA Heroku via
+  `bin/release prepare`, and operator-gated `bin/release ship`. When the
+  engagement ends, **hand the repo off to the client** with its own README, env
+  contract, and deploy runbook — it must stand alone without the studio.
 
 ## Multi-agent build
 

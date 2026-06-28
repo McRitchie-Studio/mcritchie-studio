@@ -24,7 +24,7 @@
 #
 # prod_deploy adapters (the `strategy` selects the deploy mechanic):
 #   git_push_heroku — push the release/main branch to a Heroku git remote.
-#       remote    — the git remote name to push to (e.g. heroku).
+#       remote    — the git remote name or Heroku git URL to push to (e.g. heroku).
 #       branch    — the branch the remote deploys (e.g. main).
 #       smoke_url — the production URL to smoke-test after the push.
 #   repo_script — shell out to a deploy script that lives IN the app repo (the
@@ -83,6 +83,14 @@ apps:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
+  rolio:
+    # Release-managed standalone app: Rails/SQLite demo runtime, no Studio Engine.
+    test_cmd: bin/rails test
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/rolio-prod.git
+      branch: main
+      smoke_url: https://rolio-prod-82e96784b462.herokuapp.com
   tax-studio:
     prod_deploy:
       strategy: repo_script

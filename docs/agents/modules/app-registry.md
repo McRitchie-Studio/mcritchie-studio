@@ -26,16 +26,41 @@ Codex sessions expose a SessionStart payload; `bin/install-agent-docs` keeps
 Codex's footer configured with the built-in `thread-title` item and installs a
 managed `SessionStart` hook to `bin/codex-session-title`. That hook resolves the
 same marker on startup/resume, mirrors it into Codex's persisted local thread
-title, and emits SessionStart `additionalContext` so the model knows its assigned
-mascot before the first turn. Codex CLI 0.142.3 keeps the live footer thread name
+title, and stays silent on success by default. Stock Codex CLI 0.142.3 renders
+SessionStart `additionalContext` as visible `hook context`, so the hook does not
+use it for mascot identity. Stock 0.142.3 also keeps the live footer thread name
 in memory after session configuration; a SQLite title update does not repaint
-that already-running footer. Use `/rename <marker>` in the TUI, or a
-`thread/name/set` app-server call against the same active session, when the live
-footer itself must change immediately. When `/etc/codex/requirements.toml` is not
-writable, the installer stages the managed requirements block under `~/.codex/`,
-prints the admin install note, and installs a user-level `~/.codex/hooks.json`
-fallback so organic sessions still get a mascot on machines without the managed
-file.
+that already-running footer, although resume reloads the persisted title and
+shows the Pokémon marker.
+
+For local Codex installs patched with the McRitchie `SessionStart.threadName`
+runtime hook (`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
+enable live fresh-session repainting by creating:
+
+```bash
+touch ~/.codex/mcritchie-live-thread-title.enabled
+```
+
+With that sentinel present, `bin/codex-session-title` emits:
+
+```json
+{"hookSpecificOutput":{"hookEventName":"SessionStart","threadName":"<marker>"}}
+```
+
+The patched runtime normalizes and persists that name through Codex's thread
+store, records the same marker as hidden developer context for the first model
+turn, then sends a silent live `ThreadNameUpdated` event so the footer repaints
+without adding hook context or rename history to the transcript. Remove the
+sentinel to fall back to stock-compatible silent persistence:
+
+```bash
+rm -f ~/.codex/mcritchie-live-thread-title.enabled
+```
+
+When `/etc/codex/requirements.toml` is not writable, the installer stages the
+managed requirements block under `~/.codex/`, prints the admin install note, and
+installs a user-level `~/.codex/hooks.json` fallback so organic sessions still
+get a mascot on machines without the managed file.
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:
@@ -68,12 +93,14 @@ bin/session-kickoff pokemon  # return to the Pokémon
 | McRitchie Studio | implicit active hub | 3000 | 3000-3099 | Bootstrap/docs anchor |
 | Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
-| 📇 Rolio | reserved candidate | 3300 | 3300-3399 | Range protected; not managed until promoted |
+| 📇 Rolio | release-managed standalone + reserved candidate | 3300 | 3300-3399 | QA/prod in release registries; satellite range protected until promoted |
 | Chain Ops | planned satellite | 3400 | 3400-3499 | Solana environment control plane; v1 localnet utility |
 
 Do not reuse `3200-3499`. Rolio is already in `config/satellites.yml` with
 `status: reserved`, which protects its port block without adding it to the
-managed rebuild or hub navigation.
+managed rebuild or hub navigation. Rolio is also release-managed for Heroku
+deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
+that release metadata does not make it an active Studio Engine satellite.
 
 ## Lifecycle Status
 
@@ -83,6 +110,9 @@ managed rebuild or hub navigation.
   ecosystem build and hub UI ignore it.
 - `reserved`: the app has a protected slug/range only. It is not managed, built,
   or linked until a later promotion flips it to `planned` or `active`.
+- `release-managed standalone`: the app is not a Studio Engine satellite, but
+  the release conductor knows its QA/prod deploy targets through
+  `config/release_repos.yml` and `config/qa_environments.yml`.
 - Unmanaged candidate: the app may exist locally, but it is not part of the
   rebuild contract. Keep app-specific docs in that repo and avoid adding it to
   shared automation until it is promoted.
@@ -96,8 +126,11 @@ An app starts life in one of two **tiers** (full decision table:
   `main`, lite DoR, owns its runtime + deploy, eventual handoff to a client. It
   uses the studio task board + worktrees + process but is not added to shared
   automation. It may have a `reserved` registry row to protect a future range,
-  but it is not managed until deliberately promoted. Rolio (📇) is the reference
-  case.
+  but it is not managed until deliberately promoted.
+- **Release-managed standalone** — same runtime independence as standalone, but
+  hosted QA/prod are operated by the release conductor. Rolio (📇) is the
+  reference case: PRs target the persistent `release` branch, QA deploys through
+  `bin/qa-server`, and production ship uses `bin/release ship`.
 - **Managed satellite** — registered in `config/satellites.yml`, persistent
   `release` branch, studio infra (`studio-engine` + SSO), Avi QA, full
   `bin/dor-check`, studio DevOps owns the deploy.

@@ -461,7 +461,8 @@ one blocking event happened** — omit the section on a clean run.
 1. **Survey + assess the candidate.** `bin/conductor plan` — enumerate the Deploy
    queue **by stage**, name the active release candidate + its `assembled` members
    (the "active pending release" you fold in), and flag `blocked` + non-pipeline
-   tasks (e.g. `rolio` — handle in its own app, never `bin/release merge` it).
+   tasks (repos absent from `config/release_repos.yml`; handle them in their own
+   app, never `bin/release merge` them).
 2. **Review round 1 — PARALLEL fan-out (≤5 concurrent).** Fetch the submitted
    queue (`bin/task list --stage submitted`) and review it in parallel: for each
    pipeline task run the **nested cascade** (the `Review submitted PRs` runbook
@@ -772,11 +773,24 @@ Routing lives in `AGENTS.md` (see §6) so an agent self-loads the right one.
 
 ### Standalone / Client App SOP
 
-Not every app is a managed satellite. A **standalone / client app** (Rolio) uses
-the studio's *process* — the task board, worktrees, the multi-agent merge
-patterns, and the evergreen build conventions — but **owns its own runtime and
-deploy** and is eventually handed off to a client. It rides the same **Build**
-workflow (`designed → building → submitted`); the **Deploy** half is lighter:
+Not every app is a managed satellite. A **standalone / client app** uses the
+studio's *process* — the task board, worktrees, the multi-agent merge patterns,
+and the evergreen build conventions — but **owns its own runtime** and may be
+handed off to a client. It rides the same **Build** workflow
+(`designed → building → submitted`). Its **Deploy** half has two modes:
+
+**Release-managed standalone** (Rolio, as of 2026-06-27):
+
+- **PRs target `release`** once `bin/release init` has created the branch.
+- **QA RC exists** — reviewed PRs merge into `origin/release`, and
+  `bin/release prepare` deploys `origin/release` to the app's QA Heroku target
+  from `config/qa_environments.yml`.
+- **Operator ship gate exists** — `bin/release ship --by conductor` fast-forwards
+  `release → main`, pushes production, and smokes the app's
+  `prod_deploy.smoke_url`.
+- **Runtime remains app-owned** — no `studio-engine` or hub SSO requirement.
+
+**App-owned standalone**:
 
 - **PRs target `main`, not `release`** — there is no persistent `release` branch
   and no release slug. `bin/agent-worktree` already falls back to `origin/main`

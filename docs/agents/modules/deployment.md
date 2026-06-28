@@ -247,7 +247,9 @@ bin/qa-server list
 bin/qa-server plan mcritchie-studio
 bin/qa-server provision mcritchie-studio --yes
 bin/qa-server status turf-monster
+bin/qa-server status rolio
 bin/qa-server deploy turf-monster origin/main --yes
+bin/qa-server deploy rolio origin/release --yes
 ```
 
 QA deploys are external writes, but they are not production deploys. They should
@@ -284,6 +286,7 @@ Current intended QA apps:
 |-----|---------------|--------|----------------|
 | McRitchie Studio | `mcritchie-studio-qa` | `https://qa.mcritchie.studio` | Hub QA, real low-volume auth email |
 | Turf Monster | `turf-monster-qa` | `https://qa.turfmonster.media` | Devnet, `PAYMENT_PROVIDER=none`, no real-money checkout |
+| Rolio | `rolio-qa` | `https://rolio-qa-58beede9dc0b.herokuapp.com` | Demo QA, SQLite data is ephemeral |
 
 Current Heroku-generated fallback URLs:
 
@@ -291,6 +294,7 @@ Current Heroku-generated fallback URLs:
 |-----|------------|
 | McRitchie Studio | `https://mcritchie-studio-qa-26cedb6e8fdc.herokuapp.com` |
 | Turf Monster | `https://turf-monster-qa-93e18f3ae318.herokuapp.com` |
+| Rolio | `https://rolio-qa-58beede9dc0b.herokuapp.com` |
 
 Provision each QA app once with `bin/qa-server provision <app> --yes`. The
 helper creates the Heroku app, attaches the app-owned QA addons, sets non-secret
@@ -300,8 +304,10 @@ Heroku Automated Certificate Management for HTTPS.
 
 After `provision`, run `bin/qa-server status <app>` and create the required DNS
 `CNAME` for each QA hostname to the Heroku DNS target that status reports. The
-default `*.herokuapp.com` host remains registered as `DYNO_HOST` so Rails host
-authorization and `/up` checks keep working while DNS propagates.
+default `*.herokuapp.com` host remains registered as `DYNO_HOST` where the app
+uses that env contract, so Rails host authorization and `/up` checks keep
+working while DNS propagates. Rolio currently has no custom domain, so its
+Heroku-generated QA/prod URLs are the canonical review URLs.
 
 Current DNS CNAME targets:
 
@@ -310,13 +316,20 @@ Current DNS CNAME targets:
 | `qa.mcritchie.studio` | `still-peafowl-p2kwpj56ihp5pdt4bcougntu.herokudns.com` |
 | `qa.turfmonster.media` | `encircled-avocado-2ciqghsd1qrzyecpjhz9negz.herokudns.com` |
 
+Rolio has no DNS row yet. Keep using
+`https://rolio-qa-58beede9dc0b.herokuapp.com` for QA and
+`https://rolio-prod-82e96784b462.herokuapp.com` for production until a domain is
+approved.
+
 QA servers should use Resend fallback through `team@mcritchie.studio` for
 low-volume magic-link/auth proof until `studio-engine` supports production-safe
 email capture on Heroku QA. Do not copy production payment or mainnet Solana
 settings into Turf Monster QA. Turf Monster QA runs on devnet and derives
 `EXPECTED_IDL_HASH` from `config/turf_vault.idl.json` during provisioning.
 Turf Monster QA uses `heroku-redis:mini`; Redis data is intentionally
-non-persistent because QA can be rebooted and reseeded often.
+non-persistent because QA can be rebooted and reseeded often. Rolio uses SQLite
+for the hosted demo runtime; data is intentionally ephemeral on Heroku until a
+persistent database task replaces it.
 
 If deployment changes a provider, domain, callback URL, env var, or local port, update:
 

@@ -6,11 +6,12 @@ set -euo pipefail
 # PR #233 gives Codex sessions a persisted McRitchie marker:
 #   <Pokemon> · <app> · <feature>
 #
-# Codex's live footer keeps the thread name in memory, so a SessionStart hook
-# cannot repaint it by only updating SQLite. This hook still persists the marker
-# for history/resume and emits supported SessionStart additional context so the
-# model knows the assigned mascot immediately. It is intentionally best-effort:
-# a missing session id, unreachable task API, absent sqlite DB, or transient lock
+# Stock Codex CLI 0.142.3 keeps the live footer's thread name in memory, so
+# updating SQLite only affects history/resume. A locally patched Codex runtime
+# can also consume hookSpecificOutput.threadName and repaint the live footer
+# silently. This hook emits that field only when explicitly enabled; otherwise
+# it deliberately prints nothing on success to stay compatible with stock Codex.
+# A missing session id, unreachable task API, absent sqlite DB, or transient lock
 # must never slow or break a new Codex session.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,6 +19,7 @@ SESSION_KICKOFF="${SESSION_KICKOFF:-$ROOT/bin/session-kickoff}"
 SQLITE3="${SQLITE3:-sqlite3}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CODEX_STATE_DB="${CODEX_STATE_DB:-$CODEX_HOME/state_5.sqlite}"
+LIVE_THREAD_NAME_SENTINEL="${CODEX_SESSION_TITLE_LIVE_SENTINEL:-$CODEX_HOME/mcritchie-live-thread-title.enabled}"
 default_projects_dir() {
   local candidate
   candidate="$(cd "$ROOT/.." && pwd)"
@@ -123,6 +125,33 @@ sql_quote() {
   printf "'%s'" "$(printf '%s' "$1" | sed "s/'/''/g")"
 }
 
+live_thread_name_enabled() {
+  case "${CODEX_SESSION_TITLE_LIVE_THREAD_NAME:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    0|false|FALSE|no|NO|off|OFF)
+      return 1
+      ;;
+  esac
+
+  [ -f "$LIVE_THREAD_NAME_SENTINEL" ]
+}
+
+emit_live_thread_name() {
+  CODEX_SESSION_MARKER="$marker" ruby -rjson -e '
+    marker = ENV.fetch("CODEX_SESSION_MARKER", "").strip
+    exit 0 if marker.empty?
+
+    puts JSON.generate(
+      "hookSpecificOutput" => {
+        "hookEventName" => "SessionStart",
+        "threadName" => marker
+      }
+    )
+  ' 2>/dev/null || true
+}
+
 if command -v "$SQLITE3" >/dev/null 2>&1 && [ -f "$CODEX_STATE_DB" ]; then
   q_sid="$(sql_quote "$sid")"
   q_marker="$(sql_quote "$marker")"
@@ -140,19 +169,8 @@ if command -v "$SQLITE3" >/dev/null 2>&1 && [ -f "$CODEX_STATE_DB" ]; then
   fi
 fi
 
-CODEX_SESSION_MARKER="$marker" ruby -rjson -e '
-  marker = ENV.fetch("CODEX_SESSION_MARKER")
-  context = [
-    "McRitchie session marker: #{marker}.",
-    "Treat this marker as your session identity.",
-    "If asked what Pokemon or session mascot you are, answer from this marker instead of inventing one."
-  ].join(" ")
-  puts JSON.generate(
-    "hookSpecificOutput" => {
-      "hookEventName" => "SessionStart",
-      "additionalContext" => context
-    }
-  )
-'
+if live_thread_name_enabled; then
+  emit_live_thread_name
+fi
 
 exit 0

@@ -12,8 +12,9 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
-reserved, but it is not managed by rebuild/nav automation. Chain Ops is planned
-for localnet/QA/node operations.
+reserved, and its hosted QA/prod deploy targets are managed by the release
+registries. It is not managed by rebuild/nav automation. Chain Ops is planned for
+localnet/QA/node operations.
 
 ## Primary Ports
 

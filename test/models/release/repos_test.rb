@@ -11,7 +11,9 @@ class Release::ReposTest < ActiveSupport::TestCase
   test "classifies registered apps as :app" do
     assert_equal :app, Release::Repos.kind("mcritchie-studio")
     assert_equal :app, Release::Repos.kind("turf-monster")
+    assert_equal :app, Release::Repos.kind("rolio")
     assert Release::Repos.app?("turf-monster")
+    assert Release::Repos.app?("rolio")
     assert_not Release::Repos.gem?("turf-monster")
   end
 
@@ -62,12 +64,13 @@ class Release::ReposTest < ActiveSupport::TestCase
   # --- apps as a hash: app_meta / prod_deploy / qa_app ---
 
   test "app_repos lists the registry's app hash keys" do
-    assert_equal %w[mcritchie-studio turf-monster tax-studio chain-ops].sort,
+    assert_equal %w[mcritchie-studio turf-monster rolio tax-studio chain-ops].sort,
                  Release::Repos.app_repos.sort
   end
 
   test "app? matches the app hash keys" do
     assert Release::Repos.app?("mcritchie-studio")
+    assert Release::Repos.app?("rolio")
     assert Release::Repos.app?("tax-studio")
     assert Release::Repos.app?("chain-ops")
     assert_not Release::Repos.app?("studio-engine") # a gem
@@ -100,12 +103,21 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal ["--yes"], adapter["args"]
   end
 
+  test "prod_deploy returns the Heroku URL adapter for Rolio" do
+    adapter = Release::Repos.prod_deploy("rolio")
+    assert_equal "git_push_heroku", adapter["strategy"]
+    assert_equal "https://git.heroku.com/rolio-prod.git", adapter["remote"]
+    assert_equal "main", adapter["branch"]
+    assert_equal "https://rolio-prod-82e96784b462.herokuapp.com", adapter["smoke_url"]
+  end
+
   test "prod_deploy is nil for a gem or an unknown repo" do
     assert_nil Release::Repos.prod_deploy("studio-engine")
     assert_nil Release::Repos.prod_deploy("not-a-real-repo")
   end
 
   test "qa_app defaults to the repo slug when no qa_deploy override is set" do
+    assert_equal "rolio", Release::Repos.qa_app("rolio")
     assert_equal "turf-monster", Release::Repos.qa_app("turf-monster")
     assert_equal "mcritchie-studio", Release::Repos.qa_app("mcritchie-studio")
   end
@@ -114,6 +126,10 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   test "test_cmd returns the hub's pre-prod gate command" do
     assert_equal "bin/rails test", Release::Repos.test_cmd("mcritchie-studio")
+  end
+
+  test "test_cmd returns Rolio's pre-prod gate command" do
+    assert_equal "bin/rails test", Release::Repos.test_cmd("rolio")
   end
 
   test "test_cmd is nil for a self-gating repo_script satellite" do

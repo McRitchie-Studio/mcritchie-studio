@@ -33,8 +33,8 @@
 #   bin/conductor plan       survey + the recommended NEXT deterministic action
 #                            per stage (submitted→reviewer-select; reviewed→
 #                            release merge; assembled→prepare then the operator
-#                            ship gate). Flags blocked + non-pipeline (rolio)
-#                            tasks separately. `--reviewers` previews the picked
+#                            ship gate). Flags blocked + non-pipeline tasks
+#                            separately. `--reviewers` previews the picked
 #                            pair per submitted task.
 #   bin/conductor merge [--run]   Thin drive: bin/release merge <reviewed pipeline
 #                            slugs>. Default prints the command; --run executes it.
@@ -98,10 +98,9 @@ STAGE_BLURB = {
 }.freeze
 
 # The release pipeline's repos — the single source of truth `bin/release` reads
-# (config/release_repos.yml). A task whose repos don't intersect this set (e.g.
-# rolio, which is its own app, not a mcritchie release member) is NON-PIPELINE
-# and must not be merged via bin/release. Read locally (cheap, no network); the
-# fallback covers a missing/unreadable config.
+# (config/release_repos.yml). A task whose repos don't intersect this set is
+# NON-PIPELINE and must not be merged via bin/release. Read locally (cheap, no
+# network); the fallback covers a missing/unreadable config.
 PIPELINE_REPOS =
   begin
     cfg = YAML.load_file(File.expand_path("../config/release_repos.yml", SCRIPT_DIR)) || {}
@@ -172,7 +171,7 @@ def task_repos(task)
   Array(task.dig("metadata", "devops", "repositories")).map(&:to_s).reject(&:empty?)
 end
 
-# Non-pipeline = has repos, NONE of which are release members (rolio etc.). An
+# Non-pipeline = has repos, NONE of which are release members. An
 # empty/unknown repo set is treated as pipeline so it is never silently hidden.
 def non_pipeline?(task)
   repos = task_repos(task)
@@ -265,7 +264,7 @@ end
 
 # --- plan ------------------------------------------------------------------
 
-# Partition a stage's tasks into pipeline vs non-pipeline (rolio etc.) after
+# Partition a stage's tasks into pipeline vs non-pipeline after
 # enriching each with its repos.
 def partition_pipeline(tasks)
   enriched = tasks.map { |t| show_task(t["slug"]).merge("slug" => t["slug"], "title" => t["title"]) }

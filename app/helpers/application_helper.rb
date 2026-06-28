@@ -136,9 +136,11 @@ module ApplicationHelper
   end
 
   def release_tracker_connector_state(index, done_count)
-    if index < done_count
+    if done_count >= RELEASE_TRACKER_STAGES.size
       :complete
-    elsif index == done_count
+    elsif index < done_count - 1
+      :complete
+    elsif index == done_count - 1
       :active
     else
       :pending

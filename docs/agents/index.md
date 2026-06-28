@@ -214,7 +214,7 @@ assigned that lane.
 |------|------|------------|
 | `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
 | `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
-| `rolio` | Reserved relationship operating workspace; not yet managed | 3300 |
+| `rolio` | Release-managed standalone workspace; satellite range reserved | 3300 |
 | `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
 | `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
 | `solana-studio` | Ruby Solana primitives | none |
@@ -299,7 +299,7 @@ The conductor queue starts with:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
 The command joins open GitHub PRs to the local worktree registry and labels
@@ -317,7 +317,7 @@ Before reusing or deleting worktrees, inspect lifecycle state:
 bin/agent-worktree list
 bin/agent-worktree doctor
 bin/agent-worktree snapshot --write
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster
+bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 bin/agent-worktree cleanup
 bin/agent-worktree cleanup --reclaim [--yes]
 bin/agent-worktree remove <app> <task-slug> --yes
