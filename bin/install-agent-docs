@@ -235,6 +235,14 @@ puts <<~TOML
   command = #{toml_string(cmd)}
   timeout = 5
   statusMessage = "Setting session mascot"
+
+  [[hooks.PostToolUse]]
+  matcher = "Bash"
+
+  [[hooks.PostToolUse.hooks]]
+  type = "command"
+  command = #{toml_string(cmd)}
+  timeout = 2
   # END McRitchie Codex mascot managed hook
 TOML
 RUBY
@@ -272,6 +280,14 @@ block = <<~TOML
   command = #{toml_string(cmd)}
   timeout = 5
   statusMessage = "Setting session mascot"
+
+  [[hooks.PostToolUse]]
+  matcher = "Bash"
+
+  [[hooks.PostToolUse.hooks]]
+  type = "command"
+  command = #{toml_string(cmd)}
+  timeout = 2
   #{end_marker}
 TOML
 
@@ -302,13 +318,17 @@ prune_codex_user_hook() {
 
   local tmp
   tmp="$(mktemp)"
-  if jq 'if .hooks.SessionStart then
-        .hooks.SessionStart |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
-          | map(select(((.hooks // []) | length) > 0))
-        )
-        | if (.hooks.SessionStart | length) == 0 then del(.hooks.SessionStart) else . end
-      else . end' "$hooks" > "$tmp"; then
+  if jq '
+      def prune_event($event):
+        if .hooks[$event] then
+          .hooks[$event] |= (
+            map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+            | map(select(((.hooks // []) | length) > 0))
+          )
+          | if (.hooks[$event] | length) == 0 then del(.hooks[$event]) else . end
+        else . end;
+      prune_event("SessionStart") | prune_event("PostToolUse")
+    ' "$hooks" > "$tmp"; then
     if ! cmp -s "$hooks" "$tmp"; then
       mv "$tmp" "$hooks"
       echo "  $hooks (removed user-level Codex mascot hooks)"
@@ -336,6 +356,11 @@ install_codex_user_hook() {
           | map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
           | map(select(((.hooks // []) | length) > 0))
         )
+      | .hooks.PostToolUse = (
+          (.hooks.PostToolUse // [])
+          | map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
       | .hooks.SessionStart += [
           {
             matcher: "startup|resume",
@@ -349,10 +374,22 @@ install_codex_user_hook() {
             ]
           }
         ]
+      | .hooks.PostToolUse += [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: $cmd,
+                timeout: 2
+              }
+            ]
+          }
+        ]
     ' "$hooks" > "$tmp"; then
     if ! cmp -s "$hooks" "$tmp"; then
       mv "$tmp" "$hooks"
-      echo "  $hooks (installed user-level Codex SessionStart fallback -> $cmd)"
+      echo "  $hooks (installed user-level Codex SessionStart/PostToolUse fallback -> $cmd)"
     else
       rm -f "$tmp"
     fi
@@ -424,9 +461,10 @@ fi
 
 # Make Codex show the McRitchie marker in its footer early. Codex does not run
 # arbitrary status-line commands, but its footer can include the thread-title
-# item. A managed SessionStart hook paints that title from the same session
-# mascot marker Claude reads. Managed hooks are trusted by policy, so a fresh
-# Codex session should not require the user-level /hooks review ceremony.
+# item. Managed hooks paint that title from the same session mascot marker
+# Claude reads and refresh it after Bash tools create or claim a task. Managed
+# hooks are trusted by policy, so a fresh Codex session should not require the
+# user-level /hooks review ceremony.
 codex_config="$HOME/.codex/config.toml"
 ensure_codex_tui_config "$codex_config"
 echo "  $codex_config (ensured status_line includes thread-title)"
@@ -435,7 +473,7 @@ codex_hooks="$HOME/.codex/hooks.json"
 codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
 codex_requirements_staged="$HOME/.codex/mcritchie-requirements.toml"
 if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged"; then
-  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart hook -> $codex_hook_cmd)"
+  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart/PostToolUse hooks -> $codex_hook_cmd)"
   prune_codex_user_hook "$codex_hooks"
 else
   requirements_status="$?"
