@@ -28,8 +28,8 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", "#request-logs"
     assert_select "a[href=?]", admin_models_path
     assert_select "a[href=?]", admin_signing_requests_path
-    assert_select "a[href=?]", tasks_path
-    assert_select "a[href=?]", deployments_path
+    assert_select "a[href=?]", deployments_path, text: /Tasks/
+    assert_select "a[href=?]", deployments_path, text: /Deployments/
     assert_select "a[href=?]", stages_path
     assert_select "a[href=?]", history_builders_path, text: /Builder History/
     assert_select "a[href=?]", nfl_hub_path
