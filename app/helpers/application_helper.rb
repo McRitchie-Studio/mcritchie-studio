@@ -149,12 +149,28 @@ module ApplicationHelper
 
   def release_tracker_done_count(release)
     return RELEASE_TRACKER_STAGES.size if release.shipped?
+    return RELEASE_TRACKER_STAGES.size if release_event_done?(release, "deploy_prod")
+    return 4 if release_event_done?(release, "ship_gate") ||
+                release_event_done?(release, "ship_authorized") ||
+                release_event_started?(release, "deploy_prod")
     return 4 if release.confirmed_at.present?
-    return 3 if release.state == "assembled"
+    return 3 if release_event_done?(release, "deploy_qa") ||
+                release_event_done?(release, "qa_smoke") ||
+                release.state == "assembled"
+    return 2 if release_event_done?(release, "assemble_release")
     return 2 if release.qa_url.present? || release_tracker_qa_shas?(release)
+    return 1 if release_event_done?(release, "review_tests")
     return 1 if release.tasks.any?
 
     0
+  end
+
+  def release_event_done?(release, step)
+    release.respond_to?(:event_completed?) && release.event_completed?(step)
+  end
+
+  def release_event_started?(release, step)
+    release.respond_to?(:event_started?) && release.event_started?(step)
   end
 
   def release_tracker_qa_shas?(release)

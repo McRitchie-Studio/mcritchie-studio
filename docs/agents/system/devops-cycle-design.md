@@ -198,6 +198,13 @@ repo's `main` up to `release` (so `release` collapses into `main`), deploys prod
 and flips members to `shipped`. Ship authority always lands **after Avi's test
 confirmation, before the deploy**.
 
+Release progress is also recorded as explicit `ReleaseEvent` checkpoints
+(`review_tests`, `assemble_release`, `deploy_qa`, `qa_smoke`, `ship_gate`,
+`ship_authorized`, `deploy_prod`, `prod_smoke`, `release_notes`,
+`archive_tasks`). The `/deployments` tracker reads those events before falling
+back to legacy `Release` fields, so `ship_gate:completed` can visibly finish the
+Confirming step before `deploy_prod:started` begins production work.
+
 **Gem members & producer-first ordering.** A release is not apps-only — it can
 carry **gem** tasks (`studio-engine`, `solana-studio`) as first-class members
 alongside apps. The classification lives in `config/release_repos.yml` (read by
@@ -569,7 +576,8 @@ that STARTED it, not only the one that completed it, so /deployments and the
 task's consolidated **Stage Timeline** show who's working *right now* with a
 green ticking timer — the Deploy mirror of the build lane's live counter. These
 are append-only `TaskEvent`s of `kind: intent` (completed transitions stay
-`kind: transition`, and an intent never enters the duration spine); an intent is
+`kind: transition`; named non-moving lifecycle completions such as heavy/light
+review verdicts use `kind: checkpoint`; and an intent never enters the duration spine); an intent is
 "open" only inside the source-stage cycle where it was recorded. A later
 transition into its target stage supersedes it, and leaving the source stage
 (for example `submitted → blocked`) closes it even if the target never landed.

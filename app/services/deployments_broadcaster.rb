@@ -83,8 +83,8 @@ class DeploymentsBroadcaster
       remove_card           # → archived: drop it from the active board
     elsif new_card?
       prepend_card          # genesis: a brand-new card at the top of Designed
-    elsif @event.intent?
-      replace_card          # in place: intent ticker
+    elsif @event.intent? || @event.checkpoint?
+      replace_card          # in place: intent ticker / lifecycle checkpoint
     else
       move_card             # stage move: remove the old card, prepend a fresh one
     end

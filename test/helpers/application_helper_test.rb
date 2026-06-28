@@ -270,6 +270,16 @@ class ApplicationHelperTest < ActionView::TestCase
                  release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
 
     rel.assemble!
+    rel.record_event!(step: "ship_gate", status: "started", source: "conductor")
+    assert_equal %i[complete complete complete active pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] },
+                 "ship-gate start keeps Confirming active"
+
+    rel.record_event!(step: "ship_gate", status: "completed", source: "conductor")
+    assert_equal %i[complete complete complete complete active],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] },
+                 "ship-gate completion advances to Deploying Prod before shipped"
+
     rel.update!(confirmed_at: Time.current)
     assert_equal %i[complete complete complete complete active],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }

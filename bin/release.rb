@@ -342,6 +342,23 @@ rescue SystemExit, StandardError => e
   say("  ⚠ #{label} not recorded — crew-ticker board write failed (#{e.message}); deploy continues (cosmetic only)")
 end
 
+def record_release_event(release_slug, step_name, status, attrs = {})
+  attrs = attrs.dup
+  attrs[:source] ||= "conductor"
+  attrs[:idempotency_key] ||= [
+    release_slug, step_name, status, attrs[:repo], attrs[:app], attrs[:sha], attrs[:url]
+  ].compact.join(":")
+
+  payload = attrs.map { |key, value| "#{key}: #{value.inspect}" }.join(", ")
+  conductor(
+    "r = Release.find_by!(slug: #{release_slug.inspect}); " \
+    "Release::Conductor.record_event!(release: r, step: #{step_name.inspect}, status: #{status.inspect}, #{payload}); " \
+    "puts({ release_event: #{step_name.inspect}, status: #{status.inspect} }.to_json)"
+  )
+rescue SystemExit, StandardError => e
+  say("  ⚠ release event #{step_name}:#{status} not recorded (#{e.message}); deploy continues")
+end
+
 # --- deploy-side usage capture (best-effort) --------------------------------
 # The conductor flips task stages on PROD via `heroku run`, where there is NO
 # local transcript — so we capture the per-transition usage delta HERE (locally,
@@ -851,6 +868,7 @@ def prepare
   app_groups = repos.select { |g| g["kind"] == "app" }
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
+  record_release_event(rel_slug, "assemble_release", "started")
 
   # 1b. Record the Steffon assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment prepare starts — the Deploy mirror of
@@ -876,6 +894,7 @@ def prepare
   #    are NOT deployed — they ride the release as a record, published at ship.
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
+  record_release_event(rel_slug, "deploy_qa", "started") if app_groups.any?
   repos.each do |group|
     repo    = group["repo"]
     members = group["members"] || []
@@ -1492,6 +1511,7 @@ def production_smoke_seal(app_groups, ship_sha)
 
   host    = PROD_URL
   summary = ok ? "@qa-readonly green vs #{host}" : "@qa-readonly FAILED vs #{host} — see ship log"
+  smoke_status = ok ? "completed" : "failed"
   seal    = Release::SmokeSeal.from_result(passed: ok, summary: summary)
 
   # Record the seal on prod (best-effort). conductor() abort!s on a heroku-run
@@ -1502,6 +1522,8 @@ def production_smoke_seal(app_groups, ship_sha)
       "r = Release.current; abort('no active release to seal') unless r; " \
       "r.record_smoke_seal!(Release::SmokeSeal.from_result(" \
       "passed: #{ok ? 'true' : 'false'}, summary: #{summary.inspect}, checked_at: Time.current)); " \
+      "Release::Conductor.record_event!(release: r, step: 'prod_smoke', status: #{smoke_status.inspect}, " \
+      "source: 'conductor', message: #{summary.inspect}, idempotency_key: \"\#{r.slug}:prod_smoke:#{smoke_status}\"); " \
       "puts({ sealed: r.smoke_seal&.status }.to_json)"
     )
     say("  seal recorded on Release.current: #{seal.badge} #{seal.status}")
@@ -1570,12 +1592,15 @@ def ship
   #     SHA — the exact prod code — BEFORE ship authority, so "shipped" can
   #     never mean "untested". A red gate scoped-aborts here, before the confirm
   #     and before any push, leaving origin untouched.
+  record_release_event(rel_slug, "ship_gate", "started", actor: by)
   avi_ship_gate(app_groups, ship_sha)
+  record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
   # 2b. The ship-authority gate — explicit, AFTER Avi's test confirmation and
   #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
   step("ship authority: Avi's full e2e passed on the frozen SHA — confirming production deploy")
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
+  record_release_event(rel_slug, "ship_authorized", "completed", actor: by)
 
   # 2c. The ship is now authorized + proceeding — record the Avi → shipped intent for
   #     every member so /deployments shows him shipping LIVE (a green ticking timer)
@@ -1593,6 +1618,7 @@ def ship
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'avi'); " \
     "puts({ intent: 'shipped', actor: 'avi', members: n.size }.to_json)"
   )
+  record_release_event(rel_slug, "deploy_prod", "started", actor: by)
 
   # 3. Gems FIRST (producer-first): publish (skip-if-live; yank safety = `gem push`
   #    fails closed on a yanked number) + ff.

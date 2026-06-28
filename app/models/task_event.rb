@@ -13,6 +13,10 @@
 #     a completion concept) and is NEVER part of the duration spine — the next
 #     transition measures back to the prior TRANSITION, skipping intents.
 #
+#   CHECKPOINT — an agent-visible lifecycle event that does not move the task's
+#     coarse stage: design complete, heavy/light review complete, failed sub-step,
+#     or another named checkpoint. The status lives in metadata["status"].
+#
 # Never updated after creation. An intent is "open" only while the task remains in
 # the same source-stage cycle and no later transition into its target stage has
 # landed. Leaving the source stage (for example, `submitted → blocked`) closes the
@@ -27,7 +31,8 @@ class TaskEvent < ApplicationRecord
   # transitions (the column default backfills them).
   TRANSITION = "transition"
   INTENT     = "intent"
-  KINDS      = [TRANSITION, INTENT].freeze
+  CHECKPOINT = "checkpoint"
+  KINDS      = [TRANSITION, INTENT, CHECKPOINT].freeze
 
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug, optional: true, inverse_of: :task_events
 
@@ -38,6 +43,7 @@ class TaskEvent < ApplicationRecord
   scope :chronological, -> { order(occurred_at: :asc, id: :asc) }
   scope :transitions, -> { where(kind: TRANSITION) }
   scope :intents, -> { where(kind: INTENT) }
+  scope :checkpoints, -> { where(kind: CHECKPOINT) }
 
   # Live-update the /deployments board the moment an event commits — a transition
   # moves the card, an intent updates it in place. AFTER commit so subscribers only
@@ -51,6 +57,10 @@ class TaskEvent < ApplicationRecord
 
   def intent?
     kind == INTENT
+  end
+
+  def checkpoint?
+    kind == CHECKPOINT
   end
 
   # The stage left, as a label. The genesis event has no prior stage.
