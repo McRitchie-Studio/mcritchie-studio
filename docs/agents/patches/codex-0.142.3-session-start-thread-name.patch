@@ -1,0 +1,632 @@
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+index 238e87d..4ab78ac 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+@@ -1450,6 +1450,8 @@ pub struct ThreadNameUpdatedNotification {
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     #[ts(optional)]
+     pub thread_name: Option<String>,
++    #[serde(default)]
++    pub silent: bool,
+ }
+ 
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+diff --git a/codex-rs/app-server/src/bespoke_event_handling.rs b/codex-rs/app-server/src/bespoke_event_handling.rs
+index 36dbdd9..5adc448 100644
+--- a/codex-rs/app-server/src/bespoke_event_handling.rs
++++ b/codex-rs/app-server/src/bespoke_event_handling.rs
+@@ -53,6 +53,7 @@ use codex_app_server_protocol::ServerNotification;
+ use codex_app_server_protocol::ServerRequestPayload;
+ use codex_app_server_protocol::ThreadGoalUpdatedNotification;
+ use codex_app_server_protocol::ThreadItem;
++use codex_app_server_protocol::ThreadNameUpdatedNotification;
+ use codex_app_server_protocol::ThreadRealtimeClosedNotification;
+ use codex_app_server_protocol::ThreadRealtimeErrorNotification;
+ use codex_app_server_protocol::ThreadRealtimeItemAddedNotification;
+@@ -1256,6 +1257,18 @@ pub(crate) async fn apply_bespoke_event_handling(
+                 ))
+                 .await;
+         }
++        EventMsg::ThreadNameUpdated(thread_name_event) => {
++            let notification = ThreadNameUpdatedNotification {
++                thread_id: thread_name_event.thread_id.to_string(),
++                thread_name: thread_name_event.thread_name,
++                silent: thread_name_event.silent,
++            };
++            outgoing
++                .send_global_server_notification(ServerNotification::ThreadNameUpdated(
++                    notification,
++                ))
++                .await;
++        }
+         EventMsg::ThreadSettingsApplied(thread_settings_event) => {
+             let thread_settings =
+                 thread_settings_from_core_snapshot(thread_settings_event.thread_settings);
+diff --git a/codex-rs/app-server/src/request_processors/thread_processor.rs b/codex-rs/app-server/src/request_processors/thread_processor.rs
+index 5c7b28b..3f58b6e 100644
+--- a/codex-rs/app-server/src/request_processors/thread_processor.rs
++++ b/codex-rs/app-server/src/request_processors/thread_processor.rs
+@@ -1518,6 +1518,7 @@ impl ThreadRequestProcessor {
+             Some(ThreadNameUpdatedNotification {
+                 thread_id: thread_id.to_string(),
+                 thread_name: Some(name),
++                silent: false,
+             }),
+         ))
+     }
+diff --git a/codex-rs/core/src/hook_runtime.rs b/codex-rs/core/src/hook_runtime.rs
+index 96ae6c9..fb757c8 100644
+--- a/codex-rs/core/src/hook_runtime.rs
++++ b/codex-rs/core/src/hook_runtime.rs
+@@ -35,7 +35,10 @@ use codex_protocol::protocol::HookSource;
+ use codex_protocol::protocol::HookStartedEvent;
+ use codex_protocol::protocol::SessionSource;
+ use codex_protocol::protocol::SubAgentSource;
++use codex_protocol::protocol::ThreadNameUpdatedEvent;
+ use codex_thread_store::ReadThreadParams;
++use codex_thread_store::ThreadMetadataPatch;
++use codex_thread_store::UpdateThreadMetadataParams;
+ use serde_json::Value;
+ use tracing::instrument;
+ 
+@@ -70,6 +73,7 @@ impl From<SessionStartOutcome> for ContextInjectingHookOutcome {
+             should_stop,
+             stop_reason: _,
+             additional_contexts,
++            thread_name: _,
+         } = value;
+         Self {
+             hook_events,
+@@ -138,16 +142,22 @@ pub(crate) async fn run_pending_session_start_hooks(
+         };
+         let hooks = sess.hooks();
+         let preview_runs = hooks.preview_session_start(&request);
+-        if run_context_injecting_hook(
+-            sess,
+-            turn_context,
+-            preview_runs,
+-            hooks.run_session_start(request, Some(turn_context.sub_id.clone())),
+-        )
+-        .await
+-        .record_additional_contexts(sess, turn_context)
+-        .await
+-        {
++        emit_hook_started_events(sess, turn_context, preview_runs).await;
++
++        let SessionStartOutcome {
++            hook_events,
++            should_stop,
++            stop_reason: _,
++            additional_contexts,
++            thread_name,
++        } = hooks
++            .run_session_start(request, Some(turn_context.sub_id.clone()))
++            .await;
++        emit_hook_completed_events(sess, turn_context, hook_events).await;
++        apply_session_start_thread_name(sess, turn_context, thread_name).await;
++        record_additional_contexts(sess, turn_context, additional_contexts).await;
++
++        if should_stop {
+             return true;
+         }
+     }
+@@ -155,6 +165,77 @@ pub(crate) async fn run_pending_session_start_hooks(
+     false
+ }
+ 
++async fn apply_session_start_thread_name(
++    sess: &Arc<Session>,
++    turn_context: &Arc<TurnContext>,
++    thread_name: Option<String>,
++) {
++    let Some(thread_name) = thread_name
++        .as_deref()
++        .and_then(crate::util::normalize_thread_name)
++    else {
++        return;
++    };
++    let thread_id = sess.thread_id();
++
++    if let Err(error) = persist_session_thread_name(sess, thread_id, thread_name.clone()).await {
++        tracing::warn!(
++            %thread_id,
++            error = %error,
++            "failed to persist SessionStart thread name"
++        );
++    }
++
++    sess.send_event(
++        turn_context,
++        EventMsg::ThreadNameUpdated(ThreadNameUpdatedEvent {
++            thread_id,
++            thread_name: Some(thread_name.clone()),
++            silent: true,
++        }),
++    )
++    .await;
++
++    record_additional_contexts(
++        sess,
++        turn_context,
++        vec![session_identity_context_from_thread_name(&thread_name)],
++    )
++    .await;
++}
++
++fn session_identity_context_from_thread_name(thread_name: &str) -> String {
++    format!(
++        "McRitchie session marker: {thread_name}. Treat this marker as your session identity. If asked what Pokemon or session mascot you are, answer from this marker instead of inventing one."
++    )
++}
++
++async fn persist_session_thread_name(
++    sess: &Arc<Session>,
++    thread_id: codex_protocol::ThreadId,
++    thread_name: String,
++) -> codex_thread_store::ThreadStoreResult<()> {
++    let patch = ThreadMetadataPatch {
++        name: Some(Some(thread_name)),
++        ..Default::default()
++    };
++    if let Some(live_thread) = sess.services.live_thread.as_ref() {
++        live_thread
++            .update_metadata(patch, /*include_archived*/ false)
++            .await?;
++    } else {
++        sess.services
++            .thread_store
++            .update_thread_metadata(UpdateThreadMetadataParams {
++                thread_id,
++                patch,
++                include_archived: false,
++            })
++            .await?;
++    }
++    Ok(())
++}
++
+ /// Runs matching `PreToolUse` hooks before a tool executes.
+ ///
+ /// `tool_name` is the canonical name serialized to hook stdin. Matcher aliases
+@@ -580,18 +661,6 @@ where
+     outcome.outcome
+ }
+ 
+-impl HookRuntimeOutcome {
+-    async fn record_additional_contexts(
+-        self,
+-        sess: &Arc<Session>,
+-        turn_context: &Arc<TurnContext>,
+-    ) -> bool {
+-        record_additional_contexts(sess, turn_context, self.additional_contexts).await;
+-
+-        self.should_stop
+-    }
+-}
+-
+ pub(crate) async fn record_additional_contexts(
+     sess: &Arc<Session>,
+     turn_context: &Arc<TurnContext>,
+diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
+index cdb8468..4ba0e6f 100644
+--- a/codex-rs/core/src/session/turn.rs
++++ b/codex-rs/core/src/session/turn.rs
+@@ -1567,6 +1567,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
+         | EventMsg::AgentReasoningSectionBreak(_)
+         | EventMsg::SessionConfigured(_)
+         | EventMsg::ThreadGoalUpdated(_)
++        | EventMsg::ThreadNameUpdated(_)
+         | EventMsg::McpStartupUpdate(_)
+         | EventMsg::McpStartupComplete(_)
+         | EventMsg::McpToolCallBegin(_)
+diff --git a/codex-rs/hooks/src/engine/output_parser.rs b/codex-rs/hooks/src/engine/output_parser.rs
+index b4f2141..f3994a1 100644
+--- a/codex-rs/hooks/src/engine/output_parser.rs
++++ b/codex-rs/hooks/src/engine/output_parser.rs
+@@ -10,6 +10,7 @@ pub(crate) struct UniversalOutput {
+ pub(crate) struct SessionStartOutput {
+     pub universal: UniversalOutput,
+     pub additional_context: Option<String>,
++    pub thread_name: Option<String>,
+ }
+ 
+ #[derive(Debug, Clone)]
+@@ -92,10 +93,15 @@ use crate::schema::UserPromptSubmitCommandOutputWire;
+ 
+ pub(crate) fn parse_session_start(stdout: &str) -> Option<SessionStartOutput> {
+     let wire: SessionStartCommandOutputWire = parse_json(stdout)?;
++    let hook_specific_output = wire.hook_specific_output;
++    let additional_context = hook_specific_output
++        .as_ref()
++        .and_then(|output| output.additional_context.clone());
++    let thread_name = hook_specific_output.and_then(|output| output.thread_name);
+     Some(session_start_output(
+         wire.universal,
+-        wire.hook_specific_output
+-            .and_then(|output| output.additional_context),
++        additional_context,
++        thread_name,
+     ))
+ }
+ 
+@@ -105,16 +111,19 @@ pub(crate) fn parse_subagent_start(stdout: &str) -> Option<SessionStartOutput> {
+         wire.universal,
+         wire.hook_specific_output
+             .and_then(|output| output.additional_context),
++        None,
+     ))
+ }
+ 
+ fn session_start_output(
+     universal: HookUniversalOutputWire,
+     additional_context: Option<String>,
++    thread_name: Option<String>,
+ ) -> SessionStartOutput {
+     SessionStartOutput {
+         universal: UniversalOutput::from(universal),
+         additional_context,
++        thread_name,
+     }
+ }
+ 
+diff --git a/codex-rs/hooks/src/events/session_start.rs b/codex-rs/hooks/src/events/session_start.rs
+index bd1aa20..c3b2682 100644
+--- a/codex-rs/hooks/src/events/session_start.rs
++++ b/codex-rs/hooks/src/events/session_start.rs
+@@ -82,6 +82,7 @@ pub struct SessionStartOutcome {
+     pub should_stop: bool,
+     pub stop_reason: Option<String>,
+     pub additional_contexts: Vec<String>,
++    pub thread_name: Option<String>,
+ }
+ 
+ #[derive(Debug, PartialEq, Eq)]
+@@ -89,6 +90,7 @@ struct SessionStartHandlerData {
+     should_stop: bool,
+     stop_reason: Option<String>,
+     additional_contexts_for_model: Vec<String>,
++    thread_name: Option<String>,
+ }
+ 
+ pub(crate) fn preview(
+@@ -122,6 +124,7 @@ pub(crate) async fn run(
+             should_stop: false,
+             stop_reason: None,
+             additional_contexts: Vec::new(),
++            thread_name: None,
+         };
+     }
+ 
+@@ -199,12 +202,17 @@ pub(crate) async fn run(
+             .iter()
+             .map(|result| result.data.additional_contexts_for_model.as_slice()),
+     );
++    let thread_name = results
++        .iter()
++        .filter_map(|result| result.data.thread_name.clone())
++        .last();
+ 
+     SessionStartOutcome {
+         hook_events: results.into_iter().map(|result| result.completed).collect(),
+         should_stop,
+         stop_reason,
+         additional_contexts,
++        thread_name,
+     }
+ }
+ 
+@@ -224,6 +232,7 @@ fn parse_completed(
+     let mut should_stop = false;
+     let mut stop_reason = None;
+     let mut additional_contexts_for_model = Vec::new();
++    let mut thread_name = None;
+ 
+     match run_result.error.as_deref() {
+         Some(error) => {
+@@ -261,6 +270,9 @@ fn parse_completed(
+                             additional_context,
+                         );
+                     }
++                    if handler.event_name == HookEventName::SessionStart {
++                        thread_name = parsed.thread_name;
++                    }
+                     let _ = parsed.universal.suppress_output;
+                     if handler.event_name == HookEventName::SessionStart
+                         && !parsed.universal.continue_processing
+@@ -329,6 +341,7 @@ fn parse_completed(
+             should_stop,
+             stop_reason,
+             additional_contexts_for_model,
++            thread_name,
+         },
+         completion_order: 0,
+     }
+@@ -340,6 +353,7 @@ fn serialization_failure_outcome(hook_events: Vec<HookCompletedEvent>) -> Sessio
+         should_stop: false,
+         stop_reason: None,
+         additional_contexts: Vec::new(),
++        thread_name: None,
+     }
+ }
+ 
+@@ -372,6 +386,7 @@ mod tests {
+                 should_stop: false,
+                 stop_reason: None,
+                 additional_contexts_for_model: vec!["hello from hook".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
+@@ -402,6 +417,7 @@ mod tests {
+                 should_stop: true,
+                 stop_reason: Some("pause".to_string()),
+                 additional_contexts_for_model: vec!["do not inject".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Stopped);
+@@ -420,6 +436,31 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn json_thread_name_is_collected_without_model_context() {
++        let parsed = parse_completed(
++            &handler(),
++            run_result(
++                Some(0),
++                r#"{"hookSpecificOutput":{"hookEventName":"SessionStart","threadName":"🍄 Nidoqueen · mcritchie-studio"}}"#,
++                "",
++            ),
++            /*turn_id*/ None,
++        );
++
++        assert_eq!(
++            parsed.data,
++            SessionStartHandlerData {
++                should_stop: false,
++                stop_reason: None,
++                additional_contexts_for_model: Vec::new(),
++                thread_name: Some("🍄 Nidoqueen · mcritchie-studio".to_string()),
++            }
++        );
++        assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
++        assert!(parsed.completed.run.entries.is_empty());
++    }
++
+     #[test]
+     fn invalid_json_like_stdout_fails_instead_of_becoming_model_context() {
+         let parsed = parse_completed(
+@@ -438,6 +479,7 @@ mod tests {
+                 should_stop: false,
+                 stop_reason: None,
+                 additional_contexts_for_model: Vec::new(),
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Failed);
+@@ -464,6 +506,7 @@ mod tests {
+                 should_stop: false,
+                 stop_reason: None,
+                 additional_contexts_for_model: vec!["hello from subagent hook".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.turn_id.as_deref(), Some("turn-1"));
+@@ -495,6 +538,7 @@ mod tests {
+                 should_stop: false,
+                 stop_reason: None,
+                 additional_contexts_for_model: vec!["child context".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.turn_id.as_deref(), Some("turn-1"));
+diff --git a/codex-rs/hooks/src/schema.rs b/codex-rs/hooks/src/schema.rs
+index d90d8a3..64b5495 100644
+--- a/codex-rs/hooks/src/schema.rs
++++ b/codex-rs/hooks/src/schema.rs
+@@ -395,6 +395,8 @@ pub(crate) struct SessionStartHookSpecificOutputWire {
+     pub hook_event_name: HookEventNameWire,
+     #[serde(default)]
+     pub additional_context: Option<String>,
++    #[serde(default)]
++    pub thread_name: Option<String>,
+ }
+ 
+ #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
+index cbc113f..ce85412 100644
+--- a/codex-rs/mcp-server/src/codex_tool_runner.rs
++++ b/codex-rs/mcp-server/src/codex_tool_runner.rs
+@@ -324,6 +324,9 @@ async fn run_codex_tool_session_inner(
+                     EventMsg::ThreadGoalUpdated(_) => {
+                         // Ignore thread goal metadata updates in MCP tool runner.
+                     }
++                    EventMsg::ThreadNameUpdated(_) => {
++                        // Ignore thread name metadata updates in MCP tool runner.
++                    }
+                     EventMsg::McpStartupUpdate(_) | EventMsg::McpStartupComplete(_) => {
+                         // Ignored in MCP tool runner.
+                     }
+diff --git a/codex-rs/protocol/src/protocol.rs b/codex-rs/protocol/src/protocol.rs
+index ead8980..a18d954 100644
+--- a/codex-rs/protocol/src/protocol.rs
++++ b/codex-rs/protocol/src/protocol.rs
+@@ -1311,6 +1311,9 @@ pub enum EventMsg {
+     /// Updated long-running goal metadata for the thread.
+     ThreadGoalUpdated(ThreadGoalUpdatedEvent),
+ 
++    /// Updated user-facing thread name.
++    ThreadNameUpdated(ThreadNameUpdatedEvent),
++
+     /// Incremental MCP startup progress updates.
+     McpStartupUpdate(McpStartupUpdateEvent),
+ 
+@@ -3882,6 +3885,18 @@ pub struct ThreadGoalUpdatedEvent {
+     pub goal: ThreadGoal,
+ }
+ 
++#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "protocol/")]
++pub struct ThreadNameUpdatedEvent {
++    pub thread_id: ThreadId,
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    #[ts(optional)]
++    pub thread_name: Option<String>,
++    #[serde(default)]
++    pub silent: bool,
++}
++
+ /// User's decision in response to an ExecApprovalRequest.
+ #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Display, JsonSchema, TS)]
+ #[serde(rename_all = "snake_case")]
+diff --git a/codex-rs/rollout-trace/src/protocol_event.rs b/codex-rs/rollout-trace/src/protocol_event.rs
+index 42e0db0..b0c3618 100644
+--- a/codex-rs/rollout-trace/src/protocol_event.rs
++++ b/codex-rs/rollout-trace/src/protocol_event.rs
+@@ -355,6 +355,7 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
+         | EventMsg::ContextCompacted(_)
+         | EventMsg::ThreadRolledBack(_)
+         | EventMsg::ThreadGoalUpdated(_)
++        | EventMsg::ThreadNameUpdated(_)
+         | EventMsg::TurnStarted(_)
+         | EventMsg::ThreadSettingsApplied(_)
+         | EventMsg::TurnComplete(_)
+@@ -436,6 +437,7 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
+         | EventMsg::AgentReasoningRawContent(_)
+         | EventMsg::AgentReasoningSectionBreak(_)
+         | EventMsg::ThreadGoalUpdated(_)
++        | EventMsg::ThreadNameUpdated(_)
+         | EventMsg::McpStartupUpdate(_)
+         | EventMsg::McpStartupComplete(_)
+         | EventMsg::McpToolCallBegin(_)
+diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
+index b342d69..f448c43 100644
+--- a/codex-rs/rollout/src/policy.rs
++++ b/codex-rs/rollout/src/policy.rs
+@@ -129,6 +129,7 @@ pub fn should_persist_event_msg(ev: &EventMsg) -> bool {
+         | EventMsg::RawResponseItem(_)
+         | EventMsg::SessionConfigured(_)
+         | EventMsg::ThreadSettingsApplied(_)
++        | EventMsg::ThreadNameUpdated(_)
+         | EventMsg::McpToolCallBegin(_)
+         | EventMsg::ExecCommandBegin(_)
+         | EventMsg::TerminalInteraction(_)
+diff --git a/codex-rs/tui/src/chatwidget/protocol.rs b/codex-rs/tui/src/chatwidget/protocol.rs
+index 085255a..6bf2d3b 100644
+--- a/codex-rs/tui/src/chatwidget/protocol.rs
++++ b/codex-rs/tui/src/chatwidget/protocol.rs
+@@ -36,9 +36,11 @@ impl ChatWidget {
+             }
+             ServerNotification::ThreadNameUpdated(notification) => {
+                 match ThreadId::from_string(&notification.thread_id) {
+-                    Ok(thread_id) => {
+-                        self.on_thread_name_updated(thread_id, notification.thread_name)
+-                    }
++                    Ok(thread_id) => self.on_thread_name_updated(
++                        thread_id,
++                        notification.thread_name,
++                        notification.silent,
++                    ),
+                     Err(err) => {
+                         tracing::warn!(
+                             thread_id = notification.thread_id,
+diff --git a/codex-rs/tui/src/chatwidget/session_flow.rs b/codex-rs/tui/src/chatwidget/session_flow.rs
+index 004f64c..77be78d 100644
+--- a/codex-rs/tui/src/chatwidget/session_flow.rs
++++ b/codex-rs/tui/src/chatwidget/session_flow.rs
+@@ -210,9 +210,10 @@ impl ChatWidget {
+         &mut self,
+         thread_id: ThreadId,
+         thread_name: Option<String>,
++        silent: bool,
+     ) {
+         if self.thread_id == Some(thread_id) {
+-            if let Some(name) = thread_name.as_deref() {
++            if !silent && let Some(name) = thread_name.as_deref() {
+                 let cell = Self::rename_confirmation_cell(name, self.thread_id);
+                 self.add_boxed_history(Box::new(cell));
+             }
+diff --git a/codex-rs/tui/src/chatwidget/tests/app_server.rs b/codex-rs/tui/src/chatwidget/tests/app_server.rs
+index a10c2cc..2a41d42 100644
+--- a/codex-rs/tui/src/chatwidget/tests/app_server.rs
++++ b/codex-rs/tui/src/chatwidget/tests/app_server.rs
+@@ -1003,6 +1003,7 @@ async fn live_app_server_invalid_thread_name_update_is_ignored() {
+             codex_app_server_protocol::ThreadNameUpdatedNotification {
+                 thread_id: "not-a-thread-id".to_string(),
+                 thread_name: Some("bad update".to_string()),
++                silent: false,
+             },
+         ),
+         /*replay_kind*/ None,
+@@ -1024,6 +1025,7 @@ async fn live_app_server_thread_name_update_shows_resume_hint() {
+             codex_app_server_protocol::ThreadNameUpdatedNotification {
+                 thread_id: thread_id.to_string(),
+                 thread_name: Some("review-fix".to_string()),
++                silent: false,
+             },
+         ),
+         /*replay_kind*/ None,
+@@ -1036,6 +1038,29 @@ async fn live_app_server_thread_name_update_shows_resume_hint() {
+     assert_chatwidget_snapshot!("thread_name_update_resume_hint", rendered);
+ }
+ 
++#[tokio::test]
++async fn live_app_server_silent_thread_name_update_repaints_without_history() {
++    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
++    let thread_id =
++        ThreadId::from_string("123e4567-e89b-12d3-a456-426614174000").expect("thread id");
++    chat.thread_id = Some(thread_id);
++
++    chat.handle_server_notification(
++        ServerNotification::ThreadNameUpdated(
++            codex_app_server_protocol::ThreadNameUpdatedNotification {
++                thread_id: thread_id.to_string(),
++                thread_name: Some("startup-mascot".to_string()),
++                silent: true,
++            },
++        ),
++        /*replay_kind*/ None,
++    );
++
++    assert_eq!(chat.thread_name, Some("startup-mascot".to_string()));
++    let cells = drain_insert_history(&mut rx);
++    assert!(cells.is_empty());
++}
++
+ #[tokio::test]
+ async fn live_app_server_thread_closed_requests_immediate_exit() {
+     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+diff --git a/codex-rs/tui/src/chatwidget/tests/slash_commands.rs b/codex-rs/tui/src/chatwidget/tests/slash_commands.rs
+index d8b3f8a..5e6bbec 100644
+--- a/codex-rs/tui/src/chatwidget/tests/slash_commands.rs
++++ b/codex-rs/tui/src/chatwidget/tests/slash_commands.rs
+@@ -479,6 +479,7 @@ async fn queued_bare_rename_drains_next_input_after_name_update() {
+             codex_app_server_protocol::ThreadNameUpdatedNotification {
+                 thread_id: thread_id.to_string(),
+                 thread_name: Some("Queued rename".to_string()),
++                silent: false,
+             },
+         ),
+         /*replay_kind*/ None,
+@@ -553,6 +554,7 @@ async fn queued_inline_rename_does_not_drain_again_before_turn_started() {
+             codex_app_server_protocol::ThreadNameUpdatedNotification {
+                 thread_id: thread_id.to_string(),
+                 thread_name: Some("Queued rename".to_string()),
++                silent: false,
+             },
+         ),
+         /*replay_kind*/ None,
+diff --git a/codex-rs/tui/src/chatwidget/tests/status_and_layout.rs b/codex-rs/tui/src/chatwidget/tests/status_and_layout.rs
+index 57de08c..3761e2f 100644
+--- a/codex-rs/tui/src/chatwidget/tests/status_and_layout.rs
++++ b/codex-rs/tui/src/chatwidget/tests/status_and_layout.rs
+@@ -2703,6 +2703,7 @@ async fn renamed_thread_footer_title_snapshot() {
+             codex_app_server_protocol::ThreadNameUpdatedNotification {
+                 thread_id: thread_id.to_string(),
+                 thread_name: Some("Roadmap cleanup".to_string()),
++                silent: false,
+             },
+         ),
+         /*replay_kind*/ None,

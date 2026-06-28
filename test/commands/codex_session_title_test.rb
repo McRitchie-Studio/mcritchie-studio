@@ -42,6 +42,7 @@ class CodexSessionTitleTest < Minitest::Test
     Open3.capture3(
       {
         "CODEX_THREAD_ID" => "thread-123",
+        "CODEX_HOME" => @tmp,
         "CODEX_STATE_DB" => @db,
         "SESSION_KICKOFF" => @kickoff,
         "CLAUDE_PROJECTS_DIR" => @tmp,
@@ -69,6 +70,39 @@ class CodexSessionTitleTest < Minitest::Test
     assert_silent_success out, err, status
     assert_equal ["called"], calls
     assert_equal marker, title_for("thread-123")
+  end
+
+  def test_emits_thread_name_when_live_output_is_enabled
+    marker = "🍄 Nidoqueen · mcritchie-studio"
+    out, err, status = run_script(
+      "KICKOFF_MARKER" => marker,
+      "CODEX_SESSION_TITLE_LIVE_THREAD_NAME" => "1"
+    )
+
+    assert status.success?, err
+    assert_empty err
+    assert_equal marker, title_for("thread-123")
+
+    payload = JSON.parse(out)
+    assert_equal(
+      {
+        "hookSpecificOutput" => {
+          "hookEventName" => "SessionStart",
+          "threadName" => marker
+        }
+      },
+      payload
+    )
+  end
+
+  def test_sentinel_enables_live_thread_name_output
+    File.write(File.join(@tmp, "mcritchie-live-thread-title.enabled"), "1")
+    marker = "🍄 Nidoqueen · mcritchie-studio"
+    out, err, status = run_script("KICKOFF_MARKER" => marker)
+
+    assert status.success?, err
+    assert_empty err
+    assert_equal marker, JSON.parse(out).dig("hookSpecificOutput", "threadName")
   end
 
   def test_reads_session_id_from_session_start_payload

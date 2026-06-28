@@ -15,9 +15,9 @@ and make product calls, not to operate the terminal on behalf of the agent.
   wears it as the build agent ("Snorlax is building this"). It's the easy default,
   established the moment you create your production task (per-session, so every
   task that session builds shares it). One agent → one Pokémon → the same critter
-  in your terminal title/resume metadata and on the board. Codex fresh-session
-  model context stays quiet because its SessionStart `additionalContext` is
-  visibly printed as `hook context` in CLI 0.142.3.
+  in your terminal title/resume metadata and on the board. Patched Codex
+  fresh-session support uses `SessionStart.threadName` to update the live footer
+  and quietly seed model identity, without visible `additionalContext`.
 - **Mascot for identity, soul for expertise.** When the work wants a specific soul —
   Carl (backend), Shannon (UI), Jasper (Web3), Steffon (platform), Alex (docs) — act
   *as* that soul: the agent handle drives the review pool and domain fit. The Pokémon

@@ -26,18 +26,41 @@ Codex sessions expose a SessionStart payload; `bin/install-agent-docs` keeps
 Codex's footer configured with the built-in `thread-title` item and installs a
 managed `SessionStart` hook to `bin/codex-session-title`. That hook resolves the
 same marker on startup/resume, mirrors it into Codex's persisted local thread
-title, and stays silent on success. Codex CLI 0.142.3 renders SessionStart
-`additionalContext` as visible `hook context`, so the hook does not use it for
-mascot identity. The live footer also keeps the thread name in memory after
-session configuration; a SQLite title update does not repaint that
-already-running footer. Use `/rename <marker>` in the TUI, or a
-`thread/name/set` app-server call against the same active session, when the live
-footer itself must change immediately. A resumed session reloads the persisted
-title and should show the Pokémon marker. When `/etc/codex/requirements.toml` is
-not writable, the installer stages the managed requirements block under
-`~/.codex/`, prints the admin install note, and installs a user-level
-`~/.codex/hooks.json` fallback so organic sessions still get a mascot on machines
-without the managed file.
+title, and stays silent on success by default. Stock Codex CLI 0.142.3 renders
+SessionStart `additionalContext` as visible `hook context`, so the hook does not
+use it for mascot identity. Stock 0.142.3 also keeps the live footer thread name
+in memory after session configuration; a SQLite title update does not repaint
+that already-running footer, although resume reloads the persisted title and
+shows the Pokémon marker.
+
+For local Codex installs patched with the McRitchie `SessionStart.threadName`
+runtime hook (`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
+enable live fresh-session repainting by creating:
+
+```bash
+touch ~/.codex/mcritchie-live-thread-title.enabled
+```
+
+With that sentinel present, `bin/codex-session-title` emits:
+
+```json
+{"hookSpecificOutput":{"hookEventName":"SessionStart","threadName":"<marker>"}}
+```
+
+The patched runtime normalizes and persists that name through Codex's thread
+store, records the same marker as hidden developer context for the first model
+turn, then sends a silent live `ThreadNameUpdated` event so the footer repaints
+without adding hook context or rename history to the transcript. Remove the
+sentinel to fall back to stock-compatible silent persistence:
+
+```bash
+rm -f ~/.codex/mcritchie-live-thread-title.enabled
+```
+
+When `/etc/codex/requirements.toml` is not writable, the installer stages the
+managed requirements block under `~/.codex/`, prints the admin install note, and
+installs a user-level `~/.codex/hooks.json` fallback so organic sessions still
+get a mascot on machines without the managed file.
 
 Run the kickoff wrapper manually only when you want to force or inspect the
 current marker:
