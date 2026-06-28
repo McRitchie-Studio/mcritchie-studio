@@ -215,12 +215,10 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "crew lanes grow from their column edge on hover (column-aware transform-origin)" do
+  test "crew lanes keep hover growth bounded inside their compartments" do
     # Same full four-lane shipped journey: build · review · assembled · shipped.
-    # On card hover each lane's stack scales up 1.5x and its grow DIRECTION is
-    # anchored to its column so an enlarged stack never spills off the card's near
-    # edge — the leftmost lane grows rightward (origin-left), the last lane grows
-    # leftward (origin-right), and the two middle lanes grow from center.
+    # On card hover each lane's stack gets only a small transform lift, anchored
+    # inside its column. It must not translate into the card margins.
     task = Task.create!(title: "origin crew shipped card", stage: "shipped")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl")
@@ -245,11 +243,10 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select ".origin-left",   count: 1
       assert_select ".origin-center", count: 2
       assert_select ".origin-right",  count: 1
-      # every lane's stack gets the bigger 1.5x hover bump (was a subtle scale-110)
-      assert_select "[class*='scale-150']", count: 4
-      # the two edge lanes also slide OUT into the card's side margins on hover
-      assert_select "[class*='group-hover:-translate-x-3']", count: 1 # leftmost slides further left
-      assert_select "[class*='group-hover:translate-x-3']",  count: 1 # rightmost slides further right
+      # every lane keeps a bounded hover lift; no edge lane slides outside the card
+      assert_select "[class*='scale-105']", count: 4
+      assert_select "[class*='group-hover:-translate-x-3']", count: 0
+      assert_select "[class*='group-hover:translate-x-3']",  count: 0
     end
   end
 

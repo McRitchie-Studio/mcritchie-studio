@@ -71,6 +71,22 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} div.whitespace-nowrap.overflow-hidden", minimum: 1
   end
 
+  test "long card title and activity preview clamp to readable two-line text" do
+    task = Task.create!(title: "Suite Consistency Cleanup Review Card",
+                        stage: "blocked")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                     description: "QA review found one remaining generated-doc blocker that needs action before merge.")
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='task-card-title'].line-clamp-2.break-words",
+                  text: /Suite Consistency Cleanup/, count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-description'].line-clamp-2.break-words",
+                  text: /QA review found one remaining/, count: 1
+    assert_select "#card-#{task.slug} a[title=?]", task.title, count: 1
+  end
+
   test "the size badge leads the slug row instead of the footer meta row" do
     task = Task.create!(title: "size badge polish card", stage: "submitted", po_size: "small")
 
