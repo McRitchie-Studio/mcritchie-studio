@@ -4,6 +4,22 @@ require "application_system_test_case"
 # build mascot on historical timeline cards while the new builder owns the live
 # build card.
 class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
+  test "task timeline shows the blocking agent" do
+    Agent.create!(name: "Shannon", slug: "shannon")
+    task = Task.create!(title: "system blocked actor task", stage: "submitted")
+
+    Current.task_event_actor = "shannon"
+    task.block!
+    Current.reset
+
+    visit task_path(task.slug)
+
+    assert_selector "[data-test='stage-timeline']"
+    assert_selector "[data-test='timeline-block'][data-stage='blocked'] [data-test='timeline-crew-member'][title^='Shannon']"
+  ensure
+    Current.reset
+  end
+
   test "task timeline preserves historical mascots after a rework handoff" do
     Pokemon.create!(dex: 87, name: "Dewgong", slug: "dewgong", generation: 1)
     Pokemon.create!(dex: 88, name: "Grimer", slug: "grimer", generation: 1)

@@ -45,6 +45,28 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     assert_match "claude-opus-4-8", response.body
   end
 
+  test "api block move with actor records and shows the blocking agent" do
+    Agent.create!(name: "Shannon", slug: "shannon")
+    task = Task.create!(title: "Timeline block actor task", stage: "submitted")
+    token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
+
+    patch "/api/v1/tasks/#{task.slug}",
+          params: { stage: "blocked", event: { source: "cli", actor: "shannon" } },
+          headers: { "Authorization" => "Bearer #{token}" },
+          as: :json
+    assert_response :success
+
+    event = task.reload.task_events.chronological.last
+    assert_equal "blocked", event.to_stage
+    assert_equal "shannon", event.actor
+
+    get task_path(task.slug)
+    assert_response :success
+    assert_select "[data-test='timeline-block'][data-stage='blocked']" do
+      assert_select "[data-test='timeline-crew-member'][title^='Shannon']", count: 1
+    end
+  end
+
   # [integration] a task reworked by a new session keeps the original build
   # mascot on the completed historical cards and shows the new mascot only for
   # the rework/current build cards.
