@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# McRitchie agent-runtime bootstrap wrapper.
+#
+# This command is the stable fresh-machine surface. The older
+# bin/install-agent-docs command remains as the implementation for now.
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INSTALLER="${AGENT_RUNTIME_INSTALLER:-$ROOT/bin/install-agent-docs}"
+MARKER_BIN="${AGENT_RUNTIME_MARKER:-$ROOT/bin/agent-marker}"
+CODEX_ADAPTER="${AGENT_RUNTIME_CODEX_ADAPTER:-$ROOT/bin/codex-session-title}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  bin/agent-runtime install   # install AGENTS/CLAUDE docs, skills, and agent runtime hooks
+  bin/agent-runtime check     # verify installed docs/skills match tracked sources
+  bin/agent-runtime doctor    # inspect local marker/runtime configuration
+  bin/agent-runtime repair    # alias for install
+
+Fresh machine:
+  cd /Users/alex/projects/mcritchie-studio
+  bin/agent-runtime install
+  bin/agent-runtime doctor
+USAGE
+}
+
+ok() {
+  printf 'ok: %s\n' "$1"
+}
+
+warn_line() {
+  printf 'warn: %s\n' "$1"
+}
+
+fail_line() {
+  printf 'fail: %s\n' "$1" >&2
+  AGENT_RUNTIME_DOCTOR_STATUS=1
+}
+
+contains_thread_title() {
+  local file="$1"
+  [ -f "$file" ] && grep -q 'thread-title' "$file"
+}
+
+contains_codex_adapter() {
+  local file="$1"
+  [ -f "$file" ] && grep -q '/bin/codex-session-title' "$file"
+}
+
+doctor() {
+  AGENT_RUNTIME_DOCTOR_STATUS=0
+
+  [ -x "$MARKER_BIN" ] && ok "marker provider executable: $MARKER_BIN" || fail_line "missing marker provider: $MARKER_BIN"
+  [ -x "$CODEX_ADAPTER" ] && ok "Codex adapter executable: $CODEX_ADAPTER" || fail_line "missing Codex adapter: $CODEX_ADAPTER"
+  [ -x "$INSTALLER" ] && ok "runtime installer executable: $INSTALLER" || fail_line "missing runtime installer: $INSTALLER"
+
+  if "$INSTALLER" check >/tmp/mcritchie-agent-runtime-check.$$ 2>/tmp/mcritchie-agent-runtime-check-err.$$; then
+    ok "installed agent docs and skills match tracked sources"
+  else
+    fail_line "installed agent docs or skills are out of date; run bin/agent-runtime install"
+    sed 's/^/  /' /tmp/mcritchie-agent-runtime-check-err.$$ >&2 || true
+  fi
+  rm -f /tmp/mcritchie-agent-runtime-check.$$ /tmp/mcritchie-agent-runtime-check-err.$$
+
+  codex_config="$HOME/.codex/config.toml"
+  if contains_thread_title "$codex_config"; then
+    ok "Codex config includes thread-title status item"
+  else
+    fail_line "Codex config missing thread-title status item: $codex_config"
+  fi
+
+  codex_hooks="$HOME/.codex/hooks.json"
+  requirements="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
+  staged="$HOME/.codex/mcritchie-requirements.toml"
+  if contains_codex_adapter "$requirements"; then
+    ok "Codex managed requirements include McRitchie hook"
+  elif contains_codex_adapter "$codex_hooks"; then
+    ok "Codex user hooks include McRitchie fallback hook"
+  elif contains_codex_adapter "$staged"; then
+    warn_line "managed Codex requirements are staged but not installed: $staged"
+  else
+    fail_line "Codex hooks do not reference $CODEX_ADAPTER"
+  fi
+
+  sentinel="$HOME/.codex/mcritchie-live-thread-title.enabled"
+  if [ -f "$sentinel" ]; then
+    ok "live Codex thread-title repaint sentinel enabled"
+  else
+    warn_line "live Codex thread-title repaint sentinel disabled; stock-compatible persistence still works"
+  fi
+
+  if command -v codex >/dev/null 2>&1; then
+    ok "codex binary: $(command -v codex) ($(codex --version 2>/dev/null || printf 'version unavailable'))"
+  else
+    warn_line "codex binary not found on PATH"
+  fi
+
+  exit "$AGENT_RUNTIME_DOCTOR_STATUS"
+}
+
+command="${1:-install}"
+case "$command" in
+  install)
+    shift
+    exec "$INSTALLER" install "$@"
+    ;;
+  repair)
+    shift
+    exec "$INSTALLER" install "$@"
+    ;;
+  check)
+    shift
+    exec "$INSTALLER" check "$@"
+    ;;
+  doctor)
+    shift
+    [ "$#" -eq 0 ] || { usage >&2; exit 64; }
+    doctor
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    printf 'agent-runtime: unknown command: %s\n' "$command" >&2
+    usage >&2
+    exit 64
+    ;;
+esac

@@ -22,6 +22,7 @@ require "json"
 class InstallAgentSkillsTest < Minitest::Test
   ROOT     = File.expand_path("../..", __dir__)
   SCRIPT   = File.join(ROOT, "bin", "install-agent-docs")
+  RUNTIME  = File.join(ROOT, "bin", "agent-runtime")
   WRAP_SRC = File.join(ROOT, "docs", "agents", "skills", "wrap", "SKILL.md")
 
   def setup
@@ -37,14 +38,24 @@ class InstallAgentSkillsTest < Minitest::Test
 
   # Run bin/install-agent-docs with HOME + PROJECTS_DIR pinned into the sandbox.
   def run_installer(mode, env = {})
-    default_env = {
+    Open3.capture3(
+      default_env.merge(env),
+      SCRIPT, mode
+    )
+  end
+
+  def default_env
+    {
       "HOME" => @home,
       "PROJECTS_DIR" => @projects,
       "CODEX_REQUIREMENTS_PATH" => installed_codex_requirements
     }
+  end
+
+  def run_runtime(*args, env: {})
     Open3.capture3(
       default_env.merge(env),
-      SCRIPT, mode
+      RUNTIME, *args
     )
   end
 
@@ -116,6 +127,13 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/unknown mode/i, err)
   end
 
+  def test_unit_agent_runtime_unknown_command_is_rejected
+    _out, err, status = run_runtime("bogus")
+    refute status.success?, "an unknown runtime command must fail"
+    assert_equal 64, status.exitstatus
+    assert_match(/unknown command/i, err)
+  end
+
   # ── integration ───────────────────────────────────────────────────────────
 
   def test_integration_install_lands_skill_in_home_agent_skills
@@ -181,6 +199,27 @@ class InstallAgentSkillsTest < Minitest::Test
       refute status.success?, "check must fail when a tracked skill is missing locally"
       assert_match(%r{ERROR:.*skills/wrap/SKILL\.md}, err)
     end
+  end
+
+  def test_integration_agent_runtime_install_delegates_to_installer
+    out, err, status = run_runtime("install")
+
+    assert status.success?, "agent-runtime install failed: #{err}"
+    assert_includes out, "Installed:"
+    assert File.file?(installed_claude_wrap)
+    assert File.file?(installed_codex_wrap)
+  end
+
+  def test_integration_agent_runtime_doctor_passes_after_install
+    run_runtime("install")
+    out, err, status = run_runtime("doctor")
+
+    assert status.success?, "agent-runtime doctor failed:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
+    assert_includes out, "ok: marker provider executable"
+    assert_includes out, "ok: runtime installer executable"
+    assert_includes out, "ok: installed agent docs and skills match tracked sources"
+    assert_includes out, "ok: Codex config includes thread-title status item"
+    assert_match(/ok: Codex (managed requirements|user hooks) include McRitchie .*hook/, out)
   end
 
   def test_integration_global_hooks_use_runtime_root_override

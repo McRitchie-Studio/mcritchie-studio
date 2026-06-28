@@ -11,7 +11,7 @@ McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monst
 
 > **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the ecosystem.
 
-> **Agent session?** Run `bin/install-agent-docs` after cloning or pulling this repo. It refreshes `/Users/alex/projects/AGENTS.md` from the tracked source at [`docs/agents/index.md`](docs/agents/index.md), then prints the next context files to read. Use `bin/install-agent-docs check` to detect drift.
+> **Agent session?** Run `bin/agent-runtime install` after cloning or pulling this repo. It refreshes `/Users/alex/projects/AGENTS.md` from the tracked source at [`docs/agents/index.md`](docs/agents/index.md), installs shared agent skills and Codex hooks, then prints the next context files to read. Use `bin/agent-runtime doctor` to inspect drift and runtime hook state.
 
 ---
 

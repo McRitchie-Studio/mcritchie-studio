@@ -370,21 +370,21 @@ phase_repos() {
   done
 }
 
-# ─── Phase 5b: Agent docs + skills ──────────────────────────────────────────
+# ─── Phase 5b: Agent runtime ────────────────────────────────────────────────
 phase_agent_docs() {
-  log_phase "Phase 5b: Agent docs + skills"
+  log_phase "Phase 5b: Agent runtime"
 
-  local installer="$PROJECTS_DIR/mcritchie-studio/bin/install-agent-docs"
-  if [ ! -x "$installer" ]; then
-    log_fail "bin/install-agent-docs missing or not executable" "run from mcritchie-studio after pulling latest"
+  local runtime="$PROJECTS_DIR/mcritchie-studio/bin/agent-runtime"
+  if [ ! -x "$runtime" ]; then
+    log_fail "bin/agent-runtime missing or not executable" "run from mcritchie-studio after pulling latest"
     return 1
   fi
 
-  # Installs the root AGENTS.md/CLAUDE.md AND the user-global skills
-  # (docs/agents/skills/* -> ~/.claude/skills/* + ~/.codex/skills/*) in one pass.
-  "$installer" >/dev/null
+  # Installs the root AGENTS.md/CLAUDE.md, user-global skills, and Codex hooks in one pass.
+  "$runtime" install >/dev/null
   log_ok "projects/AGENTS.md" "installed from mcritchie-studio/docs/agents/index.md"
   log_ok "agent skills" "installed to ~/.claude/skills and ~/.codex/skills"
+  log_ok "Codex runtime" "marker hooks configured"
 }
 
 # ─── Phase 6: Bundles + databases ───────────────────────────────────────────

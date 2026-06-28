@@ -22,14 +22,15 @@ McRitchie Studio is the canonical home for the projects-root agent entrypoints
 in one idempotent command:
 
 ```bash
-bin/install-agent-docs          # AGENTS.md + CLAUDE.md -> projects root; skills -> ~/.claude/skills + ~/.codex/skills
-bin/install-agent-docs check    # verify nothing has drifted from the tracked sources
+bin/agent-runtime install       # AGENTS.md + CLAUDE.md, skills, Codex hooks
+bin/agent-runtime doctor        # verify docs, skills, marker command, and hooks
 ```
 
 `bin/ecosystem-build` runs this automatically (Phase 5b) on a full-machine
-rebuild; run it by hand here when you only brought up the one app. Project-scoped
-runtime skills, such as `.claude/skills/`, are a separate mechanism and are not
-touched.
+rebuild; run it by hand here when you only brought up the one app. The lower-level
+`bin/install-agent-docs check` still performs the byte-for-byte docs/skills drift
+check that `doctor` calls. Project-scoped runtime skills, such as
+`.claude/skills/`, are a separate mechanism and are not touched.
 
 ## Login
 

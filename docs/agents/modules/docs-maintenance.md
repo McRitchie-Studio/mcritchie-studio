@@ -29,7 +29,7 @@ Use this before handing a feature back:
 
 1. Check `git status --short --branch` in every repo you touched.
 2. Run the narrowest meaningful tests or smoke checks yourself.
-3. Run `bin/install-agent-docs check` from McRitchie Studio if
+3. Run `bin/agent-runtime check` from McRitchie Studio if
    `docs/agents/index.md`, generated root guidance, or a user-global skill under
    `docs/agents/skills/` changed.
 4. Run `bin/register-satellite --list` after app registry changes.
