@@ -208,6 +208,8 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes requirements, %(managed_dir = "#{runtime_root}")
     assert_includes requirements, "[[hooks.SessionStart]]"
     assert_includes requirements, 'matcher = "startup|resume"'
+    assert_includes requirements, "[[hooks.PostToolUse]]"
+    assert_includes requirements, 'matcher = "Bash"'
     assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
     assert_includes requirements, 'statusMessage = "Setting session mascot"'
   end
@@ -243,6 +245,17 @@ class InstallAgentSkillsTest < Minitest::Test
               }
             ]
           }
+        ],
+        "PostToolUse" => [
+          {
+            "matcher" => "Bash",
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => "/repo/.worktrees/docs-gate-cleanup/bin/codex-session-title"
+              }
+            ]
+          }
         ]
       }
     ))
@@ -258,12 +271,16 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes commands, "#{runtime_root}/bin/task session-mascot"
 
     codex_hooks = JSON.parse(File.read(installed_codex_hooks))
-    codex_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
-      entry.fetch("hooks", []).map { |hook| hook["command"] }
+    codex_commands = %w[SessionStart PostToolUse].flat_map do |event|
+      (codex_hooks.dig("hooks", event) || []).flat_map do |entry|
+        entry.fetch("hooks", []).map { |hook| hook["command"] }
+      end
     end
     refute codex_commands.any? { |command| command.include?("/bin/codex-session-title") }
 
     requirements = File.read(installed_codex_requirements)
+    assert_includes requirements, "[[hooks.SessionStart]]"
+    assert_includes requirements, "[[hooks.PostToolUse]]"
     assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
   end
 
@@ -295,19 +312,27 @@ class InstallAgentSkillsTest < Minitest::Test
 
     assert status.success?, "install should not fail when admin requirements need root: #{err}"
     assert_includes out, "admin install required for organic Codex mascot"
-    assert_includes out, "installed user-level Codex SessionStart fallback"
+    assert_includes out, "installed user-level Codex SessionStart/PostToolUse fallback"
     assert_includes out, "Staged managed requirements:"
     refute_includes out, "Review once inside Codex with /hooks"
 
     staged = File.join(@home, ".codex", "mcritchie-requirements.toml")
     assert File.file?(staged), "installer should stage the managed requirements for admin install"
-    assert_includes File.read(staged), "/bin/codex-session-title"
+    staged_requirements = File.read(staged)
+    assert_includes staged_requirements, "/bin/codex-session-title"
+    assert_includes staged_requirements, "[[hooks.SessionStart]]"
+    assert_includes staged_requirements, "[[hooks.PostToolUse]]"
 
     codex_hooks = JSON.parse(File.read(installed_codex_hooks))
-    codex_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
+    runtime_root = ROOT.sub(%r{/\.worktrees/.*\z}, "")
+    session_commands = (codex_hooks.dig("hooks", "SessionStart") || []).flat_map do |entry|
       entry.fetch("hooks", []).map { |hook| hook["command"] }
     end
-    runtime_root = ROOT.sub(%r{/\.worktrees/.*\z}, "")
-    assert_equal ["#{runtime_root}/bin/codex-session-title"], codex_commands
+    post_tool_commands = (codex_hooks.dig("hooks", "PostToolUse") || []).flat_map do |entry|
+      entry.fetch("hooks", []).map { |hook| hook["command"] }
+    end
+
+    assert_equal ["#{runtime_root}/bin/codex-session-title"], session_commands
+    assert_equal ["#{runtime_root}/bin/codex-session-title"], post_tool_commands
   end
 end

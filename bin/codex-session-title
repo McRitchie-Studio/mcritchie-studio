@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Codex SessionStart bridge.
+# Codex thread-title bridge.
 #
 # PR #233 gives Codex sessions a persisted McRitchie marker:
 #   <Pokemon> · <app> · <feature>
 #
 # Stock Codex CLI 0.142.3 keeps the live footer's thread name in memory, so
 # updating SQLite only affects history/resume. A locally patched Codex runtime
-# can also consume hookSpecificOutput.threadName and repaint the live footer
-# silently. This hook emits that field only when explicitly enabled; otherwise
-# it deliberately prints nothing on success to stay compatible with stock Codex.
+# can also consume hookSpecificOutput.threadName from SessionStart and
+# PostToolUse hooks and repaint the live footer silently. This hook emits that
+# field only when explicitly enabled; otherwise it deliberately prints nothing
+# on success to stay compatible with stock Codex.
 # A missing session id, unreachable task API, absent sqlite DB, or transient lock
 # must never slow or break a new Codex session.
 
@@ -32,10 +33,13 @@ default_projects_dir() {
 PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$(default_projects_dir)}"
 
 hook_input="$(cat 2>/dev/null || true)"
-payload_sid="$(
+payload_info="$(
   CODEX_HOOK_INPUT="$hook_input" ruby -rjson -e '
     raw = ENV.fetch("CODEX_HOOK_INPUT", "").strip
-    exit 0 if raw.empty?
+    if raw.empty?
+      puts ["", "SessionStart"].join("\t")
+      exit 0
+    end
 
     data = JSON.parse(raw)
     candidates = [
@@ -45,13 +49,19 @@ payload_sid="$(
       data.dig("session", "id"),
       data.dig("thread", "id")
     ]
-    puts candidates.find { |value| !value.to_s.strip.empty? }.to_s
+    event_name = data["hook_event_name"] || data["hookEventName"] || "SessionStart"
+    puts [candidates.find { |value| !value.to_s.strip.empty? }, event_name].map(&:to_s).join("\t")
   ' 2>/dev/null || true
 )"
+
+payload_sid="${payload_info%%	*}"
+payload_event="${payload_info#*	}"
+[ "$payload_event" != "$payload_info" ] || payload_event="SessionStart"
 
 sid="${payload_sid:-${CODEX_THREAD_ID:-}}"
 [ -n "$sid" ] || exit 0
 export CODEX_THREAD_ID="$sid"
+export CODEX_HOOK_EVENT_NAME="$payload_event"
 
 context_marker() {
   ruby -rjson -e '
@@ -142,10 +152,11 @@ emit_live_thread_name() {
   CODEX_SESSION_MARKER="$marker" ruby -rjson -e '
     marker = ENV.fetch("CODEX_SESSION_MARKER", "").strip
     exit 0 if marker.empty?
+    event_name = ENV.fetch("CODEX_HOOK_EVENT_NAME", "SessionStart")
 
     puts JSON.generate(
       "hookSpecificOutput" => {
-        "hookEventName" => "SessionStart",
+        "hookEventName" => event_name,
         "threadName" => marker
       }
     )

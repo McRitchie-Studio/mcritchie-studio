@@ -95,6 +95,39 @@ class CodexSessionTitleTest < Minitest::Test
     )
   end
 
+  def test_emits_post_tool_use_thread_name_for_task_refresh
+    FileUtils.mkdir_p(File.join(@tmp, ".agents", "sessions"))
+    File.write(File.join(@tmp, ".agents", "sessions", "thread-123.json"), <<~JSON)
+      {
+        "mascot": "rattata",
+        "mascot_emoji": "🔶",
+        "app": "mcritchie-studio",
+        "worktree_slug": "tasks-button-deployments"
+      }
+    JSON
+
+    out, err, status = run_script(
+      { "CODEX_SESSION_TITLE_LIVE_THREAD_NAME" => "1" },
+      JSON.generate({ "session_id" => "thread-123", "hook_event_name" => "PostToolUse" })
+    )
+
+    assert status.success?, err
+    assert_empty err
+    marker = "🔶 Rattata · mcritchie-studio · tasks-button-deployments"
+    assert_equal marker, title_for("thread-123")
+
+    payload = JSON.parse(out)
+    assert_equal(
+      {
+        "hookSpecificOutput" => {
+          "hookEventName" => "PostToolUse",
+          "threadName" => marker
+        }
+      },
+      payload
+    )
+  end
+
   def test_sentinel_enables_live_thread_name_output
     File.write(File.join(@tmp, "mcritchie-live-thread-title.enabled"), "1")
     marker = "🍄 Nidoqueen · mcritchie-studio"

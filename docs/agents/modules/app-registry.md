@@ -22,20 +22,21 @@ The color rides to the status line without DB access (`bin/task` and
 and `.agent-context.json` carry it the same way the Pokémon mascot's signature
 color does. A brand-new Claude session (no task yet) adopts `App.default`
 (`mcritchie-studio`) via the SessionStart hook → `bin/task session-mascot`.
-Codex sessions expose a SessionStart payload; `bin/install-agent-docs` keeps
+Codex sessions expose hook payloads; `bin/install-agent-docs` keeps
 Codex's footer configured with the built-in `thread-title` item and installs a
-managed `SessionStart` hook to `bin/codex-session-title`. That hook resolves the
-same marker on startup/resume, mirrors it into Codex's persisted local thread
-title, and stays silent on success by default. Stock Codex CLI 0.142.3 renders
+managed `SessionStart` hook plus a `PostToolUse` refresh hook to
+`bin/codex-session-title`. The hooks resolve the same marker on startup/resume
+and after Bash tools, mirror it into Codex's persisted local thread title, and
+stay silent on success by default. Stock Codex CLI 0.142.3 renders
 SessionStart `additionalContext` as visible `hook context`, so the hook does not
 use it for mascot identity. Stock 0.142.3 also keeps the live footer thread name
 in memory after session configuration; a SQLite title update does not repaint
 that already-running footer, although resume reloads the persisted title and
 shows the Pokémon marker.
 
-For local Codex installs patched with the McRitchie `SessionStart.threadName`
-runtime hook (`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
-enable live fresh-session repainting by creating:
+For local Codex installs patched with the McRitchie `threadName` hook runtime
+(`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
+enable live fresh-session and post-task repainting by creating:
 
 ```bash
 touch ~/.codex/mcritchie-live-thread-title.enabled
@@ -47,10 +48,13 @@ With that sentinel present, `bin/codex-session-title` emits:
 {"hookSpecificOutput":{"hookEventName":"SessionStart","threadName":"<marker>"}}
 ```
 
-The patched runtime normalizes and persists that name through Codex's thread
-store, records the same marker as hidden developer context for the first model
-turn, then sends a silent live `ThreadNameUpdated` event so the footer repaints
-without adding hook context or rename history to the transcript. Remove the
+For post-command refreshes the hook emits the same shape with
+`"hookEventName":"PostToolUse"`, which lets task creation update the live footer
+with the feature slug in the same session. The patched runtime normalizes and
+persists that name through Codex's thread store, records the same marker as
+hidden developer context for the first model turn, then sends a silent live
+`ThreadNameUpdated` event so the footer repaints without adding hook context or
+rename history to the transcript. Remove the
 sentinel to fall back to stock-compatible silent persistence:
 
 ```bash

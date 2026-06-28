@@ -9,7 +9,7 @@ index 238e87d..4ab78ac 100644
 +    #[serde(default)]
 +    pub silent: bool,
  }
- 
+
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 diff --git a/codex-rs/app-server/src/bespoke_event_handling.rs b/codex-rs/app-server/src/bespoke_event_handling.rs
 index 36dbdd9..5adc448 100644
@@ -55,7 +55,7 @@ index 5c7b28b..3f58b6e 100644
          ))
      }
 diff --git a/codex-rs/core/src/hook_runtime.rs b/codex-rs/core/src/hook_runtime.rs
-index 96ae6c9..fb757c8 100644
+index 96ae6c9..45aed7a 100644
 --- a/codex-rs/core/src/hook_runtime.rs
 +++ b/codex-rs/core/src/hook_runtime.rs
 @@ -35,7 +35,10 @@ use codex_protocol::protocol::HookSource;
@@ -68,7 +68,7 @@ index 96ae6c9..fb757c8 100644
 +use codex_thread_store::UpdateThreadMetadataParams;
  use serde_json::Value;
  use tracing::instrument;
- 
+
 @@ -70,6 +73,7 @@ impl From<SessionStartOutcome> for ContextInjectingHookOutcome {
              should_stop,
              stop_reason: _,
@@ -110,14 +110,23 @@ index 96ae6c9..fb757c8 100644
              return true;
          }
      }
-@@ -155,6 +165,77 @@ pub(crate) async fn run_pending_session_start_hooks(
+@@ -155,6 +165,88 @@ pub(crate) async fn run_pending_session_start_hooks(
      false
  }
- 
+
 +async fn apply_session_start_thread_name(
 +    sess: &Arc<Session>,
 +    turn_context: &Arc<TurnContext>,
 +    thread_name: Option<String>,
++) {
++    apply_hook_thread_name(sess, turn_context, thread_name, true).await;
++}
++
++async fn apply_hook_thread_name(
++    sess: &Arc<Session>,
++    turn_context: &Arc<TurnContext>,
++    thread_name: Option<String>,
++    record_identity_context: bool,
 +) {
 +    let Some(thread_name) = thread_name
 +        .as_deref()
@@ -145,12 +154,14 @@ index 96ae6c9..fb757c8 100644
 +    )
 +    .await;
 +
-+    record_additional_contexts(
-+        sess,
-+        turn_context,
-+        vec![session_identity_context_from_thread_name(&thread_name)],
-+    )
-+    .await;
++    if record_identity_context {
++        record_additional_contexts(
++            sess,
++            turn_context,
++            vec![session_identity_context_from_thread_name(&thread_name)],
++        )
++        .await;
++    }
 +}
 +
 +fn session_identity_context_from_thread_name(thread_name: &str) -> String {
@@ -188,10 +199,18 @@ index 96ae6c9..fb757c8 100644
  /// Runs matching `PreToolUse` hooks before a tool executes.
  ///
  /// `tool_name` is the canonical name serialized to hook stdin. Matcher aliases
-@@ -580,18 +661,6 @@ where
+@@ -291,6 +383,7 @@ pub(crate) async fn run_post_tool_use_hooks(
+
+     let outcome = hooks.run_post_tool_use(request).await;
+     emit_hook_completed_events(sess, turn_context, outcome.hook_events.clone()).await;
++    apply_hook_thread_name(sess, turn_context, outcome.thread_name.clone(), false).await;
+     outcome
+ }
+
+@@ -580,18 +673,6 @@ where
      outcome.outcome
  }
- 
+
 -impl HookRuntimeOutcome {
 -    async fn record_additional_contexts(
 -        self,
@@ -220,7 +239,7 @@ index cdb8468..4ba0e6f 100644
          | EventMsg::McpStartupComplete(_)
          | EventMsg::McpToolCallBegin(_)
 diff --git a/codex-rs/hooks/src/engine/output_parser.rs b/codex-rs/hooks/src/engine/output_parser.rs
-index b4f2141..f3994a1 100644
+index b4f2141..804fd89 100644
 --- a/codex-rs/hooks/src/engine/output_parser.rs
 +++ b/codex-rs/hooks/src/engine/output_parser.rs
 @@ -10,6 +10,7 @@ pub(crate) struct UniversalOutput {
@@ -229,10 +248,18 @@ index b4f2141..f3994a1 100644
      pub additional_context: Option<String>,
 +    pub thread_name: Option<String>,
  }
- 
+
  #[derive(Debug, Clone)]
-@@ -92,10 +93,15 @@ use crate::schema::UserPromptSubmitCommandOutputWire;
- 
+@@ -41,6 +42,7 @@ pub(crate) struct PostToolUseOutput {
+     pub reason: Option<String>,
+     pub invalid_block_reason: Option<String>,
+     pub additional_context: Option<String>,
++    pub thread_name: Option<String>,
+     pub invalid_reason: Option<String>,
+ }
+
+@@ -92,10 +94,15 @@ use crate::schema::UserPromptSubmitCommandOutputWire;
+
  pub(crate) fn parse_session_start(stdout: &str) -> Option<SessionStartOutput> {
      let wire: SessionStartCommandOutputWire = parse_json(stdout)?;
 +    let hook_specific_output = wire.hook_specific_output;
@@ -248,15 +275,15 @@ index b4f2141..f3994a1 100644
 +        thread_name,
      ))
  }
- 
-@@ -105,16 +111,19 @@ pub(crate) fn parse_subagent_start(stdout: &str) -> Option<SessionStartOutput> {
+
+@@ -105,16 +112,19 @@ pub(crate) fn parse_subagent_start(stdout: &str) -> Option<SessionStartOutput> {
          wire.universal,
          wire.hook_specific_output
              .and_then(|output| output.additional_context),
 +        None,
      ))
  }
- 
+
  fn session_start_output(
      universal: HookUniversalOutputWire,
      additional_context: Option<String>,
@@ -268,7 +295,205 @@ index b4f2141..f3994a1 100644
 +        thread_name,
      }
  }
- 
+
+@@ -224,9 +234,11 @@ pub(crate) fn parse_post_tool_use(stdout: &str) -> Option<PostToolUseOutput> {
+     } else {
+         None
+     };
+-    let additional_context = wire
+-        .hook_specific_output
+-        .and_then(|output| output.additional_context);
++    let hook_specific_output = wire.hook_specific_output;
++    let additional_context = hook_specific_output
++        .as_ref()
++        .and_then(|output| output.additional_context.clone());
++    let thread_name = hook_specific_output.and_then(|output| output.thread_name);
+
+     Some(PostToolUseOutput {
+         universal,
+@@ -234,6 +246,7 @@ pub(crate) fn parse_post_tool_use(stdout: &str) -> Option<PostToolUseOutput> {
+         reason: wire.reason,
+         invalid_block_reason,
+         additional_context,
++        thread_name,
+         invalid_reason,
+     })
+ }
+diff --git a/codex-rs/hooks/src/events/post_tool_use.rs b/codex-rs/hooks/src/events/post_tool_use.rs
+index 71adb11..a538bf2 100644
+--- a/codex-rs/hooks/src/events/post_tool_use.rs
++++ b/codex-rs/hooks/src/events/post_tool_use.rs
+@@ -41,6 +41,7 @@ pub struct PostToolUseOutcome {
+     pub should_block: bool,
+     pub additional_contexts: Vec<String>,
+     pub feedback_message: Option<String>,
++    pub thread_name: Option<String>,
+ }
+
+ #[derive(Debug, Default, PartialEq, Eq)]
+@@ -48,6 +49,7 @@ struct PostToolUseHandlerData {
+     should_block: bool,
+     additional_contexts_for_model: Vec<String>,
+     feedback_messages_for_model: Vec<String>,
++    thread_name: Option<String>,
+ }
+
+ pub(crate) fn preview(
+@@ -84,6 +86,7 @@ pub(crate) async fn run(
+             should_block: false,
+             additional_contexts: Vec::new(),
+             feedback_message: None,
++            thread_name: None,
+         };
+     }
+
+@@ -122,6 +125,10 @@ pub(crate) async fn run(
+             .flat_map(|result| result.data.feedback_messages_for_model.clone())
+             .collect(),
+     );
++    let thread_name = results
++        .iter()
++        .filter_map(|result| result.data.thread_name.clone())
++        .last();
+
+     PostToolUseOutcome {
+         hook_events: results
+@@ -133,6 +140,7 @@ pub(crate) async fn run(
+         should_block,
+         additional_contexts,
+         feedback_message,
++        thread_name,
+     }
+ }
+
+@@ -171,6 +179,7 @@ fn parse_completed(
+     let mut should_block = false;
+     let mut additional_contexts_for_model = Vec::new();
+     let mut feedback_messages_for_model = Vec::new();
++    let mut thread_name = None;
+
+     match run_result.error.as_deref() {
+         Some(error) => {
+@@ -202,6 +211,13 @@ fn parse_completed(
+                             additional_context,
+                         );
+                     }
++                    thread_name = if parsed.invalid_reason.is_none()
++                        && parsed.invalid_block_reason.is_none()
++                    {
++                        parsed.thread_name
++                    } else {
++                        None
++                    };
+                     if !parsed.universal.continue_processing {
+                         status = HookRunStatus::Stopped;
+                         let stop_text = parsed
+@@ -294,6 +310,7 @@ fn parse_completed(
+             should_block,
+             additional_contexts_for_model,
+             feedback_messages_for_model,
++            thread_name,
+         },
+         completion_order: 0,
+     }
+@@ -305,6 +322,7 @@ fn serialization_failure_outcome(hook_events: Vec<HookCompletedEvent>) -> PostTo
+         should_block: false,
+         additional_contexts: Vec::new(),
+         feedback_message: None,
++        thread_name: None,
+     }
+ }
+
+@@ -358,6 +376,7 @@ mod tests {
+                 should_block: true,
+                 additional_contexts_for_model: Vec::new(),
+                 feedback_messages_for_model: vec!["bash output looked sketchy".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Blocked);
+@@ -381,6 +400,7 @@ mod tests {
+                 should_block: false,
+                 additional_contexts_for_model: vec!["Remember the bash cleanup note.".to_string()],
+                 feedback_messages_for_model: Vec::new(),
++                thread_name: None,
+             }
+         );
+         assert_eq!(
+@@ -392,6 +412,33 @@ mod tests {
+         );
+     }
+
++    #[test]
++    fn json_thread_name_is_collected_without_model_context() {
++        let parsed = parse_completed(
++            &handler(),
++            run_result(
++                Some(0),
++                r#"{"hookSpecificOutput":{"hookEventName":"PostToolUse","threadName":"🔶 Rattata · mcritchie-studio · tasks-button-deployments"}}"#,
++                "",
++            ),
++            Some("turn-1".to_string()),
++        );
++
++        assert_eq!(
++            parsed.data,
++            PostToolUseHandlerData {
++                should_block: false,
++                additional_contexts_for_model: Vec::new(),
++                feedback_messages_for_model: Vec::new(),
++                thread_name: Some(
++                    "🔶 Rattata · mcritchie-studio · tasks-button-deployments".to_string()
++                ),
++            }
++        );
++        assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
++        assert!(parsed.completed.run.entries.is_empty());
++    }
++
+     #[test]
+     fn unsupported_updated_mcp_tool_output_fails_open() {
+         let parsed = parse_completed(
+@@ -410,6 +457,7 @@ mod tests {
+                 should_block: false,
+                 additional_contexts_for_model: Vec::new(),
+                 feedback_messages_for_model: Vec::new(),
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Failed);
+@@ -436,6 +484,7 @@ mod tests {
+                 should_block: true,
+                 additional_contexts_for_model: Vec::new(),
+                 feedback_messages_for_model: vec!["post hook says pause".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Blocked);
+@@ -459,6 +508,7 @@ mod tests {
+                 should_block: false,
+                 additional_contexts_for_model: Vec::new(),
+                 feedback_messages_for_model: vec!["post-tool hook says stop".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Stopped);
+@@ -485,6 +535,7 @@ mod tests {
+                 should_block: false,
+                 additional_contexts_for_model: Vec::new(),
+                 feedback_messages_for_model: vec!["PostToolUse hook stopped execution".to_string()],
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Stopped);
+@@ -511,6 +562,7 @@ mod tests {
+                 should_block: false,
+                 additional_contexts_for_model: Vec::new(),
+                 feedback_messages_for_model: Vec::new(),
++                thread_name: None,
+             }
+         );
+         assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
 diff --git a/codex-rs/hooks/src/events/session_start.rs b/codex-rs/hooks/src/events/session_start.rs
 index bd1aa20..c3b2682 100644
 --- a/codex-rs/hooks/src/events/session_start.rs
@@ -279,7 +504,7 @@ index bd1aa20..c3b2682 100644
      pub additional_contexts: Vec<String>,
 +    pub thread_name: Option<String>,
  }
- 
+
  #[derive(Debug, PartialEq, Eq)]
 @@ -89,6 +90,7 @@ struct SessionStartHandlerData {
      should_stop: bool,
@@ -287,7 +512,7 @@ index bd1aa20..c3b2682 100644
      additional_contexts_for_model: Vec<String>,
 +    thread_name: Option<String>,
  }
- 
+
  pub(crate) fn preview(
 @@ -122,6 +124,7 @@ pub(crate) async fn run(
              should_stop: false,
@@ -296,7 +521,7 @@ index bd1aa20..c3b2682 100644
 +            thread_name: None,
          };
      }
- 
+
 @@ -199,12 +202,17 @@ pub(crate) async fn run(
              .iter()
              .map(|result| result.data.additional_contexts_for_model.as_slice()),
@@ -305,7 +530,7 @@ index bd1aa20..c3b2682 100644
 +        .iter()
 +        .filter_map(|result| result.data.thread_name.clone())
 +        .last();
- 
+
      SessionStartOutcome {
          hook_events: results.into_iter().map(|result| result.completed).collect(),
          should_stop,
@@ -314,13 +539,13 @@ index bd1aa20..c3b2682 100644
 +        thread_name,
      }
  }
- 
+
 @@ -224,6 +232,7 @@ fn parse_completed(
      let mut should_stop = false;
      let mut stop_reason = None;
      let mut additional_contexts_for_model = Vec::new();
 +    let mut thread_name = None;
- 
+
      match run_result.error.as_deref() {
          Some(error) => {
 @@ -261,6 +270,9 @@ fn parse_completed(
@@ -348,7 +573,7 @@ index bd1aa20..c3b2682 100644
 +        thread_name: None,
      }
  }
- 
+
 @@ -372,6 +386,7 @@ mod tests {
                  should_stop: false,
                  stop_reason: None,
@@ -368,7 +593,7 @@ index bd1aa20..c3b2682 100644
 @@ -420,6 +436,31 @@ mod tests {
          );
      }
- 
+
 +    #[test]
 +    fn json_thread_name_is_collected_without_model_context() {
 +        let parsed = parse_completed(
@@ -422,17 +647,26 @@ index bd1aa20..c3b2682 100644
          );
          assert_eq!(parsed.completed.turn_id.as_deref(), Some("turn-1"));
 diff --git a/codex-rs/hooks/src/schema.rs b/codex-rs/hooks/src/schema.rs
-index d90d8a3..64b5495 100644
+index d90d8a3..4b6789e 100644
 --- a/codex-rs/hooks/src/schema.rs
 +++ b/codex-rs/hooks/src/schema.rs
-@@ -395,6 +395,8 @@ pub(crate) struct SessionStartHookSpecificOutputWire {
+@@ -229,6 +229,8 @@ pub(crate) struct PostToolUseHookSpecificOutputWire {
+     #[serde(default)]
+     pub additional_context: Option<String>,
+     #[serde(default)]
++    pub thread_name: Option<String>,
++    #[serde(default)]
+     #[serde(rename = "updatedMCPToolOutput")]
+     pub updated_mcp_tool_output: Option<Value>,
+ }
+@@ -395,6 +397,8 @@ pub(crate) struct SessionStartHookSpecificOutputWire {
      pub hook_event_name: HookEventNameWire,
      #[serde(default)]
      pub additional_context: Option<String>,
 +    #[serde(default)]
 +    pub thread_name: Option<String>,
  }
- 
+
  #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
 index cbc113f..ce85412 100644
@@ -455,17 +689,17 @@ index ead8980..a18d954 100644
 @@ -1311,6 +1311,9 @@ pub enum EventMsg {
      /// Updated long-running goal metadata for the thread.
      ThreadGoalUpdated(ThreadGoalUpdatedEvent),
- 
+
 +    /// Updated user-facing thread name.
 +    ThreadNameUpdated(ThreadNameUpdatedEvent),
 +
      /// Incremental MCP startup progress updates.
      McpStartupUpdate(McpStartupUpdateEvent),
- 
+
 @@ -3882,6 +3885,18 @@ pub struct ThreadGoalUpdatedEvent {
      pub goal: ThreadGoal,
  }
- 
+
 +#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 +#[serde(rename_all = "camelCase")]
 +#[ts(export_to = "protocol/")]
@@ -571,7 +805,7 @@ index a10c2cc..2a41d42 100644
 @@ -1036,6 +1038,29 @@ async fn live_app_server_thread_name_update_shows_resume_hint() {
      assert_chatwidget_snapshot!("thread_name_update_resume_hint", rendered);
  }
- 
+
 +#[tokio::test]
 +async fn live_app_server_silent_thread_name_update_repaints_without_history() {
 +    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
