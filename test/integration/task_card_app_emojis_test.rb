@@ -19,10 +19,11 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
       # Feature 6: the whole card is the click target (carries its destination).
       assert_select "[data-href=?]", task_path(task.slug)
 
-      # Feature 1: the title is a bounded two-line link carrying the task title.
-      assert_select "a[href=?].line-clamp-2.break-words", task_path(task.slug) do |links|
+      # Feature 1: the link carries the destination; its inner title owns clamping.
+      assert_select "a[href=?]", task_path(task.slug) do |links|
         assert links.first.text.include?(task.title), "title link should carry the task title"
       end
+      assert_select "[data-test='task-card-title'].line-clamp-2.break-words", text: task.title, count: 1
 
       # Slug row: the slug shows with the affected-app emojis grouped under a
       # title attribute listing the repos.

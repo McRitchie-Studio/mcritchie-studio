@@ -110,7 +110,7 @@ bin/session-kickoff pokemon  # return to the Pokémon
 | McRitchie Studio | implicit active hub | 3000 | 3000-3099 | Bootstrap/docs anchor |
 | Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
-| 📇 Rolio | release-managed standalone + reserved candidate | 3300 | 3300-3399 | QA/prod in release registries; satellite range protected until promoted |
+| 📇 Rolio | release-managed standalone with reserved satellite range | 3300 | 3300-3399 | QA/prod in release registries; satellite range protected until promoted |
 | Chain Ops | planned satellite | 3400 | 3400-3499 | Solana environment control plane; v1 localnet utility |
 
 Do not reuse `3200-3499`. Rolio is already in `config/satellites.yml` with
