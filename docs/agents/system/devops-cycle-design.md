@@ -601,12 +601,13 @@ Two deterministic steps:
    <task-slug> [<task-slug> …] --yes [--prod]`** — it accepts **one OR many**
    slugs (run the pre-merge checklist first — `gh pr ready <n>` to un-draft,
    `gh pr edit <n> --base release` to retarget). It resolves every task's PR in
-   **one** board read, verifies each base is `release`, `gh pr merge`s each, then
-   `Release::Conductor.adopt!`s **all of them in a SINGLE `heroku run`** (one dyno
-   spin-up, N `reviewed → assembled` flips) — opening/reopening the singleton
-   release as needed. A merge **conflict surfaces here** (resolve on GitHub or
-   block the task for rework); `release` is never force-pushed. Gem PRs merge into
-   their own repo's `release` like any other.
+   **one** board read, verifies each unique PR base is `release`, `gh pr merge`s
+   each **unique PR once** (several task records may intentionally ride the same
+   PR), then `Release::Conductor.adopt!`s **all task slugs in a SINGLE `heroku
+   run`** (one dyno spin-up, N `reviewed → assembled` flips) —
+   opening/reopening the singleton release as needed. A merge **conflict surfaces
+   here** (resolve on GitHub or block the task for rework); `release` is never
+   force-pushed. Gem PRs merge into their own repo's `release` like any other.
    - **Why batched:** the old one-slug-at-a-time loop did a cold-start `heroku
      run` adopt **per PR** — three in a row blew the 2-min tool timeout, and a
      mid-loop timeout left a PR *merged* but its task stuck `reviewed` (a
