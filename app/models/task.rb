@@ -173,6 +173,15 @@ class Task < ApplicationRecord
   # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
   scope :live, -> { where.not(stage: %w[shipped archived]) }
 
+  def self.board_column_tasks(tasks_by_stage, stage)
+    tasks_by_stage ||= {}
+    stage = stage.to_s
+    tasks = Array(tasks_by_stage[stage])
+    return tasks unless stage == "building"
+
+    tasks + Array(tasks_by_stage["blocked"])
+  end
+
   # The mascot slugs currently held by live tasks — the exclusion set the draw
   # skips so two in-flight tasks never share a Pokémon.
   def self.active_mascots

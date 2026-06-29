@@ -356,10 +356,9 @@ function kanbanBoard(live) {
   <!-- Kanban Board -->
   <div class="flex gap-4 overflow-x-auto pb-4">
     <% columns.each_with_index do |stage, idx| %>
-      <%# Blocked tasks surface at the TOP of Building (a block means more building to do),
-          on BOTH boards. The count badge + the cards both reflect that. %>
-      <% column_tasks = @tasks_by_stage[stage] || [] %>
-      <% column_tasks = (@tasks_by_stage["blocked"] || []) + column_tasks if stage == "building" %>
+      <%# Blocked tasks ride Building, but active building work stays first so a
+          re-claimed blocked task becomes topical again. %>
+      <% column_tasks = Task.board_column_tasks(@tasks_by_stage, stage) %>
       <%# On a six-lane board (Deployments) the upstream lanes collapse below ~1250px
           unless "All Stages" is on, leaving just the last three (reviewed · assembled
           · shipped). Building collapses with them; blocked/needs-attention tasks ride
@@ -405,7 +404,7 @@ function kanbanBoard(live) {
 
           <!-- Empty State -->
           <div class="kanban-empty flex items-center justify-center h-24 text-muted text-sm"
-               <% if (@tasks_by_stage[stage] || []).any? %>style="display: none"<% end %>>
+               <% if column_tasks.any? %>style="display: none"<% end %>>
             Drop tasks here
           </div>
         </div>
