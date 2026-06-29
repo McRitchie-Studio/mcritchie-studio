@@ -227,6 +227,12 @@ server-side writers such as `bin/release` use `source: "conductor"` and may
 record spine-only events. Repeated calls should pass `idempotency_key` so retries
 return the existing release event instead of stacking duplicates.
 
+Start/intents create the analytics timestamp; completions create the accounting
+row. Do not put model/tokens/cost on `start` or intent calls. Agent/API/CLI
+`complete` and `fail` calls must report `model`, `tokens_in`, `tokens_out`, and
+`cost`; deterministic `source: conductor|system` completions may stay
+spine-only.
+
 ## Writable fields
 
 `POST`/`PATCH` permit exactly (`tasks_controller.rb#task_params`):
@@ -303,6 +309,23 @@ PATCH /api/v1/tasks/:slug
 Source of truth: `app/models/task_event.rb`, `Task#record_genesis_event` /
 `#record_transition_event`, and `app/models/current.rb` (the request-scoped
 bridge that carries usage into the event).
+
+**Genesis and live building display.** `Created → Designed` is the deterministic
+task-creation marker. It has no actor/model/tokens/cost because the task slug and
+usage baseline do not exist until the create call lands. `bin/task create` then
+seeds the usage baseline, so design work is accounted on the next conclusion:
+`Designed → Building`. While the task is currently `building`, the task detail
+timeline marks that same `Designed → Building` card live; it does not append a
+second `Building` card.
+
+**Release duration cache.** `Release::DurationCache` derives stage spans from
+task intents to conclusions (`building`, `reviewing`, `assembled`, `shipped`)
+and release spans from `ReleaseEvent`s. Cached metrics live on
+`releases.duration_metrics` with `duration_metrics_cached_at` and
+`duration_cache_version`. Task/release event writes refresh the owning release
+best-effort, `bin/rails releases:refresh_duration_metrics` refreshes the last
+three shipped releases, and `/deployments/all` plus `/deployments/:slug` render
+from the cache with an in-memory fallback when a row is missing.
 
 ## The `devops` object
 

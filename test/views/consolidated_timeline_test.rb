@@ -57,6 +57,22 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "dark:text-green-200"
   end
 
+  test "renders active building on the Designed to Building card without appending a second build card" do
+    Pokemon.create!(dex: 27, name: "Sandshrew", slug: "sandshrew", generation: 1)
+    task = Task.create!(title: "component live building merge task", stage: "designed",
+                        metadata: { "devops" => { "mascot" => "sandshrew" } })
+    task.build!
+
+    render partial: "tasks/consolidated_timeline",
+           locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
+
+    assert_select "[data-test='timeline-block'][data-stage='building']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='building'][data-in-progress='true']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='submitted'][data-in-progress='true']", count: 0
+    assert_select "[data-test='timeline-live']"
+    assert_select "[data-test='timeline-transition']", text: /Designed.*Building/m
+  end
+
   test "renders the blocking agent on a blocked transition card" do
     task = Task.create!(title: "blocked actor timeline task", stage: "blocked")
     task.task_events.delete_all
@@ -118,7 +134,8 @@ class ConsolidatedTimelineTest < ActionView::TestCase
            locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
 
     assert_select "[data-test='timeline-crew-member'][title^='Dewgong']", minimum: 3
-    assert_select "[data-test='timeline-crew-member'][title^='Grimer']", minimum: 2
+    assert_select "[data-test='timeline-crew-member'][title^='Grimer']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='building'][data-in-progress='true']", count: 1
   end
 
   test "renders the sizing trio strip (Avi PO, Dev, Actual) and flags an estimate miss" do

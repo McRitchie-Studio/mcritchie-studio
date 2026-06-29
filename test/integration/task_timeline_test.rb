@@ -88,7 +88,8 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-test='timeline-crew-member'][title^='Dewgong']", minimum: 3
-    assert_select "[data-test='timeline-crew-member'][title^='Grimer']", minimum: 2
+    assert_select "[data-test='timeline-crew-member'][title^='Grimer']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='building'][data-in-progress='true']", count: 1
   end
 
   # [integration] recording a review INTENT via the API appends a kind=intent

@@ -205,6 +205,15 @@ Release progress is also recorded as explicit `ReleaseEvent` checkpoints
 back to legacy `Release` fields, so `ship_gate:completed` can visibly finish the
 Confirming step before `deploy_prod:started` begins production work.
 
+Release analytics are cached on the `Release` record. `Release::DurationCache`
+stores `duration_metrics` (versioned JSON), `duration_metrics_cached_at`, and
+`duration_cache_version`; the `/deployments` dashboard shows last-three-release
+averages, `/deployments/all` lists release timestamp rows, and
+`/deployments/:slug` shows the per-release read view. Task/release event writes
+refresh the owning release best-effort, and production follow-up tasks should use
+the idempotent post-deploy hook `bin/rails releases:refresh_duration_metrics` to
+backfill the last three shipped releases after a deploy.
+
 **Gem members & producer-first ordering.** A release is not apps-only — it can
 carry **gem** tasks (`studio-engine`, `solana-studio`) as first-class members
 alongside apps. The classification lives in `config/release_repos.yml` (read by
@@ -582,7 +591,14 @@ review verdicts use `kind: checkpoint`; and an intent never enters the duration 
 transition into its target stage supersedes it, and leaving the source stage
 (for example `submitted → blocked`) closes it even if the target never landed.
 If QA blocks a PR for rework and the feature agent rebuilds/resubmits it, Avi can
-record a fresh `→reviewed` intent for the second review round. Build-lane intent = the task's
+record a fresh `→reviewed` intent for the second review round. The build lane is
+the special viewer case: `building` is both the stage-change conclusion and the
+"agent started working" signal, so the task detail timeline marks the existing
+`Designed → Building` card live instead of rendering a duplicate live
+`Building` card. The `Created → Designed` genesis row stays deterministic and
+usage-free; design accounting belongs on the `Designed → Building` transition
+because `bin/task create` seeds the usage baseline only after the task slug
+exists. The build-lane face is the task's
 Pokémon mascot (assigned at create). The
 review pair is recorded by **`bin/reviewer-select <task>`** (step 2 — recording
 is the DEFAULT now; pass `--no-record`/`--dry` for an advisory-only preview);
@@ -629,7 +645,10 @@ Two deterministic steps:
      rebase** (they touch a file an earlier same-repo PR already merged). It
      **never blocks** — merges proceed in the order given; it just surfaces the
      "siblings all touched `task.rb`" rework *before* it happens. Pure logic:
-     `Release::MergePlan.compute`.
+     `Release::MergePlan.compute`. The adoption step records the
+     reviewed→assembled intent before the assembled transition, so assembly
+     duration caches measure from the conductor starting the merge/assembly work
+     to the task entering `assembled`.
 2. **Deploy the candidate to QA.** Run **`bin/release prepare --yes [--task SLUG ...]
    [--slug rel-…] [--prod]`** (`Release::Conductor.prepare!`): finds the active
    release, **auto-records the Steffon → `assembled` QA intent** for every member

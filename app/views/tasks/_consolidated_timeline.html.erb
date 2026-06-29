@@ -70,13 +70,14 @@
                   class="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-green-500/15 animate-pulse"></span>
           <% end %>
 
-          <%# 1 — stage transition, centered. While the stage is still IN PROGRESS we
-              show ONLY the current stage badge — the arrow + next-step badge appear
-              once the transition lands (a completed card). Live work is otherwise
-              shown by the pulsing backdrop + ticking duration. %>
+          <%# 1 — stage transition, centered. Deploy-lane live intent cards show only
+              the active stage badge until the transition lands; build-lane live work
+              is different because `building` is the intent stage, so its existing
+              →Building transition stays visible while the card ticks live. %>
+          <% show_to_badge = !block.in_progress? || block.event.present? %>
           <div class="flex flex-wrap items-center justify-center gap-2 mb-3" data-test="timeline-transition">
             <%= render "components/badge", text: block.from_label, scheme: block.from_stage.present? ? stage_scheme(block.from_stage) : "neutral" %>
-            <% unless block.in_progress? %>
+            <% if show_to_badge %>
               <span class="text-muted text-xs">&rarr;</span>
               <%= render "components/badge", text: block.to_label, scheme: stage_scheme(block.to_stage) %>
               <% if block.backfilled %>

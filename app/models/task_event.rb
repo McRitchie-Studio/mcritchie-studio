@@ -50,6 +50,7 @@ class TaskEvent < ApplicationRecord
   # ever see persisted state; best-effort inside the broadcaster so a transport
   # failure never breaks the move. Bulk historical backfill rows don't broadcast.
   after_create_commit :broadcast_to_deployments_board
+  after_create_commit :refresh_release_duration_metrics
 
   def transition?
     kind == TRANSITION
@@ -107,5 +108,9 @@ class TaskEvent < ApplicationRecord
     return if backfilled? # a bulk historical backfill shouldn't spam the board
 
     DeploymentsBroadcaster.task_event(self)
+  end
+
+  def refresh_release_duration_metrics
+    task&.release&.refresh_duration_metrics_safely
   end
 end

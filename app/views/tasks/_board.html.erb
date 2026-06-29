@@ -8,6 +8,7 @@
 <% archived = local_assigns.fetch(:archived, false) %>
 <% current_release = local_assigns.fetch(:current_release, nil) %>
 <% last_release = local_assigns.fetch(:last_release, nil) %>
+<% release_duration_dashboard = local_assigns.fetch(:release_duration_dashboard, nil) %>
 <%# Blocked tasks live in the Building column (a block means more building to do), so the
     board never renders a standalone Blocked column on either page. %>
 <% columns = (archived ? (stages + ["archived"]) : stages).reject { |s| s == "blocked" } %>
@@ -325,11 +326,12 @@ function kanbanBoard(live) {
     </div>
   </div>
 
-  <% if current_release || last_release %>
-    <!-- Current Release (with empty state) + Last Release (read-only history): side by side on lg+, stacked below -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-start">
+  <% if current_release || last_release || release_duration_dashboard %>
+    <!-- Current Release + Last Release + duration intelligence: one-column mobile, roomy two-up tablet, three-up wide. -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 mb-6 items-start">
       <%= render "current_release", release: current_release %>
       <%= render "last_release", release: last_release %>
+      <%= render "release_duration_card", dashboard: release_duration_dashboard %>
     </div>
   <% end %>
 
