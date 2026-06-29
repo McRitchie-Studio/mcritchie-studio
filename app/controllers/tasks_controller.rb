@@ -49,6 +49,7 @@ class TasksController < ApplicationController
     load_task_conversation
     @task_events = @task.task_events.chronological.to_a
     @agents = Agent.order(:position)
+    @active_review_intent = @task.open_intent_for("reviewed")
   end
 
   def review_events
@@ -62,7 +63,9 @@ class TasksController < ApplicationController
   end
 
   def new
-    @task = Task.new
+    followup_slug = params[:followup_from].to_s.strip.presence
+    @followup_source = Task.find_by(slug: followup_slug) if followup_slug
+    @task = @followup_source ? followup_task_from(@followup_source) : Task.new
     @agents = Agent.active.order(:position)
   end
 
@@ -152,6 +155,41 @@ class TasksController < ApplicationController
     @task_activity ||= @task.activities.build(activity_type: "comment")
   end
 
+  def followup_task_from(source)
+    Task.new(
+      title: "Followup Review Changes",
+      description: followup_description(source),
+      priority: source.priority,
+      metadata: { "devops" => followup_devops_metadata(source) }
+    )
+  end
+
+  def followup_devops_metadata(source)
+    {
+      "kind" => source.devops_kind.presence || "feature",
+      "shape" => source.devops_shape.presence,
+      "repositories" => source.devops_repositories,
+      "risk_tags" => (source.devops_risk_tags + ["review-followup"]).uniq,
+      "acceptance" => [
+        "Followup captures post review changes safely",
+        "Original review continues without interruption"
+      ],
+      "test_plan" => [
+        "Run focused checks for followup scope"
+      ]
+    }.compact
+  end
+
+  def followup_description(source)
+    lines = [
+      "Follow-up to #{source.title} (#{source.slug}).",
+      "",
+      "The original task is already in review. Capture new changes here instead of pushing to the branch under review."
+    ]
+    lines << "PR: #{source.devops_url("pr")}" if source.devops_url("pr")
+    lines.join("\n")
+  end
+
   # Shared data loader for /tasks and /deployments — same task set, different
   # columns. Each view passes its own column list to the _board partial; archived
   # is a board-side toggle, so grouping the full task set here is intentional.
@@ -214,6 +252,7 @@ class TasksController < ApplicationController
       :stage,
       devops: [
         :kind,
+        :shape,
         :worktree_slug,
         :branch,
         :pr_url,

@@ -54,6 +54,10 @@
       </div>
     <% end %>
 
+    <% if @active_review_intent %>
+      <%= render "tasks/review_followup_guard", task: @task, review_intent: @active_review_intent, agents: @agents %>
+    <% end %>
+
     <!-- Timestamps -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
       <div class="bg-surface-alt rounded-lg p-3">

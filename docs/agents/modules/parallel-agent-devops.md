@@ -175,6 +175,14 @@ Submitted `docs` link opens `/review_events`, a process hub with heavy/light
 swimlanes, top recent role owners, and recent submitted/reviewed/assembled/
 shipped task drilldowns.
 
+Once the task page shows the **Review in progress** guard, the branch is under
+review. Do not push opportunistic new changes to that PR while reviewers are
+working; use the page's **Create follow-up task** action to file the next change
+with source context, then build it in its own worktree/branch. The action opens
+`/tasks/new?followup_from=<task-slug>` and preserves the source kind, shape,
+repositories, risk tags, PR link, and review-safe acceptance/test context. The
+guard clears when the reviewed transition lands.
+
 
 ### Step 0 — assess the queue by stage
 
