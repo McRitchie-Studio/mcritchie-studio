@@ -44,17 +44,39 @@
     <% end %>
   </div>
 
+  <% moment_timings = review_lane_moment_timings(lane) if show_task_events %>
   <ol class="mt-4 space-y-2" data-test="review-role-moments">
     <% lane.moments.each_with_index do |moment, index| %>
-      <% complete = review_moment_complete?(lane.events, moment) %>
+      <% timing = moment_timings&.fetch(moment, nil) %>
+      <% complete = timing&.event.present? || review_moment_complete?(lane.events, moment) %>
       <li class="flex gap-2 rounded-md border p-2 <%= complete ? "border-green-500/40 bg-green-500/10" : "border-subtle bg-inset/40" %>"
           data-test="review-moment"
           data-moment="<%= moment %>"
-          data-complete="<%= complete %>">
+          data-complete="<%= complete %>"
+          data-timing-status="<%= timing&.status || "expected" %>">
         <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded border <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface text-muted" %> text-[11px] font-bold tabular-nums"><%= index + 1 %></span>
-        <div class="min-w-0">
-          <p class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, moment) %></p>
-          <p class="mt-0.5 text-xs text-muted"><%= complete ? "Recorded on this task." : "Expected in chronological order." %></p>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, moment) %></p>
+            <% if show_task_events && timing %>
+              <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide tabular-nums <%= review_moment_duration_classes(timing) %>"
+                    data-test="review-moment-duration"
+                    data-duration-seconds="<%= timing.seconds %>">
+                <%= review_moment_duration_label(timing) %>
+              </span>
+            <% end %>
+          </div>
+          <p class="mt-0.5 text-xs text-muted">
+            <% if show_task_events && timing&.status == "completed" %>
+              Recorded on this task.
+            <% elsif show_task_events && timing&.status == "live" %>
+              In progress since the previous checkpoint.
+            <% elsif show_task_events && timing&.status == "skipped" %>
+              No checkpoint was broadcast for this step.
+            <% else %>
+              Expected in chronological order.
+            <% end %>
+          </p>
         </div>
       </li>
     <% end %>

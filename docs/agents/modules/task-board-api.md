@@ -245,10 +245,12 @@ POST /api/v1/tasks/:slug/review_events
 It records a `TaskEvent(kind: checkpoint)` and does not move the task stage. The
 task detail page links reviewed/live-review timeline cards to
 `/tasks/:slug/review_events`, which groups these check-ins by the heavy and
-light reviewer swimlanes. The deployments board's Submitted column also links to
-the global review-process hub at `/review_events`, which shows the canonical
-moment order, top recent role owners, and recent submitted/reviewed/assembled/
-shipped task drilldowns.
+light reviewer swimlanes. On a specific task, the reader derives each moment's
+duration from the review intent and subsequent checkpoint timestamps; callers do
+not send a duration. The deployments board's Submitted column also links to the
+global review-process hub at `/review_events`, which shows the canonical moment
+order, top recent role owners, and recent submitted/reviewed/assembled/shipped
+task drilldowns.
 
 Payload:
 

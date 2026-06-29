@@ -16,7 +16,7 @@
 - `/tasks/new` — Create task (auth required)
 - `/tasks/:slug` — Task detail with transition buttons. Includes a Sealed-bid sizing summary card and an "Edit →" link to the sizing sub-page.
 - `/review_events` — Review process hub. Linked from the Submitted column's `docs` link on the deployments board; shows heavy/light swimlanes, top role owners, canonical moment order, and recent submitted/reviewed/assembled/shipped task drilldowns.
-- `/tasks/:slug/review_events` — Read-only task review event timeline. Linked from reviewed/live-review cards on the task stage timeline. Groups reviewer check-ins into heavy/light swimlanes recorded by `POST /api/v1/tasks/:slug/review_events`.
+- `/tasks/:slug/review_events` — Read-only task review event timeline. Linked from reviewed/live-review cards on the task stage timeline. Groups reviewer check-ins into heavy/light swimlanes recorded by `POST /api/v1/tasks/:slug/review_events`, with per-step durations derived from the review intent and checkpoint timestamps.
 - `/tasks/:slug/sizing` — Sealed-bid sizing sub-page (admin update, public read). Form for `pm_size` / `po_size` / `dev_size` / `actual_size` + `requires_migration` toggle. See `docs/agents/system/sizing-rubric.md` and `exclusive-lanes.md`.
 - `/news` — News pipeline Kanban board (6 columns: new→reviewed→processed→refined→concluded→archived). SortableJS drag-and-drop. Inline `newsBoard()` Alpine function. Column focus: click header to expand single column full-width (hides others, click again to unfocus).
 - `/news/new` — Create news article (admin required)
