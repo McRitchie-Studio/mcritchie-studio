@@ -462,6 +462,21 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal started + 2.minutes, qa[:duration_started_at]
   end
 
+  test "release_tracker_steps does not collapse completed-only assemble events to zero seconds" do
+    created = Time.zone.parse("2026-06-29 12:00:00")
+    completed = created + 4.minutes + 12.seconds
+    rel = Release.open!(created_at: created)
+    rel.record_event!(step: "assemble_release", status: "completed", source: "conductor", occurred_at: completed)
+    rel.update_columns(assembled_at: completed, state: "assembling") # rubocop:disable Rails/SkipsModelValidations
+
+    steps = release_tracker_steps(rel.reload, now: completed)
+    assembling = steps.detect { |step| step[:key] == "assembling" }
+
+    assert_equal :complete, assembling[:state]
+    assert_equal 4.minutes + 12.seconds, assembling[:duration_seconds]
+    assert_not assembling[:duration_live]
+  end
+
   test "[component] _current_release renders a glow hook + a live in-progress ticker" do
     rel = Release.open!
     render partial: "tasks/current_release", locals: { release: rel }

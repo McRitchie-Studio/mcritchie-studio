@@ -167,6 +167,7 @@ module ApplicationHelper
     return {} unless state.to_sym == :complete
 
     completed_at ||= release_tracker_fallback_completed_at(release, key)
+    started_at ||= release_tracker_fallback_started_at(release, key)
     started_at ||= completed_at
     seconds = elapsed_seconds(started_at, completed_at)
     return {} unless seconds
@@ -187,8 +188,8 @@ module ApplicationHelper
     finishes = steps.flatten.filter_map { |step| release_event_at(events, step, "completed") }
     started_at = starts.min
     completed_at = finishes.max
+    started_at ||= release_tracker_fallback_started_at(release, key) if completed_at
     started_at ||= completed_at if completed_at
-    started_at ||= release.created_at if key.to_s == "assembling" && completed_at
     [started_at, completed_at]
   end
 
