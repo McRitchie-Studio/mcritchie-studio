@@ -120,3 +120,15 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-06-28 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/task-card-overflow` | worktree | Hidden worktree; branch `feat/task-card-overflow` is clean and HEAD f7f76e8 is contained in origin/release; health up, Redis DB 22, database mcritchie_studio_development_task_card_overflow:ok. | Removed with `bin/agent-worktree remove mcritchie-studio task-card-overflow --yes` during approved lifecycle cleanup. | removed 2026-06-28 |
+
+<!-- agent-worktree remove 2026-06-28 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/archive-ledger-cleanup` | worktree | Hidden worktree; branch `feat/archive-ledger-cleanup` is clean and HEAD 01fd012 is contained in origin/release; health down, Redis DB 18, database mcritchie_studio_development_archive_ledger_cleanup:missing. | Removed with `bin/agent-worktree remove mcritchie-studio archive-ledger-cleanup --yes` during approved lifecycle cleanup. | removed 2026-06-28 |
+
+<!-- agent-worktree remove 2026-06-28 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/event-driven-lifecycle-apis` | worktree | Hidden worktree; branch `feat/event-driven-lifecycle-apis` is clean and HEAD 01df41c is contained in origin/release; health up, Redis DB 12, database mcritchie_studio_development_event_driven_lifecycle_apis:ok. | Removed with `bin/agent-worktree remove mcritchie-studio event-driven-lifecycle-apis --yes` during approved lifecycle cleanup. | removed 2026-06-28 |
+
+<!-- agent-worktree remove 2026-06-28 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/release-duration-dashboard` | worktree | Hidden worktree; branch `feat/release-duration-dashboard` is clean and HEAD d2aca9c is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_release_duration_dashboard:missing. | Removed with `bin/agent-worktree remove mcritchie-studio release-duration-dashboard --yes` during approved lifecycle cleanup. | removed 2026-06-28 |
+
+<!-- agent-worktree remove 2026-06-28 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/studio-theme-polish` | worktree | Hidden worktree; branch `feat/studio-theme-polish` is clean and HEAD d2aca9c is contained in origin/release; health down, Redis DB 13, database mcritchie_studio_development_studio_theme_polish:missing. | Removed with `bin/agent-worktree remove mcritchie-studio studio-theme-polish --yes` during approved lifecycle cleanup. | removed 2026-06-28 |
