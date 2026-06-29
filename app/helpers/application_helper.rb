@@ -333,6 +333,7 @@ module ApplicationHelper
   # Non-stage keys for the release-wide meta-triggers in +devops_kickoffs+ (see
   # below). They never render on column headers — only the current-release
   # section reaches for them.
+  AVI_HEARTBEAT_KICKOFF_KEY = "avi_heartbeat"
   QA_RELEASE_KICKOFF_KEY = "release"
   AUTONOMOUS_RELEASE_KICKOFF_KEY = "release_autonomous"
 
@@ -342,12 +343,14 @@ module ApplicationHelper
   # keyed by DevOps board stage and kept terse (≤3 words) so each fits a column
   # header; the feature-agent lane has none.
   #
-  # Plus two non-stage meta-triggers: the QA-only "Build and Deploy QA Release"
-  # workflow and the autonomous "Merge, Assemble, Deploy" workflow. They render
-  # as prominent chips in the current-release section, never on column headers,
-  # so they are exempt from the per-stage word cap.
+  # Plus three non-stage meta-triggers: the long-running "Avi Heartbeat" review
+  # loop, the QA-only "Build and Deploy QA Release" workflow, and the autonomous
+  # "Merge, Assemble, Deploy" workflow. They render as prominent chips in the
+  # current-release section, never on column headers, so they are exempt from the
+  # per-stage word cap.
   def devops_kickoffs
     {
+      AVI_HEARTBEAT_KICKOFF_KEY => "Avi Heartbeat",
       QA_RELEASE_KICKOFF_KEY => "Build and Deploy QA Release",
       AUTONOMOUS_RELEASE_KICKOFF_KEY => "Merge, Assemble, Deploy",
       "submitted" => "Review submitted PRs",
@@ -355,6 +358,13 @@ module ApplicationHelper
       "assembled" => "Run Deployment",
       "shipped"   => "Archive completed tasks"
     }
+  end
+
+  # The "Avi Heartbeat" meta-trigger command — a long-running review supervisor
+  # that serializes submitted PR review newest-first, moves approved work to
+  # reviewed, and stops with a retrospective after its review cap.
+  def avi_heartbeat_kickoff
+    devops_kickoffs.fetch(AVI_HEARTBEAT_KICKOFF_KEY)
   end
 
   # The "Build and Deploy QA Release" meta-trigger command — Mr. McRitchie's
@@ -373,6 +383,7 @@ module ApplicationHelper
 
   def release_kickoff_chips
     [
+      { label: "Avi", command: avi_heartbeat_kickoff },
       { label: "QA", command: qa_release_kickoff },
       { label: "Prod", command: autonomous_release_kickoff }
     ]

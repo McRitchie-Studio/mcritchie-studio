@@ -257,6 +257,7 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
+bin/avi-heartbeat --run
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
@@ -266,6 +267,16 @@ joins each task to latest task conversation notes, and attaches matching
 `bin/qa-intake` status when a local PR/worktree exists. Use it first in a fresh
 DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
 before reviewing individual diffs. It is read-only by default.
+
+Use `bin/avi-heartbeat --run` when Mr. McRitchie wants Avi to review submitted
+PRs unattended for hours without assembling a release. It is the review-only
+heartbeat: newest `submitted` task first, one PR at a time, fresh
+`bin/devops-cycle --json --decisions --scout-reports` query before selection and
+again after reviewer completion, selected PRIMARY + LIGHT reviewers launched via
+`codex exec`, then Avi moves two-approval work to `reviewed` and leaves it for
+Steffon/release assembly. It stops after ten completed PR reviews by default and
+prints a retrospective of friction, blockers, common blocker patterns, and
+refactor candidates. It does not merge, deploy, ship, publish gems, or archive.
 
 Use `bin/devops-cycle --plan` when the queue is larger than one conductor can
 comfortably hold in context. The plan separates:
