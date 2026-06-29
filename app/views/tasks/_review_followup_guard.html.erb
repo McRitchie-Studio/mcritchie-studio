@@ -16,17 +16,18 @@
           <% reviewers.each do |reviewer| %>
             <% slug = reviewer["slug"].to_s %>
             <% agent = agents_by_slug[slug] %>
+            <% role = Task.normalize_review_role(reviewer["weight"]) || reviewer["weight"].presence %>
             <span class="inline-flex items-center gap-1.5 rounded border border-amber-500/30 bg-surface px-2 py-1 text-xs text-secondary"
                   data-test="review-followup-reviewer"
-                  data-role="<%= Task.normalize_review_role(reviewer["weight"]) || reviewer["weight"] %>">
+                  data-role="<%= role %>">
               <% if agent %>
                 <%= render "components/agent_avatar", agent: agent, size: "xs" %>
                 <span class="font-semibold text-heading"><%= agent.name %></span>
               <% else %>
                 <span class="font-semibold text-heading"><%= slug %></span>
               <% end %>
-              <% if reviewer["weight"].present? %>
-                <span class="uppercase tracking-wide text-muted"><%= reviewer["weight"] %></span>
+              <% if role.present? %>
+                <span class="uppercase tracking-wide text-muted"><%= role %></span>
               <% end %>
             </span>
           <% end %>

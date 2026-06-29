@@ -14,7 +14,7 @@
 - `/agents/:slug` — Agent detail (tasks, skills, activity)
 - `/tasks` — Filterable task list with stage tabs
 - `/tasks/new` — Create task (auth required). Accepts `?followup_from=<task-slug>` to prefill a review-safe follow-up task from a source task.
-- `/tasks/:slug` — Task detail with transition buttons. Includes a Sealed-bid sizing summary card and an "Edit →" link to the sizing sub-page. When an open review intent is active, shows a Review in progress guard that steers agents to a follow-up task instead of changing the branch under review.
+- `/tasks/:slug` — Task detail with transition buttons. Includes a Sealed-bid sizing summary card and an "Edit →" link to the sizing sub-page. When an open review intent is active, shows a Review in progress guard that steers agents to a follow-up task instead of changing the branch under review; the guard clears when the reviewed transition lands.
 - `/tasks/:slug/review_events` — Read-only primary/light reviewer event timeline. Linked from reviewed/live-review cards on the task stage timeline. Groups reviewer check-ins recorded by `POST /api/v1/tasks/:slug/review_events`.
 - `/tasks/:slug/sizing` — Sealed-bid sizing sub-page (admin update, public read). Form for `pm_size` / `po_size` / `dev_size` / `actual_size` + `requires_migration` toggle. See `docs/agents/system/sizing-rubric.md` and `exclusive-lanes.md`.
 - `/news` — News pipeline Kanban board (6 columns: new→reviewed→processed→refined→concluded→archived). SortableJS drag-and-drop. Inline `newsBoard()` Alpine function. Column focus: click header to expand single column full-width (hides others, click again to unfocus).

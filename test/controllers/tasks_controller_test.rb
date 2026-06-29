@@ -782,9 +782,39 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "textarea[name='task[description]']", text: /Follow-up to source review guard/
     assert_select "textarea[name='task[description]']", text: /instead of pushing to the branch under review/
     assert_select "textarea[name='task[description]']", text: /pull\/998/
+    assert_select "select[name='task[devops][shape]'] option[selected][value='ui-only']", "ui-only"
     assert_select "input[name='task[devops][repositories]'][value='mcritchie-studio, turf-monster']"
     assert_select "input[name='task[devops][risk_tags]'][value='review-workflow, review-followup']"
     assert_select "textarea[name='task[devops][acceptance]']", text: /Original review continues without interruption/
+  end
+
+  test "[integration] create preserves followup task shape from form params" do
+    log_in_as(@admin)
+
+    assert_difference "Task.count", 1 do
+      post tasks_path, params: {
+        task: {
+          title: "Followup Shape Guard",
+          description: "Follow-up to source review guard.",
+          priority: "1",
+          devops: {
+            kind: "feature",
+            shape: "ui-only",
+            repositories: "mcritchie-studio",
+            risk_tags: "review-workflow, review-followup",
+            acceptance: "Followup captures post review changes safely\nOriginal review continues without interruption",
+            test_plan: "Run focused checks for followup scope"
+          }
+        }
+      }
+    end
+
+    task = Task.order(:created_at).last
+    assert_redirected_to task_path(task.slug)
+    assert_equal "ui-only", task.devops_shape
+    assert_equal "feature", task.devops_kind
+    assert_equal ["mcritchie-studio"], task.devops_repositories
+    assert_equal ["review-workflow", "review-followup"], task.devops_risk_tags
   end
 
   # === Per-stage deploy-crew avatars (task-ui-stage-agents) ===
@@ -1073,6 +1103,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
           title: "Review Turf PR",
           devops: {
             kind: "feature",
+            shape: "ui+db",
             worktree_slug: "contest-flow",
             repositories: "turf-monster, turf-vault",
             branch: "feat/contest-flow",
@@ -1091,11 +1122,31 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     task = Task.order(:created_at).last
     assert_redirected_to task_path(task.slug)
     assert task.requires_release_conductor?
+    assert_equal "ui+db", task.devops_shape
     assert_equal "contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster", "turf-vault"], task.devops_repositories
     assert_equal ["Contest creates on QA without errors", "Entry submits successfully on QA devnet"], task.devops_acceptance
     assert_equal ["bin/rails test test/controllers/tasks_controller_test.rb"], task.devops_checks_run
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
+  end
+
+  test "update stores devops shape from html params" do
+    log_in_as(@admin)
+
+    patch task_path(@new_task.slug), params: {
+      task: {
+        devops: {
+          kind: "feature",
+          shape: "backend",
+          repositories: "mcritchie-studio"
+        }
+      }
+    }
+
+    assert_redirected_to task_path(@new_task.slug)
+    @new_task.reload
+    assert_equal "backend", @new_task.devops_shape
+    assert_equal "feature", @new_task.devops_kind
   end
 
   test "show renders devops handoff details" do

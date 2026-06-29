@@ -156,22 +156,24 @@ class TasksController < ApplicationController
       title: "Followup Review Changes",
       description: followup_description(source),
       priority: source.priority,
-      metadata: {
-        "devops" => {
-          "kind" => source.devops_kind.presence || "feature",
-          "shape" => source.devops_shape.presence,
-          "repositories" => source.devops_repositories,
-          "risk_tags" => (source.devops_risk_tags + ["review-followup"]).uniq,
-          "acceptance" => [
-            "Followup captures post review changes safely",
-            "Original review continues without interruption"
-          ],
-          "test_plan" => [
-            "Run focused checks for followup scope"
-          ]
-        }.compact
-      }
+      metadata: { "devops" => followup_devops_metadata(source) }
     )
+  end
+
+  def followup_devops_metadata(source)
+    {
+      "kind" => source.devops_kind.presence || "feature",
+      "shape" => source.devops_shape.presence,
+      "repositories" => source.devops_repositories,
+      "risk_tags" => (source.devops_risk_tags + ["review-followup"]).uniq,
+      "acceptance" => [
+        "Followup captures post review changes safely",
+        "Original review continues without interruption"
+      ],
+      "test_plan" => [
+        "Run focused checks for followup scope"
+      ]
+    }.compact
   end
 
   def followup_description(source)
@@ -240,6 +242,7 @@ class TasksController < ApplicationController
       :stage,
       devops: [
         :kind,
+        :shape,
         :worktree_slug,
         :branch,
         :pr_url,
