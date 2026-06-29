@@ -38,6 +38,6 @@ class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
 
     assert_selector "[data-test='stage-timeline']"
     assert_selector "[data-test='timeline-crew-member'][title^='Dewgong']", minimum: 3
-    assert_selector "[data-test='timeline-crew-member'][title^='Grimer']", minimum: 2
+    assert_selector "[data-test='timeline-crew-member'][title^='Grimer']", count: 1
   end
 end
