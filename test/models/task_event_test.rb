@@ -228,7 +228,14 @@ class TaskEventTest < ActiveSupport::TestCase
     assert task.task_events.transitions.exists?(from_stage: nil), "the genesis stays a transition"
   end
 
-  test "kind must be transition or intent" do
+  test "kind may be a transition intent or checkpoint" do
+    task = Task.create!(title: "checkpoint validation task", stage: "designed")
+    checkpoint = task.task_events.build(to_stage: "design_complete", occurred_at: Time.current, kind: "checkpoint")
+
+    assert checkpoint.valid?
+  end
+
+  test "kind must be transition intent or checkpoint" do
     task = Task.create!(title: "kind validation task", stage: "designed")
     bad = task.task_events.build(to_stage: "building", occurred_at: Time.current, kind: "bogus")
 

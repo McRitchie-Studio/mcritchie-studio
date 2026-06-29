@@ -31,6 +31,7 @@ class Release < ApplicationRecord
   }.freeze
 
   has_many :tasks, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release
+  has_many :release_events, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release, dependent: :destroy
 
   validates :slug, presence: true, uniqueness: true
   validates :state, inclusion: { in: STATES }
@@ -177,6 +178,18 @@ class Release < ApplicationRecord
 
   def shipped?
     state == "shipped"
+  end
+
+  def record_event!(step:, status:, **attrs)
+    ReleaseEvent.record!(release: self, step: step, status: status, **attrs)
+  end
+
+  def event_completed?(step)
+    release_events.for_step(step).completed.exists?
+  end
+
+  def event_started?(step)
+    release_events.for_step(step).started.exists?
   end
 
   # Attach a reviewed task to this (assembling) release. The TASK's stage becomes

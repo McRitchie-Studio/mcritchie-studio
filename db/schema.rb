@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_26_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_162000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -664,6 +664,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_140000) do
     t.datetime "updated_at", null: false
     t.index ["dex"], name: "index_pokemons_on_dex", unique: true
     t.index ["slug"], name: "index_pokemons_on_slug", unique: true
+  end
+
+  create_table "release_events", force: :cascade do |t|
+    t.string "actor"
+    t.string "app"
+    t.string "command"
+    t.decimal "cost", precision: 10, scale: 4
+    t.datetime "created_at", null: false
+    t.string "idempotency_key"
+    t.text "message"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "model"
+    t.datetime "occurred_at", null: false
+    t.string "release_slug", null: false
+    t.string "repo"
+    t.string "sha"
+    t.string "source"
+    t.string "status", null: false
+    t.string "step", null: false
+    t.integer "tokens_in"
+    t.integer "tokens_out"
+    t.datetime "updated_at", null: false
+    t.string "url"
+    t.index ["release_slug", "idempotency_key"], name: "index_release_events_on_release_slug_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["release_slug", "occurred_at"], name: "index_release_events_on_release_slug_and_occurred_at"
+    t.index ["release_slug", "step", "status"], name: "index_release_events_on_release_slug_and_step_and_status"
   end
 
   create_table "releases", force: :cascade do |t|

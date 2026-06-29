@@ -451,6 +451,23 @@ class Task < ApplicationRecord
     )
   end
 
+  def record_checkpoint_event(name:, status:, actor: nil, source: nil, metadata: {})
+    task_events.create!(
+      kind: TaskEvent::CHECKPOINT,
+      from_stage: stage,
+      to_stage: name.to_s,
+      occurred_at: Time.current,
+      seconds_in_from: nil,
+      source: (source.presence || Current.task_event_source).presence,
+      actor: actor.to_s.strip.presence || Current.task_event_actor.presence,
+      model: Current.task_event_model.presence,
+      tokens_in: Current.task_event_tokens_in,
+      tokens_out: Current.task_event_tokens_out,
+      cost: Current.task_event_cost,
+      metadata: metadata.to_h.merge("status" => status.to_s)
+    )
+  end
+
   # The OPEN intent event for `to_stage` (work has STARTED toward that stage but no
   # later transition into it has landed yet), or nil once it's resolved by a
   # transition — so a non-nil result means "work is in progress on this stage right

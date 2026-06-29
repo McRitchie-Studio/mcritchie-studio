@@ -11,15 +11,12 @@ It is written against the live code (`config/routes.rb`,
 `app/controllers/api/v1/*`, `app/models/task.rb`). When the code changes, update
 this file in the same pass.
 
-> ⚠️ **Partially stale (pre-2026-06-20 stage migration).** The **Endpoints**
-> table, the **Stages** section, and the **worked example** below still use the
-> legacy 9-stage model and its per-stage transition endpoints, which no longer
-> exist. The live model is the two-workflow 8-stage one (`designed → building →
-> submitted → reviewed → assembled → shipped`, plus `blocked`/`archived`), and
-> **every move is a plain `PATCH stage`** — there are no transition endpoints. See
-> [`devops-cycle-design.md`](../system/devops-cycle-design.md) for the live stage
-> policy, and the **[Stage-change event trail](#stage-change-event-trail)**
-> section below (which is current). A full refresh of this doc is tracked separately.
+> ⚠️ **Mostly current, with legacy examples below.** The live task model is the
+> two-workflow 8-stage one (`designed → building → submitted → reviewed →
+> assembled → shipped`, plus `blocked`/`archived`). The endpoints table and
+> lifecycle-event sections are current; any older examples that mention named
+> legacy transition routes should be treated as historical and replaced with
+> either `PATCH stage` or the event APIs documented here.
 
 > **Preferred path: use `bin/task`.** Don't hand-roll the HTTP calls below
 > unless you're debugging. `bin/task create|update|move|list|show` handles auth,
@@ -93,6 +90,12 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `PATCH`/`PUT` | `/tasks/:slug` | Update a task |
 | `DELETE` | `/tasks/:slug` | Delete a task |
 | `POST` | `/tasks/:slug/intent` | Record live agent intent for a target stage |
+| `POST` | `/tasks/:slug/events/:stage/start` | Record a task lifecycle start event |
+| `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task lifecycle stage/checkpoint |
+| `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task lifecycle step and block the task |
+| `POST` | `/releases/:slug/events/:step/start` | Record a release checkpoint start |
+| `POST` | `/releases/:slug/events/:step/complete` | Complete a release checkpoint |
+| `POST` | `/releases/:slug/events/:step/fail` | Fail a release checkpoint |
 
 `GET /tasks` accepts `?stage=<stage>` and `?agent_slug=<slug>` filters (plus
 `?page` / `?per_page`) and returns `{ "data": [...], "meta": { page, per_page,
@@ -160,6 +163,69 @@ Successful responses return `{ "data": { "delivered": true|false,
 "dry_run": true|false, "message": "...", "task_slugs": [...] } }`.
 Unknown task slugs return `422 UNKNOWN_TASKS`; missing webhook config on a live
 send returns `422 MISSING_WEBHOOK`.
+
+### Lifecycle Event APIs
+
+Agents should prefer the event endpoints for new automation. The legacy task
+stage `PATCH` still exists, but event endpoints give the board a deterministic
+paper trail and enforce usage metadata on completed/failed agent work.
+
+Task lifecycle endpoints:
+
+```bash
+POST /api/v1/tasks/:slug/events/:stage/start
+POST /api/v1/tasks/:slug/events/:stage/complete
+POST /api/v1/tasks/:slug/events/:stage/fail
+```
+
+Known `:stage` values include the normal task stages
+`designed|building|submitted|reviewed|assembled|shipped|archived`, plus named
+checkpoints such as `heavy_review`, `light_review`, `design`, and
+`design_complete`. `start` records an intent when the named stage is the task's
+next workflow stage; otherwise it records a checkpoint. `complete` moves the
+task when the stage is a real workflow stage; named review/design checkpoints
+record an append-only `TaskEvent(kind: checkpoint)` without moving the task.
+`fail` records the named failed checkpoint, then moves the task to `blocked`
+with `kind` defaulting to `rework`.
+
+Release checkpoint endpoints:
+
+```bash
+POST /api/v1/releases/:slug/events/:step/start
+POST /api/v1/releases/:slug/events/:step/complete
+POST /api/v1/releases/:slug/events/:step/fail
+```
+
+Canonical release steps are:
+
+```text
+review_tests assemble_release deploy_qa qa_smoke ship_gate ship_authorized
+deploy_prod prod_smoke release_notes archive_tasks
+```
+
+The tracker aliases also work: `testing`, `assembling`, `qa_deploying`,
+`confirming`, and `production_deploying`.
+
+For `complete` and `fail` calls from agent/API/CLI sources, usage is mandatory:
+
+```json
+{
+  "event": {
+    "actor": "avi",
+    "source": "api",
+    "model": "gpt-5",
+    "tokens_in": 12000,
+    "tokens_out": 1800,
+    "cost": "0.4200",
+    "idempotency_key": "rel-20260628-demo:ship_gate:complete"
+  }
+}
+```
+
+`start` does not require usage because work has just begun. Deterministic
+server-side writers such as `bin/release` use `source: "conductor"` and may
+record spine-only events. Repeated calls should pass `idempotency_key` so retries
+return the existing release event instead of stacking duplicates.
 
 ## Writable fields
 

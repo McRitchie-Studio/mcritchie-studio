@@ -33,16 +33,16 @@ test("task timeline shows a live in-progress block for an open review intent", a
   const timeline = page.locator("[data-test='stage-timeline']");
   await expect(timeline).toBeVisible();
 
-  // The live in-progress block + its ticking counter render
-  await expect(page.locator("[data-test='timeline-inprogress']")).toBeVisible();
+  // The live in-progress backdrop + its ticking counter render
+  await expect(page.locator("[data-test='timeline-pulse']")).toBeVisible();
   const live = page.locator("[data-test='timeline-live']");
   await expect(live).toBeVisible();
 
-  // Both senior reviewers are named on the live block, with the heavy/light split
+  // Both senior reviewers are named on the live block, with the primary/light split
   const block = page.locator("[data-test='timeline-block'][data-in-progress='true']");
   await expect(block).toContainText("Carl");
   await expect(block).toContainText("Shannon");
-  await expect(block).toContainText("heavy");
+  await expect(block).toContainText("primary");
 
   // The ticker is a real elapsed value (e.g. "0s"/"3m"), not the "…" placeholder
   await expect(live).not.toHaveText("…");

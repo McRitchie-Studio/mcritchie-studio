@@ -161,6 +161,20 @@ class Release
     # actually serving.
     def assemble!(release)
       release.assemble! if release.state == "assembling"
+      record_event!(
+        release: release,
+        step: "assemble_release",
+        status: "completed",
+        source: "conductor",
+        idempotency_key: "#{release.slug}:assemble_release:completed"
+      )
+      record_event!(
+        release: release,
+        step: "qa_smoke",
+        status: "completed",
+        source: "conductor",
+        idempotency_key: "#{release.slug}:qa_smoke:completed"
+      )
       release
     end
 
@@ -244,6 +258,16 @@ class Release
           production_url: production_url.presence || release.production_url
         )
         release.ship!(by: by, usage_by_slug: usage_by_slug)
+        record_event!(
+          release: release,
+          step: "deploy_prod",
+          status: "completed",
+          source: "conductor",
+          actor: by,
+          sha: deployed_sha,
+          url: production_url.presence || release.production_url,
+          idempotency_key: "#{release.slug}:deploy_prod:completed"
+        )
       end
       # Re-stamp AFTER the ship commits so the read-only "Last Release" wears the
       # mascot of whoever actually ran the deploy (a handoff swaps it). Defensive
@@ -274,6 +298,14 @@ class Release
     # bin/qa-server). Lets the board's current-release header link straight to QA.
     def record_qa_deploy(release:, qa_url:)
       release.update!(qa_url: qa_url)
+      record_event!(
+        release: release,
+        step: "deploy_qa",
+        status: "completed",
+        source: "conductor",
+        url: qa_url,
+        idempotency_key: "#{release.slug}:deploy_qa:#{qa_url}:completed"
+      )
       release
     end
 
@@ -392,6 +424,10 @@ class Release
       checks
     end
 
+    def record_event!(release:, step:, status:, **attrs)
+      release.record_event!(step: step, status: status, **attrs)
+    end
+
     # Build + deliver release notes for a shipped release — reusing the exact
     # Formatter + DiscordClient behind POST /api/v1/release_notes. Delivers rich
     # embeds (a summary + one card per task) when the release fits Discord's
@@ -428,6 +464,14 @@ class Release
           delivered = false
         end
       end
+
+      record_event!(
+        release: release,
+        step: "release_notes",
+        status: "completed",
+        source: "conductor",
+        idempotency_key: "#{release.slug}:release_notes:completed"
+      )
 
       { message: message, delivered: delivered }
     end

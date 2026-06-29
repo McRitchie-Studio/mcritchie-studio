@@ -233,6 +233,16 @@ Rails.application.routes.draw do
           # Steffon QA started, Avi ship e2e started) — so the board + task timeline
           # show who's on it with a live ticker before the transition lands.
           post :intent
+          post "events/:stage/start", to: "task_events#start", as: :event_start
+          post "events/:stage/complete", to: "task_events#complete", as: :event_complete
+          post "events/:stage/fail", to: "task_events#fail", as: :event_fail
+        end
+      end
+      resources :releases, only: [], param: :slug do
+        member do
+          post "events/:step/start", to: "release_events#start", as: :event_start
+          post "events/:step/complete", to: "release_events#complete", as: :event_complete
+          post "events/:step/fail", to: "release_events#fail", as: :event_fail
         end
       end
       resources :activities, only: [:index, :create]
