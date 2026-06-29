@@ -17,6 +17,7 @@ class TaskIntentTest < ActiveSupport::TestCase
     assert_equal "cli", intent.source
     assert_equal REVIEWERS, intent.metadata["reviewers"]
     assert task.open_intent_for("reviewed").present?
+    assert task.review_in_progress?
   end
 
   test "a single-owner intent records its actor (Steffon QA / Avi ship)" do
@@ -121,5 +122,23 @@ class TaskIntentTest < ActiveSupport::TestCase
     task.review! # no Current override → should adopt the intent's pair, not re-roll
 
     assert_equal REVIEWERS, task.task_events.transitions.find_by(to_stage: "reviewed").metadata["reviewers"]
+  end
+
+  test "unresolved feedback survives non-resolution notes and clears on resolving handoff" do
+    task = Task.create!(title: "feedback state task", stage: "submitted")
+    feedback = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "Rework this before merge.")
+    Activity.create!(task_slug: task.slug, activity_type: "clarification", description: "Question only.")
+    Activity.create!(task_slug: task.slug, activity_type: "handoff", description: "Pushed another commit.")
+
+    assert_equal feedback, task.unresolved_feedback_activity
+
+    Activity.create!(
+      task_slug: task.slug,
+      activity_type: "handoff",
+      description: "Addressed the blocker.",
+      metadata: { "resolves_feedback" => true }
+    )
+
+    assert_nil task.unresolved_feedback_activity
   end
 end

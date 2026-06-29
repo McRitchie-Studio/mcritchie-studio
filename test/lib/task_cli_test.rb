@@ -331,6 +331,17 @@ class TaskCliTest < Minitest::Test
     assert_equal "carl", event["actor"], "task persona should beat the opaque session id"
   end
 
+  def test_note_handoff_can_mark_feedback_resolved
+    requests, = run_task(["note", "demo-task", "--handoff", "Addressed the blocker.", "--resolves-feedback", "--agent", "hitmonchan"])
+
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    refute_nil note
+    parsed = JSON.parse(note[:body])
+    assert_equal "handoff", parsed["activity_type"]
+    assert_equal "hitmonchan", parsed["agent_slug"]
+    assert_equal true, parsed.dig("metadata", "resolves_feedback")
+  end
+
   def test_move_with_legacy_stage_name_suggests_the_live_stage
     requests, _out, err, status = run_task(["move", "demo-task", "pr_review"])
 

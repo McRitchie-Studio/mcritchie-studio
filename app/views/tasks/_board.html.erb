@@ -409,7 +409,9 @@ function kanbanBoard(live) {
             <%= render "tasks/task_card", task: task, agents: @agents, crew_board: crew_board,
                   mascot: pokemon_by_slug[task.devops_field("mascot")], type_enumerals: type_enumerals,
                   latest_activity: @latest_task_activities[task.slug],
-                  activity_count: @task_activity_counts[task.slug].to_i %>
+                  activity_count: @task_activity_counts[task.slug].to_i,
+                  unresolved_feedback: @unresolved_feedback_activities[task.slug],
+                  review_in_progress: task.review_in_progress? %>
           <% end %>
 
           <!-- Empty State -->

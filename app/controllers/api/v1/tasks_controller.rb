@@ -88,7 +88,9 @@ module Api
 
       def task_json(task)
         task.as_json.merge(
-          "latest_activity" => latest_activity_json(task)
+          "latest_activity" => latest_activity_json(task),
+          "unresolved_feedback" => activity_json(task.unresolved_feedback_activity),
+          "review_in_progress" => task.review_in_progress?
         )
       end
 
@@ -98,6 +100,10 @@ module Api
                 .recent
                 .first
                 &.as_json
+      end
+
+      def activity_json(activity)
+        activity&.as_json
       end
 
       # Reject query params the index doesn't support instead of silently ignoring

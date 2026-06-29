@@ -46,7 +46,16 @@ class Activity < ApplicationRecord
     activity_type == "qa_feedback"
   end
 
+  def resolves_feedback?
+    activity_type == "handoff" && truthy_metadata?("resolves_feedback")
+  end
+
   private
+
+  def truthy_metadata?(key)
+    value = metadata.to_h[key]
+    value == true || value.to_s.match?(/\A(1|true|yes)\z/i)
+  end
 
   def set_slug
     update_column(:slug, "activity-#{id}")

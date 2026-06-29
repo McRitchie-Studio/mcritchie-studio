@@ -179,6 +179,33 @@ module Api
         assert_equal "Latest blocker feedback.", activity.fetch("description")
       end
 
+      test "show includes unresolved feedback and review progress state" do
+        @task.update!(stage: "submitted")
+        @task.record_intent_event(
+          to_stage: "reviewed",
+          reviewers: [{ "slug" => "carl", "weight" => "primary" }, { "slug" => "shannon", "weight" => "light" }]
+        )
+        Activity.create!(
+          task_slug: @task.slug,
+          activity_type: "qa_feedback",
+          description: "Needs rework before release."
+        )
+        Activity.create!(
+          task_slug: @task.slug,
+          activity_type: "handoff",
+          description: "Clarifying context only."
+        )
+
+        get api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+        assert_response :success
+        task = response.parsed_body.fetch("data")
+        assert_equal true, task.fetch("review_in_progress")
+        feedback = task.fetch("unresolved_feedback")
+        assert_equal "qa_feedback", feedback.fetch("activity_type")
+        assert_equal "Needs rework before release.", feedback.fetch("description")
+      end
+
       test "update returns 404 for an unknown slug" do
         patch api_v1_task_path("nope-not-here"),
               params: { title: "renamed task title here" }, headers: @headers, as: :json

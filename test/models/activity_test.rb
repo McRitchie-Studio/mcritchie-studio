@@ -34,4 +34,12 @@ class ActivityTest < ActiveSupport::TestCase
     assert_includes activity.errors[:activity_type], "can't be blank"
     assert_includes activity.errors[:description], "can't be blank"
   end
+
+  test "only explicit handoff metadata resolves feedback" do
+    handoff = Activity.new(activity_type: "handoff", description: "Addressed.", metadata: { "resolves_feedback" => "true" })
+    comment = Activity.new(activity_type: "comment", description: "Addressed.", metadata: { "resolves_feedback" => "true" })
+
+    assert handoff.resolves_feedback?
+    refute comment.resolves_feedback?
+  end
 end
