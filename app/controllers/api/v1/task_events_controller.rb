@@ -120,10 +120,13 @@ module Api
       end
 
       def checkpoint_metadata
-        event_attributes[:metadata].to_h.merge(
+        metadata = event_attributes[:metadata].to_h.merge(
           "stage" => normalized_stage,
           "event" => raw_stage
         )
+        metadata["message"] = event_attributes[:message].to_s.strip if event_attributes[:message].present?
+        metadata["idempotency_key"] = event_attributes[:idempotency_key].to_s.strip if event_attributes[:idempotency_key].present?
+        metadata
       end
 
       def event_payload
@@ -131,6 +134,7 @@ module Api
         raw = params unless raw.is_a?(ActionController::Parameters)
         raw.permit(
           :source, :actor, :model, :tokens_in, :tokens_out, :cost, :message,
+          :idempotency_key,
           metadata: {},
           reviewers: %i[slug weight agent_slug review_weight depth]
         )

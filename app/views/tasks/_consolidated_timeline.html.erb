@@ -83,6 +83,12 @@
                 <span class="text-[10px] text-muted uppercase tracking-wide" title="Reconstructed from legacy stage timestamps">reconstructed</span>
               <% end %>
             <% end %>
+            <% if block.to_stage == "reviewed" %>
+              <%= link_to "Review Events",
+                    review_events_task_path(task.slug),
+                    class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
+                    "data-test": "timeline-review-events-link" %>
+            <% end %>
           </div>
 
           <%# 2 — crew: one discrete column per agent — avatar OVER name (+ review

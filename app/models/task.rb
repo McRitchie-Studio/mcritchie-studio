@@ -79,6 +79,41 @@ class Task < ApplicationRecord
   DEPLOYMENTS_BOARD_STAGES = %w[designed building submitted reviewed assembled shipped].freeze
   # Why a task sits in `blocked` — lets a heartbeat agent route it correctly.
   BLOCK_KINDS = %w[environment rework dependency].freeze
+  REVIEW_ROLES = %w[primary light].freeze
+  REVIEW_ROLE_ALIASES = {
+    "primary" => "primary",
+    "heavy" => "primary",
+    "deep" => "primary",
+    "heavy_review" => "primary",
+    "light" => "light",
+    "light_review" => "light"
+  }.freeze
+  REVIEW_MOMENTS = {
+    "primary" => %w[started context diff tests risk findings completed failed],
+    "light" => %w[started context diff smoke handoff completed failed]
+  }.freeze
+  REVIEW_MOMENT_LABELS = {
+    "primary" => {
+      "started" => "Started deep review",
+      "context" => "Loaded task and PR context",
+      "diff" => "Audited code diff",
+      "tests" => "Checked required test evidence",
+      "risk" => "Scanned release and regression risk",
+      "findings" => "Prepared findings",
+      "completed" => "Completed deep review",
+      "failed" => "Reported deep-review blocker"
+    },
+    "light" => {
+      "started" => "Started light review",
+      "context" => "Loaded task and PR context",
+      "diff" => "Skimmed changed files",
+      "smoke" => "Checked targeted smoke path",
+      "handoff" => "Checked docs and handoff",
+      "completed" => "Completed light review",
+      "failed" => "Reported light-review blocker"
+    }
+  }.freeze
+  REVIEW_STATUSES = %w[started completed failed info].freeze
   MIGRATION_LANE = "backend_migration".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
@@ -477,6 +512,50 @@ class Task < ApplicationRecord
     )
   end
 
+  def record_review_check_in(role:, moment:, status: nil, actor: nil, source: nil, message: nil, idempotency_key: nil, metadata: {})
+    role = self.class.normalize_review_role(role)
+    raise ArgumentError, "review role must be primary or light" unless REVIEW_ROLES.include?(role)
+
+    moment = self.class.normalize_review_moment(moment)
+    raise ArgumentError, "review moment is required" if moment.blank?
+    unless REVIEW_MOMENTS.fetch(role).include?(moment)
+      raise ArgumentError, "review moment must be one of: #{REVIEW_MOMENTS.fetch(role).join(', ')}"
+    end
+
+    status = self.class.normalize_review_status(status.presence || default_review_status_for(moment))
+    unless REVIEW_STATUSES.include?(status)
+      raise ArgumentError, "review status must be one of: #{REVIEW_STATUSES.join(', ')}"
+    end
+
+    key = idempotency_key.to_s.strip.presence
+    if key
+      existing = task_events.checkpoints.where("metadata ->> 'idempotency_key' = ?", key).first
+      return existing if existing
+    end
+
+    review_metadata = metadata.to_h.merge(
+      "stage" => "reviewed",
+      "event" => "review_check_in",
+      "review_role" => role,
+      "review_moment" => moment,
+      "moment_label" => self.class.review_moment_label(role, moment)
+    )
+    review_metadata["message"] = message.to_s.strip if message.present?
+    review_metadata["idempotency_key"] = key if key
+
+    record_checkpoint_event(
+      name: "review_#{role}_#{moment}",
+      status: status,
+      actor: actor,
+      source: source,
+      metadata: review_metadata
+    )
+  end
+
+  def review_check_in_events
+    task_events.checkpoints.chronological.to_a.select(&:review_check_in?)
+  end
+
   # The OPEN intent event for `to_stage` (work has STARTED toward that stage but no
   # later transition into it has landed yet), or nil once it's resolved by a
   # transition — so a non-nil result means "work is in progress on this stage right
@@ -695,6 +774,24 @@ class Task < ApplicationRecord
     end
   end
 
+  def self.normalize_review_role(raw)
+    REVIEW_ROLE_ALIASES[raw.to_s.strip.downcase]
+  end
+
+  def self.normalize_review_moment(raw)
+    raw.to_s.strip.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
+  end
+
+  def self.normalize_review_status(raw)
+    raw.to_s.strip.downcase
+  end
+
+  def self.review_moment_label(role, moment)
+    role = normalize_review_role(role)
+    moment = normalize_review_moment(moment)
+    REVIEW_MOMENT_LABELS.dig(role, moment).presence || moment.to_s.tr("_", " ").presence&.humanize || "Review update"
+  end
+
   # Postgres advisory locks are session-scoped — try_acquire and release
   # must run on the same DB connection. Designed for long-lived agent
   # processes, not Rails request cycles. See exclusive-lanes.md.
@@ -751,6 +848,15 @@ class Task < ApplicationRecord
   end
 
   private
+
+  def default_review_status_for(moment)
+    case moment
+    when "started" then "started"
+    when "completed" then "completed"
+    when "failed" then "failed"
+    else "info"
+    end
+  end
 
   # Extract the repo from a GitHub PR url: github.com/<owner>/<repo>/pull/<n>.
   def repo_from_pr_url
