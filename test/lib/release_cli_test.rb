@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
-# Standalone test for bin/release's pure helpers (no Rails needed — it `load`s
-# the script in a subprocess so the guarded dispatch never fires and the test
-# process's top-level namespace stays clean). Run directly:
+# Standalone test for bin/release's launcher plus bin/release.rb's pure helpers
+# (no Rails needed — it `load`s the Ruby implementation in a subprocess so the
+# guarded dispatch never fires and the test process's top-level namespace stays
+# clean). Run directly:
 #   ruby -Itest test/lib/release_cli_test.rb
 # It is also picked up by the normal `bin/rails test` sweep.
 #
@@ -14,6 +15,7 @@
 require "minitest/autorun"
 require "shellwords"
 require "open3"
+require "tmpdir"
 # Several payload tests decode/parse the runner snippet (JSON + url-safe Base64).
 # Require both here so they don't depend on test seed order (a prior test having
 # pulled them in first) — without this, a seed that runs a payload test before any
@@ -22,7 +24,8 @@ require "json"
 require "base64"
 
 class ReleaseCliTest < Minitest::Test
-  BIN = File.expand_path("../../bin/release", __dir__)
+  WRAPPER = File.expand_path("../../bin/release", __dir__)
+  BIN = File.expand_path("../../bin/release.rb", __dir__)
 
   # How many times to re-spawn a helper whose subprocess EXITED NONZERO / was
   # killed before we treat it as a genuine failure. Each helper drives the same
@@ -75,6 +78,50 @@ class ReleaseCliTest < Minitest::Test
         stderr:
       #{last[:err].to_s.gsub(/^/, "    ")}
     MSG
+  end
+
+  def test_bin_release_wrapper_dispatches_through_mise_with_the_pinned_ruby
+    Dir.mktmpdir do |dir|
+      fake_mise = File.join(dir, "mise")
+      File.write(fake_mise, <<~SH)
+        #!/usr/bin/env sh
+        printf '%s\\n' "$@"
+      SH
+      File.chmod(0o755, fake_mise)
+
+      out, err, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch('PATH', '')}" }, WRAPPER, "merge", "task-a")
+
+      assert status.success?, err
+      lines = out.lines.map(&:strip)
+      assert_equal "x", lines[0]
+      assert_equal "ruby@3.3.11", lines[1]
+      assert_equal "--", lines[2]
+      assert_equal "ruby", lines[3]
+      assert_equal BIN, lines[4]
+      assert_equal ["merge", "task-a"], lines[5..]
+    end
+  end
+
+  def test_bin_release_wrapper_fails_helpfully_without_mise_or_ruby_three
+    Dir.mktmpdir do |dir|
+      fake_ruby = File.join(dir, "ruby")
+      File.write(fake_ruby, <<~SH)
+        #!/usr/bin/env sh
+        if [ "$1" = "-e" ]; then
+          printf '2'
+          exit 0
+        fi
+        echo "unexpected ruby exec" >&2
+        exit 99
+      SH
+      File.chmod(0o755, fake_ruby)
+
+      _out, err, status = Open3.capture3({ "PATH" => "#{dir}:/usr/bin:/bin" }, WRAPPER, "merge", "task-a")
+
+      refute status.success?, "the wrapper must not hand Ruby 3 syntax to Ruby 2"
+      assert_includes err, "requires Ruby 3.3.11"
+      assert_includes err, "install mise"
+    end
   end
 
   # Evaluate a bin/release helper in a clean subprocess (see run_ruby).
@@ -981,6 +1028,47 @@ class ReleaseCliTest < Minitest::Test
     assert_includes adopt, "task-a", "the single adopt call covers task-a"
     assert_includes adopt, "task-b", "the single adopt call covers task-b"
     assert_includes adopt, "adopt!", "the batched call drives Release::Conductor.adopt!"
+  end
+
+  def test_merge_collapses_duplicate_pr_urls_but_adopts_every_task
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "tasks" => [
+            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
+            { "slug" => "task-b", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+          ] }
+        else
+          $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+        end
+      end
+      def sh(*a, **_k)
+        pr_url = a.find { |arg| arg.to_s.start_with?("https://") }
+        if a.include?("baseRefName")
+          $stdout.puts("BASE-CALL " + pr_url.to_s)
+          ["release", true]
+        else
+          $stdout.puts("MERGE-CALL " + pr_url.to_s)
+          ["", true]
+        end
+      end
+      def gh_pr_files(pr_url)
+        $stdout.puts("FILES-CALL " + pr_url)
+        ["app/models/task.rb"]
+      end
+    RUBY
+
+    out = run_cli(%w[task-a task-b], call: "merge", setup: setup)
+
+    assert_includes out, "2 task(s) map to 1 unique PR(s)"
+    assert_equal 1, out.scan("BASE-CALL https://gh/pr/1").size, "the shared PR base is read once"
+    assert_equal 1, out.scan("MERGE-CALL https://gh/pr/1").size, "the shared PR is merged once"
+    assert_equal 0, out.scan("FILES-CALL").size, "one unique PR needs no overlap report"
+
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "task-a", "the first task riding the PR is adopted"
+    assert_includes adopt, "task-b", "the second task riding the PR is adopted"
   end
 
   # A resolve that returns exactly ONE reviewed PR — for the single-slug path.
