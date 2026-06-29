@@ -11,6 +11,10 @@ INSTALLER="${AGENT_RUNTIME_INSTALLER:-$ROOT/bin/install-agent-docs}"
 MARKER_BIN="${AGENT_RUNTIME_MARKER:-$ROOT/bin/agent-marker}"
 CODEX_ADAPTER="${AGENT_RUNTIME_CODEX_ADAPTER:-$ROOT/bin/codex-session-title}"
 CODEX_UPDATE="${AGENT_RUNTIME_CODEX_UPDATE:-$ROOT/bin/codex-update}"
+RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
+REQUIRED_RUBY_VERSION="${AGENT_RUNTIME_REQUIRED_RUBY_VERSION:-3.3}"
+BUNDLER_CHECK_CMD="${AGENT_RUNTIME_BUNDLER_CHECK_CMD:-ruby -S bundle -v}"
+RAILS_BOOT_CMD="${AGENT_RUNTIME_RAILS_BOOT_CMD:-bin/rails runner 'print Rails.version'}"
 
 usage() {
   cat <<'USAGE'
@@ -51,6 +55,46 @@ contains_codex_adapter() {
   [ -f "$file" ] && grep -q '/bin/codex-session-title' "$file"
 }
 
+contains_ruby_path_prefix() {
+  local file="$1"
+  [ -f "$file" ] && grep -Fq "$RUBY_PATH_PREFIX" "$file"
+}
+
+ruby_version_meets_requirement() {
+  local version="$1"
+  local required="$2"
+  local major minor req_major req_minor
+  IFS=. read -r major minor _ <<EOF
+$version
+EOF
+  IFS=. read -r req_major req_minor _ <<EOF
+$required
+EOF
+  major="${major:-0}"; minor="${minor:-0}"
+  req_major="${req_major:-0}"; req_minor="${req_minor:-0}"
+
+  case "$major$minor$req_major$req_minor" in
+    *[!0-9]*) return 1 ;;
+  esac
+
+  [ "$major" -gt "$req_major" ] || { [ "$major" -eq "$req_major" ] && [ "$minor" -ge "$req_minor" ]; }
+}
+
+run_doctor_command() {
+  local label="$1" cmd="$2" out_file err_file
+  out_file="/tmp/mcritchie-agent-runtime-${label//[^A-Za-z0-9]/-}-out.$$"
+  err_file="/tmp/mcritchie-agent-runtime-${label//[^A-Za-z0-9]/-}-err.$$"
+
+  if (cd "$ROOT" && eval "$cmd") >"$out_file" 2>"$err_file"; then
+    ok "$label"
+  else
+    fail_line "$label failed: $cmd"
+    sed 's/^/  /' "$err_file" >&2 || true
+  fi
+
+  rm -f "$out_file" "$err_file"
+}
+
 doctor() {
   AGENT_RUNTIME_DOCTOR_STATUS=0
 
@@ -72,6 +116,12 @@ doctor() {
     ok "Codex config includes thread-title status item"
   else
     fail_line "Codex config missing thread-title status item: $codex_config"
+  fi
+
+  if contains_ruby_path_prefix "$codex_config"; then
+    ok "Codex shell environment prepends required Ruby path"
+  else
+    fail_line "Codex shell environment missing required Ruby path ($RUBY_PATH_PREFIX); run bin/agent-runtime install and restart Codex"
   fi
 
   codex_hooks="$HOME/.codex/hooks.json"
@@ -99,6 +149,18 @@ doctor() {
   else
     warn_line "codex binary not found on PATH"
   fi
+
+  ruby_bin="$(command -v ruby 2>/dev/null || true)"
+  ruby_version="$(ruby -e 'print RUBY_VERSION' 2>/dev/null || true)"
+  required_ruby_bin="${RUBY_PATH_PREFIX%%:*}/ruby"
+  if [ "$ruby_bin" = "$required_ruby_bin" ] && ruby_version_meets_requirement "$ruby_version" "$REQUIRED_RUBY_VERSION"; then
+    ok "Ruby path: $ruby_bin ($ruby_version)"
+  else
+    fail_line "Ruby path drift: expected $required_ruby_bin with Ruby >= $REQUIRED_RUBY_VERSION, got ${ruby_bin:-missing} ${ruby_version:-version unavailable}; run bin/agent-runtime install, restart Codex, then rerun doctor"
+  fi
+
+  run_doctor_command "Bundler available under current Ruby" "$BUNDLER_CHECK_CMD"
+  run_doctor_command "Rails boots under current Ruby" "$RAILS_BOOT_CMD"
 
   exit "$AGENT_RUNTIME_DOCTOR_STATUS"
 }

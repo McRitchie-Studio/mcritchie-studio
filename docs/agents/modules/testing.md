@@ -68,10 +68,12 @@ bin/rails test
 npm test
 ```
 
-> **Running the Rails suite from an agent shell.** A non-interactive shell does
-> not load `direnv`, so `ruby` resolves to the wrong version (brew `ruby@3.1` or
-> system 2.6) and `bundle`/`rails` fail with `bundler RubyVersionMismatch`. The
-> apps pin **3.3.11** — prepend the pinned Ruby first:
+> **Running the Rails suite from an agent shell.** `bin/agent-runtime install`
+> configures Codex's `shell_environment_policy` so new Codex Bash tools prepend
+> `/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin`.
+> `bin/agent-runtime doctor` verifies the Codex config, current `ruby`, Bundler,
+> and Rails boot path. If an already-open session still resolves system Ruby 2.6,
+> restart Codex or temporarily run
 > `export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"`. Parallel test workers
 > fork-clone the test DB, which **deadlocks or segfaults the `pg` gem on macOS**
 > (a Ruby crash report, not a test failure) — pg fork-safety. So as of PR #169 the

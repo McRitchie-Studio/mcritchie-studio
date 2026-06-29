@@ -38,6 +38,7 @@ runtime_root() {
 PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
 RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
+RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
 MODE="${1:-install}"
 
 # "source:target" pairs (paths use /, so : is a safe delimiter).
@@ -219,6 +220,87 @@ range = ensure_array_item(lines, range, "status_line", "thread-title",
 range = ensure_array_item(lines, range, "terminal_title", "thread-title",
                           ["thread-title"])
 ensure_scalar(lines, range, "status_line_use_colors", "true")
+
+updated = lines.join
+File.write(path, updated) if updated != text
+RUBY
+}
+
+ensure_codex_shell_environment_config() {
+  local config="$1" ruby_path="$2"
+  mkdir -p "$(dirname "$config")"
+  ruby - "$config" "$ruby_path" <<'RUBY'
+path = ARGV.fetch(0)
+ruby_path = ARGV.fetch(1)
+text = File.exist?(path) ? File.read(path) : ""
+lines = text.lines
+
+def toml_string(value)
+  %("#{value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').gsub("\n", "\\n")}")
+end
+
+def find_section(lines, name)
+  start = lines.index { |line| line.match?(/^\s*\[#{Regexp.escape(name)}\]\s*$/) }
+  return nil unless start
+
+  finish = ((start + 1)...lines.length).find { |i| lines[i].match?(/^\s*\[[^\]]+\]\s*$/) } || lines.length
+  [start, finish]
+end
+
+def ensure_section(lines, name)
+  range = find_section(lines, name)
+  return range if range
+
+  lines << "\n" unless lines.empty? || lines.last.end_with?("\n\n")
+  lines << "[#{name}]\n"
+  [lines.length - 1, lines.length]
+end
+
+def upsert_scalar(lines, range, key, value)
+  start, finish = range
+  key_re = /^\s*#{Regexp.escape(key)}\s*=/
+  index = (start + 1...finish).find { |i| lines[i].match?(key_re) }
+  line = "#{key} = #{value}\n"
+
+  if index
+    lines[index] = line
+    range
+  else
+    lines.insert(finish, line)
+    [start, finish + 1]
+  end
+end
+
+def upsert_inline_set_path(lines, range, ruby_path)
+  start, finish = range
+  index = (start + 1...finish).find { |i| lines[i].match?(/^\s*set\s*=\s*\{.*\}\s*(#.*)?$/) }
+  return false unless index
+
+  comment = lines[index][/(\s+#.*)$/]
+  code = comment ? lines[index].sub(/\s+#.*$/, "") : lines[index].chomp
+  inner = code[/\{(.*)\}/, 1].to_s.strip
+  entry = "PATH = #{toml_string(ruby_path)}"
+  inner =
+    if inner.match?(/(^|,\s*)PATH\s*=/)
+      inner.gsub(/PATH\s*=\s*"([^"\\]|\\.)*"/, entry)
+    elsif inner.empty?
+      entry
+    else
+      "#{inner}, #{entry}"
+    end
+  lines[index] = "set = { #{inner} }#{comment}\n"
+  true
+end
+
+policy_range = ensure_section(lines, "shell_environment_policy")
+set_range = find_section(lines, "shell_environment_policy.set")
+if set_range
+  upsert_scalar(lines, set_range, "PATH", toml_string(ruby_path))
+elsif !upsert_inline_set_path(lines, policy_range, ruby_path)
+  lines << "\n" unless lines.empty? || lines.last.end_with?("\n\n")
+  lines << "[shell_environment_policy.set]\n"
+  lines << "PATH = #{toml_string(ruby_path)}\n"
+end
 
 updated = lines.join
 File.write(path, updated) if updated != text
@@ -481,7 +563,9 @@ fi
 # user-level /hooks review ceremony.
 codex_config="$HOME/.codex/config.toml"
 ensure_codex_tui_config "$codex_config"
+ensure_codex_shell_environment_config "$codex_config" "$RUBY_PATH_PREFIX"
 echo "  $codex_config (ensured status_line includes thread-title)"
+echo "  $codex_config (ensured Codex shell PATH prepends $RUBY_PATH_PREFIX)"
 
 codex_hooks="$HOME/.codex/hooks.json"
 codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"

@@ -18,6 +18,7 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "json"
+require "rbconfig"
 
 class InstallAgentSkillsTest < Minitest::Test
   ROOT     = File.expand_path("../..", __dir__)
@@ -89,6 +90,31 @@ class InstallAgentSkillsTest < Minitest::Test
 
   def jq_available?
     system("command -v jq >/dev/null 2>&1")
+  end
+
+  def with_fake_runtime_ruby
+    ruby_dir = File.join(@sandbox, "fake-runtime-ruby", "bin")
+    FileUtils.mkdir_p(ruby_dir)
+    fake_ruby = File.join(ruby_dir, "ruby")
+    File.write(fake_ruby, <<~SH)
+      #!/bin/sh
+      if [ "$1" = "-e" ] && printf '%s' "$2" | grep -q 'RUBY_VERSION'; then
+        printf '3.3.11'
+        exit 0
+      fi
+      exec #{RbConfig.ruby} "$@"
+    SH
+    FileUtils.chmod("+x", fake_ruby)
+    yield ruby_dir
+  end
+
+  def runtime_doctor_env(ruby_dir)
+    {
+      "AGENT_RUNTIME_RUBY_PATH_PREFIX" => ruby_dir,
+      "AGENT_RUNTIME_BUNDLER_CHECK_CMD" => "true",
+      "AGENT_RUNTIME_RAILS_BOOT_CMD" => "true",
+      "PATH" => "#{ruby_dir}:#{ENV.fetch("PATH", "")}"
+    }
   end
 
   # ── unit ──────────────────────────────────────────────────────────────────
@@ -211,16 +237,36 @@ class InstallAgentSkillsTest < Minitest::Test
   end
 
   def test_integration_agent_runtime_doctor_passes_after_install
-    run_runtime("install")
-    out, err, status = run_runtime("doctor")
+    with_fake_runtime_ruby do |ruby_dir|
+      env = runtime_doctor_env(ruby_dir)
+      run_runtime("install", env: env)
+      out, err, status = run_runtime("doctor", env: env)
 
-    assert status.success?, "agent-runtime doctor failed:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
-    assert_includes out, "ok: marker provider executable"
-    assert_includes out, "ok: Codex update guard executable"
-    assert_includes out, "ok: runtime installer executable"
-    assert_includes out, "ok: installed agent docs and skills match tracked sources"
-    assert_includes out, "ok: Codex config includes thread-title status item"
-    assert_match(/ok: Codex (managed requirements|user hooks) include McRitchie .*hook/, out)
+      assert status.success?, "agent-runtime doctor failed:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
+      assert_includes out, "ok: marker provider executable"
+      assert_includes out, "ok: Codex update guard executable"
+      assert_includes out, "ok: runtime installer executable"
+      assert_includes out, "ok: installed agent docs and skills match tracked sources"
+      assert_includes out, "ok: Codex config includes thread-title status item"
+      assert_includes out, "ok: Codex shell environment prepends required Ruby path"
+      assert_includes out, "ok: Ruby path: #{ruby_dir}/ruby (3.3.11)"
+      assert_includes out, "ok: Bundler available under current Ruby"
+      assert_includes out, "ok: Rails boots under current Ruby"
+      assert_match(/ok: Codex (managed requirements|user hooks) include McRitchie .*hook/, out)
+    end
+  end
+
+  def test_integration_agent_runtime_doctor_flags_ruby_path_drift
+    with_fake_runtime_ruby do |ruby_dir|
+      env = runtime_doctor_env(ruby_dir)
+      run_runtime("install", env: env)
+      File.write(installed_codex_config, File.read(installed_codex_config).gsub(ruby_dir, "/wrong/ruby"))
+
+      _out, err, status = run_runtime("doctor", env: env)
+
+      refute status.success?, "doctor must fail when Codex config loses the Ruby path"
+      assert_includes err, "Codex shell environment missing required Ruby path"
+    end
   end
 
   def test_integration_global_hooks_use_runtime_root_override
@@ -240,6 +286,8 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/^check_for_update_on_startup = false$/, config)
     assert_match(/status_line = \[[^\n]*"thread-title"/, config)
     assert_match(/terminal_title = \[[^\n]*"thread-title"/, config)
+    assert_includes config, "[shell_environment_policy.set]"
+    assert_includes config, %(PATH = "/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin")
 
     refute File.exist?(installed_codex_hooks),
       "Codex mascot startup must be managed, not a user hook that requires /hooks review"
@@ -253,6 +301,16 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes requirements, 'matcher = "Bash"'
     assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
     assert_includes requirements, 'statusMessage = "Setting session mascot"'
+  end
+
+  def test_integration_install_allows_runtime_ruby_path_override
+    ruby_path = "/tmp/homebrew-ruby/bin:/tmp/homebrew-gems/bin"
+    _out, err, status = run_installer("install", "AGENT_RUNTIME_RUBY_PATH_PREFIX" => ruby_path)
+
+    assert status.success?, "install failed: #{err}"
+    config = File.read(installed_codex_config)
+    assert_includes config, "[shell_environment_policy.set]"
+    assert_includes config, %(PATH = "#{ruby_path}")
   end
 
   def test_integration_install_prunes_stale_worktree_session_hooks
