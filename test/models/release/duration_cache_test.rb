@@ -73,6 +73,26 @@ class Release::DurationCacheTest < ActiveSupport::TestCase
     assert_equal 1, metrics.dig("stages", "building", "sample_count")
   end
 
+  test "completed-only release events preserve their checkpoint timestamp" do
+    release = create_release_with_task(
+      slug: "rel-duration-checkpoint",
+      shipped_at: Time.zone.parse("2026-06-29 12:00:00"),
+      building_seconds: 20.minutes
+    )
+    occurred_at = Time.zone.parse("2026-06-29 11:45:00")
+    ReleaseEvent.create!(release: release, step: "qa_smoke", status: "completed",
+                         occurred_at: occurred_at, source: "conductor")
+
+    metrics = Release::DurationCache.build(release)
+    step = metrics.dig("release_steps", "qa_smoke")
+
+    assert_equal "completed", step["status"]
+    assert_equal occurred_at.iso8601, step["started_at"]
+    assert_equal occurred_at.iso8601, step["completed_at"]
+    assert_equal 0, step["seconds"]
+    assert_equal "completed_only", step["source"]
+  end
+
   test "refresh stores cached metrics on the release record" do
     release = create_release_with_task(
       slug: "rel-duration-refresh",

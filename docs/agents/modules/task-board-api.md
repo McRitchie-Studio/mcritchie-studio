@@ -225,8 +225,11 @@ For `complete` and `fail` calls from agent/API/CLI sources, usage is mandatory:
 
 `start` does not require usage because work has just begun. Deterministic
 server-side writers such as `bin/release` use `source: "conductor"` and may
-record spine-only events. Repeated calls should pass `idempotency_key` so retries
-return the existing release event instead of stacking duplicates.
+record spine-only events. Steps that take measurable work should write `start`
+and then `complete` or `fail`; completed-only legacy checkpoints render as
+instant spans in release analytics so their timestamp remains visible. Repeated
+calls should pass `idempotency_key` so retries return the existing release event
+instead of stacking duplicates.
 
 Start/intents create the analytics timestamp; completions create the accounting
 row. Do not put model/tokens/cost on `start` or intent calls. Agent/API/CLI

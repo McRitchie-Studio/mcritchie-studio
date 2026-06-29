@@ -40,6 +40,32 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_match "Building", response.body
   end
 
+  test "[integration] all deployments paginates releases twenty five per page" do
+    base_time = Time.zone.parse("2030-01-01 12:00:00")
+    26.times do |index|
+      release = Release.create!(slug: "rel-page-#{format('%02d', index + 1)}", branch: "release", state: "shipped")
+      release.update_columns( # rubocop:disable Rails/SkipsModelValidations
+        created_at: base_time + index.minutes,
+        shipped_at: base_time + index.minutes,
+        updated_at: base_time + index.minutes
+      )
+    end
+
+    get all_deployments_path
+
+    assert_response :success
+    assert_select "tbody tr", count: 25
+    assert_includes response.body, "rel-page-26"
+    assert_not_includes response.body, "rel-page-01"
+    assert_select "a[href=?]", all_deployments_path(page: 2), text: "Next"
+
+    get all_deployments_path(page: 2)
+
+    assert_response :success
+    assert_includes response.body, "rel-page-01"
+    assert_select "a[href=?]", all_deployments_path(page: 1), text: "Previous"
+  end
+
   test "[integration] release detail renders cached stage and event tables" do
     release = release_with_member
 

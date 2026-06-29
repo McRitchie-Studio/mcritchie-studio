@@ -59,4 +59,30 @@
       </tbody>
     </table>
   </div>
+
+  <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-muted">
+    <p>
+      <% if @release_count.positive? %>
+        Showing <%= number_with_delimiter(@release_offset + 1) %>-<%= number_with_delimiter([@release_offset + @releases.size, @release_count].min) %>
+        of <%= number_with_delimiter(@release_count) %>
+      <% else %>
+        No deployments
+      <% end %>
+    </p>
+    <% if @release_total_pages > 1 %>
+      <nav class="flex items-center gap-2" aria-label="Deployment pages">
+        <% if @release_page > 1 %>
+          <%= link_to "Previous", all_deployments_path(page: @release_page - 1), class: "btn btn-neutral btn-sm" %>
+        <% else %>
+          <span class="btn btn-neutral btn-sm opacity-40 pointer-events-none">Previous</span>
+        <% end %>
+        <span class="font-mono text-secondary px-2">Page <%= @release_page %> / <%= @release_total_pages %></span>
+        <% if @release_page < @release_total_pages %>
+          <%= link_to "Next", all_deployments_path(page: @release_page + 1), class: "btn btn-neutral btn-sm" %>
+        <% else %>
+          <span class="btn btn-neutral btn-sm opacity-40 pointer-events-none">Next</span>
+        <% end %>
+      </nav>
+    <% end %>
+  </div>
 </div>
