@@ -118,6 +118,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # pill and the chip both live in the same release-members-row.
     assert_select "#current-release [data-test='release-members-row']" do
       assert_select "a[href=?]", task_path(@new_task.slug)  # the task pill
+      assert_select "code", text: /Avi Heartbeat/
       assert_select "code", text: /Build and Deploy QA Release/
       assert_select "code", text: /Merge, Assemble, Deploy/
     end
@@ -135,11 +136,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     card = css_select("#current-release").first.to_html
     badge_at = card.index("release-state-badge")
+    heartbeat_chip_at = card.index("Avi Heartbeat")
     chip_at  = card.index("Build and Deploy QA Release")
     prod_chip_at = card.index("Merge, Assemble, Deploy")
     assert badge_at, "current card should render the status badge"
+    assert heartbeat_chip_at, "current card should render the heartbeat kickoff chip"
     assert chip_at, "current card should render the kickoff chip"
     assert prod_chip_at, "current card should render the autonomous kickoff chip"
+    assert badge_at < heartbeat_chip_at,
+           "the top-right status badge must render before the inline heartbeat kickoff chip"
     assert badge_at < chip_at,
            "the top-right status badge must render before the inline kickoff chip"
     assert badge_at < prod_chip_at,
@@ -248,13 +253,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select %(nav[aria-label="Board views"] span[title="0 building"]), text: "0"
   end
 
-  test "deployments shows an empty current release state when there is no release" do
+  test "deployments shows the release kickoff chips when no release exists" do
     Release.delete_all
 
     get deployments_path
 
     assert_response :success
     assert_select "#current-release", text: /none active/
+    assert_select "#current-release", text: /Avi Heartbeat/
+    assert_select "#current-release", text: /Build and Deploy QA Release/
+    assert_select "#current-release", text: /Merge, Assemble, Deploy/
     assert_select "#last-release", count: 0
   end
 
@@ -305,6 +313,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # No active release → Current shows the muted empty state + kickoff chip,
     # NOT the shipped release dressed up as "current".
     assert_select "#current-release", text: /none active/
+    assert_select "#current-release", text: /Avi Heartbeat/
     assert_select "#current-release", text: /Build and Deploy QA Release/
     assert_select "#current-release", text: /Merge, Assemble, Deploy/
     assert_select "#current-release", { text: /#{Regexp.escape(shipped.slug)}/, count: 0 },

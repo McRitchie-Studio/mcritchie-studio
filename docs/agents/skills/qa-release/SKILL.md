@@ -1,23 +1,28 @@
 ---
 name: qa-release
-description: "Build and Deploy QA Release or Merge, Assemble, Deploy — release-conductor launchers for review, release assembly, QA deploy, and optionally production ship. Build and Deploy QA Release stops at the production ship gate; Merge, Assemble, Deploy explicitly authorizes autonomous production ship after gates pass. Invoke when the operator uses either phrase, clicks either release kickoff chip, or asks to prepare/deploy the release. Thin launcher — the full, model-agnostic SOP lives in devops-cycle-design.md §1.4."
+description: "Avi Heartbeat, Build and Deploy QA Release, or Merge, Assemble, Deploy — DevOps launchers for review intake, release assembly, QA deploy, and optionally production ship. Avi Heartbeat is review-only and stops at reviewed after newest-first serialized PR reviews. Build and Deploy QA Release stops at the production ship gate; Merge, Assemble, Deploy explicitly authorizes autonomous production ship after gates pass. Invoke when the operator uses one of these phrases, clicks a release kickoff chip, or asks to prepare/deploy the release. Thin launcher — the full, model-agnostic SOP lives in devops-cycle-design.md §1.4."
 ---
 
 # Release Conductor Launcher
 
 You are the **CONDUCTOR** (the Deploy lane), not a feature agent. This skill is a
-thin Claude-side launcher; the **canonical, model-agnostic runbook** lives in the
+thin agent-side launcher; the **canonical, model-agnostic runbook** lives in the
 docs so it works the same whether the operator drives Claude, Codex, or anything
 else:
 
-> **`docs/agents/system/devops-cycle-design.md` §1.4 — "Build and Deploy QA
-> Release" and "Merge, Assemble, Deploy"** (with the `Review submitted PRs` /
-> `Prepare release` / `Run Deployment` building blocks that follow them).
+> **`docs/agents/system/devops-cycle-design.md` §1.4 — "Avi Heartbeat", "Build
+> and Deploy QA Release", and "Merge, Assemble, Deploy"** (with the `Review
+> submitted PRs` / `Prepare release` / `Run Deployment` building blocks that
+> follow them).
 
 Read that section and work it top to bottom. It is the source of truth — if this
 launcher and the SOP ever disagree, the SOP wins.
 
 > ⚠️ **Branch at the production decision.**
+> - `Avi Heartbeat`: run `bin/avi-heartbeat --run` from
+>   `/Users/alex/projects/mcritchie-studio`; it serializes submitted PR review,
+>   moves approved tasks to `reviewed`, prints a retrospective after its cap, and
+>   does not merge, deploy, ship, publish gems, or archive.
 > - `Build and Deploy QA Release`: review submitted PRs, assemble the release,
 >   deploy QA, then hand the operator `bin/release ship --by conductor`.
 > - `Merge, Assemble, Deploy`: run the same review/assembly/QA path, then run
