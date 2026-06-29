@@ -284,6 +284,22 @@ class TaskCliTest < Minitest::Test
     assert_equal "avi", JSON.parse(note[:body])["agent_slug"], "qa_feedback should carry the resolved blocker"
   end
 
+  def test_note_posts_clarification_activity
+    requests, out, _err, status = run_task(
+      ["note", "demo-task", "--clarification", "Can you confirm whether this needs a PR comment too?", "--agent", "avi"]
+    )
+
+    assert status.success?
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    refute_nil note, "expected a clarification activity"
+    parsed = JSON.parse(note[:body])
+    assert_equal "demo-task", parsed["task_slug"]
+    assert_equal "clarification", parsed["activity_type"]
+    assert_equal "Can you confirm whether this needs a PR comment too?", parsed["description"]
+    assert_equal "avi", parsed["agent_slug"]
+    assert_includes out, "noted [clarification] on demo-task"
+  end
+
   def test_block_defaults_event_actor_to_the_session_persona
     Dir.mktmpdir do |projects|
       sessions = File.join(projects, ".agents", "sessions")

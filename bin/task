@@ -69,10 +69,10 @@
 #       automatically by bin/reviewer-select, which records by default). )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
-#   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --comment "..." [--agent A]
+#   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
-#       activity_type handoff/qa_feedback/comment. Repeatable + combinable —
-#       one activity is posted per flag given. )
+#       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
+#       combinable — one activity is posted per flag given. )
 
 require "net/http"
 require "json"
@@ -260,7 +260,12 @@ SCALAR_FLAGS = {
   "--persona" => "persona"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
-NOTE_FLAGS = { "--handoff" => "handoff", "--qa-feedback" => "qa_feedback", "--comment" => "comment" }.freeze
+NOTE_FLAGS = {
+  "--handoff" => "handoff",
+  "--qa-feedback" => "qa_feedback",
+  "--clarification" => "clarification",
+  "--comment" => "comment"
+}.freeze
 # The size trio, set as TOP-LEVEL Task columns (not devops). Avi seeds po_size at
 # creation (the default sizer — not a hard gate), the builder Pokémon stamps
 # dev_size when it claims the task at `building`, pm_size is an optional extra
@@ -997,7 +1002,7 @@ when "block"
   write_feature_marker(task)
   print_task(task)
 when "note"
-  slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--comment \"...\" [--agent A]")
+  slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A]")
   notes = []
   agent = nil
   i = 0

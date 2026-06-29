@@ -22,6 +22,8 @@ review comment.
 
 - Use `clarification` when the work can keep moving after an answer. It should
   not be treated as an implicit request-changes decision.
+- From the CLI, record one with
+  `bin/task note <slug> --clarification "..." --agent <agent>`.
 - Use `qa_feedback` when the task must return to the feature agent before the
   next pipeline step. Name the exact action, expected owner, and any PR/CI link
   needed to reproduce the problem.
