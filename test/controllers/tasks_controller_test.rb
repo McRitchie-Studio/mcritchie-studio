@@ -464,6 +464,44 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] reactivated building tasks render above blocked cards" do
+    blocked = Task.create!(title: "stale blocked sort task", stage: "blocked")
+    reactivated = Task.create!(title: "reactivated sort task now", stage: "blocked")
+    reactivated.update!(stage: "building")
+
+    get tasks_path
+    assert_response :success
+
+    building_html = css_select("#dropzone-building").first.to_html
+    reactivated_index = building_html.index("card-#{reactivated.slug}")
+    blocked_index = building_html.index("card-#{blocked.slug}")
+
+    assert reactivated_index, "reactivated card should render in Building"
+    assert blocked_index, "blocked card should render in Building"
+    assert_operator reactivated_index, :<, blocked_index
+  end
+
+  test "[integration] JSON blocked-to-building move renders reactivated task first" do
+    log_in_as(@admin)
+    blocked = Task.create!(title: "stale blocked api task", stage: "blocked")
+    reactivated = Task.create!(title: "reactivated api task now", stage: "blocked")
+
+    patch task_path(reactivated.slug, format: :json),
+          params: { task: { stage: "building" } }, as: :json
+    assert_response :success
+
+    get tasks_path
+    assert_response :success
+
+    building_html = css_select("#dropzone-building").first.to_html
+    reactivated_index = building_html.index("card-#{reactivated.slug}")
+    blocked_index = building_html.index("card-#{blocked.slug}")
+
+    assert reactivated_index, "reactivated card should render in Building"
+    assert blocked_index, "blocked card should render in Building"
+    assert_operator reactivated_index, :<, blocked_index
+  end
+
   test "stages page renders both workflow lanes and the stage guide" do
     get stages_path
 

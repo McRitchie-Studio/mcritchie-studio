@@ -349,6 +349,21 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal positions.sort.reverse, positions, "ordered is position DESC"
   end
 
+  test "[unit] building board column keeps reactivated work above blocked cards" do
+    older_building = Task.create!(title: "older building card here", stage: "building")
+    blocked = Task.create!(title: "stale blocked card here", stage: "blocked")
+    reactivated = Task.create!(title: "reactivated blocked card here", stage: "blocked")
+
+    reactivated.update!(stage: "building")
+
+    grouped = Task.where(slug: [older_building.slug, blocked.slug, reactivated.slug])
+                  .ordered
+                  .group_by(&:stage)
+
+    assert_equal [reactivated.slug, older_building.slug, blocked.slug],
+                 Task.board_column_tasks(grouped, "building").map(&:slug)
+  end
+
   test "tasks default to the designed stage" do
     task = Task.create!(title: "default stage check task")
     assert_equal "designed", task.stage
