@@ -26,9 +26,30 @@ class ReviewEventsTest < ApplicationSystemTestCase
     click_link "Review Events"
 
     assert_current_path review_events_task_path(task.slug)
-    assert_text "PRIMARY REVIEW"
-    assert_text "LIGHT REVIEW"
+    assert_text "HEAVY SWIMLANE"
+    assert_text "LIGHT SWIMLANE"
     assert_text "System test sees the primary diff checkpoint."
     assert_text "System test sees the light smoke checkpoint."
+  end
+
+  test "[e2e] operator opens review process hub from submitted column docs link" do
+    Agent.create!(name: "Carl", slug: "carl")
+    Agent.create!(name: "Shannon", slug: "shannon")
+    task = Task.create!(title: "review hub system task", stage: "submitted")
+    task.record_intent_event(
+      to_stage: "reviewed",
+      reviewers: [{ "slug" => "carl", "weight" => "primary" }, { "slug" => "shannon", "weight" => "light" }]
+    )
+
+    visit deployments_path
+    find("[data-test='submitted-review-docs-link']").click
+
+    assert_current_path review_events_hub_path
+    assert_text "Review Process Hub"
+    assert_text "HEAVY SWIMLANE"
+    assert_text "LIGHT SWIMLANE"
+    assert_text "review hub system task"
+    assert_text "Carl"
+    assert_text "Shannon"
   end
 end

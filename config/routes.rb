@@ -39,6 +39,7 @@ Rails.application.routes.draw do
   get "deployments", to: "tasks#deployments", as: :deployments
   get "deployments/all", to: "releases#index", as: :all_deployments
   get "deployments/:slug", to: "releases#show", as: :deployment
+  get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
   get "stages", to: "tasks#stages", as: :stages
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane infographic.
   get "stages/sop", to: "tasks#sop", as: :sop

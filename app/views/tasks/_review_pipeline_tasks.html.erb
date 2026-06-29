@@ -1,0 +1,53 @@
+<%# locals: (snapshots_by_stage:) %>
+<section class="mt-5 rounded-lg border border-subtle bg-surface p-4" data-test="review-pipeline-tasks">
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <p class="label-upper">Pipeline Tasks</p>
+      <h3 class="mt-1 text-lg font-semibold text-heading">Recent review flow</h3>
+    </div>
+    <%= link_to "Deployments", deployments_path, class: "text-xs text-primary hover:underline" %>
+  </div>
+
+  <div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-4">
+    <% ReviewProcessHub::PIPELINE_STAGES.each do |stage| %>
+      <% snapshots = Array(snapshots_by_stage[stage]) %>
+      <section class="rounded-md border border-subtle bg-inset/50 p-3" data-test="review-pipeline-stage" data-stage="<%= stage %>">
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <h4 class="text-xs font-bold uppercase tracking-wide text-heading"><%= Task::STAGE_LABELS.fetch(stage) %></h4>
+          <span class="rounded-full border px-1.5 py-0.5 text-[10px] font-bold tabular-nums <%= task_stage_count_classes(stage) %>"><%= snapshots.size %></span>
+        </div>
+
+        <% if snapshots.any? %>
+          <ol class="space-y-2">
+            <% snapshots.each do |snapshot| %>
+              <% task = snapshot.task %>
+              <li class="rounded border border-subtle bg-surface p-2" data-test="review-pipeline-task" data-slug="<%= task.slug %>">
+                <%= link_to task.title,
+                      review_events_task_path(task.slug),
+                      class: "block text-sm font-semibold leading-snug text-heading hover:text-primary" %>
+                <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <% { "Heavy" => snapshot.reviewer_for("primary"), "Light" => snapshot.reviewer_for("light") }.each do |label, reviewer| %>
+                    <div class="min-w-0 rounded border border-subtle bg-surface-alt px-2 py-1" data-test="review-pipeline-reviewer" data-role="<%= label.downcase %>">
+                      <p class="text-[10px] font-semibold uppercase tracking-wide text-muted"><%= label %></p>
+                      <p class="truncate text-secondary"><%= review_agent_name(reviewer) %></p>
+                    </div>
+                  <% end %>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted">
+                  <span><%= pluralize(snapshot.review_event_count, "event") %></span>
+                  <% if snapshot.latest_review_at %>
+                    <time datetime="<%= snapshot.latest_review_at.iso8601 %>"><%= time_ago_in_words(snapshot.latest_review_at) %> ago</time>
+                  <% else %>
+                    <span>No check-ins</span>
+                  <% end %>
+                </div>
+              </li>
+            <% end %>
+          </ol>
+        <% else %>
+          <p class="rounded border border-dashed border-subtle bg-surface p-3 text-sm text-muted">No recent tasks in this stage.</p>
+        <% end %>
+      </section>
+    <% end %>
+  </div>
+</section>

@@ -3,6 +3,7 @@
     <div class="flex items-center gap-3">
       <%= link_to "&larr; Task".html_safe, task_path(@task.slug), class: "text-secondary hover:text-heading text-sm transition" %>
       <%= link_to "Deployments", deployments_path, class: "text-secondary hover:text-heading text-sm transition" %>
+      <%= link_to "Review Hub", review_events_hub_path, class: "text-secondary hover:text-heading text-sm transition" %>
     </div>
     <span class="text-xs text-muted font-mono"><%= @task.slug %></span>
   </div>
@@ -13,13 +14,13 @@
         <p class="label-upper">Review Events</p>
         <h2 class="mt-1 text-2xl font-bold text-heading"><%= @task.title %></h2>
         <p class="mt-2 max-w-3xl text-sm text-muted">
-          Primary and light reviewer check-ins are recorded as append-only task events, so long-running reviews show their actual progress instead of only a final stage move.
+          Heavy and light reviewer check-ins are recorded as append-only task events, so long-running reviews show their actual progress instead of only a final stage move.
         </p>
       </div>
       <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
     </div>
 
-    <% lanes = review_event_lanes(@task, @agents, @review_events) %>
+    <% lanes = review_event_lanes(@task, @agents, @review_events, process: @review_process) %>
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-2" data-test="review-events-grid">
       <% lanes.each do |lane| %>
         <%= render "tasks/review_event_lane", lane: lane %>
@@ -32,4 +33,6 @@
       <p class="mt-2 text-xs text-muted">Roles accept <code>primary</code>, <code>light</code>, and the legacy <code>heavy_review</code>/<code>light_review</code> aliases. Completed and failed agent events include usage.</p>
     </div>
   </div>
+
+  <%= render "tasks/review_pipeline_tasks", snapshots_by_stage: @review_pipeline_tasks %>
 </section>

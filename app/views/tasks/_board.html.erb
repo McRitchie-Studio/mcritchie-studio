@@ -377,6 +377,12 @@ function kanbanBoard(live) {
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
               <%= Task::STAGE_LABELS.fetch(stage) %>
             </h3>
+            <% if stage == "submitted" %>
+              <%= link_to "docs",
+                    review_events_hub_path,
+                    class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
+                    "data-test": "submitted-review-docs-link" %>
+            <% end %>
             <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
               <%= task_stage_count_classes(stage) %>"
               data-stage-count="<%= stage %>">
