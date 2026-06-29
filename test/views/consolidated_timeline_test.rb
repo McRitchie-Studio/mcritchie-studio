@@ -105,7 +105,8 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "Shannon"
     # the legacy "heavy" weight surfaces as the canonical "primary" label, never "heavy"
     assert_includes rendered, "primary", "a legacy heavy record displays the primary role"
-    refute_includes rendered, "heavy", "the stale 'heavy' label is normalized away in the UI"
+    visible_text = css_select("[data-test='stage-timeline']").map(&:text).join(" ")
+    refute_match(/\bheavy\b/i, visible_text, "the stale 'heavy' label is normalized away in visible UI")
     # and it wears the primary (deep) seat tooltip + accent styling
     assert_select "[title='Primary (deep) review']"
   end

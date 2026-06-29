@@ -195,6 +195,25 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     assert task.reload.open_intent_for("reviewed").present?
   end
 
+  test "[integration] review timeline block links to review event reader" do
+    Agent.create!(name: "Carl", slug: "carl")
+    Agent.create!(name: "Shannon", slug: "shannon")
+    reviewers = [{ "slug" => "carl", "weight" => "primary" }, { "slug" => "shannon", "weight" => "light" }]
+    task = Task.create!(title: "Timeline review events task", stage: "submitted")
+    task.record_intent_event(to_stage: "reviewed", reviewers: reviewers)
+    task.record_review_check_in(role: "primary", moment: "diff", actor: "carl", message: "Diff scan done.")
+
+    get task_path(task.slug)
+    assert_response :success
+    assert_select "[data-test='timeline-review-events-link'][href=?]", review_events_task_path(task.slug)
+
+    get review_events_task_path(task.slug)
+    assert_response :success
+    assert_select "[data-test='review-events-grid']"
+    assert_select "[data-test='review-event-lane'][data-role='primary']"
+    assert_match "Diff scan done.", response.body
+  end
+
   # [integration] a bad request (no to_stage) is a clean 400, never a 500.
   test "api intent without to_stage is a 400" do
     task = Task.create!(title: "Timeline intent bad task", stage: "submitted")

@@ -121,6 +121,7 @@ Rails.application.routes.draw do
     member do
       # Stages move through PATCH update (one path shared by the board drag-drop,
       # bin/task, and the API). `comment` posts task-conversation activities.
+      get :review_events
       post :comment
     end
     resource :sizing, only: [:show, :update]
@@ -235,6 +236,7 @@ Rails.application.routes.draw do
           # Steffon QA started, Avi ship e2e started) — so the board + task timeline
           # show who's on it with a live ticker before the transition lands.
           post :intent
+          post "review_events", to: "review_events#create", as: :review_events
           post "events/:stage/start", to: "task_events#start", as: :event_start
           post "events/:stage/complete", to: "task_events#complete", as: :event_complete
           post "events/:stage/fail", to: "task_events#fail", as: :event_fail

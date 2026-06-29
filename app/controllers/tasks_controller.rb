@@ -1,8 +1,8 @@
 class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show, :deployments, :stages, :sop]
-  before_action :require_admin, except: [:index, :show, :deployments, :stages, :sop]
-  before_action :set_task, only: [:show, :edit, :update, :destroy, :comment]
+  skip_before_action :require_authentication, only: [:index, :show, :review_events, :deployments, :stages, :sop]
+  before_action :require_admin, except: [:index, :show, :review_events, :deployments, :stages, :sop]
+  before_action :set_task, only: [:show, :review_events, :edit, :update, :destroy, :comment]
 
   def reorder
     slugs = params[:slugs]
@@ -48,6 +48,12 @@ class TasksController < ApplicationController
   def show
     load_task_conversation
     @task_events = @task.task_events.chronological.to_a
+    @agents = Agent.order(:position)
+  end
+
+  def review_events
+    @task_events = @task.task_events.chronological.to_a
+    @review_events = @task.review_check_in_events
     @agents = Agent.order(:position)
   end
 
