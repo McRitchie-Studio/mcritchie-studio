@@ -18,6 +18,19 @@ class TaskCardTest < ActionView::TestCase
     assert_includes rendered, "Card render task"
   end
 
+  test "blocked card tone is readable in light and dark themes" do
+    task = Task.create!(title: "Blocked tone task", stage: "blocked")
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_includes card["class"], "bg-red-50"
+    assert_includes card["class"], "dark:bg-red-950/40"
+    assert_includes card["class"], "hover:bg-red-100/70"
+    assert_includes rendered, "hover:text-red-700"
+    assert_includes rendered, "dark:hover:text-red-300"
+  end
+
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do
     task = Task.create!(title: "Activity label task", stage: "submitted")
     activity = Activity.create!(task_slug: task.slug, activity_type: "handoff",

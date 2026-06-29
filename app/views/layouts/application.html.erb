@@ -117,8 +117,8 @@
       })();
     </script>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
-            class="sticky top-0 z-50 bg-page transition-shadow duration-300"
-            :class="scrolled && 'shadow-lg border-b border-subtle'">
+            class="sticky top-0 z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
+            :class="scrolled ? 'shadow-lg border-subtle' : 'border-transparent'">
       <% if show_environment_banner? %>
         <% environment_actions = capture do %>
           <%= render "shared/dev_mode_button" %>
@@ -135,13 +135,13 @@
         <div class="flex items-center justify-between gap-4 min-w-0">
           <div class="flex items-center gap-6 min-w-0">
             <%= link_to root_path, class: "inline-flex items-center gap-3 group" do %>
-              <%= image_tag "logo-icon.svg", class: "transition-all duration-300", "x-bind:class": "scrolled ? 'w-5 h-5' : 'w-8 h-8'" %>
+              <%= image_tag "logo-icon.svg", class: "invert transition-all duration-300 dark:invert-0", "x-bind:class": "scrolled ? 'w-5 h-5' : 'w-8 h-8'" %>
               <h1 class="font-extrabold text-heading tracking-tight transition-all duration-300"
                   x-bind:class="scrolled ? 'text-base' : 'text-2xl'">McRitchie <span class="text-primary">Studio</span></h1>
             <% end %>
-            <nav class="hidden md:flex items-center gap-4 min-w-0">
-              <%= link_to "Agents", activities_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
-              <%= link_to "Builders", builders_path, class: "text-secondary hover:text-primary text-sm font-medium transition" %>
+            <nav class="hidden md:flex items-center gap-1 min-w-0" aria-label="Primary">
+              <%= link_to "Agents", activities_path, class: "rounded-md px-2 py-1 text-secondary hover:text-primary hover:bg-surface-alt text-sm font-medium transition" %>
+              <%= link_to "Builders", builders_path, class: "rounded-md px-2 py-1 text-secondary hover:text-primary hover:bg-surface-alt text-sm font-medium transition" %>
             </nav>
           </div>
 
@@ -159,9 +159,9 @@
         </div>
       </div>
       <%# Mobile sub-navbar %>
-      <div class="flex md:hidden items-center gap-3 px-4 py-1.5 overflow-x-auto border-t border-subtle bg-surface-alt">
-        <%= link_to "Agents", activities_path, class: "text-secondary hover:text-primary text-xs font-medium transition whitespace-nowrap" %>
-        <%= link_to "Builders", builders_path, class: "text-secondary hover:text-primary text-xs font-medium transition whitespace-nowrap" %>
+      <div class="flex md:hidden items-center gap-1 px-4 py-1.5 overflow-x-auto border-t border-subtle bg-surface-alt">
+        <%= link_to "Agents", activities_path, class: "rounded-md px-2 py-1 text-secondary hover:text-primary hover:bg-surface text-xs font-medium transition whitespace-nowrap" %>
+        <%= link_to "Builders", builders_path, class: "rounded-md px-2 py-1 text-secondary hover:text-primary hover:bg-surface text-xs font-medium transition whitespace-nowrap" %>
         <% unless logged_in? %>
           <span class="ml-auto flex items-center gap-3">
             <%= render "components/link_sidebar_trigger" %>

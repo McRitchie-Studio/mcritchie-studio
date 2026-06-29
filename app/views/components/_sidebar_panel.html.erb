@@ -38,7 +38,7 @@
           <% if close_action.present? %>
             <button type="button"
                     @click="<%= close_action %>"
-                    class="flex items-center justify-center w-8 h-8 rounded-full text-secondary hover:text-heading hover:bg-surface-alt transition"
+                    class="flex items-center justify-center w-8 h-8 rounded-full text-secondary hover:text-heading hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition"
                     aria-label="Close sidebar"
                     data-link-sidebar-close="true">
               <span class="text-xl leading-none">&times;</span>

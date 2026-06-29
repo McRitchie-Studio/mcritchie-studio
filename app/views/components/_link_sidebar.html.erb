@@ -6,14 +6,14 @@
       <div class="px-4 pt-4 pb-1 label-upper font-bold text-muted flex items-center gap-2">
         <span><%= section[:title] %></span>
         <% if section[:admin] %>
-          <span class="text-[10px] font-mono text-primary">ADMIN</span>
+          <span class="rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-mono text-primary">ADMIN</span>
         <% end %>
       </div>
 
       <% section[:links].each do |link| %>
         <% target = link[:target].presence %>
         <%= link_to link[:href],
-              class: "group flex items-start gap-3 px-4 py-3 text-sm text-body hover:text-heading hover:bg-surface-alt transition",
+              class: "group flex items-start gap-3 px-4 py-3 text-sm text-body hover:text-heading hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-inset transition",
               target: target,
               rel: target == "_blank" ? "noopener" : nil,
               "@click": close_action do %>
@@ -41,7 +41,7 @@
   <% if logged_in? %>
     <div class="border-t border-subtle p-2">
       <%= link_to logout_path,
-            class: "flex items-center gap-3 px-4 py-3 text-sm text-body hover:text-heading hover:bg-surface-alt transition rounded",
+            class: "flex items-center gap-3 rounded-md px-4 py-3 text-sm text-body hover:text-heading hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition",
             "@click": close_action do %>
         <span>👋</span><span>Log out</span>
       <% end %>

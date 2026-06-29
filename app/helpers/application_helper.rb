@@ -47,15 +47,15 @@ module ApplicationHelper
 
   def task_stage_count_classes(stage)
     case stage.to_s
-    when "designed"  then "bg-blue-900/50 text-blue-300"
-    when "building"  then "bg-mint-900/50 text-mint-300"
-    when "submitted" then "bg-orange-900/50 text-orange-300"
-    when "reviewed"  then "bg-cyan-900/50 text-cyan-300"
-    when "assembled" then "bg-violet-900/50 text-violet-300"
-    when "shipped"   then "bg-green-900/50 text-green-300"
-    when "blocked"   then "bg-red-900/50 text-red-300"
-    when "archived"  then "bg-surface-alt text-muted"
-    else "bg-surface-alt text-muted"
+    when "designed"  then "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/50"
+    when "building"  then "bg-mint-100 text-mint-900 border border-mint-200 dark:bg-mint-900/50 dark:text-mint-200 dark:border-mint-700/50"
+    when "submitted" then "bg-amber-100 text-amber-900 border border-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:border-amber-700/50"
+    when "reviewed"  then "bg-cyan-100 text-cyan-900 border border-cyan-200 dark:bg-cyan-900/50 dark:text-cyan-200 dark:border-cyan-700/50"
+    when "assembled" then "bg-primary-100 text-primary-900 border border-primary-300 dark:bg-primary-900/50 dark:text-primary-200 dark:border-primary-700/50"
+    when "shipped"   then "bg-green-100 text-green-900 border border-green-200 dark:bg-green-900/50 dark:text-green-200 dark:border-green-700/50"
+    when "blocked"   then "bg-red-100 text-red-900 border border-red-200 dark:bg-red-900/50 dark:text-red-200 dark:border-red-700/50"
+    when "archived"  then "bg-surface-alt text-muted border border-subtle"
+    else "bg-surface-alt text-muted border border-subtle"
     end
   end
 
