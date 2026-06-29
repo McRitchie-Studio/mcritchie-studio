@@ -6,12 +6,12 @@ set -euo pipefail
 # PR #233 gives Codex sessions a persisted McRitchie marker:
 #   <Pokemon> · <app> · <feature>
 #
-# Stock Codex CLI 0.142.3 keeps the live footer's thread name in memory, so
-# updating SQLite only affects history/resume. A locally patched Codex runtime
-# can also consume hookSpecificOutput.threadName from SessionStart and
-# PostToolUse hooks and repaint the live footer silently. This hook emits that
-# field only when explicitly enabled; otherwise it deliberately prints nothing
-# on success to stay compatible with stock Codex.
+# Stock Codex keeps the live footer's thread name in memory, so updating SQLite
+# only affects history/resume. A locally patched Codex runtime can also consume
+# hookSpecificOutput.threadName from SessionStart and PostToolUse hooks and
+# repaint the live footer silently. This hook emits that non-standard field only
+# when the patched extension is explicitly marked present; otherwise it prints
+# nothing on success to stay compatible with stock Codex after CLI updates.
 # A missing session id, unreachable task API, absent sqlite DB, or transient lock
 # must never slow or break a new Codex session.
 
@@ -22,6 +22,7 @@ SQLITE3="${SQLITE3:-sqlite3}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CODEX_STATE_DB="${CODEX_STATE_DB:-$CODEX_HOME/state_5.sqlite}"
 LIVE_THREAD_NAME_SENTINEL="${CODEX_SESSION_TITLE_LIVE_SENTINEL:-$CODEX_HOME/mcritchie-live-thread-title.enabled}"
+THREAD_NAME_EXTENSION_SENTINEL="${CODEX_SESSION_TITLE_EXTENSION_SENTINEL:-$CODEX_HOME/mcritchie-thread-name-extension.enabled}"
 default_projects_dir() {
   local candidate
   candidate="$(cd "$ROOT/.." && pwd)"
@@ -92,7 +93,7 @@ live_thread_name_enabled() {
       ;;
   esac
 
-  [ -f "$LIVE_THREAD_NAME_SENTINEL" ]
+  [ -f "$LIVE_THREAD_NAME_SENTINEL" ] && [ -f "$THREAD_NAME_EXTENSION_SENTINEL" ]
 }
 
 emit_live_thread_name() {

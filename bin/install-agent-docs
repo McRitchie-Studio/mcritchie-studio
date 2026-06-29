@@ -484,6 +484,7 @@ else
     13)
       echo "  $CODEX_REQUIREMENTS_PATH (admin install required for organic Codex mascot)"
       install_codex_user_hook "$codex_hooks" "$codex_hook_cmd"
+      echo "  Review the fallback hooks once inside Codex with /hooks, or install the staged managed requirements."
       ;;
     *)
       echo "  $CODEX_REQUIREMENTS_PATH (could not install Codex managed mascot hook)"

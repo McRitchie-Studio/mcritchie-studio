@@ -49,6 +49,61 @@ contains_codex_adapter() {
   [ -f "$file" ] && grep -q '/bin/codex-session-title' "$file"
 }
 
+codex_user_hook_events() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+
+  ruby -rjson - "$file" <<'RUBY' 2>/dev/null || true
+path = ARGV.fetch(0)
+data = JSON.parse(File.read(path))
+%w[SessionStart PostToolUse].each do |event|
+  entries = Array(data.dig("hooks", event))
+  found = entries.any? do |entry|
+    Array(entry["hooks"]).any? { |hook| hook["command"].to_s.include?("/bin/codex-session-title") }
+  end
+  puts event if found
+end
+RUBY
+}
+
+codex_hook_event_key() {
+  case "$1" in
+    SessionStart) printf 'session_start' ;;
+    PostToolUse) printf 'post_tool_use' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+codex_hook_trusted() {
+  local config="$1" hooks_file="$2" event="$3" key
+  [ -f "$config" ] || return 1
+  key="$(codex_hook_event_key "$event")"
+  grep -F "[hooks.state.\"$hooks_file:$key:" "$config" >/dev/null 2>&1
+}
+
+probe_codex_adapter() {
+  local adapter="$1" tmp_home err_file out status
+  [ -x "$adapter" ] || return 1
+  tmp_home="$(mktemp -d "${TMPDIR:-/tmp}/agent-runtime-codex.XXXXXX")" || return 1
+  err_file="$tmp_home/probe.err"
+  out="$(
+    CODEX_HOME="$tmp_home" \
+    CODEX_STATE_DB="$tmp_home/state_5.sqlite" \
+    CODEX_SESSION_TITLE_RETRY_DELAYS=none \
+    CODEX_THREAD_ID=agent-runtime-doctor \
+    CLAUDE_PROJECTS_DIR="/Users/alex/projects" \
+    "$adapter" <<'JSON' 2>"$err_file"
+{"session_id":"agent-runtime-doctor","hook_event_name":"SessionStart"}
+JSON
+  )"
+  status="$?"
+  rm -rf "$tmp_home"
+  [ "$status" -eq 0 ] || return 1
+  # Stock-compatible success is intentionally silent. If output exists, it must
+  # at least look like the JSON hook output shape the patched extension expects.
+  [ -z "$out" ] || printf '%s' "$out" | ruby -rjson -e 'JSON.parse(STDIN.read); exit 0' >/dev/null 2>&1
+}
+
 doctor() {
   AGENT_RUNTIME_DOCTOR_STATUS=0
 
@@ -77,16 +132,46 @@ doctor() {
   if contains_codex_adapter "$requirements"; then
     ok "Codex managed requirements include McRitchie hook"
   elif contains_codex_adapter "$codex_hooks"; then
-    ok "Codex user hooks include McRitchie fallback hook"
+    missing_trust=0
+    missing_events=0
+    events="$(codex_user_hook_events "$codex_hooks" | tr '\n' ' ')"
+    for event in SessionStart PostToolUse; do
+      case " $events " in
+        *" $event "*) ;;
+        *) missing_events=1 ;;
+      esac
+      if ! codex_hook_trusted "$codex_config" "$codex_hooks" "$event"; then
+        missing_trust=1
+      fi
+    done
+
+    if [ "$missing_events" -eq 0 ] && [ "$missing_trust" -eq 0 ]; then
+      ok "Codex user hooks include trusted McRitchie fallback hooks"
+    elif [ "$missing_events" -eq 0 ]; then
+      fail_line "Codex user hooks include McRitchie fallback hooks but are not trusted; review them inside Codex with /hooks or install managed requirements"
+    else
+      fail_line "Codex user hooks are missing one of SessionStart/PostToolUse for $CODEX_ADAPTER"
+    fi
   elif contains_codex_adapter "$staged"; then
     warn_line "managed Codex requirements are staged but not installed: $staged"
   else
     fail_line "Codex hooks do not reference $CODEX_ADAPTER"
   fi
 
+  if probe_codex_adapter "$CODEX_ADAPTER"; then
+    ok "Codex mascot adapter hook probe exits cleanly"
+  else
+    fail_line "Codex mascot adapter hook probe failed: $CODEX_ADAPTER"
+  fi
+
   sentinel="$HOME/.codex/mcritchie-live-thread-title.enabled"
+  extension="$HOME/.codex/mcritchie-thread-name-extension.enabled"
   if [ -f "$sentinel" ]; then
-    ok "live Codex thread-title repaint sentinel enabled"
+    if [ -f "$extension" ]; then
+      ok "live Codex thread-title repaint extension sentinel enabled"
+    else
+      warn_line "legacy live Codex thread-title sentinel is ignored until the patched threadName extension is installed"
+    fi
   else
     warn_line "live Codex thread-title repaint sentinel disabled; stock-compatible persistence still works"
   fi

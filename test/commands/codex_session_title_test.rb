@@ -128,8 +128,9 @@ class CodexSessionTitleTest < Minitest::Test
     )
   end
 
-  def test_sentinel_enables_live_thread_name_output
+  def test_explicit_extension_sentinel_enables_live_thread_name_output
     File.write(File.join(@tmp, "mcritchie-live-thread-title.enabled"), "1")
+    File.write(File.join(@tmp, "mcritchie-thread-name-extension.enabled"), "1")
     marker = "🍄 Nidoqueen · mcritchie-studio"
     out, err, status = run_script("KICKOFF_MARKER" => marker)
 
@@ -238,6 +239,15 @@ class CodexSessionTitleTest < Minitest::Test
     assert_silent_success out, err, status
     assert_empty calls
     assert_equal "thread-123", title_for("thread-123")
+  end
+
+  def test_stale_live_sentinel_stays_silent_on_stock_codex
+    File.write(File.join(@tmp, "mcritchie-live-thread-title.enabled"), "1")
+    marker = "🍄 Nidoqueen · mcritchie-studio"
+    out, err, status = run_script("KICKOFF_MARKER" => marker)
+
+    assert_silent_success out, err, status
+    assert_equal marker, title_for("thread-123")
   end
 
   def test_kickoff_failure_does_not_break_session_start

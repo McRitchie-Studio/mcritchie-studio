@@ -222,6 +222,43 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/ok: Codex (managed requirements|user hooks) include McRitchie .*hook/, out)
   end
 
+  def test_integration_agent_runtime_doctor_flags_untrusted_user_hook_fallback
+    skip "jq is required for settings hook install" unless jq_available?
+
+    blocked_parent = File.join(@sandbox, "not-a-directory")
+    File.write(blocked_parent, "nope")
+    fallback_env = { "CODEX_REQUIREMENTS_PATH" => File.join(blocked_parent, "requirements.toml") }
+    _out, err, status = run_installer("install", fallback_env)
+    assert status.success?, "fallback install failed: #{err}"
+
+    out, err, status = run_runtime("doctor", env: fallback_env)
+    refute status.success?, "doctor must fail when fallback hooks exist without Codex trust"
+    assert_includes err, "Codex user hooks include McRitchie fallback hooks but are not trusted"
+
+    File.open(installed_codex_config, "a") do |file|
+      file.puts
+      file.puts %([hooks.state."#{installed_codex_hooks}:session_start:0:0"])
+      file.puts %(trusted_hash = "sha256:test-session")
+      file.puts
+      file.puts %([hooks.state."#{installed_codex_hooks}:post_tool_use:0:0"])
+      file.puts %(trusted_hash = "sha256:test-post-tool")
+    end
+
+    out, err, status = run_runtime("doctor", env: fallback_env)
+    assert status.success?, "trusted fallback hooks should pass doctor:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
+    assert_includes out, "ok: Codex user hooks include trusted McRitchie fallback hooks"
+  end
+
+  def test_integration_agent_runtime_doctor_warns_on_legacy_live_sentinel
+    run_runtime("install")
+    File.write(File.join(@home, ".codex", "mcritchie-live-thread-title.enabled"), "")
+
+    out, err, status = run_runtime("doctor")
+
+    assert status.success?, "legacy sentinel should warn, not fail:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
+    assert_includes out, "warn: legacy live Codex thread-title sentinel is ignored"
+  end
+
   def test_integration_global_hooks_use_runtime_root_override
     skip "jq is required for settings hook install" unless jq_available?
 
@@ -353,7 +390,7 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes out, "admin install required for organic Codex mascot"
     assert_includes out, "installed user-level Codex SessionStart/PostToolUse fallback"
     assert_includes out, "Staged managed requirements:"
-    refute_includes out, "Review once inside Codex with /hooks"
+    assert_includes out, "Review the fallback hooks once inside Codex with /hooks"
 
     staged = File.join(@home, ".codex", "mcritchie-requirements.toml")
     assert File.file?(staged), "installer should stage the managed requirements for admin install"

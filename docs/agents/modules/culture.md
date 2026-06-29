@@ -15,9 +15,10 @@ and make product calls, not to operate the terminal on behalf of the agent.
   wears it as the build agent ("Snorlax is building this"). It's the easy default,
   established the moment you create your production task (per-session, so every
   task that session builds shares it). One agent → one Pokémon → the same critter
-  in your terminal title/resume metadata and on the board. Patched Codex support
-  uses hook `threadName` output to update the live footer on session start and
-  after task-creating Bash tools, without visible `additionalContext`.
+  in your terminal title/resume metadata and on the board. Stock Codex persists
+  the marker for resume/history; live footer repaint requires the McRitchie
+  patched `threadName` hook extension markers so Codex updates cannot leave a
+  stale sentinel emitting unsupported hook output.
 - **Mascot for identity, soul for expertise.** When the work wants a specific soul —
   Carl (backend), Shannon (UI), Jasper (Web3), Steffon (platform), Alex (docs) — act
   *as* that soul: the agent handle drives the review pool and domain fit. The Pokémon

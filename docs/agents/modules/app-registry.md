@@ -27,12 +27,12 @@ footer configured with the built-in `thread-title` item and installs a managed
 `SessionStart` hook plus a `PostToolUse` refresh hook to
 `bin/codex-session-title`. That Codex adapter delegates marker resolution to the
 shared provider `bin/agent-marker current`, then mirrors the marker into Codex's
-persisted local thread title. Stock Codex CLI 0.142.3 renders
-SessionStart `additionalContext` as visible `hook context`, so the hook does not
-use it for mascot identity. Stock 0.142.3 also keeps the live footer thread name
-in memory after session configuration; a SQLite title update does not repaint
-that already-running footer, although resume reloads the persisted title and
-shows the Pokémon marker.
+persisted local thread title. Stock Codex keeps the live footer thread name in
+memory after session configuration; a SQLite title update does not repaint that
+already-running footer, although resume reloads the persisted title and shows
+the Pokémon marker. Codex `SessionStart` supports `additionalContext`, but the
+hook does not use it for mascot identity because it is rendered as visible hook
+context.
 
 For local Codex installs patched with the McRitchie `threadName` hook runtime
 (`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
@@ -40,9 +40,10 @@ enable live fresh-session and post-task repainting by creating:
 
 ```bash
 touch ~/.codex/mcritchie-live-thread-title.enabled
+touch ~/.codex/mcritchie-thread-name-extension.enabled
 ```
 
-With that sentinel present, `bin/codex-session-title` emits:
+With both sentinels present, `bin/codex-session-title` emits:
 
 ```json
 {"hookSpecificOutput":{"hookEventName":"SessionStart","threadName":"<marker>"}}
@@ -59,12 +60,20 @@ sentinel to fall back to stock-compatible silent persistence:
 
 ```bash
 rm -f ~/.codex/mcritchie-live-thread-title.enabled
+rm -f ~/.codex/mcritchie-thread-name-extension.enabled
 ```
+
+The second marker is deliberately required because Codex updates can replace a
+locally patched binary with a stock one. A stale
+`mcritchie-live-thread-title.enabled` file by itself is ignored so the hook stays
+valid under stock Codex instead of emitting unsupported `threadName` output.
 
 When `/etc/codex/requirements.toml` is not writable, the installer stages the
 managed requirements block under `~/.codex/`, prints the admin install note, and
 installs a user-level `~/.codex/hooks.json` fallback so organic sessions still
-get a mascot on machines without the managed file.
+get a mascot on machines without the managed file after the fallback hooks are
+trusted once in Codex with `/hooks`. `bin/agent-runtime doctor` fails loudly when
+that fallback exists but Codex has no trusted hook state for it.
 
 Fresh-machine operator surface:
 
