@@ -588,6 +588,25 @@ rescue StandardError
   nil
 end
 
+def session_marker_persona
+  marker = existing_marker(feature_marker_path)
+  persona = marker && marker["persona"].to_s.strip
+  persona unless persona.to_s.empty?
+end
+
+def resolved_block_actor(explicit_agent, task)
+  explicit = explicit_agent.to_s.strip
+  return explicit unless explicit.empty?
+
+  devops = task.is_a?(Hash) ? task.dig("metadata", "devops") : {}
+  [session_marker_persona, devops&.fetch("persona", nil), session_identity.first].each do |candidate|
+    actor = candidate.to_s.strip
+    return actor unless actor.empty?
+  end
+
+  ""
+end
+
 # The board's devops.mascot, read in a SUBPROCESS via `bin/task field` — never
 # in-process. The board read is the last, lowest-priority fallback source, so it
 # must NEVER be able to abort the command that's only writing a marker: an
@@ -957,8 +976,7 @@ when "block"
   devops = (current.dig("metadata", "devops") || {}).dup
   devops["block_kind"] = kind if kind
   event = { "source" => "cli" }
-  blocker = agent.to_s.strip
-  blocker = session_identity.first.to_s.strip if blocker.empty?
+  blocker = resolved_block_actor(agent, current)
   event["actor"] = blocker unless blocker.empty?
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
   body = { "stage" => "blocked", "event" => event }
