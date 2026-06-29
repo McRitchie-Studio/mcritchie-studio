@@ -268,7 +268,10 @@ class Release < ApplicationRecord
     usage_by_slug ||= {}
     transaction do
       update!(state: "shipped", confirmed_by: by, confirmed_at: Time.current)
-      tasks.to_a.each do |task|
+      # Each Task#ship! stamps position = target-column max + 100. Ship members in
+      # stable oldest-first order so the newest task in a deployment batch receives
+      # the freshest board rank, regardless of how the association was preloaded.
+      tasks.order(:created_at, :id).to_a.each do |task|
         Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }
       end
     end
