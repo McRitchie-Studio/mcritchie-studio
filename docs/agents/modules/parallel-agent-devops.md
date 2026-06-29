@@ -269,7 +269,8 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
-bin/avi-heartbeat --run
+bin/avi-heartbeat --run          # Avi Heartbeat Slow
+bin/avi-heartbeat --run --fast   # Avi Heartbeat Fast
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
@@ -281,14 +282,18 @@ DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
 before reviewing individual diffs. It is read-only by default.
 
 Use `bin/avi-heartbeat --run` when Mr. McRitchie wants Avi to review submitted
-PRs unattended for hours without assembling a release. It is the review-only
-heartbeat: newest `submitted` task first, one PR at a time, fresh
+PRs unattended for hours without assembling a release. That is **Avi Heartbeat
+Slow**: newest `submitted` task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
-again after reviewer completion, selected PRIMARY + LIGHT reviewers launched via
-`codex exec`, then Avi moves two-approval work to `reviewed` and leaves it for
-Steffon/release assembly. It stops after ten completed PR reviews by default and
-prints a retrospective of friction, blockers, common blocker patterns, and
-refactor candidates. It does not merge, deploy, ship, publish gems, or archive.
+again after reviewer completion. Use `bin/avi-heartbeat --run --fast` for
+**Avi Heartbeat Fast** when submitted PRs have stacked up; it launches bounded
+waves of selected PRIMARY + LIGHT reviewer pairs, defaulting to the operating
+model's five-agent cap (two complete PR pairs per wave). Both modes leave Avi as
+the final resolver: two-approval work moves to `reviewed` for Steffon/release
+assembly, request-changes blocks for rework, and CI/conductor waits defer for a
+later pass. They stop after ten completed PR reviews by default and print a
+retrospective of friction, blockers, common blocker patterns, and refactor
+candidates. They do not merge, deploy, ship, publish gems, or archive.
 
 Use `bin/devops-cycle --plan` when the queue is larger than one conductor can
 comfortably hold in context. The plan separates:

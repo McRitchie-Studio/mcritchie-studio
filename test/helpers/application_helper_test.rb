@@ -69,6 +69,7 @@ class ApplicationHelperTest < ActionView::TestCase
   test "devops_kickoffs covers every DevOps board stage plus release meta-triggers" do
     meta_keys = [
       ApplicationHelper::AVI_HEARTBEAT_KICKOFF_KEY,
+      ApplicationHelper::AVI_HEARTBEAT_FAST_KICKOFF_KEY,
       ApplicationHelper::QA_RELEASE_KICKOFF_KEY,
       ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY
     ]
@@ -89,10 +90,13 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::QA_RELEASE_KICKOFF_KEY
   end
 
-  test "avi_heartbeat_kickoff is the long-running review workflow command" do
-    assert_equal "Avi Heartbeat", avi_heartbeat_kickoff
+  test "avi heartbeat kickoffs expose slow and fast review workflow commands" do
+    assert_equal "Avi Heartbeat Slow", avi_heartbeat_kickoff
     assert_equal avi_heartbeat_kickoff, devops_kickoffs[ApplicationHelper::AVI_HEARTBEAT_KICKOFF_KEY]
+    assert_equal "Avi Heartbeat Fast", avi_heartbeat_fast_kickoff
+    assert_equal avi_heartbeat_fast_kickoff, devops_kickoffs[ApplicationHelper::AVI_HEARTBEAT_FAST_KICKOFF_KEY]
     assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AVI_HEARTBEAT_KICKOFF_KEY
+    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AVI_HEARTBEAT_FAST_KICKOFF_KEY
   end
 
   test "autonomous_release_kickoff is the production-authorized workflow command" do
@@ -101,7 +105,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY
 
     commands = release_kickoff_chips.map { |chip| chip.fetch(:command) }
-    assert_equal [avi_heartbeat_kickoff, qa_release_kickoff, autonomous_release_kickoff], commands
+    assert_equal [avi_heartbeat_kickoff, avi_heartbeat_fast_kickoff, qa_release_kickoff, autonomous_release_kickoff],
+                 commands
   end
 
   test "app_emoji maps each canonical app slug to its glyph" do

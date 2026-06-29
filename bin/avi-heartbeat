@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Avi Heartbeat — serial PR-review supervisor.
+# Avi Heartbeat — PR-review supervisor.
 #
 # The script composes the existing DevOps tools:
 #   * bin/devops-cycle --json --decisions --scout-reports
@@ -9,9 +9,11 @@
 #   * codex exec for each selected reviewer
 #   * bin/task move|block|note for Avi's final handoff
 #
-# It reviews one submitted PR at a time, always re-querying the board after a
-# review before choosing the next PR. It stops after --limit completed reviews
-# and prints a deterministic retrospective.
+# Slow mode reviews one submitted PR at a time and always re-queries the board
+# after a review before choosing the next PR. Fast mode starts bounded waves of
+# PRIMARY + LIGHT review pairs for stacked queues, then resolves each reviewed
+# PR with the same final board re-query and handoff rules. Both modes stop after
+# --limit completed reviews and print a deterministic retrospective.
 
 require "fileutils"
 require "json"
@@ -59,28 +61,35 @@ OPTIONS = {
   approval: ENV.fetch("AVI_HEARTBEAT_APPROVAL", "never"),
   codex_workdir: PROJECTS_ROOT,
   output_dir: File.join(ROOT, "tmp", "avi-heartbeat"),
-  once: false
+  once: false,
+  mode: "slow",
+  max_agents: 5
 }
 
 OptionParser.new do |opts|
   opts.banner = <<~TEXT
     Usage: bin/avi-heartbeat [options]
 
-    Reviews submitted PRs one at a time, newest first. For each PR, Avi records
-    reviewer intent, launches the selected reviewers with codex exec, waits for
-    their reports, then moves merge-ready work to reviewed for Steffon.
+    Reviews submitted PRs newest first. Slow mode reviews one PR at a time.
+    Fast mode launches review pairs in bounded waves for stacked queues, while
+    preserving the same reviewer intent, scout-report, and reviewed/block/defer
+    resolution semantics.
 
     Default is dry-run. Pass --run to launch reviewers and write task updates.
   TEXT
 
   opts.on("--run", "Execute reviewer launches and task writes") { OPTIONS[:run] = true }
   opts.on("--dry-run", "Preview without launching reviewers or writing tasks") { OPTIONS[:run] = false }
+  opts.on("--slow", "Review one submitted PR at a time (default)") { OPTIONS[:mode] = "slow" }
+  opts.on("--fast", "Review submitted PRs in bounded parallel waves") { OPTIONS[:mode] = "fast" }
+  opts.on("--mode MODE", "Review mode: slow or fast (default: slow)") { |mode| OPTIONS[:mode] = mode }
+  opts.on("--max-agents N", Integer, "Fast mode reviewer-agent cap, 2-5 (default: 5)") { |n| OPTIONS[:max_agents] = n }
   opts.on("--limit N", Integer, "Completed PR reviews before retrospective (default: 10)") { |n| OPTIONS[:limit] = n }
   opts.on("--required-approvals N", Integer, "Merge-ready scout reports required (default: 2)") { |n| OPTIONS[:required_approvals] = n }
   opts.on("--idle-sleep SECONDS", Integer, "Seconds to wait when no submitted PR is ready (default: 60)") { |n| OPTIONS[:idle_sleep] = n }
   opts.on("--max-idle-cycles N", Integer, "Stop after N idle polls; -1 means forever (default: 240)") { |n| OPTIONS[:max_idle_cycles] = n }
   opts.on("--defer-seconds N", Integer, "Seconds before retrying wait-for-CI/incomplete reports (default: 300)") { |n| OPTIONS[:defer_seconds] = n }
-  opts.on("--once", "Process at most one PR or one idle poll") { OPTIONS[:once] = true }
+  opts.on("--once", "Process at most one PR wave or one idle poll") { OPTIONS[:once] = true }
   opts.on("--apps LIST", "Comma-separated apps for qa-intake (default: #{DEFAULT_APPS.join(",")})") do |value|
     OPTIONS[:apps] = value.split(",").map(&:strip).reject(&:empty?)
   end
@@ -98,6 +107,8 @@ OptionParser.new do |opts|
 end.parse!
 
 abort "--limit must be positive" unless OPTIONS[:limit].positive?
+abort "--mode must be slow or fast" unless %w[slow fast].include?(OPTIONS.fetch(:mode))
+abort "--max-agents must be between 2 and 5" unless (2..5).cover?(OPTIONS[:max_agents])
 abort "--required-approvals must be positive" unless OPTIONS[:required_approvals].positive?
 abort "--idle-sleep cannot be negative" if OPTIONS[:idle_sleep].negative?
 abort "--defer-seconds cannot be negative" if OPTIONS[:defer_seconds].negative?
@@ -240,7 +251,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
     Read /Users/alex/projects/AGENTS.md and the relevant repo README/runbook/docs before reviewing.
 
-    Avi Heartbeat is reviewing one PR at a time. Avi has selected this pair:
+    Avi Heartbeat is reviewing in #{OPTIONS.fetch(:mode)} mode. Avi has selected this pair:
     #{peer_text}
 
     Task: #{task.fetch("task_url")}
@@ -290,7 +301,7 @@ def run_directory
 end
 
 def codex_command(last_message_path)
-  cmd = [CODEX_BIN, "exec", "-C", OPTIONS.fetch(:codex_workdir), "-a", OPTIONS.fetch(:approval), "-s", OPTIONS.fetch(:codex_sandbox)]
+  cmd = [CODEX_BIN, "-a", OPTIONS.fetch(:approval), "-s", OPTIONS.fetch(:codex_sandbox), "exec", "-C", OPTIONS.fetch(:codex_workdir)]
   cmd += ["-m", OPTIONS.fetch(:model)] unless OPTIONS.fetch(:model).empty?
   cmd += ["-o", last_message_path, "-"]
   cmd
@@ -390,6 +401,106 @@ def note_deferred(slug, outcome, reports)
   task_write(["note", slug, "--comment", description, "--agent", "avi"])
 end
 
+def task_wave_size(remaining_reviews)
+  return 1 if OPTIONS.fetch(:mode) == "slow"
+
+  # The operating model caps concurrent agents at 5. Each PR consumes a PRIMARY
+  # and LIGHT reviewer, so use complete reviewer pairs and leave an odd spare
+  # slot idle instead of launching a partial PR lane.
+  pair_capacity = [OPTIONS.fetch(:max_agents) / 2, 1].max
+  [pair_capacity, remaining_reviews].min
+end
+
+def start_review(task, review_number)
+  slug = task.fetch("slug")
+  puts
+  puts "Review #{review_number}/#{OPTIONS.fetch(:limit)}: #{slug} #{task["title"]}"
+  puts "  submitted_at=#{task["submitted_at"] || "-"} created_at=#{task["created_at"]} task=#{task["task_url"]}"
+  puts "  pr=#{task.dig("devops", "pr_url") || "missing"}"
+
+  reviewers = select_reviewers(slug)
+  reviewer_slugs = reviewers.map { |reviewer| reviewer.fetch("slug") }
+  puts "  reviewers=#{reviewer_slugs.join(" + ")}"
+
+  roles = %w[primary light]
+  launches = reviewers.each_with_index.map do |reviewer, index|
+    launch_reviewer(task, reviewer, roles.fetch(index), reviewers)
+  end
+
+  { task: task, slug: slug, reviewers: reviewers, reviewer_slugs: reviewer_slugs, launches: launches }
+rescue StandardError => e
+  { task: task, slug: task["slug"], reviewers: [], reviewer_slugs: [], launches: [], error: e.message }
+end
+
+def finish_review(review, events, handled, deferred_until)
+  slug = review.fetch(:slug)
+  reviewer_slugs = review.fetch(:reviewer_slugs)
+
+  if review[:error]
+    events << { slug: slug, status: :tool_failure, category: "heartbeat-error", reason: review[:error], reviewers: reviewer_slugs }
+    handled[slug] = true
+    puts "  error: #{review[:error]}"
+    return false
+  end
+
+  launches = wait_for_reviewers(review.fetch(:launches))
+  failures = launches.reject { |launch| launch[:success] }
+  if failures.any?
+    reason = failures.map { |f| "#{f[:reviewer]} exit=#{f[:exitstatus] || "?"} #{f[:error]}".strip }.join("; ")
+    events << { slug: slug, status: :tool_failure, category: "reviewer-launch", reason: reason, reviewers: reviewer_slugs }
+    handled[slug] = true
+    puts "  reviewer failure: #{reason}"
+    return false
+  end
+
+  fresh = fetch_snapshot
+  fresh_task = task_by_slug(fresh, slug)
+  if fresh_task.nil?
+    reason = "task no longer appears in submitted after review"
+    events << { slug: slug, status: :deferred, category: "stage-changed", reason: reason, reviewers: reviewer_slugs }
+    handled[slug] = true
+    puts "  skipped: #{reason}"
+    return false
+  end
+
+  reviewers = review.fetch(:reviewers)
+  reports = latest_reports_by_reviewer(fresh_task, reviewers)
+  outcome = outcome_from_reports(reports, OPTIONS.fetch(:required_approvals))
+  decision = task_decision(fresh, slug)
+  reports_text = reports.map { |r| report_summary(r) }.join(" | ")
+  puts "  reports=#{reports_text.empty? ? "none" : reports_text}"
+  puts "  decision=#{decision&.fetch("recommendation", nil) || "none"} outcome=#{outcome}"
+
+  case outcome
+  when "merge-ready"
+    ok = move_reviewed(slug, reviewers, reports)
+    status = ok ? :reviewed : :tool_failure
+    events << { slug: slug, status: status, category: ok ? "approved" : "task-write", reason: "merge-ready", reviewers: reviewer_slugs }
+    handled[slug] = true
+    ok
+  when "request-changes"
+    ok = block_for_rework(slug, reports)
+    events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "request-changes", reason: reports.map { |r| report_summary(r) }.join("; "), reviewers: reviewer_slugs }
+    handled[slug] = true
+    ok
+  when "wait-for-ci", "conductor-review", "incomplete"
+    category = outcome == "incomplete" ? "missing-scout-report" : outcome
+    reason = reports.empty? ? "missing required reviewer reports" : reports.map { |r| report_summary(r) }.join("; ")
+    note_deferred(slug, outcome, reports) unless outcome == "incomplete" && !OPTIONS.fetch(:run)
+    events << { slug: slug, status: :deferred, category: category, reason: reason, reviewers: reviewer_slugs }
+    deferred_until[slug] = Time.now + OPTIONS.fetch(:defer_seconds)
+    puts "  deferred: #{reason}"
+    false
+  else
+    false
+  end
+rescue StandardError => e
+  events << { slug: slug, status: :tool_failure, category: "heartbeat-error", reason: e.message, reviewers: reviewer_slugs }
+  handled[slug] = true
+  puts "  error: #{e.message}"
+  false
+end
+
 def commonality_counts(items)
   items.each_with_object(Hash.new(0)) { |item, counts| counts[item[:category]] += 1 }
 end
@@ -459,7 +570,7 @@ handled = {}
 deferred_until = {}
 
 puts "Avi Heartbeat #{OPTIONS.fetch(:run) ? "RUN" : "DRY-RUN"}"
-puts "limit=#{OPTIONS.fetch(:limit)} newest_first=true fresh_query_after_each_review=true"
+puts "mode=#{OPTIONS.fetch(:mode)} limit=#{OPTIONS.fetch(:limit)} newest_first=true fresh_query_after_each_review=true max_agents=#{OPTIONS.fetch(:max_agents)}"
 puts "output_dir=#{File.expand_path(OPTIONS.fetch(:output_dir), ROOT)}"
 
 loop do
@@ -480,75 +591,16 @@ loop do
   end
 
   idle_cycles = 0
-  task = candidates.first
-  slug = task.fetch("slug")
-  puts
-  puts "Review #{completed_reviews + 1}/#{OPTIONS.fetch(:limit)}: #{slug} #{task["title"]}"
-  puts "  submitted_at=#{task["submitted_at"] || "-"} created_at=#{task["created_at"]} task=#{task["task_url"]}"
-  puts "  pr=#{task.dig("devops", "pr_url") || "missing"}"
+  remaining_reviews = OPTIONS.fetch(:limit) - completed_reviews
+  wave = candidates.first(task_wave_size(remaining_reviews))
+  puts "fast wave: tasks=#{wave.map { |candidate| candidate.fetch("slug") }.join(", ")}" if OPTIONS.fetch(:mode) == "fast"
 
-  begin
-    reviewers = select_reviewers(slug)
-    reviewer_slugs = reviewers.map { |reviewer| reviewer.fetch("slug") }
-    puts "  reviewers=#{reviewer_slugs.join(" + ")}"
+  started = wave.each_with_index.map do |task, index|
+    start_review(task, completed_reviews + index + 1)
+  end
 
-    roles = %w[primary light]
-    launches = reviewers.each_with_index.map do |reviewer, index|
-      launch_reviewer(task, reviewer, roles.fetch(index), reviewers)
-    end
-    launches = wait_for_reviewers(launches)
-    failures = launches.reject { |launch| launch[:success] }
-    if failures.any?
-      reason = failures.map { |f| "#{f[:reviewer]} exit=#{f[:exitstatus] || "?"} #{f[:error]}".strip }.join("; ")
-      events << { slug: slug, status: :tool_failure, category: "reviewer-launch", reason: reason, reviewers: reviewer_slugs }
-      handled[slug] = true
-      puts "  reviewer failure: #{reason}"
-      break if OPTIONS.fetch(:once)
-      next
-    end
-
-    fresh = fetch_snapshot
-    fresh_task = task_by_slug(fresh, slug)
-    if fresh_task.nil?
-      reason = "task no longer appears in submitted after review"
-      events << { slug: slug, status: :deferred, category: "stage-changed", reason: reason, reviewers: reviewer_slugs }
-      handled[slug] = true
-      puts "  skipped: #{reason}"
-      break if OPTIONS.fetch(:once)
-      next
-    end
-
-    reports = latest_reports_by_reviewer(fresh_task, reviewers)
-    outcome = outcome_from_reports(reports, OPTIONS.fetch(:required_approvals))
-    decision = task_decision(fresh, slug)
-    reports_text = reports.map { |r| report_summary(r) }.join(" | ")
-    puts "  reports=#{reports_text.empty? ? "none" : reports_text}"
-    puts "  decision=#{decision&.fetch("recommendation", nil) || "none"} outcome=#{outcome}"
-
-    case outcome
-    when "merge-ready"
-      ok = move_reviewed(slug, reviewers, reports)
-      status = ok ? :reviewed : :tool_failure
-      events << { slug: slug, status: status, category: ok ? "approved" : "task-write", reason: "merge-ready", reviewers: reviewer_slugs }
-      completed_reviews += 1 if ok
-      handled[slug] = true
-    when "request-changes"
-      ok = block_for_rework(slug, reports)
-      events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "request-changes", reason: reports.map { |r| report_summary(r) }.join("; "), reviewers: reviewer_slugs }
-      completed_reviews += 1 if ok
-      handled[slug] = true
-    when "wait-for-ci", "conductor-review", "incomplete"
-      category = outcome == "incomplete" ? "missing-scout-report" : outcome
-      reason = reports.empty? ? "missing required reviewer reports" : reports.map { |r| report_summary(r) }.join("; ")
-      note_deferred(slug, outcome, reports) unless outcome == "incomplete" && !OPTIONS.fetch(:run)
-      events << { slug: slug, status: :deferred, category: category, reason: reason, reviewers: reviewer_slugs }
-      deferred_until[slug] = Time.now + OPTIONS.fetch(:defer_seconds)
-      puts "  deferred: #{reason}"
-    end
-  rescue StandardError => e
-    events << { slug: slug, status: :tool_failure, category: "heartbeat-error", reason: e.message, reviewers: [] }
-    handled[slug] = true
-    puts "  error: #{e.message}"
+  started.each do |review|
+    completed_reviews += 1 if finish_review(review, events, handled, deferred_until)
   end
 
   break if OPTIONS.fetch(:once)
