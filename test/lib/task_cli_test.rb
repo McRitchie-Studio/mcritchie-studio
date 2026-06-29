@@ -268,6 +268,37 @@ class TaskCliTest < Minitest::Test
     assert_equal SESSION, event["actor"], "block should attribute to the blocker session"
   end
 
+  def test_block_defaults_event_actor_to_the_session_persona
+    Dir.mktmpdir do |projects|
+      sessions = File.join(projects, ".agents", "sessions")
+      FileUtils.mkdir_p(sessions)
+      File.write(File.join(sessions, "#{SESSION}.json"), JSON.generate("persona" => "shannon"))
+
+      requests, = run_task(
+        ["block", "demo-task", "--kind", "dependency"],
+        env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "CLAUDE_PROJECTS_DIR" => projects }
+      )
+
+      patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+      event = JSON.parse(patch[:body]).fetch("event")
+      assert_equal "cli", event["source"]
+      assert_equal "shannon", event["actor"], "block should prefer the session persona over the raw session id"
+    end
+  end
+
+  def test_block_defaults_event_actor_to_the_task_persona_before_session_id
+    requests, = run_task(
+      ["block", "demo-task", "--kind", "dependency"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
+      stub_devops: { "kind" => "bug", "persona" => "carl" }
+    )
+
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    event = JSON.parse(patch[:body]).fetch("event")
+    assert_equal "cli", event["source"]
+    assert_equal "carl", event["actor"], "task persona should beat the opaque session id"
+  end
+
   def test_move_with_legacy_stage_name_suggests_the_live_stage
     requests, _out, err, status = run_task(["move", "demo-task", "pr_review"])
 
