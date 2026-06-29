@@ -31,10 +31,9 @@
         <tr>
           <th class="px-4 py-3 font-semibold">Release</th>
           <th class="px-4 py-3 font-semibold">State</th>
-          <th class="px-4 py-3 font-semibold">Created</th>
-          <th class="px-4 py-3 font-semibold">Assembled</th>
-          <th class="px-4 py-3 font-semibold">Confirmed</th>
-          <th class="px-4 py-3 font-semibold">Shipped</th>
+          <th class="px-4 py-3 font-semibold text-right">Assemble</th>
+          <th class="px-4 py-3 font-semibold text-right">Confirm</th>
+          <th class="px-4 py-3 font-semibold text-right">Ship</th>
           <th class="px-4 py-3 font-semibold text-right">Deploy</th>
           <th class="px-4 py-3 font-semibold text-right">Tasks</th>
         </tr>
@@ -42,6 +41,7 @@
       <tbody class="divide-y divide-subtle">
         <% @releases.each do |release| %>
           <% metrics = release.duration_metrics.presence || Release::DurationCache.build(release) %>
+          <% deployment = metrics["release"] || {} %>
           <tr class="hover:bg-surface-alt/70">
             <td class="px-4 py-3">
               <%= link_to release.slug, deployment_path(release), class: "font-mono text-primary hover:underline" %>
@@ -49,11 +49,10 @@
             <td class="px-4 py-3">
               <span class="rounded px-2 py-0.5 text-xs font-bold <%= release_state_classes(release.state) %>"><%= release.state %></span>
             </td>
-            <td class="px-4 py-3 text-secondary whitespace-nowrap"><%= release_duration_time(release.created_at) %></td>
-            <td class="px-4 py-3 text-secondary whitespace-nowrap"><%= release_duration_time(release.assembled_at) %></td>
-            <td class="px-4 py-3 text-secondary whitespace-nowrap"><%= release_duration_time(release.confirmed_at) %></td>
-            <td class="px-4 py-3 text-secondary whitespace-nowrap"><%= release_duration_time(release.shipped_at) %></td>
-            <td class="px-4 py-3 text-right font-mono text-heading"><%= release_duration_label(metrics.dig("release", "deployment_seconds")) %></td>
+            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["assembly_seconds"]) %></td>
+            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["confirmation_seconds"]) %></td>
+            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["shipping_seconds"]) %></td>
+            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["deployment_seconds"] || deployment["live_seconds"]) %></td>
             <td class="px-4 py-3 text-right text-secondary"><%= release.tasks.size %></td>
           </tr>
         <% end %>

@@ -29,7 +29,14 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", "All Deployments"
     assert_select "a[href=?]", deployment_path(release), text: release.slug
+    assert_select "table", text: /Assemble/
+    assert_select "table", text: /Confirm/
+    assert_select "table", text: /Ship/
     assert_select "table", text: /Deploy/
+    assert_select "tbody td", text: "30m"
+    assert_select "tbody td", text: "20m"
+    assert_select "tbody td", text: "5m"
+    assert_select "tbody td", text: "55m"
     assert_match "Building", response.body
   end
 

@@ -126,14 +126,19 @@ class Release
 
     def release_metrics(release, tasks:, now:)
       started_at = release.created_at
+      assembled_at = release.assembled_at
+      confirmed_at = release.confirmed_at
       finished_at = release.shipped_at
       {
         "slug" => release.slug,
         "state" => release.state,
         "started_at" => timestamp(started_at),
-        "assembled_at" => timestamp(release.assembled_at),
-        "confirmed_at" => timestamp(release.confirmed_at),
+        "assembled_at" => timestamp(assembled_at),
+        "confirmed_at" => timestamp(confirmed_at),
         "shipped_at" => timestamp(finished_at),
+        "assembly_seconds" => seconds_between(started_at, assembled_at),
+        "confirmation_seconds" => seconds_between(assembled_at, confirmed_at),
+        "shipping_seconds" => seconds_between(confirmed_at, finished_at),
         "deployment_seconds" => seconds_between(started_at, finished_at),
         "live_seconds" => release.active? ? seconds_between(started_at, now) : nil,
         "task_count" => tasks.size,
