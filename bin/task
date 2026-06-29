@@ -594,12 +594,18 @@ def session_marker_persona
   persona unless persona.to_s.empty?
 end
 
-def resolved_block_actor(explicit_agent, task)
+def default_block_actor(task, kind)
+  return "avi" if kind.to_s == "rework" && task.is_a?(Hash) && task["stage"].to_s == "submitted"
+
+  nil
+end
+
+def resolved_block_actor(explicit_agent, task, kind: nil)
   explicit = explicit_agent.to_s.strip
   return explicit unless explicit.empty?
 
   devops = task.is_a?(Hash) ? task.dig("metadata", "devops") : {}
-  [session_marker_persona, devops&.fetch("persona", nil), session_identity.first].each do |candidate|
+  [session_marker_persona, devops&.fetch("persona", nil), default_block_actor(task, kind)].each do |candidate|
     actor = candidate.to_s.strip
     return actor unless actor.empty?
   end
@@ -976,7 +982,7 @@ when "block"
   devops = (current.dig("metadata", "devops") || {}).dup
   devops["block_kind"] = kind if kind
   event = { "source" => "cli" }
-  blocker = resolved_block_actor(agent, current)
+  blocker = resolved_block_actor(agent, current, kind: kind)
   event["actor"] = blocker unless blocker.empty?
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
   body = { "stage" => "blocked", "event" => event }
@@ -984,7 +990,7 @@ when "block"
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
   if feedback
     note = { "task_slug" => slug, "activity_type" => "qa_feedback", "description" => feedback }
-    note["agent_slug"] = agent if agent
+    note["agent_slug"] = blocker unless blocker.empty?
     api(:post, "/api/v1/activities", note)
     puts "noted [qa_feedback] on #{slug}"
   end
