@@ -17,7 +17,11 @@ class CodexSessionTitleTest < Minitest::Test
     @calls = File.join(@tmp, "calls.log")
     File.write(@kickoff, <<~BASH)
       #!/usr/bin/env bash
-      printf 'called\\n' >> "#{@calls}"
+      if [ -n "${MCRITCHIE_PARENT_SESSION_ID:-}" ]; then
+        printf 'called parent=%s\\n' "$MCRITCHIE_PARENT_SESSION_ID" >> "#{@calls}"
+      else
+        printf 'called\\n' >> "#{@calls}"
+      fi
       [ -n "${KICKOFF_FAIL:-}" ] && exit 1
       printf '%s\\n' "${KICKOFF_MARKER:-🍃 Bulbasaur · mcritchie-studio}"
     BASH
@@ -165,6 +169,21 @@ class CodexSessionTitleTest < Minitest::Test
 
     assert_silent_success out, err, status
     assert_equal ["called"], calls
+    assert_equal marker, title_for("thread-123")
+  end
+
+  def test_forwards_parent_session_id_from_subagent_payload
+    marker = "🍃 Weepinbell · mcritchie-studio"
+    out, err, status = run_script(
+      {
+        "CODEX_THREAD_ID" => "parent-thread",
+        "KICKOFF_MARKER" => marker
+      },
+      JSON.generate({ "session_id" => "thread-123", "parent_session_id" => "parent-thread" })
+    )
+
+    assert_silent_success out, err, status
+    assert_equal ["called parent=parent-thread"], calls
     assert_equal marker, title_for("thread-123")
   end
 

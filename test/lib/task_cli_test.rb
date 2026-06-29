@@ -1100,6 +1100,22 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  def test_session_mascot_sends_parent_session_context_when_present
+    Dir.mktmpdir do |projects|
+      requests, _out, _err, status = run_task(
+        ["session-mascot"],
+        env: { "CODEX_THREAD_ID" => MARKER_SESSION,
+               "MCRITCHIE_PARENT_SESSION_ID" => OTHER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects
+      )
+
+      assert status.success?
+      mascot_request = requests.find { |req| req[:path] == "/api/v1/sessions/#{MARKER_SESSION}/mascot" }
+      assert_equal({ "parent_session_id" => OTHER_SESSION }, JSON.parse(mascot_request[:body]))
+    end
+  end
+
   # No session → a clean no-op (the hook must never break or delay session start).
   def test_session_mascot_is_a_noop_without_a_session
     Dir.mktmpdir do |projects|

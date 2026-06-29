@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_29_053000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_29_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -758,8 +758,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_29_053000) do
   create_table "session_mascots", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "mascot_slug", null: false
+    t.string "parent_session_id"
     t.string "session_id", null: false
     t.datetime "updated_at", null: false
+    t.index ["parent_session_id"], name: "index_session_mascots_on_parent_session_id"
     t.index ["session_id"], name: "index_session_mascots_on_session_id", unique: true
   end
 

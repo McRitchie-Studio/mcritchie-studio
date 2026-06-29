@@ -39,9 +39,45 @@ module Api
         assert_equal 1, SessionMascot.where(session_id: "sess-1").count
       end
 
+      test "POST mascot can draw a subagent from the parent evolution tree" do
+        create_bellsprout_tree!
+        SessionMascot.create!(session_id: "parent-sess", mascot_slug: "victreebel")
+        SessionMascot.create!(session_id: "sibling-sess", parent_session_id: "parent-sess",
+                              mascot_slug: "bellsprout")
+
+        post "/api/v1/sessions/child-sess/mascot",
+             params: { parent_session_id: "parent-sess" },
+             headers: @headers,
+             as: :json
+
+        assert_response :success
+        data = JSON.parse(response.body)["data"]
+        assert_equal "weepinbell", data["mascot"]
+
+        child = SessionMascot.find_by!(session_id: "child-sess")
+        assert_equal "parent-sess", child.parent_session_id
+      end
+
       test "POST mascot requires auth" do
         post "/api/v1/sessions/sess-1/mascot"
         assert_response :unauthorized
+      end
+
+      private
+
+      def create_bellsprout_tree!
+        [
+          [69, "Bellsprout", "bellsprout"],
+          [70, "Weepinbell", "weepinbell"],
+          [71, "Victreebel", "victreebel"]
+        ].each do |dex, name, slug|
+          Pokemon.find_or_create_by!(slug: slug) do |pokemon|
+            pokemon.dex = dex
+            pokemon.name = name
+            pokemon.types = %w[grass poison]
+            pokemon.generation = 1
+          end
+        end
       end
     end
   end

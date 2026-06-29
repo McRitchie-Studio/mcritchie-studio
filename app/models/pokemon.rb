@@ -37,6 +37,19 @@ class Pokemon < ApplicationRecord
     pool.order(Arel.sql("RANDOM()")).first
   end
 
+  def self.draw_from_slugs(slugs, exclude: [])
+    candidates = Array(slugs).compact_blank
+    return nil if candidates.empty?
+
+    available = candidates - Array(exclude).compact_blank
+    available = candidates if available.empty?
+    deck.where(slug: available).order(Arel.sql("RANDOM()")).first
+  end
+
+  def self.evolution_tree_for(slug)
+    PokemonEvolutionTree.for(slug)
+  end
+
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build
   # it once per page and look up each badge's color + emoji with no extra queries
   # (avoids an N+1 over the 151 rows). Empty when the enumeral table/gem isn't
