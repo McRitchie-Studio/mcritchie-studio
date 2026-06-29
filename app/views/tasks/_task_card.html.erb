@@ -29,7 +29,7 @@
       stay readable without horizontal clipping or hover-only marquee movement.
       Archive/delete moved to the footer so nothing covers it. %>
   <a href="<%= task_path(task.slug) %>"
-     class="block mb-1.5 text-heading font-semibold text-sm leading-tight line-clamp-2 break-words hover:text-primary transition"
+     class="block mb-1.5 hover:text-primary transition"
      title="<%= task.title %>">
     <span class="block text-heading font-semibold text-sm leading-tight line-clamp-2 break-words"
           data-test="task-card-title"><%= task.title %></span>

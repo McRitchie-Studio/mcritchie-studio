@@ -14,13 +14,13 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
 | [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
 
-📇 `rolio` is **release-managed standalone** for hosted QA/prod deploys and
-also has a protected future satellite range in `config/satellites.yml` at
-`3300-3399` with `status: reserved`. It rides `config/release_repos.yml` and
-`config/qa_environments.yml`, but it is not an active Studio Engine SSO satellite
-and is not managed by the rebuild script or hub navbar until deliberately
-promoted. `tax-studio` remains planned at `3200-3299`, and `chain-ops` is
-planned at `3400-3499`.
+📇 `rolio` is **release-managed standalone with reserved satellite range**:
+hosted QA/prod deploys ride `config/release_repos.yml` and
+`config/qa_environments.yml`, while `config/satellites.yml` protects `3300-3399`
+with `status: reserved`. It is not an active Studio Engine SSO satellite and is
+not managed by the rebuild script or hub navbar until deliberately promoted.
+`tax-studio` remains planned at `3200-3299`, and `chain-ops` is planned at
+`3400-3499`.
 
 ## Dependency graph
 

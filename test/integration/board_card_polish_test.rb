@@ -161,7 +161,9 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    assert_select "#card-#{task.slug} > a.line-clamp-2.break-words", text: /Long Board Card Title/
+    assert_select "#card-#{task.slug} > a.line-clamp-2", count: 0
+    assert_select "#card-#{task.slug} > a [data-test='task-card-title'].line-clamp-2.break-words",
+                  text: /Long Board Card Title/
     assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words",
                   text: /QA review found one remaining visual regression/
     assert_select "#card-#{task.slug} > a [x-ref='fadeInner']", count: 0
