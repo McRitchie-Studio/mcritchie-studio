@@ -416,12 +416,15 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # Both modules sit inside ONE responsive grid container: single column on
-    # narrow viewports, two columns on lg+ so they render side by side.
-    assert_select "div.grid.grid-cols-1.lg\\:grid-cols-2" do
+    # Current spans the full left column; Last and statistics stack in the right column.
+    assert_select "[data-test='release-dashboard-grid'].grid.grid-cols-1.lg\\:grid-cols-2" do
       assert_select "#current-release", count: 1
       assert_select "#last-release", count: 1
+      assert_select "#release-duration-card", count: 1
     end
+    assert_select "#current-release.lg\\:row-span-2.h-full"
+    assert_select "#last-release.h-full"
+    assert_select "#release-duration-card.h-full"
   end
 
   test "deployments empty-state Current still nests inside the responsive grid beside Last" do

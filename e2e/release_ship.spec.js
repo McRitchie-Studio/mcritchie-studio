@@ -26,6 +26,13 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   const after = await timing.textContent();
   expect(after).not.toEqual(before);
 
+  const stageTiming = page.locator("#current-release [data-test='release-tracker-duration'][data-release-ticker]").first();
+  await expect(stageTiming).toBeVisible();
+  const stageBefore = await stageTiming.textContent();
+  await page.waitForTimeout(1200);
+  const stageAfter = await stageTiming.textContent();
+  expect(stageAfter).not.toEqual(stageBefore);
+
   // Ship the active release (local-only dev trigger → real in-process broadcast).
   const res = await page.request.post("/dev/board/ship_release");
   expect(res.ok()).toBeTruthy();

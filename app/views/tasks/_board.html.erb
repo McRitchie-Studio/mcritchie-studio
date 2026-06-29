@@ -329,11 +329,11 @@ function kanbanBoard(live) {
   </div>
 
   <% if show_release_modules %>
-    <!-- Current Release + Last Release + duration intelligence: one-column mobile, roomy two-up tablet, three-up wide. -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 mb-6 items-start">
-      <%= render "current_release", release: current_release %>
-      <%= render "last_release", release: last_release %>
-      <%= render "release_duration_card", dashboard: release_duration_dashboard %>
+    <!-- Deployment summary grid: Current Release spans the left column; Last Release and Release Times stack on the right. -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-stretch" data-test="release-dashboard-grid">
+      <%= render "current_release", release: current_release, card_class: "lg:row-span-2 h-full" %>
+      <%= render "last_release", release: last_release, card_class: "h-full" %>
+      <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full" %>
     </div>
   <% end %>
 
