@@ -90,6 +90,7 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `PATCH`/`PUT` | `/tasks/:slug` | Update a task |
 | `DELETE` | `/tasks/:slug` | Delete a task |
 | `POST` | `/tasks/:slug/intent` | Record live agent intent for a target stage |
+| `POST` | `/tasks/:slug/review_events` | Record a primary/light reviewer check-in |
 | `POST` | `/tasks/:slug/events/:stage/start` | Record a task lifecycle start event |
 | `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task lifecycle stage/checkpoint |
 | `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task lifecycle step and block the task |
@@ -226,6 +227,70 @@ For `complete` and `fail` calls from agent/API/CLI sources, usage is mandatory:
 server-side writers such as `bin/release` use `source: "conductor"` and may
 record spine-only events. Repeated calls should pass `idempotency_key` so retries
 return the existing release event instead of stacking duplicates.
+
+### Review Check-In API
+
+Reviewer agents broadcast progress with:
+
+```bash
+POST /api/v1/tasks/:slug/review_events
+```
+
+It records a `TaskEvent(kind: checkpoint)` and does not move the task stage. The
+task detail page links reviewed/live-review timeline cards to
+`/tasks/:slug/review_events`, which groups these check-ins by the primary and
+light reviewer lanes.
+
+Payload:
+
+```json
+{
+  "review_event": {
+    "role": "primary",
+    "moment": "diff",
+    "status": "info",
+    "actor": "carl",
+    "source": "agent",
+    "message": "Routes, controller, and persistence diff scanned.",
+    "idempotency_key": "task-slug:primary:diff",
+    "metadata": { "pr": "https://github.com/amcritchie/mcritchie-studio/pull/123" }
+  }
+}
+```
+
+Roles are `primary` and `light`. The legacy aliases `heavy`, `heavy_review`, and
+`light_review` are accepted for API compatibility; they normalize to
+`primary`/`light` in the UI.
+
+Canonical primary moments:
+
+```text
+started context diff tests risk findings completed failed
+```
+
+Canonical light moments:
+
+```text
+started context diff smoke handoff completed failed
+```
+
+`status` is `started`, `info`, `completed`, or `failed`; when omitted it is
+derived from the moment (`started`, `completed`, and `failed` self-map,
+everything else is `info`). `completed` and `failed` events from `api`, `agent`,
+or `cli` sources must include `model`, `tokens_in`, `tokens_out`, and `cost`.
+Mid-review `started`/`info` check-ins may be spine-only. Pass
+`idempotency_key` on every automated broadcast so retries return the existing
+checkpoint instead of stacking duplicates.
+
+The older task lifecycle aliases still work:
+
+```bash
+POST /api/v1/tasks/:slug/events/heavy_review/complete
+POST /api/v1/tasks/:slug/events/light_review/complete
+```
+
+Use the dedicated `review_events` endpoint for new reviewer automation because
+it captures the specific check-in moment and message.
 
 ## Writable fields
 

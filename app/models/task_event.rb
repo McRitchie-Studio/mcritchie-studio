@@ -33,6 +33,10 @@ class TaskEvent < ApplicationRecord
   INTENT     = "intent"
   CHECKPOINT = "checkpoint"
   KINDS      = [TRANSITION, INTENT, CHECKPOINT].freeze
+  REVIEW_LEGACY_STAGE_ROLES = {
+    "heavy_review" => "primary",
+    "light_review" => "light"
+  }.freeze
 
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug, optional: true, inverse_of: :task_events
 
@@ -61,6 +65,30 @@ class TaskEvent < ApplicationRecord
 
   def checkpoint?
     kind == CHECKPOINT
+  end
+
+  def review_check_in?
+    checkpoint? && (metadata["event"] == "review_check_in" || REVIEW_LEGACY_STAGE_ROLES.key?(to_stage))
+  end
+
+  def review_role
+    Task.normalize_review_role(metadata["review_role"].presence || REVIEW_LEGACY_STAGE_ROLES[to_stage])
+  end
+
+  def review_moment
+    metadata["review_moment"].presence || metadata["status"].presence || "update"
+  end
+
+  def review_status
+    metadata["status"].presence || "info"
+  end
+
+  def review_message
+    metadata["message"].presence
+  end
+
+  def review_moment_label
+    metadata["moment_label"].presence || Task.review_moment_label(review_role, review_moment)
   end
 
   # The stage left, as a label. The genesis event has no prior stage.

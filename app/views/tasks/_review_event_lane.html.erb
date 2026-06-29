@@ -1,0 +1,79 @@
+<%# locals: (lane:) %>
+<section class="rounded-lg border border-subtle bg-surface p-4" data-test="review-event-lane" data-role="<%= lane.role %>">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <p class="label-upper"><%= lane.label %></p>
+      <p class="mt-1 text-xs text-muted"><%= lane.description %></p>
+    </div>
+    <% if lane.agent %>
+      <div class="flex shrink-0 flex-col items-center gap-1 text-center">
+        <div class="rounded-full ring-2 ring-surface">
+          <%= render "components/agent_avatar", agent: lane.agent, size: "sm" %>
+        </div>
+        <span class="max-w-[7rem] truncate text-xs text-heading"><%= lane.agent.name %></span>
+      </div>
+    <% else %>
+      <span class="shrink-0 rounded border border-dashed border-subtle px-2 py-1 text-xs text-muted">Unassigned</span>
+    <% end %>
+  </div>
+
+  <div class="mt-4 flex flex-wrap gap-1.5" data-test="review-moment-strip">
+    <% lane.moments.each do |moment| %>
+      <% complete = review_moment_complete?(lane.events, moment) %>
+      <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface-alt text-muted" %>"
+            data-test="review-moment"
+            data-moment="<%= moment %>"
+            data-complete="<%= complete %>">
+        <%= Task.review_moment_label(lane.role, moment) %>
+      </span>
+    <% end %>
+  </div>
+
+  <div class="mt-4 space-y-3" data-test="review-event-list">
+    <% if lane.events.any? %>
+      <% lane.events.each do |event| %>
+        <article class="rounded-md border border-subtle bg-inset/50 p-3" data-test="review-event" data-moment="<%= event.review_moment %>" data-status="<%= event.review_status %>">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide <%= review_status_classes(event.review_status) %>">
+                  <%= event.review_status %>
+                </span>
+                <h3 class="text-sm font-semibold text-heading"><%= event.review_moment_label %></h3>
+              </div>
+              <% if event.review_message.present? %>
+                <p class="mt-2 text-sm text-body whitespace-pre-wrap"><%= event.review_message %></p>
+              <% end %>
+            </div>
+            <time class="shrink-0 text-[11px] text-muted" datetime="<%= event.occurred_at.iso8601 %>" title="<%= event.occurred_at.strftime("%b %d, %Y %H:%M") %>">
+              <%= event.occurred_at.strftime("%b %d, %H:%M") %>
+            </time>
+          </div>
+
+          <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs md:grid-cols-4">
+            <div class="min-w-0">
+              <dt class="text-[10px] uppercase tracking-wide text-muted">Actor</dt>
+              <dd class="truncate text-secondary"><%= event.actor.presence || "—" %></dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[10px] uppercase tracking-wide text-muted">Model</dt>
+              <dd class="truncate font-mono text-secondary"><%= event.model.presence || "—" %></dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[10px] uppercase tracking-wide text-muted">Tokens</dt>
+              <dd class="font-mono tabular-nums text-secondary"><%= event.tokens_total ? number_with_delimiter(event.tokens_total) : "—" %></dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[10px] uppercase tracking-wide text-muted">Cost</dt>
+              <dd class="font-mono tabular-nums text-secondary"><%= event.cost.present? ? "~$#{format("%.2f", event.cost)}" : "—" %></dd>
+            </div>
+          </dl>
+        </article>
+      <% end %>
+    <% else %>
+      <p class="rounded-md border border-dashed border-subtle bg-inset/40 p-3 text-sm text-muted" data-test="review-events-empty">
+        No check-ins recorded for this reviewer yet.
+      </p>
+    <% end %>
+  </div>
+</section>

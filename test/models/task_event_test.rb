@@ -242,4 +242,30 @@ class TaskEventTest < ActiveSupport::TestCase
     assert_not bad.valid?
     assert_includes bad.errors[:kind], "is not included in the list"
   end
+
+  test "[unit] review check-ins normalize heavy role and reuse idempotency keys" do
+    task = Task.create!(title: "review checkin task", stage: "submitted")
+
+    event = task.record_review_check_in(
+      role: "heavy_review",
+      moment: "diff",
+      actor: "carl",
+      message: "Diff scan reached controllers.",
+      idempotency_key: "review-checkin-task:primary:diff"
+    )
+    retried = task.record_review_check_in(
+      role: "primary",
+      moment: "diff",
+      actor: "carl",
+      idempotency_key: "review-checkin-task:primary:diff"
+    )
+
+    assert_equal event.id, retried.id
+    assert event.review_check_in?
+    assert_equal "primary", event.review_role
+    assert_equal "diff", event.review_moment
+    assert_equal "info", event.review_status
+    assert_equal "Audited code diff", event.review_moment_label
+    assert_equal "Diff scan reached controllers.", event.review_message
+  end
 end
