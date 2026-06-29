@@ -257,7 +257,7 @@ class TaskCliTest < Minitest::Test
     assert_equal "shannon", JSON.parse(note[:body])["agent_slug"]
   end
 
-  def test_block_defaults_event_actor_to_the_running_session
+  def test_block_without_a_named_actor_does_not_stamp_the_raw_session
     requests, = run_task(
       ["block", "demo-task", "--kind", "dependency"],
       env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
@@ -265,7 +265,23 @@ class TaskCliTest < Minitest::Test
     patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
     event = JSON.parse(patch[:body]).fetch("event")
     assert_equal "cli", event["source"]
-    assert_equal SESSION, event["actor"], "block should attribute to the blocker session"
+    refute event.key?("actor"), "block should not persist an opaque session id as the blocker"
+  end
+
+  def test_block_defaults_rework_from_submitted_to_avi_when_no_agent_context
+    requests, = run_task(
+      ["block", "demo-task", "--kind", "rework", "--feedback", "Needs review rework."],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
+      stub_stage: "submitted"
+    )
+
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    parsed = JSON.parse(patch[:body])
+    assert_equal "blocked", parsed["stage"]
+    assert_equal "avi", parsed.dig("event", "actor"), "submitted rework blocks default to Avi, not a session id"
+
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    assert_equal "avi", JSON.parse(note[:body])["agent_slug"], "qa_feedback should carry the resolved blocker"
   end
 
   def test_block_defaults_event_actor_to_the_session_persona
