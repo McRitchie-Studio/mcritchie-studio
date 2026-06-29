@@ -21,6 +21,7 @@ class AviHeartbeatCommandTest < Minitest::Test
     @reviewer_log = File.join(@dir, "reviewer-select.log")
     @codex_log = File.join(@dir, "codex.log")
     @task_log = File.join(@dir, "task.log")
+    @sequence_log = File.join(@dir, "sequence.log")
     write_fakes
   end
 
@@ -55,7 +56,10 @@ class AviHeartbeatCommandTest < Minitest::Test
       #!#{RbConfig.ruby}
       require "json"
       File.open(ENV.fetch("CODEX_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
-      STDIN.read
+      prompt = STDIN.read
+      slug = prompt[/reviewer for ([A-Za-z0-9._-]+)/, 1] || "unknown"
+      File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["codex", slug, ARGV]) }
+      sleep ENV.fetch("CODEX_SLEEP", "0").to_f
       if (idx = ARGV.index("-o"))
         File.write(ARGV.fetch(idx + 1), "fake review complete\\n")
       end
@@ -66,6 +70,7 @@ class AviHeartbeatCommandTest < Minitest::Test
       #!#{RbConfig.ruby}
       require "json"
       File.open(ENV.fetch("TASK_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
+      File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["task", *ARGV]) }
       puts "task fake: \#{ARGV.join(" ")}"
     RUBY
   end
@@ -161,7 +166,8 @@ class AviHeartbeatCommandTest < Minitest::Test
       "DEVOPS_LOG" => @devops_log,
       "REVIEWER_LOG" => @reviewer_log,
       "CODEX_LOG" => @codex_log,
-      "TASK_LOG" => @task_log
+      "TASK_LOG" => @task_log,
+      "SEQUENCE_LOG" => @sequence_log
     }.merge(env)
 
     Open3.capture3(
@@ -251,6 +257,52 @@ class AviHeartbeatCommandTest < Minitest::Test
 
     assert_equal 4, json_lines(@codex_log).size, "two reviewer subagents per PR"
     assert_operator json_lines(@devops_log).size, :>=, 4, "heartbeat must query again after each PR review"
+  end
+
+  def test_fast_mode_launches_multiple_prs_before_resolving_the_wave
+    first = task("first-new", created_at: "2026-06-29T12:30:00Z")
+    second = task("second-new", created_at: "2026-06-29T12:20:00Z")
+    third = task("third-new", created_at: "2026-06-29T12:10:00Z")
+    first_reviewed = task("first-new", created_at: "2026-06-29T12:30:00Z",
+                                       reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    second_reviewed = task("second-new", created_at: "2026-06-29T12:20:00Z",
+                                         reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    third_reviewed = task("third-new", created_at: "2026-06-29T12:10:00Z",
+                                       reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+
+    write_snapshots(
+      snapshot([first, second, third]),
+      snapshot([first_reviewed, second_reviewed, third]),
+      snapshot([first_reviewed, second_reviewed, third]),
+      snapshot([third]),
+      snapshot([third_reviewed])
+    )
+
+    out, err, status = run_heartbeat("--run", "--fast", "--limit", "3", "--max-agents", "5",
+                                     env: { "CODEX_SLEEP" => "0.05" })
+
+    assert status.success?, err
+    assert_includes out, "mode=fast"
+    assert_includes out, "fast wave: tasks=first-new, second-new"
+    assert_includes out, "completed_reviews=3 approved=3 blocked=0"
+
+    reviewer_calls = json_lines(@reviewer_log)
+    assert_equal ["first-new", "second-new", "third-new"], reviewer_calls.map(&:first)
+    assert_equal 6, json_lines(@codex_log).size, "fast mode still launches two reviewer subagents per PR"
+
+    sequence = json_lines(@sequence_log)
+    first_move_index = sequence.index { |entry| entry.first == "task" && entry[1] == "move" }
+    assert first_move_index, "expected a task move after reviewer launches"
+    codex_before_first_move = sequence.first(first_move_index).count { |entry| entry.first == "codex" }
+    assert_equal 4, codex_before_first_move,
+                 "fast mode should launch two PR review pairs before resolving the first PR"
+
+    moves = json_lines(@task_log).select { |args| args.first == "move" }
+    assert_equal [
+      ["move", "first-new", "reviewed", "--actor", "avi"],
+      ["move", "second-new", "reviewed", "--actor", "avi"],
+      ["move", "third-new", "reviewed", "--actor", "avi"]
+    ], moves
   end
 
   def test_blocks_a_pr_when_either_reviewer_requests_changes

@@ -407,6 +407,7 @@ module ApplicationHelper
   # below). They never render on column headers — only the current-release
   # section reaches for them.
   AVI_HEARTBEAT_KICKOFF_KEY = "avi_heartbeat"
+  AVI_HEARTBEAT_FAST_KICKOFF_KEY = "avi_heartbeat_fast"
   QA_RELEASE_KICKOFF_KEY = "release"
   AUTONOMOUS_RELEASE_KICKOFF_KEY = "release_autonomous"
 
@@ -416,14 +417,15 @@ module ApplicationHelper
   # keyed by DevOps board stage and kept terse (≤3 words) so each fits a column
   # header; the feature-agent lane has none.
   #
-  # Plus three non-stage meta-triggers: the long-running "Avi Heartbeat" review
-  # loop, the QA-only "Build and Deploy QA Release" workflow, and the autonomous
+  # Plus four non-stage meta-triggers: the slow and fast "Avi Heartbeat" review
+  # loops, the QA-only "Build and Deploy QA Release" workflow, and the autonomous
   # "Merge, Assemble, Deploy" workflow. They render as prominent chips in the
   # current-release section, never on column headers, so they are exempt from the
   # per-stage word cap.
   def devops_kickoffs
     {
-      AVI_HEARTBEAT_KICKOFF_KEY => "Avi Heartbeat",
+      AVI_HEARTBEAT_KICKOFF_KEY => "Avi Heartbeat Slow",
+      AVI_HEARTBEAT_FAST_KICKOFF_KEY => "Avi Heartbeat Fast",
       QA_RELEASE_KICKOFF_KEY => "Build and Deploy QA Release",
       AUTONOMOUS_RELEASE_KICKOFF_KEY => "Merge, Assemble, Deploy",
       "submitted" => "Review submitted PRs",
@@ -433,11 +435,15 @@ module ApplicationHelper
     }
   end
 
-  # The "Avi Heartbeat" meta-trigger command — a long-running review supervisor
-  # that serializes submitted PR review newest-first, moves approved work to
-  # reviewed, and stops with a retrospective after its review cap.
+  # The slow "Avi Heartbeat" meta-trigger command — a long-running review
+  # supervisor that serializes submitted PR review newest-first, moves approved
+  # work to reviewed, and stops with a retrospective after its review cap.
   def avi_heartbeat_kickoff
     devops_kickoffs.fetch(AVI_HEARTBEAT_KICKOFF_KEY)
+  end
+
+  def avi_heartbeat_fast_kickoff
+    devops_kickoffs.fetch(AVI_HEARTBEAT_FAST_KICKOFF_KEY)
   end
 
   # The "Build and Deploy QA Release" meta-trigger command — Mr. McRitchie's
@@ -456,7 +462,8 @@ module ApplicationHelper
 
   def release_kickoff_chips
     [
-      { label: "Avi", command: avi_heartbeat_kickoff },
+      { label: "Avi Slow", command: avi_heartbeat_kickoff },
+      { label: "Avi Fast", command: avi_heartbeat_fast_kickoff },
       { label: "QA", command: qa_release_kickoff },
       { label: "Prod", command: autonomous_release_kickoff }
     ]
