@@ -14,7 +14,7 @@
 
 ## Navbar
 
-Custom navbar in `application.html.erb` (not engine partial). Sticky, scroll-responsive. `sticky top-0 z-50 bg-page` with Alpine `scrolled` state (triggers at 20px). On scroll: logo shrinks `w-8→w-5`, title `text-2xl→text-base`, padding `py-6→py-2`, adds `shadow-lg border-b border-subtle`. All transitions 300ms. Desktop nav: "Meet the Agents 🦞" link. Mobile sub-navbar has the same link and the gear/moon icons for logged-out visitors. Logged in: renders the app-level `_user_nav` override with `show_logout_link: true`.
+Custom navbar in `application.html.erb` (not engine partial). Sticky, scroll-responsive. `sticky top-0 z-50 border-b bg-page/95` with Alpine `scrolled` state (triggers after the first scroll threshold). On scroll: logo shrinks `w-8→w-5`, title `text-2xl→text-base`, padding `py-6→py-2`, and the stable transparent border becomes `border-subtle` with `shadow-lg`. All transitions 300ms. Desktop nav: "Agents" and "Builders" links with tokenized hover surfaces. Mobile sub-navbar has the same links and the gear/moon icons for logged-out visitors. Logged in: renders the app-level `_user_nav` override with `show_logout_link: true`.
 
 The gear, username, and profile image all toggle the fixed link sidebar (`components/_link_sidebar.html.erb`). The sidebar is full width on mobile, a right rail on desktop, and uses `.studio-link-sidebar-layer` so it sits above page content. Its public and admin trees come from `LinkTreeHelper`: `/links` and `/admin/links` render those same sections, while the sidebar combines public links with admin sections only when `admin?` is true.
 
@@ -46,6 +46,15 @@ Task stage badges use `ApplicationHelper#stage_scheme` over the live
 `blocked` as `danger`, and `archived` as the neutral fallback. Task is a
 workflow, not a pipeline, and is not in the News/Content shared palette.
 
+For task workflow count pills and `/stages` badges, use
+`ApplicationHelper#task_stage_count_classes`. It intentionally carries both
+light and dark classes (`bg-*-100 text-*-900` plus `dark:bg-*-900/50
+dark:text-*-200`) and a border, so badges stay readable in the no-JS light
+default and in dark mode. Do not paste the old dark-only `bg-*-900/50
+text-*-300` pairs into new task workflow surfaces.
+
 ## Button System
 
-`.btn` base + `.btn-primary` (uses `--color-cta`), `.btn-secondary` (uses `--color-success`), `.btn-outline` (hover uses `--color-cta`), `.btn-danger` (uses `--color-danger`), `.btn-google` (white, hardcoded `color: #374151` for dark mode compat). Size: `.btn-sm`, `.btn-lg`.
+`.btn` base + `.btn-primary` (uses `--color-cta`), `.btn-secondary` (uses `--color-success`), `.btn-outline` (hover uses `--color-cta`), `.btn-danger` (uses `--color-danger`), `.btn-google` (white, hardcoded `color: #374151` for dark mode compat). Size: `.btn-sm`, `.btn-lg`. The base `.btn` owns the focus-visible outline using `--color-cta`; avoid one-off focus rings on individual button variants unless a control is not using `.btn`.
+
+Icon controls such as the link-sidebar trigger and sidebar close button should use fixed square dimensions, tokenized hover surfaces, and `focus-visible:ring-primary/40`. The link sidebar uses `bg-surface`, `border-subtle`, `bg-surface-alt` hover rows, and the same focus ring so light/dark contrast is consistent.

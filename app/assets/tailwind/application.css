@@ -102,6 +102,10 @@
 @utility btn {
   /* -- Button System (standardized across all Studio apps) -- */
   @apply inline-flex items-center justify-center font-bold rounded-lg transition px-6 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed;
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-cta) 70%, transparent);
+    outline-offset: 2px;
+  }
 }
 
 @utility btn-primary {
