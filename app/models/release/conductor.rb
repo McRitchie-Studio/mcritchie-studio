@@ -189,6 +189,15 @@ class Release
         source: "conductor",
         idempotency_key: "#{release.slug}:assemble_release:completed"
       )
+      unless release.event_started?("qa_smoke")
+        record_event!(
+          release: release,
+          step: "qa_smoke",
+          status: "started",
+          source: "conductor",
+          idempotency_key: "#{release.slug}:qa_smoke:started"
+        )
+      end
       record_event!(
         release: release,
         step: "qa_smoke",
@@ -279,6 +288,18 @@ class Release
           production_url: production_url.presence || release.production_url
         )
         release.ship!(by: by, usage_by_slug: usage_by_slug)
+        unless release.event_started?("deploy_prod")
+          record_event!(
+            release: release,
+            step: "deploy_prod",
+            status: "started",
+            source: "conductor",
+            actor: by,
+            sha: deployed_sha,
+            url: production_url.presence || release.production_url,
+            idempotency_key: "#{release.slug}:deploy_prod:started"
+          )
+        end
         record_event!(
           release: release,
           step: "deploy_prod",
@@ -458,6 +479,16 @@ class Release
     # already-completed ship. Returns { message:, delivered: } (message is the
     # text render, kept for preview regardless of which payload shipped).
     def post_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: false)
+      unless release.event_started?("release_notes")
+        record_event!(
+          release: release,
+          step: "release_notes",
+          status: "started",
+          source: "conductor",
+          idempotency_key: "#{release.slug}:release_notes:started"
+        )
+      end
+
       formatter = ReleaseNotes::Formatter.new(
         app: app,
         environment: environment,

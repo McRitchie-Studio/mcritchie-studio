@@ -203,7 +203,10 @@ Release progress is also recorded as explicit `ReleaseEvent` checkpoints
 `ship_authorized`, `deploy_prod`, `prod_smoke`, `release_notes`,
 `archive_tasks`). The `/deployments` tracker reads those events before falling
 back to legacy `Release` fields, so `ship_gate:completed` can visibly finish the
-Confirming step before `deploy_prod:started` begins production work.
+Confirming step before `deploy_prod:started` begins production work. Steps that
+take measurable work should be bookended with `started` and `completed`; older
+completed-only checkpoints render as instant spans so their recorded timestamp is
+still visible in release analytics.
 
 Release analytics are cached on the `Release` record. `Release::DurationCache`
 stores `duration_metrics` (versioned JSON), `duration_metrics_cached_at`, and

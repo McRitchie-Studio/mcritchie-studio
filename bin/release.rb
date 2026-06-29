@@ -894,6 +894,7 @@ def prepare
   #    are NOT deployed — they ride the release as a record, published at ship.
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
+  qa_smoke_started = false
   record_release_event(rel_slug, "deploy_qa", "started") if app_groups.any?
   repos.each do |group|
     repo    = group["repo"]
@@ -972,6 +973,10 @@ def prepare
     #     /up-smoke race that left the RC stuck `assembling`. Poll <qa_url>/up
     #     until 200 (or timeout); a non-200 marks the app NOT ok so step 4 leaves
     #     the release `assembling` for a clean re-run.
+    if qa_ok && !qa_smoke_started
+      record_release_event(rel_slug, "qa_smoke", "started")
+      qa_smoke_started = true
+    end
     qa_ok &&= wait_for_boot(qa_url_for(qa_app))
 
     # d. capture the deployed SHA (origin/release after any merge-forward).
@@ -1487,7 +1492,7 @@ end
 # SAME verdict (the seal write commits here; step 6 reloads Release.current). The
 # WRITE is best-effort: a prod-board blip on the seal record warns + continues —
 # the red alert still prints from the LOCAL verdict, independent of the write.
-def production_smoke_seal(app_groups, ship_sha)
+def production_smoke_seal(app_groups, ship_sha, rel_slug)
   step("production smoke seal: bin/prod-smoke #{APP} (@qa-readonly vs prod) — post-ship SEAL, non-blocking")
 
   # Seal what we DEPLOYED: only when the hub (mcritchie-studio, whose @qa-readonly
@@ -1506,6 +1511,7 @@ def production_smoke_seal(app_groups, ship_sha)
     return
   end
 
+  record_release_event(rel_slug, "prod_smoke", "started")
   out, ok = sh("bin/prod-smoke", APP, capture: true)
   print out unless out.to_s.empty?
 
@@ -1599,6 +1605,7 @@ def ship
   # 2b. The ship-authority gate — explicit, AFTER Avi's test confirmation and
   #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
   step("ship authority: Avi's full e2e passed on the frozen SHA — confirming production deploy")
+  record_release_event(rel_slug, "ship_authorized", "started", actor: by)
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
   record_release_event(rel_slug, "ship_authorized", "completed", actor: by)
 
@@ -1648,7 +1655,7 @@ def ship
   #     against PROD and record a 🟢/🔴 seal on the release. NON-BLOCKING (a red
   #     seal alerts + prints the rollback but never aborts the ship). BEFORE step 6
   #     so post_release_notes reads the SAME verdict. See production_smoke_seal.
-  production_smoke_seal(app_groups, ship_sha)
+  production_smoke_seal(app_groups, ship_sha, rel_slug)
 
   # 6. Record LAST — only after EVERY repo deployed, so a partial ship leaves the
   #    record `assembled` (recoverable). Stamp the hub's shipped SHA + ship! +

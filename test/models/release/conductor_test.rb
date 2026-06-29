@@ -359,10 +359,12 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
     Release::Conductor.assemble!(rel)
     assert_equal "assembled", rel.reload.state
+    assert_equal %w[started completed], rel.release_events.for_step("qa_smoke").chronological.pluck(:status)
 
     # Re-running against an already-assembled RC is a no-op, not an error.
     assert_nothing_raised { Release::Conductor.assemble!(rel) }
     assert_equal "assembled", rel.reload.state
+    assert_equal 2, rel.release_events.for_step("qa_smoke").count
   end
 
   test "prepare! is atomic — a non-reviewed task rolls back the new release" do
@@ -415,6 +417,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "https://example.test", rel.production_url
     assert_equal "alex", rel.confirmed_by
     assert_equal "shipped", t.reload.stage
+    assert_equal %w[started completed], rel.release_events.for_step("deploy_prod").chronological.pluck(:status)
   end
 
   test "eligible_task_slugs lists reviewed tasks" do
@@ -721,6 +724,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_includes header, "🪎", "the single-app release shows its app glyph"
     assert_includes header, rel.slug, "the H3 carries the release tag"
     assert_includes header, "](https://example.test)", "the H3 links to the production url"
+    assert_equal %w[started completed], rel.release_events.for_step("release_notes").chronological.pluck(:status)
   end
 
   test "post_release_notes dry_run builds the message without delivering" do

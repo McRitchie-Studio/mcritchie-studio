@@ -229,12 +229,21 @@ class Release
           event.occurred_at >= start.occurred_at
         end
 
+        started_at = start&.occurred_at || finish&.occurred_at
+        completed_at = finish&.occurred_at
+        seconds = if start && finish
+                    seconds_between(start.occurred_at, finish.occurred_at)
+                  elsif finish
+                    0
+                  end
+
         [step, {
           "label" => RELEASE_STEP_LABELS.fetch(step),
           "status" => finish&.status || start&.status || "missing",
-          "started_at" => timestamp(start&.occurred_at),
-          "completed_at" => timestamp(finish&.occurred_at),
-          "seconds" => start && finish ? seconds_between(start.occurred_at, finish.occurred_at) : nil,
+          "started_at" => timestamp(started_at),
+          "completed_at" => timestamp(completed_at),
+          "seconds" => seconds,
+          "source" => start ? "bookended" : ("completed_only" if finish),
           "start_event" => event_ref(start),
           "completion_event" => event_ref(finish),
           "event_count" => rows.size
