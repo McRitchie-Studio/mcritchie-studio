@@ -1,0 +1,36 @@
+<section data-test="review-process-hub">
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <%= link_to "&larr; Deployments".html_safe, deployments_path, class: "text-secondary hover:text-heading text-sm transition" %>
+      <%= link_to "Tasks", tasks_path, class: "text-secondary hover:text-heading text-sm transition" %>
+    </div>
+    <span class="text-xs text-muted font-mono">review-process</span>
+  </div>
+
+  <div class="card p-6">
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="label-upper">Review Process</p>
+        <h2 class="mt-1 text-2xl font-bold text-heading">Review Process Hub</h2>
+        <p class="mt-2 max-w-3xl text-sm text-muted">
+          Heavy and light review lanes show the expected checkpoint order, recent role owners, and the tasks currently moving through submitted, reviewed, assembled, and shipped.
+        </p>
+      </div>
+      <%= link_to "Task Board", deployments_path, class: "rounded border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition" %>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-2" data-test="review-process-lanes">
+      <% review_process_lanes(@review_process).each do |lane| %>
+        <%= render "tasks/review_event_lane", lane: lane, show_task_events: false %>
+      <% end %>
+    </div>
+  </div>
+
+  <%= render "tasks/review_pipeline_tasks", snapshots_by_stage: @review_pipeline_tasks %>
+
+  <div class="mt-5 rounded-lg border border-subtle bg-surface-alt p-3" data-test="review-api-contract">
+    <p class="label-upper">Broadcast API</p>
+    <code class="mt-2 block break-all rounded bg-surface px-3 py-2 text-xs text-secondary">POST /api/v1/tasks/:slug/review_events</code>
+    <p class="mt-2 text-xs text-muted">The API stores append-only checkpoints. The canonical heavy lane is still sent as <code>primary</code>; legacy <code>heavy_review</code> aliases normalize into that lane.</p>
+  </div>
+</section>

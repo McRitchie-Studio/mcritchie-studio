@@ -15,7 +15,8 @@
 - `/tasks` — Filterable task list with stage tabs
 - `/tasks/new` — Create task (auth required)
 - `/tasks/:slug` — Task detail with transition buttons. Includes a Sealed-bid sizing summary card and an "Edit →" link to the sizing sub-page.
-- `/tasks/:slug/review_events` — Read-only primary/light reviewer event timeline. Linked from reviewed/live-review cards on the task stage timeline. Groups reviewer check-ins recorded by `POST /api/v1/tasks/:slug/review_events`.
+- `/review_events` — Review process hub. Linked from the Submitted column's `docs` link on the deployments board; shows heavy/light swimlanes, top role owners, canonical moment order, and recent submitted/reviewed/assembled/shipped task drilldowns.
+- `/tasks/:slug/review_events` — Read-only task review event timeline. Linked from reviewed/live-review cards on the task stage timeline. Groups reviewer check-ins into heavy/light swimlanes recorded by `POST /api/v1/tasks/:slug/review_events`.
 - `/tasks/:slug/sizing` — Sealed-bid sizing sub-page (admin update, public read). Form for `pm_size` / `po_size` / `dev_size` / `actual_size` + `requires_migration` toggle. See `docs/agents/system/sizing-rubric.md` and `exclusive-lanes.md`.
 - `/news` — News pipeline Kanban board (6 columns: new→reviewed→processed→refined→concluded→archived). SortableJS drag-and-drop. Inline `newsBoard()` Alpine function. Column focus: click header to expand single column full-width (hides others, click again to unfocus).
 - `/news/new` — Create news article (admin required)
@@ -92,7 +93,7 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `GET/POST /api/v1/tasks` — List/create tasks
 - `GET/PATCH /api/v1/tasks/:slug` — Read/update task, including `stage`
 - `POST /api/v1/tasks/:slug/intent` — Record an intended next stage or reviewer assignment
-- `POST /api/v1/tasks/:slug/review_events` — Record an idempotent primary/light reviewer check-in checkpoint. Canonical moments are primary: `started context diff tests risk findings completed failed`; light: `started context diff smoke handoff completed failed`.
+- `POST /api/v1/tasks/:slug/review_events` — Record an idempotent primary/light reviewer check-in checkpoint. The UI displays `primary` as the heavy swimlane. Canonical moments are primary: `started context diff tests risk findings completed failed`; light: `started context diff smoke handoff completed failed`.
 - `POST /api/v1/release_notes` — Format and send canonical Discord Release Notes for deployed task slugs
 - `GET/PATCH /api/v1/agents/:slug` — Read/update agent
 - `GET/POST /api/v1/activities` — List/create activities

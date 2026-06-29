@@ -1,79 +1,112 @@
-<%# locals: (lane:) %>
+<%# locals: (lane:, show_task_events: true) %>
+<% show_task_events = local_assigns.fetch(:show_task_events, true) %>
 <section class="rounded-lg border border-subtle bg-surface p-4" data-test="review-event-lane" data-role="<%= lane.role %>">
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0">
       <p class="label-upper"><%= lane.label %></p>
       <p class="mt-1 text-xs text-muted"><%= lane.description %></p>
     </div>
-    <% if lane.agent %>
-      <div class="flex shrink-0 flex-col items-center gap-1 text-center">
-        <div class="rounded-full ring-2 ring-surface">
-          <%= render "components/agent_avatar", agent: lane.agent, size: "sm" %>
-        </div>
-        <span class="max-w-[7rem] truncate text-xs text-heading"><%= lane.agent.name %></span>
-      </div>
-    <% else %>
-      <span class="shrink-0 rounded border border-dashed border-subtle px-2 py-1 text-xs text-muted">Unassigned</span>
-    <% end %>
-  </div>
-
-  <div class="mt-4 flex flex-wrap gap-1.5" data-test="review-moment-strip">
-    <% lane.moments.each do |moment| %>
-      <% complete = review_moment_complete?(lane.events, moment) %>
-      <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface-alt text-muted" %>"
-            data-test="review-moment"
-            data-moment="<%= moment %>"
-            data-complete="<%= complete %>">
-        <%= Task.review_moment_label(lane.role, moment) %>
-      </span>
-    <% end %>
-  </div>
-
-  <div class="mt-4 space-y-3" data-test="review-event-list">
-    <% if lane.events.any? %>
-      <% lane.events.each do |event| %>
-        <article class="rounded-md border border-subtle bg-inset/50 p-3" data-test="review-event" data-moment="<%= event.review_moment %>" data-status="<%= event.review_status %>">
-          <div class="flex flex-wrap items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide <%= review_status_classes(event.review_status) %>">
-                  <%= event.review_status %>
-                </span>
-                <h3 class="text-sm font-semibold text-heading"><%= event.review_moment_label %></h3>
-              </div>
-              <% if event.review_message.present? %>
-                <p class="mt-2 text-sm text-body whitespace-pre-wrap"><%= event.review_message %></p>
-              <% end %>
-            </div>
-            <time class="shrink-0 text-[11px] text-muted" datetime="<%= event.occurred_at.iso8601 %>" title="<%= event.occurred_at.strftime("%b %d, %Y %H:%M") %>">
-              <%= event.occurred_at.strftime("%b %d, %H:%M") %>
-            </time>
+    <% if show_task_events %>
+      <% if lane.agent %>
+        <div class="flex shrink-0 flex-col items-center gap-1 text-center">
+          <span class="text-[9px] font-semibold uppercase tracking-wide text-muted">This task</span>
+          <div class="rounded-full ring-2 ring-surface">
+            <%= render "components/agent_avatar", agent: lane.agent, size: "sm" %>
           </div>
-
-          <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs md:grid-cols-4">
-            <div class="min-w-0">
-              <dt class="text-[10px] uppercase tracking-wide text-muted">Actor</dt>
-              <dd class="truncate text-secondary"><%= event.actor.presence || "—" %></dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-[10px] uppercase tracking-wide text-muted">Model</dt>
-              <dd class="truncate font-mono text-secondary"><%= event.model.presence || "—" %></dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-[10px] uppercase tracking-wide text-muted">Tokens</dt>
-              <dd class="font-mono tabular-nums text-secondary"><%= event.tokens_total ? number_with_delimiter(event.tokens_total) : "—" %></dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-[10px] uppercase tracking-wide text-muted">Cost</dt>
-              <dd class="font-mono tabular-nums text-secondary"><%= event.cost.present? ? "~$#{format("%.2f", event.cost)}" : "—" %></dd>
-            </div>
-          </dl>
-        </article>
+          <span class="max-w-[7rem] truncate text-xs text-heading"><%= lane.agent.name %></span>
+        </div>
+      <% else %>
+        <span class="shrink-0 rounded border border-dashed border-subtle px-2 py-1 text-xs text-muted">Unassigned</span>
       <% end %>
-    <% else %>
-      <p class="rounded-md border border-dashed border-subtle bg-inset/40 p-3 text-sm text-muted" data-test="review-events-empty">
-        No check-ins recorded for this reviewer yet.
-      </p>
     <% end %>
   </div>
+
+  <div class="mt-4 rounded-md border border-subtle bg-surface-alt p-3" data-test="review-role-stats">
+    <div class="mb-2 flex items-center justify-between gap-2">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-muted">Top <%= review_role_short_label(lane.role) %> reviewers</p>
+      <span class="text-[10px] text-muted">tasks</span>
+    </div>
+    <% if lane.top_agents.any? %>
+      <ol class="space-y-2">
+        <% lane.top_agents.each_with_index do |stat, index| %>
+          <li class="flex items-center gap-2" data-test="review-role-stat" data-agent="<%= stat.slug %>">
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-subtle bg-surface text-[10px] font-bold text-muted"><%= index + 1 %></span>
+            <% if stat.agent %>
+              <%= render "components/agent_avatar", agent: stat.agent, size: "xs" %>
+            <% end %>
+            <span class="min-w-0 flex-1 truncate text-sm text-heading"><%= stat.name %></span>
+            <span class="font-mono text-xs tabular-nums text-secondary"><%= stat.count %></span>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="text-sm text-muted">No reviewer history recorded yet.</p>
+    <% end %>
+  </div>
+
+  <ol class="mt-4 space-y-2" data-test="review-role-moments">
+    <% lane.moments.each_with_index do |moment, index| %>
+      <% complete = review_moment_complete?(lane.events, moment) %>
+      <li class="flex gap-2 rounded-md border p-2 <%= complete ? "border-green-500/40 bg-green-500/10" : "border-subtle bg-inset/40" %>"
+          data-test="review-moment"
+          data-moment="<%= moment %>"
+          data-complete="<%= complete %>">
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded border <%= complete ? "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-200" : "border-subtle bg-surface text-muted" %> text-[11px] font-bold tabular-nums"><%= index + 1 %></span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, moment) %></p>
+          <p class="mt-0.5 text-xs text-muted"><%= complete ? "Recorded on this task." : "Expected in chronological order." %></p>
+        </div>
+      </li>
+    <% end %>
+  </ol>
+
+  <% if show_task_events %>
+    <div class="mt-4 space-y-3" data-test="review-event-list">
+      <% if lane.events.any? %>
+        <% lane.events.each do |event| %>
+          <article class="rounded-md border border-subtle bg-inset/50 p-3" data-test="review-event" data-moment="<%= event.review_moment %>" data-status="<%= event.review_status %>">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide <%= review_status_classes(event.review_status) %>">
+                    <%= event.review_status %>
+                  </span>
+                  <h3 class="text-sm font-semibold text-heading"><%= review_moment_display_label(lane.role, event.review_moment) %></h3>
+                </div>
+                <% if event.review_message.present? %>
+                  <p class="mt-2 text-sm text-body whitespace-pre-wrap"><%= event.review_message %></p>
+                <% end %>
+              </div>
+              <time class="shrink-0 text-[11px] text-muted" datetime="<%= event.occurred_at.iso8601 %>" title="<%= event.occurred_at.strftime("%b %d, %Y %H:%M") %>">
+                <%= event.occurred_at.strftime("%b %d, %H:%M") %>
+              </time>
+            </div>
+
+            <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs md:grid-cols-4">
+              <div class="min-w-0">
+                <dt class="text-[10px] uppercase tracking-wide text-muted">Actor</dt>
+                <dd class="truncate text-secondary"><%= event.actor.presence || "—" %></dd>
+              </div>
+              <div class="min-w-0">
+                <dt class="text-[10px] uppercase tracking-wide text-muted">Model</dt>
+                <dd class="truncate font-mono text-secondary"><%= event.model.presence || "—" %></dd>
+              </div>
+              <div class="min-w-0">
+                <dt class="text-[10px] uppercase tracking-wide text-muted">Tokens</dt>
+                <dd class="font-mono tabular-nums text-secondary"><%= event.tokens_total ? number_with_delimiter(event.tokens_total) : "—" %></dd>
+              </div>
+              <div class="min-w-0">
+                <dt class="text-[10px] uppercase tracking-wide text-muted">Cost</dt>
+                <dd class="font-mono tabular-nums text-secondary"><%= event.cost.present? ? "~$#{format("%.2f", event.cost)}" : "—" %></dd>
+              </div>
+            </dl>
+          </article>
+        <% end %>
+      <% else %>
+        <p class="rounded-md border border-dashed border-subtle bg-inset/40 p-3 text-sm text-muted" data-test="review-events-empty">
+          No check-ins recorded for this reviewer yet.
+        </p>
+      <% end %>
+    </div>
+  <% end %>
 </section>

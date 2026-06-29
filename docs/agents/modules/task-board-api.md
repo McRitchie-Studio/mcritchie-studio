@@ -244,8 +244,11 @@ POST /api/v1/tasks/:slug/review_events
 
 It records a `TaskEvent(kind: checkpoint)` and does not move the task stage. The
 task detail page links reviewed/live-review timeline cards to
-`/tasks/:slug/review_events`, which groups these check-ins by the primary and
-light reviewer lanes.
+`/tasks/:slug/review_events`, which groups these check-ins by the heavy and
+light reviewer swimlanes. The deployments board's Submitted column also links to
+the global review-process hub at `/review_events`, which shows the canonical
+moment order, top recent role owners, and recent submitted/reviewed/assembled/
+shipped task drilldowns.
 
 Payload:
 
@@ -264,9 +267,9 @@ Payload:
 }
 ```
 
-Roles are `primary` and `light`. The legacy aliases `heavy`, `heavy_review`, and
-`light_review` are accepted for API compatibility; they normalize to
-`primary`/`light` in the UI.
+Roles are `primary` and `light`. The UI labels `primary` as the **heavy**
+swimlane. The legacy aliases `heavy`, `heavy_review`, and `light_review` are
+accepted for API compatibility; they normalize to `primary`/`light`.
 
 Canonical primary moments:
 

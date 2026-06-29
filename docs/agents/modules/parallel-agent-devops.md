@@ -162,14 +162,16 @@ the actual reviewers. Pass `--no-record` (or `--dry`) for an advisory-only run
 that writes nothing.
 
 During the review itself, both reviewer agents should broadcast progress with
-`POST /api/v1/tasks/:slug/review_events`. The primary lane records these moments:
-`started`, `context`, `diff`, `tests`, `risk`, `findings`, `completed` (or
-`failed`). The light lane records `started`, `context`, `diff`, `smoke`,
-`handoff`, `completed` (or `failed`). Use an `idempotency_key` per moment so
-agent retries are safe. Completed/failed agent check-ins include model, tokens,
-and cost; earlier status check-ins can be spine-only. The task timeline's Review
-Events link opens `/tasks/:slug/review_events`, grouped by primary and light
-reviewer.
+`POST /api/v1/tasks/:slug/review_events`. The API role `primary` displays as the
+heavy swimlane and records these moments: `started`, `context`, `diff`, `tests`,
+`risk`, `findings`, `completed` (or `failed`). The light swimlane records
+`started`, `context`, `diff`, `smoke`, `handoff`, `completed` (or `failed`). Use
+an `idempotency_key` per moment so agent retries are safe. Completed/failed agent
+check-ins include model, tokens, and cost; earlier status check-ins can be
+spine-only. The task timeline's Review Events link opens
+`/tasks/:slug/review_events`; the deployments board's Submitted `docs` link opens
+`/review_events`, a process hub with heavy/light swimlanes, top recent role
+owners, and recent submitted/reviewed/assembled/shipped task drilldowns.
 
 
 ### Step 0 — assess the queue by stage

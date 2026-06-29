@@ -1,7 +1,8 @@
 module ReviewEventsHelper
-  ReviewLane = Struct.new(:role, :label, :description, :agent, :events, :moments, keyword_init: true)
+  ReviewLane = Struct.new(:role, :label, :description, :agent, :events, :moments, :top_agents, keyword_init: true)
 
-  def review_event_lanes(task, agents, events)
+  def review_event_lanes(task, agents, events, process: nil)
+    process ||= ReviewProcessHub.new(agents: agents)
     by_role = Array(events).group_by(&:review_role)
     by_slug = agents.index_by(&:slug)
     reviewers = latest_review_reviewer_records(task)
@@ -17,18 +18,37 @@ module ReviewEventsHelper
         description: review_role_description(role),
         agent: agent || unresolved_review_agent(slug, role),
         events: Array(by_role[role]),
-        moments: Task::REVIEW_MOMENTS.fetch(role)
+        moments: Task::REVIEW_MOMENTS.fetch(role),
+        top_agents: process.top_agents(role)
+      )
+    end
+  end
+
+  def review_process_lanes(process)
+    Task::REVIEW_ROLES.map do |role|
+      ReviewLane.new(
+        role: role,
+        label: review_role_label(role),
+        description: review_role_description(role),
+        agent: nil,
+        events: [],
+        moments: Task::REVIEW_MOMENTS.fetch(role),
+        top_agents: process.top_agents(role)
       )
     end
   end
 
   def review_role_label(role)
-    role.to_s == "primary" ? "Primary Review" : "Light Review"
+    Task.normalize_review_role(role) == "primary" ? "Heavy Swimlane" : "Light Swimlane"
+  end
+
+  def review_role_short_label(role)
+    Task.normalize_review_role(role) == "primary" ? "Heavy" : "Light"
   end
 
   def review_role_description(role)
-    if role.to_s == "primary"
-      "Deep review owner: acceptance, design, tests, risk, and merge readiness."
+    if Task.normalize_review_role(role) == "primary"
+      "Full review pass: acceptance, design, tests, risk, findings, and merge readiness."
     else
       "Focused second pass: changed files, smoke path, docs, and handoff clarity."
     end
@@ -49,6 +69,21 @@ module ReviewEventsHelper
 
   def review_moment_complete?(events, moment)
     Array(events).any? { |event| event.review_moment == moment }
+  end
+
+  def review_moment_display_label(role, moment)
+    label = Task.review_moment_label(role, moment)
+    return label unless Task.normalize_review_role(role) == "primary"
+
+    label.gsub("deep-review", "heavy-review").gsub("deep review", "heavy review")
+  end
+
+  def review_agent_name(reviewer)
+    reviewer&.name.presence || "Unassigned"
+  end
+
+  def review_agent_avatar_record(reviewer)
+    reviewer&.agent || reviewer
   end
 
   def latest_review_reviewer_records(task)
