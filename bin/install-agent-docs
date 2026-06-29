@@ -193,6 +193,20 @@ def ensure_scalar(lines, range, key, value)
   [start, finish + 1]
 end
 
+def ensure_top_level_scalar(lines, key, value)
+  key_re = /^\s*#{Regexp.escape(key)}\s*=/
+  index = lines.index { |line| line.match?(key_re) }
+  if index
+    lines[index] = "#{key} = #{value}\n"
+    return
+  end
+
+  insert_at = lines.index { |line| line.match?(/^\s*\[/) } || lines.length
+  lines.insert(insert_at, "#{key} = #{value}\n")
+end
+
+ensure_top_level_scalar(lines, "check_for_update_on_startup", "false")
+
 range = find_section(lines, "tui")
 unless range
   lines << "\n" unless lines.empty? || lines.last.end_with?("\n\n")

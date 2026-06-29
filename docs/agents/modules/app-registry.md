@@ -74,6 +74,11 @@ bin/agent-runtime doctor
 bin/agent-marker current --format title
 ```
 
+Codex updates are opt-in because stock updates can replace the patched runtime
+that repaints the live Pokemon marker. Use
+[`codex-updates.md`](codex-updates.md) and `bin/codex-update` instead of the
+startup update prompt.
+
 `bin/install-agent-docs` remains the lower-level copy/drift implementation that
 `agent-runtime` calls. Request copy for official stock-Codex `threadName` hook
 support lives in

@@ -194,6 +194,7 @@ assigned that lane.
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
+| Codex runtime updates | `mcritchie-studio/docs/agents/modules/codex-updates.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
 | Tests | `mcritchie-studio/docs/agents/modules/testing.md` |
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
