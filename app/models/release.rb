@@ -46,6 +46,7 @@ class Release < ApplicationRecord
   # Release.current / .last_shipped in the broadcast — and so a rolled-back
   # transaction never broadcasts a state that didn't land.
   after_commit :broadcast_release_modules, on: %i[create update]
+  after_commit :refresh_duration_metrics_safely, on: %i[create update]
 
   scope :active, -> { where(state: ACTIVE_STATES) }
 
@@ -182,6 +183,18 @@ class Release < ApplicationRecord
 
   def record_event!(step:, status:, **attrs)
     ReleaseEvent.record!(release: self, step: step, status: status, **attrs)
+  end
+
+  def refresh_duration_metrics!
+    Release::DurationCache.refresh!(self)
+  end
+
+  def refresh_duration_metrics_safely
+    return unless persisted?
+
+    refresh_duration_metrics!
+  rescue StandardError => e
+    Rails.logger.warn("[release-duration-cache] refresh failed for #{slug}: #{e.class}: #{e.message}")
   end
 
   def event_completed?(step)

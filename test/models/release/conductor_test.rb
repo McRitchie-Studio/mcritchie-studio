@@ -42,6 +42,20 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
+  test "adopt! records an assembly intent before the assembled conclusion" do
+    t = reviewed_task
+    Release::Conductor.adopt!(t)
+
+    events = t.reload.task_events.chronological.to_a
+    intent = events.find { |event| event.intent? && event.to_stage == "assembled" }
+    assembled = events.find { |event| event.transition? && event.to_stage == "assembled" }
+
+    assert_not_nil intent, "merge starts with an assembled intent"
+    assert_not_nil assembled, "merge concludes with an assembled transition"
+    assert_operator intent.occurred_at, :<=, assembled.occurred_at
+    assert_equal "conductor", intent.source
+  end
+
   # --- deploy-side usage capture (model/tokens/cost on the conductor flips) ---
   # bin/release captures the per-transition delta from its LOCAL transcript and
   # threads it in; these prove it lands on the assembled/shipped TaskEvents.

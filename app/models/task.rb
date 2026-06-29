@@ -185,6 +185,7 @@ class Task < ApplicationRecord
   # #autoderive_actual_size — it only fills a BLANK actual_size (never clobbers a
   # manual size) and never unwinds the ship if derivation fails.
   after_update :autoderive_actual_size, if: :saved_change_to_stage?
+  after_commit :refresh_duration_metrics_for_release_changes, on: %i[create update destroy]
   # A destroy fires no TaskEvent, so the live /deployments board never hears about
   # it — broadcast the card removal explicitly so every viewer's board drops it.
   after_destroy_commit :broadcast_removal_to_deployments_board
@@ -848,6 +849,21 @@ class Task < ApplicationRecord
   end
 
   private
+
+  def refresh_duration_metrics_for_release_changes
+    release_slugs = [release_slug]
+    if previous_changes.key?("release_slug")
+      release_slugs.concat(previous_changes["release_slug"])
+    elsif previous_changes.key?("stage")
+      release_slugs << release_slug
+    end
+
+    release_slugs.compact_blank.uniq.each do |slug|
+      Release.find_by(slug: slug)&.refresh_duration_metrics_safely
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[release-duration-cache] task #{slug} refresh failed: #{e.class}: #{e.message}")
+  end
 
   def default_review_status_for(moment)
     case moment

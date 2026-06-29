@@ -38,6 +38,7 @@ class Release
     def adopt!(task, override: false, usage: nil)
       release = Release.current_or_open!
       stamp_session_mascot(release)
+      record_assembly_intent!(task)
       member = release.tasks.find_by(slug: task.slug)
       target = member || task
       # Only flag a genuine bypass: an override on an already-`reviewed` (or
@@ -56,9 +57,29 @@ class Release
           release.add(member, override: override)
         end
       end
-      release
+      release.reload
     ensure
       Current.task_event_review_bypass = nil
+    end
+
+    # The merge/assembly bookend: the primary reviewer starts the reviewed→assembled
+    # work before the PR is adopted onto the release train. This gives analytics an
+    # explicit start timestamp for the assembly window instead of relying only on the
+    # reviewed→assembled transition. Idempotent through Task#record_intent_event.
+    def record_assembly_intent!(task, actor: nil)
+      return nil unless task&.stage == "reviewed"
+
+      actor ||= assembly_actor(task)
+      task.record_intent_event(to_stage: "assembled", actor: actor, source: "conductor")
+    end
+
+    def assembly_actor(task)
+      reviewed = task.task_events.transitions.where(to_stage: "reviewed").chronological.last
+      return reviewed.actor if reviewed&.actor.present?
+
+      reviewers = task.latest_intent_reviewers("reviewed")
+      primary = Array(reviewers).find { |r| %w[primary heavy].include?(r["weight"].to_s) } || Array(reviewers).first
+      primary&.dig("slug")
     end
 
     # Pre-flight REVIEW-GATE screen for `bin/release merge` — the decision the CLI
