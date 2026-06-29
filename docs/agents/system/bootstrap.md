@@ -22,8 +22,8 @@ McRitchie Studio is the canonical home for the projects-root agent entrypoints
 in one idempotent command:
 
 ```bash
-bin/agent-runtime install       # AGENTS.md + CLAUDE.md, skills, Codex hooks, Ruby PATH
-bin/agent-runtime doctor        # verify docs, skills, marker hooks, Ruby/Bundler/Rails boot
+bin/agent-runtime install       # AGENTS.md + CLAUDE.md, skills, Codex hooks, zsh Ruby PATH
+bin/agent-runtime doctor        # verify docs, marker hooks, login-shell Ruby/Bundler/Rails boot
 ```
 
 `bin/ecosystem-build` runs this automatically (Phase 5b) on a full-machine

@@ -69,11 +69,13 @@ npm test
 ```
 
 > **Running the Rails suite from an agent shell.** `bin/agent-runtime install`
-> configures Codex's `shell_environment_policy` so new Codex Bash tools prepend
-> `/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin`.
-> `bin/agent-runtime doctor` verifies the Codex config, current `ruby`, Bundler,
-> and Rails boot path. If an already-open session still resolves system Ruby 2.6,
-> restart Codex or temporarily run
+> manages a small `~/.zprofile` Ruby PATH block so Codex Bash tools and other
+> non-interactive zsh login shells prepend
+> `/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin` while
+> preserving normal command lookup. `bin/agent-runtime doctor` verifies the zsh
+> startup file, login-shell `ruby`, Bundler, and Rails boot path. If an
+> already-open session still resolves system Ruby 2.6, restart Codex or
+> temporarily run
 > `export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"`. Parallel test workers
 > fork-clone the test DB, which **deadlocks or segfaults the `pg` gem on macOS**
 > (a Ruby crash report, not a test failure) — pg fork-safety. So as of PR #169 the

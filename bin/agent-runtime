@@ -11,10 +11,6 @@ INSTALLER="${AGENT_RUNTIME_INSTALLER:-$ROOT/bin/install-agent-docs}"
 MARKER_BIN="${AGENT_RUNTIME_MARKER:-$ROOT/bin/agent-marker}"
 CODEX_ADAPTER="${AGENT_RUNTIME_CODEX_ADAPTER:-$ROOT/bin/codex-session-title}"
 CODEX_UPDATE="${AGENT_RUNTIME_CODEX_UPDATE:-$ROOT/bin/codex-update}"
-RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
-REQUIRED_RUBY_VERSION="${AGENT_RUNTIME_REQUIRED_RUBY_VERSION:-3.3}"
-BUNDLER_CHECK_CMD="${AGENT_RUNTIME_BUNDLER_CHECK_CMD:-ruby -S bundle -v}"
-RAILS_BOOT_CMD="${AGENT_RUNTIME_RAILS_BOOT_CMD:-bin/rails runner 'print Rails.version'}"
 
 usage() {
   cat <<'USAGE'
@@ -44,6 +40,13 @@ fail_line() {
   printf 'fail: %s\n' "$1" >&2
   AGENT_RUNTIME_DOCTOR_STATUS=1
 }
+
+RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
+REQUIRED_RUBY_VERSION="${AGENT_RUNTIME_REQUIRED_RUBY_VERSION:-3.3}"
+BUNDLER_CHECK_CMD="${AGENT_RUNTIME_BUNDLER_CHECK_CMD:-ruby -S bundle -v}"
+RAILS_BOOT_CMD="${AGENT_RUNTIME_RAILS_BOOT_CMD:-bin/rails runner 'print Rails.version'}"
+ZPROFILE_PATH="${AGENT_RUNTIME_ZPROFILE:-$HOME/.zprofile}"
+ZSH_BIN="${AGENT_RUNTIME_ZSH:-zsh}"
 
 contains_thread_title() {
   local file="$1"
@@ -95,6 +98,29 @@ run_doctor_command() {
   rm -f "$out_file" "$err_file"
 }
 
+run_doctor_login_command() {
+  local label="$1" cmd="$2" out_file err_file
+  out_file="/tmp/mcritchie-agent-runtime-${label//[^A-Za-z0-9]/-}-out.$$"
+  err_file="/tmp/mcritchie-agent-runtime-${label//[^A-Za-z0-9]/-}-err.$$"
+
+  if (cd "$ROOT" && "$ZSH_BIN" -lc "$cmd") >"$out_file" 2>"$err_file"; then
+    ok "$label"
+  else
+    fail_line "$label failed in login shell: $cmd"
+    sed 's/^/  /' "$err_file" >&2 || true
+  fi
+
+  rm -f "$out_file" "$err_file"
+}
+
+login_shell_ruby_bin() {
+  "$ZSH_BIN" -lc 'command -v ruby' 2>/dev/null || true
+}
+
+login_shell_ruby_version() {
+  "$ZSH_BIN" -lc 'ruby -e "print RUBY_VERSION"' 2>/dev/null || true
+}
+
 doctor() {
   AGENT_RUNTIME_DOCTOR_STATUS=0
 
@@ -118,10 +144,10 @@ doctor() {
     fail_line "Codex config missing thread-title status item: $codex_config"
   fi
 
-  if contains_ruby_path_prefix "$codex_config"; then
-    ok "Codex shell environment prepends required Ruby path"
+  if contains_ruby_path_prefix "$ZPROFILE_PATH"; then
+    ok "agent zsh login startup prepends required Ruby path"
   else
-    fail_line "Codex shell environment missing required Ruby path ($RUBY_PATH_PREFIX); run bin/agent-runtime install and restart Codex"
+    fail_line "agent shell login startup missing required Ruby path in $ZPROFILE_PATH ($RUBY_PATH_PREFIX); run bin/agent-runtime install and restart Codex"
   fi
 
   codex_hooks="$HOME/.codex/hooks.json"
@@ -150,17 +176,25 @@ doctor() {
     warn_line "codex binary not found on PATH"
   fi
 
-  ruby_bin="$(command -v ruby 2>/dev/null || true)"
-  ruby_version="$(ruby -e 'print RUBY_VERSION' 2>/dev/null || true)"
   required_ruby_bin="${RUBY_PATH_PREFIX%%:*}/ruby"
-  if [ "$ruby_bin" = "$required_ruby_bin" ] && ruby_version_meets_requirement "$ruby_version" "$REQUIRED_RUBY_VERSION"; then
-    ok "Ruby path: $ruby_bin ($ruby_version)"
+  login_ruby_bin="$(login_shell_ruby_bin)"
+  login_ruby_version="$(login_shell_ruby_version)"
+  if [ "$login_ruby_bin" = "$required_ruby_bin" ] && ruby_version_meets_requirement "$login_ruby_version" "$REQUIRED_RUBY_VERSION"; then
+    ok "login shell Ruby path: $login_ruby_bin ($login_ruby_version)"
   else
-    fail_line "Ruby path drift: expected $required_ruby_bin with Ruby >= $REQUIRED_RUBY_VERSION, got ${ruby_bin:-missing} ${ruby_version:-version unavailable}; run bin/agent-runtime install, restart Codex, then rerun doctor"
+    fail_line "login shell Ruby path drift: expected $required_ruby_bin with Ruby >= $REQUIRED_RUBY_VERSION, got ${login_ruby_bin:-missing} ${login_ruby_version:-version unavailable}; run bin/agent-runtime install, restart Codex, then rerun doctor"
   fi
 
-  run_doctor_command "Bundler available under current Ruby" "$BUNDLER_CHECK_CMD"
-  run_doctor_command "Rails boots under current Ruby" "$RAILS_BOOT_CMD"
+  ruby_bin="$(command -v ruby 2>/dev/null || true)"
+  ruby_version="$(ruby -e 'print RUBY_VERSION' 2>/dev/null || true)"
+  if [ "$ruby_bin" = "$required_ruby_bin" ] && ruby_version_meets_requirement "$ruby_version" "$REQUIRED_RUBY_VERSION"; then
+    ok "current shell Ruby path: $ruby_bin ($ruby_version)"
+  else
+    warn_line "current shell Ruby path is ${ruby_bin:-missing} ${ruby_version:-version unavailable}; already-open shells may need restart after install"
+  fi
+
+  run_doctor_login_command "Bundler available under login-shell Ruby" "$BUNDLER_CHECK_CMD"
+  run_doctor_login_command "Rails boots under login-shell Ruby" "$RAILS_BOOT_CMD"
 
   exit "$AGENT_RUNTIME_DOCTOR_STATUS"
 }
