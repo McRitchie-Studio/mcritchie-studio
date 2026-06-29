@@ -19,6 +19,7 @@
 - `npm run test:ui` — opens Playwright UI mode
 - **Config**: `playwright.config.js` — Chromium only, defaults to port 3000, accepts `E2E_PORT=<port>`, auto-starts test Rails server with local email capture enabled
 - **Seed**: `e2e/seed.rb` — 1 admin user (`alex@test.com`), 2 agents, 2 skills, 3 tasks, 2 activities. Idempotent via delete_all.
+- **Cleanup**: Playwright seeds into `RAILS_ENV=test`; before running the Rails suite after e2e work, reset with `RAILS_ENV=test bin/rails db:test:purge db:test:prepare`. `bin/full-suite-check` runs that reset automatically before certifying `bin/rails test`.
 - **Helper**: `e2e/helpers.js` — `loginWithMagicLink(page, email)` requests a link, reads `/_studio/local_emails.json`, confirms, and consumes it.
 - **Spec file**: `e2e/smoke.spec.js` — page loads, passwordless auth, nav links, theme toggle
 
@@ -27,7 +28,7 @@
 System Ruby 2.6 is on PATH by default on macOS and breaks `bundle exec`. If tests fail with `cannot load such file -- socket` or `Could not find 'bundler' (2.4.19)`, prepend the brew Ruby PATH:
 
 ```bash
-PATH="/opt/homebrew/opt/ruby@3.1/bin:/opt/homebrew/lib/ruby/gems/3.1.0/bin:$PATH" bin/rails test
+PATH="/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:$PATH" bin/rails test
 ```
 
 See `docs/agents/system/house-burn-down.md` gotchas 1 and 5 for context.
