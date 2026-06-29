@@ -8,6 +8,8 @@
 <% archived = local_assigns.fetch(:archived, false) %>
 <% current_release = local_assigns.fetch(:current_release, nil) %>
 <% last_release = local_assigns.fetch(:last_release, nil) %>
+<% current_page = local_assigns[:current_page] %>
+<% show_release_modules = current_page == "deployments" || current_release || last_release %>
 <%# Blocked tasks live in the Building column (a block means more building to do), so the
     board never renders a standalone Blocked column on either page. %>
 <% columns = (archived ? (stages + ["archived"]) : stages).reject { |s| s == "blocked" } %>
@@ -290,12 +292,12 @@ function kanbanBoard(live) {
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">
-    <%= render "board_top_links", current: local_assigns[:current_page] %>
+    <%= render "board_top_links", current: current_page %>
     <div class="flex items-center gap-4 flex-wrap">
       <h2 class="text-2xl font-bold text-heading"><%= title %></h2>
       <%# Toggle sits directly right of the title (where you are → switch boards);
           New Task / Archived are pushed to the far right with ml-auto. %>
-      <%= render "page_nav", current: local_assigns[:current_page] %>
+      <%= render "page_nav", current: current_page %>
       <% if columns.size > 4 %>
         <%# Below ~1250px the upstream lanes collapse (Building stays — it carries
             blocked, needs-attention tasks); this reveals all six (x-scroll).
@@ -325,7 +327,7 @@ function kanbanBoard(live) {
     </div>
   </div>
 
-  <% if current_release || last_release %>
+  <% if show_release_modules %>
     <!-- Current Release (with empty state) + Last Release (read-only history): side by side on lg+, stacked below -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-start">
       <%= render "current_release", release: current_release %>

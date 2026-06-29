@@ -389,14 +389,38 @@ into an agent session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
 each command to a deterministic runbook. The same `devops_kickoffs` source also
-carries two non-stage meta-triggers rendered as prominent chips in the
+carries three non-stage meta-triggers rendered as prominent chips in the
 current-release section (`#current-release`):
 
+- **`Avi Heartbeat`** — the long-running review-only loop. It serializes
+  submitted PR review newest-first, re-fetches after each PR, moves approved
+  work to `reviewed`, then leaves it for Steffon/release assembly.
 - **`Build and Deploy QA Release`** — the QA-department run. It reviews,
   assembles, deploys QA, runs ship-readiness, then stops before production.
 - **`Merge, Assemble, Deploy`** — the autonomous production run. It shares the
   same review/assembly/QA phases, then runs production ship after the same gates
   pass.
+
+**`Avi Heartbeat`**  *(long-running review-only loop — stops at reviewed)*
+
+This is the unattended Avi intake loop for hours-long review duty while feature
+agents keep submitting work. Run it from the primary McRitchie Studio checkout:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/avi-heartbeat --run
+```
+
+The heartbeat always re-queries the production board before selecting work,
+chooses the newest `submitted` PR first, records `bin/reviewer-select` intent,
+launches the selected PRIMARY + LIGHT reviewers with `codex exec`, waits for
+both to finish, then re-queries before deciding. Two merge-ready reports move
+the task to **`reviewed`** with an Avi handoff note; request-changes blocks the
+task with `qa_feedback`; wait-for-CI or conductor-review is deferred and retried
+after the defer window. The heartbeat does **not** merge into `release`, deploy
+QA, ship production, publish gems, or archive tasks. After ten completed PR
+reviews by default (`--limit 10`), it prints a retrospective covering friction,
+blocked/deferred tasks, blocker commonalities, and future refactor candidates.
 
 **`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run — stops at the ship gate)*
 
