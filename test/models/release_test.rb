@@ -1,4 +1,5 @@
 require "test_helper"
+require "minitest/mock"
 
 class ReleaseTest < ActiveSupport::TestCase
   def reviewed_task(label = "default")
@@ -107,6 +108,22 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_not_nil rel.confirmed_at
     assert_equal "shipped", task.reload.stage
     assert_not_nil task.completed_at # Task#ship! callback ran (not update_all)
+  end
+
+  test "[unit] ship! ranks newer members above older members" do
+    rel = Release.open!
+    older = Task.create!(title: "older rank release member", stage: "reviewed", created_at: 20.minutes.ago)
+    newer = Task.create!(title: "newer rank release member", stage: "reviewed", created_at: 5.minutes.ago)
+    rel.add(older)
+    rel.add(newer)
+    rel.assemble!
+
+    rel.association(:tasks).target = [newer.reload, older.reload]
+    rel.association(:tasks).loaded!
+    rel.ship!
+
+    assert_operator newer.reload.position, :>, older.reload.position,
+                    "newer release members should receive the fresher board rank"
   end
 
   test "abandon! returns members to reviewed and clears the release link" do

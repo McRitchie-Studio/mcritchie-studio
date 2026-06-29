@@ -29,6 +29,48 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
                     "the same shared `ordered` scope drives the build board too"
   end
 
+  test "[integration] deployments column puts freshly shipped tasks above older shipped cards" do
+    older = nil
+    fresh = nil
+
+    travel_to 2.hours.ago do
+      older = Task.create!(title: "older shipped board card", stage: "shipped")
+    end
+    travel_to 10.minutes.ago do
+      fresh = Task.create!(title: "fresh assembled board card", stage: "assembled")
+    end
+    travel_to Time.current do
+      fresh.ship!
+    end
+
+    get deployments_path
+    assert_response :success
+
+    order = card_order_in("dropzone-shipped")
+    assert_operator order.index("card-#{fresh.slug}"), :<, order.index("card-#{older.slug}"),
+                    "a card that just entered shipped should render above older shipped work"
+  end
+
+  test "[integration] release ship ranks newly shipped members newest first on reload" do
+    release = Release.open!
+    older_member = Task.create!(title: "older release member card", stage: "reviewed", created_at: 20.minutes.ago)
+    newer_member = Task.create!(title: "newer release member card", stage: "reviewed", created_at: 5.minutes.ago)
+    release.add(older_member)
+    release.add(newer_member)
+    release.assemble!
+
+    release.association(:tasks).target = [newer_member.reload, older_member.reload]
+    release.association(:tasks).loaded!
+    release.ship!(by: "avi")
+
+    get deployments_path
+    assert_response :success
+
+    order = card_order_in("dropzone-shipped")
+    assert_operator order.index("card-#{newer_member.slug}"), :<, order.index("card-#{older_member.slug}"),
+                    "a deployment batch should not render newer shipped members below older members"
+  end
+
   private
 
   # Card element ids within a dropzone, top → bottom.

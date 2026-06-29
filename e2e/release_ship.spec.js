@@ -36,6 +36,16 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   await expect(page.locator("#last-release [data-test='release-mascot']")).toContainText("Snorlax", { timeout: 10_000 });
   await expect(page.locator("#last-release [data-test='release-timing']")).toContainText("took");
 
+  await expect(page.locator("#dropzone-shipped #card-release-stack-current-c")).toBeVisible({ timeout: 10_000 });
+  let shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
+  expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
+  expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
+
+  await page.reload();
+  shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
+  expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
+  expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
+
   // No uncaught error from the broadcast/animation handlers.
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
