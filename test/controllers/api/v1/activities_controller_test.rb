@@ -30,6 +30,28 @@ module Api
         assert_equal "qa_feedback", activity.activity_type
       end
 
+      test "[integration] create records task-linked clarification" do
+        assert_difference "Activity.count", 1 do
+          post api_v1_activities_path,
+               params: {
+                 task_slug: @task.slug,
+                 agent_slug: "avi",
+                 activity_type: "clarification",
+                 description: "Can you confirm if this should wait for CI?",
+                 metadata: { source: "api" }
+               },
+               headers: @headers,
+               as: :json
+        end
+
+        assert_response :created
+        activity = Activity.order(:created_at).last
+        assert_equal @task.slug, activity.task_slug
+        assert_equal "clarification", activity.activity_type
+        assert activity.clarification?
+        assert_not activity.blocking_feedback?
+      end
+
       test "index filters activities by task slug" do
         matching = Activity.create!(
           task_slug: @task.slug,

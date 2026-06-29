@@ -1,9 +1,16 @@
 class Activity < ApplicationRecord
-  TASK_CONVERSATION_TYPES = %w[comment qa_feedback handoff].freeze
+  TASK_CONVERSATION_TYPES = %w[comment clarification qa_feedback handoff].freeze
   TASK_CONVERSATION_LABELS = {
     "comment" => "Comment",
+    "clarification" => "Clarification",
     "qa_feedback" => "QA Feedback",
     "handoff" => "Handoff"
+  }.freeze
+  TASK_CONVERSATION_DESCRIPTIONS = {
+    "comment" => "General coordination note",
+    "clarification" => "Non-blocking question or answer",
+    "qa_feedback" => "Blocking review feedback",
+    "handoff" => "Response or ready-again handoff"
   }.freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
@@ -25,6 +32,18 @@ class Activity < ApplicationRecord
 
   def activity_type_label
     TASK_CONVERSATION_LABELS.fetch(activity_type, activity_type.to_s.humanize)
+  end
+
+  def activity_type_description
+    TASK_CONVERSATION_DESCRIPTIONS.fetch(activity_type, activity_type_label)
+  end
+
+  def clarification?
+    activity_type == "clarification"
+  end
+
+  def blocking_feedback?
+    activity_type == "qa_feedback"
   end
 
   private

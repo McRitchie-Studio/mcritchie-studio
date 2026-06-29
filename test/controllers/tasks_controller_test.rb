@@ -1234,6 +1234,31 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "task_conversation", activity.metadata["source"]
   end
 
+  test "[integration] admin can add clarification without blocking the task" do
+    log_in_as(@admin)
+    @new_task.update!(stage: "submitted")
+
+    assert_difference "Activity.count", 1 do
+      post comment_task_path(@new_task.slug),
+           params: {
+             activity: {
+               activity_type: "clarification",
+               description: "Can you confirm whether the response belongs on the PR too?"
+             }
+           }
+    end
+
+    assert_redirected_to task_path(@new_task.slug)
+    activity = Activity.order(:created_at).last
+    assert_equal "clarification", activity.activity_type
+    assert_equal "submitted", @new_task.reload.stage
+
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{@new_task.slug} [data-test='activity-box'][data-activity-type='clarification']"
+    assert_select "#card-#{@new_task.slug} [data-test='activity-type-label']", text: "Clarification"
+  end
+
   test "task feedback requires admin" do
     log_in_as(@viewer)
 

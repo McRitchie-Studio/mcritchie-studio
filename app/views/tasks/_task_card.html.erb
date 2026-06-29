@@ -123,9 +123,13 @@
 
   <% if latest_activity %>
     <%# Activity note follows the slug + updated rows so status metadata stays grouped. %>
-    <div class="mt-1 min-w-0 rounded-md border border-subtle bg-inset/60 px-2 py-1" data-test="activity-box">
+    <div class="mt-1 min-w-0 rounded-md border px-2 py-1 <%= task_activity_box_classes(latest_activity) %>"
+         data-test="activity-box"
+         data-activity-type="<%= latest_activity.activity_type %>">
       <div class="flex min-w-0 items-center gap-1.5 mb-0 leading-none">
-        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"><%= latest_activity.activity_type_label %></span>
+        <span class="text-[9px] font-semibold uppercase tracking-wide text-heading"
+              data-test="activity-type-label"
+              title="<%= latest_activity.activity_type_description %>"><%= latest_activity.activity_type_label %></span>
         <% if activity_count.to_i > 1 %>
           <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
         <% end %>

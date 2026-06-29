@@ -242,7 +242,7 @@
               <%= f.text_area :description,
                     rows: 3,
                     class: "input-field",
-                    placeholder: "Record QA feedback, handoff notes, or agent response..." %>
+                    placeholder: "Record a comment, clarification, QA feedback, or handoff..." %>
             </div>
             <div class="md:pt-6">
               <button type="submit" class="btn btn-primary whitespace-nowrap">Add Note</button>
@@ -256,7 +256,7 @@
           <% @task_activities.each do |activity| %>
             <div class="bg-surface rounded p-3 border border-subtle">
               <div class="flex flex-wrap items-center gap-2 mb-2">
-                <%= render "components/badge", text: activity.activity_type_label, scheme: activity.activity_type == "qa_feedback" ? "warning" : "violet" %>
+                <%= render "components/badge", text: activity.activity_type_label, scheme: task_activity_badge_scheme(activity) %>
                 <% if activity.agent.present? %>
                   <%= link_to activity.agent_slug, agent_path(activity.agent_slug), class: "text-xs text-primary hover:text-primary-300" %>
                 <% elsif activity.agent_slug.present? %>

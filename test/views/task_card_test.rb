@@ -46,6 +46,24 @@ class TaskCardTest < ActionView::TestCase
       "uppercase tracking-wide label must have no surrounding whitespace, else it shows a gap before the count"
   end
 
+  test "[component] renders clarification activity with a non-blocking card signal" do
+    task = Task.create!(title: "Clarification card task", stage: "submitted")
+    activity = Activity.create!(task_slug: task.slug, activity_type: "clarification",
+                                description: "Can you confirm whether the docs example should mention PR comments?")
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     latest_activity: activity, activity_count: 1 }
+
+    box = css_select("[data-test='activity-box']").first
+    assert_equal "clarification", box["data-activity-type"]
+    assert_includes box["class"], "border-cyan-300"
+
+    label = css_select("[data-test='activity-type-label']").first
+    assert_equal "Clarification", label.text
+    assert_equal "Non-blocking question or answer", label["title"]
+  end
+
   test "the slug row renders between the crew and updated age row with size first" do
     task = Task.create!(title: "Slug position task", stage: "building", po_size: "small")
     task.task_events.delete_all
