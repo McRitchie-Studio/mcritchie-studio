@@ -301,7 +301,7 @@ def run_directory
 end
 
 def codex_command(last_message_path)
-  cmd = [CODEX_BIN, "exec", "-C", OPTIONS.fetch(:codex_workdir), "-a", OPTIONS.fetch(:approval), "-s", OPTIONS.fetch(:codex_sandbox)]
+  cmd = [CODEX_BIN, "-a", OPTIONS.fetch(:approval), "-s", OPTIONS.fetch(:codex_sandbox), "exec", "-C", OPTIONS.fetch(:codex_workdir)]
   cmd += ["-m", OPTIONS.fetch(:model)] unless OPTIONS.fetch(:model).empty?
   cmd += ["-o", last_message_path, "-"]
   cmd

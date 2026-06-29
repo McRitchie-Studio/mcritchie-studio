@@ -305,6 +305,24 @@ class AviHeartbeatCommandTest < Minitest::Test
     ], moves
   end
 
+  def test_run_mode_places_codex_global_flags_before_exec
+    task_record = task("flag-order", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("flag-order", created_at: "2026-06-29T12:00:00Z",
+                                  reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([task_record]), snapshot([reviewed]))
+
+    _out, err, status = run_heartbeat("--run", "--limit", "1")
+
+    assert status.success?, err
+    args = json_lines(@codex_log).first
+    assert_equal ["-a", "never", "-s", "danger-full-access", "exec"], args.first(5)
+    exec_index = args.index("exec")
+    assert_operator args.index("-a"), :<, exec_index
+    assert_operator args.index("-s"), :<, exec_index
+    assert_includes args, "-C"
+    assert_includes args, "-o"
+  end
+
   def test_blocks_a_pr_when_either_reviewer_requests_changes
     bad = task("bad-pr", created_at: "2026-06-29T12:00:00Z")
     bad_reviewed = task(
