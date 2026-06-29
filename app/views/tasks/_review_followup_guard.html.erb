@@ -1,0 +1,51 @@
+<%# locals: (task:, review_intent:, agents:) %>
+<% reviewers = Task.normalize_reviewers(review_intent.metadata["reviewers"]) %>
+<% agents_by_slug = agents.index_by(&:slug) %>
+
+<section class="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4" data-test="review-followup-guard">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div class="min-w-0">
+      <p class="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-200">Review in progress</p>
+      <h3 class="mt-1 text-base font-semibold text-heading">Do not interrupt the branch under review.</h3>
+      <p class="mt-1 max-w-3xl text-sm text-secondary">
+        Review has started for this task. Keep this PR stable while reviewers work; capture new scope or fixes in a follow-up task instead of pushing another change here.
+      </p>
+
+      <% if reviewers.any? %>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <% reviewers.each do |reviewer| %>
+            <% slug = reviewer["slug"].to_s %>
+            <% agent = agents_by_slug[slug] %>
+            <span class="inline-flex items-center gap-1.5 rounded border border-amber-500/30 bg-surface px-2 py-1 text-xs text-secondary"
+                  data-test="review-followup-reviewer"
+                  data-role="<%= Task.normalize_review_role(reviewer["weight"]) || reviewer["weight"] %>">
+              <% if agent %>
+                <%= render "components/agent_avatar", agent: agent, size: "xs" %>
+                <span class="font-semibold text-heading"><%= agent.name %></span>
+              <% else %>
+                <span class="font-semibold text-heading"><%= slug %></span>
+              <% end %>
+              <% if reviewer["weight"].present? %>
+                <span class="uppercase tracking-wide text-muted"><%= reviewer["weight"] %></span>
+              <% end %>
+            </span>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
+      <% if (pr_url = task.devops_url("pr")) %>
+        <%= link_to "View PR", pr_url, class: "btn btn-outline btn-sm", target: "_blank", rel: "noopener" %>
+      <% end %>
+      <% if logged_in? %>
+        <%= link_to "Create follow-up task",
+              new_task_path(followup_from: task.slug),
+              class: "btn btn-primary btn-sm",
+              "data-test": "review-followup-create-link" %>
+      <% else %>
+        <span class="rounded border border-subtle bg-surface px-2 py-1 text-xs text-muted">Sign in to create follow-up</span>
+      <% end %>
+    </div>
+  </div>
+</section>
