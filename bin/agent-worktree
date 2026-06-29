@@ -2204,15 +2204,70 @@ def task_bound?(values)
   task_record_slug(values) && task_url(values)
 end
 
+def task_record_for_pr(record)
+  override = ENV["AGENT_WORKTREE_TASK_JSON"].to_s.strip
+  return JSON.parse(override) unless override.empty?
+
+  slug = task_record_slug(record[:env])
+  return {} unless slug
+
+  task_bin = File.join(record[:dir], "bin", "task")
+  task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
+  return {} unless File.exist?(task_bin)
+
+  ok, out, = capture_status(task_bin, "show", slug, "--json", chdir: record[:dir], env: command_env(record[:app], record[:env]))
+  return {} unless ok
+
+  JSON.parse(out)
+rescue JSON::ParserError
+  {}
+end
+
+def task_devops_for_pr(task_record)
+  metadata = task_record.is_a?(Hash) ? task_record["metadata"] : nil
+  devops = metadata.is_a?(Hash) ? metadata["devops"] : nil
+  devops.is_a?(Hash) ? devops : {}
+end
+
+def list_from_task_devops(devops, key)
+  raw = devops[key]
+  case raw
+  when Array
+    raw.map(&:to_s).map(&:strip).reject(&:empty?)
+  else
+    raw.to_s.split(/\r?\n/).map(&:strip).reject(&:empty?)
+  end
+end
+
+def bullet_lines(items, fallback)
+  lines = Array(items).map(&:to_s).map(&:strip).reject(&:empty?)
+  lines = [fallback] if lines.empty?
+  lines.map { |line| "- #{line}" }.join("\n")
+end
+
+def pr_summary_lines(task_record)
+  devops = task_devops_for_pr(task_record)
+  acceptance = list_from_task_devops(devops, "acceptance")
+  return acceptance if acceptance.any?
+
+  title = task_record.is_a?(Hash) ? task_record["title"].to_s.strip : ""
+  title.empty? ? [] : ["Implements #{title}."]
+end
+
+def pr_verification_lines(task_record)
+  list_from_task_devops(task_devops_for_pr(task_record), "checks_run")
+end
+
 def pr_body(record)
   url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}"
   email_url = record[:port].empty? ? "not started" : "http://localhost:#{record[:port]}/_studio/local_emails"
   task_record = task_record_slug(record[:env])
   task_record_url = task_url(record[:env])
   task_line = task_record_url ? "#{task_record_url} (`#{task_record}`)" : "`#{record[:task]}` worktree slug; bind the production task with `bin/agent-worktree bind-task #{record[:app].fetch("slug")} #{record[:task]} task-...` before PR review."
+  task_metadata = task_record_for_pr(record)
   <<~BODY
     ## Summary
-    - 
+    #{bullet_lines(pr_summary_lines(task_metadata), "Scope is recorded on the linked task.")}
 
     ## Task
     - McRitchie Studio task: #{task_line}
@@ -2226,7 +2281,7 @@ def pr_body(record)
     - Stack health: #{stack_health(record)} (/up #{record[:code]})
 
     ## Verification
-    - 
+    #{bullet_lines(pr_verification_lines(task_metadata), "No checks_run recorded on the linked task yet.")}
 
     ## QA Notes
     - Avi: verify scope/spec match and merge safety.

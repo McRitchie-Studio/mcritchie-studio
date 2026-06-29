@@ -181,6 +181,94 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes combined, "worktree is not bound to a production McRitchie Studio task"
   end
 
+  test "[unit] pr body fills summary and verification from task metadata" do
+    task_json = {
+      "title" => "PR Handoff Autofill",
+      "metadata" => {
+        "devops" => {
+          "acceptance" => ["Fill PR summary from task metadata", "Keep release as default PR base"],
+          "checks_run" => ["[unit] bin/rails test test/commands/agent_worktree_test.rb"]
+        }
+      }
+    }
+    snippet = <<~RUBY
+      ENV["AGENT_WORKTREE_TASK_JSON"] = #{JSON.generate(task_json).inspect}
+      record = {
+        task: "pr-handoff-autofill",
+        port: "39999",
+        dir: #{@worktree_dir.inspect},
+        code: "000",
+        env_exists: true,
+        port_pid: "",
+        app: { "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio" },
+        env: {
+          "TASK_RECORD_SLUG" => "pr-handoff-autofill",
+          "TASK_URL" => "https://mcritchie.studio/tasks/pr-handoff-autofill"
+        }
+      }
+      puts pr_body(record)
+    RUBY
+
+    body = script_eval(snippet)
+
+    assert_includes body, "- Fill PR summary from task metadata"
+    assert_includes body, "- Keep release as default PR base"
+    assert_includes body, "- [unit] bin/rails test test/commands/agent_worktree_test.rb"
+    refute_match(/^-\\s*$/m, body, "generated PR body must not include blank bullets")
+  end
+
+  test "[unit] pr body falls back without blank bullets when task metadata is unavailable" do
+    snippet = <<~RUBY
+      record = {
+        task: "pr-handoff-autofill",
+        port: "39999",
+        dir: #{@worktree_dir.inspect},
+        code: "000",
+        env_exists: true,
+        port_pid: "",
+        app: { "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio" },
+        env: {
+          "TASK_RECORD_SLUG" => "pr-handoff-autofill",
+          "TASK_URL" => "https://mcritchie.studio/tasks/pr-handoff-autofill"
+        }
+      }
+      puts pr_body(record)
+    RUBY
+
+    body = script_eval(snippet)
+
+    assert_includes body, "- Scope is recorded on the linked task."
+    assert_includes body, "- No checks_run recorded on the linked task yet."
+    refute_match(/^-\\s*$/m, body, "generated PR body must not include blank bullets")
+  end
+
+  test "[integration] finish prints a complete generated PR body" do
+    agent_worktree!("bind-task", "mcritchie-studio", @task, "pr-handoff-autofill")
+    task_json = {
+      "title" => "PR Handoff Autofill",
+      "metadata" => {
+        "devops" => {
+          "acceptance" => ["Fill PR summary from task metadata"],
+          "checks_run" => ["[integration] bin/agent-worktree finish prints body"]
+        }
+      }
+    }
+
+    out, err, status = agent_worktree(
+      "finish", "mcritchie-studio", @task,
+      env: {
+        "AGENT_WORKTREE_TASK_JSON" => JSON.generate(task_json),
+        "GIT_SSH_COMMAND" => "/usr/bin/false"
+      }
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "ready for QA. Open a draft PR with this body:"
+    assert_includes out, "- Fill PR summary from task metadata"
+    assert_includes out, "- [integration] bin/agent-worktree finish prints body"
+    refute_match(/^-\\s*$/m, out, "finish must not print blank PR body bullets")
+  end
+
   test "qa-intake PR metadata includes bound task fields" do
     registry_path = write_intake_registry
     fake_bin = write_fake_gh
