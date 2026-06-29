@@ -126,8 +126,9 @@ module ApplicationHelper
 
   # Pizza-tracker progress for the active release card, derived from the durable
   # writes the conductor already makes during bin/release merge/prepare/ship.
-  def release_tracker_steps(release)
+  def release_tracker_steps(release, now: Time.current)
     done_count = release_tracker_done_count(release)
+    events = release.release_events.to_a
 
     RELEASE_TRACKER_STAGES.each_with_index.map do |stage, index|
       state =
@@ -144,8 +145,79 @@ module ApplicationHelper
         label: release_tracker_step_label(stage, state),
         state: state,
         connector_state: release_tracker_connector_state(index, done_count)
+      ).merge(
+        release_tracker_duration(release, stage[:key], state, events: events, now: now)
       )
     end
+  end
+
+  def release_tracker_duration(release, key, state, events:, now: Time.current)
+    started_at, completed_at = release_tracker_duration_bounds(release, key, events)
+    if state.to_sym == :active
+      started_at ||= release_tracker_fallback_started_at(release, key)
+      return {} unless started_at
+
+      return {
+        duration_seconds: elapsed_seconds(started_at, now),
+        duration_started_at: started_at,
+        duration_live: true
+      }
+    end
+
+    return {} unless state.to_sym == :complete
+
+    completed_at ||= release_tracker_fallback_completed_at(release, key)
+    started_at ||= completed_at
+    seconds = elapsed_seconds(started_at, completed_at)
+    return {} unless seconds
+
+    { duration_seconds: seconds, duration_live: false }
+  end
+
+  def release_tracker_duration_bounds(release, key, events)
+    steps = case key.to_s
+            when "testing" then [["review_tests"]]
+            when "assembling" then [["assemble_release"]]
+            when "qa_deploying" then [["deploy_qa"]]
+            when "confirming" then [%w[ship_gate ship_authorized]]
+            when "production_deploying" then [["deploy_prod"]]
+            else []
+            end
+    starts = steps.flatten.filter_map { |step| release_event_at(events, step, "started") }
+    finishes = steps.flatten.filter_map { |step| release_event_at(events, step, "completed") }
+    started_at = starts.min
+    completed_at = finishes.max
+    started_at ||= completed_at if completed_at
+    started_at ||= release.created_at if key.to_s == "assembling" && completed_at
+    [started_at, completed_at]
+  end
+
+  def release_event_at(events, step, status)
+    events.select { |event| event.step == step && event.status == status }.map(&:occurred_at).compact.min
+  end
+
+  def release_tracker_fallback_started_at(release, key)
+    case key.to_s
+    when "testing", "assembling" then release.created_at
+    when "qa_deploying" then release.assembled_at
+    when "confirming" then release.confirmed_at
+    when "production_deploying" then release.confirmed_at
+    end
+  end
+
+  def release_tracker_fallback_completed_at(release, key)
+    case key.to_s
+    when "assembling" then release.assembled_at
+    when "confirming" then release.confirmed_at
+    when "production_deploying" then release.shipped_at
+    end
+  end
+
+  def release_static_duration_label(seconds)
+    seconds = seconds.to_i
+    return "#{seconds}s" if seconds < 60
+
+    "#{seconds / 60}m"
   end
 
   def release_tracker_step_label(stage, state)

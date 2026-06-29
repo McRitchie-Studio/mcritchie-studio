@@ -4,9 +4,10 @@
     Local: release (the shipped Release, or nil to render nothing). %>
 <% rel = local_assigns.fetch(:release, nil) %>
 <% if rel %>
+  <% card_class = ["rounded-xl border border-subtle bg-surface p-4 opacity-75", local_assigns[:card_class]].compact.join(" ") %>
   <%# data-glow tints the deploy burst (LiveBoardFx) with the just-shipped release's
       conductor mascot colour; blank → the default warm-orange flash. %>
-  <div id="last-release" data-glow="<%= rel.mascot&.signature_color %>" class="rounded-xl border border-subtle bg-surface p-4 opacity-75">
+  <div id="last-release" data-glow="<%= rel.mascot&.signature_color %>" class="<%= card_class %>">
     <%# The shipped-stage kickoff chip ("Archive completed tasks") rides inline with the
         task pills, mirroring the Next Release card's release workflow chips. %>
     <% archive_chip = render "tasks/kickoff_chip", command: devops_kickoffs["shipped"] %>

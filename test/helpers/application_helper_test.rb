@@ -436,6 +436,32 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "7m 23s", release_elapsed_clock(rel, now: Time.utc(2026, 1, 1, 0, 7, 23))
   end
 
+  test "release_static_duration_label renders seconds or whole minutes" do
+    assert_equal "14s", release_static_duration_label(14)
+    assert_equal "3m", release_static_duration_label(3.minutes + 22.seconds)
+  end
+
+  test "release_tracker_steps carries live and completed stage durations" do
+    rel = Release.open!
+    started = Time.zone.parse("2026-06-29 12:00:00")
+    rel.record_event!(step: "assemble_release", status: "started", source: "conductor", occurred_at: started)
+    rel.record_event!(step: "assemble_release", status: "completed", source: "conductor", occurred_at: started + 90.seconds)
+    rel.record_event!(step: "deploy_qa", status: "started", source: "conductor", occurred_at: started + 2.minutes)
+    rel.update_columns(assembled_at: started + 90.seconds, state: "assembling") # rubocop:disable Rails/SkipsModelValidations
+
+    steps = release_tracker_steps(rel.reload, now: started + 3.minutes)
+    assembling = steps.detect { |step| step[:key] == "assembling" }
+    qa = steps.detect { |step| step[:key] == "qa_deploying" }
+
+    assert_equal :complete, assembling[:state]
+    assert_equal 90, assembling[:duration_seconds]
+    assert_not assembling[:duration_live]
+    assert_equal :active, qa[:state]
+    assert_equal 60, qa[:duration_seconds]
+    assert qa[:duration_live]
+    assert_equal started + 2.minutes, qa[:duration_started_at]
+  end
+
   test "[component] _current_release renders a glow hook + a live in-progress ticker" do
     rel = Release.open!
     render partial: "tasks/current_release", locals: { release: rel }
@@ -443,6 +469,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "#current-release[data-glow]" # the live-flash tint hook rides the card
     assert_select "#current-release [data-release-ticker][data-since=?]", rel.created_at.to_i.to_s
     assert_select "#current-release [data-test='release-timing']", text: /\Ain progress · /
+    assert_select "#current-release [data-test='release-tracker-duration'][data-release-ticker]", minimum: 1
   end
 
   test "devops_next_html badges whole-word stage names only" do

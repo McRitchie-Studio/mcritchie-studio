@@ -3,8 +3,9 @@
 <% stage_averages = averages["stages"] || {} %>
 <% deployment = averages["deployment"] || {} %>
 <% sample_count = dashboard["sample_count"].to_i %>
+<% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 
-<div id="release-duration-card" class="rounded-xl border border-subtle bg-surface p-4" data-test="release-duration-card">
+<div id="release-duration-card" class="<%= card_class %>" data-test="release-duration-card">
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0">
       <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Release Times</span>
