@@ -1662,6 +1662,7 @@ def ship
   shipped = conductor(
     "r = Release.current; " \
     "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}); " \
+    "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
     "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
   )

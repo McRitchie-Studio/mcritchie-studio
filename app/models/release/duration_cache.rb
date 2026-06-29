@@ -1,0 +1,319 @@
+# frozen_string_literal: true
+
+class Release
+  module DurationCache
+    VERSION = 1
+
+    STAGE_DEFINITIONS = {
+      "building" => {
+        "label" => "Building",
+        "intent_to" => "building",
+        "complete_to" => "submitted",
+        "fallback_to" => "building"
+      },
+      "reviewing" => {
+        "label" => "Reviewing",
+        "intent_to" => "reviewed",
+        "complete_to" => "reviewed",
+        "fallback_to" => "submitted"
+      },
+      "assembled" => {
+        "label" => "Assembling",
+        "intent_to" => "assembled",
+        "complete_to" => "assembled",
+        "fallback_to" => "reviewed"
+      },
+      "shipped" => {
+        "label" => "Shipping",
+        "intent_to" => "shipped",
+        "complete_to" => "shipped",
+        "fallback_to" => "assembled"
+      }
+    }.freeze
+
+    RELEASE_STEP_LABELS = {
+      "review_tests" => "Review tests",
+      "assemble_release" => "Assemble release",
+      "deploy_qa" => "Deploy QA",
+      "qa_smoke" => "QA smoke",
+      "ship_gate" => "Ship gate",
+      "ship_authorized" => "Ship authorized",
+      "deploy_prod" => "Deploy production",
+      "prod_smoke" => "Production smoke",
+      "release_notes" => "Release notes",
+      "archive_tasks" => "Archive tasks"
+    }.freeze
+
+    module_function
+
+    def build(release, now: Time.current)
+      release = Release.includes(:release_events, tasks: :task_events)
+                       .find_by!(slug: release.is_a?(Release) ? release.slug : release)
+      now = now.in_time_zone
+      tasks = release.tasks.includes(:task_events).order(:position, :created_at).to_a
+      task_rows = tasks.map { |task| task_metrics(task, now: now) }
+      release_steps = release_step_metrics(release.release_events.chronological.to_a)
+
+      {
+        "cache_version" => VERSION,
+        "cached_at" => now.iso8601,
+        "release" => release_metrics(release, tasks: tasks, now: now),
+        "stages" => stage_aggregates(task_rows),
+        "release_steps" => release_steps,
+        "tasks" => task_rows,
+        "integrity" => integrity_metrics(release, tasks, task_rows, release_steps)
+      }
+    end
+
+    def refresh!(release, now: Time.current)
+      release = Release.find_by!(slug: release) unless release.is_a?(Release)
+      metrics = build(release, now: now)
+      stamp = now.in_time_zone
+      release.update_columns( # rubocop:disable Rails/SkipsModelValidations
+        duration_metrics: metrics,
+        duration_metrics_cached_at: stamp,
+        duration_cache_version: VERSION,
+        updated_at: Time.current
+      )
+      metrics
+    end
+
+    def refresh_recent!(limit: 3, now: Time.current)
+      recent_releases(limit: limit).map { |release| [release.slug, refresh!(release, now: now)] }.to_h
+    end
+
+    def recent_releases(limit: 3)
+      Release.where(state: "shipped")
+             .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+             .limit(limit)
+    end
+
+    def dashboard(limit: 3)
+      releases = recent_releases(limit: limit).to_a
+      metrics = releases.map { |release| cached_or_built(release) }
+      {
+        "limit" => limit,
+        "releases" => releases,
+        "averages" => averages_from(metrics),
+        "sample_count" => releases.size,
+        "generated_at" => Time.current.iso8601
+      }
+    end
+
+    def averages_from(metrics)
+      stage_rows = STAGE_DEFINITIONS.each_key.to_h do |key|
+        values = metrics.flat_map { |row| Array(row["tasks"]).filter_map { |task| task.dig("stages", key, "seconds") } }
+        [key, average_row(values)]
+      end
+      deployment_values = metrics.filter_map { |row| row.dig("release", "deployment_seconds") }
+
+      {
+        "stages" => stage_rows,
+        "deployment" => average_row(deployment_values)
+      }
+    end
+
+    def cached_or_built(release)
+      if release.duration_cache_version == VERSION && release.duration_metrics.present?
+        release.duration_metrics
+      else
+        build(release)
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[release-duration-cache] fallback build failed for #{release.slug}: #{e.class}: #{e.message}")
+      build(release)
+    end
+
+    def release_metrics(release, tasks:, now:)
+      started_at = release.created_at
+      finished_at = release.shipped_at
+      {
+        "slug" => release.slug,
+        "state" => release.state,
+        "started_at" => timestamp(started_at),
+        "assembled_at" => timestamp(release.assembled_at),
+        "confirmed_at" => timestamp(release.confirmed_at),
+        "shipped_at" => timestamp(finished_at),
+        "deployment_seconds" => seconds_between(started_at, finished_at),
+        "live_seconds" => release.active? ? seconds_between(started_at, now) : nil,
+        "task_count" => tasks.size,
+        "qa_url" => release.qa_url,
+        "production_url" => release.production_url,
+        "deployed_sha" => release.deployed_sha
+      }
+    end
+
+    def task_metrics(task, now:)
+      events = task.task_events.chronological.to_a
+      {
+        "slug" => task.slug,
+        "title" => task.title,
+        "stage" => task.stage,
+        "stages" => STAGE_DEFINITIONS.keys.to_h { |key| [key, task_stage_span(task, events, key, now: now)] }
+      }
+    end
+
+    def task_stage_span(task, events, key, now:)
+      definition = STAGE_DEFINITIONS.fetch(key)
+      transitions = events.select(&:transition?)
+      intents = events.select(&:intent?)
+      completion = transitions.select { |event| event.to_stage == definition.fetch("complete_to") }.last
+      start = stage_intent(intents, definition, before: completion&.occurred_at) ||
+              stage_fallback_transition(transitions, definition, before: completion&.occurred_at)
+
+      if completion && start
+        return span_row(
+          status: "completed",
+          seconds: seconds_between(start.occurred_at, completion.occurred_at),
+          started_at: start.occurred_at,
+          completed_at: completion.occurred_at,
+          source: start.intent? ? "intent" : "transition_fallback",
+          actor: start.actor,
+          start_event: event_ref(start),
+          completion_event: event_ref(completion)
+        )
+      end
+
+      open_intent = stage_intent(intents, definition)
+      if open_intent && !completion
+        return span_row(
+          status: "in_progress",
+          seconds: seconds_between(open_intent.occurred_at, now),
+          started_at: open_intent.occurred_at,
+          completed_at: nil,
+          source: "intent",
+          actor: open_intent.actor,
+          start_event: event_ref(open_intent),
+          completion_event: nil
+        )
+      end
+
+      span_row(
+        status: "missing",
+        seconds: nil,
+        started_at: start&.occurred_at,
+        completed_at: completion&.occurred_at,
+        source: start ? "transition_fallback" : nil,
+        actor: start&.actor,
+        start_event: event_ref(start),
+        completion_event: event_ref(completion)
+      )
+    end
+
+    def stage_intent(intents, definition, before: nil)
+      candidates = intents.select { |event| event.to_stage == definition.fetch("intent_to") }
+      candidates = candidates.reject { |event| event.metadata["qa"] == true } if definition.fetch("intent_to") == "shipped"
+      candidates = candidates.select { |event| event.occurred_at <= before } if before
+      candidates.last
+    end
+
+    def stage_fallback_transition(transitions, definition, before: nil)
+      candidates = transitions.select { |event| event.to_stage == definition.fetch("fallback_to") }
+      candidates = candidates.select { |event| event.occurred_at <= before } if before
+      candidates.last
+    end
+
+    def release_step_metrics(events)
+      RELEASE_STEP_LABELS.keys.to_h do |step|
+        rows = events.select { |event| event.step == step }
+        start = rows.find(&:started?)
+        finish = rows.find do |event|
+          next false if event.started?
+          next true unless start
+
+          event.occurred_at >= start.occurred_at
+        end
+
+        [step, {
+          "label" => RELEASE_STEP_LABELS.fetch(step),
+          "status" => finish&.status || start&.status || "missing",
+          "started_at" => timestamp(start&.occurred_at),
+          "completed_at" => timestamp(finish&.occurred_at),
+          "seconds" => start && finish ? seconds_between(start.occurred_at, finish.occurred_at) : nil,
+          "start_event" => event_ref(start),
+          "completion_event" => event_ref(finish),
+          "event_count" => rows.size
+        }]
+      end
+    end
+
+    def stage_aggregates(task_rows)
+      STAGE_DEFINITIONS.each_key.to_h do |key|
+        rows = task_rows.map { |task| task.dig("stages", key) }.compact
+        completed = rows.select { |row| row["status"] == "completed" && row["seconds"] }
+        [key, {
+          "label" => STAGE_DEFINITIONS.dig(key, "label"),
+          "average_seconds" => average(completed.map { |row| row["seconds"] }),
+          "sample_count" => completed.size,
+          "missing_count" => rows.count { |row| row["status"] == "missing" },
+          "in_progress_count" => rows.count { |row| row["status"] == "in_progress" }
+        }]
+      end
+    end
+
+    def average_row(values)
+      values = values.compact
+      {
+        "average_seconds" => average(values),
+        "sample_count" => values.size
+      }
+    end
+
+    def average(values)
+      values = values.compact
+      return nil if values.empty?
+
+      (values.sum.to_f / values.size).round
+    end
+
+    def integrity_metrics(release, tasks, task_rows, release_steps)
+      missing_stage_spans = task_rows.sum do |task|
+        task.fetch("stages").values.count { |row| row["status"] == "missing" }
+      end
+      {
+        "release_event_count" => release.release_events.size,
+        "task_event_count" => tasks.sum { |task| task.task_events.size },
+        "missing_task_stage_spans" => missing_stage_spans,
+        "missing_release_steps" => release_steps.values.count { |row| row["status"] == "missing" }
+      }
+    end
+
+    def span_row(status:, seconds:, started_at:, completed_at:, source:, actor:, start_event:, completion_event:)
+      {
+        "status" => status,
+        "seconds" => seconds,
+        "started_at" => timestamp(started_at),
+        "completed_at" => timestamp(completed_at),
+        "source" => source,
+        "actor" => actor,
+        "start_event" => start_event,
+        "completion_event" => completion_event
+      }
+    end
+
+    def event_ref(event)
+      return nil unless event
+
+      {
+        "id" => event.id,
+        "kind" => event.respond_to?(:kind) ? event.kind : nil,
+        "from_stage" => event.respond_to?(:from_stage) ? event.from_stage : nil,
+        "to_stage" => event.respond_to?(:to_stage) ? event.to_stage : nil,
+        "step" => event.respond_to?(:step) ? event.step : nil,
+        "status" => event.respond_to?(:status) ? event.status : nil,
+        "actor" => event.actor,
+        "occurred_at" => timestamp(event.occurred_at)
+      }.compact
+    end
+
+    def seconds_between(from, to)
+      return nil unless from && to
+
+      [(to - from).to_i, 0].max
+    end
+
+    def timestamp(value)
+      value&.iso8601
+    end
+  end
+end

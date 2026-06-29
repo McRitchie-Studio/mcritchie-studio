@@ -266,6 +266,28 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release", count: 0
   end
 
+  test "[component] deployments renders the release duration intelligence card" do
+    Release.delete_all
+    shipped = Release.create!(slug: "rel-dashboard-metrics", branch: "release", state: "shipped")
+    shipped.update_columns(created_at: 45.minutes.ago, shipped_at: 5.minutes.ago) # rubocop:disable Rails/SkipsModelValidations
+    task = Task.create!(title: "duration dashboard member task", stage: "shipped", release_slug: shipped.slug)
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, kind: "intent", from_stage: "designed", to_stage: "building",
+                      occurred_at: 35.minutes.ago, actor: "builder")
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 25.minutes.ago, seconds_in_from: 10.minutes.to_i,
+                      actor: "builder", source: "cli", model: "gpt-5",
+                      tokens_in: 1000, tokens_out: 250, cost: "0.0500")
+    Release::DurationCache.refresh!(shipped)
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#release-duration-card"
+    assert_select "#release-duration-card a[href=?]", all_deployments_path, text: /All Deployments/
+    assert_select "#release-duration-card", text: /Building/
+  end
+
   test "[integration] deployments cards carry a data-glow attribute for the live glow" do
     # The live board tints each card's create/move glow from data-glow (the mascot's
     # type colour); it's present on every card (empty when the task has no mascot).

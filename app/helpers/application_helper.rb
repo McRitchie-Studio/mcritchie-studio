@@ -45,6 +45,23 @@ module ApplicationHelper
     "#{seconds / 86_400}d"
   end
 
+  def release_duration_label(seconds, empty: "—")
+    compact_stage_duration(seconds) || empty
+  end
+
+  def release_duration_time(value)
+    return "—" if value.blank?
+
+    time = value.is_a?(String) ? Time.zone.parse(value) : value
+    time ? l(time, format: :short) : "—"
+  rescue ArgumentError, TypeError
+    "—"
+  end
+
+  def release_duration_stage_name(key)
+    Release::DurationCache::STAGE_DEFINITIONS.dig(key.to_s, "label") || key.to_s.humanize
+  end
+
   def task_stage_count_classes(stage)
     case stage.to_s
     when "designed"  then "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/50"

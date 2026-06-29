@@ -422,4 +422,6 @@ active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_
   t.update_columns(created_at: spec[:created], completed_at: spec[:shipped], updated_at: at)
 end
 
+Release::DurationCache.refresh_recent!(limit: 3)
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases"

@@ -365,10 +365,11 @@ module StageAgentsHelper
   # The CONSOLIDATED timeline for /tasks/:id — one ordered list that replaces the
   # separate "Stage Crew" + "Stage Timeline" panels. Every completed TRANSITION is
   # a block (from→to, the agent(s) that COMPLETED it, time-in-stage, and the
-  # model/tokens/cost the agent reported), and when the task is still live a
-  # trailing IN-PROGRESS block shows who is on the current stage right now with a
-  # green live ticker (the build lane from the mascot + entry time; the deploy lane
-  # from the OPEN intent). Returns an array of TimelineBlock in pipeline order.
+  # model/tokens/cost the agent reported). Deploy-lane live work appends an
+  # IN-PROGRESS block from the open intent; the build lane is special because
+  # `building` is itself the intent stage, so the existing →Building transition is
+  # marked live instead of adding a second "Building" card. Returns an array of
+  # TimelineBlock in pipeline order.
   TimelineBlock = Struct.new(:event, :from_label, :to_label, :from_stage, :to_stage,
                              :occurred_at, :seconds, :agents, :model, :tokens, :cost,
                              :source, :live_since, :in_progress, :backfilled, keyword_init: true) do
@@ -395,6 +396,10 @@ module StageAgentsHelper
     end
 
     if (work = in_progress_work(task, by_slug, mascot_agent, intents))
+      if task.stage == "building" && merge_live_build_work!(blocks, work)
+        return blocks
+      end
+
       # The timeline frames live work as the real pipeline TRANSITION it produces —
       # `to_stage` is the next stage and `timeline_agents` is that stage's crew. This
       # is what keeps a re-homed QA intent from rendering "Assembled → Assembled":
@@ -412,6 +417,16 @@ module StageAgentsHelper
     end
 
     blocks
+  end
+
+  def merge_live_build_work!(blocks, work)
+    block = blocks.reverse.find { |candidate| candidate.to_stage == "building" }
+    return false unless block
+
+    block.live_since = work[:live_since]
+    block.in_progress = true
+    block.agents = work[:timeline_agents] if block.agents.blank?
+    true
   end
 
   # The work in progress on `task` right now — who's on it + when they started — or

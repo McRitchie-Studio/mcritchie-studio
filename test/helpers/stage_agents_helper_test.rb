@@ -293,10 +293,11 @@ class StageAgentsHelperTest < ActionView::TestCase
                       metadata: { "mascot" => { "slug" => "grimer", "name" => "Grimer",
                                                  "avatar" => "https://example.test/grimer.png" } })
 
-    blocks = stage_timeline(task.reload, @agents).reject(&:in_progress?)
+    blocks = stage_timeline(task.reload, @agents)
 
     assert_equal ["Dewgong", "Dewgong", "Dewgong", nil, "Grimer"],
                  blocks.map { |block| block.agents.first&.name }
+    assert blocks.last.in_progress?, "the current rework →building span ticks live on the same card"
   end
 
   # --- crew_clusters (board-card collapsing) ----------------------------------
@@ -552,17 +553,42 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[avi], live.agents.map { |a| a.agent&.slug }
   end
 
-  test "stage_timeline's live building card reads Building -> Submitted, not Building -> Building" do
+  test "stage_timeline merges live building into the existing designed to building card" do
     mon = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
                           sprite_url: "https://example.test/snorlax-sprite.png")
-    task = Task.create!(title: "timeline live building task", stage: "building")
-    live = stage_timeline(task.reload, @agents, mascot: mon).find(&:in_progress?)
+    task = Task.create!(title: "timeline live building task", stage: "designed")
+    task.build!
+    blocks = stage_timeline(task.reload, @agents, mascot: mon)
+    live = blocks.find(&:in_progress?)
 
     assert_not_nil live, "an active building claim surfaces as a live block"
-    assert_equal "building", live.from_stage
-    assert_equal "submitted", live.to_stage, "badge reads toward the next stage, not a Building -> Building no-op"
-    assert_equal "Submitted", live.to_label
+    assert_equal 1, blocks.count(&:in_progress?), "there is only one live card"
+    assert_equal "designed", live.from_stage
+    assert_equal "building", live.to_stage, "the existing Designed → Building span becomes live"
+    assert_equal "Building", live.to_label
+    assert live.event, "live building reuses the transition event instead of appending a blank card"
     assert_equal "Snorlax", live.agents.first.name, "the mascot heads the live build card"
+  end
+
+  test "stage_timeline keeps genesis usage empty and accounts design work on the building transition" do
+    mon = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax-usage", generation: 1)
+    task = Task.create!(title: "timeline design accounting task", stage: "building")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 20.minutes.ago)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 10.minutes.ago, seconds_in_from: 600, actor: "carl",
+                      model: "gpt-5", tokens_in: 1200, tokens_out: 300, cost: "0.0400")
+
+    by_stage = stage_timeline(task.reload, @agents, mascot: mon).index_by(&:to_stage)
+    genesis = by_stage["designed"]
+    building = by_stage["building"]
+
+    refute genesis.usage?, "Created → Designed is the deterministic creation marker"
+    assert building.usage?, "design accounting lands on the Designed → Building transition"
+    assert_equal "gpt-5", building.model
+    assert_equal 1500, building.tokens
+    assert_equal "0.04".to_d, building.cost
+    assert building.in_progress?, "the building-start transition also carries live build state"
   end
 
   test "stage_timeline build-lane mascot wears its type (signature) color, not the name palette" do

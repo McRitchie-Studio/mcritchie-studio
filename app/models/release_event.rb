@@ -26,6 +26,7 @@ class ReleaseEvent < ApplicationRecord
   before_validation :default_occurred_at, on: :create
   before_validation :normalize_blank_scalars
   after_create_commit :broadcast_release_modules
+  after_create_commit :refresh_release_duration_metrics
 
   scope :chronological, -> { order(occurred_at: :asc, id: :asc) }
   scope :for_step, ->(step) { where(step: step.to_s) }
@@ -90,5 +91,9 @@ class ReleaseEvent < ApplicationRecord
 
   def broadcast_release_modules
     DeploymentsBroadcaster.release_modules
+  end
+
+  def refresh_release_duration_metrics
+    release&.refresh_duration_metrics_safely
   end
 end
