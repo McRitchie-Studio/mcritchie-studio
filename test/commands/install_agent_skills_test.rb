@@ -31,6 +31,17 @@ class InstallAgentSkillsTest < Minitest::Test
     @home     = File.join(@sandbox, "home")
     @projects = File.join(@sandbox, "projects")
     FileUtils.mkdir_p(@home)
+    @fake_zsh = File.join(@sandbox, "fake-zsh")
+    File.write(@fake_zsh, <<~SH)
+      #!/bin/sh
+      if [ "$1" = "-lc" ]; then
+        shift
+        [ -f "$HOME/.zprofile" ] && . "$HOME/.zprofile"
+        exec /bin/sh -c "$1"
+      fi
+      exec /bin/sh "$@"
+    SH
+    FileUtils.chmod("+x", @fake_zsh)
   end
 
   def teardown
@@ -49,7 +60,9 @@ class InstallAgentSkillsTest < Minitest::Test
     {
       "HOME" => @home,
       "PROJECTS_DIR" => @projects,
-      "CODEX_REQUIREMENTS_PATH" => installed_codex_requirements
+      "CODEX_REQUIREMENTS_PATH" => installed_codex_requirements,
+      "AGENT_RUNTIME_RUBY_PATH_PREFIX" => File.dirname(RbConfig.ruby),
+      "AGENT_RUNTIME_ZSH" => @fake_zsh
     }
   end
 
@@ -123,7 +136,8 @@ class InstallAgentSkillsTest < Minitest::Test
   end
 
   def capture_login_shell(command, env)
-    Open3.capture3(default_env.merge(env), "zsh", "-lc", command)
+    shell_env = default_env.merge(env)
+    Open3.capture3(shell_env, shell_env.fetch("AGENT_RUNTIME_ZSH"), "-lc", command)
   end
 
   # ── unit ──────────────────────────────────────────────────────────────────
