@@ -10,6 +10,8 @@
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
+require "rbconfig"
+require "shellwords"
 require_relative "../../bin/lib/full_suite_gate"
 
 class FullSuiteCheckTest < Minitest::Test
@@ -69,14 +71,51 @@ class FullSuiteCheckTest < Minitest::Test
 
   # Run the runner in --print mode (no task board) with both lanes stubbed.
   # Returns [stdout, exitcode]. test:/rubocop: are shell commands ("true"/"false").
-  def run_check(dir, test_cmd:, rubocop_cmd:)
+  def run_check(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true")
     env = {
       "FULL_SUITE_ROOT" => dir,
+      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
       "FULL_SUITE_TEST_CMD" => test_cmd,
       "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
     }
     out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
     [out, $?.exitstatus]
+  end
+
+  def append_command(path, line)
+    script = "File.open(ARGV.fetch(0), 'a') { |file| file.puts(ARGV.fetch(1)) }"
+    "#{RbConfig.ruby.shellescape} -e #{script.shellescape} #{path.shellescape} #{line.shellescape}"
+  end
+
+  def test_resets_test_database_before_certifying_lanes
+    with_repo do |dir|
+      log = File.join(dir, "order.log")
+      out, code = run_check(
+        dir,
+        reset_cmd: append_command(log, "reset"),
+        test_cmd: append_command(log, "test"),
+        rubocop_cmd: append_command(log, "rubocop")
+      )
+
+      assert_equal 0, code, out
+      assert_equal %w[reset test rubocop], File.readlines(log, chomp: true)
+    end
+  end
+
+  def test_reset_failure_aborts_without_certifying_evidence
+    with_repo do |dir|
+      log = File.join(dir, "order.log")
+      out, code = run_check(
+        dir,
+        reset_cmd: "false",
+        test_cmd: append_command(log, "test"),
+        rubocop_cmd: append_command(log, "rubocop")
+      )
+
+      assert_equal 1, code, out
+      assert_equal "", out
+      refute File.exist?(log), "test and rubocop lanes must not run after reset failure"
+    end
   end
 
   def test_both_lanes_green_records_both_evidence_lines

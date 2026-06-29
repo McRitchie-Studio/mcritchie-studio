@@ -24,6 +24,9 @@
 #   bin/full-suite-check --print               # run standalone (no task), just print
 #
 # Test/CI seams (so the orchestration is exercisable without a real multi-minute run):
+#   FULL_SUITE_TEST_DB_RESET_CMD  override the test DB reset command
+#                                (default: bin/rails db:test:purge db:test:prepare)
+#   FULL_SUITE_SKIP_TEST_DB_RESET set to 1 only for non-Rails harness tests
 #   FULL_SUITE_TEST_CMD     override the test lane command   (default: bin/rails test)
 #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
 #   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
@@ -109,10 +112,12 @@ end
 
 test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
+test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
+skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"
 
-def run_lane(label, cmd, root)
+def run_lane(label, cmd, root, env: {})
   warn "== #{label}: #{cmd} =="
-  ok = system(cmd, chdir: root)
+  ok = system(env, cmd, chdir: root)
   warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   ok
 end
@@ -128,6 +133,14 @@ def fetch_checks(task_bin, slug)
   Array(record.dig("metadata", "devops", "checks_run"))
 rescue JSON::ParserError, SystemCallError
   nil
+end
+
+unless skip_test_db_reset
+  reset_ok = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" })
+  unless reset_ok
+    warn "full-suite-check: test database reset failed; not certifying a possibly polluted Rails suite."
+    exit 1
+  end
 end
 
 test_ok = run_lane("full-suite", test_cmd, root)
