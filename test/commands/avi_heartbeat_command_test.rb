@@ -112,13 +112,16 @@ class AviHeartbeatCommandTest < Minitest::Test
     }
   end
 
-  def task(slug, created_at:, reports: [], stage: "submitted")
+  def task(slug, created_at:, submitted_at: nil, reports: [], stage: "submitted")
+    submitted_at ||= created_at
+
     {
       "slug" => slug,
       "title" => slug.tr("-", " ").capitalize,
       "stage" => stage,
       "priority" => 1,
       "created_at" => created_at,
+      "submitted_at" => submitted_at,
       "task_url" => "https://www.mcritchie.studio/tasks/#{slug}",
       "repositories" => ["mcritchie-studio"],
       "devops" => {
@@ -176,6 +179,41 @@ class AviHeartbeatCommandTest < Minitest::Test
     return [] unless File.exist?(path)
 
     File.readlines(path).map { |line| JSON.parse(line) }
+  end
+
+  def test_prefers_latest_submitted_at_over_task_creation_time
+    older_resubmitted = task(
+      "older-resubmitted",
+      created_at: "2026-06-29T09:00:00Z",
+      submitted_at: "2026-06-29T12:30:00Z"
+    )
+    newer_created = task(
+      "newer-created",
+      created_at: "2026-06-29T12:00:00Z",
+      submitted_at: "2026-06-29T12:00:00Z"
+    )
+    older_reviewed = task(
+      "older-resubmitted",
+      created_at: "2026-06-29T09:00:00Z",
+      submitted_at: "2026-06-29T12:30:00Z",
+      reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")]
+    )
+
+    write_snapshots(
+      snapshot([older_resubmitted, newer_created]),
+      snapshot([older_reviewed, newer_created])
+    )
+
+    out, err, status = run_heartbeat("--run", "--limit", "1")
+
+    assert status.success?, err
+    assert_includes out, "Review 1/1: older-resubmitted"
+
+    reviewer_calls = json_lines(@reviewer_log)
+    assert_equal ["older-resubmitted"], reviewer_calls.map(&:first)
+
+    moves = json_lines(@task_log).select { |args| args.first == "move" }
+    assert_equal [["move", "older-resubmitted", "reviewed", "--actor", "avi"]], moves
   end
 
   def test_runs_newest_submitted_pr_first_then_re_queries_before_the_next_review

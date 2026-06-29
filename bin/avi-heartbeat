@@ -182,8 +182,14 @@ end
 def submitted_tasks(snapshot)
   Array(snapshot["tasks"])
     .select { |task| task["stage"] == "submitted" }
-    .sort_by { |task| [parse_time(task["created_at"]), task["slug"].to_s] }
+    .sort_by { |task| [submitted_sort_time(task), task["slug"].to_s] }
     .reverse
+end
+
+def submitted_sort_time(task)
+  submitted_at = task["submitted_at"].to_s.strip
+  submitted_at = task["created_at"].to_s.strip if submitted_at.empty?
+  parse_time(submitted_at)
 end
 
 def task_decision(snapshot, slug)
@@ -478,7 +484,7 @@ loop do
   slug = task.fetch("slug")
   puts
   puts "Review #{completed_reviews + 1}/#{OPTIONS.fetch(:limit)}: #{slug} #{task["title"]}"
-  puts "  created_at=#{task["created_at"]} task=#{task["task_url"]}"
+  puts "  submitted_at=#{task["submitted_at"] || "-"} created_at=#{task["created_at"]} task=#{task["task_url"]}"
   puts "  pr=#{task.dig("devops", "pr_url") || "missing"}"
 
   begin
