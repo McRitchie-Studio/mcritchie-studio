@@ -216,6 +216,7 @@ class InstallAgentSkillsTest < Minitest::Test
 
     assert status.success?, "agent-runtime doctor failed:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
     assert_includes out, "ok: marker provider executable"
+    assert_includes out, "ok: Codex update guard executable"
     assert_includes out, "ok: runtime installer executable"
     assert_includes out, "ok: installed agent docs and skills match tracked sources"
     assert_includes out, "ok: Codex config includes thread-title status item"
@@ -236,6 +237,7 @@ class InstallAgentSkillsTest < Minitest::Test
     refute commands.any? { |command| command.include?("/.worktrees/") }
 
     config = File.read(installed_codex_config)
+    assert_match(/^check_for_update_on_startup = false$/, config)
     assert_match(/status_line = \[[^\n]*"thread-title"/, config)
     assert_match(/terminal_title = \[[^\n]*"thread-title"/, config)
 

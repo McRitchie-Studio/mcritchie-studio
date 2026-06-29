@@ -1,0 +1,483 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Controlled Codex updater for McRitchie machines.
+#
+# The stock Codex updater may replace a locally patched runtime. This wrapper
+# makes updates explicit: review the latest release, stage/install it, verify
+# McRitchie thread-title hook support, and roll back before the Pokemon marker
+# breaks.
+
+require "digest"
+require "fileutils"
+require "json"
+require "net/http"
+require "open3"
+require "optparse"
+require "rbconfig"
+require "time"
+require "uri"
+
+ROOT = File.expand_path("..", __dir__)
+PATCH_PATH = File.join(ROOT, "docs", "agents", "patches", "codex-0.142.3-session-start-thread-name.patch")
+DEFAULT_INSTALL_COMMAND = "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
+LATEST_RELEASE_API = "https://api.github.com/repos/openai/codex/releases/latest"
+LATEST_RELEASE_URL = "https://github.com/openai/codex/releases/latest"
+
+def usage
+  <<~USAGE
+    Usage:
+      bin/codex-update plan [--json] [--latest-version VERSION] [--release-url URL]
+      bin/codex-update run --yes [--latest-version VERSION] [--release-url URL] [--install-command CMD]
+      bin/codex-update inspect [--binary PATH] [--json]
+      bin/codex-update apply-patch --source DIR
+      bin/codex-update promote --binary PATH --version VERSION --yes
+      bin/codex-update restore --yes
+
+    Purpose:
+      Keep Codex updates opt-in while preserving the McRitchie Pokemon thread-title
+      hook. `run --yes` installs the latest stock Codex, verifies hook support,
+      and rolls back to the previous runtime if the update would break the marker.
+
+    Build flow for a stock release that lacks hook support:
+      1. bin/codex-update plan
+      2. clone/check out the matching openai/codex source tag
+      3. bin/codex-update apply-patch --source /path/to/codex
+      4. build Codex from that checkout
+      5. bin/codex-update promote --binary /path/to/built/codex --version X.Y.Z --yes
+  USAGE
+end
+
+def die(message, code = 1)
+  warn "codex-update: #{message}"
+  exit code
+end
+
+def compact(value)
+  value.to_s.strip
+end
+
+def codex_home
+  ENV.fetch("CODEX_HOME", File.join(Dir.home, ".codex"))
+end
+
+def packages_root
+  ENV.fetch("CODEX_UPDATE_PACKAGES_ROOT", File.join(codex_home, "packages", "standalone"))
+end
+
+def releases_dir
+  ENV.fetch("CODEX_UPDATE_RELEASES_DIR", File.join(packages_root, "releases"))
+end
+
+def current_link
+  ENV.fetch("CODEX_UPDATE_CURRENT_LINK", File.join(packages_root, "current"))
+end
+
+def state_dir
+  ENV.fetch("CODEX_UPDATE_STATE_DIR", File.join(codex_home, "mcritchie-codex-update"))
+end
+
+def state_path
+  File.join(state_dir, "last-good.json")
+end
+
+def codex_bin
+  ENV.fetch("CODEX_UPDATE_CODEX_BIN", "codex")
+end
+
+def codex_config_path
+  ENV.fetch("CODEX_UPDATE_CONFIG", File.join(codex_home, "config.toml"))
+end
+
+def sentinel_path
+  ENV.fetch("CODEX_UPDATE_LIVE_SENTINEL", File.join(codex_home, "mcritchie-live-thread-title.enabled"))
+end
+
+def install_command_default
+  ENV.fetch("CODEX_UPDATE_INSTALL_COMMAND", DEFAULT_INSTALL_COMMAND)
+end
+
+def arch_triple
+  env = ENV["CODEX_UPDATE_ARCH_TRIPLE"]
+  return env unless compact(env).empty?
+
+  case RbConfig::CONFIG["host_os"]
+  when /darwin/
+    RbConfig::CONFIG["host_cpu"] == "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"
+  when /linux/
+    RbConfig::CONFIG["host_cpu"] =~ /arm|aarch64/ ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"
+  else
+    "#{RbConfig::CONFIG["host_cpu"]}-#{RbConfig::CONFIG["host_os"]}"
+  end
+end
+
+def current_target
+  path = current_link
+  return nil unless File.exist?(path) || File.symlink?(path)
+
+  File.realpath(path)
+rescue SystemCallError
+  nil
+end
+
+def active_binary
+  override = ENV["CODEX_UPDATE_ACTIVE_BINARY"]
+  return override unless compact(override).empty?
+
+  target = current_target
+  candidate = File.join(target, "bin", "codex") if target
+  return candidate if candidate && File.executable?(candidate)
+
+  out, _err, status = Open3.capture3("sh", "-lc", "command -v #{ShellwordsCompat.escape(codex_bin)}")
+  status.success? ? compact(out) : codex_bin
+end
+
+module ShellwordsCompat
+  module_function
+
+  def escape(value)
+    text = value.to_s
+    return "''" if text.empty?
+
+    text.gsub(/[^A-Za-z0-9_\-.,:\/@\n]/, "\\\\\\&").gsub("\n", "'\n'")
+  end
+end
+
+def codex_version(binary = codex_bin)
+  out, _err, status = Open3.capture3(binary, "--version")
+  return "" unless status.success?
+
+  out[/\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.]+)?/].to_s
+rescue SystemCallError
+  ""
+end
+
+def binary_sha(path)
+  return "" unless path && File.file?(path)
+
+  Digest::SHA256.file(path).hexdigest
+end
+
+def binary_strings(path)
+  return "" unless path && File.file?(path)
+
+  File.binread(path)
+rescue SystemCallError
+  ""
+end
+
+def inspect_binary(path)
+  bytes = binary_strings(path)
+  hook_schema = bytes[/SessionStartHookSpecificOutputWire with \d+ elements/].to_s
+  supports_thread_name =
+    bytes.include?("McRitchie session marker:") ||
+    (hook_schema.include?("3 elements") && bytes.include?("threadName"))
+  stock_without_thread_name =
+    hook_schema.include?("2 elements") && !supports_thread_name
+
+  {
+    "path" => path,
+    "exists" => File.file?(path.to_s),
+    "sha256" => binary_sha(path),
+    "hook_schema" => hook_schema,
+    "mcritchie_marker_context" => bytes.include?("McRitchie session marker:"),
+    "thread_name_hook_output" => supports_thread_name,
+    "stock_without_thread_name" => stock_without_thread_name
+  }
+end
+
+def latest_release(options)
+  if !compact(options[:latest_version]).empty?
+    return {
+      "version" => options[:latest_version],
+      "url" => compact(options[:release_url]).empty? ? LATEST_RELEASE_URL : options[:release_url],
+      "body" => options[:release_body].to_s,
+      "source" => "override"
+    }
+  end
+
+  uri = URI(LATEST_RELEASE_API)
+  response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 8) do |http|
+    req = Net::HTTP::Get.new(uri)
+    req["Accept"] = "application/vnd.github+json"
+    req["User-Agent"] = "mcritchie-codex-update"
+    http.request(req)
+  end
+  raise "GitHub release lookup failed: HTTP #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+  data = JSON.parse(response.body)
+  {
+    "version" => data.fetch("tag_name").to_s.sub(/\Av/, ""),
+    "url" => data["html_url"] || LATEST_RELEASE_URL,
+    "body" => data["body"].to_s,
+    "source" => "github"
+  }
+rescue StandardError => e
+  {
+    "version" => "",
+    "url" => LATEST_RELEASE_URL,
+    "body" => "",
+    "source" => "unavailable",
+    "error" => e.message
+  }
+end
+
+def ensure_startup_update_disabled(path = codex_config_path)
+  FileUtils.mkdir_p(File.dirname(path))
+  text = File.exist?(path) ? File.read(path) : ""
+  lines = text.lines
+  key = "check_for_update_on_startup"
+  index = lines.index { |line| line.match?(/^\s*#{Regexp.escape(key)}\s*=/) }
+  if index
+    lines[index] = "#{key} = false\n"
+  else
+    insert_at = lines.index { |line| line.match?(/^\s*\[/) } || lines.length
+    lines.insert(insert_at, "#{key} = false\n")
+  end
+  updated = lines.join
+  File.write(path, updated) if updated != text
+end
+
+def ensure_live_sentinel(path = sentinel_path)
+  FileUtils.mkdir_p(File.dirname(path))
+  FileUtils.touch(path)
+end
+
+def save_last_good!(label:)
+  target = current_target
+  return unless target
+
+  binary = File.join(target, "bin", "codex")
+  FileUtils.mkdir_p(state_dir)
+  File.write(state_path, JSON.pretty_generate(
+    "label" => label,
+    "saved_at" => Time.now.utc.iso8601,
+    "target" => target,
+    "binary" => binary,
+    "version" => codex_version(binary),
+    "sha256" => binary_sha(binary)
+  ))
+end
+
+def last_good
+  JSON.parse(File.read(state_path))
+rescue JSON::ParserError, SystemCallError
+  nil
+end
+
+def relink_current!(target)
+  die("runtime target missing: #{target}") unless File.directory?(target)
+
+  FileUtils.mkdir_p(File.dirname(current_link))
+  tmp = "#{current_link}.tmp-#{$$}"
+  FileUtils.rm_f(tmp)
+  File.symlink(target, tmp)
+  File.rename(tmp, current_link)
+end
+
+def release_target(version)
+  File.join(releases_dir, "#{version}-#{arch_triple}")
+end
+
+def render_review(current_version:, latest:, inspection:)
+  latest_version = compact(latest["version"])
+  puts "Codex update review"
+  puts "  current: #{current_version.empty? ? "(unknown)" : current_version}"
+  puts "  latest:  #{latest_version.empty? ? "(unavailable)" : latest_version}"
+  puts "  release: #{latest["url"] || LATEST_RELEASE_URL}"
+  puts "  source:  #{latest["source"]}"
+  puts "  warning: #{latest["error"]}" if latest["error"]
+  puts
+  puts "Mascot hook inspection"
+  puts "  binary:  #{inspection["path"]}"
+  puts "  hook:    #{inspection["thread_name_hook_output"] ? "supported" : "missing"}"
+  puts "  schema:  #{inspection["hook_schema"].empty? ? "(not found)" : inspection["hook_schema"]}"
+  puts "  sha256:  #{inspection["sha256"].empty? ? "(missing)" : inspection["sha256"]}"
+  puts
+  if inspection["thread_name_hook_output"]
+    puts "Decision: current runtime can consume the live threadName hook."
+  else
+    puts "Decision: current runtime lacks live threadName hook support."
+    puts "Action: patch source with #{PATCH_PATH}, build Codex, then promote the built binary."
+  end
+
+  body = latest["body"].to_s.lines.map(&:rstrip).reject(&:empty?).first(10)
+  return if body.empty?
+
+  puts
+  puts "Release note excerpt:"
+  body.each { |line| puts "  #{line[0, 180]}" }
+end
+
+def run_install_command!(command)
+  out, err, status = Open3.capture3("sh", "-lc", command)
+  return [out, err] if status.success?
+
+  die("official Codex install command failed:\n#{err.empty? ? out : err}")
+end
+
+def apply_patch!(source)
+  die("--source is required", 64) if compact(source).empty?
+  die("source directory not found: #{source}") unless File.directory?(source)
+  die("patch missing: #{PATCH_PATH}") unless File.file?(PATCH_PATH)
+
+  check_out, check_err, check_status = Open3.capture3("git", "-C", source, "apply", "--check", PATCH_PATH)
+  unless check_status.success?
+    die("patch does not apply cleanly:\n#{check_err.empty? ? check_out : check_err}")
+  end
+
+  out, err, status = Open3.capture3("git", "-C", source, "apply", PATCH_PATH)
+  die("patch apply failed:\n#{err.empty? ? out : err}") unless status.success?
+
+  puts "Applied McRitchie Codex thread-title patch to #{source}"
+  puts "Next: build Codex from that checkout, then run:"
+  puts "  bin/codex-update promote --binary /path/to/built/codex --version <version> --yes"
+end
+
+def promote!(binary:, version:, yes:)
+  die("--yes is required to switch Codex runtimes", 64) unless yes
+  die("--binary is required", 64) if compact(binary).empty?
+  die("--version is required", 64) if compact(version).empty?
+  die("binary not found: #{binary}") unless File.file?(binary)
+
+  inspection = inspect_binary(binary)
+  unless inspection["thread_name_hook_output"]
+    die("refusing to promote binary without live threadName hook support: #{binary}")
+  end
+
+  save_last_good!(label: "before-promote-#{version}")
+  target = release_target(version)
+  FileUtils.mkdir_p(File.join(target, "bin"))
+  FileUtils.cp(binary, File.join(target, "bin", "codex"))
+  FileUtils.chmod(0o755, File.join(target, "bin", "codex"))
+  File.write(File.join(target, "codex-package.json"), JSON.pretty_generate(
+    "version" => version,
+    "mcritchie_patched" => true,
+    "installed_at" => Time.now.utc.iso8601,
+    "source_binary" => File.expand_path(binary),
+    "sha256" => inspection["sha256"]
+  ))
+  relink_current!(target)
+  ensure_startup_update_disabled
+  ensure_live_sentinel
+  puts "Promoted patched Codex #{version} -> #{target}"
+end
+
+def restore!(yes:)
+  die("--yes is required to restore Codex runtime", 64) unless yes
+  record = last_good
+  die("no last-good runtime recorded at #{state_path}") unless record
+
+  target = record.fetch("target")
+  relink_current!(target)
+  ensure_startup_update_disabled
+  ensure_live_sentinel
+  puts "Restored Codex runtime -> #{target}"
+end
+
+command = ARGV.shift || "plan"
+options = {
+  json: false,
+  yes: false,
+  latest_version: ENV["CODEX_UPDATE_LATEST_VERSION"],
+  release_url: ENV["CODEX_UPDATE_RELEASE_URL"],
+  release_body: ENV["CODEX_UPDATE_RELEASE_BODY"],
+  binary: nil,
+  source: nil,
+  version: nil,
+  install_command: install_command_default
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = usage
+  opts.on("--json", "Print JSON where supported") { options[:json] = true }
+  opts.on("--yes", "Allow mutation") { options[:yes] = true }
+  opts.on("--latest-version VERSION", "Override latest release version") { |value| options[:latest_version] = value }
+  opts.on("--release-url URL", "Override release notes URL") { |value| options[:release_url] = value }
+  opts.on("--release-body BODY", "Override release notes body") { |value| options[:release_body] = value }
+  opts.on("--binary PATH", "Binary to inspect or promote") { |value| options[:binary] = value }
+  opts.on("--source DIR", "Codex source checkout for patching") { |value| options[:source] = value }
+  opts.on("--version VERSION", "Version label for promote") { |value| options[:version] = value }
+  opts.on("--install-command CMD", "Stock Codex install command for run") { |value| options[:install_command] = value }
+  opts.on("-h", "--help", "Show help") do
+    print usage
+    exit 0
+  end
+end
+
+case command
+when "-h", "--help", "help"
+  print usage
+  exit 0
+when "plan"
+  parser.parse!(ARGV)
+  latest = latest_release(options)
+  current_version = codex_version
+  inspection = inspect_binary(active_binary)
+  payload = {
+    "current_version" => current_version,
+    "latest" => latest,
+    "inspection" => inspection,
+    "patch_path" => PATCH_PATH,
+    "current_target" => current_target
+  }
+  if options[:json]
+    puts JSON.pretty_generate(payload)
+  else
+    render_review(current_version: current_version, latest: latest, inspection: inspection)
+  end
+when "inspect"
+  parser.parse!(ARGV)
+  inspection = inspect_binary(options[:binary] || active_binary)
+  if options[:json]
+    puts JSON.pretty_generate(inspection)
+  else
+    puts "binary: #{inspection["path"]}"
+    puts "hook:   #{inspection["thread_name_hook_output"] ? "supported" : "missing"}"
+    puts "schema: #{inspection["hook_schema"].empty? ? "(not found)" : inspection["hook_schema"]}"
+    puts "sha256: #{inspection["sha256"].empty? ? "(missing)" : inspection["sha256"]}"
+  end
+  exit(inspection["thread_name_hook_output"] ? 0 : 2)
+when "run"
+  parser.parse!(ARGV)
+  die("--yes is required to run the stock Codex installer", 64) unless options[:yes]
+
+  latest = latest_release(options)
+  before_target = current_target
+  before_binary = before_target && File.join(before_target, "bin", "codex")
+  before_inspection = inspect_binary(before_binary || active_binary)
+  save_last_good!(label: "before-run-#{latest["version"] || "latest"}") if before_inspection["thread_name_hook_output"]
+
+  puts "Running stock Codex installer..."
+  run_install_command!(options[:install_command])
+  ensure_startup_update_disabled
+
+  after_binary = active_binary
+  after_inspection = inspect_binary(after_binary)
+  if after_inspection["thread_name_hook_output"]
+    ensure_live_sentinel
+    puts "Codex update installed and mascot hook support is present."
+    puts "current: #{current_target || after_binary}"
+    exit 0
+  end
+
+  if before_target
+    relink_current!(before_target)
+    ensure_live_sentinel
+    warn "codex-update: latest stock runtime lacks live threadName hook support; restored #{before_target}"
+  end
+  warn "codex-update: patch required before promotion. Run bin/codex-update apply-patch --source <codex-source>"
+  exit 2
+when "apply-patch"
+  parser.parse!(ARGV)
+  apply_patch!(options[:source])
+when "promote"
+  parser.parse!(ARGV)
+  promote!(binary: options[:binary], version: options[:version], yes: options[:yes])
+when "restore"
+  parser.parse!(ARGV)
+  restore!(yes: options[:yes])
+else
+  warn usage
+  die("unknown command: #{command}", 64)
+end
