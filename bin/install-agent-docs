@@ -510,6 +510,40 @@ if command -v jq >/dev/null 2>&1; then
       rm -f "$tmp"
     fi
   fi
+
+  # Wire the PostToolUse hook so every tool call streams into the atomic-capture
+  # endpoint and a fresh session populates /alex/heartbeat live (Phase B live
+  # capture). Same discipline as the SessionStart mascot hook: point at the
+  # primary checkout (survives worktree cleanup), prune stale worktree copies,
+  # and only append when our command isn't already wired — never clobbering the
+  # user's other PostToolUse hooks. See docs/agents/system/atomic-capture-hook.md.
+  tmp="$(mktemp)"
+  if jq 'if .hooks.PostToolUse then
+        .hooks.PostToolUse |= (
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/atomic-capture-hook") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      else . end' "$settings" > "$tmp"; then
+    if ! cmp -s "$settings" "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (removed stale worktree PostToolUse hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+
+  capture_cmd="$RUNTIME_ROOT/bin/atomic-capture-hook"
+  if ! jq -e --arg cmd "$capture_cmd" '[(.hooks.PostToolUse // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$capture_cmd" '.hooks //= {} | .hooks.PostToolUse = ((.hooks.PostToolUse // []) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}])' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (added PostToolUse hook -> $capture_cmd)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
 fi
 
 # Make Codex show the McRitchie marker in its footer early. Codex does not run

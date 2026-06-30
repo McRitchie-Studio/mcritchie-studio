@@ -1,0 +1,390 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/atomic-capture-hook — Claude Code PostToolUse hook that streams every tool
+# call into the atomic-capture endpoint (Phase B live-capture). A FRESH Claude
+# Code session, with this wired as a PostToolUse hook, populates the per-action
+# trajectory at /alex/heartbeat LIVE — one AtomicAction row per tool call.
+#
+# Claude Code invokes a PostToolUse hook with the event JSON on STDIN:
+#   { session_id, transcript_path, cwd, hook_event_name,
+#     tool_name, tool_input, tool_response }
+# We map that to the AtomicAction.capture contract (owned by the parallel task
+# atomic-capture-api-endpoint) and POST it to
+#   ${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/atomic_actions
+# using the SAME agent token bin/task mints (POST /api/v1/auth { secret }).
+#
+# ── Telemetry must never break the work it observes ────────────────────────
+# This hook is BEST-EFFORT and runs on EVERY tool call, so it is built to be
+# invisible to the session:
+#   * It ALWAYS exits 0 — every error is swallowed, no exception ever escapes.
+#   * The network leg runs in a DETACHED child (fork) so the parent returns
+#     immediately and the session never waits on HTTP. Set
+#     ATOMIC_CAPTURE_FOREGROUND=1 to run it inline (the integration test does, so
+#     it can observe the POST); fork-less platforms fall back to inline too.
+#   * HTTP open/read timeouts are short (≈1.5s) so even an unreachable endpoint
+#     fails fast.
+#   * The 24h auth token is cached on disk so `op read` runs at most ~once/day,
+#     never per tool call.
+#
+# Wire-up (the orchestrator installs this AFTER review via bin/install-agent-docs;
+# do NOT hand-edit the operator's global ~/.claude/settings.json). See
+# docs/agents/system/atomic-capture-hook.md for the settings.json snippet.
+
+require "json"
+require "net/http"
+require "uri"
+require "time"
+require "fileutils"
+require "digest"
+
+# All logic lives on this class so the unit test can `load` the file (the main
+# guard below keeps it from executing) and exercise the pure builders directly.
+class AtomicCaptureHook
+  # AtomicAction outcomes / actors (mirror app/models/atomic_action.rb).
+  OK    = "ok"
+  ERROR = "error"
+  AGENT = "agent"
+
+  # tool_name → capture kind. Anything unmapped falls back to the tool name
+  # downcased, so a new tool still captures (just under its own label).
+  KIND_MAP = {
+    "Read" => "read", "Glob" => "read", "Grep" => "read",
+    "Edit" => "edit", "Write" => "edit", "NotebookEdit" => "edit",
+    "Bash" => "bash",
+    "Task" => "delegate", "Agent" => "delegate",
+    "WebFetch" => "research", "WebSearch" => "research"
+  }.freeze
+
+  # Truncate input/output to ≈3KB (within the task's 2-4KB cap) so a giant file
+  # read or command dump never bloats a row.
+  MAX_FIELD_BYTES = 3000
+
+  # Short timeouts — an unreachable endpoint must fail fast, never stall a tool.
+  OPEN_TIMEOUT = 1
+  READ_TIMEOUT = 2
+
+  OP = "/opt/homebrew/bin/op"
+  SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+  # Reuse a cached token until this margin before its 24h expiry.
+  TOKEN_REFRESH_MARGIN = 300
+
+  def initialize(env: ENV)
+    @env = env
+  end
+
+  # ── Pure builders (unit-tested directly) ─────────────────────────────────
+
+  # Map a PostToolUse event hash → the flat AtomicAction.capture payload.
+  # task_slug / stage / mascot come from the active-feature marker; tokens, cost,
+  # and event/result slugs are intentionally absent (a hook can't know them).
+  def build_payload(event, now: Time.now.utc)
+    marker = resolve_marker(cwd: event["cwd"], session_id: event["session_id"])
+    {
+      "session_id" => event["session_id"],
+      "kind" => map_kind(event["tool_name"]),
+      "task_slug" => marker["task_slug"],
+      "stage" => marker["stage"],
+      "mascot" => marker["mascot"],
+      "input" => truncate(serialize(event["tool_input"])),
+      "output" => truncate(serialize(event["tool_response"])),
+      "outcome" => outcome_for(event["tool_response"]),
+      "actor" => AGENT,
+      "occurred_at" => now.iso8601
+    }
+  end
+
+  def map_kind(tool_name)
+    name = tool_name.to_s
+    KIND_MAP[name] || name.downcase
+  end
+
+  # JSON-encode anything that isn't already a string (the contract columns are
+  # text). Never raises — a non-encodable value degrades to #inspect.
+  def serialize(value)
+    return "" if value.nil?
+    return value if value.is_a?(String)
+
+    JSON.generate(value)
+  rescue StandardError
+    value.inspect
+  end
+
+  # Byte-safe truncation with a marker, so a multibyte tail never corrupts the
+  # column and the reader can see how much was dropped.
+  def truncate(value, max_bytes = MAX_FIELD_BYTES)
+    str = value.to_s
+    return str if str.bytesize <= max_bytes
+
+    cut = str.byteslice(0, max_bytes).to_s
+    cut = cut.scrub("") if cut.respond_to?(:scrub)
+    "#{cut}…[truncated #{str.bytesize} bytes]"
+  end
+
+  # ok unless tool_response carries an explicit failure signal. Deliberately
+  # conservative — a non-empty stderr is NOT a failure, only structured signals
+  # (error/is_error/success:false/interrupted) are, so we never false-flag.
+  def outcome_for(tool_response)
+    return OK unless tool_response.is_a?(Hash)
+
+    return ERROR if present?(fetch_either(tool_response, "error"))
+    return ERROR if fetch_either(tool_response, "is_error") == true
+    return ERROR if fetch_either(tool_response, "success") == false
+    return ERROR if fetch_either(tool_response, "interrupted") == true
+
+    OK
+  end
+
+  # Resolve task_slug / stage / mascot the way bin/statusline + bin/agent-marker
+  # do: the nearest .agent-context.json walking up from the tool's cwd (the
+  # worktree desk) wins; else the per-session marker keyed by session id. Returns
+  # a hash with string keys (possibly nil values) and never raises.
+  def resolve_marker(cwd:, session_id:)
+    data = read_context_marker(cwd) || read_session_marker(session_id) || {}
+    {
+      # worktree desk uses task_record_slug/task_slug; session marker uses
+      # task_slug/slug — accept all, first present wins.
+      "task_slug" => first_present(data, "task_record_slug", "task_slug", "slug"),
+      "stage" => blank_to_nil(data["stage"]),
+      "mascot" => blank_to_nil(data["mascot"])
+    }
+  rescue StandardError
+    { "task_slug" => nil, "stage" => nil, "mascot" => nil }
+  end
+
+  # ── Delivery (integration-tested via shell-out to a stub) ────────────────
+
+  # Entry point: read the event off stdin and dispatch. Wrapped so NOTHING can
+  # escape — the process always exits 0.
+  def run(stdin: $stdin)
+    raw = stdin.read
+    event = JSON.parse(raw)
+    return unless present?(event["session_id"]) # nothing to attribute → skip
+
+    payload = build_payload(event)
+    dispatch(payload)
+  rescue StandardError
+    # swallow — telemetry never breaks the session
+  end
+
+  # Run the network leg detached by default so the parent returns instantly;
+  # inline when ATOMIC_CAPTURE_FOREGROUND=1 (tests) or fork is unavailable.
+  def dispatch(payload)
+    if foreground?
+      deliver(payload)
+      return
+    end
+
+    pid = fork do
+      begin
+        Process.setsid
+        deliver(payload)
+      rescue StandardError
+        # swallow in the child too
+      ensure
+        exit!(0)
+      end
+    end
+    Process.detach(pid) if pid
+  rescue NotImplementedError, StandardError
+    deliver(payload) # fork unsupported → inline with short timeouts
+  end
+
+  # Auth (cached token) then POST the action. Best-effort; swallows everything.
+  def deliver(payload)
+    tok = token
+    return unless tok
+
+    res = http_json(:post, "/api/v1/atomic_actions", payload, bearer: tok)
+    invalidate_token! if res && res.code.to_i == 401
+  rescue StandardError
+    # swallow
+  end
+
+  private
+
+  def foreground?
+    @env["ATOMIC_CAPTURE_FOREGROUND"].to_s == "1"
+  end
+
+  def base_url
+    url = @env["ATOMIC_CAPTURE_URL"].to_s.strip
+    url.empty? ? "http://localhost:3000" : url
+  end
+
+  # ── Token: mint once, cache to disk under the 24h expiry ─────────────────
+
+  def token
+    cached = read_cached_token
+    return cached if cached
+
+    secret = agent_secret
+    return nil unless secret
+
+    res = http_json(:post, "/api/v1/auth", { "secret" => secret }, bearer: nil)
+    return nil unless res && res.code.to_i.between?(200, 299)
+
+    body = JSON.parse(res.body) rescue {}
+    tok = body["token"]
+    write_cached_token(tok, body["expires_at"]) if present?(tok)
+    tok
+  rescue StandardError
+    nil
+  end
+
+  def token_cache_path
+    File.join(projects_dir, ".agents", "atomic-capture", "token.json")
+  end
+
+  def read_cached_token
+    path = token_cache_path
+    return nil unless File.file?(path)
+
+    data = JSON.parse(File.read(path))
+    return nil unless present?(data["token"])
+
+    if present?(data["expires_at"])
+      expires = Time.parse(data["expires_at"])
+      return nil if Time.now >= (expires - TOKEN_REFRESH_MARGIN)
+    end
+    data["token"]
+  rescue StandardError
+    nil
+  end
+
+  def write_cached_token(tok, expires_at)
+    path = token_cache_path
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at))
+  rescue StandardError
+    nil
+  end
+
+  def invalidate_token!
+    File.delete(token_cache_path)
+  rescue StandardError
+    nil
+  end
+
+  # Same lookup order as bin/task: ENV, then 1Password, then repo .env.
+  def agent_secret
+    env = @env["AGENT_API_SECRET"].to_s
+    return env unless env.empty?
+
+    if File.executable?(OP)
+      op = begin
+        IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
+      rescue StandardError
+        ""
+      end
+      return op unless op.empty?
+    end
+
+    dotenv = File.join(repo_root, ".env")
+    if File.file?(dotenv)
+      line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
+      return line.split("=", 2)[1].to_s.strip if line
+    end
+    nil
+  rescue StandardError
+    nil
+  end
+
+  # ── HTTP ─────────────────────────────────────────────────────────────────
+
+  def http_json(method, path, body, bearer:)
+    uri = URI.join(base_url, path)
+    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
+    req = klass.new(uri)
+    req["Authorization"] = "Bearer #{bearer}" if bearer
+    if body
+      req["Content-Type"] = "application/json"
+      req.body = JSON.generate(body)
+    end
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == "https")
+    http.open_timeout = OPEN_TIMEOUT
+    http.read_timeout = READ_TIMEOUT
+    http.request(req)
+  rescue StandardError
+    nil
+  end
+
+  # ── Marker file resolution (mirrors bin/agent-marker) ────────────────────
+
+  # Walk up from the tool's cwd to the nearest .agent-context.json.
+  def read_context_marker(cwd)
+    dir = present?(cwd) ? File.expand_path(cwd) : nil
+    return nil unless dir
+
+    loop do
+      path = File.join(dir, ".agent-context.json")
+      return JSON.parse(File.read(path)) if File.file?(path)
+
+      parent = File.dirname(dir)
+      return nil if parent == dir
+
+      dir = parent
+    end
+  rescue StandardError
+    nil
+  end
+
+  def read_session_marker(session_id)
+    sid = session_id.to_s.strip
+    return nil if sid.empty?
+
+    safe = sid.gsub(/[^A-Za-z0-9._-]/, "")
+    path = File.join(projects_dir, ".agents", "sessions", "#{safe}.json")
+    return nil unless File.file?(path)
+
+    JSON.parse(File.read(path))
+  rescue StandardError
+    nil
+  end
+
+  # ── Paths (honor CLAUDE_PROJECTS_DIR like bin/task / bin/statusline) ──────
+
+  def projects_dir
+    dir = @env["CLAUDE_PROJECTS_DIR"].to_s.strip
+    dir.empty? ? default_projects_dir : File.expand_path(dir)
+  end
+
+  def repo_root
+    File.expand_path("..", __dir__)
+  end
+
+  def default_projects_dir
+    candidate = File.expand_path("../..", __dir__)
+    if File.basename(candidate) == ".worktrees"
+      File.expand_path("../..", candidate)
+    else
+      candidate
+    end
+  end
+
+  # ── Tiny helpers ─────────────────────────────────────────────────────────
+
+  def first_present(hash, *keys)
+    keys.each do |key|
+      value = hash[key]
+      return value if present?(value)
+    end
+    nil
+  end
+
+  def fetch_either(hash, key)
+    hash.fetch(key) { hash[key.to_sym] }
+  end
+
+  def blank_to_nil(value)
+    present?(value) ? value : nil
+  end
+
+  def present?(value)
+    !value.nil? && value != false && !value.to_s.strip.empty?
+  end
+end
+
+# Only run when invoked directly (not when `load`ed by the unit test).
+AtomicCaptureHook.new.run if $PROGRAM_NAME == __FILE__
