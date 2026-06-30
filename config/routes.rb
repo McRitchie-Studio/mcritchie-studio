@@ -67,12 +67,13 @@ Rails.application.routes.draw do
   get "links", to: "links#index", as: :links
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
-  # session as (Session agent · Avi · Alex). Selecting Alex routes to the
-  # learning heartbeat, which lives at /alex/heartbeat. That view is a separate
-  # task (T2); for now LauncherController#heartbeat renders a marked placeholder
-  # so the named route (alex_heartbeat_path) is stable when T2 lands.
+  # session as (Session agent · Avi · Alex). Selecting Alex routes to the learning
+  # heartbeat at /alex/heartbeat, the per-action atomic trajectory table
+  # (HeartbeatController#show). The named route (alex_heartbeat_path) is stable, so
+  # the launcher anchor follows it; it was repointed off LauncherController's
+  # placeholder once the real view (T2) landed.
   get "launcher", to: "launcher#index", as: :launcher
-  get "alex/heartbeat", to: "launcher#heartbeat", as: :alex_heartbeat
+  get "alex/heartbeat", to: "heartbeat#show", as: :alex_heartbeat
 
   get "toast_test", to: "toast_test#index"
   post "toast_test/flash", to: "toast_test#trigger_flash"

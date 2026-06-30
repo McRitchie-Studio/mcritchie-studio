@@ -1,0 +1,109 @@
+<% content_for(:title, "Alex · Learning Heartbeat") %>
+<% content_for(:full_width, true) %>
+
+<%# Alex learning heartbeat — the per-action atomic trajectory table. A deliberate
+    fixed-dark dashboard (like the launcher terminal, which "stays dark on a light
+    desktop") sitting on the theme-aware body. The palette mirrors the prototype;
+    styles are scoped under the section id so they touch nothing else. %>
+<style>
+  #alex-heartbeat {
+    --hb-bg:#0d1117; --hb-panel:#161b22; --hb-panel2:#1c2330; --hb-line:#2a3240;
+    --hb-txt:#e6edf3; --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff;
+    --hb-mascot:#a78bfa;
+    display:flex; flex-direction:column;
+    height:calc(100vh - var(--nav-h, 7rem));
+    background:var(--hb-bg); color:var(--hb-txt);
+    padding:18px 22px 22px; font-size:13px; line-height:1.5;
+  }
+  #alex-heartbeat .hb-head { flex:0 0 auto; }
+  #alex-heartbeat .hb-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; }
+  #alex-heartbeat .hb-title h1 { margin:0; font-size:19px; font-weight:700; }
+  #alex-heartbeat .hb-title p { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:64ch; }
+  #alex-heartbeat .hb-stats { display:flex; gap:8px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-stat { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:9px; padding:7px 11px; text-align:center; min-width:62px; }
+  #alex-heartbeat .hb-stat b { display:block; font-size:16px; }
+  #alex-heartbeat .hb-stat span { font-size:10px; color:var(--hb-muted); text-transform:uppercase; letter-spacing:.4px; }
+  #alex-heartbeat .hb-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+  #alex-heartbeat .hb-lab { font-size:11px; color:var(--hb-muted); text-transform:uppercase; letter-spacing:.5px; }
+  #alex-heartbeat .hb-sel { background:var(--hb-panel); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:8px; padding:6px 9px; font-size:12px; max-width:60vw; }
+  #alex-heartbeat .hb-legend { color:var(--hb-faint); font-size:11.5px; margin-left:auto; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  #alex-heartbeat .hb-legend b { color:var(--hb-muted); font-weight:600; }
+
+  #alex-heartbeat .hb-scroll { flex:1 1 auto; overflow:auto; border:1px solid var(--hb-line); border-radius:12px; }
+  #alex-heartbeat table.hb-tbl { border-collapse:collapse; width:100%; min-width:1080px; font-size:12.5px; }
+  #alex-heartbeat thead th { position:sticky; top:0; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 10px; border-bottom:1px solid var(--hb-line); white-space:nowrap; z-index:3; }
+  #alex-heartbeat tbody td { padding:9px 10px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
+  #alex-heartbeat tr.hb-row td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat tr.hb-row:hover { background:var(--hb-panel2); }
+  #alex-heartbeat .hb-seq { color:var(--hb-faint); font-family:ui-monospace,monospace; white-space:nowrap; }
+  #alex-heartbeat .hb-slug { font-weight:600; }
+  #alex-heartbeat .hb-result { color:var(--hb-muted); }
+  #alex-heartbeat .hb-meta { color:var(--hb-muted); white-space:nowrap; }
+  #alex-heartbeat .hb-mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; }
+  #alex-heartbeat .hb-mascot { color:var(--hb-mascot); white-space:nowrap; }
+  #alex-heartbeat .hb-actor { font-size:10px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.4px; cursor:help; }
+  #alex-heartbeat .hb-stage-cell { cursor:help; }
+  #alex-heartbeat .hb-chip { font-size:10px; font-weight:700; border-radius:5px; padding:1px 7px; border:1px solid currentColor; text-transform:uppercase; letter-spacing:.4px; cursor:help; }
+  #alex-heartbeat .hb-outcome { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; }
+
+  #alex-heartbeat tr.hb-grouphead td { background:var(--hb-panel); border-bottom:1px solid var(--hb-line); padding:8px 10px; cursor:pointer; position:sticky; top:31px; z-index:2; }
+  #alex-heartbeat tr.hb-grouphead:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat .hb-groupinner { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-groupcount { color:var(--hb-faint); font-size:11px; }
+  #alex-heartbeat .hb-groupsub { color:var(--hb-muted); font-size:11px; margin-left:auto; font-family:ui-monospace,monospace; }
+  #alex-heartbeat .hb-chev { display:inline-block; transition:transform .15s; color:var(--hb-faint); font-size:11px; }
+  #alex-heartbeat .hb-chev-open { transform:rotate(90deg); }
+
+  #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
+  #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
+  #alex-heartbeat .hb-empty a { color:var(--hb-accent); }
+</style>
+
+<section id="alex-heartbeat" data-test="heartbeat">
+  <div class="hb-head">
+    <header class="hb-topbar">
+      <div class="hb-title">
+        <h1>Atomic Trajectory &middot; Alex Heartbeat</h1>
+        <p>
+          Every atomic action this session took, oldest &rarr; newest, grouped by stage.
+          The learning heartbeat reads the forward-only trajectory; grading the events is a follow-up.
+        </p>
+      </div>
+      <div class="hb-stats">
+        <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
+        <div class="hb-stat"><b><%= heartbeat_tokens_compact(@actions.sum(&:tokens_total)) %></b><span>tokens</span></div>
+        <div class="hb-stat"><b><%= heartbeat_cost(@actions.sum { |a| a.cost.to_f }) %></b><span>cost</span></div>
+        <div class="hb-stat"><b><%= @groups.size %></b><span>stages</span></div>
+        <div class="hb-stat"><b><%= @actions.count(&:error?) %></b><span>errors</span></div>
+      </div>
+    </header>
+
+    <div class="hb-toolbar">
+      <% if @sessions.size > 1 %>
+        <%= form_with url: alex_heartbeat_path, method: :get, data: { turbo: false } do %>
+          <span class="hb-lab">Session</span>
+          <%= select_tag :session_id,
+                options_for_select(@sessions.map { |id| [id, id] }, @session_id),
+                class: "hb-sel", onchange: "this.form.requestSubmit()" %>
+        <% end %>
+      <% elsif @session_id.present? %>
+        <span class="hb-lab">Session</span>
+        <span class="hb-meta hb-mono"><%= @session_id %></span>
+      <% end %>
+      <span class="hb-legend">
+        <span><b>actors:</b> harness &middot; agent &middot; board &middot; human</span>
+        <span><b>outcome:</b> ok / error / pending</span>
+      </span>
+    </div>
+  </div>
+
+  <% if @actions.any? %>
+    <%= render "heartbeat/trajectory_table", groups: @groups, pokemon_by_slug: @pokemon_by_slug %>
+  <% else %>
+    <div class="hb-empty" data-test="heartbeat-empty">
+      <b>No atomic actions captured yet</b>
+      <p>Capture is forward-only — actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+      <p><%= link_to "&lsaquo; back to the session launcher".html_safe, launcher_path %></p>
+    </div>
+  <% end %>
+</section>

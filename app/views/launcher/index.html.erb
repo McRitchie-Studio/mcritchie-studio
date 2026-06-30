@@ -76,11 +76,9 @@
           <span class="shrink-0 rounded-sm border border-[#3a4150] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#8b949e]">soon</span>
         </button>
 
-        <%# 3 · Alex — the active avenue. Real link to the learning heartbeat.
-            TODO(T2 learning-heartbeat): alex_heartbeat_path currently renders the
-            placeholder (LauncherController#heartbeat); when T2 ships the real
-            heartbeat view it repoints that route and this anchor follows for free.
-            data-avenue-target marks the wiring seam. %>
+        <%# 3 · Alex — the active avenue. Real link to the learning heartbeat:
+            alex_heartbeat_path now renders the atomic trajectory table
+            (HeartbeatController#show). data-avenue-target marks the wiring seam. %>
         <%= link_to alex_heartbeat_path,
               data: { avenue: "alex", avenue_target: "learning-heartbeat" },
               "aria-label": "Enter as Alex — learning heartbeat",

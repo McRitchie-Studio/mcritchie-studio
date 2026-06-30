@@ -35,11 +35,11 @@ class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
     assert_select "a[data-avenue=avi]", 0
   end
 
-  test "alex heartbeat route renders a marked placeholder" do
+  test "alex heartbeat route now renders the trajectory view (no longer a placeholder)" do
     get alex_heartbeat_path
 
     assert_response :success
-    assert_select "[data-placeholder=alex-heartbeat]", 1
-    assert_select "a[href=?]", launcher_path
+    assert_select "[data-test=heartbeat]", 1
+    assert_select "[data-placeholder=alex-heartbeat]", 0
   end
 end
