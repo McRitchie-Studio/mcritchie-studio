@@ -32,6 +32,7 @@ HIGH_RISK_PATTERN = /auth|email|wallet|solana|payment|provider|deploy|migration|
 REVIEW_BLOCKING_QA_STATUSES = %w[needs-agent merge-risk missing-local-branch].freeze
 REVIEW_WAIT_QA_STATUSES = %w[checks-review avi-ready-draft].freeze
 REVIEW_NOT_READY_QA_STATUSES = (REVIEW_BLOCKING_QA_STATUSES + REVIEW_WAIT_QA_STATUSES).freeze
+FEEDBACK_ACTIVITY_TYPES = %w[qa_feedback handoff].freeze
 PRIORITY_LABELS = {
   0 => "LOW",
   1 => "MED",
@@ -344,6 +345,30 @@ def latest_activity_for(task, activities)
     .max_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
 end
 
+def truthy_metadata?(activity, key)
+  metadata = activity["metadata"].is_a?(Hash) ? activity["metadata"] : {}
+  value = metadata[key]
+  value == true || value.to_s.match?(/\A(1|true|yes)\z/i)
+end
+
+def resolves_feedback_activity?(activity)
+  activity["activity_type"].to_s == "handoff" && truthy_metadata?(activity, "resolves_feedback")
+end
+
+def unresolved_feedback_for(task, activities)
+  activities
+    .select { |activity| activity["task_slug"] == task.fetch("slug") }
+    .select { |activity| FEEDBACK_ACTIVITY_TYPES.include?(activity["activity_type"].to_s) }
+    .sort_by { |activity| Time.parse(activity.fetch("created_at", "1970-01-01T00:00:00Z")) rescue Time.at(0) }
+    .each_with_object({ "activity" => nil }) do |activity, state|
+      if activity["activity_type"].to_s == "qa_feedback"
+        state["activity"] = activity
+      elsif resolves_feedback_activity?(activity)
+        state["activity"] = nil
+      end
+    end.fetch("activity")
+end
+
 def scout_report_activity?(activity)
   activity.dig("metadata", "kind").to_s == "scout_report"
 end
@@ -392,6 +417,7 @@ def enriched_tasks(tasks, activities, qa_intake, base_url, include_scout_reports
       "devops" => metadata,
       "repositories" => task_repos(task),
       "latest_activity" => activity,
+      "unresolved_feedback" => task["unresolved_feedback"] || unresolved_feedback_for(task, activities),
       "qa_intake" => qa
     )
     enriched["scout_reports"] = scout_reports_for(task, activities) if include_scout_reports
@@ -521,6 +547,11 @@ def conductor_decision(task)
     return ["request-changes", reasons]
   end
 
+  if task["unresolved_feedback"]
+    reasons << "unresolved task feedback is qa_feedback"
+    return ["request-changes", reasons]
+  end
+
   if task.dig("latest_activity", "activity_type") == "qa_feedback"
     reasons << "latest task activity is qa_feedback"
     return ["request-changes", reasons]
@@ -584,7 +615,8 @@ def build_decisions(tasks)
         "pr_url" => metadata["pr_url"],
         "qa_intake" => compact_qa_intake(task["qa_intake"]),
         "scout_report_counts" => scout_report_counts(task),
-        "latest_activity" => compact_activity(task["latest_activity"])
+        "latest_activity" => compact_activity(task["latest_activity"]),
+        "unresolved_feedback" => compact_activity(task["unresolved_feedback"])
       }
     end
 end
@@ -798,6 +830,7 @@ def build_scout_packets(tasks, plan)
           "checks_run" => Array(metadata["checks_run"])
         },
         "latest_activity" => compact_activity(task["latest_activity"]),
+        "unresolved_feedback" => compact_activity(task["unresolved_feedback"]),
         "qa_intake" => compact_qa_intake(task["qa_intake"]),
         "guardrails" => [
           "Do not merge PRs.",
@@ -1030,7 +1063,8 @@ def readiness_task(task, recommendation: nil, reasons: [])
     "production_url" => metadata["production_url"],
     "recommendation" => recommendation,
     "reasons" => reasons,
-    "latest_activity" => compact_activity(task["latest_activity"])
+    "latest_activity" => compact_activity(task["latest_activity"]),
+    "unresolved_feedback" => compact_activity(task["unresolved_feedback"])
   }
 end
 
@@ -1128,6 +1162,9 @@ def print_task(task)
   end
   if activity
     puts "  latest #{activity["activity_type"]}: #{first_line(activity["description"])}"
+  end
+  if task["unresolved_feedback"]
+    puts "  unresolved qa_feedback: #{first_line(task.dig("unresolved_feedback", "description"))}"
   end
 end
 
