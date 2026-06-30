@@ -38,6 +38,8 @@ runtime_root() {
 PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"
 RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
+RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
+ZPROFILE_PATH="${AGENT_RUNTIME_ZPROFILE:-$HOME/.zprofile}"
 MODE="${1:-install}"
 
 # "source:target" pairs (paths use /, so : is a safe delimiter).
@@ -221,6 +223,43 @@ range = ensure_array_item(lines, range, "terminal_title", "thread-title",
 ensure_scalar(lines, range, "status_line_use_colors", "true")
 
 updated = lines.join
+File.write(path, updated) if updated != text
+RUBY
+}
+
+install_zprofile_ruby_path() {
+  local zprofile="$1" ruby_path="$2"
+  mkdir -p "$(dirname "$zprofile")"
+  ruby - "$zprofile" "$ruby_path" <<'RUBY'
+require "shellwords"
+
+path = ARGV.fetch(0)
+ruby_path = ARGV.fetch(1)
+text = File.exist?(path) ? File.read(path) : ""
+begin_marker = "# BEGIN McRitchie agent Ruby PATH"
+end_marker = "# END McRitchie agent Ruby PATH"
+quoted_path = Shellwords.escape(ruby_path)
+
+block = <<~ZSH
+  #{begin_marker}
+  # Homebrew Ruby for Codex/agent non-interactive zsh login shells.
+  mcritchie_ruby_path_prefix=#{quoted_path}
+  case ":${PATH:-}:" in
+    *":$mcritchie_ruby_path_prefix:"*) ;;
+    *) export PATH="$mcritchie_ruby_path_prefix${PATH:+:$PATH}" ;;
+  esac
+  unset mcritchie_ruby_path_prefix
+  #{end_marker}
+ZSH
+
+updated =
+  if text.include?(begin_marker) && text.include?(end_marker)
+    text.sub(/#{Regexp.escape(begin_marker)}.*?#{Regexp.escape(end_marker)}\n?/m, block)
+  else
+    prefix = text.empty? ? "" : text.sub(/\s*\z/, "\n\n")
+    "#{prefix}#{block}"
+  end
+
 File.write(path, updated) if updated != text
 RUBY
 }
@@ -481,7 +520,9 @@ fi
 # user-level /hooks review ceremony.
 codex_config="$HOME/.codex/config.toml"
 ensure_codex_tui_config "$codex_config"
+install_zprofile_ruby_path "$ZPROFILE_PATH" "$RUBY_PATH_PREFIX"
 echo "  $codex_config (ensured status_line includes thread-title)"
+echo "  $ZPROFILE_PATH (ensured agent zsh login shells prepend $RUBY_PATH_PREFIX)"
 
 codex_hooks="$HOME/.codex/hooks.json"
 codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"

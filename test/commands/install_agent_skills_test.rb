@@ -18,6 +18,7 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "json"
+require "rbconfig"
 
 class InstallAgentSkillsTest < Minitest::Test
   ROOT     = File.expand_path("../..", __dir__)
@@ -30,6 +31,17 @@ class InstallAgentSkillsTest < Minitest::Test
     @home     = File.join(@sandbox, "home")
     @projects = File.join(@sandbox, "projects")
     FileUtils.mkdir_p(@home)
+    @fake_zsh = File.join(@sandbox, "fake-zsh")
+    File.write(@fake_zsh, <<~SH)
+      #!/bin/sh
+      if [ "$1" = "-lc" ]; then
+        shift
+        [ -f "$HOME/.zprofile" ] && . "$HOME/.zprofile"
+        exec /bin/sh -c "$1"
+      fi
+      exec /bin/sh "$@"
+    SH
+    FileUtils.chmod("+x", @fake_zsh)
   end
 
   def teardown
@@ -48,7 +60,9 @@ class InstallAgentSkillsTest < Minitest::Test
     {
       "HOME" => @home,
       "PROJECTS_DIR" => @projects,
-      "CODEX_REQUIREMENTS_PATH" => installed_codex_requirements
+      "CODEX_REQUIREMENTS_PATH" => installed_codex_requirements,
+      "AGENT_RUNTIME_RUBY_PATH_PREFIX" => File.dirname(RbConfig.ruby),
+      "AGENT_RUNTIME_ZSH" => @fake_zsh
     }
   end
 
@@ -87,8 +101,43 @@ class InstallAgentSkillsTest < Minitest::Test
     File.join(@sandbox, "etc", "codex", "requirements.toml")
   end
 
+  def installed_zprofile
+    File.join(@home, ".zprofile")
+  end
+
   def jq_available?
     system("command -v jq >/dev/null 2>&1")
+  end
+
+  def with_fake_runtime_ruby
+    ruby_dir = File.join(@sandbox, "fake-runtime-ruby", "bin")
+    FileUtils.mkdir_p(ruby_dir)
+    fake_ruby = File.join(ruby_dir, "ruby")
+    File.write(fake_ruby, <<~SH)
+      #!/bin/sh
+      if [ "$1" = "-e" ] && printf '%s' "$2" | grep -q 'RUBY_VERSION'; then
+        printf '3.3.11'
+        exit 0
+      fi
+      exec #{RbConfig.ruby} "$@"
+    SH
+    FileUtils.chmod("+x", fake_ruby)
+    yield ruby_dir
+  end
+
+  def runtime_doctor_env(ruby_dir)
+    {
+      "AGENT_RUNTIME_RUBY_PATH_PREFIX" => ruby_dir,
+      "AGENT_RUNTIME_ZPROFILE" => installed_zprofile,
+      "AGENT_RUNTIME_BUNDLER_CHECK_CMD" => "true",
+      "AGENT_RUNTIME_RAILS_BOOT_CMD" => "true",
+      "PATH" => ENV.fetch("PATH", "")
+    }
+  end
+
+  def capture_login_shell(command, env)
+    shell_env = default_env.merge(env)
+    Open3.capture3(shell_env, shell_env.fetch("AGENT_RUNTIME_ZSH"), "-lc", command)
   end
 
   # ── unit ──────────────────────────────────────────────────────────────────
@@ -240,6 +289,9 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/^check_for_update_on_startup = false$/, config)
     assert_match(/status_line = \[[^\n]*"thread-title"/, config)
     assert_match(/terminal_title = \[[^\n]*"thread-title"/, config)
+    refute_includes config, "shell_environment_policy.set",
+      "installer must not replace Codex PATH and break normal Bash tool lookup"
+    assert_includes File.read(installed_zprofile), "# BEGIN McRitchie agent Ruby PATH"
 
     refute File.exist?(installed_codex_hooks),
       "Codex mascot startup must be managed, not a user hook that requires /hooks review"
@@ -253,6 +305,64 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes requirements, 'matcher = "Bash"'
     assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
     assert_includes requirements, 'statusMessage = "Setting session mascot"'
+  end
+
+  def test_integration_install_allows_runtime_ruby_path_override
+    ruby_path = "/tmp/homebrew-ruby/bin:/tmp/homebrew-gems/bin"
+    _out, err, status = run_installer("install", "AGENT_RUNTIME_RUBY_PATH_PREFIX" => ruby_path)
+
+    assert status.success?, "install failed: #{err}"
+    zprofile = File.read(installed_zprofile)
+    assert_includes zprofile, "# BEGIN McRitchie agent Ruby PATH"
+    assert_includes zprofile, "mcritchie_ruby_path_prefix=#{ruby_path}"
+  end
+
+  def test_integration_agent_runtime_doctor_checks_login_shell_ruby
+    with_fake_runtime_ruby do |ruby_dir|
+      env = runtime_doctor_env(ruby_dir)
+      run_runtime("install", env: env)
+      out, err, status = run_runtime("doctor", env: env)
+
+      assert status.success?, "agent-runtime doctor failed:\nSTDOUT:\n#{out}\nSTDERR:\n#{err}"
+      assert_includes out, "ok: agent zsh login startup prepends required Ruby path"
+      assert_includes out, "ok: login shell Ruby path: #{ruby_dir}/ruby (3.3.11)"
+      assert_includes out, "ok: Bundler available under login-shell Ruby"
+      assert_includes out, "ok: Rails boots under login-shell Ruby"
+    end
+  end
+
+  def test_integration_agent_runtime_doctor_flags_ruby_path_drift
+    with_fake_runtime_ruby do |ruby_dir|
+      env = runtime_doctor_env(ruby_dir)
+      run_runtime("install", env: env)
+      File.write(installed_zprofile, File.read(installed_zprofile).gsub(ruby_dir, "/wrong/ruby"))
+
+      _out, err, status = run_runtime("doctor", env: env)
+
+      refute status.success?, "doctor must fail when zsh login startup loses the Ruby path"
+      assert_includes err, "agent shell login startup missing required Ruby path"
+      assert_includes err, "login shell Ruby path drift"
+    end
+  end
+
+  def test_integration_agent_zprofile_preserves_normal_path_lookup
+    with_fake_runtime_ruby do |ruby_dir|
+      env = runtime_doctor_env(ruby_dir)
+      _out, err, status = run_installer("install", env)
+      assert status.success?, "install failed: #{err}"
+
+      out, shell_err, shell_status = capture_login_shell(<<~'ZSH', env)
+        printf "ruby=%s\n" "$(command -v ruby)"
+        printf "version="
+        ruby -e 'print RUBY_VERSION'
+        printf "\nenv=%s\n" "$(command -v env)"
+      ZSH
+
+      assert shell_status.success?, "login shell failed:\n#{shell_err}"
+      assert_includes out, "ruby=#{ruby_dir}/ruby"
+      assert_includes out, "version=3.3.11"
+      assert_match(/^env=.+env$/, out, "managed Ruby path must preserve normal command lookup")
+    end
   end
 
   def test_integration_install_prunes_stale_worktree_session_hooks
