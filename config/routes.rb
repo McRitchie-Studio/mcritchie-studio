@@ -268,6 +268,10 @@ Rails.application.routes.draw do
       end
       resources :activities, only: [:index, :create]
       resources :usages, only: [:index, :create]
+      # Live-capture sink for the forward-only atomic trajectory — the live-capture
+      # hook POSTs one AtomicAction per agent step. Best-effort: a capture miss
+      # returns 204, never a 500 (telemetry must not break the work it observes).
+      resources :atomic_actions, only: [:create]
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.
       post "sessions/:session_id/mascot", to: "sessions#mascot"
