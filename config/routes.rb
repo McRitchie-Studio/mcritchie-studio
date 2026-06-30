@@ -65,6 +65,15 @@ Rails.application.routes.draw do
   # lives at /admin/links (admin#links, require_admin). Both are surfaced from
   # the nav dropdown (Admin Links shows only to admins).
   get "links", to: "links#index", as: :links
+
+  # Session entry launcher — terminal-styled chooser for the avenue you enter a
+  # session as (Session agent · Avi · Alex). Selecting Alex routes to the
+  # learning heartbeat, which lives at /alex/heartbeat. That view is a separate
+  # task (T2); for now LauncherController#heartbeat renders a marked placeholder
+  # so the named route (alex_heartbeat_path) is stable when T2 lands.
+  get "launcher", to: "launcher#index", as: :launcher
+  get "alex/heartbeat", to: "launcher#heartbeat", as: :alex_heartbeat
+
   get "toast_test", to: "toast_test#index"
   post "toast_test/flash", to: "toast_test#trigger_flash"
   resources :chat, only: [:index, :create]
