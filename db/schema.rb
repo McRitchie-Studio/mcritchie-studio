@@ -10,9 +10,24 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_30_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_30_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "action_grades", force: :cascade do |t|
+    t.bigint "atomic_action_id", null: false
+    t.boolean "banked", default: false, null: false
+    t.datetime "created_at", null: false
+    t.boolean "discarded", default: false, null: false
+    t.string "disposition", null: false
+    t.string "grader", null: false
+    t.text "long_form"
+    t.string "slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["atomic_action_id", "grader"], name: "index_action_grades_on_atomic_action_id_and_grader", unique: true
+    t.index ["atomic_action_id"], name: "index_action_grades_on_atomic_action_id"
+    t.index ["banked"], name: "index_action_grades_on_banked"
+  end
 
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
@@ -1218,6 +1233,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_120000) do
     t.index ["solana_address"], name: "index_users_on_solana_address", unique: true
   end
 
+  add_foreign_key "action_grades", "atomic_actions"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "broadcast_deliveries", "broadcasts"
