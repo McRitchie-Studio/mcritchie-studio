@@ -32,6 +32,11 @@ class AgentMarkerTest < Minitest::Test
     default_env = {
       "CLAUDE_PROJECTS_DIR" => @tmp,
       "SESSION_KICKOFF" => @kickoff,
+      # Neutralize ambient agent-session vars so the test fully controls the
+      # marker subprocess env. A live Claude Code session exports
+      # CLAUDE_CODE_SESSION_ID, which Open3.capture3 would otherwise leak through
+      # its env-merge and let bin/agent-marker prefer over our CODEX_THREAD_ID.
+      "CLAUDE_CODE_SESSION_ID" => nil,
       "CODEX_THREAD_ID" => "thread-123"
     }
     Open3.capture3(default_env.merge(env), SCRIPT, *args, chdir: chdir)
