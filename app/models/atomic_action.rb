@@ -35,6 +35,11 @@ class AtomicAction < ApplicationRecord
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug,
                     optional: true, inverse_of: :atomic_actions
 
+  # The grading layer — Alex's grade and the McRitchie audit-of-Alex are two
+  # ActionGrade rows (distinguished by grader). The Insight Bank is the banked
+  # subset. Destroyed with the action so grades never outlive what they grade.
+  has_many :action_grades, dependent: :destroy, inverse_of: :atomic_action
+
   validates :session_id, presence: true
   validates :kind, presence: true
   validates :occurred_at, presence: true
