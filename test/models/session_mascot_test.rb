@@ -49,4 +49,61 @@ class SessionMascotTest < ActiveSupport::TestCase
     sm = SessionMascot.for("sess-1")
     assert_equal sm.mascot_slug, sm.pokemon.slug
   end
+
+  test "subagent draws from parent evolution tree excluding the parent mascot" do
+    create_bellsprout_tree!
+    SessionMascot.create!(session_id: "parent", mascot_slug: "victreebel")
+
+    child = SessionMascot.for("child-1", parent_session_id: "parent")
+
+    assert_includes %w[bellsprout weepinbell], child.mascot_slug
+    assert_equal "parent", child.parent_session_id
+  end
+
+  test "sibling subagents avoid duplicate available evolutions" do
+    create_bellsprout_tree!
+    SessionMascot.create!(session_id: "parent", mascot_slug: "victreebel")
+
+    first = SessionMascot.for("child-1", parent_session_id: "parent").mascot_slug
+    second = SessionMascot.for("child-2", parent_session_id: "parent").mascot_slug
+
+    assert_equal %w[bellsprout weepinbell], [first, second].sort
+  end
+
+  test "single member trees reuse the parent mascot for subagents" do
+    SessionMascot.create!(session_id: "parent", mascot_slug: "snorlax")
+
+    child = SessionMascot.for("child-1", parent_session_id: "parent")
+
+    assert_equal "snorlax", child.mascot_slug
+    assert_equal "parent", child.parent_session_id
+  end
+
+  test "exhausted parent evolution trees fall back to a random tree member" do
+    create_bellsprout_tree!
+    SessionMascot.create!(session_id: "parent", mascot_slug: "victreebel")
+    SessionMascot.create!(session_id: "child-1", parent_session_id: "parent", mascot_slug: "bellsprout")
+    SessionMascot.create!(session_id: "child-2", parent_session_id: "parent", mascot_slug: "weepinbell")
+
+    child = SessionMascot.for("child-3", parent_session_id: "parent")
+
+    assert_includes %w[bellsprout weepinbell victreebel], child.mascot_slug
+  end
+
+  private
+
+  def create_bellsprout_tree!
+    [
+      [69, "Bellsprout", "bellsprout"],
+      [70, "Weepinbell", "weepinbell"],
+      [71, "Victreebel", "victreebel"]
+    ].each do |dex, name, slug|
+      Pokemon.find_or_create_by!(slug: slug) do |pokemon|
+        pokemon.dex = dex
+        pokemon.name = name
+        pokemon.types = %w[grass poison]
+        pokemon.generation = 1
+      end
+    end
+  end
 end

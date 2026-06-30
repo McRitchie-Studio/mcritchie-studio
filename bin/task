@@ -128,6 +128,20 @@ def session_identity
   [nil, nil]
 end
 
+def parent_session_identity
+  %w[
+    MCRITCHIE_PARENT_SESSION_ID
+    AGENT_PARENT_SESSION_ID
+    CODEX_PARENT_THREAD_ID
+    CLAUDE_PARENT_SESSION_ID
+  ].each do |key|
+    value = ENV[key].to_s.strip
+    return value unless value.empty?
+  end
+
+  nil
+end
+
 # Merge the captured session id/provider into a devops hash. No-op (returns the
 # input) when there's no session, so non-Claude/CI runs stamp nothing.
 def stamp_session(devops)
@@ -933,7 +947,9 @@ when "session-mascot"
     sid = session_identity.first.to_s.strip
     path = feature_marker_path
     unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty? || path.nil?
-      data = api(:post, "/api/v1/sessions/#{sid}/mascot")["data"]
+      body = {}
+      body["parent_session_id"] = parent_session_identity if parent_session_identity
+      data = api(:post, "/api/v1/sessions/#{sid}/mascot", body.empty? ? nil : body)["data"]
       if data && !data["mascot"].to_s.strip.empty?
         existing = (JSON.parse(File.read(path)) if File.exist?(path)) || {}
         marker = existing.merge(

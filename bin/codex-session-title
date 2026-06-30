@@ -38,7 +38,7 @@ payload_info="$(
   CODEX_HOOK_INPUT="$hook_input" ruby -rjson -e '
     raw = ENV.fetch("CODEX_HOOK_INPUT", "").strip
     if raw.empty?
-      puts ["", "SessionStart"].join("\t")
+      puts ["", "SessionStart", ""].join("\n")
       exit 0
     end
 
@@ -50,28 +50,43 @@ payload_info="$(
       data.dig("session", "id"),
       data.dig("thread", "id")
     ]
+    parent_candidates = [
+      data["parent_session_id"],
+      data["parentSessionId"],
+      data["parent_thread_id"],
+      data["parentThreadId"],
+      data.dig("parent", "session_id"),
+      data.dig("parent", "sessionId"),
+      data.dig("parent", "thread_id"),
+      data.dig("parent", "threadId"),
+      data.dig("subagent", "parent_session_id"),
+      data.dig("subagent", "parentSessionId")
+    ]
     event_name = data["hook_event_name"] || data["hookEventName"] || "SessionStart"
-    puts [candidates.find { |value| !value.to_s.strip.empty? }, event_name].map(&:to_s).join("\t")
+    puts [
+      candidates.find { |value| !value.to_s.strip.empty? },
+      event_name,
+      parent_candidates.find { |value| !value.to_s.strip.empty? }
+    ].map(&:to_s).join("\n")
   ' 2>/dev/null || true
 )"
 
-payload_sid="${payload_info%%	*}"
-payload_event="${payload_info#*	}"
-[ "$payload_event" != "$payload_info" ] || payload_event="SessionStart"
+payload_sid="$(printf '%s\n' "$payload_info" | sed -n '1p')"
+payload_event="$(printf '%s\n' "$payload_info" | sed -n '2p')"
+payload_parent="$(printf '%s\n' "$payload_info" | sed -n '3p')"
+payload_event="${payload_event:-SessionStart}"
 
 sid="${payload_sid:-${CODEX_THREAD_ID:-}}"
 [ -n "$sid" ] || exit 0
 export CODEX_THREAD_ID="$sid"
 export CODEX_HOOK_EVENT_NAME="$payload_event"
 export SESSION_KICKOFF
+[ -z "${payload_parent:-}" ] || export MCRITCHIE_PARENT_SESSION_ID="$payload_parent"
 
 [ -x "$AGENT_MARKER" ] || exit 0
-marker="$(
-  "$AGENT_MARKER" current \
-    --format title \
-    --session-id "$sid" \
-    --projects-dir "$PROJECTS_DIR" 2>/dev/null || true
-)"
+marker_args=(current --format title --session-id "$sid" --projects-dir "$PROJECTS_DIR")
+[ -z "${payload_parent:-}" ] || marker_args+=(--cwd "$PROJECTS_DIR")
+marker="$("$AGENT_MARKER" "${marker_args[@]}" 2>/dev/null || true)"
 
 # Collapse accidental newlines while preserving emoji and normal spacing.
 marker="$(printf '%s' "$marker" | awk 'NF { gsub(/[[:space:]]+/, " "); print; exit }')"

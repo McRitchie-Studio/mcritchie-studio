@@ -34,6 +34,16 @@ in memory after session configuration; a SQLite title update does not repaint
 that already-running footer, although resume reloads the persisted title and
 shows the Pokémon marker.
 
+Sub-agent sessions can declare their parent with `parent_session_id` on
+`POST /api/v1/sessions/:session_id/mascot`; `bin/task session-mascot` forwards
+`MCRITCHIE_PARENT_SESSION_ID` (also accepting `AGENT_PARENT_SESSION_ID`,
+`CODEX_PARENT_THREAD_ID`, and `CLAUDE_PARENT_SESSION_ID`). When a parent session
+already has a Pokémon, the child draws from that parent's Gen-1 evolution tree:
+siblings avoid duplicate available evolutions, single-member trees reuse the
+parent mascot, and exhausted trees sample the tree again. The Codex title hook
+forwards common parent fields from hook JSON, including `parent_session_id` and
+`parentThreadId`.
+
 For local Codex installs patched with the McRitchie `threadName` hook runtime
 (`docs/agents/patches/codex-0.142.3-session-start-thread-name.patch`),
 enable live fresh-session and post-task repainting by creating:
