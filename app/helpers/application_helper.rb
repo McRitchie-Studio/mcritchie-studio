@@ -76,6 +76,28 @@ module ApplicationHelper
     end
   end
 
+  def task_activity_badge_scheme(activity)
+    case activity&.activity_type.to_s
+    when "qa_feedback"    then "warning"
+    when "clarification"  then "info"
+    when "handoff"        then "success"
+    else "violet"
+    end
+  end
+
+  def task_activity_box_classes(activity)
+    case activity&.activity_type.to_s
+    when "qa_feedback"
+      "border-amber-300 bg-amber-50/80 dark:border-amber-700/60 dark:bg-amber-950/30"
+    when "clarification"
+      "border-cyan-300 bg-cyan-50/80 dark:border-cyan-700/60 dark:bg-cyan-950/30"
+    when "handoff"
+      "border-mint-300 bg-mint-50/80 dark:border-mint-700/60 dark:bg-mint-950/30"
+    else
+      "border-subtle bg-inset/60"
+    end
+  end
+
   def release_state_classes(state)
     case state.to_s
     when "assembling" then "bg-blue-900/50 text-blue-300"

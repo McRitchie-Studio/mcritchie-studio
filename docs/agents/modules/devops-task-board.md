@@ -116,11 +116,15 @@ Handoff connections:
 The task board owns the durable conversation for an increment. `/tasks` cards
 show the latest feedback inline so agents can scan the queue without opening a
 separate tool. Open the task detail page when you need the full thread or need
-to add a note.
+to add a note. The response taxonomy lives in
+[`review-comment-taxonomy.md`](review-comment-taxonomy.md); use it when deciding
+whether a note is a non-blocking clarification or blocking review feedback.
 
 Use these activity types:
 
 - `comment` for general coordination notes.
+- `clarification` for non-blocking questions or answers that should not send the
+  task back for rework by themselves.
 - `qa_feedback` for Avi or Steffon review findings, QA blockers, failed checks,
   missing metadata, or changes requested before merge/deploy.
 - `handoff` for feature-agent responses, rebase notes, local proof URLs, or

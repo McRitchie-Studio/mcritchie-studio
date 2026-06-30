@@ -15,6 +15,18 @@ class ActivityTest < ActiveSupport::TestCase
     assert activity.task_conversation?
   end
 
+  test "[unit] classifies clarifications separately from blocking qa feedback" do
+    clarification = Activity.new(activity_type: "clarification", description: "Can you confirm the release target?")
+    blocker = Activity.new(activity_type: "qa_feedback", description: "Fix the failing system test before merge.")
+
+    assert_includes Activity::TASK_CONVERSATION_TYPES, "clarification"
+    assert_equal "Clarification", clarification.activity_type_label
+    assert_equal "Non-blocking question or answer", clarification.activity_type_description
+    assert clarification.clarification?
+    assert_not clarification.blocking_feedback?
+    assert blocker.blocking_feedback?
+  end
+
   test "requires a type and description" do
     activity = Activity.new(task_slug: tasks(:new_task).slug)
 
