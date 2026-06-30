@@ -1,0 +1,64 @@
+<%# The atomic trajectory table — ported from the prototype, READ-ONLY. Rows run
+    oldest to newest and are bucketed into per-stage groups (the null-stage
+    "Session" group leads). Each group is a collapsible tbody (Alpine, default
+    open). Locals: groups (Array of [stage, actions]) and pokemon_by_slug. %>
+<% pokemon_by_slug ||= {} %>
+<div class="hb-scroll">
+  <table class="hb-tbl" data-test="heartbeat-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Event</th>
+        <th>Result</th>
+        <th>Stage</th>
+        <th>Task</th>
+        <th>Pokémon</th>
+        <th>Model</th>
+        <th>Tokens</th>
+        <th>Cost</th>
+        <th>Actor</th>
+        <th>Outcome</th>
+      </tr>
+    </thead>
+
+    <% groups.each do |stage, actions| %>
+      <% meta = heartbeat_stage_meta(stage) %>
+      <tbody class="hb-group" data-test="heartbeat-group" data-stage="<%= stage.presence || "session" %>" x-data="{ open: true }">
+        <tr class="hb-grouphead" @click="open = !open">
+          <td colspan="11">
+            <div class="hb-groupinner">
+              <span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span>
+              <span class="hb-chip" style="color: <%= meta[:accent] %>" title="<%= meta[:description] %>"><%= meta[:label] %></span>
+              <span class="hb-groupcount"><%= pluralize(actions.size, "action") %></span>
+              <span class="hb-groupsub"><%= heartbeat_tokens_compact(actions.sum(&:tokens_total)) %> tok &middot; <%= heartbeat_cost(actions.sum { |a| a.cost.to_f }) %></span>
+            </div>
+          </td>
+        </tr>
+
+        <% actions.each do |action| %>
+          <% outcome = heartbeat_outcome_meta(action.outcome) %>
+          <% pokemon = pokemon_by_slug[action.mascot] %>
+          <tr class="hb-row" data-test="heartbeat-row" data-seq="<%= action.seq %>" x-show="open" style="--hb-edge: <%= outcome[:color] %>">
+            <td class="hb-seq">#<%= action.seq %></td>
+            <td><span class="hb-slug"><%= action.event_slug.presence || action.kind %></span></td>
+            <td><span class="hb-result"><%= action.result_slug.presence || "—" %></span></td>
+            <td class="hb-meta hb-stage-cell" title="<%= meta[:description] %>"><%= meta[:label] %></td>
+            <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
+            <td>
+              <% if action.mascot.present? %>
+                <span class="hb-mascot">&#10022; <%= pokemon&.name || action.mascot.titleize %></span>
+              <% else %>
+                <span class="hb-meta">—</span>
+              <% end %>
+            </td>
+            <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
+            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+            <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+            <td><span class="hb-actor" title="<%= heartbeat_actor_description(action.actor) %>"><%= action.actor %></span></td>
+            <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
+          </tr>
+        <% end %>
+      </tbody>
+    <% end %>
+  </table>
+</div>
