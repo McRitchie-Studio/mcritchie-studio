@@ -1,8 +1,12 @@
-<%# The atomic trajectory table — ported from the prototype, READ-ONLY. Rows run
-    oldest to newest and are bucketed into per-stage groups (the null-stage
-    "Session" group leads). Each group is a collapsible tbody (Alpine, default
-    open). Locals: groups (Array of [stage, actions]) and pokemon_by_slug. %>
+<%# The atomic trajectory table — ported from the prototype. Rows run oldest to
+    newest and are bucketed into per-stage groups (the null-stage "Session" group
+    leads). Each group is a collapsible tbody (Alpine, default open). The last two
+    columns are the T5 feedback layer: Alex's grade and the McRitchie audit-of-Alex,
+    each an inline good/not radio set; clicking a row opens the per-action grading
+    drawer. Locals: groups (Array of [stage, actions]), pokemon_by_slug, grades
+    (lookup of action_id => { grader => ActionGrade }). %>
 <% pokemon_by_slug ||= {} %>
+<% grades ||= {} %>
 <div class="hb-scroll">
   <table class="hb-tbl" data-test="heartbeat-table">
     <thead>
@@ -18,6 +22,8 @@
         <th>Cost</th>
         <th>Actor</th>
         <th>Outcome</th>
+        <th>Alex feedback</th>
+        <th>Audit (McR &rarr; Alex)</th>
       </tr>
     </thead>
 
@@ -25,7 +31,7 @@
       <% meta = heartbeat_stage_meta(stage) %>
       <tbody class="hb-group" data-test="heartbeat-group" data-stage="<%= stage.presence || "session" %>" x-data="{ open: true }">
         <tr class="hb-grouphead" @click="open = !open">
-          <td colspan="11">
+          <td colspan="13">
             <div class="hb-groupinner">
               <span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span>
               <span class="hb-chip" style="color: <%= meta[:accent] %>" title="<%= meta[:description] %>"><%= meta[:label] %></span>
@@ -38,7 +44,10 @@
         <% actions.each do |action| %>
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
           <% pokemon = pokemon_by_slug[action.mascot] %>
-          <tr class="hb-row" data-test="heartbeat-row" data-seq="<%= action.seq %>" x-show="open" style="--hb-edge: <%= outcome[:color] %>">
+          <% row_grades = grades[action.id] || {} %>
+          <tr class="hb-row" data-test="heartbeat-row" data-seq="<%= action.seq %>" x-show="open"
+              style="--hb-edge: <%= outcome[:color] %>"
+              @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
             <td class="hb-seq">#<%= action.seq %></td>
             <td><span class="hb-slug"><%= action.event_slug.presence || action.kind %></span></td>
             <td><span class="hb-result"><%= action.result_slug.presence || "—" %></span></td>
@@ -56,6 +65,8 @@
             <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
             <td><span class="hb-actor" title="<%= heartbeat_actor_description(action.actor) %>"><%= action.actor %></span></td>
             <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
+            <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::ALEX, grade: row_grades[ActionGrade::ALEX] %>
+            <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::MCR, grade: row_grades[ActionGrade::MCR] %>
           </tr>
         <% end %>
       </tbody>

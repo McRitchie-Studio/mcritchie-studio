@@ -1,0 +1,40 @@
+<%# One feedback cell for the trajectory table — the inline good/not radios (which
+    set the disposition WITHOUT opening the drawer, persisting immediately via a
+    turbo-stream form submit), the grade slug, and the long-form / bank / discard
+    markers. Rendered as the full <td> so #grade's turbo_stream can replace it by id.
+    Locals: action, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+<td id="fb-<%= grader %>-<%= action.id %>" class="hb-fbcell hb-fbcell-<%= grader %>">
+  <div class="hb-fbinner">
+    <%= form_with url: heartbeat_grade_path(action), method: :post, class: "hb-radioform", data: { turbo: true } do %>
+      <%= hidden_field_tag :grader, grader %>
+      <%= hidden_field_tag :surface, "inline" %>
+      <span class="hb-radiogrp" @click.stop>
+        <label class="hb-rb <%= "on-good" if grade&.good? %>">
+          <%= radio_button_tag "disposition", "good", grade&.good?,
+                id: "r-#{grader}-#{action.id}-good", onchange: "this.form.requestSubmit()" %>
+          Good
+        </label>
+        <label class="hb-rb <%= "on-not" if grade&.not_good? %>">
+          <%= radio_button_tag "disposition", "not", grade&.not_good?,
+                id: "r-#{grader}-#{action.id}-not", onchange: "this.form.requestSubmit()" %>
+          Not
+        </label>
+      </span>
+    <% end %>
+    <span class="hb-fbslugwrap">
+      <% if grade&.slug.present? %>
+        <span class="hb-fbslug"><%= grade.slug %></span>
+      <% else %>
+        <span class="hb-addfb">add slug&hellip;</span>
+      <% end %>
+      <% if grade&.long_form.present? %>
+        <span class="hb-longmark" title="has long-form note">&#128221;</span>
+      <% end %>
+      <% if grade&.banked %>
+        <span class="hb-bankmark" title="banked insight">&#128161;</span>
+      <% elsif grade&.discarded %>
+        <span class="hb-discardmark" title="discarded">&#128465;</span>
+      <% end %>
+    </span>
+  </div>
+</td>

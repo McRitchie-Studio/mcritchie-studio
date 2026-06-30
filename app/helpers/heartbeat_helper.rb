@@ -94,4 +94,11 @@ module HeartbeatHelper
 
     cents < 1 ? format("$%.4f", cents) : format("$%.2f", cents)
   end
+
+  # Whitespace-delimited word count for the drawer's live "aim 4-7 words" counter —
+  # the server-rendered initial value the Alpine counter then keeps in sync. Mirrors
+  # the prototype's `words()` (trim, split on runs of whitespace, drop blanks).
+  def heartbeat_word_count(text)
+    text.to_s.strip.split(/\s+/).reject(&:empty?).length
+  end
 end

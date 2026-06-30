@@ -18,7 +18,9 @@ namespace :atomic do
     price = ->(tin, tout, model) { model ? (((tin * 5.0) + (tout * 25.0)) / 1_000_000.0).round(4) : 0 }
 
     # Idempotent: clear any prior demo rows for THIS session before reseeding.
-    AtomicAction.where(session_id: session_id).delete_all
+    # destroy_all (not delete_all) so dependent ActionGrade rows go with them —
+    # a raw DELETE trips the action_grades foreign key once a trajectory is graded.
+    AtomicAction.where(session_id: session_id).destroy_all
 
     rows = [
       # Session group (null stage) — boot, recall, intake. Mascot is drawn mid-group.

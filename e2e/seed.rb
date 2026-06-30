@@ -6,6 +6,7 @@
 puts "Seeding test database for Playwright..."
 
 # Clear in dependency order
+ActionGrade.delete_all # FK child of atomic_actions — clear before the parent
 AtomicAction.delete_all
 Activity.delete_all
 SkillAssignment.delete_all

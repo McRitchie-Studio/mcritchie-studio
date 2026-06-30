@@ -1,0 +1,49 @@
+<%# One grade editor inside the drawer — Alex's grade, or the McRitchie audit of it
+    (same shape). Posts to #grade (grader + surface=drawer); the response turbo_stream
+    updates the inline table cell, the stat tallies, and re-renders this drawer. The
+    nested x-data holds the live word count `n` and the toggled disposition `disp`;
+    wordCount() resolves up to the section's heartbeatDrawer() root. The Alpine-bound
+    fields are raw inputs (precise control over @input / :value); form_with supplies
+    the CSRF token. Locals: action, grader, who, role_label, grade (ActionGrade | nil),
+    save_label, allow_bank (Alex only — banking curates Alex's grade into the Bank). %>
+<% n0 = heartbeat_word_count(grade&.slug) %>
+<%= form_with url: heartbeat_grade_path(action), method: :post, class: "hb-fbblock",
+      data: { turbo: true, turbo_frame: "_top" } do %>
+  <input type="hidden" name="grader" value="<%= grader %>">
+  <input type="hidden" name="surface" value="drawer">
+  <div x-data="{ n: <%= n0 %>, disp: '<%= grade&.disposition %>' }">
+    <h3><%= who %> <span class="hb-who"><%= role_label %></span></h3>
+
+    <div class="hb-field">
+      <label>4&ndash;7 word slug</label>
+      <input type="text" name="slug" class="hb-input" value="<%= grade&.slug %>"
+             placeholder="4–7 words — what happened, critically"
+             @input="n = wordCount($event.target.value)">
+      <div class="hb-wc" :class="(n >= 4 && n <= 7) ? 'ok' : 'off'"
+           x-text="n + ' words (aim 4–7)'"><%= n0 %> words (aim 4&ndash;7)</div>
+    </div>
+
+    <div class="hb-field">
+      <label>Disposition</label>
+      <input type="hidden" name="disposition" :value="disp">
+      <div class="hb-disptoggle">
+        <button type="button" @click="disp = 'good'" :class="disp === 'good' ? 'sel-good' : ''">Good</button>
+        <button type="button" @click="disp = 'not'" :class="disp === 'not' ? 'sel-not' : ''">Not</button>
+      </div>
+    </div>
+
+    <div class="hb-field">
+      <label>Long-form (as needed)</label>
+      <textarea name="long_form" class="hb-textarea"
+                placeholder="optional — anchor the lesson, cite the seq, name the rule"><%= grade&.long_form %></textarea>
+    </div>
+
+    <div class="hb-saverow">
+      <button type="submit" name="intent" value="save" class="hb-btn primary"><%= save_label %></button>
+      <% if allow_bank %>
+        <button type="submit" name="intent" value="bank" class="hb-btn hb-bank <%= "is-on" if grade&.banked %>">&#128161; Bank</button>
+        <button type="submit" name="intent" value="discard" class="hb-btn hb-discard <%= "is-on" if grade&.discarded %>">&#128465; Discard</button>
+      <% end %>
+    </div>
+  </div>
+<% end %>
