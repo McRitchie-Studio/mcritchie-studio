@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_29_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_30_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -175,6 +175,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_29_120000) do
     t.index ["slug"], name: "index_athletes_on_slug", unique: true
     t.index ["sport"], name: "index_athletes_on_sport"
     t.index ["team_slug"], name: "index_athletes_on_team_slug"
+  end
+
+  create_table "atomic_actions", force: :cascade do |t|
+    t.string "actor", default: "agent", null: false
+    t.decimal "cost", precision: 10, scale: 4, default: "0.0", null: false
+    t.datetime "created_at", null: false
+    t.integer "duration_ms"
+    t.string "event_slug"
+    t.boolean "feedback_anchor", default: false, null: false
+    t.text "input"
+    t.string "kind", null: false
+    t.string "mascot"
+    t.string "model"
+    t.datetime "occurred_at", null: false
+    t.string "outcome", default: "pending", null: false
+    t.text "output"
+    t.string "result_slug"
+    t.integer "seq", default: 0, null: false
+    t.string "session_id", null: false
+    t.string "stage"
+    t.string "task_slug"
+    t.integer "tokens_in", default: 0, null: false
+    t.integer "tokens_out", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["feedback_anchor"], name: "index_atomic_actions_on_feedback_anchor"
+    t.index ["occurred_at"], name: "index_atomic_actions_on_occurred_at"
+    t.index ["session_id", "seq"], name: "index_atomic_actions_on_session_id_and_seq"
+    t.index ["task_slug", "seq"], name: "index_atomic_actions_on_task_slug_and_seq"
   end
 
   create_table "broadcast_deliveries", force: :cascade do |t|

@@ -141,6 +141,9 @@ class Task < ApplicationRecord
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
+  # Forward-only per-action trajectory (AtomicAction.capture). Nullify on destroy
+  # so the finest-grain telemetry survives a task teardown as orphaned history.
+  has_many :atomic_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
