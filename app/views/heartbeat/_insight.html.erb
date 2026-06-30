@@ -1,0 +1,19 @@
+<%# One banked lesson in the Insight Bank. Local: grade (a banked ActionGrade). The
+    left border + disposition badge read the binary good/not signal; the meta line
+    traces it back to the action it was mined from and whether it is Alex's grade or
+    the McRitchie audit of Alex. %>
+<% action = grade.atomic_action %>
+<div class="hb-insight <%= "is-not" if grade.not_good? %>" data-test="insight">
+  <div class="hb-isl">
+    <span><%= grade.slug %></span>
+    <span class="hb-disp <%= grade.good? ? "good" : "not" %>"><%= grade.disposition.upcase %></span>
+    <span class="hb-grader"><%= grade.alex? ? "Alex" : "McR → Alex" %></span>
+  </div>
+  <div class="hb-imeta">
+    from #<%= action.seq %> &middot; <%= action.event_slug.presence || action.kind %>
+    <%= " &middot; #{action.task_slug}".html_safe if action.task_slug.present? %>
+  </div>
+  <% if grade.long_form.present? %>
+    <div class="hb-ilg"><%= grade.long_form %></div>
+  <% end %>
+</div>

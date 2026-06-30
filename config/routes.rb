@@ -74,6 +74,12 @@ Rails.application.routes.draw do
   # placeholder once the real view (T2) landed.
   get "launcher", to: "launcher#index", as: :launcher
   get "alex/heartbeat", to: "heartbeat#show", as: :alex_heartbeat
+  # Feedback layer over the read-only trajectory (T5): a per-action grading drawer
+  # (GET, lazy-loaded into a turbo-frame), the upsert/bank/discard write, and the
+  # curated Insight Bank page. Like the view itself, this is an open meta surface.
+  get  "alex/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
+  post "alex/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
 
   get "toast_test", to: "toast_test#index"
   post "toast_test/flash", to: "toast_test#trigger_flash"

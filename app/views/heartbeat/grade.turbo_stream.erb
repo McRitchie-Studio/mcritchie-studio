@@ -1,0 +1,19 @@
+<%# Persist response for #grade — replace the inline feedback cell that changed, the
+    three live stat tallies and the Insight Bank count, and (only when the write came
+    from the drawer) re-render the drawer with the fresh grade + audit state. The
+    read-only view stays put; just these surfaces update. %>
+<% grade_for_grader = @grade.alex? ? @alex : @mcr %>
+<%= turbo_stream.replace "fb-#{@grade.grader}-#{@action.id}" do %>
+  <%= render "heartbeat/feedback_cell", action: @action, grader: @grade.grader, grade: grade_for_grader %>
+<% end %>
+
+<%= turbo_stream.replace "hb-stat-graded" do %><b id="hb-stat-graded"><%= @counts[:graded] %></b><% end %>
+<%= turbo_stream.replace "hb-stat-audited" do %><b id="hb-stat-audited"><%= @counts[:audited] %></b><% end %>
+<%= turbo_stream.replace "hb-stat-insights" do %><b id="hb-stat-insights"><%= @counts[:insights] %></b><% end %>
+<%= turbo_stream.replace "hb-insight-count" do %><span id="hb-insight-count"><%= @counts[:insights] %></span><% end %>
+
+<% if @from_drawer %>
+  <%= turbo_stream.replace "hb-drawer" do %>
+    <%= render "heartbeat/drawer", action: @action, alex: @alex, mcr: @mcr %>
+  <% end %>
+<% end %>

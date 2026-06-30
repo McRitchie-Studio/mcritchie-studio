@@ -2,11 +2,12 @@ require "test_helper"
 
 # [component] the atomic trajectory table partial — one row per action, bucketed
 # into per-stage group tbodies, with the ported dense columns and outcome accents.
-# Read-only: nothing here mutates an AtomicAction.
+# The read-only columns mutate nothing; the trailing feedback columns (the inline
+# Alex/McRitchie radios) need a real id, so the rows are persisted.
 class HeartbeatTrajectoryTableTest < ActionView::TestCase
   def action(attrs)
-    AtomicAction.new({ session_id: "s", kind: "edit", occurred_at: Time.current,
-                       outcome: "ok", actor: "agent" }.merge(attrs))
+    AtomicAction.create!({ session_id: "s", kind: "edit", occurred_at: Time.current,
+                           outcome: "ok", actor: "agent" }.merge(attrs))
   end
 
   test "renders a row per action with the trajectory columns and grouping" do

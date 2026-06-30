@@ -1,0 +1,10 @@
+<%# Shown in the drawer frame when a grade write fails — the rescue_and_log path has
+    already captured the exception to an ErrorLog; this just surfaces it to the grader.
+    Local: message. %>
+<%= turbo_frame_tag "hb-drawer" do %>
+  <div class="hb-dh">
+    <button type="button" class="hb-dclose" @click="closeDrawer()" aria-label="Close drawer">&times;</button>
+    <h2>Could not save</h2>
+  </div>
+  <div class="hb-derror"><%= message %></div>
+<% end %>

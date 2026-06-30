@@ -1,0 +1,59 @@
+<% content_for(:title, "Insight Bank · Alex Heartbeat") %>
+<% content_for(:full_width, true) %>
+
+<%# The Insight Bank — exactly ActionGrade.banked, the curated lessons mined from the
+    trajectory that make each next agent smarter. Same fixed-dark surface as the
+    heartbeat it is reached from. %>
+<style>
+  #alex-insights {
+    --hb-bg:#0d1117; --hb-panel:#161b22; --hb-line:#2a3240; --hb-txt:#e6edf3;
+    --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff; --hb-good:#3fb950;
+    --hb-not:#f85149; --hb-bank:#fbbf24;
+    min-height:calc(100vh - var(--nav-h, 7rem));
+    background:var(--hb-bg); color:var(--hb-txt);
+    padding:18px 22px 60px; font-size:13px; line-height:1.5;
+  }
+  #alex-insights .hb-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
+  #alex-insights h1 { margin:0; font-size:19px; font-weight:700; }
+  #alex-insights .hb-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:70ch; }
+  #alex-insights .hb-back { color:var(--hb-accent); text-decoration:none; font-size:12.5px; white-space:nowrap; }
+  #alex-insights .hb-back:hover { text-decoration:underline; }
+  #alex-insights .hb-mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  #alex-insights .hb-list { display:flex; flex-direction:column; gap:10px; max-width:860px; }
+  #alex-insights .hb-insight { border:1px solid var(--hb-line); border-left:3px solid var(--hb-good); border-radius:9px; padding:12px 14px; background:var(--hb-panel); }
+  #alex-insights .hb-insight.is-not { border-left-color:var(--hb-not); }
+  #alex-insights .hb-isl { font-weight:600; font-size:13.5px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #alex-insights .hb-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; }
+  #alex-insights .hb-disp.good { color:var(--hb-good); }
+  #alex-insights .hb-disp.not { color:var(--hb-not); }
+  #alex-insights .hb-grader { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-faint); border:1px solid var(--hb-line); border-radius:5px; padding:1px 6px; }
+  #alex-insights .hb-imeta { color:var(--hb-faint); font-size:11px; margin-top:4px; }
+  #alex-insights .hb-ilg { color:var(--hb-muted); font-size:12px; margin-top:7px; white-space:pre-wrap; }
+  #alex-insights .hb-empty { border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; text-align:center; max-width:860px; }
+  #alex-insights .hb-empty b { color:var(--hb-txt); font-size:15px; display:block; margin-bottom:6px; }
+  #alex-insights .hb-empty a { color:var(--hb-accent); }
+</style>
+
+<section id="alex-insights" data-test="insight-bank">
+  <header class="hb-topbar">
+    <div>
+      <h1>&#128161; Insight Bank</h1>
+      <p class="hb-sub">
+        The curated lessons banked from the atomic trajectory — <%= pluralize(@insights.size, "insight") %> so far.
+        Each is a grade Alex (or the McRitchie audit) kept as a lesson worth carrying into the next session.
+      </p>
+    </div>
+    <%= link_to "&lsaquo; back to the heartbeat".html_safe, alex_heartbeat_path, class: "hb-back", data: { turbo: false } %>
+  </header>
+
+  <% if @insights.any? %>
+    <div class="hb-list">
+      <%= render partial: "heartbeat/insight", collection: @insights, as: :grade %>
+    </div>
+  <% else %>
+    <div class="hb-empty" data-test="insight-bank-empty">
+      <b>No insights banked yet</b>
+      <p>Grade an event on the <%= link_to "heartbeat", alex_heartbeat_path, data: { turbo: false } %>, open its drawer, and choose &#128161; Bank to curate it here.</p>
+    </div>
+  <% end %>
+</section>

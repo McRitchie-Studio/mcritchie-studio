@@ -1,0 +1,30 @@
+<%# The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
+    row click (and re-rendered by #grade's turbo_stream after a write). Wrapped in the
+    matching <turbo-frame id="hb-drawer"> so the frame navigation swaps it in place.
+    Locals: action, alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
+<%= turbo_frame_tag "hb-drawer" do %>
+  <% stage_meta = heartbeat_stage_meta(action.stage) %>
+  <div class="hb-dh">
+    <button type="button" class="hb-dclose" @click="closeDrawer()" aria-label="Close drawer">&times;</button>
+    <h2>#<%= action.seq %> &middot; <%= action.event_slug.presence || action.kind %></h2>
+    <div class="hb-dsub"><%= action.result_slug.presence || "—" %></div>
+  </div>
+  <div class="hb-db">
+    <div class="hb-kv">
+      <span class="hb-k">Stage</span><span><%= stage_meta[:label] %></span>
+      <span class="hb-k">Task</span><span class="hb-mono"><%= action.task_slug.presence || "—" %></span>
+      <span class="hb-k">Actor</span><span><%= action.actor %></span>
+      <span class="hb-k">Model</span><span class="hb-mono"><%= heartbeat_model_short(action.model) %></span>
+      <span class="hb-k">Tokens</span><span class="hb-mono"><%= heartbeat_tokens(action) %></span>
+      <span class="hb-k">Cost</span><span class="hb-mono"><%= heartbeat_cost(action.cost) %></span>
+    </div>
+
+    <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::ALEX,
+          who: "Alex", role_label: "grades this action", grade: alex,
+          save_label: "Save Alex grade", allow_bank: true %>
+
+    <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::MCR,
+          who: "Mr. McRitchie → Alex", role_label: "audits Alex's grade", grade: mcr,
+          save_label: "Save audit", allow_bank: false %>
+  </div>
+<% end %>
