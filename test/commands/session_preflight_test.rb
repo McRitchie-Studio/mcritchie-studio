@@ -154,6 +154,32 @@ class SessionPreflightTest < Minitest::Test
     end
   end
 
+  def test_live_task_show_falls_back_to_clarification_activity
+    write_fake_task_cli
+    activity = {
+      "activity_type" => "clarification",
+      "created_at" => "2026-06-26T19:42:31Z",
+      "description" => "Can you clarify whether this blocks release?"
+    }
+
+    with_activity_api(activity) do |base_url|
+      out, err, status = run_preflight(
+        "add-session-preflight", "--no-gh", "--no-fetch", "--json",
+        env: {
+          "AGENT_API_SECRET" => "test-secret",
+          "TASK_API_BASE" => base_url
+        }
+      )
+      assert status.success?, "#{out}\n#{err}"
+
+      report = JSON.parse(out)
+      assert_equal "clarification", report.dig("latest_feedback", "activity_type")
+      assert_equal "Can you clarify whether this blocks release?",
+                   report.dig("latest_feedback", "description")
+      assert_empty report.fetch("warnings").grep(/latest task activity fallback failed/)
+    end
+  end
+
   private
 
   def run_preflight(*args, env: {})
