@@ -218,6 +218,21 @@ class Task < ApplicationRecord
     tasks + Array(tasks_by_stage["blocked"])
   end
 
+  def self.unresolved_feedback_by_slug(task_slugs)
+    slugs = Array(task_slugs).map(&:to_s).reject(&:blank?)
+    return {} if slugs.empty?
+
+    Activity.where(task_slug: slugs, activity_type: %w[qa_feedback handoff])
+            .conversation_order
+            .each_with_object({}) do |activity, unresolved|
+      if activity.activity_type == "qa_feedback"
+        unresolved[activity.task_slug] = activity
+      elsif activity.resolves_feedback?
+        unresolved.delete(activity.task_slug)
+      end
+    end
+  end
+
   # The mascot slugs currently held by live tasks — the exclusion set the draw
   # skips so two in-flight tasks never share a Pokémon.
   def self.active_mascots
@@ -424,6 +439,18 @@ class Task < ApplicationRecord
 
   def devops_checks_run
     devops_list("checks_run")
+  end
+
+  def unresolved_feedback_activity
+    self.class.unresolved_feedback_by_slug([slug])[slug]
+  end
+
+  def unresolved_feedback?
+    unresolved_feedback_activity.present?
+  end
+
+  def review_in_progress?
+    stage == "submitted" && open_intent_for("reviewed").present?
   end
 
   # The two senior reviewers Avi assigned for the `submitted` review (the Deploy

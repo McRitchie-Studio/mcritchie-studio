@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0) %>
+<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, review_in_progress: nil) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
   server-side and pushed over Turbo Streams (the "deployments" stream) for live
@@ -8,7 +8,9 @@
   (agents/mascot/latest_activity/activity_count instead of the board's @ivars).
 %>
 <%# Blocked cards wear a reddish hue (the crew also flags the stall point). %>
-<% card_tone = task.blocked? ? "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/70 dark:bg-red-950/40 dark:border-red-800/60 dark:hover:border-red-600/70 dark:hover:bg-red-900/40" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt" %>
+<% unresolved_feedback = local_assigns.key?(:unresolved_feedback) ? local_assigns[:unresolved_feedback] : task.unresolved_feedback_activity %>
+<% review_in_progress = local_assigns.key?(:review_in_progress) ? local_assigns[:review_in_progress] : task.review_in_progress? %>
+<% card_tone = (task.blocked? || unresolved_feedback) ? "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/70 dark:bg-red-950/40 dark:border-red-800/60 dark:hover:border-red-600/70 dark:hover:bg-red-900/40" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt" %>
 <div id="card-<%= task.slug %>"
      data-slug="<%= task.slug %>"
      data-stage="<%= task.stage %>"
@@ -68,6 +70,21 @@
       <% end %>
       <% if task.requires_release_conductor? %>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-300 border border-orange-700/50" title="Requires release_slug lane">REL</span>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if review_in_progress || unresolved_feedback %>
+    <div class="flex flex-wrap items-center gap-1 mb-1.5">
+      <% if review_in_progress %>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-200 border border-violet-700/50"
+              data-test="review-in-progress"
+              title="Review has started; use a follow-up task for new changes.">REVIEW STARTED</span>
+      <% end %>
+      <% if unresolved_feedback %>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-200 border border-red-700/60"
+              data-test="unresolved-feedback"
+              title="<%= unresolved_feedback.description %>">UNRESOLVED QA</span>
       <% end %>
     </div>
   <% end %>

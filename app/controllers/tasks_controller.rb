@@ -47,6 +47,7 @@ class TasksController < ApplicationController
 
   def show
     load_task_conversation
+    @unresolved_feedback_activity = @task.unresolved_feedback_activity
     @task_events = @task.task_events.chronological.to_a
     @agents = Agent.order(:position)
     @active_review_intent = @task.open_intent_for("reviewed")
@@ -211,6 +212,7 @@ class TasksController < ApplicationController
     @latest_task_activities = activities.recent.each_with_object({}) do |activity, memo|
       memo[activity.task_slug] ||= activity
     end
+    @unresolved_feedback_activities = Task.unresolved_feedback_by_slug(task_slugs)
   end
 
   def load_review_process_context

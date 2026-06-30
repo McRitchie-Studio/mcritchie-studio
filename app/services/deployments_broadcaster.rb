@@ -146,7 +146,9 @@ class DeploymentsBroadcaster
       crew_board: :deploy,
       mascot: Pokemon.find_by(slug: @task.devops_field("mascot").to_s.presence),
       latest_activity: activities.recent.first,
-      activity_count: activities.count
+      activity_count: activities.count,
+      unresolved_feedback: @task.unresolved_feedback_activity,
+      review_in_progress: @task.review_in_progress?
     }
   end
 

@@ -3,6 +3,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
+require "tempfile"
 
 class DevopsCycleCommandTest < ActiveSupport::TestCase
   def setup
@@ -251,7 +252,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_includes out, "Conductor Decisions (4)"
     assert_includes out, "Request Changes (2)"
     assert_includes out, "task-pr123 Ship sidebar recovery"
-    assert_includes out, "reason=latest task activity is qa_feedback"
+    assert_includes out, "reason=unresolved task feedback is qa_feedback"
     assert_includes out, "task-block000 Fix stale worktree handoff"
     assert_includes out, "reason=qa-intake status needs-agent"
     assert_includes out, "Wait For CI (0)"
@@ -276,7 +277,29 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     blocked = decisions.find { |decision| decision.fetch("slug") == "task-pr123" }
     assert_equal "request-changes", blocked.fetch("recommendation")
-    assert_includes blocked.fetch("reasons"), "latest task activity is qa_feedback"
+    assert_includes blocked.fetch("reasons"), "unresolved task feedback is qa_feedback"
+  end
+
+  test "conductor decisions preserve unresolved feedback after later handoff" do
+    data = JSON.parse(File.read(@fixture))
+    data.fetch("activities") << {
+      "task_slug" => "task-pr123",
+      "agent_slug" => "casey",
+      "activity_type" => "handoff",
+      "description" => "Acknowledged the feedback and checking the fixture.",
+      "created_at" => "2026-06-18T14:06:00Z"
+    }
+
+    with_fixture(data) do
+      out, err, status = devops_cycle("--json", "--decisions")
+
+      assert status.success?, err
+      blocked = JSON.parse(out).fetch("decisions").find { |decision| decision.fetch("slug") == "task-pr123" }
+      assert_equal "request-changes", blocked.fetch("recommendation")
+      assert_equal "handoff", blocked.dig("latest_activity", "activity_type")
+      assert_equal "qa_feedback", blocked.dig("unresolved_feedback", "activity_type")
+      assert_includes blocked.fetch("reasons"), "unresolved task feedback is qa_feedback"
+    end
   end
 
   test "prints conductor readiness groups" do
@@ -350,5 +373,17 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
       *args,
       chdir: Rails.root.to_s
     )
+  end
+
+  def with_fixture(data)
+    original = @fixture
+    Tempfile.create(["devops-cycle", ".json"]) do |file|
+      file.write(JSON.pretty_generate(data))
+      file.close
+      @fixture = file.path
+      yield
+    end
+  ensure
+    @fixture = original
   end
 end

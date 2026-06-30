@@ -505,6 +505,37 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] task cards show unresolved feedback independent of latest note" do
+    task = Task.create!(title: "unresolved feedback card", stage: "submitted")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "Needs rework before merge.")
+    Activity.create!(task_slug: task.slug, activity_type: "handoff", description: "Latest handoff context.")
+
+    get tasks_path
+
+    assert_response :success
+    assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", text: "UNRESOLVED QA"
+    assert_select "#card-#{task.slug} [data-test='activity-box']", text: /Handoff/
+  end
+
+  test "[component] review intent shows review started on card and task page" do
+    task = Task.create!(title: "review started guard", stage: "submitted")
+    task.record_intent_event(
+      to_stage: "reviewed",
+      reviewers: [{ "slug" => "carl", "weight" => "primary" }, { "slug" => "shannon", "weight" => "light" }]
+    )
+
+    get tasks_path
+
+    assert_response :success
+    assert_select "#card-#{task.slug} [data-test='review-in-progress']", text: "REVIEW STARTED"
+
+    get task_path(task.slug)
+
+    assert_response :success
+    assert_select "[data-test='task-review-in-progress']", text: "REVIEW STARTED"
+    assert_includes response.body, "Open follow-up work before adding changes to this branch."
+  end
+
   test "[component] reactivated building tasks render above blocked cards" do
     blocked = Task.create!(title: "stale blocked sort task", stage: "blocked")
     reactivated = Task.create!(title: "reactivated sort task now", stage: "blocked")

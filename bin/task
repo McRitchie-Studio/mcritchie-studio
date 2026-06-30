@@ -69,10 +69,11 @@
 #       automatically by bin/reviewer-select, which records by default). )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
 #     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
-#   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A]
+#   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A] [--resolves-feedback]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
-#       combinable — one activity is posted per flag given. )
+#       combinable — one activity is posted per flag given. --resolves-feedback
+#       marks handoff notes as explicitly addressing open QA feedback. )
 
 require "net/http"
 require "json"
@@ -461,6 +462,12 @@ def print_task_verbose(task)
   print_bullets("checks_run", dv["checks_run"])
   puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
+  puts "  review_in_progress: #{task["review_in_progress"] ? "yes" : "no"}" if task.key?("review_in_progress")
+  if task.key?("unresolved_feedback")
+    feedback = task["unresolved_feedback"]
+    summary = feedback && feedback["description"].to_s.strip
+    puts "  unresolved_feedback: #{summary && !summary.empty? ? summary : "-"}"
+  end
 end
 
 # --- Stale check: is a task's work already on origin/main? ------------------
@@ -1018,9 +1025,10 @@ when "block"
   write_feature_marker(task)
   print_task(task)
 when "note"
-  slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A]")
+  slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A] [--resolves-feedback]")
   notes = []
   agent = nil
+  resolves_feedback = false
   i = 0
   while i < ARGV.length
     arg = ARGV[i]
@@ -1031,14 +1039,18 @@ when "note"
     elsif arg == "--agent"
       agent = ARGV[i + 1] || die!("--agent needs a value")
       i += 2
+    elsif arg == "--resolves-feedback"
+      resolves_feedback = true
+      i += 1
     else
-      die!("unknown flag #{arg.inspect} for note (one of: #{NOTE_FLAGS.keys.join(", ")} [--agent A])")
+      die!("unknown flag #{arg.inspect} for note (one of: #{NOTE_FLAGS.keys.join(", ")} [--agent A] [--resolves-feedback])")
     end
   end
   die!("note needs one of: #{NOTE_FLAGS.keys.join(", ")}") if notes.empty?
   notes.each do |activity_type, description|
     body = { "task_slug" => slug, "activity_type" => activity_type, "description" => description }
     body["agent_slug"] = agent if agent
+    body["metadata"] = { "resolves_feedback" => true } if resolves_feedback && activity_type == "handoff"
     activity = api(:post, "/api/v1/activities", body)["data"] || {}
     puts "noted [#{activity_type}] on #{slug} -> #{activity["slug"] || "(created)"}"
   end
