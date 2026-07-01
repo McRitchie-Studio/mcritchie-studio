@@ -242,6 +242,24 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       "the Tasks link must not be width-hidden on /stages"
   end
 
+  test "[component] deployments board links to the Alex learning heartbeat" do
+    get deployments_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board sections"] a[href="#{alex_heartbeat_path}"]),
+      text: "Alex Heartbeat",
+      count: 1
+  end
+
+  test "[component] the Alex Heartbeat link rides every board surface" do
+    # _board_top_links is shared, so the shortcut shows on tasks + stages too.
+    [tasks_path, stages_path].each do |path|
+      get path
+      assert_response :success
+      assert_select %(nav[aria-label="Board sections"] a[href="#{alex_heartbeat_path}"]), { count: 1 },
+        "expected the Alex Heartbeat link on #{path}"
+    end
+  end
+
   test "board header omits the removed All Agents agent filter" do
     get tasks_path
     assert_response :success
