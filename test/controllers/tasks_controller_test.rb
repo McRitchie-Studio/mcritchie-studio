@@ -292,6 +292,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#release-duration-card"
     assert_select "#release-duration-card a[href=?]", all_deployments_path, text: /All Deployments/
     assert_select "#release-duration-card", text: /Building/
+    # Five uniform square tiles consolidated into one row: the four release
+    # stages plus the end-to-end Deployment total.
+    assert_select "#release-duration-card [data-test='release-duration-stage'].aspect-square", count: 4
+    assert_select "#release-duration-card [data-test='release-duration-deployment'].aspect-square", count: 1
+    assert_select "#release-duration-card .aspect-square", count: 5
   end
 
   test "[integration] deployments cards carry a data-glow attribute for the live glow" do
