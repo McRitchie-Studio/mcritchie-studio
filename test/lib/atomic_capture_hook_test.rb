@@ -226,6 +226,7 @@ class AtomicCaptureHookTest < Minitest::Test
       # No transcript on this event → zero usage and no source turn.
       assert_equal 0, payload["tokens_in"]
       assert_equal 0, payload["tokens_out"]
+      assert_equal 0, payload["cache_read_tokens"]
       assert_nil payload["source_turn_uuid"]
       # A hook can't know these — they stay absent (capture fills defaults).
       refute payload.key?("seq")
@@ -239,7 +240,7 @@ class AtomicCaptureHookTest < Minitest::Test
   # (the one with message.model) also carries message.usage and a uuid. The hook
   # reads model + usage + uuid from that ONE line and stamps tokens on the action.
 
-  def test_unit_turn_usage_sums_input_and_cache_for_tokens_in
+  def test_unit_turn_usage_splits_fresh_from_cache_read
     h = hook
     usage = {
       "input_tokens" => 1200,
@@ -248,15 +249,17 @@ class AtomicCaptureHookTest < Minitest::Test
       "output_tokens" => 800
     }
     result = h.turn_usage(usage)
-    assert_equal 6000, result[:tokens_in], "tokens_in = input + cache_creation + cache_read"
+    assert_equal 1500, result[:tokens_in], "tokens_in = FRESH input + cache_creation (no cache_read)"
     assert_equal 800, result[:tokens_out]
+    assert_equal 4500, result[:cache_read_tokens], "cache_read is carried apart for costing only"
   end
 
   def test_unit_turn_usage_is_zero_for_missing_or_non_hash
     h = hook
-    assert_equal({ tokens_in: 0, tokens_out: 0 }, h.turn_usage(nil))
-    assert_equal({ tokens_in: 0, tokens_out: 0 }, h.turn_usage("nope"))
-    assert_equal({ tokens_in: 0, tokens_out: 0 }, h.turn_usage({}))
+    zero = { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
+    assert_equal(zero, h.turn_usage(nil))
+    assert_equal(zero, h.turn_usage("nope"))
+    assert_equal(zero, h.turn_usage({}))
   end
 
   def test_unit_reads_usage_and_uuid_from_the_newest_model_bearing_line
@@ -274,18 +277,24 @@ class AtomicCaptureHookTest < Minitest::Test
       turn = hook.read_assistant_turn_from_transcript(path)
       assert_equal "claude-opus-4-8[1m]", turn["model"], "the newest model-bearing line wins"
       assert_equal "turn-new", turn["uuid"]
-      assert_equal 2500, hook.turn_usage(turn["usage"])[:tokens_in]
-      assert_equal 900, hook.turn_usage(turn["usage"])[:tokens_out]
+      usage = hook.turn_usage(turn["usage"])
+      assert_equal 2000, usage[:tokens_in], "fresh input only — cache_read is excluded"
+      assert_equal 900, usage[:tokens_out]
+      assert_equal 500, usage[:cache_read_tokens]
     end
   end
 
   def test_unit_build_payload_stamps_tokens_and_source_turn_uuid
     Dir.mktmpdir do |proj|
       path = File.join(proj, "transcript.jsonl")
+      # A long-session-shaped turn: small fresh input + cache_creation, a HUGE
+      # cache_read (re-read context). Fresh tokens stay small; cache_read is carried
+      # apart so cost can price it cheaply rather than at the full input rate.
       File.write(path, JSON.generate(
         "type" => "assistant", "uuid" => "turn-42",
         "message" => { "model" => "claude-opus-4-8",
-                       "usage" => { "input_tokens" => 3000, "cache_creation_input_tokens" => 1000, "output_tokens" => 250 } }
+                       "usage" => { "input_tokens" => 3000, "cache_creation_input_tokens" => 1000,
+                                    "cache_read_input_tokens" => 304_000, "output_tokens" => 250 } }
       ) + "\n")
       event = {
         "session_id" => SESSION, "cwd" => "/nope", "transcript_path" => path,
@@ -293,8 +302,9 @@ class AtomicCaptureHookTest < Minitest::Test
       }
       payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event, now: Time.utc(2026, 7, 1, 12, 0, 0))
       assert_equal "claude-opus-4-8", payload["model"]
-      assert_equal 4000, payload["tokens_in"], "input + cache_creation"
+      assert_equal 4000, payload["tokens_in"], "FRESH input + cache_creation only"
       assert_equal 250, payload["tokens_out"]
+      assert_equal 304_000, payload["cache_read_tokens"], "cache_read is stamped apart, not lumped into tokens_in"
       assert_equal "turn-42", payload["source_turn_uuid"]
     end
   end

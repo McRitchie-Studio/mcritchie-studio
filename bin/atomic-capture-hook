@@ -92,8 +92,9 @@ class AtomicCaptureHook
   # Map a PostToolUse event hash → the flat AtomicAction.capture payload.
   # task_slug / stage / mascot come from the active-feature marker; model + token
   # usage + the source turn id come from the SAME assistant transcript line (read
-  # once here); cost is derived server-side and event/result slugs stay absent (a
-  # hook can't know them).
+  # once here). tokens_in/out are the FRESH spend and cache_read_tokens the re-used
+  # context (kept apart so cost prices the cache tier correctly); cost itself is
+  # derived server-side and event/result slugs stay absent (a hook can't know them).
   def build_payload(event, now: Time.now.utc)
     marker = resolve_marker(cwd: event["cwd"], session_id: event["session_id"])
     turn   = resolve_assistant_turn(event)
@@ -107,6 +108,7 @@ class AtomicCaptureHook
       "model" => resolve_model(event, turn),
       "tokens_in" => usage[:tokens_in],
       "tokens_out" => usage[:tokens_out],
+      "cache_read_tokens" => usage[:cache_read_tokens],
       "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
       "input" => truncate(serialize(event["tool_input"])),
       "output" => truncate(serialize(event["tool_response"])),
@@ -197,17 +199,28 @@ class AtomicCaptureHook
     nil
   end
 
-  # Fold an assistant turn's `message.usage` into the AtomicAction token contract:
-  # tokens_in = input + cache_creation + cache_read (the full prompt-side spend),
-  # tokens_out = output. Missing / non-hash usage yields 0/0. Never raises.
+  # Fold an assistant turn's `message.usage` into the AtomicAction token contract,
+  # keeping FRESH spend and RE-USED context apart:
+  #   * tokens_in  = input + cache_creation — the fresh prompt-side tokens actually
+  #     processed this turn (cache_creation folded in at 1x; its true rate is 1.25x,
+  #     an accepted best-effort so we don't split a third tier).
+  #   * tokens_out = output.
+  #   * cache_read_tokens = cache_read — context re-read from the prompt cache. It
+  #     is NOT part of the displayed token count (that's the fresh in/out), only of
+  #     cost, priced server-side at the cache-read tier (10% of the input rate).
+  # Lumping cache_read into tokens_in is what overstated a long session as ~300K
+  # tokens/action and priced it ~10x; splitting it here is the fix. Missing /
+  # non-hash usage yields all-zero. Never raises.
   def turn_usage(usage)
     usage = usage.is_a?(Hash) ? usage : {}
-    tokens_in = usage["input_tokens"].to_i +
-                usage["cache_creation_input_tokens"].to_i +
-                usage["cache_read_input_tokens"].to_i
-    { tokens_in: tokens_in, tokens_out: usage["output_tokens"].to_i }
+    tokens_in = usage["input_tokens"].to_i + usage["cache_creation_input_tokens"].to_i
+    {
+      tokens_in: tokens_in,
+      tokens_out: usage["output_tokens"].to_i,
+      cache_read_tokens: usage["cache_read_input_tokens"].to_i
+    }
   rescue StandardError
-    { tokens_in: 0, tokens_out: 0 }
+    { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
   end
 
   # True when the event is a NAVIGATION tool-call (dropped, never POSTed): a Bash

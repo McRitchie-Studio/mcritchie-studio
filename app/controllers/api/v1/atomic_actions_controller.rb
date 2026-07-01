@@ -27,20 +27,22 @@ module Api
       private
 
       # The live-capture request contract. The caller does NOT set cost (capture
-      # DERIVES it from model + tokens via MODEL_RATES) or the event/result slugs
-      # (those arrive null and are filled by capture's defaults + Current.task_event_*
-      # fallbacks). It DOES now carry the transcript-derived usage — model, tokens,
-      # and the source_turn_uuid the tokens came from. Blank scalars are dropped so
-      # capture's own defaults engage (e.g. a missing occurred_at → Time.current);
-      # token counts are coerced to integers.
+      # DERIVES it from model + tokens + cache_read via MODEL_RATES) or the
+      # event/result slugs (those arrive null and are filled by capture's defaults +
+      # Current.task_event_* fallbacks). It DOES now carry the transcript-derived
+      # usage — model, the FRESH tokens (in/out), the RE-USED cache_read_tokens (for
+      # cost only), and the source_turn_uuid the tokens came from. Blank scalars are
+      # dropped so capture's own defaults engage (e.g. a missing occurred_at →
+      # Time.current); token counts are coerced to integers.
       def capture_attributes
         attrs = capture_params
                 .to_h
                 .symbolize_keys
                 .transform_values { |value| value.is_a?(String) ? value.presence : value }
                 .compact
-        attrs[:tokens_in]  = attrs[:tokens_in].to_i  if attrs.key?(:tokens_in)
-        attrs[:tokens_out] = attrs[:tokens_out].to_i if attrs.key?(:tokens_out)
+        %i[tokens_in tokens_out cache_read_tokens].each do |key|
+          attrs[key] = attrs[key].to_i if attrs.key?(key)
+        end
         attrs
       end
 
@@ -55,8 +57,9 @@ module Api
           :outcome,          # optional ok | error | pending (defaults pending)
           :actor,            # optional harness | agent | board | human (defaults agent)
           :model,            # optional session model id (the hook derives it; kills the "—")
-          :tokens_in,        # optional input+cache tokens for the source turn
+          :tokens_in,        # optional FRESH input tokens (input+cache_creation) for the turn
           :tokens_out,       # optional output tokens for the source turn
+          :cache_read_tokens, # optional re-used cache-read tokens (for cost only, not display)
           :source_turn_uuid, # optional assistant-turn id N actions may share (dedupe key)
           :stage,            # optional coarse task stage at capture time
           :occurred_at,      # optional ISO8601; defaults to capture time

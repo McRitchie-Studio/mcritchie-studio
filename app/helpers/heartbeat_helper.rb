@@ -125,8 +125,10 @@ module HeartbeatHelper
   # turn's usage), so a naive per-action sum multi-counts the fan-out. Counting
   # each distinct turn once fixes it. Actions with a blank source_turn_uuid are
   # pre-usage / board / harness rows with no shared turn — each counts on its own.
-  # Pure in-memory reduction over the array the controller already loaded (no
-  # query per row). Returns summed in/out tokens, their total, and summed cost.
+  # Tokens summed here are the FRESH spend (tokens_in/out) — cache_read is priced
+  # into `cost` but never added to the displayed token count. Pure in-memory
+  # reduction over the array the controller already loaded (no query per row).
+  # Returns summed in/out tokens, their total, and summed cost.
   def heartbeat_usage_totals(actions)
     seen = {}
     tokens_in = 0

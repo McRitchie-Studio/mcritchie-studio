@@ -39,6 +39,24 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "9.4k/360", heartbeat_tokens(busy)
   end
 
+  test "tokens display shows FRESH spend and excludes cache_read" do
+    # A long-session turn: tiny fresh spend, huge cache_read carried only for cost.
+    action = AtomicAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000)
+    assert_equal "5.0k/250", heartbeat_tokens(action), "the cell reads fresh tokens, not the 300K+ cache read"
+  end
+
+  test "usage totals sum the fresh tokens only, never cache_read" do
+    actions = [
+      AtomicAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000, cost: 0.18, source_turn_uuid: "t1"),
+      AtomicAction.new(tokens_in: 3000, tokens_out: 100, cache_read_tokens: 120_000, cost: 0.07, source_turn_uuid: "t2")
+    ]
+    totals = heartbeat_usage_totals(actions)
+
+    assert_equal 8000, totals[:tokens_in], "cache_read is excluded from the displayed total"
+    assert_equal 350, totals[:tokens_out]
+    assert_equal 8350, totals[:tokens_total]
+  end
+
   test "cost formats by magnitude and dashes a zero cost" do
     assert_equal "—", heartbeat_cost(0)
     assert_equal "$0.00", heartbeat_cost(0.0005)
