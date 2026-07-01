@@ -31,6 +31,13 @@ class AtomicEvent < ApplicationRecord
   # closing/removing a span never destroys the actions it framed.
   has_many :atomic_actions, dependent: :nullify, inverse_of: :atomic_event
 
+  # The grades targeting this span — Alex's grade and the McRitchie audit-of-Alex
+  # are two ActionGrade rows (distinguished by grader), the span-level mirror of
+  # AtomicAction#action_grades. Nullify (not destroy), matching the FK's
+  # on_delete: :nullify — removing a span orphans its grades rather than deleting
+  # the recorded feedback.
+  has_many :action_grades, dependent: :nullify, inverse_of: :atomic_event
+
   validates :session_id, presence: true
   validates :category, presence: true, inclusion: { in: CATEGORIES }
   validates :reason_slug, presence: true

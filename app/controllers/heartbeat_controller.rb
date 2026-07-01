@@ -80,6 +80,36 @@ class HeartbeatController < ApplicationController
     end
   end
 
+  # Upsert ONE grade for (event, grader) — the span-level analogue of #grade,
+  # targeting a narrated AtomicEvent span instead of a raw action. Same
+  # disposition/slug/long_form/intent=bank|discard semantics. JSON ONLY by design:
+  # E2 stays view-free so it never touches the heartbeat views or the existing
+  # #grade turbo_stream path (E3 owns all heartbeat UI), which keeps the two
+  # parallel tasks from colliding. Writes RAISE (a grade is a deliberate user
+  # action), so they are wrapped in rescue_and_log with the grade as target
+  # context, per backend discipline.
+  def grade_event
+    @event = AtomicEvent.find(params[:id])
+    grader = params[:grader].to_s
+    @grade = ActionGrade.for_event(@event).by_grader(grader).first_or_initialize(grader: grader)
+
+    rescue_and_log(target: @grade) do
+      @grade.disposition = params[:disposition].presence || @grade.disposition.presence || ActionGrade::GOOD
+      @grade.slug        = params[:slug].presence || @grade.slug.presence || default_event_grade_slug(@event)
+      @grade.long_form   = params[:long_form] if params.key?(:long_form)
+      @grade.save!
+
+      case params[:intent]
+      when "bank"    then @grade.bank!
+      when "discard" then @grade.discard!
+      end
+
+      render json: grade_json(@grade)
+    end
+  rescue StandardError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   # The Insight Bank — exactly ActionGrade.banked, the curated lessons that make each
   # next agent smarter. Newest curation first.
   def insights
@@ -146,9 +176,17 @@ class HeartbeatController < ApplicationController
     action.event_slug.presence || action.result_slug.presence || action.kind
   end
 
+  # A starter slug for a span (event) grade that carries none of its own: the
+  # span's narrated reason, then its outcome, then its category — always a
+  # meaningful default so the ActionGrade slug-presence rule holds.
+  def default_event_grade_slug(event)
+    event.reason_slug.presence || event.outcome_slug.presence || event.category
+  end
+
   # JSON shape for the Alpine/fetch fallback consumer (the turbo_stream path is the
-  # primary one used by the UI).
+  # primary one used by the UI). Carries BOTH target FKs — exactly one is set,
+  # which tells the consumer whether this grade is of an action or a span.
   def grade_json(grade)
-    grade.slice(:id, :atomic_action_id, :grader, :disposition, :slug, :long_form, :banked, :discarded)
+    grade.slice(:id, :atomic_action_id, :atomic_event_id, :grader, :disposition, :slug, :long_form, :banked, :discarded)
   end
 end
