@@ -17,7 +17,9 @@ namespace :atomic do
     raise "atomic:demo_seed is local demo data — refusing to run in production." if Rails.env.production?
 
     session_id = ENV.fetch("SESSION_ID", "demo-heartbeat-0001")
-    mascot     = ENV.fetch("MASCOT", "rotom")
+    # A Gen-1 slug so the mascot AVATAR resolves to a real sprite (the deck seeds only
+    # the original 151; a Gen-4 slug like rotom renders only an initials fallback).
+    mascot     = ENV.fetch("MASCOT", "snorlax")
     task_slug  = ENV.fetch("TASK_SLUG", "atomic-action-capture")
     opus       = "claude-opus-4-8"
 

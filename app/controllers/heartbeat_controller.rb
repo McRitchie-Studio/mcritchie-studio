@@ -14,6 +14,10 @@ class HeartbeatController < ApplicationController
   # alex_heartbeat_path, which routes here.
   skip_before_action :require_authentication
 
+  # Page size for the cross-session All Spans view — the operator asked for 100
+  # spans per page.
+  ALL_SPANS_PER_PAGE = 100
+
   def show
     @session_id = params[:session_id].presence || latest_session_id
     @actions = @session_id ? AtomicAction.for_session(@session_id).chronological.to_a : []
@@ -40,6 +44,32 @@ class HeartbeatController < ApplicationController
     @agents_by_slug = agent_soul_lookup(@events)
     @event_grades = event_grade_lookup(@events)
     @counts = grade_counts(@session_id)
+  end
+
+  # Every narrated AtomicEvent SPAN across ALL sessions, newest-first, paginated
+  # 100 per page — the cross-session companion to #show (which scopes to one
+  # session). Reuses the SAME span table partial: one page of spans, each rolling
+  # up the raw actions attributed to it (one grouped query, no N+1). There is no
+  # "Unlabeled" group here — that is per-session context (null-span actions have no
+  # coherent place in a newest-first cross-session list), so exactly one Unlabeled
+  # group is never exceeded. Read-only meta surface, like #show.
+  def all_spans
+    @page  = [params[:page].to_i, 1].max
+    scope  = AtomicEvent.order(opened_at: :desc, seq: :desc, id: :desc)
+    @total = scope.count
+    @events = scope.offset((@page - 1) * ALL_SPANS_PER_PAGE).limit(ALL_SPANS_PER_PAGE).to_a
+
+    actions_by_event = AtomicAction.where(atomic_event_id: @events.map(&:id))
+                                   .chronological.to_a.group_by(&:atomic_event_id)
+    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
+
+    page_actions = actions_by_event.values.flatten
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(page_actions)
+    @pokemon_by_slug = pokemon_lookup(page_actions, @events)
+    @agents_by_slug  = agent_soul_lookup(@events)
+    @event_grades    = event_grade_lookup(@events)
+    @has_prev = @page > 1
+    @has_next = @page * ALL_SPANS_PER_PAGE < @total
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on

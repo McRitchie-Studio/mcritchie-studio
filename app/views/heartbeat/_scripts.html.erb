@@ -1,0 +1,123 @@
+<script>
+  // Inline factory for the section's x-data. Defined inline (plain script, not a
+  // module) because Alpine loads via `defer` and evaluates BEFORE importmap modules
+  // — an x-data referencing a module-exported factory would be undefined at init.
+  window.heartbeatDrawer = function () {
+    return {
+      drawer: false,
+      // Open the per-action grading drawer by pointing the shared turbo-frame at the
+      // action's feedback URL. Re-opening the same row forces a fresh server fetch.
+      openDrawer(url) {
+        this.drawer = true;
+        var frame = document.getElementById("hb-drawer");
+        if (!frame) return;
+        if (frame.getAttribute("src") === url) { frame.reload(); } else { frame.src = url; }
+      },
+      closeDrawer() { this.drawer = false; },
+      // Whitespace word count for the drawer's live "aim 4–7 words" counter.
+      wordCount(text) { return (text || "").trim().split(/\s+/).filter(Boolean).length; }
+    };
+  };
+
+  // Per-span row component: owns the expand/collapse `open` AND the span's live grade
+  // markers. It hydrates its Alex/McRitchie marker state from the server-rendered
+  // data-* attributes on the <tbody> (so a page load already reflects existing grades),
+  // then listens for the hb:span-graded CustomEvent the span drawer dispatches after a
+  // fetch save — updating the matching grader's marker in place without a reload.
+  window.heartbeatSpanRow = function () {
+    return {
+      open: false,
+      eventId: null,
+      grades: { alex: null, mcr: null },
+      hydrate(el) {
+        this.eventId = el.dataset.eventId;
+        this.grades.alex = this.readGrade(el.dataset, "alex");
+        this.grades.mcr = this.readGrade(el.dataset, "mcr");
+      },
+      readGrade(data, who) {
+        if (data[who + "Graded"] !== "true") return null;
+        return {
+          disposition: data[who + "Disp"] || "",
+          slug: data[who + "Slug"] || "",
+          banked: data[who + "Banked"] === "true"
+        };
+      },
+      onGraded(detail) {
+        if (!detail || String(detail.atomic_event_id) !== String(this.eventId)) return;
+        this.grades[detail.grader] = {
+          disposition: detail.disposition,
+          slug: detail.slug,
+          banked: !!detail.banked
+        };
+      },
+      // The inline quick-grade: a good/not radio changed on the span row. It POSTs the
+      // little form (CSRF token + grader + the checked disposition) to E2's JSON
+      // grade_event endpoint by fetch — like the drawer editor, since E2 is view-free —
+      // and dispatches hb:span-graded so this row's own onGraded flips the marker +
+      // radio state live (no reload). A failed save leaves the radio; the next load
+      // reflects server truth.
+      async quickGrade(ev) {
+        var form = ev.target.closest("form");
+        if (!form) return;
+        var body = new FormData(form);
+        try {
+          var resp = await fetch(form.action, {
+            method: "POST",
+            headers: { "Accept": "application/json" },
+            body: body
+          });
+          var data = await resp.json();
+          if (!resp.ok) return;
+          window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
+        } catch (err) {
+          /* network error — leave the radio; a reload reflects server truth */
+        }
+      }
+    };
+  };
+
+  // The span grade editor inside the span drawer. Because E2's grade_event endpoint
+  // returns JSON (view-free by design), this submits via fetch rather than a turbo
+  // form: it posts the form (CSRF token + fields + the clicked intent), reflects the
+  // saved disposition/banked/discarded back into its own controls, surfaces any error,
+  // and dispatches hb:span-graded so the originating span row updates its markers live.
+  window.heartbeatEventEditor = function (config) {
+    return {
+      n: config.n,
+      disp: config.disp,
+      banked: config.banked,
+      discarded: config.discarded,
+      saving: false,
+      saved: false,
+      error: "",
+      wordCount(text) { return (text || "").trim().split(/\s+/).filter(Boolean).length; },
+      async submit(event) {
+        this.error = "";
+        this.saved = false;
+        this.saving = true;
+        var form = event.target;
+        var body = new FormData(form);
+        var submitter = event.submitter;
+        if (submitter && submitter.name) { body.set(submitter.name, submitter.value); }
+        try {
+          var resp = await fetch(form.action, {
+            method: "POST",
+            headers: { "Accept": "application/json" },
+            body: body
+          });
+          var data = await resp.json();
+          if (!resp.ok) { this.error = (data && data.error) || "Could not save the grade."; return; }
+          this.disp = data.disposition;
+          this.banked = !!data.banked;
+          this.discarded = !!data.discarded;
+          this.saved = true;
+          window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
+        } catch (err) {
+          this.error = "Could not save the grade.";
+        } finally {
+          this.saving = false;
+        }
+      }
+    };
+  };
+</script>

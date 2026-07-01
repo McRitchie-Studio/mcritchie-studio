@@ -1,0 +1,69 @@
+<% content_for(:title, "Alex · All Spans") %>
+<% content_for(:full_width, true) %>
+
+<%# Alex learning heartbeat — the CROSS-SESSION span table. Every AtomicEvent span
+    across all sessions, newest-first, paginated 100 per page. It reuses the exact
+    per-session chrome (styles, scripts, the span table partial, the grading drawer)
+    so a span reads identically here and on the per-session heartbeat; only the header
+    and the pager differ. There is no "Unlabeled" group here (that is per-session
+    context) — a single Unlabeled group per view is never exceeded. %>
+<%= render "heartbeat/styles" %>
+
+<%= render "heartbeat/scripts" %>
+
+<section id="alex-heartbeat" data-test="heartbeat-all-spans" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+  <div class="hb-head">
+    <header class="hb-topbar">
+      <div class="hb-title">
+        <h1>All Spans &middot; Alex Heartbeat</h1>
+        <p>
+          Every narrated span across all sessions, newest &rarr; oldest.
+          Expand a span to drill into the raw tool-calls it framed; grade it inline or open one to grade the McRitchie audit.
+        </p>
+      </div>
+      <div class="hb-stats">
+        <div class="hb-stat"><b><%= @total %></b><span>spans</span></div>
+        <div class="hb-stat"><b><%= @page %></b><span>page</span></div>
+        <div class="hb-stat"><b><%= HeartbeatController::ALL_SPANS_PER_PAGE %></b><span>per page</span></div>
+      </div>
+    </header>
+
+    <div class="hb-toolbar">
+      <%= render "heartbeat/nav", current: :all_spans, insights_count: ActionGrade.banked.count %>
+      <span class="hb-legend">
+        <span><b>span:</b> category &middot; reason &rarr; outcome</span>
+        <span><b>drill down:</b> expand a span &middot; click an action to grade</span>
+      </span>
+    </div>
+  </div>
+
+  <% if @event_rows.any? %>
+    <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: [],
+          pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids %>
+
+    <nav class="hb-pager" data-test="hb-pager" aria-label="All Spans pages">
+      <% if @has_prev %>
+        <%= link_to "&lsaquo; Newer".html_safe, heartbeat_all_spans_path(page: @page - 1),
+              class: "hb-btn", data: { turbo: false, test: "hb-pager-prev" } %>
+      <% else %>
+        <span class="hb-btn hb-pager-off">&lsaquo; Newer</span>
+      <% end %>
+      <span class="hb-pager-at" data-test="hb-pager-at">Page <%= @page %></span>
+      <% if @has_next %>
+        <%= link_to "Older &rsaquo;".html_safe, heartbeat_all_spans_path(page: @page + 1),
+              class: "hb-btn", data: { turbo: false, test: "hb-pager-next" } %>
+      <% else %>
+        <span class="hb-btn hb-pager-off">Older &rsaquo;</span>
+      <% end %>
+    </nav>
+  <% else %>
+    <div class="hb-empty" data-test="heartbeat-empty">
+      <b>No spans captured yet</b>
+      <p>Capture is forward-only — spans land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+      <p><%= link_to "&lsaquo; back to the per-session heartbeat".html_safe, alex_heartbeat_path %></p>
+    </div>
+  <% end %>
+
+  <%= render "heartbeat/drawer_host" %>
+</section>

@@ -76,7 +76,8 @@ class HeartbeatTrajectoryTableTest < ActionView::TestCase
                      agents_by_slug: { "carl" => carl }, agent_slug_by_action: { act.id => "carl" } }
 
     assert_select "[data-test=agent-stack]"
-    assert_select "[data-test=agent-soul][data-soul=carl]", text: /Carl/
+    assert_select "[data-test=agent-soul][data-soul=carl][title=?]", "Carl"
+    # the base mascot name rides on its avatar title
     assert_includes rendered, "Sandshrew"
   end
 
