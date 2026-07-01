@@ -79,6 +79,10 @@ Rails.application.routes.draw do
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
   get  "alex/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
   post "alex/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  # Span-level grade (E2): upsert one grade for a narrated AtomicEvent span. JSON
+  # only by design — E2 stays view-free so it never collides with E3, which owns
+  # every heartbeat view/partial and the turbo_stream grading path.
+  post "alex/heartbeat/events/:id/grade",     to: "heartbeat#grade_event", as: :heartbeat_event_grade
   get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
 
   get "toast_test", to: "toast_test#index"

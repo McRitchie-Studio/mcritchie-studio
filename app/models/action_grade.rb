@@ -1,14 +1,20 @@
-# The grading layer over AtomicAction — the learning heartbeat's feedback record.
+# The grading layer over the learning heartbeat — Alex's feedback record.
 #
-# Every graded action can carry up to TWO ActionGrade rows, distinguished by the
+# A grade targets EXACTLY ONE of two things (an additive dual-FK, not a
+# polymorphic rewrite): a raw `atomic_action` (the original per-tool-call path)
+# OR a narrated `atomic_event` SPAN (the agent-declared trajectory). The model
+# enforces the XOR; each FK is independently unique per grader.
+#
+# Either target can carry up to TWO ActionGrade rows, distinguished by the
 # `grader` column:
 #
-#   grader = "alex"  — Alex's grade of the action itself.
-#   grader = "mcr"   — Mr. McRitchie's audit OF Alex's grade for that action
+#   grader = "alex"  — Alex's grade of the action/span itself.
+#   grader = "mcr"   — Mr. McRitchie's audit OF Alex's grade for that target
 #                      (the recursive audit: McRitchie grades Alex's grading).
 #
-# The (atomic_action_id, grader) pair is unique, so an action holds at most one
-# Alex grade and one McRitchie audit — never two of either.
+# The (atomic_action_id, grader) and (atomic_event_id, grader) pairs are each
+# unique, so a target holds at most one Alex grade and one McRitchie audit —
+# never two of either.
 #
 # Each grade is a 4–7 word feedback `slug` plus a BINARY `disposition`
 # (good | not) and an optional `long_form` anchor. Two flags decide its fate:
@@ -36,18 +42,28 @@ class ActionGrade < ApplicationRecord
   NOT          = "not"
   DISPOSITIONS = [GOOD, NOT].freeze
 
-  belongs_to :atomic_action, inverse_of: :action_grades
+  # Dual, mutually exclusive targets — both optional at the association level so a
+  # grade can hang off EITHER one. The XOR below guarantees exactly one is set.
+  belongs_to :atomic_action, optional: true, inverse_of: :action_grades
+  belongs_to :atomic_event,  optional: true, inverse_of: :action_grades
 
   validates :grader, inclusion: { in: GRADERS }
   validates :disposition, inclusion: { in: DISPOSITIONS }
   validates :slug, presence: true
-  # One Alex grade + one McRitchie audit per action — never two of either.
-  validates :grader, uniqueness: { scope: :atomic_action_id }
+  # Exactly one target — a grade is of an action OR a span, never both, never
+  # neither (replaces the old atomic_action presence guarantee).
+  validate :exactly_one_target
+  # One Alex grade + one McRitchie audit PER TARGET — never two of either. The
+  # uniqueness is scoped per FK and only fires for the FK that is actually set,
+  # so an action grade and a span grade by the same grader never collide.
+  validates :grader, uniqueness: { scope: :atomic_action_id }, if: -> { atomic_action_id.present? }
+  validates :grader, uniqueness: { scope: :atomic_event_id },  if: -> { atomic_event_id.present? }
 
   scope :by_grader,  ->(grader) { where(grader: grader) }
   scope :banked,     -> { where(banked: true) }            # the Insight Bank
   scope :discarded,  -> { where(discarded: true) }
   scope :for_action, ->(action) { where(atomic_action_id: action) }
+  scope :for_event,  ->(event) { where(atomic_event_id: event) }
 
   # Curate this grade into the Insight Bank. Banking and discarding are mutually
   # exclusive, so banking clears any prior discard. Raises on failure.
@@ -77,5 +93,21 @@ class ActionGrade < ApplicationRecord
   # the string "not", so this predicate names the negative case explicitly.
   def not_good?
     disposition == NOT
+  end
+
+  # True when this grade targets a narrated span rather than a raw action.
+  def event_grade?
+    atomic_event_id.present?
+  end
+
+  private
+
+  # XOR: a grade must target EXACTLY ONE of an action or a span. Zero targets
+  # (the old "atomic_action must exist") and two targets are both invalid.
+  def exactly_one_target
+    targets = [atomic_action_id, atomic_event_id].count(&:present?)
+    return if targets == 1
+
+    errors.add(:base, "must grade exactly one of an action or an event")
   end
 end

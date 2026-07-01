@@ -10,12 +10,13 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_30_140100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "action_grades", force: :cascade do |t|
-    t.bigint "atomic_action_id", null: false
+    t.bigint "atomic_action_id"
+    t.bigint "atomic_event_id"
     t.boolean "banked", default: false, null: false
     t.datetime "created_at", null: false
     t.boolean "discarded", default: false, null: false
@@ -26,6 +27,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_140100) do
     t.datetime "updated_at", null: false
     t.index ["atomic_action_id", "grader"], name: "index_action_grades_on_atomic_action_id_and_grader", unique: true
     t.index ["atomic_action_id"], name: "index_action_grades_on_atomic_action_id"
+    t.index ["atomic_event_id", "grader"], name: "index_action_grades_on_atomic_event_id_and_grader", unique: true, where: "(atomic_event_id IS NOT NULL)"
+    t.index ["atomic_event_id"], name: "index_action_grades_on_atomic_event_id"
     t.index ["banked"], name: "index_action_grades_on_banked"
   end
 
@@ -1255,6 +1258,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_140100) do
   end
 
   add_foreign_key "action_grades", "atomic_actions"
+  add_foreign_key "action_grades", "atomic_events", on_delete: :nullify
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "atomic_actions", "atomic_events", on_delete: :nullify
