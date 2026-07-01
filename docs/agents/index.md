@@ -40,8 +40,12 @@ events — without being asked.** Narration is the default, not an add-on; a fre
 session with no explicit prompt still narrates from its first real unit of work.
 Your raw tool-calls attribute server-side to whichever span is currently open, so
 a session with no spans reads as a wall of raw tool calls instead of "Explore:
-find api issue → found the nil-guard". Do not wait to be told — open the first
-span at your first unit of work and keep the trail going to handoff.
+find api issue → found the nil-guard". Do not wait to be told — **your FIRST
+span opens BEFORE your first tool call**: an `Explore` (or `Plan`) "orient" span —
+read the task, scan the code you'll touch — even on a small, pinpointed change. Go
+straight to `Edit` and your orientation strands in the "Unlabeled" bucket, so the
+"understand the task" beat is lost. Open the orient span first, then keep the trail
+going to handoff.
 
 Open a span at each natural work boundary:
 
@@ -62,6 +66,8 @@ Close the final open span when the work (or the session) is done:
 bin/atomic-event end --outcome "what happened"
 ```
 
+- **Lead with orient** — your opening span is `Explore`/`Plan` and opens BEFORE
+  any tool runs; nothing should land in "Unlabeled" at the top of a session.
 - **Keep spans meaningful** — one per unit of work, not one per tool call
   (navigate `cd` is dropped automatically; opening a new span auto-closes the
   prior one).
