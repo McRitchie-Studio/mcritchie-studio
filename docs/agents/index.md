@@ -33,6 +33,45 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   not backup. Feature agents push their own branch and graduate through PR/QA;
   Avi or the designated release conductor merges.
 
+## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
+
+This is how you work here: **as you work you MUST narrate your trajectory into
+events — without being asked.** Narration is the default, not an add-on; a fresh
+session with no explicit prompt still narrates from its first real unit of work.
+Your raw tool-calls attribute server-side to whichever span is currently open, so
+a session with no spans reads as a wall of raw tool calls instead of "Explore:
+find api issue → found the nil-guard". Do not wait to be told — open the first
+span at your first unit of work and keep the trail going to handoff.
+
+Open a span at each natural work boundary:
+
+```bash
+bin/atomic-event start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
+```
+
+When one unit of work ends and the next begins, roll the boundary in **one call**
+— close the prior span with its outcome and open the next together:
+
+```bash
+bin/atomic-event next --outcome "what just happened" --category <C> --reason "what's next"
+```
+
+Close the final open span when the work (or the session) is done:
+
+```bash
+bin/atomic-event end --outcome "what happened"
+```
+
+- **Keep spans meaningful** — one per unit of work, not one per tool call
+  (navigate `cd` is dropped automatically; opening a new span auto-closes the
+  prior one).
+- **Always give an outcome** — every `next`/`end` records what actually happened
+  ("Explore: find api issue → found the nil-guard"), not just the intent; an
+  outcome-less span is a wasted span.
+- Keep `--reason`/`--outcome` short (~4-7 words).
+- **It's non-fatal** — narration never blocks your work, and it powers the Alex
+  learning heartbeat (`/alex/heartbeat`). There is no reason to skip it.
+
 ## DevOps Routing — read before writing ANY code
 
 If your work will produce a code diff — a feature, a bug, or a chore, **even a
@@ -231,29 +270,6 @@ assigned that lane.
 6. Run meaningful verification yourself.
 7. Hand back something inspectable: local URL, screenshot, test output summary, diff summary, or explicit blocker.
 8. Update docs when behavior or workflow changes.
-
-## Narrate your trajectory
-
-As you work, narrate your trajectory into meaningful **events** so the Alex
-learning heartbeat (`/alex/heartbeat`) reads as "Explore: find issue with api →
-found X", not a wall of raw tool calls. At a natural work boundary, open a span:
-
-```bash
-bin/atomic-event start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
-```
-
-Keep `--reason` short (~4-7 words). When that unit of work is done, close it with
-what happened:
-
-```bash
-bin/atomic-event end --outcome "what happened"
-```
-
-Your raw tool-calls attribute server-side to whichever span is currently open, so
-keep spans **meaningful** — one per unit of work, not one per tool call. Navigate
-(`cd`) is dropped automatically, and opening a new span auto-closes the prior one
-(a bare `end` is rarely needed). Narration is non-fatal — it never blocks your
-work — and it powers the Alex learning heartbeat.
 
 ## Parallel Work Quick Start
 
