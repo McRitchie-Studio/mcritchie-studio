@@ -274,9 +274,14 @@ Rails.application.routes.draw do
       resources :atomic_actions, only: [:create]
       # Agent-narration sink — the agent OPENs a meaningful span (category+reason)
       # and CLOSEs it with an outcome; raw actions attribute to the open span.
-      # POST /api/v1/atomic_events opens; POST /api/v1/atomic_events/close closes.
+      # POST /api/v1/atomic_events opens (carrying an optional prior_outcome for the
+      # BOUNDARY transition); /close closes the current span; /close_all is the
+      # session-end teardown that closes every still-open span.
       resources :atomic_events, only: [:create] do
-        collection { post :close }
+        collection do
+          post :close
+          post :close_all
+        end
       end
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.

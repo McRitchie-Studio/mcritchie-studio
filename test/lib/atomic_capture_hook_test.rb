@@ -155,6 +155,51 @@ class AtomicCaptureHookTest < Minitest::Test
     assert_nil marker["mascot"]
   end
 
+  # ── [unit] model derivation ──────────────────────────────────────────────
+  # Claude Code does NOT ship the model in the PostToolUse stdin payload or any
+  # env var; it IS in the transcript (assistant lines carry message.model) that the
+  # payload's transcript_path points at. So the hook derives it from there — a real
+  # model only, never fabricated.
+
+  def test_unit_model_nil_when_no_source_available
+    assert_nil hook.resolve_model({}), "no model field and no transcript ⇒ nil"
+    assert_nil hook.resolve_model("transcript_path" => "/nonexistent-#{rand(10_000)}.jsonl")
+  end
+
+  def test_unit_model_prefers_a_direct_payload_field
+    assert_equal "claude-direct", hook.resolve_model("model" => "claude-direct")
+    assert_equal "claude-nested", hook.resolve_model("message" => { "model" => "claude-nested" })
+  end
+
+  def test_unit_model_reads_the_newest_assistant_line_from_the_transcript
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, [
+        JSON.generate("type" => "assistant", "message" => { "model" => "claude-old-4-1", "role" => "assistant" }),
+        JSON.generate("type" => "user", "message" => { "role" => "user", "content" => "no model here" }),
+        JSON.generate("type" => "assistant", "message" => { "model" => "claude-opus-4-8", "role" => "assistant" }),
+        JSON.generate("type" => "user", "message" => { "role" => "user", "content" => "tool_result" })
+      ].join("\n") + "\n")
+
+      assert_equal "claude-opus-4-8", hook.read_model_from_transcript(path),
+                   "the most recent assistant model wins"
+      assert_equal "claude-opus-4-8", hook.resolve_model("transcript_path" => path)
+    end
+  end
+
+  def test_unit_build_payload_stamps_the_transcript_model
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, JSON.generate("type" => "assistant", "message" => { "model" => "claude-opus-4-8" }) + "\n")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope", "transcript_path" => path,
+        "tool_name" => "Read", "tool_input" => {}, "tool_response" => {}
+      }
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event, now: Time.utc(2026, 6, 30, 12, 0, 0))
+      assert_equal "claude-opus-4-8", payload["model"]
+    end
+  end
+
   # ── [unit] full payload shape ────────────────────────────────────────────
 
   def test_unit_build_payload_maps_the_whole_event

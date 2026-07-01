@@ -155,6 +155,73 @@ class AtomicEventTest < ActiveSupport::TestCase
     assert_equal 1, AtomicEvent.for_session("guard-sess").open.count
   end
 
+  # ---- [unit] BOUNDARY transition: open_event! prior_outcome ----------------
+
+  test "[unit] open_event! stamps the auto-closed prior span's outcome when given" do
+    AtomicEvent.open_event!(session_id: "boundary-sess", category: "Explore", reason_slug: "look")
+    second = AtomicEvent.open_event!(session_id: "boundary-sess", category: "Edit",
+                                     reason_slug: "change", prior_outcome_slug: "found the bug")
+
+    prior = AtomicEvent.for_session("boundary-sess").order(:seq).first
+    assert prior.closed?, "the prior span is closed at the boundary"
+    assert_equal "found the bug", prior.outcome_slug, "and stamped with the narrated outcome"
+    assert second.open?
+    assert_nil second.outcome_slug, "the newly opened span carries no outcome yet"
+    assert_equal 1, AtomicEvent.for_session("boundary-sess").open.count
+  end
+
+  test "[unit] open_event! without a prior_outcome auto-closes prior with a NULL outcome" do
+    AtomicEvent.open_event!(session_id: "nullout-sess", category: "Explore", reason_slug: "look")
+    AtomicEvent.open_event!(session_id: "nullout-sess", category: "Edit", reason_slug: "change")
+
+    prior = AtomicEvent.for_session("nullout-sess").order(:seq).first
+    assert prior.closed?
+    assert_nil prior.outcome_slug, "legacy behavior: a bare open leaves the prior outcome NULL"
+  end
+
+  test "[unit] a blank prior_outcome never blanks an outcome a prior close already set" do
+    AtomicEvent.open_event!(session_id: "keep-sess", category: "Verify", reason_slug: "run tests")
+    AtomicEvent.close_event!(session_id: "keep-sess", outcome_slug: "already green")
+    # There is no open span now; opening the next with a blank prior_outcome must
+    # not touch the already-closed span's outcome.
+    AtomicEvent.open_event!(session_id: "keep-sess", category: "Edit", reason_slug: "next",
+                            prior_outcome_slug: "")
+
+    assert_equal "already green", AtomicEvent.for_session("keep-sess").order(:seq).first.outcome_slug
+  end
+
+  # ---- [integration] session-end teardown: close_all_open! ------------------
+
+  test "[integration] close_all_open! closes the open span with a shared outcome" do
+    AtomicEvent.open_event!(session_id: "end-sess", category: "Edit", reason_slug: "mid-edit")
+
+    count = AtomicEvent.close_all_open!(session_id: "end-sess", outcome_slug: "session ended")
+
+    assert_equal 1, count
+    span = AtomicEvent.for_session("end-sess").order(:seq).last
+    assert span.closed?
+    assert_equal "session ended", span.outcome_slug
+    assert_equal 0, AtomicEvent.for_session("end-sess").open.count
+  end
+
+  test "[integration] close_all_open! closes EVERY open span, not just the latest" do
+    # Defensive: even if the single-open invariant were somehow broken, teardown
+    # must leave nothing open. Force two open spans by inserting directly.
+    AtomicEvent.create!(session_id: "multi-end", category: "Explore", reason_slug: "a",
+                        seq: 0, opened_at: Time.current)
+    AtomicEvent.create!(session_id: "multi-end", category: "Edit", reason_slug: "b",
+                        seq: 1, opened_at: Time.current)
+
+    count = AtomicEvent.close_all_open!(session_id: "multi-end", outcome_slug: "session ended")
+
+    assert_equal 2, count
+    assert_equal 0, AtomicEvent.for_session("multi-end").open.count
+  end
+
+  test "[integration] close_all_open! is a no-op returning 0 when nothing is open" do
+    assert_equal 0, AtomicEvent.close_all_open!(session_id: "never-open-end", outcome_slug: "x")
+  end
+
   test "[integration] open_event! links to a task via the slug FK" do
     task = Task.create!(title: "atomic event sample task", stage: "building")
 

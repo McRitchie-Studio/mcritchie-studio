@@ -73,6 +73,30 @@ module Api
         assert_not captured.key?(:occurred_at)
       end
 
+      test "[unit] permits model so the hook can stamp the session model" do
+        captured = nil
+        stub = lambda do |attrs|
+          captured = attrs
+          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+        end
+
+        AtomicAction.stub(:capture, stub) do
+          post api_v1_atomic_actions_path,
+               params: @body.merge(model: "claude-opus-4-8"), headers: @headers, as: :json
+        end
+
+        assert_response :created
+        assert_equal "claude-opus-4-8", captured[:model], "model reaches capture (kills the \"—\")"
+      end
+
+      test "[integration] a captured action persists its stamped model" do
+        post api_v1_atomic_actions_path,
+             params: @body.merge(model: "claude-opus-4-8"), headers: @headers, as: :json
+
+        assert_response :created
+        assert_equal "claude-opus-4-8", AtomicAction.order(:created_at).last.model
+      end
+
       test "[unit] does not permit tokens cost or distillation slugs" do
         captured = nil
         stub = lambda do |attrs|

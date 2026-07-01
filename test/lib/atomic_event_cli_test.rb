@@ -92,6 +92,76 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
+  # ── [integration] BOUNDARY transition: next / start --outcome ────────────
+
+  def test_integration_next_opens_with_prior_outcome_in_one_call
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[next --session #{SESSION} --outcome found-the-bug --category Edit --reason add-the-guard],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute_nil open, "next opens the new span (carrying the prior outcome)"
+      body = JSON.parse(open[:body])
+      assert_equal SESSION, body["session_id"]
+      assert_equal "Edit", body["category"]
+      assert_equal "add-the-guard", body["reason"]
+      assert_equal "found-the-bug", body["prior_outcome"], "the prior span's outcome rides the SAME call"
+    end
+  end
+
+  def test_integration_start_with_outcome_carries_prior_outcome
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[start --session #{SESSION} --outcome wrapped-explore --category Edit --reason change-it],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      body = JSON.parse(open[:body])
+      assert_equal "wrapped-explore", body["prior_outcome"]
+    end
+  end
+
+  def test_integration_start_without_outcome_omits_prior_outcome
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute JSON.parse(open[:body]).key?("prior_outcome"), "a bare start sends no prior_outcome key"
+    end
+  end
+
+  # ── [integration] session-end teardown: close-open ───────────────────────
+
+  def test_integration_close_open_reads_session_from_stdin_and_posts_close_all
+    Dir.mktmpdir do |proj|
+      # The SessionEnd hook pipes its event JSON on stdin; no --session, no env id.
+      requests = run_cli(%w[close-open], proj: proj, with_session_env: false,
+                         stdin: JSON.generate("session_id" => SESSION, "reason" => "logout"))
+
+      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close_all" }
+      refute_nil close_all, "close-open posts to /api/v1/atomic_events/close_all"
+      body = JSON.parse(close_all[:body])
+      assert_equal SESSION, body["session_id"], "the session id comes from the stdin payload"
+      assert_equal "session ended", body["outcome"], "defaults to a generic teardown outcome"
+    end
+  end
+
+  def test_integration_close_open_respects_explicit_outcome_and_session_flag
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[close-open --session #{SESSION} --outcome wrapped-it-up], proj: proj)
+
+      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close_all" }
+      body = JSON.parse(close_all[:body])
+      assert_equal SESSION, body["session_id"]
+      assert_equal "wrapped-it-up", body["outcome"]
+    end
+  end
+
+  def test_integration_close_open_with_no_session_anywhere_hits_no_network
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%w[close-open], proj: proj, with_session_env: false, stdin: "")
+      assert_empty requests, "no session id (flag / env / stdin) → nothing to close → no network"
+    end
+  end
+
   def test_integration_unknown_category_never_hits_the_network
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[start --session #{SESSION} --category Vibe --reason nope], proj: proj)
@@ -137,7 +207,7 @@ class AtomicEventCliTest < Minitest::Test
   # Shell out to the real CLI against a one-shot stub server; returns the recorded
   # requests. chdir into the isolated proj dir so no stray .agent-context.json up
   # the real tree leaks into the marker resolution.
-  def run_cli(argv, proj:, with_session_env: true)
+  def run_cli(argv, proj:, with_session_env: true, stdin: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -145,7 +215,9 @@ class AtomicEventCliTest < Minitest::Test
 
     env = base_env(proj).merge("ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}")
     env["CLAUDE_CODE_SESSION_ID"] = SESSION if with_session_env && !argv.include?("--session")
-    Open3.capture3(env, RbConfig.ruby, BIN, *argv, chdir: proj)
+    opts = { chdir: proj }
+    opts[:stdin_data] = stdin unless stdin.nil?
+    Open3.capture3(env, RbConfig.ruby, BIN, *argv, **opts)
     requests
   ensure
     server&.close
@@ -181,6 +253,7 @@ class AtomicEventCliTest < Minitest::Test
     return ["200 OK", JSON.generate("token" => "stub-token", "expires_at" => (Time.now + 86_400).utc.iso8601)] if path == "/api/v1/auth"
     return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_events"
     return ["200 OK", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_events/close"
+    return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/atomic_events/close_all"
 
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
   end
