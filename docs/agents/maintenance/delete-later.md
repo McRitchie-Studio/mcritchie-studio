@@ -132,3 +132,21 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-06-28 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/studio-theme-polish` | worktree | Hidden worktree; branch `feat/studio-theme-polish` is clean and HEAD d2aca9c is contained in origin/release; health down, Redis DB 13, database mcritchie_studio_development_studio_theme_polish:missing. | Removed with `bin/agent-worktree remove mcritchie-studio studio-theme-polish --yes` during approved lifecycle cleanup. | removed 2026-06-28 |
+
+<!-- agent-worktree remove 2026-07-01 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/agent-attribution-on-events` | worktree | Hidden worktree; branch `feat/agent-attribution-on-events` is clean and HEAD fdf1228 is contained in origin/release; health down, Redis DB 12, database mcritchie_studio_development_agent_attribution_on_events:missing. | Removed with `bin/agent-worktree remove mcritchie-studio agent-attribution-on-events --yes` during approved lifecycle cleanup. | removed 2026-07-01 |
+
+<!-- agent-worktree remove 2026-07-01 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/agent-column-stacked-display` | worktree | Hidden worktree; branch `feat/agent-column-stacked-display` is clean and HEAD adaecf0 is contained in origin/release; health up, Redis DB 15, database mcritchie_studio_development_agent_column_stacked_display:ok. | Removed with `bin/agent-worktree remove mcritchie-studio agent-column-stacked-display --yes` during approved lifecycle cleanup. | removed 2026-07-01 |
+
+<!-- agent-worktree remove 2026-07-01 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/avi-sizes-designed-tasks` | worktree | Hidden worktree; branch `feat/avi-sizes-designed-tasks` is clean and HEAD 7e65ab9 is contained in origin/release; health down, Redis DB 17, database mcritchie_studio_development_avi_sizes_designed_tasks:missing. | Removed with `bin/agent-worktree remove mcritchie-studio avi-sizes-designed-tasks --yes` during approved lifecycle cleanup. | removed 2026-07-01 |
+
+<!-- agent-worktree remove 2026-07-01 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fade-shared-turn-token-duplicates` | worktree | Hidden worktree; branch `feat/fade-shared-turn-token-duplicates` is clean and HEAD 6a0aec2 is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_fade_shared_turn_token_duplicates:missing. | Removed with `bin/agent-worktree remove mcritchie-studio fade-shared-turn-token-duplicates --yes` during approved lifecycle cleanup. | removed 2026-07-01 |
+
+<!-- agent-worktree remove 2026-07-01 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fresh-tokens-accurate-cost` | worktree | Hidden worktree; branch `feat/fresh-tokens-accurate-cost` is clean and HEAD 643ac13 is contained in origin/release; health down, Redis DB 9, database mcritchie_studio_development_fresh_tokens_accurate_cost:ok. | Removed with `bin/agent-worktree remove mcritchie-studio fresh-tokens-accurate-cost --yes` during approved lifecycle cleanup. | removed 2026-07-01 |
+
+<!-- agent-worktree remove 2026-07-01 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/modular-pr-review-sop` | worktree | Hidden worktree; branch `feat/modular-pr-review-sop` is clean and HEAD 24c2009 is contained in origin/release; health down, Redis DB 13, database mcritchie_studio_development_modular_pr_review_sop:missing. | Removed with `bin/agent-worktree remove mcritchie-studio modular-pr-review-sop --yes` during approved lifecycle cleanup. | removed 2026-07-01 |
