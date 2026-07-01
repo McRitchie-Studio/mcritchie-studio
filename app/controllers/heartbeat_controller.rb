@@ -37,6 +37,7 @@ class HeartbeatController < ApplicationController
 
     @sessions = session_options
     @pokemon_by_slug = pokemon_lookup(@actions, @events)
+    @agents_by_slug = agent_soul_lookup(@events)
     @event_grades = event_grade_lookup(@events)
     @counts = grade_counts(@session_id)
   end
@@ -173,6 +174,18 @@ class HeartbeatController < ApplicationController
     return {} if slugs.empty?
 
     Pokemon.where(slug: slugs).index_by(&:slug)
+  end
+
+  # One query for every acting SOUL on the page so the stacked Agent column reuses
+  # the seeded Agent identity (name/emoji/status_color) instead of N+1 lookups. A
+  # span's `agent` is the soul that acted (avi/carl/…); the drill-down actions
+  # inherit their span's agent, so this single lookup covers both. Most spans carry
+  # a nil agent (the base session mascot did it), so the set is usually tiny/empty.
+  def agent_soul_lookup(events)
+    slugs = events.filter_map { |event| event.agent.presence }.uniq
+    return {} if slugs.empty?
+
+    Agent.where(slug: slugs).index_by(&:slug)
   end
 
   # Every span's current grades in one query, grouped by event id then keyed by

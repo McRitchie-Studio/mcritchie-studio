@@ -66,6 +66,12 @@
   #alex-heartbeat table.hb-evt-tbl { min-width:1180px; }
   #alex-heartbeat .hb-evttime { font-size:10px; margin-top:2px; color:var(--hb-faint); }
   #alex-heartbeat .hb-submascot { color:var(--hb-mascot); opacity:.85; }
+  /* Stacked Agent cell — the acting SOUL (AtomicEvent#agent) small + bold ON TOP
+     in its own tint, the base session mascot Pokémon BENEATH (the .hb-submascot
+     smaller/dimmer variant). A nil agent collapses to just the base mascot. */
+  #alex-heartbeat .hb-agentstack { display:flex; flex-direction:column; align-items:flex-start; gap:2px; white-space:nowrap; }
+  #alex-heartbeat .hb-soul { display:inline-flex; align-items:center; gap:4px; font-weight:700; font-size:11.5px; letter-spacing:.2px; line-height:1.1; }
+  #alex-heartbeat .hb-soul-glyph { font-size:12px; line-height:1; }
   #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
   /* A tokens/cost cell that INHERITS its turn's spend — a non-primary tool-call of
      a shared source_turn_uuid. Faded (never recolored to an outcome hue) so it reads
@@ -318,8 +324,8 @@
 
   <% if @event_rows.any? || @unlabeled.any? %>
     <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
-          pokemon_by_slug: @pokemon_by_slug, event_grades: @event_grades,
-          shared_turn_ids: @shared_turn_ids %>
+          pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids %>
   <% else %>
     <div class="hb-empty" data-test="heartbeat-empty">
       <b>No trajectory captured yet</b>

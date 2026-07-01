@@ -221,6 +221,48 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "   ", heartbeat_pretty_json("   ")
   end
 
+  # ---- the stacked Agent cell (acting soul over the base session mascot) --------
+
+  test "[unit] agent cell stacks the acting soul ON TOP of the base mascot" do
+    avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋", "color" => "#FB7185" })
+    poke = Pokemon.new(slug: "shellder", name: "Shellder")
+    html = heartbeat_agent_cell(mascot_slug: "shellder", pokemon: poke, agent_slug: "avi", agent: avi)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+
+    # a stack wrapper holding the soul then the base mascot beneath it
+    assert frag.at_css(".hb-agentstack[data-test=agent-stack]"), "expected a stacked cell"
+    soul = frag.at_css(".hb-soul[data-test=agent-soul]")
+    assert_equal "avi", soul["data-soul"]
+    assert_includes soul.text, "Avi"
+    assert_includes soul.text, "📋", "reuses the seeded Agent emoji"
+    assert_includes soul["style"].to_s, "#FB7185", "tints the soul with its status color"
+    mascot = frag.at_css(".hb-mascot.hb-submascot")
+    assert_includes mascot.text, "Shellder", "the base mascot renders beneath, smaller"
+    # soul is emitted BEFORE the mascot in the DOM (on top of the stack)
+    assert_operator html.index("Avi"), :<, html.index("Shellder")
+  end
+
+  test "[unit] agent cell shows JUST the base mascot when there is no acting soul" do
+    html = heartbeat_agent_cell(mascot_slug: "sandshrew", pokemon: nil, agent_slug: nil)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+
+    assert_nil frag.at_css(".hb-agentstack"), "a nil agent must NOT stack"
+    assert_nil frag.at_css(".hb-soul")
+    assert_includes frag.at_css(".hb-mascot").text, "Sandshrew"
+  end
+
+  test "[unit] agent cell falls back to a capitalized soul name when the Agent is unseeded" do
+    html = heartbeat_agent_cell(mascot_slug: "shellder", agent_slug: "carl", agent: nil)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+    assert_includes frag.at_css(".hb-soul[data-soul=carl]").text, "Carl"
+  end
+
+  test "[unit] agent cell renders an em dash when neither soul nor mascot is present" do
+    html = heartbeat_agent_cell(mascot_slug: nil, agent_slug: nil)
+    assert_includes html, "—"
+    assert_nil Nokogiri::HTML::DocumentFragment.parse(html).at_css(".hb-mascot")
+  end
+
   # Persisted so each action carries a real id — heartbeat_shared_turn_ids keys the
   # duplicate set by action.id (the flag the row partial checks).
   def turn_action(**attrs)

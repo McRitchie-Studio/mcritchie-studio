@@ -8,8 +8,14 @@
     columns are the T5 feedback layer: Alex's grade and the McRitchie audit-of-Alex,
     each an inline good/not radio set; clicking a row opens the per-action grading
     drawer. Locals: groups (Array of [stage, actions]), pokemon_by_slug, grades
-    (lookup of action_id => { grader => ActionGrade }). %>
+    (lookup of action_id => { grader => ActionGrade }), agents_by_slug (soul slug =>
+    Agent) and agent_slug_by_action (action_id => the acting soul slug INHERITED
+    from the action's span) for the stacked acting-soul-over-base-mascot Agent
+    cell — both default empty, so an action with no span-soul shows just its
+    mascot. %>
 <% pokemon_by_slug ||= {} %>
+<% agents_by_slug ||= {} %>
+<% agent_slug_by_action ||= {} %>
 <% grades ||= {} %>
 <%# Ids of the 2nd+ tool-call of each shared source_turn_uuid, whose tokens/cost merely
     inherit the turn's spend — the view fades those cells. Computed session-wide by the
@@ -24,7 +30,7 @@
         <th>Result</th>
         <th>Stage</th>
         <th>Task</th>
-        <th>Pokémon</th>
+        <th>Agent</th>
         <th>Model</th>
         <th>Tokens</th>
         <th>Cost</th>
@@ -53,6 +59,7 @@
         <% actions.each do |action| %>
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
           <% pokemon = pokemon_by_slug[action.mascot] %>
+          <% action_soul = agent_slug_by_action[action.id] %>
           <% row_grades = grades[action.id] || {} %>
           <% turn_shared = shared_turn_ids.include?(action.id) %>
           <tr class="hb-row" data-test="heartbeat-row" data-seq="<%= action.seq %>" x-show="open"
@@ -63,13 +70,8 @@
             <td><span class="hb-result"><%= action.result_slug.presence || "—" %></span></td>
             <td class="hb-meta hb-stage-cell" title="<%= meta[:description] %>"><%= meta[:label] %></td>
             <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
-            <td>
-              <% if action.mascot.present? %>
-                <span class="hb-mascot">&#10022; <%= pokemon&.name || action.mascot.titleize %></span>
-              <% else %>
-                <span class="hb-meta">—</span>
-              <% end %>
-            </td>
+            <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: pokemon,
+                                         agent_slug: action_soul, agent: agents_by_slug[action_soul]) %></td>
             <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
             <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>

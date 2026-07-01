@@ -211,6 +211,53 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "tbody[data-test=heartbeat-unlabeled] tr[data-seq='1'] td.hb-turn-shared", 2
   end
 
+  test "[component] the mascot column header now reads Agent" do
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "thead th", text: "Agent"
+    assert_select "thead th", text: "Pokémon", count: 0
+  end
+
+  test "[component] a span with an acting soul stacks the soul over the base mascot" do
+    avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋", "color" => "#FB7185" })
+    ev   = event(seq: 0, mascot: "shellder", agent: "avi", closed_at: Time.current, outcome_slug: "reviewed")
+    poke = Pokemon.new(slug: "shellder", name: "Shellder")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: { "shellder" => poke },
+                     agents_by_slug: { "avi" => avi } }
+
+    # the acting soul renders server-side (Nokogiri-visible) ON TOP
+    assert_select "[data-test=agent-stack]"
+    assert_select "[data-test=agent-soul][data-soul=avi]", text: /Avi/
+    # the base session mascot renders BENEATH, inside the same stack
+    assert_select "[data-test=agent-stack] [data-test=event-mascot]", text: /Shellder/
+  end
+
+  test "[component] a span with no acting soul renders just the base mascot (no stack)" do
+    ev = event(seq: 0, mascot: "sandshrew", agent: nil, closed_at: Time.current, outcome_slug: "done")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "[data-test=agent-stack]", false
+    assert_select "[data-test=agent-soul]", false
+    assert_select "[data-test=event-mascot]", text: /Sandshrew/
+  end
+
+  test "[component] drill-down actions inherit their span's acting soul" do
+    avi = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋" })
+    ev  = event(seq: 0, mascot: "shellder", agent: "avi", closed_at: Time.current, outcome_slug: "reviewed")
+    a1  = action(atomic_event_id: ev.id, seq: 0, mascot: "shellder", kind: "read")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {},
+                     agents_by_slug: { "avi" => avi } }
+
+    assert_select "tr[data-test=heartbeat-event-action] [data-test=agent-soul][data-soul=avi]"
+  end
+
   test "[component] a span's existing grade markers render server-side from event_grades" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
     grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
