@@ -13,6 +13,10 @@
 <% pokemon_by_slug ||= {} %>
 <% unlabeled ||= [] %>
 <% event_grades ||= {} %>
+<%# Session-level dup flags: ids of the 2nd+ tool-call of each shared source_turn_uuid,
+    whose tokens/cost merely inherit the turn's spend — the controller walks the whole
+    session so a turn split across spans still fades every row after its first. %>
+<% shared_turn_ids ||= Set.new %>
 <div class="hb-scroll">
   <table class="hb-tbl hb-evt-tbl" data-test="heartbeat-event-table">
     <thead>
@@ -84,6 +88,7 @@
           <% actions.each do |action| %>
             <% outcome = heartbeat_outcome_meta(action.outcome) %>
             <% action_pokemon = pokemon_by_slug[action.mascot] %>
+            <% turn_shared = shared_turn_ids.include?(action.id) %>
             <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
                 style="--hb-edge: <%= outcome[:color] %>"
                 @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -103,8 +108,8 @@
                 <% end %>
               </td>
               <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
-              <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
-              <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+              <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
+              <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
               <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
               <td class="hb-meta">&mdash;</td>
               <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
@@ -140,6 +145,7 @@
         <% unlabeled.each do |action| %>
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
           <% action_pokemon = pokemon_by_slug[action.mascot] %>
+          <% turn_shared = shared_turn_ids.include?(action.id) %>
           <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
               style="--hb-edge: <%= outcome[:color] %>"
               @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -159,8 +165,8 @@
               <% end %>
             </td>
             <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+            <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
+            <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
             <td class="hb-meta">&mdash;</td>
             <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>

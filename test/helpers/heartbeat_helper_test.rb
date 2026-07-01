@@ -220,4 +220,44 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "", heartbeat_pretty_json("")
     assert_equal "   ", heartbeat_pretty_json("   ")
   end
+
+  # Persisted so each action carries a real id — heartbeat_shared_turn_ids keys the
+  # duplicate set by action.id (the flag the row partial checks).
+  def turn_action(**attrs)
+    AtomicAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
+                           occurred_at: Time.current, seq: attrs.fetch(:seq, 0) }.merge(attrs))
+  end
+
+  test "[unit] shared turn ids flag every action AFTER a turn's first, primary excluded" do
+    # One assistant turn fired three parallel tool-calls (all carry turn-A's usage);
+    # a fourth action is the only call of turn-B.
+    first  = turn_action(seq: 0, source_turn_uuid: "turn-A")
+    second = turn_action(seq: 1, source_turn_uuid: "turn-A")
+    third  = turn_action(seq: 2, source_turn_uuid: "turn-A")
+    solo   = turn_action(seq: 3, source_turn_uuid: "turn-B")
+
+    dups = heartbeat_shared_turn_ids([first, second, third, solo])
+
+    refute_includes dups, first.id, "the turn's first action is the primary, never faded"
+    assert_includes dups, second.id
+    assert_includes dups, third.id
+    refute_includes dups, solo.id, "a turn with a single action has no duplicate"
+  end
+
+  test "[unit] blank source_turn_uuid actions are each their own primary, never shared" do
+    a = turn_action(seq: 0, source_turn_uuid: nil)
+    b = turn_action(seq: 1, source_turn_uuid: "")
+
+    assert_empty heartbeat_shared_turn_ids([a, b])
+  end
+
+  test "[unit] the primary is the FIRST in the given (chronological) order" do
+    early = turn_action(seq: 0, source_turn_uuid: "turn-Z")
+    late  = turn_action(seq: 1, source_turn_uuid: "turn-Z")
+
+    dups = heartbeat_shared_turn_ids([early, late])
+
+    refute_includes dups, early.id, "the earliest action of the turn keeps its color"
+    assert_includes dups, late.id
+  end
 end

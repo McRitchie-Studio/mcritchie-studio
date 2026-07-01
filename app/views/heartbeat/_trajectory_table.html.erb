@@ -11,6 +11,10 @@
     (lookup of action_id => { grader => ActionGrade }). %>
 <% pokemon_by_slug ||= {} %>
 <% grades ||= {} %>
+<%# Ids of the 2nd+ tool-call of each shared source_turn_uuid, whose tokens/cost merely
+    inherit the turn's spend — the view fades those cells. Computed session-wide by the
+    controller (heartbeat_shared_turn_ids); defaults to none for a standalone render. %>
+<% shared_turn_ids ||= Set.new %>
 <div class="hb-scroll">
   <table class="hb-tbl" data-test="heartbeat-table">
     <thead>
@@ -50,6 +54,7 @@
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
           <% pokemon = pokemon_by_slug[action.mascot] %>
           <% row_grades = grades[action.id] || {} %>
+          <% turn_shared = shared_turn_ids.include?(action.id) %>
           <tr class="hb-row" data-test="heartbeat-row" data-seq="<%= action.seq %>" x-show="open"
               style="--hb-edge: <%= outcome[:color] %>"
               @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -66,8 +71,8 @@
               <% end %>
             </td>
             <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+            <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
+            <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <td><span class="hb-actor" title="<%= heartbeat_actor_description(action.actor) %>"><%= action.actor %></span></td>
             <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
             <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::ALEX, grade: row_grades[ActionGrade::ALEX] %>

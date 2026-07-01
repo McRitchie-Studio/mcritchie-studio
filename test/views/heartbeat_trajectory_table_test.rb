@@ -59,4 +59,19 @@ class HeartbeatTrajectoryTableTest < ActionView::TestCase
                      pokemon_by_slug: { "mr-mime" => poke } }
     assert_includes rendered, "Mr. Mime"
   end
+
+  test "a shared turn fades the tokens and cost cells of the later action, not the first" do
+    first  = action(seq: 0, stage: "building", source_turn_uuid: "turn-A",
+                    tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    second = action(seq: 1, stage: "building", source_turn_uuid: "turn-A",
+                    tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    shared = Set.new([second.id])
+
+    render partial: "heartbeat/trajectory_table",
+           locals: { groups: [["building", [first, second]]], pokemon_by_slug: {},
+                     shared_turn_ids: shared }
+
+    assert_select "tr[data-seq='0'] td.hb-turn-shared", false
+    assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
+  end
 end

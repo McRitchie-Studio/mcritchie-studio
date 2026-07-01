@@ -18,6 +18,13 @@ class HeartbeatController < ApplicationController
     @session_id = params[:session_id].presence || latest_session_id
     @actions = @session_id ? AtomicAction.for_session(@session_id).chronological.to_a : []
 
+    # Usage is metered per assistant TURN, so a turn's fan-out of tool-calls all
+    # carry that turn's tokens/cost and render identical numbers. Flag the
+    # non-primary rows of each source_turn_uuid (walked chronologically across the
+    # WHOLE session) so the views fade their tokens/cost cells — the numbers are
+    # inherited, not additive. Purely presentational; no total changes.
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(@actions)
+
     # The primary rows are now agent-narrated EVENT SPANS, not raw tool-calls. Each
     # event rolls up the actions attributed to it (atomic_event_id); the actions the
     # agent never narrated (null atomic_event_id) fall into the read-only "Unlabeled"
