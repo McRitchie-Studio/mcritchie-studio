@@ -1,0 +1,32 @@
+<%# Inline quick-grade for a span — the good/not disposition radios for ONE grader
+    (Alex, or the McRitchie audit of Alex). The span analogue of the per-action
+    _feedback_cell radios: they POST grader + disposition to E2's JSON grade_event
+    endpoint via the span row's `quickGrade` fetch (@change), which dispatches
+    hb:span-graded so the row's live markers update in place. The fuller "grade ▸"
+    drawer stays the home for the slug / long-form / bank detail — these are the fast
+    lane. The checked state is server-rendered (Nokogiri-visible, no-JS correct) and
+    bound to the row's Alpine `grades.<grader>` so a drawer/quick save syncs it live.
+    Locals: event, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+<form action="<%= heartbeat_event_grade_path(event) %>" method="post"
+      class="hb-radioform hb-evtquick-form" data-test="event-inline-grade"
+      data-grader="<%= grader %>" @submit.prevent>
+  <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
+  <input type="hidden" name="grader" value="<%= grader %>">
+  <span class="hb-evtquick-role"><%= grader == "mcr" ? "M" : "A" %></span>
+  <span class="hb-radiogrp" @click.stop>
+    <label class="hb-rb <%= "on-good" if grade&.good? %>"
+           :class="{ 'on-good': grades.<%= grader %> && grades.<%= grader %>.disposition === 'good' }">
+      <input type="radio" name="disposition" value="good" <%= "checked" if grade&.good? %>
+             :checked="grades.<%= grader %> && grades.<%= grader %>.disposition === 'good'"
+             @change="quickGrade($event)">
+      Good
+    </label>
+    <label class="hb-rb <%= "on-not" if grade&.not_good? %>"
+           :class="{ 'on-not': grades.<%= grader %> && grades.<%= grader %>.disposition === 'not' }">
+      <input type="radio" name="disposition" value="not" <%= "checked" if grade&.not_good? %>
+             :checked="grades.<%= grader %> && grades.<%= grader %>.disposition === 'not'"
+             @change="quickGrade($event)">
+      Not
+    </label>
+  </span>
+</form>

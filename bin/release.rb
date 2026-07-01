@@ -122,6 +122,11 @@ require_relative "../lib/task_usage_baseline"
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
 
+# The self-narration CLI this deploy lane opens+closes role spans through (see
+# narrate_span). Same bin the session narrates with — which the capture hook DROPS
+# from raw actions, so only the resulting SPAN shows on the heartbeat.
+ATOMIC_EVENT = File.expand_path("atomic-event", __dir__)
+
 # The persistent per-repo integration branch (same name in every repo). Mirrors
 # Release::BRANCH on the record side — feature PRs merge into it, QA deploys from
 # it, ship fast-forwards it into main.
@@ -301,6 +306,37 @@ def with_conductor_session(ruby)
   return ruby unless sid
 
   "Current.try(:conductor_session_id=, #{sid.inspect}); #{ruby}"
+end
+
+# --- deploy-lane self-narration (best-effort) -------------------------------
+# Open+close an AtomicEvent SPAN around a release phase, stamped with the ROLE
+# soul the board already attributes that phase to — Steffon assembles (prepare),
+# Avi ships — so the heartbeat's deploy spans match the board's stage timeline.
+# Narrated through bin/atomic-event (the SAME path the session narrates with,
+# which the capture hook DROPS from raw actions, so only the resulting span
+# shows). BEST-EFFORT + NON-FATAL: telemetry must never break a release, so a
+# missing bin, a down endpoint, or any error is swallowed. Skipped under
+# --dry-run (a preview narrates nothing) and when no conductor session is
+# resolvable (nothing to attribute the span to).
+
+# Fire one bin/atomic-event subcommand, best-effort. atomic-event itself always
+# exits 0; we still swallow everything and redirect its stdout/stderr so the
+# narration never disturbs the release log or aborts the run.
+def atomic_event(*args)
+  return if DRY
+  return unless conductor_session_id # no session → nothing to narrate
+
+  system(ATOMIC_EVENT, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+def open_role_span(agent, reason)
+  atomic_event("start", "--category", "Remote", "--reason", reason, "--agent", agent)
+end
+
+def close_role_span(outcome)
+  atomic_event("end", "--outcome", outcome)
 end
 
 # Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.
@@ -839,6 +875,13 @@ def prepare
   # --dry-run (previews nothing-executed), so both bypass the prompt.
   return unless confirm("Prepare the current release — assemble + deploy origin/#{RELEASE_BRANCH} to QA?")
 
+  # Deploy-lane narration: Steffon assembles the RC + deploys it to QA. Open a role
+  # span so the heartbeat attributes this phase to him (matching the board's stage
+  # timeline). Best-effort — see the narrate helpers. `steffon_span` gates the close
+  # in the rescue so an abort BEFORE this point never emits a stray `end`.
+  open_role_span("steffon", "assemble → deploy RC to QA")
+  steffon_span = true
+
   # 1. Record: CURATE the active release (adopt any explicit --task first), then
   #    read the per-REPO deploy plan (producer-first; one group per repo). The
   #    assemble is DEFERRED to step 4 — after wait_for_boot confirms QA is up — so
@@ -1045,6 +1088,12 @@ def prepare
   end
   say("")
   say("  Review the QA app(s) above, then `bin/release ship`.")
+  close_role_span("assembled #{rel_slug} → QA")
+rescue SystemExit
+  # An abort mid-prepare closes the Steffon span with the abort outcome (best-effort)
+  # before re-raising, so the heartbeat span resolves instead of hanging open.
+  close_role_span("prepare aborted before assemble") if steffon_span
+  raise
 end
 
 # --- ship (multi-repo, producer-first) -------------------------------------
@@ -1554,6 +1603,7 @@ end
 def ship
   by = opt_value("--by") || ENV["USER"] || "operator"
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
+  avi_span = false # set once the Avi deploy-lane span opens (gates its close)
 
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
@@ -1608,6 +1658,13 @@ def ship
   record_release_event(rel_slug, "ship_authorized", "started", actor: by)
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
   record_release_event(rel_slug, "ship_authorized", "completed", actor: by)
+
+  # Deploy-lane narration: the ship is authorized — Avi is shipping to prod. Open a
+  # role span (best-effort) so the heartbeat attributes the deploy to him, matching
+  # the board's Avi→shipped intent recorded just below. Opened AFTER ship authority
+  # so a declined ship never shows Avi shipping.
+  open_role_span("avi", "ship → prod")
+  avi_span = true
 
   # 2c. The ship is now authorized + proceeding — record the Avi → shipped intent for
   #     every member so /deployments shows him shipping LIVE (a green ticking timer)
@@ -1685,7 +1742,12 @@ def ship
   #    already succeeded; a primary carrying uncommitted/unpushed work is REFUSED
   #    and left for the operator.
   restore_primaries(app_groups)
+  close_role_span("shipped #{rel_slug} → prod")
 rescue SystemExit => e
+  # Close the Avi span on a partial-ship abort too (best-effort) so the heartbeat
+  # span resolves instead of hanging open. Gated by avi_span so an abort BEFORE the
+  # span opened (e.g. no active release) never emits a stray `end`.
+  close_role_span("ship aborted partway") if avi_span
   # Partial-ship recovery: abort! (Kernel#abort) raised SystemExit mid-train. The
   # abort message already printed; add what's live + the idempotent re-run path.
   raise if DRY # a dry-run abort (e.g. no active release) surfaces as-is

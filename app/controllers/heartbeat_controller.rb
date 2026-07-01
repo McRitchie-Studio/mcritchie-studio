@@ -14,9 +14,20 @@ class HeartbeatController < ApplicationController
   # alex_heartbeat_path, which routes here.
   skip_before_action :require_authentication
 
+  # Page size for the cross-session All Spans view — the operator asked for 100
+  # spans per page.
+  ALL_SPANS_PER_PAGE = 100
+
   def show
     @session_id = params[:session_id].presence || latest_session_id
     @actions = @session_id ? AtomicAction.for_session(@session_id).chronological.to_a : []
+
+    # Usage is metered per assistant TURN, so a turn's fan-out of tool-calls all
+    # carry that turn's tokens/cost and render identical numbers. Flag the
+    # non-primary rows of each source_turn_uuid (walked chronologically across the
+    # WHOLE session) so the views fade their tokens/cost cells — the numbers are
+    # inherited, not additive. Purely presentational; no total changes.
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(@actions)
 
     # The primary rows are now agent-narrated EVENT SPANS, not raw tool-calls. Each
     # event rolls up the actions attributed to it (atomic_event_id); the actions the
@@ -30,8 +41,35 @@ class HeartbeatController < ApplicationController
 
     @sessions = session_options
     @pokemon_by_slug = pokemon_lookup(@actions, @events)
+    @agents_by_slug = agent_soul_lookup(@events)
     @event_grades = event_grade_lookup(@events)
     @counts = grade_counts(@session_id)
+  end
+
+  # Every narrated AtomicEvent SPAN across ALL sessions, newest-first, paginated
+  # 100 per page — the cross-session companion to #show (which scopes to one
+  # session). Reuses the SAME span table partial: one page of spans, each rolling
+  # up the raw actions attributed to it (one grouped query, no N+1). There is no
+  # "Unlabeled" group here — that is per-session context (null-span actions have no
+  # coherent place in a newest-first cross-session list), so exactly one Unlabeled
+  # group is never exceeded. Read-only meta surface, like #show.
+  def all_spans
+    @page  = [params[:page].to_i, 1].max
+    scope  = AtomicEvent.order(opened_at: :desc, seq: :desc, id: :desc)
+    @total = scope.count
+    @events = scope.offset((@page - 1) * ALL_SPANS_PER_PAGE).limit(ALL_SPANS_PER_PAGE).to_a
+
+    actions_by_event = AtomicAction.where(atomic_event_id: @events.map(&:id))
+                                   .chronological.to_a.group_by(&:atomic_event_id)
+    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
+
+    page_actions = actions_by_event.values.flatten
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(page_actions)
+    @pokemon_by_slug = pokemon_lookup(page_actions, @events)
+    @agents_by_slug  = agent_soul_lookup(@events)
+    @event_grades    = event_grade_lookup(@events)
+    @has_prev = @page > 1
+    @has_next = @page * ALL_SPANS_PER_PAGE < @total
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
@@ -166,6 +204,18 @@ class HeartbeatController < ApplicationController
     return {} if slugs.empty?
 
     Pokemon.where(slug: slugs).index_by(&:slug)
+  end
+
+  # One query for every acting SOUL on the page so the stacked Agent column reuses
+  # the seeded Agent identity (name/emoji/status_color) instead of N+1 lookups. A
+  # span's `agent` is the soul that acted (avi/carl/…); the drill-down actions
+  # inherit their span's agent, so this single lookup covers both. Most spans carry
+  # a nil agent (the base session mascot did it), so the set is usually tiny/empty.
+  def agent_soul_lookup(events)
+    slugs = events.filter_map { |event| event.agent.presence }.uniq
+    return {} if slugs.empty?
+
+    Agent.where(slug: slugs).index_by(&:slug)
   end
 
   # Every span's current grades in one query, grouped by event id then keyed by

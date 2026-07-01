@@ -1,18 +1,27 @@
 <%# The agent-narrated event-span table — the PRIMARY heartbeat rows. Each row is an
-    AtomicEvent: its category badge, the narrated reason -> outcome (an OPEN span shows
-    the in-progress placeholder plus a distinct "open" status badge, a closed one its
-    outcome_slug), the span's mascot, and the tokens/cost/model ROLLED UP from the raw
-    tool-calls attributed to it (summed in the controller-loaded @event_rows array — no
+    AtomicEvent: its category badge, the narrated reason -> outcome (now STACKED two
+    lines — reason on top, "-> outcome" beneath — to save horizontal width; an OPEN
+    span shows the in-progress placeholder plus a distinct "open" status badge), the
+    stacked-avatar Agent cell, and a MERGED Model / Tokens column (model on top, the
+    rolled-up in/out tokens beneath) plus Cost — all rolled up from the raw tool-calls
+    attributed to the span (summed in the controller-loaded @event_rows array — no
     per-row query). Each span is a collapsible tbody (Alpine, default collapsed);
-    expanding it drills into those raw atomic_actions read-only. A "grade" affordance on
-    each span opens the span-grading drawer (mirrors the per-action drawer). Raw actions
-    the agent never narrated (a null atomic_event_id) fall into the trailing "Unlabeled"
-    group. Locals: event_rows (Array of [AtomicEvent, [AtomicAction, ...]]), unlabeled
-    (Array of AtomicAction), pokemon_by_slug, event_grades (event_id => { grader =>
-    ActionGrade }). %>
+    expanding it drills into those raw atomic_actions read-only. Each span carries
+    inline good/not quick-grade radios (Alex + McRitchie, POSTing to the E2 grade_event
+    endpoint) plus a "grade" affordance opening the fuller span-grading drawer. Raw
+    actions the agent never narrated (a null atomic_event_id) fall into the single
+    trailing "Unlabeled" group. Locals: event_rows (Array of [AtomicEvent,
+    [AtomicAction, ...]]), unlabeled (Array of AtomicAction), pokemon_by_slug,
+    agents_by_slug (soul slug => Agent, for the stacked acting-soul-over-base-mascot
+    Agent cell), event_grades (event_id => { grader => ActionGrade }). %>
 <% pokemon_by_slug ||= {} %>
+<% agents_by_slug ||= {} %>
 <% unlabeled ||= [] %>
 <% event_grades ||= {} %>
+<%# Session-level dup flags: ids of the 2nd+ tool-call of each shared source_turn_uuid,
+    whose tokens/cost merely inherit the turn's spend — the controller walks the whole
+    session so a turn split across spans still fades every row after its first. %>
+<% shared_turn_ids ||= Set.new %>
 <div class="hb-scroll">
   <table class="hb-tbl hb-evt-tbl" data-test="heartbeat-event-table">
     <thead>
@@ -20,9 +29,8 @@
         <th>#</th>
         <th>Span</th>
         <th>Narration</th>
-        <th>Pok&eacute;mon</th>
-        <th>Model</th>
-        <th>Tokens</th>
+        <th>Agent</th>
+        <th>Model / Tokens</th>
         <th>Cost</th>
         <th>Status</th>
         <th>Actions</th>
@@ -55,24 +63,24 @@
             <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= event.category %></span>
             <div class="hb-meta hb-mono hb-evttime" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></div>
           </td>
-          <td class="hb-span">
-            <span class="hb-slug"><%= event.reason_slug %></span>
-            <span class="hb-arrow">&rarr;</span>
-            <% if event.open? || event.outcome_slug.blank? %>
-              <span class="hb-inprogress" data-test="event-in-progress"><%= heartbeat_event_outcome(event) %></span>
-            <% else %>
-              <span class="hb-result"><%= event.outcome_slug %></span>
-            <% end %>
+          <td class="hb-span hb-narr">
+            <span class="hb-narrline hb-slug"><%= event.reason_slug %></span>
+            <span class="hb-narrline hb-narr-result">
+              <span class="hb-arrow">&rarr;</span>
+              <% if event.open? || event.outcome_slug.blank? %>
+                <span class="hb-inprogress" data-test="event-in-progress"><%= heartbeat_event_outcome(event) %></span>
+              <% else %>
+                <span class="hb-result"><%= event.outcome_slug %></span>
+              <% end %>
+            </span>
           </td>
-          <td>
-            <% if mascot_slug.present? %>
-              <span class="hb-mascot" data-test="event-mascot">&#10022; <%= pokemon&.name || mascot_slug.titleize %></span>
-            <% else %>
-              <span class="hb-meta">&mdash;</span>
-            <% end %>
+          <td><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
+                                       agent_slug: event.agent, agent: agents_by_slug[event.agent],
+                                       mascot_test: "event-mascot") %></td>
+          <td class="hb-meta hb-mono hb-modeltok">
+            <span class="hb-mt-model" data-test="event-model" title="<%= totals[:model].presence || "no model (board / harness steps only)" %>"><%= heartbeat_model_short(totals[:model]) %></span>
+            <span class="hb-mt-tokens" data-test="event-tokens"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></span>
           </td>
-          <td class="hb-meta hb-mono" data-test="event-model" title="<%= totals[:model].presence || "no model (board / harness steps only)" %>"><%= heartbeat_model_short(totals[:model]) %></td>
-          <td class="hb-meta hb-mono" data-test="event-tokens"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></td>
           <td class="hb-meta hb-mono" data-test="event-cost"><%= heartbeat_cost(totals[:cost]) %></td>
           <td><span class="hb-outcome" data-test="event-status" style="color: <%= status[:color] %>"><%= status[:label] %></span></td>
           <td class="hb-meta"><span class="hb-count" data-test="event-action-count"><%= pluralize(actions.size, "action") %></span></td>
@@ -84,6 +92,7 @@
           <% actions.each do |action| %>
             <% outcome = heartbeat_outcome_meta(action.outcome) %>
             <% action_pokemon = pokemon_by_slug[action.mascot] %>
+            <% turn_shared = shared_turn_ids.include?(action.id) %>
             <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
                 style="--hb-edge: <%= outcome[:color] %>"
                 @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -95,16 +104,14 @@
                   <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
                 <% end %>
               </td>
-              <td>
-                <% if action.mascot.present? %>
-                  <span class="hb-mascot hb-submascot">&#10022; <%= action_pokemon&.name || action.mascot.titleize %></span>
-                <% else %>
-                  <span class="hb-meta">&mdash;</span>
-                <% end %>
-              </td>
-              <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
-              <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
-              <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+              <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon,
+                                           agent_slug: event.agent, agent: agents_by_slug[event.agent],
+                                           submascot: true) %></td>
+              <%= tag.td class: class_names("hb-meta", "hb-mono", "hb-modeltok", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) do %>
+                <span class="hb-mt-model" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></span>
+                <span class="hb-mt-tokens"><%= heartbeat_tokens(action) %></span>
+              <% end %>
+              <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
               <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
               <td class="hb-meta">&mdash;</td>
               <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
@@ -114,7 +121,7 @@
         <% else %>
           <tr class="hb-subrow hb-subempty" x-show="open">
             <td class="hb-seq">&mdash;</td>
-            <td colspan="10" class="hb-meta">No raw actions attributed to this span.</td>
+            <td colspan="9" class="hb-meta">No raw actions attributed to this span.</td>
           </tr>
         <% end %>
       </tbody>
@@ -132,7 +139,6 @@
           <td class="hb-meta">&mdash;</td>
           <td class="hb-meta">&mdash;</td>
           <td class="hb-meta">&mdash;</td>
-          <td class="hb-meta">&mdash;</td>
           <td class="hb-meta"><span class="hb-count" data-test="event-action-count"><%= pluralize(unlabeled.size, "action") %></span></td>
           <td class="hb-meta">&mdash;</td>
           <td class="hb-meta">&mdash;</td>
@@ -140,6 +146,7 @@
         <% unlabeled.each do |action| %>
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
           <% action_pokemon = pokemon_by_slug[action.mascot] %>
+          <% turn_shared = shared_turn_ids.include?(action.id) %>
           <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
               style="--hb-edge: <%= outcome[:color] %>"
               @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -151,16 +158,12 @@
                 <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
               <% end %>
             </td>
-            <td>
-              <% if action.mascot.present? %>
-                <span class="hb-mascot hb-submascot">&#10022; <%= action_pokemon&.name || action.mascot.titleize %></span>
-              <% else %>
-                <span class="hb-meta">&mdash;</span>
-              <% end %>
-            </td>
-            <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+            <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon, submascot: true) %></td>
+            <%= tag.td class: class_names("hb-meta", "hb-mono", "hb-modeltok", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) do %>
+              <span class="hb-mt-model" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></span>
+              <span class="hb-mt-tokens"><%= heartbeat_tokens(action) %></span>
+            <% end %>
+            <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
             <td class="hb-meta">&mdash;</td>
             <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>

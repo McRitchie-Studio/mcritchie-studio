@@ -62,6 +62,23 @@ class AtomicCaptureHook
   # navigation when its command's first token is cd / pushd / popd / pwd.
   NAV_COMMAND = /\A\s*(?:cd|pushd|popd|pwd)\b/.freeze
 
+  # NARRATION is DROPPED too — a Bash call whose invocation IS `bin/atomic-event`
+  # (the agent's self-narration CLI) is the span machinery itself, not work. The
+  # PostToolUse hook fires on that call like any other, so storing it as a raw
+  # action drops it into "Unlabeled" (it owns no span — it declares one). So we
+  # drop it, exactly like navigation. Matches ONLY an atomic-event INVOCATION —
+  # any path prefix (`/abs/…/bin/atomic-event`, `./bin/atomic-event`) and optional
+  # leading `ENV=val` assignments — never a command that merely MENTIONS the string
+  # (`grep atomic-event`, `cat bin/atomic-event`, editing the file). A `cd … &&
+  # bin/atomic-event` already drops as navigation (first token `cd`).
+  NARRATION_COMMAND = %r{
+    \A\s*
+    (?:\w+=\S*\s+)*   # optional leading ENV=val assignments
+    (?:[^\s]*/)?      # optional path prefix (/abs/…/, ./, ../…)
+    bin/atomic-event
+    (?:\s|\z)         # a bare invocation, or followed by args/whitespace
+  }x.freeze
+
   # Truncate input/output to ≈3KB (within the task's 2-4KB cap) so a giant file
   # read or command dump never bloats a row.
   MAX_FIELD_BYTES = 3000
@@ -90,17 +107,26 @@ class AtomicCaptureHook
   # ── Pure builders (unit-tested directly) ─────────────────────────────────
 
   # Map a PostToolUse event hash → the flat AtomicAction.capture payload.
-  # task_slug / stage / mascot come from the active-feature marker; tokens, cost,
-  # and event/result slugs are intentionally absent (a hook can't know them).
+  # task_slug / stage / mascot come from the active-feature marker; model + token
+  # usage + the source turn id come from the SAME assistant transcript line (read
+  # once here). tokens_in/out are the FRESH spend and cache_read_tokens the re-used
+  # context (kept apart so cost prices the cache tier correctly); cost itself is
+  # derived server-side and event/result slugs stay absent (a hook can't know them).
   def build_payload(event, now: Time.now.utc)
     marker = resolve_marker(cwd: event["cwd"], session_id: event["session_id"])
+    turn   = resolve_assistant_turn(event)
+    usage  = turn_usage(turn["usage"])
     {
       "session_id" => event["session_id"],
       "kind" => map_kind(event["tool_name"]),
       "task_slug" => marker["task_slug"],
       "stage" => marker["stage"],
       "mascot" => marker["mascot"],
-      "model" => resolve_model(event),
+      "model" => resolve_model(event, turn),
+      "tokens_in" => usage[:tokens_in],
+      "tokens_out" => usage[:tokens_out],
+      "cache_read_tokens" => usage[:cache_read_tokens],
+      "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
       "input" => truncate(serialize(event["tool_input"])),
       "output" => truncate(serialize(event["tool_response"])),
       "outcome" => outcome_for(event["tool_response"]),
@@ -117,23 +143,45 @@ class AtomicCaptureHook
   # The session model, or nil — best-effort and never raises. Order: a direct
   # payload field (`model` / nested `message.model`) if a future Claude Code adds
   # one, else the most recent assistant `message.model` in the transcript the
-  # payload's `transcript_path` points at. nil ⇒ the capture endpoint drops the key
-  # and the column stays null (no fabrication — we only ever stamp a REAL model).
-  def resolve_model(event)
+  # payload's `transcript_path` points at. Reuses a turn already read for this
+  # payload when passed one (build_payload reads the transcript once). nil ⇒ the
+  # capture endpoint drops the key and the column stays null (no fabrication — we
+  # only ever stamp a REAL model).
+  def resolve_model(event, turn = nil)
     direct = event["model"] || event.dig("message", "model")
     return direct if present?(direct)
 
-    read_model_from_transcript(event["transcript_path"])
+    turn ||= resolve_assistant_turn(event)
+    model = turn["model"]
+    present?(model) ? model : nil
   rescue StandardError
     nil
   end
 
-  # Scan the TAIL of the transcript JSONL for the newest assistant line's
-  # `message.model`. Reads at most TRANSCRIPT_TAIL_BYTES off the end (dropping a
-  # leading partial line), parses lines back-to-front, and returns the first model
-  # found. Bounded + best-effort so a huge or missing transcript never stalls or
-  # breaks the hook.
+  # The newest assistant turn from the transcript as { "model", "usage", "uuid" },
+  # or {} — the single source of both the model and the token usage a payload
+  # stamps. Best-effort and never raises.
+  def resolve_assistant_turn(event)
+    read_assistant_turn_from_transcript(event["transcript_path"]) || {}
+  rescue StandardError
+    {}
+  end
+
+  # Model-only helper kept for callers/tests that just want the model string.
   def read_model_from_transcript(path)
+    turn = read_assistant_turn_from_transcript(path)
+    turn && turn["model"]
+  end
+
+  # Scan the TAIL of the transcript JSONL for the newest assistant line carrying a
+  # `message.model`, and return that SAME line's { "model", "usage", "uuid" } — the
+  # model, its `message.usage` block, and the line's `uuid` (the assistant turn id).
+  # Model and usage MUST come from one line: usage belongs to the turn that issued
+  # the tool call. Reads at most TRANSCRIPT_TAIL_BYTES off the end (dropping a
+  # leading partial line), parses lines back-to-front. Bounded + best-effort so a
+  # huge or missing transcript never stalls or breaks the hook. nil when no
+  # model-bearing line is found.
+  def read_assistant_turn_from_transcript(path)
     return nil unless present?(path) && File.file?(path)
 
     size = File.size(path)
@@ -155,22 +203,66 @@ class AtomicCaptureHook
       next unless parsed.is_a?(Hash)
 
       model = parsed.dig("message", "model")
-      return model if present?(model)
+      next unless present?(model)
+
+      return {
+        "model" => model,
+        "usage" => parsed.dig("message", "usage"),
+        "uuid"  => parsed["uuid"]
+      }
     end
     nil
   rescue StandardError
     nil
   end
 
+  # Fold an assistant turn's `message.usage` into the AtomicAction token contract,
+  # keeping FRESH spend and RE-USED context apart:
+  #   * tokens_in  = input + cache_creation — the fresh prompt-side tokens actually
+  #     processed this turn (cache_creation folded in at 1x; its true rate is 1.25x,
+  #     an accepted best-effort so we don't split a third tier).
+  #   * tokens_out = output.
+  #   * cache_read_tokens = cache_read — context re-read from the prompt cache. It
+  #     is NOT part of the displayed token count (that's the fresh in/out), only of
+  #     cost, priced server-side at the cache-read tier (10% of the input rate).
+  # Lumping cache_read into tokens_in is what overstated a long session as ~300K
+  # tokens/action and priced it ~10x; splitting it here is the fix. Missing /
+  # non-hash usage yields all-zero. Never raises.
+  def turn_usage(usage)
+    usage = usage.is_a?(Hash) ? usage : {}
+    tokens_in = usage["input_tokens"].to_i + usage["cache_creation_input_tokens"].to_i
+    {
+      tokens_in: tokens_in,
+      tokens_out: usage["output_tokens"].to_i,
+      cache_read_tokens: usage["cache_read_input_tokens"].to_i
+    }
+  rescue StandardError
+    { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
+  end
+
   # True when the event is a NAVIGATION tool-call (dropped, never POSTed): a Bash
   # call whose command's first token is cd / pushd / popd / pwd. Anything else —
   # including every non-Bash tool — is not navigation.
   def navigation?(event)
-    return false unless event["tool_name"].to_s == "Bash"
+    NAV_COMMAND.match?(bash_command(event))
+  end
 
-    command = event.fetch("tool_input") { {} }
-    command = command.is_a?(Hash) ? command["command"].to_s : ""
-    NAV_COMMAND.match?(command)
+  # True when the event is a NARRATION tool-call (dropped, never POSTed): a Bash
+  # call whose invocation IS `bin/atomic-event` (the self-narration CLI is the span
+  # machinery, not work). Non-Bash tools and commands that merely mention the string
+  # are NOT narration. See NARRATION_COMMAND.
+  def narration?(event)
+    NARRATION_COMMAND.match?(bash_command(event))
+  end
+
+  # The Bash command string for an event, or "" for a non-Bash tool / missing
+  # input. The shared extractor behind navigation?/narration? — an empty string
+  # matches neither pattern, so a non-Bash tool is never dropped.
+  def bash_command(event)
+    return "" unless event["tool_name"].to_s == "Bash"
+
+    input = event.fetch("tool_input") { {} }
+    input.is_a?(Hash) ? input["command"].to_s : ""
   end
 
   # JSON-encode anything that isn't already a string (the contract columns are
@@ -209,18 +301,28 @@ class AtomicCaptureHook
     OK
   end
 
-  # Resolve task_slug / stage / mascot the way bin/statusline + bin/agent-marker
-  # do: the nearest .agent-context.json walking up from the tool's cwd (the
-  # worktree desk) wins; else the per-session marker keyed by session id. Returns
+  # Resolve task_slug / stage / mascot for a captured action. task_slug + stage
+  # describe the DESK — the nearest .agent-context.json walking up from the tool's
+  # cwd (the worktree) wins; else the per-session marker keyed by session id.
+  #
+  # The BASE `mascot`, though, is the session's OWN stable Pokémon — the
+  # per-session marker (keyed by session_id, written by `bin/task session-mascot`
+  # from SessionMascot) — NOT the desk's .agent-context.json mascot, which carries
+  # the BOUND TASK's builder mascot and would FLIP the base when a session works a
+  # task built by a different soul (the Shellder→Sandshrew switch). This keeps an
+  # action's base mascot aligned with its span's (see bin/atomic-event). The desk
+  # mascot is only a fallback for a session with no mascot of its own yet. Returns
   # a hash with string keys (possibly nil values) and never raises.
   def resolve_marker(cwd:, session_id:)
-    data = read_context_marker(cwd) || read_session_marker(session_id) || {}
+    desk    = read_context_marker(cwd)
+    session = read_session_marker(session_id) || {}
+    context = desk || session
     {
       # worktree desk uses task_record_slug/task_slug; session marker uses
       # task_slug/slug — accept all, first present wins.
-      "task_slug" => first_present(data, "task_record_slug", "task_slug", "slug"),
-      "stage" => blank_to_nil(data["stage"]),
-      "mascot" => blank_to_nil(data["mascot"])
+      "task_slug" => first_present(context, "task_record_slug", "task_slug", "slug"),
+      "stage" => blank_to_nil(context["stage"]),
+      "mascot" => blank_to_nil(session["mascot"]) || blank_to_nil((desk || {})["mascot"])
     }
   rescue StandardError
     { "task_slug" => nil, "stage" => nil, "mascot" => nil }
@@ -235,6 +337,7 @@ class AtomicCaptureHook
     event = JSON.parse(raw)
     return unless present?(event["session_id"]) # nothing to attribute → skip
     return if navigation?(event)                # navigation is dropped — never a row
+    return if narration?(event)                 # bin/atomic-event narration is dropped too
 
     payload = build_payload(event)
     dispatch(payload)

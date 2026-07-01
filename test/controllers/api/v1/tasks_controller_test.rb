@@ -3,6 +3,11 @@ require "test_helper"
 module Api
   module V1
     class TasksControllerTest < ActionDispatch::IntegrationTest
+      include ActiveJob::TestHelper
+
+      # Stands in for Avi::Sizer.new(task) in the perform-through sizing test.
+      SizerReturning = Struct.new(:size) { def call = size }
+
       setup do
         @task = tasks(:new_task)
         @headers = {
@@ -333,6 +338,42 @@ module Api
         assert_equal "medium", task.po_size, "the PO forecast is retained"
         assert_equal "large", task.dev_size, "the dev forecast is retained"
         assert_equal "large", task.actual_size, "actual_size auto-derives from measured usage at ship"
+      end
+
+      test "creating a task without a po_size enqueues Avi's async sizer" do
+        assert_enqueued_jobs 1, only: AviSizingJob do
+          post api_v1_tasks_path,
+               params: { title: "Api sizes this one" },
+               headers: @headers, as: :json
+        end
+        assert_response :created
+      end
+
+      test "creating a task WITH a po_size does not enqueue the sizer" do
+        assert_no_enqueued_jobs only: AviSizingJob do
+          post api_v1_tasks_path,
+               params: { title: "Api presizes this", po_size: "small" },
+               headers: @headers, as: :json
+        end
+        assert_response :created
+        assert_equal "small", Task.find_by!(slug: JSON.parse(response.body).dig("data", "slug")).po_size
+      end
+
+      test "the enqueued sizer sets po_size and stamps the agent=avi attribution on the creating session" do
+        slug = nil
+        Avi::Sizer.stub(:new, ->(*) { SizerReturning.new("medium") }) do
+          perform_enqueued_jobs(only: AviSizingJob) do
+            post api_v1_tasks_path,
+                 params: { title: "End to end sizing", devops: { session_id: "sess-int-9" } },
+                 headers: @headers, as: :json
+            slug = JSON.parse(response.body).dig("data", "slug")
+          end
+        end
+
+        task = Task.find_by!(slug: slug)
+        assert_equal "medium", task.po_size
+        assert AtomicEvent.exists?(session_id: "sess-int-9", agent: "avi", task_slug: slug),
+               "sizing must surface in the creator's heartbeat as an agent=avi event"
       end
     end
   end

@@ -1,6 +1,10 @@
 ENV["RAILS_ENV"] ||= "test"
 require_relative "../config/environment"
 require "rails/test_help"
+# minitest/mock (Object#stub + Minitest::Mock) isn't auto-required by rails/test_help;
+# the pinned minitest ~> 5.25 keeps it available (6.0 dropped it — see Gemfile), so
+# make it loadable suite-wide for tests that stub a seam (e.g. the LLM adapter).
+require "minitest/mock"
 
 OmniAuth.config.test_mode = true
 

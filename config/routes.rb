@@ -55,7 +55,7 @@ Rails.application.routes.draw do
       post "board/delete",       to: "board#delete",       as: :board_delete
       post "board/ship_release", to: "board#ship_release", as: :board_ship_release
       # Deployment-step toys: open / advance / reset a fixture RELEASE so the live
-      # tracker can be stepped Testing → … → Deploying Prod without real data.
+      # tracker can be stepped Testing → … → Deploying without real data.
       post "board/open_release",    to: "board#open_release",    as: :board_open_release
       post "board/advance_release", to: "board#advance_release", as: :board_advance_release
       post "board/reset_release",   to: "board#reset_release",   as: :board_reset_release
@@ -87,6 +87,10 @@ Rails.application.routes.draw do
   # feedback drawer, lazy-loaded into the same shared turbo-frame on a span's grade
   # click. Read-only GET; its editors POST to the E2 grade_event endpoint above.
   get  "alex/heartbeat/events/:id/feedback", to: "heartbeat#feedback_event", as: :heartbeat_event_feedback
+  # Every AtomicEvent SPAN across ALL sessions, newest-first, paginated 100/page —
+  # the cross-session analogue of the per-session heartbeat (heartbeat#show). Reuses
+  # the same span table + drawer; linked from the heartbeat's in-context navbar.
+  get  "alex/heartbeat/spans", to: "heartbeat#all_spans", as: :heartbeat_all_spans
   get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
 
   get "toast_test", to: "toast_test#index"

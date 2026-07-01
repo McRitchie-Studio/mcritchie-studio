@@ -17,6 +17,22 @@
 # harness that sets Current usage once gets every action it captures attributed
 # for free, exactly like a `bin/task move` does.
 #
+# TOKENS are split FRESH vs RE-USED: tokens_in/tokens_out hold the fresh spend the
+# turn actually processed (input + cache_creation, and output) — this is what the
+# heartbeat DISPLAYS — while cache_read_tokens holds the context re-read from the
+# prompt cache, carried for COSTING only (never shown). Lumping cache reads into
+# tokens_in is what once read a long session as ~300K tokens/action and overstated
+# its cost ~10x.
+#
+# COST is DERIVED, not stored blindly: when no explicit cost is given (the live-
+# capture hook path — it carries model + tokens but can't price them), capture
+# computes cost from MODEL_RATES per tier — fresh tokens at the model rate, plus
+# cache_read at the cache tier (10% of input). A model with no known rate leaves
+# cost NULL — we never fabricate a price. source_turn_uuid records the assistant
+# turn a row's usage came from; because ONE turn can fire N parallel tool calls (N
+# rows sharing that turn's usage), every SPAN/SESSION aggregation dedupes by it (see
+# HeartbeatHelper#heartbeat_usage_totals) so a fan-out isn't multi-counted.
+#
 # SPAN attribution (atomic_event_id): the agent self-narrates its trajectory as
 # OPEN/CLOSE AtomicEvents; each captured action attributes SERVER-SIDE to the
 # session's current OPEN span (AtomicEvent.for_session(sid).open.order(:seq).last).
@@ -36,6 +52,25 @@ class AtomicAction < ApplicationRecord
   BOARD   = "board"   # Rails board / bin command
   HUMAN   = "human"   # the operator
   ACTORS  = [HARNESS, AGENT, BOARD, HUMAN].freeze
+
+  # Per-model token pricing, in US dollars per 1,000,000 tokens (input, output).
+  # Sourced from the authoritative Anthropic pricing table (the claude-api skill,
+  # 2026-07). Keyed by the canonical model id; a `[tier]` suffix on a transcript
+  # model id (e.g. "claude-opus-4-8[1m]") is stripped before lookup, since the 1M
+  # context tier bills at standard rates for these models. A model with no entry
+  # yields a NULL cost — we NEVER fabricate a price. An operator can extend the
+  # map via the ATOMIC_ACTION_MODEL_RATES env (JSON: {"model": {"in": n, "out": n}}).
+  MODEL_RATES = {
+    "claude-fable-5"    => { in: 10.0, out: 50.0 },
+    "claude-mythos-5"   => { in: 10.0, out: 50.0 },
+    "claude-opus-4-8"   => { in: 5.0,  out: 25.0 },
+    "claude-opus-4-7"   => { in: 5.0,  out: 25.0 },
+    "claude-opus-4-6"   => { in: 5.0,  out: 25.0 },
+    "claude-sonnet-4-6" => { in: 3.0,  out: 15.0 },
+    "claude-haiku-4-5"  => { in: 1.0,  out: 5.0 }
+  }.freeze
+
+  PER_MILLION = 1_000_000
 
   # Slug FK to tasks (the ecosystem convention). Optional: PRE-task actions (boot,
   # intake) carry a null task_slug, and capture must never fail on a task lookup.
@@ -75,33 +110,56 @@ class AtomicAction < ApplicationRecord
   #     input: nil, output: nil,
   #     outcome: "pending", actor: "agent",
   #     model: nil, tokens_in: nil, tokens_out: nil, cost: nil,  # fall back to Current.task_event_*
+  #     source_turn_uuid: nil,                   # the assistant turn N actions may share
   #     stage: nil, feedback_anchor: false,
   #     occurred_at: Time.current, duration_ms: nil
   #   ) => AtomicAction | nil
   def self.capture(attrs = {})
     attrs = attrs.to_h.symbolize_keys
 
+    model_value      = attrs.fetch(:model) { Current.task_event_model }.presence
+    tokens_in_value  = (attrs.fetch(:tokens_in)  { Current.task_event_tokens_in }  || 0).to_i
+    tokens_out_value = (attrs.fetch(:tokens_out) { Current.task_event_tokens_out } || 0).to_i
+    # cache_read is the RE-USED prompt-cache context — hook-only (no Current seam),
+    # kept OUT of the displayed token count and used only to price the cache tier.
+    cache_read_value = (attrs[:cache_read_tokens] || 0).to_i
+
+    # Cost priority: an EXPLICIT cost (in-process caller or the Current.task_event_*
+    # seam a `bin/task move` sets) always wins; otherwise DERIVE it from the model +
+    # tokens via MODEL_RATES — the FRESH tokens at the model rate plus cache_read at
+    # the cache tier (10% of input). When the model has no known rate the derivation
+    # returns nil and cost stays NULL — never a fabricated $0. The live-capture hook
+    # carries model + tokens but no cost, so it lands on the derived path.
+    explicit_cost = attrs.fetch(:cost) { Current.task_event_cost }
+    cost_value    = if explicit_cost.nil?
+                      cost_for(model_value, tokens_in_value, tokens_out_value, cache_read_value)
+                    else
+                      explicit_cost.to_d
+                    end
+
     create!(
-      session_id:      attrs[:session_id],
-      task_slug:       attrs[:task_slug],
-      mascot:          attrs[:mascot],
-      seq:             attrs[:seq] || next_seq_for(attrs[:session_id]),
-      atomic_event_id: attrs.fetch(:atomic_event_id) { current_event_id_for(attrs[:session_id]) },
-      kind:            attrs[:kind],
-      event_slug:      attrs[:event_slug],
-      result_slug:     attrs[:result_slug],
-      input:           attrs[:input],
-      output:          attrs[:output],
-      outcome:         attrs[:outcome].presence || PENDING,
-      model:           attrs.fetch(:model) { Current.task_event_model }.presence,
-      tokens_in:       (attrs.fetch(:tokens_in)  { Current.task_event_tokens_in }  || 0).to_i,
-      tokens_out:      (attrs.fetch(:tokens_out) { Current.task_event_tokens_out } || 0).to_i,
-      cost:            (attrs.fetch(:cost)       { Current.task_event_cost }       || 0).to_d,
-      stage:           attrs[:stage],
-      actor:           attrs[:actor].presence || AGENT,
-      feedback_anchor: attrs.fetch(:feedback_anchor, false) || false,
-      occurred_at:     attrs[:occurred_at] || Time.current,
-      duration_ms:     attrs[:duration_ms]
+      session_id:       attrs[:session_id],
+      task_slug:        attrs[:task_slug],
+      mascot:           attrs[:mascot],
+      seq:              attrs[:seq] || next_seq_for(attrs[:session_id]),
+      atomic_event_id:  attrs.fetch(:atomic_event_id) { current_event_id_for(attrs[:session_id]) },
+      kind:             attrs[:kind],
+      event_slug:       attrs[:event_slug],
+      result_slug:      attrs[:result_slug],
+      input:            attrs[:input],
+      output:           attrs[:output],
+      outcome:          attrs[:outcome].presence || PENDING,
+      model:            model_value,
+      tokens_in:        tokens_in_value,
+      tokens_out:       tokens_out_value,
+      cache_read_tokens: cache_read_value,
+      cost:             cost_value,
+      source_turn_uuid: attrs[:source_turn_uuid].presence,
+      stage:            attrs[:stage],
+      actor:            attrs[:actor].presence || AGENT,
+      feedback_anchor:  attrs.fetch(:feedback_anchor, false) || false,
+      occurred_at:      attrs[:occurred_at] || Time.current,
+      duration_ms:      attrs[:duration_ms]
     )
   rescue StandardError => e
     # Telemetry is best-effort: log and move on, NEVER re-raise into the caller.
@@ -136,6 +194,68 @@ class AtomicAction < ApplicationRecord
     AtomicEvent.for_session(session_id).open.order(:seq).last&.id
   rescue StandardError
     nil
+  end
+
+  # The cache-read (prompt-cache HIT) rate as a fraction of the base input rate.
+  # Anthropic prices a cache read at 10% of the input rate; cache_creation (a cache
+  # WRITE) is 1.25x, but the hook folds that into tokens_in at 1x as an accepted
+  # best-effort, so only the cache-read tier is modelled here.
+  CACHE_READ_RATE_FACTOR = 0.10
+
+  # Dollar cost for a model's token usage, or nil when the model has no known rate
+  # (never fabricate a price). Prices per tier: the FRESH tokens_in and tokens_out
+  # at the model's input/output rate, plus cache_read_tokens at the cache-read tier
+  # (10% of input) — re-used context is cheap, so lumping it into tokens_in at the
+  # full rate overstated cost ~10x on long sessions. Best-effort + total: any bad
+  # input degrades to nil rather than raising into capture. Returns dollars (BigDecimal).
+  def self.cost_for(model, tokens_in, tokens_out, cache_read_tokens = 0)
+    rate = rate_for(model)
+    return nil unless rate
+
+    ti = tokens_in.to_i
+    to = tokens_out.to_i
+    cr = cache_read_tokens.to_i
+    in_rate = rate[:in].to_d
+    ((ti * in_rate) +
+     (cr * in_rate * CACHE_READ_RATE_FACTOR.to_d) +
+     (to * rate[:out].to_d)) / PER_MILLION.to_d
+  rescue StandardError
+    nil
+  end
+
+  # The {in:, out:} per-million rate for a model, or nil. Tolerates a trailing
+  # tier suffix ("[1m]") and a blank model, and returns nil unless BOTH sides
+  # of the rate are present (a half-defined rate must not fabricate a $0).
+  def self.rate_for(model)
+    key = model.to_s.strip
+    return nil if key.empty?
+
+    base = model_rates[key] || model_rates[key.sub(/\[[^\]]*\]\z/, "")]
+    return nil unless base.is_a?(Hash)
+
+    in_rate  = base[:in]  || base["in"]
+    out_rate = base[:out] || base["out"]
+    return nil if in_rate.nil? || out_rate.nil?
+
+    { in: in_rate, out: out_rate }
+  rescue StandardError
+    nil
+  end
+
+  # MODEL_RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override
+  # (JSON: {"model-id": {"in": n, "out": n}}). Memoized; a malformed env is
+  # ignored so a bad value can never break costing.
+  def self.model_rates
+    @model_rates ||= MODEL_RATES.merge(env_model_rates)
+  end
+
+  def self.env_model_rates
+    raw = ENV["ATOMIC_ACTION_MODEL_RATES"].to_s.strip
+    return {} if raw.empty?
+
+    JSON.parse(raw).transform_values { |v| { in: v["in"], out: v["out"] } }
+  rescue StandardError
+    {}
   end
 
   def ok?

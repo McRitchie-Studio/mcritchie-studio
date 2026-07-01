@@ -81,6 +81,47 @@ class AtomicCaptureHookTest < Minitest::Test
     refute h.navigation?({ "tool_name" => "Bash" })
   end
 
+  # ── [unit] narration drop ────────────────────────────────────────────────
+  # A Bash call whose invocation IS `bin/atomic-event` (the self-narration CLI) is
+  # DROPPED like navigation — it's the span machinery, not work, and would otherwise
+  # fall into "Unlabeled". Precise: only an INVOCATION, never a mention.
+
+  def test_unit_narration_flags_atomic_event_invocations
+    h = hook
+    [
+      "bin/atomic-event start --category Explore --reason x",
+      "/Users/alex/projects/mcritchie-studio/bin/atomic-event next --outcome y --category Edit --reason z",
+      "./bin/atomic-event end",
+      "  bin/atomic-event close-open",
+      "FOO=bar bin/atomic-event start --category Edit --reason z",           # inline ENV= prefix
+      "ATOMIC_CAPTURE_URL=http://x /abs/bin/atomic-event end"                # ENV= + abs path
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      assert h.narration?(event), "#{command.inspect} should be narration (dropped)"
+    end
+  end
+
+  def test_unit_narration_ignores_mentions_and_lookalikes_and_real_work
+    h = hook
+    [
+      "grep atomic-event bin/",          # searching for it, not running it
+      "cat bin/atomic-event",            # reading the file
+      "echo bin/atomic-event",           # printing the string
+      "bin/atomic-events-report",        # a different script (suffix)
+      "bin/atomic-event-foo",            # not the bin (trailing chars)
+      "ls -la",
+      "git status",
+      "bin/rails test"
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      refute h.narration?(event), "#{command.inspect} is NOT narration — must be kept"
+    end
+    # Non-Bash tools are never narration, whatever they carry (a real edit of the file).
+    refute h.narration?({ "tool_name" => "Edit", "tool_input" => { "command" => "bin/atomic-event start" } })
+    refute h.narration?({ "tool_name" => "Bash", "tool_input" => {} })
+    refute h.narration?({ "tool_name" => "Bash" })
+  end
+
   # ── [unit] serialization + truncation ────────────────────────────────────
 
   def test_unit_serialize_json_encodes_non_strings
@@ -131,7 +172,7 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
-  def test_unit_context_marker_wins_over_session_and_walks_up
+  def test_unit_desk_wins_task_and_stage_but_base_mascot_is_the_session
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "task_slug" => "session-task", "mascot" => "ekans")
       desk = File.join(proj, "wt")
@@ -144,7 +185,22 @@ class AtomicCaptureHookTest < Minitest::Test
       marker = hook("CLAUDE_PROJECTS_DIR" => proj).resolve_marker(cwd: nested, session_id: SESSION)
       assert_equal "ctx-task", marker["task_slug"], "the worktree desk slug should win and walk up"
       assert_nil marker["stage"], "a blank desk stage stays nil (no false claim)"
-      assert_equal "caterpie", marker["mascot"]
+      # The BASE mascot is the session's OWN Pokémon — NOT the desk's .agent-context.json
+      # mascot (the bound task's builder mascot), which would FLIP the base when a
+      # session works a task built by a different soul (Shellder→Sandshrew).
+      assert_equal "ekans", marker["mascot"], "the base mascot stays the session's own, not the desk/task mascot"
+    end
+  end
+
+  def test_unit_base_mascot_falls_back_to_desk_when_the_session_has_none
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "session-task") # no session mascot yet
+      desk = File.join(proj, "wt")
+      FileUtils.mkdir_p(desk)
+      File.write(File.join(desk, ".agent-context.json"),
+                 JSON.generate("task_record_slug" => "ctx-task", "mascot" => "caterpie"))
+      marker = hook("CLAUDE_PROJECTS_DIR" => proj).resolve_marker(cwd: desk, session_id: SESSION)
+      assert_equal "caterpie", marker["mascot"], "with no session mascot, fall back to the desk (never regress to nil)"
     end
   end
 
@@ -223,10 +279,89 @@ class AtomicCaptureHookTest < Minitest::Test
       assert_equal "2026-06-30T12:00:00Z", payload["occurred_at"]
       assert_includes payload["input"], "file_path"
       assert_includes payload["output"], "ok"
-      # A hook can't know these — they must stay absent (the model fills defaults).
-      refute payload.key?("tokens_in")
+      # No transcript on this event → zero usage and no source turn.
+      assert_equal 0, payload["tokens_in"]
+      assert_equal 0, payload["tokens_out"]
+      assert_equal 0, payload["cache_read_tokens"]
+      assert_nil payload["source_turn_uuid"]
+      # A hook can't know these — they stay absent (capture fills defaults).
       refute payload.key?("seq")
       refute payload.key?("event_slug")
+      refute payload.key?("cost"), "the hook never sends cost — capture DERIVES it server-side"
+    end
+  end
+
+  # ── [unit] usage extraction (tokens + source turn) ───────────────────────
+  # The PostToolUse payload carries no usage, but the transcript's assistant line
+  # (the one with message.model) also carries message.usage and a uuid. The hook
+  # reads model + usage + uuid from that ONE line and stamps tokens on the action.
+
+  def test_unit_turn_usage_splits_fresh_from_cache_read
+    h = hook
+    usage = {
+      "input_tokens" => 1200,
+      "cache_creation_input_tokens" => 300,
+      "cache_read_input_tokens" => 4500,
+      "output_tokens" => 800
+    }
+    result = h.turn_usage(usage)
+    assert_equal 1500, result[:tokens_in], "tokens_in = FRESH input + cache_creation (no cache_read)"
+    assert_equal 800, result[:tokens_out]
+    assert_equal 4500, result[:cache_read_tokens], "cache_read is carried apart for costing only"
+  end
+
+  def test_unit_turn_usage_is_zero_for_missing_or_non_hash
+    h = hook
+    zero = { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
+    assert_equal(zero, h.turn_usage(nil))
+    assert_equal(zero, h.turn_usage("nope"))
+    assert_equal(zero, h.turn_usage({}))
+  end
+
+  def test_unit_reads_usage_and_uuid_from_the_newest_model_bearing_line
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, [
+        JSON.generate("type" => "assistant", "uuid" => "turn-old",
+                      "message" => { "model" => "claude-opus-4-8", "usage" => { "input_tokens" => 1 } }),
+        JSON.generate("type" => "assistant", "uuid" => "turn-new",
+                      "message" => { "model" => "claude-opus-4-8[1m]",
+                                     "usage" => { "input_tokens" => 2000, "cache_read_input_tokens" => 500, "output_tokens" => 900 } }),
+        JSON.generate("type" => "user", "message" => { "role" => "user", "content" => "tool_result" })
+      ].join("\n") + "\n")
+
+      turn = hook.read_assistant_turn_from_transcript(path)
+      assert_equal "claude-opus-4-8[1m]", turn["model"], "the newest model-bearing line wins"
+      assert_equal "turn-new", turn["uuid"]
+      usage = hook.turn_usage(turn["usage"])
+      assert_equal 2000, usage[:tokens_in], "fresh input only — cache_read is excluded"
+      assert_equal 900, usage[:tokens_out]
+      assert_equal 500, usage[:cache_read_tokens]
+    end
+  end
+
+  def test_unit_build_payload_stamps_tokens_and_source_turn_uuid
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      # A long-session-shaped turn: small fresh input + cache_creation, a HUGE
+      # cache_read (re-read context). Fresh tokens stay small; cache_read is carried
+      # apart so cost can price it cheaply rather than at the full input rate.
+      File.write(path, JSON.generate(
+        "type" => "assistant", "uuid" => "turn-42",
+        "message" => { "model" => "claude-opus-4-8",
+                       "usage" => { "input_tokens" => 3000, "cache_creation_input_tokens" => 1000,
+                                    "cache_read_input_tokens" => 304_000, "output_tokens" => 250 } }
+      ) + "\n")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope", "transcript_path" => path,
+        "tool_name" => "Read", "tool_input" => {}, "tool_response" => {}
+      }
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event, now: Time.utc(2026, 7, 1, 12, 0, 0))
+      assert_equal "claude-opus-4-8", payload["model"]
+      assert_equal 4000, payload["tokens_in"], "FRESH input + cache_creation only"
+      assert_equal 250, payload["tokens_out"]
+      assert_equal 304_000, payload["cache_read_tokens"], "cache_read is stamped apart, not lumped into tokens_in"
+      assert_equal "turn-42", payload["source_turn_uuid"]
     end
   end
 
@@ -285,6 +420,20 @@ class AtomicCaptureHookTest < Minitest::Test
       }
       requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
       assert_empty requests, "a navigation Bash call must POST nothing — not even a token mint"
+    end
+  end
+
+  def test_integration_atomic_event_narration_is_dropped_no_post
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Bash",
+        "tool_input" => { "command" => "bin/atomic-event start --category Explore --reason orient" },
+        "tool_response" => { "stdout" => "atomic-event: opened Explore · orient" }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      assert_empty requests, "a bin/atomic-event narration call must POST nothing — not even a token mint"
     end
   end
 

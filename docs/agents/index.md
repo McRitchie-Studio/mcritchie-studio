@@ -40,8 +40,12 @@ events — without being asked.** Narration is the default, not an add-on; a fre
 session with no explicit prompt still narrates from its first real unit of work.
 Your raw tool-calls attribute server-side to whichever span is currently open, so
 a session with no spans reads as a wall of raw tool calls instead of "Explore:
-find api issue → found the nil-guard". Do not wait to be told — open the first
-span at your first unit of work and keep the trail going to handoff.
+find api issue → found the nil-guard". Do not wait to be told — **your FIRST
+span opens BEFORE your first tool call**: an `Explore` (or `Plan`) "orient" span —
+read the task, scan the code you'll touch — even on a small, pinpointed change. Go
+straight to `Edit` and your orientation strands in the "Unlabeled" bucket, so the
+"understand the task" beat is lost. Open the orient span first, then keep the trail
+going to handoff.
 
 Open a span at each natural work boundary:
 
@@ -62,9 +66,16 @@ Close the final open span when the work (or the session) is done:
 bin/atomic-event end --outcome "what happened"
 ```
 
+- **Lead with orient** — your opening span is `Explore`/`Plan` and opens BEFORE
+  any tool runs; nothing should land in "Unlabeled" at the top of a session.
 - **Keep spans meaningful** — one per unit of work, not one per tool call
-  (navigate `cd` is dropped automatically; opening a new span auto-closes the
-  prior one).
+  (navigate `cd` **and** the `bin/atomic-event` narration calls themselves are
+  dropped automatically; opening a new span auto-closes the prior one).
+- **Stamp the task on your first span** — add `--task <slug>` to `start`/`next`
+  so the span is task-attributed immediately, instead of a blank TASK until a
+  later `bin/task`/`bind-task` write lands. In a `feat/<slug>` worktree it's
+  inferred from the branch, so `--task` is mainly for a primary/conductor
+  checkout working a specific task.
 - **Always give an outcome** — every `next`/`end` records what actually happened
   ("Explore: find api issue → found the nil-guard"), not just the intent; an
   outcome-less span is a wasted span.
@@ -229,6 +240,7 @@ assigned that lane.
 | New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
+| Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |

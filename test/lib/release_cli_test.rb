@@ -61,10 +61,19 @@ class ReleaseCliTest < Minitest::Test
   #     stderr, so the swallowed-failure mode can never again recur silently.
   #     (rubygems "already initialized" warnings land on the child's stderr but are
   #     ignored on success — stderr is only surfaced when flunking.)
+  # Null the ambient agent-session vars for every release subprocess. A live
+  # Claude/Codex session exports CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID, which the
+  # subprocess would otherwise inherit — making bin/release's best-effort deploy-lane
+  # narration (atomic_event) resolve a real session and shell out to bin/atomic-event
+  # mid-test. Neutralizing them keeps narration inert unless a test opts in (the
+  # deploy-span tests stub atomic_event directly). Tests that need a session set it
+  # inline via ENV[...] (see the with_conductor_session tests).
+  NEUTRALIZED_ENV = { "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }.freeze
+
   def run_ruby(script)
     last = nil
     SUBPROCESS_ATTEMPTS.times do
-      out, err, status = Open3.capture3("ruby", "-e", script)
+      out, err, status = Open3.capture3(NEUTRALIZED_ENV, "ruby", "-e", script)
       return out if status.success?
 
       last = { out: out, err: err, status: status }
@@ -1341,6 +1350,69 @@ class ReleaseCliTest < Minitest::Test
     expr = %{(ENV.delete('CLAUDE_CODE_SESSION_ID'); ENV.delete('CODEX_THREAD_ID'); with_conductor_session("puts :ok"))}
     assert_equal "puts :ok", eval_helper(expr).strip,
                  "a session-less run passes the snippet through untouched"
+  end
+
+  # --- deploy-lane self-narration: Steffon assembles, Avi ships ---------------
+  # bin/release opens+closes an AtomicEvent SPAN around its deploy phases stamped
+  # with the ROLE soul the board already attributes them to — Steffon on prepare
+  # (assemble → QA), Avi on ship (→ prod) — so the heartbeat's deploy spans match
+  # the board's stage timeline. Best-effort + non-fatal: skipped under --dry-run
+  # and when no conductor session is resolvable.
+
+  # Capture the narration args instead of shelling out to the real bin/atomic-event.
+  NARRATION_CAPTURE = <<~RUBY
+    def atomic_event(*a) = $stdout.puts("ATOMIC " + a.join(" "))
+  RUBY
+
+  def test_narration_helpers_stamp_the_role_agent_and_close_with_an_outcome
+    setup = <<~RUBY
+      $events = []
+      def atomic_event(*a) = ($events << a)
+      def conductor_session_id = "sess-x"
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(open_role_span("steffon", "assemble → deploy RC to QA"); ) +
+                        %(close_role_span("assembled rel-x → QA"); print($events.inspect)))
+
+    assert_includes out, %(["start", "--category", "Remote", "--reason", "assemble → deploy RC to QA", "--agent", "steffon"]),
+                     "open_role_span opens a Remote span stamped with the role soul"
+    assert_includes out, %(["end", "--outcome", "assembled rel-x → QA"]),
+                     "close_role_span closes it with an outcome"
+  end
+
+  def test_atomic_event_is_a_noop_under_dry_run
+    setup = %(def conductor_session_id = "sess-x")
+    out = run_cli(["--dry-run"], setup: setup,
+                  call: %(print(atomic_event("start", "--category", "Remote", "--reason", "x").inspect)))
+    assert_equal "nil", out, "a dry-run narrates nothing (best-effort no-op)"
+  end
+
+  def test_atomic_event_is_a_noop_without_a_conductor_session
+    # NEUTRALIZED_ENV nulls the session vars → conductor_session_id is nil → no-op;
+    # telemetry must never shell out (or fail) when there's no session to attribute.
+    out = run_cli(["--yes"], setup: "",
+                  call: %(print(atomic_event("start", "--category", "Remote", "--reason", "x").inspect)))
+    assert_equal "nil", out, "no conductor session → nothing to narrate"
+  end
+
+  # [integration] prepare records a Steffon deploy span end-to-end (the paren
+  # post_deploy stub reaches assemble under --yes; narration is captured, not shelled).
+  def test_prepare_narrates_a_steffon_deploy_span
+    out = run_cli(["--yes"], call: "prepare", setup: PAREN_POST_DEPLOY_PREP_STUB + NARRATION_CAPTURE)
+
+    assert_includes out, "ATOMIC start --category Remote --reason assemble → deploy RC to QA --agent steffon",
+                     "prepare opens a Steffon span"
+    assert_match(/ATOMIC end --outcome assembled/, out, "and closes it once the RC is assembled")
+  end
+
+  # [integration] ship records an Avi deploy span end-to-end (the publish-decision
+  # stub runs the real ship flow under --yes with only the git/gem/heroku I/O stubbed).
+  def test_ship_narrates_an_avi_deploy_span
+    out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB + NARRATION_CAPTURE)
+
+    assert_includes out, "ATOMIC start --category Remote --reason ship → prod --agent avi",
+                     "ship opens an Avi span after ship authority"
+    assert_match(/ATOMIC end --outcome shipped/, out, "and closes it once shipped to prod")
   end
 
   # --- ship preflight: every app checkout on a clean `main` before any ff ----

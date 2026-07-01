@@ -104,6 +104,8 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "aside[data-test=heartbeat-drawer]"
     assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
+    # the heartbeat navbar links across to the cross-session All Spans page
+    assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_spans_path
   end
 
   test "renders a friendly empty state when nothing has been captured" do
@@ -125,8 +127,31 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
     assert_select "[data-test=event-cost]", text: "$0.1400"
     assert_select "[data-test=event-model]", text: "opus-4-8"
-    assert_select "[data-test=event-mascot]", text: /Snorlax/
+    assert_select "[data-test=event-mascot][title=?]", "Snorlax"
     assert_select "[data-test=event-status]", text: "done"
+  end
+
+  test "a turn's repeated tool-calls fade their tokens and cost cells end-to-end" do
+    # One assistant turn, two tool-calls: both carry the turn's usage, so the second
+    # renders IDENTICAL tokens/cost. The controller flags it session-wide and the view
+    # fades that row's tokens+cost cells while the first (primary) keeps full color.
+    ev = event(seq: 0, category: "Edit", reason_slug: "edit the view code",
+               outcome_slug: "done", closed_at: 1.minute.ago, at: 3.minutes.ago)
+    action(event: ev, seq: 0, at: 3.minutes.ago, source_turn_uuid: "turn-A",
+           tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    action(event: ev, seq: 1, at: 2.minutes.ago, source_turn_uuid: "turn-A",
+           tokens_in: 9400, tokens_out: 360, cost: 0.05)
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "tr[data-seq='0'] td.hb-turn-shared", false
+    assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
+    # the faded cells carry the inherit tooltip (assert_select decodes the entity)
+    assert_select "td.hb-turn-shared[title=?]", "shared with this turn's first action", 2
+    # totals stay DEDUPED + unchanged — the span still rolls the turn up once
+    assert_select "[data-test=event-tokens]", text: "9.4k/360"
+    assert_select "[data-test=event-cost]", text: "$0.0500"
   end
 
   test "each span row exposes a grade affordance into the span-grade drawer" do

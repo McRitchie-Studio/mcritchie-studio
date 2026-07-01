@@ -17,7 +17,9 @@ namespace :atomic do
     raise "atomic:demo_seed is local demo data — refusing to run in production." if Rails.env.production?
 
     session_id = ENV.fetch("SESSION_ID", "demo-heartbeat-0001")
-    mascot     = ENV.fetch("MASCOT", "rotom")
+    # A Gen-1 slug so the mascot AVATAR resolves to a real sprite (the deck seeds only
+    # the original 151; a Gen-4 slug like rotom renders only an initials fallback).
+    mascot     = ENV.fetch("MASCOT", "snorlax")
     task_slug  = ENV.fetch("TASK_SLUG", "atomic-action-capture")
     opus       = "claude-opus-4-8"
 
@@ -42,6 +44,9 @@ namespace :atomic do
 
     # The narrated spans, in order. Each closes with `outcome:` except the LAST,
     # which is left open (outcome: nil) to render the "…in progress" placeholder.
+    # A couple carry an acting soul (`agent:` — a senior who did that span) so the
+    # heartbeat's stacked Agent column has a live example: the soul renders ON TOP
+    # of the base session mascot. Most spans omit it (nil = the base mascot did it).
     spans = [
       { category: "Clarify", reason: "triage the operator request", outcome: "feature intent captured for triage", stage: nil,
         rows: [
@@ -66,13 +71,13 @@ namespace :atomic do
           { kind: "test", actor: "agent", task: task_slug, model: opus, ti: 3100, to: 780, in: "test/views/heartbeat_event_table_test.rb", ev: "Write a failing regression test first", rs: "Red test reproduces the gap" },
           { kind: "edit", actor: "agent", task: task_slug, model: opus, ti: 6800, to: 2400, in: "app/views/heartbeat/_event_table.html.erb", ev: "Implement the event trajectory view", rs: "Controller view and helper written" }
         ] },
-      { category: "Verify", reason: "run the unit suite", outcome: "green after a null-stage fix", stage: "building",
+      { category: "Verify", reason: "run the unit suite", outcome: "green after a null-stage fix", stage: "building", agent: "carl",
         rows: [
           { kind: "run-test",      actor: "board", task: task_slug, outcome: "error", in: "bin/rails test test/views/heartbeat_event_table_test.rb", ev: "Run the unit test suite", rs: "One spec fails on null outcome" },
           { kind: "recover-error", actor: "agent", task: task_slug, model: opus, ti: 7200, to: 1900, anchor: true, in: "app/helpers/heartbeat_helper.rb heartbeat_event_outcome", ev: "Diagnose and fix the failing spec", rs: "In-progress fallback applied to outcome" },
           { kind: "commit",        actor: "agent", task: task_slug, model: opus, ti: 300, to: 80, in: "git commit -m 'Add event-grouped heartbeat'", ev: "Commit and push the feature branch", rs: "Branch pushed code now preserved" }
         ] },
-      { category: "Workflow", reason: "certify and open the PR", outcome: nil, stage: "submitted",
+      { category: "Workflow", reason: "certify and open the PR", outcome: nil, stage: "submitted", agent: "avi",
         rows: [
           { kind: "full-suite",     actor: "board", task: task_slug, in: "bin/full-suite-check event-grouped-heartbeat-view", ev: "Run full suite certification check", rs: "Full suite and rubocop green" },
           { kind: "open-pr",        actor: "agent", task: task_slug, model: opus, ti: 1800, to: 540, in: "gh pr create --base release", ev: "Open a pull request into release", rs: "PR opened task URL leading" },
@@ -128,6 +133,7 @@ namespace :atomic do
         task_slug:   span[:rows].first[:task],
         mascot:      mascot,
         stage:       span[:stage],
+        agent:       span[:agent],
         opened_at:   opened_at
       )
       span[:rows].each { |row| capture_row.call(row) }

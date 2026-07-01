@@ -10,262 +10,9 @@
     styles are scoped under the section id so they touch nothing else. The table is
     read-only; clicking a drilled-down action opens the grading drawer, where Alex
     grades the action and the McRitchie audit-of-Alex banks the keepers. %>
-<style>
-  #alex-heartbeat {
-    --hb-bg:#0d1117; --hb-panel:#161b22; --hb-panel2:#1c2330; --hb-line:#2a3240;
-    --hb-txt:#e6edf3; --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff;
-    --hb-mascot:#a78bfa; --hb-good:#3fb950; --hb-not:#f85149; --hb-bank:#fbbf24;
-    display:flex; flex-direction:column;
-    height:calc(100vh - var(--nav-h, 7rem));
-    background:var(--hb-bg); color:var(--hb-txt);
-    padding:18px 22px 22px; font-size:13px; line-height:1.5;
-  }
-  #alex-heartbeat .hb-head { flex:0 0 auto; }
-  #alex-heartbeat .hb-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; }
-  #alex-heartbeat .hb-title h1 { margin:0; font-size:19px; font-weight:700; }
-  #alex-heartbeat .hb-title p { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:64ch; }
-  #alex-heartbeat .hb-stats { display:flex; gap:8px; flex-wrap:wrap; }
-  #alex-heartbeat .hb-stat { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:9px; padding:7px 11px; text-align:center; min-width:62px; }
-  #alex-heartbeat .hb-stat b { display:block; font-size:16px; }
-  #alex-heartbeat .hb-stat span { font-size:10px; color:var(--hb-muted); text-transform:uppercase; letter-spacing:.4px; }
-  #alex-heartbeat .hb-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }
-  #alex-heartbeat .hb-lab { font-size:11px; color:var(--hb-muted); text-transform:uppercase; letter-spacing:.5px; }
-  #alex-heartbeat .hb-sel { background:var(--hb-panel); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:8px; padding:6px 9px; font-size:12px; max-width:60vw; }
-  #alex-heartbeat .hb-legend { color:var(--hb-faint); font-size:11.5px; margin-left:auto; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-  #alex-heartbeat .hb-legend b { color:var(--hb-muted); font-weight:600; }
+<%= render "heartbeat/styles" %>
 
-  #alex-heartbeat .hb-scroll { flex:1 1 auto; overflow:auto; border:1px solid var(--hb-line); border-radius:12px; }
-  #alex-heartbeat table.hb-tbl { border-collapse:collapse; width:100%; min-width:1320px; font-size:12.5px; }
-  #alex-heartbeat thead th { position:sticky; top:0; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 10px; border-bottom:1px solid var(--hb-line); white-space:nowrap; z-index:3; }
-  #alex-heartbeat tbody td { padding:9px 10px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
-  #alex-heartbeat tr.hb-row { cursor:pointer; }
-  #alex-heartbeat tr.hb-row td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
-  #alex-heartbeat tr.hb-row:hover { background:var(--hb-panel2); }
-  #alex-heartbeat .hb-seq { color:var(--hb-faint); font-family:ui-monospace,monospace; white-space:nowrap; }
-  #alex-heartbeat .hb-slug { font-weight:600; }
-  #alex-heartbeat .hb-result { color:var(--hb-muted); }
-  #alex-heartbeat .hb-meta { color:var(--hb-muted); white-space:nowrap; }
-  #alex-heartbeat .hb-mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; }
-  #alex-heartbeat .hb-mascot { color:var(--hb-mascot); white-space:nowrap; }
-  #alex-heartbeat .hb-actor { font-size:10px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.4px; cursor:help; }
-  #alex-heartbeat .hb-stage-cell { cursor:help; }
-  #alex-heartbeat .hb-chip { font-size:10px; font-weight:700; border-radius:5px; padding:1px 7px; border:1px solid currentColor; text-transform:uppercase; letter-spacing:.4px; cursor:help; }
-  #alex-heartbeat .hb-outcome { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; }
-
-  #alex-heartbeat tr.hb-grouphead td { background:var(--hb-panel); border-bottom:1px solid var(--hb-line); padding:8px 10px; cursor:pointer; position:sticky; top:31px; z-index:2; }
-  #alex-heartbeat tr.hb-grouphead:hover td { background:var(--hb-panel2); }
-  #alex-heartbeat .hb-groupinner { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  #alex-heartbeat .hb-groupcount { color:var(--hb-faint); font-size:11px; }
-  #alex-heartbeat .hb-groupsub { color:var(--hb-muted); font-size:11px; margin-left:auto; font-family:ui-monospace,monospace; }
-  #alex-heartbeat .hb-chev { display:inline-block; transition:transform .15s; color:var(--hb-faint); font-size:11px; }
-  #alex-heartbeat .hb-chev-open { transform:rotate(90deg); }
-
-  /* Event-span table — spans are the primary rows; expanding one drills into its
-     attributed raw actions (read-only). Wider now: the span rows carry the rolled-up
-     Pokémon / Model / Tokens / Cost columns plus a span-grade affordance. */
-  #alex-heartbeat table.hb-evt-tbl { min-width:1180px; }
-  #alex-heartbeat .hb-evttime { font-size:10px; margin-top:2px; color:var(--hb-faint); }
-  #alex-heartbeat .hb-submascot { color:var(--hb-mascot); opacity:.85; }
-  #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
-  #alex-heartbeat tr.hb-evtrow { cursor:pointer; }
-  #alex-heartbeat tr.hb-evtrow td { background:var(--hb-panel); }
-  #alex-heartbeat tr.hb-evtrow:hover td { background:var(--hb-panel2); }
-  #alex-heartbeat tr.hb-evtrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
-  #alex-heartbeat .hb-catchip { cursor:help; }
-  #alex-heartbeat .hb-span .hb-slug { color:var(--hb-txt); }
-  #alex-heartbeat .hb-arrow { color:var(--hb-faint); margin:0 6px; }
-  #alex-heartbeat .hb-inprogress { color:var(--hb-muted); font-style:italic; }
-  #alex-heartbeat .hb-count { color:var(--hb-muted); font-family:ui-monospace,monospace; }
-
-  #alex-heartbeat tr.hb-subrow { cursor:pointer; }
-  #alex-heartbeat tr.hb-subrow td { background:var(--hb-bg); }
-  #alex-heartbeat tr.hb-subrow:hover td { background:var(--hb-panel2); }
-  #alex-heartbeat tr.hb-subrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); padding-left:24px; }
-  #alex-heartbeat tr.hb-subrow.hb-subempty { cursor:default; }
-  #alex-heartbeat tr.hb-subrow.hb-subempty td { color:var(--hb-faint); font-style:italic; }
-  #alex-heartbeat .hb-kind { color:var(--hb-txt); }
-  #alex-heartbeat .hb-subslug { color:var(--hb-txt); }
-  #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:8px; }
-  #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
-
-  #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
-  #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
-  #alex-heartbeat .hb-empty a { color:var(--hb-accent); }
-
-  /* T5 feedback layer — buttons, inline radios, the per-action drawer, markers */
-  #alex-heartbeat .hb-btn { background:var(--hb-panel); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:8px; padding:7px 12px; cursor:pointer; font-size:12.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; line-height:1; }
-  #alex-heartbeat .hb-btn:hover { border-color:var(--hb-accent); }
-  #alex-heartbeat .hb-btn.primary { background:var(--hb-accent); color:#06131f; border-color:var(--hb-accent); font-weight:600; }
-  #alex-heartbeat .hb-insightbtn { color:var(--hb-txt); }
-
-  #alex-heartbeat .hb-fbcell { min-width:196px; }
-  #alex-heartbeat .hb-fbinner { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
-  #alex-heartbeat .hb-radioform { display:inline; margin:0; }
-  #alex-heartbeat .hb-radiogrp { display:inline-flex; gap:4px; }
-  #alex-heartbeat .hb-rb { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:700; letter-spacing:.3px; padding:2px 6px; border:1px solid var(--hb-line); border-radius:6px; color:var(--hb-muted); cursor:pointer; white-space:nowrap; }
-  #alex-heartbeat .hb-rb input { margin:0; width:11px; height:11px; cursor:pointer; accent-color:var(--hb-accent); }
-  #alex-heartbeat .hb-rb.on-good { color:var(--hb-good); border-color:var(--hb-good); }
-  #alex-heartbeat .hb-rb.on-good input { accent-color:var(--hb-good); }
-  #alex-heartbeat .hb-rb.on-not { color:var(--hb-not); border-color:var(--hb-not); }
-  #alex-heartbeat .hb-rb.on-not input { accent-color:var(--hb-not); }
-  #alex-heartbeat .hb-fbslugwrap { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
-  #alex-heartbeat .hb-fbslug { font-weight:600; font-size:12px; }
-  #alex-heartbeat .hb-addfb { color:var(--hb-faint); font-size:11.5px; font-style:italic; }
-  #alex-heartbeat .hb-longmark { font-size:11px; }
-  #alex-heartbeat .hb-bankmark { color:var(--hb-bank); }
-  #alex-heartbeat .hb-discardmark { color:var(--hb-faint); }
-
-  /* Span-grade affordance on the event row — the "grade" button plus each grader's
-     live marker (a disposition dot + slug), and the span-grading drawer's saved chip. */
-  #alex-heartbeat .hb-evtfbcell { white-space:nowrap; }
-  #alex-heartbeat .hb-gradebtn { padding:4px 9px; font-size:11px; }
-  #alex-heartbeat .hb-evtmarks { display:inline-flex; flex-direction:column; gap:3px; margin-top:5px; }
-  #alex-heartbeat .hb-evtmark { display:inline-flex; align-items:center; gap:5px; font-size:11px; }
-  #alex-heartbeat .hb-evtmark-role { font-size:9px; font-weight:700; color:var(--hb-faint); letter-spacing:.4px; width:9px; }
-  #alex-heartbeat .hb-evtdot { width:7px; height:7px; border-radius:50%; background:var(--hb-faint); flex:0 0 auto; }
-  #alex-heartbeat .hb-evtdot.is-good { background:var(--hb-good); }
-  #alex-heartbeat .hb-evtdot.is-not { background:var(--hb-not); }
-  #alex-heartbeat .hb-evtmark-slug { color:var(--hb-txt); font-weight:600; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #alex-heartbeat .hb-evtsaved { color:var(--hb-good); font-size:11.5px; margin-top:8px; font-weight:600; }
-
-  /* Full-command view in the per-action drawer — the raw tool-call input + output in
-     full, each pane scrollable so a long bash body or file never blows out the drawer. */
-  #alex-heartbeat .hb-cmd { margin-bottom:16px; }
-  #alex-heartbeat .hb-cmdtoggle { padding:5px 10px; font-size:11.5px; margin-bottom:8px; }
-  #alex-heartbeat .hb-cmdlabel { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-faint); margin:8px 0 4px; }
-  #alex-heartbeat .hb-pre { background:var(--hb-bg); border:1px solid var(--hb-line); border-radius:8px; padding:9px 11px; margin:0; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; line-height:1.45; color:var(--hb-txt); white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
-
-  #alex-heartbeat .hb-scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .15s; z-index:40; }
-  #alex-heartbeat .hb-scrim.hb-scrim-open { opacity:1; pointer-events:auto; }
-  #alex-heartbeat .hb-drawer { position:fixed; top:0; right:0; height:100%; width:min(540px,94vw); background:var(--hb-panel); border-left:1px solid var(--hb-line); transform:translateX(100%); transition:transform .18s ease; z-index:50; overflow-y:auto; color:var(--hb-txt); }
-  #alex-heartbeat .hb-drawer.hb-drawer-open { transform:none; }
-  #alex-heartbeat .hb-dh { padding:16px 20px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
-  #alex-heartbeat .hb-dclose { position:absolute; top:12px; right:14px; background:none; border:none; color:var(--hb-muted); font-size:22px; cursor:pointer; line-height:1; }
-  #alex-heartbeat .hb-dh h2 { margin:0; font-size:15px; padding-right:26px; }
-  #alex-heartbeat .hb-dsub { color:var(--hb-muted); font-size:12px; margin-top:4px; }
-  #alex-heartbeat .hb-db { padding:14px 20px 40px; }
-  #alex-heartbeat .hb-kv { display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:12px; margin-bottom:16px; }
-  #alex-heartbeat .hb-kv .hb-k { color:var(--hb-faint); }
-  #alex-heartbeat .hb-fbblock { border:1px solid var(--hb-line); border-radius:11px; padding:13px 14px; margin-bottom:14px; }
-  #alex-heartbeat .hb-fbblock h3 { margin:0 0 10px; font-size:13px; display:flex; align-items:center; gap:8px; }
-  #alex-heartbeat .hb-fbblock h3 .hb-who { font-size:10px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.6px; font-weight:600; }
-  #alex-heartbeat .hb-field { margin-bottom:11px; }
-  #alex-heartbeat .hb-field > label { display:block; font-size:10.5px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
-  #alex-heartbeat .hb-input, #alex-heartbeat .hb-textarea { width:100%; background:var(--hb-bg); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:7px; padding:7px 9px; font:13px/1.4 inherit; }
-  #alex-heartbeat .hb-textarea { min-height:70px; resize:vertical; }
-  #alex-heartbeat .hb-wc { font-size:10.5px; margin-top:3px; }
-  #alex-heartbeat .hb-wc.ok { color:var(--hb-good); }
-  #alex-heartbeat .hb-wc.off { color:var(--hb-faint); }
-  #alex-heartbeat .hb-disptoggle { display:flex; gap:8px; }
-  #alex-heartbeat .hb-disptoggle button { flex:1; border:1px solid var(--hb-line); background:var(--hb-bg); color:var(--hb-muted); border-radius:7px; padding:7px; cursor:pointer; font-weight:600; font-size:12px; }
-  #alex-heartbeat .hb-disptoggle button.sel-good { background:var(--hb-good); color:#06140a; border-color:var(--hb-good); }
-  #alex-heartbeat .hb-disptoggle button.sel-not { background:var(--hb-not); color:#1a0606; border-color:var(--hb-not); }
-  #alex-heartbeat .hb-saverow { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
-  #alex-heartbeat .hb-bank.is-on { border-color:var(--hb-bank); color:var(--hb-bank); }
-  #alex-heartbeat .hb-discard.is-on { border-color:var(--hb-not); color:var(--hb-not); }
-  #alex-heartbeat .hb-derror { color:var(--hb-not); padding:18px 20px; font-size:12.5px; }
-</style>
-
-<script>
-  // Inline factory for the section's x-data. Defined inline (plain script, not a
-  // module) because Alpine loads via `defer` and evaluates BEFORE importmap modules
-  // — an x-data referencing a module-exported factory would be undefined at init.
-  window.heartbeatDrawer = function () {
-    return {
-      drawer: false,
-      // Open the per-action grading drawer by pointing the shared turbo-frame at the
-      // action's feedback URL. Re-opening the same row forces a fresh server fetch.
-      openDrawer(url) {
-        this.drawer = true;
-        var frame = document.getElementById("hb-drawer");
-        if (!frame) return;
-        if (frame.getAttribute("src") === url) { frame.reload(); } else { frame.src = url; }
-      },
-      closeDrawer() { this.drawer = false; },
-      // Whitespace word count for the drawer's live "aim 4–7 words" counter.
-      wordCount(text) { return (text || "").trim().split(/\s+/).filter(Boolean).length; }
-    };
-  };
-
-  // Per-span row component: owns the expand/collapse `open` AND the span's live grade
-  // markers. It hydrates its Alex/McRitchie marker state from the server-rendered
-  // data-* attributes on the <tbody> (so a page load already reflects existing grades),
-  // then listens for the hb:span-graded CustomEvent the span drawer dispatches after a
-  // fetch save — updating the matching grader's marker in place without a reload.
-  window.heartbeatSpanRow = function () {
-    return {
-      open: false,
-      eventId: null,
-      grades: { alex: null, mcr: null },
-      hydrate(el) {
-        this.eventId = el.dataset.eventId;
-        this.grades.alex = this.readGrade(el.dataset, "alex");
-        this.grades.mcr = this.readGrade(el.dataset, "mcr");
-      },
-      readGrade(data, who) {
-        if (data[who + "Graded"] !== "true") return null;
-        return {
-          disposition: data[who + "Disp"] || "",
-          slug: data[who + "Slug"] || "",
-          banked: data[who + "Banked"] === "true"
-        };
-      },
-      onGraded(detail) {
-        if (!detail || String(detail.atomic_event_id) !== String(this.eventId)) return;
-        this.grades[detail.grader] = {
-          disposition: detail.disposition,
-          slug: detail.slug,
-          banked: !!detail.banked
-        };
-      }
-    };
-  };
-
-  // The span grade editor inside the span drawer. Because E2's grade_event endpoint
-  // returns JSON (view-free by design), this submits via fetch rather than a turbo
-  // form: it posts the form (CSRF token + fields + the clicked intent), reflects the
-  // saved disposition/banked/discarded back into its own controls, surfaces any error,
-  // and dispatches hb:span-graded so the originating span row updates its markers live.
-  window.heartbeatEventEditor = function (config) {
-    return {
-      n: config.n,
-      disp: config.disp,
-      banked: config.banked,
-      discarded: config.discarded,
-      saving: false,
-      saved: false,
-      error: "",
-      wordCount(text) { return (text || "").trim().split(/\s+/).filter(Boolean).length; },
-      async submit(event) {
-        this.error = "";
-        this.saved = false;
-        this.saving = true;
-        var form = event.target;
-        var body = new FormData(form);
-        var submitter = event.submitter;
-        if (submitter && submitter.name) { body.set(submitter.name, submitter.value); }
-        try {
-          var resp = await fetch(form.action, {
-            method: "POST",
-            headers: { "Accept": "application/json" },
-            body: body
-          });
-          var data = await resp.json();
-          if (!resp.ok) { this.error = (data && data.error) || "Could not save the grade."; return; }
-          this.disp = data.disposition;
-          this.banked = !!data.banked;
-          this.discarded = !!data.discarded;
-          this.saved = true;
-          window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
-        } catch (err) {
-          this.error = "Could not save the grade.";
-        } finally {
-          this.saving = false;
-        }
-      }
-    };
-  };
-</script>
+<%= render "heartbeat/scripts" %>
 
 <section id="alex-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
   <div class="hb-head">
@@ -277,11 +24,12 @@
           Expand a span to drill into the raw tool-calls it framed; open one to grade the action and its McRitchie audit.
         </p>
       </div>
+      <% session_totals = heartbeat_usage_totals(@actions) %>
       <div class="hb-stats">
         <div class="hb-stat"><b><%= @events.size %></b><span>spans</span></div>
         <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
-        <div class="hb-stat"><b><%= heartbeat_tokens_compact(@actions.sum(&:tokens_total)) %></b><span>tokens</span></div>
-        <div class="hb-stat"><b><%= heartbeat_cost(@actions.sum { |a| a.cost.to_f }) %></b><span>cost</span></div>
+        <div class="hb-stat"><b><%= heartbeat_tokens_compact(session_totals[:tokens_total]) %></b><span>tokens</span></div>
+        <div class="hb-stat"><b><%= heartbeat_cost(session_totals[:cost]) %></b><span>cost</span></div>
         <div class="hb-stat"><b id="hb-stat-graded"><%= @counts[:graded] %></b><span>graded</span></div>
         <div class="hb-stat"><b id="hb-stat-audited"><%= @counts[:audited] %></b><span>audited</span></div>
         <div class="hb-stat"><b id="hb-stat-insights"><%= @counts[:insights] %></b><span>insights</span></div>
@@ -300,9 +48,7 @@
         <span class="hb-lab">Session</span>
         <span class="hb-meta hb-mono"><%= @session_id %></span>
       <% end %>
-      <%= link_to alex_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
-        &#128161; Insight Bank (<span id="hb-insight-count"><%= @counts[:insights] %></span>)
-      <% end %>
+      <%= render "heartbeat/nav", current: :session, insights_count: @counts[:insights] %>
       <span class="hb-legend">
         <span><b>span:</b> category &middot; reason &rarr; outcome</span>
         <span><b>drill down:</b> expand a span &middot; click an action to grade</span>
@@ -312,7 +58,8 @@
 
   <% if @event_rows.any? || @unlabeled.any? %>
     <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
-          pokemon_by_slug: @pokemon_by_slug, event_grades: @event_grades %>
+          pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids %>
   <% else %>
     <div class="hb-empty" data-test="heartbeat-empty">
       <b>No trajectory captured yet</b>
@@ -321,12 +68,5 @@
     </div>
   <% end %>
 
-  <%# The grading drawer — a single shared host; the per-action body is lazy-loaded
-      into the turbo-frame on row click. Alpine owns only the open/close chrome. %>
-  <div class="hb-scrim" :class="drawer ? 'hb-scrim-open' : ''" @click="closeDrawer()"></div>
-  <aside class="hb-drawer" :class="drawer ? 'hb-drawer-open' : ''" data-test="heartbeat-drawer">
-    <turbo-frame id="hb-drawer">
-      <div class="hb-derror">Select an action to grade&hellip;</div>
-    </turbo-frame>
-  </aside>
+  <%= render "heartbeat/drawer_host" %>
 </section>

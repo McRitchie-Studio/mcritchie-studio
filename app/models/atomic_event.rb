@@ -22,6 +22,14 @@ class AtomicEvent < ApplicationRecord
     Explore Edit Verify Version Workflow Delegate Clarify Remote Research Plan
   ].freeze
 
+  # The McRitchie soul roster — the ONE acting agent a span may be attributed to
+  # (via `bin/atomic-event --agent <soul>`), distinct from the base session
+  # `mascot`. A nil `agent` means "the base session mascot did it" (no soul
+  # override); the heartbeat can later STACK the acting soul over the stable base
+  # mascot. An unknown slug is coerced to nil by #normalize_agent — non-fatal, so
+  # a typo'd soul never fails a narration.
+  SOULS = %w[avi carl shannon jasper steffon alex].freeze
+
   # Slug FK to tasks (the ecosystem convention). Optional: PRE-task spans (boot,
   # intake) carry a null task_slug and must never fail a task lookup.
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug,
@@ -44,6 +52,11 @@ class AtomicEvent < ApplicationRecord
   validates :opened_at, presence: true
   validates :seq, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
+  # Coerce the acting soul to a known roster slug (down-cased), else nil. This is
+  # deliberately NON-FATAL — an unknown/typo'd `agent` becomes nil rather than an
+  # invalid record, so a bad --agent value never sinks a best-effort narration.
+  before_validation :normalize_agent
+
   scope :for_session,  ->(session_id) { where(session_id: session_id) }
   scope :open,         -> { where(closed_at: nil) }
   scope :closed,       -> { where.not(closed_at: nil) }
@@ -65,12 +78,16 @@ class AtomicEvent < ApplicationRecord
   # invariant. Raises ActiveRecord::RecordInvalid on an invalid span (the caller —
   # the controller — turns that into a 422).
   #
+  # `agent:` is the acting soul (see SOULS) — an unknown value is coerced to nil
+  # (via #normalize_agent) rather than raising, so a bad --agent never sinks the
+  # open. `mascot:` stays the STABLE base session mascot; the agent stacks on top.
+  #
   #   AtomicEvent.open_event!(session_id:, category:, reason_slug:,
   #                           task_slug: nil, mascot: nil, stage: nil,
-  #                           prior_outcome_slug: nil,
+  #                           agent: nil, prior_outcome_slug: nil,
   #                           opened_at: Time.current) => AtomicEvent
   def self.open_event!(session_id:, category:, reason_slug:, task_slug: nil,
-                       mascot: nil, stage: nil, prior_outcome_slug: nil,
+                       mascot: nil, stage: nil, agent: nil, prior_outcome_slug: nil,
                        opened_at: Time.current)
     event = new(
       session_id:  session_id,
@@ -79,6 +96,7 @@ class AtomicEvent < ApplicationRecord
       task_slug:   task_slug,
       mascot:      mascot,
       stage:       stage,
+      agent:       agent,
       seq:         next_seq_for(session_id),
       opened_at:   opened_at
     )
@@ -135,5 +153,15 @@ class AtomicEvent < ApplicationRecord
 
   def closed?
     !open?
+  end
+
+  private
+
+  # Normalize `agent` to a known soul slug (down-cased + stripped) or nil. An
+  # unknown/blank value becomes nil — the coercion is deliberately silent so a
+  # typo'd --agent degrades to "base session mascot did it", never a hard error.
+  def normalize_agent
+    slug = agent.to_s.strip.downcase
+    self.agent = SOULS.include?(slug) ? slug : nil
   end
 end

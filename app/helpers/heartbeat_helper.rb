@@ -120,21 +120,84 @@ module HeartbeatHelper
     "#{heartbeat_tokens_compact(ti)}/#{heartbeat_tokens_compact(to)}"
   end
 
+  # Sum token + cost usage across actions, DEDUPED by source_turn_uuid. One
+  # assistant turn can fire N parallel tool calls (N actions that all carry THAT
+  # turn's usage), so a naive per-action sum multi-counts the fan-out. Counting
+  # each distinct turn once fixes it. Actions with a blank source_turn_uuid are
+  # pre-usage / board / harness rows with no shared turn — each counts on its own.
+  # Tokens summed here are the FRESH spend (tokens_in/out) — cache_read is priced
+  # into `cost` but never added to the displayed token count. Pure in-memory
+  # reduction over the array the controller already loaded (no query per row).
+  # Returns summed in/out tokens, their total, and summed cost.
+  def heartbeat_usage_totals(actions)
+    seen = {}
+    tokens_in = 0
+    tokens_out = 0
+    cost = 0.0
+    Array(actions).each do |action|
+      turn = action.source_turn_uuid.presence
+      next if turn && seen.key?(turn)
+
+      seen[turn] = true if turn
+      tokens_in  += action.tokens_in.to_i
+      tokens_out += action.tokens_out.to_i
+      cost       += action.cost.to_f
+    end
+    { tokens_in: tokens_in, tokens_out: tokens_out,
+      tokens_total: tokens_in + tokens_out, cost: cost }
+  end
+
+  # The tooltip surfaced on a per-action tokens/cost cell that INHERITS its turn's
+  # spend (a non-primary row of a shared source_turn_uuid). One assistant turn is
+  # metered once, so its fan-out of tool-calls repeat that spend verbatim; the
+  # tooltip tells the operator the number is shared, not additive.
+  SHARED_TURN_TITLE = "shared with this turn's first action"
+
+  def heartbeat_shared_turn_title
+    SHARED_TURN_TITLE
+  end
+
+  # The ids of the actions whose tokens/cost DUPLICATE their turn's first action.
+  # Usage is metered per assistant TURN, not per tool-call: N tool-calls from one
+  # turn each carry that turn's usage and render IDENTICAL tokens/cost (they share
+  # a source_turn_uuid), which reads like double-counting. Walking the session's
+  # actions in chronological order (occurred_at then seq — the order the controller
+  # already loads @actions in), the FIRST action of each source_turn_uuid is the
+  # PRIMARY and keeps its normal color; every SUBSEQUENT action sharing that turn
+  # is a duplicate whose id lands here, so the view fades its tokens/cost cells to
+  # signal the spend is inherited. Exactly ONE primary per turn across the WHOLE
+  # session, even when a turn's calls land under different spans. Actions with a
+  # blank source_turn_uuid are each their own primary and never appear here.
+  # Display-only — mirrors the dedupe in heartbeat_usage_totals, changes NO value.
+  def heartbeat_shared_turn_ids(actions)
+    seen = {}
+    Array(actions).each_with_object(Set.new) do |action, dups|
+      turn = action.source_turn_uuid.presence
+      next unless turn
+
+      if seen[turn]
+        dups << action.id
+      else
+        seen[turn] = true
+      end
+    end
+  end
+
   # Roll a span's attributed actions up into the totals the EVENT row shows: summed
-  # in/out tokens, summed cost, and the span's dominant model (the model most of its
-  # actions ran on). Pure aggregation over the in-memory array the controller already
-  # loaded under each span (@event_rows), so the event table adds NO query per row —
-  # the N+1 the task explicitly forbids. `mascot` is the most common action mascot,
-  # a fallback the view uses only when the span carries no mascot of its own.
+  # in/out tokens, summed cost (all DEDUPED by source_turn_uuid, see above), and the
+  # span's dominant model (the model most of its actions ran on). Pure aggregation
+  # over the in-memory array the controller already loaded under each span
+  # (@event_rows), so the event table adds NO query per row — the N+1 the task
+  # explicitly forbids. `mascot` is the most common action mascot, a fallback the
+  # view uses only when the span carries no mascot of its own.
   def heartbeat_event_totals(actions)
     actions = Array(actions)
-    tokens_in  = actions.sum { |a| a.tokens_in.to_i }
-    tokens_out = actions.sum { |a| a.tokens_out.to_i }
+    totals  = heartbeat_usage_totals(actions)
     {
-      tokens_in:    tokens_in,
-      tokens_out:   tokens_out,
-      tokens_total: tokens_in + tokens_out,
-      cost:         actions.sum { |a| a.cost.to_f },
+      tokens_in:    totals[:tokens_in],
+      tokens_out:   totals[:tokens_out],
+      tokens_total: totals[:tokens_total],
+      cost:         totals[:cost],
       model:        heartbeat_dominant(actions.map(&:model)),
       mascot:       heartbeat_dominant(actions.map(&:mascot))
     }
@@ -207,5 +270,67 @@ module HeartbeatHelper
     return "—" if text.blank?
 
     text.length > limit ? "#{text[0, limit]}…" : text
+  end
+
+  # The stacked "Agent" cell — now real AVATAR IMAGES, the same faces the
+  # /deployments stage-timeline crew wears (components/agent_avatar): the acting
+  # SOUL (AtomicEvent#agent) photo ON TOP of the base session mascot's Pokémon
+  # sprite BENEATH it — the operator's "Avi over Shellder" ask, vertically stacked.
+  # Most rows carry no acting soul (a nil agent) and collapse to JUST the base
+  # mascot; a row with neither renders an em dash. The soul reuses the seeded Agent
+  # record (its avatar image, deterministic initials fallback, name on hover),
+  # falling back to a titleized-slug stand-in when the Agent isn't seeded; the base
+  # mascot wraps the seeded Pokémon in the shared MascotAgent bridge (sprite image,
+  # single-letter fallback) so it drops straight into agent_avatar. `agent`/`pokemon`
+  # are the records the controller pre-loaded in one query each (nil-safe) — this
+  # adds NO query (MascotAgent takes a nil color so signature_color is never hit
+  # per row). `submascot` is retained for caller compatibility; `mascot_test` stamps
+  # the base mascot's data-test hook (e.g. "event-mascot").
+  def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil, submascot: false, mascot_test: nil)
+    mascot_slug = mascot_slug.presence
+    agent_slug  = agent_slug.presence
+
+    mascot_el =
+      if mascot_slug
+        name = pokemon&.name.presence || mascot_slug.titleize
+        face = StageAgentsHelper::MascotAgent.new(name: name, avatar: pokemon&.sprite_url, color: nil)
+        tag.span(render(partial: "components/agent_avatar", locals: { agent: face, size: "xxs" }),
+                 class: class_names("hb-mascot", "hb-submascot" => submascot || agent_slug.present?),
+                 title: name,
+                 data: mascot_test ? { test: mascot_test } : {})
+      end
+
+    if agent_slug
+      soul = agent || Agent.new(slug: agent_slug, name: agent_slug.titleize)
+      soul_el = tag.span(
+        render(partial: "components/agent_avatar", locals: { agent: soul, size: "xxs" }),
+        class: "hb-soul", title: soul.name,
+        data: { test: "agent-soul", soul: agent_slug }
+      )
+      tag.div(safe_join([soul_el, mascot_el].compact), class: "hb-agentstack", data: { test: "agent-stack" })
+    elsif mascot_el
+      mascot_el
+    else
+      tag.span("—", class: "hb-meta")
+    end
+  end
+
+  # Pretty-print a captured tool-call payload for the drill-down drawer. Input and
+  # output are stored as raw (often escaped) JSON strings, so a nested `content`
+  # field reads as one `\n`-laden line. Parse and re-emit with 2-space indent so the
+  # STRUCTURE expands across lines, then unescape the newlines/tabs JSON re-escapes
+  # inside string values so a multi-line file body or command reads as REAL line
+  # breaks rather than literal `\n`. Falls back to the raw string UNTOUCHED when the
+  # payload is not valid JSON (a bash command, a plain sentence) so the view never
+  # raises. Blank-safe. Display-only: the result is intentionally no longer strict
+  # JSON — readability for the operator wins over round-trippability here.
+  def heartbeat_pretty_json(raw)
+    text = raw.to_s
+    return text if text.blank?
+
+    pretty = JSON.pretty_generate(JSON.parse(text))
+    pretty.gsub('\n', "\n").gsub('\t', "\t")
+  rescue JSON::ParserError
+    text
   end
 end

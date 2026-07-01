@@ -14,6 +14,7 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert_equal AtomicAction::AGENT, action.actor
     assert_equal 0, action.tokens_in
     assert_equal 0, action.tokens_out
+    assert_equal 0, action.cache_read_tokens
     assert_equal 0.to_d, action.cost
     assert_equal false, action.feedback_anchor
   end
@@ -92,6 +93,60 @@ class AtomicActionTest < ActiveSupport::TestCase
     action = AtomicAction.new(tokens_in: 1200, tokens_out: 3400)
 
     assert_equal 4600, action.tokens_total
+  end
+
+  # ---- [unit] cost derivation from the model rate map ------------------------
+
+  test "[unit] cost_for prices tokens from the model rate map" do
+    # claude-opus-4-8 = $5/1M in, $25/1M out.
+    # 1_000_000 in + 200_000 out => $5.00 + $5.00 = $10.00.
+    cost = AtomicAction.cost_for("claude-opus-4-8", 1_000_000, 200_000)
+
+    assert_equal "10.0".to_d, cost
+  end
+
+  test "[unit] cost_for is nil when the model has no known rate (never fabricated)" do
+    assert_nil AtomicAction.cost_for("gpt-5-codex", 1000, 2000), "an unknown model must NOT get a fabricated price"
+    assert_nil AtomicAction.cost_for(nil, 1000, 2000)
+    assert_nil AtomicAction.cost_for("", 1000, 2000)
+  end
+
+  test "[unit] cost_for strips a [tier] suffix so the 1M-context id still prices" do
+    plain  = AtomicAction.cost_for("claude-opus-4-8", 100_000, 20_000)
+    tiered = AtomicAction.cost_for("claude-opus-4-8[1m]", 100_000, 20_000)
+
+    assert_equal plain, tiered
+    assert_operator tiered, :>, 0
+  end
+
+  test "[unit] cost_for zero usage on a known model is zero, not nil" do
+    assert_equal 0.to_d, AtomicAction.cost_for("claude-opus-4-8", 0, 0)
+  end
+
+  test "[unit] cost_for prices cache_read at 10% of the input rate" do
+    # claude-opus-4-8 = $5/1M in. 1_000_000 cache_read tokens => $5.00 * 0.10 = $0.50.
+    assert_equal "0.5".to_d, AtomicAction.cost_for("claude-opus-4-8", 0, 0, 1_000_000)
+  end
+
+  test "[unit] cost_for sums fresh tokens at full rate and cache_read at the cache tier" do
+    # 1M fresh in ($5.00) + 200K out ($5.00) + 1M cache_read ($0.50) = $10.50.
+    cost = AtomicAction.cost_for("claude-opus-4-8", 1_000_000, 200_000, 1_000_000)
+
+    assert_equal "10.5".to_d, cost
+  end
+
+  test "[unit] cost_for on a long-session shaped turn reads cents, not dollars" do
+    # The overstatement bug: a huge cache_read once priced at the full input rate.
+    # 5K fresh in + 250 out + 304K cache_read on opus should be ~cents, not ~$1.58.
+    cost = AtomicAction.cost_for("claude-opus-4-8", 5_000, 250, 304_000)
+
+    assert_operator cost, :<, "0.25".to_d, "cache_read at 0.1x keeps a long turn in cents"
+    assert_operator cost, :>, 0
+  end
+
+  test "[unit] cost_for cache_read on a model with no known rate is still nil" do
+    assert_nil AtomicAction.cost_for("gpt-5-codex", 0, 0, 1_000_000),
+               "no rate means no price, even for pure cache_read"
   end
 
   test "[unit] outcome predicates reflect the stored value" do
@@ -204,6 +259,68 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert_equal 50, action.tokens_in
   ensure
     Current.reset
+  end
+
+  test "[integration] capture DERIVES cost from model + tokens when no cost is given" do
+    # The live-capture hook carries model + tokens but no cost; capture prices it.
+    action = AtomicAction.capture(session_id: "cost-sess", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000)
+
+    assert_equal "10.0".to_d, action.cost
+  end
+
+  test "[integration] capture leaves cost NULL for a model with no known rate" do
+    action = AtomicAction.capture(session_id: "norate-sess", kind: "bash",
+                                  model: "gpt-5-codex", tokens_in: 1000, tokens_out: 2000)
+
+    assert_nil action.cost, "an unknown model must record NULL cost, never a fabricated $0"
+    assert_equal 1000, action.tokens_in
+    assert_equal 2000, action.tokens_out
+  end
+
+  test "[integration] an explicit cost still wins over derivation" do
+    action = AtomicAction.capture(session_id: "explicit-cost", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 1_000_000, cost: "0.03".to_d)
+
+    assert_equal "0.03".to_d, action.cost
+  end
+
+  test "[integration] capture stores cache_read_tokens apart from the fresh tokens" do
+    action = AtomicAction.capture(session_id: "cr-sess", kind: "read",
+                                  model: "claude-opus-4-8",
+                                  tokens_in: 5_000, tokens_out: 250, cache_read_tokens: 304_000)
+
+    assert_equal 5_000, action.tokens_in
+    assert_equal 250, action.tokens_out
+    assert_equal 304_000, action.cache_read_tokens
+    assert_equal 5_250, action.tokens_total, "the DISPLAY total is the fresh tokens only"
+  end
+
+  test "[integration] capture prices cache_read into the derived cost at the cache tier" do
+    # 5K fresh in ($0.025) + 250 out ($0.00625) + 304K cache_read ($0.152) = $0.18325,
+    # which the decimal(10,4) cost column stores as $0.1833.
+    action = AtomicAction.capture(session_id: "cr-cost-sess", kind: "read",
+                                  model: "claude-opus-4-8",
+                                  tokens_in: 5_000, tokens_out: 250, cache_read_tokens: 304_000)
+
+    assert_equal "0.1833".to_d, action.cost
+    assert_operator action.cost, :<, "0.25".to_d, "not the ~$1.58 the lumped path overstated"
+  end
+
+  test "[integration] capture defaults cache_read_tokens to zero when the caller omits it" do
+    action = AtomicAction.capture(session_id: "cr-default-sess", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000)
+
+    assert_equal 0, action.cache_read_tokens
+    assert_equal "10.0".to_d, action.cost, "no cache_read means the fresh-only price is unchanged"
+  end
+
+  test "[integration] capture stores the source_turn_uuid the usage came from" do
+    action = AtomicAction.capture(session_id: "turn-sess", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 500,
+                                  source_turn_uuid: "turn-abc-123")
+
+    assert_equal "turn-abc-123", action.source_turn_uuid
   end
 
   test "[integration] capture with string keys works" do

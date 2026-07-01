@@ -39,6 +39,22 @@ matching the `/api/v1` convention) to
 **intentionally absent** — a hook can't know them; the model fills its defaults
 and derives `seq` per session.
 
+### What it DROPS (never a row)
+
+Two classes of Bash call are dropped **before** any POST — they own no narrated
+span and would otherwise land in "Unlabeled":
+
+- **Navigation** — a command whose first token is `cd` / `pushd` / `popd` / `pwd`
+  (a bare directory move; ~84% of the raw noise).
+- **Narration** — a command whose invocation **is** `bin/atomic-event` (the
+  agent's self-narration CLI). It's the span machinery itself, so capturing the
+  call that declares a span would double-record it as a raw action. Matches only
+  an actual invocation — any path prefix (`/abs/…/bin/atomic-event`,
+  `./bin/atomic-event`) and optional leading `ENV=val` assignments — never a
+  command that merely *mentions* the string (`grep atomic-event`, `cat
+  bin/atomic-event`, an edit to the file). A `cd … && bin/atomic-event` already
+  drops as navigation (first token `cd`).
+
 ### Model derivation — what's actually available to the hook
 
 Claude Code does **not** put the session model in the PostToolUse stdin payload,
