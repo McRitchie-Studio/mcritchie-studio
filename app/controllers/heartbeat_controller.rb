@@ -1,11 +1,13 @@
 class HeartbeatController < ApplicationController
-  # Alex learning / distillation heartbeat — the per-action atomic trajectory.
+  # Alex learning / distillation heartbeat — the agent-narrated event trajectory.
   #
-  # #show reads AtomicAction.for_session(...).chronological (oldest -> newest) and
-  # groups the rows by stage for display, then loads the ActionGrade feedback layer
-  # (T5): each action carries up to two grades — Alex's grade and the McRitchie
-  # audit-of-Alex. #feedback renders the per-action grading drawer, #grade upserts a
-  # grade (and banks/discards it), and #insights is the curated Insight Bank.
+  # #show reads AtomicEvent.for_session(...).chronological (oldest -> newest) as the
+  # PRIMARY rows — agent-narrated spans (category · reason -> outcome) — and rolls the
+  # raw AtomicActions attributed to each span (atomic_event_id) underneath as an
+  # expandable, read-only drill-down; actions the agent never narrated (null
+  # atomic_event_id) fall into the "Unlabeled" group. Grading is unchanged and lives
+  # entirely in the drawer: #feedback renders the per-action grading drawer, #grade
+  # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
   #
   # Open meta surface, like the launcher: it opts out of the engine's
   # authenticate-by-default before_action. The launcher's Alex avenue points at
@@ -15,10 +17,19 @@ class HeartbeatController < ApplicationController
   def show
     @session_id = params[:session_id].presence || latest_session_id
     @actions = @session_id ? AtomicAction.for_session(@session_id).chronological.to_a : []
-    @groups = group_by_stage(@actions)
+
+    # The primary rows are now agent-narrated EVENT SPANS, not raw tool-calls. Each
+    # event rolls up the actions attributed to it (atomic_event_id); the actions the
+    # agent never narrated (null atomic_event_id) fall into the read-only "Unlabeled"
+    # group. One actions query, grouped in Ruby, so events + Unlabeled share it with
+    # no N+1.
+    actions_by_event = @actions.group_by(&:atomic_event_id)
+    @events = @session_id ? AtomicEvent.for_session(@session_id).chronological.to_a : []
+    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
+    @unlabeled = actions_by_event[nil] || []
+
     @sessions = session_options
     @pokemon_by_slug = pokemon_lookup(@actions)
-    @grades = grades_lookup(@actions)
     @counts = grade_counts(@session_id)
   end
 
@@ -78,31 +89,24 @@ class HeartbeatController < ApplicationController
   private
 
   # The session whose trajectory we show by default: the one with the most recent
-  # action. nil when nothing has been captured yet (capture is forward-only, so a
-  # fresh prod is legitimately empty).
+  # activity. Event-primary now, so we consider the latest SPAN as well as the
+  # latest raw action (a session can narrate a span before its first tool-call
+  # attributes). nil when nothing has been captured yet (capture is forward-only,
+  # so a fresh prod is legitimately empty).
   def latest_session_id
-    AtomicAction.order(occurred_at: :desc, id: :desc).limit(1).pick(:session_id)
+    AtomicAction.order(occurred_at: :desc, id: :desc).limit(1).pick(:session_id) ||
+      AtomicEvent.order(opened_at: :desc, id: :desc).limit(1).pick(:session_id)
   end
 
-  # Bucket the (already chronological) actions by stage, preserving each stage's
-  # first-appearance order — except the null-stage "Session" group, which is
-  # pulled to the very top regardless. Returns an ordered Array of [stage, actions].
-  def group_by_stage(actions)
-    grouped = actions.group_by { |action| action.stage.presence }
-    session_group = grouped.delete(nil)
-
-    groups = []
-    groups << [nil, session_group] if session_group
-    grouped.each { |stage, stage_actions| groups << [stage, stage_actions] }
-    groups
-  end
-
-  # Distinct sessions for the switcher, most-recent first. [[label, id], ...].
+  # Distinct sessions for the switcher, most-recent first — the union of every
+  # session that has captured an action OR narrated a span, keyed by its latest
+  # timestamp so an event-only session still appears.
   def session_options
-    AtomicAction.group(:session_id).maximum(:occurred_at)
-                .sort_by { |_id, last_at| last_at }
-                .reverse
-                .map { |id, _last_at| id }
+    times = AtomicAction.group(:session_id).maximum(:occurred_at)
+    times.merge(AtomicEvent.group(:session_id).maximum(:opened_at)) { |_id, a, b| [a, b].max }
+         .sort_by { |_id, last_at| last_at }
+         .reverse
+         .map { |id, _last_at| id }
   end
 
   # One query for every mascot on the page so the Pokémon column reuses the
@@ -112,18 +116,6 @@ class HeartbeatController < ApplicationController
     return {} if slugs.empty?
 
     Pokemon.where(slug: slugs).index_by(&:slug)
-  end
-
-  # One query for every grade on the page: { action_id => { "alex" => grade,
-  # "mcr" => grade } }. Lets each feedback cell render its stored grade without an
-  # N+1 — and lets the drawer reuse the same loaded rows.
-  def grades_lookup(actions)
-    ids = actions.map(&:id)
-    return {} if ids.empty?
-
-    ActionGrade.where(atomic_action_id: ids).each_with_object({}) do |grade, lookup|
-      (lookup[grade.atomic_action_id] ||= {})[grade.grader] = grade
-    end
   end
 
   # The three live feedback tallies for a session's actions: how many Alex graded,

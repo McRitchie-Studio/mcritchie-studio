@@ -44,6 +44,34 @@ module HeartbeatHelper
     "pending" => { label: "pending", color: "#6e7681" }
   }.freeze
 
+  # Category -> { accent, description } for an AtomicEvent span's badge + tooltip.
+  # These are the agent-declared span vocabulary (AtomicEvent::CATEGORIES); the
+  # accent tints the span badge and its left-edge on the event-grouped heartbeat.
+  # Distinct, readable-on-dark hues so a glance separates the ten span kinds.
+  HEARTBEAT_CATEGORY_META = {
+    "Explore"  => { accent: "#58a6ff", description: "Explore — read, grep, and locate the seam" },
+    "Edit"     => { accent: "#fb923c", description: "Edit — write or change the code" },
+    "Verify"   => { accent: "#3fb950", description: "Verify — run tests and checks" },
+    "Version"  => { accent: "#a371f7", description: "Version — commit, branch, and push" },
+    "Workflow" => { accent: "#d29922", description: "Workflow — board, task, and process steps" },
+    "Delegate" => { accent: "#f778ba", description: "Delegate — hand a span to a sub-agent" },
+    "Clarify"  => { accent: "#7ee787", description: "Clarify — intake, triage, and questions" },
+    "Remote"   => { accent: "#79c0ff", description: "Remote — network, API, and remote ops" },
+    "Research" => { accent: "#ffa657", description: "Research — web, docs, and reference lookup" },
+    "Plan"     => { accent: "#a5d6ff", description: "Plan — shape the approach and the steps" }
+  }.freeze
+
+  # The read-only label for an unlabeled group — raw tool-calls the agent never
+  # narrated into a span (a null atomic_event_id). Kept as one constant so the
+  # view, the badge, and any tests read the same string.
+  HEARTBEAT_UNLABELED = { accent: "#5c6573", description: "Unlabeled — context the agent did not narrate into a span" }.freeze
+
+  def heartbeat_category_meta(category)
+    HEARTBEAT_CATEGORY_META.fetch(category.to_s) do
+      { accent: "#8b949e", description: category.to_s }
+    end
+  end
+
   def heartbeat_stage_meta(stage)
     HEARTBEAT_STAGE_META.fetch(stage.presence) do
       { label: stage.to_s.titleize, accent: "#8b949e", description: stage.to_s.titleize }
@@ -100,5 +128,35 @@ module HeartbeatHelper
   # the prototype's `words()` (trim, split on runs of whitespace, drop blanks).
   def heartbeat_word_count(text)
     text.to_s.strip.split(/\s+/).reject(&:empty?).length
+  end
+
+  # The close-side of a span on the event-grouped heartbeat: the narrated
+  # outcome_slug when the agent closed it, or the "…in progress" placeholder while
+  # the span is still OPEN (open? / no outcome). Read-only display only.
+  IN_PROGRESS = "…in progress"
+
+  def heartbeat_event_outcome(event)
+    return IN_PROGRESS if event.open? || event.outcome_slug.blank?
+
+    event.outcome_slug
+  end
+
+  # Short, dense timestamp for the "Opened" cell ("Jun 30, 14:07"); the full
+  # timestamp rides along in the cell's title. Blank-safe so a span missing an
+  # opened_at still renders a dash rather than raising.
+  def heartbeat_time(time)
+    return "—" if time.blank?
+
+    time.strftime("%b %-d, %H:%M")
+  end
+
+  # Compact preview of a raw tool-call's input for the drill-down ("kind/input"),
+  # single-lined and clipped so a long bash command or file body stays one dense
+  # row. Full value is surfaced via the cell title.
+  def heartbeat_input_preview(input, limit: 120)
+    text = input.to_s.strip.gsub(/\s+/, " ")
+    return "—" if text.blank?
+
+    text.length > limit ? "#{text[0, limit]}…" : text
   end
 end
