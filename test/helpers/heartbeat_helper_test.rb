@@ -131,4 +131,27 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "done", done_meta[:label]
     assert_not_equal open_meta[:color], done_meta[:color], "open and done must read as visibly distinct badges"
   end
+
+  test "[unit] pretty json expands structure with 2-space indent and real newlines" do
+    raw = %({"type":"text","file":{"path":"a.rb","content":"line1\\nline2"}})
+    pretty = heartbeat_pretty_json(raw)
+
+    # structure expanded across lines with a 2-space indent (not a one-liner)
+    assert_operator pretty.lines.count, :>, 1, "must expand across multiple lines"
+    assert_includes pretty, %(  "type": "text")
+    # the escaped \n inside the content value is now a REAL line break
+    assert_includes pretty, "line1\nline2"
+    refute_includes pretty, "line1\\nline2", "the escaped sequence must be unescaped"
+  end
+
+  test "[unit] pretty json returns a non-JSON payload untouched and never raises" do
+    assert_equal "git status --porcelain", heartbeat_pretty_json("git status --porcelain")
+    assert_equal "not json: {broken", heartbeat_pretty_json("not json: {broken")
+  end
+
+  test "[unit] pretty json is blank-safe" do
+    assert_equal "", heartbeat_pretty_json(nil)
+    assert_equal "", heartbeat_pretty_json("")
+    assert_equal "   ", heartbeat_pretty_json("   ")
+  end
 end
