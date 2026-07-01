@@ -87,15 +87,29 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_includes rendered, "Unnarrated boot step"
   end
 
-  test "[component] the table is read-only — no inline grading radios" do
+  test "[component] every unlabeled action collapses into a SINGLE consolidated group" do
+    a = action(atomic_event_id: nil, seq: 0, kind: "boot", event_slug: "first orphan", session_id: "s1")
+    b = action(atomic_event_id: nil, seq: 1, kind: "boot", event_slug: "second orphan", session_id: "s2")
+    c = action(atomic_event_id: nil, seq: 2, kind: "boot", event_slug: "third orphan", session_id: "s1")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [], unlabeled: [a, b, c], pokemon_by_slug: {} }
+
+    # exactly ONE Unlabeled group, holding every orphan action — never several
+    assert_select "tbody[data-test=heartbeat-unlabeled]", 1
+    assert_select "tbody[data-test=heartbeat-unlabeled] tr[data-test=heartbeat-event-action]", 3
+  end
+
+  test "[component] drilled-down action rows carry no inline radios — they open the drawer" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
     a1 = action(atomic_event_id: ev.id, seq: 0)
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select "input[type=radio]", false
-    # but a drilled-down action still links to its grading drawer
+    # the span row now carries quick-grade radios, but the ACTION drill-down row does not
+    assert_select "tr[data-test=heartbeat-event-action] input[type=radio]", false
+    # a drilled-down action still links to its grading drawer
     assert_includes rendered, heartbeat_feedback_path(a1)
   end
 
@@ -107,12 +121,55 @@ class HeartbeatEventTableTest < ActionView::TestCase
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
 
-    # aggregated across the span's actions, not per-action
+    # aggregated across the span's actions, not per-action; model + tokens now stack
+    # inside one merged cell (each keeping its data-test hook)
     assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
     assert_select "[data-test=event-cost]", text: "$0.1400"
     assert_select "[data-test=event-model]", text: "opus-4-8"
-    # the span mascot resolves to a name (slug titleized here — no seeded Pokémon passed)
-    assert_select "[data-test=event-mascot]", text: /Snorlax/
+    assert_select "td.hb-modeltok [data-test=event-model]"
+    assert_select "td.hb-modeltok [data-test=event-tokens]"
+    # the span mascot resolves to a name on its avatar title (slug titleized here — no
+    # seeded Pokémon passed)
+    assert_select "[data-test=event-mascot][title=?]", "Snorlax"
+  end
+
+  test "[component] narration stacks the reason on line one and the result beneath" do
+    ev = event(seq: 0, reason_slug: "find issue with api",
+               outcome_slug: "found the nil-guard", closed_at: Time.current)
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    # both live in the narration cell as separate block lines (reason over result)
+    assert_select "td.hb-narr .hb-narrline.hb-slug", text: "find issue with api"
+    assert_select "td.hb-narr .hb-narrline.hb-narr-result", text: /found the nil-guard/
+  end
+
+  test "[component] each span row carries inline good/not quick-grade radios for both graders" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    # a quick-grade form per grader, both posting to the E2 span grade endpoint
+    assert_select "form[data-test=event-inline-grade]", 2
+    assert_select "form[data-test=event-inline-grade][action=?]", heartbeat_event_grade_path(ev), 2
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] input[name=disposition][value=good]"
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] input[name=disposition][value=not]"
+    assert_select "form[data-test=event-inline-grade][data-grader=mcr] input[type=hidden][name=grader][value=mcr]"
+  end
+
+  test "[component] an existing span grade pre-checks its inline disposition radio" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+    grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
+                                slug: "clean span with a crisp outcome")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+                     event_grades: { ev.id => { "alex" => grade } } }
+
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=good][checked]"
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=not][checked]", false
   end
 
   test "[component] the span row shows a distinct open vs done status badge" do
@@ -155,8 +212,9 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
     assert_select "tr[data-seq='1'] td.hb-turn-shared[title=?]",
                   "shared with this turn's first action", 2
-    # only the color changes — the value itself is untouched
-    assert_select "tr[data-seq='1'] td.hb-turn-shared", text: "9.4k/360"
+    # only the color changes — the token value itself (now in the merged model/tokens
+    # cell) is untouched
+    assert_select "tr[data-seq='1'] td.hb-turn-shared .hb-mt-tokens", text: "9.4k/360"
   end
 
   test "[component] a solo-turn action and a blank-turn action are never faded" do
@@ -219,7 +277,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "thead th", text: "Pokémon", count: 0
   end
 
-  test "[component] a span with an acting soul stacks the soul over the base mascot" do
+  test "[component] a span with an acting soul stacks the soul avatar over the base mascot avatar" do
     avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋", "color" => "#FB7185" })
     ev   = event(seq: 0, mascot: "shellder", agent: "avi", closed_at: Time.current, outcome_slug: "reviewed")
     poke = Pokemon.new(slug: "shellder", name: "Shellder")
@@ -228,14 +286,16 @@ class HeartbeatEventTableTest < ActionView::TestCase
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: { "shellder" => poke },
                      agents_by_slug: { "avi" => avi } }
 
-    # the acting soul renders server-side (Nokogiri-visible) ON TOP
+    # the acting soul avatar renders server-side (Nokogiri-visible) ON TOP
     assert_select "[data-test=agent-stack]"
-    assert_select "[data-test=agent-soul][data-soul=avi]", text: /Avi/
-    # the base session mascot renders BENEATH, inside the same stack
-    assert_select "[data-test=agent-stack] [data-test=event-mascot]", text: /Shellder/
+    assert_select "[data-test=agent-soul][data-soul=avi][title=?]", "Avi"
+    assert_select "[data-test=agent-soul] .rounded-full"
+    # the base session mascot avatar renders BENEATH, inside the same stack
+    assert_select "[data-test=agent-stack] [data-test=event-mascot][title=?]", "Shellder"
+    assert_select "[data-test=agent-stack] [data-test=event-mascot] .rounded-full"
   end
 
-  test "[component] a span with no acting soul renders just the base mascot (no stack)" do
+  test "[component] a span with no acting soul renders just the base mascot avatar (no stack)" do
     ev = event(seq: 0, mascot: "sandshrew", agent: nil, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/event_table",
@@ -243,7 +303,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     assert_select "[data-test=agent-stack]", false
     assert_select "[data-test=agent-soul]", false
-    assert_select "[data-test=event-mascot]", text: /Sandshrew/
+    assert_select "[data-test=event-mascot][title=?]", "Sandshrew"
   end
 
   test "[component] drill-down actions inherit their span's acting soul" do

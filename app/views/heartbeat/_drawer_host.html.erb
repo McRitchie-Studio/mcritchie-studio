@@ -1,0 +1,10 @@
+<%# The grading drawer — a single shared host; the per-action / per-span body is
+    lazy-loaded into the turbo-frame on row (or grade-button) click. Alpine owns only
+    the open/close chrome (heartbeatDrawer, on the section). Shared by the per-session
+    heartbeat (show) and the All Spans page so both drive the identical drawer. %>
+<div class="hb-scrim" :class="drawer ? 'hb-scrim-open' : ''" @click="closeDrawer()"></div>
+<aside class="hb-drawer" :class="drawer ? 'hb-drawer-open' : ''" data-test="heartbeat-drawer">
+  <turbo-frame id="hb-drawer">
+    <div class="hb-derror">Select a span or action to grade&hellip;</div>
+  </turbo-frame>
+</aside>

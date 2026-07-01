@@ -104,6 +104,8 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "aside[data-test=heartbeat-drawer]"
     assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
+    # the heartbeat navbar links across to the cross-session All Spans page
+    assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_spans_path
   end
 
   test "renders a friendly empty state when nothing has been captured" do
@@ -125,7 +127,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
     assert_select "[data-test=event-cost]", text: "$0.1400"
     assert_select "[data-test=event-model]", text: "opus-4-8"
-    assert_select "[data-test=event-mascot]", text: /Snorlax/
+    assert_select "[data-test=event-mascot][title=?]", "Snorlax"
     assert_select "[data-test=event-status]", text: "done"
   end
 
