@@ -41,10 +41,11 @@ Load-bearing reminders (full detail in §1.4):
   production approval in-session, or an already-approved rollout prompt. Use
   `archive --yes` only when archive work is assigned. `--yes` drops the human
   confirm only, never a test gate.
-- **Review round 1 in parallel** — the **nested cascade**: fan out **Avi** as the
-  thin gate (product-acceptance + `reviewer-select` to pick the primary/light
+- **Review round 1 in parallel** — the **nested cascade** (full how-to: the
+  reusable [PR Review SOP module](../../modules/pr-review-sop.md)): fan out **Avi**
+  as the thin gate (product-acceptance + `reviewer-select` to pick the primary/light
   pair), then spawn the **PRIMARY** reviewer per PR, which **spawns the LIGHT** as
-  its own sub-agent. **Cap the fan-out at 5 concurrent agents** (the board DB's
+  its own sub-agent — each narrating its review **as its soul** (`--agent`). **Cap the fan-out at 5 concurrent agents** (the board DB's
   connection budget — see "Concurrency cap" in the operating model); review larger
   queues in **waves of ≤5**. On two approvals with no blocker the **PRIMARY**
   drives its task to `reviewed` AND runs `bin/release merge` (it owns the merge —

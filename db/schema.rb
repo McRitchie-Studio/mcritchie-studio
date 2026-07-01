@@ -10,12 +10,13 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_30_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "action_grades", force: :cascade do |t|
-    t.bigint "atomic_action_id", null: false
+    t.bigint "atomic_action_id"
+    t.bigint "atomic_event_id"
     t.boolean "banked", default: false, null: false
     t.datetime "created_at", null: false
     t.boolean "discarded", default: false, null: false
@@ -26,6 +27,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_130000) do
     t.datetime "updated_at", null: false
     t.index ["atomic_action_id", "grader"], name: "index_action_grades_on_atomic_action_id_and_grader", unique: true
     t.index ["atomic_action_id"], name: "index_action_grades_on_atomic_action_id"
+    t.index ["atomic_event_id", "grader"], name: "index_action_grades_on_atomic_event_id_and_grader", unique: true, where: "(atomic_event_id IS NOT NULL)"
+    t.index ["atomic_event_id"], name: "index_action_grades_on_atomic_event_id"
     t.index ["banked"], name: "index_action_grades_on_banked"
   end
 
@@ -194,7 +197,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_130000) do
 
   create_table "atomic_actions", force: :cascade do |t|
     t.string "actor", default: "agent", null: false
-    t.decimal "cost", precision: 10, scale: 4, default: "0.0", null: false
+    t.bigint "atomic_event_id"
+    t.integer "cache_read_tokens", default: 0
+    t.decimal "cost", precision: 10, scale: 4, default: "0.0"
     t.datetime "created_at", null: false
     t.integer "duration_ms"
     t.string "event_slug"
@@ -209,15 +214,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_130000) do
     t.string "result_slug"
     t.integer "seq", default: 0, null: false
     t.string "session_id", null: false
+    t.string "source_turn_uuid"
     t.string "stage"
     t.string "task_slug"
     t.integer "tokens_in", default: 0, null: false
     t.integer "tokens_out", default: 0, null: false
     t.datetime "updated_at", null: false
+    t.index ["atomic_event_id"], name: "index_atomic_actions_on_atomic_event_id"
     t.index ["feedback_anchor"], name: "index_atomic_actions_on_feedback_anchor"
     t.index ["occurred_at"], name: "index_atomic_actions_on_occurred_at"
     t.index ["session_id", "seq"], name: "index_atomic_actions_on_session_id_and_seq"
+    t.index ["source_turn_uuid"], name: "index_atomic_actions_on_source_turn_uuid"
     t.index ["task_slug", "seq"], name: "index_atomic_actions_on_task_slug_and_seq"
+  end
+
+  create_table "atomic_events", force: :cascade do |t|
+    t.string "agent"
+    t.string "category", null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", null: false
+    t.string "mascot"
+    t.datetime "opened_at", null: false
+    t.string "outcome_slug"
+    t.string "reason_slug", null: false
+    t.integer "seq", default: 0, null: false
+    t.string "session_id", null: false
+    t.string "stage"
+    t.string "task_slug"
+    t.datetime "updated_at", null: false
+    t.index ["opened_at"], name: "index_atomic_events_on_opened_at"
+    t.index ["session_id", "closed_at"], name: "index_atomic_events_on_session_id_and_closed_at"
+    t.index ["session_id", "seq"], name: "index_atomic_events_on_session_id_and_seq"
+    t.index ["task_slug", "seq"], name: "index_atomic_events_on_task_slug_and_seq"
   end
 
   create_table "broadcast_deliveries", force: :cascade do |t|
@@ -1234,8 +1262,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_130000) do
   end
 
   add_foreign_key "action_grades", "atomic_actions"
+  add_foreign_key "action_grades", "atomic_events", on_delete: :nullify
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "atomic_actions", "atomic_events", on_delete: :nullify
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"

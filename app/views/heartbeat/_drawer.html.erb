@@ -19,6 +19,29 @@
       <span class="hb-k">Cost</span><span class="hb-mono"><%= heartbeat_cost(action.cost) %></span>
     </div>
 
+    <%# Full-command view — the tool-call input AND output in full, pretty-printed when
+        the payload is JSON (real newlines, 2-space indent) and shown raw otherwise (the
+        table only shows a clipped one-line preview). Default-open so the operator sees
+        the whole command on drilling in; each pane scrolls if the payload is long. %>
+    <div class="hb-cmd" data-test="drawer-full-command" x-data="{ open: true }">
+      <button type="button" class="hb-btn hb-cmdtoggle" @click="open = !open">
+        <span x-text="open ? 'Hide full command' : 'Show full command'">Hide full command</span>
+      </button>
+      <div class="hb-cmdbody" x-show="open">
+        <% if action.input.present? %>
+          <div class="hb-cmdlabel">Input</div>
+          <pre class="hb-pre" data-test="drawer-input"><%= heartbeat_pretty_json(action.input) %></pre>
+        <% end %>
+        <% if action.output.present? %>
+          <div class="hb-cmdlabel">Output</div>
+          <pre class="hb-pre" data-test="drawer-output"><%= heartbeat_pretty_json(action.output) %></pre>
+        <% end %>
+        <% if action.input.blank? && action.output.blank? %>
+          <div class="hb-meta">No captured input or output for this action.</div>
+        <% end %>
+      </div>
+    </div>
+
     <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::ALEX,
           who: "Alex", role_label: "grades this action", grade: alex,
           save_label: "Save Alex grade", allow_bank: true %>

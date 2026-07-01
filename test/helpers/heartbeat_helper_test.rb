@@ -39,6 +39,24 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "9.4k/360", heartbeat_tokens(busy)
   end
 
+  test "tokens display shows FRESH spend and excludes cache_read" do
+    # A long-session turn: tiny fresh spend, huge cache_read carried only for cost.
+    action = AtomicAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000)
+    assert_equal "5.0k/250", heartbeat_tokens(action), "the cell reads fresh tokens, not the 300K+ cache read"
+  end
+
+  test "usage totals sum the fresh tokens only, never cache_read" do
+    actions = [
+      AtomicAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000, cost: 0.18, source_turn_uuid: "t1"),
+      AtomicAction.new(tokens_in: 3000, tokens_out: 100, cache_read_tokens: 120_000, cost: 0.07, source_turn_uuid: "t2")
+    ]
+    totals = heartbeat_usage_totals(actions)
+
+    assert_equal 8000, totals[:tokens_in], "cache_read is excluded from the displayed total"
+    assert_equal 350, totals[:tokens_out]
+    assert_equal 8350, totals[:tokens_total]
+  end
+
   test "cost formats by magnitude and dashes a zero cost" do
     assert_equal "—", heartbeat_cost(0)
     assert_equal "$0.00", heartbeat_cost(0.0005)
@@ -50,5 +68,247 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "#3fb950", heartbeat_outcome_meta("ok")[:color]
     assert_equal "#f85149", heartbeat_outcome_meta("error")[:color]
     assert_equal "#6e7681", heartbeat_outcome_meta("pending")[:color]
+  end
+
+  test "[unit] category meta gives each declared span an accent, and falls back for the unknown" do
+    AtomicEvent::CATEGORIES.each do |category|
+      assert_match(/\A#[0-9a-f]{6}\z/, heartbeat_category_meta(category)[:accent], "#{category} needs a hex accent")
+    end
+    assert_equal "#8b949e", heartbeat_category_meta("Nonsense")[:accent]
+  end
+
+  test "[unit] event outcome shows the outcome_slug when closed, else the in-progress placeholder" do
+    closed = AtomicEvent.new(closed_at: Time.current, outcome_slug: "found the nil-guard")
+    open   = AtomicEvent.new(closed_at: nil, outcome_slug: nil)
+    closed_no_outcome = AtomicEvent.new(closed_at: Time.current, outcome_slug: "")
+
+    assert_equal "found the nil-guard", heartbeat_event_outcome(closed)
+    assert_equal HeartbeatHelper::IN_PROGRESS, heartbeat_event_outcome(open)
+    assert_equal HeartbeatHelper::IN_PROGRESS, heartbeat_event_outcome(closed_no_outcome)
+  end
+
+  test "[unit] time formats a stamp and dashes a blank one" do
+    assert_equal "—", heartbeat_time(nil)
+    assert_equal "Jun 30, 14:07", heartbeat_time(Time.zone.local(2026, 6, 30, 14, 7))
+  end
+
+  test "[unit] input preview single-lines, clips long input, and dashes blanks" do
+    assert_equal "—", heartbeat_input_preview(nil)
+    assert_equal "—", heartbeat_input_preview("   ")
+    assert_equal "grep -rn Foo bar", heartbeat_input_preview("grep -rn\n  Foo   bar")
+    long = "x" * 200
+    preview = heartbeat_input_preview(long, limit: 120)
+    assert_equal 121, preview.length # 120 chars + the ellipsis
+    assert preview.end_with?("…")
+  end
+
+  test "[unit] token pair compacts in/out counts and dashes a span that spent nothing" do
+    assert_equal "9.4k/360", heartbeat_tokens_pair(9400, 360)
+    assert_equal "—", heartbeat_tokens_pair(0, 0)
+    assert_equal "—", heartbeat_tokens_pair(nil, nil)
+    assert_equal "1.2k/0", heartbeat_tokens_pair(1200, 0)
+  end
+
+  test "[unit] dominant returns the most frequent non-blank value, nil when all blank" do
+    assert_equal "claude-opus-4-8", heartbeat_dominant(["claude-opus-4-8", "claude-opus-4-8", "claude-sonnet"])
+    assert_nil heartbeat_dominant([nil, "", "  "])
+    assert_nil heartbeat_dominant([])
+  end
+
+  test "[unit] event totals sum tokens + cost and pick the dominant model and mascot across a span" do
+    actions = [
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, model: "claude-opus-4-8", mascot: "snorlax"),
+      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, model: "claude-opus-4-8", mascot: "snorlax"),
+      AtomicAction.new(tokens_in: 0, tokens_out: 0, cost: 0, model: nil, mascot: nil)
+    ]
+
+    totals = heartbeat_event_totals(actions)
+
+    assert_equal 16_200, totals[:tokens_in]
+    assert_equal 2_760, totals[:tokens_out]
+    assert_equal 18_960, totals[:tokens_total]
+    assert_in_delta 0.14, totals[:cost], 0.0001
+    assert_equal "claude-opus-4-8", totals[:model]
+    assert_equal "snorlax", totals[:mascot]
+  end
+
+  test "[unit] event totals over no actions are all zero / nil (a span that framed nothing)" do
+    totals = heartbeat_event_totals([])
+
+    assert_equal 0, totals[:tokens_total]
+    assert_equal 0.0, totals[:cost]
+    assert_nil totals[:model]
+    assert_nil totals[:mascot]
+  end
+
+  test "[unit] usage totals DEDUPE by source_turn_uuid so a parallel fan-out counts a turn once" do
+    # One assistant turn fired THREE parallel tool calls: three actions all carry
+    # turn-A's usage. Two more actions belong to turn-B. A naive per-action sum
+    # would triple-count turn-A; dedupe must count each turn once.
+    actions = [
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B"),
+      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B")
+    ]
+
+    totals = heartbeat_usage_totals(actions)
+
+    assert_equal 16_200, totals[:tokens_in],  "turn-A (9400) + turn-B (6800) counted once each"
+    assert_equal 2_760,  totals[:tokens_out], "turn-A (360) + turn-B (2400) counted once each"
+    assert_equal 18_960, totals[:tokens_total]
+    assert_in_delta 0.14, totals[:cost], 0.0001
+  end
+
+  test "[unit] usage totals count each blank-turn action on its own (no shared turn)" do
+    # Pre-usage / board / harness rows carry no source_turn_uuid — each is distinct.
+    actions = [
+      AtomicAction.new(tokens_in: 100, tokens_out: 10, cost: 0.01, source_turn_uuid: nil),
+      AtomicAction.new(tokens_in: 200, tokens_out: 20, cost: 0.02, source_turn_uuid: nil)
+    ]
+
+    totals = heartbeat_usage_totals(actions)
+
+    assert_equal 300, totals[:tokens_in]
+    assert_equal 30,  totals[:tokens_out]
+    assert_in_delta 0.03, totals[:cost], 0.0001
+  end
+
+  test "[unit] event totals inherit the turn dedupe" do
+    actions = [
+      AtomicAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X"),
+      AtomicAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X")
+    ]
+
+    totals = heartbeat_event_totals(actions)
+
+    assert_equal 5000, totals[:tokens_in], "the shared turn's usage is counted once"
+    assert_equal 100, totals[:tokens_out]
+    assert_in_delta 0.02, totals[:cost], 0.0001
+    assert_equal "claude-opus-4-8", totals[:model]
+  end
+
+  test "[unit] span status badge distinguishes an open span from a closed one" do
+    open_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: nil))
+    done_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: Time.current))
+
+    assert_equal "open", open_meta[:label]
+    assert_equal "done", done_meta[:label]
+    assert_not_equal open_meta[:color], done_meta[:color], "open and done must read as visibly distinct badges"
+  end
+
+  test "[unit] pretty json expands structure with 2-space indent and real newlines" do
+    raw = %({"type":"text","file":{"path":"a.rb","content":"line1\\nline2"}})
+    pretty = heartbeat_pretty_json(raw)
+
+    # structure expanded across lines with a 2-space indent (not a one-liner)
+    assert_operator pretty.lines.count, :>, 1, "must expand across multiple lines"
+    assert_includes pretty, %(  "type": "text")
+    # the escaped \n inside the content value is now a REAL line break
+    assert_includes pretty, "line1\nline2"
+    refute_includes pretty, "line1\\nline2", "the escaped sequence must be unescaped"
+  end
+
+  test "[unit] pretty json returns a non-JSON payload untouched and never raises" do
+    assert_equal "git status --porcelain", heartbeat_pretty_json("git status --porcelain")
+    assert_equal "not json: {broken", heartbeat_pretty_json("not json: {broken")
+  end
+
+  test "[unit] pretty json is blank-safe" do
+    assert_equal "", heartbeat_pretty_json(nil)
+    assert_equal "", heartbeat_pretty_json("")
+    assert_equal "   ", heartbeat_pretty_json("   ")
+  end
+
+  # ---- the stacked AVATAR Agent cell (acting soul over the base session mascot) ----
+  # The cell now renders real avatar IMAGES (the shared components/agent_avatar
+  # primitive — the same faces the /deployments crew wears), the soul name/mascot name
+  # riding on each avatar's `title`. Unseeded here (no avatar column / sprite_url), so
+  # each face is the primitive's deterministic initials bubble; the assertions key off
+  # the data-test hooks, the title, and the avatar circle, not visible name text.
+
+  test "[unit] agent cell stacks the acting soul avatar ON TOP of the base mascot avatar" do
+    avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋", "color" => "#FB7185" })
+    poke = Pokemon.new(slug: "shellder", name: "Shellder")
+    html = heartbeat_agent_cell(mascot_slug: "shellder", pokemon: poke, agent_slug: "avi", agent: avi)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+
+    # a stack wrapper holding the soul avatar then the base mascot avatar beneath it
+    assert frag.at_css(".hb-agentstack[data-test=agent-stack]"), "expected a stacked cell"
+    soul = frag.at_css(".hb-soul[data-test=agent-soul]")
+    assert_equal "avi", soul["data-soul"]
+    assert_equal "Avi", soul["title"], "the soul name rides on the avatar's title"
+    assert soul.at_css(".rounded-full"), "the soul renders the shared avatar primitive"
+    mascot = frag.at_css(".hb-mascot")
+    assert_equal "Shellder", mascot["title"], "the base mascot name rides on its avatar title"
+    assert mascot.at_css(".rounded-full"), "the base mascot renders the shared avatar primitive"
+    # soul is emitted BEFORE the mascot in the DOM (on top of the vertical stack)
+    assert_operator html.index("agent-soul"), :<, html.index("hb-mascot")
+  end
+
+  test "[unit] agent cell shows JUST the base mascot avatar when there is no acting soul" do
+    html = heartbeat_agent_cell(mascot_slug: "sandshrew", pokemon: nil, agent_slug: nil)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+
+    assert_nil frag.at_css(".hb-agentstack"), "a nil agent must NOT stack"
+    assert_nil frag.at_css(".hb-soul")
+    mascot = frag.at_css(".hb-mascot")
+    assert_equal "Sandshrew", mascot["title"]
+    assert mascot.at_css(".rounded-full"), "the lone mascot still renders its avatar"
+  end
+
+  test "[unit] agent cell falls back to a titleized soul stand-in when the Agent is unseeded" do
+    html = heartbeat_agent_cell(mascot_slug: "shellder", agent_slug: "carl", agent: nil)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+    soul = frag.at_css(".hb-soul[data-soul=carl]")
+    assert_equal "Carl", soul["title"], "an unseeded soul still gets a titleized name on its avatar"
+    assert soul.at_css(".rounded-full")
+  end
+
+  test "[unit] agent cell renders an em dash when neither soul nor mascot is present" do
+    html = heartbeat_agent_cell(mascot_slug: nil, agent_slug: nil)
+    assert_includes html, "—"
+    assert_nil Nokogiri::HTML::DocumentFragment.parse(html).at_css(".hb-mascot")
+  end
+
+  # Persisted so each action carries a real id — heartbeat_shared_turn_ids keys the
+  # duplicate set by action.id (the flag the row partial checks).
+  def turn_action(**attrs)
+    AtomicAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
+                           occurred_at: Time.current, seq: attrs.fetch(:seq, 0) }.merge(attrs))
+  end
+
+  test "[unit] shared turn ids flag every action AFTER a turn's first, primary excluded" do
+    # One assistant turn fired three parallel tool-calls (all carry turn-A's usage);
+    # a fourth action is the only call of turn-B.
+    first  = turn_action(seq: 0, source_turn_uuid: "turn-A")
+    second = turn_action(seq: 1, source_turn_uuid: "turn-A")
+    third  = turn_action(seq: 2, source_turn_uuid: "turn-A")
+    solo   = turn_action(seq: 3, source_turn_uuid: "turn-B")
+
+    dups = heartbeat_shared_turn_ids([first, second, third, solo])
+
+    refute_includes dups, first.id, "the turn's first action is the primary, never faded"
+    assert_includes dups, second.id
+    assert_includes dups, third.id
+    refute_includes dups, solo.id, "a turn with a single action has no duplicate"
+  end
+
+  test "[unit] blank source_turn_uuid actions are each their own primary, never shared" do
+    a = turn_action(seq: 0, source_turn_uuid: nil)
+    b = turn_action(seq: 1, source_turn_uuid: "")
+
+    assert_empty heartbeat_shared_turn_ids([a, b])
+  end
+
+  test "[unit] the primary is the FIRST in the given (chronological) order" do
+    early = turn_action(seq: 0, source_turn_uuid: "turn-Z")
+    late  = turn_action(seq: 1, source_turn_uuid: "turn-Z")
+
+    dups = heartbeat_shared_turn_ids([early, late])
+
+    refute_includes dups, early.id, "the earliest action of the turn keeps its color"
+    assert_includes dups, late.id
   end
 end

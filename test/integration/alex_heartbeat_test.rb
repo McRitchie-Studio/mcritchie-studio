@@ -1,12 +1,20 @@
 require "test_helper"
 
-# [integration] GET /alex/heartbeat — the repointed Alex avenue renders the atomic
-# trajectory table from AtomicAction.for_session(...).chronological, oldest to
-# newest, grouped by stage. Read-only meta surface, so it needs no auth.
+# [integration] GET /alex/heartbeat — the Alex avenue now renders agent-narrated
+# EVENT SPANS as the primary rows, read from AtomicEvent.for_session(...).chronological
+# (oldest -> newest). The raw AtomicActions attributed to each span (atomic_event_id)
+# roll up underneath as a read-only drill-down; actions with a null atomic_event_id
+# fall into the "Unlabeled" group. Read-only meta surface, so it needs no auth.
 class AlexHeartbeatTest < ActionDispatch::IntegrationTest
-  def capture_action(seq:, stage:, at:, session: "sess-A", **attrs)
-    AtomicAction.create!({ session_id: session, kind: "edit", outcome: "ok", actor: "agent",
-                           seq: seq, stage: stage, occurred_at: at }.merge(attrs))
+  def event(session: "sess-A", at: Time.current, **attrs)
+    AtomicEvent.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
+                          opened_at: at, seq: attrs.fetch(:seq, 0) }.merge(attrs))
+  end
+
+  def action(event: nil, session: "sess-A", at: Time.current, **attrs)
+    AtomicAction.create!({ session_id: session, kind: "grep", outcome: "ok", actor: "agent",
+                           seq: attrs.fetch(:seq, 0), occurred_at: at,
+                           atomic_event_id: event&.id }.merge(attrs))
   end
 
   test "alex_heartbeat_path routes to the trajectory view, repointed off the launcher placeholder" do
@@ -14,46 +22,90 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_routing "/alex/heartbeat", controller: "heartbeat", action: "show"
   end
 
-  test "renders the trajectory table for the latest session without auth" do
-    capture_action(seq: 0, stage: nil, at: 3.minutes.ago, actor: "harness",
-                   event_slug: "Boot the runtime", result_slug: "Identity resolved")
-    capture_action(seq: 1, stage: "building", at: 2.minutes.ago, task_slug: "demo",
-                   event_slug: "Edit the view", result_slug: "View written",
-                   model: "claude-opus-4-8", tokens_in: 1000, tokens_out: 200, cost: "0.01")
+  test "renders event spans, rolling attributed actions under each, without auth" do
+    explore = event(seq: 0, category: "Explore", reason_slug: "find issue with api",
+                    outcome_slug: "found the nil-guard", closed_at: 1.minute.ago, at: 3.minutes.ago)
+    action(event: explore, seq: 0, at: 3.minutes.ago, kind: "grep",
+           event_slug: "Grep the capture seam", input: "grep -rn AtomicAction app/models")
+    verify = event(seq: 1, category: "Verify", reason_slug: "run the unit suite",
+                   outcome_slug: "green", closed_at: 30.seconds.ago, at: 90.seconds.ago)
+    action(event: verify, seq: 1, at: 90.seconds.ago, kind: "bash", event_slug: "Run the tests")
 
     get alex_heartbeat_path
 
     assert_response :success
     assert_select "[data-test=heartbeat]"
-    assert_select "tr[data-test=heartbeat-row]", 2
-    assert_select "tbody[data-test=heartbeat-group][data-stage=session]"
-    assert_select "tbody[data-test=heartbeat-group][data-stage=building]"
-    assert_match "Boot the runtime", response.body
+    assert_select "table[data-test=heartbeat-event-table]"
+    assert_select "tbody[data-test=heartbeat-event]", 2
+    assert_select "tbody[data-test=heartbeat-event][data-category=Explore]"
+    assert_select "tbody[data-test=heartbeat-event][data-category=Verify]"
+    # the raw tool-calls roll up as a drill-down under their spans
+    assert_select "tr[data-test=heartbeat-event-action]", 2
+    assert_match "find issue with api", response.body
+    assert_match "found the nil-guard", response.body
+    assert_match "Grep the capture seam", response.body
   end
 
-  test "reads chronological order, presenting actions oldest to newest" do
+  test "an open span with no outcome renders the in-progress placeholder" do
+    event(seq: 0, category: "Workflow", reason_slug: "certify and open the PR",
+          outcome_slug: nil, closed_at: nil)
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=event-in-progress]"
+    assert_match(/in progress/, response.body)
+  end
+
+  test "actions with a null atomic_event_id render in the Unlabeled group" do
+    action(event: nil, seq: 0, kind: "boot", event_slug: "Unnarrated boot step")
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "tbody[data-test=heartbeat-unlabeled]"
+    assert_select "tbody[data-test=heartbeat-unlabeled] tr[data-test=heartbeat-event-action]", 1
+    assert_match "Unnarrated boot step", response.body
+  end
+
+  test "presents spans oldest to newest by opened_at" do
     # Insert out of order; the view must present them oldest first.
-    capture_action(seq: 2, stage: "building", at: 1.minute.ago,  event_slug: "third action")
-    capture_action(seq: 0, stage: nil,        at: 3.minutes.ago, event_slug: "first action")
-    capture_action(seq: 1, stage: nil,        at: 2.minutes.ago, event_slug: "second action")
+    event(seq: 2, reason_slug: "third span opened", at: 1.minute.ago, closed_at: 30.seconds.ago)
+    event(seq: 0, reason_slug: "first span opened", at: 3.minutes.ago, closed_at: 2.minutes.ago)
+    event(seq: 1, reason_slug: "second span opened", at: 2.minutes.ago, closed_at: 90.seconds.ago)
 
     get alex_heartbeat_path
 
     assert_response :success
     body = response.body
-    assert_operator body.index("first action"),  :<, body.index("second action")
-    assert_operator body.index("second action"), :<, body.index("third action")
+    assert_operator body.index("first span opened"),  :<, body.index("second span opened")
+    assert_operator body.index("second span opened"), :<, body.index("third span opened")
   end
 
   test "scopes to a session via the session_id param" do
-    capture_action(seq: 0, stage: nil, at: 5.minutes.ago, session: "sess-A", event_slug: "session A only")
-    capture_action(seq: 0, stage: nil, at: 1.minute.ago,  session: "sess-B", event_slug: "session B only")
+    a = event(session: "sess-A", reason_slug: "session A span")
+    action(event: a, session: "sess-A")
+    b = event(session: "sess-B", reason_slug: "session B span")
+    action(event: b, session: "sess-B")
 
     get alex_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
-    assert_match "session A only", response.body
-    assert_no_match(/session B only/, response.body)
+    assert_match "session A span", response.body
+    assert_no_match(/session B span/, response.body)
+  end
+
+  test "keeps the grading drawer host for per-action grading" do
+    e = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
+    action(event: e, seq: 0)
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "aside[data-test=heartbeat-drawer]"
+    assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
+    # the heartbeat navbar links across to the cross-session All Spans page
+    assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_spans_path
   end
 
   test "renders a friendly empty state when nothing has been captured" do
@@ -72,8 +124,8 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", types: %w[fire], generation: 1)
     SessionMascot.create!(session_id: a, mascot_slug: "bulbasaur")
     SessionMascot.create!(session_id: b, mascot_slug: "charizard")
-    capture_action(seq: 0, stage: nil, at: 2.minutes.ago, session: a, event_slug: "A")
-    capture_action(seq: 0, stage: nil, at: 1.minute.ago,  session: b, event_slug: "B")
+    action(seq: 0, at: 2.minutes.ago, session: a, event_slug: "A")
+    action(seq: 0, at: 1.minute.ago,  session: b, event_slug: "B")
 
     get alex_heartbeat_path
 
@@ -89,13 +141,89 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     b = "3618cc6d-6176-43d6-8cc0-45b6fcfffaa"
     Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", types: %w[grass], generation: 1)
     SessionMascot.create!(session_id: a, mascot_slug: "bulbasaur")
-    capture_action(seq: 0, stage: nil, at: 2.minutes.ago, session: a, event_slug: "A")
-    capture_action(seq: 0, stage: nil, at: 1.minute.ago,  session: b, event_slug: "B")
+    action(seq: 0, at: 2.minutes.ago, session: a, event_slug: "A")
+    action(seq: 0, at: 1.minute.ago,  session: b, event_slug: "B")
 
     get alex_heartbeat_path
 
     assert_response :success
     assert_select "select.hb-sel option[value=?]", a, text: "Bulbasaur · e2f6eb27"
     assert_select "select.hb-sel option[value=?]", b, text: b
+  end
+
+  test "the event row rolls up its actions' tokens, cost, model, and mascot" do
+    ev = event(seq: 0, category: "Explore", reason_slug: "find the capture seam",
+               mascot: "snorlax", outcome_slug: "found it", closed_at: 1.minute.ago, at: 3.minutes.ago)
+    action(event: ev, seq: 0, at: 3.minutes.ago, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    action(event: ev, seq: 1, at: 2.minutes.ago, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
+    assert_select "[data-test=event-cost]", text: "$0.1400"
+    assert_select "[data-test=event-model]", text: "opus-4-8"
+    assert_select "[data-test=event-mascot][title=?]", "Snorlax"
+    assert_select "[data-test=event-status]", text: "done"
+  end
+
+  test "a turn's repeated tool-calls fade their tokens and cost cells end-to-end" do
+    # One assistant turn, two tool-calls: both carry the turn's usage, so the second
+    # renders IDENTICAL tokens/cost. The controller flags it session-wide and the view
+    # fades that row's tokens+cost cells while the first (primary) keeps full color.
+    ev = event(seq: 0, category: "Edit", reason_slug: "edit the view code",
+               outcome_slug: "done", closed_at: 1.minute.ago, at: 3.minutes.ago)
+    action(event: ev, seq: 0, at: 3.minutes.ago, source_turn_uuid: "turn-A",
+           tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    action(event: ev, seq: 1, at: 2.minutes.ago, source_turn_uuid: "turn-A",
+           tokens_in: 9400, tokens_out: 360, cost: 0.05)
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "tr[data-seq='0'] td.hb-turn-shared", false
+    assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
+    # the faded cells carry the inherit tooltip (assert_select decodes the entity)
+    assert_select "td.hb-turn-shared[title=?]", "shared with this turn's first action", 2
+    # totals stay DEDUPED + unchanged — the span still rolls the turn up once
+    assert_select "[data-test=event-tokens]", text: "9.4k/360"
+    assert_select "[data-test=event-cost]", text: "$0.0500"
+  end
+
+  test "each span row exposes a grade affordance into the span-grade drawer" do
+    ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=event-grade-open]"
+    assert_match heartbeat_event_feedback_path(ev), response.body
+  end
+
+  test "the span-grade drawer body loads both span editors posting to the E2 endpoint" do
+    ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
+    action(event: ev, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
+
+    get heartbeat_event_feedback_path(ev)
+
+    assert_response :success
+    assert_select "turbo-frame#hb-drawer"
+    assert_select "form[data-test=span-grade-form]", 2
+    assert_select "form[action=?]", heartbeat_event_grade_path(ev), 2
+  end
+
+  test "a graded span renders its grade marker server-side on the next load" do
+    ev = event(seq: 0, reason_slug: "narrate this span well", closed_at: 1.minute.ago, outcome_slug: "done")
+
+    # grade the span through E2, exactly as the drawer's fetch does
+    post heartbeat_event_grade_path(ev),
+         params: { grader: "alex", disposition: "good", slug: "clean span with a sharp outcome" }
+    assert_response :success
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
+    assert_match "clean span with a sharp outcome", response.body
   end
 end

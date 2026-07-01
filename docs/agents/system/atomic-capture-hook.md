@@ -31,12 +31,48 @@ matching the `/api/v1` convention) to
 | `output`      | `tool_response` serialized + truncated (~3 KB) |
 | `outcome`     | `ok`, or `error` when `tool_response` carries an explicit failure signal (`error` / `is_error:true` / `success:false` / `interrupted:true`) — a noisy stderr is **not** a failure |
 | `actor`       | `agent` |
+| `model`       | the **session model** — see below (nil ⇒ key dropped, column stays null) |
 | `occurred_at` | now (UTC ISO-8601) |
 | `task_slug`, `stage`, `mascot` | the **active-feature marker** (see below) |
 
 `tokens_in`/`tokens_out`/`cost` and `event_slug`/`result_slug`/`seq` are
 **intentionally absent** — a hook can't know them; the model fills its defaults
 and derives `seq` per session.
+
+### What it DROPS (never a row)
+
+Two classes of Bash call are dropped **before** any POST — they own no narrated
+span and would otherwise land in "Unlabeled":
+
+- **Navigation** — a command whose first token is `cd` / `pushd` / `popd` / `pwd`
+  (a bare directory move; ~84% of the raw noise).
+- **Narration** — a command whose invocation **is** `bin/atomic-event` (the
+  agent's self-narration CLI). It's the span machinery itself, so capturing the
+  call that declares a span would double-record it as a raw action. Matches only
+  an actual invocation — any path prefix (`/abs/…/bin/atomic-event`,
+  `./bin/atomic-event`) and optional leading `ENV=val` assignments — never a
+  command that merely *mentions* the string (`grep atomic-event`, `cat
+  bin/atomic-event`, an edit to the file). A `cd … && bin/atomic-event` already
+  drops as navigation (first token `cd`).
+
+### Model derivation — what's actually available to the hook
+
+Claude Code does **not** put the session model in the PostToolUse stdin payload,
+and there is **no** documented model env var (verified against the hooks
+reference + a live session: the payload is `session_id`, `prompt_id`,
+`transcript_path`, `cwd`, `permission_mode`, `hook_event_name`, `tool_name`,
+`tool_input`, `tool_response`; hook env carries only `CLAUDE_PROJECT_DIR` /
+`CLAUDE_PLUGIN_*` / `CLAUDE_ENV_FILE`). The model **is** available one hop away:
+the payload's `transcript_path` points at the session JSONL, whose **assistant**
+lines each carry `message.model` (e.g. `claude-opus-4-8`). So the hook:
+
+1. uses a direct `model` / `message.model` field if a future Claude Code adds one;
+2. else reads the newest assistant `message.model` from a **bounded tail**
+   (`TRANSCRIPT_TAIL_BYTES` ≈ 128 KB off the END — at PostToolUse time the last
+   written line is almost always the assistant turn that issued the tool call, so
+   this finds the model without reading a multi-MB file per call);
+3. else leaves it nil — the capture endpoint drops the key and the column stays
+   null. We only ever stamp a **real** model; nothing is fabricated.
 
 ### Marker derivation
 
@@ -106,6 +142,44 @@ would scope it.)
 > `$RUNTIME_ROOT/bin/atomic-capture-hook`, pruning stale worktree entries) the
 > same way it wires the status line and SessionStart mascot hook. The orchestrator
 > runs `bin/install-agent-docs` **after** this change is reviewed and merged.
+
+## SessionEnd hook — close the last open span
+
+The companion producer is the **SessionEnd** hook, which runs
+`bin/atomic-event close-open` when a Claude Code session terminates. It closes any
+span still open for the session (reading the session id off the SessionEnd stdin
+payload) with a generic `session ended` outcome — so a session's **last** span
+never hangs open forever and trailing actions never fall into "Unlabeled". It is
+best-effort and always exits 0, exactly like the atomic-event narration CLI.
+
+Add to `~/.claude/settings.json` (command points at the **primary checkout** so it
+survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason —
+`clear`, `resume`, `logout`, `prompt_input_exit`, `bypass_permissions_disabled`,
+`other`):
+
+```jsonc
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/alex/projects/mcritchie-studio/bin/atomic-event close-open",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+> **Same rule — do not hand-edit the operator's global settings from a build
+> session.** `bin/install-agent-docs` wires this SessionEnd hook idempotently
+> (pointing at `$RUNTIME_ROOT/bin/atomic-event close-open`, pruning stale worktree
+> entries) the same way it wires the PostToolUse capture hook. The orchestrator
+> runs it **after** this change is reviewed and merged.
 
 ## Tests
 

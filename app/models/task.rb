@@ -144,6 +144,10 @@ class Task < ApplicationRecord
   # Forward-only per-action trajectory (AtomicAction.capture). Nullify on destroy
   # so the finest-grain telemetry survives a task teardown as orphaned history.
   has_many :atomic_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  # Agent-narrated trajectory SPANS (AtomicEvent.open_event!/close_event!) — the
+  # coarse, meaningful layer the raw actions attribute under. Nullify on destroy so
+  # the narrated history survives a task teardown as orphaned spans.
+  has_many :atomic_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
@@ -189,6 +193,12 @@ class Task < ApplicationRecord
   # manual size) and never unwinds the ship if derivation fails.
   after_update :autoderive_actual_size, if: :saved_change_to_stage?
   after_commit :refresh_duration_metrics_for_release_changes, on: %i[create update destroy]
+  # Avi auto shirt-sizes a task the instant it enters `designed` WITHOUT a po_size
+  # — on create (the stage a task is BORN in, so the typical trigger is a
+  # `bin/task create` with no --po-size) or a later move INTO designed with the
+  # size still blank. Enqueued async (AviSizingJob) so the sizing runs in PARALLEL
+  # with the build, never blocking the create/move. See #enqueue_avi_sizing_if_designed_unsized.
+  after_commit :enqueue_avi_sizing_if_designed_unsized, on: %i[create update]
   # A destroy fires no TaskEvent, so the live /deployments board never hears about
   # it — broadcast the card removal explicitly so every viewer's board drops it.
   after_destroy_commit :broadcast_removal_to_deployments_board
@@ -959,6 +969,29 @@ class Task < ApplicationRecord
     return if size.blank?
 
     update_column(:actual_size, size) # rubocop:disable Rails/SkipsModelValidations
+  rescue StandardError => e
+    log = ErrorLog.capture!(e)
+    log.target = self
+    log.target_name = slug
+    log.save!
+  end
+
+  # after_commit trigger: fire Avi's async shirt-sizer the moment a task ENTERS
+  # `designed` with a blank po_size — a fresh create (the birth stage) or a move
+  # back INTO designed that's still unsized. Enqueue only (AviSizingJob owns the
+  # LLM call + attribution) so this never blocks the create/move. Guarded on:
+  #   * stage == "designed" AND po_size blank (never re-size a set task), and
+  #   * the task just entered designed (a fresh row, or a real stage change) — so a
+  #     plain metadata/title edit on an already-designed unsized task doesn't re-fire.
+  # Best-effort: an enqueue failure (e.g. Redis down) is logged, never raised — a
+  # broken queue must not sink task creation. AviSizingJob itself re-guards po_size,
+  # so a duplicate enqueue is a harmless no-op.
+  def enqueue_avi_sizing_if_designed_unsized
+    return unless stage == "designed"
+    return if po_size.present?
+    return unless previously_new_record? || saved_change_to_stage?
+
+    AviSizingJob.perform_later(slug)
   rescue StandardError => e
     log = ErrorLog.capture!(e)
     log.target = self

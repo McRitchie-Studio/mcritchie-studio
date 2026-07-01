@@ -55,7 +55,7 @@ Rails.application.routes.draw do
       post "board/delete",       to: "board#delete",       as: :board_delete
       post "board/ship_release", to: "board#ship_release", as: :board_ship_release
       # Deployment-step toys: open / advance / reset a fixture RELEASE so the live
-      # tracker can be stepped Testing → … → Deploying Prod without real data.
+      # tracker can be stepped Testing → … → Deploying without real data.
       post "board/open_release",    to: "board#open_release",    as: :board_open_release
       post "board/advance_release", to: "board#advance_release", as: :board_advance_release
       post "board/reset_release",   to: "board#reset_release",   as: :board_reset_release
@@ -79,6 +79,18 @@ Rails.application.routes.draw do
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
   get  "alex/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
   post "alex/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  # Span-level grade (E2): upsert one grade for a narrated AtomicEvent span. JSON
+  # only by design — E2 stays view-free so it never collides with E3, which owns
+  # every heartbeat view/partial and the turbo_stream grading path.
+  post "alex/heartbeat/events/:id/grade",     to: "heartbeat#grade_event", as: :heartbeat_event_grade
+  # The per-SPAN grading drawer body (E3): the span-level analogue of the per-action
+  # feedback drawer, lazy-loaded into the same shared turbo-frame on a span's grade
+  # click. Read-only GET; its editors POST to the E2 grade_event endpoint above.
+  get  "alex/heartbeat/events/:id/feedback", to: "heartbeat#feedback_event", as: :heartbeat_event_feedback
+  # Every AtomicEvent SPAN across ALL sessions, newest-first, paginated 100/page —
+  # the cross-session analogue of the per-session heartbeat (heartbeat#show). Reuses
+  # the same span table + drawer; linked from the heartbeat's in-context navbar.
+  get  "alex/heartbeat/spans", to: "heartbeat#all_spans", as: :heartbeat_all_spans
   get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
 
   get "toast_test", to: "toast_test#index"
@@ -272,6 +284,17 @@ Rails.application.routes.draw do
       # hook POSTs one AtomicAction per agent step. Best-effort: a capture miss
       # returns 204, never a 500 (telemetry must not break the work it observes).
       resources :atomic_actions, only: [:create]
+      # Agent-narration sink — the agent OPENs a meaningful span (category+reason)
+      # and CLOSEs it with an outcome; raw actions attribute to the open span.
+      # POST /api/v1/atomic_events opens (carrying an optional prior_outcome for the
+      # BOUNDARY transition); /close closes the current span; /close_all is the
+      # session-end teardown that closes every still-open span.
+      resources :atomic_events, only: [:create] do
+        collection do
+          post :close
+          post :close_all
+        end
+      end
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.
       post "sessions/:session_id/mascot", to: "sessions#mascot"

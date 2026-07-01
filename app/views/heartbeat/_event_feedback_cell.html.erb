@@ -1,0 +1,21 @@
+<%# The span's grade affordance on the event row. TWO layers: the INLINE quick-grade
+    good/not radios for both graders (Alex + the McRitchie audit) — the fast lane that
+    POSTs straight to the E2 grade_event endpoint — and the fuller "grade ▸" button that
+    opens the span-grading drawer (into the shared turbo-frame) for the slug / long-form
+    / bank detail. Below both, each grader's current grade marker (a disposition dot +
+    slug), server-rendered from the passed grades (so tests + a no-JS load see them) and
+    bound to the row's Alpine `grades` state so any save updates them live via the
+    hb:span-graded CustomEvent. @click.stop keeps the whole cell from toggling the span's
+    expand/collapse. Locals: event, alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
+<td class="hb-evtfbcell" data-test="event-grade-cell" @click.stop>
+  <div class="hb-evtquick" data-test="event-inline-grades">
+    <%= render "heartbeat/event_inline_grade", event: event, grader: "alex", grade: alex %>
+    <%= render "heartbeat/event_inline_grade", event: event, grader: "mcr", grade: mcr %>
+  </div>
+  <button type="button" class="hb-btn hb-gradebtn" data-test="event-grade-open"
+          @click="openDrawer('<%= heartbeat_event_feedback_path(event) %>')">grade &#9656;</button>
+  <span class="hb-evtmarks">
+    <%= render "heartbeat/event_grade_mark", grader: "alex", grade: alex %>
+    <%= render "heartbeat/event_grade_mark", grader: "mcr", grade: mcr %>
+  </span>
+</td>

@@ -12,6 +12,18 @@ class ActionGradeTest < ActiveSupport::TestCase
       slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD }.merge(overrides)
   end
 
+  # A narrated span to hang span-level grades off of.
+  def event(session_id: "grade-ev-sess", **attrs)
+    AtomicEvent.create!({ session_id: session_id, category: "Explore",
+                          reason_slug: "find issue with api", opened_at: Time.current, seq: 0 }.merge(attrs))
+  end
+
+  # Valid attrs for a grade that targets a SPAN instead of an action.
+  def event_valid_attrs(**overrides)
+    { atomic_event: event, grader: ActionGrade::ALEX,
+      slug: "narrated the span clearly", disposition: ActionGrade::GOOD }.merge(overrides)
+  end
+
   # ---- [unit] defaults -------------------------------------------------------
 
   test "[unit] a new grade is neither banked nor discarded by default" do
@@ -29,11 +41,11 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert grade.valid?, grade.errors.full_messages.to_sentence
   end
 
-  test "[unit] atomic_action is required" do
+  test "[unit] a grade with no target (neither action nor event) is invalid" do
     grade = ActionGrade.new(valid_attrs(atomic_action: nil))
 
     assert_not grade.valid?
-    assert_includes grade.errors[:atomic_action], "must exist"
+    assert_includes grade.errors[:base], "must grade exactly one of an action or an event"
   end
 
   test "[unit] slug is required" do
@@ -198,5 +210,108 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert_difference -> { ActionGrade.count }, -2 do
       graded.destroy
     end
+  end
+
+  # ---- [unit] dual target (span grading) + XOR -------------------------------
+
+  test "[unit] valid when targeting an event span instead of an action" do
+    grade = ActionGrade.new(event_valid_attrs)
+
+    assert grade.valid?, grade.errors.full_messages.to_sentence
+    assert grade.event_grade?, "a grade with an atomic_event_id targets a span"
+  end
+
+  test "[unit] targeting BOTH an action and an event is invalid (XOR)" do
+    grade = ActionGrade.new(valid_attrs(atomic_event: event))
+
+    assert_not grade.valid?
+    assert_includes grade.errors[:base], "must grade exactly one of an action or an event"
+  end
+
+  test "[unit] an event grade persists with a null atomic_action_id" do
+    grade = ActionGrade.create!(event_valid_attrs)
+
+    assert grade.persisted?
+    assert_nil grade.atomic_action_id
+    assert grade.atomic_event_id.present?
+  end
+
+  # ---- [unit] uniqueness per (event, grader) --------------------------------
+
+  test "[unit] one grade per grader on a given event" do
+    span = event(session_id: "ev-uniq-sess")
+    ActionGrade.create!(event_valid_attrs(atomic_event: span, grader: ActionGrade::ALEX))
+
+    dup = ActionGrade.new(event_valid_attrs(atomic_event: span, grader: ActionGrade::ALEX))
+
+    assert_not dup.valid?
+    assert_includes dup.errors[:grader], "has already been taken"
+  end
+
+  test "[unit] an event carries Alex's grade and the McRitchie audit as two rows" do
+    span = event(session_id: "ev-two-row")
+    alex = ActionGrade.create!(event_valid_attrs(atomic_event: span, grader: ActionGrade::ALEX))
+    mcr  = ActionGrade.create!(event_valid_attrs(atomic_event: span, grader: ActionGrade::MCR))
+
+    assert_equal 2, span.action_grades.count
+    assert_equal [alex.id], span.action_grades.by_grader(ActionGrade::ALEX).pluck(:id)
+    assert_equal [mcr.id], span.action_grades.by_grader(ActionGrade::MCR).pluck(:id)
+  end
+
+  test "[unit] the same grader may grade both an action and an event" do
+    act  = ActionGrade.create!(valid_attrs(atomic_action: action(session_id: "cross-act")))
+    span = ActionGrade.new(event_valid_attrs(atomic_event: event(session_id: "cross-ev")))
+
+    assert act.persisted?
+    assert span.valid?, span.errors.full_messages.to_sentence
+  end
+
+  # ---- [unit] for_event scope ------------------------------------------------
+
+  test "[unit] for_event scopes to a single event" do
+    mine  = event(session_id: "for-event-mine")
+    other = event(session_id: "for-event-other")
+    grade = ActionGrade.create!(event_valid_attrs(atomic_event: mine))
+    ActionGrade.create!(event_valid_attrs(atomic_event: other))
+
+    assert_equal [grade.id], ActionGrade.for_event(mine).pluck(:id)
+  end
+
+  # ---- [integration] bank!/discard! on an event grade ------------------------
+
+  test "[integration] banking an event grade lands it in the Insight Bank" do
+    grade = ActionGrade.create!(event_valid_attrs(slug: "promote this to a guardrail"))
+
+    assert_not_includes ActionGrade.banked, grade
+
+    grade.bank!
+
+    assert grade.banked
+    assert_includes ActionGrade.banked, grade, "a banked span grade appears in the Insight Bank"
+  end
+
+  test "[integration] discarding a banked event grade removes it from the Bank" do
+    grade = ActionGrade.create!(event_valid_attrs)
+    grade.bank!
+    assert_includes ActionGrade.banked, grade
+
+    grade.discard!
+
+    assert grade.discarded
+    assert_not grade.banked
+    assert_not_includes ActionGrade.banked, grade
+  end
+
+  # ---- [integration] a span deletion nullifies (never destroys) its grades ---
+
+  test "[integration] destroying a span nullifies its grades rather than deleting" do
+    span  = event(session_id: "ev-nullify")
+    grade = ActionGrade.create!(event_valid_attrs(atomic_event: span))
+
+    assert_no_difference -> { ActionGrade.count } do
+      span.destroy
+    end
+
+    assert_nil grade.reload.atomic_event_id, "the grade survives the span, orphaned"
   end
 end

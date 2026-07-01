@@ -33,6 +33,56 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   not backup. Feature agents push their own branch and graduate through PR/QA;
   Avi or the designated release conductor merges.
 
+## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
+
+This is how you work here: **as you work you MUST narrate your trajectory into
+events — without being asked.** Narration is the default, not an add-on; a fresh
+session with no explicit prompt still narrates from its first real unit of work.
+Your raw tool-calls attribute server-side to whichever span is currently open, so
+a session with no spans reads as a wall of raw tool calls instead of "Explore:
+find api issue → found the nil-guard". Do not wait to be told — **your FIRST
+span opens BEFORE your first tool call**: an `Explore` (or `Plan`) "orient" span —
+read the task, scan the code you'll touch — even on a small, pinpointed change. Go
+straight to `Edit` and your orientation strands in the "Unlabeled" bucket, so the
+"understand the task" beat is lost. Open the orient span first, then keep the trail
+going to handoff.
+
+Open a span at each natural work boundary:
+
+```bash
+bin/atomic-event start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
+```
+
+When one unit of work ends and the next begins, roll the boundary in **one call**
+— close the prior span with its outcome and open the next together:
+
+```bash
+bin/atomic-event next --outcome "what just happened" --category <C> --reason "what's next"
+```
+
+Close the final open span when the work (or the session) is done:
+
+```bash
+bin/atomic-event end --outcome "what happened"
+```
+
+- **Lead with orient** — your opening span is `Explore`/`Plan` and opens BEFORE
+  any tool runs; nothing should land in "Unlabeled" at the top of a session.
+- **Keep spans meaningful** — one per unit of work, not one per tool call
+  (navigate `cd` **and** the `bin/atomic-event` narration calls themselves are
+  dropped automatically; opening a new span auto-closes the prior one).
+- **Stamp the task on your first span** — add `--task <slug>` to `start`/`next`
+  so the span is task-attributed immediately, instead of a blank TASK until a
+  later `bin/task`/`bind-task` write lands. In a `feat/<slug>` worktree it's
+  inferred from the branch, so `--task` is mainly for a primary/conductor
+  checkout working a specific task.
+- **Always give an outcome** — every `next`/`end` records what actually happened
+  ("Explore: find api issue → found the nil-guard"), not just the intent; an
+  outcome-less span is a wasted span.
+- Keep `--reason`/`--outcome` short (~4-7 words).
+- **It's non-fatal** — narration never blocks your work, and it powers the Alex
+  learning heartbeat (`/alex/heartbeat`). There is no reason to skip it.
+
 ## DevOps Routing — read before writing ANY code
 
 If your work will produce a code diff — a feature, a bug, or a chore, **even a
@@ -190,6 +240,7 @@ assigned that lane.
 | New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
+| Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |

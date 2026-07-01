@@ -573,8 +573,12 @@ that already has `origin/release` is skipped.
 **`Review submitted PRs`**  *(submitted → reviewed → assembled)*
 Review is a **nested chain** (§1.2): **Avi thin-delegates**, then the **PRIMARY
 reviewer owns the lane** — it spawns the LIGHT and runs the merge. Not a solo
-`avi` pass, and **not a flat peer spawn**. For each `submitted` task
-(`bin/task list` or the board):
+`avi` pass, and **not a flat peer spawn**. The formalized, agent-role how-to for
+this cascade — Avi assigns the pair, each reviewer narrates its review **as its
+soul** (`--agent`) into the heartbeat's Agent column, any reviewer can block — is
+the reusable **[PR Review SOP module](../modules/pr-review-sop.md)**; this section
+is its release-context anchor. For each `submitted` task (`bin/task list` or the
+board):
 
 1. **Spawn Avi (thin gate).** He confirms **product-acceptance** — does the open
    PR (base `release`) meet the task's acceptance criteria? — and picks the pair

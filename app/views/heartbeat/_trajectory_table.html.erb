@@ -1,12 +1,26 @@
-<%# The atomic trajectory table — ported from the prototype. Rows run oldest to
+<%# The FLAT per-action trajectory table (one row per raw tool-call, grouped by
+    stage) with the inline T5 feedback columns. As of the event-grouped heartbeat
+    this is no longer the default `show` render — `_event_table` (spans as primary
+    rows) is — but it stays as a tested component and the inline-cell markup that
+    `grade.turbo_stream` reuses. Rows run oldest to
     newest and are bucketed into per-stage groups (the null-stage "Session" group
     leads). Each group is a collapsible tbody (Alpine, default open). The last two
     columns are the T5 feedback layer: Alex's grade and the McRitchie audit-of-Alex,
     each an inline good/not radio set; clicking a row opens the per-action grading
     drawer. Locals: groups (Array of [stage, actions]), pokemon_by_slug, grades
-    (lookup of action_id => { grader => ActionGrade }). %>
+    (lookup of action_id => { grader => ActionGrade }), agents_by_slug (soul slug =>
+    Agent) and agent_slug_by_action (action_id => the acting soul slug INHERITED
+    from the action's span) for the stacked acting-soul-over-base-mascot Agent
+    cell — both default empty, so an action with no span-soul shows just its
+    mascot. %>
 <% pokemon_by_slug ||= {} %>
+<% agents_by_slug ||= {} %>
+<% agent_slug_by_action ||= {} %>
 <% grades ||= {} %>
+<%# Ids of the 2nd+ tool-call of each shared source_turn_uuid, whose tokens/cost merely
+    inherit the turn's spend — the view fades those cells. Computed session-wide by the
+    controller (heartbeat_shared_turn_ids); defaults to none for a standalone render. %>
+<% shared_turn_ids ||= Set.new %>
 <div class="hb-scroll">
   <table class="hb-tbl" data-test="heartbeat-table">
     <thead>
@@ -16,7 +30,7 @@
         <th>Result</th>
         <th>Stage</th>
         <th>Task</th>
-        <th>Pokémon</th>
+        <th>Agent</th>
         <th>Model</th>
         <th>Tokens</th>
         <th>Cost</th>
@@ -29,6 +43,7 @@
 
     <% groups.each do |stage, actions| %>
       <% meta = heartbeat_stage_meta(stage) %>
+      <% group_totals = heartbeat_usage_totals(actions) %>
       <tbody class="hb-group" data-test="heartbeat-group" data-stage="<%= stage.presence || "session" %>" x-data="{ open: true }">
         <tr class="hb-grouphead" @click="open = !open">
           <td colspan="13">
@@ -36,7 +51,7 @@
               <span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span>
               <span class="hb-chip" style="color: <%= meta[:accent] %>" title="<%= meta[:description] %>"><%= meta[:label] %></span>
               <span class="hb-groupcount"><%= pluralize(actions.size, "action") %></span>
-              <span class="hb-groupsub"><%= heartbeat_tokens_compact(actions.sum(&:tokens_total)) %> tok &middot; <%= heartbeat_cost(actions.sum { |a| a.cost.to_f }) %></span>
+              <span class="hb-groupsub"><%= heartbeat_tokens_compact(group_totals[:tokens_total]) %> tok &middot; <%= heartbeat_cost(group_totals[:cost]) %></span>
             </div>
           </td>
         </tr>
@@ -44,7 +59,9 @@
         <% actions.each do |action| %>
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
           <% pokemon = pokemon_by_slug[action.mascot] %>
+          <% action_soul = agent_slug_by_action[action.id] %>
           <% row_grades = grades[action.id] || {} %>
+          <% turn_shared = shared_turn_ids.include?(action.id) %>
           <tr class="hb-row" data-test="heartbeat-row" data-seq="<%= action.seq %>" x-show="open"
               style="--hb-edge: <%= outcome[:color] %>"
               @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -53,16 +70,11 @@
             <td><span class="hb-result"><%= action.result_slug.presence || "—" %></span></td>
             <td class="hb-meta hb-stage-cell" title="<%= meta[:description] %>"><%= meta[:label] %></td>
             <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
-            <td>
-              <% if action.mascot.present? %>
-                <span class="hb-mascot">&#10022; <%= pokemon&.name || action.mascot.titleize %></span>
-              <% else %>
-                <span class="hb-meta">—</span>
-              <% end %>
-            </td>
+            <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: pokemon,
+                                         agent_slug: action_soul, agent: agents_by_slug[action_soul]) %></td>
             <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+            <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
+            <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <td><span class="hb-actor" title="<%= heartbeat_actor_description(action.actor) %>"><%= action.actor %></span></td>
             <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
             <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::ALEX, grade: row_grades[ActionGrade::ALEX] %>

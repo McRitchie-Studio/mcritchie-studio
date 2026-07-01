@@ -242,6 +242,24 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       "the Tasks link must not be width-hidden on /stages"
   end
 
+  test "[component] deployments board links to the Alex learning heartbeat" do
+    get deployments_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board sections"] a[href="#{alex_heartbeat_path}"]),
+      text: "Alex Heartbeat",
+      count: 1
+  end
+
+  test "[component] the Alex Heartbeat link rides every board surface" do
+    # _board_top_links is shared, so the shortcut shows on tasks + stages too.
+    [tasks_path, stages_path].each do |path|
+      get path
+      assert_response :success
+      assert_select %(nav[aria-label="Board sections"] a[href="#{alex_heartbeat_path}"]), { count: 1 },
+        "expected the Alex Heartbeat link on #{path}"
+    end
+  end
+
   test "board header omits the removed All Agents agent filter" do
     get tasks_path
     assert_response :success
@@ -292,6 +310,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#release-duration-card"
     assert_select "#release-duration-card a[href=?]", all_deployments_path, text: /All Deployments/
     assert_select "#release-duration-card", text: /Building/
+    assert_select "#release-duration-card h3", text: /Last Three Deployments/
+    assert_select "#release-duration-card", text: /Release Times/, count: 0
+    assert_select "#release-duration-card", text: /shipped releases/, count: 0
   end
 
   test "[integration] deployments cards carry a data-glow attribute for the live glow" do

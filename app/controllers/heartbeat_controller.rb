@@ -1,25 +1,75 @@
 class HeartbeatController < ApplicationController
-  # Alex learning / distillation heartbeat — the per-action atomic trajectory.
+  # Alex learning / distillation heartbeat — the agent-narrated event trajectory.
   #
-  # #show reads AtomicAction.for_session(...).chronological (oldest -> newest) and
-  # groups the rows by stage for display, then loads the ActionGrade feedback layer
-  # (T5): each action carries up to two grades — Alex's grade and the McRitchie
-  # audit-of-Alex. #feedback renders the per-action grading drawer, #grade upserts a
-  # grade (and banks/discards it), and #insights is the curated Insight Bank.
+  # #show reads AtomicEvent.for_session(...).chronological (oldest -> newest) as the
+  # PRIMARY rows — agent-narrated spans (category · reason -> outcome) — and rolls the
+  # raw AtomicActions attributed to each span (atomic_event_id) underneath as an
+  # expandable, read-only drill-down; actions the agent never narrated (null
+  # atomic_event_id) fall into the "Unlabeled" group. Grading is unchanged and lives
+  # entirely in the drawer: #feedback renders the per-action grading drawer, #grade
+  # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
   #
   # Open meta surface, like the launcher: it opts out of the engine's
   # authenticate-by-default before_action. The launcher's Alex avenue points at
   # alex_heartbeat_path, which routes here.
   skip_before_action :require_authentication
 
+  # Page size for the cross-session All Spans view — the operator asked for 100
+  # spans per page.
+  ALL_SPANS_PER_PAGE = 100
+
   def show
     @session_id = params[:session_id].presence || latest_session_id
     @actions = @session_id ? AtomicAction.for_session(@session_id).chronological.to_a : []
-    @groups = group_by_stage(@actions)
+
+    # Usage is metered per assistant TURN, so a turn's fan-out of tool-calls all
+    # carry that turn's tokens/cost and render identical numbers. Flag the
+    # non-primary rows of each source_turn_uuid (walked chronologically across the
+    # WHOLE session) so the views fade their tokens/cost cells — the numbers are
+    # inherited, not additive. Purely presentational; no total changes.
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(@actions)
+
+    # The primary rows are now agent-narrated EVENT SPANS, not raw tool-calls. Each
+    # event rolls up the actions attributed to it (atomic_event_id); the actions the
+    # agent never narrated (null atomic_event_id) fall into the read-only "Unlabeled"
+    # group. One actions query, grouped in Ruby, so events + Unlabeled share it with
+    # no N+1.
+    actions_by_event = @actions.group_by(&:atomic_event_id)
+    @events = @session_id ? AtomicEvent.for_session(@session_id).chronological.to_a : []
+    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
+    @unlabeled = actions_by_event[nil] || []
+
     @sessions = session_options
-    @pokemon_by_slug = pokemon_lookup(@actions)
-    @grades = grades_lookup(@actions)
+    @pokemon_by_slug = pokemon_lookup(@actions, @events)
+    @agents_by_slug = agent_soul_lookup(@events)
+    @event_grades = event_grade_lookup(@events)
     @counts = grade_counts(@session_id)
+  end
+
+  # Every narrated AtomicEvent SPAN across ALL sessions, newest-first, paginated
+  # 100 per page — the cross-session companion to #show (which scopes to one
+  # session). Reuses the SAME span table partial: one page of spans, each rolling
+  # up the raw actions attributed to it (one grouped query, no N+1). There is no
+  # "Unlabeled" group here — that is per-session context (null-span actions have no
+  # coherent place in a newest-first cross-session list), so exactly one Unlabeled
+  # group is never exceeded. Read-only meta surface, like #show.
+  def all_spans
+    @page  = [params[:page].to_i, 1].max
+    scope  = AtomicEvent.order(opened_at: :desc, seq: :desc, id: :desc)
+    @total = scope.count
+    @events = scope.offset((@page - 1) * ALL_SPANS_PER_PAGE).limit(ALL_SPANS_PER_PAGE).to_a
+
+    actions_by_event = AtomicAction.where(atomic_event_id: @events.map(&:id))
+                                   .chronological.to_a.group_by(&:atomic_event_id)
+    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
+
+    page_actions = actions_by_event.values.flatten
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(page_actions)
+    @pokemon_by_slug = pokemon_lookup(page_actions, @events)
+    @agents_by_slug  = agent_soul_lookup(@events)
+    @event_grades    = event_grade_lookup(@events)
+    @has_prev = @page > 1
+    @has_next = @page * ALL_SPANS_PER_PAGE < @total
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
@@ -28,6 +78,21 @@ class HeartbeatController < ApplicationController
   def feedback
     @action = AtomicAction.find(params[:id])
     render partial: "heartbeat/drawer", locals: drawer_locals(@action)
+  end
+
+  # The per-SPAN grading drawer body — the event-level analogue of #feedback,
+  # lazy-loaded into the same shared turbo-frame when the operator clicks a span's
+  # "grade" affordance. Loads the span's attributed actions once (for the rolled-up
+  # token/cost/model summary the drawer shows) plus its current Alex grade + McRitchie
+  # audit. Its editors POST to E2's JSON grade_event endpoint (client-side fetch), so
+  # this action, like #feedback, only READS.
+  def feedback_event
+    @event = AtomicEvent.find(params[:id])
+    actions = @event.atomic_actions.chronological.to_a
+    grades  = @event.action_grades.index_by(&:grader)
+    render partial: "heartbeat/event_drawer",
+           locals: { event: @event, actions: actions,
+                     alex: grades[ActionGrade::ALEX], mcr: grades[ActionGrade::MCR] }
   end
 
   # Upsert ONE grade for (action, grader) — the inline disposition radios and the
@@ -69,6 +134,36 @@ class HeartbeatController < ApplicationController
     end
   end
 
+  # Upsert ONE grade for (event, grader) — the span-level analogue of #grade,
+  # targeting a narrated AtomicEvent span instead of a raw action. Same
+  # disposition/slug/long_form/intent=bank|discard semantics. JSON ONLY by design:
+  # E2 stays view-free so it never touches the heartbeat views or the existing
+  # #grade turbo_stream path (E3 owns all heartbeat UI), which keeps the two
+  # parallel tasks from colliding. Writes RAISE (a grade is a deliberate user
+  # action), so they are wrapped in rescue_and_log with the grade as target
+  # context, per backend discipline.
+  def grade_event
+    @event = AtomicEvent.find(params[:id])
+    grader = params[:grader].to_s
+    @grade = ActionGrade.for_event(@event).by_grader(grader).first_or_initialize(grader: grader)
+
+    rescue_and_log(target: @grade) do
+      @grade.disposition = params[:disposition].presence || @grade.disposition.presence || ActionGrade::GOOD
+      @grade.slug        = params[:slug].presence || @grade.slug.presence || default_event_grade_slug(@event)
+      @grade.long_form   = params[:long_form] if params.key?(:long_form)
+      @grade.save!
+
+      case params[:intent]
+      when "bank"    then @grade.bank!
+      when "discard" then @grade.discard!
+      end
+
+      render json: grade_json(@grade)
+    end
+  rescue StandardError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   # The Insight Bank — exactly ActionGrade.banked, the curated lessons that make each
   # next agent smarter. Newest curation first.
   def insights
@@ -78,10 +173,13 @@ class HeartbeatController < ApplicationController
   private
 
   # The session whose trajectory we show by default: the one with the most recent
-  # action. nil when nothing has been captured yet (capture is forward-only, so a
-  # fresh prod is legitimately empty).
+  # activity. Event-primary now, so we consider the latest SPAN as well as the
+  # latest raw action (a session can narrate a span before its first tool-call
+  # attributes). nil when nothing has been captured yet (capture is forward-only,
+  # so a fresh prod is legitimately empty).
   def latest_session_id
-    AtomicAction.order(occurred_at: :desc, id: :desc).limit(1).pick(:session_id)
+    AtomicAction.order(occurred_at: :desc, id: :desc).limit(1).pick(:session_id) ||
+      AtomicEvent.order(opened_at: :desc, id: :desc).limit(1).pick(:session_id)
   end
 
   # Bucket the (already chronological) actions by stage, preserving each stage's
@@ -98,14 +196,17 @@ class HeartbeatController < ApplicationController
   end
 
   # Distinct sessions for the switcher, most-recent first, as [[label, id], ...].
-  # Each label leads with the session's Pokémon mascot ("Bulbasaur · e2f6eb27") so
-  # the picker reads as its handle, falling back to the bare session id when no
+  # The id set is the union of every session that has captured an action OR narrated
+  # a span, keyed by its latest timestamp so an event-only session still appears.
+  # Each label then leads with the session's Pokémon mascot ("Bulbasaur · e2f6eb27")
+  # so the picker reads as its handle, falling back to the bare session id when no
   # mascot was ever drawn for it (pre-mascot or seed sessions).
   def session_options
-    ids = AtomicAction.group(:session_id).maximum(:occurred_at)
-                      .sort_by { |_id, last_at| last_at }
-                      .reverse
-                      .map { |id, _last_at| id }
+    times = AtomicAction.group(:session_id).maximum(:occurred_at)
+    ids = times.merge(AtomicEvent.group(:session_id).maximum(:opened_at)) { |_id, a, b| [a, b].max }
+               .sort_by { |_id, last_at| last_at }
+               .reverse
+               .map { |id, _last_at| id }
     labels = session_mascot_labels(ids)
     ids.map { |id| [labels[id] || id, id] }
   end
@@ -126,34 +227,53 @@ class HeartbeatController < ApplicationController
 
   # One query for every mascot on the page so the Pokémon column reuses the
   # seeded Pokémon (name/emoji) instead of N+1 lookups; falls back to the slug.
-  def pokemon_lookup(actions)
-    slugs = actions.filter_map { |action| action.mascot.presence }.uniq
+  # Covers BOTH the raw actions AND the narrated spans — the event rows now show
+  # a mascot too (the span's own mascot, or its dominant action mascot), so the
+  # span mascots must resolve through the same single lookup.
+  def pokemon_lookup(actions, events = [])
+    slugs = (actions.filter_map { |action| action.mascot.presence } +
+             events.filter_map { |event| event.mascot.presence }).uniq
     return {} if slugs.empty?
 
     Pokemon.where(slug: slugs).index_by(&:slug)
   end
 
-  # One query for every grade on the page: { action_id => { "alex" => grade,
-  # "mcr" => grade } }. Lets each feedback cell render its stored grade without an
-  # N+1 — and lets the drawer reuse the same loaded rows.
-  def grades_lookup(actions)
-    ids = actions.map(&:id)
-    return {} if ids.empty?
+  # One query for every acting SOUL on the page so the stacked Agent column reuses
+  # the seeded Agent identity (name/emoji/status_color) instead of N+1 lookups. A
+  # span's `agent` is the soul that acted (avi/carl/…); the drill-down actions
+  # inherit their span's agent, so this single lookup covers both. Most spans carry
+  # a nil agent (the base session mascot did it), so the set is usually tiny/empty.
+  def agent_soul_lookup(events)
+    slugs = events.filter_map { |event| event.agent.presence }.uniq
+    return {} if slugs.empty?
 
-    ActionGrade.where(atomic_action_id: ids).each_with_object({}) do |grade, lookup|
-      (lookup[grade.atomic_action_id] ||= {})[grade.grader] = grade
-    end
+    Agent.where(slug: slugs).index_by(&:slug)
   end
 
-  # The three live feedback tallies for a session's actions: how many Alex graded,
-  # how many McRitchie audited, and how many are banked into the Insight Bank.
+  # Every span's current grades in one query, grouped by event id then keyed by
+  # grader, so the event table renders each span's Alex grade + McRitchie audit
+  # markers (and the drawer seeds from them) with no per-row lookup.
+  def event_grade_lookup(events)
+    return {} if events.empty?
+
+    ActionGrade.where(atomic_event_id: events.map(&:id))
+               .group_by(&:atomic_event_id)
+               .transform_values { |grades| grades.index_by(&:grader) }
+  end
+
+  # The three live feedback tallies for a session: how many Alex graded, how many
+  # McRitchie audited, and how many are banked into the Insight Bank. Counts grades
+  # on BOTH the session's raw actions AND its narrated spans, so span grading (E2)
+  # reflects in the header stats on the next render, exactly as action grading does.
   def grade_counts(session_id)
     return { graded: 0, audited: 0, insights: 0 } if session_id.blank?
 
-    ids = AtomicAction.for_session(session_id).pluck(:id)
-    return { graded: 0, audited: 0, insights: 0 } if ids.empty?
+    action_ids = AtomicAction.for_session(session_id).pluck(:id)
+    event_ids  = AtomicEvent.for_session(session_id).pluck(:id)
+    return { graded: 0, audited: 0, insights: 0 } if action_ids.empty? && event_ids.empty?
 
-    grades = ActionGrade.where(atomic_action_id: ids)
+    grades = ActionGrade.where(atomic_action_id: action_ids)
+                        .or(ActionGrade.where(atomic_event_id: event_ids))
     { graded:   grades.by_grader(ActionGrade::ALEX).count,
       audited:  grades.by_grader(ActionGrade::MCR).count,
       insights: grades.banked.count }
@@ -173,9 +293,17 @@ class HeartbeatController < ApplicationController
     action.event_slug.presence || action.result_slug.presence || action.kind
   end
 
+  # A starter slug for a span (event) grade that carries none of its own: the
+  # span's narrated reason, then its outcome, then its category — always a
+  # meaningful default so the ActionGrade slug-presence rule holds.
+  def default_event_grade_slug(event)
+    event.reason_slug.presence || event.outcome_slug.presence || event.category
+  end
+
   # JSON shape for the Alpine/fetch fallback consumer (the turbo_stream path is the
-  # primary one used by the UI).
+  # primary one used by the UI). Carries BOTH target FKs — exactly one is set,
+  # which tells the consumer whether this grade is of an action or a span.
   def grade_json(grade)
-    grade.slice(:id, :atomic_action_id, :grader, :disposition, :slug, :long_form, :banked, :discarded)
+    grade.slice(:id, :atomic_action_id, :atomic_event_id, :grader, :disposition, :slug, :long_form, :banked, :discarded)
   end
 end
