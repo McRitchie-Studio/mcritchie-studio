@@ -92,6 +92,17 @@
   #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:8px; }
   #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
 
+  /* Global feed table — the lightweight all-sessions index. A feed row is NOT
+     clickable as a whole (only its "open" button drills into the session), so it
+     keeps the hover highlight and category edge but a default cursor. */
+  #alex-heartbeat table.hb-feed-tbl { min-width:1080px; }
+  #alex-heartbeat tr.hb-feedrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat tr.hb-feedrow:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat .hb-feedsession { color:var(--hb-muted); }
+  #alex-heartbeat .hb-feedopen { white-space:nowrap; }
+  #alex-heartbeat .hb-openbtn { padding:4px 10px; font-size:11px; }
+  #alex-heartbeat .hb-feednote { color:var(--hb-faint); font-size:11.5px; padding:10px 12px; border-top:1px solid var(--hb-line); background:var(--hb-panel); }
+
   #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
   #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
   #alex-heartbeat .hb-empty a { color:var(--hb-accent); }
@@ -273,67 +284,122 @@
 </script>
 
 <section id="alex-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
-  <div class="hb-head">
-    <header class="hb-topbar">
-      <div class="hb-title">
-        <h1>Event Trajectory &middot; Alex Heartbeat</h1>
-        <p>
-          The spans this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; outcome.
-          Expand a span to drill into the raw tool-calls it framed; open one to grade the action and its McRitchie audit.
-        </p>
-      </div>
-      <% session_totals = heartbeat_usage_totals(@actions) %>
-      <div class="hb-stats">
-        <div class="hb-stat"><b><%= @events.size %></b><span>spans</span></div>
-        <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
-        <div class="hb-stat"><b><%= heartbeat_tokens_compact(session_totals[:tokens_total]) %></b><span>tokens</span></div>
-        <div class="hb-stat"><b><%= heartbeat_cost(session_totals[:cost]) %></b><span>cost</span></div>
-        <div class="hb-stat"><b id="hb-stat-graded"><%= @counts[:graded] %></b><span>graded</span></div>
-        <div class="hb-stat"><b id="hb-stat-audited"><%= @counts[:audited] %></b><span>audited</span></div>
-        <div class="hb-stat"><b id="hb-stat-insights"><%= @counts[:insights] %></b><span>insights</span></div>
-      </div>
-    </header>
+  <% if @feed %>
+    <%# ---- GLOBAL FEED: every span across all sessions, newest-first. Each row
+        drills into that session's detail view; no per-action drawer here. ---- %>
+    <div class="hb-head">
+      <header class="hb-topbar">
+        <div class="hb-title">
+          <h1>Event Trajectory &middot; Alex Heartbeat</h1>
+          <p>
+            Every span narrated across all sessions, newest &rarr; oldest. Open a session to drill into
+            its full trajectory &mdash; the raw tool-calls each span framed, with the token, cost, and model roll-up.
+          </p>
+        </div>
+        <div class="hb-stats">
+          <div class="hb-stat"><b data-test="feed-span-count"><%= @feed_total %></b><span>spans</span></div>
+          <div class="hb-stat"><b><%= @sessions.size %></b><span>sessions</span></div>
+          <div class="hb-stat"><b><%= @feed_insights %></b><span>insights</span></div>
+        </div>
+      </header>
 
-    <div class="hb-toolbar">
-      <% if @sessions.size > 1 %>
-        <%= form_with url: alex_heartbeat_path, method: :get, data: { turbo: false } do %>
-          <span class="hb-lab">Session</span>
-          <%= select_tag :session_id,
-                options_for_select(@sessions.map { |id| [id, id] }, @session_id),
-                class: "hb-sel", onchange: "this.form.requestSubmit()" %>
+      <div class="hb-toolbar">
+        <% if @sessions.any? %>
+          <%= form_with url: alex_heartbeat_path, method: :get, data: { turbo: false } do %>
+            <span class="hb-lab">Jump to session</span>
+            <%= select_tag :session_id,
+                  options_for_select([["all sessions", ""]] + @sessions.map { |id| [id, id] }, ""),
+                  class: "hb-sel", onchange: "this.form.requestSubmit()" %>
+          <% end %>
         <% end %>
-      <% elsif @session_id.present? %>
-        <span class="hb-lab">Session</span>
-        <span class="hb-meta hb-mono"><%= @session_id %></span>
-      <% end %>
-      <%= link_to alex_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
-        &#128161; Insight Bank (<span id="hb-insight-count"><%= @counts[:insights] %></span>)
-      <% end %>
-      <span class="hb-legend">
-        <span><b>span:</b> category &middot; reason &rarr; outcome</span>
-        <span><b>drill down:</b> expand a span &middot; click an action to grade</span>
-      </span>
+        <%= link_to alex_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
+          &#128161; Insight Bank (<span id="hb-insight-count"><%= @feed_insights %></span>)
+        <% end %>
+        <span class="hb-legend">
+          <span><b>span:</b> category &middot; reason &rarr; outcome</span>
+          <span><b>open:</b> drill into that session's trajectory</span>
+        </span>
+      </div>
     </div>
-  </div>
 
-  <% if @event_rows.any? || @unlabeled.any? %>
-    <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
-          pokemon_by_slug: @pokemon_by_slug, event_grades: @event_grades,
-          shared_turn_ids: @shared_turn_ids %>
+    <% if @feed_events.any? %>
+      <%= render "heartbeat/feed", feed_events: @feed_events, pokemon_by_slug: @pokemon_by_slug,
+            feed_truncated: @feed_truncated, feed_total: @feed_total, feed_limit: HeartbeatController::FEED_LIMIT %>
+    <% else %>
+      <div class="hb-empty" data-test="heartbeat-empty">
+        <b>No trajectory captured yet</b>
+        <p>Capture is forward-only — spans and actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+        <p><%= link_to "&lsaquo; back to the session launcher".html_safe, launcher_path %></p>
+      </div>
+    <% end %>
   <% else %>
-    <div class="hb-empty" data-test="heartbeat-empty">
-      <b>No trajectory captured yet</b>
-      <p>Capture is forward-only — spans and actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
-      <p><%= link_to "&lsaquo; back to the session launcher".html_safe, launcher_path %></p>
-    </div>
-  <% end %>
+    <%# ---- PER-SESSION DETAIL: one session's trajectory, spans chronological with
+        the raw tool-calls rolled up and the grading drawer. ---- %>
+    <div class="hb-head">
+      <header class="hb-topbar">
+        <div class="hb-title">
+          <h1>Event Trajectory &middot; Alex Heartbeat</h1>
+          <p>
+            The spans this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; outcome.
+            Expand a span to drill into the raw tool-calls it framed; open one to grade the action and its McRitchie audit.
+          </p>
+        </div>
+        <% session_totals = heartbeat_usage_totals(@actions) %>
+        <div class="hb-stats">
+          <div class="hb-stat"><b><%= @events.size %></b><span>spans</span></div>
+          <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
+          <div class="hb-stat"><b><%= heartbeat_tokens_compact(session_totals[:tokens_total]) %></b><span>tokens</span></div>
+          <div class="hb-stat"><b><%= heartbeat_cost(session_totals[:cost]) %></b><span>cost</span></div>
+          <div class="hb-stat"><b id="hb-stat-graded"><%= @counts[:graded] %></b><span>graded</span></div>
+          <div class="hb-stat"><b id="hb-stat-audited"><%= @counts[:audited] %></b><span>audited</span></div>
+          <div class="hb-stat"><b id="hb-stat-insights"><%= @counts[:insights] %></b><span>insights</span></div>
+        </div>
+      </header>
 
-  <%# The grading drawer — a single shared host; the per-action body is lazy-loaded
-      into the turbo-frame on row click. Alpine owns only the open/close chrome. %>
-  <div class="hb-scrim" :class="drawer ? 'hb-scrim-open' : ''" @click="closeDrawer()"></div>
-  <aside class="hb-drawer" :class="drawer ? 'hb-drawer-open' : ''" data-test="heartbeat-drawer">
-    <turbo-frame id="hb-drawer">
-      <div class="hb-derror">Select an action to grade&hellip;</div>
-    </turbo-frame>
-  </aside>
+      <div class="hb-toolbar">
+        <%= link_to alex_heartbeat_path, class: "hb-btn", data: { test: "heartbeat-all-sessions", turbo: false } do %>
+          &lsaquo; All sessions
+        <% end %>
+        <% if @sessions.size > 1 %>
+          <%= form_with url: alex_heartbeat_path, method: :get, data: { turbo: false } do %>
+            <span class="hb-lab">Session</span>
+            <%= select_tag :session_id,
+                  options_for_select(@sessions.map { |id| [id, id] }, @session_id),
+                  class: "hb-sel", onchange: "this.form.requestSubmit()" %>
+          <% end %>
+        <% else %>
+          <span class="hb-lab">Session</span>
+          <span class="hb-meta hb-mono"><%= @session_id %></span>
+        <% end %>
+        <%= link_to alex_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
+          &#128161; Insight Bank (<span id="hb-insight-count"><%= @counts[:insights] %></span>)
+        <% end %>
+        <span class="hb-legend">
+          <span><b>span:</b> category &middot; reason &rarr; outcome</span>
+          <span><b>drill down:</b> expand a span &middot; click an action to grade</span>
+        </span>
+      </div>
+    </div>
+
+    <% if @event_rows.any? || @unlabeled.any? %>
+      <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
+            pokemon_by_slug: @pokemon_by_slug, event_grades: @event_grades,
+            shared_turn_ids: @shared_turn_ids %>
+    <% else %>
+      <div class="hb-empty" data-test="heartbeat-empty">
+        <b>No trajectory captured yet</b>
+        <p>Capture is forward-only — spans and actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+        <p><%= link_to "&lsaquo; back to the session launcher".html_safe, launcher_path %></p>
+      </div>
+    <% end %>
+
+    <%# The grading drawer — a single shared host; the per-action body is lazy-loaded
+        into the turbo-frame on row click. Alpine owns only the open/close chrome. %>
+    <div class="hb-scrim" :class="drawer ? 'hb-scrim-open' : ''" @click="closeDrawer()"></div>
+    <aside class="hb-drawer" :class="drawer ? 'hb-drawer-open' : ''" data-test="heartbeat-drawer">
+      <turbo-frame id="hb-drawer">
+        <div class="hb-derror">Select an action to grade&hellip;</div>
+      </turbo-frame>
+    </aside>
+  <% end %>
 </section>

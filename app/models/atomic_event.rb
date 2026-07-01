@@ -48,6 +48,10 @@ class AtomicEvent < ApplicationRecord
   scope :open,         -> { where(closed_at: nil) }
   scope :closed,       -> { where.not(closed_at: nil) }
   scope :chronological, -> { order(opened_at: :asc, seq: :asc, id: :asc) }
+  # Newest-first — the reverse of :chronological. Powers the global heartbeat
+  # feed (every span across all sessions, most-recent at the top); the per-session
+  # detail view stays :chronological so a single session still reads as a trajectory.
+  scope :recent, -> { order(opened_at: :desc, seq: :desc, id: :desc) }
 
   # Open a new span for the session, auto-closing any prior OPEN span first.
   #

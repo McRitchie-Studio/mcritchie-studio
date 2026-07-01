@@ -1,0 +1,73 @@
+<%# The GLOBAL heartbeat feed — every narrated AtomicEvent across ALL sessions,
+    newest-first (AtomicEvent.recent). A deliberately lightweight index: one span per
+    row (its category badge, the narrated reason -> outcome, mascot, lifecycle status,
+    owning session, task), NO per-event action roll-up — that (tokens/cost/model, the
+    raw tool-calls) lives in the per-session detail view each row's "open" button drills
+    into (alex_heartbeat_path(session_id:)). Capped at feed_limit; a truncation notice
+    surfaces when older spans are hidden rather than silently dropping them. Locals:
+    feed_events (Array of AtomicEvent, newest-first), pokemon_by_slug, feed_truncated
+    (Boolean), feed_total (Integer), feed_limit (Integer). %>
+<% pokemon_by_slug ||= {} %>
+<% feed_truncated = false unless defined?(feed_truncated) %>
+<div class="hb-scroll">
+  <table class="hb-tbl hb-feed-tbl" data-test="heartbeat-feed">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Span</th>
+        <th>Narration</th>
+        <th>Pok&eacute;mon</th>
+        <th>Status</th>
+        <th>Session</th>
+        <th>Task</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% feed_events.each do |event| %>
+        <% cat = heartbeat_category_meta(event.category) %>
+        <% status = heartbeat_span_status_meta(event) %>
+        <% pokemon = pokemon_by_slug[event.mascot.presence] %>
+        <% detail_url = alex_heartbeat_path(session_id: event.session_id) %>
+        <tr class="hb-feedrow" data-test="heartbeat-feed-row"
+            data-session-id="<%= event.session_id %>"
+            style="--hb-edge: <%= cat[:accent] %>">
+          <td class="hb-meta hb-mono" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></td>
+          <td>
+            <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= event.category %></span>
+          </td>
+          <td class="hb-span">
+            <span class="hb-slug"><%= event.reason_slug %></span>
+            <span class="hb-arrow">&rarr;</span>
+            <% if event.open? || event.outcome_slug.blank? %>
+              <span class="hb-inprogress" data-test="feed-in-progress"><%= heartbeat_event_outcome(event) %></span>
+            <% else %>
+              <span class="hb-result"><%= event.outcome_slug %></span>
+            <% end %>
+          </td>
+          <td>
+            <% if event.mascot.present? %>
+              <span class="hb-mascot" data-test="feed-mascot">&#10022; <%= pokemon&.name || event.mascot.titleize %></span>
+            <% else %>
+              <span class="hb-meta">&mdash;</span>
+            <% end %>
+          </td>
+          <td><span class="hb-outcome" data-test="feed-status" style="color: <%= status[:color] %>"><%= status[:label] %></span></td>
+          <td class="hb-meta hb-mono hb-feedsession"><%= event.session_id %></td>
+          <td class="hb-meta hb-mono"><%= event.task_slug.presence || "—" %></td>
+          <td class="hb-feedopen">
+            <%= link_to detail_url, class: "hb-btn hb-openbtn",
+                  data: { test: "heartbeat-feed-open", turbo: false } do %>
+              open&nbsp;&#8599;
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+  <% if feed_truncated %>
+    <div class="hb-feednote" data-test="heartbeat-feed-truncated">
+      Showing the <%= feed_limit %> newest spans of <%= feed_total %>. Open a session to see its full trajectory.
+    </div>
+  <% end %>
+</div>

@@ -1,44 +1,32 @@
 class HeartbeatController < ApplicationController
   # Alex learning / distillation heartbeat — the agent-narrated event trajectory.
   #
-  # #show reads AtomicEvent.for_session(...).chronological (oldest -> newest) as the
-  # PRIMARY rows — agent-narrated spans (category · reason -> outcome) — and rolls the
-  # raw AtomicActions attributed to each span (atomic_event_id) underneath as an
-  # expandable, read-only drill-down; actions the agent never narrated (null
-  # atomic_event_id) fall into the "Unlabeled" group. Grading is unchanged and lives
-  # entirely in the drawer: #feedback renders the per-action grading drawer, #grade
-  # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
+  # #show has two faces, chosen by the session_id param:
+  #   - NO session_id -> the GLOBAL FEED (#load_feed): every narrated span across
+  #     ALL sessions, newest-first (AtomicEvent.recent). Lightweight — one query, no
+  #     per-event action roll-up; each row drills into that session's detail view.
+  #   - a session_id  -> that session's DETAIL trajectory (#load_session): the
+  #     agent-narrated spans (category · reason -> outcome) chronological, each rolling
+  #     the raw AtomicActions attributed to it (atomic_event_id) underneath as an
+  #     expandable, read-only drill-down; actions the agent never narrated (null
+  #     atomic_event_id) fall into the "Unlabeled" group.
+  # Grading is unchanged and lives entirely in the drawer: #feedback renders the
+  # per-action grading drawer, #grade upserts a grade (and banks/discards it), and
+  # #insights is the curated Insight Bank.
   #
   # Open meta surface, like the launcher: it opts out of the engine's
   # authenticate-by-default before_action. The launcher's Alex avenue points at
   # alex_heartbeat_path, which routes here.
   skip_before_action :require_authentication
 
+  # Cap on the global feed so an unbounded span history never blows out the page.
+  # Truncation past this is surfaced in the view rather than silently dropped.
+  FEED_LIMIT = 200
+
   def show
-    @session_id = params[:session_id].presence || latest_session_id
-    @actions = @session_id ? AtomicAction.for_session(@session_id).chronological.to_a : []
-
-    # Usage is metered per assistant TURN, so a turn's fan-out of tool-calls all
-    # carry that turn's tokens/cost and render identical numbers. Flag the
-    # non-primary rows of each source_turn_uuid (walked chronologically across the
-    # WHOLE session) so the views fade their tokens/cost cells — the numbers are
-    # inherited, not additive. Purely presentational; no total changes.
-    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(@actions)
-
-    # The primary rows are now agent-narrated EVENT SPANS, not raw tool-calls. Each
-    # event rolls up the actions attributed to it (atomic_event_id); the actions the
-    # agent never narrated (null atomic_event_id) fall into the read-only "Unlabeled"
-    # group. One actions query, grouped in Ruby, so events + Unlabeled share it with
-    # no N+1.
-    actions_by_event = @actions.group_by(&:atomic_event_id)
-    @events = @session_id ? AtomicEvent.for_session(@session_id).chronological.to_a : []
-    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
-    @unlabeled = actions_by_event[nil] || []
-
+    @session_id = params[:session_id].presence
+    @session_id ? load_session : load_feed
     @sessions = session_options
-    @pokemon_by_slug = pokemon_lookup(@actions, @events)
-    @event_grades = event_grade_lookup(@events)
-    @counts = grade_counts(@session_id)
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
@@ -141,14 +129,45 @@ class HeartbeatController < ApplicationController
 
   private
 
-  # The session whose trajectory we show by default: the one with the most recent
-  # activity. Event-primary now, so we consider the latest SPAN as well as the
-  # latest raw action (a session can narrate a span before its first tool-call
-  # attributes). nil when nothing has been captured yet (capture is forward-only,
-  # so a fresh prod is legitimately empty).
-  def latest_session_id
-    AtomicAction.order(occurred_at: :desc, id: :desc).limit(1).pick(:session_id) ||
-      AtomicEvent.order(opened_at: :desc, id: :desc).limit(1).pick(:session_id)
+  # The global feed: every narrated span across every session, newest-first, capped
+  # at FEED_LIMIT (truncation surfaced in the view, never silently dropped). No
+  # per-event action roll-up — the feed is a lightweight index whose rows drill into
+  # the per-session detail view, where the token/cost/model roll-up lives. One
+  # AtomicEvent query plus the shared mascot lookup. Legitimately empty on a fresh
+  # prod (capture is forward-only).
+  def load_feed
+    @feed = true
+    @feed_total = AtomicEvent.count
+    @feed_events = AtomicEvent.recent.limit(FEED_LIMIT).to_a
+    @feed_truncated = @feed_total > @feed_events.size
+    @feed_insights = ActionGrade.banked.count
+    @pokemon_by_slug = pokemon_lookup([], @feed_events)
+  end
+
+  # One session's detail trajectory — the narrated spans (chronological, so the
+  # session still reads as a trajectory) with their raw tool-calls rolled up
+  # underneath, the Unlabeled group for un-narrated calls, mascots, span grades, and
+  # the header tallies. One actions query, grouped in Ruby, so events + Unlabeled
+  # share it with no N+1.
+  def load_session
+    @feed = false
+    @actions = AtomicAction.for_session(@session_id).chronological.to_a
+
+    # Usage is metered per assistant TURN, so a turn's fan-out of tool-calls all carry
+    # that turn's tokens/cost and render identical numbers. Flag the non-primary rows of
+    # each source_turn_uuid (walked chronologically across the WHOLE session) so the
+    # detail table fades their tokens/cost cells — inherited, not additive. Purely
+    # presentational; no total changes. (The feed is a lightweight index with no
+    # per-action tokens/cost, so it needs none of this.)
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(@actions)
+
+    actions_by_event = @actions.group_by(&:atomic_event_id)
+    @events = AtomicEvent.for_session(@session_id).chronological.to_a
+    @event_rows = @events.map { |event| [event, actions_by_event[event.id] || []] }
+    @unlabeled = actions_by_event[nil] || []
+    @pokemon_by_slug = pokemon_lookup(@actions, @events)
+    @event_grades = event_grade_lookup(@events)
+    @counts = grade_counts(@session_id)
   end
 
   # Distinct sessions for the switcher, most-recent first — the union of every

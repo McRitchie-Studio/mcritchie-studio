@@ -1,10 +1,13 @@
 require "test_helper"
 
-# [integration] GET /alex/heartbeat — the Alex avenue now renders agent-narrated
-# EVENT SPANS as the primary rows, read from AtomicEvent.for_session(...).chronological
-# (oldest -> newest). The raw AtomicActions attributed to each span (atomic_event_id)
-# roll up underneath as a read-only drill-down; actions with a null atomic_event_id
-# fall into the "Unlabeled" group. Read-only meta surface, so it needs no auth.
+# [integration] GET /alex/heartbeat — two faces chosen by the session_id param:
+# with NO session_id, the GLOBAL FEED (every narrated span across all sessions,
+# newest-first) whose rows drill into a session; with a session_id, that session's
+# DETAIL trajectory — agent-narrated EVENT SPANS as the primary rows, read from
+# AtomicEvent.for_session(...).chronological (oldest -> newest), the raw
+# AtomicActions attributed to each span (atomic_event_id) rolling up as a read-only
+# drill-down (a null atomic_event_id falls into "Unlabeled"). Read-only meta
+# surface, so it needs no auth.
 class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   def event(session: "sess-A", at: Time.current, **attrs)
     AtomicEvent.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
@@ -31,7 +34,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
                    outcome_slug: "green", closed_at: 30.seconds.ago, at: 90.seconds.ago)
     action(event: verify, seq: 1, at: 90.seconds.ago, kind: "bash", event_slug: "Run the tests")
 
-    get alex_heartbeat_path
+    get alex_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     assert_select "[data-test=heartbeat]"
@@ -68,18 +71,56 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_match "Unnarrated boot step", response.body
   end
 
-  test "presents spans oldest to newest by opened_at" do
-    # Insert out of order; the view must present them oldest first.
+  test "the per-session detail view presents spans oldest to newest by opened_at" do
+    # Insert out of order; the session detail view must present them oldest first
+    # (a single session still reads as a trajectory — the feed is the newest-first one).
     event(seq: 2, reason_slug: "third span opened", at: 1.minute.ago, closed_at: 30.seconds.ago)
     event(seq: 0, reason_slug: "first span opened", at: 3.minutes.ago, closed_at: 2.minutes.ago)
     event(seq: 1, reason_slug: "second span opened", at: 2.minutes.ago, closed_at: 90.seconds.ago)
 
-    get alex_heartbeat_path
+    get alex_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
     body = response.body
     assert_operator body.index("first span opened"),  :<, body.index("second span opened")
     assert_operator body.index("second span opened"), :<, body.index("third span opened")
+  end
+
+  test "with no session_id renders the global feed of every session, newest-first" do
+    event(session: "sess-A", reason_slug: "older span in A", at: 5.minutes.ago,
+          closed_at: 4.minutes.ago, outcome_slug: "did A")
+    event(session: "sess-B", reason_slug: "newer span in B", at: 1.minute.ago,
+          closed_at: 30.seconds.ago, outcome_slug: "did B")
+
+    get alex_heartbeat_path
+
+    assert_response :success
+    assert_select "table[data-test=heartbeat-feed]"
+    # both sessions share one feed
+    assert_match "older span in A", response.body
+    assert_match "newer span in B", response.body
+    # newest span sits on top
+    assert_operator response.body.index("newer span in B"), :<, response.body.index("older span in A")
+    # each row exposes an "open" button drilling into that session's detail view
+    assert_select "a[data-test=heartbeat-feed-open][href=?]", alex_heartbeat_path(session_id: "sess-A")
+    assert_select "a[data-test=heartbeat-feed-open][href=?]", alex_heartbeat_path(session_id: "sess-B")
+  end
+
+  test "a feed open button drills into that session's detail view, not the feed" do
+    a = event(session: "sess-A", reason_slug: "span in session A")
+    action(event: a, session: "sess-A")
+    event(session: "sess-B", reason_slug: "span in session B")
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    # the drilled-in view is the per-session detail table, and the feed is gone
+    assert_select "table[data-test=heartbeat-event-table]"
+    assert_select "table[data-test=heartbeat-feed]", false
+    # scoped to the one session, with a link back to the all-sessions feed
+    assert_match "span in session A", response.body
+    assert_no_match(/span in session B/, response.body)
+    assert_select "a[data-test=heartbeat-all-sessions][href=?]", alex_heartbeat_path
   end
 
   test "scopes to a session via the session_id param" do

@@ -18,7 +18,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   test "[integration] the read-only event heartbeat links each action to its drawer + the Insight Bank" do
     a = capture(stage: "building") # no atomic_event_id -> renders in the Unlabeled group
 
-    get alex_heartbeat_path
+    get alex_heartbeat_path(session_id: "fb-int") # the per-session detail view (not the feed)
 
     assert_response :success
     # the event heartbeat is read-only: no inline grading radios on the table

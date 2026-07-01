@@ -104,6 +104,20 @@ class AtomicEventTest < ActiveSupport::TestCase
                  AtomicEvent.for_session("scope-sess").chronological.pluck(:id)
   end
 
+  test "[unit] recent orders newest-first across sessions — the reverse of chronological" do
+    t0 = Time.zone.local(2026, 6, 30, 9, 0, 0)
+    oldest = AtomicEvent.create!(session_id: "sess-A", category: "Explore", reason_slug: "a",
+                                 seq: 0, opened_at: t0)
+    middle = AtomicEvent.create!(session_id: "sess-B", category: "Edit", reason_slug: "b",
+                                 seq: 0, opened_at: t0 + 60)
+    newest = AtomicEvent.create!(session_id: "sess-A", category: "Verify", reason_slug: "c",
+                                 seq: 1, opened_at: t0 + 120)
+
+    # newest opened_at at the head, oldest at the tail — spans from every session
+    assert_equal [newest.id, middle.id, oldest.id], AtomicEvent.recent.pluck(:id)
+    assert_equal AtomicEvent.chronological.pluck(:id), AtomicEvent.recent.pluck(:id).reverse
+  end
+
   test "[unit] next_seq_for is zero for a blank or unseen session and max+1 otherwise" do
     assert_equal 0, AtomicEvent.next_seq_for(nil)
     assert_equal 0, AtomicEvent.next_seq_for("never-seen")
