@@ -8,6 +8,7 @@ puts "Seeding test database for Playwright..."
 # Clear in dependency order
 ActionGrade.delete_all # FK child of atomic_actions — clear before the parent
 AtomicAction.delete_all
+AtomicEvent.delete_all # narrated spans; actions nullify their FK on delete
 Activity.delete_all
 SkillAssignment.delete_all
 Task.delete_all
@@ -426,34 +427,58 @@ end
 
 Release::DurationCache.refresh_recent!(limit: 3)
 
-# /alex/heartbeat demo: a representative atomic-action trajectory so the learning
-# heartbeat table renders rows in the e2e env (capture is forward-only, so the
-# table is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo —
-# spans the Session (null), Designed, Building, and Submitted groups, with an
-# opus model and ok/error/pending outcomes. Mascot "snorlax" matches a seeded
-# Pokémon above so the Pokémon column resolves a real name.
+# /alex/heartbeat demo: a representative agent-narrated EVENT trajectory so the
+# learning heartbeat renders spans in the e2e env (capture is forward-only, so it
+# is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of
+# closed spans, a final OPEN span (renders "…in progress"), and one pre-narration
+# boot action captured with no span open (the read-only "Unlabeled" group). Mascot
+# "snorlax" matches a seeded Pokémon above so the mascot resolves a real name.
 hb_session = "e2e-heartbeat-0001"
 hb_task = "atomic-action-capture"
 hb_price = ->(tin, tout, model) { model ? (((tin * 5.0) + (tout * 25.0)) / 1_000_000.0).round(4) : 0 }
 hb_base = 30.minutes.ago
-[
-  { kind: "boot",        actor: "harness", stage: nil, mascot: nil,           ev: "Spin up fresh session runtime",         rs: "Session identity and model resolved" },
-  { kind: "recall",      actor: "harness", stage: nil, mascot: nil, ti: 8200, ev: "Recall relevant prior session memories", rs: "Known lessons surfaced for reuse" },
-  { kind: "intake",      actor: "human",   stage: nil,                        ev: "Receive operator feature request message", rs: "Feature intent captured for triage" },
-  { kind: "create-task", actor: "board",   stage: "designed",  task: hb_task,                                            ev: "Create the production board task",      rs: "Task slug minted and bound" },
-  { kind: "explore",     actor: "agent",   stage: "building",  task: hb_task, model: "claude-opus-4-8", ti: 9400, to: 360,  ev: "Explore the model and schema seam",     rs: "Found the capture seam quickly" },
-  { kind: "edit",        actor: "agent",   stage: "building",  task: hb_task, model: "claude-opus-4-8", ti: 6800, to: 2400, ev: "Implement the trajectory view code",    rs: "Controller view and helper written" },
-  { kind: "run-test",    actor: "board",   stage: "building",  task: hb_task, outcome: "error",                          ev: "Run the unit test suite",              rs: "One spec fails on null stage" },
-  { kind: "open-pr",     actor: "agent",   stage: "submitted", task: hb_task, model: "claude-opus-4-8", ti: 1800, to: 540, ev: "Open a pull request into release",      rs: "PR opened task URL leading" },
-  { kind: "review-wait", actor: "board",   stage: "submitted", task: hb_task, outcome: "pending",                       ev: "Await senior QA review verdict",       rs: "Submitted PR now in the queue" }
-].each_with_index do |row, i|
+hb_i = -1
+hb_capture = lambda do |row|
+  hb_i += 1
   AtomicAction.capture(
     session_id: hb_session, task_slug: row[:task], mascot: (row.key?(:mascot) ? row[:mascot] : "snorlax"),
-    kind: row[:kind], event_slug: row[:ev], result_slug: row[:rs], outcome: row[:outcome] || "ok",
+    kind: row[:kind], event_slug: row[:ev], result_slug: row[:rs], input: row[:in], outcome: row[:outcome] || "ok",
     actor: row[:actor], model: row[:model], tokens_in: row[:ti].to_i, tokens_out: row[:to].to_i,
     cost: hb_price.call(row[:ti].to_i, row[:to].to_i, row[:model]), stage: row[:stage],
-    occurred_at: hb_base + (i * 30).seconds
+    occurred_at: hb_base + (hb_i * 30).seconds
   )
 end
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions"
+# Pre-narration boot (no span open yet) -> Unlabeled group.
+hb_capture.call(kind: "boot", actor: "harness", stage: nil, mascot: nil, in: "spin up the session runtime",
+                ev: "Spin up fresh session runtime", rs: "Session identity and model resolved")
+
+hb_spans = [
+  { category: "Explore", reason: "find the capture seam", outcome: "located the model and schema seam", stage: "building",
+    rows: [
+      { kind: "explore", actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 9400, to: 360, in: "grep -rn AtomicEvent app/models", ev: "Explore the model and schema seam", rs: "Found the capture seam quickly" },
+      { kind: "edit",    actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 6800, to: 2400, in: "app/views/heartbeat/_event_table.html.erb", ev: "Implement the event trajectory view", rs: "Controller view and helper written" }
+    ] },
+  { category: "Verify", reason: "run the unit suite", outcome: "green after a fix", stage: "building",
+    rows: [
+      { kind: "run-test", actor: "board", task: hb_task, outcome: "error", in: "bin/rails test test/views/heartbeat_event_table_test.rb", ev: "Run the unit test suite", rs: "One spec fails on null outcome" }
+    ] },
+  { category: "Workflow", reason: "certify and open the PR", outcome: nil, stage: "submitted",
+    rows: [
+      { kind: "open-pr",     actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 1800, to: 540, in: "gh pr create --base release", ev: "Open a pull request into release", rs: "PR opened task URL leading" },
+      { kind: "review-wait", actor: "board", task: hb_task, outcome: "pending", in: "await senior QA verdict", ev: "Await senior QA review verdict", rs: "Submitted PR now in the queue" }
+    ] }
+]
+
+hb_spans.each do |span|
+  AtomicEvent.open_event!(session_id: hb_session, category: span[:category], reason_slug: span[:reason],
+                          task_slug: span[:rows].first[:task], mascot: "snorlax", stage: span[:stage],
+                          opened_at: hb_base + ((hb_i + 1) * 30).seconds)
+  span[:rows].each { |row| hb_capture.call(row) }
+  next if span[:outcome].nil? # leave the final span open -> "…in progress"
+
+  AtomicEvent.close_event!(session_id: hb_session, outcome_slug: span[:outcome],
+                           closed_at: hb_base + (hb_i * 30).seconds + 5.seconds)
+end
+
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events"

@@ -1,4 +1,8 @@
-<%# The atomic trajectory table — ported from the prototype. Rows run oldest to
+<%# The FLAT per-action trajectory table (one row per raw tool-call, grouped by
+    stage) with the inline T5 feedback columns. As of the event-grouped heartbeat
+    this is no longer the default `show` render — `_event_table` (spans as primary
+    rows) is — but it stays as a tested component and the inline-cell markup that
+    `grade.turbo_stream` reuses. Rows run oldest to
     newest and are bucketed into per-stage groups (the null-stage "Session" group
     leads). Each group is a collapsible tbody (Alpine, default open). The last two
     columns are the T5 feedback layer: Alex's grade and the McRitchie audit-of-Alex,

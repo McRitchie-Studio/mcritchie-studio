@@ -1,37 +1,56 @@
 const { test, expect } = require("@playwright/test");
 
-// The Alex avenue (/alex/heartbeat) renders the atomic trajectory table from the
-// seeded AtomicAction trajectory — rows oldest -> newest, grouped by stage.
-test("alex heartbeat renders the seeded atomic trajectory table", async ({ page }) => {
+// The Alex avenue (/alex/heartbeat) renders the agent-narrated EVENT trajectory from
+// the seeded spans — each row an AtomicEvent (category · reason -> outcome) that
+// drills down (Alpine) into the raw tool-calls attributed to it. The seed narrates a
+// couple of closed spans, a final OPEN span ("…in progress"), plus one pre-narration
+// action in the read-only "Unlabeled" group.
+test("alex heartbeat renders the narrated event spans as the primary rows", async ({ page }) => {
   await page.goto("/alex/heartbeat");
 
-  const table = page.locator("[data-test='heartbeat-table']");
+  const table = page.locator("[data-test='heartbeat-event-table']");
   await expect(table).toBeVisible();
 
-  // The seeded demo trajectory has several actions, all visible by default.
-  const rows = page.locator("tr[data-test='heartbeat-row']");
-  await expect(rows.first()).toBeVisible();
-  expect(await rows.count()).toBeGreaterThanOrEqual(5);
+  // The seeded spans render as event rows, each with its category badge.
+  const events = page.locator("[data-test='heartbeat-event']");
+  expect(await events.count()).toBeGreaterThanOrEqual(2);
+  await expect(table).toContainText("Explore");
+  await expect(table).toContainText("Verify");
+  await expect(table).toContainText("Workflow");
 
-  // Grouped by stage: the null-stage Session group plus a Building group.
-  await expect(page.locator("[data-test='heartbeat-group'][data-stage='session']")).toBeVisible();
-  await expect(page.locator("[data-test='heartbeat-group'][data-stage='building']")).toBeVisible();
+  // The final span is still open — it renders the in-progress placeholder.
+  await expect(page.locator("[data-test='event-in-progress']").first()).toBeVisible();
 
-  // Dense ported columns: short model label + an outcome badge.
-  await expect(table).toContainText("opus-4-8");
-  await expect(table.locator("span.hb-outcome", { hasText: "ok" }).first()).toBeVisible();
+  // The raw tool-calls the agent never narrated fall into the Unlabeled group.
+  await expect(page.locator("[data-test='heartbeat-unlabeled']")).toBeVisible();
 });
 
-// Collapsing a stage group (Alpine) hides its action rows.
-test("a stage group collapses its rows on click", async ({ page }) => {
+// A span is collapsed by default; expanding it (Alpine) reveals the raw actions
+// attributed to it — kind + input — as read-only drill-down rows.
+test("expanding a span drills down into its attributed actions", async ({ page }) => {
   await page.goto("/alex/heartbeat");
 
-  const group = page.locator("[data-test='heartbeat-group'][data-stage='building']");
-  const firstRow = group.locator("tr[data-test='heartbeat-row']").first();
-  await expect(firstRow).toBeVisible();
+  const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  const firstAction = span.locator("tr[data-test='heartbeat-event-action']").first();
 
-  await group.locator("tr.hb-grouphead").click();
-  await expect(firstRow).toBeHidden();
+  // Collapsed by default — the action drill-down rows are hidden.
+  await expect(firstAction).toBeHidden();
+
+  // Expand the span; its raw tool-calls become visible, showing kind + input.
+  await span.locator("tr[data-test='heartbeat-event-row']").click();
+  await expect(firstAction).toBeVisible();
+  await expect(firstAction).toContainText("grep");
+});
+
+// Grading is preserved: clicking a drilled-down action opens the per-action drawer.
+test("clicking a drilled-down action opens its grading drawer", async ({ page }) => {
+  await page.goto("/alex/heartbeat");
+
+  const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  await span.locator("tr[data-test='heartbeat-event-row']").click();
+  await span.locator("tr[data-test='heartbeat-event-action']").first().click();
+
+  await expect(page.locator("aside[data-test='heartbeat-drawer']")).toHaveClass(/hb-drawer-open/);
 });
 
 // The launcher's Alex avenue links straight to the heartbeat trajectory.
@@ -42,5 +61,5 @@ test("the session launcher Alex avenue links to the heartbeat trajectory", async
   await expect(alex).toHaveAttribute("href", "/alex/heartbeat");
 
   await alex.click();
-  await expect(page.locator("[data-test='heartbeat-table']")).toBeVisible();
+  await expect(page.locator("[data-test='heartbeat-event-table']")).toBeVisible();
 });

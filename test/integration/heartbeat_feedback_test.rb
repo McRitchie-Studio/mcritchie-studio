@@ -15,15 +15,18 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     ActionGrade.for_action(action).by_grader(grader).first
   end
 
-  test "[integration] the heartbeat renders inline feedback radios and the Insight Bank link" do
-    a = capture(stage: "building")
+  test "[integration] the read-only event heartbeat links each action to its drawer + the Insight Bank" do
+    a = capture(stage: "building") # no atomic_event_id -> renders in the Unlabeled group
 
     get alex_heartbeat_path
 
     assert_response :success
-    assert_select "th", text: "Alex feedback"
-    assert_select "td#fb-alex-#{a.id} input[type=radio][value=good]"
-    assert_select "td#fb-mcr-#{a.id} input[type=radio][value=not]"
+    # the event heartbeat is read-only: no inline grading radios on the table
+    assert_select "input[type=radio]", false
+    # but a drilled-down action still links to its per-action grading drawer
+    assert_select "tr[data-test=heartbeat-event-action]", 1
+    assert_match heartbeat_feedback_path(a), response.body
+    assert_select "aside[data-test=heartbeat-drawer]"
     assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
   end
 

@@ -1,13 +1,15 @@
 <% content_for(:title, "Alex · Learning Heartbeat") %>
 <% content_for(:full_width, true) %>
 
-<%# Alex learning heartbeat — the per-action atomic trajectory table plus the T5
-    feedback layer. A deliberate fixed-dark dashboard (like the launcher terminal,
-    which stays dark on a light desktop) sitting on the theme-aware body. The
-    palette mirrors the prototype; styles are scoped under the section id so they
-    touch nothing else. Alex grades each event inline (good/not radios); a per-action
-    drawer edits the full grade and the McRitchie audit-of-Alex, and banks the keepers
-    into the Insight Bank. %>
+<%# Alex learning heartbeat — the agent-narrated event-span table. Each row is an
+    AtomicEvent (category, reason -> outcome) that rolls up the raw tool-calls
+    attributed to it; expand a span to drill into those actions read-only, or drop into
+    the trailing "Unlabeled" group for the tool-calls the agent never narrated. A
+    deliberate fixed-dark dashboard (like the launcher terminal, which stays dark on a
+    light desktop) sitting on the theme-aware body. The palette mirrors the prototype;
+    styles are scoped under the section id so they touch nothing else. The table is
+    read-only; clicking a drilled-down action opens the grading drawer, where Alex
+    grades the action and the McRitchie audit-of-Alex banks the keepers. %>
 <style>
   #alex-heartbeat {
     --hb-bg:#0d1117; --hb-panel:#161b22; --hb-panel2:#1c2330; --hb-line:#2a3240;
@@ -57,6 +59,30 @@
   #alex-heartbeat .hb-groupsub { color:var(--hb-muted); font-size:11px; margin-left:auto; font-family:ui-monospace,monospace; }
   #alex-heartbeat .hb-chev { display:inline-block; transition:transform .15s; color:var(--hb-faint); font-size:11px; }
   #alex-heartbeat .hb-chev-open { transform:rotate(90deg); }
+
+  /* Event-span table — spans are the primary rows; expanding one drills into its
+     attributed raw actions (read-only). Fewer columns than the per-action table. */
+  #alex-heartbeat table.hb-evt-tbl { min-width:900px; }
+  #alex-heartbeat tr.hb-evtrow { cursor:pointer; }
+  #alex-heartbeat tr.hb-evtrow td { background:var(--hb-panel); }
+  #alex-heartbeat tr.hb-evtrow:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.hb-evtrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat .hb-catchip { cursor:help; }
+  #alex-heartbeat .hb-span .hb-slug { color:var(--hb-txt); }
+  #alex-heartbeat .hb-arrow { color:var(--hb-faint); margin:0 6px; }
+  #alex-heartbeat .hb-inprogress { color:var(--hb-muted); font-style:italic; }
+  #alex-heartbeat .hb-count { color:var(--hb-muted); font-family:ui-monospace,monospace; }
+
+  #alex-heartbeat tr.hb-subrow { cursor:pointer; }
+  #alex-heartbeat tr.hb-subrow td { background:var(--hb-bg); }
+  #alex-heartbeat tr.hb-subrow:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.hb-subrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); padding-left:24px; }
+  #alex-heartbeat tr.hb-subrow.hb-subempty { cursor:default; }
+  #alex-heartbeat tr.hb-subrow.hb-subempty td { color:var(--hb-faint); font-style:italic; }
+  #alex-heartbeat .hb-kind { color:var(--hb-txt); }
+  #alex-heartbeat .hb-subslug { color:var(--hb-txt); }
+  #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:8px; }
+  #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
 
   #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
   #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
@@ -142,13 +168,14 @@
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
-        <h1>Atomic Trajectory &middot; Alex Heartbeat</h1>
+        <h1>Event Trajectory &middot; Alex Heartbeat</h1>
         <p>
-          Every atomic action this session took, oldest &rarr; newest, grouped by stage.
-          Alex grades each event inline; open a row to write the full grade and the McRitchie audit, then bank the keepers.
+          The spans this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; outcome.
+          Expand a span to drill into the raw tool-calls it framed; open one to grade the action and its McRitchie audit.
         </p>
       </div>
       <div class="hb-stats">
+        <div class="hb-stat"><b><%= @events.size %></b><span>spans</span></div>
         <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
         <div class="hb-stat"><b><%= heartbeat_tokens_compact(@actions.sum(&:tokens_total)) %></b><span>tokens</span></div>
         <div class="hb-stat"><b><%= heartbeat_cost(@actions.sum { |a| a.cost.to_f }) %></b><span>cost</span></div>
@@ -174,17 +201,18 @@
         &#128161; Insight Bank (<span id="hb-insight-count"><%= @counts[:insights] %></span>)
       <% end %>
       <span class="hb-legend">
-        <span><b>grade:</b> good / not &middot; click a row to edit &amp; bank</span>
+        <span><b>span:</b> category &middot; reason &rarr; outcome</span>
+        <span><b>drill down:</b> expand a span &middot; click an action to grade</span>
       </span>
     </div>
   </div>
 
-  <% if @actions.any? %>
-    <%= render "heartbeat/trajectory_table", groups: @groups, pokemon_by_slug: @pokemon_by_slug, grades: @grades %>
+  <% if @event_rows.any? || @unlabeled.any? %>
+    <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled, pokemon_by_slug: @pokemon_by_slug %>
   <% else %>
     <div class="hb-empty" data-test="heartbeat-empty">
-      <b>No atomic actions captured yet</b>
-      <p>Capture is forward-only — actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+      <b>No trajectory captured yet</b>
+      <p>Capture is forward-only — spans and actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
       <p><%= link_to "&lsaquo; back to the session launcher".html_safe, launcher_path %></p>
     </div>
   <% end %>

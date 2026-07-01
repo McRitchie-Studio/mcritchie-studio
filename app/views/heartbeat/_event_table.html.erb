@@ -1,0 +1,109 @@
+<%# The agent-narrated event-span table — the PRIMARY heartbeat rows. Each row is an
+    AtomicEvent (category badge, reason_slug -> outcome_slug, opened time, and a count
+    of the raw tool-calls attributed to it). Each span is a collapsible tbody (Alpine,
+    default collapsed); expanding it drills into the raw atomic_actions (kind + input)
+    it framed, read-only. Raw actions the agent never narrated (a null atomic_event_id)
+    fall into the trailing "Unlabeled" group. Read-only: clicking a drilled-down action
+    opens the existing per-action grading drawer, but nothing on the table itself edits.
+    Locals: event_rows (Array of [AtomicEvent, [AtomicAction, ...]]), unlabeled (Array
+    of AtomicAction), pokemon_by_slug. %>
+<% pokemon_by_slug ||= {} %>
+<% unlabeled ||= [] %>
+<div class="hb-scroll">
+  <table class="hb-tbl hb-evt-tbl" data-test="heartbeat-event-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Span</th>
+        <th>Narration</th>
+        <th>Opened</th>
+        <th>Actions</th>
+        <th>Task</th>
+      </tr>
+    </thead>
+
+    <% event_rows.each do |event, actions| %>
+      <% cat = heartbeat_category_meta(event.category) %>
+      <tbody class="hb-evtgroup" data-test="heartbeat-event"
+             data-category="<%= event.category %>" data-event-id="<%= event.id %>"
+             x-data="{ open: false }">
+        <tr class="hb-evtrow" data-test="heartbeat-event-row" @click="open = !open"
+            style="--hb-edge: <%= cat[:accent] %>">
+          <td class="hb-seq"><span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span></td>
+          <td><span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= event.category %></span></td>
+          <td class="hb-span">
+            <span class="hb-slug"><%= event.reason_slug %></span>
+            <span class="hb-arrow">&rarr;</span>
+            <% if event.open? || event.outcome_slug.blank? %>
+              <span class="hb-inprogress" data-test="event-in-progress"><%= heartbeat_event_outcome(event) %></span>
+            <% else %>
+              <span class="hb-result"><%= event.outcome_slug %></span>
+            <% end %>
+          </td>
+          <td class="hb-meta hb-mono" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></td>
+          <td class="hb-meta"><span class="hb-count" data-test="event-action-count"><%= pluralize(actions.size, "action") %></span></td>
+          <td class="hb-meta hb-mono"><%= event.task_slug.presence || "—" %></td>
+        </tr>
+
+        <% if actions.any? %>
+          <% actions.each do |action| %>
+            <% outcome = heartbeat_outcome_meta(action.outcome) %>
+            <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
+                style="--hb-edge: <%= outcome[:color] %>"
+                @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
+              <td class="hb-seq">#<%= action.seq %></td>
+              <td class="hb-mono hb-kind"><%= action.kind %></td>
+              <td class="hb-subnarr">
+                <span class="hb-subslug"><%= action.event_slug.presence || "—" %></span>
+                <% if action.input.present? %>
+                  <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
+                <% end %>
+              </td>
+              <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
+              <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+              <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
+            </tr>
+          <% end %>
+        <% else %>
+          <tr class="hb-subrow hb-subempty" x-show="open">
+            <td class="hb-seq">&mdash;</td>
+            <td colspan="5" class="hb-meta">No raw actions attributed to this span.</td>
+          </tr>
+        <% end %>
+      </tbody>
+    <% end %>
+
+    <% if unlabeled.any? %>
+      <% unl = HeartbeatHelper::HEARTBEAT_UNLABELED %>
+      <tbody class="hb-evtgroup hb-unlabeled" data-test="heartbeat-unlabeled" x-data="{ open: false }">
+        <tr class="hb-evtrow" data-test="heartbeat-event-row" @click="open = !open"
+            style="--hb-edge: <%= unl[:accent] %>">
+          <td class="hb-seq"><span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span></td>
+          <td><span class="hb-chip hb-catchip" style="color: <%= unl[:accent] %>" title="<%= unl[:description] %>">Unlabeled</span></td>
+          <td class="hb-span"><span class="hb-result">context the agent did not narrate into a span</span></td>
+          <td class="hb-meta">&mdash;</td>
+          <td class="hb-meta"><span class="hb-count" data-test="event-action-count"><%= pluralize(unlabeled.size, "action") %></span></td>
+          <td class="hb-meta">&mdash;</td>
+        </tr>
+        <% unlabeled.each do |action| %>
+          <% outcome = heartbeat_outcome_meta(action.outcome) %>
+          <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
+              style="--hb-edge: <%= outcome[:color] %>"
+              @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
+            <td class="hb-seq">#<%= action.seq %></td>
+            <td class="hb-mono hb-kind"><%= action.kind %></td>
+            <td class="hb-subnarr">
+              <span class="hb-subslug"><%= action.event_slug.presence || "—" %></span>
+              <% if action.input.present? %>
+                <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
+              <% end %>
+            </td>
+            <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
+            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+            <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    <% end %>
+  </table>
+</div>
