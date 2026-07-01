@@ -232,6 +232,29 @@ assigned that lane.
 7. Hand back something inspectable: local URL, screenshot, test output summary, diff summary, or explicit blocker.
 8. Update docs when behavior or workflow changes.
 
+## Narrate your trajectory
+
+As you work, narrate your trajectory into meaningful **events** so the Alex
+learning heartbeat (`/alex/heartbeat`) reads as "Explore: find issue with api →
+found X", not a wall of raw tool calls. At a natural work boundary, open a span:
+
+```bash
+bin/atomic-event start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
+```
+
+Keep `--reason` short (~4-7 words). When that unit of work is done, close it with
+what happened:
+
+```bash
+bin/atomic-event end --outcome "what happened"
+```
+
+Your raw tool-calls attribute server-side to whichever span is currently open, so
+keep spans **meaningful** — one per unit of work, not one per tool call. Navigate
+(`cd`) is dropped automatically, and opening a new span auto-closes the prior one
+(a bare `end` is rarely needed). Narration is non-fatal — it never blocks your
+work — and it powers the Alex learning heartbeat.
+
 ## Parallel Work Quick Start
 
 > **Concurrency cap — 5 at a time.** Cap parallel work at **5 concurrent
