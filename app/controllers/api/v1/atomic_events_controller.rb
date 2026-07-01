@@ -15,14 +15,20 @@ module Api
       # 201 with the opened span. An invalid span (unknown category / blank reason)
       # is a 422 (VALIDATION_FAILED) via BaseController — the agent used a bad
       # category and should see it. `reason` maps to reason_slug on the record.
+      #
+      # BOUNDARY transition: `prior_outcome` (from `bin/atomic-event next` /
+      # `start --outcome`) stamps the auto-closed prior span's outcome_slug as the
+      # agent crosses into this one — resolving "what happened" in the SAME call
+      # that opens "what's next", so spans stop hanging half-narrated.
       def create
         event = AtomicEvent.open_event!(
-          session_id:  open_params[:session_id],
-          category:    open_params[:category],
-          reason_slug: open_params[:reason],
-          task_slug:   open_params[:task_slug],
-          mascot:      open_params[:mascot],
-          stage:       open_params[:stage]
+          session_id:         open_params[:session_id],
+          category:           open_params[:category],
+          reason_slug:        open_params[:reason],
+          task_slug:          open_params[:task_slug],
+          mascot:             open_params[:mascot],
+          stage:              open_params[:stage],
+          prior_outcome_slug: open_params[:prior_outcome]
         )
         render_data(event, status: :created)
       end
@@ -43,16 +49,34 @@ module Api
         render_data(event, status: :ok)
       end
 
+      # POST /api/v1/atomic_events/close_all
+      #
+      # Session-end teardown (behind `bin/atomic-event close-open` + the Claude Code
+      # SessionEnd hook): close EVERY still-open span for the session with a shared
+      # generic outcome, so a session's last span never hangs open forever. Returns
+      # 200 with the count closed, or a 204 no-op when nothing was open (never an
+      # error — a session teardown must not surface as a failure to the caller).
+      def close_all
+        count = AtomicEvent.close_all_open!(
+          session_id:   close_all_params[:session_id],
+          outcome_slug: close_all_params[:outcome]
+        )
+        return head :no_content if count.zero?
+
+        render_data({ closed: count }, status: :ok)
+      end
+
       private
 
       def open_params
         params.permit(
-          :session_id, # required — the session this span belongs to
-          :category,   # required — Explore | Edit | Verify | … (AtomicEvent::CATEGORIES)
-          :reason,     # required — "what am I doing" (stored as reason_slug)
-          :task_slug,  # optional slug FK; null for pre-task spans
-          :mascot,     # optional session/task Pokémon slug
-          :stage       # optional coarse task stage at open time
+          :session_id,     # required — the session this span belongs to
+          :category,       # required — Explore | Edit | Verify | … (AtomicEvent::CATEGORIES)
+          :reason,         # required — "what am I doing" (stored as reason_slug)
+          :task_slug,      # optional slug FK; null for pre-task spans
+          :mascot,         # optional session/task Pokémon slug
+          :stage,          # optional coarse task stage at open time
+          :prior_outcome   # optional — "what happened" on the auto-closed prior span
         )
       end
 
@@ -60,6 +84,13 @@ module Api
         params.permit(
           :session_id, # required — the session whose open span to close
           :outcome     # optional — "what happened" (stored as outcome_slug)
+        )
+      end
+
+      def close_all_params
+        params.permit(
+          :session_id, # required — the session whose open spans to close
+          :outcome     # optional — shared teardown outcome (e.g. "session ended")
         )
       end
     end

@@ -66,6 +66,14 @@ class AtomicCaptureHook
   # read or command dump never bloats a row.
   MAX_FIELD_BYTES = 3000
 
+  # How much of the transcript tail to scan for the session model. Claude Code does
+  # NOT put the model in the PostToolUse stdin payload or any env var (verified),
+  # but the payload's `transcript_path` points at a JSONL whose assistant lines
+  # carry `message.model`. At PostToolUse time the last written line is (almost
+  # always) the assistant turn that issued the tool call, so a bounded tail read
+  # off the END reliably finds the model without reading a multi-MB file per call.
+  TRANSCRIPT_TAIL_BYTES = 131_072
+
   # Short timeouts — an unreachable endpoint must fail fast, never stall a tool.
   OPEN_TIMEOUT = 1
   READ_TIMEOUT = 2
@@ -92,6 +100,7 @@ class AtomicCaptureHook
       "task_slug" => marker["task_slug"],
       "stage" => marker["stage"],
       "mascot" => marker["mascot"],
+      "model" => resolve_model(event),
       "input" => truncate(serialize(event["tool_input"])),
       "output" => truncate(serialize(event["tool_response"])),
       "outcome" => outcome_for(event["tool_response"]),
@@ -103,6 +112,54 @@ class AtomicCaptureHook
   def map_kind(tool_name)
     name = tool_name.to_s
     KIND_MAP[name] || name.downcase
+  end
+
+  # The session model, or nil — best-effort and never raises. Order: a direct
+  # payload field (`model` / nested `message.model`) if a future Claude Code adds
+  # one, else the most recent assistant `message.model` in the transcript the
+  # payload's `transcript_path` points at. nil ⇒ the capture endpoint drops the key
+  # and the column stays null (no fabrication — we only ever stamp a REAL model).
+  def resolve_model(event)
+    direct = event["model"] || event.dig("message", "model")
+    return direct if present?(direct)
+
+    read_model_from_transcript(event["transcript_path"])
+  rescue StandardError
+    nil
+  end
+
+  # Scan the TAIL of the transcript JSONL for the newest assistant line's
+  # `message.model`. Reads at most TRANSCRIPT_TAIL_BYTES off the end (dropping a
+  # leading partial line), parses lines back-to-front, and returns the first model
+  # found. Bounded + best-effort so a huge or missing transcript never stalls or
+  # breaks the hook.
+  def read_model_from_transcript(path)
+    return nil unless present?(path) && File.file?(path)
+
+    size = File.size(path)
+    if size > TRANSCRIPT_TAIL_BYTES
+      content = IO.read(path, TRANSCRIPT_TAIL_BYTES, size - TRANSCRIPT_TAIL_BYTES, mode: "rb")
+      partial = true
+    else
+      content = IO.read(path, mode: "rb")
+      partial = false
+    end
+    return nil unless content
+
+    lines = content.to_s.split("\n")
+    lines.shift if partial && lines.length > 1 # a mid-line start is not valid JSON
+    lines.reverse_each do |line|
+      next if line.strip.empty?
+
+      parsed = (JSON.parse(line) rescue nil)
+      next unless parsed.is_a?(Hash)
+
+      model = parsed.dig("message", "model")
+      return model if present?(model)
+    end
+    nil
+  rescue StandardError
+    nil
   end
 
   # True when the event is a NAVIGATION tool-call (dropped, never POSTed): a Bash

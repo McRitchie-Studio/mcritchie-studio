@@ -49,6 +49,7 @@ module Api
           :output,      # optional action output (result / stdout / diff)
           :outcome,     # optional ok | error | pending (defaults pending)
           :actor,       # optional harness | agent | board | human (defaults agent)
+          :model,       # optional session model id (the hook derives it; kills the "—")
           :stage,       # optional coarse task stage at capture time
           :occurred_at, # optional ISO8601; defaults to capture time
           :duration_ms  # optional wall-clock duration

@@ -6,13 +6,21 @@
 #
 #   bin/atomic-event start --category Explore --reason "find issue with api"
 #   … (the agent's raw tool-calls attribute server-side to this open span) …
-#   bin/atomic-event end   --outcome "located the nil-guard in AtomicAction.capture"
+#   bin/atomic-event next  --outcome "found the nil-guard" \
+#                          --category Edit --reason "add the guard"
+#   … (more work under the new span) …
+#   bin/atomic-event end   --outcome "guard added, tests green"
 #
 # `start` opens a span (auto-closing any prior open one); `end` closes the
-# session's open span with an outcome. There is NO per-call classifier and NO
-# reader sub-agent — the agent narrates. Raw tool-calls attribute to whichever
-# span is open (see AtomicAction.capture), so the span vocabulary + outcomes are
-# the coarse, meaningful layer over the raw stream.
+# session's open span with an outcome. `next` is the BOUNDARY transition — it
+# closes the prior span WITH an outcome and opens the next one WITH a reason in
+# ONE call, so spans resolve instead of hanging half-narrated (`start` also
+# accepts `--outcome` for the same crossover). `close-open` is the session-end
+# teardown (wired to the Claude Code SessionEnd hook): it closes any span still
+# open so the last one never hangs open forever. There is NO per-call classifier
+# and NO reader sub-agent — the agent narrates. Raw tool-calls attribute to
+# whichever span is open (see AtomicAction.capture), so the span vocabulary +
+# outcomes are the coarse, meaningful layer over the raw stream.
 #
 # Targets the SAME endpoint as bin/atomic-capture-hook (ATOMIC_CAPTURE_URL,
 # default http://localhost:3000) — events and actions MUST land on the same
@@ -41,24 +49,27 @@ class AtomicEventCli
   SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
   TOKEN_REFRESH_MARGIN = 300
 
-  def initialize(env: ENV, out: $stdout, err: $stderr)
+  def initialize(env: ENV, out: $stdout, err: $stderr, input: $stdin)
     @env = env
     @out = out
     @err = err
+    @in  = input
   end
 
-  # Entry point. Parses argv, dispatches start/end, and ALWAYS returns (the main
+  # Entry point. Parses argv, dispatches the command, and ALWAYS returns (the main
   # guard exits 0 regardless) — nothing here may break the calling session.
   def run(argv)
     command = argv.shift
     flags = parse_flags(argv)
 
     case command
-    when "start" then start(flags)
-    when "end"   then finish(flags)
+    when "start", "next" then start(flags) # `next` = boundary open (carries --outcome)
+    when "end"           then finish(flags)
+    when "close-open"    then close_open(flags)
     else
-      warn_note("usage: atomic-event start --category <C> --reason <text> | " \
-                "end [--outcome <text>]")
+      warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] | " \
+                "next --outcome <text> --category <C> --reason <text> | " \
+                "end [--outcome <text>] | close-open [--outcome <text>]")
     end
   rescue StandardError => e
     warn_note("atomic-event failed (ignored): #{e.class}: #{e.message}")
@@ -78,17 +89,25 @@ class AtomicEventCli
                        "(one of: #{CATEGORIES.join(', ')})")
     end
 
+    # BOUNDARY transition: --outcome (the `next` idiom, also valid on `start`)
+    # stamps the auto-closed prior span's outcome as we cross into this one, so a
+    # span resolves in the same call that opens the next instead of hanging with a
+    # NULL outcome. Empty ⇒ dropped below ⇒ legacy behavior (prior auto-closes null).
+    prior_outcome = flags["outcome"].to_s.strip
+
     marker = resolve_marker(session_id: sid)
     res = post("/api/v1/atomic_events", {
-      "session_id" => sid,
-      "category"   => category,
-      "reason"     => reason,
-      "task_slug"  => marker["task_slug"],
-      "mascot"     => marker["mascot"],
-      "stage"      => marker["stage"]
-    }.compact)
+      "session_id"    => sid,
+      "category"      => category,
+      "reason"        => reason,
+      "prior_outcome" => prior_outcome,
+      "task_slug"     => marker["task_slug"],
+      "mascot"        => marker["mascot"],
+      "stage"         => marker["stage"]
+    }.reject { |_, v| v.to_s.empty? })
 
-    report(res, "opened #{category} · #{reason}")
+    opened = "opened #{category} · #{reason}"
+    report(res, prior_outcome.empty? ? opened : "#{prior_outcome} → #{opened}")
   end
 
   def finish(flags)
@@ -102,6 +121,26 @@ class AtomicEventCli
     }.reject { |_, v| v.to_s.empty? })
 
     report(res, outcome.empty? ? "closed span" : "closed · #{outcome}")
+  end
+
+  # Session-end teardown — closes ANY span still open for the session so the last
+  # one never hangs open forever (and trailing actions never fall into
+  # "Unlabeled"). Wired to the Claude Code SessionEnd hook, which pipes its event
+  # JSON on stdin; we take the session id from a --session flag or the harness env
+  # first, then fall back to that stdin payload.
+  def close_open(flags)
+    sid = resolve_session_id(flags)
+    sid = session_from_stdin unless present?(sid)
+    return warn_note("atomic-event: no session id — nothing to close") unless present?(sid)
+
+    outcome = flags["outcome"].to_s.strip
+    outcome = "session ended" if outcome.empty?
+    res = post("/api/v1/atomic_events/close_all", {
+      "session_id" => sid,
+      "outcome"    => outcome
+    })
+
+    report(res, "closed open spans · #{outcome}")
   end
 
   # ── argv + session/marker resolution ──────────────────────────────────────
@@ -132,6 +171,20 @@ class AtomicEventCli
     return claude unless claude.empty?
 
     @env["CODEX_THREAD_ID"].to_s.strip
+  end
+
+  # The Claude Code SessionEnd hook pipes its event JSON ({session_id, reason, …})
+  # on stdin. Read it ONLY when stdin is a pipe (a hook), never a tty (a manual
+  # `close-open` run), so an interactive invocation never hangs waiting on input.
+  def session_from_stdin
+    return nil if @in.respond_to?(:tty?) && @in.tty?
+
+    raw = @in.read
+    return nil if raw.to_s.strip.empty?
+
+    JSON.parse(raw)["session_id"].to_s.strip
+  rescue StandardError
+    nil
   end
 
   # task_slug / mascot / stage the way the capture hook resolves them: the nearest

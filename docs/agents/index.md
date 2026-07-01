@@ -236,14 +236,26 @@ assigned that lane.
 
 As you work, narrate your trajectory into meaningful **events** so the Alex
 learning heartbeat (`/alex/heartbeat`) reads as "Explore: find issue with api →
-found X", not a wall of raw tool calls. At a natural work boundary, open a span:
+found X", not a wall of raw tool calls. Open your first span at a natural work
+boundary:
 
 ```bash
 bin/atomic-event start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
 ```
 
-Keep `--reason` short (~4-7 words). When that unit of work is done, close it with
-what happened:
+Keep `--reason` short (~4-7 words). Then, at every following boundary, use **one**
+`next` call to close the current span WITH its outcome and open the next one in
+the same breath:
+
+```bash
+bin/atomic-event next --outcome "what just happened" \
+                      --category <C> --reason "what's next"
+```
+
+`next` is the habit that keeps spans from hanging half-narrated: it stamps the
+outcome on the span you're leaving AND opens the one you're entering in a single
+call (`start --outcome "…"` does the same crossover). Close the very last span
+with what happened:
 
 ```bash
 bin/atomic-event end --outcome "what happened"
@@ -251,9 +263,13 @@ bin/atomic-event end --outcome "what happened"
 
 Your raw tool-calls attribute server-side to whichever span is currently open, so
 keep spans **meaningful** — one per unit of work, not one per tool call. Navigate
-(`cd`) is dropped automatically, and opening a new span auto-closes the prior one
-(a bare `end` is rarely needed). Narration is non-fatal — it never blocks your
-work — and it powers the Alex learning heartbeat.
+(`cd`) is dropped automatically. Opening a new span still auto-closes the prior
+one, but a bare open leaves that span's outcome NULL — always carry it across with
+`next --outcome` (or `end --outcome`) so the heartbeat shows a resolution, not a
+dangling "in progress". If a session ends with a span still open, the SessionEnd
+hook (`bin/atomic-event close-open`) closes it with a generic "session ended"
+outcome so it never hangs open forever. Narration is non-fatal — it never blocks
+your work — and it powers the Alex learning heartbeat.
 
 ## Parallel Work Quick Start
 
