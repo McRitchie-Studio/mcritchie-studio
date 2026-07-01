@@ -53,6 +53,24 @@ test("clicking a drilled-down action opens its grading drawer", async ({ page })
   await expect(page.locator("aside[data-test='heartbeat-drawer']")).toHaveClass(/hb-drawer-open/);
 });
 
+// The event row rolls its attributed actions up into the Pokémon / Model / Tokens /
+// Cost columns and a distinct open-vs-done status badge (the operator's screenshot ask).
+test("the span rows show the rolled-up mascot, model, tokens, cost, and status", async ({ page }) => {
+  await page.goto("/alex/heartbeat");
+
+  const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  await expect(explore.locator("[data-test='event-mascot']")).toContainText("Snorlax");
+  await expect(explore.locator("[data-test='event-model']")).toContainText("opus-4-8");
+  // 9.4k/360 + 6.8k/2.4k summed across the span's two seeded actions
+  await expect(explore.locator("[data-test='event-tokens']")).toContainText("16.2k/2.8k");
+  await expect(explore.locator("[data-test='event-cost']")).toContainText("$");
+  await expect(explore.locator("[data-test='event-status']")).toHaveText("done");
+
+  // The final Workflow span is still open — its status badge reads "open", distinctly.
+  const workflow = page.locator("[data-test='heartbeat-event'][data-category='Workflow']");
+  await expect(workflow.locator("[data-test='event-status']")).toHaveText("open");
+});
+
 // The launcher's Alex avenue links straight to the heartbeat trajectory.
 test("the session launcher Alex avenue links to the heartbeat trajectory", async ({ page }) => {
   await page.goto("/launcher");

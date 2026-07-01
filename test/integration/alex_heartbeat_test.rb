@@ -112,4 +112,57 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test=heartbeat-empty]"
   end
+
+  test "the event row rolls up its actions' tokens, cost, model, and mascot" do
+    ev = event(seq: 0, category: "Explore", reason_slug: "find the capture seam",
+               mascot: "snorlax", outcome_slug: "found it", closed_at: 1.minute.ago, at: 3.minutes.ago)
+    action(event: ev, seq: 0, at: 3.minutes.ago, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    action(event: ev, seq: 1, at: 2.minutes.ago, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
+    assert_select "[data-test=event-cost]", text: "$0.1400"
+    assert_select "[data-test=event-model]", text: "opus-4-8"
+    assert_select "[data-test=event-mascot]", text: /Snorlax/
+    assert_select "[data-test=event-status]", text: "done"
+  end
+
+  test "each span row exposes a grade affordance into the span-grade drawer" do
+    ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=event-grade-open]"
+    assert_match heartbeat_event_feedback_path(ev), response.body
+  end
+
+  test "the span-grade drawer body loads both span editors posting to the E2 endpoint" do
+    ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
+    action(event: ev, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
+
+    get heartbeat_event_feedback_path(ev)
+
+    assert_response :success
+    assert_select "turbo-frame#hb-drawer"
+    assert_select "form[data-test=span-grade-form]", 2
+    assert_select "form[action=?]", heartbeat_event_grade_path(ev), 2
+  end
+
+  test "a graded span renders its grade marker server-side on the next load" do
+    ev = event(seq: 0, reason_slug: "narrate this span well", closed_at: 1.minute.ago, outcome_slug: "done")
+
+    # grade the span through E2, exactly as the drawer's fetch does
+    post heartbeat_event_grade_path(ev),
+         params: { grader: "alex", disposition: "good", slug: "clean span with a sharp outcome" }
+    assert_response :success
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
+    assert_match "clean span with a sharp outcome", response.body
+  end
 end

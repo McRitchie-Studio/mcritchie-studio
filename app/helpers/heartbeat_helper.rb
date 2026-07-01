@@ -106,11 +106,47 @@ module HeartbeatHelper
   # "in/out" token pair for the Tokens cell, or "—" when the action spent none
   # (board/harness steps carry no model usage).
   def heartbeat_tokens(action)
-    ti = action.tokens_in.to_i
-    to = action.tokens_out.to_i
+    heartbeat_tokens_pair(action.tokens_in, action.tokens_out)
+  end
+
+  # The same "in/out" pair from raw counts rather than an action — the aggregated
+  # form the EVENT row uses (summed across a span's rolled-up actions). "—" when
+  # the span spent nothing (a span of pure board/harness steps carries no usage).
+  def heartbeat_tokens_pair(tokens_in, tokens_out)
+    ti = tokens_in.to_i
+    to = tokens_out.to_i
     return "—" if ti.zero? && to.zero?
 
     "#{heartbeat_tokens_compact(ti)}/#{heartbeat_tokens_compact(to)}"
+  end
+
+  # Roll a span's attributed actions up into the totals the EVENT row shows: summed
+  # in/out tokens, summed cost, and the span's dominant model (the model most of its
+  # actions ran on). Pure aggregation over the in-memory array the controller already
+  # loaded under each span (@event_rows), so the event table adds NO query per row —
+  # the N+1 the task explicitly forbids. `mascot` is the most common action mascot,
+  # a fallback the view uses only when the span carries no mascot of its own.
+  def heartbeat_event_totals(actions)
+    actions = Array(actions)
+    tokens_in  = actions.sum { |a| a.tokens_in.to_i }
+    tokens_out = actions.sum { |a| a.tokens_out.to_i }
+    {
+      tokens_in:    tokens_in,
+      tokens_out:   tokens_out,
+      tokens_total: tokens_in + tokens_out,
+      cost:         actions.sum { |a| a.cost.to_f },
+      model:        heartbeat_dominant(actions.map(&:model)),
+      mascot:       heartbeat_dominant(actions.map(&:mascot))
+    }
+  end
+
+  # The most frequent non-blank value in a list (the span's dominant model/mascot),
+  # or nil when the list is empty/all-blank. Ties resolve to the first-seen value.
+  def heartbeat_dominant(values)
+    values.filter_map { |v| v.to_s.presence }
+          .tally
+          .max_by { |_value, count| count }
+          &.first
   end
 
   # Cost formatter mirroring the prototype: zero -> "—", sub-cent -> "$0.00",
@@ -139,6 +175,19 @@ module HeartbeatHelper
     return IN_PROGRESS if event.open? || event.outcome_slug.blank?
 
     event.outcome_slug
+  end
+
+  # A span's lifecycle badge for the Status column — the distinct signal the operator
+  # asked for so an OPEN span reads as legitimately in-progress, not a hung/broken
+  # row. "open" is amber (still running); "done" is a quiet slate (closed), kept
+  # deliberately NOT green so it never reads as a "good" grade verdict.
+  HEARTBEAT_SPAN_STATUS = {
+    open: { label: "open", color: "#d29922" },
+    done: { label: "done", color: "#8b949e" }
+  }.freeze
+
+  def heartbeat_span_status_meta(event)
+    HEARTBEAT_SPAN_STATUS[event.open? ? :open : :done]
   end
 
   # Short, dense timestamp for the "Opened" cell ("Jun 30, 14:07"); the full

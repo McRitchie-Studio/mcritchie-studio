@@ -1,0 +1,13 @@
+<%# One grader's compact marker on the span row (alex or mcr): a disposition dot and
+    the grade slug, shown only when that grader has graded the span. Server-rendered
+    from `grade` (what the tests assert on), and kept live by the row's Alpine
+    `grades.<grader>` state — a drawer save flips it in place. The dot's colour is a
+    JS-only nicety (bound via :class); tests assert on the slug text, not the colour.
+    Locals: grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+<span class="hb-evtmark hb-evtmark-<%= grader %>" data-test="event-grade-<%= grader %>"
+      x-show="grades.<%= grader %>" <%= raw(grade ? "" : 'style="display:none"') %>>
+  <span class="hb-evtmark-role"><%= grader == "mcr" ? "M" : "A" %></span>
+  <span class="hb-evtdot" :class="grades.<%= grader %> && grades.<%= grader %>.disposition === 'good' ? 'is-good' : 'is-not'"></span>
+  <span class="hb-evtmark-slug" x-text="grades.<%= grader %> ? grades.<%= grader %>.slug : ''"><%= grade&.slug %></span>
+  <span class="hb-bankmark" title="banked insight" x-show="grades.<%= grader %> && grades.<%= grader %>.banked" <%= raw(grade&.banked ? "" : 'style="display:none"') %>>&#128161;</span>
+</span>

@@ -83,4 +83,52 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal 121, preview.length # 120 chars + the ellipsis
     assert preview.end_with?("…")
   end
+
+  test "[unit] token pair compacts in/out counts and dashes a span that spent nothing" do
+    assert_equal "9.4k/360", heartbeat_tokens_pair(9400, 360)
+    assert_equal "—", heartbeat_tokens_pair(0, 0)
+    assert_equal "—", heartbeat_tokens_pair(nil, nil)
+    assert_equal "1.2k/0", heartbeat_tokens_pair(1200, 0)
+  end
+
+  test "[unit] dominant returns the most frequent non-blank value, nil when all blank" do
+    assert_equal "claude-opus-4-8", heartbeat_dominant(["claude-opus-4-8", "claude-opus-4-8", "claude-sonnet"])
+    assert_nil heartbeat_dominant([nil, "", "  "])
+    assert_nil heartbeat_dominant([])
+  end
+
+  test "[unit] event totals sum tokens + cost and pick the dominant model and mascot across a span" do
+    actions = [
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, model: "claude-opus-4-8", mascot: "snorlax"),
+      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, model: "claude-opus-4-8", mascot: "snorlax"),
+      AtomicAction.new(tokens_in: 0, tokens_out: 0, cost: 0, model: nil, mascot: nil)
+    ]
+
+    totals = heartbeat_event_totals(actions)
+
+    assert_equal 16_200, totals[:tokens_in]
+    assert_equal 2_760, totals[:tokens_out]
+    assert_equal 18_960, totals[:tokens_total]
+    assert_in_delta 0.14, totals[:cost], 0.0001
+    assert_equal "claude-opus-4-8", totals[:model]
+    assert_equal "snorlax", totals[:mascot]
+  end
+
+  test "[unit] event totals over no actions are all zero / nil (a span that framed nothing)" do
+    totals = heartbeat_event_totals([])
+
+    assert_equal 0, totals[:tokens_total]
+    assert_equal 0.0, totals[:cost]
+    assert_nil totals[:model]
+    assert_nil totals[:mascot]
+  end
+
+  test "[unit] span status badge distinguishes an open span from a closed one" do
+    open_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: nil))
+    done_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: Time.current))
+
+    assert_equal "open", open_meta[:label]
+    assert_equal "done", done_meta[:label]
+    assert_not_equal open_meta[:color], done_meta[:color], "open and done must read as visibly distinct badges"
+  end
 end

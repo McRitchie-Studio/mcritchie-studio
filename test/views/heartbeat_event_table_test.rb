@@ -98,4 +98,57 @@ class HeartbeatEventTableTest < ActionView::TestCase
     # but a drilled-down action still links to its grading drawer
     assert_includes rendered, heartbeat_feedback_path(a1)
   end
+
+  test "[component] the span row rolls up its actions into Pokémon, model, tokens, and cost" do
+    ev = event(seq: 0, mascot: "snorlax", closed_at: Time.current, outcome_slug: "done")
+    a1 = action(atomic_event_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    a2 = action(atomic_event_id: ev.id, seq: 1, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
+
+    # aggregated across the span's actions, not per-action
+    assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
+    assert_select "[data-test=event-cost]", text: "$0.1400"
+    assert_select "[data-test=event-model]", text: "opus-4-8"
+    # the span mascot resolves to a name (slug titleized here — no seeded Pokémon passed)
+    assert_select "[data-test=event-mascot]", text: /Snorlax/
+  end
+
+  test "[component] the span row shows a distinct open vs done status badge" do
+    open_span = event(seq: 0, reason_slug: "certify and open the PR", closed_at: nil, outcome_slug: nil)
+    done_span = event(seq: 1, reason_slug: "run the unit suite", closed_at: Time.current, outcome_slug: "green")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[open_span, []], [done_span, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "[data-test=event-status]", text: "open"
+    assert_select "[data-test=event-status]", text: "done"
+  end
+
+  test "[component] each span exposes a grade affordance opening its span-grade drawer" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "[data-test=event-grade-open]", 1
+    assert_includes rendered, heartbeat_event_feedback_path(ev)
+  end
+
+  test "[component] a span's existing grade markers render server-side from event_grades" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+    grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
+                                slug: "tight span with a clean outcome")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+                     event_grades: { ev.id => { "alex" => grade } } }
+
+    # the Alex marker is server-rendered (Nokogiri-visible), carrying its slug
+    assert_select "[data-test=event-grade-alex]"
+    assert_includes rendered, "tight span with a clean outcome"
+    # and the tbody carries the hydration data the Alpine row reads
+    assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
+  end
 end
