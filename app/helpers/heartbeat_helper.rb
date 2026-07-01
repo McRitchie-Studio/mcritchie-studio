@@ -147,6 +147,42 @@ module HeartbeatHelper
       tokens_total: tokens_in + tokens_out, cost: cost }
   end
 
+  # The tooltip surfaced on a per-action tokens/cost cell that INHERITS its turn's
+  # spend (a non-primary row of a shared source_turn_uuid). One assistant turn is
+  # metered once, so its fan-out of tool-calls repeat that spend verbatim; the
+  # tooltip tells the operator the number is shared, not additive.
+  SHARED_TURN_TITLE = "shared with this turn's first action"
+
+  def heartbeat_shared_turn_title
+    SHARED_TURN_TITLE
+  end
+
+  # The ids of the actions whose tokens/cost DUPLICATE their turn's first action.
+  # Usage is metered per assistant TURN, not per tool-call: N tool-calls from one
+  # turn each carry that turn's usage and render IDENTICAL tokens/cost (they share
+  # a source_turn_uuid), which reads like double-counting. Walking the session's
+  # actions in chronological order (occurred_at then seq — the order the controller
+  # already loads @actions in), the FIRST action of each source_turn_uuid is the
+  # PRIMARY and keeps its normal color; every SUBSEQUENT action sharing that turn
+  # is a duplicate whose id lands here, so the view fades its tokens/cost cells to
+  # signal the spend is inherited. Exactly ONE primary per turn across the WHOLE
+  # session, even when a turn's calls land under different spans. Actions with a
+  # blank source_turn_uuid are each their own primary and never appear here.
+  # Display-only — mirrors the dedupe in heartbeat_usage_totals, changes NO value.
+  def heartbeat_shared_turn_ids(actions)
+    seen = {}
+    Array(actions).each_with_object(Set.new) do |action, dups|
+      turn = action.source_turn_uuid.presence
+      next unless turn
+
+      if seen[turn]
+        dups << action.id
+      else
+        seen[turn] = true
+      end
+    end
+  end
+
   # Roll a span's attributed actions up into the totals the EVENT row shows: summed
   # in/out tokens, summed cost (all DEDUPED by source_turn_uuid, see above), and the
   # span's dominant model (the model most of its actions ran on). Pure aggregation

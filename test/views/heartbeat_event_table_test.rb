@@ -136,6 +136,81 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_includes rendered, heartbeat_event_feedback_path(ev)
   end
 
+  test "[component] a shared turn fades the tokens AND cost cells of every action after the first" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+    first  = action(atomic_event_id: ev.id, seq: 0, source_turn_uuid: "turn-A",
+                    tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    second = action(atomic_event_id: ev.id, seq: 1, source_turn_uuid: "turn-A",
+                    tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    # the controller's session-level walk marks the 2nd action of the shared turn
+    shared = Set.new([second.id])
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, [first, second]]], unlabeled: [], pokemon_by_slug: {},
+                     shared_turn_ids: shared }
+
+    # the turn's first action keeps its normal color — no faded cell
+    assert_select "tr[data-seq='0'] td.hb-turn-shared", false
+    # the 2nd action fades BOTH its tokens and its cost cell, each with the inherit tooltip
+    assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
+    assert_select "tr[data-seq='1'] td.hb-turn-shared[title=?]",
+                  "shared with this turn's first action", 2
+    # only the color changes — the value itself is untouched
+    assert_select "tr[data-seq='1'] td.hb-turn-shared", text: "9.4k/360"
+  end
+
+  test "[component] a solo-turn action and a blank-turn action are never faded" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+    solo  = action(atomic_event_id: ev.id, seq: 0, source_turn_uuid: "turn-solo",
+                   tokens_in: 100, tokens_out: 10, cost: 0.01)
+    blank = action(atomic_event_id: ev.id, seq: 1, source_turn_uuid: nil,
+                   tokens_in: 200, tokens_out: 20, cost: 0.02)
+    # neither is a duplicate, so the controller flags nothing
+    shared = Set.new
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, [solo, blank]]], unlabeled: [], pokemon_by_slug: {},
+                     shared_turn_ids: shared }
+
+    assert_select "td.hb-turn-shared", false
+  end
+
+  test "[component] exactly one primary per turn even when the turn's calls split across spans" do
+    span1 = event(seq: 0, reason_slug: "first span", closed_at: Time.current, outcome_slug: "done")
+    span2 = event(seq: 1, reason_slug: "second span", closed_at: Time.current, outcome_slug: "done")
+    primary = action(atomic_event_id: span1.id, seq: 0, source_turn_uuid: "turn-split",
+                     tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    echo    = action(atomic_event_id: span2.id, seq: 1, source_turn_uuid: "turn-split",
+                     tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    # the controller walks the WHOLE session chronologically, so the echo (in span2)
+    # is the sole duplicate even though it lives under a different span than the primary
+    shared = Set.new([echo.id])
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[span1, [primary]], [span2, [echo]]], unlabeled: [],
+                     pokemon_by_slug: {}, shared_turn_ids: shared }
+
+    # the primary (in span1) stays full color; only the echo (in span2) fades its two cells
+    assert_select "tr[data-seq='0'] td.hb-turn-shared", false
+    assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-turn-shared", 2
+  end
+
+  test "[component] a shared turn in the Unlabeled group fades its later rows too" do
+    first  = action(atomic_event_id: nil, seq: 0, source_turn_uuid: "turn-U",
+                    tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    second = action(atomic_event_id: nil, seq: 1, source_turn_uuid: "turn-U",
+                    tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    shared = Set.new([second.id])
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [], unlabeled: [first, second], pokemon_by_slug: {},
+                     shared_turn_ids: shared }
+
+    assert_select "tbody[data-test=heartbeat-unlabeled] tr[data-seq='0'] td.hb-turn-shared", false
+    assert_select "tbody[data-test=heartbeat-unlabeled] tr[data-seq='1'] td.hb-turn-shared", 2
+  end
+
   test "[component] a span's existing grade markers render server-side from event_grades" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
     grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
