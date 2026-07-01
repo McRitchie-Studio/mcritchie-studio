@@ -79,7 +79,7 @@ module Dev
 
     # Advance the fixture release ONE tracker step by setting the next done_count
     # input (member → qa_url → assembled → confirmed → shipped), so the live release
-    # tracker steps Testing → Assembling → Deploying QA → Confirming → Deploying Prod
+    # tracker steps Testing → Assembling → Deploying QA → Confirming → Deploying
     # with each click. Wraps from shipped back to a fresh release.
     def advance_release
       release = current_fixture_release || open_fixture_release

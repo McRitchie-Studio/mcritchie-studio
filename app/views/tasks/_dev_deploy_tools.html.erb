@@ -6,7 +6,7 @@
             title="Open a fixture release at step 1 (Testing)"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Open</button>
     <button type="button" @click="post('advance_release')" :disabled="busy"
-            title="Advance one tracker step: Testing, Assembling, Deploying QA, Confirming, Deploying Prod"
+            title="Advance one tracker step: Testing, Assembling, Deploying QA, Confirming, Deploying"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-amber-300 disabled:opacity-40 transition">Advance →</button>
     <button type="button" @click="post('reset_release')" :disabled="busy"
             title="Clear the fixture release"
