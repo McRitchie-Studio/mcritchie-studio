@@ -313,6 +313,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#release-duration-card h3", text: /Last Three Deployments/
     assert_select "#release-duration-card", text: /Release Times/, count: 0
     assert_select "#release-duration-card", text: /shipped releases/, count: 0
+    # The redundant "Sample: N shipped releases" footer was removed (it echoed the
+    # card's duration metrics); the zero-state message still shows when empty.
+    assert_select "#release-duration-card", { text: /Sample:/, count: 0 },
+                  "the 'Sample: N shipped releases' footer must not render"
   end
 
   test "[integration] deployments cards carry a data-glow attribute for the live glow" do
