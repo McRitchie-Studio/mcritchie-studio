@@ -33,6 +33,7 @@
 
     <% groups.each do |stage, actions| %>
       <% meta = heartbeat_stage_meta(stage) %>
+      <% group_totals = heartbeat_usage_totals(actions) %>
       <tbody class="hb-group" data-test="heartbeat-group" data-stage="<%= stage.presence || "session" %>" x-data="{ open: true }">
         <tr class="hb-grouphead" @click="open = !open">
           <td colspan="13">
@@ -40,7 +41,7 @@
               <span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span>
               <span class="hb-chip" style="color: <%= meta[:accent] %>" title="<%= meta[:description] %>"><%= meta[:label] %></span>
               <span class="hb-groupcount"><%= pluralize(actions.size, "action") %></span>
-              <span class="hb-groupsub"><%= heartbeat_tokens_compact(actions.sum(&:tokens_total)) %> tok &middot; <%= heartbeat_cost(actions.sum { |a| a.cost.to_f }) %></span>
+              <span class="hb-groupsub"><%= heartbeat_tokens_compact(group_totals[:tokens_total]) %> tok &middot; <%= heartbeat_cost(group_totals[:cost]) %></span>
             </div>
           </td>
         </tr>

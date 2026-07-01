@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -198,7 +198,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_120000) do
   create_table "atomic_actions", force: :cascade do |t|
     t.string "actor", default: "agent", null: false
     t.bigint "atomic_event_id"
-    t.decimal "cost", precision: 10, scale: 4, default: "0.0", null: false
+    t.decimal "cost", precision: 10, scale: 4, default: "0.0"
     t.datetime "created_at", null: false
     t.integer "duration_ms"
     t.string "event_slug"
@@ -213,6 +213,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_120000) do
     t.string "result_slug"
     t.integer "seq", default: 0, null: false
     t.string "session_id", null: false
+    t.string "source_turn_uuid"
     t.string "stage"
     t.string "task_slug"
     t.integer "tokens_in", default: 0, null: false
@@ -222,6 +223,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_120000) do
     t.index ["feedback_anchor"], name: "index_atomic_actions_on_feedback_anchor"
     t.index ["occurred_at"], name: "index_atomic_actions_on_occurred_at"
     t.index ["session_id", "seq"], name: "index_atomic_actions_on_session_id_and_seq"
+    t.index ["source_turn_uuid"], name: "index_atomic_actions_on_source_turn_uuid"
     t.index ["task_slug", "seq"], name: "index_atomic_actions_on_task_slug_and_seq"
   end
 

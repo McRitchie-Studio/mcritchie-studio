@@ -123,6 +123,54 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_nil totals[:mascot]
   end
 
+  test "[unit] usage totals DEDUPE by source_turn_uuid so a parallel fan-out counts a turn once" do
+    # One assistant turn fired THREE parallel tool calls: three actions all carry
+    # turn-A's usage. Two more actions belong to turn-B. A naive per-action sum
+    # would triple-count turn-A; dedupe must count each turn once.
+    actions = [
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B"),
+      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B")
+    ]
+
+    totals = heartbeat_usage_totals(actions)
+
+    assert_equal 16_200, totals[:tokens_in],  "turn-A (9400) + turn-B (6800) counted once each"
+    assert_equal 2_760,  totals[:tokens_out], "turn-A (360) + turn-B (2400) counted once each"
+    assert_equal 18_960, totals[:tokens_total]
+    assert_in_delta 0.14, totals[:cost], 0.0001
+  end
+
+  test "[unit] usage totals count each blank-turn action on its own (no shared turn)" do
+    # Pre-usage / board / harness rows carry no source_turn_uuid — each is distinct.
+    actions = [
+      AtomicAction.new(tokens_in: 100, tokens_out: 10, cost: 0.01, source_turn_uuid: nil),
+      AtomicAction.new(tokens_in: 200, tokens_out: 20, cost: 0.02, source_turn_uuid: nil)
+    ]
+
+    totals = heartbeat_usage_totals(actions)
+
+    assert_equal 300, totals[:tokens_in]
+    assert_equal 30,  totals[:tokens_out]
+    assert_in_delta 0.03, totals[:cost], 0.0001
+  end
+
+  test "[unit] event totals inherit the turn dedupe" do
+    actions = [
+      AtomicAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X"),
+      AtomicAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X")
+    ]
+
+    totals = heartbeat_event_totals(actions)
+
+    assert_equal 5000, totals[:tokens_in], "the shared turn's usage is counted once"
+    assert_equal 100, totals[:tokens_out]
+    assert_in_delta 0.02, totals[:cost], 0.0001
+    assert_equal "claude-opus-4-8", totals[:model]
+  end
+
   test "[unit] span status badge distinguishes an open span from a closed one" do
     open_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: nil))
     done_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: Time.current))

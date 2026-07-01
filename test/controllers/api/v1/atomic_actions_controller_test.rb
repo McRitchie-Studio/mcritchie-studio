@@ -97,7 +97,7 @@ module Api
         assert_equal "claude-opus-4-8", AtomicAction.order(:created_at).last.model
       end
 
-      test "[unit] does not permit tokens cost or distillation slugs" do
+      test "[unit] permits usage fields (tokens + source turn) as integers" do
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
@@ -106,14 +106,44 @@ module Api
 
         AtomicAction.stub(:capture, stub) do
           post api_v1_atomic_actions_path,
-               params: @body.merge(tokens_in: 999, cost: "9.99", event_slug: "x", result_slug: "y", seq: 42),
+               params: @body.merge(tokens_in: "4000", tokens_out: "250", source_turn_uuid: "turn-9"),
                headers: @headers, as: :json
         end
 
         assert_response :created
-        %i[tokens_in cost event_slug result_slug seq].each do |forbidden|
+        assert_equal 4000, captured[:tokens_in], "tokens are coerced to integers"
+        assert_equal 250, captured[:tokens_out]
+        assert_equal "turn-9", captured[:source_turn_uuid]
+      end
+
+      test "[unit] still does not permit cost or distillation slugs (cost is DERIVED)" do
+        captured = nil
+        stub = lambda do |attrs|
+          captured = attrs
+          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+        end
+
+        AtomicAction.stub(:capture, stub) do
+          post api_v1_atomic_actions_path,
+               params: @body.merge(cost: "9.99", event_slug: "x", result_slug: "y", seq: 42),
+               headers: @headers, as: :json
+        end
+
+        assert_response :created
+        %i[cost event_slug result_slug seq].each do |forbidden|
           assert_not captured.key?(forbidden), "#{forbidden} must not be caller-settable"
         end
+      end
+
+      test "[integration] a captured action derives cost from the stamped model + tokens" do
+        post api_v1_atomic_actions_path,
+             params: @body.merge(model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000),
+             headers: @headers, as: :json
+
+        assert_response :created
+        action = AtomicAction.order(:created_at).last
+        assert_equal 1_000_000, action.tokens_in
+        assert_equal "10.0".to_d, action.cost, "cost is priced server-side from model + tokens"
       end
 
       # ---- [integration] persistence -------------------------------------------

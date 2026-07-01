@@ -90,17 +90,24 @@ class AtomicCaptureHook
   # ── Pure builders (unit-tested directly) ─────────────────────────────────
 
   # Map a PostToolUse event hash → the flat AtomicAction.capture payload.
-  # task_slug / stage / mascot come from the active-feature marker; tokens, cost,
-  # and event/result slugs are intentionally absent (a hook can't know them).
+  # task_slug / stage / mascot come from the active-feature marker; model + token
+  # usage + the source turn id come from the SAME assistant transcript line (read
+  # once here); cost is derived server-side and event/result slugs stay absent (a
+  # hook can't know them).
   def build_payload(event, now: Time.now.utc)
     marker = resolve_marker(cwd: event["cwd"], session_id: event["session_id"])
+    turn   = resolve_assistant_turn(event)
+    usage  = turn_usage(turn["usage"])
     {
       "session_id" => event["session_id"],
       "kind" => map_kind(event["tool_name"]),
       "task_slug" => marker["task_slug"],
       "stage" => marker["stage"],
       "mascot" => marker["mascot"],
-      "model" => resolve_model(event),
+      "model" => resolve_model(event, turn),
+      "tokens_in" => usage[:tokens_in],
+      "tokens_out" => usage[:tokens_out],
+      "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
       "input" => truncate(serialize(event["tool_input"])),
       "output" => truncate(serialize(event["tool_response"])),
       "outcome" => outcome_for(event["tool_response"]),
@@ -117,23 +124,45 @@ class AtomicCaptureHook
   # The session model, or nil — best-effort and never raises. Order: a direct
   # payload field (`model` / nested `message.model`) if a future Claude Code adds
   # one, else the most recent assistant `message.model` in the transcript the
-  # payload's `transcript_path` points at. nil ⇒ the capture endpoint drops the key
-  # and the column stays null (no fabrication — we only ever stamp a REAL model).
-  def resolve_model(event)
+  # payload's `transcript_path` points at. Reuses a turn already read for this
+  # payload when passed one (build_payload reads the transcript once). nil ⇒ the
+  # capture endpoint drops the key and the column stays null (no fabrication — we
+  # only ever stamp a REAL model).
+  def resolve_model(event, turn = nil)
     direct = event["model"] || event.dig("message", "model")
     return direct if present?(direct)
 
-    read_model_from_transcript(event["transcript_path"])
+    turn ||= resolve_assistant_turn(event)
+    model = turn["model"]
+    present?(model) ? model : nil
   rescue StandardError
     nil
   end
 
-  # Scan the TAIL of the transcript JSONL for the newest assistant line's
-  # `message.model`. Reads at most TRANSCRIPT_TAIL_BYTES off the end (dropping a
-  # leading partial line), parses lines back-to-front, and returns the first model
-  # found. Bounded + best-effort so a huge or missing transcript never stalls or
-  # breaks the hook.
+  # The newest assistant turn from the transcript as { "model", "usage", "uuid" },
+  # or {} — the single source of both the model and the token usage a payload
+  # stamps. Best-effort and never raises.
+  def resolve_assistant_turn(event)
+    read_assistant_turn_from_transcript(event["transcript_path"]) || {}
+  rescue StandardError
+    {}
+  end
+
+  # Model-only helper kept for callers/tests that just want the model string.
   def read_model_from_transcript(path)
+    turn = read_assistant_turn_from_transcript(path)
+    turn && turn["model"]
+  end
+
+  # Scan the TAIL of the transcript JSONL for the newest assistant line carrying a
+  # `message.model`, and return that SAME line's { "model", "usage", "uuid" } — the
+  # model, its `message.usage` block, and the line's `uuid` (the assistant turn id).
+  # Model and usage MUST come from one line: usage belongs to the turn that issued
+  # the tool call. Reads at most TRANSCRIPT_TAIL_BYTES off the end (dropping a
+  # leading partial line), parses lines back-to-front. Bounded + best-effort so a
+  # huge or missing transcript never stalls or breaks the hook. nil when no
+  # model-bearing line is found.
+  def read_assistant_turn_from_transcript(path)
     return nil unless present?(path) && File.file?(path)
 
     size = File.size(path)
@@ -155,11 +184,30 @@ class AtomicCaptureHook
       next unless parsed.is_a?(Hash)
 
       model = parsed.dig("message", "model")
-      return model if present?(model)
+      next unless present?(model)
+
+      return {
+        "model" => model,
+        "usage" => parsed.dig("message", "usage"),
+        "uuid"  => parsed["uuid"]
+      }
     end
     nil
   rescue StandardError
     nil
+  end
+
+  # Fold an assistant turn's `message.usage` into the AtomicAction token contract:
+  # tokens_in = input + cache_creation + cache_read (the full prompt-side spend),
+  # tokens_out = output. Missing / non-hash usage yields 0/0. Never raises.
+  def turn_usage(usage)
+    usage = usage.is_a?(Hash) ? usage : {}
+    tokens_in = usage["input_tokens"].to_i +
+                usage["cache_creation_input_tokens"].to_i +
+                usage["cache_read_input_tokens"].to_i
+    { tokens_in: tokens_in, tokens_out: usage["output_tokens"].to_i }
+  rescue StandardError
+    { tokens_in: 0, tokens_out: 0 }
   end
 
   # True when the event is a NAVIGATION tool-call (dropped, never POSTed): a Bash
