@@ -62,4 +62,40 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test=heartbeat-empty]"
   end
+
+  # The multi-session switcher labels each option with its session's Pokémon mascot
+  # ("Bulbasaur · e2f6eb27") — the mascot leads, the eight-char id keeps it unique.
+  test "session switcher options lead with each session's Pokémon mascot and short id" do
+    a = "e2f6eb27-415c-4f3d-81c4-5bdf64064904"
+    b = "3618cc6d-6176-43d6-8cc0-45b6fcfffaa"
+    Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", types: %w[grass], generation: 1)
+    Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", types: %w[fire], generation: 1)
+    SessionMascot.create!(session_id: a, mascot_slug: "bulbasaur")
+    SessionMascot.create!(session_id: b, mascot_slug: "charizard")
+    capture_action(seq: 0, stage: nil, at: 2.minutes.ago, session: a, event_slug: "A")
+    capture_action(seq: 0, stage: nil, at: 1.minute.ago,  session: b, event_slug: "B")
+
+    get alex_heartbeat_path
+
+    assert_response :success
+    assert_select "select.hb-sel option[value=?]", a, text: "Bulbasaur · e2f6eb27"
+    assert_select "select.hb-sel option[value=?]", b, text: "Charizard · 3618cc6d"
+  end
+
+  # A session with no mascot row (pre-mascot or seed data) still lists — it just
+  # falls back to the bare session id rather than dropping out of the switcher.
+  test "session switcher falls back to the bare id when a session has no mascot" do
+    a = "e2f6eb27-415c-4f3d-81c4-5bdf64064904"
+    b = "3618cc6d-6176-43d6-8cc0-45b6fcfffaa"
+    Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", types: %w[grass], generation: 1)
+    SessionMascot.create!(session_id: a, mascot_slug: "bulbasaur")
+    capture_action(seq: 0, stage: nil, at: 2.minutes.ago, session: a, event_slug: "A")
+    capture_action(seq: 0, stage: nil, at: 1.minute.ago,  session: b, event_slug: "B")
+
+    get alex_heartbeat_path
+
+    assert_response :success
+    assert_select "select.hb-sel option[value=?]", a, text: "Bulbasaur · e2f6eb27"
+    assert_select "select.hb-sel option[value=?]", b, text: b
+  end
 end
