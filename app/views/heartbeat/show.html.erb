@@ -128,16 +128,17 @@
   #alex-heartbeat .hb-evtmark-slug { color:var(--hb-txt); font-weight:600; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #alex-heartbeat .hb-evtsaved { color:var(--hb-good); font-size:11.5px; margin-top:8px; font-weight:600; }
 
-  /* Full-command view in the per-action drawer — the raw tool-call input + output in
-     full, each pane scrollable so a long bash body or file never blows out the drawer. */
+  /* Full-command view in the per-action drawer — the tool-call input + output in full
+     (pretty-printed JSON when parseable, raw otherwise), each pane scrollable so a long
+     bash body or file never blows out the drawer. */
   #alex-heartbeat .hb-cmd { margin-bottom:16px; }
   #alex-heartbeat .hb-cmdtoggle { padding:5px 10px; font-size:11.5px; margin-bottom:8px; }
   #alex-heartbeat .hb-cmdlabel { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-faint); margin:8px 0 4px; }
-  #alex-heartbeat .hb-pre { background:var(--hb-bg); border:1px solid var(--hb-line); border-radius:8px; padding:9px 11px; margin:0; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; line-height:1.45; color:var(--hb-txt); white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
+  #alex-heartbeat .hb-pre { background:var(--hb-bg); border:1px solid var(--hb-line); border-radius:8px; padding:9px 11px; margin:0; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; line-height:1.45; color:var(--hb-txt); white-space:pre-wrap; word-break:break-word; max-height:420px; overflow:auto; }
 
   #alex-heartbeat .hb-scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .15s; z-index:40; }
   #alex-heartbeat .hb-scrim.hb-scrim-open { opacity:1; pointer-events:auto; }
-  #alex-heartbeat .hb-drawer { position:fixed; top:0; right:0; height:100%; width:min(540px,94vw); background:var(--hb-panel); border-left:1px solid var(--hb-line); transform:translateX(100%); transition:transform .18s ease; z-index:50; overflow-y:auto; color:var(--hb-txt); }
+  #alex-heartbeat .hb-drawer { position:fixed; top:0; right:0; height:100%; width:min(1080px,92vw); background:var(--hb-panel); border-left:1px solid var(--hb-line); transform:translateX(100%); transition:transform .18s ease; z-index:50; overflow-y:auto; color:var(--hb-txt); }
   #alex-heartbeat .hb-drawer.hb-drawer-open { transform:none; }
   #alex-heartbeat .hb-dh { padding:16px 20px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
   #alex-heartbeat .hb-dclose { position:absolute; top:12px; right:14px; background:none; border:none; color:var(--hb-muted); font-size:22px; cursor:pointer; line-height:1; }

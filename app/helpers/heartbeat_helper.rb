@@ -208,4 +208,23 @@ module HeartbeatHelper
 
     text.length > limit ? "#{text[0, limit]}…" : text
   end
+
+  # Pretty-print a captured tool-call payload for the drill-down drawer. Input and
+  # output are stored as raw (often escaped) JSON strings, so a nested `content`
+  # field reads as one `\n`-laden line. Parse and re-emit with 2-space indent so the
+  # STRUCTURE expands across lines, then unescape the newlines/tabs JSON re-escapes
+  # inside string values so a multi-line file body or command reads as REAL line
+  # breaks rather than literal `\n`. Falls back to the raw string UNTOUCHED when the
+  # payload is not valid JSON (a bash command, a plain sentence) so the view never
+  # raises. Blank-safe. Display-only: the result is intentionally no longer strict
+  # JSON — readability for the operator wins over round-trippability here.
+  def heartbeat_pretty_json(raw)
+    text = raw.to_s
+    return text if text.blank?
+
+    pretty = JSON.pretty_generate(JSON.parse(text))
+    pretty.gsub('\n', "\n").gsub('\t', "\t")
+  rescue JSON::ParserError
+    text
+  end
 end
