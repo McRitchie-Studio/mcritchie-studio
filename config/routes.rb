@@ -55,7 +55,7 @@ Rails.application.routes.draw do
       post "board/delete",       to: "board#delete",       as: :board_delete
       post "board/ship_release", to: "board#ship_release", as: :board_ship_release
       # Deployment-step toys: open / advance / reset a fixture RELEASE so the live
-      # tracker can be stepped Testing → … → Deploying Prod without real data.
+      # tracker can be stepped Testing → … → Deploying without real data.
       post "board/open_release",    to: "board#open_release",    as: :board_open_release
       post "board/advance_release", to: "board#advance_release", as: :board_advance_release
       post "board/reset_release",   to: "board#reset_release",   as: :board_reset_release
