@@ -272,6 +272,12 @@ Rails.application.routes.draw do
       # hook POSTs one AtomicAction per agent step. Best-effort: a capture miss
       # returns 204, never a 500 (telemetry must not break the work it observes).
       resources :atomic_actions, only: [:create]
+      # Agent-narration sink — the agent OPENs a meaningful span (category+reason)
+      # and CLOSEs it with an outcome; raw actions attribute to the open span.
+      # POST /api/v1/atomic_events opens; POST /api/v1/atomic_events/close closes.
+      resources :atomic_events, only: [:create] do
+        collection { post :close }
+      end
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.
       post "sessions/:session_id/mascot", to: "sessions#mascot"

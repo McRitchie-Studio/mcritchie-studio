@@ -16,6 +16,13 @@
 # (the same seam Task#write_stage_event drains), then to the column defaults. So a
 # harness that sets Current usage once gets every action it captures attributed
 # for free, exactly like a `bin/task move` does.
+#
+# SPAN attribution (atomic_event_id): the agent self-narrates its trajectory as
+# OPEN/CLOSE AtomicEvents; each captured action attributes SERVER-SIDE to the
+# session's current OPEN span (AtomicEvent.for_session(sid).open.order(:seq).last).
+# The caller never sets it — it's derived here, best-effort: no open span (or a
+# lookup hiccup) simply yields a null atomic_event_id and capture proceeds. An
+# explicit atomic_event_id in attrs still wins (in-process callers can pin it).
 class AtomicAction < ApplicationRecord
   # The outcome of a single action — the local credit signal.
   OK       = "ok"
@@ -34,6 +41,11 @@ class AtomicAction < ApplicationRecord
   # intake) carry a null task_slug, and capture must never fail on a task lookup.
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug,
                     optional: true, inverse_of: :atomic_actions
+
+  # The narrated SPAN this raw tool-call rolls up under — the session's OPEN
+  # AtomicEvent at capture time (attributed server-side, see .capture). Optional:
+  # an action captured with no open span carries a null atomic_event_id.
+  belongs_to :atomic_event, optional: true, inverse_of: :atomic_actions
 
   # The grading layer — Alex's grade and the McRitchie audit-of-Alex are two
   # ActionGrade rows (distinguished by grader). The Insight Bank is the banked
@@ -74,6 +86,7 @@ class AtomicAction < ApplicationRecord
       task_slug:       attrs[:task_slug],
       mascot:          attrs[:mascot],
       seq:             attrs[:seq] || next_seq_for(attrs[:session_id]),
+      atomic_event_id: attrs.fetch(:atomic_event_id) { current_event_id_for(attrs[:session_id]) },
       kind:            attrs[:kind],
       event_slug:      attrs[:event_slug],
       result_slug:     attrs[:result_slug],
@@ -111,6 +124,18 @@ class AtomicAction < ApplicationRecord
     (where(session_id: session_id).maximum(:seq) || -1) + 1
   rescue StandardError
     0
+  end
+
+  # The id of the session's current OPEN span, or nil when none is open. This is
+  # the server-side span attribution the agent's self-narration hangs on. Wrapped
+  # best-effort: an attribution lookup must NEVER break capture, so any failure
+  # degrades to nil (the action still writes, just unattributed).
+  def self.current_event_id_for(session_id)
+    return nil if session_id.blank?
+
+    AtomicEvent.for_session(session_id).open.order(:seq).last&.id
+  rescue StandardError
+    nil
   end
 
   def ok?

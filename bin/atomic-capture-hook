@@ -56,6 +56,12 @@ class AtomicCaptureHook
     "WebFetch" => "research", "WebSearch" => "research"
   }.freeze
 
+  # NAVIGATION is DROPPED — the agent narrates meaningful SPANS (AtomicEvents) and
+  # raw tool-calls attribute to whichever span is open; a bare directory move owns
+  # no span and is ~84% of the noise, so it never becomes a row. A Bash call is
+  # navigation when its command's first token is cd / pushd / popd / pwd.
+  NAV_COMMAND = /\A\s*(?:cd|pushd|popd|pwd)\b/.freeze
+
   # Truncate input/output to ≈3KB (within the task's 2-4KB cap) so a giant file
   # read or command dump never bloats a row.
   MAX_FIELD_BYTES = 3000
@@ -97,6 +103,17 @@ class AtomicCaptureHook
   def map_kind(tool_name)
     name = tool_name.to_s
     KIND_MAP[name] || name.downcase
+  end
+
+  # True when the event is a NAVIGATION tool-call (dropped, never POSTed): a Bash
+  # call whose command's first token is cd / pushd / popd / pwd. Anything else —
+  # including every non-Bash tool — is not navigation.
+  def navigation?(event)
+    return false unless event["tool_name"].to_s == "Bash"
+
+    command = event.fetch("tool_input") { {} }
+    command = command.is_a?(Hash) ? command["command"].to_s : ""
+    NAV_COMMAND.match?(command)
   end
 
   # JSON-encode anything that isn't already a string (the contract columns are
@@ -160,6 +177,7 @@ class AtomicCaptureHook
     raw = stdin.read
     event = JSON.parse(raw)
     return unless present?(event["session_id"]) # nothing to attribute → skip
+    return if navigation?(event)                # navigation is dropped — never a row
 
     payload = build_payload(event)
     dispatch(payload)
