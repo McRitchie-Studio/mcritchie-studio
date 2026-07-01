@@ -270,18 +270,28 @@ class AtomicCaptureHook
     OK
   end
 
-  # Resolve task_slug / stage / mascot the way bin/statusline + bin/agent-marker
-  # do: the nearest .agent-context.json walking up from the tool's cwd (the
-  # worktree desk) wins; else the per-session marker keyed by session id. Returns
+  # Resolve task_slug / stage / mascot for a captured action. task_slug + stage
+  # describe the DESK — the nearest .agent-context.json walking up from the tool's
+  # cwd (the worktree) wins; else the per-session marker keyed by session id.
+  #
+  # The BASE `mascot`, though, is the session's OWN stable Pokémon — the
+  # per-session marker (keyed by session_id, written by `bin/task session-mascot`
+  # from SessionMascot) — NOT the desk's .agent-context.json mascot, which carries
+  # the BOUND TASK's builder mascot and would FLIP the base when a session works a
+  # task built by a different soul (the Shellder→Sandshrew switch). This keeps an
+  # action's base mascot aligned with its span's (see bin/atomic-event). The desk
+  # mascot is only a fallback for a session with no mascot of its own yet. Returns
   # a hash with string keys (possibly nil values) and never raises.
   def resolve_marker(cwd:, session_id:)
-    data = read_context_marker(cwd) || read_session_marker(session_id) || {}
+    desk    = read_context_marker(cwd)
+    session = read_session_marker(session_id) || {}
+    context = desk || session
     {
       # worktree desk uses task_record_slug/task_slug; session marker uses
       # task_slug/slug — accept all, first present wins.
-      "task_slug" => first_present(data, "task_record_slug", "task_slug", "slug"),
-      "stage" => blank_to_nil(data["stage"]),
-      "mascot" => blank_to_nil(data["mascot"])
+      "task_slug" => first_present(context, "task_record_slug", "task_slug", "slug"),
+      "stage" => blank_to_nil(context["stage"]),
+      "mascot" => blank_to_nil(session["mascot"]) || blank_to_nil((desk || {})["mascot"])
     }
   rescue StandardError
     { "task_slug" => nil, "stage" => nil, "mascot" => nil }

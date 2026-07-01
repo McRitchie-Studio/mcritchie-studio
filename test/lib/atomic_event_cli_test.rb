@@ -54,6 +54,37 @@ class AtomicEventCliTest < Minitest::Test
                  AtomicEventCli::CATEGORIES
   end
 
+  # ── [unit] resolve_marker: base mascot = session, task_slug/stage = desk ──
+
+  def test_unit_resolve_marker_base_mascot_is_the_session_not_the_desk
+    Dir.mktmpdir do |proj|
+      proj = File.realpath(proj)
+      # The bound task's DESK marker (.agent-context.json) carries the TASK's
+      # builder mascot — the value that used to FLIP the base (Shellder→Sandshrew).
+      write_context_marker(proj, "task_record_slug" => "desk-task",
+                                 "mascot" => "sandshrew", "stage" => "reviewed")
+      # The session marker carries the session's OWN Pokémon (its stable base).
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+
+      marker = Dir.chdir(proj) { cli("CLAUDE_PROJECTS_DIR" => proj).resolve_marker(session_id: SESSION) }
+
+      assert_equal "shellder", marker["mascot"], "base mascot = the session's OWN, never the desk/task builder mascot"
+      assert_equal "desk-task", marker["task_slug"], "task_slug still describes the desk"
+      assert_equal "reviewed", marker["stage"], "stage still describes the desk"
+    end
+  end
+
+  def test_unit_resolve_marker_falls_back_to_desk_mascot_when_the_session_has_none
+    Dir.mktmpdir do |proj|
+      proj = File.realpath(proj)
+      write_context_marker(proj, "task_record_slug" => "desk-task", "mascot" => "sandshrew")
+      # No session-marker mascot → fall back to the desk so we never regress to nil.
+      marker = Dir.chdir(proj) { cli("CLAUDE_PROJECTS_DIR" => proj).resolve_marker(session_id: SESSION) }
+
+      assert_equal "sandshrew", marker["mascot"]
+    end
+  end
+
   # ── [integration] start POSTs an open span ───────────────────────────────
 
   def test_integration_start_mints_token_and_opens_span
@@ -89,6 +120,65 @@ class AtomicEventCliTest < Minitest::Test
       body = JSON.parse(close[:body])
       assert_equal SESSION, body["session_id"]
       assert_equal "located-the-bug", body["outcome"]
+    end
+  end
+
+  # ── [integration] --agent stamps the acting soul on the span ─────────────
+
+  def test_integration_start_stamps_agent_on_the_open_span
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      requests = run_cli(%W[start --session #{SESSION} --category Edit --reason add-guard --agent avi], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute_nil open, "expected a POST /api/v1/atomic_events"
+      body = JSON.parse(open[:body])
+      assert_equal "avi", body["agent"], "--agent rides the open-span POST"
+      assert_equal "shellder", body["mascot"], "the base session mascot rides alongside, unchanged"
+    end
+  end
+
+  def test_integration_next_carries_agent_across_the_boundary
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      requests = run_cli(%W[next --session #{SESSION} --outcome done --category Edit --reason go --agent carl],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      assert_equal "carl", JSON.parse(open[:body])["agent"]
+    end
+  end
+
+  def test_integration_start_without_agent_omits_the_key
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute JSON.parse(open[:body]).key?("agent"), "a bare start sends no agent key"
+    end
+  end
+
+  # ── [integration] base mascot stays the session's own across a task bind ──
+
+  def test_integration_base_mascot_stays_the_session_mascot_across_a_task_bind
+    Dir.mktmpdir do |proj|
+      # The session's OWN Pokémon (its stable base mascot)…
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      # …and a bound task's DESK marker carrying the TASK's builder mascot — this
+      # used to FLIP the base (the observed Shellder→Sandshrew switch). It must not.
+      write_context_marker(proj, "task_record_slug" => "someone-elses-task",
+                                 "mascot" => "sandshrew", "stage" => "reviewed")
+
+      requests = run_cli(%W[start --session #{SESSION} --category Verify --reason review], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      body = JSON.parse(open[:body])
+      assert_equal "shellder", body["mascot"],
+                   "base mascot stays the session's own, not the bound task's builder mascot"
+      assert_equal "someone-elses-task", body["task_slug"],
+                   "the desk task_slug is still recorded (builder mascot stays reachable via it)"
+      assert_equal "reviewed", body["stage"], "stage still describes the desk"
     end
   end
 
@@ -193,6 +283,13 @@ class AtomicEventCliTest < Minitest::Test
     sessions = File.join(projects_dir, ".agents", "sessions")
     FileUtils.mkdir_p(sessions)
     File.write(File.join(sessions, "#{session_id}.json"), JSON.generate(attrs))
+  end
+
+  # The worktree DESK marker (.agent-context.json) — carries the BOUND task's
+  # context (task slug + its builder mascot). resolve_marker walks up from cwd to
+  # find it, so tests write it at the proj dir they chdir into.
+  def write_context_marker(dir, attrs)
+    File.write(File.join(dir, ".agent-context.json"), JSON.generate(attrs))
   end
 
   def base_env(projects_dir)

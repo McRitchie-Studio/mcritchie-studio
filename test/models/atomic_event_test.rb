@@ -77,6 +77,36 @@ class AtomicEventTest < ActiveSupport::TestCase
     assert_includes event.errors[:category], "is not included in the list"
   end
 
+  # ---- [unit] agent attribution ---------------------------------------------
+
+  test "[unit] SOULS is the McRitchie roster" do
+    assert_equal %w[avi carl shannon jasper steffon alex], AtomicEvent::SOULS
+  end
+
+  test "[unit] a known acting soul is stored, down-cased" do
+    event = AtomicEvent.new(session_id: "sess-1", category: "Explore", reason_slug: "x",
+                            opened_at: Time.current, agent: "Avi")
+
+    assert event.valid?, event.errors.full_messages.to_sentence
+    assert_equal "avi", event.agent
+  end
+
+  test "[unit] an unknown acting soul is coerced to nil, never invalid" do
+    event = AtomicEvent.new(session_id: "sess-1", category: "Explore", reason_slug: "x",
+                            opened_at: Time.current, agent: "gary-oak")
+
+    assert event.valid?, "an unknown soul must NOT fail validation (non-fatal coercion)"
+    assert_nil event.agent, "an unknown soul is coerced to nil, not stored"
+  end
+
+  test "[unit] a blank acting soul normalizes to nil" do
+    event = AtomicEvent.new(session_id: "sess-1", category: "Explore", reason_slug: "x",
+                            opened_at: Time.current, agent: "   ")
+
+    assert event.valid?
+    assert_nil event.agent, "blank means the base session mascot did it"
+  end
+
   # ---- [unit] open/closed predicates ----------------------------------------
 
   test "[unit] open? and closed? reflect closed_at" do
@@ -130,6 +160,27 @@ class AtomicEventTest < ActiveSupport::TestCase
     assert_equal "building", event.stage
     assert_nil event.outcome_slug
     assert event.opened_at.present?
+  end
+
+  test "[integration] open_event! stamps a known acting soul on the span" do
+    event = AtomicEvent.open_event!(session_id: "agent-sess", category: "Edit",
+                                    reason_slug: "add guard", agent: "Carl")
+
+    assert_equal "carl", event.reload.agent, "the acting soul rides the span, down-cased"
+  end
+
+  test "[integration] open_event! coerces an unknown acting soul to nil and still opens" do
+    event = AtomicEvent.open_event!(session_id: "agent-sess-2", category: "Edit",
+                                    reason_slug: "add guard", agent: "team-rocket")
+
+    assert_nil event.reload.agent, "unknown soul → nil (non-fatal)"
+    assert event.open?, "a bad --agent never sinks the open"
+  end
+
+  test "[integration] open_event! defaults agent to nil — the base session mascot did it" do
+    event = AtomicEvent.open_event!(session_id: "agent-sess-3", category: "Explore", reason_slug: "look")
+
+    assert_nil event.agent
   end
 
   test "[integration] opening a new span auto-closes the prior open span" do

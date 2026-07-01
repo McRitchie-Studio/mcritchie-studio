@@ -61,6 +61,29 @@ module Api
         assert_equal "VALIDATION_FAILED", response.parsed_body["error_code"]
       end
 
+      # ---- [integration] agent attribution -------------------------------------
+
+      test "[integration] create permits agent and stamps the acting soul" do
+        post api_v1_atomic_events_path,
+             params: { session_id: "sess-agent", category: "Edit", reason: "add guard", agent: "carl" },
+             headers: @headers, as: :json
+
+        assert_response :created
+        assert_equal "carl", AtomicEvent.for_session("sess-agent").order(:seq).last.agent
+      end
+
+      test "[integration] create coerces an unknown agent to nil and still returns 201" do
+        assert_difference -> { AtomicEvent.count }, 1 do
+          post api_v1_atomic_events_path,
+               params: { session_id: "sess-agent-bad", category: "Edit", reason: "add guard", agent: "team-rocket" },
+               headers: @headers, as: :json
+        end
+
+        assert_response :created
+        assert_nil AtomicEvent.for_session("sess-agent-bad").order(:seq).last.agent,
+                   "an unknown soul is non-fatally coerced to nil, not a 422"
+      end
+
       # ---- [integration] BOUNDARY transition: create carries prior_outcome -----
 
       test "[integration] create with prior_outcome closes the prior span WITH that outcome" do
