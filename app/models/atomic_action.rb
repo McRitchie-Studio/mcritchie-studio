@@ -17,9 +17,17 @@
 # harness that sets Current usage once gets every action it captures attributed
 # for free, exactly like a `bin/task move` does.
 #
+# TOKENS are split FRESH vs RE-USED: tokens_in/tokens_out hold the fresh spend the
+# turn actually processed (input + cache_creation, and output) — this is what the
+# heartbeat DISPLAYS — while cache_read_tokens holds the context re-read from the
+# prompt cache, carried for COSTING only (never shown). Lumping cache reads into
+# tokens_in is what once read a long session as ~300K tokens/action and overstated
+# its cost ~10x.
+#
 # COST is DERIVED, not stored blindly: when no explicit cost is given (the live-
 # capture hook path — it carries model + tokens but can't price them), capture
-# computes cost = tokens * rate from MODEL_RATES. A model with no known rate leaves
+# computes cost from MODEL_RATES per tier — fresh tokens at the model rate, plus
+# cache_read at the cache tier (10% of input). A model with no known rate leaves
 # cost NULL — we never fabricate a price. source_turn_uuid records the assistant
 # turn a row's usage came from; because ONE turn can fire N parallel tool calls (N
 # rows sharing that turn's usage), every SPAN/SESSION aggregation dedupes by it (see
@@ -112,14 +120,22 @@ class AtomicAction < ApplicationRecord
     model_value      = attrs.fetch(:model) { Current.task_event_model }.presence
     tokens_in_value  = (attrs.fetch(:tokens_in)  { Current.task_event_tokens_in }  || 0).to_i
     tokens_out_value = (attrs.fetch(:tokens_out) { Current.task_event_tokens_out } || 0).to_i
+    # cache_read is the RE-USED prompt-cache context — hook-only (no Current seam),
+    # kept OUT of the displayed token count and used only to price the cache tier.
+    cache_read_value = (attrs[:cache_read_tokens] || 0).to_i
 
     # Cost priority: an EXPLICIT cost (in-process caller or the Current.task_event_*
     # seam a `bin/task move` sets) always wins; otherwise DERIVE it from the model +
-    # tokens via MODEL_RATES. When the model has no known rate the derivation returns
-    # nil and cost stays NULL — never a fabricated $0. The live-capture hook carries
-    # model + tokens but no cost, so it lands on the derived path.
+    # tokens via MODEL_RATES — the FRESH tokens at the model rate plus cache_read at
+    # the cache tier (10% of input). When the model has no known rate the derivation
+    # returns nil and cost stays NULL — never a fabricated $0. The live-capture hook
+    # carries model + tokens but no cost, so it lands on the derived path.
     explicit_cost = attrs.fetch(:cost) { Current.task_event_cost }
-    cost_value    = explicit_cost.nil? ? cost_for(model_value, tokens_in_value, tokens_out_value) : explicit_cost.to_d
+    cost_value    = if explicit_cost.nil?
+                      cost_for(model_value, tokens_in_value, tokens_out_value, cache_read_value)
+                    else
+                      explicit_cost.to_d
+                    end
 
     create!(
       session_id:       attrs[:session_id],
@@ -136,6 +152,7 @@ class AtomicAction < ApplicationRecord
       model:            model_value,
       tokens_in:        tokens_in_value,
       tokens_out:       tokens_out_value,
+      cache_read_tokens: cache_read_value,
       cost:             cost_value,
       source_turn_uuid: attrs[:source_turn_uuid].presence,
       stage:            attrs[:stage],
@@ -179,16 +196,29 @@ class AtomicAction < ApplicationRecord
     nil
   end
 
-  # Dollar cost for a model's token usage, or nil when the model has no known
-  # rate (never fabricate a price). Best-effort + total: any bad input degrades
-  # to nil rather than raising into capture. Returns a BigDecimal in dollars.
-  def self.cost_for(model, tokens_in, tokens_out)
+  # The cache-read (prompt-cache HIT) rate as a fraction of the base input rate.
+  # Anthropic prices a cache read at 10% of the input rate; cache_creation (a cache
+  # WRITE) is 1.25x, but the hook folds that into tokens_in at 1x as an accepted
+  # best-effort, so only the cache-read tier is modelled here.
+  CACHE_READ_RATE_FACTOR = 0.10
+
+  # Dollar cost for a model's token usage, or nil when the model has no known rate
+  # (never fabricate a price). Prices per tier: the FRESH tokens_in and tokens_out
+  # at the model's input/output rate, plus cache_read_tokens at the cache-read tier
+  # (10% of input) — re-used context is cheap, so lumping it into tokens_in at the
+  # full rate overstated cost ~10x on long sessions. Best-effort + total: any bad
+  # input degrades to nil rather than raising into capture. Returns dollars (BigDecimal).
+  def self.cost_for(model, tokens_in, tokens_out, cache_read_tokens = 0)
     rate = rate_for(model)
     return nil unless rate
 
     ti = tokens_in.to_i
     to = tokens_out.to_i
-    ((ti * rate[:in].to_d) + (to * rate[:out].to_d)) / PER_MILLION.to_d
+    cr = cache_read_tokens.to_i
+    in_rate = rate[:in].to_d
+    ((ti * in_rate) +
+     (cr * in_rate * CACHE_READ_RATE_FACTOR.to_d) +
+     (to * rate[:out].to_d)) / PER_MILLION.to_d
   rescue StandardError
     nil
   end

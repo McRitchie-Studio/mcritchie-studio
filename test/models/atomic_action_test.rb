@@ -14,6 +14,7 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert_equal AtomicAction::AGENT, action.actor
     assert_equal 0, action.tokens_in
     assert_equal 0, action.tokens_out
+    assert_equal 0, action.cache_read_tokens
     assert_equal 0.to_d, action.cost
     assert_equal false, action.feedback_anchor
   end
@@ -120,6 +121,32 @@ class AtomicActionTest < ActiveSupport::TestCase
 
   test "[unit] cost_for zero usage on a known model is zero, not nil" do
     assert_equal 0.to_d, AtomicAction.cost_for("claude-opus-4-8", 0, 0)
+  end
+
+  test "[unit] cost_for prices cache_read at 10% of the input rate" do
+    # claude-opus-4-8 = $5/1M in. 1_000_000 cache_read tokens => $5.00 * 0.10 = $0.50.
+    assert_equal "0.5".to_d, AtomicAction.cost_for("claude-opus-4-8", 0, 0, 1_000_000)
+  end
+
+  test "[unit] cost_for sums fresh tokens at full rate and cache_read at the cache tier" do
+    # 1M fresh in ($5.00) + 200K out ($5.00) + 1M cache_read ($0.50) = $10.50.
+    cost = AtomicAction.cost_for("claude-opus-4-8", 1_000_000, 200_000, 1_000_000)
+
+    assert_equal "10.5".to_d, cost
+  end
+
+  test "[unit] cost_for on a long-session shaped turn reads cents, not dollars" do
+    # The overstatement bug: a huge cache_read once priced at the full input rate.
+    # 5K fresh in + 250 out + 304K cache_read on opus should be ~cents, not ~$1.58.
+    cost = AtomicAction.cost_for("claude-opus-4-8", 5_000, 250, 304_000)
+
+    assert_operator cost, :<, "0.25".to_d, "cache_read at 0.1x keeps a long turn in cents"
+    assert_operator cost, :>, 0
+  end
+
+  test "[unit] cost_for cache_read on a model with no known rate is still nil" do
+    assert_nil AtomicAction.cost_for("gpt-5-codex", 0, 0, 1_000_000),
+               "no rate means no price, even for pure cache_read"
   end
 
   test "[unit] outcome predicates reflect the stored value" do
@@ -256,6 +283,36 @@ class AtomicActionTest < ActiveSupport::TestCase
                                   model: "claude-opus-4-8", tokens_in: 1_000_000, cost: "0.03".to_d)
 
     assert_equal "0.03".to_d, action.cost
+  end
+
+  test "[integration] capture stores cache_read_tokens apart from the fresh tokens" do
+    action = AtomicAction.capture(session_id: "cr-sess", kind: "read",
+                                  model: "claude-opus-4-8",
+                                  tokens_in: 5_000, tokens_out: 250, cache_read_tokens: 304_000)
+
+    assert_equal 5_000, action.tokens_in
+    assert_equal 250, action.tokens_out
+    assert_equal 304_000, action.cache_read_tokens
+    assert_equal 5_250, action.tokens_total, "the DISPLAY total is the fresh tokens only"
+  end
+
+  test "[integration] capture prices cache_read into the derived cost at the cache tier" do
+    # 5K fresh in ($0.025) + 250 out ($0.00625) + 304K cache_read ($0.152) = $0.18325,
+    # which the decimal(10,4) cost column stores as $0.1833.
+    action = AtomicAction.capture(session_id: "cr-cost-sess", kind: "read",
+                                  model: "claude-opus-4-8",
+                                  tokens_in: 5_000, tokens_out: 250, cache_read_tokens: 304_000)
+
+    assert_equal "0.1833".to_d, action.cost
+    assert_operator action.cost, :<, "0.25".to_d, "not the ~$1.58 the lumped path overstated"
+  end
+
+  test "[integration] capture defaults cache_read_tokens to zero when the caller omits it" do
+    action = AtomicAction.capture(session_id: "cr-default-sess", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000)
+
+    assert_equal 0, action.cache_read_tokens
+    assert_equal "10.0".to_d, action.cost, "no cache_read means the fresh-only price is unchanged"
   end
 
   test "[integration] capture stores the source_turn_uuid the usage came from" do

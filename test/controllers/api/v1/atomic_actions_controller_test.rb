@@ -106,13 +106,15 @@ module Api
 
         AtomicAction.stub(:capture, stub) do
           post api_v1_atomic_actions_path,
-               params: @body.merge(tokens_in: "4000", tokens_out: "250", source_turn_uuid: "turn-9"),
+               params: @body.merge(tokens_in: "4000", tokens_out: "250",
+                                   cache_read_tokens: "304000", source_turn_uuid: "turn-9"),
                headers: @headers, as: :json
         end
 
         assert_response :created
         assert_equal 4000, captured[:tokens_in], "tokens are coerced to integers"
         assert_equal 250, captured[:tokens_out]
+        assert_equal 304_000, captured[:cache_read_tokens], "cache_read is permitted and coerced to an integer"
         assert_equal "turn-9", captured[:source_turn_uuid]
       end
 
@@ -144,6 +146,20 @@ module Api
         action = AtomicAction.order(:created_at).last
         assert_equal 1_000_000, action.tokens_in
         assert_equal "10.0".to_d, action.cost, "cost is priced server-side from model + tokens"
+      end
+
+      test "[integration] cache_read is stored apart and priced at the cache tier, not lumped" do
+        post api_v1_atomic_actions_path,
+             params: @body.merge(model: "claude-opus-4-8", tokens_in: 5_000, tokens_out: 250,
+                                 cache_read_tokens: 304_000),
+             headers: @headers, as: :json
+
+        assert_response :created
+        action = AtomicAction.order(:created_at).last
+        assert_equal 5_000, action.tokens_in, "the fresh tokens are what the caller sent"
+        assert_equal 304_000, action.cache_read_tokens
+        assert_equal 5_250, action.tokens_total, "the display total excludes cache_read"
+        assert_operator action.cost, :<, "0.25".to_d, "cache_read priced at 0.1x keeps a long turn in cents"
       end
 
       # ---- [integration] persistence -------------------------------------------

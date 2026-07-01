@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -198,6 +198,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_130000) do
   create_table "atomic_actions", force: :cascade do |t|
     t.string "actor", default: "agent", null: false
     t.bigint "atomic_event_id"
+    t.integer "cache_read_tokens", default: 0
     t.decimal "cost", precision: 10, scale: 4, default: "0.0"
     t.datetime "created_at", null: false
     t.integer "duration_ms"
