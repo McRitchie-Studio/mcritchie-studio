@@ -39,3 +39,48 @@ test("the event heartbeat table exposes no inline grading radios", async ({ page
   await expect(page.locator("[data-test='heartbeat-event-table']")).toBeVisible();
   await expect(page.locator("[data-test='heartbeat-event-table'] input[type='radio']")).toHaveCount(0);
 });
+
+// [e2e] Grade a whole SPAN from its drawer: open the span-grade drawer, write Alex's
+// grade, save (fetch -> E2 JSON), confirm the saved chip, and see the grade marker
+// land on the span row live and survive a reload.
+test("grade a span from its drawer and see the marker land on the row", async ({ page }) => {
+  await page.goto("/alex/heartbeat");
+  const drawer = page.locator("aside[data-test='heartbeat-drawer']");
+
+  const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  await span.locator("[data-test='event-grade-open']").click();
+  await expect(drawer).toHaveClass(/hb-drawer-open/);
+
+  const alexForm = drawer.locator("form[data-grader='alex']");
+  const lesson = "tight explore span from e2e";
+  await alexForm.locator("input[name='slug']").fill(lesson);
+  await alexForm.locator(".hb-disptoggle button", { hasText: "Good" }).click();
+  await alexForm.locator("button[value='save']").click();
+
+  // The editor confirms the save in place (JSON round-trip, no reload).
+  await expect(alexForm.locator("[data-test='span-grade-saved']")).toBeVisible();
+
+  // The span row's Alex marker updates live via the hb:span-graded event.
+  await expect(span.locator("[data-test='event-grade-alex']")).toContainText(lesson);
+
+  // And it persists — a fresh load renders the marker server-side.
+  await page.goto("/alex/heartbeat");
+  await expect(
+    page.locator("[data-test='heartbeat-event'][data-category='Explore'] [data-test='event-grade-alex']")
+  ).toContainText(lesson);
+});
+
+// [e2e] The per-action drawer surfaces the full tool-call command (input), not the
+// clipped one-line preview the table shows.
+test("the action drawer shows the full command input", async ({ page }) => {
+  await page.goto("/alex/heartbeat");
+
+  const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  await span.locator("tr[data-test='heartbeat-event-row']").click();
+  await span.locator("tr[data-test='heartbeat-event-action']").first().click();
+
+  const drawer = page.locator("aside[data-test='heartbeat-drawer']");
+  await expect(drawer).toHaveClass(/hb-drawer-open/);
+  await expect(drawer.locator("[data-test='drawer-full-command']")).toBeVisible();
+  await expect(drawer.locator("[data-test='drawer-input']")).toContainText("grep -rn AtomicEvent app/models");
+});

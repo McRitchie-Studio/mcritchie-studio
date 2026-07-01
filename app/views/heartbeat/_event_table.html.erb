@@ -1,14 +1,18 @@
 <%# The agent-narrated event-span table — the PRIMARY heartbeat rows. Each row is an
-    AtomicEvent (category badge, reason_slug -> outcome_slug, opened time, and a count
-    of the raw tool-calls attributed to it). Each span is a collapsible tbody (Alpine,
-    default collapsed); expanding it drills into the raw atomic_actions (kind + input)
-    it framed, read-only. Raw actions the agent never narrated (a null atomic_event_id)
-    fall into the trailing "Unlabeled" group. Read-only: clicking a drilled-down action
-    opens the existing per-action grading drawer, but nothing on the table itself edits.
-    Locals: event_rows (Array of [AtomicEvent, [AtomicAction, ...]]), unlabeled (Array
-    of AtomicAction), pokemon_by_slug. %>
+    AtomicEvent: its category badge, the narrated reason -> outcome (an OPEN span shows
+    the in-progress placeholder plus a distinct "open" status badge, a closed one its
+    outcome_slug), the span's mascot, and the tokens/cost/model ROLLED UP from the raw
+    tool-calls attributed to it (summed in the controller-loaded @event_rows array — no
+    per-row query). Each span is a collapsible tbody (Alpine, default collapsed);
+    expanding it drills into those raw atomic_actions read-only. A "grade" affordance on
+    each span opens the span-grading drawer (mirrors the per-action drawer). Raw actions
+    the agent never narrated (a null atomic_event_id) fall into the trailing "Unlabeled"
+    group. Locals: event_rows (Array of [AtomicEvent, [AtomicAction, ...]]), unlabeled
+    (Array of AtomicAction), pokemon_by_slug, event_grades (event_id => { grader =>
+    ActionGrade }). %>
 <% pokemon_by_slug ||= {} %>
 <% unlabeled ||= [] %>
+<% event_grades ||= {} %>
 <div class="hb-scroll">
   <table class="hb-tbl hb-evt-tbl" data-test="heartbeat-event-table">
     <thead>
@@ -16,21 +20,41 @@
         <th>#</th>
         <th>Span</th>
         <th>Narration</th>
-        <th>Opened</th>
+        <th>Pok&eacute;mon</th>
+        <th>Model</th>
+        <th>Tokens</th>
+        <th>Cost</th>
+        <th>Status</th>
         <th>Actions</th>
         <th>Task</th>
+        <th>Grade</th>
       </tr>
     </thead>
 
     <% event_rows.each do |event, actions| %>
       <% cat = heartbeat_category_meta(event.category) %>
+      <% totals = heartbeat_event_totals(actions) %>
+      <% status = heartbeat_span_status_meta(event) %>
+      <% mascot_slug = event.mascot.presence || totals[:mascot] %>
+      <% pokemon = pokemon_by_slug[mascot_slug] %>
+      <% grades_for = event_grades[event.id] || {} %>
+      <% alex_g = grades_for[ActionGrade::ALEX] %>
+      <% mcr_g = grades_for[ActionGrade::MCR] %>
       <tbody class="hb-evtgroup" data-test="heartbeat-event"
              data-category="<%= event.category %>" data-event-id="<%= event.id %>"
-             x-data="{ open: false }">
+             data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
+             data-alex-graded="<%= alex_g.present? %>" data-alex-banked="<%= !!alex_g&.banked %>"
+             data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
+             data-mcr-graded="<%= mcr_g.present? %>" data-mcr-banked="<%= !!mcr_g&.banked %>"
+             x-data="heartbeatSpanRow()" x-init="hydrate($el)"
+             @hb:span-graded.window="onGraded($event.detail)">
         <tr class="hb-evtrow" data-test="heartbeat-event-row" @click="open = !open"
             style="--hb-edge: <%= cat[:accent] %>">
           <td class="hb-seq"><span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span></td>
-          <td><span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= event.category %></span></td>
+          <td>
+            <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= event.category %></span>
+            <div class="hb-meta hb-mono hb-evttime" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></div>
+          </td>
           <td class="hb-span">
             <span class="hb-slug"><%= event.reason_slug %></span>
             <span class="hb-arrow">&rarr;</span>
@@ -40,14 +64,26 @@
               <span class="hb-result"><%= event.outcome_slug %></span>
             <% end %>
           </td>
-          <td class="hb-meta hb-mono" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></td>
+          <td>
+            <% if mascot_slug.present? %>
+              <span class="hb-mascot" data-test="event-mascot">&#10022; <%= pokemon&.name || mascot_slug.titleize %></span>
+            <% else %>
+              <span class="hb-meta">&mdash;</span>
+            <% end %>
+          </td>
+          <td class="hb-meta hb-mono" data-test="event-model" title="<%= totals[:model].presence || "no model (board / harness steps only)" %>"><%= heartbeat_model_short(totals[:model]) %></td>
+          <td class="hb-meta hb-mono" data-test="event-tokens"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></td>
+          <td class="hb-meta hb-mono" data-test="event-cost"><%= heartbeat_cost(totals[:cost]) %></td>
+          <td><span class="hb-outcome" data-test="event-status" style="color: <%= status[:color] %>"><%= status[:label] %></span></td>
           <td class="hb-meta"><span class="hb-count" data-test="event-action-count"><%= pluralize(actions.size, "action") %></span></td>
           <td class="hb-meta hb-mono"><%= event.task_slug.presence || "—" %></td>
+          <%= render "heartbeat/event_feedback_cell", event: event, alex: alex_g, mcr: mcr_g %>
         </tr>
 
         <% if actions.any? %>
           <% actions.each do |action| %>
             <% outcome = heartbeat_outcome_meta(action.outcome) %>
+            <% action_pokemon = pokemon_by_slug[action.mascot] %>
             <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
                 style="--hb-edge: <%= outcome[:color] %>"
                 @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -59,15 +95,26 @@
                   <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
                 <% end %>
               </td>
-              <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
-              <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+              <td>
+                <% if action.mascot.present? %>
+                  <span class="hb-mascot hb-submascot">&#10022; <%= action_pokemon&.name || action.mascot.titleize %></span>
+                <% else %>
+                  <span class="hb-meta">&mdash;</span>
+                <% end %>
+              </td>
               <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
+              <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+              <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+              <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
+              <td class="hb-meta">&mdash;</td>
+              <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
+              <td class="hb-meta hb-gradehint">click to grade</td>
             </tr>
           <% end %>
         <% else %>
           <tr class="hb-subrow hb-subempty" x-show="open">
             <td class="hb-seq">&mdash;</td>
-            <td colspan="5" class="hb-meta">No raw actions attributed to this span.</td>
+            <td colspan="10" class="hb-meta">No raw actions attributed to this span.</td>
           </tr>
         <% end %>
       </tbody>
@@ -82,11 +129,17 @@
           <td><span class="hb-chip hb-catchip" style="color: <%= unl[:accent] %>" title="<%= unl[:description] %>">Unlabeled</span></td>
           <td class="hb-span"><span class="hb-result">context the agent did not narrate into a span</span></td>
           <td class="hb-meta">&mdash;</td>
+          <td class="hb-meta">&mdash;</td>
+          <td class="hb-meta">&mdash;</td>
+          <td class="hb-meta">&mdash;</td>
+          <td class="hb-meta">&mdash;</td>
           <td class="hb-meta"><span class="hb-count" data-test="event-action-count"><%= pluralize(unlabeled.size, "action") %></span></td>
+          <td class="hb-meta">&mdash;</td>
           <td class="hb-meta">&mdash;</td>
         </tr>
         <% unlabeled.each do |action| %>
           <% outcome = heartbeat_outcome_meta(action.outcome) %>
+          <% action_pokemon = pokemon_by_slug[action.mascot] %>
           <tr class="hb-subrow" data-test="heartbeat-event-action" data-seq="<%= action.seq %>" x-show="open"
               style="--hb-edge: <%= outcome[:color] %>"
               @click="openDrawer('<%= heartbeat_feedback_path(action) %>')">
@@ -98,9 +151,20 @@
                 <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
               <% end %>
             </td>
-            <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
-            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+            <td>
+              <% if action.mascot.present? %>
+                <span class="hb-mascot hb-submascot">&#10022; <%= action_pokemon&.name || action.mascot.titleize %></span>
+              <% else %>
+                <span class="hb-meta">&mdash;</span>
+              <% end %>
+            </td>
             <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
+            <td class="hb-meta hb-mono"><%= heartbeat_tokens(action) %></td>
+            <td class="hb-meta hb-mono"><%= heartbeat_cost(action.cost) %></td>
+            <td><span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span></td>
+            <td class="hb-meta">&mdash;</td>
+            <td class="hb-meta hb-mono"><%= action.task_slug.presence || "—" %></td>
+            <td class="hb-meta hb-gradehint">click to grade</td>
           </tr>
         <% end %>
       </tbody>

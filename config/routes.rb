@@ -83,6 +83,10 @@ Rails.application.routes.draw do
   # only by design — E2 stays view-free so it never collides with E3, which owns
   # every heartbeat view/partial and the turbo_stream grading path.
   post "alex/heartbeat/events/:id/grade",     to: "heartbeat#grade_event", as: :heartbeat_event_grade
+  # The per-SPAN grading drawer body (E3): the span-level analogue of the per-action
+  # feedback drawer, lazy-loaded into the same shared turbo-frame on a span's grade
+  # click. Read-only GET; its editors POST to the E2 grade_event endpoint above.
+  get  "alex/heartbeat/events/:id/feedback", to: "heartbeat#feedback_event", as: :heartbeat_event_feedback
   get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
 
   get "toast_test", to: "toast_test#index"

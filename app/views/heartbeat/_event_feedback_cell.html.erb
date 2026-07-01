@@ -1,0 +1,16 @@
+<%# The span's grade affordance on the event row — a "grade" button that opens the
+    span-grading drawer (into the shared turbo-frame, like a drilled-down action), plus
+    the span's current Alex grade + McRitchie audit markers. Markers are server-rendered
+    from the passed grades (so the integration/component tests and a no-JS load see
+    them), and bound to the row's Alpine `grades` state so a drawer save updates them
+    live via the hb:span-graded CustomEvent. @click.stop keeps the grade button from
+    toggling the span's expand/collapse. Locals: event, alex (ActionGrade | nil),
+    mcr (ActionGrade | nil). %>
+<td class="hb-evtfbcell" data-test="event-grade-cell" @click.stop>
+  <button type="button" class="hb-btn hb-gradebtn" data-test="event-grade-open"
+          @click="openDrawer('<%= heartbeat_event_feedback_path(event) %>')">grade &#9656;</button>
+  <span class="hb-evtmarks">
+    <%= render "heartbeat/event_grade_mark", grader: "alex", grade: alex %>
+    <%= render "heartbeat/event_grade_mark", grader: "mcr", grade: mcr %>
+  </span>
+</td>

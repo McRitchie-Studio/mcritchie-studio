@@ -29,7 +29,8 @@ class HeartbeatController < ApplicationController
     @unlabeled = actions_by_event[nil] || []
 
     @sessions = session_options
-    @pokemon_by_slug = pokemon_lookup(@actions)
+    @pokemon_by_slug = pokemon_lookup(@actions, @events)
+    @event_grades = event_grade_lookup(@events)
     @counts = grade_counts(@session_id)
   end
 
@@ -39,6 +40,21 @@ class HeartbeatController < ApplicationController
   def feedback
     @action = AtomicAction.find(params[:id])
     render partial: "heartbeat/drawer", locals: drawer_locals(@action)
+  end
+
+  # The per-SPAN grading drawer body — the event-level analogue of #feedback,
+  # lazy-loaded into the same shared turbo-frame when the operator clicks a span's
+  # "grade" affordance. Loads the span's attributed actions once (for the rolled-up
+  # token/cost/model summary the drawer shows) plus its current Alex grade + McRitchie
+  # audit. Its editors POST to E2's JSON grade_event endpoint (client-side fetch), so
+  # this action, like #feedback, only READS.
+  def feedback_event
+    @event = AtomicEvent.find(params[:id])
+    actions = @event.atomic_actions.chronological.to_a
+    grades  = @event.action_grades.index_by(&:grader)
+    render partial: "heartbeat/event_drawer",
+           locals: { event: @event, actions: actions,
+                     alex: grades[ActionGrade::ALEX], mcr: grades[ActionGrade::MCR] }
   end
 
   # Upsert ONE grade for (action, grader) — the inline disposition radios and the
@@ -141,22 +157,41 @@ class HeartbeatController < ApplicationController
 
   # One query for every mascot on the page so the Pokémon column reuses the
   # seeded Pokémon (name/emoji) instead of N+1 lookups; falls back to the slug.
-  def pokemon_lookup(actions)
-    slugs = actions.filter_map { |action| action.mascot.presence }.uniq
+  # Covers BOTH the raw actions AND the narrated spans — the event rows now show
+  # a mascot too (the span's own mascot, or its dominant action mascot), so the
+  # span mascots must resolve through the same single lookup.
+  def pokemon_lookup(actions, events = [])
+    slugs = (actions.filter_map { |action| action.mascot.presence } +
+             events.filter_map { |event| event.mascot.presence }).uniq
     return {} if slugs.empty?
 
     Pokemon.where(slug: slugs).index_by(&:slug)
   end
 
-  # The three live feedback tallies for a session's actions: how many Alex graded,
-  # how many McRitchie audited, and how many are banked into the Insight Bank.
+  # Every span's current grades in one query, grouped by event id then keyed by
+  # grader, so the event table renders each span's Alex grade + McRitchie audit
+  # markers (and the drawer seeds from them) with no per-row lookup.
+  def event_grade_lookup(events)
+    return {} if events.empty?
+
+    ActionGrade.where(atomic_event_id: events.map(&:id))
+               .group_by(&:atomic_event_id)
+               .transform_values { |grades| grades.index_by(&:grader) }
+  end
+
+  # The three live feedback tallies for a session: how many Alex graded, how many
+  # McRitchie audited, and how many are banked into the Insight Bank. Counts grades
+  # on BOTH the session's raw actions AND its narrated spans, so span grading (E2)
+  # reflects in the header stats on the next render, exactly as action grading does.
   def grade_counts(session_id)
     return { graded: 0, audited: 0, insights: 0 } if session_id.blank?
 
-    ids = AtomicAction.for_session(session_id).pluck(:id)
-    return { graded: 0, audited: 0, insights: 0 } if ids.empty?
+    action_ids = AtomicAction.for_session(session_id).pluck(:id)
+    event_ids  = AtomicEvent.for_session(session_id).pluck(:id)
+    return { graded: 0, audited: 0, insights: 0 } if action_ids.empty? && event_ids.empty?
 
-    grades = ActionGrade.where(atomic_action_id: ids)
+    grades = ActionGrade.where(atomic_action_id: action_ids)
+                        .or(ActionGrade.where(atomic_event_id: event_ids))
     { graded:   grades.by_grader(ActionGrade::ALEX).count,
       audited:  grades.by_grader(ActionGrade::MCR).count,
       insights: grades.banked.count }

@@ -61,8 +61,12 @@
   #alex-heartbeat .hb-chev-open { transform:rotate(90deg); }
 
   /* Event-span table — spans are the primary rows; expanding one drills into its
-     attributed raw actions (read-only). Fewer columns than the per-action table. */
-  #alex-heartbeat table.hb-evt-tbl { min-width:900px; }
+     attributed raw actions (read-only). Wider now: the span rows carry the rolled-up
+     Pokémon / Model / Tokens / Cost columns plus a span-grade affordance. */
+  #alex-heartbeat table.hb-evt-tbl { min-width:1180px; }
+  #alex-heartbeat .hb-evttime { font-size:10px; margin-top:2px; color:var(--hb-faint); }
+  #alex-heartbeat .hb-submascot { color:var(--hb-mascot); opacity:.85; }
+  #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
   #alex-heartbeat tr.hb-evtrow { cursor:pointer; }
   #alex-heartbeat tr.hb-evtrow td { background:var(--hb-panel); }
   #alex-heartbeat tr.hb-evtrow:hover td { background:var(--hb-panel2); }
@@ -110,6 +114,26 @@
   #alex-heartbeat .hb-longmark { font-size:11px; }
   #alex-heartbeat .hb-bankmark { color:var(--hb-bank); }
   #alex-heartbeat .hb-discardmark { color:var(--hb-faint); }
+
+  /* Span-grade affordance on the event row — the "grade" button plus each grader's
+     live marker (a disposition dot + slug), and the span-grading drawer's saved chip. */
+  #alex-heartbeat .hb-evtfbcell { white-space:nowrap; }
+  #alex-heartbeat .hb-gradebtn { padding:4px 9px; font-size:11px; }
+  #alex-heartbeat .hb-evtmarks { display:inline-flex; flex-direction:column; gap:3px; margin-top:5px; }
+  #alex-heartbeat .hb-evtmark { display:inline-flex; align-items:center; gap:5px; font-size:11px; }
+  #alex-heartbeat .hb-evtmark-role { font-size:9px; font-weight:700; color:var(--hb-faint); letter-spacing:.4px; width:9px; }
+  #alex-heartbeat .hb-evtdot { width:7px; height:7px; border-radius:50%; background:var(--hb-faint); flex:0 0 auto; }
+  #alex-heartbeat .hb-evtdot.is-good { background:var(--hb-good); }
+  #alex-heartbeat .hb-evtdot.is-not { background:var(--hb-not); }
+  #alex-heartbeat .hb-evtmark-slug { color:var(--hb-txt); font-weight:600; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #alex-heartbeat .hb-evtsaved { color:var(--hb-good); font-size:11.5px; margin-top:8px; font-weight:600; }
+
+  /* Full-command view in the per-action drawer — the raw tool-call input + output in
+     full, each pane scrollable so a long bash body or file never blows out the drawer. */
+  #alex-heartbeat .hb-cmd { margin-bottom:16px; }
+  #alex-heartbeat .hb-cmdtoggle { padding:5px 10px; font-size:11.5px; margin-bottom:8px; }
+  #alex-heartbeat .hb-cmdlabel { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-faint); margin:8px 0 4px; }
+  #alex-heartbeat .hb-pre { background:var(--hb-bg); border:1px solid var(--hb-line); border-radius:8px; padding:9px 11px; margin:0; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; line-height:1.45; color:var(--hb-txt); white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
 
   #alex-heartbeat .hb-scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .15s; z-index:40; }
   #alex-heartbeat .hb-scrim.hb-scrim-open { opacity:1; pointer-events:auto; }
@@ -162,6 +186,85 @@
       wordCount(text) { return (text || "").trim().split(/\s+/).filter(Boolean).length; }
     };
   };
+
+  // Per-span row component: owns the expand/collapse `open` AND the span's live grade
+  // markers. It hydrates its Alex/McRitchie marker state from the server-rendered
+  // data-* attributes on the <tbody> (so a page load already reflects existing grades),
+  // then listens for the hb:span-graded CustomEvent the span drawer dispatches after a
+  // fetch save — updating the matching grader's marker in place without a reload.
+  window.heartbeatSpanRow = function () {
+    return {
+      open: false,
+      eventId: null,
+      grades: { alex: null, mcr: null },
+      hydrate(el) {
+        this.eventId = el.dataset.eventId;
+        this.grades.alex = this.readGrade(el.dataset, "alex");
+        this.grades.mcr = this.readGrade(el.dataset, "mcr");
+      },
+      readGrade(data, who) {
+        if (data[who + "Graded"] !== "true") return null;
+        return {
+          disposition: data[who + "Disp"] || "",
+          slug: data[who + "Slug"] || "",
+          banked: data[who + "Banked"] === "true"
+        };
+      },
+      onGraded(detail) {
+        if (!detail || String(detail.atomic_event_id) !== String(this.eventId)) return;
+        this.grades[detail.grader] = {
+          disposition: detail.disposition,
+          slug: detail.slug,
+          banked: !!detail.banked
+        };
+      }
+    };
+  };
+
+  // The span grade editor inside the span drawer. Because E2's grade_event endpoint
+  // returns JSON (view-free by design), this submits via fetch rather than a turbo
+  // form: it posts the form (CSRF token + fields + the clicked intent), reflects the
+  // saved disposition/banked/discarded back into its own controls, surfaces any error,
+  // and dispatches hb:span-graded so the originating span row updates its markers live.
+  window.heartbeatEventEditor = function (config) {
+    return {
+      n: config.n,
+      disp: config.disp,
+      banked: config.banked,
+      discarded: config.discarded,
+      saving: false,
+      saved: false,
+      error: "",
+      wordCount(text) { return (text || "").trim().split(/\s+/).filter(Boolean).length; },
+      async submit(event) {
+        this.error = "";
+        this.saved = false;
+        this.saving = true;
+        var form = event.target;
+        var body = new FormData(form);
+        var submitter = event.submitter;
+        if (submitter && submitter.name) { body.set(submitter.name, submitter.value); }
+        try {
+          var resp = await fetch(form.action, {
+            method: "POST",
+            headers: { "Accept": "application/json" },
+            body: body
+          });
+          var data = await resp.json();
+          if (!resp.ok) { this.error = (data && data.error) || "Could not save the grade."; return; }
+          this.disp = data.disposition;
+          this.banked = !!data.banked;
+          this.discarded = !!data.discarded;
+          this.saved = true;
+          window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
+        } catch (err) {
+          this.error = "Could not save the grade.";
+        } finally {
+          this.saving = false;
+        }
+      }
+    };
+  };
 </script>
 
 <section id="alex-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
@@ -208,7 +311,8 @@
   </div>
 
   <% if @event_rows.any? || @unlabeled.any? %>
-    <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled, pokemon_by_slug: @pokemon_by_slug %>
+    <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
+          pokemon_by_slug: @pokemon_by_slug, event_grades: @event_grades %>
   <% else %>
     <div class="hb-empty" data-test="heartbeat-empty">
       <b>No trajectory captured yet</b>
