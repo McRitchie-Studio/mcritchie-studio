@@ -277,11 +277,12 @@
           Expand a span to drill into the raw tool-calls it framed; open one to grade the action and its McRitchie audit.
         </p>
       </div>
+      <% session_totals = heartbeat_usage_totals(@actions) %>
       <div class="hb-stats">
         <div class="hb-stat"><b><%= @events.size %></b><span>spans</span></div>
         <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
-        <div class="hb-stat"><b><%= heartbeat_tokens_compact(@actions.sum(&:tokens_total)) %></b><span>tokens</span></div>
-        <div class="hb-stat"><b><%= heartbeat_cost(@actions.sum { |a| a.cost.to_f }) %></b><span>cost</span></div>
+        <div class="hb-stat"><b><%= heartbeat_tokens_compact(session_totals[:tokens_total]) %></b><span>tokens</span></div>
+        <div class="hb-stat"><b><%= heartbeat_cost(session_totals[:cost]) %></b><span>cost</span></div>
         <div class="hb-stat"><b id="hb-stat-graded"><%= @counts[:graded] %></b><span>graded</span></div>
         <div class="hb-stat"><b id="hb-stat-audited"><%= @counts[:audited] %></b><span>audited</span></div>
         <div class="hb-stat"><b id="hb-stat-insights"><%= @counts[:insights] %></b><span>insights</span></div>

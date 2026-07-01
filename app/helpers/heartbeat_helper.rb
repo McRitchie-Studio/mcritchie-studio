@@ -120,21 +120,46 @@ module HeartbeatHelper
     "#{heartbeat_tokens_compact(ti)}/#{heartbeat_tokens_compact(to)}"
   end
 
+  # Sum token + cost usage across actions, DEDUPED by source_turn_uuid. One
+  # assistant turn can fire N parallel tool calls (N actions that all carry THAT
+  # turn's usage), so a naive per-action sum multi-counts the fan-out. Counting
+  # each distinct turn once fixes it. Actions with a blank source_turn_uuid are
+  # pre-usage / board / harness rows with no shared turn — each counts on its own.
+  # Pure in-memory reduction over the array the controller already loaded (no
+  # query per row). Returns summed in/out tokens, their total, and summed cost.
+  def heartbeat_usage_totals(actions)
+    seen = {}
+    tokens_in = 0
+    tokens_out = 0
+    cost = 0.0
+    Array(actions).each do |action|
+      turn = action.source_turn_uuid.presence
+      next if turn && seen.key?(turn)
+
+      seen[turn] = true if turn
+      tokens_in  += action.tokens_in.to_i
+      tokens_out += action.tokens_out.to_i
+      cost       += action.cost.to_f
+    end
+    { tokens_in: tokens_in, tokens_out: tokens_out,
+      tokens_total: tokens_in + tokens_out, cost: cost }
+  end
+
   # Roll a span's attributed actions up into the totals the EVENT row shows: summed
-  # in/out tokens, summed cost, and the span's dominant model (the model most of its
-  # actions ran on). Pure aggregation over the in-memory array the controller already
-  # loaded under each span (@event_rows), so the event table adds NO query per row —
-  # the N+1 the task explicitly forbids. `mascot` is the most common action mascot,
-  # a fallback the view uses only when the span carries no mascot of its own.
+  # in/out tokens, summed cost (all DEDUPED by source_turn_uuid, see above), and the
+  # span's dominant model (the model most of its actions ran on). Pure aggregation
+  # over the in-memory array the controller already loaded under each span
+  # (@event_rows), so the event table adds NO query per row — the N+1 the task
+  # explicitly forbids. `mascot` is the most common action mascot, a fallback the
+  # view uses only when the span carries no mascot of its own.
   def heartbeat_event_totals(actions)
     actions = Array(actions)
-    tokens_in  = actions.sum { |a| a.tokens_in.to_i }
-    tokens_out = actions.sum { |a| a.tokens_out.to_i }
+    totals  = heartbeat_usage_totals(actions)
     {
-      tokens_in:    tokens_in,
-      tokens_out:   tokens_out,
-      tokens_total: tokens_in + tokens_out,
-      cost:         actions.sum { |a| a.cost.to_f },
+      tokens_in:    totals[:tokens_in],
+      tokens_out:   totals[:tokens_out],
+      tokens_total: totals[:tokens_total],
+      cost:         totals[:cost],
       model:        heartbeat_dominant(actions.map(&:model)),
       mascot:       heartbeat_dominant(actions.map(&:mascot))
     }

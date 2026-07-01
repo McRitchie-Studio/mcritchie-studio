@@ -94,6 +94,34 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert_equal 4600, action.tokens_total
   end
 
+  # ---- [unit] cost derivation from the model rate map ------------------------
+
+  test "[unit] cost_for prices tokens from the model rate map" do
+    # claude-opus-4-8 = $5/1M in, $25/1M out.
+    # 1_000_000 in + 200_000 out => $5.00 + $5.00 = $10.00.
+    cost = AtomicAction.cost_for("claude-opus-4-8", 1_000_000, 200_000)
+
+    assert_equal "10.0".to_d, cost
+  end
+
+  test "[unit] cost_for is nil when the model has no known rate (never fabricated)" do
+    assert_nil AtomicAction.cost_for("gpt-5-codex", 1000, 2000), "an unknown model must NOT get a fabricated price"
+    assert_nil AtomicAction.cost_for(nil, 1000, 2000)
+    assert_nil AtomicAction.cost_for("", 1000, 2000)
+  end
+
+  test "[unit] cost_for strips a [tier] suffix so the 1M-context id still prices" do
+    plain  = AtomicAction.cost_for("claude-opus-4-8", 100_000, 20_000)
+    tiered = AtomicAction.cost_for("claude-opus-4-8[1m]", 100_000, 20_000)
+
+    assert_equal plain, tiered
+    assert_operator tiered, :>, 0
+  end
+
+  test "[unit] cost_for zero usage on a known model is zero, not nil" do
+    assert_equal 0.to_d, AtomicAction.cost_for("claude-opus-4-8", 0, 0)
+  end
+
   test "[unit] outcome predicates reflect the stored value" do
     assert AtomicAction.new(outcome: "ok").ok?
     assert AtomicAction.new(outcome: "error").error?
@@ -204,6 +232,38 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert_equal 50, action.tokens_in
   ensure
     Current.reset
+  end
+
+  test "[integration] capture DERIVES cost from model + tokens when no cost is given" do
+    # The live-capture hook carries model + tokens but no cost; capture prices it.
+    action = AtomicAction.capture(session_id: "cost-sess", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000)
+
+    assert_equal "10.0".to_d, action.cost
+  end
+
+  test "[integration] capture leaves cost NULL for a model with no known rate" do
+    action = AtomicAction.capture(session_id: "norate-sess", kind: "bash",
+                                  model: "gpt-5-codex", tokens_in: 1000, tokens_out: 2000)
+
+    assert_nil action.cost, "an unknown model must record NULL cost, never a fabricated $0"
+    assert_equal 1000, action.tokens_in
+    assert_equal 2000, action.tokens_out
+  end
+
+  test "[integration] an explicit cost still wins over derivation" do
+    action = AtomicAction.capture(session_id: "explicit-cost", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 1_000_000, cost: "0.03".to_d)
+
+    assert_equal "0.03".to_d, action.cost
+  end
+
+  test "[integration] capture stores the source_turn_uuid the usage came from" do
+    action = AtomicAction.capture(session_id: "turn-sess", kind: "read",
+                                  model: "claude-opus-4-8", tokens_in: 500,
+                                  source_turn_uuid: "turn-abc-123")
+
+    assert_equal "turn-abc-123", action.source_turn_uuid
   end
 
   test "[integration] capture with string keys works" do

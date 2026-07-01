@@ -223,10 +223,79 @@ class AtomicCaptureHookTest < Minitest::Test
       assert_equal "2026-06-30T12:00:00Z", payload["occurred_at"]
       assert_includes payload["input"], "file_path"
       assert_includes payload["output"], "ok"
-      # A hook can't know these — they must stay absent (the model fills defaults).
-      refute payload.key?("tokens_in")
+      # No transcript on this event → zero usage and no source turn.
+      assert_equal 0, payload["tokens_in"]
+      assert_equal 0, payload["tokens_out"]
+      assert_nil payload["source_turn_uuid"]
+      # A hook can't know these — they stay absent (capture fills defaults).
       refute payload.key?("seq")
       refute payload.key?("event_slug")
+      refute payload.key?("cost"), "the hook never sends cost — capture DERIVES it server-side"
+    end
+  end
+
+  # ── [unit] usage extraction (tokens + source turn) ───────────────────────
+  # The PostToolUse payload carries no usage, but the transcript's assistant line
+  # (the one with message.model) also carries message.usage and a uuid. The hook
+  # reads model + usage + uuid from that ONE line and stamps tokens on the action.
+
+  def test_unit_turn_usage_sums_input_and_cache_for_tokens_in
+    h = hook
+    usage = {
+      "input_tokens" => 1200,
+      "cache_creation_input_tokens" => 300,
+      "cache_read_input_tokens" => 4500,
+      "output_tokens" => 800
+    }
+    result = h.turn_usage(usage)
+    assert_equal 6000, result[:tokens_in], "tokens_in = input + cache_creation + cache_read"
+    assert_equal 800, result[:tokens_out]
+  end
+
+  def test_unit_turn_usage_is_zero_for_missing_or_non_hash
+    h = hook
+    assert_equal({ tokens_in: 0, tokens_out: 0 }, h.turn_usage(nil))
+    assert_equal({ tokens_in: 0, tokens_out: 0 }, h.turn_usage("nope"))
+    assert_equal({ tokens_in: 0, tokens_out: 0 }, h.turn_usage({}))
+  end
+
+  def test_unit_reads_usage_and_uuid_from_the_newest_model_bearing_line
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, [
+        JSON.generate("type" => "assistant", "uuid" => "turn-old",
+                      "message" => { "model" => "claude-opus-4-8", "usage" => { "input_tokens" => 1 } }),
+        JSON.generate("type" => "assistant", "uuid" => "turn-new",
+                      "message" => { "model" => "claude-opus-4-8[1m]",
+                                     "usage" => { "input_tokens" => 2000, "cache_read_input_tokens" => 500, "output_tokens" => 900 } }),
+        JSON.generate("type" => "user", "message" => { "role" => "user", "content" => "tool_result" })
+      ].join("\n") + "\n")
+
+      turn = hook.read_assistant_turn_from_transcript(path)
+      assert_equal "claude-opus-4-8[1m]", turn["model"], "the newest model-bearing line wins"
+      assert_equal "turn-new", turn["uuid"]
+      assert_equal 2500, hook.turn_usage(turn["usage"])[:tokens_in]
+      assert_equal 900, hook.turn_usage(turn["usage"])[:tokens_out]
+    end
+  end
+
+  def test_unit_build_payload_stamps_tokens_and_source_turn_uuid
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, JSON.generate(
+        "type" => "assistant", "uuid" => "turn-42",
+        "message" => { "model" => "claude-opus-4-8",
+                       "usage" => { "input_tokens" => 3000, "cache_creation_input_tokens" => 1000, "output_tokens" => 250 } }
+      ) + "\n")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope", "transcript_path" => path,
+        "tool_name" => "Read", "tool_input" => {}, "tool_response" => {}
+      }
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event, now: Time.utc(2026, 7, 1, 12, 0, 0))
+      assert_equal "claude-opus-4-8", payload["model"]
+      assert_equal 4000, payload["tokens_in"], "input + cache_creation"
+      assert_equal 250, payload["tokens_out"]
+      assert_equal "turn-42", payload["source_turn_uuid"]
     end
   end
 
