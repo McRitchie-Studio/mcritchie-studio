@@ -56,6 +56,31 @@ class AtomicCaptureHookTest < Minitest::Test
     assert_equal "somenewtool", hook.map_kind("SomeNewTool")
   end
 
+  # ── [unit] navigation drop ───────────────────────────────────────────────
+  # Navigation (a bare directory move) owns no narrated span and is ~84% of the
+  # noise, so it is DROPPED — never POSTed. A Bash call is navigation when its
+  # command's first token is cd / pushd / popd / pwd.
+
+  def test_unit_navigation_flags_directory_moves
+    h = hook
+    ["cd /Users/x", "cd ..", "  cd foo", "pushd bar", "popd", "pwd"].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      assert h.navigation?(event), "#{command.inspect} should be navigation"
+    end
+  end
+
+  def test_unit_navigation_ignores_non_nav_bash_and_other_tools
+    h = hook
+    ["ls -la", "git status", "cargo build", "cdless", "pwdx", "echo cd"].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      refute h.navigation?(event), "#{command.inspect} is NOT navigation"
+    end
+    # Non-Bash tools are never navigation, whatever they carry.
+    refute h.navigation?({ "tool_name" => "Read", "tool_input" => { "command" => "cd /x" } })
+    refute h.navigation?({ "tool_name" => "Bash", "tool_input" => {} })
+    refute h.navigation?({ "tool_name" => "Bash" })
+  end
+
   # ── [unit] serialization + truncation ────────────────────────────────────
 
   def test_unit_serialize_json_encodes_non_strings
@@ -201,6 +226,20 @@ class AtomicCaptureHookTest < Minitest::Test
       event = { "cwd" => "/nope", "tool_name" => "Read", "tool_input" => {}, "tool_response" => {} }
       requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
       assert_empty requests, "a hook event without a session_id must POST nothing"
+    end
+  end
+
+  def test_integration_navigation_is_dropped_no_post
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Bash",
+        "tool_input" => { "command" => "cd /Users/alex/projects" },
+        "tool_response" => { "stdout" => "" }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      assert_empty requests, "a navigation Bash call must POST nothing — not even a token mint"
     end
   end
 

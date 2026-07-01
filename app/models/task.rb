@@ -144,6 +144,10 @@ class Task < ApplicationRecord
   # Forward-only per-action trajectory (AtomicAction.capture). Nullify on destroy
   # so the finest-grain telemetry survives a task teardown as orphaned history.
   has_many :atomic_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  # Agent-narrated trajectory SPANS (AtomicEvent.open_event!/close_event!) — the
+  # coarse, meaningful layer the raw actions attribute under. Nullify on destroy so
+  # the narrated history survives a task teardown as orphaned spans.
+  has_many :atomic_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true

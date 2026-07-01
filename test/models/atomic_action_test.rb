@@ -257,4 +257,62 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert_equal 0, AtomicAction.next_seq_for(nil)
     assert_equal 0, AtomicAction.next_seq_for("never-seen")
   end
+
+  # ---- [integration] SPAN attribution (atomic_event_id) ----------------------
+
+  test "[integration] capture attributes an action to the session's open span" do
+    event = AtomicEvent.open_event!(session_id: "attr-sess", category: "Explore", reason_slug: "look")
+
+    action = AtomicAction.capture(session_id: "attr-sess", kind: "read")
+
+    assert_equal event.id, action.atomic_event_id, "the action rolls up under the open span"
+    assert_equal action, event.atomic_actions.first
+  end
+
+  test "[integration] capture attributes to the LATEST open span" do
+    AtomicEvent.open_event!(session_id: "latest-attr", category: "Explore", reason_slug: "one")
+    second = AtomicEvent.open_event!(session_id: "latest-attr", category: "Edit", reason_slug: "two")
+
+    action = AtomicAction.capture(session_id: "latest-attr", kind: "edit")
+
+    assert_equal second.id, action.atomic_event_id, "opening a new span moves attribution to it"
+  end
+
+  test "[integration] an action with no open span carries a null atomic_event_id" do
+    action = AtomicAction.capture(session_id: "no-span-sess", kind: "read")
+
+    assert_nil action.atomic_event_id
+  end
+
+  test "[integration] a closed span stops receiving new actions" do
+    AtomicEvent.open_event!(session_id: "closed-attr", category: "Verify", reason_slug: "test")
+    AtomicEvent.close_event!(session_id: "closed-attr", outcome_slug: "green")
+
+    action = AtomicAction.capture(session_id: "closed-attr", kind: "read")
+
+    assert_nil action.atomic_event_id, "once the span closes, actions attribute to nothing"
+  end
+
+  test "[integration] an explicit atomic_event_id wins over the derived one" do
+    open = AtomicEvent.open_event!(session_id: "pin-sess", category: "Explore", reason_slug: "open")
+    other = AtomicEvent.create!(session_id: "pin-sess", category: "Edit", reason_slug: "pinned",
+                                seq: 9, opened_at: Time.current, closed_at: Time.current)
+
+    action = AtomicAction.capture(session_id: "pin-sess", kind: "edit", atomic_event_id: other.id)
+
+    assert_equal other.id, action.atomic_event_id
+    assert_not_equal open.id, action.atomic_event_id
+  end
+
+  test "[integration] an attribution lookup failure is swallowed and the action still writes" do
+    action = nil
+    AtomicEvent.stub(:for_session, ->(*) { raise "attribution is down" }) do
+      assert_nothing_raised do
+        action = AtomicAction.capture(session_id: "attr-fail", kind: "read")
+      end
+    end
+
+    assert action&.persisted?, "capture still writes the action when attribution fails"
+    assert_nil action.atomic_event_id, "a failed attribution degrades to a null span"
+  end
 end
