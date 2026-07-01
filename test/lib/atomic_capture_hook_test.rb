@@ -131,7 +131,7 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
-  def test_unit_context_marker_wins_over_session_and_walks_up
+  def test_unit_desk_wins_task_and_stage_but_base_mascot_is_the_session
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "task_slug" => "session-task", "mascot" => "ekans")
       desk = File.join(proj, "wt")
@@ -144,7 +144,22 @@ class AtomicCaptureHookTest < Minitest::Test
       marker = hook("CLAUDE_PROJECTS_DIR" => proj).resolve_marker(cwd: nested, session_id: SESSION)
       assert_equal "ctx-task", marker["task_slug"], "the worktree desk slug should win and walk up"
       assert_nil marker["stage"], "a blank desk stage stays nil (no false claim)"
-      assert_equal "caterpie", marker["mascot"]
+      # The BASE mascot is the session's OWN Pokémon — NOT the desk's .agent-context.json
+      # mascot (the bound task's builder mascot), which would FLIP the base when a
+      # session works a task built by a different soul (Shellder→Sandshrew).
+      assert_equal "ekans", marker["mascot"], "the base mascot stays the session's own, not the desk/task mascot"
+    end
+  end
+
+  def test_unit_base_mascot_falls_back_to_desk_when_the_session_has_none
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "session-task") # no session mascot yet
+      desk = File.join(proj, "wt")
+      FileUtils.mkdir_p(desk)
+      File.write(File.join(desk, ".agent-context.json"),
+                 JSON.generate("task_record_slug" => "ctx-task", "mascot" => "caterpie"))
+      marker = hook("CLAUDE_PROJECTS_DIR" => proj).resolve_marker(cwd: desk, session_id: SESSION)
+      assert_equal "caterpie", marker["mascot"], "with no session mascot, fall back to the desk (never regress to nil)"
     end
   end
 

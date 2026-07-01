@@ -28,6 +28,7 @@ module Api
           task_slug:          open_params[:task_slug],
           mascot:             open_params[:mascot],
           stage:              open_params[:stage],
+          agent:              open_params[:agent],
           prior_outcome_slug: open_params[:prior_outcome]
         )
         render_data(event, status: :created)
@@ -74,8 +75,9 @@ module Api
           :category,       # required — Explore | Edit | Verify | … (AtomicEvent::CATEGORIES)
           :reason,         # required — "what am I doing" (stored as reason_slug)
           :task_slug,      # optional slug FK; null for pre-task spans
-          :mascot,         # optional session/task Pokémon slug
+          :mascot,         # optional STABLE base session Pokémon slug
           :stage,          # optional coarse task stage at open time
+          :agent,          # optional acting soul (AtomicEvent::SOULS); unknown → nil
           :prior_outcome   # optional — "what happened" on the auto-closed prior span
         )
       end
