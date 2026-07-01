@@ -69,8 +69,13 @@ bin/atomic-event end --outcome "what happened"
 - **Lead with orient** — your opening span is `Explore`/`Plan` and opens BEFORE
   any tool runs; nothing should land in "Unlabeled" at the top of a session.
 - **Keep spans meaningful** — one per unit of work, not one per tool call
-  (navigate `cd` is dropped automatically; opening a new span auto-closes the
-  prior one).
+  (navigate `cd` **and** the `bin/atomic-event` narration calls themselves are
+  dropped automatically; opening a new span auto-closes the prior one).
+- **Stamp the task on your first span** — add `--task <slug>` to `start`/`next`
+  so the span is task-attributed immediately, instead of a blank TASK until a
+  later `bin/task`/`bind-task` write lands. In a `feat/<slug>` worktree it's
+  inferred from the branch, so `--task` is mainly for a primary/conductor
+  checkout working a specific task.
 - **Always give an outcome** — every `next`/`end` records what actually happened
   ("Explore: find api issue → found the nil-guard"), not just the intent; an
   outcome-less span is a wasted span.

@@ -81,6 +81,47 @@ class AtomicCaptureHookTest < Minitest::Test
     refute h.navigation?({ "tool_name" => "Bash" })
   end
 
+  # ── [unit] narration drop ────────────────────────────────────────────────
+  # A Bash call whose invocation IS `bin/atomic-event` (the self-narration CLI) is
+  # DROPPED like navigation — it's the span machinery, not work, and would otherwise
+  # fall into "Unlabeled". Precise: only an INVOCATION, never a mention.
+
+  def test_unit_narration_flags_atomic_event_invocations
+    h = hook
+    [
+      "bin/atomic-event start --category Explore --reason x",
+      "/Users/alex/projects/mcritchie-studio/bin/atomic-event next --outcome y --category Edit --reason z",
+      "./bin/atomic-event end",
+      "  bin/atomic-event close-open",
+      "FOO=bar bin/atomic-event start --category Edit --reason z",           # inline ENV= prefix
+      "ATOMIC_CAPTURE_URL=http://x /abs/bin/atomic-event end"                # ENV= + abs path
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      assert h.narration?(event), "#{command.inspect} should be narration (dropped)"
+    end
+  end
+
+  def test_unit_narration_ignores_mentions_and_lookalikes_and_real_work
+    h = hook
+    [
+      "grep atomic-event bin/",          # searching for it, not running it
+      "cat bin/atomic-event",            # reading the file
+      "echo bin/atomic-event",           # printing the string
+      "bin/atomic-events-report",        # a different script (suffix)
+      "bin/atomic-event-foo",            # not the bin (trailing chars)
+      "ls -la",
+      "git status",
+      "bin/rails test"
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      refute h.narration?(event), "#{command.inspect} is NOT narration — must be kept"
+    end
+    # Non-Bash tools are never narration, whatever they carry (a real edit of the file).
+    refute h.narration?({ "tool_name" => "Edit", "tool_input" => { "command" => "bin/atomic-event start" } })
+    refute h.narration?({ "tool_name" => "Bash", "tool_input" => {} })
+    refute h.narration?({ "tool_name" => "Bash" })
+  end
+
   # ── [unit] serialization + truncation ────────────────────────────────────
 
   def test_unit_serialize_json_encodes_non_strings
@@ -379,6 +420,20 @@ class AtomicCaptureHookTest < Minitest::Test
       }
       requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
       assert_empty requests, "a navigation Bash call must POST nothing — not even a token mint"
+    end
+  end
+
+  def test_integration_atomic_event_narration_is_dropped_no_post
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Bash",
+        "tool_input" => { "command" => "bin/atomic-event start --category Explore --reason orient" },
+        "tool_response" => { "stdout" => "atomic-event: opened Explore · orient" }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      assert_empty requests, "a bin/atomic-event narration call must POST nothing — not even a token mint"
     end
   end
 

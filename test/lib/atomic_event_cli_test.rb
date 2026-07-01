@@ -85,6 +85,50 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
+  # ── [unit] task_slug inference from a feat/<slug> branch ──────────────────
+  # The MARKER fallback: with no desk/session task_slug, resolve_marker infers the
+  # task from a `feat/<slug>` checkout branch so a span is task-attributed even
+  # before a task-bind write. (The `--task` flag is the explicit stamp — below.)
+
+  def test_unit_task_slug_from_branch_reads_only_feat_branches
+    c = cli
+    slug = ->(branch) { c.send(:task_slug_from_branch, branch) }
+    assert_equal "capture-and-deploy-attribution", slug.call("feat/capture-and-deploy-attribution")
+    assert_equal "x", slug.call("feat/x")
+    # A non-feature branch (a conductor on main/release) or a bare prefix is NOT a task.
+    assert_nil slug.call("main")
+    assert_nil slug.call("release")
+    assert_nil slug.call("feature/foo")
+    assert_nil slug.call("feat/")
+    assert_nil slug.call("")
+    assert_nil slug.call(nil)
+  end
+
+  def test_unit_resolve_marker_infers_task_from_the_feat_branch_when_markers_lack_one
+    Dir.mktmpdir do |proj|
+      proj = File.realpath(proj)
+      # No desk marker, no session marker → task_slug would be blank; the feat branch
+      # supplies it. Stub the git read so the test needs no real checkout.
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      c.define_singleton_method(:current_git_branch) { |_dir = nil| "feat/inferred-task" }
+
+      marker = Dir.chdir(proj) { c.resolve_marker(session_id: SESSION) }
+      assert_equal "inferred-task", marker["task_slug"], "the feat/<slug> branch fills a blank task_slug"
+    end
+  end
+
+  def test_unit_resolve_marker_prefers_the_desk_slug_over_branch_inference
+    Dir.mktmpdir do |proj|
+      proj = File.realpath(proj)
+      write_context_marker(proj, "task_record_slug" => "desk-task")
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      c.define_singleton_method(:current_git_branch) { |_dir = nil| "feat/inferred-task" }
+
+      marker = Dir.chdir(proj) { c.resolve_marker(session_id: SESSION) }
+      assert_equal "desk-task", marker["task_slug"], "an explicit desk slug wins over branch inference"
+    end
+  end
+
   # ── [integration] start POSTs an open span ───────────────────────────────
 
   def test_integration_start_mints_token_and_opens_span
@@ -108,6 +152,47 @@ class AtomicEventCliTest < Minitest::Test
       assert_equal "narrated-trajectory-events", body["task_slug"]
       assert_equal "caterpie", body["mascot"]
       assert_equal "building", body["stage"]
+    end
+  end
+
+  # ── [integration] --task stamps the span's task explicitly ────────────────
+  # The observed fix: a session's FIRST span is task-attributed immediately via
+  # --task, instead of a blank TASK until a late `bin/task`/`bind-task` write.
+
+  def test_integration_task_flag_stamps_task_slug_on_the_first_span
+    Dir.mktmpdir do |proj|
+      # No session/desk marker at all → without --task the task_slug is blank.
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient --task capture-and-deploy-attribution],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute_nil open, "expected a POST /api/v1/atomic_events"
+      assert_equal "capture-and-deploy-attribution", JSON.parse(open[:body])["task_slug"],
+                   "--task stamps the task on the very first span"
+    end
+  end
+
+  def test_integration_task_flag_overrides_the_marker_task_slug
+    Dir.mktmpdir do |proj|
+      # The marker says one task; --task explicitly overrides it for this span.
+      write_session_marker(proj, SESSION, "task_slug" => "marker-task", "mascot" => "shellder")
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient --task explicit-task],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      body = JSON.parse(open[:body])
+      assert_equal "explicit-task", body["task_slug"], "--task wins over the marker's task_slug"
+      assert_equal "shellder", body["mascot"], "the base mascot still rides from the session marker"
+    end
+  end
+
+  def test_integration_next_carries_the_task_flag_across_the_boundary
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[next --session #{SESSION} --outcome done --category Edit --reason go --task t-next],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      assert_equal "t-next", JSON.parse(open[:body])["task_slug"], "--task rides the boundary open too"
     end
   end
 

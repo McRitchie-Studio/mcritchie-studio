@@ -62,6 +62,23 @@ class AtomicCaptureHook
   # navigation when its command's first token is cd / pushd / popd / pwd.
   NAV_COMMAND = /\A\s*(?:cd|pushd|popd|pwd)\b/.freeze
 
+  # NARRATION is DROPPED too — a Bash call whose invocation IS `bin/atomic-event`
+  # (the agent's self-narration CLI) is the span machinery itself, not work. The
+  # PostToolUse hook fires on that call like any other, so storing it as a raw
+  # action drops it into "Unlabeled" (it owns no span — it declares one). So we
+  # drop it, exactly like navigation. Matches ONLY an atomic-event INVOCATION —
+  # any path prefix (`/abs/…/bin/atomic-event`, `./bin/atomic-event`) and optional
+  # leading `ENV=val` assignments — never a command that merely MENTIONS the string
+  # (`grep atomic-event`, `cat bin/atomic-event`, editing the file). A `cd … &&
+  # bin/atomic-event` already drops as navigation (first token `cd`).
+  NARRATION_COMMAND = %r{
+    \A\s*
+    (?:\w+=\S*\s+)*   # optional leading ENV=val assignments
+    (?:[^\s]*/)?      # optional path prefix (/abs/…/, ./, ../…)
+    bin/atomic-event
+    (?:\s|\z)         # a bare invocation, or followed by args/whitespace
+  }x.freeze
+
   # Truncate input/output to ≈3KB (within the task's 2-4KB cap) so a giant file
   # read or command dump never bloats a row.
   MAX_FIELD_BYTES = 3000
@@ -227,11 +244,25 @@ class AtomicCaptureHook
   # call whose command's first token is cd / pushd / popd / pwd. Anything else —
   # including every non-Bash tool — is not navigation.
   def navigation?(event)
-    return false unless event["tool_name"].to_s == "Bash"
+    NAV_COMMAND.match?(bash_command(event))
+  end
 
-    command = event.fetch("tool_input") { {} }
-    command = command.is_a?(Hash) ? command["command"].to_s : ""
-    NAV_COMMAND.match?(command)
+  # True when the event is a NARRATION tool-call (dropped, never POSTed): a Bash
+  # call whose invocation IS `bin/atomic-event` (the self-narration CLI is the span
+  # machinery, not work). Non-Bash tools and commands that merely mention the string
+  # are NOT narration. See NARRATION_COMMAND.
+  def narration?(event)
+    NARRATION_COMMAND.match?(bash_command(event))
+  end
+
+  # The Bash command string for an event, or "" for a non-Bash tool / missing
+  # input. The shared extractor behind navigation?/narration? — an empty string
+  # matches neither pattern, so a non-Bash tool is never dropped.
+  def bash_command(event)
+    return "" unless event["tool_name"].to_s == "Bash"
+
+    input = event.fetch("tool_input") { {} }
+    input.is_a?(Hash) ? input["command"].to_s : ""
   end
 
   # JSON-encode anything that isn't already a string (the contract columns are
@@ -306,6 +337,7 @@ class AtomicCaptureHook
     event = JSON.parse(raw)
     return unless present?(event["session_id"]) # nothing to attribute → skip
     return if navigation?(event)                # navigation is dropped — never a row
+    return if narration?(event)                 # bin/atomic-event narration is dropped too
 
     payload = build_payload(event)
     dispatch(payload)
