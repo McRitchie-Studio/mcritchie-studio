@@ -8,9 +8,11 @@
     each span opens the span-grading drawer (mirrors the per-action drawer). Raw actions
     the agent never narrated (a null atomic_event_id) fall into the trailing "Unlabeled"
     group. Locals: event_rows (Array of [AtomicEvent, [AtomicAction, ...]]), unlabeled
-    (Array of AtomicAction), pokemon_by_slug, event_grades (event_id => { grader =>
-    ActionGrade }). %>
+    (Array of AtomicAction), pokemon_by_slug, agents_by_slug (soul slug => Agent,
+    for the stacked acting-soul-over-base-mascot Agent cell), event_grades
+    (event_id => { grader => ActionGrade }). %>
 <% pokemon_by_slug ||= {} %>
+<% agents_by_slug ||= {} %>
 <% unlabeled ||= [] %>
 <% event_grades ||= {} %>
 <%# Session-level dup flags: ids of the 2nd+ tool-call of each shared source_turn_uuid,
@@ -24,7 +26,7 @@
         <th>#</th>
         <th>Span</th>
         <th>Narration</th>
-        <th>Pok&eacute;mon</th>
+        <th>Agent</th>
         <th>Model</th>
         <th>Tokens</th>
         <th>Cost</th>
@@ -68,13 +70,9 @@
               <span class="hb-result"><%= event.outcome_slug %></span>
             <% end %>
           </td>
-          <td>
-            <% if mascot_slug.present? %>
-              <span class="hb-mascot" data-test="event-mascot">&#10022; <%= pokemon&.name || mascot_slug.titleize %></span>
-            <% else %>
-              <span class="hb-meta">&mdash;</span>
-            <% end %>
-          </td>
+          <td><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
+                                       agent_slug: event.agent, agent: agents_by_slug[event.agent],
+                                       mascot_test: "event-mascot") %></td>
           <td class="hb-meta hb-mono" data-test="event-model" title="<%= totals[:model].presence || "no model (board / harness steps only)" %>"><%= heartbeat_model_short(totals[:model]) %></td>
           <td class="hb-meta hb-mono" data-test="event-tokens"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></td>
           <td class="hb-meta hb-mono" data-test="event-cost"><%= heartbeat_cost(totals[:cost]) %></td>
@@ -100,13 +98,9 @@
                   <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
                 <% end %>
               </td>
-              <td>
-                <% if action.mascot.present? %>
-                  <span class="hb-mascot hb-submascot">&#10022; <%= action_pokemon&.name || action.mascot.titleize %></span>
-                <% else %>
-                  <span class="hb-meta">&mdash;</span>
-                <% end %>
-              </td>
+              <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon,
+                                           agent_slug: event.agent, agent: agents_by_slug[event.agent],
+                                           submascot: true) %></td>
               <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
               <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
               <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
@@ -157,13 +151,7 @@
                 <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
               <% end %>
             </td>
-            <td>
-              <% if action.mascot.present? %>
-                <span class="hb-mascot hb-submascot">&#10022; <%= action_pokemon&.name || action.mascot.titleize %></span>
-              <% else %>
-                <span class="hb-meta">&mdash;</span>
-              <% end %>
-            </td>
+            <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon, submascot: true) %></td>
             <td class="hb-meta hb-mono" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></td>
             <%= tag.td heartbeat_tokens(action), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
