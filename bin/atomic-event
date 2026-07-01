@@ -14,7 +14,12 @@
 # `start` opens a span (auto-closing any prior open one); `end` closes the
 # session's open span with an outcome. `start`/`next` also take `--agent <soul>`
 # (avi/carl/…) to stamp the ACTING soul on the span, distinct from the base
-# session mascot — an unknown slug is coerced to nil server-side. `next` is the
+# session mascot — an unknown slug is coerced to nil server-side. They also take
+# `--task <slug>` to stamp the span's task EXPLICITLY — so the FIRST working span
+# is task-attributed immediately, instead of a blank TASK until a later
+# `bin/task`/`bind-task` write populates the session marker. `--task` wins over
+# the desk/session marker; absent it, resolve_marker still infers the task from a
+# `feat/<slug>` checkout branch. `next` is the
 # BOUNDARY transition — it
 # closes the prior span WITH an outcome and opens the next one WITH a reason in
 # ONE call, so spans resolve instead of hanging half-narrated (`start` also
@@ -70,8 +75,8 @@ class AtomicEventCli
     when "end"           then finish(flags)
     when "close-open"    then close_open(flags)
     else
-      warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] | " \
-                "next --outcome <text> --category <C> --reason <text> [--agent <soul>] | " \
+      warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
+                "next --outcome <text> --category <C> --reason <text> [--agent <soul>] [--task <slug>] | " \
                 "end [--outcome <text>] | close-open [--outcome <text>]")
     end
   rescue StandardError => e
@@ -103,13 +108,20 @@ class AtomicEventCli
     # (AtomicEvent::SOULS), so we never validate it here.
     agent = flags["agent"].to_s.strip
 
+    # --task stamps the span's task EXPLICITLY and WINS over the desk/session
+    # marker — so a session's FIRST span is task-attributed immediately, without
+    # waiting for a `bin/task`/`bind-task` write to populate the session marker
+    # (the observed blank-TASK-until-late-bind case). Absent it, resolve_marker
+    # still resolves the task from the desk marker or a `feat/<slug>` branch.
+    task = flags["task"].to_s.strip
+
     marker = resolve_marker(session_id: sid)
     res = post("/api/v1/atomic_events", {
       "session_id"    => sid,
       "category"      => category,
       "reason"        => reason,
       "prior_outcome" => prior_outcome,
-      "task_slug"     => marker["task_slug"],
+      "task_slug"     => present?(task) ? task : marker["task_slug"],
       "mascot"        => marker["mascot"],
       "stage"         => marker["stage"],
       "agent"         => agent
@@ -214,7 +226,11 @@ class AtomicEventCli
     session = read_session_marker(session_id) || {}
     context = desk || session
     {
-      "task_slug" => first_present(context, "task_record_slug", "task_slug", "slug"),
+      # task_slug: the desk/session marker first, then infer from a `feat/<slug>`
+      # checkout branch so a span is task-attributed even before a task-bind write
+      # populates the marker. (The base-mascot split below is unchanged — mascot is
+      # the SESSION's own Pokémon, never the desk/task builder mascot.)
+      "task_slug" => first_present(context, "task_record_slug", "task_slug", "slug") || infer_task_from_branch,
       "mascot"    => blank_to_nil(session["mascot"]) || blank_to_nil((desk || {})["mascot"]),
       "stage"     => blank_to_nil(context["stage"])
     }
@@ -375,6 +391,38 @@ class AtomicEventCli
     return nil unless File.file?(path)
 
     JSON.parse(File.read(path))
+  rescue StandardError
+    nil
+  end
+
+  # ── Task-from-branch inference (marker fallback) ───────────────────────────
+
+  # Infer the task slug from a `feat/<slug>` checkout branch when neither the desk
+  # nor the session marker carries one — so a session working a task from a feature
+  # checkout stamps the TASK from its FIRST span, without waiting for a
+  # `bin/task`/`bind-task` write. The `--task <slug>` flag is the EXPLICIT stamp
+  # (it wins over this); this is the branch-name fallback. The pure split is
+  # task_slug_from_branch, unit-testable without a git checkout.
+  def infer_task_from_branch(dir = Dir.pwd)
+    task_slug_from_branch(current_git_branch(dir))
+  end
+
+  # Pure: the <slug> of a `feat/<slug>` branch, else nil (the `feat/` prefix is the
+  # McRitchie feature-branch convention, seeded from the task slug).
+  def task_slug_from_branch(branch)
+    m = branch.to_s.strip.match(%r{\Afeat/(.+)\z})
+    m && present?(m[1]) ? m[1] : nil
+  end
+
+  # The checkout's git branch, or nil — best-effort (a non-repo / detached HEAD /
+  # git failure yields nil). Bounded shell-out; never raises. Only reached when the
+  # markers lack a task_slug, so it costs a git call at most once per span.
+  def current_git_branch(dir = Dir.pwd)
+    return nil unless present?(dir) && File.directory?(dir.to_s)
+
+    out = IO.popen(["git", "-C", dir.to_s, "rev-parse", "--abbrev-ref", "HEAD"],
+                   err: File::NULL, &:read).to_s.strip
+    present?(out) && out != "HEAD" ? out : nil
   rescue StandardError
     nil
   end
