@@ -310,6 +310,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#release-duration-card"
     assert_select "#release-duration-card a[href=?]", all_deployments_path, text: /All Deployments/
     assert_select "#release-duration-card", text: /Building/
+    assert_select "#release-duration-card h3", text: /Last Three Deployments/
+    assert_select "#release-duration-card", text: /Release Times/, count: 0
+    assert_select "#release-duration-card", text: /shipped releases/, count: 0
   end
 
   test "[integration] deployments cards carry a data-glow attribute for the live glow" do
