@@ -41,7 +41,7 @@
         <%= form_with url: alex_heartbeat_path, method: :get, data: { turbo: false } do %>
           <span class="hb-lab">Session</span>
           <%= select_tag :session_id,
-                options_for_select(@sessions.map { |id| [id, id] }, @session_id),
+                options_for_select(@sessions, @session_id),
                 class: "hb-sel", onchange: "this.form.requestSubmit()" %>
         <% end %>
       <% elsif @session_id.present? %>

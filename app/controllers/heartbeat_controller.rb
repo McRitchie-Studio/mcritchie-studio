@@ -182,15 +182,47 @@ class HeartbeatController < ApplicationController
       AtomicEvent.order(opened_at: :desc, id: :desc).limit(1).pick(:session_id)
   end
 
-  # Distinct sessions for the switcher, most-recent first — the union of every
-  # session that has captured an action OR narrated a span, keyed by its latest
-  # timestamp so an event-only session still appears.
+  # Bucket the (already chronological) actions by stage, preserving each stage's
+  # first-appearance order — except the null-stage "Session" group, which is
+  # pulled to the very top regardless. Returns an ordered Array of [stage, actions].
+  def group_by_stage(actions)
+    grouped = actions.group_by { |action| action.stage.presence }
+    session_group = grouped.delete(nil)
+
+    groups = []
+    groups << [nil, session_group] if session_group
+    grouped.each { |stage, stage_actions| groups << [stage, stage_actions] }
+    groups
+  end
+
+  # Distinct sessions for the switcher, most-recent first, as [[label, id], ...].
+  # The id set is the union of every session that has captured an action OR narrated
+  # a span, keyed by its latest timestamp so an event-only session still appears.
+  # Each label then leads with the session's Pokémon mascot ("Bulbasaur · e2f6eb27")
+  # so the picker reads as its handle, falling back to the bare session id when no
+  # mascot was ever drawn for it (pre-mascot or seed sessions).
   def session_options
     times = AtomicAction.group(:session_id).maximum(:occurred_at)
-    times.merge(AtomicEvent.group(:session_id).maximum(:opened_at)) { |_id, a, b| [a, b].max }
-         .sort_by { |_id, last_at| last_at }
-         .reverse
-         .map { |id, _last_at| id }
+    ids = times.merge(AtomicEvent.group(:session_id).maximum(:opened_at)) { |_id, a, b| [a, b].max }
+               .sort_by { |_id, last_at| last_at }
+               .reverse
+               .map { |id, _last_at| id }
+    labels = session_mascot_labels(ids)
+    ids.map { |id| [labels[id] || id, id] }
+  end
+
+  # { session_id => "Pokémon · shortid" } for the sessions whose mascot resolves to
+  # a seeded Pokémon. Two bulk queries — mascots by session_id, then Pokémon by
+  # slug — so the switcher never N+1s, mirroring #pokemon_lookup.
+  def session_mascot_labels(ids)
+    return {} if ids.empty?
+
+    mascots = SessionMascot.where(session_id: ids).index_by(&:session_id)
+    pokemon = Pokemon.where(slug: mascots.values.map(&:mascot_slug).uniq).index_by(&:slug)
+    ids.each_with_object({}) do |id, labels|
+      name = pokemon[mascots[id]&.mascot_slug]&.name
+      labels[id] = "#{name} · #{id.first(8)}" if name
+    end
   end
 
   # One query for every mascot on the page so the Pokémon column reuses the
