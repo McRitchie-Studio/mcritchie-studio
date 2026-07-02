@@ -249,8 +249,57 @@ module HeartbeatHelper
     done: { label: "done", color: "#8b949e" }
   }.freeze
 
-  def heartbeat_span_status_meta(event)
+  # A span's Status/Task badge. When the span's task changed STAGE during the span's
+  # window, the badge becomes that target stage — humanized + colored with the SAME
+  # board palette /tasks and /deployments use (Task::STAGE_LABELS + stage_scheme +
+  # the components/badge pill), so a stage-change span reads as its new stage instead
+  # of the generic "done". `stage_transitions` is the controller's bulk map
+  # { task_slug => [chronological transition TaskEvents] }; when it is empty (no
+  # task_slug, no transitions loaded) this falls straight back to the open/done badge,
+  # so the helper is safe to call with no map (the drawer/isolated renders do).
+  def heartbeat_span_status_meta(event, stage_transitions = {})
+    if (to_stage = heartbeat_span_stage_change(event, stage_transitions))
+      return {
+        stage:  to_stage,
+        label:  Task::STAGE_LABELS.fetch(to_stage, to_stage.to_s.humanize),
+        scheme: stage_scheme(to_stage)
+      }
+    end
+
     HEARTBEAT_SPAN_STATUS[event.open? ? :open : :done]
+  end
+
+  # The stage a span's task CHANGED TO during the span's window, or nil. A span
+  # badges as a stage change when a kind:"transition" TaskEvent for the span's
+  # task_slug lands inside [opened_at, closed_at] (an OPEN span's window runs to
+  # now); the LAST such transition wins. `stage_transitions` is the pre-grouped
+  # bulk map { task_slug => [chronological transitions] } — a blank slug / no
+  # transitions returns nil, so this never triggers a per-row query.
+  def heartbeat_span_stage_change(event, stage_transitions = {})
+    slug = event.task_slug.presence
+    return nil if slug.blank? || event.opened_at.blank?
+
+    transitions = (stage_transitions || {})[slug]
+    return nil if transitions.blank?
+
+    window_end = event.closed_at || Time.current
+    transitions.select { |te| te.occurred_at >= event.opened_at && te.occurred_at <= window_end }
+               .last&.to_stage
+  end
+
+  # Render a span's status badge from its status meta. A stage-change span renders
+  # the shared board badge pill (components/badge — exact /tasks + /deployments
+  # look, both themes) wrapped in the stable event-status test hook; every other
+  # span keeps the lightweight open/done outcome chip. One code path for the table
+  # AND the drawer so they never drift.
+  def heartbeat_span_status_badge(status)
+    if status[:stage].present?
+      tag.span(render("components/badge", text: status[:label], scheme: status[:scheme]),
+               class: "hb-outcome-badge", data: { test: "event-status", stage: status[:stage] })
+    else
+      tag.span(status[:label], class: "hb-outcome", data: { test: "event-status" },
+               style: "color: #{status[:color]}")
+    end
   end
 
   # Short, dense timestamp for the "Opened" cell ("Jun 30, 14:07"); the full

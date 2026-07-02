@@ -2,6 +2,9 @@ require "test_helper"
 
 # [unit] the pure label / palette / formatter helpers behind the trajectory table.
 class HeartbeatHelperTest < ActionView::TestCase
+  # The stage-change badge reuses the board palette (stage_scheme + STAGE_LABELS),
+  # so the helper calls across into ApplicationHelper — make it available directly.
+  include ApplicationHelper
   test "stage meta labels the null stage as the Session phase" do
     meta = heartbeat_stage_meta(nil)
     assert_equal "Session", meta[:label]
@@ -196,6 +199,52 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "open", open_meta[:label]
     assert_equal "done", done_meta[:label]
     assert_not_equal open_meta[:color], done_meta[:color], "open and done must read as visibly distinct badges"
+  end
+
+  test "[unit] a span whose task transitioned in-window badges as the target stage" do
+    slug  = "stage-change-status-badge"
+    event = AtomicEvent.new(task_slug: slug, opened_at: 3.minutes.ago, closed_at: 1.minute.ago)
+    te    = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition", occurred_at: 2.minutes.ago)
+
+    meta = heartbeat_span_status_meta(event, { slug => [te] })
+
+    assert_equal "submitted", meta[:stage]
+    assert_equal "Submitted", meta[:label], "stage badge label reuses Task::STAGE_LABELS"
+    assert_equal stage_scheme("submitted"), meta[:scheme], "stage badge color reuses the board's stage_scheme"
+  end
+
+  test "[unit] the LAST in-window transition wins the stage badge" do
+    slug   = "multi-move"
+    event  = AtomicEvent.new(task_slug: slug, opened_at: 5.minutes.ago, closed_at: Time.current)
+    first  = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition", occurred_at: 4.minutes.ago)
+    second = TaskEvent.new(task_slug: slug, to_stage: "reviewed",  kind: "transition", occurred_at: 1.minute.ago)
+
+    meta = heartbeat_span_status_meta(event, { slug => [first, second] })
+    assert_equal "reviewed", meta[:stage]
+  end
+
+  test "[unit] a transition outside the span window falls back to the done badge" do
+    slug   = "outside-window"
+    event  = AtomicEvent.new(task_slug: slug, opened_at: 2.minutes.ago, closed_at: 1.minute.ago)
+    before = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition", occurred_at: 5.minutes.ago)
+
+    meta = heartbeat_span_status_meta(event, { slug => [before] })
+    assert_equal "done", meta[:label]
+    assert_nil meta[:stage]
+  end
+
+  test "[unit] a span with no task_slug ignores transitions and stays open/done" do
+    event = AtomicEvent.new(task_slug: nil, opened_at: 2.minutes.ago, closed_at: 1.minute.ago)
+    other = TaskEvent.new(task_slug: "other", to_stage: "submitted", kind: "transition", occurred_at: 90.seconds.ago)
+
+    meta = heartbeat_span_status_meta(event, { "other" => [other] })
+    assert_equal "done", meta[:label]
+    assert_nil meta[:stage]
+  end
+
+  test "[unit] status meta with no transitions map still returns the plain open/done badge" do
+    assert_equal "open", heartbeat_span_status_meta(AtomicEvent.new(closed_at: nil, opened_at: Time.current))[:label]
+    assert_equal "done", heartbeat_span_status_meta(AtomicEvent.new(closed_at: Time.current, opened_at: Time.current))[:label]
   end
 
   test "[unit] pretty json expands structure with 2-space indent and real newlines" do

@@ -201,6 +201,49 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "[data-test=event-status]", text: "done"
   end
 
+  test "[component] the status line separates the badge and the action count with a bullet" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "green")
+    a1 = action(atomic_event_id: ev.id, seq: 0)
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select ".hb-satline .hb-bullet"
+    assert_select "[data-test=event-action-count]", text: "1 action"
+  end
+
+  test "[component] a stage-change span badges as its target stage using the board pill" do
+    slug = "stage-change-status-badge"
+    ev   = event(seq: 0, task_slug: slug, opened_at: 3.minutes.ago,
+                 closed_at: 1.minute.ago, outcome_slug: "moved to submitted")
+    te   = TaskEvent.new(task_slug: slug, from_stage: "building", to_stage: "submitted",
+                         kind: "transition", occurred_at: 2.minutes.ago)
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+                     stage_transitions: { slug => [te] } }
+
+    # the board badge pill, humanized + stage-colored, with a stable data hook
+    assert_select "[data-test=event-status][data-stage=submitted] .badge", text: "Submitted"
+    # it replaces the generic done chip
+    assert_select "[data-test=event-status]", text: "done", count: 0
+  end
+
+  test "[component] a span with no in-window transition keeps the plain done badge" do
+    slug = "no-window-match"
+    ev   = event(seq: 0, task_slug: slug, opened_at: 2.minutes.ago,
+                 closed_at: 1.minute.ago, outcome_slug: "done")
+    te   = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition",
+                         occurred_at: 5.minutes.ago) # before the span opened
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+                     stage_transitions: { slug => [te] } }
+
+    assert_select "[data-test=event-status]", text: "done"
+    assert_select "[data-test=event-status][data-stage]", false
+  end
+
   test "[component] the span row itself opens the span-grade drawer on click (no separate grade button)" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 

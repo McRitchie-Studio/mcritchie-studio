@@ -59,7 +59,8 @@
   <% if @event_rows.any? || @unlabeled.any? %>
     <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
           pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
-          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids %>
+          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids,
+          stage_transitions: @stage_transitions %>
   <% else %>
     <div class="hb-empty" data-test="heartbeat-empty">
       <b>No trajectory captured yet</b>

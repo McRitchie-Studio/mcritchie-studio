@@ -481,4 +481,15 @@ hb_spans.each do |span|
                            closed_at: hb_base + (hb_i * 30).seconds + 5.seconds)
 end
 
+# Stage-change status badge: one kind:"transition" TaskEvent inside the Explore span's
+# window (that span opened at hb_base+30s, closed at +65s) so the heartbeat status
+# column badges that span with the stage its task moved TO — the "building" board pill
+# + color — instead of the generic "done". The Verify span (window +90..+95s) and the
+# still-open Workflow span (window +120s.. ) see no in-window transition, so they keep
+# their plain done / open badges — proving the fallback path too. Backfilled so it
+# never spams the /deployments board during the e2e seed.
+TaskEvent.create!(task_slug: hb_task, from_stage: "designed", to_stage: "building",
+                  kind: "transition", occurred_at: hb_base + 45.seconds,
+                  metadata: { "backfilled" => true })
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events"

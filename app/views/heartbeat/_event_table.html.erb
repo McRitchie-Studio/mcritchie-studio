@@ -18,6 +18,10 @@
 <% agents_by_slug ||= {} %>
 <% unlabeled ||= [] %>
 <% event_grades ||= {} %>
+<%# task_slug => [chronological transition TaskEvents], bulk-loaded by the controller
+    so a span whose task changed stage in-window badges as that new stage. Defaults
+    to empty so isolated/legacy renders fall back to the plain open/done badge. %>
+<% stage_transitions ||= {} %>
 <%# Session-level dup flags: ids of the 2nd+ tool-call of each shared source_turn_uuid,
     whose tokens/cost merely inherit the turn's spend — the controller walks the whole
     session so a turn split across spans still fades every row after its first. %>
@@ -41,7 +45,7 @@
     <% event_rows.each do |event, actions| %>
       <% cat = heartbeat_category_meta(event.category) %>
       <% totals = heartbeat_event_totals(actions) %>
-      <% status = heartbeat_span_status_meta(event) %>
+      <% status = heartbeat_span_status_meta(event, stage_transitions) %>
       <% mascot_slug = event.mascot.presence || totals[:mascot] %>
       <% pokemon = pokemon_by_slug[mascot_slug] %>
       <% grades_for = event_grades[event.id] || {} %>
@@ -83,7 +87,8 @@
           <td class="hb-meta hb-mono" data-test="event-cost"><%= heartbeat_cost(totals[:cost]) %></td>
           <td class="hb-meta"><div class="hb-sat">
             <div class="hb-satline">
-              <span class="hb-outcome" data-test="event-status" style="color: <%= status[:color] %>"><%= status[:label] %></span>
+              <%= heartbeat_span_status_badge(status) %>
+              <span class="hb-bullet" aria-hidden="true">&middot;</span>
               <span class="hb-count" data-test="event-action-count"><%= pluralize(actions.size, "action") %></span>
             </div>
             <span class="hb-mono hb-taskcell"><%= event.task_slug.presence || "—" %></span>

@@ -6,8 +6,9 @@
     so the drawer stays a read-only GET. Locals: event, actions (its attributed
     AtomicActions), alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
 <%= turbo_frame_tag "hb-drawer" do %>
+  <% stage_transitions ||= {} %>
   <% cat = heartbeat_category_meta(event.category) %>
-  <% status = heartbeat_span_status_meta(event) %>
+  <% status = heartbeat_span_status_meta(event, stage_transitions) %>
   <% totals = heartbeat_event_totals(actions) %>
   <div class="hb-dh">
     <button type="button" class="hb-dclose" @click="closeDrawer()" aria-label="Close drawer">&times;</button>
@@ -26,7 +27,7 @@
   </div>
   <div class="hb-db">
     <div class="hb-kv">
-      <span class="hb-k">Status</span><span><span class="hb-outcome" style="color: <%= status[:color] %>"><%= status[:label] %></span></span>
+      <span class="hb-k">Status</span><span><%= heartbeat_span_status_badge(status) %></span>
       <span class="hb-k">Category</span><span><%= event.category %></span>
       <span class="hb-k">Task</span><span class="hb-mono"><%= event.task_slug.presence || "—" %></span>
       <span class="hb-k">Opened</span><span class="hb-mono" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></span>
