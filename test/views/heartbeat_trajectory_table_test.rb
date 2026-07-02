@@ -81,13 +81,15 @@ class HeartbeatTrajectoryTableTest < ActionView::TestCase
     assert_includes rendered, "Sandshrew"
   end
 
-  test "an action with no inherited soul falls back to just its mascot" do
+  test "an action with no inherited soul falls back to its mascot as a solo stack" do
     render partial: "heartbeat/trajectory_table",
            locals: { groups: [["building", [action(seq: 0, stage: "building", mascot: "rotom")]]],
                      pokemon_by_slug: {} }
 
-    assert_select "[data-test=agent-stack]", false
-    assert_includes rendered, "Rotom"
+    # a soulless action still renders the shared stack, flagged solo, with no acting soul
+    assert_select "[data-test=agent-stack].hb-solo"
+    assert_select "[data-test=agent-soul]", false
+    assert_select "[data-test=agent-stack].hb-solo .hb-nameprimary", text: "Rotom"
   end
 
   test "a shared turn fades the tokens and cost cells of the later action, not the first" do

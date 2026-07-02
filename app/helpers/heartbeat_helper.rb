@@ -272,47 +272,58 @@ module HeartbeatHelper
     text.length > limit ? "#{text[0, limit]}…" : text
   end
 
-  # The stacked "Agent" cell — now real AVATAR IMAGES, the same faces the
-  # /deployments stage-timeline crew wears (components/agent_avatar): the acting
-  # SOUL (AtomicEvent#agent) photo ON TOP of the base session mascot's Pokémon
-  # sprite BENEATH it — the operator's "Avi over Shellder" ask, vertically stacked.
-  # Most rows carry no acting soul (a nil agent) and collapse to JUST the base
-  # mascot; a row with neither renders an em dash. The soul reuses the seeded Agent
-  # record (its avatar image, deterministic initials fallback, name on hover),
-  # falling back to a titleized-slug stand-in when the Agent isn't seeded; the base
-  # mascot wraps the seeded Pokémon in the shared MascotAgent bridge (sprite image,
-  # single-letter fallback) so it drops straight into agent_avatar. `agent`/`pokemon`
-  # are the records the controller pre-loaded in one query each (nil-safe) — this
-  # adds NO query (MascotAgent takes a nil color so signature_color is never hit
-  # per row). `submascot` is retained for caller compatibility; `mascot_test` stamps
-  # the base mascot's data-test hook (e.g. "event-mascot").
+  # The compact "Agent" cell — a tight vertical stack of "small avatar + NAME" rows
+  # (the original 📋 Avi / ✦ Magikarp text layout, but with the real avatar image in
+  # place of the emoji). The acting SOUL (AtomicEvent#agent) rides ON TOP — bold, in
+  # its own tint — over the base session mascot BENEATH it (muted). The name is
+  # VISIBLE beside each face (not just a hover title) so a glance reads WHO acted.
+  # Most rows carry no acting soul (a nil agent) and collapse to a SINGLE mascot row
+  # (avatar + name on one line); a row with neither renders an em dash. The soul
+  # reuses the seeded Agent record (avatar image, deterministic initials fallback,
+  # name + status_color tint), falling back to a titleized-slug stand-in when the
+  # Agent isn't seeded; the base mascot wraps the seeded Pokémon in the shared
+  # MascotAgent bridge (sprite image, single-letter fallback) so it drops straight
+  # into agent_avatar. `agent`/`pokemon` are the records the controller pre-loaded in
+  # one query each (nil-safe) — this adds NO query (MascotAgent takes a nil color so
+  # signature_color is never hit per row). `submascot` dims the mascot on the
+  # drill-down rows; `mascot_test` stamps the base mascot's data-test hook (e.g.
+  # "event-mascot"). Faces are the compact agent_avatar "xxs" (24px) size.
   def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil, submascot: false, mascot_test: nil)
     mascot_slug = mascot_slug.presence
     agent_slug  = agent_slug.presence
+    mascot_name = pokemon&.name.presence || mascot_slug&.titleize
+    soul = (agent || Agent.new(slug: agent_slug, name: agent_slug.titleize)) if agent_slug
 
-    mascot_el =
+    # Avatar faces — the acting SOUL rides ON TOP of the base mascot in a tight
+    # overlapping vertical cluster (the soul keeps its own per-soul ring tint).
+    soul_face =
+      if agent_slug
+        tag.span(render(partial: "components/agent_avatar", locals: { agent: soul, size: "xxs" }),
+                 class: "hb-ava hb-soulava", style: "color: #{soul.status_color}",
+                 title: soul.name, data: { test: "agent-soul", soul: agent_slug })
+      end
+    mascot_face =
       if mascot_slug
-        name = pokemon&.name.presence || mascot_slug.titleize
-        face = StageAgentsHelper::MascotAgent.new(name: name, avatar: pokemon&.sprite_url, color: nil)
+        face = StageAgentsHelper::MascotAgent.new(name: mascot_name, avatar: pokemon&.sprite_url, color: nil)
         tag.span(render(partial: "components/agent_avatar", locals: { agent: face, size: "xxs" }),
-                 class: class_names("hb-mascot", "hb-submascot" => submascot || agent_slug.present?),
-                 title: name,
-                 data: mascot_test ? { test: mascot_test } : {})
+                 class: class_names("hb-ava", "hb-mascotava", "hb-submascot" => submascot || agent_slug.present?),
+                 title: mascot_name, data: mascot_test ? { test: mascot_test } : {})
       end
 
-    if agent_slug
-      soul = agent || Agent.new(slug: agent_slug, name: agent_slug.titleize)
-      soul_el = tag.span(
-        render(partial: "components/agent_avatar", locals: { agent: soul, size: "xxs" }),
-        class: "hb-soul", title: soul.name,
-        data: { test: "agent-soul", soul: agent_slug }
-      )
-      tag.div(safe_join([soul_el, mascot_el].compact), class: "hb-agentstack", data: { test: "agent-stack" })
-    elsif mascot_el
-      mascot_el
-    else
-      tag.span("—", class: "hb-meta")
-    end
+    return tag.span("—", class: "hb-meta") unless soul_face || mascot_face
+
+    avatars = tag.div(safe_join([soul_face, mascot_face].compact), class: "hb-avatars")
+
+    # Name column — PRIMARY (the acting soul, else the solo mascot) is bold in one
+    # shared primary color; the subordinate mascot name stacks directly BENEATH it in
+    # the lighter/less-bold SUB color (not aligned to its avatar, per design).
+    names = [tag.span(agent_slug ? soul.name : mascot_name, class: "hb-nameprimary")]
+    names << tag.span(mascot_name, class: "hb-namesub") if agent_slug && mascot_slug
+    name_col = tag.div(safe_join(names), class: "hb-names")
+
+    tag.div(safe_join([avatars, name_col]),
+            class: class_names("hb-agentstack", "hb-solo" => agent_slug.nil?),
+            data: { test: "agent-stack" })
   end
 
   # Pretty-print a captured tool-call payload for the drill-down drawer. Input and

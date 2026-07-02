@@ -159,6 +159,24 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "form[data-test=event-inline-grade][data-grader=mcr] input[type=hidden][name=grader][value=mcr]"
   end
 
+  test "[component] the two graders' quick-grades sit in SEPARATE Alex + McRitchie cells, no grade button" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    # Grade split into two columns: an Alex cell and a McRitchie audit cell, each holding
+    # ONLY its own grader's inline quick-grade form (not one shared, side-by-side row).
+    assert_select "td[data-test=event-grade-cell] form[data-test=event-inline-grade][data-grader=alex]", 1
+    assert_select "td[data-test=event-grade-cell] form[data-grader=mcr]", false
+    assert_select "td[data-test=event-grade-cell-mcr] form[data-test=event-inline-grade][data-grader=mcr]", 1
+    assert_select "td[data-test=event-grade-cell-mcr] form[data-grader=alex]", false
+    # the old shared inline-grades container and the "grade ▸" drawer button are gone
+    assert_select "[data-test=event-inline-grades]", false
+    assert_select "[data-test=event-grade-open]", false
+    assert_select ".hb-gradebtn", false
+  end
+
   test "[component] an existing span grade pre-checks its inline disposition radio" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
     grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
@@ -183,14 +201,17 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "[data-test=event-status]", text: "done"
   end
 
-  test "[component] each span exposes a grade affordance opening its span-grade drawer" do
+  test "[component] the span row itself opens the span-grade drawer on click (no separate grade button)" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select "[data-test=event-grade-open]", 1
+    # the whole event row is the clickable affordance into the span-grade drawer
+    assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]", 1
     assert_includes rendered, heartbeat_event_feedback_path(ev)
+    # the old dedicated "grade ▸" button was removed
+    assert_select "[data-test=event-grade-open]", false
   end
 
   test "[component] a shared turn fades the tokens AND cost cells of every action after the first" do
@@ -277,7 +298,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "thead th", text: "Pokémon", count: 0
   end
 
-  test "[component] a span with an acting soul stacks the soul avatar over the base mascot avatar" do
+  test "[component] a span with an acting soul stacks the soul avatar+name over the base mascot avatar+name" do
     avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋", "color" => "#FB7185" })
     ev   = event(seq: 0, mascot: "shellder", agent: "avi", closed_at: Time.current, outcome_slug: "reviewed")
     poke = Pokemon.new(slug: "shellder", name: "Shellder")
@@ -286,24 +307,28 @@ class HeartbeatEventTableTest < ActionView::TestCase
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: { "shellder" => poke },
                      agents_by_slug: { "avi" => avi } }
 
-    # the acting soul avatar renders server-side (Nokogiri-visible) ON TOP
+    # the acting soul avatar renders server-side (Nokogiri-visible) ON TOP, tinted
     assert_select "[data-test=agent-stack]"
-    assert_select "[data-test=agent-soul][data-soul=avi][title=?]", "Avi"
-    assert_select "[data-test=agent-soul] .rounded-full"
+    assert_select "[data-test=agent-soul][data-soul=avi] .rounded-full"
     # the base session mascot avatar renders BENEATH, inside the same stack
-    assert_select "[data-test=agent-stack] [data-test=event-mascot][title=?]", "Shellder"
     assert_select "[data-test=agent-stack] [data-test=event-mascot] .rounded-full"
+    # the names live in the side column: the soul is the primary, the base mascot the sub
+    assert_select "[data-test=agent-stack] .hb-names .hb-nameprimary", text: "Avi"
+    assert_select "[data-test=agent-stack] .hb-names .hb-namesub", text: "Shellder"
   end
 
-  test "[component] a span with no acting soul renders just the base mascot avatar (no stack)" do
+  test "[component] a span with no acting soul renders the base mascot as a SOLO stack (no soul)" do
     ev = event(seq: 0, mascot: "sandshrew", agent: nil, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select "[data-test=agent-stack]", false
+    # still an agent-stack, but flagged solo with no acting-soul avatar and no sub name
+    assert_select "[data-test=agent-stack].hb-solo"
     assert_select "[data-test=agent-soul]", false
-    assert_select "[data-test=event-mascot][title=?]", "Sandshrew"
+    assert_select "[data-test=agent-stack].hb-solo [data-test=event-mascot].hb-mascotava .rounded-full"
+    assert_select "[data-test=agent-stack].hb-solo .hb-names .hb-nameprimary", text: "Sandshrew"
+    assert_select "[data-test=agent-stack] .hb-namesub", false
   end
 
   test "[component] drill-down actions inherit their span's acting soul" do

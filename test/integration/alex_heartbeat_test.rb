@@ -190,13 +190,15 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=event-cost]", text: "$0.0500"
   end
 
-  test "each span row exposes a grade affordance into the span-grade drawer" do
+  test "each span row opens the span-grade drawer on a row click" do
     ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
 
     get alex_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
-    assert_select "[data-test=event-grade-open]"
+    # the whole event row is the clickable affordance into the drawer (no grade button)
+    assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]"
+    assert_select "[data-test=event-grade-open]", false
     assert_match heartbeat_event_feedback_path(ev), response.body
   end
 
