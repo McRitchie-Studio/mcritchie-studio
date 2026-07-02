@@ -43,6 +43,7 @@ class HeartbeatController < ApplicationController
     @pokemon_by_slug = pokemon_lookup(@actions, @events)
     @agents_by_slug = agent_soul_lookup(@events)
     @event_grades = event_grade_lookup(@events)
+    @stage_transitions = stage_transitions_for(@events)
     @counts = grade_counts(@session_id)
   end
 
@@ -68,6 +69,7 @@ class HeartbeatController < ApplicationController
     @pokemon_by_slug = pokemon_lookup(page_actions, @events)
     @agents_by_slug  = agent_soul_lookup(@events)
     @event_grades    = event_grade_lookup(@events)
+    @stage_transitions = stage_transitions_for(@events)
     @has_prev = @page > 1
     @has_next = @page * ALL_SPANS_PER_PAGE < @total
   end
@@ -92,7 +94,8 @@ class HeartbeatController < ApplicationController
     grades  = @event.action_grades.index_by(&:grader)
     render partial: "heartbeat/event_drawer",
            locals: { event: @event, actions: actions,
-                     alex: grades[ActionGrade::ALEX], mcr: grades[ActionGrade::MCR] }
+                     alex: grades[ActionGrade::ALEX], mcr: grades[ActionGrade::MCR],
+                     stage_transitions: stage_transitions_for([@event]) }
   end
 
   # Upsert ONE grade for (action, grader) — the inline disposition radios and the
@@ -248,6 +251,20 @@ class HeartbeatController < ApplicationController
     return {} if slugs.empty?
 
     Agent.where(slug: slugs).index_by(&:slug)
+  end
+
+  # The STAGE-CHANGE spine for the visible spans — every kind:"transition" TaskEvent
+  # for the spans' task_slugs, in ONE query (WHERE task_slug IN (...)), grouped by
+  # slug and chronological so heartbeat_span_status_meta can badge a span with the
+  # stage its task changed to during the span's window with no per-row lookup. Empty
+  # when no span carries a task_slug (PRE-task spans / a fresh session).
+  def stage_transitions_for(events)
+    slugs = events.filter_map { |event| event.task_slug.presence }.uniq
+    return {} if slugs.empty?
+
+    TaskEvent.transitions.where(task_slug: slugs)
+             .order(:occurred_at, :id)
+             .group_by(&:task_slug)
   end
 
   # Every span's current grades in one query, grouped by event id then keyed by

@@ -40,7 +40,8 @@
   <% if @event_rows.any? %>
     <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: [],
           pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
-          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids %>
+          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids,
+          stage_transitions: @stage_transitions %>
 
     <nav class="hb-pager" data-test="hb-pager" aria-label="All Spans pages">
       <% if @has_prev %>

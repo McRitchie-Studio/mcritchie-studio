@@ -214,6 +214,63 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", heartbeat_event_grade_path(ev), 2
   end
 
+  # A span whose task changed STAGE during the span's window badges as the new stage
+  # (board pill + color), not the generic "done" — the operator's stage-change signal.
+  test "[integration] a span whose task transitioned in-window badges as the new stage" do
+    event(seq: 0, session: "sess-S", task_slug: "ship-it",
+          at: 3.minutes.ago, closed_at: 1.minute.ago, outcome_slug: "moved to submitted")
+    TaskEvent.create!(task_slug: "ship-it", from_stage: "building", to_stage: "submitted",
+                      kind: "transition", occurred_at: 2.minutes.ago, metadata: { "backfilled" => true })
+
+    get alex_heartbeat_path(session_id: "sess-S")
+
+    assert_response :success
+    assert_select "[data-test=event-status][data-stage=submitted] .badge", text: "Submitted"
+    assert_select "[data-test=event-status]", text: "done", count: 0
+  end
+
+  # Detection is kind:"transition" only — an INTENT row in the same window must not
+  # restage the badge (it is a "who is on it" marker, not a completed stage change).
+  test "[integration] an intent event in-window does not restage the badge" do
+    event(seq: 0, session: "sess-I", task_slug: "review-it",
+          at: 3.minutes.ago, closed_at: 1.minute.ago, outcome_slug: "done")
+    TaskEvent.create!(task_slug: "review-it", to_stage: "reviewed", kind: "intent",
+                      occurred_at: 2.minutes.ago, metadata: { "backfilled" => true })
+
+    get alex_heartbeat_path(session_id: "sess-I")
+
+    assert_response :success
+    assert_select "[data-test=event-status]", text: "done"
+    assert_select "[data-test=event-status][data-stage]", false
+  end
+
+  # The stage spine loads in ONE query for every visible span (grouped by task_slug),
+  # never per-row — the bulk-load contract the controller owns.
+  test "[integration] stage transitions bulk-load for all spans in a single query (no N+1)" do
+    %w[task-one task-two task-three].each_with_index do |slug, i|
+      event(seq: i, session: "sess-N", task_slug: slug,
+            at: (10 - i).minutes.ago, closed_at: (9 - i).minutes.ago, outcome_slug: "moved")
+      TaskEvent.create!(task_slug: slug, from_stage: "building", to_stage: "submitted",
+                        kind: "transition", occurred_at: (9.5 - i).minutes.ago,
+                        metadata: { "backfilled" => true })
+    end
+
+    selects = []
+    counter = lambda do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql].to_s
+      selects << sql if sql =~ /SELECT/i && sql =~ /FROM ["'`]?task_events/i && sql !~ /SCHEMA/i
+    end
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+      get alex_heartbeat_path(session_id: "sess-N")
+    end
+
+    assert_response :success
+    # all three spans badge as their new stage...
+    assert_select "[data-test=event-status][data-stage=submitted] .badge", text: "Submitted", count: 3
+    # ...off exactly ONE task_events read, not one per span
+    assert_equal 1, selects.size, "spans' stage transitions must bulk-load in a single query"
+  end
+
   test "a graded span renders its grade marker server-side on the next load" do
     ev = event(seq: 0, reason_slug: "narrate this span well", closed_at: 1.minute.ago, outcome_slug: "done")
 
