@@ -1,10 +1,14 @@
 <%# The heartbeat's in-context navbar — the link cluster shared by the per-session
-    heartbeat (show) and the All Spans page. The Insight Bank, the cross-session All
-    Spans view, and (only off All Spans) a link back to the per-session heartbeat.
+    heartbeat (show) and the All Spans page. A back link to the Deployments board,
+    the Insight Bank, the cross-session All Spans view, and (only off All Spans) a
+    link back to the per-session heartbeat.
     `current` marks the active surface (:session | :all_spans) so its own chip reads
     as active; `insights_count` seeds the Insight Bank tally (kept id'd so the grade
     turbo_stream can live-update it on the per-session page). Locals: current,
     insights_count. %>
+<%= link_to deployments_path, class: "hb-btn", data: { turbo: false, test: "hb-nav-deployments" } do %>
+  &lsaquo; Deployments
+<% end %>
 <%= link_to alex_insights_path, class: "hb-btn hb-insightbtn", data: { turbo: false } do %>
   &#128161; Insight Bank (<span id="hb-insight-count"><%= insights_count %></span>)
 <% end %>
