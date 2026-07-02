@@ -1,6 +1,7 @@
 <section>
-  <div class="mb-6">
+  <div class="mb-6 flex items-center gap-4">
     <%= link_to "&larr; All Agents".html_safe, agents_path, class: "text-secondary hover:text-heading text-sm transition" %>
+    <%= link_to "Deployments", deployments_path, class: "text-secondary hover:text-heading text-sm transition", data: { test: "agent-nav-deployments" } %>
   </div>
 
   <!-- Agent Header -->
@@ -21,6 +22,9 @@
       <p class="text-body text-sm"><%= @agent.description %></p>
     <% end %>
   </div>
+
+  <%# HEARTBEAT — only renders for souls that own one (Avi / Steffon / Alex). %>
+  <%= render "agents/heartbeat_section", agent: @agent %>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Skills -->

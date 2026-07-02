@@ -1,0 +1,62 @@
+<%# HEARTBEAT section for the agent profile page (agents/show), a sibling of the
+    Skills / Recent Tasks / Recent Activity blocks. Rendered ONLY for souls that
+    own a heartbeat — the entries in ApplicationHelper#heartbeat_launchers keyed
+    by the agent's slug (Avi / Steffon / Alex). Agents without one (Carl /
+    Shannon / Jasper) fall through the guard and render nothing, so their page is
+    unchanged.
+
+    Layout: the soul heartbeat phrase ("<Soul> Heartbeat") is the header, then one
+    copyable ROW per launcher ACT — the act's phrase in a <code> chip plus a
+    one-line description of what it does (heartbeat_act_description, sourced from
+    docs/agents/modules/heartbeats.md). Copy reuses window.copyText /
+    components/copy_text_script (async Clipboard API + hidden-textarea fallback);
+    each phrase is server-rendered into data-clip AND the visible <code> so tests
+    and the no-clipboard fallback read it without Alpine (Nokogiri can't see
+    Alpine-toggled state). Each row is its own button with its own `copied` flash. %>
+<% launcher = heartbeat_launcher_for(agent.slug) %>
+<% if launcher.present? %>
+  <section class="card p-6 mb-6" data-test="agent-heartbeat-section" data-agent="<%= agent.slug %>">
+    <%= render "components/copy_text_script" %>
+    <div class="flex items-center gap-2 mb-1">
+      <span class="text-primary" aria-hidden="true">&#9829;</span>
+      <h3 class="text-lg font-bold text-heading">Heartbeat</h3>
+    </div>
+    <p class="text-muted text-xs mb-3">Copy any phrase to launch it as <%= agent.name %>.</p>
+
+    <%# The soul heartbeat phrase itself — a copyable header chip. %>
+    <button type="button"
+            x-data="{ copied: false }"
+            class="group relative flex w-full items-center gap-2 rounded-lg border border-subtle bg-inset px-3 py-2 mb-3 text-left transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+            :class="copied ? 'border-mint-400/60' : ''"
+            data-clip="<%= launcher[:heartbeat] %>"
+            data-test="heartbeat-name"
+            @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)"
+            :aria-label="copied ? 'Copied!' : '<%= j "Copy: #{launcher[:heartbeat]}" %>'"
+            title="<%= "Copy: #{launcher[:heartbeat]}" %>">
+      <code class="min-w-0 break-words text-sm font-semibold normal-case tracking-normal text-heading"><%= launcher[:heartbeat] %></code>
+      <span class="ml-auto shrink-0 text-[10px] text-muted group-hover:text-body" x-show="!copied">Copy</span>
+      <span class="ml-auto shrink-0 text-[10px] text-mint-300" x-show="copied" x-cloak x-transition.opacity>Copied &#10003;</span>
+    </button>
+
+    <%# One copyable row per launcher act: phrase chip + one-line description. %>
+    <div class="space-y-2">
+      <% launcher[:acts].each do |act| %>
+        <button type="button"
+                x-data="{ copied: false }"
+                class="group relative flex w-full items-start gap-3 rounded-lg border border-subtle bg-inset px-3 py-2 text-left transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+                :class="copied ? 'border-mint-400/60' : ''"
+                data-clip="<%= act %>"
+                data-test="heartbeat-act"
+                data-act="<%= act %>"
+                @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)"
+                :aria-label="copied ? 'Copied!' : '<%= j "Copy: #{act}" %>'"
+                title="<%= "Copy: #{act}" %>">
+          <code class="mt-0.5 shrink-0 break-words rounded bg-surface px-1.5 py-0.5 text-xs font-medium normal-case tracking-normal text-primary"><%= act %></code>
+          <span class="min-w-0 flex-1 text-sm text-body"><%= heartbeat_act_description(act) %></span>
+          <span class="shrink-0 text-[10px] text-muted group-hover:text-body" x-show="!copied">Copy</span>
+          <span class="shrink-0 text-[10px] text-mint-300" x-show="copied" x-cloak x-transition.opacity>&#10003;</span>
+        </button>
+      <% end %>
+    </div>
+  </section>
+<% end %>
