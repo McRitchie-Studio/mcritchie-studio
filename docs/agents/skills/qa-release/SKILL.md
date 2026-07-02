@@ -1,6 +1,6 @@
 ---
 name: qa-release
-description: "Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge, Assemble, Deploy, or Deploy with Task <task> — the composable DevOps launchers for review intake, release assembly, QA deploy, and optionally production ship. They are compositions of atoms: review-one (one-PR review + merge), pr-review / pr-review-slow (that fanned across all submitted PRs, waves <=5 / serialized), qa-deploy (bin/release prepare), production-deploy (bin/release ship). Avi Heartbeat is review-only and stops at reviewed; Build and Deploy QA Release stops at the production ship gate; Merge, Assemble, Deploy authorizes autonomous production ship after gates pass; Deploy with Task expedites ONE task to prod, guarded on a clean release (release == main). Also recognizes the four single-soul heartbeat chips on the current-release card — either row of each: avi pr / pr-review (review+merge submitted PRs), steffon / qa-deploy (prepare QA), avi deploy / production-deploy (ship prod), and alex / grade events (the learning loop; full SOP in heartbeats.md). Invoke when the operator uses one of these phrases, clicks a release kickoff or heartbeat chip, or asks to prepare/deploy the release. Thin launcher — the full, model-agnostic SOP lives in devops-cycle-design.md §1.4."
+description: "Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge, Assemble, Deploy, or Deploy with Task <task> — the composable DevOps launchers for review intake, release assembly, QA deploy, and optionally production ship. They are compositions of atoms: review-one (one-PR review + merge), pr-review / pr-review-slow (that fanned across all submitted PRs, waves <=5 / serialized), qa-deploy (bin/release prepare), production-deploy (bin/release ship). Avi Heartbeat is review-only and stops at reviewed; Build and Deploy QA Release stops at the production ship gate; Merge, Assemble, Deploy authorizes autonomous production ship after gates pass; Deploy with Task expedites ONE task to prod, guarded on a clean release (release == main). Also recognizes the three soul heartbeat chips on the DevOps card (#release-duration-card on /deployments) — any row of each: Avi Heartbeat (acts pr-review = review+merge submitted PRs, production-deploy = ship a QA-green release), Steffon Heartbeat (acts qa-deploy = prepare QA, archive-completed = bin/release archive), and Alex Heartbeat (act grade-events, the learning loop; full SOP in heartbeats.md). Invoke when the operator uses one of these phrases, clicks a release kickoff or heartbeat chip, or asks to prepare/deploy the release. Thin launcher — the full, model-agnostic SOP lives in devops-cycle-design.md §1.4."
 ---
 
 # Release Conductor Launcher
@@ -54,22 +54,26 @@ is a sequence of them (full detail in §1.4):
 >   Assemble, Deploy`** (ship the whole release) instead. Never expedite one task
 >   past pending work.
 
-**Single-soul heartbeat launchers** — the four current-release card chips (full
-SOP [`heartbeats.md`](../../modules/heartbeats.md)). Each is a soul face over two
-independently-copyable rows; **either row is a recognized launcher** (the soul+role
-phrase OR its atom). Enter as the named soul. Operator-launched (copy-paste) today,
-schedule-ready tomorrow — each is idempotent with an explicit precondition + a named
-exit seam:
-- **`avi pr`** / **`pr-review`** — Avi; review + **merge** ALL submitted PRs
-  (waves ≤5) → each `assembled` or `blocked`. NB: this MERGES — unlike the
-  review-only `Avi Heartbeat Slow`/`Fast`.
-- **`steffon`** / **`qa-deploy`** — Steffon; `bin/release prepare --yes` → QA →
-  `assembled` on QA. Does NOT ship.
-- **`avi deploy`** / **`production-deploy`** — Avi (ship authority); `bin/release
-  ship --yes` → prod → `shipped`.
-- **`alex`** / **`grade events`** — Alex; grade the 10 most recent resolved spans
-  at `/alex/heartbeat`, bank the useful insights. (Learning loop — outside the
-  release pipeline.)
+**Soul heartbeat launchers** — the three DevOps-card chips (full SOP
+[`heartbeats.md`](../../modules/heartbeats.md)). Each is a soul face (linking to
+`/agents/<slug>`) over a prompt-like row 1 + copyable atom act(s); **any row is a
+recognized launcher** (the `<Soul> Heartbeat` prompt OR any of its atoms). Enter as
+the named soul. Operator-launched (copy-paste) today, schedule-ready tomorrow — each
+act is idempotent with an explicit precondition + a named exit seam. **Steffon owns
+release stages 1–3, Avi owns 4–5, and "deployed to QA" is the Steffon → Avi
+handoff:**
+- **`Avi Heartbeat`** — Avi. Act **`pr-review`**: review + **merge** ALL submitted
+  PRs (waves ≤5) → each `assembled` or `blocked` (MERGES — unlike the review-only
+  `Avi Heartbeat Slow`/`Fast`). Act **`production-deploy`** (ship authority):
+  **IF** a QA-green release is ready → `bin/release ship --yes` (stages 4–5) → prod
+  → `shipped`; else no-op.
+- **`Steffon Heartbeat`** — Steffon. Act **`qa-deploy`**: `bin/release prepare
+  --yes` (stages 1–3) → QA → `assembled` on QA, hands off at "deployed to QA" (does
+  NOT ship). Act **`archive-completed`**: `bin/release archive --yes` → shipped
+  tasks + completed releases + merged worktrees archived (idempotent).
+- **`Alex Heartbeat`** — Alex. Act **`grade-events`**: grade the 10 most recent
+  resolved spans at `/alex/heartbeat`, bank the useful insights. (Learning loop —
+  outside the release pipeline.)
 
 Load-bearing reminders (full detail in §1.4):
 - Run every command from `/Users/alex/projects/mcritchie-studio`; the board is

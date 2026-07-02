@@ -1,40 +1,45 @@
-<%# Soul-avatar heartbeat launchers for the current-release card. Each launcher
-    stacks a soul's components/agent_avatar OVER a TWO-ROW command: two stacked
-    copy chips, each an INDEPENDENTLY-copyable valid launch prompt. Row 1 is the
-    soul+role heartbeat phrase (avi pr / avi deploy / steffon / alex) — distinct
-    per launcher, not the ambiguous "<soul> heartbeat"; row 2 is the launcher atom
-    that scopes it (pr-review / production-deploy / qa-deploy / grade events). Each row is its
-    OWN button with its OWN data-clip + Alpine `copied` flash: clicking copies
-    THAT row's phrase via window.copyText (async Clipboard API + hidden-textarea
-    execCommand fallback, components/copy_text_script). The phrase is server-
-    rendered into data-clip AND the visible <code>, so tests + the no-clipboard
-    fallback read it without Alpine (Nokogiri can't see Alpine-toggled state). The
-    four launchers sit in an even 4-up grid (grid-cols-4 => 25% columns) across the
-    card, not left-bunched. Souls load in one query (index_by) so the faces add no
-    N+1. %>
+<%# Soul-avatar heartbeat launchers for the DevOps card (#release-duration-card on
+    /deployments), rendered below its release-duration metrics. Each launcher
+    stacks a soul's components/agent_avatar (LINKING to /agents/<slug>) OVER a
+    column of copy chips: row 1 is the PROMPT-LIKE soul heartbeat phrase ("Avi
+    Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"), followed by that soul's
+    launcher atom act(s) — Avi's two lanes (pr-review + production-deploy) now
+    share ONE column, Steffon owns qa-deploy + archive-completed, Alex owns
+    grade-events. Each row is its OWN button with its OWN data-clip + Alpine
+    `copied` flash: clicking copies THAT row's phrase via window.copyText (async
+    Clipboard API + hidden-textarea execCommand fallback,
+    components/copy_text_script). The phrase is server-rendered into data-clip AND
+    the visible <code>, so tests + the no-clipboard fallback read it without Alpine
+    (Nokogiri can't see Alpine-toggled state). The three launchers sit in an even
+    3-up grid (grid-cols-3 => 33% columns) across the card, not left-bunched, and
+    wrap cleanly on narrow widths. Souls load in one query (index_by) so the faces
+    add no N+1. %>
 <% launchers = heartbeat_launchers %>
 <% souls = Agent.where(slug: launchers.map { |l| l[:agent_slug] }.uniq).index_by(&:slug) %>
 <%= render "components/copy_text_script" %>
 <div class="mt-4 pt-3 border-t border-subtle/70" data-test="heartbeat-launchers">
   <p class="text-[11px] uppercase tracking-wide text-muted font-semibold mb-2">Heartbeats</p>
-  <div class="grid grid-cols-4 gap-2 sm:gap-3">
+  <div class="grid grid-cols-3 gap-2 sm:gap-3">
     <% launchers.each do |launcher| %>
       <% soul = souls[launcher[:agent_slug]] || Agent.new(slug: launcher[:agent_slug], name: launcher[:agent_slug].titleize) %>
       <div class="flex min-w-0 flex-col items-center gap-1.5"
            data-test="heartbeat-launcher"
            data-agent="<%= launcher[:agent_slug] %>"
-           data-heartbeat="<%= launcher[:heartbeat] %>"
-           data-phrase="<%= launcher[:phrase] %>">
+           data-heartbeat="<%= launcher[:heartbeat] %>">
         <%# Avatar on top — the same face as the heartbeat Agent column + stage
-            timeline. %>
-        <span class="rounded-full ring-2 ring-surface">
+            timeline — now a LINK to the soul's /agents/<slug> page. %>
+        <%= link_to agent_path(launcher[:agent_slug]),
+                    class: "inline-flex rounded-full ring-2 ring-surface transition hover:ring-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+                    title: launcher[:title],
+                    data: { test: "heartbeat-avatar-link" } do %>
           <%= render "components/agent_avatar", agent: soul, size: "sm" %>
-        </span>
-        <%# Two independently-copyable command rows: row 1 = the soul heartbeat,
-            row 2 = the launcher phrase. Each is its own clip target and flashes
-            its own "copied ✓". %>
+        <% end %>
+        <%# Independently-copyable command rows: row 1 = the prompt-like soul
+            heartbeat, then one row per launcher atom act. Each is its own clip
+            target and flashes its own "copied ✓". %>
         <div class="flex w-full min-w-0 flex-col items-stretch gap-1">
-          <% [[:heartbeat, launcher[:heartbeat]], [:phrase, launcher[:phrase]]].each do |row_kind, text| %>
+          <% rows = [["heartbeat", launcher[:heartbeat]]] + launcher[:acts].map { |act| ["act", act] } %>
+          <% rows.each do |row_kind, text| %>
             <button type="button"
                     x-data="{ copied: false }"
                     class="group relative flex w-full min-w-0 items-center justify-center rounded-md border border-subtle bg-inset px-1.5 py-1 transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"

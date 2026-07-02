@@ -491,23 +491,25 @@ module ApplicationHelper
     ]
   end
 
-  # The four soul-avatar heartbeat launchers shown in the current-release card
-  # (tasks/heartbeat_launchers): a soul face over a TWO-ROW command, each row an
-  # INDEPENDENTLY-copyable valid launch prompt. +heartbeat+ (row 1) is the soul+
-  # role heartbeat phrase — DISTINCT per launcher (avi pr / avi deploy / steffon /
-  # alex), never the ambiguous "<soul> heartbeat" that collapsed Avi's two lanes
-  # into one; +phrase+ (row 2) is the launcher atom that scopes that heartbeat's
-  # work (pr-review / production-deploy / qa-deploy / grade events). +agent_slug+
+  # The three soul-avatar heartbeat launchers shown in the DevOps card
+  # (#release-duration-card on /deployments, tasks/heartbeat_launchers): a soul
+  # face (linking to /agents/<slug>) over a
+  # PROMPT-LIKE row 1 plus one or more copyable atom acts. Avi's two lanes are now
+  # ONE column with two acts. Every row is an INDEPENDENTLY-copyable valid launch
+  # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
+  # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +acts+ are the
+  # launcher atoms that scope that heartbeat's work (Avi: pr-review + production-
+  # deploy; Steffon: qa-deploy + archive-completed; Alex: grade-events). +agent_slug+
   # resolves the soul avatar (reused from the heartbeat Agent column + stage
-  # timeline); +label+ is the small purpose caption; +title+ is the hover tooltip.
-  # Both rows are genuinely launchable on their own; each is a recognized launcher
-  # in docs/agents/modules/heartbeats.md + qa-release/SKILL.md.
+  # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
+  # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
+  # genuinely launchable on its own; each is a recognized launcher in
+  # docs/agents/modules/heartbeats.md + qa-release/SKILL.md.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "avi pr",     phrase: "pr-review",         label: "PR review",   title: "Avi — PR-review heartbeat" },
-      { agent_slug: "avi",     heartbeat: "avi deploy", phrase: "production-deploy", label: "Prod deploy", title: "Avi — production-deploy heartbeat" },
-      { agent_slug: "steffon", heartbeat: "steffon",    phrase: "qa-deploy",         label: "QA deploy",   title: "Steffon — prepare + QA heartbeat" },
-      { agent_slug: "alex",    heartbeat: "alex",       phrase: "grade events",      label: "Learning",    title: "Alex — grade-events / learning heartbeat" }
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     acts: ["pr-review", "production-deploy"], label: "Review + ship", title: "Avi — review + ship heartbeat" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", acts: ["qa-deploy", "archive-completed"], label: "QA + archive",   title: "Steffon — QA deploy + archive heartbeat" },
+      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    acts: ["grade-events"],                   label: "Learning",      title: "Alex — grade-events / learning heartbeat" }
     ]
   end
 
