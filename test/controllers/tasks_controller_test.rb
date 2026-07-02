@@ -37,7 +37,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
-  test "[integration] deployments renders the four heartbeat launcher copiers in the current-release card" do
+  test "[integration] deployments renders the four two-row heartbeat launchers in the current-release card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
@@ -45,12 +45,18 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    # The soul-avatar copiers live inside the current-release card, one per heartbeat.
+    # The soul-avatar copiers live inside the current-release card, four across.
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='pr-review'] button[data-clip='pr-review']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='production-deploy']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='qa-deploy']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='Alex heartbeat']"
+    # Even 4-up 25% columns (grid-cols-4), not left-bunched.
+    assert_select "#current-release div.grid.grid-cols-4 [data-test='heartbeat-launcher']", count: 4
+    # Each launcher exposes TWO independently-copyable rows: the distinct soul+role
+    # heartbeat phrase (row 1) and the launcher atom (row 2), each its own data-clip.
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='pr-review'] button[data-row='heartbeat'][data-clip='avi pr']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='pr-review'] button[data-row='phrase'][data-clip='pr-review']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='production-deploy'] button[data-row='heartbeat'][data-clip='avi deploy']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='production-deploy'] button[data-clip='production-deploy']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-clip='steffon']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='grade events'] button[data-clip='alex']"
   end
 
   test "[integration] deployments shows the conductor mascot + in-progress timing on the Next Release card" do
