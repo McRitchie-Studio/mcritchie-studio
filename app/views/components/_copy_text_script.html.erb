@@ -1,0 +1,33 @@
+<%# Clipboard copy with a graceful fallback, defined on window so any Alpine
+    @click can share one implementation. Prefers the async Clipboard API; when it
+    is unavailable (older browsers, insecure/non-HTTPS contexts) or rejects, it
+    falls back to a hidden-textarea execCommand('copy'). Idempotent (the `||`
+    guard) so rendering it on a page more than once never clobbers the definition. %>
+<script>
+  window.__copyTextFallback = window.__copyTextFallback || function (text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch (e) {
+      console.warn('copyText fallback failed', e);
+      return false;
+    }
+  };
+  window.copyText = window.copyText || function (text) {
+    text = String(text == null ? '' : text);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        return window.__copyTextFallback(text);
+      });
+    }
+    return window.__copyTextFallback(text);
+  };
+</script>

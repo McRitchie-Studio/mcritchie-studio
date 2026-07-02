@@ -1,0 +1,48 @@
+<%# Soul-avatar heartbeat launchers for the current-release card. Each launcher
+    stacks a soul's components/agent_avatar OVER a copy-to-clipboard clicker: the
+    whole face+pill is ONE button that copies a short launcher phrase (aligned to
+    the qa-release skill names) via window.copyText — the async Clipboard API with
+    a hidden-textarea execCommand fallback (components/copy_text_script). A click
+    flashes a transient "copied ✓" (Alpine `copied`, x-data double-quoted so the
+    inner reads via $el.dataset). The phrase is server-rendered into data-clip AND
+    the visible <code>, so tests (and the no-clipboard fallback) read it without
+    Alpine — Nokogiri can't see Alpine-toggled state. Souls are loaded in one
+    query (index_by), so the four faces add no N+1. %>
+<% launchers = heartbeat_launchers %>
+<% souls = Agent.where(slug: launchers.map { |l| l[:agent_slug] }.uniq).index_by(&:slug) %>
+<%= render "components/copy_text_script" %>
+<div class="mt-4 pt-3 border-t border-subtle/70" data-test="heartbeat-launchers">
+  <p class="text-[11px] uppercase tracking-wide text-muted font-semibold mb-2">Heartbeats</p>
+  <div class="flex flex-wrap gap-3">
+    <% launchers.each do |launcher| %>
+      <% soul = souls[launcher[:agent_slug]] || Agent.new(slug: launcher[:agent_slug], name: launcher[:agent_slug].titleize) %>
+      <div x-data="{ copied: false }"
+           class="flex w-20 flex-col items-center gap-1.5"
+           data-test="heartbeat-launcher"
+           data-agent="<%= launcher[:agent_slug] %>"
+           data-phrase="<%= launcher[:phrase] %>">
+        <button type="button"
+                class="group flex flex-col items-center gap-1.5 focus:outline-none"
+                data-clip="<%= launcher[:phrase] %>"
+                @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)"
+                :aria-label="copied ? 'Copied!' : '<%= j launcher[:title] %>'"
+                title="<%= launcher[:title] %>">
+          <%# Avatar on top — the same face as the heartbeat Agent column + stage
+              timeline. A subtle hover lift + a mint ring while "copied". %>
+          <span class="relative rounded-full ring-2 ring-surface transition-transform duration-150 group-hover:scale-105"
+                :class="copied ? 'ring-mint-400/70' : ''">
+            <%= render "components/agent_avatar", agent: soul, size: "sm" %>
+          </span>
+          <%# Copy clicker beneath: the phrase in a chip with a copy glyph that
+              swaps to a ✓ on click. %>
+          <span class="inline-flex items-center gap-1 rounded-md border border-subtle bg-inset px-1.5 py-0.5 transition group-hover:border-primary/40"
+                :class="copied ? 'border-mint-400/50' : ''">
+            <code class="text-[10px] font-normal normal-case tracking-normal text-body"><%= launcher[:phrase] %></code>
+            <span class="text-[10px]" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'">⧉</span>
+          </span>
+        </button>
+        <span class="text-center text-[10px] leading-tight text-muted"><%= launcher[:label] %></span>
+      </div>
+    <% end %>
+  </div>
+</div>
