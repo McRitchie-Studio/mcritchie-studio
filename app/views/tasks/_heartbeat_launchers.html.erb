@@ -1,8 +1,9 @@
 <%# Soul-avatar heartbeat launchers for the current-release card. Each launcher
     stacks a soul's components/agent_avatar OVER a TWO-ROW command: two stacked
     copy chips, each an INDEPENDENTLY-copyable valid launch prompt. Row 1 is the
-    soul's heartbeat ("<soul> heartbeat"); row 2 is the launcher atom that scopes
-    it (pr-review / production-deploy / qa-deploy / grade events). Each row is its
+    soul+role heartbeat phrase (avi pr / avi deploy / steffon / alex) — distinct
+    per launcher, not the ambiguous "<soul> heartbeat"; row 2 is the launcher atom
+    that scopes it (pr-review / production-deploy / qa-deploy / grade events). Each row is its
     OWN button with its OWN data-clip + Alpine `copied` flash: clicking copies
     THAT row's phrase via window.copyText (async Clipboard API + hidden-textarea
     execCommand fallback, components/copy_text_script). The phrase is server-

@@ -512,8 +512,9 @@ class ApplicationHelperTest < ActionView::TestCase
 
     assert_equal 4, launchers.size
     assert_equal %w[avi avi steffon alex], launchers.map { |l| l[:agent_slug] }
-    # Row 1 wakes the soul; row 2 is the launcher atom that scopes the heartbeat.
-    assert_equal ["avi heartbeat", "avi heartbeat", "steffon heartbeat", "alex heartbeat"],
+    # Row 1 is the distinct soul+role heartbeat phrase (Avi's two lanes split apart);
+    # row 2 is the launcher atom that scopes it.
+    assert_equal ["avi pr", "avi deploy", "steffon", "alex"],
                  launchers.map { |l| l[:heartbeat] }
     assert_equal ["pr-review", "production-deploy", "qa-deploy", "grade events"],
                  launchers.map { |l| l[:phrase] }
@@ -557,7 +558,7 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "tasks/current_release", locals: { release: nil }
 
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
-    assert_select "[data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-row='heartbeat'] code", text: "steffon heartbeat"
+    assert_select "[data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-row='heartbeat'] code", text: "steffon"
     assert_select "[data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-row='phrase'] code", text: "qa-deploy"
   end
 end

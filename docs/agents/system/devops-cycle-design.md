@@ -453,6 +453,31 @@ The only NEW code this set required is the clean-release **GUARD** that
 `Deploy with Task` runs first (`bin/release status --clean-only`, backed by the
 unit-tested `Release::CleanCheck`); everything else is the atoms recombined.
 
+#### The four single-soul heartbeat launchers — the current-release card chips
+
+The current-release card (`#current-release`) also renders four **single-soul
+heartbeat launchers** (`ApplicationHelper#heartbeat_launchers`,
+`tasks/_heartbeat_launchers`) — a soul face over **two independently-copyable
+rows**: the **soul+role heartbeat phrase** (row 1) and the **launcher atom**
+(row 2). **Either row**, pasted into a fresh session, is a **recognized
+launcher**. Three wrap a single release atom; the fourth (`alex` / `grade
+events`) is the learning loop, outside the release pipeline. Full SOP:
+[`heartbeats.md`](../modules/heartbeats.md).
+
+| Launcher (row 1) | Atom (row 2) | Soul | Does | Exit seam |
+|---|---|---|---|---|
+| **`avi pr`** | **`pr-review`** | Avi | review + **merge** ALL submitted PRs (waves ≤5) | each `reviewed`+merged (`assembled`) or `blocked` |
+| **`steffon`** | **`qa-deploy`** | Steffon | assemble `release` + deploy QA (`bin/release prepare --yes`) | members `assembled` on QA (no prod) |
+| **`avi deploy`** | **`production-deploy`** | Avi (ship authority) | ff `release → main`, ship prod (`bin/release ship --yes`) | members `shipped` |
+| **`alex`** | **`grade events`** | Alex | grade the 10 most recent resolved spans at `/alex/heartbeat`, bank insights | 10 graded, insights banked |
+
+These are **operator-launched (copy-paste) today, schedule-ready tomorrow** — each
+SOP is idempotent, with an explicit precondition + a named exit seam, so a
+scheduler can fire it later without rework (see [`heartbeats.md`](../modules/heartbeats.md)).
+Note `avi pr` **merges** approved PRs (the `pr-review` atom → `assembled`); the
+long-running **`Avi Heartbeat Slow`/`Fast`** loops below are review-**only** and
+stop at `reviewed`.
+
 **`Avi Heartbeat Slow` / `Avi Heartbeat Fast`**  *(long-running review-only loops — stop at reviewed)*
 
 This is the unattended Avi intake loop for hours-long review duty while feature
