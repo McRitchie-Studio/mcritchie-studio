@@ -506,4 +506,44 @@ class ApplicationHelperTest < ActionView::TestCase
     plain = devops_next_html("passes dor-check --gate build; records blocked_from")
     assert_not_includes plain, "<span"
   end
+
+  test "[unit] heartbeat_launchers maps the four souls to the qa-release phrases" do
+    launchers = heartbeat_launchers
+
+    assert_equal 4, launchers.size
+    assert_equal %w[avi avi steffon alex], launchers.map { |l| l[:agent_slug] }
+    assert_equal ["pr-review", "production-deploy", "qa-deploy", "Alex heartbeat"],
+                 launchers.map { |l| l[:phrase] }
+    assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
+  end
+
+  test "[component] _current_release renders the four heartbeat launcher copiers inside #current-release" do
+    Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
+    Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
+    Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+    rel = Release.open!
+
+    render partial: "tasks/current_release", locals: { release: rel }
+
+    # The cluster sits INSIDE the current-release card, with all four launchers.
+    assert_select "#current-release [data-test='heartbeat-launchers']", count: 1
+    assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
+    # Each launcher stacks a soul avatar OVER a copy clicker carrying the phrase in
+    # data-clip (server-rendered so the fallback + Nokogiri read it without Alpine).
+    heartbeat_launchers.each do |launcher|
+      assert_select "[data-test='heartbeat-launcher'][data-agent=?][data-phrase=?] button[data-clip=?]",
+                    launcher[:agent_slug], launcher[:phrase], launcher[:phrase]
+    end
+    # The avatar is the shared components/agent_avatar face (initials fallback text).
+    assert_select "[data-test='heartbeat-launcher'] button span span", minimum: 4
+    # The copy helper (with its execCommand fallback) is present on the page.
+    assert_includes rendered, "window.copyText"
+  end
+
+  test "[component] _current_release renders the heartbeat launchers on the empty-state card" do
+    render partial: "tasks/current_release", locals: { release: nil }
+
+    assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
+    assert_select "[data-test='heartbeat-launcher'][data-phrase='qa-deploy'] code", text: "qa-deploy"
+  end
 end

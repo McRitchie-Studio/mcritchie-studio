@@ -37,6 +37,22 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
+  test "[integration] deployments renders the four heartbeat launcher copiers in the current-release card" do
+    Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
+    Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
+    Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+
+    get deployments_path
+
+    assert_response :success
+    # The soul-avatar copiers live inside the current-release card, one per heartbeat.
+    assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='pr-review'] button[data-clip='pr-review']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='production-deploy']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='qa-deploy']"
+    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='Alex heartbeat']"
+  end
+
   test "[integration] deployments shows the conductor mascot + in-progress timing on the Next Release card" do
     Release.delete_all
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
