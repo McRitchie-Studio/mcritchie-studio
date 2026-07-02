@@ -56,15 +56,40 @@
   #alex-heartbeat table.hb-evt-tbl { min-width:980px; }
   #alex-heartbeat .hb-evttime { font-size:10px; margin-top:2px; color:var(--hb-faint); }
   #alex-heartbeat .hb-submascot { color:var(--hb-mascot); opacity:.85; }
-  /* Stacked Agent cell — real AVATAR IMAGES (the /deployments crew faces via
-     components/agent_avatar): the acting SOUL photo ON TOP, the base session mascot's
-     Pokémon sprite BENEATH it, centered in a tight vertical stack. A nil agent
-     collapses to just the base mascot. The soul wears a faint accent ring so it reads
-     as the actor; both faces are the compact "xxs" (24px) size. */
-  #alex-heartbeat .hb-agentstack { display:flex; flex-direction:column; align-items:center; gap:3px; }
-  #alex-heartbeat .hb-soul, #alex-heartbeat .hb-mascot { display:inline-flex; line-height:0; }
-  #alex-heartbeat .hb-soul > span { box-shadow:0 0 0 1.5px var(--hb-mascot); border-radius:9999px; }
-  #alex-heartbeat .hb-mascot > span { box-shadow:0 0 0 1px var(--hb-line); border-radius:9999px; }
+  /* Compact Agent cell — a tight vertical stack of "small avatar + NAME" rows (the
+     original 📋 Avi / ✦ Magikarp text layout, with the real avatar image in place of
+     the emoji). The acting SOUL rides ON TOP (bold, in its own tint via inline color)
+     over the base session mascot BENEATH it (the mascot's purple identity tint, dimmed
+     when a soul is present). A nil agent collapses to a SINGLE mascot row on one line.
+     Faces reuse components/agent_avatar at the compact "xxs" (24px) size; the name
+     rides inline beside each face so a glance reads WHO. */
+  /* Agent cell: an overlapping vertical AVATAR cluster (soul ON TOP of mascot) on the
+     left, a NAME column on the right — primary name over sub name, decoupled from the
+     avatars. */
+  #alex-heartbeat .hb-agentstack { display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-avatars { display:flex; flex-direction:column; align-items:center; }
+  #alex-heartbeat .hb-ava { position:relative; display:inline-flex; }
+  #alex-heartbeat .hb-avatars .hb-soulava { z-index:2; }
+  #alex-heartbeat .hb-avatars .hb-mascotava { z-index:1; }
+  /* Overlap ONLY when a soul sits on top — a solo mascot keeps normal alignment. */
+  #alex-heartbeat .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-14px; }
+  #alex-heartbeat .hb-soulava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
+  #alex-heartbeat .hb-mascotava > .rounded-full { box-shadow:0 0 0 1px var(--hb-line); border-radius:9999px; }
+  #alex-heartbeat .hb-names { display:flex; flex-direction:column; line-height:1.15; }
+  #alex-heartbeat .hb-nameprimary { font-weight:700; color:var(--hb-txt); font-size:12px; white-space:nowrap; }
+  #alex-heartbeat .hb-namesub { font-weight:400; color:var(--hb-muted); font-size:11px; white-space:nowrap; }
+  /* Center-justify the whole table — cells centered, flex cells centered too. */
+  #alex-heartbeat .hb-tbl th, #alex-heartbeat .hb-tbl td { text-align:left; vertical-align:middle; }
+  #alex-heartbeat .hb-avatars { align-items:center; }
+  #alex-heartbeat .hb-modeltok, #alex-heartbeat .hb-narr, #alex-heartbeat .hb-subnarr { align-items:flex-start; }
+  /* Agent cell stays LEFT-justified: cluster flush-left, name snug beside the avatar. */
+  #alex-heartbeat .hb-agentstack { justify-content:flex-start; }
+  #alex-heartbeat .hb-names { align-items:flex-start; }
+  /* Status / Actions / Task merged into one stacked cell to save horizontal space. */
+  #alex-heartbeat .hb-sat { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+  #alex-heartbeat .hb-satline { display:flex; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-clickrow { cursor:pointer; }
+  #alex-heartbeat .hb-taskcell { color:var(--hb-muted); font-size:10.5px; }
   #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
   /* Two-line narration — the reason on line 1, the "-> outcome" beneath it, so the
      span cell stays narrow instead of running reason and outcome across one wide row. */
@@ -75,9 +100,11 @@
   #alex-heartbeat .hb-modeltok .hb-mt-model { display:block; }
   #alex-heartbeat .hb-modeltok .hb-mt-tokens { display:block; margin-top:2px; color:var(--hb-faint); font-size:11px; }
   /* Inline span quick-grade — the good/not radios for both graders on the span row,
-     stacked compactly above the "grade" button + markers. Reuses the .hb-rb radio
-     chips; each grader row carries its A / M lane letter. */
-  #alex-heartbeat .hb-evtquick { display:flex; flex-direction:column; gap:3px; margin-bottom:5px; }
+     laid out HORIZONTALLY side by side (A ● Good ● Not   M ● Good ● Not) on ONE row so
+     the Grade cell reads short-and-wide instead of tall, sitting above the "grade ▸"
+     button + markers. Reuses the .hb-rb radio chips; each grader group carries its
+     A / M lane letter. */
+  #alex-heartbeat .hb-evtquick { display:flex; flex-direction:row; flex-wrap:nowrap; align-items:center; gap:14px; margin-bottom:5px; }
   #alex-heartbeat .hb-evtquick-form { display:inline-flex; align-items:center; gap:5px; margin:0; }
   #alex-heartbeat .hb-evtquick-role { font-size:9px; font-weight:700; color:var(--hb-faint); letter-spacing:.4px; width:9px; }
   /* A tokens/cost cell that INHERITS its turn's spend — a non-primary tool-call of

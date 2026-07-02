@@ -221,55 +221,67 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "   ", heartbeat_pretty_json("   ")
   end
 
-  # ---- the stacked AVATAR Agent cell (acting soul over the base session mascot) ----
-  # The cell now renders real avatar IMAGES (the shared components/agent_avatar
-  # primitive — the same faces the /deployments crew wears), the soul name/mascot name
-  # riding on each avatar's `title`. Unseeded here (no avatar column / sprite_url), so
-  # each face is the primitive's deterministic initials bubble; the assertions key off
-  # the data-test hooks, the title, and the avatar circle, not visible name text.
+  # ---- the compact Agent cell (acting soul over the base mascot) ----
+  # The cell is a flex row: an OVERLAPPING avatar column (.hb-avatars) with the acting
+  # SOUL face (.hb-soulava, ON TOP) over the base session mascot (.hb-mascotava, beneath),
+  # plus a NAME column (.hb-names) — the PRIMARY name (.hb-nameprimary: the soul, else the
+  # solo mascot) over the subordinate mascot name (.hb-namesub, only when a soul is present).
+  # Faces reuse the shared components/agent_avatar primitive; unseeded here (no sprite_url),
+  # so each face is its deterministic initials bubble. Assertions key off the data-test
+  # hooks, the visible names in the side column, and the avatar circle.
 
-  test "[unit] agent cell stacks the acting soul avatar ON TOP of the base mascot avatar" do
+  test "[unit] agent cell stacks the acting soul avatar ON TOP of the base mascot, names in a side column" do
     avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋", "color" => "#FB7185" })
     poke = Pokemon.new(slug: "shellder", name: "Shellder")
     html = heartbeat_agent_cell(mascot_slug: "shellder", pokemon: poke, agent_slug: "avi", agent: avi)
     frag = Nokogiri::HTML::DocumentFragment.parse(html)
 
-    # a stack wrapper holding the soul avatar then the base mascot avatar beneath it
+    # a stack wrapper holding an overlapping avatar column + a side name column
     assert frag.at_css(".hb-agentstack[data-test=agent-stack]"), "expected a stacked cell"
-    soul = frag.at_css(".hb-soul[data-test=agent-soul]")
+    assert_nil frag.at_css(".hb-agentstack.hb-solo"), "a cell WITH a soul is not solo"
+    # the acting soul avatar rides ON TOP (its own tint ring); the base mascot beneath, dimmed
+    soul = frag.at_css(".hb-ava.hb-soulava[data-test=agent-soul]")
     assert_equal "avi", soul["data-soul"]
-    assert_equal "Avi", soul["title"], "the soul name rides on the avatar's title"
     assert soul.at_css(".rounded-full"), "the soul renders the shared avatar primitive"
-    mascot = frag.at_css(".hb-mascot")
-    assert_equal "Shellder", mascot["title"], "the base mascot name rides on its avatar title"
+    assert_includes soul["style"].to_s, "#FB7185", "the soul avatar carries the soul's tint"
+    mascot = frag.at_css(".hb-ava.hb-mascotava")
     assert mascot.at_css(".rounded-full"), "the base mascot renders the shared avatar primitive"
-    # soul is emitted BEFORE the mascot in the DOM (on top of the vertical stack)
-    assert_operator html.index("agent-soul"), :<, html.index("hb-mascot")
+    assert_includes mascot["class"], "hb-submascot", "the mascot dims beneath a soul"
+    # the names live in the side column: PRIMARY = the soul, SUB = the base mascot
+    assert_equal "Avi", frag.at_css(".hb-names .hb-nameprimary").text, "the soul name is the primary, VISIBLE inline"
+    assert_equal "Shellder", frag.at_css(".hb-names .hb-namesub").text, "the base mascot name stacks beneath as the sub name"
+    # the soul avatar is emitted BEFORE the mascot avatar in the DOM (on top of the overlap)
+    assert_operator html.index("agent-soul"), :<, html.index("hb-mascotava")
   end
 
-  test "[unit] agent cell shows JUST the base mascot avatar when there is no acting soul" do
+  test "[unit] agent cell renders the base mascot as a SOLO stack (no soul, no sub name) when there is no acting soul" do
     html = heartbeat_agent_cell(mascot_slug: "sandshrew", pokemon: nil, agent_slug: nil)
     frag = Nokogiri::HTML::DocumentFragment.parse(html)
 
-    assert_nil frag.at_css(".hb-agentstack"), "a nil agent must NOT stack"
-    assert_nil frag.at_css(".hb-soul")
-    mascot = frag.at_css(".hb-mascot")
-    assert_equal "Sandshrew", mascot["title"]
-    assert mascot.at_css(".rounded-full"), "the lone mascot still renders its avatar"
+    stack = frag.at_css(".hb-agentstack[data-test=agent-stack]")
+    assert stack, "a solo mascot still renders the stack wrapper"
+    assert_includes stack["class"], "hb-solo", "a nil-soul cell is flagged solo"
+    assert_nil frag.at_css(".hb-soulava"), "no acting-soul avatar in a solo cell"
+    assert frag.at_css(".hb-ava.hb-mascotava .rounded-full"), "the lone mascot still renders its avatar"
+    assert_equal "Sandshrew", frag.at_css(".hb-names .hb-nameprimary").text, "the solo mascot name is the primary"
+    assert_nil frag.at_css(".hb-namesub"), "a solo cell has no subordinate name"
   end
 
   test "[unit] agent cell falls back to a titleized soul stand-in when the Agent is unseeded" do
     html = heartbeat_agent_cell(mascot_slug: "shellder", agent_slug: "carl", agent: nil)
     frag = Nokogiri::HTML::DocumentFragment.parse(html)
-    soul = frag.at_css(".hb-soul[data-soul=carl]")
-    assert_equal "Carl", soul["title"], "an unseeded soul still gets a titleized name on its avatar"
+    soul = frag.at_css(".hb-soulava[data-soul=carl]")
+    assert soul, "an unseeded soul still renders its avatar"
     assert soul.at_css(".rounded-full")
+    assert_equal "Carl", frag.at_css(".hb-names .hb-nameprimary").text, "an unseeded soul still shows a titleized primary name"
   end
 
   test "[unit] agent cell renders an em dash when neither soul nor mascot is present" do
     html = heartbeat_agent_cell(mascot_slug: nil, agent_slug: nil)
     assert_includes html, "—"
-    assert_nil Nokogiri::HTML::DocumentFragment.parse(html).at_css(".hb-mascot")
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+    assert_nil frag.at_css(".hb-agentstack"), "neither present renders no stack, just the meta dash"
+    assert_nil frag.at_css(".hb-mascotava")
   end
 
   # Persisted so each action carries a real id — heartbeat_shared_turn_ids keys the
