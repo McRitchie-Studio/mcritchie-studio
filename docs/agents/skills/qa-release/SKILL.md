@@ -1,6 +1,6 @@
 ---
 name: qa-release
-description: "Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, or Merge, Assemble, Deploy — DevOps launchers for review intake, release assembly, QA deploy, and optionally production ship. Avi Heartbeat is review-only and stops at reviewed after newest-first PR reviews; slow serializes one PR at a time, fast runs bounded reviewer waves. Build and Deploy QA Release stops at the production ship gate; Merge, Assemble, Deploy explicitly authorizes autonomous production ship after gates pass. Invoke when the operator uses one of these phrases, clicks a release kickoff chip, or asks to prepare/deploy the release. Thin launcher — the full, model-agnostic SOP lives in devops-cycle-design.md §1.4."
+description: "Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge, Assemble, Deploy, or Deploy with Task <task> — the composable DevOps launchers for review intake, release assembly, QA deploy, and optionally production ship. They are compositions of atoms: review-one (one-PR review + merge), pr-review / pr-review-slow (that fanned across all submitted PRs, waves <=5 / serialized), qa-deploy (bin/release prepare), production-deploy (bin/release ship). Avi Heartbeat is review-only and stops at reviewed; Build and Deploy QA Release stops at the production ship gate; Merge, Assemble, Deploy authorizes autonomous production ship after gates pass; Deploy with Task expedites ONE task to prod, guarded on a clean release (release == main). Invoke when the operator uses one of these phrases, clicks a release kickoff chip, or asks to prepare/deploy the release. Thin launcher — the full, model-agnostic SOP lives in devops-cycle-design.md §1.4."
 ---
 
 # Release Conductor Launcher
@@ -18,20 +18,41 @@ else:
 Read that section and work it top to bottom. It is the source of truth — if this
 launcher and the SOP ever disagree, the SOP wins.
 
+**The launchers are compositions of atoms.** Learn the atoms once; every launcher
+is a sequence of them (full detail in §1.4):
+
+- **`review-one <task>`** — the PRIMITIVE: the [PR Review SOP](../../modules/pr-review-sop.md)
+  on ONE PR (Avi picks the pair → PRIMARY + LIGHT review → all-clear = PRIMARY
+  drives `reviewed` **and** runs `bin/release merge` → `assembled`; else block).
+- **`pr-review`** — `review-one` fanned across ALL `submitted` PRs, **waves of ≤5**
+  (review **+ merge**). **`pr-review-slow`** — the same, serialized.
+- **`qa-deploy`** — `bin/release prepare --yes` (assemble + deploy `origin/release`
+  to QA). **`production-deploy`** — `bin/release ship` (ff `release → main`, deploy
+  prod; ship-authority gated).
+
 > ⚠️ **Branch at the production decision.**
 > - `Avi Heartbeat Slow`: run `bin/avi-heartbeat --run` from
->   `/Users/alex/projects/mcritchie-studio`; it serializes submitted PR review,
->   moves approved tasks to `reviewed`, prints a retrospective after its cap, and
->   does not merge, deploy, ship, publish gems, or archive.
+>   `/Users/alex/projects/mcritchie-studio` — the review-only loop (`pr-review-slow`
+>   WITHOUT the merge/deploy tail): it serializes submitted PR review, moves
+>   approved tasks to `reviewed`, prints a retrospective after its cap, and does
+>   not merge, deploy, ship, publish gems, or archive.
 > - `Avi Heartbeat Fast`: run `bin/avi-heartbeat --run --fast` from
->   `/Users/alex/projects/mcritchie-studio`; it reviews stacked queues in bounded
->   PRIMARY + LIGHT reviewer waves under the five-agent cap, then applies the
->   same reviewed/block/defer resolution rules and does not merge, deploy, ship,
->   publish gems, or archive.
-> - `Build and Deploy QA Release`: review submitted PRs, assemble the release,
->   deploy QA, then hand the operator `bin/release ship --by conductor`.
-> - `Merge, Assemble, Deploy`: run the same review/assembly/QA path, then run
->   `bin/conductor ship --run` from a primary checkout after the gates pass.
+>   `/Users/alex/projects/mcritchie-studio` — the review-only loop for stacked
+>   queues (bounded PRIMARY + LIGHT waves under the five-agent cap); same
+>   reviewed/block/defer rules, and does not merge, deploy, ship, publish gems,
+>   or archive.
+> - `Build and Deploy QA Release` = **`pr-review` → `qa-deploy`**: review submitted
+>   PRs, assemble the release, deploy QA, then hand the operator `bin/release ship
+>   --by conductor` (**stops before `production-deploy`**).
+> - `Merge, Assemble, Deploy` = **`pr-review` → `qa-deploy` → `production-deploy`**:
+>   the same review/assembly/QA path, then `bin/conductor ship --run` from a
+>   primary checkout after the gates pass. Slow variant swaps in `pr-review-slow`.
+> - `Deploy with Task <task>` = **GUARD `release == main` → `review-one <task>` →
+>   `qa-deploy` → `production-deploy`**: expedite ONE task to prod. Run
+>   **`bin/release status --clean-only` FIRST**; on a **dirty** release (other
+>   assembled work pending) it exits non-zero — **REFUSE and offer `Merge,
+>   Assemble, Deploy`** (ship the whole release) instead. Never expedite one task
+>   past pending work.
 
 Load-bearing reminders (full detail in §1.4):
 - Run every command from `/Users/alex/projects/mcritchie-studio`; the board is

@@ -1,4 +1,4 @@
-# PR Review SOP (modular)
+# PR Review SOP (modular) — the `review-one` primitive
 
 This is the **reusable, self-contained PR-review procedure** — the review half of
 the Deploy workflow (`submitted → reviewed`), factored out so any conductor or QA
@@ -8,6 +8,16 @@ session can invoke it the same way "all over the place." The release SOP
 [`Avi Heartbeat`](parallel-agent-devops.md) loops all include this module **by
 reference** rather than restating it — edit the review contract here and it flows
 everywhere.
+
+> **This module IS the `review-one <task>` atom** — the indivisible PRIMITIVE the
+> composable deploy launchers are built from (§1.4). One run = **one PR / one
+> task**: Avi picks the pair → PRIMARY (+ LIGHT) review → on all-clear the PRIMARY
+> drives `reviewed` **and runs `bin/release merge`** (→ `assembled`), or **any**
+> reviewer blocks. The plural atoms just LOOP this body over the `submitted`
+> queue: **`pr-review`** runs it fanned across all submitted PRs in **waves of
+> ≤5**; **`pr-review-slow`** runs it serialized, one PR at a time. So the sections
+> below are the body of `review-one`; the loop that turns it into `pr-review` is
+> the concurrency wrapper in §1.4 — nothing here changes between the two.
 
 It follows the established **2-senior review** model, but **formalizes the agent
 roles**: Avi assigns a **primary** and one or more **light** reviewers, each
@@ -19,11 +29,13 @@ is the operational how-to for that stage.
 ## When to invoke
 
 Run this whenever a `submitted` task's PR needs review before it can advance —
-inside a `Build and Deploy QA Release` / `Merge, Assemble, Deploy` conductor run,
-an `Avi Heartbeat Slow` / `Avi Heartbeat Fast` loop, or a one-off review a
-conductor kicks off by hand. The unit of work is **one PR / one task**; a queue is
-just this cascade run per task, in **waves of ≤5 concurrent agents** (the board
-DB's connection budget — see "Concurrency cap" in the operating model).
+as the `review-one` atom inside a `Merge, Assemble, Deploy` / `Build and Deploy
+QA Release` / `Deploy with Task <task>` composition, as the body of a `pr-review`
+/ `pr-review-slow` sweep, inside an `Avi Heartbeat Slow` / `Avi Heartbeat Fast`
+loop, or a one-off review a conductor kicks off by hand. The unit of work is
+**one PR / one task**; a queue is just this cascade run per task (`pr-review`), in
+**waves of ≤5 concurrent agents** (the board DB's connection budget — see
+"Concurrency cap" in the operating model).
 
 You are the **CONDUCTOR** here, not a feature agent — you orchestrate review on
 work that is **already built**. Do not create a task, take a worktree, or write
@@ -139,6 +151,9 @@ The **PRIMARY reviewer's verdict decides**; the light reviewers add perspective.
   routes to a human Avi/Steffon session instead of approving the merge.
 
 ## At a glance
+
+One `review-one <task>` run, start to finish (the loop that fans this across the
+`submitted` queue = `pr-review`, §1.4):
 
 | # | Actor | Agent (`subagent_type`) | Does | Records |
 |---|---|---|---|---|

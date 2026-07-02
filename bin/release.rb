@@ -106,6 +106,11 @@ require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
+# CleanCheck is the pure verdict behind the `Deploy with Task` clean-release GUARD
+# (`bin/release status --clean-only`): given the pending assembled tasks (board)
+# and the per-repo release-ahead-of-main counts (git), it decides clean vs dirty
+# and builds the refusal + `Merge, Assemble, Deploy` offer. Rails-free → unit-tested.
+require_relative "../app/models/release/clean_check"
 # SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
 # source the notes/board read on prod.
@@ -1111,6 +1116,73 @@ end
 # bin/release does only git/gh/gem/bundle I/O here; the string/version/ordering
 # DECISIONS live in the unit-tested Release::ShipSequence (+ GemfileRepin).
 
+# --- the clean-release GUARD (`Deploy with Task` runs this FIRST) -----------
+# `bin/release status` reports whether `release == main` — i.e. whether the only
+# thing a `release → main` fast-forward would ship is ONE freshly-merged task, or
+# whether OTHER assembled-but-unshipped work is already riding `release`. The
+# `Deploy with Task <task>` composition runs `bin/release status --clean-only`
+# BEFORE it merges the expedited task; `--clean-only` turns the report into a
+# GATE — it exits nonzero (aborting the expedite) on a dirty release, after
+# printing the refusal + the `Merge, Assemble, Deploy` offer. The pure verdict +
+# message live in Release::CleanCheck; this owns only the two live reads.
+def status
+  clean_only = Release::Cli.take_flag(ARGV, "--clean-only")
+
+  say("Release status#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
+
+  # 1. Board signal (read-only, runs even in --dry-run): the tasks already
+  #    `assembled` (merged into `release`) but not yet `shipped`, plus the current
+  #    release for context. A read mutates nothing, so it's safe under --dry-run.
+  step("read (read-only): assembled tasks pending ship + Release.current")
+  board = conductor(
+    "pending = Task.by_stage('assembled').order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
+    "r = Release.current; " \
+    "puts({ pending: pending, release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
+    read_only: true
+  )
+  pending = board["pending"] || []
+  rel = board["release"]
+  say("  current release: #{rel ? "#{rel['slug']} (#{rel['state']})" : 'none active'}") if rel || !DRY
+
+  # 2. Git signal: per release repo, how far origin/release is AHEAD of
+  #    origin/main. Skipped under --dry-run (fetches touch the network); the
+  #    board signal alone drives the previewed verdict then.
+  repo_states = release_ahead_states
+
+  verdict = Release::CleanCheck.evaluate(pending_tasks: pending, repo_states: repo_states)
+  say("")
+  say(verdict["message"])
+
+  # --clean-only is the GATE: a dirty release aborts the expedite (non-zero exit)
+  # so `Deploy with Task` refuses instead of dragging the pending work to prod.
+  # A --dry-run previews the verdict without aborting (nothing is executed).
+  if clean_only && !verdict["clean"] && !DRY
+    abort!("release is not clean — `Deploy with Task` refused (ship the whole release with `Merge, Assemble, Deploy`)")
+  end
+end
+
+# The git signal for the clean check: per release repo, the number of commits
+# origin/release is AHEAD of origin/main (0 ⇒ that repo's release == main). This
+# is the I/O seam (fetch + rev-list) `status` calls, split out so the tests stub
+# it the way they stub `conductor`. Returns [] under --dry-run (a preview runs no
+# git — the board read alone drives the previewed verdict) and skips any repo not
+# cloned as a sibling.
+def release_ahead_states
+  return [] if DRY
+
+  release_repo_slugs.filter_map do |repo|
+    path = repo_path(repo)
+    next unless Dir.exist?(path)
+
+    sh("git", "-C", path, "fetch", "origin", "--quiet")
+    out, ok = sh("git", "-C", path, "rev-list", "--count", "origin/main..origin/#{RELEASE_BRANCH}", capture: true)
+    next unless ok
+
+    { "repo" => repo, "ahead" => out.strip.to_i }
+  end
+end
+
 SHORT = 7
 def short(sha) = sha.to_s.empty? ? "(frozen)" : sha.to_s[0, SHORT]
 
@@ -2008,11 +2080,12 @@ if __FILE__ == $PROGRAM_NAME
   when "merge"   then merge
   when "prepare" then prepare
   when "ship"    then ship
+  when "status"  then status
   when "archive" then archive
   when "retro"   then retro
   else
-    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|ship|archive|retro} " \
-         "[--task SLUG ...] [--slug REL] [--by NAME] " \
+    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|ship|status|archive|retro} " \
+         "[--task SLUG ...] [--slug REL] [--by NAME] [--clean-only] " \
          "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
     exit 1
   end
