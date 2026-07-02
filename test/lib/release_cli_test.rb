@@ -356,6 +356,68 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "bin/qa-server deploy mcritchie-studio origin/release"
   end
 
+  # --- status / the clean-release GUARD (`Deploy with Task`'s first step) ---
+  # `status` gathers two signals — the board's assembled-but-unshipped tasks (via
+  # `conductor`) and per-repo release-ahead-of-main (via `release_ahead_states`) —
+  # then Release::CleanCheck decides clean vs dirty. Both reads are stubbed here so
+  # the guard is exercised with no Rails/DB/git. `--clean-only` turns a dirty
+  # verdict into a non-zero abort (rescued in-band so run_ruby sees a clean exit).
+
+  # Stub the board read + git seam. `pending` = assembled-task hashes, `ahead` =
+  # per-repo release-ahead counts.
+  def status_stub(pending:, ahead:)
+    <<~RUBY
+      def conductor(ruby, read_only: false)
+        { "pending" => #{pending.inspect}, "release" => { "slug" => "rel-cli", "state" => "assembling" } }
+      end
+      def release_ahead_states
+        #{ahead.inspect}
+      end
+    RUBY
+  end
+
+  def test_status_clean_release_reports_release_equals_main
+    out = run_cli(["status", "--clean-only"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }]),
+                  call: "status")
+
+    assert_includes out, "release == main", "a clean release reports release == main"
+    assert_includes out, "safe to expedite one task"
+    refute_includes out, "refused", "a clean release is not refused"
+  end
+
+  def test_status_clean_only_refuses_a_dirty_release_and_offers_the_composition
+    out = run_cli(["status", "--clean-only"],
+                  setup: status_stub(pending: [{ "slug" => "other-work", "title" => "Other feature" }], ahead: []),
+                  call: "begin; status; puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message.to_s); end")
+
+    assert_includes out, "refused", "a dirty release is refused"
+    assert_includes out, "other-work", "the refusal lists the pending assembled task"
+    assert_includes out, "Merge, Assemble, Deploy", "it offers shipping the whole release instead"
+    assert_includes out, "ABORTED", "--clean-only gates: a dirty release aborts the expedite (non-zero exit)"
+    refute_includes out, "NO-ABORT", "the expedite must not fall through past the guard"
+  end
+
+  def test_status_clean_only_refuses_when_release_is_ahead_of_main
+    out = run_cli(["status", "--clean-only"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 2 }]),
+                  call: "begin; status; puts('NO-ABORT'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "ahead of main", "the git signal alone (a stray release commit) makes it dirty"
+    assert_includes out, "mcritchie-studio (+2)"
+    assert_includes out, "ABORTED"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_status_without_clean_only_reports_but_never_aborts
+    out = run_cli(["status"],
+                  setup: status_stub(pending: [{ "slug" => "other-work", "title" => "Other feature" }], ahead: []),
+                  call: "status; puts('DONE-NO-ABORT')")
+
+    assert_includes out, "other-work", "plain status still reports the dirty state"
+    assert_includes out, "DONE-NO-ABORT", "plain status is informational — it reports but never aborts"
+  end
+
   # --- ship --dry-run: multi-repo, producer-first, hub-before-satellites ---
 
   # A mixed release: a gem (producer) + two apps with DIFFERENT prod adapters,

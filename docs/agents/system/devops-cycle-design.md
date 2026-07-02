@@ -400,9 +400,10 @@ per DevOps stage (source of truth: `ApplicationHelper#devops_kickoffs`). Pasted
 into an agent session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
-each command to a deterministic runbook. The same `devops_kickoffs` source also
+each command to a deterministic runbook. The same `devops_kickoffs` source
 carries four non-stage meta-triggers rendered as prominent chips in the
-current-release section (`#current-release`):
+current-release section (`#current-release`) — plus a fifth launcher phrase,
+`Deploy with Task <task>`, that is a typed prompt (not yet a board chip):
 
 - **`Avi Heartbeat Slow`** — the long-running review-only loop for a steady
   trickle. It serializes submitted PR review newest-first, re-fetches after
@@ -416,6 +417,41 @@ current-release section (`#current-release`):
 - **`Merge, Assemble, Deploy`** — the autonomous production run. It shares the
   same review/assembly/QA phases, then runs production ship after the same gates
   pass.
+- **`Deploy with Task <task>`** — expedite ONE task to prod. Guarded on a clean
+  release (`release == main`); on a dirty release it refuses and points at
+  `Merge, Assemble, Deploy` (details below).
+
+#### The composable launcher set — atoms + compositions
+
+The launchers above are not four monoliths — they are **compositions of a small
+set of atoms**, so the same building blocks recombine instead of each flow
+carrying its own copy of the runbook. Learn the atoms once; every launcher is a
+sequence of them.
+
+**Atoms** (the indivisible steps — each maps onto an existing `bin/release` verb
+or the `review-one` SOP; none is a new command to build):
+
+| Atom | Is | Command / SOP |
+|---|---|---|
+| **`review-one <task>`** | the PRIMITIVE — the Modular PR-Review SOP on ONE PR (Avi `reviewer-select` → PRIMARY + LIGHT in parallel → all-clear = PRIMARY drives `reviewed` **and** runs `bin/release merge` → `assembled`; else block) | [`pr-review-sop.md`](../modules/pr-review-sop.md) |
+| **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review **+ merge**) | the loop in step 2 below |
+| **`pr-review-slow`** | the same, **serialized** — one PR at a time | the loop, `--max-agents 1` |
+| **`qa-deploy`** | assemble `origin/release` + deploy it to QA (members → `assembled`) | `bin/release prepare --yes` |
+| **`production-deploy`** | ff each repo `release → main`, deploy prod, smoke, release notes (members → `shipped`) — **ship-authority gated** | `bin/release ship` |
+
+**Compositions** (the operator-facing launcher phrases = a sequence of atoms):
+
+| Composition | Expands to |
+|---|---|
+| **`Merge, Assemble, Deploy`** | `pr-review` → `qa-deploy` → `production-deploy` |
+| &nbsp;&nbsp;↳ *slow variant* | `pr-review-slow` → `qa-deploy` → `production-deploy` |
+| **`Build and Deploy QA Release`** | `pr-review` → `qa-deploy` **(stops before `production-deploy`** — hands the operator the ship gate) |
+| **`Deploy with Task <task>`** | **GUARD `release == main`** → `review-one <task>` (→ merge) → `qa-deploy` → `production-deploy` |
+| **`Avi Heartbeat Slow` / `Fast`** | the review-only loops — `pr-review-slow` / `pr-review` **without** the merge/deploy tail; they stop at `reviewed` (see below) |
+
+The only NEW code this set required is the clean-release **GUARD** that
+`Deploy with Task` runs first (`bin/release status --clean-only`, backed by the
+unit-tested `Release::CleanCheck`); everything else is the atoms recombined.
 
 **`Avi Heartbeat Slow` / `Avi Heartbeat Fast`**  *(long-running review-only loops — stop at reviewed)*
 
@@ -470,8 +506,9 @@ smoke, production `post_deploy_cmd`, or partial-ship recovery.
 
 > ⚠️ **THIS SOP IS PRODUCTION AUTHORITY.** Do not infer it from "prepare QA",
 > "review release", or `Build and Deploy QA Release`. The exact phrase
-> **`Merge, Assemble, Deploy`** (or another explicit production rollout prompt in
-> the session) is what grants the agent authority to cross the ship gate.
+> **`Merge, Assemble, Deploy`** — or **`Deploy with Task <task>`** (the single-task
+> expedite), or another explicit production rollout prompt in the session — is
+> what grants the agent authority to cross the ship gate.
 
 > **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
 > opens a fresh session with just `Build and Deploy QA Release` or
@@ -491,9 +528,13 @@ smoke, production `post_deploy_cmd`, or partial-ship recovery.
 > - **`prepare`** aborts without confirmation in a non-interactive shell. Always
 >   run `bin/release prepare --yes` for the approved QA deploy step.
 > - **`ship`** *aborts loudly* without confirmation — that is intentional. Do not
->   pass `--yes` unless the session trigger is **`Merge, Assemble, Deploy`**, Mr.
->   McRitchie explicitly gives the production ship go in this session, or an
->   already-approved rollout prompt grants ship authority.
+>   pass `--yes` unless the session trigger is **`Merge, Assemble, Deploy`** or
+>   **`Deploy with Task <task>`**, Mr. McRitchie explicitly gives the production
+>   ship go in this session, or an already-approved rollout prompt grants ship
+>   authority.
+> - **`status`** is a read-only report (no confirm); `--clean-only` makes it a
+>   GATE that exits non-zero on a dirty release. It never deploys, so it needs no
+>   ship authority.
 > - **`archive`** can use `--yes` after the shipped release is verified and the
 >   operator has approved cleanup.
 > - **`merge`** does not prompt today; `--yes` is harmless future-proofing.
@@ -562,7 +603,42 @@ one blocking event happened** — omit the section on a clean run.
 7. **Close the loop (optional).** `bin/release archive --yes` (shipped → archived +
    reclaim worktrees) and `bin/release retro --yes` (durable learnings doc).
 
-The per-stage commands below are the building blocks both meta-triggers
+**`Deploy with Task <task>`**  *(expedite ONE task to prod — guarded on a clean release)*
+
+> ⚠️ **THIS SOP IS PRODUCTION AUTHORITY** (like `Merge, Assemble, Deploy`). It
+> takes a **single** freshly-submitted task all the way to prod, skipping the
+> full-queue drain — for when one fix must ship now and nothing else is waiting.
+
+The difference from the full run is the **clean-release GUARD** and the scope of
+one task. Fast-forwarding `release → main` ships **everything** on `release`, so
+expediting one task is only safe when `release == main` — otherwise the ff drags
+along whatever is already `assembled` but unshipped. Run it as:
+
+1. **GUARD — is the release clean?** From the primary checkout, run
+   **`bin/release status --clean-only`**. It reads two signals — the tasks already
+   `assembled` (board) and each repo's `origin/release`-ahead-of-`origin/main`
+   count (git) — and the pure `Release::CleanCheck` returns clean vs dirty.
+   - **Clean** (`release == main`, exit 0) → continue.
+   - **Dirty** (exit non-zero) → **STOP**. The guard prints the pending
+     assembled work and **refuses**, offering the correct move instead: *"Ship the
+     WHOLE release with `Merge, Assemble, Deploy`."* Do **not** try to expedite one
+     task past pending work — run `Merge, Assemble, Deploy` (which ships all of it
+     properly) or wait until the release is shipped and clean. Never force past.
+2. **`review-one <task>`.** Run the single-PR cascade
+   ([`pr-review-sop.md`](../modules/pr-review-sop.md)) for that one task — Avi
+   picks the pair, PRIMARY + LIGHT review; on all-clear the PRIMARY drives
+   `reviewed` **and runs `bin/release merge <task>`** (→ `assembled`). A block ends
+   the expedite (fix, resubmit, re-run).
+3. **`qa-deploy`.** `bin/release prepare --yes` — assemble + deploy that member to
+   QA; confirm `/up` 200.
+4. **`production-deploy`.** From a primary checkout, `bin/release ship --by
+   conductor --yes` — the same gated ship sequence as step 6 above (frozen-SHA
+   `avi_ship_gate` → ff `release → main` → deploy + smoke → members `shipped`).
+
+Because the guard proved `release == main` before step 2, the only new commit the
+ff carries to `main` is the one expedited task — nothing else rides along.
+
+The per-stage commands below are the building blocks the compositions above
 sequence:
 
 **One-time setup (per machine/clone).** Run **`bin/release init`** once: it
