@@ -329,7 +329,7 @@ function kanbanBoard(live) {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment summary grid: Current Release spans the left column; Last Release and Last Three Deployments stack on the right. -->
+    <!-- Deployment summary grid: Current Release spans the left column; Last Release and the DevOps card (release durations + heartbeat launchers) stack on the right. -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-stretch" data-test="release-dashboard-grid">
       <%= render "current_release", release: current_release, card_class: "lg:row-span-2 h-full" %>
       <%= render "last_release", release: last_release, card_class: "h-full" %>

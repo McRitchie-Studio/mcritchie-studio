@@ -507,58 +507,86 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes plain, "<span"
   end
 
-  test "[unit] heartbeat_launchers maps the four souls to two-row heartbeat + launcher prompts" do
+  test "[unit] heartbeat_launchers maps the three souls to prompt + atom-act launchers" do
     launchers = heartbeat_launchers
 
-    assert_equal 4, launchers.size
-    assert_equal %w[avi avi steffon alex], launchers.map { |l| l[:agent_slug] }
-    # Row 1 is the distinct soul+role heartbeat phrase (Avi's two lanes split apart);
-    # row 2 is the launcher atom that scopes it.
-    assert_equal ["avi pr", "avi deploy", "steffon", "alex"],
+    assert_equal 3, launchers.size
+    assert_equal %w[avi steffon alex], launchers.map { |l| l[:agent_slug] }
+    # Row 1 is the prompt-like soul heartbeat phrase (Avi's two lanes now share one
+    # column); acts are the launcher atoms that scope it.
+    assert_equal ["Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
-    assert_equal ["pr-review", "production-deploy", "qa-deploy", "grade events"],
-                 launchers.map { |l| l[:phrase] }
+    assert_equal ["pr-review", "production-deploy"], launchers[0][:acts]
+    assert_equal ["qa-deploy", "archive-completed"], launchers[1][:acts]
+    assert_equal ["grade-events"], launchers[2][:acts]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
   end
 
-  test "[component] _current_release renders the four two-row heartbeat launchers in a 25% grid" do
+  test "[component] _release_duration_card renders the three heartbeat launchers in a 33% grid" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
-    rel = Release.open!
 
-    render partial: "tasks/current_release", locals: { release: rel }
+    render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
-    # The cluster sits INSIDE the current-release card, with all four launchers.
-    assert_select "#current-release [data-test='heartbeat-launchers']", count: 1
-    assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
-    # Even 4-up 25% columns (grid-cols-4), not a left-bunched flex row.
-    assert_select "[data-test='heartbeat-launchers'] div.grid.grid-cols-4 [data-test='heartbeat-launcher']", count: 4
-    # Each launcher stacks a soul avatar OVER a TWO-ROW command: row 1 = the soul
-    # heartbeat, row 2 = the launcher phrase. Each row is its own copy button with
-    # its phrase server-rendered into data-clip (fallback + Nokogiri read it).
+    # The cluster now lives INSIDE the DevOps (release-duration) card, all three launchers.
+    assert_select "#release-duration-card [data-test='heartbeat-launchers']", count: 1
+    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 3
+    # Even 3-up 33% columns (grid-cols-3), not a left-bunched flex row.
+    assert_select "[data-test='heartbeat-launchers'] div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    # Each launcher stacks a soul avatar (LINKING to /agents/<slug>) OVER a prompt-
+    # like row 1 + its atom act(s). Each row is its own copy button with its phrase
+    # server-rendered into data-clip (fallback + Nokogiri read it).
     heartbeat_launchers.each do |launcher|
-      scope = "[data-test='heartbeat-launcher'][data-agent='#{launcher[:agent_slug]}'][data-phrase='#{launcher[:phrase]}']"
+      scope = "[data-test='heartbeat-launcher'][data-agent='#{launcher[:agent_slug]}']"
+      # The avatar links to the soul's /agents/<slug> page.
+      assert_select "#{scope} a[data-test='heartbeat-avatar-link'][href=?]", "/agents/#{launcher[:agent_slug]}"
+      # Row 1 — the prompt-like soul heartbeat phrase.
       assert_select "#{scope} button[data-row='heartbeat'][data-clip=?]", launcher[:heartbeat] do
         assert_select "code", text: launcher[:heartbeat]
       end
-      assert_select "#{scope} button[data-row='phrase'][data-clip=?]", launcher[:phrase] do
-        assert_select "code", text: launcher[:phrase]
+      # One copyable act row per launcher atom.
+      launcher[:acts].each do |act|
+        assert_select "#{scope} button[data-row='act'][data-clip=?]", act do
+          assert_select "code", text: act
+        end
       end
-      # Exactly two independently-copyable rows per launcher.
-      assert_select "#{scope} button[data-clip]", count: 2
+      # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher.
+      assert_select "#{scope} button[data-clip]", count: 1 + launcher[:acts].size
     end
-    # The avatar is the shared components/agent_avatar face (initials fallback text).
-    assert_select "[data-test='heartbeat-launcher'] span span", minimum: 4
+    # The avatar is the shared components/agent_avatar face (initials fallback text),
+    # now nested inside its /agents link.
+    assert_select "[data-test='heartbeat-launcher'] a span span", minimum: 3
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
   end
 
-  test "[component] _current_release renders the two-row heartbeat launchers on the empty-state card" do
-    render partial: "tasks/current_release", locals: { release: nil }
+  test "[component] the DevOps card renders the heartbeat launchers even with no cached durations" do
+    render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
-    assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
-    assert_select "[data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-row='heartbeat'] code", text: "steffon"
-    assert_select "[data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-row='phrase'] code", text: "qa-deploy"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 3
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='heartbeat'] code", text: "Steffon Heartbeat"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'] code", text: "qa-deploy"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'] code", text: "archive-completed"
+  end
+
+  test "[component] the DevOps card lays the four stage tiles in a single row (grid-cols-4 on sm+)" do
+    render partial: "tasks/release_duration_card", locals: { dashboard: {} }
+
+    # All four per-stage tiles (Building/Reviewing/Assembling/Shipping) line up in one
+    # row on sm+ (grid-cols-4), wrapping to 2×2 on mobile (grid-cols-2 base).
+    assert_select "[data-test='release-duration-stage-grid'].grid.grid-cols-2.sm\\:grid-cols-4"
+    assert_select "[data-test='release-duration-stage-grid'] [data-test='release-duration-stage']", count: 4
+    # The wider Deployment summary tile stays its own full-width row below.
+    assert_select "#release-duration-card [data-test='release-duration-deployment']", count: 1
+  end
+
+  test "[component] _current_release no longer carries the heartbeat cluster (moved to the DevOps card)" do
+    rel = Release.open!
+    render partial: "tasks/current_release", locals: { release: rel }
+    assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
+
+    render partial: "tasks/current_release", locals: { release: nil }
+    assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
   end
 end

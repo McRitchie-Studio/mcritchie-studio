@@ -37,7 +37,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
-  test "[integration] deployments renders the four two-row heartbeat launchers in the current-release card" do
+  test "[integration] deployments renders the three heartbeat launchers in the DevOps card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
@@ -45,18 +45,27 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    # The soul-avatar copiers live inside the current-release card, four across.
-    assert_select "#current-release [data-test='heartbeat-launcher']", count: 4
-    # Even 4-up 25% columns (grid-cols-4), not left-bunched.
-    assert_select "#current-release div.grid.grid-cols-4 [data-test='heartbeat-launcher']", count: 4
-    # Each launcher exposes TWO independently-copyable rows: the distinct soul+role
-    # heartbeat phrase (row 1) and the launcher atom (row 2), each its own data-clip.
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='pr-review'] button[data-row='heartbeat'][data-clip='avi pr']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='pr-review'] button[data-row='phrase'][data-clip='pr-review']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='production-deploy'] button[data-row='heartbeat'][data-clip='avi deploy']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='production-deploy'] button[data-clip='production-deploy']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='qa-deploy'] button[data-clip='steffon']"
-    assert_select "#current-release [data-test='heartbeat-launcher'][data-phrase='grade events'] button[data-clip='alex']"
+    # The cluster moved OUT of the current-release card and INTO the DevOps card.
+    assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
+    # The soul-avatar copiers live inside the DevOps (release-duration) card, three across.
+    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 3
+    # Even 3-up 33% columns (grid-cols-3), not left-bunched.
+    assert_select "#release-duration-card div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    # Each avatar links to the soul's /agents/<slug> page.
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
+    # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom act
+    # rows — each an independently-copyable data-clip target. Avi consolidates both
+    # release lanes; Steffon owns qa-deploy + archive-completed; Alex owns grade-events.
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='heartbeat'][data-clip='Avi Heartbeat']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='act'][data-clip='pr-review']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='act'][data-clip='production-deploy']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='heartbeat'][data-clip='Steffon Heartbeat']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'][data-clip='qa-deploy']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'][data-clip='archive-completed']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='heartbeat'][data-clip='Alex Heartbeat']"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='act'][data-clip='grade-events']"
   end
 
   test "[integration] deployments shows the conductor mascot + in-progress timing on the Next Release card" do
@@ -332,7 +341,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#release-duration-card"
     assert_select "#release-duration-card a[href=?]", all_deployments_path, text: /All Deployments/
     assert_select "#release-duration-card", text: /Building/
-    assert_select "#release-duration-card h3", text: /Last Three Deployments/
+    assert_select "#release-duration-card h3", text: /DevOps/
     assert_select "#release-duration-card", text: /Release Times/, count: 0
     assert_select "#release-duration-card", text: /shipped releases/, count: 0
     # The redundant "Sample: N shipped releases" footer was removed (it echoed the

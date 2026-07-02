@@ -453,30 +453,38 @@ The only NEW code this set required is the clean-release **GUARD** that
 `Deploy with Task` runs first (`bin/release status --clean-only`, backed by the
 unit-tested `Release::CleanCheck`); everything else is the atoms recombined.
 
-#### The four single-soul heartbeat launchers — the current-release card chips
+#### The three soul heartbeat launchers — the DevOps-card chips
 
-The current-release card (`#current-release`) also renders four **single-soul
-heartbeat launchers** (`ApplicationHelper#heartbeat_launchers`,
-`tasks/_heartbeat_launchers`) — a soul face over **two independently-copyable
-rows**: the **soul+role heartbeat phrase** (row 1) and the **launcher atom**
-(row 2). **Either row**, pasted into a fresh session, is a **recognized
-launcher**. Three wrap a single release atom; the fourth (`alex` / `grade
-events`) is the learning loop, outside the release pipeline. Full SOP:
-[`heartbeats.md`](../modules/heartbeats.md).
+The **DevOps card** (`#release-duration-card` on `/deployments`, below its
+release-duration metrics) renders three **soul heartbeat launchers**
+(`ApplicationHelper#heartbeat_launchers`, `tasks/_heartbeat_launchers`)
+— a soul face (**linking to `/agents/<slug>`**) over a **prompt-like row 1**
+(`Avi Heartbeat` / `Steffon Heartbeat` / `Alex Heartbeat`) plus one or more
+**copyable atom acts**. **Any row**, pasted into a fresh session, is a **recognized
+launcher**. Avi's two release lanes now share ONE column. Each act wraps a single
+release atom, except `alex` / `grade-events`, the learning loop outside the release
+pipeline. Full SOP: [`heartbeats.md`](../modules/heartbeats.md).
 
-| Launcher (row 1) | Atom (row 2) | Soul | Does | Exit seam |
-|---|---|---|---|---|
-| **`avi pr`** | **`pr-review`** | Avi | review + **merge** ALL submitted PRs (waves ≤5) | each `reviewed`+merged (`assembled`) or `blocked` |
-| **`steffon`** | **`qa-deploy`** | Steffon | assemble `release` + deploy QA (`bin/release prepare --yes`) | members `assembled` on QA (no prod) |
-| **`avi deploy`** | **`production-deploy`** | Avi (ship authority) | ff `release → main`, ship prod (`bin/release ship --yes`) | members `shipped` |
-| **`alex`** | **`grade events`** | Alex | grade the 10 most recent resolved spans at `/alex/heartbeat`, bank insights | 10 graded, insights banked |
+| Soul (row 1) | Acts | Does | Exit seam |
+|---|---|---|---|
+| **Avi** (`Avi Heartbeat`) | `pr-review` · `production-deploy` | review + **merge** ALL submitted PRs (waves ≤5); then ship a QA-green release (`bin/release ship --yes`, stages 4–5) | each PR `assembled`/`blocked`; then `shipped` when a QA-green RC is ready |
+| **Steffon** (`Steffon Heartbeat`) | `qa-deploy` · `archive-completed` | assemble `release` + deploy QA (`bin/release prepare --yes`, stages 1–3); then archive shipped tasks (`bin/release archive --yes`) | RC **deployed to QA**; shipped tasks + completed releases `archived` |
+| **Alex** (`Alex Heartbeat`) | `grade-events` | grade the 10 most recent resolved spans at `/alex/heartbeat`, bank insights | 10 graded, insights banked |
+
+**The release handoff seam.** The pizza-tracker (`RELEASE_TRACKER_STAGES`) is five
+stages: 1 **Testing**, 2 **Assembling**, 3 **Deploying QA**, 4 **Confirming**, 5
+**Deploying** (prod). **Steffon owns stages 1–3** (`qa-deploy` = `bin/release
+prepare`) and stops at **Live on QA**; **Avi owns stages 4–5** (`production-deploy`
+= `bin/release ship`) and finishes at **Deployed**. The seam between them —
+**"deployed to QA."** — is the **Steffon → Avi handoff**: Steffon's `qa-deploy`
+ends and reports there; Avi's `production-deploy` starts only once it is true.
 
 These are **operator-launched (copy-paste) today, schedule-ready tomorrow** — each
-SOP is idempotent, with an explicit precondition + a named exit seam, so a
+act is idempotent, with an explicit precondition + a named exit seam, so a
 scheduler can fire it later without rework (see [`heartbeats.md`](../modules/heartbeats.md)).
-Note `avi pr` **merges** approved PRs (the `pr-review` atom → `assembled`); the
-long-running **`Avi Heartbeat Slow`/`Fast`** loops below are review-**only** and
-stop at `reviewed`.
+Note `pr-review` **merges** approved PRs (→ `assembled`); the long-running
+**`Avi Heartbeat Slow`/`Fast`** loops below are review-**only** and stop at
+`reviewed`.
 
 **`Avi Heartbeat Slow` / `Avi Heartbeat Fast`**  *(long-running review-only loops — stop at reviewed)*
 

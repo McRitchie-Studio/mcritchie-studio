@@ -1,59 +1,90 @@
-# Heartbeats — the four single-soul launchers
+# Heartbeats — the three soul launchers
 
-The current-release card (`#current-release`) renders four **soul-avatar heartbeat
-launchers** (`ApplicationHelper#heartbeat_launchers`, rendered by
-`tasks/_heartbeat_launchers`). Each launcher is a soul face over **two
-independently-copyable rows**:
+The **DevOps card** (`#release-duration-card` on `/deployments`) renders three
+**soul-avatar heartbeat launchers** (`ApplicationHelper#heartbeat_launchers`,
+rendered by `tasks/_heartbeat_launchers`, below the card's release-duration
+metrics). Each launcher is a soul face — **now a link to that
+soul's `/agents/<slug>` page** — over a **prompt-like row 1** plus one or more
+**copyable atom acts**:
 
-- **Row 1 — the soul+role heartbeat phrase**: `avi pr` · `avi deploy` · `steffon`
-  · `alex`. Distinct per launcher (never the ambiguous `<soul> heartbeat` that
-  collapsed Avi's two lanes into one).
-- **Row 2 — the launcher atom**: `pr-review` · `production-deploy` · `qa-deploy` ·
-  `grade events`. The scoped verb the heartbeat runs.
+- **Row 1 — the prompt-like soul heartbeat**: `Avi Heartbeat` · `Steffon
+  Heartbeat` · `Alex Heartbeat`. One per soul (Avi's two release lanes now share a
+  single column).
+- **The atom acts** — one copyable row each:
+  - **Avi** → `pr-review` · `production-deploy`
+  - **Steffon** → `qa-deploy` · `archive-completed`
+  - **Alex** → `grade-events`
 
-**Either row**, pasted into a fresh agent session run from
-`/Users/alex/projects`, launches that heartbeat. Both rows are **recognized
+**Every row is independently copyable** (the row-1 heartbeat prompt and each act),
+and **any of them**, pasted into a fresh agent session run from
+`/Users/alex/projects`, launches that heartbeat. All rows are **recognized
 launchers** — wired into
 [`qa-release/SKILL.md`](../skills/qa-release/SKILL.md) and
-[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Three of the
-four wrap a single release **atom** (see §1.4's atom table); the fourth (`alex` /
-`grade events`) is the learning loop and lives outside the release pipeline.
+[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps a
+single release **atom** (see §1.4's atom table), except `alex` / `grade-events`,
+which is the learning loop and lives outside the release pipeline.
 
-| Launcher (row 1) | Atom (row 2) | Soul | Enters at | Exit seam |
+| Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
-| **`avi pr`** | **`pr-review`** | Avi | submitted PRs waiting | each `reviewed`+merged (`assembled`) or `blocked` |
-| **`steffon`** | **`qa-deploy`** | Steffon | `assembled` on `release` | `assembled` deployed to QA (no prod) |
-| **`avi deploy`** | **`production-deploy`** | Avi (ship authority) | `assembled` + QA-reviewed | `shipped` to prod |
-| **`alex`** | **`grade events`** | Alex | resolved spans awaiting grade | 10 graded, insights banked |
+| **Avi** (`avi`) | `Avi Heartbeat` | `pr-review`, `production-deploy` | submitted PRs waiting / release deployed to QA | each PR `assembled` or `blocked`; then `shipped` if a QA-green release is ready |
+| **Steffon** (`steffon`) | `Steffon Heartbeat` | `qa-deploy`, `archive-completed` | `assembled` on `release` | release **deployed to QA**; shipped tasks + completed releases archived |
+| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events` | resolved spans awaiting grade | 10 graded, insights banked |
+
+## The release handoff seam — Steffon owns stages 1–3, Avi owns 4–5
+
+The current-release pizza-tracker (`ApplicationHelper::RELEASE_TRACKER_STAGES`) has
+five stages:
+
+| # | Stage key | Active → complete label | Owner | Driven by |
+|---|---|---|---|---|
+| 1 | `testing` | **Testing → Tested** | Steffon | `bin/release prepare` |
+| 2 | `assembling` | **Assembling → Assembled** | Steffon | `bin/release prepare` |
+| 3 | `qa_deploying` | **Deploying QA → Live on QA** | Steffon | `bin/release prepare` |
+| 4 | `confirming` | **Confirming → Confirmed** | Avi | `bin/release ship` |
+| 5 | `production_deploying` | **Deploying → Deployed** | Avi | `bin/release ship` |
+
+**Steffon owns stages 1–3** (Testing → Assembling → Deploying QA) via `qa-deploy`
+(`bin/release prepare`) and stops at **Live on QA**. **Avi owns stages 4–5**
+(Confirming → Deploying) via `production-deploy` (`bin/release ship`) and finishes
+at **Deployed**. The seam between them — **"deployed to QA."** — is the
+**Steffon → Avi handoff**: Steffon's `qa-deploy` ends there and reports it; Avi's
+`production-deploy` begins only once it is true.
 
 ## Operator-launched today, schedule-ready tomorrow  *(DESIGN NOTE — load-bearing)*
 
-These four are **operator-launched** (copy-paste from the card) today. Each SOP
-below is deliberately written so it can be **run on a schedule/cadence later
-without rework**. Three properties make that safe, and every heartbeat must keep
-all three:
+These three are **operator-launched** (copy-paste from the card) today. Each act's
+SOP below is deliberately written so it can be **run on a schedule/cadence later
+without rework**. Three properties make that safe, and every act must keep all
+three:
 
 1. **Idempotent** — re-running when there is nothing to do is a safe no-op that
-   reports "nothing waiting" and exits. Firing `steffon` with nothing assembled,
-   `avi deploy` on a `release == main`, or `avi pr` on an empty queue must each
+   reports "nothing waiting" and exits. `pr-review` on an empty queue,
+   `qa-deploy` with nothing assembled, `production-deploy` on a `release == main`
+   (or no QA-green release), and `archive-completed` with nothing shipped must each
    just report and stop — never fabricate work.
-2. **Explicit precondition** — each states what must already be true to begin
-   (the "Enters at" column above). A scheduler checks the precondition, and skips
+2. **Explicit precondition** — each states what must already be true to begin (the
+   "Enters at" column above). A scheduler checks the precondition, and skips
    cleanly when it is not met.
 3. **Named exit seam** — each ends at a definite stage/state plus a report (the
-   "Exit seam" column). A scheduler reads the seam and can chain the next
-   heartbeat (`avi pr` → `steffon` → `avi deploy`) or bank the result (`alex`).
+   "Exit seam" column). A scheduler reads the seam and can chain the next act
+   (`pr-review` → `qa-deploy` → `production-deploy` → `archive-completed`) or bank
+   the result (`grade-events`).
 
 No heartbeat assumes a human is watching mid-run: no interactive prompts (pass
 `--yes` on the `bin/release` verbs an agent shell owns), bounded blast radius, and
-a self-contained report at the seam. Moving these to a cron/queue trigger later is
+a self-contained report at each seam. Moving these to a cron/queue trigger later is
 a wiring change, not a rewrite.
 
 ---
 
-## 1. Avi PR — `avi pr` / `pr-review`
+## 1. Avi Heartbeat — `Avi Heartbeat` / `pr-review` / `production-deploy`
 
-**Enter as Avi.** Review every waiting PR, merging the approved ones.
+**Enter as Avi.** Two acts: review + merge the submitted PRs, then ship a
+QA-green release if one is ready. Avi owns release **stages 4–5** (post-QA → prod).
+
+### Act 1 — `pr-review`
+
+Review every waiting PR, merging the approved ones.
 
 - **Precondition:** at least one `submitted` PR. Empty queue → report "no
   submitted PRs" and stop (idempotent no-op).
@@ -71,46 +102,71 @@ a wiring change, not a rewrite.
   `blocked`. Report per-PR.
 
 > **Not the same as `Avi Heartbeat Slow`/`Fast`.** Those long-running loops
-> (§1.4) are review-**only** and stop at `reviewed`. `avi pr` is the `pr-review`
-> atom — it **merges** approved work through to `assembled`.
+> (devops-cycle-design.md §1.4) are review-**only** and stop at `reviewed`.
+> `pr-review` is the atom that **merges** approved work through to `assembled`.
 
-## 2. Steffon — `steffon` / `qa-deploy`
+### Act 2 — `production-deploy`
 
-**Enter as Steffon.** Start the release and deploy it to QA.
+Ship the assembled, QA-green release to production.
+
+- **Precondition:** a release is **ready** — i.e. Steffon has taken it through
+  `qa-deploy` and it is **`assembled` + deployed to QA (QA-green)**. If nothing is
+  ready to ship (`release == main`, or no QA-green release) → report "nothing to
+  ship" and stop (idempotent no-op).
+- **Steps:**
+  1. Clean the primary checkouts (stash the delete-later ledger if needed) — ship
+     from a **primary checkout**, not a worktree (gems resolve as siblings).
+  2. `bin/release ship --yes` — drive **stages 4–5** (Confirming → Deploying):
+     fast-forward each repo's `release → main` and deploy production.
+  3. Prod-smoke, green seal, and post release notes.
+  4. Restore the primary checkouts.
+- **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
+  slug.
+
+> ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
+> operator launched it (the `Avi Heartbeat` / `production-deploy` chip / phrase) or
+> otherwise granted ship authority in-session. The `--yes` answers only the human
+> confirm; it never skips the clean-main preflight, frozen-SHA tests, gem publish,
+> deploy smoke, or partial-ship recovery.
+
+## 2. Steffon Heartbeat — `Steffon Heartbeat` / `qa-deploy` / `archive-completed`
+
+**Enter as Steffon.** Two acts: take assembled work through to QA, then archive the
+completed work. Steffon owns release **stages 1–3** (Testing → Assembling →
+Deploying QA).
+
+### Act 1 — `qa-deploy`
+
+Start the release and deploy it to QA.
 
 - **Precondition:** `assembled` work sits on `release`. Nothing assembled →
   report "nothing to prepare" and stop (idempotent no-op).
 - **Steps:**
   1. Confirm the assembled members are on `origin/release`.
-  2. `bin/release prepare --yes` — assemble `origin/release` and deploy it to QA.
+  2. `bin/release prepare --yes` — drive **stages 1–3** (Testing → Assembling →
+     Deploying QA): assemble `origin/release` and deploy it to QA.
   3. Smoke `https://qa.mcritchie.studio/up`.
-- **Exit seam:** the release candidate is `assembled` and live on QA. Report the
-  QA URL. **Does NOT ship to production.**
+- **Exit seam:** the release candidate is `assembled` and live on QA (stage 3 **Live
+  on QA**). Report the QA URL, then hand off to Avi at **"deployed to QA."**
+  **Does NOT ship to production** — stages 4–5 are Avi's.
 
-## 3. Avi Deploy — `avi deploy` / `production-deploy`
+### Act 2 — `archive-completed`
 
-**Enter as Avi (ship authority).** Deploy the assembled, QA-reviewed release to
-production.
+Close the loop: archive the shipped work and reclaim its worktrees.
 
-- **Precondition:** the release is `assembled` **and** QA-reviewed. Nothing to
-  ship (`release == main`) → report "release == main, nothing to ship" and stop
-  (idempotent no-op).
+- **Precondition:** at least one `shipped` task not on `Release.last_shipped`.
+  Nothing shipped to archive → report "nothing to archive" and stop (idempotent
+  no-op).
 - **Steps:**
-  1. Clean the primary checkouts (stash the delete-later ledger if needed) — ship
-     from a **primary checkout**, not a worktree (gems resolve as siblings).
-  2. `bin/release ship --yes` — fast-forward each repo's `release → main` and
-     deploy production.
-  3. Prod-smoke, green seal, and post release notes.
-  4. Restore the primary checkouts.
-- **Exit seam:** `shipped`. Report the prod SHA + release slug.
+  1. `bin/release archive --yes` — archives every `shipped` task that is **not** a
+     member of the most-recently-shipped release (`shipped → archived`), retires the
+     now-completed releases, and reclaims the merged/shipped feature worktrees
+     (delete-later ledger + Redis band shrink). Preview first with `--dry-run`.
+- **Exit seam:** shipped tasks + completed releases are `archived`, merged
+  worktrees reclaimed. Idempotent — a re-run finds nothing new. Report the archived
+  count + reclaimed worktrees.
 
-> ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
-> operator launched it (the `avi deploy` chip / phrase) or otherwise granted ship
-> authority in-session. The `--yes` answers only the human confirm; it never
-> skips the clean-main preflight, frozen-SHA tests, gem publish, deploy smoke, or
-> partial-ship recovery.
-
-## 4. Alex — `alex` / `grade events`
+## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events`
 
 **Enter as Alex.** Grade a batch of recent trajectory events for quality so the
 learning layer keeps only what makes the next agent smarter.
