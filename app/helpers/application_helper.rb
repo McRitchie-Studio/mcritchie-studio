@@ -492,18 +492,19 @@ module ApplicationHelper
   end
 
   # The four soul-avatar heartbeat launchers shown in the current-release card
-  # (tasks/heartbeat_launchers): a copy-to-clipboard face per DevOps
-  # heartbeat, each keyed to the exact qa-release skill launcher phrase.
-  # +agent_slug+ resolves the soul avatar (reused from the heartbeat Agent column
-  # + stage timeline); +phrase+ is the literal clipboard text, kept 1-3 words to
-  # match the skill launcher names (pr-review / qa-deploy / production-deploy);
-  # +label+ is the small purpose caption; +title+ is the hover tooltip.
+  # (tasks/heartbeat_launchers): a soul face over a TWO-ROW command, each row an
+  # INDEPENDENTLY-copyable valid launch prompt. +heartbeat+ (row 1) wakes the
+  # soul ("<soul> heartbeat"); +phrase+ (row 2) is the launcher atom that scopes
+  # that heartbeat's work (pr-review / production-deploy / qa-deploy / grade
+  # events). +agent_slug+ resolves the soul avatar (reused from the heartbeat
+  # Agent column + stage timeline); +label+ is the small purpose caption; +title+
+  # is the hover tooltip. Both rows are genuinely launchable on their own.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     phrase: "pr-review",         label: "PR review",   title: "Avi — PR-review heartbeat" },
-      { agent_slug: "avi",     phrase: "production-deploy", label: "Prod deploy", title: "Avi — production-deploy heartbeat" },
-      { agent_slug: "steffon", phrase: "qa-deploy",         label: "QA deploy",   title: "Steffon — prepare + QA heartbeat" },
-      { agent_slug: "alex",    phrase: "Alex heartbeat",    label: "Learning",    title: "Alex — grade-events / learning heartbeat" }
+      { agent_slug: "avi",     heartbeat: "avi heartbeat",     phrase: "pr-review",         label: "PR review",   title: "Avi — PR-review heartbeat" },
+      { agent_slug: "avi",     heartbeat: "avi heartbeat",     phrase: "production-deploy", label: "Prod deploy", title: "Avi — production-deploy heartbeat" },
+      { agent_slug: "steffon", heartbeat: "steffon heartbeat", phrase: "qa-deploy",         label: "QA deploy",   title: "Steffon — prepare + QA heartbeat" },
+      { agent_slug: "alex",    heartbeat: "alex heartbeat",    phrase: "grade events",      label: "Learning",    title: "Alex — grade-events / learning heartbeat" }
     ]
   end
 
