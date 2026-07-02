@@ -589,4 +589,31 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "tasks/current_release", locals: { release: nil }
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
   end
+
+  test "[unit] heartbeat_act_description captions every act in every launcher" do
+    heartbeat_launchers.each do |launcher|
+      launcher[:acts].each do |act|
+        desc = heartbeat_act_description(act)
+        assert desc.present?, "act #{act} should have a one-line description"
+        assert_operator desc.length, :<=, 60, "act description stays a short one-liner"
+      end
+    end
+  end
+
+  test "[unit] heartbeat_act_description maps the known acts to their captions" do
+    assert_equal "Review + merge all submitted PRs", heartbeat_act_description("pr-review")
+    assert_equal "Ship a QA-ready release to production", heartbeat_act_description("production-deploy")
+    assert_equal "Grade 10 recent events for quality", heartbeat_act_description("grade-events")
+    assert_nil heartbeat_act_description("not-an-act")
+  end
+
+  test "[unit] heartbeat_launcher_for resolves the soul launcher and skips non-souls" do
+    avi = heartbeat_launcher_for("avi")
+    assert avi.present?
+    assert_equal "Avi Heartbeat", avi[:heartbeat]
+    assert_equal ["pr-review", "production-deploy"], avi[:acts]
+
+    assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
+    assert_nil heartbeat_launcher_for(nil)
+  end
 end

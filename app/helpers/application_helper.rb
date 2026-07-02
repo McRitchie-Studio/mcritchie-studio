@@ -513,6 +513,31 @@ module ApplicationHelper
     ]
   end
 
+  # One-line "what it does" caption for each heartbeat launcher act, keyed by the
+  # act slug used in +heartbeat_launchers+. Sourced from
+  # docs/agents/modules/heartbeats.md so the agent profile page can annotate each
+  # copyable phrase with the work it launches (Avi: pr-review + production-deploy;
+  # Steffon: qa-deploy + archive-completed; Alex: grade-events).
+  HEARTBEAT_ACT_DESCRIPTIONS = {
+    "pr-review"         => "Review + merge all submitted PRs",
+    "production-deploy" => "Ship a QA-ready release to production",
+    "qa-deploy"         => "Prepare + deploy to QA (release stages 1–3)",
+    "archive-completed" => "Archive completed tasks + releases",
+    "grade-events"      => "Grade 10 recent events for quality"
+  }.freeze
+
+  def heartbeat_act_description(act)
+    HEARTBEAT_ACT_DESCRIPTIONS[act.to_s]
+  end
+
+  # The heartbeat launcher owned by a given soul, or nil for an agent that has no
+  # heartbeat (Carl / Shannon / Jasper). Lets the agent profile page render the
+  # HEARTBEAT section only for souls that own one, and skip it gracefully for the
+  # rest.
+  def heartbeat_launcher_for(agent_slug)
+    heartbeat_launchers.find { |l| l[:agent_slug] == agent_slug.to_s }
+  end
+
   # The two-workflow stage guide rendered on /stages (vertical swimlanes). One
   # entry per stage: what it means, who's responsible, and what moves it next.
   # `submitted` is the shared seam, so it appears in both lanes.
