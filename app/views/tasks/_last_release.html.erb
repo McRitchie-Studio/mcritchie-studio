@@ -1,16 +1,23 @@
 <%# Last Release module for /deployments: the most-recently shipped release,
     read-only history. Dimmed (opacity-75 + the :last summary variant's muted
-    text) so it reads as the past, distinct from the active Current block.
-    Local: release (the shipped Release, or nil to render nothing). %>
+    text) so it reads as the past, distinct from the active Current block. When
+    nothing has shipped yet, a muted empty state fills the card so the 2×2
+    dashboard grid keeps this cell (mirroring the Next Release "none active" card).
+    Local: release (the shipped Release, or nil for the empty state). %>
 <% rel = local_assigns.fetch(:release, nil) %>
+<% base_card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% if rel %>
-  <% card_class = ["rounded-xl border border-subtle bg-surface p-4 opacity-75", local_assigns[:card_class]].compact.join(" ") %>
   <%# data-glow tints the deploy burst (LiveBoardFx) with the just-shipped release's
       conductor mascot colour; blank → the default warm-orange flash. %>
-  <div id="last-release" data-glow="<%= rel.mascot&.signature_color %>" class="<%= card_class %>">
+  <div id="last-release" data-glow="<%= rel.mascot&.signature_color %>" class="<%= base_card_class %> opacity-75">
     <%# The shipped-stage kickoff chip ("Archive completed tasks") rides inline with the
         task pills, mirroring the Next Release card's release workflow chips. %>
     <% archive_chip = render "tasks/kickoff_chip", command: devops_kickoffs["shipped"] %>
     <%= render "tasks/release_summary", release: rel, variant: :last, trailing: archive_chip -%>
   </div>
+<% else %>
+  <%# No shipped release yet: muted empty state (shared with the Next Release card). %>
+  <%= render "tasks/release_card_empty_state", dom_id: "last-release", card_class: base_card_class,
+             label: "Last Release", status: "none yet",
+             hint: "The most recently shipped release will appear here." %>
 <% end %>

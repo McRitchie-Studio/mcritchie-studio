@@ -91,7 +91,7 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, done_count(rel), "a fresh release sits at Testing (done_count 0)"
   end
 
-  test "[integration] advance_release steps the fixture release's tracker done_count 0 to 5" do
+  test "[integration] advance_release steps Testing → shipped, shipping on the deploy step" do
     post dev_board_open_release_path
     rel = fixture_release
     assert_equal 0, done_count(rel)
@@ -104,17 +104,17 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, done_count(rel.reload)
     assert rel.qa_url.present?, "step 2 records a QA url"
 
-    post dev_board_advance_release_path # 2 -> 3: assembled
+    post dev_board_advance_release_path # 2 -> 3: assembled (Confirming active)
     assert_equal 3, done_count(rel.reload)
     assert_equal "assembled", rel.state
 
-    post dev_board_advance_release_path # 3 -> 4: confirmed
-    assert_equal 4, done_count(rel.reload)
-    assert rel.confirmed_at.present?, "step 4 records confirmation"
-
-    post dev_board_advance_release_path # 4 -> 5: shipped
-    assert_equal 5, done_count(rel.reload)
-    assert_equal "shipped", rel.state
+    # Reaching the deploy step ships in ONE advance — no confirmed-but-unshipped
+    # pause. The release goes straight to shipped and becomes the Last Release.
+    post dev_board_advance_release_path # 3 -> shipped
+    assert_equal "shipped", rel.reload.state
+    assert_equal 5, done_count(rel)
+    assert_equal rel, Release.last_shipped, "shipping the fixture creates the Last Release"
+    assert_nil Release.current, "shipping clears the Next Release slot"
   end
 
   test "[integration] reset_release clears the fixture release and its members" do

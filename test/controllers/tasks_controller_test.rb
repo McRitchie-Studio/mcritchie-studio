@@ -305,7 +305,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     # The Heartbeats card still offers the launchers even with no active release.
     assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
-    assert_select "#last-release", count: 0
+    # With nothing shipped, Last Release shows its muted empty state (keeps the 2×2 cell).
+    assert_select "#last-release", text: /none yet/
   end
 
   test "[component] deployments renders the release duration intelligence card" do
@@ -462,15 +463,19 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # Current spans the full left column; Last and statistics stack in the right column.
+    # A 2×2 card grid: Next Release + Last Release on top, Heartbeats + DevOps below.
     assert_select "[data-test='release-dashboard-grid'].grid.grid-cols-1.lg\\:grid-cols-2" do
       assert_select "#current-release", count: 1
       assert_select "#last-release", count: 1
+      assert_select "[data-test='heartbeats-card']", count: 1
       assert_select "#release-duration-card", count: 1
     end
-    assert_select "#current-release.lg\\:row-span-2.h-full"
+    assert_select "#current-release.h-full"
     assert_select "#last-release.h-full"
+    assert_select "[data-test='heartbeats-card'].h-full"
     assert_select "#release-duration-card.h-full"
+    # Next Release no longer spans two rows — every card is a single 2×2 cell.
+    assert_select "#current-release.lg\\:row-span-2", count: 0
   end
 
   test "deployments empty-state Current still nests inside the responsive grid beside Last" do
