@@ -298,6 +298,10 @@ Rails.application.routes.draw do
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.
       post "sessions/:session_id/mascot", to: "sessions#mascot"
+      # The learning loop's feed-forward READ path — the curated Insight Bank
+      # (ActionGrade.banked) as a capped, newest-first list, so a SessionStart hook
+      # can inject past sessions' lessons into a fresh agent's context.
+      get "insights", to: "insights#index"
     end
   end
 end

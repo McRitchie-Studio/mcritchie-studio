@@ -12,9 +12,19 @@
 # the span with an outcome. A simple task that used to log ~100 noisy rows
 # collapses to a handful of narrated spans.
 #
-# INVARIANT: at most one OPEN span per session at a time. Opening a new span
-# auto-closes the prior open one (see .open_event!), so the "current open event"
-# an incoming action attributes to is always unambiguous.
+# INVARIANT: at most one OPEN span per (session, AGENT) at a time — a per-agent
+# LANE. Opening a new span auto-closes the prior open one FOR THAT AGENT (see
+# .open_event!). This is what lets the documented reviewer fan-out work: a
+# PRIMARY and its nested LIGHT both narrate `--agent <soul>` in the SAME parent
+# session (subagents inherit the session id), and each soul's start/end operates
+# on its OWN lane instead of silently closing the other's in-flight span and
+# dropping its verdict. The orchestrator's un-agented spans are the nil lane.
+#
+# (Raw AtomicAction attribution stays best-effort last-open-span within the
+# session — an action carries no agent, and a subagent's PostToolUse hook posts
+# under the parent session id, so per-agent ACTION attribution is a harness-level
+# limit this does not claim to fix. The span/verdict integrity — the graded
+# signal — is what the per-agent lane protects.)
 class AtomicEvent < ApplicationRecord
   # The agent-declared span vocabulary — a fixed, small set so spans stay
   # comparable across sessions. The agent picks ONE per span.
@@ -107,17 +117,22 @@ class AtomicEvent < ApplicationRecord
       # Stamp the crossed-over span's outcome only when the agent narrated one, so
       # a bare open never blanks an outcome a prior close already set.
       close_attrs[:outcome_slug] = prior_outcome_slug if prior_outcome_slug.present?
-      for_session(session_id).open.update_all(close_attrs)
+      # Per-agent lanes: auto-close only THIS agent's open span (event.agent is the
+      # already-normalized lane key — a known soul or nil), so a parallel soul
+      # narration in the same session never closes another soul's in-flight span.
+      for_session(session_id).where(agent: event.agent).open.update_all(close_attrs)
       event.save!
     end
     event
   end
 
-  # Close the session's current OPEN span, stamping the outcome the agent
-  # narrates. Returns the closed span, or nil when the session has no open span
-  # (a stray close is a no-op, never an error).
-  def self.close_event!(session_id:, outcome_slug: nil, closed_at: Time.current)
-    event = for_session(session_id).open.order(:seq).last
+  # Close the current OPEN span for (session, agent), stamping the narrated
+  # outcome. `agent` selects the LANE (normalized like the record's own agent — an
+  # unknown/blank value is the nil lane, the orchestrator's), so a reviewer's close
+  # resolves ITS OWN span, not whichever soul opened last. Returns the closed span,
+  # or nil when that lane has no open span (a stray close is a no-op, never an error).
+  def self.close_event!(session_id:, agent: nil, outcome_slug: nil, closed_at: Time.current)
+    event = for_session(session_id).where(agent: normalize_agent_value(agent)).open.order(:seq).last
     return nil unless event
 
     event.update!(outcome_slug: outcome_slug.presence, closed_at: closed_at)
@@ -161,7 +176,15 @@ class AtomicEvent < ApplicationRecord
   # unknown/blank value becomes nil — the coercion is deliberately silent so a
   # typo'd --agent degrades to "base session mascot did it", never a hard error.
   def normalize_agent
-    slug = agent.to_s.strip.downcase
-    self.agent = SOULS.include?(slug) ? slug : nil
+    self.agent = self.class.normalize_agent_value(agent)
+  end
+
+  # The lane key for an agent value: a known SOULS slug (down-cased + stripped),
+  # else nil (the orchestrator's un-agented lane). Shared by #normalize_agent (the
+  # record) and the per-lane close scopes (open_event!/close_event!) so a WHERE on
+  # `agent` matches the SAME normalized value the record was stored under.
+  def self.normalize_agent_value(value)
+    slug = value.to_s.strip.downcase
+    SOULS.include?(slug) ? slug : nil
   end
 end

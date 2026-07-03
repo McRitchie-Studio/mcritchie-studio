@@ -352,4 +352,57 @@ class ActionGradeTest < ActiveSupport::TestCase
     grade = ActionGrade.new(valid_attrs(atomic_action: a))
     assert_equal "bash", grade.insight_label
   end
+
+  # ---- [integration] insight_feed — the feed-forward read path (north star) --
+
+  def banked_grade(slug:, **overrides)
+    g = ActionGrade.create!(valid_attrs(atomic_action: action(session_id: "feed-#{slug.object_id}"),
+                                        slug: slug).merge(overrides))
+    g.bank!
+    g
+  end
+
+  test "[integration] insight_feed returns only banked grades, newest curation first" do
+    old = banked_grade(slug: "older curated lesson here")
+    old.update!(updated_at: 2.days.ago)
+    fresh = banked_grade(slug: "fresher curated lesson here")
+    ActionGrade.create!(valid_attrs(slug: "not banked, excluded from feed")) # unbanked
+
+    feed = ActionGrade.insight_feed.to_a
+
+    assert_equal [fresh.id, old.id], feed.map(&:id), "only banked grades, newest curation first"
+  end
+
+  test "[integration] insight_feed clamps the limit to 1..MAX_FEED_LIMIT" do
+    3.times { |i| banked_grade(slug: "curated lesson number #{i} ok") }
+
+    assert_equal 1, ActionGrade.insight_feed(limit: 0).size, "0/blank clamps up to 1"
+    assert_equal 1, ActionGrade.insight_feed(limit: 1).size
+    assert_operator ActionGrade.insight_feed(limit: 999).size, :<=, ActionGrade::MAX_FEED_LIMIT
+  end
+
+  test "[unit] to_insight is the compact feed shape and drops nil fields" do
+    a = action(session_id: "feed-shape", task_slug: nil)
+    grade = ActionGrade.create!(valid_attrs(atomic_action: a, slug: "flag the gap first",
+                                            disposition: ActionGrade::NOT))
+
+    insight = grade.to_insight
+
+    assert_equal "flag the gap first", insight["slug"]
+    assert_equal "not", insight["disposition"]
+    assert_equal "alex", insight["grader"]
+    assert_not insight.key?("long_form"), "a nil long_form is dropped"
+    assert_not insight.key?("task_slug"), "a nil task_slug is dropped"
+  end
+
+  test "[unit] to_insight carries long_form and reads provenance from either source" do
+    span = event(session_id: "feed-prov", task_slug: "some-feature-slug")
+    grade = ActionGrade.create!(event_valid_attrs(atomic_event: span, slug: "promote this guardrail",
+                                                  long_form: "Anchor: check siblings first."))
+
+    insight = grade.to_insight
+
+    assert_equal "Anchor: check siblings first.", insight["long_form"]
+    assert_equal "some-feature-slug", insight["task_slug"], "provenance read from the span source"
+  end
 end

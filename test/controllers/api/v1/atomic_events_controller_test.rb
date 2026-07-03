@@ -167,6 +167,27 @@ module Api
         assert_response :no_content
       end
 
+      test "[integration] close with an agent closes only that soul's lane" do
+        # two souls narrate concurrently in one session (the reviewer fan-out)
+        post api_v1_atomic_events_path,
+             params: { session_id: "sess-lanes", category: "Verify", reason: "backend", agent: "carl" },
+             headers: @headers, as: :json
+        post api_v1_atomic_events_path,
+             params: { session_id: "sess-lanes", category: "Verify", reason: "ui", agent: "shannon" },
+             headers: @headers, as: :json
+
+        post close_api_v1_atomic_events_path,
+             params: { session_id: "sess-lanes", agent: "carl", outcome: "approve: clean" },
+             headers: @headers, as: :json
+
+        assert_response :ok
+        assert_equal "approve: clean", response.parsed_body.dig("data", "outcome_slug")
+        carl    = AtomicEvent.for_session("sess-lanes").where(agent: "carl").order(:seq).last
+        shannon = AtomicEvent.for_session("sess-lanes").where(agent: "shannon").order(:seq).last
+        assert carl.closed?, "carl's lane closed"
+        assert shannon.open?, "shannon's lane is untouched by carl's close"
+      end
+
       # ---- [integration] auth ---------------------------------------------------
 
       test "[integration] create requires auth — 401 without a token" do
