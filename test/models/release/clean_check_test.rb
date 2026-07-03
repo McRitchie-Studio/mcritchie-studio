@@ -36,11 +36,11 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     assert_equal ["other-work"], v["pending_tasks"].map { |t| t["slug"] }
   end
 
-  test "the dirty message REFUSES and OFFERS Merge, Assemble, Deploy, listing the pending task" do
+  test "the dirty message REFUSES and OFFERS full-cycle, listing the pending task" do
     v = C.evaluate(pending_tasks: [{ "slug" => "other-work", "title" => "Some other feature" }])
     msg = v["message"]
     assert_includes msg, "refused", "the guard refuses on a dirty release"
-    assert_includes msg, "Merge, Assemble, Deploy", "it offers shipping the whole release instead"
+    assert_includes msg, "full-cycle", "it offers shipping the whole release instead"
     assert_includes msg, "other-work", "it lists the pending task slug"
     assert_includes msg, "Some other feature", "it lists the pending task title"
     refute_includes msg, "safe to expedite"
@@ -65,7 +65,7 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     refute v["clean"], "a stray commit on release with no task is still dirty (fail-closed)"
     assert_equal [{ "repo" => "mcritchie-studio", "ahead" => 2 }], v["ahead_repos"]
     assert_includes v["message"], "mcritchie-studio (+2)"
-    assert_includes v["message"], "Merge, Assemble, Deploy"
+    assert_includes v["message"], "full-cycle"
   end
 
   test "ahead_repos excludes repos that are even with main" do

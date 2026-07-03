@@ -393,7 +393,7 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "refused", "a dirty release is refused"
     assert_includes out, "other-work", "the refusal lists the pending assembled task"
-    assert_includes out, "Merge, Assemble, Deploy", "it offers shipping the whole release instead"
+    assert_includes out, "full-cycle", "it offers shipping the whole release instead"
     assert_includes out, "ABORTED", "--clean-only gates: a dirty release aborts the expedite (non-zero exit)"
     refute_includes out, "NO-ABORT", "the expedite must not fall through past the guard"
   end

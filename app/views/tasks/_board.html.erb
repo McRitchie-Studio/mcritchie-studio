@@ -329,11 +329,15 @@ function kanbanBoard(live) {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment summary grid: Current Release spans the left column; Last Release and the DevOps card (release durations + heartbeat launchers) stack on the right. -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-stretch" data-test="release-dashboard-grid">
+    <!-- Deployment summary grid: Current Release spans the left column; Last Release and the DevOps card (release durations) stack on the right. -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch" data-test="release-dashboard-grid">
       <%= render "current_release", release: current_release, card_class: "lg:row-span-2 h-full" %>
       <%= render "last_release", release: last_release, card_class: "h-full" %>
       <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full" %>
+    </div>
+    <!-- Release Pipeline: the live 5-stage tracker paired with the soul heartbeat launchers that drive each segment (Steffon 1–3, Avi 4–5, Alex full cycle). -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6" data-test="heartbeats-row">
+      <%= render "heartbeats_card" %>
     </div>
   <% end %>
 

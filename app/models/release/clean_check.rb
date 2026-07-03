@@ -12,8 +12,8 @@ class Release
   # drags along EVERYTHING already sitting on `release` ahead of `main` — i.e. any
   # OTHER task already `assembled` (merged) but not yet `shipped`. So expediting
   # one task is only safe when `release == main` (nothing else is pending). On a
-  # DIRTY release the guard REFUSES and OFFERS `Merge, Assemble, Deploy` (ship the
-  # WHOLE release) instead of silently shipping the pending work to production.
+  # DIRTY release the guard REFUSES and OFFERS the `Alex Heartbeat` `full-cycle`
+  # launcher (ship the WHOLE release) instead of silently shipping the pending work.
   #
   # It reads TWO independent signals and is FAIL-CLOSED — either one showing
   # pending work makes the release dirty:
@@ -35,7 +35,7 @@ class Release
     #   "pending_tasks" => the normalized pending tasks (empty when clean)
     #   "ahead_repos"   => the repos with ahead > 0 (empty when clean)
     #   "message"       => the operator-facing verdict line(s): a one-line OK when
-    #                      clean, or the REFUSAL + `Merge, Assemble, Deploy` OFFER
+    #                      clean, or the REFUSAL + `Alex Heartbeat` full-cycle OFFER
     #                      (listing the pending work) when dirty.
     def evaluate(pending_tasks: [], repo_states: [])
       pending = Array(pending_tasks).map do |t|
@@ -70,7 +70,7 @@ class Release
         lines << "  Repo(s) ahead of main: #{ahead.map { |r| "#{r['repo']} (+#{r['ahead']})" }.join(', ')}"
       end
       lines << "  Expediting one task now would DRAG that pending work to production."
-      lines << "  → Ship the WHOLE release instead: run `Merge, Assemble, Deploy`."
+      lines << "  → Ship the WHOLE release instead: run the `Alex Heartbeat` `full-cycle` launcher."
       lines.join("\n")
     end
 

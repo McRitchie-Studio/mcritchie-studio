@@ -1,0 +1,50 @@
+<%# ONE soul heartbeat launcher — the avatar (LINKING to /agents/<slug>) stacked
+    over a column of copy chips: row 1 is the prompt-like soul heartbeat phrase (the
+    rollup), then one row per ACTION the heartbeat groups. Rendered once per soul by
+    the Heartbeats card (`tasks/_heartbeats_card`) in its 3-up grid. Each row is its
+    OWN button with its OWN data-clip + Alpine
+    copied flash; the phrase is server-rendered into data-clip AND the visible <code>
+    so tests + the no-clipboard fallback read it without Alpine. Locals:
+      launcher  a heartbeat_launchers entry ({agent_slug, heartbeat, actions, label, title})
+      soul      the Agent (optional; resolved from the slug when absent) %>
+<% launcher = local_assigns.fetch(:launcher) %>
+<% soul = local_assigns[:soul] || Agent.find_by(slug: launcher[:agent_slug]) ||
+          Agent.new(slug: launcher[:agent_slug], name: launcher[:agent_slug].titleize) %>
+<div class="flex min-w-0 flex-col items-center gap-1.5"
+     data-test="heartbeat-launcher"
+     data-agent="<%= launcher[:agent_slug] %>"
+     data-heartbeat="<%= launcher[:heartbeat] %>">
+  <%= link_to agent_path(launcher[:agent_slug]),
+              class: "inline-flex rounded-full ring-2 ring-surface transition hover:ring-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+              title: launcher[:title],
+              data: { test: "heartbeat-avatar-link" } do %>
+    <%= render "components/agent_avatar", agent: soul, size: "sm" %>
+  <% end %>
+  <div class="flex w-full max-w-[9rem] min-w-0 flex-col items-stretch gap-1">
+    <% rows = [["heartbeat", launcher[:heartbeat]]] + launcher[:actions].map { |a| ["action", a] } %>
+    <% rows.each do |row_kind, text| %>
+      <% leading = row_kind == "heartbeat" ? "❤️" : action_icon(text) %>
+      <button type="button"
+              x-data="{ copied: false }"
+              class="group relative flex w-full min-w-0 items-center justify-start gap-2 rounded-md border border-subtle bg-inset px-2 py-1 transition hover:border-primary/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+              :class="copied ? 'border-mint-400/60' : ''"
+              data-clip="<%= text %>"
+              data-row="<%= row_kind %>"
+              @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)"
+              :aria-label="copied ? 'Copied!' : '<%= j "Copy: #{text}" %>'"
+              title="<%= "Copy: #{text}" %>">
+        <%# Leading icon: heart for the soul heartbeat (row 1); each action gets its
+            own glyph — a keycap 1-4 for the ordered release actions, a themed emoji
+            for the rest. Decorative — NOT part of the copied data-clip text. %>
+        <% if leading %>
+          <span class="shrink-0 text-[10px] leading-none" aria-hidden="true"
+                data-test="<%= row_kind == "heartbeat" ? "heartbeat-heart" : "action-icon" %>"><%= leading %></span>
+        <% end %>
+        <code class="min-w-0 break-words text-left text-[10px] font-normal normal-case leading-tight tracking-normal text-body"><%= text %></code>
+        <span class="pointer-events-none absolute right-1 top-1 text-[9px] text-mint-300"
+              x-show="copied" x-cloak x-transition.opacity>&check;</span>
+      </button>
+    <% end %>
+  </div>
+  <span class="text-center text-[10px] leading-tight text-muted"><%= launcher[:label] %></span>
+</div>

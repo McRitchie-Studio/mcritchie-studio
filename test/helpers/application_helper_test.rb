@@ -66,47 +66,17 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
-  test "devops_kickoffs covers every DevOps board stage plus release meta-triggers" do
-    meta_keys = [
-      ApplicationHelper::AVI_HEARTBEAT_KICKOFF_KEY,
-      ApplicationHelper::AVI_HEARTBEAT_FAST_KICKOFF_KEY,
-      ApplicationHelper::QA_RELEASE_KICKOFF_KEY,
-      ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY
-    ]
-    stage_keys = devops_kickoffs.keys - meta_keys
-    assert_equal Task::DEPLOY_STAGES.sort, stage_keys.sort
+  test "devops_kickoffs is exactly the per-stage DevOps board kickoffs" do
+    # The four legacy release-wide meta-trigger chips were retired; devops_kickoffs
+    # now carries ONLY the per-stage board kickoffs (the soul heartbeat launchers
+    # replaced the chips — see heartbeat_launchers below).
+    assert_equal Task::DEPLOY_STAGES.sort, devops_kickoffs.keys.sort
     # per-stage kickoffs stay terse enough for a column header (≤3 words)
-    stage_keys.each { |k| assert_operator devops_kickoffs[k].split.size, :<=, 3 }
+    devops_kickoffs.each_value { |v| assert_operator v.split.size, :<=, 3 }
   end
 
   test "shipped kickoff is the Archive completed tasks workflow (DevOps loop conclusion)" do
     assert_equal "Archive completed tasks", devops_kickoffs["shipped"]
-  end
-
-  test "qa_release_kickoff is the one-trigger Build and Deploy QA Release command" do
-    assert_equal "Build and Deploy QA Release", qa_release_kickoff
-    assert_equal qa_release_kickoff, devops_kickoffs[ApplicationHelper::QA_RELEASE_KICKOFF_KEY]
-    # the meta-trigger is exempt from the per-stage word cap (prominent chip, not a header)
-    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::QA_RELEASE_KICKOFF_KEY
-  end
-
-  test "avi heartbeat kickoffs expose slow and fast review workflow commands" do
-    assert_equal "Avi Heartbeat Slow", avi_heartbeat_kickoff
-    assert_equal avi_heartbeat_kickoff, devops_kickoffs[ApplicationHelper::AVI_HEARTBEAT_KICKOFF_KEY]
-    assert_equal "Avi Heartbeat Fast", avi_heartbeat_fast_kickoff
-    assert_equal avi_heartbeat_fast_kickoff, devops_kickoffs[ApplicationHelper::AVI_HEARTBEAT_FAST_KICKOFF_KEY]
-    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AVI_HEARTBEAT_KICKOFF_KEY
-    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AVI_HEARTBEAT_FAST_KICKOFF_KEY
-  end
-
-  test "autonomous_release_kickoff is the production-authorized workflow command" do
-    assert_equal "Merge, Assemble, Deploy", autonomous_release_kickoff
-    assert_equal autonomous_release_kickoff, devops_kickoffs[ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY]
-    assert_not_includes Task::DEPLOY_STAGES, ApplicationHelper::AUTONOMOUS_RELEASE_KICKOFF_KEY
-
-    commands = release_kickoff_chips.map { |chip| chip.fetch(:command) }
-    assert_equal [avi_heartbeat_kickoff, avi_heartbeat_fast_kickoff, qa_release_kickoff, autonomous_release_kickoff],
-                 commands
   end
 
   test "app_emoji maps each canonical app slug to its glyph" do
@@ -375,8 +345,8 @@ class ApplicationHelperTest < ActionView::TestCase
     # Steffon owns QA; Avi runs the frozen-SHA suite; production authority is explicit
     assert_match(/steffon/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
-    assert_match(/Build and Deploy QA Release/i, deploy["shipped"][:gate])
-    assert_match(/Merge, Assemble, Deploy/i, deploy["shipped"][:gate])
+    assert_match(/qa-deploy/i, deploy["shipped"][:gate])
+    assert_match(/full-cycle/i, deploy["shipped"][:gate])
   end
 
   test "release_state_label folds a shipped release into 'Shipped <time> ago'" do
@@ -516,58 +486,66 @@ class ApplicationHelperTest < ActionView::TestCase
     # column); acts are the launcher atoms that scope it.
     assert_equal ["Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
-    assert_equal ["pr-review", "production-deploy"], launchers[0][:acts]
-    assert_equal ["qa-deploy", "archive-completed"], launchers[1][:acts]
-    assert_equal ["grade-events"], launchers[2][:acts]
+    assert_equal ["pr-review", "production-deploy", "pr-review-slow"], launchers[0][:actions]
+    assert_equal ["qa-deploy", "archive-completed"], launchers[1][:actions]
+    assert_equal ["grade-events", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
   end
 
-  test "[component] _release_duration_card renders the three heartbeat launchers in a 33% grid" do
+  test "[component] _heartbeats_card renders the three soul heartbeat launchers in a 3-up grid" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
 
-    render partial: "tasks/release_duration_card", locals: { dashboard: {} }
+    render partial: "tasks/heartbeats_card"
 
-    # The cluster now lives INSIDE the DevOps (release-duration) card, all three launchers.
-    assert_select "#release-duration-card [data-test='heartbeat-launchers']", count: 1
-    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 3
-    # Even 3-up 33% columns (grid-cols-3), not a left-bunched flex row.
-    assert_select "[data-test='heartbeat-launchers'] div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    # The heartbeats live in their own card, one launcher per soul, 3-up grid.
+    assert_select "[data-test='heartbeats-card']", count: 1
+    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    # The tracker does NOT live here — it stays in the Current Release card.
+    assert_select "[data-test='heartbeats-card'] [data-test='release-tracker-steps']", count: 0
     # Each launcher stacks a soul avatar (LINKING to /agents/<slug>) OVER a prompt-
-    # like row 1 + its atom act(s). Each row is its own copy button with its phrase
-    # server-rendered into data-clip (fallback + Nokogiri read it).
+    # like row 1 + its atom action(s), each an independently-copyable data-clip target.
     heartbeat_launchers.each do |launcher|
       scope = "[data-test='heartbeat-launcher'][data-agent='#{launcher[:agent_slug]}']"
-      # The avatar links to the soul's /agents/<slug> page.
       assert_select "#{scope} a[data-test='heartbeat-avatar-link'][href=?]", "/agents/#{launcher[:agent_slug]}"
-      # Row 1 — the prompt-like soul heartbeat phrase.
       assert_select "#{scope} button[data-row='heartbeat'][data-clip=?]", launcher[:heartbeat] do
         assert_select "code", text: launcher[:heartbeat]
       end
-      # One copyable act row per launcher atom.
-      launcher[:acts].each do |act|
-        assert_select "#{scope} button[data-row='act'][data-clip=?]", act do
+      launcher[:actions].each do |act|
+        assert_select "#{scope} button[data-row='action'][data-clip=?]", act do
           assert_select "code", text: act
         end
       end
       # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher.
-      assert_select "#{scope} button[data-clip]", count: 1 + launcher[:acts].size
+      assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
     end
-    # The avatar is the shared components/agent_avatar face (initials fallback text),
-    # now nested inside its /agents link.
-    assert_select "[data-test='heartbeat-launcher'] a span span", minimum: 3
+    # The new pr-review-slow (Avi) and full-cycle (Alex) acts are copyable rows.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "pr-review-slow"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
+    # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly three.
+    assert_select "[data-test='heartbeat-heart']", count: 3
+    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 3
+    # Every act carries a leading icon — a 1️⃣–4️⃣ keycap for the four ordered release
+    # acts, a themed glyph for the rest.
+    assert_select "button[data-row='action'][data-clip='pr-review'] [data-test='action-icon']", text: "1️⃣"
+    assert_select "button[data-row='action'][data-clip='qa-deploy'] [data-test='action-icon']", text: "2️⃣"
+    assert_select "button[data-row='action'][data-clip='production-deploy'] [data-test='action-icon']", text: "3️⃣"
+    assert_select "button[data-row='action'][data-clip='archive-completed'] [data-test='action-icon']", text: "4️⃣"
+    assert_select "button[data-row='action'][data-clip='pr-review-slow'] [data-test='action-icon']", text: "🐢"
+    assert_select "button[data-row='action'][data-clip='grade-events'] [data-test='action-icon']", text: "🧑🏻‍🏫"
+    assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
+    # One icon per act row: Avi 3 + Steffon 2 + Alex 2 = 7.
+    assert_select "[data-test='action-icon']", count: 7
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
   end
 
-  test "[component] the DevOps card renders the heartbeat launchers even with no cached durations" do
+  test "[component] the DevOps card keeps its stage tiles but no longer carries the heartbeats" do
     render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
-    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 3
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='heartbeat'] code", text: "Steffon Heartbeat"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'] code", text: "qa-deploy"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'] code", text: "archive-completed"
+    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
+    assert_select "#release-duration-card [data-test='release-duration-stage']", count: 4
   end
 
   test "[component] the DevOps card lays the four stage tiles in a single row (grid-cols-4 on sm+)" do
@@ -590,28 +568,41 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
   end
 
-  test "[unit] heartbeat_act_description captions every act in every launcher" do
+  test "[unit] action_description captions every act in every launcher" do
     heartbeat_launchers.each do |launcher|
-      launcher[:acts].each do |act|
-        desc = heartbeat_act_description(act)
+      launcher[:actions].each do |act|
+        desc = action_description(act)
         assert desc.present?, "act #{act} should have a one-line description"
         assert_operator desc.length, :<=, 60, "act description stays a short one-liner"
       end
     end
   end
 
-  test "[unit] heartbeat_act_description maps the known acts to their captions" do
-    assert_equal "Review + merge all submitted PRs", heartbeat_act_description("pr-review")
-    assert_equal "Ship a QA-ready release to production", heartbeat_act_description("production-deploy")
-    assert_equal "Grade 10 recent events for quality", heartbeat_act_description("grade-events")
-    assert_nil heartbeat_act_description("not-an-act")
+  test "[unit] action_description maps the known acts to their captions" do
+    assert_equal "Review + merge all submitted PRs", action_description("pr-review")
+    assert_equal "Review + merge submitted PRs one at a time", action_description("pr-review-slow")
+    assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
+    assert_equal "Grade 10 recent events for quality", action_description("grade-events")
+    assert_equal "Full cycle — review, assemble, QA, ship to prod", action_description("full-cycle")
+    assert_nil action_description("not-an-act")
+  end
+
+  test "[unit] action_icon numbers the four ordered release actions (1→4), nil otherwise" do
+    assert_equal "1️⃣", action_icon("pr-review")
+    assert_equal "2️⃣", action_icon("qa-deploy")
+    assert_equal "3️⃣", action_icon("production-deploy")
+    assert_equal "4️⃣", action_icon("archive-completed")
+    assert_equal "🐢", action_icon("pr-review-slow")
+    assert_equal "🧑🏻‍🏫", action_icon("grade-events")
+    assert_equal "🌎", action_icon("full-cycle")
+    assert_nil action_icon("not-an-act")
   end
 
   test "[unit] heartbeat_launcher_for resolves the soul launcher and skips non-souls" do
     avi = heartbeat_launcher_for("avi")
     assert avi.present?
     assert_equal "Avi Heartbeat", avi[:heartbeat]
-    assert_equal ["pr-review", "production-deploy"], avi[:acts]
+    assert_equal ["pr-review", "production-deploy", "pr-review-slow"], avi[:actions]
 
     assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
     assert_nil heartbeat_launcher_for(nil)

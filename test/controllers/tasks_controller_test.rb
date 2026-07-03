@@ -37,7 +37,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
-  test "[integration] deployments renders the three heartbeat launchers in the DevOps card" do
+  test "[integration] deployments renders the three heartbeat launchers in the Heartbeats card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
@@ -45,27 +45,25 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    # The cluster moved OUT of the current-release card and INTO the DevOps card.
+    # The launchers live in the Heartbeats card, NOT the current-release or DevOps cards.
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
-    # The soul-avatar copiers live inside the DevOps (release-duration) card, three across.
-    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 3
-    # Even 3-up 33% columns (grid-cols-3), not left-bunched.
-    assert_select "#release-duration-card div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
+    # The card PAIRS the 5-stage release tracker with the launchers, and lays the
+    # launchers out under the stages they drive: Steffon 1–3, Avi 4–5, Alex full cycle.
     # Each avatar links to the soul's /agents/<slug> page.
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
-    # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom act
-    # rows — each an independently-copyable data-clip target. Avi consolidates both
-    # release lanes; Steffon owns qa-deploy + archive-completed; Alex owns grade-events.
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='heartbeat'][data-clip='Avi Heartbeat']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='act'][data-clip='pr-review']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='act'][data-clip='production-deploy']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='heartbeat'][data-clip='Steffon Heartbeat']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'][data-clip='qa-deploy']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='act'][data-clip='archive-completed']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='heartbeat'][data-clip='Alex Heartbeat']"
-    assert_select "#release-duration-card [data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='act'][data-clip='grade-events']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
+    # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom action rows —
+    # Avi now carries pr-review-slow, Alex now carries full-cycle.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='heartbeat'][data-clip='Avi Heartbeat']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review-slow']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='production-deploy']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='qa-deploy']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='grade-events']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='full-cycle']"
   end
 
   test "[integration] deployments shows the conductor mascot + in-progress timing on the Next Release card" do
@@ -145,18 +143,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    # the kickoff chip shares the member-pills row (not a row of its own): the task
-    # pill and the chip both live in the same release-members-row.
+    # The four legacy release chips were retired; the current-release card no longer
+    # carries them. The task pill still shares the members row.
     assert_select "#current-release [data-test='release-members-row']" do
       assert_select "a[href=?]", task_path(@new_task.slug)  # the task pill
-      assert_select "code", text: /Avi Heartbeat Slow/
-      assert_select "code", text: /Avi Heartbeat Fast/
-      assert_select "code", text: /Build and Deploy QA Release/
-      assert_select "code", text: /Merge, Assemble, Deploy/
     end
+    assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
+    assert_select "#current-release code", { text: /Merge, Assemble, Deploy/, count: 0 }
+    # The launchers now live in the Heartbeats card — one per soul, including
+    # the new pr-review-slow (Avi) and full-cycle (Alex) acts.
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] code", text: "pr-review-slow"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] code", text: "full-cycle"
   end
 
-  test "deployments renders the status badge above the kickoff chip on the current card" do
+  test "deployments renders the status badge on the current release card" do
     Release.delete_all
     rel = Release.open!(branch: "release/badge-order")
     @new_task.update!(stage: "reviewed")
@@ -166,25 +167,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    card = css_select("#current-release").first.to_html
-    badge_at = card.index("release-state-badge")
-    heartbeat_chip_at = card.index("Avi Heartbeat Slow")
-    fast_heartbeat_chip_at = card.index("Avi Heartbeat Fast")
-    chip_at  = card.index("Build and Deploy QA Release")
-    prod_chip_at = card.index("Merge, Assemble, Deploy")
-    assert badge_at, "current card should render the status badge"
-    assert heartbeat_chip_at, "current card should render the slow heartbeat kickoff chip"
-    assert fast_heartbeat_chip_at, "current card should render the fast heartbeat kickoff chip"
-    assert chip_at, "current card should render the kickoff chip"
-    assert prod_chip_at, "current card should render the autonomous kickoff chip"
-    assert badge_at < heartbeat_chip_at,
-           "the top-right status badge must render before the inline slow heartbeat kickoff chip"
-    assert badge_at < fast_heartbeat_chip_at,
-           "the top-right status badge must render before the inline fast heartbeat kickoff chip"
-    assert badge_at < chip_at,
-           "the top-right status badge must render before the inline kickoff chip"
-    assert badge_at < prod_chip_at,
-           "the top-right status badge must render before the inline autonomous kickoff chip"
+    # The status badge still pins to the card's top-right corner (the retired chips
+    # no longer share that row).
+    assert_select "#current-release [data-test='release-state-badge']", count: 1
   end
 
   test "deployments release cards omit the redundant 'release' branch label" do
@@ -307,17 +292,18 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select %(nav[aria-label="Board views"] span[title="0 building"]), text: "0"
   end
 
-  test "deployments shows the release kickoff chips when no release exists" do
+  test "deployments shows the heartbeat launchers when no release exists" do
     Release.delete_all
+    %w[avi steffon alex].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.titleize } }
 
     get deployments_path
 
     assert_response :success
     assert_select "#current-release", text: /none active/
-    assert_select "#current-release", text: /Avi Heartbeat Slow/
-    assert_select "#current-release", text: /Avi Heartbeat Fast/
-    assert_select "#current-release", text: /Build and Deploy QA Release/
-    assert_select "#current-release", text: /Merge, Assemble, Deploy/
+    # The four legacy chips were retired from the current-release card.
+    assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
+    # The Heartbeats card still offers the launchers even with no active release.
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
     assert_select "#last-release", count: 0
   end
 
@@ -372,13 +358,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # No active release → Current shows the muted empty state + kickoff chip,
-    # NOT the shipped release dressed up as "current".
+    # No active release → Current shows the muted empty state, NOT the shipped
+    # release dressed up as "current". The launchers live in the Pipeline card.
     assert_select "#current-release", text: /none active/
-    assert_select "#current-release", text: /Avi Heartbeat Slow/
-    assert_select "#current-release", text: /Avi Heartbeat Fast/
-    assert_select "#current-release", text: /Build and Deploy QA Release/
-    assert_select "#current-release", text: /Merge, Assemble, Deploy/
     assert_select "#current-release", { text: /#{Regexp.escape(shipped.slug)}/, count: 0 },
                   "shipped release must NOT appear under Current"
 
@@ -655,8 +637,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Gate"
     assert_includes response.body, "two senior reviewers"     # review delegated, not Avi-solo
     assert_includes response.body, "FROZEN ship SHA"          # Avi's ship-time suite
-    assert_includes response.body, "Build and Deploy QA Release"
-    assert_includes response.body, "Merge, Assemble, Deploy"
+    assert_includes response.body, "qa-deploy"                # Steffon's QA-deploy lane
+    assert_includes response.body, "full-cycle"               # the Alex full-cycle ship launcher
   end
 
   test "deployments and stages are public (no login required)" do

@@ -412,7 +412,7 @@ def drive_ship(run:)
     exit(ok ? 0 : 1)
   else
     puts "bin/release ship --by conductor"
-    puts "(dry — Build and Deploy QA Release stops here; Merge, Assemble, Deploy uses `bin/conductor ship --run`)"
+    puts "(dry — qa-deploy stops here at QA; the full-cycle launcher uses `bin/conductor ship --run`)"
   end
 end
 

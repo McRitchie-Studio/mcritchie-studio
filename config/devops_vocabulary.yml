@@ -137,7 +137,7 @@ lanes:
       - type: deploy
         label: Prod
         expectation: "Fast-forward release to main per repo, deploy, smoke /up, run post_deploy_cmd."
-        gate: "Build and Deploy QA Release stops here; Merge, Assemble, Deploy grants ship authority after Avi's tests"
+        gate: "qa-deploy stops here at QA; production-deploy (or the Alex full-cycle) grants ship authority after Avi's tests"
       - type: stage_update
         label: Shipped
         stage: shipped

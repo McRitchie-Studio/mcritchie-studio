@@ -104,37 +104,7 @@
       </div>
     <% end %>
     <% if current %>
-      <% tracker_steps = release_tracker_steps(rel) %>
       <div class="mt-4 pt-3 border-t border-subtle/70" data-test="release-tracker" aria-label="Release progress">
-        <div class="grid grid-cols-5 gap-1">
-          <% tracker_steps.each_with_index do |step, index| %>
-            <div class="relative flex min-w-0 flex-col items-center gap-1" data-test="release-tracker-step" data-stage="<%= step[:key] %>" data-state="<%= step[:state] %>">
-              <% unless index == tracker_steps.length - 1 %>
-                <span aria-hidden="true" data-test="release-tracker-connector" data-state="<%= step[:connector_state] %>" class="absolute top-3 z-0 h-1 rounded-full <%= release_tracker_connector_classes(step[:connector_state]) %>" style="left: 50%; width: 100%;"></span>
-              <% end %>
-              <span class="relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[11px] font-black leading-none <%= release_tracker_dot_classes(step[:state]) %>" <%= raw('aria-current="step"') if step[:state] == :active %>>
-                <% if step[:state] == :complete %>
-                  <span aria-hidden="true">&check;</span>
-                <% else %>
-                  <%= step[:index] %>
-                <% end %>
-              </span>
-              <span class="max-w-20 text-center text-[10px] font-semibold leading-tight <%= release_tracker_label_classes(step[:state]) %>" data-test="release-tracker-label"><%= step[:label] %></span>
-              <% if step[:duration_seconds] %>
-                <% if step[:duration_live] && step[:duration_started_at] %>
-                  <span class="font-mono text-[10px] leading-none tabular-nums text-secondary"
-                        data-test="release-tracker-duration"
-                        data-release-ticker
-                        data-since="<%= step[:duration_started_at].to_i %>"><%= format_elapsed_clock(step[:duration_seconds]) %></span>
-                <% else %>
-                  <span class="font-mono text-[10px] leading-none tabular-nums text-muted"
-                        data-test="release-tracker-duration"><%= release_static_duration_label(step[:duration_seconds]) %></span>
-                <% end %>
-              <% else %>
-                <span class="h-3" aria-hidden="true"></span>
-              <% end %>
-            </div>
-          <% end %>
-        </div>
+        <%= render "tasks/release_tracker", release: rel %>
       </div>
     <% end %>

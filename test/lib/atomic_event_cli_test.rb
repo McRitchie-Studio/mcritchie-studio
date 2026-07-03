@@ -40,6 +40,27 @@ class AtomicEventCliTest < Minitest::Test
     assert_equal "find", flags["reason"]
   end
 
+  def test_unit_parse_flags_treats_a_flag_before_a_flag_as_boolean
+    # `--clear --session X` must read clear=true + session=X, not clear="--session"
+    # (the bug that made `heartbeat --clear --session X` target the wrong session).
+    flags = cli.parse_flags(%w[--clear --session smoke])
+    assert_equal true, flags["clear"], "a flag whose next token is another flag is boolean"
+    assert_equal "smoke", flags["session"], "the following flag still parses its own value"
+    # A trailing valueless flag is boolean too.
+    assert_equal true, cli.parse_flags(%w[--reason go --clear])["clear"]
+  end
+
+  def test_unit_acting_agent_round_trip_write_read_clear
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      assert_nil c.send(:read_acting_agent, SESSION), "no sticky agent by default"
+      c.send(:write_acting_agent, SESSION, "steffon")
+      assert_equal "steffon", c.send(:read_acting_agent, SESSION), "read-back returns the written soul"
+      c.send(:clear_acting_agent, SESSION)
+      assert_nil c.send(:read_acting_agent, SESSION), "clear removes the sticky agent"
+    end
+  end
+
   def test_unit_session_prefers_explicit_then_env
     assert_equal "flag-sid", cli.resolve_session_id("session" => "flag-sid")
     assert_equal "claude-sid",
@@ -241,6 +262,61 @@ class AtomicEventCliTest < Minitest::Test
 
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
       refute JSON.parse(open[:body]).key?("agent"), "a bare start sends no agent key"
+    end
+  end
+
+  # ── [integration] STICKY heartbeat agent — a `<Soul> Heartbeat` self-attributes ─
+
+  def test_integration_heartbeat_sets_a_sticky_agent_a_bare_start_inherits
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      # `atomic-event heartbeat avi` sets the sticky (local, no HTTP)…
+      run_cli(%W[heartbeat avi --session #{SESSION}], proj: proj)
+      # …so a subsequent BARE start (no --agent) attributes the span to avi.
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      body = JSON.parse(open[:body])
+      assert_equal "avi", body["agent"], "the bare start inherits the sticky heartbeat agent"
+      assert_equal "shellder", body["mascot"], "base mascot stays the session's own; the soul stacks on top"
+    end
+  end
+
+  def test_integration_explicit_agent_overrides_the_sticky
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      run_cli(%W[heartbeat avi --session #{SESSION}], proj: proj)
+      # A delegated reviewer passes its OWN --agent — it must win over the sticky.
+      requests = run_cli(%W[start --session #{SESSION} --category Delegate --reason review --agent carl], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      assert_equal "carl", JSON.parse(open[:body])["agent"], "explicit --agent overrides the sticky heartbeat agent"
+    end
+  end
+
+  def test_integration_heartbeat_clear_stops_the_sticky_attribution
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      run_cli(%W[heartbeat avi --session #{SESSION}], proj: proj)
+      run_cli(%W[heartbeat --clear --session #{SESSION}], proj: proj)
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute JSON.parse(open[:body]).key?("agent"), "after --clear a bare start sends no agent"
+    end
+  end
+
+  def test_integration_session_end_clears_the_sticky_agent
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      run_cli(%W[heartbeat avi --session #{SESSION}], proj: proj)
+      # close-open (the SessionEnd hook) tears down the sticky so a later reuse of
+      # this session id can't silently inherit it.
+      run_cli(%W[close-open --session #{SESSION} --outcome done], proj: proj)
+      requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      refute JSON.parse(open[:body]).key?("agent"), "session end cleared the sticky; the next start sends no agent"
     end
   end
 

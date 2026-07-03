@@ -1,19 +1,19 @@
 # Heartbeats — the three soul launchers
 
-The **DevOps card** (`#release-duration-card` on `/deployments`) renders three
-**soul-avatar heartbeat launchers** (`ApplicationHelper#heartbeat_launchers`,
-rendered by `tasks/_heartbeat_launchers`, below the card's release-duration
-metrics). Each launcher is a soul face — **now a link to that
-soul's `/agents/<slug>` page** — over a **prompt-like row 1** plus one or more
-**copyable atom acts**:
+The standalone **Heartbeats card** on `/deployments` (`tasks/_heartbeats_card`,
+sized to match the Next Release card) renders three **soul-avatar heartbeat
+launchers** (`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher`
+per soul). Each launcher is a soul face — **a link to that soul's `/agents/<slug>`
+page** — over a **prompt-like row 1** plus one or more **copyable action rows**,
+each carrying a leading icon (a ❤️ on the heartbeat row; a `1️⃣`–`4️⃣` keycap on the
+four ordered release actions, a themed glyph on the rest):
 
-- **Row 1 — the prompt-like soul heartbeat**: `Avi Heartbeat` · `Steffon
-  Heartbeat` · `Alex Heartbeat`. One per soul (Avi's two release lanes now share a
-  single column).
-- **The atom acts** — one copyable row each:
-  - **Avi** → `pr-review` · `production-deploy`
-  - **Steffon** → `qa-deploy` · `archive-completed`
-  - **Alex** → `grade-events`
+- **Row 1 — the prompt-like soul heartbeat** (❤️): `Avi Heartbeat` · `Steffon
+  Heartbeat` · `Alex Heartbeat`. One per soul (Avi's release lanes share a column).
+- **The action rows** — one copyable row each:
+  - **Avi** → `1️⃣ pr-review` · `3️⃣ production-deploy` · `🐢 pr-review-slow`
+  - **Steffon** → `2️⃣ qa-deploy` · `4️⃣ archive-completed`
+  - **Alex** → `🧑🏻‍🏫 grade-events` · `🌎 full-cycle`
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
@@ -26,9 +26,26 @@ which is the learning loop and lives outside the release pipeline.
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
-| **Avi** (`avi`) | `Avi Heartbeat` | `pr-review`, `production-deploy` | submitted PRs waiting / release deployed to QA | each PR `assembled` or `blocked`; then `shipped` if a QA-green release is ready |
+| **Avi** (`avi`) | `Avi Heartbeat` | `pr-review`, `pr-review-slow`, `production-deploy` | submitted PRs waiting / release deployed to QA | each PR `assembled` or `blocked`; then `shipped` if a QA-green release is ready |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `qa-deploy`, `archive-completed` | `assembled` on `release` | release **deployed to QA**; shipped tasks + completed releases archived |
-| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events` | resolved spans awaiting grade | 10 graded, insights banked |
+| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `full-cycle` | resolved spans awaiting grade / a full pipeline to run | 10 graded + insights banked; or the whole release `shipped` |
+
+> **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
+> `bin/atomic-event heartbeat <soul>` (e.g. `bin/atomic-event heartbeat avi`) so
+> EVERY span self-attributes to that soul — stacked over the stable base session
+> mascot — without re-passing `--agent` on each `start`/`next`. An explicit
+> `--agent` on a span still WINS over the sticky (a delegated reviewer keeps its
+> own soul). It clears on `bin/atomic-event heartbeat --clear` or at session end
+> (`close-open`). This is why the heartbeat's own orient/workflow spans show the
+> soul instead of falling back to the base mascot.
+>
+> **Launchers consolidated (2026-07-03).** The `pr-review-slow` (Avi) and
+> `full-cycle` (Alex) actions absorbed the four **retired** release chips — `Avi
+> Heartbeat Slow`, `Avi Heartbeat Fast`, `Build and Deploy QA Release`, and `Merge,
+> Assemble, Deploy`. They surface on the standalone /deployments **Heartbeats** card
+> (three souls, 3-up, sized to the Next Release card); the 5-stage release tracker
+> stays in the **Next Release** card. `full-cycle` is named to avoid colliding with
+> the read-only `bin/devops-cycle` snapshot tool.
 
 ## The release handoff seam — Steffon owns stages 1–3, Avi owns 4–5
 
@@ -101,9 +118,21 @@ Review every waiting PR, merging the approved ones.
 - **Exit seam:** every `submitted` PR is resolved — merged (`assembled`) or
   `blocked`. Report per-PR.
 
-> **Not the same as `Avi Heartbeat Slow`/`Fast`.** Those long-running loops
-> (devops-cycle-design.md §1.4) are review-**only** and stop at `reviewed`.
-> `pr-review` is the atom that **merges** approved work through to `assembled`.
+### Act 1b — `pr-review-slow`
+
+The same as `pr-review`, but **serialized** — one PR at a time.
+
+- **Precondition:** at least one `submitted` PR. Empty queue → report + stop.
+- **Steps:** the `pr-review` loop with **`--max-agents 1`** — review + merge one PR
+  (`review-one` → on approval `bin/task move <task> reviewed` **and** `bin/release
+  merge <task>`), then **re-query the board** before choosing the next. Use it for a
+  steady trickle or when parallel review waves would thrash the board DB.
+- **Exit seam:** every `submitted` PR resolved — `assembled` or `blocked`.
+
+> **Retired chips.** `pr-review-slow` (and `pr-review`) replaced the review-**only**
+> `Avi Heartbeat Slow`/`Fast` chips — those stopped at `reviewed` without merging;
+> the acts here **merge** approved work through to `assembled`. The old `bin/avi-heartbeat`
+> review-only loop still exists but is no longer a card chip.
 
 ### Act 2 — `production-deploy`
 
@@ -166,10 +195,16 @@ Close the loop: archive the shipped work and reclaim its worktrees.
   worktrees reclaimed. Idempotent — a re-run finds nothing new. Report the archived
   count + reclaimed worktrees.
 
-## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events`
+## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `full-cycle`
 
-**Enter as Alex.** Grade a batch of recent trajectory events for quality so the
-learning layer keeps only what makes the next agent smarter.
+**Enter as Alex** (the Lead Orchestrator). Two acts: grade recent trajectory
+events for the learning layer, and — with ship authority — run the whole DevOps
+cycle end to end.
+
+### Act 1 — `grade-events`
+
+Grade a batch of recent trajectory events for quality so the learning layer keeps
+only what makes the next agent smarter.
 
 - **Precondition:** resolved spans awaiting a grade (there usually are). None
   ungraded → report "nothing to grade" and stop (idempotent no-op).
@@ -182,6 +217,30 @@ learning layer keeps only what makes the next agent smarter.
      insights); **discard** the rest.
 - **Exit seam:** 10 spans graded, useful insights banked. (Mr. McRitchie audits a
   shrinking sample as the signal proves out.)
+
+### Act 2 — `full-cycle`
+
+Run the **whole DevOps cycle** end to end — the launcher that replaced the retired
+`Merge, Assemble, Deploy` chip. Named `full-cycle` to avoid colliding with the
+read-only `bin/devops-cycle` snapshot tool.
+
+- **Precondition:** there is work to move — `submitted` PRs to review, and/or an
+  `assembled` release to ship. Nothing anywhere (`release == main`, empty queue) →
+  report "nothing to run" and stop (idempotent no-op).
+- **Steps** (the three atoms in sequence — Avi + Steffon + Avi):
+  1. `pr-review` — review + **merge** every `submitted` PR (→ `assembled`).
+  2. `qa-deploy` — `bin/release prepare --yes` (stages 1–3 → live on QA).
+  3. `production-deploy` — `bin/release ship` (stages 4–5 → prod), same frozen-SHA
+     tests, deploy smoke, green seal, release notes.
+- **Exit seam:** the whole release `shipped` (stage 5 **Deployed**). Report the prod
+  SHA + release slug.
+
+> ⚠️ **Full ship authority.** `full-cycle` crosses the production gate autonomously
+> — run it only when the operator launched it (the `Alex Heartbeat` / `full-cycle`
+> phrase) or otherwise granted ship authority in-session. It uses the SAME
+> deterministic gates as `production-deploy`; `--yes` answers only the human
+> confirm. For expediting ONE task on a clean release, use `Deploy with Task
+> <task>` instead (§1.4).
 
 ---
 

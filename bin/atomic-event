@@ -74,10 +74,12 @@ class AtomicEventCli
     when "start", "next" then start(flags) # `next` = boundary open (carries --outcome)
     when "end"           then finish(flags)
     when "close-open"    then close_open(flags)
+    when "heartbeat"     then heartbeat(argv, flags) # sticky acting-agent for a soul run
     else
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
                 "next --outcome <text> --category <C> --reason <text> [--agent <soul>] [--task <slug>] | " \
-                "end [--outcome <text>] | close-open [--outcome <text>]")
+                "end [--outcome <text>] | close-open [--outcome <text>] | " \
+                "heartbeat <soul> | heartbeat --clear")
     end
   rescue StandardError => e
     warn_note("atomic-event failed (ignored): #{e.class}: #{e.message}")
@@ -105,8 +107,14 @@ class AtomicEventCli
 
     # --agent stamps the ACTING soul on the span, distinct from the base session
     # mascot. Passed through verbatim — the server coerces an unknown slug to nil
-    # (AtomicEvent::SOULS), so we never validate it here.
+    # (AtomicEvent::SOULS), so we never validate it here. When --agent is ABSENT,
+    # fall back to the session's STICKY acting-agent (set by `atomic-event heartbeat
+    # <soul>`), so a `<Soul> Heartbeat` self-attributes EVERY span as the soul —
+    # stacked over the stable base mascot — without re-passing --agent each call.
+    # Explicit --agent always WINS over the sticky (a delegated reviewer keeps its
+    # own soul); the sticky clears at session end (close-open) or `heartbeat --clear`.
     agent = flags["agent"].to_s.strip
+    agent = read_acting_agent(sid).to_s if agent.empty?
 
     # --task stamps the span's task EXPLICITLY and WINS over the desk/session
     # marker — so a session's FIRST span is task-attributed immediately, without
@@ -161,20 +169,68 @@ class AtomicEventCli
       "outcome"    => outcome
     })
 
+    # Session end also drops any STICKY heartbeat agent so it can never leak into a
+    # later run that happens to reuse this session id.
+    clear_acting_agent(sid)
+
     report(res, "closed open spans · #{outcome}")
+  end
+
+  # Sets (or clears) the session's STICKY acting-agent — the soul that EVERY
+  # subsequent span attributes to until session end or `heartbeat --clear`. This is
+  # how a `<Soul> Heartbeat` self-attributes its OWN top-level spans (orient,
+  # workflow, verify) as the soul, stacked over the stable base session mascot,
+  # instead of the observed fall-back to the base mascot alone. An explicit
+  # `--agent` on an individual `start`/`next` still WINS over the sticky, so a
+  # delegated reviewer keeps its own soul. Local-only (no HTTP) — writes a tiny
+  # per-session file beside the session marker; a fresh session never inherits it.
+  def heartbeat(argv, flags)
+    sid = resolve_session_id(flags)
+    return warn_note("atomic-event: no session id — nothing to set") unless present?(sid)
+
+    # The soul (if any) is the LEADING positional — `heartbeat <soul>` — never a
+    # flag VALUE elsewhere in argv (so `heartbeat --session X` doesn't read X as the
+    # soul). `--agent <soul>` is the explicit alternative and wins.
+    first = argv.first.to_s.strip
+    positional = first.start_with?("--") ? "" : first
+
+    if flags.key?("clear") || positional == "clear" || positional == "off"
+      clear_acting_agent(sid)
+      @out.puts("atomic-event: heartbeat cleared — spans return to the base session mascot")
+      return
+    end
+
+    soul = flags["agent"].to_s.strip
+    soul = positional if soul.empty?
+    return warn_note("atomic-event: heartbeat needs a soul (e.g. `heartbeat avi`) or `heartbeat --clear`") if soul.empty?
+
+    write_acting_agent(sid, soul)
+    @out.puts("atomic-event: heartbeat set — every span attributes to #{soul} " \
+              "(stacked over the base mascot) until `heartbeat --clear` or session end")
   end
 
   # ── argv + session/marker resolution ──────────────────────────────────────
 
   # Minimal --flag value parser (repeats: last wins). Bare/unknown args ignored.
+  # A flag whose next token is ANOTHER flag (or the end) is a valueless BOOLEAN
+  # (stored as true) — so `--clear --session X` reads clear=true + session=X rather
+  # than clear swallowing "--session" as its value. Values never legitimately start
+  # with "--" in this CLI (categories/reasons/outcomes/slugs/souls), so this is a
+  # strict improvement over consuming the next token unconditionally.
   def parse_flags(argv)
     flags = {}
     i = 0
     while i < argv.length
       arg = argv[i]
       if arg.start_with?("--")
-        flags[arg.delete_prefix("--")] = argv[i + 1]
-        i += 2
+        nxt = argv[i + 1]
+        if nxt.nil? || nxt.start_with?("--")
+          flags[arg.delete_prefix("--")] = true
+          i += 1
+        else
+          flags[arg.delete_prefix("--")] = nxt
+          i += 2
+        end
       else
         i += 1
       end
@@ -391,6 +447,41 @@ class AtomicEventCli
     return nil unless File.file?(path)
 
     JSON.parse(File.read(path))
+  rescue StandardError
+    nil
+  end
+
+  # ── Sticky heartbeat acting-agent (per-session, session-scoped) ────────────
+  # A sibling of the session marker keyed by session_id, holding ONE soul slug in
+  # plain text. Presence = a `<Soul> Heartbeat` is running and every span should
+  # attribute to that soul. Deliberately a SEPARATE file from the mascot marker
+  # (which `bin/task` owns) so we never read-modify-write / clobber it.
+  def acting_agent_path(session_id)
+    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+    File.join(projects_dir, ".agents", "sessions", "#{safe}.acting-agent")
+  end
+
+  def read_acting_agent(session_id)
+    path = acting_agent_path(session_id)
+    return nil unless File.file?(path)
+
+    value = File.read(path).to_s.strip
+    present?(value) ? value : nil
+  rescue StandardError
+    nil
+  end
+
+  def write_acting_agent(session_id, soul)
+    path = acting_agent_path(session_id)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{soul.to_s.strip}\n")
+  rescue StandardError
+    nil
+  end
+
+  def clear_acting_agent(session_id)
+    path = acting_agent_path(session_id)
+    File.delete(path) if File.file?(path)
   rescue StandardError
     nil
   end

@@ -2,31 +2,24 @@
     (assembling/assembled) release, or a muted empty state when none is active.
     Local: release (the Release, or nil for the empty state). The shipped
     release is NOT shown here; it renders read-only in _last_release.
-    Layout: the status badge owns the top-right corner (in _release_summary);
-    release kickoff chips ride inline (right) with the task pills row. %>
+    Layout: the status badge owns the top-right corner (in _release_summary). The
+    release-wide launcher chips moved to the standalone Heartbeats card
+    (tasks/_heartbeats_card); this card is now the release summary alone. %>
 <% rel = local_assigns.fetch(:release, nil) %>
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
-<% release_kickoffs = tag.div(class: "flex flex-wrap justify-end gap-2") do
-     safe_join(release_kickoff_chips.map { |chip| render("tasks/kickoff_chip", command: chip[:command], label: chip[:label]) })
-   end %>
 <% if rel %>
   <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
       type colour; blank → the fx falls back to its default warm-orange pulse. %>
   <div id="current-release" data-glow="<%= rel.mascot&.signature_color %>" class="<%= card_class %>">
-    <%# Release-wide workflow chips ride inline with the task pills. %>
-    <%= render "tasks/release_summary", release: rel, variant: :current, trailing: release_kickoffs -%>
+    <%= render "tasks/release_summary", release: rel, variant: :current -%>
   </div>
 <% else %>
-  <%# No active release: muted empty state mirroring the active card — the section
-      label top-left, the kickoff chip floated bottom-right. %>
+  <%# No active release: muted empty state mirroring the active card. %>
   <div id="current-release" class="<%= card_class %>">
     <div class="flex items-center gap-3 flex-wrap">
       <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Next Release</span>
       <span class="text-sm text-muted italic">none active</span>
     </div>
-    <p class="mt-2 text-xs text-muted">Merge a reviewed task (or kick off below) to establish one.</p>
-    <div class="mt-3 flex justify-end">
-      <%= release_kickoffs %>
-    </div>
+    <p class="mt-2 text-xs text-muted">Merge a reviewed task, or launch a heartbeat below, to establish one.</p>
   </div>
 <% end %>

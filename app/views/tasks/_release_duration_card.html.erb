@@ -43,9 +43,4 @@
   <% if sample_count.zero? %>
     <p class="mt-3 text-xs text-muted">No shipped releases have cached duration metrics yet.</p>
   <% end %>
-
-  <%# Soul-avatar heartbeat launchers — the DevOps cluster (was in the current-release
-      card). Copy any row to launch that heartbeat (Avi / Steffon / Alex). Full SOP:
-      docs/agents/modules/heartbeats.md. %>
-  <%= render "tasks/heartbeat_launchers" %>
 </div>
