@@ -229,6 +229,27 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
+  def test_integration_end_sends_the_explicit_agent_so_close_targets_that_lane
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[end --session #{SESSION} --outcome approve --agent carl], proj: proj)
+
+      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close" }
+      assert_equal "carl", JSON.parse(close[:body])["agent"], "--agent rides the close so it hits carl's lane"
+    end
+  end
+
+  def test_integration_end_falls_back_to_the_sticky_heartbeat_agent
+    Dir.mktmpdir do |proj|
+      # a `<Soul> Heartbeat` sets the sticky; a later bare `end` must still close
+      # that soul's lane, not the nil lane.
+      run_cli(%W[heartbeat steffon --session #{SESSION}], proj: proj)
+      requests = run_cli(%W[end --session #{SESSION} --outcome shipped], proj: proj)
+
+      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close" }
+      assert_equal "steffon", JSON.parse(close[:body])["agent"], "end inherits the sticky acting soul"
+    end
+  end
+
   # ── [integration] --agent stamps the acting soul on the span ─────────────
 
   def test_integration_start_stamps_agent_on_the_open_span

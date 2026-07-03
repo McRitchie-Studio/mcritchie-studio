@@ -311,6 +311,81 @@ class AtomicEventTest < ActiveSupport::TestCase
     assert_nil AtomicEvent.close_event!(session_id: "never-opened", outcome_slug: "x")
   end
 
+  # ---- [integration] per-agent span lanes (audit finding #4) ----------------
+  # The reviewer fan-out narrates several souls in ONE session; each soul's
+  # start/end must operate on its OWN lane, never closing another's in-flight span.
+
+  test "[integration] concurrent soul spans do NOT close each other" do
+    carl    = AtomicEvent.open_event!(session_id: "lane", category: "Verify", reason_slug: "backend", agent: "carl")
+    shannon = AtomicEvent.open_event!(session_id: "lane", category: "Verify", reason_slug: "ui", agent: "shannon")
+
+    assert carl.reload.open?,    "carl's span stays open when shannon opens hers"
+    assert shannon.reload.open?, "shannon's span opens without disturbing carl's"
+    assert_equal 2, AtomicEvent.for_session("lane").open.count, "both lanes open at once"
+  end
+
+  test "[integration] opening a new span for a soul auto-closes only THAT soul's prior span" do
+    carl_first  = AtomicEvent.open_event!(session_id: "lane2", category: "Explore", reason_slug: "scan", agent: "carl")
+    shannon     = AtomicEvent.open_event!(session_id: "lane2", category: "Verify", reason_slug: "ui", agent: "shannon")
+    carl_second = AtomicEvent.open_event!(session_id: "lane2", category: "Edit", reason_slug: "fix",
+                                          agent: "carl", prior_outcome_slug: "scan done")
+
+    assert carl_first.reload.closed?, "carl's own prior span closes"
+    assert_equal "scan done", carl_first.outcome_slug, "and is stamped with the boundary outcome"
+    assert shannon.reload.open?, "shannon's span is untouched by carl's boundary"
+    assert carl_second.open?
+  end
+
+  test "[integration] close_event! closes only the named soul's lane" do
+    carl    = AtomicEvent.open_event!(session_id: "lane3", category: "Verify", reason_slug: "backend", agent: "carl")
+    shannon = AtomicEvent.open_event!(session_id: "lane3", category: "Verify", reason_slug: "ui", agent: "shannon")
+
+    closed = AtomicEvent.close_event!(session_id: "lane3", agent: "carl", outcome_slug: "approve: clean")
+
+    assert_equal carl.id, closed.id, "carl's close resolves carl's span, not whichever opened last"
+    assert_equal "approve: clean", closed.outcome_slug
+    assert shannon.reload.open?, "shannon's span survives carl's close"
+  end
+
+  test "[integration] the orchestrator's nil lane is independent of soul lanes" do
+    orchestrator = AtomicEvent.open_event!(session_id: "lane4", category: "Plan", reason_slug: "orient")
+    carl         = AtomicEvent.open_event!(session_id: "lane4", category: "Verify", reason_slug: "review", agent: "carl")
+
+    # closing the nil lane (no agent) leaves the soul lane open, and vice versa
+    AtomicEvent.close_event!(session_id: "lane4", outcome_slug: "planned")
+
+    assert orchestrator.reload.closed?
+    assert carl.reload.open?, "the soul lane is unaffected by the nil-lane close"
+  end
+
+  test "[integration] close_all_open! still closes EVERY lane at session end" do
+    AtomicEvent.open_event!(session_id: "lane5", category: "Plan", reason_slug: "orient")
+    AtomicEvent.open_event!(session_id: "lane5", category: "Verify", reason_slug: "a", agent: "carl")
+    AtomicEvent.open_event!(session_id: "lane5", category: "Verify", reason_slug: "b", agent: "shannon")
+
+    count = AtomicEvent.close_all_open!(session_id: "lane5", outcome_slug: "session ended")
+
+    assert_equal 3, count, "the session-end teardown closes all three lanes"
+    assert_equal 0, AtomicEvent.for_session("lane5").open.count
+  end
+
+  test "[unit] normalize_agent_value maps known souls and coerces the rest to the nil lane" do
+    assert_equal "carl", AtomicEvent.normalize_agent_value("Carl")
+    assert_nil AtomicEvent.normalize_agent_value("nobody")
+    assert_nil AtomicEvent.normalize_agent_value("")
+    assert_nil AtomicEvent.normalize_agent_value(nil)
+  end
+
+  test "[integration] an unknown close agent resolves the nil lane, not a soul lane" do
+    orchestrator = AtomicEvent.open_event!(session_id: "lane6", category: "Plan", reason_slug: "orient")
+    AtomicEvent.open_event!(session_id: "lane6", category: "Verify", reason_slug: "review", agent: "carl")
+
+    # a typo'd/unknown agent normalizes to the nil lane (matches the record coercion)
+    closed = AtomicEvent.close_event!(session_id: "lane6", agent: "typo", outcome_slug: "planned")
+
+    assert_equal orchestrator.id, closed.id
+  end
+
   # ---- [integration] destroy orphans its actions (survives as history) -------
 
   test "[integration] destroying a span nullifies its actions rather than destroying them" do
