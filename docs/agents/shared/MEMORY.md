@@ -1,26 +1,19 @@
-# Shared Agent Memory
+# Shared Agent Memory — retired
 
-## System Status
-- McRitchie Studio initialized: 2026-03-23
-- All 4 agents registered and active
-- 9 skills cataloged across 5 categories
-- API endpoints operational at /api/v1/
+This hand-edited file drifted stale (it once taught retired facts — a fixed agent
+count, "immutable random-hex" task slugs, an unauthenticated API). It is **no longer
+a source of truth.** Its two jobs now live in canonical places:
 
-## Key Decisions
-- Slug-based foreign keys everywhere (no integer FKs between models)
-- Task slugs are immutable random hex (not regenerated on save)
-- Cost stored as decimal(10,4) for sub-cent API pricing precision
-- Dashboard and monitoring pages are public; mutations require auth
-- API has no authentication initially (add token auth later)
+- **Distilled lessons** — the curated agent lessons are now the **Insight Bank**
+  (`ActionGrade.banked`), and the tracked doc is **generated** from it:
+  [`docs/agents/shared/insights.md`](insights.md). Curate lessons into the bank with
+  `bin/atomic-event grade <span> --disposition good|not --slug "…" --bank`; regenerate
+  the doc with `bin/rails insights:doc`. A fresh session loads them via
+  `bin/session-insights` (SessionStart). See
+  [`../system/memory.md`](../system/memory.md).
 
-## Agent Accounts
-- Shared Gmail: `team@mcritchie.studio` (all agents)
-- Per-agent emails: `admin@` (Alex), `mack@` (Mack), `mason@` (Mason), `turf@` (Turf Monster) — all forward to shared inbox
-- 1Password vault under `team@mcritchie.studio` holds Gmail credentials and Solana wallet keypairs for each agent
-- Each agent has a dedicated Solana wallet (keypairs in 1Password)
+- **Operational reference** — accounts / 1Password → `../modules/credentials.md`
+  and `../modules/credential-inventory.md`; conventions → `../system/coding-standards.md`;
+  ecosystem status → `../ECOSYSTEM.md`.
 
-## Conventions
-- All timestamps in UTC
-- Activity logging after every significant action
-- Usage reporting at end of each work session
-- Error capture via ErrorLog.capture! with polymorphic context
+Do not add lessons here — they will be missed. Bank them instead.
