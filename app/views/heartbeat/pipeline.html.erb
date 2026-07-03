@@ -9,67 +9,55 @@
 <%= render "heartbeat/styles" %>
 
 <style>
-  #alex-pipeline { --hb-bg:#0d1117; --hb-panel:#161b22; --hb-line:#2a3240; --hb-txt:#e6edf3;
+  #alex-heartbeat { --hb-bg:#0d1117; --hb-panel:#161b22; --hb-line:#2a3240; --hb-txt:#e6edf3;
     --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff; --hb-good:#3fb950;
     --hb-not:#f85149; --hb-bank:#fbbf24; --hb-mcr:#a371f7;
     min-height:calc(100vh - var(--nav-h, 7rem)); background:var(--hb-bg); color:var(--hb-txt);
     padding:18px 22px 60px; font-size:13px; line-height:1.5; }
-  #alex-pipeline .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
-  #alex-pipeline h1 { margin:0; font-size:19px; font-weight:700; }
-  #alex-pipeline .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
-  #alex-pipeline .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
-  #alex-pipeline .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
-  @media (max-width:1000px) { #alex-pipeline .pl-grid { grid-template-columns:1fr; } }
-  #alex-pipeline .pl-col { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; }
-  #alex-pipeline .pl-colhd { padding:12px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
-  #alex-pipeline .pl-colhd .pl-step { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--hb-faint); }
-  #alex-pipeline .pl-colhd h2 { margin:2px 0 0; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
-  #alex-pipeline .pl-colhd .pl-count { color:var(--hb-faint); font-weight:500; font-size:12px; }
-  #alex-pipeline .pl-list { max-height:calc(100vh - 230px); overflow-y:auto; }
-  #alex-pipeline .pl-row { padding:11px 14px; border-bottom:1px solid var(--hb-line); }
-  #alex-pipeline .pl-row:last-child { border-bottom:none; }
-  #alex-pipeline .pl-row.is-not { box-shadow:inset 3px 0 0 var(--hb-not); }
+  #alex-heartbeat .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
+  #alex-heartbeat h1 { margin:0; font-size:19px; font-weight:700; }
+  #alex-heartbeat .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
+  #alex-heartbeat .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
+  #alex-heartbeat .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
+  @media (max-width:1000px) { #alex-heartbeat .pl-grid { grid-template-columns:1fr; } }
+  #alex-heartbeat .pl-col { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; }
+  #alex-heartbeat .pl-colhd { padding:12px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
+  #alex-heartbeat .pl-colhd .pl-step { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--hb-faint); }
+  #alex-heartbeat .pl-colhd h2 { margin:2px 0 0; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .pl-colhd .pl-count { color:var(--hb-faint); font-weight:500; font-size:12px; }
+  #alex-heartbeat .pl-list { max-height:calc(100vh - 230px); overflow-y:auto; }
+  #alex-heartbeat .pl-row { padding:11px 14px; border-bottom:1px solid var(--hb-line); }
+  #alex-heartbeat .pl-row:last-child { border-bottom:none; }
+  #alex-heartbeat .pl-row.is-not { box-shadow:inset 3px 0 0 var(--hb-not); }
   /* top of the row: narration on the left, the agent cell aligned TOP-RIGHT */
-  #alex-pipeline .pl-rowtop { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-  #alex-pipeline .pl-main { flex:1; min-width:0; }
-  #alex-pipeline .pl-agent { flex-shrink:0; }
-  #alex-pipeline .pl-narr { font-weight:600; font-size:13px; margin:4px 0 0; }
-  #alex-pipeline .pl-out { color:var(--hb-muted); font-size:12px; margin:2px 0 0; }
-  #alex-pipeline .pl-out::before { content:"→ "; color:var(--hb-faint); }
-  #alex-pipeline .pl-meta { display:flex; align-items:center; gap:10px; margin-top:8px; }
-  #alex-pipeline .pl-cost { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; color:var(--hb-muted); }
-  #alex-pipeline .pl-notpill { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-not); border:1px solid var(--hb-not); border-radius:5px; padding:1px 6px; }
-  /* agent cell — SAME stacking as /alex/heartbeat/spans (the hb-* rules there are
-     scoped to #alex-heartbeat, so re-scope them here): avatars in an overlapping
-     vertical cluster, the soul name over the mascot name. */
-  #alex-pipeline { --hb-mascot:#8b949e; }
-  #alex-pipeline .hb-agentstack { display:flex; align-items:center; gap:8px; }
-  #alex-pipeline .hb-avatars { display:flex; flex-direction:column; align-items:center; }
-  #alex-pipeline .hb-ava { position:relative; display:inline-flex; }
-  #alex-pipeline .hb-avatars .hb-soulava { z-index:2; }
-  #alex-pipeline .hb-avatars .hb-mascotava { z-index:1; }
-  #alex-pipeline .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-14px; }
-  #alex-pipeline .hb-soulava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
-  #alex-pipeline .hb-mascotava > .rounded-full { box-shadow:0 0 0 1px var(--hb-line); border-radius:9999px; }
-  #alex-pipeline .hb-names { display:flex; flex-direction:column; line-height:1.15; align-items:flex-end; text-align:right; }
-  #alex-pipeline .hb-nameprimary { font-weight:700; color:var(--hb-txt); font-size:12px; white-space:nowrap; }
-  #alex-pipeline .hb-namesub { font-weight:400; color:var(--hb-muted); font-size:11px; white-space:nowrap; }
-  #alex-pipeline .hb-submascot { color:var(--hb-mascot); opacity:.85; }
-  #alex-pipeline .pl-slug { font-weight:600; font-size:13.5px; }
-  #alex-pipeline .pl-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; margin-left:6px; }
-  #alex-pipeline .pl-disp.good { color:var(--hb-good); } #alex-pipeline .pl-disp.not { color:var(--hb-not); }
-  #alex-pipeline .pl-long { color:var(--hb-muted); font-size:12px; margin:6px 0 0; white-space:pre-wrap; }
-  #alex-pipeline .pl-from { color:var(--hb-faint); font-size:11px; margin-top:6px; }
-  #alex-pipeline .pl-confirm { margin-top:9px; }
-  #alex-pipeline .pl-confirm button { font:inherit; font-size:11.5px; font-weight:600; color:var(--hb-mcr); background:transparent; border:1px solid var(--hb-mcr); border-radius:7px; padding:4px 12px; cursor:pointer; }
-  #alex-pipeline .pl-confirm button:hover { background:color-mix(in srgb, var(--hb-mcr) 16%, transparent); }
-  #alex-pipeline .pl-confirmed { margin-top:8px; font-size:11px; color:var(--hb-mcr); font-weight:600; }
-  #alex-pipeline .pl-confirmed::before { content:"✓ "; }
-  #alex-pipeline .pl-empty { color:var(--hb-faint); font-size:12px; padding:26px 16px; text-align:center; }
-  #alex-pipeline .pl-flash { margin-bottom:14px; padding:9px 14px; border-radius:9px; font-size:12.5px; border:1px solid var(--hb-line); background:var(--hb-panel); color:var(--hb-good); }
+  #alex-heartbeat .pl-rowtop { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #alex-heartbeat .pl-main { flex:1; min-width:0; }
+  #alex-heartbeat .pl-agent { flex-shrink:0; }
+  #alex-heartbeat .pl-narr { font-weight:600; font-size:13px; margin:4px 0 0; }
+  #alex-heartbeat .pl-out { color:var(--hb-muted); font-size:12px; margin:2px 0 0; }
+  #alex-heartbeat .pl-out::before { content:"→ "; color:var(--hb-faint); }
+  #alex-heartbeat .pl-meta { display:flex; align-items:center; gap:10px; margin-top:8px; }
+  #alex-heartbeat .pl-cost { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; color:var(--hb-muted); }
+  #alex-heartbeat .pl-notpill { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-not); border:1px solid var(--hb-not); border-radius:5px; padding:1px 6px; }
+  /* the reused hb-* components (category badge, nav buttons, agent cell) are styled
+     by the shared _styles partial, which scopes every rule under #alex-heartbeat —
+     so this page's ROOT is #alex-heartbeat (below), giving all of them their real
+     styling instead of re-scoping each rule by hand. */
+  #alex-heartbeat .pl-slug { font-weight:600; font-size:13.5px; }
+  #alex-heartbeat .pl-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; margin-left:6px; }
+  #alex-heartbeat .pl-disp.good { color:var(--hb-good); } #alex-heartbeat .pl-disp.not { color:var(--hb-not); }
+  #alex-heartbeat .pl-long { color:var(--hb-muted); font-size:12px; margin:6px 0 0; white-space:pre-wrap; }
+  #alex-heartbeat .pl-from { color:var(--hb-faint); font-size:11px; margin-top:6px; }
+  #alex-heartbeat .pl-confirm { margin-top:9px; }
+  #alex-heartbeat .pl-confirm button { font:inherit; font-size:11.5px; font-weight:600; color:var(--hb-mcr); background:transparent; border:1px solid var(--hb-mcr); border-radius:7px; padding:4px 12px; cursor:pointer; }
+  #alex-heartbeat .pl-confirm button:hover { background:color-mix(in srgb, var(--hb-mcr) 16%, transparent); }
+  #alex-heartbeat .pl-confirmed { margin-top:8px; font-size:11px; color:var(--hb-mcr); font-weight:600; }
+  #alex-heartbeat .pl-confirmed::before { content:"✓ "; }
+  #alex-heartbeat .pl-empty { color:var(--hb-faint); font-size:12px; padding:26px 16px; text-align:center; }
+  #alex-heartbeat .pl-flash { margin-bottom:14px; padding:9px 14px; border-radius:9px; font-size:12.5px; border:1px solid var(--hb-line); background:var(--hb-panel); color:var(--hb-good); }
 </style>
 
-<section id="alex-pipeline" data-test="alex-pipeline">
+<section id="alex-heartbeat" data-test="alex-pipeline">
   <header class="pl-topbar">
     <div>
       <h1>&#127869;&#65039; Distillation Pipeline</h1>
