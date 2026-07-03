@@ -460,8 +460,8 @@ module ApplicationHelper
   # docs/agents/modules/heartbeats.md + qa-release/SKILL.md.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["pr-review", "production-deploy", "pr-review-slow"], label: "Review + ship", title: "Avi — review + ship heartbeat" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["qa-deploy", "archive-completed"],                  label: "QA + archive",  title: "Steffon — QA deploy + archive heartbeat" },
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow"], label: "Ship + review", title: "Avi — ship a ready release, then review + merge new PRs" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-completed", "qa-deploy"],                  label: "Archive + QA",  title: "Steffon — archive the closed-out cycle, then QA the new release" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "full-cycle"],                      label: "Learn + ship",  title: "Alex — grade-events + full DevOps cycle heartbeat" }
     ]
   end
