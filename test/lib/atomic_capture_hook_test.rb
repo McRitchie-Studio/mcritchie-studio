@@ -531,6 +531,28 @@ class AtomicCaptureHookTest < Minitest::Test
     assert_includes payload["input"].to_s, "AGENT_API_SECRET"
   end
 
+  def test_unit_redact_masks_json_quoted_key_secrets
+    # tool_input/tool_response are JSON.generate'd BEFORE redaction, so a structured
+    # tool response (an MCP tool, a nested hash) with a secret-named key arrives as
+    # "KEY":"VALUE" — the key's CLOSING quote sits before the ':'. This must redact.
+    h = hook
+    [
+      %({"access_token":"#{SECRET}"}),
+      %({"api_key":"#{SECRET}"}),
+      %({"AGENT_API_SECRET":"#{SECRET}"}),
+      %({"result":{"auth_token":"#{SECRET}"}}) # nested
+    ].each do |json|
+      out = h.redact_secrets(json)
+      refute_includes out, SECRET, "JSON-serialized secret must be masked: #{json}"
+      assert_includes out, "[redacted]"
+    end
+
+    # end-to-end through a real structured tool_response (serialize → redact → store)
+    payload = payload_for(tool_name: "mcp__vault__read", tool_input: { "path" => "prod" },
+                          tool_response: { "access_token" => SECRET, "nested" => { "api_key" => SECRET } })
+    refute_includes payload["output"].to_s, SECRET, "a structured secret never reaches the stored field"
+  end
+
   def test_unit_redact_masks_known_credential_formats
     {
       "stripe" => "sk_live_#{"a" * 24}",

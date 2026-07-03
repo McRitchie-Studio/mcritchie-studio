@@ -56,11 +56,24 @@ before the POST, so a secret never leaves the machine. Two layers:
   `*PASSWORD*`, `*_KEY`, `*CREDENTIAL*`, `*WEBHOOK*`, `*MNEMONIC*`, …) have the
   **value** masked (key kept, so the trajectory stays legible), plus standalone
   credential formats (PEM private-key blocks, `sk_live`/`sk_test`, `AKIA…`,
-  `ghp_`/`github_pat_`, `xox…`, `Bearer …`).
+  `ghp_`/`github_pat_`, `xox…`, `Bearer …`). The JSON `"KEY":"VALUE"` form is
+  covered because `tool_input`/`tool_response` are JSON-serialized before redaction,
+  so a **structured** tool response (an MCP tool, a nested hash) with a secret-named
+  key is caught too.
 
 Redaction runs **before** truncation, so a secret near the ~3 KB cut can't survive
 as a prefix. This is defense at the producer; broadening who can *read* the (now
 secret-free) telemetry is a separate concern.
+
+> **Best-effort, not a guarantee.** Pattern redaction catches secrets that carry a
+> recognizable **key** or **format**. A **bare, space-separated value with no key
+> and no known format is NOT caught** — e.g. `echo $SECRET`, `--password <val>`,
+> `cut -d= .env`, a raw `op read` value, a Solana keypair `*.json` byte-array, or
+> creds embedded in a `DATABASE_URL`. The **whole-field suppression** layer is the
+> backstop for the common cases (secret-reader commands + secret file reads); the
+> "never ship a secret off the box" headline holds for those, but a novel bare-value
+> path can still slip. Widening coverage (keypair reads, URL creds) is tracked as a
+> follow-up.
 
 ### What it DROPS (never a row)
 

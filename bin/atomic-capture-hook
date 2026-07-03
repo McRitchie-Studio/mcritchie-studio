@@ -310,14 +310,20 @@ class AtomicCaptureHook
   # SECRET_FILE_BASENAME (checked together in secret_reader_command?).
   FILE_DUMP = /(?:\A|[|&;]|\s)\s*(?:cat|bat|less|more|head|tail|xxd|strings|nl)\s/.freeze
 
-  # An assignment whose KEY names a secret: KEY=VALUE, KEY: VALUE, "KEY":"VALUE".
-  # The value (group 4, up to whitespace/quote/comma) is masked; the key is kept.
+  # An assignment whose KEY names a secret, masking the VALUE and keeping the key.
+  # Covers shell `KEY=VALUE` / `KEY="VALUE"`, YAML `KEY: VALUE`, and — crucially —
+  # JSON `"KEY":"VALUE"`. The key/separator group (2) tolerates a CLOSING QUOTE
+  # before the `[:=]` so a JSON-serialized structured tool response (an MCP tool /
+  # nested tool_response hash) can't slip a `"access_token":"…"` past: the key class
+  # excludes `"`, so without this the key's closing quote sat between the key and the
+  # separator and the match failed (the value then landed on the PUBLIC surface). The
+  # value (group 4, up to whitespace/quote/comma) is masked; groups 1–3 are kept.
   SECRET_ASSIGNMENT = /
     ([A-Za-z0-9_.\-]*
      (?:SECRET|TOKEN|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|
         SECRET[_-]?KEY|_KEY|CREDENTIAL|WEBHOOK|SIGNING|MNEMONIC|SEED[_-]?PHRASE)
      [A-Za-z0-9_.\-]*)
-    (\s*[:=]\s*)(['"]?)([^\s'",]+)
+    (['"]?\s*[:=]\s*)(['"]?)([^\s'",]+)
   /xi.freeze
 
   # The field value to store: REDACTED_FIELD when the tool touched secret material
