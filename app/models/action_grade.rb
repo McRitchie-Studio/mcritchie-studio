@@ -100,6 +100,25 @@ class ActionGrade < ApplicationRecord
     atomic_event_id.present?
   end
 
+  # The record this banked lesson was mined from — its action OR its span (the XOR
+  # target), or nil when that source was later removed (has_many :nullify), so a
+  # banked insight can outlive what it graded. The Insight Bank reads provenance
+  # through this instead of dereferencing atomic_action unconditionally (which 500'd
+  # the whole bank the moment a SPAN grade was banked).
+  def insight_source
+    atomic_action || atomic_event
+  end
+
+  # A short human label for the insight's source: a span reads by its narration
+  # category, a raw action by its event slug (falling back to its tool kind). nil
+  # when the source is unknown/removed.
+  def insight_label
+    source = insight_source
+    return nil unless source
+
+    event_grade? ? source.category : (source.event_slug.presence || source.kind)
+  end
+
   private
 
   # XOR: a grade must target EXACTLY ONE of an action or a span. Zero targets

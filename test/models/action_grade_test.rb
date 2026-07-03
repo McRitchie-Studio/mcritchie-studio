@@ -314,4 +314,42 @@ class ActionGradeTest < ActiveSupport::TestCase
 
     assert_nil grade.reload.atomic_event_id, "the grade survives the span, orphaned"
   end
+
+  # ---- [unit] insight provenance (the Insight-Bank crash fix) -----------------
+  # The bank renders provenance through #insight_source / #insight_label instead of
+  # dereferencing atomic_action unconditionally — a span grade has no action.
+
+  test "[unit] insight_source returns the action for an action grade" do
+    a = action
+    grade = ActionGrade.new(valid_attrs(atomic_action: a))
+    assert_equal a, grade.insight_source
+  end
+
+  test "[unit] insight_source returns the span for a span grade (never nil-derefs an action)" do
+    span = event
+    grade = ActionGrade.new(event_valid_attrs(atomic_event: span))
+    assert_nil grade.atomic_action, "a span grade has no action target"
+    assert_equal span, grade.insight_source
+  end
+
+  test "[unit] insight_source is nil once the source is removed (orphaned but still valid to read)" do
+    grade = ActionGrade.new(grader: ActionGrade::ALEX, slug: "orphaned lesson body",
+                            disposition: ActionGrade::GOOD)
+    assert_nil grade.insight_source, "no target -> the bank shows 'source since removed', never crashes"
+  end
+
+  test "[unit] insight_label reads a span by category and an action by event slug" do
+    span_grade = ActionGrade.new(event_valid_attrs(atomic_event: event(category: "Verify")))
+    assert_equal "Verify", span_grade.insight_label
+
+    a = action(event_slug: "Add the auth gate")
+    action_grade = ActionGrade.new(valid_attrs(atomic_action: a))
+    assert_equal "Add the auth gate", action_grade.insight_label
+  end
+
+  test "[unit] insight_label falls back to the tool kind when an action has no event slug" do
+    a = action(event_slug: nil, kind: "bash")
+    grade = ActionGrade.new(valid_attrs(atomic_action: a))
+    assert_equal "bash", grade.insight_label
+  end
 end
