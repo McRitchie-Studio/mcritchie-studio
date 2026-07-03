@@ -6,7 +6,8 @@
 # Insight Bank — distilled agent lessons
 
 _Generated 2026-07-03 from 0 banked insights. Do not hand-edit —
-curate the bank and regenerate. A fresh session loads these via `bin/session-insights`._
+curate the bank and regenerate. A fresh session **will** load these via the planned
+`bin/session-insights` SessionStart loader once it lands._
 
 _No insights banked yet. Grade resolved spans and `--bank` the ones worth carrying
 forward (`bin/atomic-event grade <span> --bank`), then regenerate with `bin/rails insights:doc`._

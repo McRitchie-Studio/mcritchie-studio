@@ -18,14 +18,23 @@ module Insights
       Rails.root.join("docs/agents/shared/insights.md")
     end
 
-    # Read ActionGrade.banked, render, and write the doc. Returns the path written.
+    # Read ActionGrade.banked, render, and write the doc. Returns the COUNT of
+    # insights written — the same number the doc header shows — so callers (the rake
+    # task) never report a count from a different source than the doc.
     def generate!(path: default_path, at: Time.current)
-      insights = ActionGrade.banked
-                            .includes(:atomic_action, :atomic_event)
-                            .order(updated_at: :desc)
-                            .map { |g| normalize(g) }
+      insights = banked_insights
       File.write(path, render(insights: insights, generated_at: at))
-      path
+      insights.size
+    end
+
+    # The banked grades as render-ready hashes: newest curation first, blank-slug
+    # rows dropped (the same set render shows, so counts can't diverge).
+    def banked_insights
+      ActionGrade.banked
+                 .includes(:atomic_action, :atomic_event)
+                 .order(updated_at: :desc)
+                 .map { |g| normalize(g) }
+                 .reject { |i| i[:slug].to_s.strip.empty? }
     end
 
     # Normalize one banked ActionGrade to the render hash. Provenance is read inline
@@ -73,7 +82,8 @@ module Insights
         # Insight Bank — distilled agent lessons
 
         _Generated #{stamp} from #{count} banked #{count == 1 ? 'insight' : 'insights'}. Do not hand-edit —
-        curate the bank and regenerate. A fresh session loads these via `bin/session-insights`._
+        curate the bank and regenerate. A fresh session **will** load these via the planned
+        `bin/session-insights` SessionStart loader once it lands._
       HEAD
     end
 

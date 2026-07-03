@@ -66,9 +66,9 @@ module Insights
 
       Dir.mktmpdir do |dir|
         path = File.join(dir, "insights.md")
-        written = DocGenerator.generate!(path: path, at: AT)
+        count = DocGenerator.generate!(path: path, at: AT)
 
-        assert_equal path, written.to_s
+        assert_equal 2, count, "generate! returns the count the doc shows (only banked, non-blank)"
         md = File.read(path)
         assert_includes md, "bank this good lesson"
         assert_includes md, "avoid this bad pattern"
