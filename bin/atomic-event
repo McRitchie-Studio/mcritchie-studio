@@ -144,8 +144,16 @@ class AtomicEventCli
     return warn_note("atomic-event: no session id — nothing to narrate") unless present?(sid)
 
     outcome = flags["outcome"].to_s.strip
+    # Resolve the acting soul the SAME way `start` does (explicit --agent, else the
+    # session's sticky heartbeat agent) and send it, so close targets THIS soul's
+    # LANE — a reviewer's `end` resolves its own span, not whichever soul opened
+    # last in the shared session. Empty ⇒ the nil lane (the orchestrator's).
+    agent = flags["agent"].to_s.strip
+    agent = read_acting_agent(sid).to_s if agent.empty?
+
     res = post("/api/v1/atomic_events/close", {
       "session_id" => sid,
+      "agent"      => agent,
       "outcome"    => outcome
     }.reject { |_, v| v.to_s.empty? })
 

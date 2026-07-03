@@ -43,6 +43,7 @@ module Api
       def close
         event = AtomicEvent.close_event!(
           session_id:   close_params[:session_id],
+          agent:        close_params[:agent],
           outcome_slug: close_params[:outcome]
         )
         return head :no_content if event.nil?
@@ -85,6 +86,7 @@ module Api
       def close_params
         params.permit(
           :session_id, # required — the session whose open span to close
+          :agent,      # optional acting soul — selects the LANE to close (unknown → nil lane)
           :outcome     # optional — "what happened" (stored as outcome_slug)
         )
       end
