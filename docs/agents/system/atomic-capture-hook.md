@@ -192,3 +192,56 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
   server: it mints a token, then POSTs the right shape to `/api/v1/atomic_actions`
   with `Authorization: Bearer …`; a missing `session_id` posts nothing; a closed
   port still exits 0.
+
+---
+
+## Feed-forward: `bin/session-insights` (SessionStart) — closing the loop
+
+The capture hook + narration record the trajectory; grading distills it into the
+**Insight Bank** (`ActionGrade.banked`). `bin/session-insights` is the loop's
+**output** stage — a **SessionStart** hook that reads the bank and injects the
+curated lessons into a **fresh** agent's context, so a new session hatches already
+knowing what past sessions learned (the OPSD feed-forward: banked lessons stop
+being write-only).
+
+**What it does.** It `GET`s `/api/v1/insights?limit=N` (bearer-gated, the curated
+`ActionGrade.banked` newest-first, capped 1..50; default 12), then prints the
+SessionStart context-injection JSON to stdout and exits 0:
+
+```json
+{ "hookSpecificOutput": { "hookEventName": "SessionStart",
+    "additionalContext": "## Insights from past sessions — the McRitchie learning loop\n… ✓ do / ✗ avoid lines …" } }
+```
+
+Same board + token as the rest of the stack (`ATOMIC_CAPTURE_URL`,
+`AGENT_API_SECRET` → 1Password → repo `.env`, reusing the shared token cache).
+**NON-FATAL by construction:** no token, an unreachable board, or an empty bank
+prints **nothing** and exits 0 — the hook can never block or slow a session start.
+Codex uses the same SessionStart `hookSpecificOutput.additionalContext` schema.
+
+**Wiring (settings.json).** Registered under `hooks.SessionStart` the same way the
+mascot hook is, with `ATOMIC_CAPTURE_URL` pointed at prod:
+
+```json
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "timeout": 5000, "statusMessage": "Loading insights…",
+    "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/session-insights" }
+] } ] } }
+```
+
+> **Same rule — activation is the installer's job, not a build session's.**
+> `bin/install-agent-docs` wiring this hook idempotently is a follow-up (like the
+> capture + SessionEnd hooks); the orchestrator activates it **after** this change
+> is reviewed and merged. Relevance ranking by app/shape is a documented follow-up
+> — v1 injects the most recently curated set.
+
+### Tests
+
+`test/lib/session_insights_test.rb`:
+
+- **[unit]** the pure formatter — `insight_line` (✓ do / ✗ avoid, provenance,
+  symbol/string keys, empty without a slug) and `additional_context` (header +
+  rows; empty when nothing renders).
+- **[integration]** the real script shelled out against a localhost stub: it mints
+  a token, `GET`s the insights, and prints valid SessionStart injection JSON; an
+  empty bank prints nothing and exits 0.

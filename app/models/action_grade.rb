@@ -42,6 +42,12 @@ class ActionGrade < ApplicationRecord
   NOT          = "not"
   DISPOSITIONS = [GOOD, NOT].freeze
 
+  # Feed-forward: how many banked insights a fresh session loads by default, and
+  # the hard cap. A session's context budget is finite, so the feed NEVER floods
+  # it — .insight_feed clamps to 1..MAX_FEED_LIMIT.
+  DEFAULT_FEED_LIMIT = 12
+  MAX_FEED_LIMIT     = 50
+
   # Dual, mutually exclusive targets — both optional at the association level so a
   # grade can hang off EITHER one. The XOR below guarantees exactly one is set.
   belongs_to :atomic_action, optional: true, inverse_of: :action_grades
@@ -64,6 +70,18 @@ class ActionGrade < ApplicationRecord
   scope :discarded,  -> { where(discarded: true) }
   scope :for_action, ->(action) { where(atomic_action_id: action) }
   scope :for_event,  ->(event) { where(atomic_event_id: event) }
+
+  # The learning loop's OUTPUT — the curated lessons a FRESH session carries in.
+  # Today `banked` is read by one HTML page; .insight_feed is the feed-forward
+  # read path (GET /api/v1/insights → the SessionStart hook), so a new agent
+  # hatches already knowing what past sessions learned. Newest curation first,
+  # capped (clamped 1..MAX_FEED_LIMIT). Eager-loads both possible sources so
+  # #to_insight reads provenance with no N+1. (Relevance-by-app/shape ranking is a
+  # documented follow-up; v1 is the most recently curated set.)
+  def self.insight_feed(limit: DEFAULT_FEED_LIMIT)
+    capped = limit.to_i.clamp(1, MAX_FEED_LIMIT)
+    banked.includes(:atomic_action, :atomic_event).order(updated_at: :desc).limit(capped)
+  end
 
   # Curate this grade into the Insight Bank. Banking and discarding are mutually
   # exclusive, so banking clears any prior discard. Raises on failure.
@@ -98,6 +116,22 @@ class ActionGrade < ApplicationRecord
   # True when this grade targets a narrated span rather than a raw action.
   def event_grade?
     atomic_event_id.present?
+  end
+
+  # The feed-forward shape of one banked insight: the lesson (`slug` + optional
+  # `long_form`), its GOOD-do-this / NOT-avoid-this signal, who curated it, and the
+  # task it was mined from. Provenance is read INLINE from whichever source is set
+  # (kept independent of any richer provenance helper so this doesn't couple to
+  # other in-flight work). No raw trajectory body — a fresh session wants the
+  # LESSON, not the tool calls. nil fields are dropped.
+  def to_insight
+    {
+      "slug"        => slug,
+      "disposition" => disposition,
+      "long_form"   => long_form.presence,
+      "grader"      => grader,
+      "task_slug"   => (atomic_action&.task_slug || atomic_event&.task_slug)
+    }.compact
   end
 
   private
