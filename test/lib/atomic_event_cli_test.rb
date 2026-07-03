@@ -286,6 +286,40 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
+  # ── [integration] grade + awaiting — the agent grade-events flow ──────────
+
+  def test_integration_grade_posts_disposition_slug_and_intent_to_the_span
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[grade 42 --disposition not --slug noisy-span --bank], proj: proj)
+
+      grade = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/42/grade" }
+      refute_nil grade, "grade POSTs to the span's grade endpoint"
+      body = JSON.parse(grade[:body])
+      assert_equal "not", body["disposition"]
+      assert_equal "noisy-span", body["slug"]
+      assert_equal "bank", body["intent"], "--bank becomes intent=bank"
+      refute body.key?("grader"), "the CLI never sends a grader — the server forces alex"
+    end
+  end
+
+  def test_integration_grade_without_a_span_id_posts_nothing
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[grade --disposition good], proj: proj)
+
+      assert_empty requests.select { |r| r[:path].to_s.include?("/grade") }, "no span id → no grade POST"
+    end
+  end
+
+  def test_integration_awaiting_gets_the_endpoint_with_the_limit
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%W[awaiting --limit 5], proj: proj)
+
+      fetch = requests.find { |r| r[:method] == "GET" && r[:path].start_with?("/api/v1/atomic_events/awaiting_grade") }
+      refute_nil fetch, "awaiting GETs the awaiting_grade endpoint"
+      assert_includes fetch[:path], "limit=5"
+    end
+  end
+
   # ── [integration] STICKY heartbeat agent — a `<Soul> Heartbeat` self-attributes ─
 
   def test_integration_heartbeat_sets_a_sticky_agent_a_bare_start_inherits
@@ -533,6 +567,14 @@ class AtomicEventCliTest < Minitest::Test
     return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_events"
     return ["200 OK", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_events/close"
     return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/atomic_events/close_all"
+    if method == "POST" && path.match?(%r{\A/api/v1/atomic_events/\d+/grade\z})
+      return ["201 Created", JSON.generate("data" => { "id" => 5, "grader" => "alex", "disposition" => "not",
+                                                       "slug" => "noisy span", "banked" => true })]
+    end
+    if method == "GET" && path.start_with?("/api/v1/atomic_events/awaiting_grade")
+      return ["200 OK", JSON.generate("data" => [{ "id" => 7, "category" => "Verify",
+                                                   "reason" => "review the diff", "outcome" => "approved" }])]
+    end
 
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
   end

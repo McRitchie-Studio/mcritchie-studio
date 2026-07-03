@@ -208,14 +208,17 @@ only what makes the next agent smarter.
 
 - **Precondition:** resolved spans awaiting a grade (there usually are). None
   ungraded → report "nothing to grade" and stop (idempotent no-op).
-- **Steps:**
-  1. At `/alex/heartbeat`, grab the **10 most recent resolved spans**, oldest →
-     newest.
-  2. Grade each: **good / not**, a **4–7 word slug**, and an optional long-form
-     note.
-  3. **Bank** the ones that make the next agent smarter (enriched `feedback_*`
-     insights); **discard** the rest.
-- **Exit seam:** 10 spans graded, useful insights banked. (Mr. McRitchie audits a
+- **Steps (first-class CLI path — bearer-gated, no HTML scraping):**
+  1. `bin/atomic-event awaiting [--limit 10]` — the resolved spans Alex hasn't
+     graded yet (id + category · reason → outcome + task), oldest → newest.
+  2. Grade each: `bin/atomic-event grade <span-id> --disposition good|not
+     --slug "<4–7 words>" [--long-form "<anchor>"]`.
+  3. **Bank** the ones that make the next agent smarter (`--bank`); **discard** the
+     rest (`--discard`). Banked insights feed forward via `bin/session-insights`.
+  4. The browser drawer at `/alex/heartbeat` is the equivalent **admin** path
+     (same writes; it also owns the **`mcr` audit-of-Alex** lane, which the agent
+     CLI cannot write — the bearer `grade` endpoint always grades as `alex`).
+- **Exit seam:** ~10 spans graded, useful insights banked. (Mr. McRitchie audits a
   shrinking sample as the signal proves out.)
 
 ### Act 2 — `full-cycle`

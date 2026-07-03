@@ -75,11 +75,15 @@ class AtomicEventCli
     when "end"           then finish(flags)
     when "close-open"    then close_open(flags)
     when "heartbeat"     then heartbeat(argv, flags) # sticky acting-agent for a soul run
+    when "grade"         then grade_span(argv, flags) # bearer AGENT grade of a resolved span
+    when "awaiting"      then awaiting(flags)          # resolved spans still awaiting an Alex grade
     else
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
                 "next --outcome <text> --category <C> --reason <text> [--agent <soul>] [--task <slug>] | " \
                 "end [--outcome <text>] | close-open [--outcome <text>] | " \
-                "heartbeat <soul> | heartbeat --clear")
+                "heartbeat <soul> | heartbeat --clear | " \
+                "grade <span-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
+                "awaiting [--limit <n>]")
     end
   rescue StandardError => e
     warn_note("atomic-event failed (ignored): #{e.class}: #{e.message}")
@@ -217,6 +221,66 @@ class AtomicEventCli
               "(stacked over the base mascot) until `heartbeat --clear` or session end")
   end
 
+  # `grade <span-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`
+  # — the bearer AGENT grade of a resolved span (the CLI half of the Alex heartbeat
+  # grade-events loop; the browser drawer is admin-only). The span id is the LEADING
+  # positional. The server FORCES the grader to alex (the mcr audit stays admin-only),
+  # so no --grader flag exists. Reports what landed, but ALWAYS exits 0.
+  def grade_span(argv, flags)
+    first = argv.first.to_s.strip
+    span_id = first.start_with?("--") ? "" : first
+    if span_id.empty?
+      return warn_note("atomic-event grade needs a span id " \
+                       "(e.g. `grade 42 --disposition good --slug \"clean sharp outcome\"`)")
+    end
+
+    intent = "bank" if flags["bank"]
+    intent = "discard" if flags["discard"]
+    body = {
+      "disposition" => flags["disposition"].to_s.strip,
+      "slug"        => flags["slug"].to_s.strip,
+      "long_form"   => flags["long-form"].to_s.strip,
+      "intent"      => intent
+    }.reject { |_, v| v.to_s.empty? }
+
+    res = post("/api/v1/atomic_events/#{span_id}/grade", body)
+    if res && res.code.to_i.between?(200, 299)
+      data = parse_data(res)
+      mark = data["disposition"] == "not" ? "✗" : "✓"
+      tail = data["banked"] ? " · banked" : (data["discarded"] ? " · discarded" : "")
+      @out.puts("atomic-event: graded span #{span_id} #{mark} #{data['slug']}#{tail}")
+    elsif res
+      warn_note("atomic-event: grade failed — server said #{res.code}")
+    else
+      warn_note("atomic-event: grade failed — no response")
+    end
+  end
+
+  # `awaiting [--limit <n>]` — the resolved spans still awaiting an Alex grade (the
+  # READ half of grade-events), so the agent knows WHAT to grade and their ids
+  # without scraping the HTML page. One line per span; ALWAYS exits 0.
+  def awaiting(flags)
+    limit = flags["limit"].to_s.strip
+    path = "/api/v1/atomic_events/awaiting_grade"
+    path += "?limit=#{limit}" unless limit.empty?
+
+    res = get(path)
+    unless res && res.code.to_i.between?(200, 299)
+      return warn_note("atomic-event: couldn't fetch spans awaiting grade")
+    end
+
+    rows = parse_data(res)
+    rows = [] unless rows.is_a?(Array)
+    return @out.puts("atomic-event: no spans awaiting grade") if rows.empty?
+
+    @out.puts("Spans awaiting an Alex grade (#{rows.size}):")
+    rows.each do |r|
+      outcome = present?(r["outcome"]) ? r["outcome"] : "(no outcome)"
+      task = present?(r["task_slug"]) ? "  [#{r['task_slug']}]" : ""
+      @out.puts("  ##{r['id']}  #{r['category']} · #{r['reason']} → #{outcome}#{task}")
+    end
+  end
+
   # ── argv + session/marker resolution ──────────────────────────────────────
 
   # Minimal --flag value parser (repeats: last wins). Bare/unknown args ignored.
@@ -314,6 +378,27 @@ class AtomicEventCli
   rescue StandardError => e
     warn_note("atomic-event POST #{path} failed (ignored): #{e.class}")
     nil
+  end
+
+  def get(path)
+    tok = token
+    return nil unless tok
+
+    res = http_json(:get, path, nil, bearer: tok)
+    invalidate_token! if res && res.code.to_i == 401
+    res
+  rescue StandardError => e
+    warn_note("atomic-event GET #{path} failed (ignored): #{e.class}")
+    nil
+  end
+
+  # The `data` payload of a JSON API response (a Hash for a single record, an Array
+  # for a collection), or {} on any parse failure. Best-effort — never raises.
+  def parse_data(res)
+    body = JSON.parse(res.body)
+    body.is_a?(Hash) ? (body["data"] || {}) : {}
+  rescue StandardError
+    {}
   end
 
   def report(res, ok_message)

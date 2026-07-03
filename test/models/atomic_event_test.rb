@@ -398,4 +398,61 @@ class AtomicEventTest < ActiveSupport::TestCase
     end
     assert_nil action.reload.atomic_event_id, "the raw action survives as orphaned history"
   end
+
+  # ---- [integration] awaiting_grade — the grade-events READ path -------------
+
+  def resolved_span(session_id:, reason: "resolved span here", **attrs)
+    AtomicEvent.open_event!(session_id: session_id, category: "Verify", reason_slug: reason, **attrs)
+    AtomicEvent.close_event!(session_id: session_id, outcome_slug: "done")
+  end
+
+  test "[integration] awaiting_grade returns resolved spans ungraded by the grader, newest first" do
+    older = resolved_span(session_id: "aw-1", reason: "older resolved span")
+    older.update!(closed_at: 2.days.ago)
+    newer = resolved_span(session_id: "aw-2", reason: "newer resolved span")
+
+    ids = AtomicEvent.awaiting_grade(grader: "alex").map(&:id)
+
+    assert_equal [newer.id, older.id], ids, "resolved spans, newest-resolved first"
+  end
+
+  test "[integration] awaiting_grade excludes an OPEN span and one Alex already graded" do
+    AtomicEvent.open_event!(session_id: "aw-open", category: "Edit", reason_slug: "still open") # never closed
+    graded = resolved_span(session_id: "aw-graded", reason: "already graded span")
+    ActionGrade.create!(atomic_event: graded, grader: "alex", slug: "seen this one", disposition: "good")
+    fresh = resolved_span(session_id: "aw-fresh", reason: "not yet graded span")
+
+    ids = AtomicEvent.awaiting_grade(grader: "alex").map(&:id)
+
+    assert_includes ids, fresh.id
+    refute_includes ids, graded.id, "a span Alex already graded is not awaiting"
+    assert(ids.none? { |id| AtomicEvent.find(id).open? }, "open spans are never awaiting")
+  end
+
+  test "[integration] awaiting_grade is per-grader — an mcr grade doesn't satisfy alex" do
+    span = resolved_span(session_id: "aw-grader", reason: "mcr graded not alex")
+    ActionGrade.create!(atomic_event: span, grader: "mcr", slug: "mcr audited this", disposition: "good")
+
+    assert_includes AtomicEvent.awaiting_grade(grader: "alex").map(&:id), span.id,
+                    "an mcr grade leaves it awaiting an ALEX grade"
+  end
+
+  test "[integration] awaiting_grade clamps the limit" do
+    3.times { |i| resolved_span(session_id: "aw-cap-#{i}", reason: "resolved number #{i}") }
+
+    assert_equal 1, AtomicEvent.awaiting_grade(limit: 0).size, "0 clamps up to 1"
+    assert_operator AtomicEvent.awaiting_grade(limit: 999).size, :<=, AtomicEvent::MAX_GRADE_BATCH
+  end
+
+  test "[unit] to_grading_row carries what a grader needs and drops nils" do
+    span = AtomicEvent.open_event!(session_id: "row-sess", category: "Verify",
+                                   reason_slug: "narrated well", agent: "carl", task_slug: nil)
+    row = span.to_grading_row
+
+    assert_equal span.id, row["id"]
+    assert_equal "Verify", row["category"]
+    assert_equal "narrated well", row["reason"]
+    assert_equal "carl", row["agent"]
+    assert_not row.key?("task_slug"), "a nil task_slug is dropped"
+  end
 end

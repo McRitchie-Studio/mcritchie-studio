@@ -295,6 +295,13 @@ Rails.application.routes.draw do
           post :close_all
         end
       end
+      # Learning-loop grading — the bearer AGENT path for the Alex heartbeat
+      # grade-events loop. `awaiting` lists resolved spans still ungraded by Alex;
+      # `grade` upserts Alex's grade of one span. The grader is FORCED to alex here
+      # (the mcr audit-of-Alex stays admin-browser-only), so the shared agent token
+      # can never forge McRitchie's audit.
+      get  "atomic_events/awaiting_grade", to: "event_grades#awaiting", as: :awaiting_grade_atomic_events
+      post "atomic_events/:id/grade",      to: "event_grades#create",   as: :grade_atomic_event
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,
       # so a SessionStart hook can show it on the status line in seconds.
       post "sessions/:session_id/mascot", to: "sessions#mascot"
