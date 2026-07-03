@@ -37,7 +37,11 @@
 require "optparse"
 require "json"
 require_relative "lib/full_suite_gate"
+require_relative "lib/repo_root"
 
+# ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
+# to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
+# CODE we run + fingerprint, though, roots at the agent's worktree (below).
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = File.expand_path("task", __dir__)
 
@@ -54,7 +58,11 @@ OptionParser.new do |o|
 end.parse!
 
 slug = ARGV.shift
-root = ENV.fetch("FULL_SUITE_ROOT", ROOT)
+# Run + fingerprint the CODE at the agent's worktree (cwd's git toplevel), so a
+# task in a SATELLITE worktree certifies the satellite — not the hub this script
+# lives in. FULL_SUITE_ROOT overrides (the CI/test seam); falls back to ROOT when
+# cwd isn't in a git tree. For a mcritchie-studio worktree this is the same dir.
+root = RepoRoot.code_root(ENV["FULL_SUITE_ROOT"], ROOT)
 
 # --- opt-in pre-push hook installer -------------------------------------------
 # "Pre-commit hooks always run" (git-protocol.md) — but a FULL suite on every
