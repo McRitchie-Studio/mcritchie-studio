@@ -253,6 +253,25 @@ reviewers = [{ "slug" => "shannon", "weight" => "primary" }, { "slug" => "carl",
   )
 end
 
+# Cleared-block re-review demo: a task that was QA-blocked (a qa_feedback Activity),
+# had the block resolved (a resolves_feedback handoff), and is back in `submitted`
+# awaiting a re-review — Task#block_state => :cleared, so the card wears the amber
+# tone + RE-REVIEW badge (distinct from red UNRESOLVED and plain never-blocked).
+cleared_block_task = Task.create!(
+  title: "Cleared block re-review demo",
+  slug: "e2e-cleared-block-demo",
+  description: "A resolved QA block back in submitted, awaiting another review.",
+  stage: "submitted",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+Activity.create!(task_slug: cleared_block_task.slug, activity_type: "qa_feedback",
+                 description: "Blocked: please add a regression test.", created_at: 2.hours.ago)
+Activity.create!(task_slug: cleared_block_task.slug, activity_type: "handoff",
+                 description: "Added the regression test — ready for another review.",
+                 metadata: { "resolves_feedback" => true }, created_at: 20.minutes.ago)
+
 # A second submitted task for the live STAGE-CHANGE round-trip: the e2e moves it
 # submitted→reviewed and asserts the card FLIPs columns AND the per-column count
 # badges update (the regression guard for the updateCounts() call in applyLiveUpdate).

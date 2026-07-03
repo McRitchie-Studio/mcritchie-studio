@@ -213,6 +213,12 @@ class TasksController < ApplicationController
       memo[activity.task_slug] ||= activity
     end
     @unresolved_feedback_activities = Task.unresolved_feedback_by_slug(task_slugs)
+    # Which tasks ever carried a QA block — the "was blocked" half of the card's
+    # tri-state tone (a cleared block wears amber, awaiting re-review). One indexed
+    # query for the whole board, so a card never queries per-slug (mirrors
+    # @unresolved_feedback_activities).
+    @ever_blocked_slugs = Activity.where(task_slug: task_slugs, activity_type: "qa_feedback")
+                                  .distinct.pluck(:task_slug).to_set
   end
 
   def load_review_process_context

@@ -1134,4 +1134,61 @@ class TaskTest < ActiveSupport::TestCase
 
     assert_nil task.reload.actual_size, "a non-ship transition must not stamp actual_size"
   end
+
+  # --- block_state: the cleared-block re-review tri-state ---
+
+  def block_state_task(stage:)
+    Task.create!(title: "block state #{stage} #{SecureRandom.hex(3)}", stage: stage)
+  end
+
+  def qa_block(task, description: "please fix it")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: description)
+  end
+
+  def resolve_block(task, description: "fixed it")
+    Activity.create!(task_slug: task.slug, activity_type: "handoff", description: description,
+                     metadata: { "resolves_feedback" => true })
+  end
+
+  test "block_state is :never and ever_blocked? false for a task never blocked" do
+    task = block_state_task(stage: "submitted")
+    assert_not task.ever_blocked?
+    assert_equal :never, task.block_state
+  end
+
+  test "block_state is :blocked while a qa_feedback is unresolved" do
+    task = block_state_task(stage: "submitted")
+    qa_block(task)
+    assert task.ever_blocked?
+    assert_equal :blocked, task.block_state
+  end
+
+  test "block_state is :blocked for the blocked stage even with no open feedback" do
+    assert_equal :blocked, block_state_task(stage: "blocked").block_state
+  end
+
+  test "block_state is :cleared once a block is resolved and it is back in submitted" do
+    task = block_state_task(stage: "submitted")
+    qa_block(task)
+    resolve_block(task)
+    assert_not task.unresolved_feedback?
+    assert task.ever_blocked?
+    assert_equal :cleared, task.block_state
+  end
+
+  test "block_state clears to :never once a cleared task advances past submitted" do
+    task = block_state_task(stage: "reviewed")
+    qa_block(task)
+    resolve_block(task)
+    assert task.ever_blocked?, "history still shows a past block"
+    assert_equal :never, task.block_state,
+      "the amber re-review state only holds while awaiting re-review in submitted"
+  end
+
+  test "block_state honors preloaded unresolved/ever_blocked hints (no query)" do
+    task = block_state_task(stage: "submitted") # no activities at all
+    assert_equal :cleared, task.block_state(unresolved: false, ever_blocked: true)
+    assert_equal :blocked, task.block_state(unresolved: true, ever_blocked: false)
+    assert_equal :never, task.block_state(unresolved: false, ever_blocked: false)
+  end
 end

@@ -114,4 +114,46 @@ class TaskCardTest < ActionView::TestCase
     end
     assert_select "#card-#{task.slug}"
   end
+
+  test "[component] a cleared-block card wears the amber re-review tone + badge" do
+    task = Task.create!(title: "Cleared block card", stage: "submitted")
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     unresolved_feedback: nil, ever_blocked: true }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_includes card["class"], "bg-amber-50"
+    assert_includes card["class"], "dark:bg-amber-950/40"
+    assert_includes card["class"], "hover:bg-amber-100/70"
+    assert_select "[data-test='cleared-feedback']", text: "RE-REVIEW"
+    assert_not_includes card["class"], "bg-red-50", "a cleared block is amber, not red"
+  end
+
+  test "[component] an open block still wins red over amber" do
+    task = Task.create!(title: "Still blocked card", stage: "submitted")
+    feedback = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                                description: "please fix it")
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     unresolved_feedback: feedback, ever_blocked: true }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_includes card["class"], "bg-red-50"
+    assert_select "[data-test='unresolved-feedback']"
+    assert_select "[data-test='cleared-feedback']", count: 0
+  end
+
+  test "[component] a never-blocked submitted card stays plain" do
+    task = Task.create!(title: "Never blocked card", stage: "submitted")
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     unresolved_feedback: nil, ever_blocked: false }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_includes card["class"], "bg-surface"
+    assert_select "[data-test='cleared-feedback']", count: 0
+  end
 end

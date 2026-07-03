@@ -412,6 +412,7 @@ function kanbanBoard(live) {
                   latest_activity: @latest_task_activities[task.slug],
                   activity_count: @task_activity_counts[task.slug].to_i,
                   unresolved_feedback: @unresolved_feedback_activities[task.slug],
+                  ever_blocked: @ever_blocked_slugs&.include?(task.slug),
                   review_in_progress: task.review_in_progress? %>
           <% end %>
 
