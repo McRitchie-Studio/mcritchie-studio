@@ -481,8 +481,8 @@ rest). **Any row**, pasted into a fresh session, is a **recognized launcher**. T
 
 | Soul (row 1) | Acts | Does | Exit seam |
 |---|---|---|---|
-| **Avi** (`Avi Heartbeat`) | `pr-review` · `pr-review-slow` · `production-deploy` | review + **merge** submitted PRs (waves ≤5, or serialized via `pr-review-slow`); then ship a QA-green release (`bin/release ship --yes`, stages 4–5) | each PR `assembled`/`blocked`; then `shipped` when a QA-green RC is ready |
-| **Steffon** (`Steffon Heartbeat`) | `qa-deploy` · `archive-completed` | assemble `release` + deploy QA (`bin/release prepare --yes`, stages 1–3); then archive shipped tasks (`bin/release archive --yes`) | RC **deployed to QA**; shipped tasks + completed releases `archived` |
+| **Avi** (`Avi Heartbeat`) | `production-deploy` · `pr-review` · `pr-review-slow` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5) if one is ready; then review + **merge** submitted PRs (waves ≤5, or serialized via `pr-review-slow`) | the ready release `shipped` (or no-op); then each PR `assembled`/`blocked` |
+| **Steffon** (`Steffon Heartbeat`) | `archive-completed` · `qa-deploy` | **downstream-first:** archive shipped tasks (`bin/release archive --yes`) from the prior cycle; then assemble `release` + deploy QA (`bin/release prepare --yes`, stages 1–3) | prior cycle `archived` (or no-op); then RC **deployed to QA** |
 | **Alex** (`Alex Heartbeat`) | `grade-events` · `full-cycle` | grade the 10 most recent resolved spans at `/alex/heartbeat`; OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; or the whole release `shipped` |
 
 **The release handoff seam.** The pizza-tracker (`RELEASE_TRACKER_STAGES`) is five

@@ -10,9 +10,11 @@ four ordered release actions, a themed glyph on the rest):
 
 - **Row 1 — the prompt-like soul heartbeat** (❤️): `Avi Heartbeat` · `Steffon
   Heartbeat` · `Alex Heartbeat`. One per soul (Avi's release lanes share a column).
-- **The action rows** — one copyable row each:
-  - **Avi** → `1️⃣ pr-review` · `3️⃣ production-deploy` · `🐢 pr-review-slow`
-  - **Steffon** → `2️⃣ qa-deploy` · `4️⃣ archive-completed`
+- **The action rows** — one copyable row each, ordered **downstream-first** (each
+  soul leads with its idempotent close-out action, so the number icons read
+  descending):
+  - **Avi** → `3️⃣ production-deploy` · `1️⃣ pr-review` · `🐢 pr-review-slow`
+  - **Steffon** → `4️⃣ archive-completed` · `2️⃣ qa-deploy`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `🌎 full-cycle`
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
@@ -26,8 +28,8 @@ which is the learning loop and lives outside the release pipeline.
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
-| **Avi** (`avi`) | `Avi Heartbeat` | `pr-review`, `pr-review-slow`, `production-deploy` | submitted PRs waiting / release deployed to QA | each PR `assembled` or `blocked`; then `shipped` if a QA-green release is ready |
-| **Steffon** (`steffon`) | `Steffon Heartbeat` | `qa-deploy`, `archive-completed` | `assembled` on `release` | release **deployed to QA**; shipped tasks + completed releases archived |
+| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `assembled` or `blocked` |
+| **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-completed`, `qa-deploy` | shipped work to archive / `assembled` on `release` | prior cycle `archived` (or no-op); then release **deployed to QA** |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `full-cycle` | resolved spans awaiting grade / a full pipeline to run | 10 graded + insights banked; or the whole release `shipped` |
 
 > **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
@@ -94,12 +96,39 @@ a wiring change, not a rewrite.
 
 ---
 
-## 1. Avi Heartbeat — `Avi Heartbeat` / `pr-review` / `production-deploy`
+## 1. Avi Heartbeat — `Avi Heartbeat` / `production-deploy` / `pr-review`
 
-**Enter as Avi.** Two acts: review + merge the submitted PRs, then ship a
-QA-green release if one is ready. Avi owns release **stages 4–5** (post-QA → prod).
+**Enter as Avi.** Two acts, run **downstream-first**: ship a QA-green release if one
+is ready, then review + merge the new submitted PRs. Leading with the idempotent
+`production-deploy` clears any ready release before new merges pile onto it; when
+nothing is ready it is a no-op and falls straight through to `pr-review`. Avi owns
+release **stages 4–5** (post-QA → prod).
 
-### Act 1 — `pr-review`
+### Act 1 — `production-deploy`
+
+Ship the assembled, QA-green release to production.
+
+- **Precondition:** a release is **ready** — i.e. Steffon has taken it through
+  `qa-deploy` and it is **`assembled` + deployed to QA (QA-green)**. If nothing is
+  ready to ship (`release == main`, or no QA-green release) → report "nothing to
+  ship" and continue to `pr-review` (idempotent no-op).
+- **Steps:**
+  1. Clean the primary checkouts (stash the delete-later ledger if needed) — ship
+     from a **primary checkout**, not a worktree (gems resolve as siblings).
+  2. `bin/release ship --yes` — drive **stages 4–5** (Confirming → Deploying):
+     fast-forward each repo's `release → main` and deploy production.
+  3. Prod-smoke, green seal, and post release notes.
+  4. Restore the primary checkouts.
+- **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
+  slug.
+
+> ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
+> operator launched it (the `Avi Heartbeat` / `production-deploy` chip / phrase) or
+> otherwise granted ship authority in-session. The `--yes` answers only the human
+> confirm; it never skips the clean-main preflight, frozen-SHA tests, gem publish,
+> deploy smoke, or partial-ship recovery.
+
+### Act 2 — `pr-review`
 
 Review every waiting PR, merging the approved ones.
 
@@ -118,7 +147,7 @@ Review every waiting PR, merging the approved ones.
 - **Exit seam:** every `submitted` PR is resolved — merged (`assembled`) or
   `blocked`. Report per-PR.
 
-### Act 1b — `pr-review-slow`
+### Act 2b — `pr-review-slow`
 
 The same as `pr-review`, but **serialized** — one PR at a time.
 
@@ -134,37 +163,31 @@ The same as `pr-review`, but **serialized** — one PR at a time.
 > the acts here **merge** approved work through to `assembled`. The old `bin/avi-heartbeat`
 > review-only loop still exists but is no longer a card chip.
 
-### Act 2 — `production-deploy`
+## 2. Steffon Heartbeat — `Steffon Heartbeat` / `archive-completed` / `qa-deploy`
 
-Ship the assembled, QA-green release to production.
+**Enter as Steffon.** Two acts, run **downstream-first**: archive the closed-out
+cycle, then take the new assembled work through to QA. Leading with the idempotent
+`archive-completed` closes out the previous cycle before starting the next; when
+nothing is shipped to archive it is a no-op and falls through to `qa-deploy`.
+Steffon owns release **stages 1–3** (Testing → Assembling → Deploying QA).
 
-- **Precondition:** a release is **ready** — i.e. Steffon has taken it through
-  `qa-deploy` and it is **`assembled` + deployed to QA (QA-green)**. If nothing is
-  ready to ship (`release == main`, or no QA-green release) → report "nothing to
-  ship" and stop (idempotent no-op).
+### Act 1 — `archive-completed`
+
+Close the loop: archive the shipped work and reclaim its worktrees.
+
+- **Precondition:** at least one `shipped` task not on `Release.last_shipped`.
+  Nothing shipped to archive → report "nothing to archive" and continue to
+  `qa-deploy` (idempotent no-op).
 - **Steps:**
-  1. Clean the primary checkouts (stash the delete-later ledger if needed) — ship
-     from a **primary checkout**, not a worktree (gems resolve as siblings).
-  2. `bin/release ship --yes` — drive **stages 4–5** (Confirming → Deploying):
-     fast-forward each repo's `release → main` and deploy production.
-  3. Prod-smoke, green seal, and post release notes.
-  4. Restore the primary checkouts.
-- **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
-  slug.
+  1. `bin/release archive --yes` — archives every `shipped` task that is **not** a
+     member of the most-recently-shipped release (`shipped → archived`), retires the
+     now-completed releases, and reclaims the merged/shipped feature worktrees
+     (delete-later ledger + Redis band shrink). Preview first with `--dry-run`.
+- **Exit seam:** shipped tasks + completed releases are `archived`, merged
+  worktrees reclaimed. Idempotent — a re-run finds nothing new. Report the archived
+  count + reclaimed worktrees.
 
-> ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
-> operator launched it (the `Avi Heartbeat` / `production-deploy` chip / phrase) or
-> otherwise granted ship authority in-session. The `--yes` answers only the human
-> confirm; it never skips the clean-main preflight, frozen-SHA tests, gem publish,
-> deploy smoke, or partial-ship recovery.
-
-## 2. Steffon Heartbeat — `Steffon Heartbeat` / `qa-deploy` / `archive-completed`
-
-**Enter as Steffon.** Two acts: take assembled work through to QA, then archive the
-completed work. Steffon owns release **stages 1–3** (Testing → Assembling →
-Deploying QA).
-
-### Act 1 — `qa-deploy`
+### Act 2 — `qa-deploy`
 
 Start the release and deploy it to QA.
 
@@ -178,22 +201,6 @@ Start the release and deploy it to QA.
 - **Exit seam:** the release candidate is `assembled` and live on QA (stage 3 **Live
   on QA**). Report the QA URL, then hand off to Avi at **"deployed to QA."**
   **Does NOT ship to production** — stages 4–5 are Avi's.
-
-### Act 2 — `archive-completed`
-
-Close the loop: archive the shipped work and reclaim its worktrees.
-
-- **Precondition:** at least one `shipped` task not on `Release.last_shipped`.
-  Nothing shipped to archive → report "nothing to archive" and stop (idempotent
-  no-op).
-- **Steps:**
-  1. `bin/release archive --yes` — archives every `shipped` task that is **not** a
-     member of the most-recently-shipped release (`shipped → archived`), retires the
-     now-completed releases, and reclaims the merged/shipped feature worktrees
-     (delete-later ledger + Redis band shrink). Preview first with `--dry-run`.
-- **Exit seam:** shipped tasks + completed releases are `archived`, merged
-  worktrees reclaimed. Idempotent — a re-run finds nothing new. Report the archived
-  count + reclaimed worktrees.
 
 ## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `full-cycle`
 

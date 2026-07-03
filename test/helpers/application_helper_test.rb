@@ -486,8 +486,10 @@ class ApplicationHelperTest < ActionView::TestCase
     # column); acts are the launcher atoms that scope it.
     assert_equal ["Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
-    assert_equal ["pr-review", "production-deploy", "pr-review-slow"], launchers[0][:actions]
-    assert_equal ["qa-deploy", "archive-completed"], launchers[1][:actions]
+    # Acts run DOWNSTREAM-FIRST: each soul leads with its idempotent close-out
+    # action (production-deploy / archive-completed) before the new-work action.
+    assert_equal ["production-deploy", "pr-review", "pr-review-slow"], launchers[0][:actions]
+    assert_equal ["archive-completed", "qa-deploy"], launchers[1][:actions]
     assert_equal ["grade-events", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
   end
@@ -612,7 +614,7 @@ class ApplicationHelperTest < ActionView::TestCase
     avi = heartbeat_launcher_for("avi")
     assert avi.present?
     assert_equal "Avi Heartbeat", avi[:heartbeat]
-    assert_equal ["pr-review", "production-deploy", "pr-review-slow"], avi[:actions]
+    assert_equal ["production-deploy", "pr-review", "pr-review-slow"], avi[:actions]
 
     assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
     assert_nil heartbeat_launcher_for(nil)
