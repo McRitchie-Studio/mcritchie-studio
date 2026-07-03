@@ -462,6 +462,34 @@ class Task < ApplicationRecord
     unresolved_feedback_activity.present?
   end
 
+  # Has this task ever carried a blocking qa_feedback (a QA block), resolved or
+  # not? The "was it ever blocked" half of #block_state — distinct from
+  # #unresolved_feedback? (an OPEN block) and #blocked? (the blocked stage).
+  def ever_blocked?
+    Activity.for_task(self).by_type("qa_feedback").exists?
+  end
+
+  # The card's block lifecycle as a tri-state, derived entirely from the
+  # qa_feedback ledger (no stored column — it can't drift from the activities that
+  # already drive the red "UNRESOLVED QA" badge):
+  #   :blocked — the blocked stage OR an unresolved qa_feedback is open (red card)
+  #   :cleared — was blocked, the block is resolved, and it is back in `submitted`
+  #              awaiting a re-review (the light-yellow "look again" card)
+  #   :never   — no live block: never blocked, already re-reviewed past submitted
+  #              (the yellow clears once it advances), or re-blocked (→ :blocked)
+  # Board rendering passes preloaded `unresolved:`/`ever_blocked:` booleans to
+  # avoid N+1; omit them (single-card Turbo render, the show page, tests) and it
+  # self-queries.
+  def block_state(unresolved: nil, ever_blocked: nil)
+    unresolved = unresolved_feedback? if unresolved.nil?
+    return :blocked if blocked? || unresolved
+
+    ever_blocked = ever_blocked?() if ever_blocked.nil?
+    return :cleared if stage == "submitted" && ever_blocked
+
+    :never
+  end
+
   def review_in_progress?
     stage == "submitted" && open_intent_for("reviewed").present?
   end

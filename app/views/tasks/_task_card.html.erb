@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, review_in_progress: nil) %>
+<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
   server-side and pushed over Turbo Streams (the "deployments" stream) for live
@@ -7,10 +7,19 @@
   is unchanged from the inline version; only the data source moved to locals
   (agents/mascot/latest_activity/activity_count instead of the board's @ivars).
 %>
-<%# Blocked cards wear a reddish hue (the crew also flags the stall point). %>
+<%# Card tone tracks the block lifecycle (Task#block_state): red = blocked (an open
+    QA block or the blocked stage), amber = a CLEARED block back in `submitted`
+    awaiting re-review, plain otherwise. The board passes preloaded booleans; a
+    single-card Turbo render falls back to per-task queries. %>
 <% unresolved_feedback = local_assigns.key?(:unresolved_feedback) ? local_assigns[:unresolved_feedback] : task.unresolved_feedback_activity %>
 <% review_in_progress = local_assigns.key?(:review_in_progress) ? local_assigns[:review_in_progress] : task.review_in_progress? %>
-<% card_tone = (task.blocked? || unresolved_feedback) ? "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/70 dark:bg-red-950/40 dark:border-red-800/60 dark:hover:border-red-600/70 dark:hover:bg-red-900/40" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt" %>
+<% ever_blocked = local_assigns.key?(:ever_blocked) ? local_assigns[:ever_blocked] : nil %>
+<% block_state = task.block_state(unresolved: unresolved_feedback.present?, ever_blocked: ever_blocked) %>
+<% card_tone = case block_state
+   when :blocked then "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/70 dark:bg-red-950/40 dark:border-red-800/60 dark:hover:border-red-600/70 dark:hover:bg-red-900/40"
+   when :cleared then "bg-amber-50 border-amber-200 hover:border-amber-300 hover:bg-amber-100/70 dark:bg-amber-950/40 dark:border-amber-800/60 dark:hover:border-amber-600/70 dark:hover:bg-amber-900/40"
+   else "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
+   end %>
 <div id="card-<%= task.slug %>"
      data-slug="<%= task.slug %>"
      data-stage="<%= task.stage %>"
@@ -74,7 +83,7 @@
     </div>
   <% end %>
 
-  <% if review_in_progress || unresolved_feedback %>
+  <% if review_in_progress || unresolved_feedback || block_state == :cleared %>
     <div class="flex flex-wrap items-center gap-1 mb-1.5">
       <% if review_in_progress %>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-200 border border-violet-700/50"
@@ -85,6 +94,12 @@
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-200 border border-red-700/60"
               data-test="unresolved-feedback"
               title="<%= unresolved_feedback.description %>">UNRESOLVED QA</span>
+      <% elsif block_state == :cleared %>
+        <%# A prior QA block was resolved and the task is resubmitted — flag it so
+            the reviewer knows to look again (pairs with the amber card tone). %>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-900/50 text-amber-200 border border-amber-700/50"
+              data-test="cleared-feedback"
+              title="A QA block was resolved — ready for another review.">RE-REVIEW</span>
       <% end %>
     </div>
   <% end %>
