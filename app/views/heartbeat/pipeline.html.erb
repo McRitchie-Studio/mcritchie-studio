@@ -29,12 +29,32 @@
   #alex-pipeline .pl-row { padding:11px 14px; border-bottom:1px solid var(--hb-line); }
   #alex-pipeline .pl-row:last-child { border-bottom:none; }
   #alex-pipeline .pl-row.is-not { box-shadow:inset 3px 0 0 var(--hb-not); }
-  #alex-pipeline .pl-narr { font-weight:600; font-size:13px; margin:0; }
+  /* top of the row: narration on the left, the agent cell aligned TOP-RIGHT */
+  #alex-pipeline .pl-rowtop { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #alex-pipeline .pl-main { flex:1; min-width:0; }
+  #alex-pipeline .pl-agent { flex-shrink:0; }
+  #alex-pipeline .pl-narr { font-weight:600; font-size:13px; margin:4px 0 0; }
   #alex-pipeline .pl-out { color:var(--hb-muted); font-size:12px; margin:2px 0 0; }
   #alex-pipeline .pl-out::before { content:"→ "; color:var(--hb-faint); }
-  #alex-pipeline .pl-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; }
+  #alex-pipeline .pl-meta { display:flex; align-items:center; gap:10px; margin-top:8px; }
   #alex-pipeline .pl-cost { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; color:var(--hb-muted); }
   #alex-pipeline .pl-notpill { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-not); border:1px solid var(--hb-not); border-radius:5px; padding:1px 6px; }
+  /* agent cell — SAME stacking as /alex/heartbeat/spans (the hb-* rules there are
+     scoped to #alex-heartbeat, so re-scope them here): avatars in an overlapping
+     vertical cluster, the soul name over the mascot name. */
+  #alex-pipeline { --hb-mascot:#8b949e; }
+  #alex-pipeline .hb-agentstack { display:flex; align-items:center; gap:8px; }
+  #alex-pipeline .hb-avatars { display:flex; flex-direction:column; align-items:center; }
+  #alex-pipeline .hb-ava { position:relative; display:inline-flex; }
+  #alex-pipeline .hb-avatars .hb-soulava { z-index:2; }
+  #alex-pipeline .hb-avatars .hb-mascotava { z-index:1; }
+  #alex-pipeline .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-14px; }
+  #alex-pipeline .hb-soulava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
+  #alex-pipeline .hb-mascotava > .rounded-full { box-shadow:0 0 0 1px var(--hb-line); border-radius:9999px; }
+  #alex-pipeline .hb-names { display:flex; flex-direction:column; line-height:1.15; align-items:flex-end; text-align:right; }
+  #alex-pipeline .hb-nameprimary { font-weight:700; color:var(--hb-txt); font-size:12px; white-space:nowrap; }
+  #alex-pipeline .hb-namesub { font-weight:400; color:var(--hb-muted); font-size:11px; white-space:nowrap; }
+  #alex-pipeline .hb-submascot { color:var(--hb-mascot); opacity:.85; }
   #alex-pipeline .pl-slug { font-weight:600; font-size:13.5px; }
   #alex-pipeline .pl-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; margin-left:6px; }
   #alex-pipeline .pl-disp.good { color:var(--hb-good); } #alex-pipeline .pl-disp.not { color:var(--hb-not); }
@@ -82,17 +102,22 @@
           <% cat = heartbeat_category_meta(span.category) %>
           <% alex_grade = @span_grades.dig(span.id, "alex") %>
           <% is_not = alex_grade&.not_good? %>
+          <% cost = heartbeat_usage_totals(actions)[:cost] %>
           <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-span" data-span-id="<%= span.id %>">
-            <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= span.category %></span>
-            <p class="pl-narr"><%= span.reason_slug %></p>
-            <% if span.outcome_slug.present? %><p class="pl-out"><%= span.outcome_slug %></p><% end %>
+            <div class="pl-rowtop">
+              <div class="pl-main">
+                <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= span.category %></span>
+                <p class="pl-narr"><%= span.reason_slug %></p>
+                <% if span.outcome_slug.present? %><p class="pl-out"><%= span.outcome_slug %></p><% end %>
+              </div>
+              <div class="pl-agent">
+                <%= heartbeat_agent_cell(mascot_slug: span.mascot, pokemon: @pokemon_by_slug[span.mascot],
+                                         agent_slug: span.agent, agent: @agents_by_slug[span.agent]) %>
+              </div>
+            </div>
             <div class="pl-meta">
-              <%= heartbeat_agent_cell(mascot_slug: span.mascot, pokemon: @pokemon_by_slug[span.mascot],
-                                       agent_slug: span.agent, agent: @agents_by_slug[span.agent]) %>
-              <span style="display:flex; align-items:center; gap:8px;">
-                <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Alex graded this NOT">not</span><% end %>
-                <span class="pl-cost"><%= heartbeat_usage_totals(actions)[:cost].positive? ? number_to_currency(heartbeat_usage_totals(actions)[:cost], precision: 4) : "—" %></span>
-              </span>
+              <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Alex graded this NOT">not</span><% end %>
+              <span class="pl-cost"><%= cost.positive? ? number_to_currency(cost, precision: 4) : "—" %></span>
             </div>
           </div>
         <% end %>
