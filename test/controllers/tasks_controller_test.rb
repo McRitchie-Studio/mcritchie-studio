@@ -49,8 +49,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
     assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
     assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
-    # The card PAIRS the 5-stage release tracker with the launchers, and lays the
-    # launchers out under the stages they drive: Steffon 1–3, Avi 4–5, Alex full cycle.
+    # The card is launchers-only — a plain 3-up grid of the soul launchers, no release
+    # tracker and no stage-ownership layout (that pairing was the rejected design; the
+    # tracker stays in the Next Release card).
     # Each avatar links to the soul's /agents/<slug> page.
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
