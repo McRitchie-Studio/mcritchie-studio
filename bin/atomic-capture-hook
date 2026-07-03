@@ -127,8 +127,8 @@ class AtomicCaptureHook
       "tokens_out" => usage[:tokens_out],
       "cache_read_tokens" => usage[:cache_read_tokens],
       "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
-      "input" => truncate(serialize(event["tool_input"])),
-      "output" => truncate(serialize(event["tool_response"])),
+      "input" => redacted_field(serialize(event["tool_input"]), event, suppress: write_tool?(event)),
+      "output" => redacted_field(serialize(event["tool_response"]), event, suppress: true),
       "outcome" => outcome_for(event["tool_response"]),
       "actor" => AGENT,
       "occurred_at" => now.iso8601
@@ -274,6 +274,115 @@ class AtomicCaptureHook
     JSON.generate(value)
   rescue StandardError
     value.inspect
+  end
+
+  # ── Secret redaction (audit 2026-07-02 high finding #6) ───────────────────
+  # tool_input / tool_response are the SOLE source of AtomicAction.input/output,
+  # which render on the PUBLIC /alex/heartbeat surface — so a secret must never be
+  # stored (and never leaves the box: we redact HERE, before the POST). Two layers:
+  #   1. WHOLE-FIELD suppression when the tool touches secret MATERIAL — a Bash
+  #      command that prints a secret, or a read/write of a secret FILE. A bare
+  #      value (e.g. `bin/secret` output) has no key to pattern-match, so the whole
+  #      field is dropped to REDACTED_FIELD.
+  #   2. PATTERN redaction on whatever survives — KEY=VALUE pairs whose key names a
+  #      secret, plus known credential value formats. The KEY is kept and only the
+  #      VALUE masked, so the trajectory stays legible.
+  REDACTED_FIELD = "[redacted: secret material]"
+  REDACTED_VALUE = "[redacted]"
+
+  # A basename that holds secret material (a Read/Write of it, or a `cat` of it).
+  SECRET_FILE_BASENAME = /
+    \.env(?:\.[\w.-]+)? | credentials(?:\.\w+)* | master\.key | secrets?\.ya?ml(?:\.enc)? |
+    id_rsa | id_ed25519 | id_ecdsa | [\w.-]+\.pem | [\w.-]+\.key
+  /xi.freeze
+
+  # A command whose STDOUT is secret material — its output is suppressed wholesale.
+  SECRET_READER = %r{
+    (?:\A|[|&;]|\s)\s*
+    (?:
+      (?:\S*/)?bin/secret\b | op\s+read\b | op\s+item\s+get\b |
+      printenv\b | env\s*\z | gh\s+auth\s+token\b | heroku\s+config(?::get)?\b |
+      aws\s+configure\s+get\b | security\s+find-generic-password\b
+    )
+  }x.freeze
+
+  # A file-dumping command (`cat`/`head`/…) — secret only when its target is a
+  # SECRET_FILE_BASENAME (checked together in secret_reader_command?).
+  FILE_DUMP = /(?:\A|[|&;]|\s)\s*(?:cat|bat|less|more|head|tail|xxd|strings|nl)\s/.freeze
+
+  # An assignment whose KEY names a secret: KEY=VALUE, KEY: VALUE, "KEY":"VALUE".
+  # The value (group 4, up to whitespace/quote/comma) is masked; the key is kept.
+  SECRET_ASSIGNMENT = /
+    ([A-Za-z0-9_.\-]*
+     (?:SECRET|TOKEN|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|
+        SECRET[_-]?KEY|_KEY|CREDENTIAL|WEBHOOK|SIGNING|MNEMONIC|SEED[_-]?PHRASE)
+     [A-Za-z0-9_.\-]*)
+    (\s*[:=]\s*)(['"]?)([^\s'",]+)
+  /xi.freeze
+
+  # The field value to store: REDACTED_FIELD when the tool touched secret material
+  # (and this field should be suppressed), else the pattern-redacted, truncated
+  # value. Redaction runs BEFORE truncation so a secret near the cut can't survive
+  # as a prefix.
+  def redacted_field(raw, event, suppress:)
+    return truncate(REDACTED_FIELD) if suppress && reads_secret_material?(event)
+
+    truncate(redact_secrets(raw))
+  end
+
+  # True when the tool call touches secret material: a Bash secret-reader command,
+  # or a read/write of a secret file path. Non-Bash/non-file tools are never flagged.
+  def reads_secret_material?(event)
+    case event["tool_name"].to_s
+    when "Bash"
+      secret_reader_command?(bash_command(event))
+    when "Read", "Write", "Edit", "NotebookEdit"
+      secret_file_path?(file_path_of(event))
+    else
+      false
+    end
+  end
+
+  def secret_reader_command?(command)
+    cmd = command.to_s
+    return false if cmd.empty?
+    return true if cmd.match?(SECRET_READER)
+
+    cmd.match?(FILE_DUMP) && cmd.match?(SECRET_FILE_BASENAME)
+  end
+
+  def secret_file_path?(path)
+    return false unless present?(path)
+
+    File.basename(path.to_s).match?(/\A(?:#{SECRET_FILE_BASENAME})\z/i)
+  end
+
+  def write_tool?(event)
+    %w[Write Edit NotebookEdit].include?(event["tool_name"].to_s)
+  end
+
+  # The file_path from a Read/Write/Edit tool_input, or nil.
+  def file_path_of(event)
+    input = event.fetch("tool_input") { {} }
+    input.is_a?(Hash) ? input["file_path"] : nil
+  end
+
+  # Mask secret VALUES in-place: secret-named assignments (key kept, value masked)
+  # then known standalone credential formats. Never raises — a redaction hiccup
+  # falls back to the raw string only if the whole thing blows up (it won't).
+  def redact_secrets(str)
+    s = str.to_s
+    return s if s.empty?
+
+    s = s.gsub(SECRET_ASSIGNMENT) { "#{Regexp.last_match(1)}#{Regexp.last_match(2)}#{Regexp.last_match(3)}#{REDACTED_VALUE}" }
+    s = s.gsub(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----/m, REDACTED_VALUE)
+    s = s.gsub(/\bsk_(?:live|test)_[A-Za-z0-9]{10,}/, REDACTED_VALUE)          # stripe
+    s = s.gsub(/\bAKIA[0-9A-Z]{16}\b/, REDACTED_VALUE)                         # aws access key id
+    s = s.gsub(/\b(?:ghp|gho|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}/, REDACTED_VALUE) # github
+    s = s.gsub(/\bxox[baprs]-[A-Za-z0-9-]{10,}/, REDACTED_VALUE)              # slack
+    s.gsub(/\b([Bb]earer)\s+[A-Za-z0-9._\-]{20,}/, "\\1 #{REDACTED_VALUE}")   # bearer token
+  rescue StandardError
+    REDACTED_FIELD
   end
 
   # Byte-safe truncation with a marker, so a multibyte tail never corrupts the
