@@ -77,6 +77,25 @@ module Api
         assert_response :not_found
       end
 
+      test "[integration] a failed grade write is captured with the span as target context" do
+        span = resolved_span(session_id: "ctl-errlog")
+
+        ActionGrade.stub(:record_event_grade, ->(**) { raise "write blew up" }) do
+          assert_difference -> { ErrorLog.count }, 1 do
+            # in test env the unexpected error re-raises; our rescue has already
+            # written the target-linked ErrorLog before re-raising.
+            assert_raises(RuntimeError) do
+              post api_v1_grade_atomic_event_path(span.id),
+                   params: { disposition: "good" }, headers: @headers, as: :json
+            end
+          end
+        end
+
+        log = ErrorLog.order(:id).last
+        assert_equal span, log.target, "the failed write is linked to its span, not a bare 500"
+        assert_equal "span ##{span.id}", log.target_name
+      end
+
       test "[integration] grade requires auth — 401 without a token" do
         span = resolved_span(session_id: "ctl-noauth")
 

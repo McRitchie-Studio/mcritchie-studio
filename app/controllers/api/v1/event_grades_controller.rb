@@ -28,7 +28,20 @@ module Api
       # an invalid grade is a 422 (both via BaseController).
       def create
         event = AtomicEvent.find(params[:id])
-        grade = ActionGrade.record_event_grade(
+        grade = record_grade_with_capture(event)
+        render_data(grade.to_grade_json, status: :created)
+      end
+
+      private
+
+      # Backend discipline: a failed grade write is captured WITH its span as
+      # context (target linkage), not a bare untargeted 500 via Layer 1. The shared
+      # API rescue_and_log keys target_name off #slug, which AtomicEvent lacks (only
+      # ActionGrade has one) — so link the span EXPLICITLY here. RecordNotFound /
+      # RecordInvalid re-raise for BaseController's clean 404 / 422 (RecordInvalid
+      # still logs via :unprocessable, so it's never a bare 500 either).
+      def record_grade_with_capture(event)
+        ActionGrade.record_event_grade(
           event: event,
           grader: ActionGrade::ALEX, # forced — never client-supplied
           disposition: grade_params[:disposition],
@@ -36,10 +49,14 @@ module Api
           long_form: grade_params.key?(:long_form) ? grade_params[:long_form] : :unset,
           intent: grade_params[:intent]
         )
-        render_data(grade.to_grade_json, status: :created)
+      rescue ActiveRecord::RecordNotFound, ActiveRecord::RecordInvalid
+        raise
+      rescue StandardError => e
+        log = create_error_log(e)
+        log.update!(target: event, target_name: "span ##{event.id}")
+        @_error_logged = true
+        raise e
       end
-
-      private
 
       def batch_limit
         raw = params[:limit]
