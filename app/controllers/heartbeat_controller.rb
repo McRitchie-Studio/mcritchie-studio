@@ -9,17 +9,15 @@ class HeartbeatController < ApplicationController
   # entirely in the drawer: #feedback renders the per-action grading drawer, #grade
   # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
   #
-  # READS are an open meta surface (like the launcher): the heartbeat, the
-  # cross-session span list, the Insight Bank, and the read-only drawers opt out of
-  # the engine's authenticate-by-default before_action. WRITES do NOT — #grade and
-  # #grade_event are the write path into the OPSD Insight Bank and the McRitchie
-  # audit-of-Alex ground truth, so they are ADMIN-ONLY (an anonymous client must not
-  # forge a grade — least of all a `grader: "mcr"` audit row — or poison the bank).
-  # Mirrors TasksController's public-read / admin-write split. The first-class AGENT
-  # write path is a separate bearer-gated /api/v1 endpoint (learning-loop lever 2).
-  READ_ACTIONS = %i[show all_spans insights feedback feedback_event].freeze
-  skip_before_action :require_authentication, only: READ_ACTIONS
-  before_action :require_admin, except: READ_ACTIONS
+  # BUILD-FIRST (2026-07-03, operator decision): the WHOLE heartbeat surface — reads
+  # AND the grade/bank/discard writes — is an OPEN meta surface, so Mr. McRitchie can
+  # grade and confirm (incl. `grader: "mcr"`) without an admin login while the pipeline
+  # is being built. This deliberately re-opens audit finding #5 (grade writes are
+  # public; an `mcr` audit row is forgeable) as a conscious tradeoff — RE-GATE before
+  # any real multi-user exposure (restore the `require_admin`-except-READ_ACTIONS
+  # split below). The first-class AGENT write path stays the bearer-gated /api/v1
+  # endpoint, which still forces `grader: alex` (learning-loop lever 2).
+  skip_before_action :require_authentication
 
   # Page size for the cross-session All Spans view — the operator asked for 100
   # spans per page.
