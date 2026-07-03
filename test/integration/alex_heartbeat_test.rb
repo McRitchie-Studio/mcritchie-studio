@@ -276,7 +276,9 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   test "a graded span renders its grade marker server-side on the next load" do
     ev = event(seq: 0, reason_slug: "narrate this span well", closed_at: 1.minute.ago, outcome_slug: "done")
 
-    # grade the span through E2, exactly as the drawer's fetch does
+    # grade the span through E2, exactly as the drawer's fetch does — an admin-only
+    # write, so authenticate first (grade WRITES are gated; see HeartbeatGradeAuthTest)
+    log_in_as(users(:alex))
     post heartbeat_event_grade_path(ev),
          params: { grader: "alex", disposition: "good", slug: "clean span with a sharp outcome" }
     assert_response :success

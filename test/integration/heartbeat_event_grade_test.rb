@@ -4,9 +4,12 @@ require "test_helper"
 # upserts ONE ActionGrade for (event, grader) and returns JSON only. It mirrors the
 # per-action #grade semantics (disposition/slug/long_form/intent=bank|discard) but
 # targets a narrated AtomicEvent SPAN and never touches a view — E2 is deliberately
-# view-free so it doesn't collide with E3 (which owns all heartbeat UI). Open meta
-# surface, like the heartbeat itself — no auth.
+# view-free so it doesn't collide with E3 (which owns all heartbeat UI). Reads are a
+# public meta surface, but grade WRITES are admin-only (see HeartbeatGradeAuthTest),
+# so the write scenarios below authenticate as the admin.
 class HeartbeatEventGradeTest < ActionDispatch::IntegrationTest
+  setup { log_in_as(users(:alex)) }
+
   def span(**attrs)
     AtomicEvent.create!({ session_id: "ev-int", category: "Explore",
                           reason_slug: "find issue with api", opened_at: Time.current,

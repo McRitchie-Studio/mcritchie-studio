@@ -9,10 +9,17 @@ class HeartbeatController < ApplicationController
   # entirely in the drawer: #feedback renders the per-action grading drawer, #grade
   # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
   #
-  # Open meta surface, like the launcher: it opts out of the engine's
-  # authenticate-by-default before_action. The launcher's Alex avenue points at
-  # alex_heartbeat_path, which routes here.
-  skip_before_action :require_authentication
+  # READS are an open meta surface (like the launcher): the heartbeat, the
+  # cross-session span list, the Insight Bank, and the read-only drawers opt out of
+  # the engine's authenticate-by-default before_action. WRITES do NOT — #grade and
+  # #grade_event are the write path into the OPSD Insight Bank and the McRitchie
+  # audit-of-Alex ground truth, so they are ADMIN-ONLY (an anonymous client must not
+  # forge a grade — least of all a `grader: "mcr"` audit row — or poison the bank).
+  # Mirrors TasksController's public-read / admin-write split. The first-class AGENT
+  # write path is a separate bearer-gated /api/v1 endpoint (learning-loop lever 2).
+  READ_ACTIONS = %i[show all_spans insights feedback feedback_event].freeze
+  skip_before_action :require_authentication, only: READ_ACTIONS
+  before_action :require_admin, except: READ_ACTIONS
 
   # Page size for the cross-session All Spans view — the operator asked for 100
   # spans per page.
@@ -170,7 +177,12 @@ class HeartbeatController < ApplicationController
   # The Insight Bank — exactly ActionGrade.banked, the curated lessons that make each
   # next agent smarter. Newest curation first.
   def insights
-    @insights = ActionGrade.banked.includes(:atomic_action).order(updated_at: :desc).to_a
+    # A banked grade targets EITHER a raw action OR a narrated span (ActionGrade's
+    # XOR), so eager-load BOTH — the view reads whichever target is set. Loading
+    # only :atomic_action left a banked SPAN grade (the Alex heartbeat's normal
+    # output) dereferencing nil and 500ing the whole bank.
+    @insights = ActionGrade.banked.includes(:atomic_action, :atomic_event)
+                           .order(updated_at: :desc).to_a
   end
 
   private

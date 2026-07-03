@@ -3,8 +3,11 @@ require "test_helper"
 # [integration] the T5 feedback layer over the read-only heartbeat: the inline radios
 # render, #grade upserts a grade (alex|mcr) with a default slug, bank!/discard! route
 # through it, the McRitchie audit is a second row, and banked grades surface on the
-# Insight Bank page. Open meta surface, like the heartbeat itself — no auth.
+# Insight Bank page. Reads are a public meta surface; grade WRITES are admin-only
+# (see HeartbeatGradeAuthTest), so this suite authenticates as the admin.
 class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
+  setup { log_in_as(users(:alex)) }
+
   def capture(**attrs)
     AtomicAction.create!({ session_id: "fb-int", kind: "edit", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current,
