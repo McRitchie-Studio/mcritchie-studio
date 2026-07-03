@@ -72,6 +72,30 @@ class AtomicEvent < ApplicationRecord
   scope :closed,       -> { where.not(closed_at: nil) }
   scope :chronological, -> { order(opened_at: :asc, seq: :asc, id: :asc) }
 
+  # Default batch size for the Alex heartbeat grade-events loop (the SOP's "10 most
+  # recent resolved spans"), and the hard cap.
+  DEFAULT_GRADE_BATCH = 10
+  MAX_GRADE_BATCH     = 100
+
+  # The RESOLVED (closed) spans that carry NO grade by `grader` yet — the "spans
+  # awaiting grade" the Alex heartbeat works through, newest-resolved first, capped.
+  # This is the READ half of the first-class agent grading flow (the WRITE is
+  # ActionGrade.record_event_grade); together they let grade-events run as a bearer
+  # CLI SOP instead of scraping the HTML page.
+  def self.awaiting_grade(grader: ActionGrade::ALEX, limit: DEFAULT_GRADE_BATCH)
+    capped = limit.to_i.clamp(1, MAX_GRADE_BATCH)
+    graded = ActionGrade.by_grader(grader).where.not(atomic_event_id: nil).select(:atomic_event_id)
+    closed.where.not(id: graded).order(closed_at: :desc, seq: :desc).limit(capped)
+  end
+
+  # The shape an agent needs to JUDGE a span: its id + what happened (category,
+  # reason → outcome) + provenance (task, session, acting soul). No raw actions —
+  # the grader judges the narrated span, not the tool stream. nil fields dropped.
+  def to_grading_row
+    { "id" => id, "category" => category, "reason" => reason_slug, "outcome" => outcome_slug,
+      "task_slug" => task_slug, "session_id" => session_id, "agent" => agent }.compact
+  end
+
   # Open a new span for the session, auto-closing any prior OPEN span first.
   #
   # The BOUNDARY transition (see `bin/atomic-event next` / `start --outcome`):

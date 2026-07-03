@@ -405,4 +405,66 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert_equal "Anchor: check siblings first.", insight["long_form"]
     assert_equal "some-feature-slug", insight["task_slug"], "provenance read from the span source"
   end
+
+  # ---- [integration] record_event_grade — the shared grade-events WRITE -------
+
+  test "[integration] record_event_grade upserts one grade for (event, grader)" do
+    span = event(session_id: "rec-1", reason_slug: "clean sharp span")
+
+    first = assert_difference -> { ActionGrade.count }, 1 do
+      ActionGrade.record_event_grade(event: span, grader: "alex", disposition: "good", slug: "clear outcome here")
+    end
+    again = assert_no_difference -> { ActionGrade.count } do
+      ActionGrade.record_event_grade(event: span, grader: "alex", disposition: "not", slug: "on reflection noisy")
+    end
+
+    assert_equal first.id, again.id, "the same (event, grader) row is updated, not duplicated"
+    assert_equal "not", again.disposition
+    assert_equal "on reflection noisy", again.slug
+  end
+
+  test "[integration] record_event_grade defaults disposition to good and slug to the span reason" do
+    span = event(session_id: "rec-2", reason_slug: "the span reason slug")
+
+    grade = ActionGrade.record_event_grade(event: span, grader: "alex")
+
+    assert_equal "good", grade.disposition, "disposition defaults to good"
+    assert_equal "the span reason slug", grade.slug, "slug defaults to the span's reason"
+  end
+
+  test "[integration] record_event_grade routes bank and discard intents" do
+    span = event(session_id: "rec-3", reason_slug: "promote me please")
+
+    banked = ActionGrade.record_event_grade(event: span, grader: "alex", slug: "keep this lesson", intent: "bank")
+    assert banked.banked
+    assert_includes ActionGrade.banked, banked
+
+    ActionGrade.record_event_grade(event: span, grader: "alex", slug: "keep this lesson", intent: "discard")
+    assert banked.reload.discarded
+    assert_not banked.banked
+  end
+
+  test "[integration] record_event_grade leaves long_form untouched when :unset, writes it when given" do
+    span = event(session_id: "rec-4", reason_slug: "anchor test span")
+    ActionGrade.record_event_grade(event: span, grader: "alex", slug: "s", long_form: "Anchor: do X.")
+    grade = ActionGrade.for_event(span).by_grader("alex").first
+    assert_equal "Anchor: do X.", grade.long_form
+
+    ActionGrade.record_event_grade(event: span, grader: "alex", slug: "s2") # long_form defaults :unset
+    assert_equal "Anchor: do X.", grade.reload.long_form, "an omitted long_form is preserved, not blanked"
+  end
+
+  test "[unit] to_grade_json is the recorded-grade echo shape" do
+    span = event(session_id: "json-1", reason_slug: "sharp span")
+    grade = ActionGrade.record_event_grade(event: span, grader: "alex", disposition: "good",
+                                           slug: "great catch here", intent: "bank")
+
+    json = grade.to_grade_json
+
+    assert_equal "alex", json["grader"]
+    assert_equal "good", json["disposition"]
+    assert_equal "great catch here", json["slug"]
+    assert_equal true, json["banked"]
+    assert_equal span.id, json["atomic_event_id"]
+  end
 end

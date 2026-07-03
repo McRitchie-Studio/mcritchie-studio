@@ -83,6 +83,37 @@ class ActionGrade < ApplicationRecord
     banked.includes(:atomic_action, :atomic_event).order(updated_at: :desc).limit(capped)
   end
 
+  # Upsert the ONE grade for (event, grader) — the shared write behind BOTH the
+  # admin browser drawer and the bearer agent path (bin/atomic-event grade). It
+  # matches the drawer's semantics: disposition defaults to GOOD, slug defaults to
+  # the span's reason, `long_form` only writes when GIVEN (pass :unset to leave it),
+  # and an `intent` of "bank"/"discard" routes through bank!/discard!. Raises on an
+  # invalid write (a grade is a deliberate act, not best-effort telemetry).
+  #
+  # `grader` is the CALLER's responsibility to constrain — the agent path passes
+  # ALEX and NEVER MCR, so McRitchie's audit-of-Alex lane stays admin-only.
+  def self.record_event_grade(event:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
+    grade = for_event(event).by_grader(grader).first_or_initialize(grader: grader)
+    grade.disposition = disposition.presence || grade.disposition.presence || GOOD
+    grade.slug        = slug.presence || grade.slug.presence || event.reason_slug
+    grade.long_form   = long_form unless long_form == :unset
+    grade.save!
+
+    case intent.to_s
+    when "bank"    then grade.bank!
+    when "discard" then grade.discard!
+    end
+    grade
+  end
+
+  # The JSON shape returned to an agent after a grade write — the recorded grade,
+  # so the CLI can echo what landed (banked/discarded reflect the intent applied).
+  def to_grade_json
+    { "id" => id, "grader" => grader, "disposition" => disposition, "slug" => slug,
+      "long_form" => long_form, "banked" => banked, "discarded" => discarded,
+      "atomic_event_id" => atomic_event_id }.compact
+  end
+
   # Curate this grade into the Insight Bank. Banking and discarding are mutually
   # exclusive, so banking clears any prior discard. Raises on failure.
   def bank!
