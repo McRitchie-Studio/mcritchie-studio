@@ -1,0 +1,157 @@
+<% content_for(:title, "Distillation Pipeline · Alex Heartbeat") %>
+<% content_for(:full_width, true) %>
+
+<%# The OPSD distillation pipeline as three columns, left→right:
+    1. ACTIONS       — recent narrated spans (the raw trajectory)
+    2. INSIGHTS      — Alex's banked grades (the distilled lessons)
+    3. CONFIRMATIONS — Mr. McRitchie's mcr grades (the confirmed subset)
+    Reuses the heartbeat surface (hb-* styles, category meta, agent cell). %>
+<%= render "heartbeat/styles" %>
+
+<style>
+  #alex-pipeline { --hb-bg:#0d1117; --hb-panel:#161b22; --hb-line:#2a3240; --hb-txt:#e6edf3;
+    --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff; --hb-good:#3fb950;
+    --hb-not:#f85149; --hb-bank:#fbbf24; --hb-mcr:#a371f7;
+    min-height:calc(100vh - var(--nav-h, 7rem)); background:var(--hb-bg); color:var(--hb-txt);
+    padding:18px 22px 60px; font-size:13px; line-height:1.5; }
+  #alex-pipeline .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
+  #alex-pipeline h1 { margin:0; font-size:19px; font-weight:700; }
+  #alex-pipeline .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
+  #alex-pipeline .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
+  #alex-pipeline .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
+  @media (max-width:1000px) { #alex-pipeline .pl-grid { grid-template-columns:1fr; } }
+  #alex-pipeline .pl-col { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; }
+  #alex-pipeline .pl-colhd { padding:12px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
+  #alex-pipeline .pl-colhd .pl-step { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--hb-faint); }
+  #alex-pipeline .pl-colhd h2 { margin:2px 0 0; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  #alex-pipeline .pl-colhd .pl-count { color:var(--hb-faint); font-weight:500; font-size:12px; }
+  #alex-pipeline .pl-list { max-height:calc(100vh - 230px); overflow-y:auto; }
+  #alex-pipeline .pl-row { padding:11px 14px; border-bottom:1px solid var(--hb-line); }
+  #alex-pipeline .pl-row:last-child { border-bottom:none; }
+  #alex-pipeline .pl-row.is-not { box-shadow:inset 3px 0 0 var(--hb-not); }
+  #alex-pipeline .pl-narr { font-weight:600; font-size:13px; margin:0; }
+  #alex-pipeline .pl-out { color:var(--hb-muted); font-size:12px; margin:2px 0 0; }
+  #alex-pipeline .pl-out::before { content:"→ "; color:var(--hb-faint); }
+  #alex-pipeline .pl-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; }
+  #alex-pipeline .pl-cost { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; color:var(--hb-muted); }
+  #alex-pipeline .pl-notpill { font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--hb-not); border:1px solid var(--hb-not); border-radius:5px; padding:1px 6px; }
+  #alex-pipeline .pl-slug { font-weight:600; font-size:13.5px; }
+  #alex-pipeline .pl-disp { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; margin-left:6px; }
+  #alex-pipeline .pl-disp.good { color:var(--hb-good); } #alex-pipeline .pl-disp.not { color:var(--hb-not); }
+  #alex-pipeline .pl-long { color:var(--hb-muted); font-size:12px; margin:6px 0 0; white-space:pre-wrap; }
+  #alex-pipeline .pl-from { color:var(--hb-faint); font-size:11px; margin-top:6px; }
+  #alex-pipeline .pl-confirm { margin-top:9px; }
+  #alex-pipeline .pl-confirm button { font:inherit; font-size:11.5px; font-weight:600; color:var(--hb-mcr); background:transparent; border:1px solid var(--hb-mcr); border-radius:7px; padding:4px 12px; cursor:pointer; }
+  #alex-pipeline .pl-confirm button:hover { background:color-mix(in srgb, var(--hb-mcr) 16%, transparent); }
+  #alex-pipeline .pl-confirmed { margin-top:8px; font-size:11px; color:var(--hb-mcr); font-weight:600; }
+  #alex-pipeline .pl-confirmed::before { content:"✓ "; }
+  #alex-pipeline .pl-empty { color:var(--hb-faint); font-size:12px; padding:26px 16px; text-align:center; }
+  #alex-pipeline .pl-flash { margin-bottom:14px; padding:9px 14px; border-radius:9px; font-size:12.5px; border:1px solid var(--hb-line); background:var(--hb-panel); color:var(--hb-good); }
+</style>
+
+<section id="alex-pipeline" data-test="alex-pipeline">
+  <header class="pl-topbar">
+    <div>
+      <h1>&#127869;&#65039; Distillation Pipeline</h1>
+      <p class="pl-sub">
+        The learning loop, left to right: raw <strong>Actions</strong> (spans) &rarr; Alex's
+        distilled <strong>Insights</strong> &rarr; the <strong>Confirmations</strong> you keep.
+        Confirm an insight to promote it toward the docs.
+      </p>
+    </div>
+    <nav class="pl-nav">
+      <%= render "heartbeat/nav", current: :pipeline, insights_count: @insights.size %>
+    </nav>
+  </header>
+
+  <% if notice.present? %><div class="pl-flash" data-test="pl-flash"><%= notice %></div><% end %>
+  <% if alert.present? %><div class="pl-flash" style="color:var(--hb-not)"><%= alert %></div><% end %>
+
+  <div class="pl-grid">
+    <%# ── Column 1 · Actions (spans) ─────────────────────────────────────── %>
+    <div class="pl-col" id="col-actions">
+      <div class="pl-colhd">
+        <div class="pl-step">Column 1</div>
+        <h2>&#128451; Actions <span class="pl-count"><%= @span_rows.size %> spans</span></h2>
+      </div>
+      <div class="pl-list">
+        <% if @span_rows.empty? %>
+          <div class="pl-empty">No spans yet.</div>
+        <% end %>
+        <% @span_rows.each do |span, actions| %>
+          <% cat = heartbeat_category_meta(span.category) %>
+          <% alex_grade = @span_grades.dig(span.id, "alex") %>
+          <% is_not = alex_grade&.not_good? %>
+          <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-span" data-span-id="<%= span.id %>">
+            <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= span.category %></span>
+            <p class="pl-narr"><%= span.reason_slug %></p>
+            <% if span.outcome_slug.present? %><p class="pl-out"><%= span.outcome_slug %></p><% end %>
+            <div class="pl-meta">
+              <%= heartbeat_agent_cell(mascot_slug: span.mascot, pokemon: @pokemon_by_slug[span.mascot],
+                                       agent_slug: span.agent, agent: @agents_by_slug[span.agent]) %>
+              <span style="display:flex; align-items:center; gap:8px;">
+                <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Alex graded this NOT">not</span><% end %>
+                <span class="pl-cost"><%= heartbeat_usage_totals(actions)[:cost].positive? ? number_to_currency(heartbeat_usage_totals(actions)[:cost], precision: 4) : "—" %></span>
+              </span>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# ── Column 2 · Insights (Alex's banked grades) ─────────────────────── %>
+    <div class="pl-col" id="col-insights">
+      <div class="pl-colhd">
+        <div class="pl-step">Column 2</div>
+        <h2>&#128161; Insights <span class="pl-count"><%= @insights.size %> distilled</span></h2>
+      </div>
+      <div class="pl-list">
+        <% if @insights.empty? %>
+          <div class="pl-empty">No insights yet — Alex banks them with <code>grade-events</code>.</div>
+        <% end %>
+        <% @insights.each do |insight| %>
+          <% event_id = insight.atomic_event_id %>
+          <% confirmed = event_id && @confirmed_event_ids.include?(event_id) %>
+          <div class="pl-row" data-test="pl-insight">
+            <div>
+              <span class="pl-slug"><%= insight.slug %></span>
+              <span class="pl-disp <%= insight.good? ? "good" : "not" %>"><%= insight.disposition.upcase %></span>
+            </div>
+            <% if insight.long_form.present? %><p class="pl-long"><%= insight.long_form %></p><% end %>
+            <% src = insight.atomic_event || insight.atomic_action %>
+            <% if src&.task_slug.present? %><p class="pl-from">from <%= src.task_slug %></p><% end %>
+            <% if confirmed %>
+              <div class="pl-confirmed" data-test="pl-insight-confirmed">Confirmed</div>
+            <% elsif event_id %>
+              <div class="pl-confirm">
+                <%= button_to "Confirm", alex_pipeline_confirm_path(event_id),
+                      params: { slug: insight.slug }, data: { test: "pl-confirm-btn" } %>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <%# ── Column 3 · Confirmations (McRitchie's mcr grades) ──────────────── %>
+    <div class="pl-col" id="col-confirmations">
+      <div class="pl-colhd">
+        <div class="pl-step">Column 3</div>
+        <h2>&#9989; Confirmations <span class="pl-count"><%= @confirmations.size %> kept</span></h2>
+      </div>
+      <div class="pl-list">
+        <% if @confirmations.empty? %>
+          <div class="pl-empty">Nothing confirmed yet — Confirm an insight in column 2.</div>
+        <% end %>
+        <% @confirmations.each do |conf| %>
+          <div class="pl-row" data-test="pl-confirmation">
+            <div><span class="pl-slug"><%= conf.slug %></span></div>
+            <% if conf.long_form.present? %><p class="pl-long"><%= conf.long_form %></p><% end %>
+            <% src = conf.atomic_event || conf.atomic_action %>
+            <% if src&.task_slug.present? %><p class="pl-from">from <%= src.task_slug %></p><% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</section>

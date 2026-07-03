@@ -10,13 +10,13 @@ class HeartbeatController < ApplicationController
   # upserts a grade (and banks/discards it), and #insights is the curated Insight Bank.
   #
   # BUILD-FIRST (2026-07-03, operator decision): the WHOLE heartbeat surface — reads
-  # AND the grade/bank/discard writes — is an OPEN meta surface, so Mr. McRitchie can
-  # grade and confirm (incl. `grader: "mcr"`) without an admin login while the pipeline
-  # is being built. This deliberately re-opens audit finding #5 (grade writes are
-  # public; an `mcr` audit row is forgeable) as a conscious tradeoff — RE-GATE before
-  # any real multi-user exposure (restore the `require_admin`-except-READ_ACTIONS
-  # split below). The first-class AGENT write path stays the bearer-gated /api/v1
-  # endpoint, which still forces `grader: alex` (learning-loop lever 2).
+  # AND the grade/bank/discard writes (incl. the pipeline's Confirm) — is an OPEN meta
+  # surface, so Mr. McRitchie can grade and confirm (incl. `grader: "mcr"`) without an
+  # admin login while the pipeline is being built. This deliberately re-opens audit
+  # finding #5 (grade writes are public; an `mcr` audit row is forgeable) as a
+  # conscious tradeoff — RE-GATE before any real multi-user exposure (restore the
+  # `require_admin`-except-READ_ACTIONS split). The first-class AGENT write path stays
+  # the bearer-gated /api/v1 endpoint, which still forces `grader: alex` (lever 2).
   skip_before_action :require_authentication
 
   # Page size for the cross-session All Spans view — the operator asked for 100
@@ -77,6 +77,59 @@ class HeartbeatController < ApplicationController
     @stage_transitions = stage_transitions_for(@events)
     @has_prev = @page > 1
     @has_next = @page * ALL_SPANS_PER_PAGE < @total
+  end
+
+  # The OPSD distillation pipeline as three columns, left→right:
+  #   1. ACTIONS       — recent narrated spans (the raw trajectory)
+  #   2. INSIGHTS      — Alex's banked grades (the distilled lessons)
+  #   3. CONFIRMATIONS — McRitchie's mcr grades (the confirmed subset)
+  # Read-only meta surface (like the rest of the heartbeat); the column-2 Confirm
+  # button posts an mcr grade through the public grade endpoint.
+  PIPELINE_SPANS    = 40
+  PIPELINE_INSIGHTS = 40
+
+  def pipeline
+    # Column 1 — spans + their attributed actions (for cost) + their Alex grade
+    # (for the "not" indicator).
+    @spans = AtomicEvent.order(opened_at: :desc, seq: :desc, id: :desc).limit(PIPELINE_SPANS).to_a
+    actions_by_span = AtomicAction.where(atomic_event_id: @spans.map(&:id))
+                                  .chronological.to_a.group_by(&:atomic_event_id)
+    @span_rows       = @spans.map { |span| [span, actions_by_span[span.id] || []] }
+    @pokemon_by_slug = pokemon_lookup(actions_by_span.values.flatten, @spans)
+    @agents_by_slug  = agent_soul_lookup(@spans)
+    @span_grades     = event_grade_lookup(@spans) # {event_id => {grader => grade}} — the "not" flag
+
+    # Column 2 — Alex's banked insights (the distilled lessons), newest curation first.
+    @insights = ActionGrade.banked.by_grader(ActionGrade::ALEX)
+                           .includes(:atomic_event, :atomic_action)
+                           .order(updated_at: :desc).limit(PIPELINE_INSIGHTS).to_a
+
+    # Column 3 — McRitchie's confirmations (audit-of-Alex), newest first.
+    @confirmations = ActionGrade.by_grader(ActionGrade::MCR)
+                                .includes(:atomic_event, :atomic_action)
+                                .order(updated_at: :desc).limit(PIPELINE_INSIGHTS).to_a
+
+    # Which spans already carry a McRitchie confirmation — so a column-2 insight
+    # shows "confirmed" instead of a Confirm button.
+    @confirmed_event_ids = ActionGrade.by_grader(ActionGrade::MCR)
+                                      .where.not(atomic_event_id: nil).pluck(:atomic_event_id).to_set
+  end
+
+  # Record Mr. McRitchie's confirmation (an `mcr` grade) of an insight's span, then
+  # redirect back to the pipeline — a no-JS form action for the column-2 Confirm
+  # button. Upserts the one (event, mcr) row (idempotent: re-confirming updates it).
+  # A write, so on the current release gate it needs admin; it goes public with the
+  # make-grading-actions-public change.
+  def confirm
+    event = AtomicEvent.find(params[:id])
+    grade = ActionGrade.for_event(event).by_grader(ActionGrade::MCR)
+                       .first_or_initialize(grader: ActionGrade::MCR)
+    grade.disposition = ActionGrade::GOOD
+    grade.slug        = params[:slug].presence || grade.slug.presence || event.reason_slug
+    rescue_and_log(target: grade) { grade.save! }
+    redirect_to alex_pipeline_path(anchor: "col-confirmations"), notice: "Confirmed “#{grade.slug}”."
+  rescue ActiveRecord::RecordNotFound
+    redirect_to alex_pipeline_path, alert: "That span no longer exists."
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on

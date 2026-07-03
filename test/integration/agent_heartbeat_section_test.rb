@@ -36,16 +36,18 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_match "Ship a QA-ready release to production", response.body
   end
 
-  test "a single-act heartbeat soul (Alex) renders its one act + description" do
+  test "Alex's heartbeat soul renders its acts + descriptions" do
     get agent_path("alex")
     assert_response :success
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='alex']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Alex Heartbeat']"
-    assert_select "[data-test='action']", count: 2
+    assert_select "[data-test='action']", count: 3
     assert_select "[data-test='action'][data-action='grade-events'][data-clip='grade-events']"
+    assert_select "[data-test='action'][data-action='propagate-insights'][data-clip='propagate-insights']"
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
+    assert_match "Propagate confirmed insights into the docs", response.body
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do

@@ -92,6 +92,11 @@ Rails.application.routes.draw do
   # the same span table + drawer; linked from the heartbeat's in-context navbar.
   get  "alex/heartbeat/spans", to: "heartbeat#all_spans", as: :heartbeat_all_spans
   get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
+  # The OPSD distillation pipeline, left→right: Actions (spans) → Insights (Alex's
+  # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
+  # (mcr) confirmation of an insight and redirects back (a no-JS form action).
+  get  "alex/pipeline", to: "heartbeat#pipeline", as: :alex_pipeline
+  post "alex/pipeline/confirm/:id", to: "heartbeat#confirm", as: :alex_pipeline_confirm
 
   get "toast_test", to: "toast_test#index"
   post "toast_test/flash", to: "toast_test#trigger_flash"
