@@ -122,6 +122,35 @@ class DorCheckTest < Minitest::Test
     end
   end
 
+  # The fingerprint dor-check resolves when run FROM `dir` with NO DOR_CHECK_DIFF_ROOT
+  # override — the cwd-default path (the satellite fix). Contrast suite_fingerprint(dir),
+  # which pins the root via the explicit override.
+  def fingerprint_running_in(dir)
+    IO.popen({ "DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil },
+             [BIN, "--suite-fingerprint"], { chdir: dir, err: File::NULL }, &:read).to_s.strip
+  end
+
+  # ── [integration] the CODE root follows the agent's worktree (finding #2) ──
+  # A satellite ships no gate scripts, so it runs the HUB's dor-check; if the diff
+  # root stayed pinned to the hub, the gate would fingerprint the hub tree — a false
+  # certification. With no DOR_CHECK_DIFF_ROOT override the root must follow cwd.
+
+  def test_integration_diff_root_defaults_to_the_cwd_worktree
+    with_git_repo(staged: ["app/x.rb"]) do |repo_a|
+      with_git_repo(staged: ["app/y.rb"]) do |repo_b|
+        fp_a_cwd      = fingerprint_running_in(repo_a)  # override UNSET → cwd
+        fp_b_cwd      = fingerprint_running_in(repo_b)
+        fp_a_explicit = suite_fingerprint(repo_a)       # explicit override (existing helper)
+
+        refute_empty fp_a_cwd, "the cwd-rooted run produces a real fingerprint"
+        assert_equal fp_a_explicit, fp_a_cwd,
+                     "no override roots at cwd — same fingerprint as an explicit --diff-root"
+        refute_equal fp_a_cwd, fp_b_cwd,
+                     "the fingerprint follows the cwd worktree, not a repo fixed at the script's location"
+      end
+    end
+  end
+
   # Build a throwaway repo modeling the persistent-`release` topology that drives
   # the false-positive bug: origin/main sits at a baseline, origin/release runs
   # AHEAD of it by a real `release_code` commit (merged-but-unshipped work), and
