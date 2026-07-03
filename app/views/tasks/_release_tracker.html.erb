@@ -1,7 +1,7 @@
 <%# The five-stage release pizza-tracker (Testing → Assembling → Deploying QA →
-    Confirming → Deploying) for the CURRENT release. Extracted from
-    _release_summary so both the Current Release card AND the Release Pipeline card
-    render the identical live tracker.
+    Confirming → Deploying) for the CURRENT release. Extracted from _release_summary
+    into its own partial so the Current Release card's tracker markup stays a
+    self-contained, testable unit (single render site — the Next Release card).
     Locals:
       release  the active Release to chart (required)
     Steps + per-stage durations come from release_tracker_steps; the live stage
