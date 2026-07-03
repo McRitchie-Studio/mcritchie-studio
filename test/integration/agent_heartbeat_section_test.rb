@@ -28,9 +28,10 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-name'] code", text: "Avi Heartbeat"
 
     # Both of Avi's acts render as copyable phrases with their captions.
-    assert_select "[data-test='heartbeat-act']", count: 2
-    assert_select "[data-test='heartbeat-act'][data-act='pr-review'][data-clip='pr-review']"
-    assert_select "[data-test='heartbeat-act'][data-act='production-deploy'][data-clip='production-deploy']"
+    assert_select "[data-test='action']", count: 3
+    assert_select "[data-test='action'][data-action='pr-review'][data-clip='pr-review']"
+    assert_select "[data-test='action'][data-action='production-deploy'][data-clip='production-deploy']"
+    assert_select "[data-test='action'][data-action='pr-review-slow'][data-clip='pr-review-slow']"
     assert_match "Review + merge all submitted PRs", response.body
     assert_match "Ship a QA-ready release to production", response.body
   end
@@ -41,8 +42,9 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='alex']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Alex Heartbeat']"
-    assert_select "[data-test='heartbeat-act']", count: 1
-    assert_select "[data-test='heartbeat-act'][data-act='grade-events'][data-clip='grade-events']"
+    assert_select "[data-test='action']", count: 2
+    assert_select "[data-test='action'][data-action='grade-events'][data-clip='grade-events']"
+    assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
   end
 
@@ -52,7 +54,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='agent-heartbeat-section']", count: 0
     assert_select "[data-test='heartbeat-name']", count: 0
-    assert_select "[data-test='heartbeat-act']", count: 0
+    assert_select "[data-test='action']", count: 0
     # The rest of the profile still renders as before.
     assert_select "h3", text: "Skills"
   end

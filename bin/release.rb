@@ -109,7 +109,7 @@ require_relative "../app/models/release/cli"
 # CleanCheck is the pure verdict behind the `Deploy with Task` clean-release GUARD
 # (`bin/release status --clean-only`): given the pending assembled tasks (board)
 # and the per-repo release-ahead-of-main counts (git), it decides clean vs dirty
-# and builds the refusal + `Merge, Assemble, Deploy` offer. Rails-free → unit-tested.
+# and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
 require_relative "../app/models/release/clean_check"
 # SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
@@ -1123,7 +1123,7 @@ end
 # `Deploy with Task <task>` composition runs `bin/release status --clean-only`
 # BEFORE it merges the expedited task; `--clean-only` turns the report into a
 # GATE — it exits nonzero (aborting the expedite) on a dirty release, after
-# printing the refusal + the `Merge, Assemble, Deploy` offer. The pure verdict +
+# printing the refusal + the `full-cycle` offer. The pure verdict +
 # message live in Release::CleanCheck; this owns only the two live reads.
 def status
   clean_only = Release::Cli.take_flag(ARGV, "--clean-only")
@@ -1158,7 +1158,7 @@ def status
   # so `Deploy with Task` refuses instead of dragging the pending work to prod.
   # A --dry-run previews the verdict without aborting (nothing is executed).
   if clean_only && !verdict["clean"] && !DRY
-    abort!("release is not clean — `Deploy with Task` refused (ship the whole release with `Merge, Assemble, Deploy`)")
+    abort!("release is not clean — `Deploy with Task` refused (ship the whole release with the `full-cycle` launcher)")
   end
 end
 

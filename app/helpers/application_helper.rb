@@ -425,70 +425,23 @@ module ApplicationHelper
       "-webkit-mask-image: linear-gradient(to right, #000 #{stop}%, transparent)"
   end
 
-  # Non-stage keys for the release-wide meta-triggers in +devops_kickoffs+ (see
-  # below). They never render on column headers — only the current-release
-  # section reaches for them.
-  AVI_HEARTBEAT_KICKOFF_KEY = "avi_heartbeat"
-  AVI_HEARTBEAT_FAST_KICKOFF_KEY = "avi_heartbeat_fast"
-  QA_RELEASE_KICKOFF_KEY = "release"
-  AUTONOMOUS_RELEASE_KICKOFF_KEY = "release_autonomous"
-
   # Canonical copy-paste kickoff commands for the DevOps (Deploy) lane — the
   # single source of truth shared by the /deployments column headers, the
-  # /stages cards, and the current-release section. The per-stage entries are
+  # /stages cards, and the last-release archive chip. The per-stage entries are
   # keyed by DevOps board stage and kept terse (≤3 words) so each fits a column
   # header; the feature-agent lane has none.
   #
-  # Plus four non-stage meta-triggers: the slow and fast "Avi Heartbeat" review
-  # loops, the QA-only "Build and Deploy QA Release" workflow, and the autonomous
-  # "Merge, Assemble, Deploy" workflow. They render as prominent chips in the
-  # current-release section, never on column headers, so they are exempt from the
-  # per-stage word cap.
+  # The four legacy release-wide meta-trigger chips (Avi Heartbeat Slow/Fast,
+  # Build and Deploy QA Release, Merge Assemble Deploy) were retired in favor of
+  # the soul heartbeat launchers in +heartbeat_launchers+ (Avi gains pr-review-slow;
+  # Alex gains the full-cycle act that carries the former Merge/Assemble/Deploy).
   def devops_kickoffs
     {
-      AVI_HEARTBEAT_KICKOFF_KEY => "Avi Heartbeat Slow",
-      AVI_HEARTBEAT_FAST_KICKOFF_KEY => "Avi Heartbeat Fast",
-      QA_RELEASE_KICKOFF_KEY => "Build and Deploy QA Release",
-      AUTONOMOUS_RELEASE_KICKOFF_KEY => "Merge, Assemble, Deploy",
       "submitted" => "Review submitted PRs",
       "reviewed"  => "Prepare release",
       "assembled" => "Run Deployment",
       "shipped"   => "Archive completed tasks"
     }
-  end
-
-  # The slow "Avi Heartbeat" meta-trigger command — a long-running review
-  # supervisor that serializes submitted PR review newest-first, moves approved
-  # work to reviewed, and stops with a retrospective after its review cap.
-  def avi_heartbeat_kickoff
-    devops_kickoffs.fetch(AVI_HEARTBEAT_KICKOFF_KEY)
-  end
-
-  def avi_heartbeat_fast_kickoff
-    devops_kickoffs.fetch(AVI_HEARTBEAT_FAST_KICKOFF_KEY)
-  end
-
-  # The "Build and Deploy QA Release" meta-trigger command — Mr. McRitchie's
-  # one-trigger QA-department workflow, surfaced as a prominent chip in the
-  # current-release section.
-  def qa_release_kickoff
-    devops_kickoffs.fetch(QA_RELEASE_KICKOFF_KEY)
-  end
-
-  # The autonomous production-release meta-trigger. It follows the same review
-  # and QA assembly path as +qa_release_kickoff+, then ships production with the
-  # release command's deterministic gates.
-  def autonomous_release_kickoff
-    devops_kickoffs.fetch(AUTONOMOUS_RELEASE_KICKOFF_KEY)
-  end
-
-  def release_kickoff_chips
-    [
-      { label: "Avi Slow", command: avi_heartbeat_kickoff },
-      { label: "Avi Fast", command: avi_heartbeat_fast_kickoff },
-      { label: "QA", command: qa_release_kickoff },
-      { label: "Prod", command: autonomous_release_kickoff }
-    ]
   end
 
   # The three soul-avatar heartbeat launchers shown in the DevOps card
@@ -507,9 +460,9 @@ module ApplicationHelper
   # docs/agents/modules/heartbeats.md + qa-release/SKILL.md.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     acts: ["pr-review", "production-deploy"], label: "Review + ship", title: "Avi — review + ship heartbeat" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", acts: ["qa-deploy", "archive-completed"], label: "QA + archive",   title: "Steffon — QA deploy + archive heartbeat" },
-      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    acts: ["grade-events"],                   label: "Learning",      title: "Alex — grade-events / learning heartbeat" }
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["pr-review", "production-deploy", "pr-review-slow"], label: "Review + ship", title: "Avi — review + ship heartbeat" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["qa-deploy", "archive-completed"],                  label: "QA + archive",  title: "Steffon — QA deploy + archive heartbeat" },
+      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "full-cycle"],                      label: "Learn + ship",  title: "Alex — grade-events + full DevOps cycle heartbeat" }
     ]
   end
 
@@ -518,16 +471,37 @@ module ApplicationHelper
   # docs/agents/modules/heartbeats.md so the agent profile page can annotate each
   # copyable phrase with the work it launches (Avi: pr-review + production-deploy;
   # Steffon: qa-deploy + archive-completed; Alex: grade-events).
-  HEARTBEAT_ACT_DESCRIPTIONS = {
+  ACTION_DESCRIPTIONS = {
     "pr-review"         => "Review + merge all submitted PRs",
+    "pr-review-slow"    => "Review + merge submitted PRs one at a time",
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-deploy"         => "Prepare + deploy to QA (release stages 1–3)",
     "archive-completed" => "Archive completed tasks + releases",
-    "grade-events"      => "Grade 10 recent events for quality"
+    "grade-events"      => "Grade 10 recent events for quality",
+    "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod"
   }.freeze
 
-  def heartbeat_act_description(act)
-    HEARTBEAT_ACT_DESCRIPTIONS[act.to_s]
+  def action_description(act)
+    ACTION_DESCRIPTIONS[act.to_s]
+  end
+
+  # Leading icon for each heartbeat launcher act. The four ORDERED release-pipeline
+  # acts get a 1→4 keycap so the buttons read as a sequence across the souls (Avi
+  # pr-review 1 → Steffon qa-deploy 2 → Avi production-deploy 3 → Steffon
+  # archive-completed 4); the off-sequence acts get a themed glyph (🐢 slow review,
+  # 🧑🏻‍🏫 grading, 🌎 the whole cycle). The heartbeat row itself gets a ❤️ in the view.
+  ACTION_ICONS = {
+    "pr-review"         => "1️⃣",
+    "qa-deploy"         => "2️⃣",
+    "production-deploy" => "3️⃣",
+    "archive-completed" => "4️⃣",
+    "pr-review-slow"    => "🐢",
+    "grade-events"      => "🧑🏻‍🏫",
+    "full-cycle"        => "🌎"
+  }.freeze
+
+  def action_icon(act)
+    ACTION_ICONS[act.to_s]
   end
 
   # The heartbeat launcher owned by a given soul, or nil for an agent that has no
@@ -580,7 +554,7 @@ module ApplicationHelper
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
           who: "Avi (tests the frozen SHA) → operator gate or autonomous deploy trigger",
           tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
-          gate: "🔒 Build and Deploy QA Release stops for the operator; Merge, Assemble, Deploy grants ship authority after the same gates pass.",
+          gate: "🔒 Steffon's qa-deploy stops for the operator at QA; Avi's production-deploy (or the Alex full-cycle) grants ship authority after the same gates pass.",
           nxt: "On explicit ship authority: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }

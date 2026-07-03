@@ -443,33 +443,45 @@ or the `review-one` SOP; none is a new command to build):
 
 | Composition | Expands to |
 |---|---|
-| **`Merge, Assemble, Deploy`** | `pr-review` → `qa-deploy` → `production-deploy` |
-| &nbsp;&nbsp;↳ *slow variant* | `pr-review-slow` → `qa-deploy` → `production-deploy` |
-| **`Build and Deploy QA Release`** | `pr-review` → `qa-deploy` **(stops before `production-deploy`** — hands the operator the ship gate) |
+| **`full-cycle`** (Alex Heartbeat act; full ship authority) | `pr-review` → `qa-deploy` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
 | **`Deploy with Task <task>`** | **GUARD `release == main`** → `review-one <task>` (→ merge) → `qa-deploy` → `production-deploy` |
-| **`Avi Heartbeat Slow` / `Fast`** | the review-only loops — `pr-review-slow` / `pr-review` **without** the merge/deploy tail; they stop at `reviewed` (see below) |
+
+> **Retired chips (2026-07-02).** The four legacy release-card chips — `Avi Heartbeat
+> Slow`, `Avi Heartbeat Fast`, `Build and Deploy QA Release`, `Merge, Assemble,
+> Deploy` — were removed from the UI and relocated into the soul heartbeat acts:
+> serialized review is now Avi's **`pr-review-slow`** act (review **+ merge**, unlike
+> the old review-only loops), QA-only is `pr-review` → Steffon's **`qa-deploy`**, and
+> the full autonomous run is Alex's **`full-cycle`** act. The `bin/avi-heartbeat`
+> review-only loop still exists but is no longer a card chip.
 
 The only NEW code this set required is the clean-release **GUARD** that
 `Deploy with Task` runs first (`bin/release status --clean-only`, backed by the
 unit-tested `Release::CleanCheck`); everything else is the atoms recombined.
 
-#### The three soul heartbeat launchers — the DevOps-card chips
+#### The three soul heartbeat launchers — the Heartbeats card
 
-The **DevOps card** (`#release-duration-card` on `/deployments`, below its
-release-duration metrics) renders three **soul heartbeat launchers**
-(`ApplicationHelper#heartbeat_launchers`, `tasks/_heartbeat_launchers`)
-— a soul face (**linking to `/agents/<slug>`**) over a **prompt-like row 1**
-(`Avi Heartbeat` / `Steffon Heartbeat` / `Alex Heartbeat`) plus one or more
-**copyable atom acts**. **Any row**, pasted into a fresh session, is a **recognized
-launcher**. Avi's two release lanes now share ONE column. Each act wraps a single
-release atom, except `alex` / `grade-events`, the learning loop outside the release
-pipeline. Full SOP: [`heartbeats.md`](../modules/heartbeats.md).
+The standalone **Heartbeats card** (`tasks/_heartbeats_card` on `/deployments`,
+sized to match the Next Release card) renders the three soul heartbeat launchers
+(`ApplicationHelper#heartbeat_launchers`, one `tasks/_heartbeat_launcher` per soul)
+in a 3-up grid. Each launcher is a soul face (**linking to `/agents/<slug>`**) over
+a **prompt-like row 1** (`Avi Heartbeat` / `Steffon Heartbeat` / `Alex Heartbeat`)
+plus one or more **copyable action rows**, each with a leading icon (❤️ on the
+heartbeat row; `1️⃣`–`4️⃣` on the four ordered release actions, a themed glyph on the
+rest). **Any row**, pasted into a fresh session, is a **recognized launcher**. The
+5-stage release tracker stays in the **Next Release** card. Full SOP:
+[`heartbeats.md`](../modules/heartbeats.md).
+
+> **Sticky attribution.** The FIRST action of a `<Soul> Heartbeat` is
+> `bin/atomic-event heartbeat <soul>` — it sets a session-sticky acting-agent so
+> every span self-attributes to that soul (stacked over the base mascot) without
+> re-passing `--agent`; an explicit `--agent` still wins, and it clears at session
+> end (`close-open`) or `heartbeat --clear`.
 
 | Soul (row 1) | Acts | Does | Exit seam |
 |---|---|---|---|
-| **Avi** (`Avi Heartbeat`) | `pr-review` · `production-deploy` | review + **merge** ALL submitted PRs (waves ≤5); then ship a QA-green release (`bin/release ship --yes`, stages 4–5) | each PR `assembled`/`blocked`; then `shipped` when a QA-green RC is ready |
+| **Avi** (`Avi Heartbeat`) | `pr-review` · `pr-review-slow` · `production-deploy` | review + **merge** submitted PRs (waves ≤5, or serialized via `pr-review-slow`); then ship a QA-green release (`bin/release ship --yes`, stages 4–5) | each PR `assembled`/`blocked`; then `shipped` when a QA-green RC is ready |
 | **Steffon** (`Steffon Heartbeat`) | `qa-deploy` · `archive-completed` | assemble `release` + deploy QA (`bin/release prepare --yes`, stages 1–3); then archive shipped tasks (`bin/release archive --yes`) | RC **deployed to QA**; shipped tasks + completed releases `archived` |
-| **Alex** (`Alex Heartbeat`) | `grade-events` | grade the 10 most recent resolved spans at `/alex/heartbeat`, bank insights | 10 graded, insights banked |
+| **Alex** (`Alex Heartbeat`) | `grade-events` · `full-cycle` | grade the 10 most recent resolved spans at `/alex/heartbeat`; OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; or the whole release `shipped` |
 
 **The release handoff seam.** The pizza-tracker (`RELEASE_TRACKER_STAGES`) is five
 stages: 1 **Testing**, 2 **Assembling**, 3 **Deploying QA**, 4 **Confirming**, 5

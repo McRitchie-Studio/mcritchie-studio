@@ -1,0 +1,22 @@
+<%# Heartbeats card for /deployments — the three soul heartbeat launchers (Avi /
+    Steffon / Alex), each an avatar over its copyable heartbeat prompt + actions,
+    in an even 3-up grid. The release progress tracker stays in the Current Release
+    card. Locals:
+      card_class  extra card classes for grid placement (optional) %>
+<% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
+<% launchers = heartbeat_launchers %>
+<% souls = Agent.where(slug: launchers.map { |l| l[:agent_slug] }.uniq).index_by(&:slug) %>
+<%= render "components/copy_text_script" %>
+<div id="heartbeats-card" class="<%= card_class %>" data-test="heartbeats-card">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold text-heading">Heartbeats</h3>
+      <p class="text-[11px] text-muted">Copy any phrase to launch that soul's heartbeat.</p>
+    </div>
+  </div>
+  <div class="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
+    <% launchers.each do |launcher| %>
+      <%= render "tasks/heartbeat_launcher", launcher: launcher, soul: souls[launcher[:agent_slug]] %>
+    <% end %>
+  </div>
+</div>
