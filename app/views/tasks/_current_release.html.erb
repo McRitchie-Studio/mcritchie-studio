@@ -14,12 +14,8 @@
     <%= render "tasks/release_summary", release: rel, variant: :current -%>
   </div>
 <% else %>
-  <%# No active release: muted empty state mirroring the active card. %>
-  <div id="current-release" class="<%= card_class %>">
-    <div class="flex items-center gap-3 flex-wrap">
-      <span class="text-[11px] uppercase tracking-wide text-muted font-semibold">Next Release</span>
-      <span class="text-sm text-muted italic">none active</span>
-    </div>
-    <p class="mt-2 text-xs text-muted">Merge a reviewed task, or launch a heartbeat below, to establish one.</p>
-  </div>
+  <%# No active release: muted empty state (shared with the Last Release card). %>
+  <%= render "tasks/release_card_empty_state", dom_id: "current-release", card_class: card_class,
+             label: "Next Release", status: "none active",
+             hint: "Merge a reviewed task, or launch a heartbeat below, to establish one." %>
 <% end %>

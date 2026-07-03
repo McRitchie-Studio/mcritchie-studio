@@ -329,15 +329,12 @@ function kanbanBoard(live) {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment summary grid: Current Release spans the left column; Last Release and the DevOps card (release durations) stack on the right. -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch" data-test="release-dashboard-grid">
-      <%= render "current_release", release: current_release, card_class: "lg:row-span-2 h-full" %>
+    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top row, Heartbeats + DevOps (release durations) on the bottom row. -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-stretch" data-test="release-dashboard-grid">
+      <%= render "current_release", release: current_release, card_class: "h-full" %>
       <%= render "last_release", release: last_release, card_class: "h-full" %>
+      <%= render "heartbeats_card", card_class: "h-full" %>
       <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full" %>
-    </div>
-    <!-- Heartbeats card: the three soul launchers (Avi / Steffon / Alex) and their copyable actions, in one column sized to match the Next Release card. The 5-stage release tracker stays in the Next Release card above. -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6" data-test="heartbeats-row">
-      <%= render "heartbeats_card" %>
     </div>
   <% end %>
 

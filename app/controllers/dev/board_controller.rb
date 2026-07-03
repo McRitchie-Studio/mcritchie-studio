@@ -78,9 +78,11 @@ module Dev
     end
 
     # Advance the fixture release ONE tracker step by setting the next done_count
-    # input (member → qa_url → assembled → confirmed → shipped), so the live release
-    # tracker steps Testing → Assembling → Deploying QA → Confirming → Deploying
-    # with each click. Wraps from shipped back to a fresh release.
+    # input (member → qa_url → assembled → shipped), so the live release tracker
+    # steps Testing → Assembling → Deploying QA → Confirming → Deploying with each
+    # click. Reaching the deploy step SHIPS in that same advance (no separate
+    # confirmed-but-unshipped pause), so a Last Release appears immediately. Wraps
+    # from shipped back to a fresh release.
     def advance_release
       release = current_fixture_release || open_fixture_release
       case tracker_done_count(release)
@@ -93,8 +95,11 @@ module Dev
         release.touch
       when 1 then release.update!(qa_url: "https://qa.example.test/dev-fixture")
       when 2 then release.update!(state: "assembled")
-      when 3 then release.update!(confirmed_at: Time.current, confirmed_by: "dev")
-      when 4
+      when 3, 4
+        # Reaching the final deploy step ships in a single advance — the operator's
+        # UX is "advancing to Deployed creates the Last Release" (no extra confirm
+        # click). ship! is valid from `assembled` and stamps confirmed_at/by itself;
+        # we set the deploy sha it records.
         release.update!(deployed_sha: SecureRandom.hex(20))
         release.ship!(by: "dev")
       else

@@ -559,6 +559,16 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "#release-duration-card [data-test='release-duration-deployment']", count: 1
   end
 
+  test "[component] the Last Release card shows a muted empty state when nothing has shipped" do
+    render partial: "tasks/last_release", locals: { release: nil }
+
+    # With no shipped release the card still renders (filling its 2×2 grid cell),
+    # mirroring the Next Release "none active" placeholder.
+    assert_select "#last-release", count: 1
+    assert_select "#last-release", text: /Last Release/
+    assert_select "#last-release", text: /none yet/
+  end
+
   test "[component] _current_release no longer carries the heartbeat cluster (moved to the DevOps card)" do
     rel = Release.open!
     render partial: "tasks/current_release", locals: { release: rel }
