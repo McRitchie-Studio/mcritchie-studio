@@ -1,16 +1,13 @@
 require "test_helper"
 
-# [integration] the security + robustness contract for the learning-loop grade
-# surface (audit 2026-07-02, high findings #3 + #5):
+# [integration] the learning-loop grade surface contract.
 #
-#   * READS stay a public "open meta surface" — the heartbeat, the span list, the
-#     Insight Bank, and the drawers render with no auth.
-#   * WRITES are ADMIN-ONLY. The grade / bank / discard endpoints are the write
-#     path into the OPSD Insight Bank AND the McRitchie audit-of-Alex ground truth,
-#     so an anonymous client must not be able to forge a grade (least of all a
-#     `grader: "mcr"` audit row) or poison the bank. Mirrors TasksController.
-#   * The Insight Bank must render a banked SPAN grade — the Alex heartbeat's
-#     normal output — instead of 500ing on a nil atomic_action.
+# BUILD-FIRST (2026-07-03): grade/bank/discard WRITES are PUBLIC — Mr. McRitchie can
+# grade and confirm (incl. `grader: "mcr"`) without an admin login while the pipeline
+# is being built. This deliberately re-opens audit finding #5 (writes public, mcr
+# forgeable) as a conscious tradeoff; re-gate before real multi-user exposure. Reads
+# were already public. The Insight Bank must still render a banked SPAN grade (the
+# #337 crash fix) instead of 500ing on a nil atomic_action.
 class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
   def action(**attrs)
     AtomicAction.create!({ session_id: "auth-int", kind: "edit", outcome: "ok", actor: "agent",
@@ -24,37 +21,27 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
                           seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
-  # ── writes are admin-only ──────────────────────────────────────────────────
+  # ── writes are PUBLIC (build-first) ─────────────────────────────────────────
 
-  test "[integration] an anonymous action-grade POST is rejected and writes no row" do
+  test "[integration] an anonymous action-grade POST succeeds and writes the row" do
     a = action
-
-    assert_no_difference -> { ActionGrade.count } do
-      post heartbeat_grade_path(a), params: { grader: "mcr", disposition: "good" }
-    end
-
-    assert_not response.successful?, "an unauthenticated grade write must not succeed"
-  end
-
-  test "[integration] an anonymous span-grade POST is rejected and writes no row" do
-    e = span
-
-    assert_no_difference -> { ActionGrade.count } do
-      post heartbeat_event_grade_path(e), params: { grader: "mcr", disposition: "good" }, as: :json
-    end
-
-    assert_not response.successful?, "an unauthenticated span-grade write must not succeed"
-  end
-
-  test "[integration] a logged-in admin can grade — the write path still works" do
-    a = action
-    log_in_as(users(:alex))
 
     assert_difference -> { ActionGrade.count }, 1 do
       post heartbeat_grade_path(a), params: { grader: "alex", disposition: "good" }, as: :json
     end
 
+    assert_response :success, "grade writes are public while build-first mode holds"
+  end
+
+  test "[integration] an anonymous McRitchie confirmation (grader mcr) succeeds" do
+    e = span
+
+    assert_difference -> { ActionGrade.count }, 1 do
+      post heartbeat_event_grade_path(e), params: { grader: "mcr", disposition: "good" }, as: :json
+    end
+
     assert_response :success
+    assert ActionGrade.for_event(e).by_grader("mcr").exists?, "the mcr confirmation is writable without login"
   end
 
   # ── reads stay public ──────────────────────────────────────────────────────
