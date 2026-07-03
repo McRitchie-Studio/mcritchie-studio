@@ -241,7 +241,10 @@ class Release < ApplicationRecord
       reopen! if state == "assembled"
       raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
 
-      task.update!(release_slug: slug, stage: "assembled")
+      # Adopting the task onto the RC means its PR merged onto the `release`
+      # branch — stamp the git-location alongside the board flip (the assemble
+      # heartbeat's crash-recovery signal). See Task::MERGED_STATES.
+      task.update!(release_slug: slug, stage: "assembled", merged: Task::MERGED_RELEASE)
     end
     task
   end

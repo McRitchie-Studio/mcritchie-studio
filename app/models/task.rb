@@ -70,6 +70,16 @@ class Task < ApplicationRecord
   NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
                         "submitted" => "reviewed", "reviewed" => "assembled",
                         "assembled" => "shipped" }.freeze
+  # WHERE the task's code physically is, ORTHOGONAL to `stage` (the board
+  # position) — so an interrupted assemble/deploy heartbeat contextualizes itself
+  # from durable state instead of guessing (an interrupted Steffon skips
+  # re-merging a `release` task; an interrupted Avi skips re-ff'ing a `main` one).
+  #   nil       — not merged anywhere (submitted / reviewed)
+  #   "release" — merged onto the release branch (going through QA)
+  #   "main"    — fast-forwarded into main (going through prod deploy)
+  MERGED_RELEASE = "release"
+  MERGED_MAIN    = "main"
+  MERGED_STATES  = [MERGED_RELEASE, MERGED_MAIN].freeze
   # Board columns per page. /tasks is the feature-agent lane (Build + the blocked
   # side state). /deployments shows the full pipeline as swim lanes — the Deploy
   # workflow plus the upstream designed/building lanes (drag-and-drop; more later).
@@ -152,6 +162,10 @@ class Task < ApplicationRecord
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
   validates :stage, inclusion: { in: STAGES }
+  # `merged` is optional (nil = not merged); when set it must be a known git
+  # location. A typo must be a hard error here (unlike `--agent`), since the
+  # heartbeats' crash-recovery reads it as ground truth.
+  validates :merged, inclusion: { in: MERGED_STATES }, allow_nil: true
   # Naming discipline — enforced wherever the title/acceptance is set or changed
   # (every create + any update that touches them, all paths). Gated on change, so
   # existing tasks that don't touch these fields stay grandfathered.
@@ -895,7 +909,10 @@ class Task < ApplicationRecord
   end
 
   def ship!(result_data = {})
-    update!(stage: "shipped", result: result_data)
+    # Shipping ff's release → main, so the code is now on main — stamp it as the
+    # git-location alongside the board flip (the deploy heartbeat's crash-recovery
+    # signal). See MERGED_STATES.
+    update!(stage: "shipped", merged: MERGED_MAIN, result: result_data)
   end
 
   # --- Side / terminal -----------------------------------------------------

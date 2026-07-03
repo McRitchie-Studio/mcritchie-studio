@@ -1191,4 +1191,25 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal :blocked, task.block_state(unresolved: true, ever_blocked: false)
     assert_equal :never, task.block_state(unresolved: false, ever_blocked: false)
   end
+
+  # --- merged: the git-location field (crash-recovery for the deploy heartbeats) ---
+
+  test "[unit] merged accepts nil + the known git locations, rejects anything else" do
+    task = Task.create!(title: "merged validation task")
+    [nil, Task::MERGED_RELEASE, Task::MERGED_MAIN].each do |value|
+      task.merged = value
+      assert task.valid?, "merged=#{value.inspect} should be valid"
+    end
+    task.merged = "somewhere-else"
+    assert_not task.valid?, "an unknown merged location must be a hard error"
+    assert_includes task.errors[:merged].to_s, "is not included"
+  end
+
+  test "[unit] ship! stamps merged=main alongside the shipped stage" do
+    task = Task.create!(title: "ship stamps merged task", stage: "assembled",
+                        merged: Task::MERGED_RELEASE)
+    task.ship!
+    assert_equal "shipped", task.reload.stage
+    assert_equal Task::MERGED_MAIN, task.merged
+  end
 end
