@@ -14,13 +14,15 @@
 > branch from `origin/release` (falling back to `origin/main` where no `release`
 > branch exists) and `finish --pr` opens the PR with `--base release`.
 >
-> **Still to land (each its own task):** migrating the heartbeat planner
-> `bin/devops-cycle` from the old stage names to the new ones (it is
-> self-consistent on the legacy snapshot today); **multi-repo `ship`** — the
-> per-repo app deploy across satellites (+ gem auto-repin + partial-ship +
-> `test_cmd` gate); `bin/release ship` today publishes gems then deploys
-> mcritchie-studio only; the Discord progress webhook
-> (§5). Where this doc describes those, it is the spec for the follow-up.
+> **Still to land (each its own task):** the Discord progress webhook (§5). Where
+> this doc describes it, it is the spec for the follow-up.
+>
+> **Since landed (do NOT rebuild):** **multi-repo `ship`** — `bin/release ship` is
+> now a full producer-first, hub-before-satellites pipeline (gems publish → auto
+> re-pin consumers → hub app deploy → satellites), with the per-repo `test_cmd`
+> gate and partial-ship recovery (`Release::ShipSequence`, `bin/release.rb`); it is
+> **not** hub-only. The heartbeat planner `bin/devops-cycle` was also migrated off
+> the legacy stage names (it speaks `submitted`/`reviewed`/`assembled`).
 >
 > **Deploy-flow redesign (decided, 2026-06-22).** The `submitted → shipped` half
 > was re-homed by role — review is **delegated by Avi to two seniors** (no longer
@@ -1305,16 +1307,20 @@ surfaces.
   ship` on the persistent per-repo `release` branch — membership flips at merge
   (`merge` → `gh pr merge` + `Release::Conductor.adopt!`), `prepare` deploys
   `origin/release` to QA, `ship` fast-forwards `release → main` (§1.1).
+- **`bin/agent-worktree` release-base default**: `new` cuts the feature branch from
+  `origin/release` (falling back to `origin/main`), and `finish --pr` opens the PR
+  with `--base release` — feature agents no longer pass `--base release` by hand.
+- **`bin/devops-cycle` stage-name migration**: the heartbeat planner (+ its snapshot
+  fixture + `bin/devops-tests` lanes) speaks the new stages
+  (`submitted`/`reviewed`/`assembled`).
+- **Multi-repo `ship`**: producer-first, hub-before-satellites deploy across every
+  release repo (gems → re-pin consumers → hub → satellites) with the per-repo
+  `test_cmd` gate and partial-ship recovery (§1.1).
 
 **Next**
 
-1. Flip `bin/agent-worktree`'s automatic PR `--base` default from `main` to
-   `release` (branch-from + `finish --pr` base), so feature agents no longer pass
-   `--base release` by hand.
-2. Migrate the heartbeat planner `bin/devops-cycle` (+ its snapshot fixture +
-   `bin/devops-tests` lane names) from the legacy stage names to the new ones.
-3. Pyramid re-tag of suites in `config/devops_test_suites.yml`.
-4. Discord progress/event templates + `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL`.
-5. The heartbeat agent script for the OpenClaw box (review→QA first; ship gate as
+1. Pyramid re-tag of suites in `config/devops_test_suites.yml`.
+2. Discord progress/event templates + `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL`.
+3. The heartbeat agent script for the OpenClaw box (review→QA first; ship gate as
    a no-op approval check).
-6. turf-vault single-writer advisory lane.
+4. turf-vault single-writer advisory lane.
