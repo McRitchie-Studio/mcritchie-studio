@@ -106,6 +106,8 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
     # the heartbeat navbar links across to the cross-session All Spans page
     assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_spans_path
+    # ...and back out to the Deployments board
+    assert_select "a[href=?][data-test=hb-nav-deployments]", deployments_path
   end
 
   test "renders a friendly empty state when nothing has been captured" do
