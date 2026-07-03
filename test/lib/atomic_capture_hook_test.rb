@@ -401,6 +401,26 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  def test_integration_secret_is_redacted_in_the_posted_body
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "redact-secrets-from-capture-hook")
+      secret = "s3cr3t-VALUE-do-not-leak-9F2xQ"
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Bash",
+        "tool_input" => { "command" => "bin/secret agents 'Agent API Secret' AGENT_API_SECRET" },
+        "tool_response" => { "stdout" => "AGENT_API_SECRET=#{secret}\n" }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_actions" }
+      refute_nil post, "expected a POST /api/v1/atomic_actions"
+      refute_includes post[:body], secret,
+                      "a secret must NOT reach the wire — redaction happens before the POST"
+      assert_match(/redact/i, JSON.parse(post[:body])["output"].to_s, "the field is marked redacted")
+    end
+  end
+
   def test_integration_no_session_id_skips_the_post
     Dir.mktmpdir do |proj|
       event = { "cwd" => "/nope", "tool_name" => "Read", "tool_input" => {}, "tool_response" => {} }
@@ -448,6 +468,123 @@ class AtomicCaptureHookTest < Minitest::Test
       )
       assert_equal 0, status.exitstatus, "the hook must always exit 0"
     end
+  end
+
+  # ── [unit] secret redaction (audit 2026-07-02 high finding #6) ───────────
+  # tool_input / tool_response are the sole source of AtomicAction.input/output,
+  # which render on the PUBLIC /alex/heartbeat surface. The hook must never ship a
+  # secret off the machine. Two layers: whole-field suppression for secret-reading
+  # commands/files (a bare value has no key to match), and pattern redaction for
+  # KEY=VALUE + known credential formats everywhere.
+  SECRET = "s3cr3t-VALUE-do-not-leak-9F2xQ"
+
+  def payload_for(tool_name:, tool_input:, tool_response:)
+    hook.build_payload(
+      { "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => tool_name, "tool_input" => tool_input, "tool_response" => tool_response },
+      now: Time.utc(2026, 7, 3, 12, 0, 0)
+    )
+  end
+
+  def test_unit_redact_suppresses_output_of_secret_reading_commands
+    [
+      "bin/secret agents 'Agent API Secret' AGENT_API_SECRET",
+      "op read op://agents/Agent API Secret/AGENT_API_SECRET",
+      "printenv AGENT_API_SECRET",
+      "gh auth token",
+      "heroku config:get SECRET_KEY_BASE -a mcritchie-studio",
+      "cat .env",
+      "cat /Users/alex/projects/mcritchie-studio/.env",
+      "head -1 config/credentials.yml.enc"
+    ].each do |command|
+      payload = payload_for(tool_name: "Bash",
+                            tool_input: { "command" => command },
+                            tool_response: "AGENT_API_SECRET=#{SECRET}\n")
+      refute_includes payload["output"].to_s, SECRET,
+                      "output of a secret-reading command must be suppressed: #{command}"
+      assert_match(/redact/i, payload["output"].to_s, "the suppressed field is marked: #{command}")
+    end
+  end
+
+  def test_unit_redact_suppresses_reads_of_secret_files
+    [
+      { "file_path" => "/Users/alex/projects/mcritchie-studio/.env" },
+      { "file_path" => "/Users/alex/.aws/credentials" },
+      { "file_path" => "config/master.key" },
+      { "file_path" => "/home/x/.ssh/id_rsa" },
+      { "file_path" => "certs/server.pem" }
+    ].each do |input|
+      payload = payload_for(tool_name: "Read", tool_input: input,
+                            tool_response: "AGENT_API_SECRET=#{SECRET}\nSTRIPE_KEY=#{SECRET}")
+      refute_includes payload["output"].to_s, SECRET,
+                      "reading #{input['file_path']} must not store its contents"
+    end
+  end
+
+  def test_unit_redact_masks_key_value_secrets_anywhere
+    command = "AGENT_API_SECRET=#{SECRET} STRIPE_SECRET_KEY=#{SECRET} bin/rails runner x"
+    payload = payload_for(tool_name: "Bash", tool_input: { "command" => command },
+                          tool_response: %(export DATABASE_PASSWORD="#{SECRET}"))
+    refute_includes payload["input"].to_s, SECRET, "KEY=VALUE secrets in the command are redacted"
+    refute_includes payload["output"].to_s, SECRET, "KEY=VALUE secrets in the output are redacted"
+    # the KEY names survive — only the value is masked (still a legible trajectory)
+    assert_includes payload["input"].to_s, "AGENT_API_SECRET"
+  end
+
+  def test_unit_redact_masks_json_quoted_key_secrets
+    # tool_input/tool_response are JSON.generate'd BEFORE redaction, so a structured
+    # tool response (an MCP tool, a nested hash) with a secret-named key arrives as
+    # "KEY":"VALUE" — the key's CLOSING quote sits before the ':'. This must redact.
+    h = hook
+    [
+      %({"access_token":"#{SECRET}"}),
+      %({"api_key":"#{SECRET}"}),
+      %({"AGENT_API_SECRET":"#{SECRET}"}),
+      %({"result":{"auth_token":"#{SECRET}"}}) # nested
+    ].each do |json|
+      out = h.redact_secrets(json)
+      refute_includes out, SECRET, "JSON-serialized secret must be masked: #{json}"
+      assert_includes out, "[redacted]"
+    end
+
+    # end-to-end through a real structured tool_response (serialize → redact → store)
+    payload = payload_for(tool_name: "mcp__vault__read", tool_input: { "path" => "prod" },
+                          tool_response: { "access_token" => SECRET, "nested" => { "api_key" => SECRET } })
+    refute_includes payload["output"].to_s, SECRET, "a structured secret never reaches the stored field"
+  end
+
+  def test_unit_redact_masks_known_credential_formats
+    {
+      "stripe" => "sk_live_#{"a" * 24}",
+      "aws"    => "AKIA#{"B" * 16}",
+      "github" => "ghp_#{"c" * 36}",
+      "bearer" => "Authorization: Bearer #{"d" * 40}",
+      "pem"    => "-----BEGIN RSA PRIVATE KEY-----\nMIIEabc123\n-----END RSA PRIVATE KEY-----"
+    }.each do |label, blob|
+      payload = payload_for(tool_name: "Bash", tool_input: { "command" => "echo hi" },
+                            tool_response: "leaked #{blob} here")
+      secret_core = blob[/(sk_live_\S+|AKIA\S+|ghp_\S+|d{40}|MIIEabc123)/] || blob
+      refute_includes payload["output"].to_s, secret_core, "#{label} credential must be redacted"
+    end
+  end
+
+  def test_unit_redact_leaves_ordinary_content_untouched
+    # No false positives: env-ish non-secrets, normal file reads, plain output.
+    command = "RAILS_ENV=test PORT=3007 bin/rails test"
+    payload = payload_for(tool_name: "Bash", tool_input: { "command" => command },
+                          tool_response: "5 runs, 0 failures\ndef insight_source\n  atomic_action\nend")
+    assert_includes payload["input"].to_s, "RAILS_ENV=test", "a non-secret KEY=VALUE is preserved"
+    assert_includes payload["input"].to_s, "PORT=3007"
+    assert_includes payload["output"].to_s, "0 failures", "ordinary output passes through"
+    assert_includes payload["output"].to_s, "insight_source"
+  end
+
+  def test_unit_redact_runs_before_truncate_so_no_secret_prefix_leaks
+    # A secret near the 3KB cut must not survive as a truncated prefix.
+    filler = "x" * 2990
+    payload = payload_for(tool_name: "Read", tool_input: { "file_path" => "notes.txt" },
+                          tool_response: "#{filler}AGENT_API_SECRET=#{SECRET}")
+    refute_includes payload["output"].to_s, SECRET
   end
 
   private

@@ -27,8 +27,8 @@ matching the `/api/v1` convention) to
 |---------------|--------|
 | `session_id`  | event `session_id` (required — no id ⇒ no POST) |
 | `kind`        | `tool_name` mapped: Read/Glob/Grep→`read`, Edit/Write/NotebookEdit→`edit`, Bash→`bash`, Task/Agent→`delegate`, WebFetch/WebSearch→`research`; **unknown→tool name downcased** |
-| `input`       | `tool_input` serialized + truncated (~3 KB) |
-| `output`      | `tool_response` serialized + truncated (~3 KB) |
+| `input`       | `tool_input` serialized, **secret-redacted**, then truncated (~3 KB) |
+| `output`      | `tool_response` serialized, **secret-redacted**, then truncated (~3 KB) |
 | `outcome`     | `ok`, or `error` when `tool_response` carries an explicit failure signal (`error` / `is_error:true` / `success:false` / `interrupted:true`) — a noisy stderr is **not** a failure |
 | `actor`       | `agent` |
 | `model`       | the **session model** — see below (nil ⇒ key dropped, column stays null) |
@@ -38,6 +38,42 @@ matching the `/api/v1` convention) to
 `tokens_in`/`tokens_out`/`cost` and `event_slug`/`result_slug`/`seq` are
 **intentionally absent** — a hook can't know them; the model fills its defaults
 and derives `seq` per session.
+
+### Secret redaction (never ship a secret off the box)
+
+`input`/`output` are the **only** source of the captured tool I/O, and they render
+on the **public** `/alex/heartbeat` surface — so the hook redacts **at the source**,
+before the POST, so a secret never leaves the machine. Two layers:
+
+- **Whole-field suppression** when the call touches secret **material** — a Bash
+  command that prints a secret (`bin/secret`, `op read`, `printenv`, `gh auth
+  token`, `heroku config`, `cat`/`head` of a `.env` / `credentials` / `*.pem` /
+  `*.key` / `id_rsa`), or a Read/Write/Edit of a secret **file path**. A bare value
+  (e.g. `bin/secret` output) has no key to pattern-match, so the whole field
+  becomes `[redacted: secret material]`.
+- **Pattern redaction** on whatever survives — `KEY=VALUE` / `KEY: VALUE` /
+  `"KEY":"VALUE"` pairs whose key names a secret (`*SECRET*`, `*TOKEN*`,
+  `*PASSWORD*`, `*_KEY`, `*CREDENTIAL*`, `*WEBHOOK*`, `*MNEMONIC*`, …) have the
+  **value** masked (key kept, so the trajectory stays legible), plus standalone
+  credential formats (PEM private-key blocks, `sk_live`/`sk_test`, `AKIA…`,
+  `ghp_`/`github_pat_`, `xox…`, `Bearer …`). The JSON `"KEY":"VALUE"` form is
+  covered because `tool_input`/`tool_response` are JSON-serialized before redaction,
+  so a **structured** tool response (an MCP tool, a nested hash) with a secret-named
+  key is caught too.
+
+Redaction runs **before** truncation, so a secret near the ~3 KB cut can't survive
+as a prefix. This is defense at the producer; broadening who can *read* the (now
+secret-free) telemetry is a separate concern.
+
+> **Best-effort, not a guarantee.** Pattern redaction catches secrets that carry a
+> recognizable **key** or **format**. A **bare, space-separated value with no key
+> and no known format is NOT caught** — e.g. `echo $SECRET`, `--password <val>`,
+> `cut -d= .env`, a raw `op read` value, a Solana keypair `*.json` byte-array, or
+> creds embedded in a `DATABASE_URL`. The **whole-field suppression** layer is the
+> backstop for the common cases (secret-reader commands + secret file reads); the
+> "never ship a secret off the box" headline holds for those, but a novel bare-value
+> path can still slip. Widening coverage (keypair reads, URL creds) is tracked as a
+> follow-up.
 
 ### What it DROPS (never a row)
 
