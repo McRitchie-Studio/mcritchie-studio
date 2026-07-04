@@ -170,6 +170,11 @@ function shouldEnhanceTable(table) {
   if (table.closest("template")) return false;
   if (table.getAttribute("role")?.toLowerCase() === "presentation") return false;
   if (!table.tHead || !table.tHead.querySelector("th")) return false;
+  // A table whose header cells are already position:sticky pins itself (usually
+  // inside its own scroll container). Cloning it doubles the header — and the
+  // activation math misfires there: the in-flow thead box scrolls under the nav
+  // while the sticky th cells stay pinned and visible.
+  if (getComputedStyle(table.tHead.querySelector("th")).position === "sticky") return false;
 
   return true;
 }

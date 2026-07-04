@@ -22,7 +22,8 @@
     controller (heartbeat_shared_turn_ids); defaults to none for a standalone render. %>
 <% shared_turn_ids ||= Set.new %>
 <div class="hb-scroll">
-  <table class="hb-tbl" data-test="heartbeat-table">
+  <%# data-sticky-table-header=false: same self-pinned thead as _event_table. %>
+  <table class="hb-tbl" data-test="heartbeat-table" data-sticky-table-header="false">
     <thead>
       <tr>
         <th>#</th>

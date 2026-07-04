@@ -77,6 +77,19 @@ class HeartbeatAllSpansTest < ActionDispatch::IntegrationTest
     assert_select "tbody[data-test=heartbeat-unlabeled]", false
   end
 
+  test "the span table opts out of the app-wide sticky header clone" do
+    span
+
+    get heartbeat_all_spans_path
+
+    assert_response :success
+    # The heartbeat table pins its own thead th (position:sticky inside .hb-scroll).
+    # Without this opt-out, sticky_table_header.js clones the thead into an unstyled
+    # body-level bar the moment the in-flow thead box scrolls under the navbar —
+    # a doubled, unstyled header. The attribute is the contract that prevents it.
+    assert_select "table[data-test=heartbeat-event-table][data-sticky-table-header=false]"
+  end
+
   test "renders a friendly empty state when nothing has been captured" do
     get heartbeat_all_spans_path
 
