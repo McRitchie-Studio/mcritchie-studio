@@ -41,7 +41,7 @@ api POST /api/v1/releases/current/events/testing/start '{"event": {"actor": "avi
 Preferred supervisor path:
 
 ```bash
-bin/avi-heartbeat --run --fast --max-idle-cycles 1 \
+bin/pr-review --run --fast --max-idle-cycles 1 \
   --codex-workdir /Users/alex/projects/mcritchie-studio
 ```
 

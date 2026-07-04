@@ -516,7 +516,7 @@ or the `review-one` SOP; none is a new command to build):
 > serialized review is now Avi's **`pr-review-slow`** act, QA-only is `pr-review` →
 > Steffon's **`qa-release`**, and the full autonomous run is Alex's **`full-cycle`**
 > act. (2026-07-03: the acts went back to **review-only** — the merge now lives in
-> Steffon's self-healing `qa-release` sweep.) The `bin/avi-heartbeat` review-only
+> Steffon's self-healing `qa-release` sweep.) The `bin/pr-review` review-only
 > loop still exists but is no longer a card chip.
 
 The only NEW code this set required is the clean-release **GUARD** that

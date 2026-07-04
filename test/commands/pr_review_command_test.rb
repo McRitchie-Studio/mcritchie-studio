@@ -7,11 +7,11 @@ require "open3"
 require "rbconfig"
 require "tmpdir"
 
-class AviHeartbeatCommandTest < Minitest::Test
-  BIN = File.expand_path("../../bin/avi-heartbeat", __dir__)
+class PrReviewCommandTest < Minitest::Test
+  BIN = File.expand_path("../../bin/pr-review", __dir__)
 
   def setup
-    @dir = Dir.mktmpdir("avi-heartbeat-test")
+    @dir = Dir.mktmpdir("pr-review-test")
     @snapshots = File.join(@dir, "snapshots")
     @output = File.join(@dir, "output")
     FileUtils.mkdir_p(@snapshots)
@@ -357,7 +357,7 @@ class AviHeartbeatCommandTest < Minitest::Test
     out, err, status = run_heartbeat("--once")
 
     assert status.success?, err
-    assert_includes out, "Avi Heartbeat DRY-RUN"
+    assert_includes out, "pr-review DRY-RUN"
     assert_includes out, "dry-run: would launch primary carl"
     assert_empty json_lines(@codex_log)
     assert_empty json_lines(@task_log)
