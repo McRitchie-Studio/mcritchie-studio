@@ -349,4 +349,23 @@ class ReleaseTest < ActiveSupport::TestCase
     end
     assert_operator calls, :>=, 1, "the seal write broadcasts the deployments modules"
   end
+
+  # --- merged: stamped at the release git-operation boundaries ---
+
+  test "[integration] add stamps the member merged=release when its PR joins the RC" do
+    rel = Release.open!
+    task = reviewed_task("merged-release")
+    rel.add(task)
+    assert_equal "assembled", task.reload.stage
+    assert_equal Task::MERGED_RELEASE, task.merged
+  end
+
+  test "[integration] ship! stamps every member merged=main" do
+    rel = Release.open!
+    task = reviewed_task("merged-main")
+    rel.add(task)
+    rel.ship!
+    assert_equal "shipped", task.reload.stage
+    assert_equal Task::MERGED_MAIN, task.merged
+  end
 end
