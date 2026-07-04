@@ -2189,6 +2189,14 @@ def ship
   #    already succeeded; a primary carrying uncommitted/unpushed work is REFUSED
   #    and left for the operator.
   restore_primaries(app_groups)
+
+  # 7b. Sync the installed agent docs from the freshly shipped `main` — the OWNED
+  #     pipeline run of bin/install-agent-docs (task name-install-agent-docs-owner).
+  #     It must be POST-SHIP, not post-merge: the installer reads the LOCAL hub
+  #     checkout's docs, and only after the ff `release → main` + restore_primaries
+  #     does the primary's `main` contain exactly what shipped (a qa-release-time
+  #     prepare run would install main's STALE docs and leave the drift in place).
+  sync_agent_docs
   close_role_span("shipped #{rel_slug} → prod")
 rescue SystemExit => e
   # Close the Avi span on a partial-ship abort too (best-effort) so the heartbeat
@@ -2228,6 +2236,32 @@ def restore_primaries(app_groups)
     print(out)
     say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
   end
+end
+
+# Post-ship agent-docs sync — the OWNED pipeline step that runs
+# bin/install-agent-docs after every prod ship, so adapter/skill/SOP merges stop
+# leaving the installed docs (~/.claude + ~/.codex skills, the projects-root
+# AGENTS.md/CLAUDE.md) drifted until someone happens to run the installer by hand
+# (previously the only owned run was Alex's share-insights act).
+#
+# ALWAYS the PRIMARY hub checkout's installer (repo_path, .worktrees-aware): the
+# installer syncs from its own $ROOT, and post-ship the primary sits on the
+# freshly shipped `main` — a worktree-run `bin/release` must not install its
+# worktree's unshipped docs. Runs unconditionally (idempotent file copies — a
+# ship with no docs changes is a cheap no-op that also heals prior drift), and is
+# NON-FATAL by construction (rescue-and-warn, like the merged:main stamps): a
+# docs sync must never abort or fail an already-completed ship. Under --dry-run,
+# `sh` prints the command and skips. Steffon owns this step; the warn line hands
+# the by-hand fix to whoever is watching the ship.
+def sync_agent_docs
+  say("")
+  step("sync installed agent docs: bin/install-agent-docs from the shipped hub main")
+  installer = File.join(repo_path("mcritchie-studio"), "bin", "install-agent-docs")
+  out, ok = sh(installer, capture: true)
+  print(out)
+  say("  ⚠ agent-docs install failed — run `#{installer}` by hand (the ship already succeeded)") unless ok
+rescue StandardError => e
+  say("  ⚠ agent-docs install skipped (#{e.message}) — run `bin/install-agent-docs` by hand (the ship already succeeded)")
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------

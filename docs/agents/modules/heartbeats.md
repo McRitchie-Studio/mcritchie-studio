@@ -212,6 +212,13 @@ Ship the assembled, QA-green release to production.
   3. Prod-smoke, green seal, and post release notes (`ship!` flips members
      `shipped`, `merged` stays `main`).
   4. Restore the primary checkouts.
+  5. Post-ship agent-docs sync — ship auto-runs the hub primary's
+     `bin/install-agent-docs` (non-fatal, never aborts a completed ship), so the
+     installed docs (`~/.claude` + `~/.codex` skills, the projects-root
+     `AGENTS.md`/`CLAUDE.md`) match what just shipped. **Steffon owns this step
+     and its mechanism** (the `Run Deployment` building block in
+     [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md)); if it
+     warns, run the installer from the hub primary by hand.
 - **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
   slug. An interrupted run re-runs safely: published gems skip, ffs no-op
   (`merged: main` members are already over), re-pins are idempotent.
@@ -357,7 +364,9 @@ act is named for its audience — the next agents — not the doc-write mechanic
   1. Regenerate the tracked lessons doc from the confirmed insights (composes with
      the lever-3 generator — `bin/rails insights:doc`, scoped to the confirmed set).
   2. `bin/install-agent-docs` to distribute the regenerated doc across the runtimes
-     (`~/.claude` + `~/.codex`), so the confirmed lessons reach every agent.
+     (`~/.claude` + `~/.codex`), so the confirmed lessons reach every agent. (No
+     longer the only owned installer run — `bin/release ship` auto-syncs the
+     installed docs post-ship; see §1 Act 1, step 5.)
 - **Exit seam:** the confirmed insights are in the tracked doc and distributed. A
   re-run with nothing newly confirmed is a clean no-op.
 

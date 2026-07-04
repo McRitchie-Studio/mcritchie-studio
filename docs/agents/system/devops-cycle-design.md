@@ -466,7 +466,7 @@ or the `review-one` SOP; none is a new command to build):
 | **`pr-review-slow`** | the same, **serialized** — one PR at a time | [`agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md) |
 | **`qa-release`** | the SELF-HEALING sweep: detect `reviewed` + stragglers → merge PRs into `release` (skip `merged:` ones) → pre-QA gate → deploy QA → members `assembled` on QA-green | [`agents/steffon/sops/qa-release.md`](../agents/steffon/sops/qa-release.md) / `bin/release prepare --yes` |
 | **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
-| **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`) — **ship-authority gated** | [`agents/avi/sops/production-deploy.md`](../agents/avi/sops/production-deploy.md) / `bin/release ship` |
+| **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`), post-ship agent-docs sync — **ship-authority gated** | [`agents/avi/sops/production-deploy.md`](../agents/avi/sops/production-deploy.md) / `bin/release ship` |
 
 **Compositions** (the operator-facing launcher phrases = a sequence of atoms):
 
@@ -920,6 +920,20 @@ flips the RC + its members to `shipped` (`Release::Conductor.ship!`), and
 each repo's `release` equals `main` and re-accumulates the next candidate. Run
 `ship` from a **primary checkout** (not a worktree): the gem repos are resolved
 as siblings at the projects root.
+**Post-ship agent-docs sync (the OWNED installer run).** After the primaries are
+restored to the freshly shipped `main`, ship auto-runs the hub primary's
+**`bin/install-agent-docs`** (`sync_agent_docs`, ship step 7b) — the owned
+pipeline step that keeps the installed docs (`~/.claude` + `~/.codex` skills,
+the projects-root `AGENTS.md`/`CLAUDE.md`) in sync with what shipped, so an
+adapter/skill/SOP merge no longer drifts until someone happens to run the
+installer by hand. It is post-SHIP by design — the installer reads the LOCAL hub
+checkout's docs, and only after the ff `release → main` + restore does the
+primary's `main` hold the merged docs (a qa-release-time / prepare-time run
+would install `main`'s stale docs) — and NON-FATAL by construction (rescue-and-warn; a docs
+sync never aborts a completed ship). **Owner: Steffon (infra) owns the step and
+its mechanism;** it runs inside whichever act drives `bin/release ship`
+(`production-deploy` / `full-cycle`). If the step warns, the fix is running
+`bin/install-agent-docs` from the hub primary by hand.
 
 **`Archive completed tasks`**  *(shipped → archived — the Deploy loop's conclusion)*
 Run **`bin/release archive [--dry-run] [--yes] [--prod]`** to close the loop. It

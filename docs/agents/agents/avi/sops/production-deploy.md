@@ -55,6 +55,14 @@ non-interactive confirmation. It does not skip clean-main preflight, frozen-SHA
 tests, gem publish ordering, deploy smoke, release notes, or partial-ship
 recovery.
 
+Post-ship, `bin/release ship` auto-runs the hub primary's
+`bin/install-agent-docs` (non-fatal — it never aborts a completed ship;
+Steffon owns the step and its mechanism) so the installed agent docs
+(`~/.claude` + `~/.codex` skills, the projects-root `AGENTS.md`/`CLAUDE.md`)
+match what shipped. If it warns, run the installer from the hub primary by
+hand. Full detail: the `Run Deployment` building block in
+[`devops-cycle-design.md` §1.4](../../../system/devops-cycle-design.md).
+
 If the ship gate aborts, do not force past it. Record the blocker and hand it
 off.
 
