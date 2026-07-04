@@ -40,8 +40,17 @@
         <% @pokemon.each do |p| %>
           <tr class="border-b border-subtle/50 hover:bg-surface">
             <td class="p-2">
-              <img src="<%= p.sprite_url %>" alt="<%= p.name %>" width="40" height="40"
-                   class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.visibility='hidden'">
+              <%# Click flips the sprite to its shiny mirror — two imgs so each
+                  keeps its own onerror fallback; the hidden one isn't fetched. %>
+              <button type="button" x-data="{ shiny: false }" @click="shiny = !shiny"
+                      :aria-pressed="shiny" title="<%= p.name %> — click for shiny"
+                      class="cursor-pointer" data-test="list-shiny-toggle">
+                <img x-show="!shiny" src="<%= p.sprite_url %>" alt="<%= p.name %>" width="40" height="40"
+                     class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.visibility='hidden'">
+                <img x-show="shiny" x-cloak src="<%= p.display_sprite(shiny: true) %>" alt="<%= p.name %> (shiny)"
+                     width="40" height="40"
+                     class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.visibility='hidden'">
+              </button>
             </td>
             <td class="p-3 text-muted tabular-nums"><%= format("%03d", p.dex) %></td>
             <td class="p-3 font-medium text-heading whitespace-nowrap"><%= p.name %></td>
@@ -76,15 +85,37 @@
   <div x-show="view === 'grid'" x-cloak
        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4" data-test="pokemon-grid">
     <% @pokemon.each do |p| %>
-      <div class="card p-3 flex flex-col items-center text-center">
-        <div class="aspect-square w-full flex items-center justify-center">
-          <%# Primary = the tightly-cropped avatar; on load failure fall back to the
-              original uncropped artwork (avatar_fallback_url), then the pixel sprite. %>
-          <img src="<%= p.display_avatar %>" alt="<%= p.name %>"
+      <div class="card p-3 flex flex-col items-center text-center" x-data="{ shiny: false }">
+        <% evolutions = Array(p.evolution).filter_map { |slug| @pokemon_by_slug[slug] } %>
+        <% if evolutions.any? %>
+          <%# The line ahead of this form — its next evolutions as small circles
+              (Eevee wears five; a final/single-stage form wears none). %>
+          <div class="w-full flex items-center justify-center gap-1 mb-1" data-test="evolution-circles">
+            <% evolutions.each do |evo| %>
+              <img src="<%= evo.display_sprite %>" alt="<%= evo.name %>" title="<%= evo.name %>"
+                   width="28" height="28"
+                   class="w-7 h-7 rounded-full border border-subtle bg-surface object-contain"
+                   loading="lazy" data-test="evolution-circle"
+                   onerror="this.style.visibility='hidden'">
+            <% end %>
+          </div>
+        <% end %>
+        <%# Click flips the artwork to its shiny mirror — two imgs so each keeps
+            its own onerror fallback chain; the hidden one isn't fetched. %>
+        <button type="button" @click="shiny = !shiny" :aria-pressed="shiny"
+                title="<%= p.name %> — click for shiny"
+                class="aspect-square w-full flex items-center justify-center cursor-pointer"
+                data-test="shiny-toggle">
+          <img x-show="!shiny" src="<%= p.display_avatar %>" alt="<%= p.name %>"
                class="max-h-32 w-auto object-contain" loading="lazy"
                onerror="this.onerror=null; this.src='<%= p.avatar_fallback_url.presence || p.sprite_url %>'">
+          <img x-show="shiny" x-cloak src="<%= p.display_avatar(shiny: true) %>" alt="<%= p.name %> (shiny)"
+               class="max-h-32 w-auto object-contain" loading="lazy"
+               onerror="this.onerror=null; this.src='<%= p.shiny_avatar_fallback_url.presence || p.sprite_url %>'">
+        </button>
+        <div class="mt-2 text-muted text-xs tabular-nums">
+          #<%= format("%03d", p.dex) %><span x-show="shiny" x-cloak> ✨</span>
         </div>
-        <div class="mt-2 text-muted text-xs tabular-nums">#<%= format("%03d", p.dex) %></div>
         <div class="text-heading font-medium text-sm"><%= p.name %></div>
         <div class="flex flex-wrap justify-center gap-1 mt-1">
           <% p.types.each do |type| %>
