@@ -5,6 +5,63 @@ McRitchie Studio owns this file so the agent operating model survives a wiped lo
 
 Paths below are written for the generated file at `/Users/alex/projects/AGENTS.md`.
 
+## SOP Invocation Standard
+
+SOPs are first-class registered commands in this workspace. The set is finite,
+the names are stable, and every SOP name maps to a repo file. Do not treat an SOP
+name as ordinary prose, generic GitHub triage, or a broad workflow request.
+
+McRitchie operating procedures are normal repo docs, not installed skills. When
+Mr. McRitchie names an SOP or heartbeat act such as `pr-review`, `qa-release`,
+`production-deploy`, or `full-cycle`, resolve that phrase through the SOP
+registry and directory convention here, read the mapped SOP, then execute it.
+
+SOP locations:
+
+- Agent heartbeats live at
+  `mcritchie-studio/docs/agents/agents/<agent>/HEARTBEAT.md`.
+- Agent-specific SOPs live at
+  `mcritchie-studio/docs/agents/agents/<agent>/sops/<sop>.md`.
+- Shared primitives live under `mcritchie-studio/docs/agents/modules/`.
+
+Invocation rule:
+
+1. Open the required trajectory span.
+2. Resolve the invocation in the finite registry below, including legacy aliases.
+3. Read the mapped `HEARTBEAT.md` or SOP file before queue inspection,
+   `--help` probing, GitHub PR discovery, or tool/plugin selection.
+4. Execute the procedure in that file. If it points to a shared primitive, read
+   that primitive next.
+
+SOP files stand alone. Each SOP is executable start-to-finish from its own
+file — every command, gate, and decision rule is inline. An SOP may reference
+only: (1) other registered SOPs at composition seams, (2) a registered shared
+primitive such as `modules/pr-review-sop.md`, exactly one hop, and (3) an
+explicitly marked "Background — not needed to execute" section. Design docs
+such as `system/devops-cycle-design.md` are architecture — the why, never a
+required execution path. Do not follow a Background reference to run an SOP.
+
+| Invocation | Owner | Read first |
+|------------|-------|------------|
+| `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
+| `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `qa-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
+| `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
+| `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
+| `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+
+For `pr-review`, read Avi's `pr-review.md` and run the bounded review-only
+supervisor described there. Approved work stops at `reviewed`; Steffon's
+`qa-release` owns merge plus QA.
+
 ## First Rules
 
 - Work from `/Users/alex/projects` unless Mr. McRitchie gives a different root.
@@ -31,7 +88,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   deploy owner for that repo.
 - A pushed feature branch preserves code. `main` is for reviewed integration,
   not backup. Feature agents push their own branch and graduate through PR/QA;
-  Avi or the designated release conductor merges.
+  review is review-only — Steffon's `qa-release` sweep merges reviewed work.
 
 ## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
 
@@ -135,12 +192,13 @@ The task lifecycle is two workflows (full spec:
   `designed` through `submitted` (the seam); opening the PR hands off to DevOps.
 - **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. Every repo
   keeps a **persistent `release` branch** (feature PRs target it, never `main`).
-  QA reviews the submitted PR → `reviewed` (approved) or `bin/task block <task>
-  --kind rework --feedback "…"` (back to you). Approved PRs are then **merged
-  into `release`** — which flips the task to `assembled` (`bin/release merge
-  <task>`); the conductor deploys `origin/release` to QA (`bin/release prepare`)
-  and ships by fast-forwarding each repo's `release → main` (`bin/release ship`)
-  → `shipped`.
+  Review is **review-only**: the submitted PR is approved → `reviewed`, or
+  `bin/task block <task> --kind rework --feedback "…"` (back to you) — nobody
+  merges at review. Steffon's self-healing `qa-release` sweep (`bin/release
+  prepare`) merges reviewed tasks + `assembled` stragglers into `release`
+  (stamping `merged: "release"`), deploys QA, and flips members `assembled` only
+  on **QA-green**. Avi's `production-deploy` (`bin/release ship`) fast-forwards
+  each repo's `release → main` (stamping `merged: "main"`) → `shipped`.
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
 
@@ -251,6 +309,18 @@ assigned that lane.
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
+| Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| Avi production deploy SOP | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| Avi PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
+| Avi slow PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
+| Alex share insights SOP | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
+| Alex full cycle SOP | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
@@ -269,6 +339,33 @@ assigned that lane.
 | Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
+
+## SOP Registry
+
+This table repeats the top-level SOP registry for agents that jump straight to
+the reference section. SOP invocations are plain text prompts, not installed
+skills. When Mr. McRitchie says one of these phrases, read the owning soul's
+`HEARTBEAT.md` when the phrase is a heartbeat launcher, then read the specific
+SOP file linked below. A heartbeat may set agent attribution and choose the act
+order, then it references the SOP. The SOP files are independent and do not
+depend on the heartbeat.
+
+| Invocation | Owner | Read |
+|------------|-------|------|
+| `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
+| `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
+| `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `qa-deploy` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
+| `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
+| `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 
 ## Repos
 
@@ -353,10 +450,10 @@ PR URL, local URL, and `devops["checks_run"]`, then move the task to
 `submitted`. Keep the worktree and branch until Avi confirms the PR was merged
 or intentionally abandoned.
 
-For a dedicated review/merge/QA session, use the recurring QA intake prompt in
+For a dedicated review/QA session, use the recurring QA intake prompt in
 `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
 stops after QA deployment; production rollout needs a separate explicit prompt
-such as `Merge, Assemble, Deploy`.
+(`production-deploy`, or Alex's ship-authority `full-cycle`).
 The conductor queue starts with:
 
 ```bash

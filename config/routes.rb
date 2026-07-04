@@ -250,7 +250,7 @@ Rails.application.routes.draw do
   get "games/:year/week/:week", to: "games#week", as: :games_week
   get "games/:year/week/:week/:slug", to: "games#show", as: :game_show
   get "people/search", to: "people#search", as: :search_people
-  resources :activities, only: [:index]
+  get "activities", to: redirect("/agents"), as: :activities
   resources :usages, only: [:index]
 
   get "docs", to: "docs#index"

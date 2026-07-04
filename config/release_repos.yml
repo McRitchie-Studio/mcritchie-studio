@@ -51,6 +51,19 @@
 # ship/its own deploy and the gate skips it. Same double-test caveat as test_cmd:
 # don't point it at the same full suite ship already runs.
 #
+# WHAT to register as qa_test_cmd: the integration SUBSET
+# (`bin/rails test test/integration`), never the full unit suite — review owns
+# the base tier, and ship's test_cmd / the repo's own deploy owns the full
+# pre-prod run. The e2e-smoke half of prepare's tier is prepare's own built-in
+# post-deploy `/up` boot wait against QA — no browser suite belongs here (a
+# Playwright run needs a booted server; the QA deploy IS that smoke).
+#
+# PARSING: both test_cmd and qa_test_cmd are Shellwords-parsed into an argv
+# (bin/release's test_cmd_argv — no shell interpolation), so quoted/spaced args
+# survive as single elements: `bin/rails test "test/integration/a b_test.rb"`.
+# Plain flag-style commands split exactly as before. An unbalanced quote aborts
+# the run naming the offending string instead of executing a garbled command.
+#
 # gem fields:
 #   version_file — path (inside the gem repo) declaring the version to publish.
 #                  Read for the producer-first publish + the board indicator.
@@ -81,12 +94,17 @@ apps:
   mcritchie-studio:
     # Hub: git_push_heroku has no test step, so gate prod on the suite here.
     test_cmd: bin/rails test
+    # Pre-QA gate: the prepare-owned integration tier on origin/release.
+    qa_test_cmd: bin/rails test test/integration
     prod_deploy:
       strategy: git_push_heroku
       remote: heroku
       branch: main
       smoke_url: https://mcritchie.studio
   turf-monster:
+    # Self-gates at SHIP (bin/deploy runs the full suite pre-prod) — but nothing
+    # gated the QA deploy, so the prepare-owned integration tier runs here.
+    qa_test_cmd: bin/rails test test/integration
     prod_deploy:
       strategy: repo_script
       command: bin/deploy
@@ -94,17 +112,23 @@ apps:
   rolio:
     # Release-managed standalone app: Rails/SQLite demo runtime, no Studio Engine.
     test_cmd: bin/rails test
+    qa_test_cmd: bin/rails test test/integration
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/rolio-prod.git
       branch: main
       smoke_url: https://rolio-prod-82e96784b462.herokuapp.com
   tax-studio:
+    # Planned app, no sibling checkout yet — qa_test_cmd stays UNSET (the gate
+    # aborts prepare if a registered command's repo is missing). Register the
+    # integration tier when the repo lands.
     prod_deploy:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
+    # Planned app; test/integration is still empty — qa_test_cmd stays UNSET
+    # until it has a real integration tier to run.
     prod_deploy:
       strategy: repo_script
       command: bin/deploy

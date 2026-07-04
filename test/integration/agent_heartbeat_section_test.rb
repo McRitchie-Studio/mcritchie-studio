@@ -15,6 +15,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
   setup do
     Agent.find_or_create_by!(slug: "avi")  { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+    Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
   end
 
@@ -27,13 +28,19 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-name'][data-clip='Avi Heartbeat']"
     assert_select "[data-test='heartbeat-name'] code", text: "Avi Heartbeat"
 
-    # Both of Avi's acts render as copyable phrases with their captions.
-    assert_select "[data-test='action']", count: 3
+    # All of Avi's acts render as copyable phrases with their captions.
+    assert_select "[data-test='action']", count: 4
     assert_select "[data-test='action'][data-action='pr-review'][data-clip='pr-review']"
     assert_select "[data-test='action'][data-action='production-deploy'][data-clip='production-deploy']"
     assert_select "[data-test='action'][data-action='pr-review-slow'][data-clip='pr-review-slow']"
-    assert_match "Review + merge all submitted PRs", response.body
+    assert_select "[data-test='action'][data-action='deploy-with-task'][data-clip='deploy-with-task']"
+    # review-only contract (2026-07-03): the pr-review caption must not claim the
+    # merge — that belongs to Steffon's sweep (phrasing mirrors heartbeats.md).
+    assert_match "Review all submitted PRs (review-only — Steffon sweeps)", response.body
+    assert_match "Review submitted PRs one at a time", response.body
     assert_match "Ship a QA-ready release to production", response.body
+    # deploy-with-task is interactive — its caption carries the "what task?" ask.
+    assert_match "Expedite ONE task to prod (asks: what task?)", response.body
   end
 
   test "Alex's heartbeat soul renders its acts + descriptions" do
@@ -48,6 +55,19 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
     assert_match "Share confirmed insights into the docs", response.body
+  end
+
+  test "Steffon's heartbeat soul renders renamed SOP acts" do
+    get agent_path("steffon")
+    assert_response :success
+
+    assert_select "[data-test='agent-heartbeat-section'][data-agent='steffon']", count: 1
+    assert_select "[data-test='heartbeat-name'][data-clip='Steffon Heartbeat']"
+    assert_select "[data-test='action']", count: 2
+    assert_select "[data-test='action'][data-action='archive-shipped'][data-clip='archive-shipped']"
+    assert_select "[data-test='action'][data-action='qa-release'][data-clip='qa-release']"
+    assert_match "Archive shipped tasks", response.body
+    assert_match "Prepare + deploy the QA release", response.body
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do

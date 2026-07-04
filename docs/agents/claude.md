@@ -4,6 +4,18 @@ Claude Code auto-loads this file; it does **not** auto-load `AGENTS.md` (that is
 the Codex convention). So this adapter carries the operating model for Claude
 sessions. **Read this whole file before acting.**
 
+## SOP invocation standard
+
+McRitchie SOPs live in `/Users/alex/projects/AGENTS.md`'s **SOP Invocation
+Standard** and the repo docs it points to. SOPs are first-class registered
+commands with finite names and stable files. If Mr. McRitchie's prompt names an
+SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
+`archive-shipped`, `deploy-with-task`, or `full-cycle`, resolve that phrase
+through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
+`mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` first and run that
+review-only SOP; do not start with `bin/avi-heartbeat --help`, `bin/qa-intake`,
+or GitHub PR discovery.
+
 ## ⛔ STOP — before writing ANY code (feature, bug, or chore — even a "small" one)
 
 If your work will produce a code diff, you are a **Feature agent** and you MUST
@@ -44,11 +56,12 @@ Task lifecycle is two workflows meeting at the `submitted` seam — **Build**
 (feature agent) `designed → building → submitted` (you own through `submitted`)
 and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped`. Every repo
 keeps a **persistent `release` branch** that feature PRs merge into (not `main`):
-QA reviews → `reviewed` or `bin/task block`s it back; merging an approved PR into
-`release` flips its task to `assembled` (`bin/release merge`); the conductor
-deploys `origin/release` to QA (`bin/release prepare`) and ships by
-fast-forwarding `release → main` (`bin/release ship`). `blocked` = needs
-attention; `archived` = terminal.
+review is **review-only** — QA reviews → `reviewed` or `bin/task block`s it back;
+Steffon's self-healing `qa-release` sweep (`bin/release prepare`) merges reviewed
+tasks + stragglers into `release` (stamping `merged: "release"`), deploys QA, and
+flips members `assembled` only on QA-green; Avi's `production-deploy`
+(`bin/release ship`) fast-forwards `release → main` (stamping `merged: "main"`).
+`blocked` = needs attention; `archived` = terminal.
 Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
 **Sizing trio (po/dev/actual).** Avi is the default sizer — he sets `po_size` at

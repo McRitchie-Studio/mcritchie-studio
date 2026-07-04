@@ -35,6 +35,10 @@ bin/agent-runtime doctor        # inspect marker/runtime hook state
 `bin/install-agent-docs` remains the lower-level copy/drift implementation that
 `agent-runtime` calls.
 
+The installer also prunes retired managed skills that used to live here. For
+example, `qa-release` is now a plain launcher phrase in `AGENTS.md` and the
+heartbeat docs, not an installed user-global skill.
+
 ## User-global vs project-scoped
 
 These are **user-global** skills — fresh Claude and Codex sessions can load them

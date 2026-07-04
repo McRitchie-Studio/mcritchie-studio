@@ -1,4 +1,5 @@
 require "test_helper"
+require "shellwords"
 
 class Release::ReposTest < ActiveSupport::TestCase
   test "classifies registered gems as :gem" do
@@ -142,5 +143,37 @@ class Release::ReposTest < ActiveSupport::TestCase
   test "test_cmd is nil for a gem or an unknown repo" do
     assert_nil Release::Repos.test_cmd("studio-engine")
     assert_nil Release::Repos.test_cmd("not-a-real-repo")
+  end
+
+  # --- qa_test_cmd: Steffon's pre-QA gate (prepare's integration tier) ---
+
+  test "qa_test_cmd registers the integration subset for every live app" do
+    # The prepare-owned tier — the integration SUBSET, never the full suite
+    # (review owns base; ship's test_cmd / the repo's deploy owns the full run).
+    %w[mcritchie-studio turf-monster rolio].each do |repo|
+      assert_equal "bin/rails test test/integration", Release::Repos.qa_test_cmd(repo),
+                   "#{repo} must gate QA on its integration tier"
+    end
+  end
+
+  test "qa_test_cmd stays flag-style so the argv parse is unambiguous" do
+    # Shellwords and String#split agree on these values (no quotes) — pins the
+    # behavior-preserving half of the test_cmd_argv switch at the registry.
+    %w[mcritchie-studio turf-monster rolio].each do |repo|
+      cmd = Release::Repos.qa_test_cmd(repo)
+      assert_equal cmd.split, Shellwords.split(cmd), "#{repo} qa_test_cmd must parse identically both ways"
+    end
+  end
+
+  test "qa_test_cmd is nil for planned apps without a runnable integration tier" do
+    # tax-studio has no sibling checkout yet; chain-ops' test/integration is
+    # empty — both self-gate (the prepare gate skips) until they grow the tier.
+    assert_nil Release::Repos.qa_test_cmd("tax-studio")
+    assert_nil Release::Repos.qa_test_cmd("chain-ops")
+  end
+
+  test "qa_test_cmd is nil for a gem or an unknown repo" do
+    assert_nil Release::Repos.qa_test_cmd("studio-engine")
+    assert_nil Release::Repos.qa_test_cmd("not-a-real-repo")
   end
 end

@@ -444,24 +444,25 @@ module ApplicationHelper
     }
   end
 
-  # The three soul-avatar heartbeat launchers shown in the DevOps card
-  # (#release-duration-card on /deployments, tasks/heartbeat_launchers): a soul
-  # face (linking to /agents/<slug>) over a
-  # PROMPT-LIKE row 1 plus one or more copyable atom acts. Avi's two lanes are now
-  # ONE column with two acts. Every row is an INDEPENDENTLY-copyable valid launch
+  # The three soul-avatar heartbeat launchers shown on the standalone Heartbeats
+  # card (tasks/_heartbeats_card on /deployments, one tasks/_heartbeat_launcher
+  # per soul): a soul face (linking to /agents/<slug>) over a
+  # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
+  # INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
-  # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +acts+ are the
-  # launcher atoms that scope that heartbeat's work (Avi: production-deploy +
-  # pr-review; Steffon: archive-completed + qa-deploy; Alex: grade-events). +agent_slug+
+  # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +actions+ are
+  # the launcher acts that scope that heartbeat's work (Avi: production-deploy +
+  # pr-review + pr-review-slow; Steffon: archive-shipped + qa-release; Alex:
+  # grade-events + share-insights + full-cycle). +agent_slug+
   # resolves the soul avatar (reused from the heartbeat Agent column + stage
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
   # genuinely launchable on its own; each is a recognized launcher in
-  # docs/agents/modules/heartbeats.md + qa-release/SKILL.md.
+  # docs/agents/modules/heartbeats.md + the per-agent HEARTBEAT.md launchers.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow"], label: "Ship + review", title: "Avi — ship a ready release, then review + merge new PRs" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-completed", "qa-deploy"],                  label: "Archive + QA",  title: "Steffon — archive the closed-out cycle, then QA the new release" },
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], label: "Ship + review", title: "Avi — ship a ready release, then review new PRs" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-shipped", "qa-release"],                  label: "Archive + QA",  title: "Steffon — archive shipped work, then QA the release" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" }
     ]
   end
@@ -469,17 +470,18 @@ module ApplicationHelper
   # One-line "what it does" caption for each heartbeat launcher act, keyed by the
   # act slug used in +heartbeat_launchers+. Sourced from
   # docs/agents/modules/heartbeats.md so the agent profile page can annotate each
-  # copyable phrase with the work it launches (Avi: production-deploy + pr-review;
-  # Steffon: archive-completed + qa-deploy; Alex: grade-events).
+  # copyable phrase with the work it launches — one caption per act registered in
+  # +heartbeat_launchers+.
   ACTION_DESCRIPTIONS = {
-    "pr-review"         => "Review + merge all submitted PRs",
-    "pr-review-slow"    => "Review + merge submitted PRs one at a time",
+    "pr-review"         => "Review all submitted PRs (review-only — Steffon sweeps)",
+    "pr-review-slow"    => "Review submitted PRs one at a time",
     "production-deploy" => "Ship a QA-ready release to production",
-    "qa-deploy"         => "Prepare + deploy to QA (release stages 1–3)",
-    "archive-completed" => "Archive completed tasks + releases",
+    "qa-release"        => "Prepare + deploy the QA release",
+    "archive-shipped"   => "Archive shipped tasks + releases",
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share confirmed insights into the docs",
-    "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod"
+    "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
+    "deploy-with-task"  => "Expedite ONE task to prod (asks: what task?)"
   }.freeze
 
   def action_description(act)
@@ -488,18 +490,20 @@ module ApplicationHelper
 
   # Leading icon for each heartbeat launcher act. The four ORDERED release-pipeline
   # acts get a 1→4 keycap so the buttons read as a sequence across the souls (Avi
-  # pr-review 1 → Steffon qa-deploy 2 → Avi production-deploy 3 → Steffon
-  # archive-completed 4); the off-sequence acts get a themed glyph (🐢 slow review,
-  # 🧑🏻‍🏫 grading, 🌎 the whole cycle). The heartbeat row itself gets a ❤️ in the view.
+  # pr-review 1 → Steffon qa-release 2 → Avi production-deploy 3 → Steffon
+  # archive-shipped 4); the off-sequence acts get a themed glyph (🐢 slow review,
+  # 🧑🏻‍🏫 grading, 🌎 the whole cycle, ⚡ the single-task expedite). The heartbeat row
+  # itself gets a ❤️ in the view.
   ACTION_ICONS = {
     "pr-review"         => "1️⃣",
-    "qa-deploy"         => "2️⃣",
+    "qa-release"        => "2️⃣",
     "production-deploy" => "3️⃣",
-    "archive-completed" => "4️⃣",
+    "archive-shipped"   => "4️⃣",
     "pr-review-slow"    => "🐢",
     "grade-events"      => "🧑🏻‍🏫",
     "share-insights"    => "📡",
-    "full-cycle"        => "🌎"
+    "full-cycle"        => "🌎",
+    "deploy-with-task"  => "⚡"
   }.freeze
 
   def action_icon(act)
@@ -539,13 +543,13 @@ module ApplicationHelper
           who: "Avi (thin delegate) → PRIMARY reviewer (owns the lane) → LIGHT",
           tests: "Base tier — unit + component. Each senior confirms green, plus code standards, smell, scalability, and acceptance.",
           gate: "Two senior approvals (PRIMARY = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
-          nxt: "Two approvals, no blocker → the primary drives to reviewed and runs the merge; one block → rework" },
+          nxt: "Two approvals, no blocker → the PRIMARY drives to reviewed; one block → rework" },
         { stage: "reviewed",  kick: devops_kickoffs["reviewed"],
-          what: "Approved by both reviewers and off the bench — the PRIMARY reviewer runs bin/release merge to land its PR in the persistent release branch (membership flips at merge).",
-          who: "The PRIMARY reviewer (owns the lane through the merge)",
-          tests: "None re-run — the green review tests carry forward (bias to action: release reverts cleanly, so we don't fear merging there).",
-          gate: "Deterministic merge honoring dependencies + lanes; conflicts surface at PR-merge. The primary owns the merge — no separate conductor step.",
-          nxt: "Primary runs bin/release merge → assembled; prepare then deploys it to QA" },
+          what: "Approved by both reviewers and ready for Steffon's self-healing qa-release sweep, which merges reviewed PRs onto the persistent release branch and flips members only after QA-green.",
+          who: "Steffon (Platform Engineer)",
+          tests: "Integration + an e2e smoke on origin/release before QA deploy; review's green base tests carry forward.",
+          gate: "Deterministic sweep honoring dependencies + lanes; conflicts surface at PR-merge and block only the affected task.",
+          nxt: "Steffon runs bin/release prepare → QA deploy → assembled on QA-green" },
         { stage: "assembled", kick: devops_kickoffs["assembled"],
           what: "Every member PR is merged and the release candidate is built; Steffon QAs it and deploys origin/release to QA.",
           who: "Steffon (Platform Engineer)",
@@ -556,7 +560,7 @@ module ApplicationHelper
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
           who: "Avi (tests the frozen SHA) → operator gate or autonomous deploy trigger",
           tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
-          gate: "🔒 Steffon's qa-deploy stops for the operator at QA; Avi's production-deploy (or the Alex full-cycle) grants ship authority after the same gates pass.",
+          gate: "🔒 Steffon's qa-release stops for the operator at QA; Avi's production-deploy (or the Alex full-cycle) grants ship authority after the same gates pass.",
           nxt: "On explicit ship authority: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }

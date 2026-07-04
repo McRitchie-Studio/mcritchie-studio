@@ -5,7 +5,7 @@ require "test_helper"
 # Guard for the review-lane SOP: Avi thin-delegates → the PRIMARY reviewer owns
 # the lane and SPAWNS the LIGHT (the nested chain, never a flat peer spawn), and
 # — since move-release-assembly-to-steffon (2026-07-03) — review is REVIEW-ONLY:
-# the merge belongs to Steffon's self-healing qa-deploy sweep, which flips
+# the merge belongs to Steffon's self-healing qa-release sweep, which flips
 # members assembled on QA-green. These assertions are deliberate tripwires:
 # revert the model and they fail.
 class ReviewLaneDocsTest < ActiveSupport::TestCase
@@ -30,7 +30,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   test "[static] the devops-cycle runbook gives the merge to Steffon's sweep — review is review-only" do
     body = norm("system/devops-cycle-design.md")
     assert_match(/review-only/i, body, "review stops at reviewed — the 2026-07-03 contract")
-    assert_match(/self-healing/i, body, "Steffon's qa-deploy is the self-healing sweep")
+    assert_match(/self-healing/i, body, "Steffon's qa-release is the self-healing sweep")
     assert_match(/sweep[^.\n]{0,300}merged: "release"/im, body,
       "the sweep stamps the merged git-location (the crash-recovery signal)")
     assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body,
@@ -46,11 +46,18 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # reviews (review-only), Steffon's sweep merges. Nobody "reviews + merges" in
   # one breath. Catches the "conductor reviews, merges, and deploys" / "Avi
   # reviews and merges" / "primary reviews and merges" framings (incl. the §1.4
-  # cold-start block) that the per-file phrase checks above missed.
+  # cold-start block) that the per-file phrase checks above missed. Includes the
+  # adapter SOURCES (index.md → /Users/alex/projects/AGENTS.md, claude.md →
+  # projects-root CLAUDE.md) so a regression to pre-sweep phrasing in the
+  # generated entry docs fails the suite too, and system/mission.md (rewritten
+  # in PR #367 with no positive pin of its own) so its framing can't drift back.
   REVIEW_DOCS = %w[
+    index.md
+    claude.md
     agents/avi/role.md
     system/devops-cycle-design.md
-    skills/qa-release/SKILL.md
+    system/mission.md
+    modules/heartbeats.md
     modules/parallel-agent-devops.md
   ].freeze
 
@@ -66,12 +73,50 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     end
   end
 
-  test "[static] the qa-release SKILL describes the nested primary→light cascade, review-only" do
-    body = norm("skills/qa-release/SKILL.md")
+  test "[static] generated agent entrypoint defines the SOP invocation standard before generic triage" do
+    body = norm("index.md")
+    standard = body.index("SOP Invocation Standard")
+    first_rules = body.index("First Rules")
+    assert standard, "index.md must expose the SOP invocation standard near the top"
+    assert first_rules, "index.md must keep First Rules after the SOP standard"
+    assert_operator standard, :<, first_rules,
+      "SOP names must resolve before the broader operating rules can send agents into generic triage"
+    assert_match(/SOPs are first-class registered commands in this workspace/i, body)
+    assert_match(/The set is finite, the names are stable, and every SOP name maps to a repo file/i, body)
+    assert_match(/Do not treat an SOP name as ordinary prose, generic GitHub triage, or a broad workflow request/i, body)
+    assert_match(/McRitchie operating procedures are normal repo docs, not installed skills/i, body)
+    assert_match(/Agent-specific SOPs live at mcritchie-studio\/docs\/agents\/agents\/<agent>\/sops\/<sop>\.md/i, body)
+    assert_match(/pr-review \| Avi \| mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md/i, body)
+    assert_match(/read the mapped HEARTBEAT\.md or SOP file before queue inspection, --help probing, GitHub PR discovery, or tool\/plugin selection/i, body)
+  end
+
+  test "[static] claude adapter also points SOP invocations to AGENTS standard first" do
+    body = norm("claude.md")
+    standard = body.index("SOP invocation standard")
+    devops_gate = body.index("STOP — before writing ANY code")
+    assert standard, "Claude adapter must expose SOP routing before the DevOps gate"
+    assert devops_gate, "Claude adapter must keep the DevOps gate"
+    assert_operator standard, :<, devops_gate,
+      "SOP prompts must be resolved before generic workflow handling"
+    assert_match(/McRitchie SOPs live in \/Users\/alex\/projects\/AGENTS\.md's SOP Invocation Standard/i, body)
+    assert_match(/SOPs are first-class registered commands with finite names and stable files/i, body)
+    assert_match(/pr-review means read mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md first/i, body)
+    assert_match(/do not start with bin\/avi-heartbeat --help, bin\/qa-intake, or GitHub PR discovery/i, body)
+  end
+
+  test "[static] markdown launch docs describe the nested primary→light cascade, review-only" do
+    body = norm("modules/parallel-agent-devops.md")
     assert_match(/nested cascade/i, body)
     assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body)
-    assert_match(/review-only/i, body, "the SKILL states the review-only contract")
+    assert_match(/review-only/i, body, "the launch docs state the review-only contract")
+
+    body = norm("agents/steffon/sops/qa-release.md")
     assert_match(/self-healing/i, body, "…and hands the merge to Steffon's self-healing sweep")
+
+    Dir.glob(AGENTS.join("agents", "*", "sops", "*.md")).each do |path|
+      refute_match(/atomic-event heartbeat/i, File.read(path),
+        "#{path}: act SOPs must stay independent of heartbeat attribution")
+    end
   end
 
   test "[static] the SOP vocabulary hands the merge to Steffon's sweep (no divergence notes)" do

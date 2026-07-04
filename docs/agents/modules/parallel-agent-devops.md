@@ -131,7 +131,7 @@ Avi owns PR **intake** as a thin delegation gate — product-acceptance + review
 selection. The **PRIMARY reviewer** then owns the rest of the lane: the deep
 review and spawning the **LIGHT** as its own sub-agent — **review-only**
 (2026-07-03): approved work stops at `reviewed`, and Steffon's self-healing
-`qa-deploy` sweep (`bin/release prepare`) merges it into `release` and flips it
+`qa-release` sweep (`bin/release prepare`) merges it into `release` and flips it
 `assembled` on QA-green.
 
 ### Picking the two senior reviewers (`bin/reviewer-select`)
@@ -193,7 +193,7 @@ with the default flat `bin/task list`:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-deploy sweep
+bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-release sweep
 bin/task list --stage assembled   # members of the current release candidate (RC)
 bin/task list --stage shipped     # baseline / reconciliation (recent ships)
 bin/task list --stage submitted   # review intake — the Build → Deploy seam
@@ -271,8 +271,8 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
-bin/avi-heartbeat --run --codex-workdir "$PWD"          # Avi Heartbeat Slow
-bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # Avi Heartbeat Fast
+bin/avi-heartbeat --run --codex-workdir "$PWD"          # pr-review-slow act (one PR at a time)
+bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # pr-review act (bounded waves)
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
@@ -287,11 +287,12 @@ Use `bin/avi-heartbeat --run --codex-workdir "$PWD"` when Mr. McRitchie wants
 Avi to review submitted PRs unattended for hours without assembling a release
 (`--codex-workdir` must be a trusted git checkout — the projects-root default
 makes `codex exec` refuse and every reviewer exit 1; full flags in the
-[`heartbeats.md`](heartbeats.md) quick start). That is **Avi Heartbeat
-Slow**: newest `submitted` task first, one PR at a time, fresh
+[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) SOP). That is the
+[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) act: newest `submitted`
+task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
-again after reviewer completion. Add `--fast` for
-**Avi Heartbeat Fast** when submitted PRs have stacked up; it launches bounded
+again after reviewer completion. Add `--fast` for the
+[`pr-review`](../agents/avi/sops/pr-review.md) act when submitted PRs have stacked up; it launches bounded
 waves of selected PRIMARY + LIGHT reviewer pairs, defaulting to the operating
 model's five-agent cap (two complete PR pairs per wave). Both modes leave Avi as
 the final resolver: two-approval work moves to `reviewed` for Steffon/release
@@ -392,13 +393,14 @@ the scout lane as complete until coverage is explicit.
 Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
 groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
 Ready To Assemble, Assembled Release, and scout-gap lanes. Readiness is still
-advisory: Avi owns the final merge, deploy, QA feedback, and production gate.
+advisory: Avi owns review resolution and the production gate; Steffon's
+`qa-release` sweep owns merge plus QA deploy.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return
 a concise findings report and one recommendation to Avi: merge-ready,
-wait-for-CI, request-changes, or conductor-review. Avi keeps the final
-integration and deployment decision.
+wait-for-CI, request-changes, or conductor-review. Avi keeps the final review
+decision; the release lane keeps integration and deployment decisions.
 
 After reviewing, the scout records the report on the task as a structured task
 comment:

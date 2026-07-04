@@ -547,6 +547,121 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
   end
 
+  # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
+
+  def test_qa_gate_cmd_reads_the_registered_integration_tier_from_the_real_registry
+    # ONE subprocess reads all five apps through the REAL config/release_repos.yml
+    # — the exact seam pre_qa_gate reads at run time.
+    out = eval_helper(%(%w[mcritchie-studio turf-monster rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
+
+    live = Array.new(3, "bin/rails test test/integration")
+    assert_equal (live + ["", ""]).inspect, out,
+                 "live apps gate QA on their integration tier; planned apps (tax-studio, chain-ops) self-gate"
+  end
+
+  def test_test_cmd_argv_matches_plain_split_for_flag_style_commands
+    # The behavior-preserving half of the Shellwords switch: every flag-style
+    # command (the shape the registry carries) parses byte-identically both ways.
+    out = eval_helper(%(["bin/rails test", "bin/rails test test/integration", "bin/deploy --yes"].map { |c| test_cmd_argv(c) == c.split }.inspect))
+    assert_equal "[true, true, true]", out
+  end
+
+  def test_test_cmd_argv_keeps_a_quoted_spaced_arg_as_one_element
+    out = eval_helper(%(test_cmd_argv(%q{bin/rails test "test/integration/a b_test.rb"}).inspect))
+    assert_equal %(["bin/rails", "test", "test/integration/a b_test.rb"]), out
+  end
+
+  def test_test_cmd_argv_aborts_naming_an_unbalanced_quote
+    out = run_cli(["--yes"], setup: "",
+                  call: %{begin; test_cmd_argv(%q{bin/rails test "unclosed}); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a malformed command must never exec a garbled argv"
+    assert_includes out, "unparseable test command"
+    assert_includes out, "unclosed", "the abort names the offending string"
+    assert_includes out, "config/release_repos.yml", "…and points at the registry to fix"
+  end
+
+  def test_pre_qa_gate_passes_a_quoted_spaced_arg_as_one_argv_element
+    setup = <<~'RUBY'
+      def repo_path(_repo) = Dir.pwd
+      def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
+      def sh(*a, **_k)
+        $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED")})
+
+    argv_line = out.lines.find { |l| l.start_with?("GATE-ARGV") }
+    assert argv_line, "the gate must exec the registered command"
+    assert argv_line.start_with?("GATE-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
+    assert_includes argv_line, %("test/integration/a b_test.rb"), "the quoted spaced arg survives as ONE element"
+    assert_includes out, "PASSED"
+  end
+
+  def test_ship_test_gate_passes_a_quoted_spaced_arg_as_one_argv_element
+    setup = <<~'RUBY'
+      def repo_path(_repo) = Dir.pwd
+      def app_meta_for(_repo) = { "test_cmd" => %q{bin/rails test "test/models/a b_test.rb"} }
+      def sh(*a, **_k)
+        $stdout.puts("SHIP-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: %{test_gate("mcritchie-studio"); puts("PASSED")})
+
+    argv_line = out.lines.find { |l| l.start_with?("SHIP-ARGV") }
+    assert argv_line, "the ship gate must exec the registered command"
+    assert argv_line.start_with?("SHIP-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
+    assert_includes argv_line, %("test/models/a b_test.rb"), "the quoted spaced arg survives as ONE element"
+    assert_includes out, "PASSED"
+  end
+
+  def test_pre_qa_gate_dry_run_still_aborts_on_a_malformed_command
+    # The parse is hoisted BEFORE the dry-run return, so a broken registry value
+    # surfaces in a preview instead of detonating mid-conductor later.
+    setup = %(def qa_gate_cmd(_repo) = %q{bin/rails test "unclosed})
+    out = run_cli(["--dry-run"], setup: setup,
+                  call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED"
+    assert_includes out, "unparseable test command"
+    refute_includes out, "PASSED"
+  end
+
+  # [integration] The gate across its REAL I/O boundary: an actual git sibling
+  # (bare origin + main/release branches), the REAL `sh`, and a REAL subprocess
+  # parsed via Shellwords — proving checkout → ff → run → restore end-to-end
+  # with a quoted spaced arg arriving intact.
+  def test_pre_qa_gate_integration_runs_a_real_command_against_a_real_release_checkout
+    Dir.mktmpdir do |dir|
+      origin = File.join(dir, "origin.git")
+      clone  = File.join(dir, "repo")
+      git = lambda do |*a|
+        ok = system("git", "-C", clone, "-c", "user.email=t@t.t", "-c", "user.name=t", *a,
+                    out: File::NULL, err: File::NULL)
+        flunk("git #{a.join(' ')} failed") unless ok
+      end
+      system("git", "init", "--bare", "-q", origin, out: File::NULL, err: File::NULL) || flunk("git init --bare failed")
+      system("git", "clone", "-q", origin, clone, out: File::NULL, err: File::NULL) || flunk("git clone failed")
+      git.call("symbolic-ref", "HEAD", "refs/heads/main")
+      File.write(File.join(clone, "README"), "gate fixture")
+      git.call("add", ".")
+      git.call("commit", "-q", "-m", "init")
+      git.call("branch", "release")
+      git.call("push", "-q", "origin", "main", "release")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) +
+              %(def qa_gate_cmd(_repo) = %q{ruby -e "puts [:GATE_OK, ARGV].inspect" -- "a b"})
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      assert_includes out, %([:GATE_OK, ["a b"]]), "the real subprocess receives the quoted arg as ONE element"
+      assert_includes out, "PASSED", "a green gate lets prepare continue"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "the sibling checkout is restored to main (ensure)"
+    end
+  end
+
   # --- eject: block-on-regression (detach + block ONE offender, keep the rest) ---
 
   def test_eject_records_the_conductor_eject_and_prints_the_revert_guidance
@@ -1243,6 +1358,60 @@ class ReleaseCliTest < Minitest::Test
     hook_at   = out.index("post-deploy hooks")    # the post-deploy hook
     assert deploy_at && hook_at, "both the deploy and the hook must appear"
     assert_operator deploy_at, :<, hook_at, "the post-deploy hook runs AFTER the app deploys + smokes"
+  end
+
+  # --- post-ship agent-docs sync (the OWNED bin/install-agent-docs run) -------
+  # Ship's step 7b runs bin/install-agent-docs AFTER the ship record + restored
+  # primaries — post-SHIP, not post-merge, because the installer reads the LOCAL
+  # hub checkout's docs and only then does the primary's `main` hold exactly what
+  # shipped. NON-FATAL by construction: a docs sync must never abort a ship.
+
+  def test_ship_dry_run_syncs_agent_docs_after_the_shipped_banner
+    out = run_cli(["--dry-run"], call: "ship", setup: POST_DEPLOY_SHIP_STUB)
+
+    shipped_at = out.index("Shipped rel-pd-ship")
+    sync_at    = out.index("sync installed agent docs")
+    assert shipped_at && sync_at, "both the shipped banner and the docs-sync step must appear"
+    assert_operator shipped_at, :<, sync_at,
+                    "the docs sync runs POST-ship (after the shipped record), never before"
+    assert_includes out, "install-agent-docs", "the dry run prints the installer command"
+  end
+
+  def test_sync_agent_docs_runs_the_primary_checkouts_installer
+    setup = <<~RUBY
+      def sh(*a, **_k)
+        $stdout.puts("SH-ARGV " + a.inspect)
+        ["installed-docs-output", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs")
+
+    assert_includes out, "mcritchie-studio/bin/install-agent-docs",
+                     "the sync shells the hub checkout's own installer"
+    refute_includes out[/SH-ARGV.*/].to_s, ".worktrees",
+                     "always the PRIMARY checkout's installer — never a worktree's unshipped docs"
+    assert_includes out, "installed-docs-output", "the installer's output is surfaced to the operator"
+  end
+
+  def test_sync_agent_docs_failure_never_aborts_the_ship
+    setup = <<~RUBY
+      def sh(*_a, **_k) = ["boom", false]
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs; puts('SHIP-CONTINUES')")
+
+    assert_includes out, "agent-docs install failed", "a failed install warns with the by-hand fix"
+    assert_includes out, "SHIP-CONTINUES", "a docs-sync failure never aborts the completed ship"
+  end
+
+  def test_sync_agent_docs_exception_never_aborts_the_ship
+    setup = <<~RUBY
+      def sh(*_a, **_k) = raise("no such installer")
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs; puts('SHIP-CONTINUES')")
+
+    assert_includes out, "agent-docs install skipped (no such installer)",
+                     "an installer exception is rescued and reported with the by-hand fix"
+    assert_includes out, "SHIP-CONTINUES", "an installer exception never aborts the completed ship"
   end
 
   # A non-zero exit from `heroku run` must ABORT the pipeline. Drive run_post_deploy

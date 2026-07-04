@@ -12,7 +12,9 @@ class DocsController < ApplicationController
   end
 
   def show
-    path = params[:path]
+    raw_path = params[:format].present? ? "#{params[:path]}.#{params[:format]}" : params[:path].to_s
+    path = raw_path.delete_suffix(".md")
+    request.format = :html if raw_path.end_with?(".md")
 
     if path.include?("..") || !path.match?(/\A[a-z0-9_\-\/]+\z/i)
       raise ActiveRecord::RecordNotFound
@@ -27,6 +29,7 @@ class DocsController < ApplicationController
     @path = path
     @title = File.basename(path).titleize
     @content = render_markdown(File.read(full_path))
+    render :show, formats: [:html]
   end
 
   private

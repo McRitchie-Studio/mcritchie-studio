@@ -62,7 +62,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='production-deploy']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='qa-deploy']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='qa-release']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='full-cycle']"
   end
@@ -667,7 +667,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Gate"
     assert_includes response.body, "two senior reviewers"     # review delegated, not Avi-solo
     assert_includes response.body, "FROZEN ship SHA"          # Avi's ship-time suite
-    assert_includes response.body, "qa-deploy"                # Steffon's QA-deploy lane
+    assert_includes response.body, "qa-release"               # Steffon's QA release lane
     assert_includes response.body, "full-cycle"               # the Alex full-cycle ship launcher
   end
 
@@ -707,11 +707,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     # Both prior divergences are reconciled: Assemble's Main Branch (merge-forward guard)
-    # and now Review's Release Branch (the PRIMARY reviewer owns the merge), so the SOP
-    # infographic carries no ⚠ marker.
+    # and Review's Release Branch (Steffon's qa-release sweep owns the merge), so the
+    # SOP infographic carries no ⚠ marker.
     markers = css_select("[data-sop-diverges]")
     assert_equal 0, markers.size,
-      "no SOP step should diverge from the implemented model (the primary now owns the merge)"
+      "no SOP step should diverge from the implemented model (Steffon now owns the merge sweep)"
   end
 
   test "each board page cross-links to the other boards" do
