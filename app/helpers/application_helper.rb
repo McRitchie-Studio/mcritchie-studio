@@ -366,8 +366,8 @@ module ApplicationHelper
   end
 
   # Canonical copy-paste kickoff commands for the DevOps (Deploy) lane — the
-  # single source of truth shared by the /deployments column headers, the
-  # /stages cards, and the last-release archive chip. The per-stage entries are
+  # single source of truth shared by the /stages cards and the last-release
+  # archive chip. The per-stage entries are
   # keyed by DevOps board stage and kept terse (≤3 words) so each fits a column
   # header; the feature-agent lane has none.
   #
