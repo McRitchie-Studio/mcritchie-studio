@@ -4,11 +4,13 @@
 
 This is Steffon's specific heartbeat SOP. It has two act SOPs:
 
-- `archive-completed` - archive shipped work and reclaim completed worktrees.
-- `qa-deploy` - run the self-healing release prepare sweep through QA.
+- [`archive-shipped`](sops/archive-shipped.md) - archive shipped work and
+  reclaim completed worktrees.
+- [`qa-release`](sops/qa-release.md) - run the self-healing release prepare sweep
+  through QA.
 
 Use this file when Mr. McRitchie invokes `Steffon Heartbeat`,
-`archive-completed`, or `qa-deploy`, whether the entry came from a manual prompt,
+`archive-shipped`, or `qa-release`, whether the entry came from a manual prompt,
 automation, or a scheduled run.
 
 ## Scope
@@ -44,65 +46,20 @@ Use the production board by default. Do not add `--local`.
 
 Run Steffon's acts downstream-first:
 
-1. `archive-completed` - close out shipped work from the prior cycle.
-2. `qa-deploy` - sweep reviewed work through release assembly and QA.
+1. [`archive-shipped`](sops/archive-shipped.md) - close out shipped work from the
+   prior cycle.
+2. [`qa-release`](sops/qa-release.md) - sweep reviewed work through release
+   assembly and QA.
 
 When Mr. McRitchie launches `Steffon Heartbeat`, run both acts in that order.
 When an act is invoked directly, run only that act.
 
-## Act 1 - `archive-completed`
+## Legacy Aliases
 
-**Precondition:** at least one shipped task or completed release is ready to
-archive. If there is nothing to archive, report "nothing to archive" and continue
-to `qa-deploy` when this is the full `Steffon Heartbeat` run.
+The old launcher names still refer to the same work:
 
-Procedure:
-
-```bash
-bin/release archive --dry-run
-bin/release archive --yes
-```
-
-Use the dry run to confirm what will be archived and reclaimed. The `--yes` flag
-answers the non-interactive confirmation only; it does not bypass archive
-eligibility or worktree safety checks.
-
-**Exit seam:** shipped tasks and completed releases are archived, and merged
-worktrees that are safe to reclaim have been reclaimed. Report archived counts
-and any worktree that was intentionally left alone.
-
-## Act 2 - `qa-deploy`
-
-**Precondition:** there is work to prepare: `reviewed` tasks, `assembled`
-stragglers not riding the current release candidate, or an interrupted release
-candidate that needs to continue. Empty queue is a clean no-op: report "nothing
-to prepare" and stop.
-
-Procedure:
-
-```bash
-bin/release prepare --yes
-curl -fsS https://qa.mcritchie.studio/up
-```
-
-`prepare` is the self-healing sweep. It detects reviewed tasks and assembled
-stragglers, opens or resumes a release candidate, merges each task's PR onto
-`release` unless `merged: release/main` already proves that work landed, runs the
-pre-QA gate on `origin/release`, deploys QA, and flips members to `assembled`
-only after QA is green.
-
-If the pre-QA gate identifies an offender, use the release eject path rather than
-forcing the candidate forward:
-
-```bash
-bin/release eject <task> --feedback "<specific failing evidence>"
-```
-
-Then re-run `bin/release prepare --yes` so the rest of the candidate can ride.
-
-**Exit seam:** the release candidate is `assembled` and live on QA; members are
-`assembled` with `merged: release`. Report the QA URL, release slug, member list,
-and the exact phrase "deployed to QA" for Avi's handoff.
+- `archive-completed` -> [`archive-shipped`](sops/archive-shipped.md)
+- `qa-deploy` -> [`qa-release`](sops/qa-release.md)
 
 ## Handoff
 

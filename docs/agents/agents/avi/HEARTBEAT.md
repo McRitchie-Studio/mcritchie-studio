@@ -20,7 +20,7 @@ Avi is the downstream bookend:
 - Review submitted PRs and move each task to `reviewed` or `blocked`.
 - Stop before merge and QA assembly.
 
-Steffon's `qa-deploy` sweep owns merging reviewed PRs onto `release`, deploying
+Steffon's `qa-release` sweep owns merging reviewed PRs onto `release`, deploying
 QA, and flipping members `assembled`. Do not run `bin/release merge`,
 `bin/release prepare`, or `gh pr merge` from Avi review unless Mr. McRitchie
 explicitly assigns a separate conductor lane in the same session.
@@ -52,7 +52,7 @@ an act is invoked directly, run only that act.
 
 ## Act 1 - `production-deploy`
 
-**Precondition:** Steffon's `qa-deploy` has already produced a QA-green release:
+**Precondition:** Steffon's `qa-release` has already produced a QA-green release:
 members are `assembled` and `merged: release`, and the candidate is live on QA.
 If `release == main` or no QA-green release exists, report "nothing to ship" and
 continue to review work when this is the full `Avi Heartbeat` run.
@@ -116,7 +116,7 @@ Verdicts:
 
   ```bash
   bin/task move <task> reviewed
-  bin/task note <task> --handoff "Avi review approved; ready for Steffon's qa-deploy sweep." --agent avi
+  bin/task note <task> --handoff "Avi review approved; ready for Steffon's qa-release sweep." --agent avi
   ```
 
 - Request changes, missing metadata, red CI, merge risk, or acceptance mismatch:
@@ -128,7 +128,7 @@ Verdicts:
 - Wait-for-CI or conductor-review: defer and re-query after the defer window.
 
 Approved tasks stop at `reviewed` with `merged: nil`. Steffon's next
-`qa-deploy` sweep moves them forward.
+`qa-release` sweep moves them forward.
 
 **Exit seam:** every visible `submitted` PR is `reviewed`, `blocked`, or
 explicitly deferred with a reason.
@@ -153,7 +153,7 @@ End every Avi heartbeat with a short report:
 - production ship result, or "nothing to ship"
 - review result per task: `reviewed`, `blocked`, or deferred
 - any `Block Resolved` lines for work sent back
-- confirmation that approved work is waiting for Steffon's `qa-deploy` sweep
+- confirmation that approved work is waiting for Steffon's `qa-release` sweep
 
 On a clean run with no blockers, omit the blocker section entirely.
 

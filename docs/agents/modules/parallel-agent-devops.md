@@ -131,7 +131,7 @@ Avi owns PR **intake** as a thin delegation gate — product-acceptance + review
 selection. The **PRIMARY reviewer** then owns the rest of the lane: the deep
 review and spawning the **LIGHT** as its own sub-agent — **review-only**
 (2026-07-03): approved work stops at `reviewed`, and Steffon's self-healing
-`qa-deploy` sweep (`bin/release prepare`) merges it into `release` and flips it
+`qa-release` sweep (`bin/release prepare`) merges it into `release` and flips it
 `assembled` on QA-green.
 
 ### Picking the two senior reviewers (`bin/reviewer-select`)
@@ -193,7 +193,7 @@ with the default flat `bin/task list`:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-deploy sweep
+bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-release sweep
 bin/task list --stage assembled   # members of the current release candidate (RC)
 bin/task list --stage shipped     # baseline / reconciliation (recent ships)
 bin/task list --stage submitted   # review intake — the Build → Deploy seam
@@ -393,7 +393,7 @@ Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
 groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
 Ready To Assemble, Assembled Release, and scout-gap lanes. Readiness is still
 advisory: Avi owns review resolution and the production gate; Steffon's
-`qa-deploy` sweep owns merge plus QA deploy.
+`qa-release` sweep owns merge plus QA deploy.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return

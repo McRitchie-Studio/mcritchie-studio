@@ -13,7 +13,7 @@ everywhere.
 > composable deploy launchers are built from (§1.4). One run = **one PR / one
 > task**: Avi picks the pair → PRIMARY (+ LIGHT) review → on all-clear the PRIMARY
 > drives the task to **`reviewed` and STOPS** (review-only, 2026-07-03 — the merge
-> is no longer the reviewer's; Steffon's self-healing `qa-deploy` sweeps the
+> is no longer the reviewer's; Steffon's self-healing `qa-release` sweeps the
 > reviewed queue, merges the PRs into `release`, and flips members `assembled` on
 > QA-green), or **any** reviewer blocks. The plural atoms just LOOP this body over
 > the `submitted` queue: **`pr-review`** runs it fanned across all submitted PRs
@@ -145,7 +145,7 @@ The **PRIMARY reviewer's verdict decides**; the light reviewers add perspective.
 - **All-clear** (no reviewer blocked) → the PRIMARY drives the task to `reviewed`
   (`bin/task move <task> reviewed`) — **and stops there.** Review is
   **review-only** (2026-07-03): the PRIMARY does NOT run `bin/release merge`;
-  Steffon's self-healing **`qa-deploy`** (`bin/release prepare`) sweeps the whole
+  Steffon's self-healing **`qa-release`** (`bin/release prepare`) sweeps the whole
   reviewed queue, merges each PR into `release` (stamping `merged: "release"`),
   and flips members to `assembled` only on QA-green. **Bias to action: green
   tests = go** — the sweep follows promptly, and `release` is recoverable by
@@ -167,7 +167,7 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 | 2 | **PRIMARY** | domain soul | deep review; spawns the LIGHT | `Verify --agent <soul>` span + notes |
 | 2 | **LIGHT** | domain soul | focused second read | `Verify --agent <soul>` span + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
-| 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-deploy sweeps + merges) | `submitted → reviewed` |
+| 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed` |
 
 ## Where this plugs in
 

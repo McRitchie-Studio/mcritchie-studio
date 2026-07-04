@@ -253,6 +253,8 @@ assigned that lane.
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Avi heartbeat SOP | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Steffon heartbeat SOP | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | Alex heartbeat SOP | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
@@ -272,6 +274,19 @@ assigned that lane.
 | Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
+
+## SOP Quick Index
+
+Skills are launch routers; markdown files are the SOP source of truth. When a
+heartbeat act is invoked, read the owning soul's `HEARTBEAT.md`, then the specific
+SOP file linked below.
+
+| Invocation | Owner | SOP |
+|------------|-------|-----|
+| `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `qa-deploy` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
 
 ## Repos
 

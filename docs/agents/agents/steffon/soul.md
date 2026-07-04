@@ -77,7 +77,10 @@ False-pass is the one I obsess over. The others are leading indicators; that's t
 
 ## Protocols I follow
 
-- [`HEARTBEAT.md`](HEARTBEAT.md) — Steffon heartbeat archive and QA-deploy SOP
+- [`HEARTBEAT.md`](HEARTBEAT.md) — Steffon heartbeat entry and act order
+- [`sops/archive-shipped.md`](sops/archive-shipped.md) — archive shipped work and
+  reclaim completed worktrees
+- [`sops/qa-release.md`](sops/qa-release.md) — prepare and deploy the QA release
 - [`git-protocol.md`](../../system/git-protocol.md) — the send-back template is mine to use well
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — I set `actual_size` after release, honestly
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — I verify migration tasks actually held the lane

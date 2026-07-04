@@ -345,7 +345,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # Steffon owns QA; Avi runs the frozen-SHA suite; production authority is explicit
     assert_match(/steffon/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
-    assert_match(/qa-deploy/i, deploy["shipped"][:gate])
+    assert_match(/qa-release/i, deploy["shipped"][:gate])
     assert_match(/full-cycle/i, deploy["shipped"][:gate])
   end
 
@@ -487,9 +487,9 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal ["Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
     # Acts run DOWNSTREAM-FIRST: each soul leads with its idempotent close-out
-    # action (production-deploy / archive-completed) before the new-work action.
+    # action (production-deploy / archive-shipped) before the new-work action.
     assert_equal ["production-deploy", "pr-review", "pr-review-slow"], launchers[0][:actions]
-    assert_equal ["archive-completed", "qa-deploy"], launchers[1][:actions]
+    assert_equal ["archive-shipped", "qa-release"], launchers[1][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
   end
@@ -531,9 +531,9 @@ class ApplicationHelperTest < ActionView::TestCase
     # Every act carries a leading icon — a 1️⃣–4️⃣ keycap for the four ordered release
     # acts, a themed glyph for the rest.
     assert_select "button[data-row='action'][data-clip='pr-review'] [data-test='action-icon']", text: "1️⃣"
-    assert_select "button[data-row='action'][data-clip='qa-deploy'] [data-test='action-icon']", text: "2️⃣"
+    assert_select "button[data-row='action'][data-clip='qa-release'] [data-test='action-icon']", text: "2️⃣"
     assert_select "button[data-row='action'][data-clip='production-deploy'] [data-test='action-icon']", text: "3️⃣"
-    assert_select "button[data-row='action'][data-clip='archive-completed'] [data-test='action-icon']", text: "4️⃣"
+    assert_select "button[data-row='action'][data-clip='archive-shipped'] [data-test='action-icon']", text: "4️⃣"
     assert_select "button[data-row='action'][data-clip='pr-review-slow'] [data-test='action-icon']", text: "🐢"
     assert_select "button[data-row='action'][data-clip='grade-events'] [data-test='action-icon']", text: "🧑🏻‍🏫"
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
@@ -595,6 +595,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "Review + merge all submitted PRs", action_description("pr-review")
     assert_equal "Review + merge submitted PRs one at a time", action_description("pr-review-slow")
     assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
+    assert_equal "Prepare + deploy the QA release", action_description("qa-release")
+    assert_equal "Archive shipped tasks + releases", action_description("archive-shipped")
     assert_equal "Grade 10 recent events for quality", action_description("grade-events")
     assert_equal "Full cycle — review, assemble, QA, ship to prod", action_description("full-cycle")
     assert_nil action_description("not-an-act")
@@ -602,9 +604,9 @@ class ApplicationHelperTest < ActionView::TestCase
 
   test "[unit] action_icon numbers the four ordered release actions (1→4), nil otherwise" do
     assert_equal "1️⃣", action_icon("pr-review")
-    assert_equal "2️⃣", action_icon("qa-deploy")
+    assert_equal "2️⃣", action_icon("qa-release")
     assert_equal "3️⃣", action_icon("production-deploy")
-    assert_equal "4️⃣", action_icon("archive-completed")
+    assert_equal "4️⃣", action_icon("archive-shipped")
     assert_equal "🐢", action_icon("pr-review-slow")
     assert_equal "🧑🏻‍🏫", action_icon("grade-events")
     assert_equal "🌎", action_icon("full-cycle")

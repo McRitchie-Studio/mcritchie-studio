@@ -75,5 +75,10 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select ".prose-themed h1", text: "Steffon Heartbeat"
+
+    get doc_path("agents/steffon/sops/qa-release.md")
+    assert_response :success
+
+    assert_select ".prose-themed h1", text: "QA Release"
   end
 end

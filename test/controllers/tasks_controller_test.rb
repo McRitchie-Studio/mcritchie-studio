@@ -62,7 +62,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='production-deploy']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='qa-deploy']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='qa-release']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='full-cycle']"
   end
@@ -667,7 +667,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Gate"
     assert_includes response.body, "two senior reviewers"     # review delegated, not Avi-solo
     assert_includes response.body, "FROZEN ship SHA"          # Avi's ship-time suite
-    assert_includes response.body, "qa-deploy"                # Steffon's QA-deploy lane
+    assert_includes response.body, "qa-release"               # Steffon's QA release lane
     assert_includes response.body, "full-cycle"               # the Alex full-cycle ship launcher
   end
 

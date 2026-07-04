@@ -117,7 +117,7 @@ bin/release ship --yes
 ```
 
 `full-cycle` composes the existing atoms: Avi-style review-only PR review,
-Steffon's self-healing `qa-deploy`, then Avi's `production-deploy`. Keep the same
+Steffon's self-healing `qa-release`, then Avi's `production-deploy`. Keep the same
 guards each atom owns: waves of five or fewer reviewers, QA-green before ship,
 and no production deploy unless ship authority is explicit.
 

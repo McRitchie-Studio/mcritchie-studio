@@ -5,7 +5,7 @@ require "test_helper"
 # Guard for the review-lane SOP: Avi thin-delegates → the PRIMARY reviewer owns
 # the lane and SPAWNS the LIGHT (the nested chain, never a flat peer spawn), and
 # — since move-release-assembly-to-steffon (2026-07-03) — review is REVIEW-ONLY:
-# the merge belongs to Steffon's self-healing qa-deploy sweep, which flips
+# the merge belongs to Steffon's self-healing qa-release sweep, which flips
 # members assembled on QA-green. These assertions are deliberate tripwires:
 # revert the model and they fail.
 class ReviewLaneDocsTest < ActiveSupport::TestCase
@@ -30,7 +30,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   test "[static] the devops-cycle runbook gives the merge to Steffon's sweep — review is review-only" do
     body = norm("system/devops-cycle-design.md")
     assert_match(/review-only/i, body, "review stops at reviewed — the 2026-07-03 contract")
-    assert_match(/self-healing/i, body, "Steffon's qa-deploy is the self-healing sweep")
+    assert_match(/self-healing/i, body, "Steffon's qa-release is the self-healing sweep")
     assert_match(/sweep[^.\n]{0,300}merged: "release"/im, body,
       "the sweep stamps the merged git-location (the crash-recovery signal)")
     assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body,
