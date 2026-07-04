@@ -534,13 +534,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#dropzone-reviewed", count: 0
     assert_select "#dropzone-assembled", count: 0
     assert_select "#dropzone-shipped", count: 0
-    # the current-release module + kickoff chips live on /deployments, not here
+    # the current-release module lives on /deployments, not here
     assert_select "#current-release", count: 0
     assert_not_includes response.body, "Review submitted PRs"
     assert_not_includes response.body, "Run Deployment"
   end
 
-  test "deployments board shows the full pipeline swim lanes (designed through shipped)" do
+  test "[component] deployments board shows pipeline swim lanes without kickoff copy chips" do
     get deployments_path
 
     assert_response :success
@@ -556,11 +556,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # the side / terminal states stay off the board
     assert_select "#dropzone-blocked", count: 0
     assert_select "#dropzone-archived", count: 0
-    # copy-paste kickoff commands sit on the column headers
-    assert_includes response.body, "Review submitted PRs"
-    assert_includes response.body, "Run Deployment"
-    # the shipped column's kickoff is the DevOps loop's conclusion
-    assert_includes response.body, "Archive completed tasks"
+    # Copy-paste kickoff commands stay off the /deployments column headers.
+    assert_not_includes response.body, "Review submitted PRs"
+    assert_not_includes response.body, "Prepare release"
+    assert_not_includes response.body, "Run Deployment"
+    assert_not_includes response.body, "Archive completed tasks"
   end
 
   test "blocked tasks ride the Building column (red hue) on both boards" do
