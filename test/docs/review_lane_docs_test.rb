@@ -46,8 +46,13 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # reviews (review-only), Steffon's sweep merges. Nobody "reviews + merges" in
   # one breath. Catches the "conductor reviews, merges, and deploys" / "Avi
   # reviews and merges" / "primary reviews and merges" framings (incl. the §1.4
-  # cold-start block) that the per-file phrase checks above missed.
+  # cold-start block) that the per-file phrase checks above missed. Includes the
+  # adapter SOURCES (index.md → /Users/alex/projects/AGENTS.md, claude.md →
+  # projects-root CLAUDE.md) so a regression to pre-sweep phrasing in the
+  # generated entry docs fails the suite too.
   REVIEW_DOCS = %w[
+    index.md
+    claude.md
     agents/avi/role.md
     system/devops-cycle-design.md
     modules/heartbeats.md

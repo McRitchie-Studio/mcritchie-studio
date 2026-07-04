@@ -472,7 +472,7 @@ module ApplicationHelper
   # copyable phrase with the work it launches (Avi: production-deploy + pr-review;
   # Steffon: archive-shipped + qa-release; Alex: grade-events).
   ACTION_DESCRIPTIONS = {
-    "pr-review"         => "Review + merge all submitted PRs",
+    "pr-review"         => "Review all submitted PRs (review-only — Steffon sweeps)",
     "pr-review-slow"    => "Review submitted PRs one at a time",
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-release"        => "Prepare + deploy the QA release",
