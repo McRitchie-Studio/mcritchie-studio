@@ -136,7 +136,7 @@ require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/sweep_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
-# CleanCheck is the pure verdict behind the `Deploy with Task` clean-release GUARD
+# CleanCheck is the pure verdict behind the `deploy-with-task` clean-release GUARD
 # (`bin/release status --clean-only`): given the pending assembled tasks (board)
 # and the per-repo release-ahead-of-main counts (git), it decides clean vs dirty
 # and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
@@ -1459,11 +1459,11 @@ end
 # bin/release does only git/gh/gem/bundle I/O here; the string/version/ordering
 # DECISIONS live in the unit-tested Release::ShipSequence (+ GemfileRepin).
 
-# --- the clean-release GUARD (`Deploy with Task` runs this FIRST) -----------
+# --- the clean-release GUARD (`deploy-with-task` runs this FIRST) -----------
 # `bin/release status` reports whether `release == main` — i.e. whether the only
 # thing a `release → main` fast-forward would ship is ONE freshly-merged task, or
-# whether OTHER assembled-but-unshipped work is already riding `release`. The
-# `Deploy with Task <task>` composition runs `bin/release status --clean-only`
+# whether OTHER assembled-but-unshipped work is already riding `release`. Avi's
+# `deploy-with-task` act runs `bin/release status --clean-only`
 # BEFORE it merges the expedited task; `--clean-only` turns the report into a
 # GATE — it exits nonzero (aborting the expedite) on a dirty release, after
 # printing the refusal + the `full-cycle` offer. The pure verdict +
@@ -1501,10 +1501,10 @@ def status
   say(verdict["message"])
 
   # --clean-only is the GATE: a dirty release aborts the expedite (non-zero exit)
-  # so `Deploy with Task` refuses instead of dragging the pending work to prod.
+  # so `deploy-with-task` refuses instead of dragging the pending work to prod.
   # A --dry-run previews the verdict without aborting (nothing is executed).
   if clean_only && !verdict["clean"] && !DRY
-    abort!("release is not clean — `Deploy with Task` refused (ship the whole release with the `full-cycle` launcher)")
+    abort!("release is not clean — `deploy-with-task` refused (ship the whole release with the `full-cycle` launcher)")
   end
 end
 
