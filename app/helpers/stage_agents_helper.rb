@@ -82,9 +82,10 @@ module StageAgentsHelper
     end
   end
 
+  # The mascot face for one event — its baked snapshot when present (every staged
+  # transition bakes one now, so a gate-evolved form stays on the card it owned),
+  # else the caller's fallback (the task's live mascot, for pre-snapshot rows).
   def event_mascot_agent(evt, fallback)
-    return fallback unless Task::BUILD_STAGES.include?(evt.to_stage)
-
     snapshot = evt.mascot_snapshot
     name = snapshot["name"].presence || snapshot["slug"].presence
     return fallback if name.blank?
@@ -361,13 +362,31 @@ module StageAgentsHelper
     elsif evt.actor.present?
       [StageAgent.new(stage: stage, from_label: evt.from_label, label: evt.actor, weight: nil,
                       agent: (mascot_agent if Task::BUILD_STAGES.include?(stage)) || resolve_actor_agent(evt.actor, by_slug),
-                      seconds: evt.seconds_in_from)]
+                      seconds: evt.seconds_in_from)] + [deploy_mascot_companion(evt, mascot_agent)].compact
     elsif (owner = (STAGE_OWNER[stage] && by_slug[STAGE_OWNER[stage]]))
       [StageAgent.new(stage: stage, from_label: evt.from_label, label: owner.slug, weight: nil,
-                      agent: owner, seconds: evt.seconds_in_from)]
+                      agent: owner, seconds: evt.seconds_in_from)] + [deploy_mascot_companion(evt, mascot_agent)].compact
     else
-      []
+      [deploy_mascot_companion(evt, mascot_agent)].compact
     end
+  end
+
+  # The stages whose crew card carries the task's Pokémon ALONGSIDE the deploy
+  # soul — how the SECOND evolution gate (assembled) actually shows its face.
+  # The mascot rides the card it earned: Steffon assembles next to Charizard,
+  # and the ship card keeps him. Reviewed stays the pure senior pair (the
+  # two-column review layout is a deliberate 2-up grid).
+  MASCOT_COMPANION_STAGES = %w[assembled shipped].freeze
+
+  def deploy_mascot_companion(evt, mascot_agent)
+    return nil unless MASCOT_COMPANION_STAGES.include?(evt.to_stage)
+
+    agent = event_mascot_agent(evt, mascot_agent)
+    return nil unless agent
+
+    StageAgent.new(stage: evt.to_stage, from_label: evt.from_label,
+                   label: evt.mascot_snapshot["slug"].presence || agent.name,
+                   weight: nil, agent: agent, seconds: nil)
   end
 
   # The CONSOLIDATED timeline for /tasks/:id — one ordered list that replaces the

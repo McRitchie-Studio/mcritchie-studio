@@ -40,4 +40,33 @@ class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
     assert_selector "[data-test='timeline-crew-member'][title^='Dewgong']", minimum: 3
     assert_selector "[data-test='timeline-crew-member'][title^='Grimer']", count: 1
   end
+
+  test "task timeline shows the mascot evolving through the pipeline gates" do
+    # Collision-proof against e2e seed leftovers in the shared test DB.
+    [[4, "charmander", ["charmeleon"]],
+     [5, "charmeleon", ["charizard"]],
+     [6, "charizard", []]].each do |dex, slug, evolution|
+      Pokemon.where(slug: slug).first_or_initialize.update!(
+        dex: dex, name: slug.capitalize, slug: slug, generation: 1,
+        base: "charmander", evolution: evolution, baby: []
+      )
+    end
+    SessionMascot.where(session_id: "sess-sys-evolve").first_or_initialize.update!(mascot_slug: "charmander")
+
+    task = Task.create!(title: "system evolution timeline task",
+                        metadata: { "devops" => { "session_id" => "sess-sys-evolve" } })
+    task.build!
+    task.submit!
+    task.review!
+    task.assemble!
+
+    visit task_path(task.slug)
+
+    assert_selector "[data-test='stage-timeline']"
+    # The build lane belongs to the base form; each gate's card wears the form
+    # that owned it — the submit stays Charmeleon even after Charizard assembles.
+    assert_selector "[data-test='timeline-crew-member'][title^='Charmander']", minimum: 2
+    assert_selector "[data-test='timeline-crew-member'][title^='Charmeleon']", minimum: 1
+    assert_selector "[data-test='timeline-crew-member'][title^='Charizard']", minimum: 1
+  end
 end
