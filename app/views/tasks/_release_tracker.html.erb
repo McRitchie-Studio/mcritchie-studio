@@ -28,6 +28,16 @@
                 data-test="release-tracker-duration"
                 data-release-ticker
                 data-since="<%= step[:duration_started_at].to_i %>"><%= format_elapsed_clock(step[:duration_seconds]) %></span>
+        <% elsif step[:completed_at] %>
+          <%# title is the app-TZ fallback; the ago ticker re-stamps it browser-local
+              off data-since + data-took so the operator reads their own clock. %>
+          <span class="font-mono text-[10px] leading-none tabular-nums text-muted"
+                data-test="release-tracker-duration"
+                data-release-ticker
+                data-mode="ago"
+                data-since="<%= step[:completed_at].to_i %>"
+                data-took="<%= release_static_duration_label(step[:duration_seconds]) %>"
+                title="<%= release_tracker_completed_title(step) %>"><%= release_ago_label(step[:ago_seconds]) %></span>
         <% else %>
           <span class="font-mono text-[10px] leading-none tabular-nums text-muted"
                 data-test="release-tracker-duration"><%= release_static_duration_label(step[:duration_seconds]) %></span>

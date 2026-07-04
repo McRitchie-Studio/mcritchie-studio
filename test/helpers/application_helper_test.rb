@@ -302,6 +302,36 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal labels.size, labels.uniq.size, "tracker active labels must be unambiguous"
   end
 
+  test "[unit] release_ago_label picks the largest single unit" do
+    assert_equal "0s ago", release_ago_label(0)
+    assert_equal "59s ago", release_ago_label(59)
+    assert_equal "1m ago", release_ago_label(60)
+    assert_equal "59m ago", release_ago_label((60 * 60) - 1)
+    assert_equal "1h ago", release_ago_label(60 * 60)
+    assert_equal "23h ago", release_ago_label((24 * 60 * 60) - 1)
+    assert_equal "1d ago", release_ago_label(24 * 60 * 60)
+  end
+
+  test "[unit] a complete tracker node carries its completion stamp and ago seconds" do
+    rel = Release.open!
+    rel.stamp_stage!("testing")
+    rel.stamp_stage!("assembling")
+
+    tested = release_tracker_steps(rel.reload, now: 5.minutes.from_now).first
+    assert_equal :complete, tested[:state]
+    assert_equal rel.stage_stamp("assembling"), tested[:completed_at]
+    assert_in_delta 5.minutes.to_i, tested[:ago_seconds], 2,
+                    "ago_seconds is completion stamp → now, not the stage span"
+    assert_equal false, tested[:duration_live]
+
+    # The active node keeps its live count-up shape — no completion fields.
+    assembling = release_tracker_steps(rel.reload).second
+    assert_equal :active, assembling[:state]
+    assert tested[:duration_seconds].present?
+    assert_nil assembling[:completed_at]
+    assert_nil assembling[:ago_seconds]
+  end
+
   test "[component] _release_summary renders the current release tracker stages" do
     rel = Release.open!
     tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
@@ -327,6 +357,34 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='release-tracker-step'][data-state='active'] [data-test='release-tracker-label'].text-amber-700.dark\\:text-amber-200"
     assert_select "[data-test='release-tracker-step'][data-stage='qa_deploying'] [data-test='release-tracker-connector'][data-state='active'].animate-pulse"
     assert_select "[data-test='release-tracker-step'][data-state='active'] [data-test='release-tracker-connector'][data-state='pending']"
+  end
+
+  test "[component] complete tracker nodes show finished-ago, active keeps the count-up" do
+    rel = Release.open!
+    tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
+    %w[testing assembling assembled qa_deploying].each { |stage| rel.stamp_stage!(stage) }
+
+    render partial: "tasks/release_tracker", locals: { release: rel }
+
+    # Complete nodes: an ago-mode ticker anchored on the COMPLETION stamp, with
+    # the absolute time + old stage span demoted to the hover title.
+    assert_select "[data-test='release-tracker-step'][data-state='complete']", 2
+    %w[testing assembling].each do |key|
+      completes = key == "testing" ? "assembling" : "assembled"
+      assert_select "[data-test='release-tracker-step'][data-stage='#{key}'] " \
+                    "[data-test='release-tracker-duration'][data-release-ticker][data-mode='ago']" \
+                    "[data-since='#{rel.stage_stamp(completes).to_i}']",
+                    text: /\A\d+[smhd] ago\z/ do |spans|
+        assert_match(/\AFinished .+ · took \d+[sm]\z/, spans.first["title"])
+        assert_match(/\A\d+[sm]\z/, spans.first["data-took"],
+                     "data-took feeds the browser-local title rewrite")
+      end
+    end
+
+    # The active node still counts UP from its start stamp — no ago mode.
+    assert_select "[data-test='release-tracker-step'][data-stage='qa_deploying'] " \
+                  "[data-test='release-tracker-duration'][data-release-ticker]" \
+                  "[data-since='#{rel.stage_stamp("qa_deploying").to_i}']:not([data-mode])"
   end
 
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
