@@ -4,16 +4,17 @@ This is the **reusable, self-contained PR-review procedure** — the review half
 the Deploy workflow (`submitted → reviewed`), factored out so any conductor or QA
 session can invoke it the same way "all over the place." The release SOP
 ([`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
-§1.4), the [`qa-release` skill](../skills/qa-release/SKILL.md), and the
-[`Avi Heartbeat`](../agents/avi/HEARTBEAT.md) loops all include this module **by
-reference** rather than restating it — edit the review contract here and it flows
-everywhere.
+§1.4), the [heartbeats launcher map](heartbeats.md), and Avi's
+[`pr-review`](../agents/avi/sops/pr-review.md) /
+[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) SOPs all include this
+module **by reference** rather than restating it — edit the review contract here
+and it flows everywhere.
 
 > **This module IS the `review-one <task>` atom** — the indivisible PRIMITIVE the
 > composable deploy launchers are built from (§1.4). One run = **one PR / one
 > task**: Avi picks the pair → PRIMARY (+ LIGHT) review → on all-clear the PRIMARY
 > drives the task to **`reviewed` and STOPS** (review-only, 2026-07-03 — the merge
-> is no longer the reviewer's; Steffon's self-healing `qa-deploy` sweeps the
+> is no longer the reviewer's; Steffon's self-healing `qa-release` sweeps the
 > reviewed queue, merges the PRs into `release`, and flips members `assembled` on
 > QA-green), or **any** reviewer blocks. The plural atoms just LOOP this body over
 > the `submitted` queue: **`pr-review`** runs it fanned across all submitted PRs
@@ -32,10 +33,10 @@ is the operational how-to for that stage.
 ## When to invoke
 
 Run this whenever a `submitted` task's PR needs review before it can advance —
-as the `review-one` atom inside a `Merge, Assemble, Deploy` / `Build and Deploy
-QA Release` / `Deploy with Task <task>` composition, as the body of a `pr-review`
-/ `pr-review-slow` sweep, inside an `Avi Heartbeat Slow` / `Avi Heartbeat Fast`
-loop, or a one-off review a conductor kicks off by hand. The unit of work is
+as the `review-one` atom inside a `full-cycle` / `deploy-with-task`
+composition, as the body of an Avi Heartbeat `pr-review` / `pr-review-slow`
+sweep (review-only — the merge belongs to Steffon's `qa-release` sweep), or a one-off
+review a conductor kicks off by hand. The unit of work is
 **one PR / one task**; a queue is just this cascade run per task (`pr-review`), in
 **waves of ≤5 concurrent agents** (the board DB's connection budget — see
 "Concurrency cap" in the operating model).
@@ -145,7 +146,7 @@ The **PRIMARY reviewer's verdict decides**; the light reviewers add perspective.
 - **All-clear** (no reviewer blocked) → the PRIMARY drives the task to `reviewed`
   (`bin/task move <task> reviewed`) — **and stops there.** Review is
   **review-only** (2026-07-03): the PRIMARY does NOT run `bin/release merge`;
-  Steffon's self-healing **`qa-deploy`** (`bin/release prepare`) sweeps the whole
+  Steffon's self-healing **`qa-release`** (`bin/release prepare`) sweeps the whole
   reviewed queue, merges each PR into `release` (stamping `merged: "release"`),
   and flips members to `assembled` only on QA-green. **Bias to action: green
   tests = go** — the sweep follows promptly, and `release` is recoverable by
@@ -167,19 +168,19 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 | 2 | **PRIMARY** | domain soul | deep review; spawns the LIGHT | `Verify --agent <soul>` span + notes |
 | 2 | **LIGHT** | domain soul | focused second read | `Verify --agent <soul>` span + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
-| 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-deploy sweeps + merges) | `submitted → reviewed` |
+| 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed` |
 
 ## Where this plugs in
 
 - [`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
   §1.4 — the canonical stage ownership and the `Review submitted PRs` building
   block; this module is its formalized, agent-role how-to.
-- [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md) — the Avi-owned
-  heartbeat SOP for the `pr-review` and `pr-review-slow` loops that run this
-  cascade unattended.
+- [`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) and
+  [`../agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md)
+  — the Avi-owned SOPs that run this cascade unattended.
 - [`parallel-agent-devops.md`](parallel-agent-devops.md) — the `bin/reviewer-select`
   mechanics, review-events API, and broader queue/scout context.
 - [`review-comment-taxonomy.md`](review-comment-taxonomy.md) — which activity type
   (`comment` / `clarification` / `qa_feedback` / `handoff`) a reviewer's note uses.
-- [`qa-release` skill](../skills/qa-release/SKILL.md) — the conductor launcher that
-  invokes this review cascade as Review round 1.
+- [`heartbeats.md`](heartbeats.md) — the launcher map that invokes this review
+  cascade as Review round 1.

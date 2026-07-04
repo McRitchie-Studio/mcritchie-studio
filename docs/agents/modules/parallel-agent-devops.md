@@ -29,7 +29,7 @@ release conductor handles production effects.
    command; `bin/dor-check` enforces this, but read the metadata yourself.
    Avi classifies check failures by lane before deciding whether to move the
    task to `reviewed`, wait, or send `qa_feedback`.
-3. **Assemble + QA: `reviewed → assembled`** — Steffon's `qa-deploy` sweep merges
+3. **Assemble + QA: `reviewed → assembled`** — Steffon's `qa-release` sweep merges
    reviewed PRs into the persistent `release` branch, deploys `origin/release` to
    the QA app, and records QA URL, deployed SHA, release slug, and QA checks in
    `checks_run`.
@@ -43,7 +43,7 @@ release conductor handles production effects.
 |------|-------|---------|-----------------|-----------------------|--------------------|
 | Feature | Task agent | Build scoped work in an isolated worktree | Yes, own branch only | No | No |
 | QA / Integration | Avi | Review PRs and prevent dropped code | Yes, review/fix branches when needed | No | No, unless explicitly acting as release conductor |
-| Quality / Infra Gate | Steffon | Validate risky PRs, merge reviewed work, QA deploy readiness, provider infra | Yes, review/fix branches when needed | Yes, through `qa-deploy` | QA only, unless release conductor |
+| Quality / Infra Gate | Steffon | Validate risky PRs, merge reviewed work, QA deploy readiness, provider infra | Yes, review/fix branches when needed | Yes, through `qa-release` | QA only, unless release conductor |
 | Release | Designated conductor | Gem publish, app deploy, production verification | Yes | Yes | Yes, with explicit approval |
 
 Approved work merges into the **persistent per-repo `release` branch**, not
@@ -131,7 +131,7 @@ Avi owns PR **intake** as a thin delegation gate — product-acceptance + review
 selection. The **PRIMARY reviewer** then owns the rest of the lane: the deep
 review and spawning the **LIGHT** as its own sub-agent — **review-only**
 (2026-07-03): approved work stops at `reviewed`, and Steffon's self-healing
-`qa-deploy` sweep (`bin/release prepare`) merges it into `release` and flips it
+`qa-release` sweep (`bin/release prepare`) merges it into `release` and flips it
 `assembled` on QA-green.
 
 ### Picking the two senior reviewers (`bin/reviewer-select`)
@@ -193,7 +193,7 @@ with the default flat `bin/task list`:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-deploy sweep
+bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-release sweep
 bin/task list --stage assembled   # members of the current release candidate (RC)
 bin/task list --stage shipped     # baseline / reconciliation (recent ships)
 bin/task list --stage submitted   # review intake — the Build → Deploy seam
@@ -271,8 +271,8 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
-bin/avi-heartbeat --run --codex-workdir "$PWD"          # Avi Heartbeat Slow
-bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # Avi Heartbeat Fast
+bin/avi-heartbeat --run --codex-workdir "$PWD"          # pr-review-slow act (one PR at a time)
+bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # pr-review act (bounded waves)
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
@@ -287,11 +287,12 @@ Use `bin/avi-heartbeat --run --codex-workdir "$PWD"` when Mr. McRitchie wants
 Avi to review submitted PRs unattended for hours without assembling a release
 (`--codex-workdir` must be a trusted git checkout — the projects-root default
 makes `codex exec` refuse and every reviewer exit 1; full flags in the
-[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md) SOP). That is **Avi Heartbeat
-Slow**: newest `submitted` task first, one PR at a time, fresh
+[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) SOP). That is the
+[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) act: newest `submitted`
+task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
-again after reviewer completion. Add `--fast` for
-**Avi Heartbeat Fast** when submitted PRs have stacked up; it launches bounded
+again after reviewer completion. Add `--fast` for the
+[`pr-review`](../agents/avi/sops/pr-review.md) act when submitted PRs have stacked up; it launches bounded
 waves of selected PRIMARY + LIGHT reviewer pairs, defaulting to the operating
 model's five-agent cap (two complete PR pairs per wave). Both modes leave Avi as
 the final resolver: two-approval work moves to `reviewed` for Steffon/release
@@ -349,7 +350,7 @@ and structured scout report outcomes into conservative Avi recommendations:
 
 The decision summary is a queue accelerator, not an authority transfer. Avi
 still reviews the underlying PR, decides whether the report is sufficient, and
-performs any review-stage move or feedback action. Steffon's `qa-deploy` sweep
+performs any review-stage move or feedback action. Steffon's `qa-release` sweep
 owns merge plus QA deploy.
 
 Use `bin/devops-cycle --scout-packets` when the conductor wants to hand
@@ -394,7 +395,7 @@ Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
 groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
 Ready To Assemble, Assembled Release, and scout-gap lanes. Readiness is still
 advisory: Avi owns review resolution and the production gate; Steffon's
-`qa-deploy` sweep owns merge plus QA deploy.
+`qa-release` sweep owns merge plus QA deploy.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return

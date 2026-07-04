@@ -53,6 +53,13 @@ class ActionGrade < ApplicationRecord
   belongs_to :atomic_action, optional: true, inverse_of: :action_grades
   belongs_to :atomic_event,  optional: true, inverse_of: :action_grades
 
+  # Provenance for a machine-seeded CANDIDATE (see Insights::BlockMiner): the
+  # qa_feedback Activity (the QA block) this grade was mined from. Slug FK (the
+  # ecosystem convention). Present ONLY on mined candidates — a hand-authored grade
+  # leaves it nil, which is what #seeded_candidate? keys off.
+  belongs_to :source_activity, class_name: "Activity", foreign_key: :source_activity_slug,
+                               primary_key: :slug, optional: true, inverse_of: :seeded_grades
+
   validates :grader, inclusion: { in: GRADERS }
   validates :disposition, inclusion: { in: DISPOSITIONS }
   validates :slug, presence: true
@@ -70,6 +77,12 @@ class ActionGrade < ApplicationRecord
   scope :discarded,  -> { where(discarded: true) }
   scope :for_action, ->(action) { where(atomic_action_id: action) }
   scope :for_event,  ->(event) { where(atomic_event_id: event) }
+  # Machine-seeded candidates mined from resolved QA blocks (Insights::BlockMiner).
+  scope :seeded_candidates, -> { where.not(source_activity_slug: nil) }
+  # Candidates still AWAITING grade — seeded but not yet banked into the Insight
+  # Bank nor set aside. The read the pipeline surfaces (heartbeat#pipeline): the
+  # queue of block-mined lessons for the operator/Alex to promote or discard.
+  scope :pending_candidates, -> { seeded_candidates.where(banked: false, discarded: false) }
 
   # The learning loop's OUTPUT — the curated lessons a FRESH session carries in.
   # Today `banked` is read by one HTML page; .insight_feed is the feed-forward
@@ -147,6 +160,14 @@ class ActionGrade < ApplicationRecord
   # True when this grade targets a narrated span rather than a raw action.
   def event_grade?
     atomic_event_id.present?
+  end
+
+  # True when this grade was MACHINE-SEEDED from a resolved QA block
+  # (Insights::BlockMiner) rather than authored by a grader — carries the
+  # provenance FK back to the qa_feedback Activity. Lets a reader treat a mined
+  # candidate distinctly (e.g. the pipeline's "awaiting grade" band).
+  def seeded_candidate?
+    source_activity_slug.present?
   end
 
   # The record this banked lesson was mined from — its action OR its span (the XOR

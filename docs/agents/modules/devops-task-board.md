@@ -359,13 +359,13 @@ and calls out missing reports or conflicting outcomes. `bin/devops-cycle
 ready-to-merge, needs-conductor-review, needs-changes, waiting, Ready To
 Assemble, Assembled Release, and scout-gap lanes. These views accelerate
 review; they do not transfer release authority. Avi owns review resolution and
-production ship, while Steffon's `qa-deploy` sweep owns merge plus QA deploy.
+production ship, while Steffon's `qa-release` sweep owns merge plus QA deploy.
 
 Scout reports are supporting evidence. Avi turns blocker findings into
 `qa_feedback` or PR review comments when the work must return to the feature
 agent. Scout reports do not move stages; the active release SOP owns final
 merge, QA deploy, production deploy, and task stage changes (Steffon for
-`qa-deploy`, Avi for `production-deploy`).
+`qa-release`, Avi for `production-deploy`).
 
 Use the decision recommendations conservatively:
 
@@ -385,7 +385,7 @@ Use the decision recommendations conservatively:
    command (`bin/dor-check` enforces this, but read it yourself).
 4. Check `risk_tags` for Steffon/infra gate needs.
 5. Move only approved PRs to `reviewed`; do not merge during review.
-6. Let Steffon's `qa-deploy` sweep merge reviewed PRs into `release` and deploy QA.
+6. Let Steffon's `qa-release` sweep merge reviewed PRs into `release` and deploy QA.
 7. Let the sweep move QA-green tasks to `assembled` with QA URL, release SHA, and `checks_run`.
 8. Leave production ship gated until Mr. McRitchie explicitly approves release work.
 

@@ -985,6 +985,18 @@ end
 # skips it.
 def qa_gate_cmd(repo) = app_meta_for(repo)["qa_test_cmd"].to_s
 
+# Parse a registry test command (`test_cmd` / `qa_test_cmd`) into the argv `sh`
+# execs — Shellwords, not String#split, so quoted/spaced args survive as single
+# elements (same policy as the heroku-run payload seam above). Identical to a
+# plain split for the flag-style commands the registry carries today, so the
+# switch is behavior-preserving. A malformed value (unbalanced quote) aborts
+# NAMING the string instead of executing a garbled command.
+def test_cmd_argv(cmd)
+  Shellwords.split(cmd)
+rescue ArgumentError => e
+  abort!("unparseable test command #{cmd.inspect} (#{e.message}) — fix it in config/release_repos.yml")
+end
+
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
 # origin/release BEFORE anything deploys to QA, so a regression riding the
 # release branch is caught while the members are still `reviewed` (nothing
@@ -1004,6 +1016,9 @@ def pre_qa_gate(app_groups)
       say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
       next
     end
+    # Parse BEFORE the dry-run return and the git dance — a malformed registry
+    # value should abort a preview too, and never churn the sibling checkout.
+    argv = test_cmd_argv(cmd)
     if DRY
       say("  [dry-run] pre-QA gate #{repo}: (cd #{repo}) #{cmd} @ origin/#{RELEASE_BRANCH}")
       next
@@ -1019,7 +1034,7 @@ def pre_qa_gate(app_groups)
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
       abort!("could not ff #{repo} #{RELEASE_BRANCH} to origin/#{RELEASE_BRANCH} (local divergence) — resolve, then re-run") unless ff
       step("pre-QA gate #{repo}: #{cmd}")
-      _, ok = sh(*cmd.split, chdir: path)
+      _, ok = sh(*argv, chdir: path)
     ensure
       sh("git", "-C", path, "checkout", "main", capture: true)
     end
@@ -1656,10 +1671,13 @@ def test_gate(repo)
     return
   end
 
+  # Parse before the dry-run return so a malformed registry value aborts a
+  # preview too (see test_cmd_argv).
+  argv = test_cmd_argv(cmd)
   step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · before prod]")
   return if DRY
 
-  _, ok = sh(*cmd.split, chdir: repo_path(repo))
+  _, ok = sh(*argv, chdir: repo_path(repo))
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
 end
 
@@ -2171,6 +2189,14 @@ def ship
   #    already succeeded; a primary carrying uncommitted/unpushed work is REFUSED
   #    and left for the operator.
   restore_primaries(app_groups)
+
+  # 7b. Sync the installed agent docs from the freshly shipped `main` — the OWNED
+  #     pipeline run of bin/install-agent-docs (task name-install-agent-docs-owner).
+  #     It must be POST-SHIP, not post-merge: the installer reads the LOCAL hub
+  #     checkout's docs, and only after the ff `release → main` + restore_primaries
+  #     does the primary's `main` contain exactly what shipped (a qa-release-time
+  #     prepare run would install main's STALE docs and leave the drift in place).
+  sync_agent_docs
   close_role_span("shipped #{rel_slug} → prod")
 rescue SystemExit => e
   # Close the Avi span on a partial-ship abort too (best-effort) so the heartbeat
@@ -2210,6 +2236,32 @@ def restore_primaries(app_groups)
     print(out)
     say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
   end
+end
+
+# Post-ship agent-docs sync — the OWNED pipeline step that runs
+# bin/install-agent-docs after every prod ship, so adapter/skill/SOP merges stop
+# leaving the installed docs (~/.claude + ~/.codex skills, the projects-root
+# AGENTS.md/CLAUDE.md) drifted until someone happens to run the installer by hand
+# (previously the only owned run was Alex's share-insights act).
+#
+# ALWAYS the PRIMARY hub checkout's installer (repo_path, .worktrees-aware): the
+# installer syncs from its own $ROOT, and post-ship the primary sits on the
+# freshly shipped `main` — a worktree-run `bin/release` must not install its
+# worktree's unshipped docs. Runs unconditionally (idempotent file copies — a
+# ship with no docs changes is a cheap no-op that also heals prior drift), and is
+# NON-FATAL by construction (rescue-and-warn, like the merged:main stamps): a
+# docs sync must never abort or fail an already-completed ship. Under --dry-run,
+# `sh` prints the command and skips. Steffon owns this step; the warn line hands
+# the by-hand fix to whoever is watching the ship.
+def sync_agent_docs
+  say("")
+  step("sync installed agent docs: bin/install-agent-docs from the shipped hub main")
+  installer = File.join(repo_path("mcritchie-studio"), "bin", "install-agent-docs")
+  out, ok = sh(installer, capture: true)
+  print(out)
+  say("  ⚠ agent-docs install failed — run `#{installer}` by hand (the ship already succeeded)") unless ok
+rescue StandardError => e
+  say("  ⚠ agent-docs install skipped (#{e.message}) — run `bin/install-agent-docs` by hand (the ship already succeeded)")
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------

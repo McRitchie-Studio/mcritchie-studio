@@ -340,12 +340,13 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_match(/primary/i, deploy["submitted"][:who])
     assert_match(/light/i, deploy["submitted"][:who])
     assert_match(/base/i, deploy["submitted"][:tests])
-    # the PRIMARY reviewer owns the merge at the reviewed step (not the conductor)
-    assert_match(/primary/i, deploy["reviewed"][:who])
+    # Steffon owns the reviewed-stage merge sweep and QA release.
+    assert_match(/steffon/i, deploy["reviewed"][:who])
+    assert_match(/qa-release/i, deploy["reviewed"][:what])
     # Steffon owns QA; Avi runs the frozen-SHA suite; production authority is explicit
     assert_match(/steffon/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
-    assert_match(/qa-deploy/i, deploy["shipped"][:gate])
+    assert_match(/qa-release/i, deploy["shipped"][:gate])
     assert_match(/full-cycle/i, deploy["shipped"][:gate])
   end
 
@@ -487,11 +488,15 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal ["Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
     # Acts run DOWNSTREAM-FIRST: each soul leads with its idempotent close-out
-    # action (production-deploy / archive-completed) before the new-work action.
-    assert_equal ["production-deploy", "pr-review", "pr-review-slow"], launchers[0][:actions]
-    assert_equal ["archive-completed", "qa-deploy"], launchers[1][:actions]
+    # action (production-deploy / archive-shipped) before the new-work action.
+    # deploy-with-task trails Avi's list — direct-invoke only, never composed.
+    assert_equal ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], launchers[0][:actions]
+    assert_equal ["archive-shipped", "qa-release"], launchers[1][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
+    # review-only contract (2026-07-03): Avi's tooltip must not claim the merge —
+    # pr-review stops at reviewed; Steffon's sweep merges.
+    refute_match(/merge/i, launchers[0][:title], "Avi's tooltip must not claim review + merge")
   end
 
   test "[component] _heartbeats_card renders the three soul heartbeat launchers in a 3-up grid" do
@@ -522,8 +527,10 @@ class ApplicationHelperTest < ActionView::TestCase
       # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher.
       assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
     end
-    # The new pr-review-slow (Avi) and full-cycle (Alex) acts are copyable rows.
+    # The new pr-review-slow + deploy-with-task (Avi) and full-cycle (Alex) acts
+    # are copyable rows.
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "pr-review-slow"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "deploy-with-task"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
     # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly three.
     assert_select "[data-test='heartbeat-heart']", count: 3
@@ -531,15 +538,16 @@ class ApplicationHelperTest < ActionView::TestCase
     # Every act carries a leading icon — a 1️⃣–4️⃣ keycap for the four ordered release
     # acts, a themed glyph for the rest.
     assert_select "button[data-row='action'][data-clip='pr-review'] [data-test='action-icon']", text: "1️⃣"
-    assert_select "button[data-row='action'][data-clip='qa-deploy'] [data-test='action-icon']", text: "2️⃣"
+    assert_select "button[data-row='action'][data-clip='qa-release'] [data-test='action-icon']", text: "2️⃣"
     assert_select "button[data-row='action'][data-clip='production-deploy'] [data-test='action-icon']", text: "3️⃣"
-    assert_select "button[data-row='action'][data-clip='archive-completed'] [data-test='action-icon']", text: "4️⃣"
+    assert_select "button[data-row='action'][data-clip='archive-shipped'] [data-test='action-icon']", text: "4️⃣"
     assert_select "button[data-row='action'][data-clip='pr-review-slow'] [data-test='action-icon']", text: "🐢"
     assert_select "button[data-row='action'][data-clip='grade-events'] [data-test='action-icon']", text: "🧑🏻‍🏫"
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
-    # One icon per act row: Avi 3 + Steffon 2 + Alex 3 = 8.
-    assert_select "[data-test='action-icon']", count: 8
+    assert_select "button[data-row='action'][data-clip='deploy-with-task'] [data-test='action-icon']", text: "⚡"
+    # One icon per act row: Avi 4 + Steffon 2 + Alex 3 = 9.
+    assert_select "[data-test='action-icon']", count: 9
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
   end
@@ -592,9 +600,11 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[unit] action_description maps the known acts to their captions" do
-    assert_equal "Review + merge all submitted PRs", action_description("pr-review")
-    assert_equal "Review + merge submitted PRs one at a time", action_description("pr-review-slow")
+    assert_equal "Review all submitted PRs (review-only — Steffon sweeps)", action_description("pr-review")
+    assert_equal "Review submitted PRs one at a time", action_description("pr-review-slow")
     assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
+    assert_equal "Prepare + deploy the QA release", action_description("qa-release")
+    assert_equal "Archive shipped tasks + releases", action_description("archive-shipped")
     assert_equal "Grade 10 recent events for quality", action_description("grade-events")
     assert_equal "Full cycle — review, assemble, QA, ship to prod", action_description("full-cycle")
     assert_nil action_description("not-an-act")
@@ -602,9 +612,9 @@ class ApplicationHelperTest < ActionView::TestCase
 
   test "[unit] action_icon numbers the four ordered release actions (1→4), nil otherwise" do
     assert_equal "1️⃣", action_icon("pr-review")
-    assert_equal "2️⃣", action_icon("qa-deploy")
+    assert_equal "2️⃣", action_icon("qa-release")
     assert_equal "3️⃣", action_icon("production-deploy")
-    assert_equal "4️⃣", action_icon("archive-completed")
+    assert_equal "4️⃣", action_icon("archive-shipped")
     assert_equal "🐢", action_icon("pr-review-slow")
     assert_equal "🧑🏻‍🏫", action_icon("grade-events")
     assert_equal "🌎", action_icon("full-cycle")
@@ -615,7 +625,7 @@ class ApplicationHelperTest < ActionView::TestCase
     avi = heartbeat_launcher_for("avi")
     assert avi.present?
     assert_equal "Avi Heartbeat", avi[:heartbeat]
-    assert_equal ["production-deploy", "pr-review", "pr-review-slow"], avi[:actions]
+    assert_equal ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], avi[:actions]
 
     assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
     assert_nil heartbeat_launcher_for(nil)

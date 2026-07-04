@@ -99,6 +99,14 @@ class HeartbeatController < ApplicationController
     @agents_by_slug  = agent_soul_lookup(@spans)
     @span_grades     = event_grade_lookup(@spans) # {event_id => {grader => grade}} — the "not" flag
 
+    # Candidates awaiting grade — disposition:"not" grades MINED from resolved QA
+    # blocks (Insights::BlockMiner), not yet banked into an insight nor discarded.
+    # The block ledger surfaced as the learning loop's newest raw material: each is
+    # a pre-labeled failure the operator/Alex promotes (bank) or sets aside.
+    @candidates = ActionGrade.pending_candidates.by_grader(ActionGrade::ALEX)
+                             .includes(:atomic_event, :source_activity)
+                             .order(created_at: :desc).limit(PIPELINE_INSIGHTS).to_a
+
     # Column 2 — Alex's banked insights (the distilled lessons), newest curation first.
     @insights = ActionGrade.banked.by_grader(ActionGrade::ALEX)
                            .includes(:atomic_event, :atomic_action)

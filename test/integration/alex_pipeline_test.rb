@@ -64,6 +64,47 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # ── candidates awaiting grade · block-mined "not" grades ────────────────────
+
+  def block_mined_candidate(task_slug:, session_id:, banked: false)
+    s = span(session_id: session_id, reason: "did the risky edit", task_slug: task_slug)
+    blk = Activity.create!(task_slug: task_slug, activity_type: "qa_feedback",
+                           description: "stage transition bypassed the server-side guard here")
+    grade = ActionGrade.create!(atomic_event: s, grader: "alex", disposition: "not",
+                                slug: "stage transition bypassed the server-side",
+                                long_form: blk.description, source_activity_slug: blk.slug)
+    grade.bank! if banked
+    [s, blk, grade]
+  end
+
+  test "[integration] a block-mined candidate is surfaced awaiting grade" do
+    s, blk, = block_mined_candidate(task_slug: "task-blocked", session_id: "pl-cand")
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-candidates]"
+    assert_select "[data-test=pl-candidate]" do
+      assert_select ".pl-slug", text: "stage transition bypassed the server-side"
+      assert_select ".pl-long", text: blk.description
+    end
+    # the candidate links to its span's grade drawer so it can be promoted
+    assert_select "a[href=?]", heartbeat_event_feedback_path(s.id)
+  end
+
+  test "[integration] a banked candidate leaves the awaiting-grade band (promoted to insights)" do
+    block_mined_candidate(task_slug: "task-promoted", session_id: "pl-promoted", banked: true)
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-candidate]", { count: 0 }, "a banked candidate is no longer awaiting grade"
+    assert_select "[data-test=pl-insight]" # it now lives in the Insights column
+  end
+
+  test "[integration] the candidates band is hidden when there are none" do
+    get alex_pipeline_path
+    assert_select "[data-test=pl-candidates]", { count: 0 }
+  end
+
   # ── the Confirm write ───────────────────────────────────────────────────────
 
   test "[integration] Confirm records a McRitchie mcr grade and redirects back" do
