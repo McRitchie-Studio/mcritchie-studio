@@ -38,6 +38,22 @@ stop.
 
 ## Procedure
 
+**Announce the handoff first.** The QA-green release sits at three greens with
+Confirming dark — Steffon's finish line. The moment you begin confirming (before
+any checks), notify the release so the /deployments tracker lights stage 4
+yellow under your name (`docs/agents/modules/task-board-api.md`, "Release stage
+timeline"):
+
+```bash
+# api() helper + TOKEN per task-board-api.md "Worked example"
+api POST /api/v1/releases/current/events/confirming/start '{"event": {"actor": "avi"}}'
+```
+
+`start` needs no usage metadata. The stamp is first-write-wins, so a re-run is a
+safe no-op. (If you skip this and go straight to `bin/release ship`, its
+`ship_gate started` checkpoint stamps `confirming` then — but only at ship time,
+which under-reports your confirmation work; post the start when the work starts.)
+
 Check readiness:
 
 ```bash
@@ -54,6 +70,12 @@ Ship from the primary checkout, not a feature worktree. `--yes` only answers the
 non-interactive confirmation. It does not skip clean-main preflight, frozen-SHA
 tests, gem publish ordering, deploy smoke, release notes, or partial-ship
 recovery.
+
+`ship` narrates the rest of the stage timeline itself (`ship_gate` →
+Confirmed green, `deploy_prod started` → Deploying yellow, the ship flip →
+Deployed green) — no extra posts on the happy path. After an interrupted run,
+backfill the missed boundary via the release events API; stamps are
+first-write-wins, so re-posts are safe no-ops.
 
 Post-ship, `bin/release ship` auto-runs the hub primary's
 `bin/install-agent-docs` (non-fatal — it never aborts a completed ship;

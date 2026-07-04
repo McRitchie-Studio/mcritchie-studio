@@ -138,101 +138,84 @@ module ApplicationHelper
     "#{seal.verdict_line}#{when_text}"
   end
 
+  # The five tracker nodes. Each node derives complete/active/pending purely from
+  # the release's stage stamps (Release::STAGES): complete once `completes` is
+  # reached, active while `starts` is reached but `completes` is not, pending
+  # otherwise. Because a node lights yellow ONLY on its own start stamp, a
+  # finished stage leaves the NEXT node dark until its owner posts their start —
+  # the explicit Steffon→Avi handoff gap between Live on QA and Confirming.
   RELEASE_TRACKER_STAGES = [
-    { key: "testing", active_label: "Testing", complete_label: "Tested" },
-    { key: "assembling", active_label: "Assembling", complete_label: "Assembled" },
-    { key: "qa_deploying", active_label: "Deploying QA", complete_label: "Live on QA" },
-    { key: "confirming", active_label: "Confirming", complete_label: "Confirmed" },
-    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed" }
+    { key: "testing", active_label: "Testing", complete_label: "Tested",
+      starts: "testing", completes: "assembling" },
+    { key: "assembling", active_label: "Assembling", complete_label: "Assembled",
+      starts: "assembling", completes: "assembled" },
+    { key: "qa_deploying", active_label: "Deploying QA", complete_label: "Live on QA",
+      starts: "qa_deploying", completes: "qa_deployed" },
+    { key: "confirming", active_label: "Confirming", complete_label: "Confirmed",
+      starts: "confirming", completes: "confirmed" },
+    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed",
+      starts: "prod_deploying", completes: "shipped" }
   ].freeze
 
-  # Pizza-tracker progress for the active release card, derived from the durable
-  # writes the conductor already makes during bin/release merge/prepare/ship.
+  # Pizza-tracker progress for the active release card, read straight off the
+  # release's stage stamps (time-and-boolean columns — see Release::STAGES).
   def release_tracker_steps(release, now: Time.current)
-    done_count = release_tracker_done_count(release)
-    events = release.release_events.to_a
-
     RELEASE_TRACKER_STAGES.each_with_index.map do |stage, index|
-      state =
-        if index < done_count
-          :complete
-        elsif index == done_count && done_count < RELEASE_TRACKER_STAGES.size
-          :active
-        else
-          :pending
-        end
-
+      state = release_tracker_state(release, stage)
       stage.merge(
         index: index + 1,
         label: release_tracker_step_label(stage, state),
         state: state,
-        connector_state: release_tracker_connector_state(index, done_count)
+        connector_state: release_tracker_connector_state(release, index)
       ).merge(
-        release_tracker_duration(release, stage[:key], state, events: events, now: now)
+        release_tracker_duration(release, stage, state, now: now)
       )
     end
   end
 
-  def release_tracker_duration(release, key, state, events:, now: Time.current)
-    started_at, completed_at = release_tracker_duration_bounds(release, key, events)
-    if state.to_sym == :active
-      started_at ||= release_tracker_fallback_started_at(release, key)
+  def release_tracker_state(release, stage)
+    return :complete if release.stage_reached?(stage[:completes])
+    return :active if release.stage_reached?(stage[:starts])
+
+    :pending
+  end
+
+  # The connector after node `index` takes the state of the node it leads INTO —
+  # green behind a complete node, pulsing into the active one, dark into a pending
+  # one (including the handoff gap, where finished work meets an unclaimed stage).
+  # The terminal node has no outgoing edge (the partial never draws it): its value
+  # just mirrors done/not-done so an all-complete tracker reads all-complete.
+  def release_tracker_connector_state(release, index)
+    next_stage = RELEASE_TRACKER_STAGES[index + 1]
+    if next_stage.nil?
+      return release_tracker_state(release, RELEASE_TRACKER_STAGES.last) == :complete ? :complete : :pending
+    end
+
+    release_tracker_state(release, next_stage)
+  end
+
+  # Node timing off the stamps: live seconds while active (start stamp → now,
+  # ticked client-side), a static span once complete (start → complete stamp). A
+  # node missing its start stamp shows no duration rather than a fake zero.
+  def release_tracker_duration(release, stage, state, now: Time.current)
+    started_at = release.stage_stamp(stage[:starts])
+    completed_at = release.stage_stamp(stage[:completes])
+
+    case state.to_sym
+    when :active
       return {} unless started_at
 
-      return {
+      {
         duration_seconds: elapsed_seconds(started_at, now),
         duration_started_at: started_at,
         duration_live: true
       }
-    end
+    when :complete
+      return {} unless started_at && completed_at
 
-    return {} unless state.to_sym == :complete
-
-    completed_at ||= release_tracker_fallback_completed_at(release, key)
-    started_at ||= release_tracker_fallback_started_at(release, key)
-    started_at ||= completed_at
-    seconds = elapsed_seconds(started_at, completed_at)
-    return {} unless seconds
-
-    { duration_seconds: seconds, duration_live: false }
-  end
-
-  def release_tracker_duration_bounds(release, key, events)
-    steps = case key.to_s
-            when "testing" then [["review_tests"]]
-            when "assembling" then [["assemble_release"]]
-            when "qa_deploying" then [["deploy_qa"]]
-            when "confirming" then [%w[ship_gate ship_authorized]]
-            when "production_deploying" then [["deploy_prod"]]
-            else []
-            end
-    starts = steps.flatten.filter_map { |step| release_event_at(events, step, "started") }
-    finishes = steps.flatten.filter_map { |step| release_event_at(events, step, "completed") }
-    started_at = starts.min
-    completed_at = finishes.max
-    started_at ||= release_tracker_fallback_started_at(release, key) if completed_at
-    started_at ||= completed_at if completed_at
-    [started_at, completed_at]
-  end
-
-  def release_event_at(events, step, status)
-    events.select { |event| event.step == step && event.status == status }.map(&:occurred_at).compact.min
-  end
-
-  def release_tracker_fallback_started_at(release, key)
-    case key.to_s
-    when "testing", "assembling" then release.created_at
-    when "qa_deploying" then release.assembled_at
-    when "confirming" then release.confirmed_at
-    when "production_deploying" then release.confirmed_at
-    end
-  end
-
-  def release_tracker_fallback_completed_at(release, key)
-    case key.to_s
-    when "assembling" then release.assembled_at
-    when "confirming" then release.confirmed_at
-    when "production_deploying" then release.shipped_at
+      { duration_seconds: elapsed_seconds(started_at, completed_at), duration_live: false }
+    else
+      {}
     end
   end
 
@@ -245,49 +228,6 @@ module ApplicationHelper
 
   def release_tracker_step_label(stage, state)
     state.to_sym == :complete ? stage[:complete_label] : stage[:active_label]
-  end
-
-  def release_tracker_connector_state(index, done_count)
-    if done_count >= RELEASE_TRACKER_STAGES.size
-      :complete
-    elsif index < done_count - 1
-      :complete
-    elsif index == done_count - 1
-      :active
-    else
-      :pending
-    end
-  end
-
-  def release_tracker_done_count(release)
-    return RELEASE_TRACKER_STAGES.size if release.shipped?
-    return RELEASE_TRACKER_STAGES.size if release_event_done?(release, "deploy_prod")
-    return 4 if release_event_done?(release, "ship_gate") ||
-                release_event_done?(release, "ship_authorized") ||
-                release_event_started?(release, "deploy_prod")
-    return 4 if release.confirmed_at.present?
-    return 3 if release_event_done?(release, "deploy_qa") ||
-                release_event_done?(release, "qa_smoke") ||
-                release.state == "assembled"
-    return 2 if release_event_done?(release, "assemble_release")
-    return 2 if release.qa_url.present? || release_tracker_qa_shas?(release)
-    return 1 if release_event_done?(release, "review_tests")
-    return 1 if release.tasks.any?
-
-    0
-  end
-
-  def release_event_done?(release, step)
-    release.respond_to?(:event_completed?) && release.event_completed?(step)
-  end
-
-  def release_event_started?(release, step)
-    release.respond_to?(:event_started?) && release.event_started?(step)
-  end
-
-  def release_tracker_qa_shas?(release)
-    shas = release.metadata.is_a?(Hash) ? release.metadata["qa_shas"] : nil
-    shas.is_a?(Hash) && shas.values.any?(&:present?)
   end
 
   def release_tracker_dot_classes(state)

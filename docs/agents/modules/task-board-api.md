@@ -94,9 +94,9 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `POST` | `/tasks/:slug/events/:stage/start` | Record a task lifecycle start event |
 | `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task lifecycle stage/checkpoint |
 | `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task lifecycle step and block the task |
-| `POST` | `/releases/:slug/events/:step/start` | Record a release checkpoint start |
-| `POST` | `/releases/:slug/events/:step/complete` | Complete a release checkpoint |
-| `POST` | `/releases/:slug/events/:step/fail` | Fail a release checkpoint |
+| `POST` | `/releases/:slug/events/:step/start` | Record a release checkpoint start (stamps the stage timeline; `:slug` accepts `current`) |
+| `POST` | `/releases/:slug/events/:step/complete` | Complete a release checkpoint (stamps the stage timeline; `:slug` accepts `current`) |
+| `POST` | `/releases/:slug/events/:step/fail` | Fail a release checkpoint (never stamps a stage) |
 
 `GET /tasks` accepts `?stage=<stage>` and `?agent_slug=<slug>` filters (plus
 `?page` / `?per_page`) and returns `{ "data": [...], "meta": { page, per_page,
@@ -206,6 +206,50 @@ deploy_prod prod_smoke release_notes archive_tasks
 
 The tracker aliases also work: `testing`, `assembling`, `qa_deploying`,
 `confirming`, and `production_deploying`.
+
+#### Release stage timeline (the /deployments tracker)
+
+The release carries an ordered set of **stage timestamps** — each acts as a time
+AND a boolean (stamped = the stage started/landed, blank = not yet) — and the
+/deployments progress tracker derives every node's green/yellow/dark state purely
+from them. **Posting a release event IS the stage notification**: the server maps
+the `(step, status)` pair to its stage stamp, first-write-wins (replays never
+rewrite history), and broadcasts the live tracker to every viewer.
+
+| You post | Stage stamped | Tracker effect |
+|---|---|---|
+| `testing/start` | `testing` | node 1 Testing yellow |
+| `assembling/start` | `assembling` | node 1 green, node 2 Assembling yellow |
+| `assembling/complete` | `assembled` | node 2 green (node 3 stays dark) |
+| `qa_deploying/start` | `qa_deploying` | node 3 Deploying QA yellow |
+| `qa_deploying/complete` | `qa_deployed` | node 3 green "Live on QA" (**node 4 stays dark**) |
+| `confirming/start` | `confirming` | node 4 Confirming yellow — **the Avi handoff** |
+| `confirming/complete` | `confirmed` | node 4 green (node 5 stays dark) |
+| `production_deploying/start` | `prod_deploying` | node 5 Deploying yellow |
+| — | `shipped` | node 5 green; only `bin/release ship` sets it, never an API post |
+
+The gaps are deliberate: a completed stage does NOT light the next node. The
+Steffon→Avi seam is the load-bearing case — Steffon's `qa_deploying/complete`
+("Live on QA") leaves Confirming dark until Avi posts `confirming/start`.
+
+`:slug` accepts the literal `current` to target the singleton active release
+without a lookup. When nothing is active, `current` 404s — except the cycle
+kick-off starts (`testing/start`, `assembling/start`), which may OPEN the next
+candidate; a late-stage post never spawns a ghost release.
+
+Every response carries the moved timeline so the poster can verify:
+
+```json
+{ "data": { "step": "ship_gate", "status": "started",
+  "release": { "slug": "rel-20260704-a6ad35", "state": "assembled",
+               "stage": "confirming", "stage_stamps": { "qa_deployed": "…", "confirming": "…", "confirmed": null } } } }
+```
+
+`bin/release` (prepare/ship) records these same checkpoints server-side, so
+CLI-driven stages stamp themselves — the API posts matter at the seams the CLI
+cannot see: Avi beginning his QA confirmation (`confirming/start`), a review
+wave kicking off the next cycle (`testing/start`), or manual recovery after an
+interrupted run.
 
 For `complete` and `fail` calls from agent/API/CLI sources, usage is mandatory:
 

@@ -27,6 +27,17 @@ PRs" and stop.
 
 ## Procedure
 
+**Kick off the release timeline.** A review wave is the `Testing` stage of the
+NEXT release — notify the release so the /deployments tracker lights stage 1
+yellow (`docs/agents/modules/task-board-api.md`, "Release stage timeline"). This
+start may OPEN the next candidate when none is active; the stamp is
+first-write-wins, so a re-post mid-cycle is a safe no-op:
+
+```bash
+# api() helper + TOKEN per task-board-api.md "Worked example"
+api POST /api/v1/releases/current/events/testing/start '{"event": {"actor": "avi"}}'
+```
+
 Preferred supervisor path:
 
 ```bash

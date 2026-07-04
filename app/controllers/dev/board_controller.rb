@@ -69,42 +69,42 @@ module Dev
       head :no_content
     end
 
-    # Open a fresh throwaway release at deploy-step 0 (Testing active) — clears any
-    # prior fixture release first so the tracker starts clean.
+    # Open a fresh throwaway release with an untouched stage timeline (every
+    # tracker node dark) — clears any prior fixture release first so the tracker
+    # starts clean.
     def open_release
       reset_release_fixtures
       open_fixture_release
       head :no_content
     end
 
-    # Advance the fixture release ONE tracker step by setting the next done_count
-    # input (member → qa_url → assembled → shipped), so the live release tracker
-    # steps Testing → Assembling → Deploying QA → Confirming → Deploying with each
-    # click. Reaching the deploy step SHIPS in that same advance (no separate
-    # confirmed-but-unshipped pause), so a Last Release appears immediately. Wraps
-    # from shipped back to a fresh release.
+    # Advance the fixture release ONE stage by stamping the next blank stage in
+    # Release::STAGES — the exact time-and-boolean inputs the live tracker reads —
+    # so each click walks Testing → Assembling → … → Confirming → Deploying,
+    # including the handoff gaps (a stamped `qa_deployed` leaves Confirming dark
+    # until the next click stamps `confirming`, just like the real Avi handoff).
+    # The terminal stage SHIPS (no separate confirmed-but-unshipped pause), so a
+    # Last Release appears immediately. Wraps from shipped back to a fresh release.
     def advance_release
       release = current_fixture_release || open_fixture_release
-      case tracker_done_count(release)
-      when 0
+      next_index = (release.current_stage_index || -1) + 1
+      stage = Release::STAGE_NAMES[next_index]
+      case stage
+      when nil
+        reset_release_fixtures
+        open_fixture_release
+      when "assembling"
+        # The sweep frame: a member rides along so the card shows its pill. The
+        # stamp itself updates the release, so the broadcast emits this frame.
         add_fixture_member(release)
-        # The member-add alone leaves the Release record untouched, so its
-        # after_commit release-modules broadcast never fires and the live tracker
-        # would skip the "Assembling" frame (jumping Testing → Deploying QA).
-        # Touch it to emit that frame, mirroring how a real adopt updates the release.
-        release.touch
-      when 1 then release.update!(qa_url: "https://qa.example.test/dev-fixture")
-      when 2 then release.update!(state: "assembled")
-      when 3, 4
-        # Reaching the final deploy step ships in a single advance — the operator's
-        # UX is "advancing to Deployed creates the Last Release" (no extra confirm
-        # click). ship! is valid from `assembled` and stamps confirmed_at/by itself;
+        release.stamp_stage!(stage)
+      when "shipped"
+        # ship! stamps confirmed_at (kept if already stamped) + shipped_at itself;
         # we set the deploy sha it records.
         release.update!(deployed_sha: SecureRandom.hex(20))
         release.ship!(by: "dev")
       else
-        reset_release_fixtures
-        open_fixture_release
+        release.stamp_stage!(stage)
       end
       head :no_content
     end
@@ -133,19 +133,7 @@ module Dev
              .order(created_at: :desc).first
     end
 
-    # Mirror of ApplicationHelper#release_tracker_done_count, kept controller-local
-    # so advancing sets exactly the next derived input the tracker reads.
-    def tracker_done_count(release)
-      return 5 if release.state == "shipped"
-      return 4 if release.confirmed_at.present?
-      return 3 if release.state == "assembled"
-      return 2 if release.qa_url.present?
-      return 1 if release.tasks.any?
-
-      0
-    end
-
-    # Attach a throwaway member task so the release reads done_count >= 1.
+    # Attach a throwaway member task so the release card shows a member pill.
     def add_fixture_member(release)
       Task.create!(
         title: SAMPLE_TITLES.sample,
