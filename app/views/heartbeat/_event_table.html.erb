@@ -27,7 +27,9 @@
     session so a turn split across spans still fades every row after its first. %>
 <% shared_turn_ids ||= Set.new %>
 <div class="hb-scroll">
-  <table class="hb-tbl hb-evt-tbl" data-test="heartbeat-event-table">
+  <%# data-sticky-table-header=false: this table pins its own thead th inside
+      .hb-scroll; the app-wide sticky_table_header.js clone would double it. %>
+  <table class="hb-tbl hb-evt-tbl" data-test="heartbeat-event-table" data-sticky-table-header="false">
     <thead>
       <tr>
         <th>#</th>
