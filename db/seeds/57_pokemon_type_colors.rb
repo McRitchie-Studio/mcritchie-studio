@@ -34,11 +34,11 @@ POKEMON_TYPE_COLORS = [
   ["fairy",    "Fairy",    "#D685AD", "🌈"]
 ].freeze
 
-# Rank the types by how common they are in the seeded list (the original 151),
+# Rank the types by how common they are in the seeded list (Gen 1–2, dex 1–251),
 # most common → least common, in steps of 100 so a value can be inserted between
 # two ranks later without renumbering. Counts come from the SAME committed JSON
 # the Pokémon seed loads; ties break on the canonical type order (position), and
-# a type absent from the 151 (e.g. Dark) ranks last.
+# a type absent from the seeded rows would rank last (all 18 appear in Gen 1–2).
 type_position = POKEMON_TYPE_COLORS.each_with_index.to_h { |(key, *), i| [key, i] }
 counts = Hash.new(0)
 JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json"))).each do |row|

@@ -52,12 +52,35 @@ class PokemonTest < ActiveSupport::TestCase
     assert_nil Pokemon.draw
   end
 
+  # --- Committed data file (db/seeds/data/pokemon.json) ---
+
+  test "data file carries all 251 Gen 1-2 rows with complete image URL sets" do
+    rows = JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json")))
+
+    assert_equal (1..251).to_a, rows.map { |r| r["dex"] }
+    assert_equal 251, rows.map { |r| r["slug"] }.uniq.size
+    assert(rows.all? { |r| r["generation"] == (r["dex"] <= 151 ? 1 : 2) })
+
+    # Every row carries the six dex-slug-keyed image URLs (normal + shiny,
+    # cropped primary + uncropped fallback + pixel sprite).
+    rows.each do |r|
+      key = "#{r['dex']}-#{r['slug']}"
+      assert r["avatar_url"].end_with?("/#{key}-cropped.png"), "##{r['dex']} avatar_url"
+      assert r["avatar_fallback_url"].end_with?("/#{key}.png"), "##{r['dex']} avatar_fallback_url"
+      assert r["sprite_url"].end_with?("/#{key}-sprite.png"), "##{r['dex']} sprite_url"
+      assert r["shiny_avatar_url"].end_with?("/#{key}-shiny-cropped.png"), "##{r['dex']} shiny_avatar_url"
+      assert r["shiny_avatar_fallback_url"].end_with?("/#{key}-shiny.png"), "##{r['dex']} shiny_avatar_fallback_url"
+      assert r["shiny_sprite_url"].end_with?("/#{key}-shiny-sprite.png"), "##{r['dex']} shiny_sprite_url"
+      assert r["types"].present? && r["hp"].present?, "##{r['dex']} types/stats"
+    end
+  end
+
   # --- Seed (idempotency from the committed JSON) ---
 
-  test "seed loads the 151 and is idempotent and self-syncing" do
+  test "seed loads the 251 and is idempotent and self-syncing" do
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
 
-    assert_difference -> { Pokemon.count }, 151 do
+    assert_difference -> { Pokemon.count }, 251 do
       capture_io { load seed }
     end
 
@@ -99,12 +122,29 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "sprite.png", p.display_avatar
   end
 
-  test "seed populates both a cropped avatar_url and an uncropped fallback for all 151" do
+  test "seed splits the generations at the Kanto/Johto boundary" do
+    seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
+    capture_io { load seed }
+
+    assert_equal 151, Pokemon.gen1.count
+    assert_equal 100, Pokemon.gen2.count
+    assert_equal (1..251).to_a, Pokemon.by_dex.pluck(:dex)
+
+    chikorita = Pokemon.find_by!(slug: "chikorita")
+    assert_equal 152, chikorita.dex
+    assert_equal 2, chikorita.generation
+
+    # Display-name special case new with Johto (title-casing would give "Ho Oh").
+    assert_equal "Ho-Oh", Pokemon.find_by!(dex: 250).name
+    assert_equal "Porygon2", Pokemon.find_by!(dex: 233).name
+  end
+
+  test "seed populates both a cropped avatar_url and an uncropped fallback for all 251" do
     seed = Rails.root.join("db/seeds/56_pokemon.rb").to_s
     capture_io { load seed }
 
     pokemon = Pokemon.order(:dex).to_a
-    assert_equal 151, pokemon.size
+    assert_equal 251, pokemon.size
     pokemon.each do |p|
       assert p.avatar_url.present?, "##{p.dex} #{p.slug} missing avatar_url"
       assert p.avatar_fallback_url.present?, "##{p.dex} #{p.slug} missing avatar_fallback_url"
@@ -180,11 +220,14 @@ class PokemonTest < ActiveSupport::TestCase
     seed = Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s
     capture_io { load seed }
 
-    # poison is the most common type across the original 151; water second.
-    assert_equal 100, Studio::Enumeral.lookup("pokemon_type", "poison").rank
-    assert_equal 200, Studio::Enumeral.lookup("pokemon_type", "water").rank
-    # Dark is absent from the 151, so it ranks last.
-    assert_equal 1800, Studio::Enumeral.lookup("pokemon_type", "dark").rank
+    # water is the most common type across Gen 1–2 (50 of 251); flying second (38).
+    assert_equal 100, Studio::Enumeral.lookup("pokemon_type", "water").rank
+    assert_equal 200, Studio::Enumeral.lookup("pokemon_type", "flying").rank
+    # normal and poison tie at 37; the canonical type order breaks the tie.
+    assert_equal 300, Studio::Enumeral.lookup("pokemon_type", "normal").rank
+    assert_equal 400, Studio::Enumeral.lookup("pokemon_type", "poison").rank
+    # dragon is the rarest across the 251 (Johto brought Dark six members).
+    assert_equal 1800, Studio::Enumeral.lookup("pokemon_type", "dragon").rank
 
     # Every rank is a distinct multiple of 100, 100..1800.
     ranks = Studio::Enumeral.in_category("pokemon_type").pluck(:rank).sort
@@ -244,20 +287,26 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "#A98FF3", pidgeot.signature_color
   end
 
-  test "primary type seed caches the identifying type for all 151 (behavior-preserving)" do
+  test "primary type seed caches the identifying type for all 251" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
     capture_io { load Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s }
     capture_io { load Rails.root.join("db/seeds/58_pokemon_primary_types.rb").to_s }
 
     pokemon = Pokemon.order(:dex).to_a
-    assert_equal 151, pokemon.size
+    assert_equal 251, pokemon.size
     assert pokemon.all? { |p| p.primary_type.present? }, "every Pokémon should have a cached primary_type"
 
-    # Pidgeot is normal/flying; flying is rarer across the 151, so it identifies it
-    # — exactly what the live computation returned before the cache (no recolor).
+    # Pidgeot is normal/flying; across Gen 1–2 flying (38) outnumbers normal (37),
+    # so normal is now the rarer side and identifies it — the cache must agree
+    # with the live computation over the full 251.
     pidgeot = Pokemon.find_by!(slug: "pidgeot")
-    assert_equal "flying", pidgeot.primary_type
-    assert_equal Studio::Enumeral.color_for("pokemon_type", "flying"), pidgeot.signature_color
+    assert_equal "normal", pidgeot.primary_type
+    assert_equal Studio::Enumeral.color_for("pokemon_type", "normal"), pidgeot.signature_color
+
+    # A Johto row ranks with the same machinery: Tyranitar (rock/dark) wears dark.
+    tyranitar = Pokemon.find_by!(slug: "tyranitar")
+    assert_equal 2, tyranitar.generation
+    assert_equal "dark", tyranitar.primary_type
 
     # Re-running the cache (the seed's class method) changes nothing.
     assert_equal 0, Pokemon.assign_primary_types!

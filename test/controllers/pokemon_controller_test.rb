@@ -16,6 +16,29 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", "https://example.test/pokemon/143.png"
   end
 
+  test "index renders Johto rows alongside Kanto, ordered by dex" do
+    Pokemon.create!(dex: 152, name: "Chikorita", slug: "chikorita", types: %w[grass],
+                    hp: 45, attack: 49, defense: 65, special_attack: 49,
+                    special_defense: 65, speed: 45, generation: 2,
+                    avatar_url: "https://example.test/pokemon/152.png",
+                    sprite_url: "https://example.test/pokemon/152-sprite.png")
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal],
+                    hp: 160, attack: 110, defense: 65, special_attack: 65,
+                    special_defense: 110, speed: 30, generation: 1,
+                    avatar_url: "https://example.test/pokemon/143.png",
+                    sprite_url: "https://example.test/pokemon/143-sprite.png")
+
+    get pokemon_path
+
+    assert_response :success
+    assert_select "td", "Chikorita"
+    # Dex order puts Snorlax (#143) before Chikorita (#152) despite creation order.
+    body_names = css_select("[data-test=pokemon-list] td.font-medium").map(&:text)
+    assert_equal %w[Snorlax Chikorita], body_names
+    # The Gen column distinguishes the generations.
+    assert_select "[data-test=pokemon-list] td", "2"
+  end
+
   test "index offers a list/grid toggle with both views rendered" do
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal],
                     hp: 160, attack: 110, defense: 65, special_attack: 65,

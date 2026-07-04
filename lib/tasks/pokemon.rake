@@ -3,7 +3,7 @@
 # committed JSON this writes. Mirrors the headshot pattern in
 # db/seeds/32_headshot_links.rb (identity/URLs seeded; image bytes uploaded here).
 #
-#   rake pokemon:fetch           → pull the original 151 from PokéAPI into the JSON
+#   rake pokemon:fetch           → pull Gen 1–2 (dex 1–251) from PokéAPI into the JSON
 #   rake pokemon:upload_images   → mirror each Pokémon's avatars + sprites into S3
 #   rake pokemon:crop_and_upload → trim each avatar's transparent margin and
 #                                  upload the crop to <dex>-<slug>-cropped.png
@@ -11,14 +11,19 @@
 #                                  backup and is never overwritten or deleted)
 #
 # Both image tasks cover the normal AND shiny art (shiny keys carry a -shiny
-# infix); VARIANTS=shiny (or normal) narrows a run to one side.
+# infix); VARIANTS=shiny (or normal) narrows a run to one side. All three tasks
+# accept RANGE=<from>-<to> (e.g. RANGE=152-251) to work one dex slice — fetch
+# merges the slice into the existing JSON, so a Johto-only run never rewrites
+# (or churns) the committed Kanto rows.
 require "net/http"
 require "json"
 require "fileutils"
 
 namespace :pokemon do
   POKEAPI = "https://pokeapi.co/api/v2"
-  DEX_RANGE = (1..151)
+  DEX_RANGE = (1..251)
+  # Which generation each dex slice belongs to — written onto every fetched row.
+  GENERATION_RANGES = { 1 => (1..151), 2 => (152..251) }.freeze
   DATA_FILE = Rails.root.join("db/seeds/data/pokemon.json")
   # Deterministic-by-dex sources on the PokéAPI sprite CDN.
   SPRITE_CDN = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon".freeze
@@ -33,10 +38,11 @@ namespace :pokemon do
     "nidoran-f" => "Nidoran♀",
     "nidoran-m" => "Nidoran♂",
     "mr-mime"   => "Mr. Mime",
-    "farfetchd" => "Farfetch'd"
+    "farfetchd" => "Farfetch'd",
+    "ho-oh"     => "Ho-Oh"
   }.freeze
 
-  desc "Seed/refresh the 151 Pokémon rows + cache their primary types (idempotent; safe on QA/prod)"
+  desc "Seed/refresh the Pokémon rows + cache their primary types (idempotent; safe on QA/prod)"
   task seed: :environment do
     load Rails.root.join("db/seeds/56_pokemon.rb").to_s
     # Cache the identifying (least-common) type onto primary_type. Needs the
@@ -58,9 +64,11 @@ namespace :pokemon do
     puts "re-stamped #{count} task mascot(s) by session"
   end
 
-  desc "Pull the original 151 from PokéAPI into db/seeds/data/pokemon.json"
+  desc "Pull Gen 1–2 (dex 1–251) from PokéAPI into db/seeds/data/pokemon.json (RANGE=152-251 fetches one slice, merged into the existing file)"
   task fetch: :environment do
-    rows = DEX_RANGE.map do |dex|
+    range = dex_range
+    existing = File.exist?(DATA_FILE) ? JSON.parse(File.read(DATA_FILE)) : []
+    fetched = range.map do |dex|
       data = get_json("#{POKEAPI}/pokemon/#{dex}")
       slug = data.fetch("name")
       stats = data.fetch("stats").to_h { |s| [s.dig("stat", "name"), s.fetch("base_stat")] }
@@ -75,7 +83,7 @@ namespace :pokemon do
         "special_attack" => stats["special-attack"],
         "special_defense" => stats["special-defense"],
         "speed" => stats["speed"],
-        "generation" => 1,
+        "generation" => generation_for(dex),
         # Primary = the tightly-cropped avatar (rake pokemon:crop_and_upload);
         # fallback = the original uncropped official-artwork (rake pokemon:upload_images).
         "avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-cropped.png",
@@ -90,19 +98,24 @@ namespace :pokemon do
       warn "fetched ##{format('%03d', dex)} #{row['name']}"
       row
     end
+    # Merge the fetched slice into the file: rows outside the slice are kept
+    # verbatim, so a RANGE=152-251 run cannot churn the committed Kanto rows.
+    rows = (existing.reject { |row| range.cover?(row["dex"]) } + fetched).sort_by { |row| row["dex"] }
     File.write(DATA_FILE, "#{JSON.pretty_generate(rows)}\n")
-    puts "wrote #{rows.size} Pokémon → #{DATA_FILE}"
+    puts "wrote #{rows.size} Pokémon (fetched #{fetched.size}) → #{DATA_FILE}"
   end
 
-  desc "Mirror the 151 avatars (official-artwork + pixel sprite, normal + shiny) into S3"
+  desc "Mirror the avatars (official-artwork + pixel sprite, normal + shiny) into S3 (RANGE=152-251 narrows)"
   task upload_images: :environment do
     require "aws-sdk-s3"
     bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
     s3 = Aws::S3::Client.new(region: "us-east-2")
     variants = image_variants
+    range = dex_range
     # Slug-keyed for self-describing URLs (e.g. pokemon/73-tentacruel.png). Slugs
     # come from the committed JSON; the source images are still dex-keyed on the CDN.
-    JSON.parse(File.read(DATA_FILE)).each do |row|
+    rows = JSON.parse(File.read(DATA_FILE)).select { |row| range.cover?(row.fetch("dex")) }
+    rows.each do |row|
       dex = row.fetch("dex")
       slug = row.fetch("slug")
       if variants.include?("normal")
@@ -115,7 +128,7 @@ namespace :pokemon do
       end
       warn "uploaded ##{format('%03d', dex)} #{slug} (#{variants.join('+')})"
     end
-    puts "mirrored 151 Pokémon avatars (#{variants.join('+')}) → s3://#{bucket}/pokemon/"
+    puts "mirrored #{rows.size} Pokémon avatars (#{variants.join('+')}) → s3://#{bucket}/pokemon/"
   end
 
   # Tighten each avatar: download the ORIGINAL official-artwork from S3, trim its
@@ -132,12 +145,13 @@ namespace :pokemon do
     require "aws-sdk-s3"
     bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
     margin = ENV.fetch("CROP_MARGIN", "5%") # border added after the trim (≈ uniform 5%)
-    limit  = ENV["LIMIT"].to_i              # 0 = all 151; >0 crops only the first N
+    limit  = ENV["LIMIT"].to_i              # 0 = all; >0 crops only the first N
     cache  = Rails.root.join("tmp/pokemon_crops")
     FileUtils.mkdir_p(cache)
 
     s3 = Aws::S3::Client.new(region: "us-east-2")
-    rows = JSON.parse(File.read(DATA_FILE))
+    range = dex_range
+    rows = JSON.parse(File.read(DATA_FILE)).select { |row| range.cover?(row.fetch("dex")) }
     rows = rows.first(limit) if limit.positive?
 
     # "" = the normal art, "-shiny" = the shiny mirror; VARIANTS narrows a run.
@@ -185,6 +199,23 @@ namespace :pokemon do
 
   def get_json(url)
     JSON.parse(Net::HTTP.get(URI(url)))
+  end
+
+  # The dex slice a task works — RANGE=<from>-<to> (e.g. RANGE=152-251), the
+  # full 1–251 when unset.
+  def dex_range
+    spec = ENV["RANGE"].to_s.strip
+    return DEX_RANGE if spec.empty?
+
+    from, to = spec.split(/[-.]+/).map { |part| Integer(part) }
+    raise ArgumentError, "RANGE=#{spec} (want e.g. 152-251)" unless from&.positive? && to && to >= from
+
+    (from..to)
+  end
+
+  def generation_for(dex)
+    generation, = GENERATION_RANGES.find { |_, range| range.cover?(dex) }
+    generation || raise(ArgumentError, "dex #{dex} outside the known generation ranges")
   end
 
   # Which artwork variants an image task processes — VARIANTS=shiny (or
