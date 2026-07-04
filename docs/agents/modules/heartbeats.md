@@ -15,7 +15,7 @@ four ordered release actions, a themed glyph on the rest):
   descending):
   - **Avi** → `3️⃣ production-deploy` · `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Steffon** → `4️⃣ archive-completed` · `2️⃣ qa-deploy`
-  - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 propagate-insights` · `🌎 full-cycle`
+  - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
@@ -30,7 +30,7 @@ which is the learning loop and lives outside the release pipeline.
 |---|---|---|---|---|
 | **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `assembled` or `blocked` |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-completed`, `qa-deploy` | shipped work to archive / `assembled` on `release` | prior cycle `archived` (or no-op); then release **deployed to QA** |
-| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `propagate-insights`, `full-cycle` | spans to grade / confirmed insights to propagate / a full pipeline to run | 10 graded + banked; confirmed insights propagated; or the whole release `shipped` |
+| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | spans to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
 
 > **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
 > `bin/atomic-event heartbeat <soul>` (e.g. `bin/atomic-event heartbeat avi`) so
@@ -202,10 +202,10 @@ Start the release and deploy it to QA.
   on QA**). Report the QA URL, then hand off to Avi at **"deployed to QA."**
   **Does NOT ship to production** — stages 4–5 are Avi's.
 
-## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `propagate-insights` / `full-cycle`
+## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
 
 **Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
-events for the learning layer, propagate the CONFIRMED insights into the docs, and
+events for the learning layer, share the CONFIRMED insights out to every agent, and
 — with ship authority — run the whole DevOps cycle end to end. The distillation
 pipeline at [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) is the
 operator view of the first two: Actions (spans) → Insights (Alex grades) →
@@ -233,14 +233,15 @@ only what makes the next agent smarter.
   [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) page, where **Confirm**
   promotes an insight into column 3 as an `mcr` grade.)
 
-### Act 2 — `propagate-insights`
+### Act 2 — `share-insights`
 
 Take the insights Mr. McRitchie has **confirmed** (column 3 of the pipeline — the
-`mcr`-graded subset) and propagate them into the platform's docs, so every next
-agent starts with the confirmed lessons.
+`mcr`-graded subset) and share them out through the platform's docs, so every next
+agent starts with the confirmed lessons. (Renamed from `propagate-insights`: the
+act is named for its audience — the next agents — not the doc-write mechanics.)
 
 - **Precondition:** at least one confirmed insight (a `grader: "mcr"` `ActionGrade`).
-  None confirmed → report "nothing to propagate" and stop (idempotent no-op).
+  None confirmed → report "nothing to share" and stop (idempotent no-op).
 - **Steps:**
   1. Regenerate the tracked lessons doc from the confirmed insights (composes with
      the lever-3 generator — `bin/rails insights:doc`, scoped to the confirmed set).

@@ -1,6 +1,6 @@
 ---
 name: qa-release
-description: "The composable DevOps launchers — surfaced as the soul heartbeat acts on the /deployments Heartbeats card (any copyable row of each). Avi Heartbeat (acts, downstream-first: production-deploy = ship a QA-green release if one is ready (idempotent no-op otherwise), pr-review = review+merge ALL submitted PRs in waves <=5, pr-review-slow = the same serialized one PR at a time), Steffon Heartbeat (acts, downstream-first: archive-completed = bin/release archive the prior cycle (idempotent no-op otherwise), qa-deploy = bin/release prepare the new RC to QA), Alex Heartbeat (acts: grade-events = the learning loop, full-cycle = the FULL autonomous cycle review->assemble->QA->prod ship with full ship authority). Plus Deploy with Task <task> — expedite ONE task to prod, guarded on a clean release (release == main). Atoms: review-one (one-PR review + merge), pr-review / pr-review-slow, qa-deploy (bin/release prepare), production-deploy (bin/release ship), full-cycle (all three, ship-authority gated). When an agent RUNS a <Soul> Heartbeat its first action is `bin/atomic-event heartbeat <soul>` so every span self-attributes to that soul. The four legacy release chips (Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge Assemble Deploy) are RETIRED — their capability is now pr-review-slow (Avi) and full-cycle (Alex); still recognized as aliases. Invoke when the operator uses one of these phrases, clicks a heartbeat launcher, or asks to prepare/deploy the release. Thin launcher — the full model-agnostic SOP lives in devops-cycle-design.md §1.4 + heartbeats.md."
+description: "The composable DevOps launchers — surfaced as the soul heartbeat acts on the /deployments Heartbeats card (any copyable row of each). Avi Heartbeat (acts, downstream-first: production-deploy = ship a QA-green release if one is ready (idempotent no-op otherwise), pr-review = review+merge ALL submitted PRs in waves <=5, pr-review-slow = the same serialized one PR at a time), Steffon Heartbeat (acts, downstream-first: archive-completed = bin/release archive the prior cycle (idempotent no-op otherwise), qa-deploy = bin/release prepare the new RC to QA), Alex Heartbeat (acts: grade-events = the learning loop, share-insights = share the mcr-confirmed insights out via the regenerated lessons doc, full-cycle = the FULL autonomous cycle review->assemble->QA->prod ship with full ship authority). Plus Deploy with Task <task> — expedite ONE task to prod, guarded on a clean release (release == main). Atoms: review-one (one-PR review + merge), pr-review / pr-review-slow, qa-deploy (bin/release prepare), production-deploy (bin/release ship), full-cycle (all three, ship-authority gated). When an agent RUNS a <Soul> Heartbeat its first action is `bin/atomic-event heartbeat <soul>` so every span self-attributes to that soul. The four legacy release chips (Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge Assemble Deploy) are RETIRED — their capability is now pr-review-slow (Avi) and full-cycle (Alex); still recognized as aliases. Invoke when the operator uses one of these phrases, clicks a heartbeat launcher, or asks to prepare/deploy the release. Thin launcher — the full model-agnostic SOP lives in devops-cycle-design.md §1.4 + heartbeats.md."
 ---
 
 # Release Conductor Launcher
@@ -72,8 +72,11 @@ handoff:**
   NOT ship). Act **`archive-completed`**: `bin/release archive --yes` → shipped
   tasks + completed releases + merged worktrees archived (idempotent).
 - **`Alex Heartbeat`** — Alex. Act **`grade-events`**: grade the 10 most recent
-  resolved spans at `/alex/heartbeat`, bank the useful insights. (Learning loop —
-  outside the release pipeline.)
+  resolved spans at `/alex/heartbeat`, bank the useful insights. Act
+  **`share-insights`**: take the `mcr`-confirmed insights, regenerate the lessons
+  doc (`bin/rails insights:doc`) and distribute it, so every next agent starts
+  with the confirmed lessons; none confirmed → no-op. (Learning loop — outside
+  the release pipeline.)
 
 Load-bearing reminders (full detail in §1.4):
 - Run every command from `/Users/alex/projects/mcritchie-studio`; the board is

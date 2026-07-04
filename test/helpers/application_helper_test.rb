@@ -490,7 +490,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # action (production-deploy / archive-completed) before the new-work action.
     assert_equal ["production-deploy", "pr-review", "pr-review-slow"], launchers[0][:actions]
     assert_equal ["archive-completed", "qa-deploy"], launchers[1][:actions]
-    assert_equal ["grade-events", "propagate-insights", "full-cycle"], launchers[2][:actions]
+    assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
   end
 
@@ -536,7 +536,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "button[data-row='action'][data-clip='archive-completed'] [data-test='action-icon']", text: "4️⃣"
     assert_select "button[data-row='action'][data-clip='pr-review-slow'] [data-test='action-icon']", text: "🐢"
     assert_select "button[data-row='action'][data-clip='grade-events'] [data-test='action-icon']", text: "🧑🏻‍🏫"
-    assert_select "button[data-row='action'][data-clip='propagate-insights'] [data-test='action-icon']", text: "📡"
+    assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
     # One icon per act row: Avi 3 + Steffon 2 + Alex 3 = 8.
     assert_select "[data-test='action-icon']", count: 8
