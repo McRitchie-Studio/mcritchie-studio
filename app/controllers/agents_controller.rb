@@ -36,10 +36,10 @@ class AgentsController < ApplicationController
       basename = File.basename(file, ".md")
       [preferred.fetch(basename, 99), basename.downcase]
     end.map do |file|
-      basename = File.basename(file, ".md")
+      filename = File.basename(file)
       {
-        label: basename.downcase.tr("_-", " ").titleize,
-        path: "agents/#{doc_slug}/#{basename}"
+        label: filename,
+        path: "agents/#{doc_slug}/#{filename}"
       }
     end
   end

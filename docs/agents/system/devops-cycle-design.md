@@ -497,8 +497,11 @@ plus one or more **copyable action rows**, each with a leading icon (❤️ on t
 heartbeat row; `1️⃣`–`4️⃣` on the four ordered release actions, a themed glyph on the
 rest). **Any row**, pasted into a fresh session, is a **recognized launcher**. The
 5-stage release tracker stays in the **Next Release** card. Cross-soul SOP:
-[`heartbeats.md`](../modules/heartbeats.md). Avi's heartbeat SOP lives with Avi:
-[`HEARTBEAT.md`](../agents/avi/HEARTBEAT.md).
+[`heartbeats.md`](../modules/heartbeats.md). Per-soul heartbeat SOPs live with
+the souls:
+[`Avi`](../agents/avi/HEARTBEAT.md),
+[`Steffon`](../agents/steffon/HEARTBEAT.md), and
+[`Alex`](../agents/alex/HEARTBEAT.md).
 
 > **Sticky attribution.** The FIRST action of a `<Soul> Heartbeat` is
 > `bin/atomic-event heartbeat <soul>` — it sets a session-sticky acting-agent so

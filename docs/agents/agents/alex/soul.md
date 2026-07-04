@@ -66,6 +66,7 @@ McRitchie.
 
 ## Protocols I follow
 
+- [`HEARTBEAT.md`](HEARTBEAT.md) — Alex heartbeat learning loop and full-cycle SOP
 - [`git-protocol.md`](../../system/git-protocol.md) — for cross-agent coordination patterns
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — `pm_size` is mine; I size from business value, blind to spec details
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — I approve new lanes only after two real incidents

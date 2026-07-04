@@ -252,6 +252,8 @@ assigned that lane.
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Avi heartbeat SOP | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| Steffon heartbeat SOP | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| Alex heartbeat SOP | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |

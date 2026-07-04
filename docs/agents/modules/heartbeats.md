@@ -26,9 +26,10 @@ launchers** — wired into
 single release **atom** (see §1.4's atom table), except `alex` / `grade-events`,
 which is the learning loop and lives outside the release pipeline.
 
-Avi's action-level procedure lives with Avi at
-[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md); this page is the
-cross-soul map.
+Each soul's action-level procedure lives with that soul:
+[`Avi`](../agents/avi/HEARTBEAT.md),
+[`Steffon`](../agents/steffon/HEARTBEAT.md), and
+[`Alex`](../agents/alex/HEARTBEAT.md). This page is the cross-soul map.
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
@@ -70,9 +71,11 @@ session needs nothing else:
    <avi|steffon|alex>`.
 3. **Run the soul's acts downstream-first** from the mcritchie-studio primary
    checkout (the board is **prod** by default; pass `--yes` on the release verbs
-   the act owns). Avi's full SOP is
-   [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md); the other acts are
-   summarized in their numbered sections below.
+   the act owns). The full per-soul SOPs are
+   [`Avi`](../agents/avi/HEARTBEAT.md),
+   [`Steffon`](../agents/steffon/HEARTBEAT.md), and
+   [`Alex`](../agents/alex/HEARTBEAT.md); the numbered sections below summarize
+   them.
 
 The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 
@@ -255,6 +258,11 @@ The same as `pr-review`, but **serialized** — one PR at a time.
 
 ## 2. Steffon Heartbeat — `Steffon Heartbeat` / `archive-completed` / `qa-deploy`
 
+Canonical step-by-step SOP:
+[`../agents/steffon/HEARTBEAT.md`](../agents/steffon/HEARTBEAT.md). The summary
+below keeps the cross-soul page readable; Steffon's own heartbeat doc wins for
+Steffon mechanics.
+
 **Enter as Steffon.** Two acts, run **downstream-first**: archive the closed-out
 cycle, then take the new reviewed work through merge, QA, and the QA-green flip.
 Leading with the idempotent `archive-completed` closes out the previous cycle
@@ -308,6 +316,11 @@ deploy QA, and flip members `assembled` on QA-green — all one idempotent verb.
   **Does NOT ship to production** — stages 4–5 are Avi's.
 
 ## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
+
+Canonical step-by-step SOP:
+[`../agents/alex/HEARTBEAT.md`](../agents/alex/HEARTBEAT.md). The summary below
+keeps the cross-soul page readable; Alex's own heartbeat doc wins for Alex
+mechanics.
 
 **Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
 events for the learning layer, share the CONFIRMED insights out to every agent, and
