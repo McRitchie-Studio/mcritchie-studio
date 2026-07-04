@@ -58,7 +58,7 @@ lanes:
   - owner: Primary Reviewer
     lane: Review
     end_stage: reviewed
-    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task (most domain depth, usually the longest step) who spawns the LIGHT reviewer as its own sub-agent for a focused second pass, then on two approvals drives the task to Reviewed AND runs the merge. Avi is a thin delegation pre-step: he confirms product-acceptance and picks the pair, then hands the lane to the primary."
+    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task (most domain depth, usually the longest step) who spawns the LIGHT reviewer as its own sub-agent for a focused second pass, then on two approvals drives the task to Reviewed — review-only; the merge belongs to Steffon's sweep. Avi is a thin delegation pre-step: he confirms product-acceptance and picks the pair, then hands the lane to the primary."
     steps:
       - type: pulse
         label: Reviewers on it
@@ -72,33 +72,29 @@ lanes:
         label: Visual
         expectation: "The PRIMARY runs the deep pass (diff-vs-acceptance, code standards, smell, scalability) and spawns the LIGHT reviewer as its own sub-agent for a focused pass."
         gate: 2 approvals (primary + light), else block with qa_feedback
-      - type: merge
-        label: Release Branch
-        expectation: "The PRIMARY reviewer runs bin/release merge to land the PR in the persistent release branch; membership flips reviewed to assembled. The primary owns the merge — not a separate conductor step."
-        gate: deterministic; a conflict surfaces here
-      - type: test
-        label: Merge Review
-        expectation: "Confirm the merge is clean on origin/release (integrating broke nothing)."
-        gate: green on origin/release
       - type: stage_update
         label: Reviewed
         stage: reviewed
-        expectation: "The PRIMARY reviewer drives the status to Reviewed, then runs the merge."
+        expectation: "The PRIMARY reviewer drives the status to Reviewed and stops — review-only; Steffon's self-healing sweep owns the merge."
         gate: 2 approvals (primary + light)
 
   - owner: Steffon
     lane: Assemble
     end_stage: assembled
-    owner_note: "Platform Engineer. Owns from Reviewed: checks in, runs the QA tier and deploys, updates the status to Assembled. This lane IS the execution of 'assembling'."
+    owner_note: "Platform Engineer. Owns the whole middle from Reviewed: the self-healing sweep merges the reviewed queue (+ assembled stragglers) onto release, gates it, deploys QA, and flips members to Assembled on QA-green. This lane IS the execution of 'assembling' — idempotent, crash-recoverable via the merged column."
     steps:
       - type: pulse
         label: Steffon on it
         expectation: "Live intent: bin/release prepare records Steffon's QA intent over every release member."
         gate: "—"
+      - type: merge
+        label: Release Branch
+        expectation: "The self-healing sweep (bin/release prepare, looping the bin/release merge primitive) lands every reviewed task's PR in the persistent release branch and stamps merged: release — stages stay Reviewed until QA-green. A task already merged: release/main skips the gh merge (crash recovery)."
+        gate: "review gate (only reviewed/assembled sweep); a conflict surfaces here — block-and-move, the rest ride"
       - type: test
         label: Merge Review
-        expectation: "Run the next tier (integration + an e2e-smoke) on origin/release."
-        gate: regression blocks the task
+        expectation: "Pre-QA gate: run the next tier (integration + an e2e-smoke, registry qa_test_cmd) on origin/release BEFORE deploying."
+        gate: "regression ejects the offender (bin/release eject) — the rest of the RC rides the re-run"
       - type: merge
         label: Main Branch
         expectation: "Merge-forward guard: if main moved ahead, merge main into release so release always keeps main as an ancestor (stays shippable). Main itself does NOT move here — it advances only at ship, when release fast-forwards into main."
@@ -114,7 +110,7 @@ lanes:
       - type: stage_update
         label: Assembled
         stage: assembled
-        expectation: "Steffon updates the status to Assembled: the QA candidate is ready."
+        expectation: "QA-green flips the swept members Reviewed → Assembled (merged stays release) and the RC to Assembled; a QA failure flips nothing — the next run self-heals."
         gate: QA booted and suite green
 
   - owner: Avi
@@ -136,7 +132,7 @@ lanes:
         gate: "—"
       - type: deploy
         label: Prod
-        expectation: "Fast-forward release to main per repo, deploy, smoke /up, run post_deploy_cmd."
+        expectation: "Fast-forward release to main per repo (stamping members merged: main as each ff lands), deploy, smoke /up, run post_deploy_cmd."
         gate: "qa-deploy stops here at QA; production-deploy (or the Alex full-cycle) grants ship authority after Avi's tests"
       - type: stage_update
         label: Shipped
