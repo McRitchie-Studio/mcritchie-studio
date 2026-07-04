@@ -29,4 +29,10 @@
       Not
     </label>
   </span>
+  <button type="button" class="hb-gradeclear <%= "is-visible" if grade.present? %>"
+          data-test="event-grade-clear" title="Clear feedback"
+          aria-label="Clear <%= grader == "mcr" ? "McRitchie" : "Alex" %> feedback"
+          :class="{ 'is-visible': !!grades.<%= grader %> }"
+          :disabled="!grades.<%= grader %>"
+          @click.stop="clearGrade($event)">&times;</button>
 </form>

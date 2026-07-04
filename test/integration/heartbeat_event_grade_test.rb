@@ -82,6 +82,40 @@ class HeartbeatEventGradeTest < ActionDispatch::IntegrationTest
     assert_not_includes ActionGrade.banked, grade
   end
 
+  test "[integration] clearing a span grade removes the existing grader row" do
+    e = span
+    ActionGrade.create!(atomic_event: e, grader: "alex", disposition: "good",
+                        slug: "clean span with a crisp outcome")
+
+    assert_difference -> { ActionGrade.count }, -1 do
+      post heartbeat_event_grade_path(e),
+           params: { grader: "alex", intent: "clear" },
+           as: :json
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal true, body["cleared"]
+    assert_equal "alex", body["grader"]
+    assert_equal e.id, body["atomic_event_id"]
+    assert_nil grade_for(e, "alex")
+  end
+
+  test "[integration] clearing a missing span grade is a no-op" do
+    e = span
+
+    assert_no_difference -> { ActionGrade.count } do
+      post heartbeat_event_grade_path(e),
+           params: { grader: "mcr", intent: "clear" },
+           as: :json
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal true, body["cleared"]
+    assert_equal "mcr", body["grader"]
+  end
+
   test "[integration] the McRitchie audit is a second grade row on the same span" do
     e = span
 

@@ -38,7 +38,7 @@
   #alex-heartbeat .hb-actor { font-size:10px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.4px; cursor:help; }
   #alex-heartbeat .hb-stage-cell { cursor:help; }
   #alex-heartbeat .hb-chip { font-size:10px; font-weight:700; border-radius:5px; padding:1px 7px; border:1px solid currentColor; text-transform:uppercase; letter-spacing:.4px; cursor:help; }
-  #alex-heartbeat .hb-outcome { font-size:9.5px; font-weight:700; letter-spacing:.5px; padding:1px 7px; border-radius:5px; border:1px solid currentColor; text-transform:uppercase; }
+  #alex-heartbeat .hb-outcome { font-size:8.5px; font-weight:700; letter-spacing:.4px; line-height:1; padding:2px 5px; border-radius:4px; border:1px solid currentColor; text-transform:uppercase; }
 
   #alex-heartbeat tr.hb-grouphead td { background:var(--hb-panel); border-bottom:1px solid var(--hb-line); padding:8px 10px; cursor:pointer; position:sticky; top:31px; z-index:2; }
   #alex-heartbeat tr.hb-grouphead:hover td { background:var(--hb-panel2); }
@@ -85,11 +85,14 @@
   /* Agent cell stays LEFT-justified: cluster flush-left, name snug beside the avatar. */
   #alex-heartbeat .hb-agentstack { justify-content:flex-start; }
   #alex-heartbeat .hb-names { align-items:flex-start; }
-  /* Status / Actions / Task merged into one stacked cell to save horizontal space. */
+  /* Command / fallback status / task merged into one stacked cell to save horizontal space. */
   #alex-heartbeat .hb-sat { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
   #alex-heartbeat .hb-satline { display:flex; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-satcmd { min-height:22px; max-width:340px; display:flex; align-items:center; }
+  #alex-heartbeat .hb-satcmd .hb-keycode { max-width:240px; }
   #alex-heartbeat .hb-bullet { color:var(--hb-muted); font-size:10.5px; line-height:1; }
   #alex-heartbeat .hb-outcome-badge { display:inline-flex; align-items:center; }
+  #alex-heartbeat .hb-outcome-badge .badge { font-size:8.5px; line-height:1; padding:2px 5px; border-radius:4px; }
   #alex-heartbeat .hb-clickrow { cursor:pointer; }
   #alex-heartbeat .hb-taskcell { color:var(--hb-muted); font-size:10.5px; }
   #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
@@ -97,6 +100,9 @@
      span cell stays narrow instead of running reason and outcome across one wide row. */
   #alex-heartbeat .hb-narr { min-width:220px; }
   #alex-heartbeat .hb-narrline { display:block; }
+  #alex-heartbeat .hb-span-title { display:flex; align-items:center; flex-wrap:wrap; gap:6px; width:fit-content; max-width:100%; cursor:pointer; }
+  #alex-heartbeat .hb-inline-actions { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; white-space:nowrap; }
+  #alex-heartbeat .hb-inline-status { display:inline-flex; align-items:center; }
   #alex-heartbeat .hb-narr-result { margin-top:2px; }
   /* Merged Model / Tokens column — model on top, the compact in/out tokens beneath. */
   #alex-heartbeat .hb-modeltok .hb-mt-model { display:block; }
@@ -130,8 +136,13 @@
   #alex-heartbeat tr.hb-subrow.hb-subempty { cursor:default; }
   #alex-heartbeat tr.hb-subrow.hb-subempty td { color:var(--hb-faint); font-style:italic; }
   #alex-heartbeat .hb-kind { color:var(--hb-txt); }
+  #alex-heartbeat .hb-kindline { display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-subseq { color:var(--hb-faint); }
+  #alex-heartbeat tr.hb-subrow td.hb-subseq-gutter { padding-left:10px; }
+  #alex-heartbeat .hb-subnarr { display:flex; flex-direction:column; gap:3px; }
+  #alex-heartbeat .hb-subtitle { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
   #alex-heartbeat .hb-subslug { color:var(--hb-txt); }
-  #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:8px; }
+  #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:0; }
   #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
 
   /* Key-method chip — [lang badge | code | copy]. The one load-bearing call of a
@@ -146,8 +157,9 @@
   #alex-heartbeat .hb-keycode { padding:1px 7px; font-size:10.5px; color:var(--hb-txt); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #alex-heartbeat .hb-keycopy { border:0; border-left:1px solid var(--hb-line); background:transparent; color:var(--hb-muted); cursor:pointer; padding:0 7px; font-size:10.5px; line-height:1; }
   #alex-heartbeat .hb-keycopy:hover { color:var(--hb-accent); background:var(--hb-panel2); }
-  /* An action's goal summary — shown in place of the idle grade hint. */
-  #alex-heartbeat .hb-subsum { color:var(--hb-muted); font-size:11px; font-style:normal; }
+  /* An action's goal summary — shown under its command chip in the command/task cell. */
+  #alex-heartbeat .hb-action-summary { color:var(--hb-muted); font-size:11px; font-style:normal; }
+  #alex-heartbeat .hb-gradehint .hb-taskcell { color:var(--hb-muted); font-style:normal; }
 
   #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
   #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
@@ -174,6 +186,9 @@
   #alex-heartbeat .hb-rb.on-good input { accent-color:var(--hb-good); }
   #alex-heartbeat .hb-rb.on-not { color:var(--hb-not); border-color:var(--hb-not); }
   #alex-heartbeat .hb-rb.on-not input { accent-color:var(--hb-not); }
+  #alex-heartbeat .hb-gradeclear { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; flex:0 0 14px; padding:0; border:1px solid var(--hb-line); border-radius:50%; background:transparent; color:var(--hb-faint); font-size:10px; line-height:1; opacity:0; pointer-events:none; cursor:pointer; }
+  #alex-heartbeat .hb-gradeclear.is-visible { opacity:1; pointer-events:auto; }
+  #alex-heartbeat .hb-gradeclear.is-visible:hover { border-color:var(--hb-accent); color:var(--hb-txt); background:var(--hb-panel2); }
   #alex-heartbeat .hb-fbslugwrap { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
   #alex-heartbeat .hb-fbslug { font-weight:600; font-size:12px; }
   #alex-heartbeat .hb-addfb { color:var(--hb-faint); font-size:11.5px; font-style:italic; }
@@ -181,11 +196,13 @@
   #alex-heartbeat .hb-bankmark { color:var(--hb-bank); }
   #alex-heartbeat .hb-discardmark { color:var(--hb-faint); }
 
-  /* Span-grade affordance on the event row — the "grade" button plus each grader's
-     live marker (a disposition dot + slug), and the span-grading drawer's saved chip. */
-  #alex-heartbeat .hb-evtfbcell { white-space:nowrap; }
+  /* Span quick-grade affordance on the event row — each grader's live marker
+     (a disposition dot + slug) beside the row-level raw-action expand target. */
+  #alex-heartbeat .hb-evtfbcell { white-space:normal; min-width:150px; }
+  #alex-heartbeat .hb-evtfbstack { display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
   #alex-heartbeat .hb-gradebtn { padding:4px 9px; font-size:11px; }
   #alex-heartbeat .hb-evtmarks { display:inline-flex; flex-direction:column; gap:3px; margin-top:5px; }
+  #alex-heartbeat .hb-evtmarkslot { display:flex; align-items:center; min-height:17px; max-width:100%; }
   #alex-heartbeat .hb-evtmark { display:inline-flex; align-items:center; gap:5px; font-size:11px; }
   #alex-heartbeat .hb-evtmark-role { font-size:9px; font-weight:700; color:var(--hb-faint); letter-spacing:.4px; width:9px; }
   #alex-heartbeat .hb-evtdot { width:7px; height:7px; border-radius:50%; background:var(--hb-faint); flex:0 0 auto; }

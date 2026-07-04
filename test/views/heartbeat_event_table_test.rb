@@ -32,8 +32,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select ".hb-catchip", text: "Explore"
     assert_includes rendered, "find issue with api"
     assert_includes rendered, "found the nil-guard"
-    # the count of attributed actions
-    assert_select "[data-test=event-action-count]", text: "2 actions"
+    # the count of attributed actions now lives in the title line.
+    assert_select "[data-test=event-inline-action-count]", text: "2 actions"
   end
 
   test "[component] an open span (no outcome) renders the in-progress placeholder" do
@@ -57,9 +57,14 @@ class HeartbeatEventTableTest < ActionView::TestCase
            locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "tr[data-test=heartbeat-event-action]", 1
-    assert_select "tr[data-test=heartbeat-event-action] .hb-kind", text: "grep"
+    assert_select "tr[data-test=heartbeat-event-action] .hb-kind", text: /#0\s+grep/
     assert_includes rendered, "Grep the seam"
+    assert_select "tr[data-test=heartbeat-event-action] .hb-subnarr [data-test=action-outcome]",
+                  text: "ok"
+    assert_select "tr[data-test=heartbeat-event-action] .hb-sat [data-test=action-outcome]", false
     # the raw tool-call input surfaces in the drill-down
+    assert_select "tr[data-test=heartbeat-event-action] .hb-subnarr .hb-subinput",
+                  text: "grep -rn AtomicEvent app/models"
     assert_includes rendered, "grep -rn AtomicEvent app/models"
   end
 
@@ -140,8 +145,10 @@ class HeartbeatEventTableTest < ActionView::TestCase
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # both live in the narration cell as separate block lines (reason over result)
-    assert_select "td.hb-narr .hb-narrline.hb-slug", text: "find issue with api"
+    # The title line carries the reason plus compact inline metadata.
+    assert_select "td.hb-narr [data-test=event-reason]", text: "find issue with api"
+    assert_select "td.hb-narr [data-test=event-inline-action-count]", text: "0 actions"
+    assert_select "td.hb-narr [data-test=event-inline-status] .hb-outcome", text: "done"
     assert_select "td.hb-narr .hb-narrline.hb-narr-result", text: /found the nil-guard/
   end
 
@@ -157,6 +164,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[name=disposition][value=good]"
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[name=disposition][value=not]"
     assert_select "form[data-test=event-inline-grade][data-grader=mcr] input[type=hidden][name=grader][value=mcr]"
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] button[data-test=event-grade-clear]", 1
+    assert_select "form[data-test=event-inline-grade][data-grader=mcr] button[data-test=event-grade-clear]", 1
   end
 
   test "[component] the two graders' quick-grades sit in SEPARATE Alex + McRitchie cells, no grade button" do
@@ -167,6 +176,10 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     # Grade split into two columns: an Alex cell and a McRitchie audit cell, each holding
     # ONLY its own grader's inline quick-grade form (not one shared, side-by-side row).
+    assert_select "td[data-test=event-grade-cell] .hb-evtfbstack", 1
+    assert_select "td[data-test=event-grade-cell-mcr] .hb-evtfbstack", 1
+    assert_select "td[data-test=event-grade-cell] .hb-evtmarkslot", 1
+    assert_select "td[data-test=event-grade-cell-mcr] .hb-evtmarkslot", 1
     assert_select "td[data-test=event-grade-cell] form[data-test=event-inline-grade][data-grader=alex]", 1
     assert_select "td[data-test=event-grade-cell] form[data-grader=mcr]", false
     assert_select "td[data-test=event-grade-cell-mcr] form[data-test=event-inline-grade][data-grader=mcr]", 1
@@ -188,6 +201,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=good][checked]"
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=not][checked]", false
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] button[data-test=event-grade-clear].is-visible", 1
   end
 
   test "[component] the span row shows a distinct open vs done status badge" do
@@ -201,15 +215,16 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "[data-test=event-status]", text: "done"
   end
 
-  test "[component] the status line separates the badge and the action count with a bullet" do
+  test "[component] the command column stays reserved when a span has no key method" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "green")
     a1 = action(atomic_event_id: ev.id, seq: 0)
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select ".hb-satline .hb-bullet"
-    assert_select "[data-test=event-action-count]", text: "1 action"
+    assert_select ".hb-sat [data-test=event-key-method]", text: ""
+    assert_select ".hb-sat [data-test=event-action-count]", false
+    assert_select "[data-test=event-inline-action-count]", text: "1 action"
   end
 
   test "[component] a stage-change span badges as its target stage using the board pill" do
@@ -244,15 +259,16 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "[data-test=event-status][data-stage]", false
   end
 
-  test "[component] the span row itself opens the span-grade drawer on click (no separate grade button)" do
+  test "[component] the span row itself expands raw actions on click" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # the whole event row is the clickable affordance into the span-grade drawer
+    # the whole event row is the clickable affordance into its raw action drill-down
     assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]", 1
-    assert_includes rendered, heartbeat_event_feedback_path(ev)
+    assert_includes rendered, '@click="open = !open"'
+    assert_not_includes rendered, heartbeat_event_feedback_path(ev)
     # the old dedicated "grade ▸" button was removed
     assert_select "[data-test=event-grade-open]", false
   end
@@ -402,14 +418,16 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
   end
 
-  test "[component] a span's key method renders as a copyable chip with a lang badge" do
+  test "[component] a span's key method replaces the right status/action line" do
     closed = event(outcome_slug: "seam found", closed_at: Time.current,
                    key_method: "AtomicAction.capture(session_id:)", key_method_lang: "ruby")
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[closed, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select "[data-test=event-key-method] [data-test=key-method-chip][data-lang=ruby]", count: 1
+    assert_select "td.hb-narr [data-test=event-key-method]", false
+    assert_select ".hb-sat [data-test=event-key-method] [data-test=key-method-chip][data-lang=ruby]", count: 1
+    assert_select ".hb-sat [data-test=event-action-count]", false
     assert_select "[data-test=key-method-chip] [data-test=key-method-lang]", text: "ruby"
     assert_select "[data-test=key-method-chip] [data-test=key-method-code]", text: "AtomicAction.capture(session_id:)"
     # The copy button carries the full call as its clip payload (Alpine renders the glyph).
@@ -421,6 +439,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
     closed = event(outcome_slug: "done", closed_at: Time.current)
     with = action(atomic_event_id: closed.id, seq: 0, kind: "bash",
                   summary: "list board tasks to find slugs",
+                  task_slug: "inline-span-badges",
                   key_method: "bin/task list | head -60", key_method_lang: "bash")
     bare = action(atomic_event_id: closed.id, seq: 1, kind: "read")
 
@@ -429,9 +448,12 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     assert_select "tr[data-test=heartbeat-event-action] [data-test=action-key-method] " \
                   "[data-test=key-method-chip][data-lang=bash]", count: 1
-    assert_select "tr[data-test=heartbeat-event-action] [data-test=action-summary]",
+    assert_select "tr[data-test=heartbeat-event-action] .hb-sat [data-test=action-summary]",
                   text: "list board tasks to find slugs", count: 1
-    # The bare action keeps the idle grade hint and no chip.
-    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint", text: /click to grade/, count: 1
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint [data-test=action-task-slug]",
+                  text: "inline-span-badges", count: 1
+    # The bare action keeps the task slot as a dash and no chip.
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint [data-test=action-task-slug]",
+                  text: "—", count: 1
   end
 end
