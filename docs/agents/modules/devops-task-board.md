@@ -376,7 +376,7 @@ Use the decision recommendations conservatively:
 - `conductor-review` means the task needs Avi's direct review because it is
   high-risk, multi-repo, missing local intake, or lacks enough scout signal.
 - `merge-ready` means scout evidence and qa-intake are aligned; Avi still
-  performs the final PR review before merging.
+  performs the final PR review before moving the task to `reviewed`.
 
 1. Find `submitted` tasks with PR URLs or branches.
 2. Confirm acceptance criteria match the PR body and diff.
@@ -384,9 +384,9 @@ Use the decision recommendations conservatively:
    against prod on ship. Reject a bare `db:seed`; require a narrow, idempotent
    command (`bin/dor-check` enforces this, but read it yourself).
 4. Check `risk_tags` for Steffon/infra gate needs.
-5. Merge only ready PRs.
-6. Merge approved PRs into `release`, then deploy `origin/release` to QA.
-7. Move the task to `assembled` with QA URL, QA release SHA, and `checks_run`.
+5. Move only approved PRs to `reviewed`; do not merge during review.
+6. Let Steffon's `qa-deploy` sweep merge reviewed PRs into `release` and deploy QA.
+7. Let the sweep move QA-green tasks to `assembled` with QA URL, release SHA, and `checks_run`.
 8. Leave production ship gated until Mr. McRitchie explicitly approves release work.
 
 If the PR is not ready, Avi leaves `qa_feedback` on the task conversation with

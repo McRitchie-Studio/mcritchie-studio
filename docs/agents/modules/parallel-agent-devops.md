@@ -27,11 +27,11 @@ release conductor handles production effects.
    against prod on ship, so a bare `db:seed` (loads all of `db/seeds.rb` →
    demo data + a non-idempotent abort) must be rejected for a narrow, idempotent
    command; `bin/dor-check` enforces this, but read the metadata yourself.
-   Avi classifies check failures by lane before deciding whether to merge,
-   wait, or send `qa_feedback`.
-3. **Assemble + QA: `reviewed → assembled`** — After merging approved PRs into
-   the persistent `release` branch, Avi deploys `origin/release` to the QA app
-   and records QA URL, deployed SHA, release slug, and QA checks in
+   Avi classifies check failures by lane before deciding whether to move the
+   task to `reviewed`, wait, or send `qa_feedback`.
+3. **Assemble + QA: `reviewed → assembled`** — Steffon's `qa-deploy` sweep merges
+   reviewed PRs into the persistent `release` branch, deploys `origin/release` to
+   the QA app, and records QA URL, deployed SHA, release slug, and QA checks in
    `checks_run`.
 4. **Ship: `assembled → shipped`** — Release conductor promotes only accepted
    QA work after explicit approval. Production smoke results, production URL,
@@ -42,8 +42,8 @@ release conductor handles production effects.
 | Lane | Owner | Purpose | May push branch | May merge → `release` | May deploy/publish |
 |------|-------|---------|-----------------|-----------------------|--------------------|
 | Feature | Task agent | Build scoped work in an isolated worktree | Yes, own branch only | No | No |
-| QA / Integration | Avi | Review PRs, prevent dropped code, merge approved work | Yes, review/fix branches when needed | Yes | No, unless explicitly acting as release conductor |
-| Quality / Infra Gate | Steffon | Validate risky PRs, CI, deploy readiness, provider infra | Yes, review/fix branches when needed | No, unless delegated by Avi | No, unless release conductor |
+| QA / Integration | Avi | Review PRs and prevent dropped code | Yes, review/fix branches when needed | No | No, unless explicitly acting as release conductor |
+| Quality / Infra Gate | Steffon | Validate risky PRs, merge reviewed work, QA deploy readiness, provider infra | Yes, review/fix branches when needed | Yes, through `qa-deploy` | QA only, unless release conductor |
 | Release | Designated conductor | Gem publish, app deploy, production verification | Yes | Yes | Yes, with explicit approval |
 
 Approved work merges into the **persistent per-repo `release` branch**, not
@@ -349,7 +349,8 @@ and structured scout report outcomes into conservative Avi recommendations:
 
 The decision summary is a queue accelerator, not an authority transfer. Avi
 still reviews the underlying PR, decides whether the report is sufficient, and
-performs any merge, QA deploy, or feedback action.
+performs any review-stage move or feedback action. Steffon's `qa-deploy` sweep
+owns merge plus QA deploy.
 
 Use `bin/devops-cycle --scout-packets` when the conductor wants to hand
 review-only work to additional sessions. Scout packets are copy-paste prompts
@@ -458,7 +459,7 @@ Status labels mean:
 
 Action lines mean:
 
-- `Avi can review...`: review diff, evidence, overlap, then merge or comment.
+- `Avi can review...`: review diff, evidence, overlap, then move to `reviewed` or comment.
 - `return to the feature agent...`: do not merge; the branch owner needs to
   resolve local blockers.
 - `rebase or repair...`: merge state is unsafe; fix branch freshness/conflicts
