@@ -462,7 +462,7 @@ module ApplicationHelper
     [
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow"], label: "Ship + review", title: "Avi — ship a ready release, then review + merge new PRs" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-completed", "qa-deploy"],                  label: "Archive + QA",  title: "Steffon — archive the closed-out cycle, then QA the new release" },
-      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "propagate-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, propagate insights, + full DevOps cycle heartbeat" }
+      { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" }
     ]
   end
 
@@ -478,7 +478,7 @@ module ApplicationHelper
     "qa-deploy"         => "Prepare + deploy to QA (release stages 1–3)",
     "archive-completed" => "Archive completed tasks + releases",
     "grade-events"      => "Grade 10 recent events for quality",
-    "propagate-insights" => "Propagate confirmed insights into the docs",
+    "share-insights"    => "Share confirmed insights into the docs",
     "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod"
   }.freeze
 
@@ -498,7 +498,7 @@ module ApplicationHelper
     "archive-completed" => "4️⃣",
     "pr-review-slow"    => "🐢",
     "grade-events"      => "🧑🏻‍🏫",
-    "propagate-insights" => "📡",
+    "share-insights"    => "📡",
     "full-cycle"        => "🌎"
   }.freeze
 
