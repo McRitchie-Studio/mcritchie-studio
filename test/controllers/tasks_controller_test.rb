@@ -267,6 +267,30 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       count: 1
   end
 
+  test "[component] deployments board links to the Alex pipeline and insights" do
+    get deployments_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board sections"] a[href="#{alex_pipeline_path}"]),
+      text: "Pipeline",
+      count: 1
+    assert_select %(nav[aria-label="Board sections"] a[href="#{alex_insights_path}"]),
+      text: "Insights",
+      count: 1
+  end
+
+  test "[component] pipeline and insights links stay off the other board surfaces" do
+    # The OPSD surfaces belong to the Deploy lane; tasks + stages keep the
+    # shorter nav.
+    [tasks_path, stages_path].each do |path|
+      get path
+      assert_response :success
+      assert_select %(nav[aria-label="Board sections"] a[href="#{alex_pipeline_path}"]), { count: 0 },
+        "expected no Pipeline link on #{path}"
+      assert_select %(nav[aria-label="Board sections"] a[href="#{alex_insights_path}"]), { count: 0 },
+        "expected no Insights link on #{path}"
+    end
+  end
+
   test "[component] the Alex Heartbeat link rides every board surface" do
     # _board_top_links is shared, so the shortcut shows on tasks + stages too.
     [tasks_path, stages_path].each do |path|
