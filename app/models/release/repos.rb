@@ -71,6 +71,15 @@ class Release
       app_meta(repo)&.fetch("test_cmd", nil)
     end
 
+    # Steffon's pre-QA gate command (registry `qa_test_cmd`) — the integration
+    # tier `bin/release prepare` runs on origin/release BEFORE any QA deploy —
+    # or nil when unset (the repo self-gates at ship / its own deploy; the gate
+    # skips it). Registered apps carry the integration SUBSET, never the full
+    # suite — see the WHAT-to-register note in config/release_repos.yml.
+    def qa_test_cmd(repo)
+      app_meta(repo)&.fetch("qa_test_cmd", nil)
+    end
+
     # The qa-server key for an app — its optional `qa_deploy.app` override, else
     # the repo slug. Always returns a string for any repo (qa targets are keyed
     # by slug by default), so callers don't special-case the common case.
