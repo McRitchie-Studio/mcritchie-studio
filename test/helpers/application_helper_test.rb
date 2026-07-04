@@ -493,6 +493,9 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal ["archive-shipped", "qa-release"], launchers[1][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
+    # review-only contract (2026-07-03): Avi's tooltip must not claim the merge —
+    # pr-review stops at reviewed; Steffon's sweep merges.
+    refute_match(/merge/i, launchers[0][:title], "Avi's tooltip must not claim review + merge")
   end
 
   test "[component] _heartbeats_card renders the three soul heartbeat launchers in a 3-up grid" do
@@ -593,7 +596,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[unit] action_description maps the known acts to their captions" do
-    assert_equal "Review + merge all submitted PRs", action_description("pr-review")
+    assert_equal "Review all submitted PRs (review-only — Steffon sweeps)", action_description("pr-review")
     assert_equal "Review submitted PRs one at a time", action_description("pr-review-slow")
     assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
     assert_equal "Prepare + deploy the QA release", action_description("qa-release")
