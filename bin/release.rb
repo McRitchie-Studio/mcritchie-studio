@@ -1933,6 +1933,15 @@ end
 # (offenders + message) lives in Release::ShipSequence; this owns only the git
 # reads. A dry-run prints the plan and runs NO git (so a preview never aborts on a
 # legitimately-dirty dev sibling).
+#
+# AUTO-CLEAN (feedback_ship_preflight_dirty_primary): the ONE dirty case that is
+# safe to fix automatically is a primary ON `main` whose dirt is ALL already on
+# origin/release — the merge noise `bin/release merge` re-stages every ship. That
+# is redundant (release is what the ff advances main to), so the preflight resets
+# it to origin/main instead of aborting. Everything else — an off-main branch, or
+# ANY dirty file NOT already on release — still BLOCKS the ship (never discard
+# local work). The reconcile/reset git I/O are seams (reconcile_offender /
+# autoclean_primary!); the safe-or-refuse verdict is pure (ShipSequence).
 
 # The current branch + dirty-file list for a checkout (live git reads). Split out
 # as the I/O seam ship_preflight calls per app repo (stubbed in tests).
@@ -1941,6 +1950,62 @@ def repo_git_state(repo, path)
   status, = git_capture("-C", path, "status", "--porcelain")
   files = status.to_s.lines.map { |l| l[3..].to_s.strip }.reject(&:empty?)
   { "repo" => repo, "branch" => branch.to_s.strip, "dirty" => files.any?, "dirty_files" => files }
+end
+
+# Augment a dirty ON-MAIN offender with the release-reconciliation facts the pure
+# auto-clean decision (Release::ShipSequence.autocleanable?) needs. The I/O seam
+# ship_preflight calls per offender (stubbed in tests); an off-main or non-dirty
+# offender is returned untouched (never auto-cleanable, so no git is consulted).
+#   * main_ancestor_of_release — origin/main is an ancestor of origin/release, so a
+#     reset to origin/main drops no merged history.
+#   * unreconciled_files — the dirty files whose content is NOT already on
+#     origin/release (would be LOST by a reset). Empty ⇒ nothing local is lost.
+def reconcile_offender(offender)
+  return offender unless (offender["on_main"] || offender[:on_main]) && (offender["dirty"] || offender[:dirty])
+
+  path = repo_path(offender["repo"] || offender[:repo])
+  _, ancestor = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/release", capture: true)
+  files = Array(offender["dirty_files"] || offender[:dirty_files])
+  unreconciled = files.reject { |file| file_on_release?(path, file) }
+  offender.merge(
+    "reconcile_checked" => true,
+    "main_ancestor_of_release" => ancestor,
+    "unreconciled_files" => unreconciled
+  )
+end
+
+# True when `path`'s WORKING-TREE content of `file` is byte-identical to
+# origin/release's version — the safety test for auto-clean (nothing local is
+# lost). Compares git blob hashes, so an untracked-but-identical file reconciles
+# while a genuinely-new untracked file does not (its blob isn't on release). A file
+# that is UNTRACKED (a `git reset --hard` can't clear it), MISSING (a local delete
+# is a change not on release), or absent on release is NOT reconciled → refuse.
+def file_on_release?(path, file)
+  _, tracked = sh("git", "-C", path, "ls-files", "--error-unmatch", "--", file, capture: true)
+  return false unless tracked
+  return false unless File.exist?(File.join(path, file))
+
+  worktree, wt_ok  = sh("git", "-C", path, "hash-object", "--", file, capture: true)
+  release,  rel_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/release:#{file}", capture: true)
+  wt_ok && rel_ok && !release.strip.empty? && worktree.strip == release.strip
+end
+
+# Auto-clean a release-identical dirty primary: `git reset --hard origin/main`
+# returns it to a clean committed `main` (the ship's own ff then advances it to the
+# frozen SHA). SAFE by construction — the pure decision already confirmed every
+# dirty file's content is on origin/release, so nothing local is lost. LOUD: names
+# the repo and the discarded redundant files. The I/O seam (stubbed in tests).
+def autoclean_primary!(offender)
+  repo = offender["repo"] || offender[:repo]
+  path = repo_path(repo)
+  files = Array(offender["dirty_files"] || offender[:dirty_files])
+  sample = files.first(5).join(", ")
+  more = files.size > 5 ? " (+#{files.size - 5} more)" : ""
+  say("  ↺ #{repo}: dirty `main` is release-identical (#{files.size} file(s) already on origin/release) — " \
+      "auto-cleaning with `git reset --hard origin/main` (the ship ff re-applies them). Discarding: #{sample}#{more}")
+  _, ok = sh("git", "-C", path, "reset", "--hard", "origin/main", capture: true)
+  abort!("ship preflight auto-clean FAILED: `git reset --hard origin/main` in #{repo} (#{path}). " \
+         "Clean it by hand, then re-run `bin/release ship`.") unless ok
 end
 
 def ship_preflight(app_groups)
@@ -1953,7 +2018,17 @@ def ship_preflight(app_groups)
 
   states = app_groups.map { |g| repo_git_state(g["repo"], repo_path(g["repo"])) }
   offenders = Release::ShipSequence.preflight_offenders(states)
-  abort!(Release::ShipSequence.preflight_message(offenders)) if offenders.any?
+
+  # AUTO-CLEAN pass (feedback_ship_preflight_dirty_primary): a dirty ON-MAIN
+  # offender whose dirt is ALL already on origin/release is redundant merge noise —
+  # reset it to a clean origin/main (the ff re-applies release's commits). Anything
+  # NOT provably-safe stays BLOCKING and aborts the ship, exactly as before.
+  if offenders.any?
+    reconciled = offenders.map { |o| reconcile_offender(o) }
+    cleanable, blocking = Release::ShipSequence.partition_autocleanable(reconciled)
+    cleanable.each { |o| autoclean_primary!(o) }
+    abort!(Release::ShipSequence.preflight_message(blocking)) if blocking.any?
+  end
 
   say("  ✓ #{states.size} app checkout(s) on a clean `main`")
 end

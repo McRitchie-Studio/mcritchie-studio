@@ -31,8 +31,13 @@
 #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
 #   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
 #
-# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
-# fingerprint (nothing certified).
+# It REFUSES a dirty/uncommitted tree (see the dirty-tree guard below): certify is
+# the LAST build step, run AFTER the final commit, so the recorded fingerprint
+# always covers HEAD — closing the "certified before the final commit → STALE
+# re-block" trap.
+#
+# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed, the tree
+# is dirty, or no fingerprint (nothing certified).
 
 require "optparse"
 require "json"
@@ -110,12 +115,44 @@ def uninstall_pre_push_hook(root)
   end
 end
 
+# The uncommitted-change list at `root` (`git status --porcelain`: staged,
+# unstaged, AND untracked-not-ignored files — exactly what the fingerprint's
+# `git add -A` + write-tree captures). Returns [] for a clean tree, or nil when git
+# can't read the working tree (no repo) — nil is "unverifiable", left to the later
+# nil-fingerprint refusal, NOT treated as clean.
+def working_tree_changes(root)
+  out = IO.popen(["git", "-C", root.to_s, "status", "--porcelain"], err: File::NULL, &:read)
+  return nil unless $?.success?
+
+  out.to_s.lines.map(&:strip).reject(&:empty?)
+end
+
 if options[:install_hook]
   install_pre_push_hook(root)
   exit 0
 elsif options[:uninstall_hook]
   uninstall_pre_push_hook(root)
   exit 0
+end
+
+# --- dirty-tree guard: certify only a fully-committed HEAD --------------------
+# The fingerprint (a git tree hash) is stable across the pre-commit→commit
+# boundary, so an EARLIER design let you certify a dirty tree. But that opened the
+# "certified before the final commit → STALE re-block" trap (feedback_certify_
+# after_final_commit): you'd certify, then make ONE more edit / land the final
+# commit AFTER the cert, so the recorded [full-suite@<fp>] no longer covered HEAD
+# and dor-check refused it. Closing it here: REFUSE to certify a dirty or
+# uncommitted tree, so the recorded fingerprint ALWAYS equals the committed HEAD's
+# tree. Commit EVERY edit first, THEN certify (the last build step). git can't read
+# the tree (no repo) → skip; the nil-fingerprint refusal below handles it.
+changes = working_tree_changes(root)
+if changes&.any?
+  warn "full-suite-check: working tree at #{root} is DIRTY (#{changes.size} uncommitted change(s)) — refusing to certify."
+  warn "  The recorded fingerprint must cover HEAD: commit EVERY edit first, THEN run this (it's the LAST build step)."
+  warn "  Certifying now would record a fingerprint that a later commit invalidates → a STALE re-block at the merge gate."
+  sample = changes.first(10).join(", ")
+  warn "  Uncommitted: #{sample}#{changes.size > 10 ? " (+#{changes.size - 10} more)" : ''}"
+  exit 1
 end
 
 test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")

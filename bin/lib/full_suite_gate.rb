@@ -108,6 +108,14 @@ module FullSuiteGate
     m && m[1].downcase
   end
 
+  # Every DISTINCT fingerprint recorded for `lane` in `checks` (in order). Feeds
+  # the STALE delta dor-check prints — the recorded "[lane@<fp>]" fingerprint(s)
+  # vs the current tree hash — so a stale refusal shows WHY (which code it was
+  # certified for) instead of an opaque "STALE".
+  def recorded_fingerprints(checks, lane)
+    Array(checks).filter_map { |line| extract_fingerprint(line, lane) }.uniq
+  end
+
   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
   # reason. Returns the reason string or nil. Like the post_deploy "none" hatch,
   # the bypass is an explicit RECORD (it lives in checks_run, prints loud, shows in
@@ -136,14 +144,15 @@ module FullSuiteGate
     return verdict(ok: false, verifiable: false) if fp.nil?
 
     lanes = LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
-    verdict(ok: lanes.values.all?(:fresh), fingerprint: fp, lanes: lanes)
+    recorded = LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane)] }
+    verdict(ok: lanes.values.all?(:fresh), fingerprint: fp, lanes: lanes, recorded: recorded)
   end
 
   # --- internals -----------------------------------------------------------
 
-  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil)
+  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil, recorded: nil)
     lanes ||= LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
-    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes }
+    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes, recorded: recorded || {} }
   end
 
   # Map a DOR_CHECK_SUITE_EVIDENCE token to a verdict (test seam only). Tokens:

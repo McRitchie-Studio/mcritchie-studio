@@ -881,8 +881,16 @@ files — if any isn't. ship ff's each repo's `main` up to the QA-frozen SHA, so
 checkout a review agent left on a leftover `pr-NNN` branch or with an uncommitted
 stale `schema.rb` would otherwise break the ff *mid-ship* (after gems published +
 the ship authorization — the worst time). The preflight catches it up front,
-before anything irreversible. Pure decision:
-`Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Live ship
+before anything irreversible. **Auto-clean (the release-identical dirty primary):**
+the ONE dirty case ship fixes automatically is a primary **on `main` whose dirt is
+ALL already on `origin/release`** — the merged-PR files `bin/release merge`
+re-stages every ship (redundant noise, since `release` is what the ff advances
+`main` to). ship resets it (`git reset --hard origin/main`; the ff re-applies
+release) instead of aborting. **Anything else still blocks** — an off-main branch,
+or *any* dirty file not already on `origin/release` (genuine local work is **never**
+discarded without the operator). Pure decision:
+`Release::ShipSequence.preflight_offenders` / `.autocleanable?` / `.preflight_message`.
+**Live ship
 crew:** right after ship authorization (so a declined gated ship never shows it),
 ship **auto-records the Avi → `shipped` intent** for every member
 (`Release::Conductor.record_deploy_intents!(r, to_stage: "shipped", actor:
@@ -906,7 +914,17 @@ release phase runs migrations), and smokes `/up`. After every app deploys + smok
 `devops.post_deploy_cmd` on its **production app** via `heroku run`, records the
 `[post-deploy]` outcome, and **aborts `ship` on a non-zero exit** — the abort
 lands before `ship!`, so the release stays `assembled` (recoverable) and a re-run
-resumes (the command is expected idempotent). On success it stamps `deployed_sha`,
+resumes (the command is expected idempotent). It then runs the **post-ship
+production smoke SEAL** — the read-only `@qa-readonly` Playwright suite
+(`bin/prod-smoke`, `npx playwright test --grep @qa-readonly`) against **live prod**
+— and records a 🟢/🔴 seal (a *seal*, not a gate: a red seal alerts + prints the
+rollback but never aborts the ship). Because this runs against **fixture-less
+prod** (no `e2e/seed.rb`), a `@qa-readonly` spec must assert only **env-agnostic
+structure** — public routes, page scaffolding, `data-test` hooks — and **never a
+seeded record** (a `#card-<slug>` / `/tasks/<slug>` fixture pin would FALSE-RED the
+seal on a healthy ship). `bin/full-suite-check`'s suite enforces this: a **lint**
+(`QaReadonlyLint`, `test/lib/qa_readonly_lint_test.rb`) FAILS when a `@qa-readonly`
+spec references an `e2e/seed.rb` fixture slug. On success it stamps `deployed_sha`,
 flips the RC + its members to `shipped` (`Release::Conductor.ship!`), and
 **auto-posts release notes**
 (`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
@@ -1102,7 +1120,14 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
   fingerprint (a git tree hash — content-addressed, so it is **stable across the
   pre-commit→commit boundary** and identical in a reviewer's fresh checkout of the
   same tree), so a **stale** (edited-since) or **partial** (one-lane / touched-files)
-  record is **refused**. Both gates root the CODE they run + fingerprint at the
+  record is **refused**. `bin/full-suite-check` **REFUSES to certify a dirty /
+  uncommitted tree** — commit EVERY edit first, then certify as the **last build
+  step**, so the recorded fingerprint always covers HEAD (this closes the
+  "certified before the final commit → STALE re-block" trap; after a rebase,
+  re-cert). When a lane IS stale, `bin/dor-check` prints the **fingerprint delta** —
+  the recorded `[full-suite@<fp>]` vs the current `git write-tree` — so you see WHY
+  ("certified for @abc… but HEAD is now @def…"), not an opaque `STALE`. Both gates
+  root the CODE they run + fingerprint at the
   **current worktree** (the cwd's git toplevel), so a **satellite** task (turf-monster,
   rolio) certifies its OWN repo even though it runs the hub's gate script — while the
   shape config (`feature_shapes.yml`) stays resolved from the studio. Run

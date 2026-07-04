@@ -366,11 +366,19 @@ def suite_evidence_error(eval, slug)
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
       "Run bin/full-suite-check from inside the repo so the FULL suite + rubocop are certified."
   end
+  current = eval[:fingerprint].to_s
+  recorded = eval[:recorded] || {}
   parts = []
   eval[:lanes].each do |lane, state|
     case state
     when :stale
-      parts << "#{lane}: STALE (certified for older code — re-run after your latest edits)"
+      # Print the fingerprint DELTA — the recorded "[lane@<fp>]" fingerprint(s) vs
+      # the current `git write-tree` — so a stale refusal shows WHY (certified for
+      # THAT code, but HEAD is now THIS code) instead of an opaque "STALE".
+      recs = Array(recorded[lane]).map { |fp| fp[0, 12] }
+      rec_str = recs.empty? ? "an older code fingerprint" : "@#{recs.join(', @')}"
+      cur_str = current.empty? ? "the current tree" : "@#{current[0, 12]}"
+      parts << "#{lane}: STALE (certified for #{rec_str}, but HEAD is now #{cur_str} — re-run after your latest edits)"
     when :missing
       parts << "#{lane}: MISSING (never certified for this exact code)"
     end
@@ -602,7 +610,8 @@ if options[:json]
       bypass: suite_eval[:bypass],
       verifiable: suite_eval[:verifiable],
       fingerprint: suite_eval[:fingerprint],
-      lanes: suite_eval[:lanes]
+      lanes: suite_eval[:lanes],
+      recorded: suite_eval[:recorded]
     }
   )
   exit(ready ? 0 : 1)

@@ -174,7 +174,56 @@ class Release
         "then re-run `bin/release ship`."
     end
 
+    # --- ship-preflight AUTO-CLEAN: the release-identical dirty-primary case ---
+    #
+    # feedback_ship_preflight_dirty_primary: `bin/release merge` leaves the just-
+    # merged PR files re-STAGED on the primary's `main`, byte-identical to
+    # origin/release — pure redundant noise that blocks the ship's fast-forward.
+    # That dirt is ALREADY committed on release (which the ship ff's main up to), so
+    # `git reset --hard origin/main` returns a clean committed main and loses
+    # NOTHING. Before this, the preflight aborted and someone reset it by hand every
+    # ship; now the preflight auto-cleans the provably-safe case and still REFUSES
+    # anything else.
+    #
+    # This is the PURE decision: given an offender the CLI augmented with release-
+    # reconciliation facts (the git I/O seam), is it SAFE to auto-clean? An offender
+    # is AUTO-CLEANABLE only when ALL hold — else it stays BLOCKING (refuse, never
+    # discard local work):
+    #   * on_main               — a branch drift (pr-NNN) is NOT auto-cleaned,
+    #   * reconcile_checked      — the IO seam actually gathered the facts, so an
+    #                             un-reconciled offender / a stub defaults to REFUSE,
+    #   * main_ancestor_of_release — origin/main is strictly behind origin/release,
+    #                             so resetting main to origin/main drops no merged
+    #                             history (the ship ff re-applies release's commits),
+    #   * dirty_files present AND unreconciled_files empty — EVERY dirty file's
+    #                             content is already on origin/release, so the reset
+    #                             discards only redundant copies; nothing local is lost.
+    def autocleanable?(offender)
+      o = offender || {}
+      return false unless truthy(o["on_main"] || o[:on_main])
+      return false unless truthy(o["reconcile_checked"] || o[:reconcile_checked])
+      return false unless truthy(o["main_ancestor_of_release"] || o[:main_ancestor_of_release])
+
+      dirty = Array(o["dirty_files"] || o[:dirty_files]).map(&:to_s).reject(&:empty?)
+      unreconciled = Array(o["unreconciled_files"] || o[:unreconciled_files]).map(&:to_s).reject(&:empty?)
+      dirty.any? && unreconciled.empty?
+    end
+
+    # Split preflight offenders into [auto_cleanable, blocking]. The CLI resets the
+    # auto-cleanable primaries (`git reset --hard origin/main`) and refuses the rest
+    # via preflight_message — the auto-clean-else-refuse rule in one call.
+    def partition_autocleanable(offenders)
+      Array(offenders).partition { |o| autocleanable?(o) }
+    end
+
     # --- internals -----------------------------------------------------------
+
+    # A value that reads as boolean-true — a real `true`, or the string "true" (the
+    # reconciliation facts arrive as Ruby booleans, but stay tolerant of the string
+    # form a JSON round-trip could introduce).
+    def truthy(value)
+      value == true || value.to_s.strip.casecmp("true").zero?
+    end
 
     def group_repo(group)
       (group[:repo] || group["repo"]).to_s

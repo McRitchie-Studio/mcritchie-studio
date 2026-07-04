@@ -970,6 +970,35 @@ class DorCheckTest < Minitest::Test
     end
   end
 
+  def test_e2e_stale_refusal_prints_the_fingerprint_delta
+    # Guardrail: a STALE refusal names the recorded "[full-suite@<fp>]" fingerprint
+    # AND the current git-write-tree, so you see WHY it's stale (certified for THAT
+    # code, HEAD is now THIS code) — not an opaque "STALE".
+    with_suite_repo do |dir, fp|
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
+      File.write(File.join(dir, "app.rb"), "base\nedited\n")
+      current_fp = suite_fingerprint(dir)
+      refute_equal fp, current_fp, "the edit must move the fingerprint (guards the test itself)"
+
+      out, code = check_real_suite(dir, devops)
+      assert_equal 1, code, out
+      assert_match(/certified for @#{fp[0, 12]}/, out, "the recorded fingerprint is named")
+      assert_match(/HEAD is now @#{current_fp[0, 12]}/, out, "the current tree fingerprint is named")
+    end
+  end
+
+  def test_e2e_stale_refusal_surfaces_recorded_fingerprints_in_json
+    with_suite_repo do |dir, fp|
+      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
+      File.write(File.join(dir, "app.rb"), "base\nedited\n")
+      out, code = check_real_suite(dir, devops, "--json")
+      assert_equal 1, code, out
+      verdict = JSON.parse(out)
+      assert_equal [fp], verdict["full_suite"]["recorded"]["full-suite"],
+                   "the recorded fingerprint(s) are machine-readable for the delta"
+    end
+  end
+
   def test_e2e_touched_files_only_pr_is_refused
     # The retro case in the real path: [unit]/[integration] tagged, but NO
     # full-suite/rubocop evidence at all → both lanes MISSING → REFUSED.

@@ -1758,11 +1758,16 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_ship_preflight_aborts_on_a_dirty_main_tree
+    # reconcile_offender stubbed to a no-op (returns the offender un-reconciled) so
+    # the dirty offender stays BLOCKING — and, crucially, NO real git/reset runs
+    # against the sibling checkout. The default-refuse (no reconcile_checked) keeps
+    # this a hard abort, exactly as before the auto-clean pass existed.
     setup = <<~RUBY
       def repo_git_state(repo, _path)
         files = repo == "mcritchie-studio" ? ["db/schema.rb"] : []
         { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
       end
+      def reconcile_offender(offender) = offender
     RUBY
     out = run_cli(["--yes"], setup: setup,
                   call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
@@ -1820,6 +1825,7 @@ class ReleaseCliTest < Minitest::Test
           ["docs/agents/audits/retro-rel-1.md", "db/schema.rb"] : []
         { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
       end
+      def reconcile_offender(offender) = offender
     RUBY
     out = run_cli(["--yes"], setup: setup,
                   call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
@@ -1827,6 +1833,56 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "ABORTED", "real code dirt still gates the ship"
     assert_includes out, "db/schema.rb", "the abort names the real dirty file"
     refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
+  end
+
+  # --- ship preflight AUTO-CLEAN: the release-identical dirty-primary case ----
+  # feedback_ship_preflight_dirty_primary: `bin/release merge` re-stages the merged
+  # PR files on the primary's `main`, byte-identical to origin/release. That
+  # redundant noise blocked EVERY ship's ff. Now the preflight auto-cleans it (reset
+  # to origin/main; the ff re-applies release) and still refuses genuine local work.
+  # The reconcile/reset git I/O are stubbed so no real sibling checkout is touched.
+
+  def test_ship_preflight_auto_cleans_a_release_identical_dirty_primary
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        files = repo == "mcritchie-studio" ? ["db/schema.rb", "app/x.rb"] : []
+        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+      end
+      # Facts say: on main, main behind release, and EVERY dirty file already on
+      # origin/release → nothing local is lost → auto-cleanable.
+      def reconcile_offender(offender)
+        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true, "unreconciled_files" => [])
+      end
+      def autoclean_primary!(offender) = puts("AUTOCLEANED " + offender["repo"] + ": " + offender["dirty_files"].join(","))
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "AUTOCLEANED mcritchie-studio: db/schema.rb,app/x.rb", "the release-identical primary is reset"
+    assert_includes out, "PASSED", "the ship proceeds after the auto-clean"
+    refute_includes out, "ABORTED", "a provably-safe dirty primary does not block the ship"
+  end
+
+  def test_ship_preflight_refuses_when_the_dirt_is_not_all_on_release
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        files = repo == "mcritchie-studio" ? ["db/schema.rb"] : []
+        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+      end
+      # A dirty file that is NOT on origin/release = genuine local work → REFUSE,
+      # never auto-reset (nothing is discarded without the operator).
+      def reconcile_offender(offender)
+        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true, "unreconciled_files" => offender["dirty_files"])
+      end
+      def autoclean_primary!(offender) = puts("WRONGLY AUTO-CLEANED " + offender["repo"])
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "un-reconciled local dirt still blocks the ship"
+    assert_includes out, "db/schema.rb", "the abort names the offending file"
+    refute_includes out, "WRONGLY AUTO-CLEANED", "local work is NEVER discarded"
+    refute_includes out, "PASSED"
   end
 
   # --- regression: the silent swallowed-subprocess flake ------------------------

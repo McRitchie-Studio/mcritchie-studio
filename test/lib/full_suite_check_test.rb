@@ -159,18 +159,21 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+  # The fingerprint-property tests drive FullSuiteGate.fingerprint DIRECTLY (not via
+  # the runner) because the runner now REFUSES a dirty tree (the dirty-tree guard —
+  # see the guard tests below). These verify the property the guard relies on: the
+  # fingerprint is a content-addressed git tree hash, stable across the pre-commit→
+  # commit boundary, so a clean committed tree fingerprints the same as it did dirty.
+
   def test_fingerprint_stable_across_commit
-    # Certify a dirty tree, commit the same change → identical fingerprint, so the
-    # evidence stays valid in a fresh checkout at the committed HEAD.
+    # A dirty change and the same change committed produce the SAME fingerprint, so
+    # the evidence certified at HEAD stays valid in a fresh checkout at that commit.
     with_repo do |dir|
       File.write(File.join(dir, "app.rb"), "base\nchange\n")
-      dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
+      dirty_fp = FullSuiteGate.fingerprint(dir)
       assert system("git -C #{dir} add -A >/dev/null 2>&1")
       assert system("git -C #{dir} commit -q -m change >/dev/null 2>&1")
-      committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
-      assert_equal dirty_fp, committed_fp
+      assert_equal dirty_fp, FullSuiteGate.fingerprint(dir)
     end
   end
 
@@ -182,31 +185,93 @@ class FullSuiteCheckTest < Minitest::Test
     # against the old stash-create fingerprint, passes against the temp-index one.
     with_repo do |dir|
       File.write(File.join(dir, "added.rb"), "brand new\n") # untracked, never add'd
-      dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
+      dirty_fp = FullSuiteGate.fingerprint(dir)
       assert system("git -C #{dir} add -A >/dev/null 2>&1")
       assert system("git -C #{dir} commit -q -m add-file >/dev/null 2>&1")
-      committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
-      assert_equal dirty_fp, committed_fp,
+      assert_equal dirty_fp, FullSuiteGate.fingerprint(dir),
                    "adding a file must not change the fingerprint across the commit boundary"
     end
   end
 
   def test_fingerprint_changes_when_an_untracked_file_is_edited
-    # Freshness must fire for untracked files too: certify with an untracked file
-    # present, then edit it (still untracked) → the fingerprint must change so the
+    # Freshness must fire for untracked files too: fingerprint with an untracked file
+    # present, then edit it (still untracked) → the fingerprint must change so any
     # recorded evidence goes STALE. The old stash-create fingerprint ignored
     # untracked content, so this edit slipped past the staleness check.
     with_repo do |dir|
       File.write(File.join(dir, "scratch.rb"), "one\n") # untracked
-      first, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      first_fp = first[/@([0-9a-f]{7,64})\]/, 1]
+      first_fp = FullSuiteGate.fingerprint(dir)
       File.write(File.join(dir, "scratch.rb"), "two\n") # edit, still untracked
-      second, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      second_fp = second[/@([0-9a-f]{7,64})\]/, 1]
-      refute_equal first_fp, second_fp,
+      refute_equal first_fp, FullSuiteGate.fingerprint(dir),
                    "editing an untracked file must change the fingerprint (staleness fires)"
+    end
+  end
+
+  # --- [integration] dirty-tree guard: certify only a fully-committed HEAD ------
+  # The runner REFUSES a dirty/uncommitted tree, so the recorded fingerprint always
+  # covers HEAD — closing the "certified before the final commit → STALE re-block"
+  # trap. The clean committed tree (the guard's own must-not-block case) still certifies.
+
+  # Like run_check but keeps STDERR (the guard's refusal prints there via warn).
+  def run_check_err(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true")
+    env = {
+      "FULL_SUITE_ROOT" => dir,
+      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
+      "FULL_SUITE_TEST_CMD" => test_cmd,
+      "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
+    }
+    out = IO.popen(env, "#{BIN} --print 2>&1", &:read)
+    [out, $?.exitstatus]
+  end
+
+  def test_refuses_to_certify_a_dirty_tracked_file
+    with_repo do |dir|
+      File.write(File.join(dir, "app.rb"), "base\nuncommitted edit\n") # dirty, not committed
+      out, code = run_check_err(dir, test_cmd: "true", rubocop_cmd: "true")
+      assert_equal 1, code, out
+      assert_match(/DIRTY/, out)
+      assert_match(/commit EVERY edit first/i, out)
+      refute_match(/\[full-suite@/, out, "a dirty tree certifies nothing")
+    end
+  end
+
+  def test_refuses_to_certify_with_an_untracked_file
+    # Untracked-but-not-ignored files are part of the fingerprint, so they count as
+    # dirt: the cert must cover a committed HEAD, not loose scratch files.
+    with_repo do |dir|
+      File.write(File.join(dir, "scratch.rb"), "wip\n") # untracked
+      out, code = run_check_err(dir, test_cmd: "true", rubocop_cmd: "true")
+      assert_equal 1, code, out
+      assert_match(/DIRTY/, out)
+      assert_match(/scratch\.rb/, out)
+      refute_match(/\[full-suite@/, out)
+    end
+  end
+
+  def test_refuses_before_running_the_lanes_on_a_dirty_tree
+    # The guard fails FAST — the (stubbed) lanes never run, so no wasted suite.
+    with_repo do |dir|
+      log = File.join(dir, "lane.log")
+      File.write(File.join(dir, "app.rb"), "base\ndirty\n")
+      _, code = run_check_err(
+        dir,
+        reset_cmd: append_command(log, "reset"),
+        test_cmd: append_command(log, "test"),
+        rubocop_cmd: append_command(log, "rubocop")
+      )
+      assert_equal 1, code
+      refute File.exist?(log), "no lane (not even the db reset) runs once the tree is refused as dirty"
+    end
+  end
+
+  def test_certifies_a_clean_committed_tree
+    # The guard's OWN must-not-block case: a fully-committed tree (with_repo commits
+    # everything) certifies normally — the dirty-tree guard is not a blanket refusal.
+    with_repo do |dir|
+      out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+      assert_equal 0, code, out
+      assert_match(/\[full-suite@[0-9a-f]{7,64}\]/, out)
+      assert_match(/\[rubocop@[0-9a-f]{7,64}\]/, out)
     end
   end
 

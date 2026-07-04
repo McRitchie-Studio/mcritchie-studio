@@ -284,4 +284,66 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     msg = S.preflight_message(S.preflight_offenders([state("x", dirty_files: files)]))
     assert_match(/\(\+4 more\)/, msg, "only the first 5 files are listed, then a +N more")
   end
+
+  # --- autocleanable?: the release-identical dirty-primary auto-clean decision ---
+  #
+  # feedback_ship_preflight_dirty_primary: a dirty ON-MAIN primary whose dirt is ALL
+  # already on origin/release is redundant merge noise — SAFE to `git reset --hard
+  # origin/main`. Anything not provably-safe stays BLOCKING (refuse, never discard
+  # local work). The CLI gathers the facts (git I/O); this is the pure verdict.
+
+  # A fully-safe (auto-cleanable) offender: on main, facts gathered, main behind
+  # release, dirty, and NOTHING unreconciled.
+  def cleanable_offender(overrides = {})
+    {
+      "repo" => "mcritchie-studio", "on_main" => true, "reconcile_checked" => true,
+      "main_ancestor_of_release" => true, "dirty_files" => ["app/x.rb"], "unreconciled_files" => []
+    }.merge(overrides)
+  end
+
+  test "autocleanable? is true for a dirty on-main primary whose dirt is all on release" do
+    assert S.autocleanable?(cleanable_offender)
+  end
+
+  test "autocleanable? is false for an off-main checkout (a branch drift is never auto-cleaned)" do
+    assert_not S.autocleanable?(cleanable_offender("on_main" => false))
+  end
+
+  test "autocleanable? is false when the reconciliation facts were never gathered (default refuse)" do
+    # A stubbed / un-reconciled offender lacks reconcile_checked → REFUSE, never a
+    # blind reset just because unreconciled_files happens to be absent/empty.
+    offender = { "repo" => "x", "on_main" => true, "dirty_files" => ["a.rb"] }
+    assert_not S.autocleanable?(offender)
+  end
+
+  test "autocleanable? is false when origin/main is NOT an ancestor of origin/release" do
+    assert_not S.autocleanable?(cleanable_offender("main_ancestor_of_release" => false))
+  end
+
+  test "autocleanable? is false when any dirty file is not on origin/release (local work)" do
+    assert_not S.autocleanable?(cleanable_offender("unreconciled_files" => ["app/local_only.rb"]))
+  end
+
+  test "autocleanable? is false when there are no dirty files to clean" do
+    assert_not S.autocleanable?(cleanable_offender("dirty_files" => [], "unreconciled_files" => []))
+  end
+
+  test "autocleanable? accepts symbol-keyed facts and string boolean flags" do
+    sym = { repo: "x", on_main: true, reconcile_checked: true,
+            main_ancestor_of_release: true, dirty_files: ["a.rb"], unreconciled_files: [] }
+    assert S.autocleanable?(sym)
+    # A JSON round-trip could stringify the booleans — still honored.
+    assert S.autocleanable?(cleanable_offender("main_ancestor_of_release" => "true"))
+    assert_not S.autocleanable?(cleanable_offender("reconcile_checked" => "false"))
+  end
+
+  test "partition_autocleanable splits the safe resets from the blocking offenders" do
+    safe = cleanable_offender("repo" => "mcritchie-studio")
+    blocked_dirty = cleanable_offender("repo" => "turf-monster", "unreconciled_files" => ["a.rb"])
+    blocked_branch = cleanable_offender("repo" => "rolio", "on_main" => false)
+
+    cleanable, blocking = S.partition_autocleanable([safe, blocked_dirty, blocked_branch])
+    assert_equal %w[mcritchie-studio], cleanable.map { |o| o["repo"] }
+    assert_equal %w[turf-monster rolio], blocking.map { |o| o["repo"] }
+  end
 end
