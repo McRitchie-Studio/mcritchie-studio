@@ -13,14 +13,16 @@ four ordered release actions, a themed glyph on the rest):
 - **The action rows** — one copyable row each, ordered **downstream-first** (each
   soul leads with its idempotent close-out action, so the number icons read
   descending):
-  - **Avi** → `3️⃣ production-deploy` · `1️⃣ pr-review` · `🐢 pr-review-slow`
+  - **Avi** → `3️⃣ production-deploy` · `1️⃣ pr-review` · `🐢 pr-review-slow` ·
+    `⚡ deploy-with-task`
   - **Steffon** → `4️⃣ archive-shipped` · `2️⃣ qa-release`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
 `/Users/alex/projects`, launches that heartbeat. All rows are **recognized
-launchers** — listed in the generated root `AGENTS.md` SOP Quick Index and in
+launchers** — listed in the generated root `AGENTS.md` SOP Invocation Standard
+registry and in
 [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps
 a single release **atom** (see §1.4's atom table), except `alex` /
 `grade-events`, which is the learning loop and lives outside the release
@@ -33,7 +35,7 @@ Each soul's action-level procedure lives with that soul:
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
-| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
+| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow`, `deploy-with-task` (direct-invoke only) | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-shipped`, `qa-release` | shipped work to archive / `reviewed` work + `assembled` stragglers to sweep | prior cycle `archived` (or no-op); then the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | spans to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
 
@@ -396,8 +398,8 @@ read-only `bin/devops-cycle` snapshot tool.
 > — run it only when the operator launched it (the `Alex Heartbeat` / `full-cycle`
 > phrase) or otherwise granted ship authority in-session. It uses the SAME
 > deterministic gates as `production-deploy`; `--yes` answers only the human
-> confirm. For expediting ONE task on a clean release, use `Deploy with Task
-> <task>` instead (§1.4).
+> confirm. For expediting ONE task on a clean release, use Avi's
+> [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) act instead.
 
 ---
 

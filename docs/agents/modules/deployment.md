@@ -161,8 +161,8 @@ Cutover sequence:
 Deploys, gem publishes, provider changes, and production env-var changes are
 Release-lane work. A feature agent can recommend deploy, but only the designated
 release conductor should run it after explicit approval from Mr. McRitchie or an
-already-approved rollout prompt. Alex's `full-cycle` launcher (and
-`Deploy with Task <task>`) is one such pre-approved production prompt;
+already-approved rollout prompt. Alex's `full-cycle` launcher (and Avi's
+`deploy-with-task`) is one such pre-approved production prompt;
 `pr-review` and Steffon's `qa-release` sweep are not — they stop before prod.
 Gem publishes specifically are **part of**
 "Run Deployment" — they ride a release as first-class members and are published

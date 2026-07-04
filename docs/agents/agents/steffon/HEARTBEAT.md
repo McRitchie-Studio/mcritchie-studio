@@ -76,9 +76,12 @@ End every Steffon heartbeat with a short report:
 
 On a clean run with no ejections or blockers, omit the blocker section entirely.
 
-## Related References
+## Background — not needed to execute
+
+This heartbeat is a recipe: it routes to the act SOPs above, and each act stands
+alone. These references are context only.
 
 - [`../../modules/heartbeats.md`](../../modules/heartbeats.md) - cross-soul
   heartbeat map.
 - [`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
-  §1.4 - release atom model and pipeline ownership.
+  §1.4 - release atom model and pipeline ownership (architecture).

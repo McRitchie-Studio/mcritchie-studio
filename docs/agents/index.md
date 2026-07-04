@@ -33,11 +33,20 @@ Invocation rule:
 4. Execute the procedure in that file. If it points to a shared primitive, read
    that primitive next.
 
+SOP files stand alone. Each SOP is executable start-to-finish from its own
+file — every command, gate, and decision rule is inline. An SOP may reference
+only: (1) other registered SOPs at composition seams, (2) a registered shared
+primitive such as `modules/pr-review-sop.md`, exactly one hop, and (3) an
+explicitly marked "Background — not needed to execute" section. Design docs
+such as `system/devops-cycle-design.md` are architecture — the why, never a
+required execution path. Do not follow a Background reference to run an SOP.
+
 | Invocation | Owner | Read first |
 |------------|-------|------------|
 | `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
 | `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
 | `qa-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
@@ -304,6 +313,7 @@ assigned that lane.
 | Avi production deploy SOP | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
 | Avi PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | Avi slow PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
@@ -346,6 +356,7 @@ depend on the heartbeat.
 | `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
 | `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
