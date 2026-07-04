@@ -38,7 +38,6 @@
         <th>Agent</th>
         <th>Model / Tokens</th>
         <th>Cost</th>
-        <th>Status</th>
         <th>Alex</th>
         <th>McRitchie</th>
       </tr>
@@ -69,7 +68,14 @@
             <div class="hb-meta hb-mono hb-evttime" title="<%= event.opened_at&.iso8601 %>"><%= heartbeat_time(event.opened_at) %></div>
           </td>
           <td class="hb-span hb-narr hb-openzone" @click="open = !open">
-            <span class="hb-narrline hb-slug"><%= event.reason_slug %></span>
+            <span class="hb-narrline hb-narr-head">
+              <span class="hb-slug"><%= event.reason_slug %></span>
+              <span class="hb-narr-status">
+                <%= heartbeat_span_status_badge(status) %>
+                <span class="hb-bullet" aria-hidden="true">&middot;</span>
+                <span class="hb-count" data-test="event-action-count"><%= pluralize(actions.size, "action") %></span>
+              </span>
+            </span>
             <span class="hb-narrline hb-narr-result">
               <span class="hb-arrow">&rarr;</span>
               <% if event.open? || event.outcome_slug.blank? %>
@@ -92,13 +98,6 @@
             <span class="hb-mt-tokens" data-test="event-tokens"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></span>
           </td>
           <td class="hb-meta hb-mono hb-openzone" data-test="event-cost" @click="open = !open"><%= heartbeat_cost(totals[:cost]) %></td>
-          <td class="hb-meta hb-openzone" @click="open = !open"><div class="hb-sat">
-            <div class="hb-satline">
-              <%= heartbeat_span_status_badge(status) %>
-              <span class="hb-bullet" aria-hidden="true">&middot;</span>
-              <span class="hb-count" data-test="event-action-count"><%= pluralize(actions.size, "action") %></span>
-            </div>
-          </div></td>
           <%= render "heartbeat/event_feedback_cell", event: event, alex: alex_g, mcr: mcr_g %>
         </tr>
 
@@ -132,18 +131,13 @@
                 <span class="hb-mt-tokens"><%= heartbeat_tokens(action) %></span>
               <% end %>
               <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
-              <td class="hb-meta"><div class="hb-sat">
-                <span class="hb-substate">—</span>
-              </div></td>
-              <td class="hb-meta hb-gradehint" colspan="2">
-                open action drawer
-              </td>
+              <td class="hb-meta hb-actionblank" colspan="2" aria-label="Click action row to open drawer"></td>
             </tr>
           <% end %>
         <% else %>
           <tr class="hb-subrow hb-subempty" x-show="open">
             <td class="hb-seq">&mdash;</td>
-            <td colspan="8" class="hb-meta">No raw actions attributed to this span.</td>
+            <td colspan="7" class="hb-meta">No raw actions attributed to this span.</td>
           </tr>
         <% end %>
       </tbody>
@@ -156,13 +150,17 @@
             style="--hb-edge: <%= unl[:accent] %>">
           <td class="hb-seq"><span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span></td>
           <td><span class="hb-chip hb-catchip" style="color: <%= unl[:accent] %>" title="<%= unl[:description] %>">Unlabeled</span></td>
-          <td class="hb-span"><span class="hb-result">context the agent did not narrate into a span</span></td>
+          <td class="hb-span">
+            <span class="hb-narrline hb-narr-head">
+              <span class="hb-result">context the agent did not narrate into a span</span>
+              <span class="hb-narr-status">
+                <span class="hb-count" data-test="event-action-count"><%= pluralize(unlabeled.size, "action") %></span>
+              </span>
+            </span>
+          </td>
           <td class="hb-meta">&mdash;</td>
           <td class="hb-meta">&mdash;</td>
           <td class="hb-meta">&mdash;</td>
-          <td class="hb-meta"><div class="hb-sat">
-            <span class="hb-count" data-test="event-action-count"><%= pluralize(unlabeled.size, "action") %></span>
-          </div></td>
           <td class="hb-meta" colspan="2">&mdash;</td>
         </tr>
         <% unlabeled.each do |action| %>
@@ -192,12 +190,7 @@
               <span class="hb-mt-tokens"><%= heartbeat_tokens(action) %></span>
             <% end %>
             <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
-            <td class="hb-meta"><div class="hb-sat">
-              <span class="hb-substate">—</span>
-            </div></td>
-            <td class="hb-meta hb-gradehint" colspan="2">
-              open action drawer
-            </td>
+            <td class="hb-meta hb-actionblank" colspan="2" aria-label="Click action row to open drawer"></td>
           </tr>
         <% end %>
       </tbody>

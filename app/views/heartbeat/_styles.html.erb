@@ -85,19 +85,19 @@
   /* Agent cell stays LEFT-justified: cluster flush-left, name snug beside the avatar. */
   #alex-heartbeat .hb-agentstack { justify-content:flex-start; }
   #alex-heartbeat .hb-names { align-items:flex-start; }
-  /* Status / Actions / Task merged into one stacked cell to save horizontal space. */
-  #alex-heartbeat .hb-sat { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
-  #alex-heartbeat .hb-satline { display:flex; align-items:center; gap:6px; }
+  /* Span status lives with the narrated reason so it does not strand a whole
+     right-side column for "done · N actions". */
   #alex-heartbeat .hb-bullet { color:var(--hb-muted); font-size:10.5px; line-height:1; }
   #alex-heartbeat .hb-outcome-badge { display:inline-flex; align-items:center; }
   #alex-heartbeat .hb-clickrow { cursor:pointer; }
   #alex-heartbeat .hb-openzone { cursor:pointer; }
   #alex-heartbeat .hb-taskcell { color:var(--hb-muted); font-size:10.5px; }
-  #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
   /* Two-line narration — the reason on line 1, the "-> outcome" beneath it, so the
      span cell stays narrow instead of running reason and outcome across one wide row. */
   #alex-heartbeat .hb-narr { min-width:220px; }
   #alex-heartbeat .hb-narrline { display:block; }
+  #alex-heartbeat .hb-narr-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-narr-status { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
   #alex-heartbeat .hb-narr-result { margin-top:2px; }
   /* Merged Model / Tokens column — model on top, the compact in/out tokens beneath. */
   #alex-heartbeat .hb-modeltok .hb-mt-model { display:block; }
@@ -135,7 +135,7 @@
   #alex-heartbeat .hb-subslug { color:var(--hb-txt); font-weight:600; }
   #alex-heartbeat .hb-subinput { color:var(--hb-faint); }
   #alex-heartbeat .hb-subkey { display:block; max-width:100%; }
-  #alex-heartbeat .hb-substate { color:var(--hb-faint); }
+  #alex-heartbeat .hb-actionblank { color:transparent; }
   #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
 
   /* Key-method chip — [lang badge | code | copy]. The one load-bearing call of a

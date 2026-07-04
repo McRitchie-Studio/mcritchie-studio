@@ -140,8 +140,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # both live in the narration cell as separate block lines (reason over result)
-    assert_select "td.hb-narr .hb-narrline.hb-slug", text: "find issue with api"
+    # reason/status share the compact header; result stays beneath it.
+    assert_select "td.hb-narr .hb-narrline.hb-narr-head .hb-slug", text: "find issue with api"
     assert_select "td.hb-narr .hb-narrline.hb-narr-result", text: /found the nil-guard/
   end
 
@@ -202,29 +202,32 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "[data-test=event-status]", text: "done"
   end
 
-  test "[component] the status line separates the badge and the action count with a bullet" do
+  test "[component] the narration header carries status and action count" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "green")
     a1 = action(atomic_event_id: ev.id, seq: 0)
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select ".hb-satline .hb-bullet"
+    assert_select "td.hb-narr .hb-narr-head .hb-narr-status .hb-bullet"
+    assert_select "td.hb-narr .hb-narr-head [data-test=event-status]", text: "done"
     assert_select "[data-test=event-action-count]", text: "1 action"
   end
 
-  test "[component] compact status hides task slugs from span and action rows" do
+  test "[component] compact rows hide status column, task slugs, and action placeholders" do
     ev = event(seq: 0, task_slug: "hidden-span-task", closed_at: Time.current, outcome_slug: "green")
     a1 = action(atomic_event_id: ev.id, seq: 0, task_slug: "hidden-action-task", outcome: "ok")
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select "th", text: "Status"
+    assert_select "th", text: "Status", count: 0
     assert_select "th", text: "Status / Task", count: 0
     assert_no_match(/hidden-span-task/, rendered)
     assert_no_match(/hidden-action-task/, rendered)
     assert_select "tr[data-test=heartbeat-event-action] .hb-outcome", false
+    assert_no_match(/open action drawer/, rendered)
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-actionblank[colspan='2']", 1
   end
 
   test "[component] a stage-change span badges as its target stage using the board pill" do
@@ -268,7 +271,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
     # the row still carries the click styling, but its left-side cells expand actions
     # while the grade columns own the drawer target.
     assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]", 1
-    assert_select "tr.hb-evtrow td.hb-openzone", minimum: 7
+    assert_select "tr.hb-evtrow td.hb-openzone", minimum: 6
     assert_includes rendered, '@click="open = !open"'
     assert_match(/data-test="event-grade-cell"\s+@click\.stop="openDrawer/, rendered)
     assert_match(/data-test="event-grade-cell-mcr"\s+@click\.stop="openDrawer/, rendered)
@@ -454,9 +457,9 @@ class HeartbeatEventTableTest < ActionView::TestCase
                   "[data-test=key-method-chip][data-lang=bash]", count: 1
     assert_select "tr[data-test=heartbeat-event-action] td.hb-subnarr [data-test=action-summary]",
                   text: "list board tasks to find slugs", count: 1
-    # The right-side hint no longer carries the summary; command + summary stay in the
-    # action narration cell.
-    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint", text: "open action drawer", count: 2
-    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint [data-test=action-summary]", false
+    # The right side no longer carries a visible drawer hint; command + summary stay
+    # in the action narration cell.
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint", false
+    assert_no_match(/open action drawer/, rendered)
   end
 end
