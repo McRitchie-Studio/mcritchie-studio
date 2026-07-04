@@ -1,6 +1,6 @@
 ---
 name: qa-release
-description: "The composable DevOps launchers — surfaced as the soul heartbeat acts on the /deployments Heartbeats card (any copyable row of each). The souls BOOKEND the pipeline: Avi reviews + ships, Steffon owns the whole middle. Avi Heartbeat (acts, downstream-first: production-deploy = ship a QA-green release if one is ready (idempotent no-op otherwise), pr-review = review ALL submitted PRs in waves <=5 REVIEW-ONLY (stops at reviewed — Steffon's sweep merges), pr-review-slow = the same serialized one PR at a time), Steffon Heartbeat (acts, downstream-first: archive-completed = bin/release archive the prior cycle (idempotent no-op otherwise), qa-deploy = the SELF-HEALING bin/release prepare: sweep reviewed tasks + assembled stragglers, merge their PRs onto release (skip merged: ones — crash recovery), pre-QA gate, deploy QA, flip members assembled on QA-green), Alex Heartbeat (acts: grade-events = the learning loop, share-insights = share the mcr-confirmed insights out via the regenerated lessons doc, full-cycle = the FULL autonomous cycle review->assemble->QA->prod ship with full ship authority). Plus Deploy with Task <task> — expedite ONE task to prod, guarded on a clean release (release == main). Atoms: review-one (one-PR review, review-only), pr-review / pr-review-slow, qa-deploy (bin/release prepare), production-deploy (bin/release ship; stamps merged: main at each ff), full-cycle (all three, ship-authority gated). When an agent RUNS a <Soul> Heartbeat its first action is `bin/atomic-event heartbeat <soul>` so every span self-attributes to that soul. The four legacy release chips (Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge Assemble Deploy) are RETIRED — their capability is now pr-review-slow (Avi) and full-cycle (Alex); still recognized as aliases. Invoke when the operator uses one of these phrases, clicks a heartbeat launcher, or asks to prepare/deploy the release. Thin launcher — the full model-agnostic SOP lives in devops-cycle-design.md §1.4 + heartbeats.md."
+description: "The composable DevOps launchers — surfaced as the soul heartbeat acts on the /deployments Heartbeats card (any copyable row of each). The souls BOOKEND the pipeline: Avi reviews + ships, Steffon owns the whole middle. Avi Heartbeat (acts, downstream-first: production-deploy = ship a QA-green release if one is ready (idempotent no-op otherwise), pr-review = review ALL submitted PRs in waves <=5 REVIEW-ONLY (stops at reviewed — Steffon's sweep merges), pr-review-slow = the same serialized one PR at a time), Steffon Heartbeat (acts, downstream-first: archive-completed = bin/release archive the prior cycle (idempotent no-op otherwise), qa-deploy = the SELF-HEALING bin/release prepare: sweep reviewed tasks + assembled stragglers, merge their PRs onto release (skip merged: ones — crash recovery), pre-QA gate, deploy QA, flip members assembled on QA-green), Alex Heartbeat (acts: grade-events = the learning loop, share-insights = share the mcr-confirmed insights out via the regenerated lessons doc, full-cycle = the FULL autonomous cycle review->assemble->QA->prod ship with full ship authority). Plus Deploy with Task <task> — expedite ONE task to prod, guarded on a clean release (release == main). Atoms: review-one (one-PR review, review-only), pr-review / pr-review-slow, qa-deploy (bin/release prepare), production-deploy (bin/release ship; stamps merged: main at each ff), full-cycle (all three, ship-authority gated). When an agent RUNS a <Soul> Heartbeat its first action is `bin/atomic-event heartbeat <soul>` so every span self-attributes to that soul. The four legacy release chips (Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge Assemble Deploy) are RETIRED — their capability is now pr-review-slow (Avi) and full-cycle (Alex); still recognized as aliases. Invoke when the operator uses one of these phrases, clicks a heartbeat launcher, or asks to prepare/deploy the release. Thin launcher — the full model-agnostic SOP lives in devops-cycle-design.md §1.4 + heartbeats.md; Avi's specific SOP lives in agents/avi/HEARTBEAT.md."
 ---
 
 # Release Conductor Launcher
@@ -17,6 +17,9 @@ else:
 
 Read that section and work it top to bottom. It is the source of truth — if this
 launcher and the SOP ever disagree, the SOP wins.
+For an `Avi Heartbeat`, `production-deploy`, `pr-review`, or `pr-review-slow`
+launcher, also read `docs/agents/agents/avi/HEARTBEAT.md`; it is Avi's specific
+procedure and the heartbeats page is only the cross-soul map.
 
 **The launchers are compositions of atoms.** Learn the atoms once; every launcher
 is a sequence of them (full detail in §1.4):
@@ -62,8 +65,9 @@ is a sequence of them (full detail in §1.4):
 >   Assemble, Deploy`** (ship the whole release) instead. Never expedite one task
 >   past pending work.
 
-**Soul heartbeat launchers** — the three DevOps-card chips (full SOP
-[`heartbeats.md`](../../modules/heartbeats.md)). Each is a soul face (linking to
+**Soul heartbeat launchers** — the three DevOps-card chips (cross-soul SOP
+[`heartbeats.md`](../../modules/heartbeats.md); Avi-specific SOP
+[`HEARTBEAT.md`](../../agents/avi/HEARTBEAT.md)). Each is a soul face (linking to
 `/agents/<slug>`) over a prompt-like row 1 + copyable atom act(s); **any row is a
 recognized launcher** (the `<Soul> Heartbeat` prompt OR any of its atoms). Enter as
 the named soul. Operator-launched (copy-paste) today, schedule-ready tomorrow — each

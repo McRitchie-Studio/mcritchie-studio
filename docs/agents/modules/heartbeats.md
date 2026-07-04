@@ -26,6 +26,10 @@ launchers** — wired into
 single release **atom** (see §1.4's atom table), except `alex` / `grade-events`,
 which is the learning loop and lives outside the release pipeline.
 
+Avi's action-level procedure lives with Avi at
+[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md); this page is the
+cross-soul map.
+
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
 | **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
@@ -66,13 +70,15 @@ session needs nothing else:
    <avi|steffon|alex>`.
 3. **Run the soul's acts downstream-first** from the mcritchie-studio primary
    checkout (the board is **prod** by default; pass `--yes` on the release verbs
-   the act owns). Each act's full SOP is in its numbered section below.
+   the act owns). Avi's full SOP is
+   [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md); the other acts are
+   summarized in their numbered sections below.
 
 The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 
 | Soul | Acts (downstream-first) | Commands each act drives |
 |---|---|---|
-| **Avi** | `production-deploy` → `pr-review` | `bin/release status` → **if** QA-green: `bin/release ship --yes`; then per `submitted` PR (waves ≤5): `bin/reviewer-select <task>` → the [review-one cascade](pr-review-sop.md) → on approval `bin/task move <task> reviewed` + `bin/release merge <task>` |
+| **Avi** | `production-deploy` → `pr-review` | `bin/release status` → **if** QA-green: `bin/release ship --yes`; then per `submitted` PR (waves ≤5): `bin/reviewer-select <task>` → the [review-one cascade](pr-review-sop.md) → on approval `bin/task move <task> reviewed` (**no merge**; Steffon's `qa-deploy` sweeps) |
 | **Steffon** | `archive-completed` → `qa-deploy` | `bin/release archive --yes` (preview `--dry-run`); then `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` |
 | **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/atomic-event awaiting --limit 10` → `bin/atomic-event grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-deploy` → `production-deploy` (ship authority) |
 
@@ -80,7 +86,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 > behind the review loop: it composes `bin/devops-cycle`, `bin/reviewer-select`,
 > and `codex exec` reviewer pairs, writes the `bin/task move|block|note` handoffs
 > itself, and prints a retrospective. It is **review-only** — approved tasks stop
-> at `reviewed`; the conductor still owns `bin/release merge`. The working
+> at `reviewed`; Steffon's `qa-deploy` sweep owns the merge. The working
 > invocation:
 >
 > ```bash
@@ -166,6 +172,11 @@ a wiring change, not a rewrite.
 ---
 
 ## 1. Avi Heartbeat — `Avi Heartbeat` / `production-deploy` / `pr-review`
+
+Canonical step-by-step SOP:
+[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md). The summary below
+keeps the cross-soul page readable; Avi's own heartbeat doc wins for Avi
+mechanics.
 
 **Enter as Avi.** Two acts, run **downstream-first**: ship a QA-green release if one
 is ready, then review the new submitted PRs (**review-only** — Steffon's

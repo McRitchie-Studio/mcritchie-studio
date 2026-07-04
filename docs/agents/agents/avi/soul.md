@@ -71,6 +71,7 @@ My accuracy is *my* number — I own it. PM and Dev sizes are calibration data, 
 
 ## Protocols I follow
 
+- [`HEARTBEAT.md`](HEARTBEAT.md) — Avi heartbeat review and production-ship SOP
 - [`git-protocol.md`](../../system/git-protocol.md) — branch naming, PR table, send-back template, ethics
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sealed-bid sizing, accuracy as my primary KPI
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — when to confer with Carl about the migration lane
