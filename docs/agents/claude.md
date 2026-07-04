@@ -4,6 +4,18 @@ Claude Code auto-loads this file; it does **not** auto-load `AGENTS.md` (that is
 the Codex convention). So this adapter carries the operating model for Claude
 sessions. **Read this whole file before acting.**
 
+## SOP invocation standard
+
+McRitchie SOPs live in `/Users/alex/projects/AGENTS.md`'s **SOP Invocation
+Standard** and the repo docs it points to. SOPs are first-class registered
+commands with finite names and stable files. If Mr. McRitchie's prompt names an
+SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
+`archive-shipped`, or `full-cycle`, resolve that phrase through the SOP registry,
+read the mapped SOP, then execute it. For example, `pr-review` means read
+`mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` first and run that
+review-only SOP; do not start with `bin/avi-heartbeat --help`, `bin/qa-intake`,
+or GitHub PR discovery.
+
 ## ⛔ STOP — before writing ANY code (feature, bug, or chore — even a "small" one)
 
 If your work will produce a code diff, you are a **Feature agent** and you MUST
