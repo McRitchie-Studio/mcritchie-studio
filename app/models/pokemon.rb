@@ -142,9 +142,12 @@ class Pokemon < ApplicationRecord
   # QA runs the production Rails env, so it's told apart by QA_ENV=true (set by
   # bin/qa-server on every QA app — same signal as ApplicationHelper#qa_environment?).
   # SHINY_ODDS overrides everything for tuning/demo ("SHINY_ODDS=1" = always shiny).
+  # 0 (never) under test so every task-creating test stays deterministic — shiny
+  # specs opt in by stubbing roll_shiny? (or setting SHINY_ODDS).
   def self.shiny_odds
     explicit = ENV["SHINY_ODDS"].to_i
     return explicit if explicit.positive?
+    return 0 if Rails.env.test?
 
     qa = ENV["QA_ENV"].to_s.strip.downcase == "true"
     Rails.env.production? && !qa ? 100 : 10
@@ -154,7 +157,8 @@ class Pokemon < ApplicationRecord
   # is a property of the DRAW (the session/task's mascot instance), never of the
   # Pokémon row itself.
   def self.roll_shiny?
-    rand(shiny_odds).zero?
+    odds = shiny_odds
+    odds.positive? && rand(odds).zero?
   end
 
   # The image to render for this Pokémon: the tightly-cropped primary

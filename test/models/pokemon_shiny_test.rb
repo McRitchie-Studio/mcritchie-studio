@@ -19,9 +19,18 @@ class PokemonShinyTest < ActiveSupport::TestCase
 
   # --- Odds ---
 
-  test "shiny odds are 1-in-10 outside production" do
+  test "shiny odds are 1-in-10 on development" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => nil) do
-      assert_equal 10, Pokemon.shiny_odds
+      Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("development")) do
+        assert_equal 10, Pokemon.shiny_odds
+      end
+    end
+  end
+
+  test "the test env never rolls shiny unless opted in" do
+    with_env("SHINY_ODDS" => nil, "QA_ENV" => nil) do
+      assert_equal 0, Pokemon.shiny_odds
+      20.times { assert_not Pokemon.roll_shiny? }
     end
   end
 
