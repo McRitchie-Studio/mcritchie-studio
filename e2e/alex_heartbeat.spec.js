@@ -42,6 +42,29 @@ test("expanding a span drills down into its attributed actions", async ({ page }
   await expect(firstAction).toContainText("grep");
 });
 
+// The seeded Explore span carries a span-level key method (ruby) and its explore
+// action a bash one + a goal summary — each renders as a copyable chip with a
+// leading language badge and a copy button (the operator's key-method ask).
+test("key methods render as copyable chips with language badges", async ({ page }) => {
+  await page.goto("/alex/heartbeat");
+
+  // The span-level chip sits under the narration lines.
+  const spanChip = page.locator("[data-test='event-key-method'] [data-test='key-method-chip']").first();
+  await expect(spanChip).toBeVisible();
+  await expect(spanChip.locator("[data-test='key-method-lang']")).toHaveText("ruby");
+  await expect(spanChip.locator("[data-test='key-method-copy']")).toBeVisible();
+
+  // Expanding the Explore span (the seq-cell chevron is the expand affordance —
+  // a row-body click opens the grading drawer instead) reveals its action's bash
+  // chip + goal summary.
+  const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  await span.locator("tr[data-test='heartbeat-event-row'] td.hb-seq").click();
+  const actionChip = span.locator("[data-test='action-key-method'] [data-test='key-method-chip']").first();
+  await expect(actionChip).toBeVisible();
+  await expect(actionChip.locator("[data-test='key-method-lang']")).toHaveText("bash");
+  await expect(span.locator("[data-test='action-summary']").first()).toHaveText("find the capture model seam");
+});
+
 // Grading is preserved: clicking a drilled-down action opens the per-action drawer.
 test("clicking a drilled-down action opens its grading drawer", async ({ page }) => {
   await page.goto("/alex/heartbeat");

@@ -54,6 +54,9 @@ module Api
           :mascot,           # optional session/task Pokémon slug
           :input,            # optional action input (prompt / command / args)
           :output,           # optional action output (result / stdout / diff)
+          :summary,          # optional GOAL slug for the action (outcome-free)
+          :key_method,       # optional load-bearing call (bash command / ruby call)
+          :key_method_lang,  # optional badge language; inferred when blank
           :outcome,          # optional ok | error | pending (defaults pending)
           :actor,            # optional harness | agent | board | human (defaults agent)
           :model,            # optional session model id (the hook derives it; kills the "—")

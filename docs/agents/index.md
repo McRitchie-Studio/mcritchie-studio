@@ -79,6 +79,15 @@ bin/atomic-event end --outcome "what happened"
 - **Always give an outcome** — every `next`/`end` records what actually happened
   ("Explore: find api issue → found the nil-guard"), not just the intent; an
   outcome-less span is a wasted span.
+- **Log the span's key method when it has one** — add `--key-method "<code>"`
+  (+ optional `--key-lang bash|ruby|sql|js`) to `next`/`end` when the completed
+  span had ONE load-bearing call worth copying — the line another agent (or the
+  operator) would rerun, e.g. `--key-method "User.find_by(email: ...)" --key-lang
+  ruby`. Most spans have none; skip it rather than invent one. It renders on the
+  heartbeat rows as a copyable chip with a language badge. (Raw bash actions get
+  theirs automatically — the capture hook logs each Bash call's command as its
+  `key_method` and its description as its goal `summary`, so keep writing good
+  Bash descriptions.)
 - Keep `--reason`/`--outcome` short (~4-7 words).
 - **It's non-fatal** — narration never blocks your work, and it powers the Alex
   learning heartbeat (`/alex/heartbeat`). There is no reason to skip it.

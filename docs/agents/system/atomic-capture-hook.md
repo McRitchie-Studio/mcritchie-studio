@@ -29,6 +29,9 @@ matching the `/api/v1` convention) to
 | `kind`        | `tool_name` mapped: Read/Glob/Grep→`read`, Edit/Write/NotebookEdit→`edit`, Bash→`bash`, Task/Agent→`delegate`, WebFetch/WebSearch→`research`; **unknown→tool name downcased** |
 | `input`       | `tool_input` serialized, **secret-redacted**, then truncated (~3 KB) |
 | `output`      | `tool_response` serialized, **secret-redacted**, then truncated (~3 KB) |
+| `summary`     | **Bash only** — the call's `description` param (the goal slug the agent wrote), pattern-redacted; other tools ⇒ absent |
+| `key_method`  | **Bash only** — the call's `command` (the copy-and-rerun line on the heartbeat rows), **same redaction policy as `input`**; other tools ⇒ absent |
+| `key_method_lang` | `bash` when `key_method` is present (the UI's language badge) |
 | `outcome`     | `ok`, or `error` when `tool_response` carries an explicit failure signal (`error` / `is_error:true` / `success:false` / `interrupted:true`) — a noisy stderr is **not** a failure |
 | `actor`       | `agent` |
 | `model`       | the **session model** — see below (nil ⇒ key dropped, column stays null) |

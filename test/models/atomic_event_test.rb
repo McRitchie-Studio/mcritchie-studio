@@ -455,4 +455,39 @@ class AtomicEventTest < ActiveSupport::TestCase
     assert_equal "carl", row["agent"]
     assert_not row.key?("task_slug"), "a nil task_slug is dropped"
   end
+
+  # ---- key_method (the span's one load-bearing call) -------------------------
+
+  test "[integration] close_event! stamps the key method with an inferred lang" do
+    AtomicEvent.open_event!(session_id: "km-sess", category: "Edit", reason_slug: "add the guard")
+    closed = AtomicEvent.close_event!(session_id: "km-sess", outcome_slug: "guard added",
+                                      key_method: "User.find_by(email: ...)")
+
+    assert_equal "User.find_by(email: ...)", closed.key_method
+    assert_equal "ruby", closed.key_method_lang
+  end
+
+  test "[integration] a bare close never blanks a key method the span already carries" do
+    AtomicEvent.open_event!(session_id: "km-keep", category: "Verify", reason_slug: "run suite")
+    AtomicEvent.close_event!(session_id: "km-keep", key_method: "bin/rails test", key_method_lang: "bash")
+    reopened = AtomicEvent.for_session("km-keep").order(:seq).last
+    reopened.update!(closed_at: nil)
+
+    closed = AtomicEvent.close_event!(session_id: "km-keep", outcome_slug: "green")
+    assert_equal "bin/rails test", closed.key_method, "a keyless close preserves the stamp"
+  end
+
+  test "[integration] open_event! with prior_key_method stamps the auto-closed prior span" do
+    prior = AtomicEvent.open_event!(session_id: "km-next", category: "Explore", reason_slug: "orient")
+    AtomicEvent.open_event!(session_id: "km-next", category: "Edit", reason_slug: "make the change",
+                            prior_outcome_slug: "seam found",
+                            prior_key_method: "grep -rn AtomicEvent app/models")
+
+    prior.reload
+    assert_equal "seam found", prior.outcome_slug
+    assert_equal "grep -rn AtomicEvent app/models", prior.key_method
+    assert_equal "bash", prior.key_method_lang, "update_all path still normalizes the pair"
+    assert_nil AtomicEvent.for_session("km-next").open.order(:seq).last.key_method,
+               "the NEW span opens without the prior's key method"
+  end
 end

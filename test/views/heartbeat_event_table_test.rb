@@ -401,4 +401,37 @@ class HeartbeatEventTableTest < ActionView::TestCase
     # and the tbody carries the hydration data the Alpine row reads
     assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
   end
+
+  test "[component] a span's key method renders as a copyable chip with a lang badge" do
+    closed = event(outcome_slug: "seam found", closed_at: Time.current,
+                   key_method: "AtomicAction.capture(session_id:)", key_method_lang: "ruby")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[closed, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "[data-test=event-key-method] [data-test=key-method-chip][data-lang=ruby]", count: 1
+    assert_select "[data-test=key-method-chip] [data-test=key-method-lang]", text: "ruby"
+    assert_select "[data-test=key-method-chip] [data-test=key-method-code]", text: "AtomicAction.capture(session_id:)"
+    # The copy button carries the full call as its clip payload (Alpine renders the glyph).
+    assert_select "[data-test=key-method-copy][data-clip=?]", "AtomicAction.capture(session_id:)"
+    assert_includes rendered, "window.copyText", "the shared copy helper ships with the chip"
+  end
+
+  test "[component] an action row renders its key-method chip and its goal summary" do
+    closed = event(outcome_slug: "done", closed_at: Time.current)
+    with = action(atomic_event_id: closed.id, seq: 0, kind: "bash",
+                  summary: "list board tasks to find slugs",
+                  key_method: "bin/task list | head -60", key_method_lang: "bash")
+    bare = action(atomic_event_id: closed.id, seq: 1, kind: "read")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[closed, [with, bare]]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "tr[data-test=heartbeat-event-action] [data-test=action-key-method] " \
+                  "[data-test=key-method-chip][data-lang=bash]", count: 1
+    assert_select "tr[data-test=heartbeat-event-action] [data-test=action-summary]",
+                  text: "list board tasks to find slugs", count: 1
+    # The bare action keeps the idle grade hint and no chip.
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint", text: /click to grade/, count: 1
+  end
 end

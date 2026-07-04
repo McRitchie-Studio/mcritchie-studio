@@ -63,8 +63,9 @@ namespace :atomic do
           { kind: "dor-check",   actor: "board", task: task_slug, in: "bin/dor-check event-grouped-heartbeat-view", ev: "Run definition of ready build", rs: "Spec completeness gate passed clean" }
         ] },
       { category: "Explore", reason: "find the capture seam", outcome: "located the model and schema seam", stage: "building",
+        km: "AtomicAction.capture(session_id:, kind:, input:)", kl: "ruby",
         rows: [
-          { kind: "explore", actor: "agent", task: task_slug, model: opus, ti: 9400, to: 360, in: "grep -rn AtomicEvent app/models", ev: "Explore the model and schema seam", rs: "Found the capture seam quickly" }
+          { kind: "explore", actor: "agent", task: task_slug, model: opus, ti: 9400, to: 360, in: "grep -rn AtomicEvent app/models", ev: "Explore the model and schema seam", rs: "Found the capture seam quickly", sm: "find the capture model seam", km: "grep -rn AtomicEvent app/models", kl: "bash" }
         ] },
       { category: "Edit", reason: "implement the event view", outcome: "controller view and helper written", stage: "building",
         rows: [
@@ -104,6 +105,9 @@ namespace :atomic do
         kind:            row[:kind],
         event_slug:      row[:ev],
         result_slug:     row[:rs],
+        summary:         row[:sm],
+        key_method:      row[:km],
+        key_method_lang: row[:kl],
         input:           row[:in],
         outcome:         row[:outcome] || "ok",
         actor:           row[:actor],
@@ -139,7 +143,9 @@ namespace :atomic do
       span[:rows].each { |row| capture_row.call(row) }
       next if span[:outcome].nil?          # leave the final span open -> "…in progress"
 
-      AtomicEvent.close_event!(session_id: session_id, outcome_slug: span[:outcome], closed_at: at.call(i) + 5.seconds)
+      AtomicEvent.close_event!(session_id: session_id, outcome_slug: span[:outcome],
+                               key_method: span[:km], key_method_lang: span[:kl],
+                               closed_at: at.call(i) + 5.seconds)
     end
 
     events = AtomicEvent.where(session_id: session_id)

@@ -53,6 +53,20 @@ module Api
         assert_equal 1234, captured[:duration_ms]
       end
 
+      test "[integration] create persists summary + key_method (lang inferred when absent)" do
+        post api_v1_atomic_actions_path,
+             params: @body.merge(kind: "bash",
+                                 summary: "list board tasks to find slugs",
+                                 key_method: "bin/task list | head -60"),
+             headers: @headers, as: :json
+
+        assert_response :created
+        action = AtomicAction.order(:id).last
+        assert_equal "list board tasks to find slugs", action.summary
+        assert_equal "bin/task list | head -60", action.key_method
+        assert_equal "bash", action.key_method_lang, "blank lang falls to the concern's inference"
+      end
+
       test "[unit] drops blank scalars so capture's own defaults engage" do
         captured = nil
         stub = lambda do |attrs|

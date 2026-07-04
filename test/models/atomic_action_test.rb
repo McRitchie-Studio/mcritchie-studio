@@ -432,4 +432,28 @@ class AtomicActionTest < ActiveSupport::TestCase
     assert action&.persisted?, "capture still writes the action when attribution fails"
     assert_nil action.atomic_event_id, "a failed attribution degrades to a null span"
   end
+
+  # ---- summary + key_method (the action's goal slug and load-bearing call) ---
+
+  test "[integration] capture persists summary, key_method, and an explicit lang" do
+    action = AtomicAction.capture(session_id: "km-sess", kind: "bash",
+                                  summary: "list board tasks to find slugs",
+                                  key_method: "bin/task list 2>/dev/null | head -60",
+                                  key_method_lang: "bash")
+
+    assert_equal "list board tasks to find slugs", action.summary
+    assert_equal "bin/task list 2>/dev/null | head -60", action.key_method
+    assert_equal "bash", action.key_method_lang
+  end
+
+  test "[unit] a blank lang is inferred and an overlong summary is capped, never rejected" do
+    action = AtomicAction.capture(session_id: "km-sess", kind: "bash",
+                                  summary: "g" * 400,
+                                  key_method: "Task.find_by(slug: 'x')")
+
+    assert_equal "ruby", action.key_method_lang
+    assert_equal AtomicAction::MAX_SUMMARY_LENGTH, action.summary.length
+    assert_nil AtomicAction.capture(session_id: "km-sess", kind: "read").summary,
+               "fields stay optional — a plain capture carries neither"
+  end
 end

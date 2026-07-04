@@ -654,4 +654,43 @@ class AtomicCaptureHookTest < Minitest::Test
 
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
   end
+
+  # ── [unit] bash summary + key_method derivation ──────────────────────────
+
+  def test_unit_bash_events_derive_summary_and_key_method
+    event = { "tool_name" => "Bash",
+              "tool_input" => { "command" => "bin/task list 2>/dev/null | head -60",
+                                "description" => "List board tasks to find the two slugs" } }
+    h = hook
+
+    assert_equal "List board tasks to find the two slugs", h.bash_summary(event)
+    assert_equal "bin/task list 2>/dev/null | head -60", h.bash_key_method(event)
+
+    payload = h.build_payload(event, now: Time.utc(2026, 7, 4, 12, 0, 0))
+    assert_equal "bin/task list 2>/dev/null | head -60", payload["key_method"]
+    assert_equal "bash", payload["key_method_lang"]
+    assert_equal "List board tasks to find the two slugs", payload["summary"]
+  end
+
+  def test_unit_non_bash_events_carry_neither_summary_nor_key_method
+    event = { "tool_name" => "Edit", "tool_input" => { "file_path" => "/x", "description" => "not a bash description" } }
+    h = hook
+
+    assert_nil h.bash_summary(event)
+    assert_nil h.bash_key_method(event)
+    payload = h.build_payload(event, now: Time.utc(2026, 7, 4, 12, 0, 0))
+    assert_nil payload["key_method"]
+    assert_nil payload["key_method_lang"]
+  end
+
+  def test_unit_bash_key_method_is_secret_redacted_like_input
+    event = { "tool_name" => "Bash",
+              "tool_input" => { "command" => "STRIPE_SECRET_KEY=sk_live_abc123 bin/rails runner Job.run",
+                                "description" => "Run the job with the STRIPE_SECRET_KEY=sk_live_abc123 env" } }
+    h = hook
+
+    refute_includes h.bash_key_method(event), "sk_live_abc123", "the command's secret VALUE is masked"
+    assert_includes h.bash_key_method(event), "STRIPE_SECRET_KEY", "the KEY survives so the line stays legible"
+    refute_includes h.bash_summary(event), "sk_live_abc123", "the description is pattern-redacted too"
+  end
 end

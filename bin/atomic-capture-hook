@@ -111,6 +111,7 @@ class AtomicCaptureHook
     marker = resolve_marker(cwd: event["cwd"], session_id: event["session_id"])
     turn   = resolve_assistant_turn(event)
     usage  = turn_usage(turn["usage"])
+    key_method = bash_key_method(event)
     {
       "session_id" => event["session_id"],
       "kind" => map_kind(event["tool_name"]),
@@ -122,6 +123,9 @@ class AtomicCaptureHook
       "tokens_out" => usage[:tokens_out],
       "cache_read_tokens" => usage[:cache_read_tokens],
       "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
+      "summary" => bash_summary(event),
+      "key_method" => key_method,
+      "key_method_lang" => key_method ? "bash" : nil,
       "input" => redacted_field(serialize(event["tool_input"]), event, suppress: write_tool?(event)),
       "output" => redacted_field(serialize(event["tool_response"]), event, suppress: true),
       "outcome" => outcome_for(event["tool_response"]),
@@ -258,6 +262,27 @@ class AtomicCaptureHook
 
     input = event.fetch("tool_input") { {} }
     input.is_a?(Hash) ? input["command"].to_s : ""
+  end
+
+  # The bash call's `description` param → the hook-derived AtomicAction.summary
+  # (the action's GOAL slug, outcome-free). Only Bash carries a description;
+  # nil leaves the column empty. Pattern-redacted like any stored text.
+  def bash_summary(event)
+    return nil unless event["tool_name"].to_s == "Bash"
+
+    input = event.fetch("tool_input") { {} }
+    desc = input.is_a?(Hash) ? input["description"].to_s.strip : ""
+    desc.empty? ? nil : redact_secrets(desc)
+  end
+
+  # The bash call's command → the hook-derived AtomicAction.key_method (the
+  # copy-and-rerun line on the heartbeat rows). SAME redaction policy as the
+  # `input` field — this lands on the PUBLIC surface. nil for non-Bash tools.
+  def bash_key_method(event)
+    cmd = bash_command(event)
+    return nil if cmd.strip.empty?
+
+    redacted_field(cmd, event, suppress: write_tool?(event))
   end
 
   # JSON-encode anything that isn't already a string (the contract columns are
