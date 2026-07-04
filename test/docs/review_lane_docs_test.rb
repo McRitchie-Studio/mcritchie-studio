@@ -49,12 +49,14 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # cold-start block) that the per-file phrase checks above missed. Includes the
   # adapter SOURCES (index.md → /Users/alex/projects/AGENTS.md, claude.md →
   # projects-root CLAUDE.md) so a regression to pre-sweep phrasing in the
-  # generated entry docs fails the suite too.
+  # generated entry docs fails the suite too, and system/mission.md (rewritten
+  # in PR #367 with no positive pin of its own) so its framing can't drift back.
   REVIEW_DOCS = %w[
     index.md
     claude.md
     agents/avi/role.md
     system/devops-cycle-design.md
+    system/mission.md
     modules/heartbeats.md
     modules/parallel-agent-devops.md
   ].freeze
