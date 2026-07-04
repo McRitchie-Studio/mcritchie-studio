@@ -1,10 +1,11 @@
-# The original 151 Pokémon, seeded as reference data (db/seeds/56_pokemon.rb,
+# The Gen 1–2 Pokémon (dex 1–251), seeded as reference data (db/seeds/56_pokemon.rb,
 # from the committed db/seeds/data/pokemon.json that `rake pokemon:fetch` writes).
 # Carries types + base stats so it's reusable beyond its first job — the per-task
 # mascot draw (Task#assign_mascot stamps metadata.devops.mascot). No behavior is
 # attached to a Pokémon: it is pure identity/reference data.
 class Pokemon < ApplicationRecord
   GEN1_RANGE = (1..151).freeze
+  GEN2_RANGE = (152..251).freeze
 
   # The shared Studio::Enumeral category holding each type's display attributes —
   # color, emoji (in metadata), and commonality rank (seeded in
@@ -20,8 +21,12 @@ class Pokemon < ApplicationRecord
 
   scope :by_dex, -> { order(:dex) }
   scope :gen1, -> { where(generation: 1) }
+  scope :gen2, -> { where(generation: 2) }
 
-  # The deck the mascot draw pulls from — the original 151.
+  # The deck the mascot draw pulls from — deliberately still the original 151.
+  # The Johto rows are seeded reference data only until the base-level spawn
+  # pool lands (tasks/base-level-spawn-pool), which reshapes the deck around
+  # evolutionary base forms across both generations.
   def self.deck
     gen1
   end

@@ -1,11 +1,11 @@
-# The original 151 Pokémon — reference data backing the per-task mascot draw
-# (Task#assign_mascot) and reusable elsewhere. DB-only: image bytes are mirrored
-# into S3 separately by `rake pokemon:upload_images` (lib/tasks/pokemon.rake), the
-# same identity-vs-bytes split as the coach/athlete headshots (32_headshot_links).
+# The Gen 1–2 Pokémon (dex 1–251) — reference data backing the per-task mascot
+# draw (Task#assign_mascot) and reusable elsewhere. DB-only: image bytes are
+# mirrored into S3 separately by `rake pokemon:upload_images` (lib/tasks/pokemon.rake),
+# the same identity-vs-bytes split as the coach/athlete headshots (32_headshot_links).
 #
 # Idempotent — upserts by dex, so re-seeding refreshes fields without duplicating.
 
-puts "\n--- Pokémon (original 151) ---"
+puts "\n--- Pokémon (Gen 1–2) ---"
 
 POKEMON_FIELDS = %w[
   name slug types hp attack defense special_attack special_defense speed
