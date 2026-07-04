@@ -2,7 +2,7 @@
 # start (a SessionStart hook → `bin/task session-mascot`), before any task exists
 # — so bin/statusline shows the handle in seconds instead of only once the first
 # task lands (~minutes in). One row per session_id; the board task adopts it
-# (Task#session_mascot_slug) so the status bar and the board always agree.
+# (Task#session_mascot_draw) so the status bar and the board always agree.
 class SessionMascot < ApplicationRecord
   validates :session_id,  presence: true, uniqueness: true
   validates :mascot_slug, presence: true
@@ -58,7 +58,10 @@ class SessionMascot < ApplicationRecord
     slug = draw_for(sid, parent_session_id: parent_session_id, parent_mascot_slug: parent_mascot_slug)
     return nil unless slug
 
-    create!(session_id: sid, parent_session_id: parent_session_id.presence, mascot_slug: slug)
+    # The shiny roll happens HERE, once per session draw (1-in-100 prod, 1-in-10
+    # dev/QA) — the session's tasks then adopt the flag as devops.mascot_shiny.
+    create!(session_id: sid, parent_session_id: parent_session_id.presence,
+            mascot_slug: slug, shiny: Pokemon.roll_shiny?)
   end
 
   def self.draw_for_parent_tree(parent_sid, parent_slug)

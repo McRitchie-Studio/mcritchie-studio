@@ -284,7 +284,10 @@ class Task < ApplicationRecord
       next unless pick
 
       merged = task.metadata.deep_dup
-      (merged["devops"] ||= {})["mascot"] = pick.slug
+      backfilled = (merged["devops"] ||= {})
+      backfilled["mascot"] = pick.slug
+      # A backfilled mascot is a fresh draw, so it gets its own shiny roll.
+      backfilled["mascot_shiny"] = Pokemon.roll_shiny?
       task.update!(metadata: merged)
       taken << pick.slug
       assigned += 1
@@ -303,6 +306,7 @@ class Task < ApplicationRecord
   # Idempotent; a failed row is captured to ErrorLog and skipped. Returns the count.
   def self.resync_session_mascots!
     by_session = {}
+    shiny_by_session = {}
     taken = active_mascots.to_set
     restamped = 0
     live.find_each do |task|
@@ -313,16 +317,26 @@ class Task < ApplicationRecord
       next unless slug
       taken << slug
 
+      # The session's shiny roll rides along with its Pokémon: the SessionMascot
+      # row is the truth when present, else the first task seen keeps its flag.
+      # key? (not ||=) because a legitimate `false` must cache too.
+      unless shiny_by_session.key?(sid)
+        session_mascot = SessionMascot.find_by(session_id: sid)
+        shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : !!task.metadata.dig("devops", "mascot_shiny")
+      end
+      shiny = shiny_by_session[sid]
+
       dev = task.metadata["devops"] || {}
-      next if dev["mascot"] == slug && dev["mascot_session"] == sid
+      next if dev["mascot"] == slug && dev["mascot_session"] == sid && !!dev["mascot_shiny"] == shiny
 
       merged = task.metadata.deep_dup
       d = (merged["devops"] ||= {})
       d["mascot"] = slug
       d["mascot_session"] = sid
+      d["mascot_shiny"] = shiny
       pokemon = Pokemon.find_by(slug: slug)
       d["mascot_color"] = pokemon&.signature_color
-      d["mascot_emoji"] = pokemon&.type_emoji.presence
+      d["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
       task.update_columns(metadata: merged)
       restamped += 1
     rescue StandardError => e
@@ -340,6 +354,13 @@ class Task < ApplicationRecord
 
   def devops?
     devops.any?
+  end
+
+  # Whether this task's mascot came up SHINY — rolled once at draw time (the
+  # session's SessionMascot roll, adopted here) and stamped server-side as
+  # devops.mascot_shiny alongside mascot_color/emoji.
+  def mascot_shiny?
+    !!devops["mascot_shiny"]
   end
 
   def devops_kind
@@ -1105,12 +1126,15 @@ class Task < ApplicationRecord
     return {} unless slug
 
     pokemon = Pokemon.find_by(slug: slug) if Pokemon.table_exists?
+    # A shiny mascot bakes its shiny avatar URL into the snapshot, so historical
+    # events keep the shiny face even after the mascot recycles to another task.
     snapshot = {
       "slug" => slug,
       "name" => pokemon&.name.presence || slug,
-      "avatar" => pokemon&.display_avatar.presence,
+      "avatar" => pokemon&.display_avatar(shiny: mascot_shiny?).presence,
       "color" => devops["mascot_color"].presence || pokemon&.signature_color.presence,
-      "emoji" => devops["mascot_emoji"].presence
+      "emoji" => devops["mascot_emoji"].presence,
+      "shiny" => (true if mascot_shiny?)
     }.compact
 
     { "mascot" => snapshot }
@@ -1251,7 +1275,7 @@ class Task < ApplicationRecord
     needs = devops["mascot"].blank? || (sid.present? && devops["mascot_session"].to_s != sid)
     return unless needs
 
-    slug = session_mascot_slug(sid)
+    slug, shiny = session_mascot_draw(sid)
     return unless slug
     devops["mascot"] = slug
     devops["mascot_session"] = sid
@@ -1259,10 +1283,12 @@ class Task < ApplicationRecord
     # emoji(s) so the status line / context JSON can tint and glyph the ⊙<mascot>
     # handle without DB access (bin/task and bin/agent-worktree are API clients).
     # nil/blank when the type colors aren't seeded — the status line then falls
-    # back to its default tint and the 🛠 ⊙ glyphs.
+    # back to its default tint and the 🛠 ⊙ glyphs. A shiny draw is stamped
+    # (server-owned, like color/emoji) and announces itself with a ✨ glyph.
     pokemon = Pokemon.find_by(slug: slug)
+    devops["mascot_shiny"] = shiny
     devops["mascot_color"] = pokemon&.signature_color
-    devops["mascot_emoji"] = pokemon&.type_emoji.presence
+    devops["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
   end
 
   # Persona override: when a task carries devops.persona (an agent slug — "act as
@@ -1291,6 +1317,7 @@ class Task < ApplicationRecord
       devops.delete("persona")
       devops["mascot"] = nil
       devops["mascot_session"] = nil
+      devops["mascot_shiny"] = nil
       devops["mascot_color"] = nil
       devops["mascot_emoji"] = nil
       sync_session_mascot
@@ -1323,12 +1350,16 @@ class Task < ApplicationRecord
   # drawn here on first task when the hook hasn't run). SessionMascot itself reuses
   # a live peer task's mascot, so every task an agent builds shares its handle.
   # With no session, draw a one-off so the task isn't mascot-less.
-  def session_mascot_slug(sid)
-    if sid.present?
-      mascot = SessionMascot.for(sid)&.mascot_slug
-      return mascot if mascot
+  # [slug, shiny] for this task's mascot: the session's stable draw (slug AND its
+  # shiny roll) when a session exists, else a fresh task-local draw with its own
+  # shiny roll. [nil, false] when nothing can be drawn.
+  def session_mascot_draw(sid)
+    if sid.present? && (session_mascot = SessionMascot.for(sid))
+      return [session_mascot.mascot_slug, session_mascot.shiny?]
     end
-    Pokemon.draw(exclude: Task.active_mascots)&.slug
+
+    slug = Pokemon.draw(exclude: Task.active_mascots)&.slug
+    slug ? [slug, Pokemon.roll_shiny?] : [nil, false]
   end
 
   def word_count(text)

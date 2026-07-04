@@ -9,6 +9,9 @@
 #                                  upload the crop to <dex>-<slug>-cropped.png
 #                                  (ADDITIVE — the original <dex>-<slug>.png is the
 #                                  backup and is never overwritten or deleted)
+#
+# Both image tasks cover the normal AND shiny art (shiny keys carry a -shiny
+# infix); VARIANTS=shiny (or normal) narrows a run to one side.
 require "net/http"
 require "json"
 require "fileutils"
@@ -77,7 +80,12 @@ namespace :pokemon do
         # fallback = the original uncropped official-artwork (rake pokemon:upload_images).
         "avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-cropped.png",
         "avatar_fallback_url" => "#{S3_BASE}/#{dex}-#{slug}.png",
-        "sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-sprite.png"
+        "sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-sprite.png",
+        # The shiny mirror of the same three — worn when a mascot DRAW rolls
+        # shiny (Pokemon.roll_shiny?), provisioned by the same two rakes.
+        "shiny_avatar_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny-cropped.png",
+        "shiny_avatar_fallback_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny.png",
+        "shiny_sprite_url" => "#{S3_BASE}/#{dex}-#{slug}-shiny-sprite.png"
       }
       warn "fetched ##{format('%03d', dex)} #{row['name']}"
       row
@@ -86,21 +94,28 @@ namespace :pokemon do
     puts "wrote #{rows.size} Pokémon → #{DATA_FILE}"
   end
 
-  desc "Mirror the 151 avatars (official-artwork + pixel sprite) into S3"
+  desc "Mirror the 151 avatars (official-artwork + pixel sprite, normal + shiny) into S3"
   task upload_images: :environment do
     require "aws-sdk-s3"
     bucket = ENV.fetch("POKEMON_S3_BUCKET", "mcritchie-studio-production")
     s3 = Aws::S3::Client.new(region: "us-east-2")
+    variants = image_variants
     # Slug-keyed for self-describing URLs (e.g. pokemon/73-tentacruel.png). Slugs
     # come from the committed JSON; the source images are still dex-keyed on the CDN.
     JSON.parse(File.read(DATA_FILE)).each do |row|
       dex = row.fetch("dex")
       slug = row.fetch("slug")
-      put_image(s3, bucket, "pokemon/#{dex}-#{slug}.png", "#{SPRITE_CDN}/other/official-artwork/#{dex}.png")
-      put_image(s3, bucket, "pokemon/#{dex}-#{slug}-sprite.png", "#{SPRITE_CDN}/#{dex}.png")
-      warn "uploaded ##{format('%03d', dex)} #{slug}"
+      if variants.include?("normal")
+        put_image(s3, bucket, "pokemon/#{dex}-#{slug}.png", "#{SPRITE_CDN}/other/official-artwork/#{dex}.png")
+        put_image(s3, bucket, "pokemon/#{dex}-#{slug}-sprite.png", "#{SPRITE_CDN}/#{dex}.png")
+      end
+      if variants.include?("shiny")
+        put_image(s3, bucket, "pokemon/#{dex}-#{slug}-shiny.png", "#{SPRITE_CDN}/other/official-artwork/shiny/#{dex}.png")
+        put_image(s3, bucket, "pokemon/#{dex}-#{slug}-shiny-sprite.png", "#{SPRITE_CDN}/shiny/#{dex}.png")
+      end
+      warn "uploaded ##{format('%03d', dex)} #{slug} (#{variants.join('+')})"
     end
-    puts "mirrored 151 Pokémon avatars → s3://#{bucket}/pokemon/"
+    puts "mirrored 151 Pokémon avatars (#{variants.join('+')}) → s3://#{bucket}/pokemon/"
   end
 
   # Tighten each avatar: download the ORIGINAL official-artwork from S3, trim its
@@ -125,35 +140,43 @@ namespace :pokemon do
     rows = JSON.parse(File.read(DATA_FILE))
     rows = rows.first(limit) if limit.positive?
 
+    # "" = the normal art, "-shiny" = the shiny mirror; VARIANTS narrows a run.
+    suffixes = []
+    suffixes << "" if image_variants.include?("normal")
+    suffixes << "-shiny" if image_variants.include?("shiny")
+
     uploaded = 0
     skipped = []
     rows.each do |row|
       dex = row.fetch("dex")
       slug = row.fetch("slug")
-      original_url = "#{S3_BASE}/#{dex}-#{slug}.png"      # the backup — read only
-      src_path = cache.join("#{dex}-#{slug}.png")
-      out_path = cache.join("#{dex}-#{slug}-cropped.png")
-      key = "pokemon/#{dex}-#{slug}-cropped.png"          # the NEW crop key
+      suffixes.each do |suffix|
+        base = "#{dex}-#{slug}#{suffix}"
+        original_url = "#{S3_BASE}/#{base}.png"    # the backup — read only
+        src_path = cache.join("#{base}.png")
+        out_path = cache.join("#{base}-cropped.png")
+        key = "pokemon/#{base}-cropped.png"        # the NEW crop key
 
-      begin
-        download_png(original_url, src_path) unless File.exist?(src_path)
-        crop_to_bbox(src_path, out_path, margin) unless File.exist?(out_path) && File.size(out_path).positive?
-        s3.put_object(
-          bucket: bucket,
-          key: key,
-          body: File.binread(out_path),
-          content_type: "image/png",
-          cache_control: "public, max-age=31536000, immutable"
-        )
-        uploaded += 1
-        warn "cropped+uploaded ##{format('%03d', dex)} #{slug} → #{key} (#{File.size(out_path)} B)"
-      rescue StandardError => e
-        skipped << "#{dex}-#{slug}: #{e.class}: #{e.message}"
-        warn "SKIPPED ##{format('%03d', dex)} #{slug}: #{e.class}: #{e.message}"
+        begin
+          download_png(original_url, src_path) unless File.exist?(src_path)
+          crop_to_bbox(src_path, out_path, margin) unless File.exist?(out_path) && File.size(out_path).positive?
+          s3.put_object(
+            bucket: bucket,
+            key: key,
+            body: File.binread(out_path),
+            content_type: "image/png",
+            cache_control: "public, max-age=31536000, immutable"
+          )
+          uploaded += 1
+          warn "cropped+uploaded ##{format('%03d', dex)} #{slug}#{suffix} → #{key} (#{File.size(out_path)} B)"
+        rescue StandardError => e
+          skipped << "#{base}: #{e.class}: #{e.message}"
+          warn "SKIPPED ##{format('%03d', dex)} #{slug}#{suffix}: #{e.class}: #{e.message}"
+        end
       end
     end
 
-    puts "cropped+uploaded #{uploaded}/#{rows.size} → s3://#{bucket}/pokemon/*-cropped.png"
+    puts "cropped+uploaded #{uploaded}/#{rows.size * suffixes.size} → s3://#{bucket}/pokemon/*-cropped.png"
     unless skipped.empty?
       puts "skipped #{skipped.size}:"
       skipped.each { |s| puts "  - #{s}" }
@@ -162,6 +185,14 @@ namespace :pokemon do
 
   def get_json(url)
     JSON.parse(Net::HTTP.get(URI(url)))
+  end
+
+  # Which artwork variants an image task processes — VARIANTS=shiny (or
+  # VARIANTS=normal) narrows a run; the default is both. The shiny-only run is
+  # the common re-provision case (the normal art is already mirrored).
+  def image_variants
+    requested = ENV["VARIANTS"].to_s.split(",").map(&:strip).reject(&:empty?)
+    requested.presence || %w[normal shiny]
   end
 
   # GET a PNG, verifying a 2xx + image content-type so an S3 error XML never gets

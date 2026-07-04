@@ -96,6 +96,18 @@ module StageAgentsHelper
     )
   end
 
+  # The task's CURRENT mascot as a board face — the single construction point for
+  # a MascotAgent built off a live task + its Pokémon. A shiny draw
+  # (devops.mascot_shiny) wears the shiny sprite; event snapshots don't come
+  # through here (their avatar URL is baked shiny-aware at record time).
+  def task_mascot_face(task, mascot)
+    return nil unless mascot
+
+    MascotAgent.new(name: mascot.name,
+                    avatar: mascot.display_sprite(shiny: task.mascot_shiny?),
+                    color: mascot.signature_color)
+  end
+
   # Resolve a TaskEvent#actor — which may be an agent slug, a session id, or an
   # email — to an Agent, or nil when it matches no soul (a raw session id, an
   # external email). agents_by_slug is a prebuilt slug→Agent map so this never
@@ -200,7 +212,7 @@ module StageAgentsHelper
     return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
-    by_lane[:build] ||= blocked_build_crew(mascot) if task.blocked?
+    by_lane[:build] ||= blocked_build_crew(task, mascot) if task.blocked?
 
     # Surface LIVE deploy-stage work (review picked · Steffon QA · Avi ship) as a
     # ticking cluster in its lane before the transition lands — the Deploy mirror of
@@ -209,7 +221,7 @@ module StageAgentsHelper
     # intent boards render exactly as before.
     if agents
       by_slug = agents.index_by(&:slug)
-      mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
+      mascot_agent = task_mascot_face(task, mascot)
       intents = Array(events || task.task_events).select(&:intent?)
       work = in_progress_work(task, by_slug, mascot_agent, intents)
       if work && %i[review assembled shipped].include?(work[:lane])
@@ -249,17 +261,13 @@ module StageAgentsHelper
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
   end
 
-  def blocked_build_crew(mascot)
-    return nil unless mascot
+  def blocked_build_crew(task, mascot)
+    face = task_mascot_face(task, mascot)
+    return nil unless face
 
     CrewCluster.new(
       lane: :build,
-      stacked: [
-        StageAgent.new(
-          stage: "building",
-          agent: MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
-        )
-      ],
+      stacked: [StageAgent.new(stage: "building", agent: face)],
       seconds: nil,
       live_since: nil
     )
@@ -270,7 +278,7 @@ module StageAgentsHelper
   # counter (a real, active claim); a `designed`/unclaimed step shows the mascot
   # with no ticker. Unreached steps render an empty, reserved column.
   def build_step_columns(task, entries, mascot)
-    face = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
+    face = task_mascot_face(task, mascot)
     by_to_stage = entries.index_by(&:stage)
     reached_idx = Task::STAGES.index(task.stage).to_i
 
@@ -314,7 +322,7 @@ module StageAgentsHelper
     events = Array(events || task.task_events).select { |e| e.transition? && e.to_stage }
                                               .sort_by { |e| [e.occurred_at, e.id.to_i] }
     by_slug = agents.index_by(&:slug)
-    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
+    mascot_agent = task_mascot_face(task, mascot)
 
     STAGE_AGENT_ORDER.flat_map do |stage|
       evt = events.reverse.find { |e| e.to_stage == stage }
@@ -381,7 +389,7 @@ module StageAgentsHelper
     events = Array(events || task.task_events)
     by_slug = agents.index_by(&:slug)
     mascot ||= Pokemon.find_by(slug: task.devops["mascot"].to_s.presence)
-    mascot_agent = mascot && MascotAgent.new(name: mascot.name, avatar: mascot.sprite_url, color: mascot.signature_color)
+    mascot_agent = task_mascot_face(task, mascot)
 
     transitions = events.select { |e| e.transition? && e.to_stage }.sort_by { |e| [e.occurred_at, e.id.to_i] }
     intents = events.select(&:intent?)

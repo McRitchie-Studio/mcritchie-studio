@@ -369,6 +369,19 @@ Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: ["normal"], g
 Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: ["dragon", "flying"], generation: 1,
                 sprite_url: sprite)
 
+# Shiny mascot demo: a building card whose session draw came up SHINY — drives
+# the shiny_mascot e2e (the board crew circle must paint the shiny sprite, a
+# GOLD 1x1 data URI distinct from the transparent normal one). Stamped directly
+# (update_columns) so the fixture is deterministic, not a 1-in-10 roll.
+shiny_sprite = "data:image/gif;base64,R0lGODlhAQABAPAAAP/XAAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="
+Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", types: ["electric"], generation: 1,
+                sprite_url: sprite, shiny_sprite_url: shiny_sprite)
+shiny_task = Task.create!(title: "Shiny mascot demo card", slug: "shiny-mascot-demo",
+                          stage: "building", priority: 1, started_at: 21.minutes.ago)
+shiny_task.update_columns(metadata: shiny_task.metadata.deep_merge(
+  "devops" => { "mascot" => "pikachu", "mascot_shiny" => true, "mascot_session" => "sess-shiny" }
+))
+
 def release_member!(release, slug:, title:)
   task = Task.create!(
     title: title,

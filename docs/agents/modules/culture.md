@@ -18,6 +18,11 @@ and make product calls, not to operate the terminal on behalf of the agent.
   in your terminal title/resume metadata and on the board. Patched Codex support
   uses hook `threadName` output to update the live footer on session start and
   after task-creating Bash tools, without visible `additionalContext`.
+  Occasionally the draw comes up **shiny** — 1-in-100 on production (1-in-10 on
+  dev/QA so you actually see them; `SHINY_ODDS` overrides). A shiny session wears
+  the shiny artwork on every board avatar and a ✨ prefix on its status-line
+  glyphs (`✨⚡ Pikachu`). Purely cosmetic, rolled once per session at draw time
+  (`devops.mascot_shiny`), and historical stage events keep the shiny face.
 - **Mascot for identity, soul for expertise.** When the work wants a specific soul —
   Carl (backend), Shannon (UI), Jasper (Web3), Steffon (platform), Alex (docs) — act
   *as* that soul: the agent handle drives the review pool and domain fit. The Pokémon

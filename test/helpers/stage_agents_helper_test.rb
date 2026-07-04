@@ -754,4 +754,18 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_not build_step_board?(Task.new(stage: "reviewed"), :deploy)
     assert_not build_step_board?(Task.new(stage: "blocked"), :build)
   end
+
+  # Component tier: the single MascotAgent construction point is shiny-aware —
+  # a shiny task wears the shiny sprite, everything else keeps the normal one.
+  test "task_mascot_face wears the shiny sprite only for a shiny draw" do
+    pokemon = Pokemon.create!(dex: 302, name: "Lapras", slug: "lapras", generation: 1,
+                              sprite_url: "normal-sprite.png", shiny_sprite_url: "shiny-sprite.png")
+    shiny_task = Task.new(metadata: { "devops" => { "mascot_shiny" => true } })
+    plain_task = Task.new(metadata: {})
+
+    assert_equal "shiny-sprite.png", task_mascot_face(shiny_task, pokemon).avatar
+    assert_equal "normal-sprite.png", task_mascot_face(plain_task, pokemon).avatar
+    assert_equal pokemon.name, task_mascot_face(shiny_task, pokemon).name
+    assert_nil task_mascot_face(plain_task, nil)
+  end
 end

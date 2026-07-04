@@ -17,11 +17,13 @@ module Api
         # Also hand back the DEFAULT app so a brand-new session (no task yet) paints
         # "<Pokémon> · mcritchie-studio" — bin/task session-mascot seeds these into
         # the marker only when it has no app, never clobbering a task-set app.
+        # A shiny draw announces itself with a ✨ prefix on the emoji glyphs.
         app = App.default
         render_data({
           "mascot"       => session_mascot.mascot_slug,
+          "mascot_shiny" => session_mascot.shiny?,
           "mascot_color" => pokemon&.signature_color,
-          "mascot_emoji" => pokemon&.type_emoji.presence,
+          "mascot_emoji" => [("✨" if session_mascot.shiny?), pokemon&.type_emoji.presence].compact.join.presence,
           "app"          => app&.slug || App::DEFAULT_SLUG,
           "app_name"     => app&.name,
           "app_color"    => app&.color
