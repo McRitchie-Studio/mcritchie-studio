@@ -8,10 +8,12 @@
     so tests + the no-clipboard fallback read it. Locals:
       launcher  a heartbeat_launchers entry ({agent_slug, heartbeat, actions, label, title})
       soul      the Agent (optional; resolved from the slug when absent)
+      actions   optional card-specific visual action order
       compact_limit  visible copy rows before the card-level reveal toggle %>
 <% launcher = local_assigns.fetch(:launcher) %>
 <% soul = local_assigns[:soul] || Agent.find_by(slug: launcher[:agent_slug]) ||
           Agent.new(slug: launcher[:agent_slug], name: launcher[:agent_slug].titleize) %>
+<% actions = local_assigns[:actions] || launcher[:actions] %>
 <% compact_limit = local_assigns.fetch(:compact_limit, Float::INFINITY) %>
 <div class="flex min-w-0 flex-col items-center gap-1.5"
      data-test="heartbeat-launcher"
@@ -24,7 +26,7 @@
     <%= render "components/agent_avatar", agent: soul, size: "sm" %>
   <% end %>
   <div class="flex w-full max-w-[9rem] min-w-0 flex-col items-stretch gap-1">
-    <% rows = [["heartbeat", launcher[:heartbeat]]] + launcher[:actions].map { |a| ["action", a] } %>
+    <% rows = [["heartbeat", launcher[:heartbeat]]] + actions.map { |a| ["action", a] } %>
     <% rows.each_with_index do |(row_kind, text), row_index| %>
       <% leading = row_kind == "heartbeat" ? "❤️" : action_icon(text) %>
       <% compacted = row_index >= compact_limit %>
@@ -55,5 +57,4 @@
       </div>
     <% end %>
   </div>
-  <span class="text-center text-[10px] leading-tight text-muted"><%= launcher[:label] %></span>
 </div>

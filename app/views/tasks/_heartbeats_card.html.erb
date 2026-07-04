@@ -22,9 +22,15 @@
   </div>
   <div class="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
     <% launchers.each do |launcher| %>
+      <% card_actions = case launcher[:agent_slug]
+                        when "avi" then ["pr-review", "production-deploy", "pr-review-slow", "deploy-with-task"]
+                        when "steffon" then ["qa-release", "archive-shipped"]
+                        else launcher[:actions]
+                        end %>
       <%= render "tasks/heartbeat_launcher",
                  launcher: launcher,
                  soul: souls[launcher[:agent_slug]],
+                 actions: card_actions,
                  compact_limit: compact_limit %>
     <% end %>
   </div>
