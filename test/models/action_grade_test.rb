@@ -107,6 +107,19 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert two.valid?, two.errors.full_messages.to_sentence
   end
 
+  test "[unit] clear_action_grade removes only the requested grader row" do
+    graded = action(session_id: "clear-action-sess")
+    alex = ActionGrade.create!(valid_attrs(atomic_action: graded, grader: ActionGrade::ALEX))
+    mcr = ActionGrade.create!(valid_attrs(atomic_action: graded, grader: ActionGrade::MCR))
+
+    assert_difference -> { ActionGrade.count }, -1 do
+      ActionGrade.clear_action_grade(action: graded, grader: ActionGrade::ALEX)
+    end
+
+    assert_not ActionGrade.exists?(alex.id)
+    assert ActionGrade.exists?(mcr.id)
+  end
+
   # ---- [unit] predicates -----------------------------------------------------
 
   test "[unit] grader and disposition predicates reflect the stored value" do
@@ -275,6 +288,19 @@ class ActionGradeTest < ActiveSupport::TestCase
     ActionGrade.create!(event_valid_attrs(atomic_event: other))
 
     assert_equal [grade.id], ActionGrade.for_event(mine).pluck(:id)
+  end
+
+  test "[unit] clear_event_grade removes only the requested grader row" do
+    span = event(session_id: "clear-event-sess")
+    alex = ActionGrade.create!(event_valid_attrs(atomic_event: span, grader: ActionGrade::ALEX))
+    mcr = ActionGrade.create!(event_valid_attrs(atomic_event: span, grader: ActionGrade::MCR))
+
+    assert_difference -> { ActionGrade.count }, -1 do
+      ActionGrade.clear_event_grade(event: span, grader: ActionGrade::MCR)
+    end
+
+    assert ActionGrade.exists?(alex.id)
+    assert_not ActionGrade.exists?(mcr.id)
   end
 
   # ---- [integration] bank!/discard! on an event grade ------------------------

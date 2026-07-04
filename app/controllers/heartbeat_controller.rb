@@ -172,17 +172,23 @@ class HeartbeatController < ApplicationController
   def grade
     @action = AtomicAction.find(params[:id])
     grader  = params[:grader].to_s
+    @grade_grader = grader
     @grade  = ActionGrade.for_action(@action).by_grader(grader).first_or_initialize(grader: grader)
 
     rescue_and_log(target: @grade) do
-      @grade.disposition = params[:disposition].presence || @grade.disposition.presence || ActionGrade::GOOD
-      @grade.slug        = params[:slug].presence || @grade.slug.presence || default_grade_slug(@action)
-      @grade.long_form   = params[:long_form] if params.key?(:long_form)
-      @grade.save!
+      if params[:intent].to_s == "clear"
+        ActionGrade.clear_action_grade(action: @action, grader: grader)
+        @grade = nil
+      else
+        @grade.disposition = params[:disposition].presence || @grade.disposition.presence || ActionGrade::GOOD
+        @grade.slug        = params[:slug].presence || @grade.slug.presence || default_grade_slug(@action)
+        @grade.long_form   = params[:long_form] if params.key?(:long_form)
+        @grade.save!
 
-      case params[:intent]
-      when "bank"    then @grade.bank!
-      when "discard" then @grade.discard!
+        case params[:intent]
+        when "bank"    then @grade.bank!
+        when "discard" then @grade.discard!
+        end
       end
 
       @from_drawer = params[:surface] == "drawer"
@@ -191,7 +197,7 @@ class HeartbeatController < ApplicationController
       @mcr  = ActionGrade.for_action(@action).by_grader(ActionGrade::MCR).first
       respond_to do |format|
         format.turbo_stream
-        format.json { render json: grade_json(@grade) }
+        format.json { render json: @grade ? grade_json(@grade) : cleared_grade_json(atomic_action_id: @action.id, grader: grader) }
         format.html { redirect_to alex_heartbeat_path(session_id: @action.session_id) }
       end
     end
@@ -217,14 +223,20 @@ class HeartbeatController < ApplicationController
     @grade = ActionGrade.for_event(@event).by_grader(grader).first_or_initialize(grader: grader)
 
     rescue_and_log(target: @grade) do
-      @grade.disposition = params[:disposition].presence || @grade.disposition.presence || ActionGrade::GOOD
-      @grade.slug        = params[:slug].presence || @grade.slug.presence || default_event_grade_slug(@event)
-      @grade.long_form   = params[:long_form] if params.key?(:long_form)
-      @grade.save!
+      if params[:intent].to_s == "clear"
+        ActionGrade.clear_event_grade(event: @event, grader: grader)
+        render json: cleared_grade_json(atomic_event_id: @event.id, grader: grader)
+        return
+      else
+        @grade.disposition = params[:disposition].presence || @grade.disposition.presence || ActionGrade::GOOD
+        @grade.slug        = params[:slug].presence || @grade.slug.presence || default_event_grade_slug(@event)
+        @grade.long_form   = params[:long_form] if params.key?(:long_form)
+        @grade.save!
 
-      case params[:intent]
-      when "bank"    then @grade.bank!
-      when "discard" then @grade.discard!
+        case params[:intent]
+        when "bank"    then @grade.bank!
+        when "discard" then @grade.discard!
+        end
       end
 
       render json: grade_json(@grade)
@@ -393,5 +405,14 @@ class HeartbeatController < ApplicationController
   # which tells the consumer whether this grade is of an action or a span.
   def grade_json(grade)
     grade.slice(:id, :atomic_action_id, :atomic_event_id, :grader, :disposition, :slug, :long_form, :banked, :discarded)
+  end
+
+  def cleared_grade_json(atomic_action_id: nil, atomic_event_id: nil, grader:)
+    {
+      cleared: true,
+      atomic_action_id: atomic_action_id,
+      atomic_event_id: atomic_event_id,
+      grader: grader
+    }.compact
   end
 end

@@ -19,6 +19,11 @@
                 id: "r-#{grader}-#{action.id}-not", onchange: "this.form.requestSubmit()" %>
           Not
         </label>
+        <% if grade.present? %>
+          <button type="submit" name="intent" value="clear" class="hb-cleargrade"
+                  data-test="clear-grade-<%= grader %>" title="Clear grade"
+                  aria-label="Clear <%= grader %> grade">&times;</button>
+        <% end %>
       </span>
     <% end %>
     <span class="hb-fbslugwrap">

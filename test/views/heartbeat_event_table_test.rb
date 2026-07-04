@@ -188,6 +188,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=good][checked]"
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=not][checked]", false
+    assert_select "form[data-test=event-inline-grade][data-grader=alex] [data-test=event-clear-grade-alex]"
   end
 
   test "[component] the span row shows a distinct open vs done status badge" do
@@ -210,6 +211,20 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     assert_select ".hb-satline .hb-bullet"
     assert_select "[data-test=event-action-count]", text: "1 action"
+  end
+
+  test "[component] compact status hides task slugs from span and action rows" do
+    ev = event(seq: 0, task_slug: "hidden-span-task", closed_at: Time.current, outcome_slug: "green")
+    a1 = action(atomic_event_id: ev.id, seq: 0, task_slug: "hidden-action-task", outcome: "ok")
+
+    render partial: "heartbeat/event_table",
+           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "th", text: "Status"
+    assert_select "th", text: "Status / Task", count: 0
+    assert_no_match(/hidden-span-task/, rendered)
+    assert_no_match(/hidden-action-task/, rendered)
+    assert_select "tr[data-test=heartbeat-event-action] .hb-outcome", false
   end
 
   test "[component] a stage-change span badges as its target stage using the board pill" do
@@ -244,16 +259,22 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "[data-test=event-status][data-stage]", false
   end
 
-  test "[component] the span row itself opens the span-grade drawer on click (no separate grade button)" do
+  test "[component] left row cells expand actions and grade cells open the sidebar" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # the whole event row is the clickable affordance into the span-grade drawer
+    # the row still carries the click styling, but its left-side cells expand actions
+    # while the grade columns own the drawer target.
     assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]", 1
+    assert_select "tr.hb-evtrow td.hb-openzone", minimum: 7
+    assert_includes rendered, '@click="open = !open"'
+    assert_match(/data-test="event-grade-cell"\s+@click\.stop="openDrawer/, rendered)
+    assert_match(/data-test="event-grade-cell-mcr"\s+@click\.stop="openDrawer/, rendered)
     assert_includes rendered, heartbeat_event_feedback_path(ev)
-    # the old dedicated "grade ▸" button was removed
+    assert_no_match(/tr class="hb-evtrow hb-clickrow"[^>]*openDrawer/, rendered)
+    # the old dedicated "grade ▸" button is still gone
     assert_select "[data-test=event-grade-open]", false
   end
 
@@ -397,6 +418,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
     # the Alex marker is server-rendered (Nokogiri-visible), carrying its slug
     assert_select "[data-test=event-grade-alex]"
+    assert_select "td[data-test=event-grade-cell] .hb-evtfeedback-stack " \
+                  "form[data-test=event-inline-grade] + [data-test=event-grade-alex]"
     assert_includes rendered, "tight span with a clean outcome"
     # and the tbody carries the hydration data the Alpine row reads
     assert_select "tbody[data-test=heartbeat-event][data-alex-graded=true]"
@@ -427,11 +450,13 @@ class HeartbeatEventTableTest < ActionView::TestCase
     render partial: "heartbeat/event_table",
            locals: { event_rows: [[closed, [with, bare]]], unlabeled: [], pokemon_by_slug: {} }
 
-    assert_select "tr[data-test=heartbeat-event-action] [data-test=action-key-method] " \
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-subnarr [data-test=action-key-method] " \
                   "[data-test=key-method-chip][data-lang=bash]", count: 1
-    assert_select "tr[data-test=heartbeat-event-action] [data-test=action-summary]",
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-subnarr [data-test=action-summary]",
                   text: "list board tasks to find slugs", count: 1
-    # The bare action keeps the idle grade hint and no chip.
-    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint", text: /click to grade/, count: 1
+    # The right-side hint no longer carries the summary; command + summary stay in the
+    # action narration cell.
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint", text: "open action drawer", count: 2
+    assert_select "tr[data-test=heartbeat-event-action] td.hb-gradehint [data-test=action-summary]", false
   end
 end

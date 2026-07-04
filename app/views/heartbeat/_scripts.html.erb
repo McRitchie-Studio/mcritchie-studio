@@ -44,6 +44,10 @@
       },
       onGraded(detail) {
         if (!detail || String(detail.atomic_event_id) !== String(this.eventId)) return;
+        if (detail.cleared) {
+          this.grades[detail.grader] = null;
+          return;
+        }
         this.grades[detail.grader] = {
           disposition: detail.disposition,
           slug: detail.slug,
@@ -60,6 +64,17 @@
         var form = ev.target.closest("form");
         if (!form) return;
         var body = new FormData(form);
+        await this.submitQuickGrade(form, body);
+      },
+      async clearGrade(ev) {
+        var form = ev.target.closest("form");
+        if (!form) return;
+        var body = new FormData(form);
+        body.set("intent", "clear");
+        body.delete("disposition");
+        await this.submitQuickGrade(form, body);
+      },
+      async submitQuickGrade(form, body) {
         try {
           var resp = await fetch(form.action, {
             method: "POST",
@@ -107,6 +122,14 @@
           });
           var data = await resp.json();
           if (!resp.ok) { this.error = (data && data.error) || "Could not save the grade."; return; }
+          if (data.cleared) {
+            this.disp = "";
+            this.banked = false;
+            this.discarded = false;
+            this.saved = true;
+            window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
+            return;
+          }
           this.disp = data.disposition;
           this.banked = !!data.banked;
           this.discarded = !!data.discarded;

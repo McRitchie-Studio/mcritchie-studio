@@ -2,9 +2,9 @@
     three live stat tallies and the Insight Bank count, and (only when the write came
     from the drawer) re-render the drawer with the fresh grade + audit state. The
     read-only view stays put; just these surfaces update. %>
-<% grade_for_grader = @grade.alex? ? @alex : @mcr %>
-<%= turbo_stream.replace "fb-#{@grade.grader}-#{@action.id}" do %>
-  <%= render "heartbeat/feedback_cell", action: @action, grader: @grade.grader, grade: grade_for_grader %>
+<% grade_for_grader = @grade_grader == ActionGrade::ALEX ? @alex : @mcr %>
+<%= turbo_stream.replace "fb-#{@grade_grader}-#{@action.id}" do %>
+  <%= render "heartbeat/feedback_cell", action: @action, grader: @grade_grader, grade: grade_for_grader %>
 <% end %>
 
 <%= turbo_stream.replace "hb-stat-graded" do %><b id="hb-stat-graded"><%= @counts[:graded] %></b><% end %>

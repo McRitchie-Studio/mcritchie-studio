@@ -33,6 +33,7 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
     assert_select "form[data-grader=mcr] input[name=grader][value=mcr]"
     # disposition is a toggle, never an inline radio
     assert_select "input[type=radio]", false
+    assert_select ".hb-disptoggle button[name=intent][value=clear].clear-disp", text: "×", count: 2
     # the rolled-up span summary surfaces
     assert_includes rendered, "9.4k/360"
     assert_includes rendered, "opus-4-8"

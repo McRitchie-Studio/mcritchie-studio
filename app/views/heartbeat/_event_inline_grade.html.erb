@@ -28,5 +28,9 @@
              @change="quickGrade($event)">
       Not
     </label>
+    <button type="button" class="hb-cleargrade" data-test="event-clear-grade-<%= grader %>"
+            title="Clear grade" aria-label="Clear <%= grader %> grade"
+            x-show="grades.<%= grader %>" <%= raw(grade ? "" : 'style="display:none"') %>
+            @click.stop="clearGrade($event)">&times;</button>
   </span>
 </form>

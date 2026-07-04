@@ -28,6 +28,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     # ungraded -> the add-slug prompt, no disposition selected
     assert_select "td#fb-alex-#{a.id} .hb-addfb"
     assert_select "td#fb-alex-#{a.id} label.hb-rb.on-good", false
+    assert_select "td#fb-alex-#{a.id} [data-test=clear-grade-alex]", false
   end
 
   test "[component] a stored disposition renders as the selected radio and shows the slug" do
@@ -39,6 +40,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
 
     assert_select "td#fb-alex-#{a.id} label.hb-rb.on-good"
     assert_select "td#fb-alex-#{a.id} input[type=radio][value=good][checked=checked]"
+    assert_select "td#fb-alex-#{a.id} button[data-test=clear-grade-alex][name=intent][value=clear]", text: "×"
     assert_select "td#fb-alex-#{a.id} .hb-fbslug", text: "good catch flagging the gaps"
   end
 

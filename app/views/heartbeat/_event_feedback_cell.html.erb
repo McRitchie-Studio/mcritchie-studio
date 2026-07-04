@@ -6,11 +6,17 @@
     @click.stop keeps the radios from bubbling to the row (which now opens the fuller
     grade drawer on click — the old "grade ▸" button was dropped). Locals: event, alex
     (ActionGrade | nil), mcr (ActionGrade | nil). %>
-<td class="hb-evtfbcell" data-test="event-grade-cell" @click.stop>
-  <%= render "heartbeat/event_inline_grade", event: event, grader: "alex", grade: alex %>
-  <%= render "heartbeat/event_grade_mark", grader: "alex", grade: alex %>
+<td class="hb-evtfbcell" data-test="event-grade-cell"
+    @click.stop="openDrawer('<%= heartbeat_event_feedback_path(event) %>')">
+  <div class="hb-evtfeedback-stack">
+    <%= render "heartbeat/event_inline_grade", event: event, grader: "alex", grade: alex %>
+    <%= render "heartbeat/event_grade_mark", grader: "alex", grade: alex %>
+  </div>
 </td>
-<td class="hb-evtfbcell" data-test="event-grade-cell-mcr" @click.stop>
-  <%= render "heartbeat/event_inline_grade", event: event, grader: "mcr", grade: mcr %>
-  <%= render "heartbeat/event_grade_mark", grader: "mcr", grade: mcr %>
+<td class="hb-evtfbcell" data-test="event-grade-cell-mcr"
+    @click.stop="openDrawer('<%= heartbeat_event_feedback_path(event) %>')">
+  <div class="hb-evtfeedback-stack">
+    <%= render "heartbeat/event_inline_grade", event: event, grader: "mcr", grade: mcr %>
+    <%= render "heartbeat/event_grade_mark", grader: "mcr", grade: mcr %>
+  </div>
 </td>

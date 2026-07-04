@@ -91,6 +91,7 @@
   #alex-heartbeat .hb-bullet { color:var(--hb-muted); font-size:10.5px; line-height:1; }
   #alex-heartbeat .hb-outcome-badge { display:inline-flex; align-items:center; }
   #alex-heartbeat .hb-clickrow { cursor:pointer; }
+  #alex-heartbeat .hb-openzone { cursor:pointer; }
   #alex-heartbeat .hb-taskcell { color:var(--hb-muted); font-size:10.5px; }
   #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
   /* Two-line narration — the reason on line 1, the "-> outcome" beneath it, so the
@@ -130,8 +131,11 @@
   #alex-heartbeat tr.hb-subrow.hb-subempty { cursor:default; }
   #alex-heartbeat tr.hb-subrow.hb-subempty td { color:var(--hb-faint); font-style:italic; }
   #alex-heartbeat .hb-kind { color:var(--hb-txt); }
-  #alex-heartbeat .hb-subslug { color:var(--hb-txt); }
-  #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:8px; }
+  #alex-heartbeat .hb-subnarr { display:flex; flex-direction:column; gap:3px; max-width:520px; }
+  #alex-heartbeat .hb-subslug { color:var(--hb-txt); font-weight:600; }
+  #alex-heartbeat .hb-subinput { color:var(--hb-faint); }
+  #alex-heartbeat .hb-subkey { display:block; max-width:100%; }
+  #alex-heartbeat .hb-substate { color:var(--hb-faint); }
   #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
 
   /* Key-method chip — [lang badge | code | copy]. The one load-bearing call of a
@@ -165,15 +169,17 @@
   #alex-heartbeat .hb-pager-off { opacity:.4; cursor:default; }
 
   #alex-heartbeat .hb-fbcell { min-width:196px; }
-  #alex-heartbeat .hb-fbinner { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-fbinner { display:flex; flex-direction:column; align-items:flex-start; gap:5px; }
   #alex-heartbeat .hb-radioform { display:inline; margin:0; }
-  #alex-heartbeat .hb-radiogrp { display:inline-flex; gap:4px; }
+  #alex-heartbeat .hb-radiogrp { display:inline-flex; align-items:center; gap:4px; }
   #alex-heartbeat .hb-rb { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:700; letter-spacing:.3px; padding:2px 6px; border:1px solid var(--hb-line); border-radius:6px; color:var(--hb-muted); cursor:pointer; white-space:nowrap; }
   #alex-heartbeat .hb-rb input { margin:0; width:11px; height:11px; cursor:pointer; accent-color:var(--hb-accent); }
   #alex-heartbeat .hb-rb.on-good { color:var(--hb-good); border-color:var(--hb-good); }
   #alex-heartbeat .hb-rb.on-good input { accent-color:var(--hb-good); }
   #alex-heartbeat .hb-rb.on-not { color:var(--hb-not); border-color:var(--hb-not); }
   #alex-heartbeat .hb-rb.on-not input { accent-color:var(--hb-not); }
+  #alex-heartbeat .hb-cleargrade { width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--hb-line); border-radius:50%; background:transparent; color:var(--hb-muted); font-size:13px; line-height:1; cursor:pointer; padding:0; }
+  #alex-heartbeat .hb-cleargrade:hover { color:var(--hb-not); border-color:var(--hb-not); background:rgba(248,81,73,.08); }
   #alex-heartbeat .hb-fbslugwrap { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
   #alex-heartbeat .hb-fbslug { font-weight:600; font-size:12px; }
   #alex-heartbeat .hb-addfb { color:var(--hb-faint); font-size:11.5px; font-style:italic; }
@@ -183,7 +189,8 @@
 
   /* Span-grade affordance on the event row — the "grade" button plus each grader's
      live marker (a disposition dot + slug), and the span-grading drawer's saved chip. */
-  #alex-heartbeat .hb-evtfbcell { white-space:nowrap; }
+  #alex-heartbeat .hb-evtfbcell { white-space:nowrap; cursor:pointer; }
+  #alex-heartbeat .hb-evtfeedback-stack { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:118px; }
   #alex-heartbeat .hb-gradebtn { padding:4px 9px; font-size:11px; }
   #alex-heartbeat .hb-evtmarks { display:inline-flex; flex-direction:column; gap:3px; margin-top:5px; }
   #alex-heartbeat .hb-evtmark { display:inline-flex; align-items:center; gap:5px; font-size:11px; }
@@ -225,6 +232,8 @@
   #alex-heartbeat .hb-wc.off { color:var(--hb-faint); }
   #alex-heartbeat .hb-disptoggle { display:flex; gap:8px; }
   #alex-heartbeat .hb-disptoggle button { flex:1; border:1px solid var(--hb-line); background:var(--hb-bg); color:var(--hb-muted); border-radius:7px; padding:7px; cursor:pointer; font-weight:600; font-size:12px; }
+  #alex-heartbeat .hb-disptoggle button.clear-disp { flex:0 0 34px; color:var(--hb-faint); }
+  #alex-heartbeat .hb-disptoggle button.clear-disp:hover { color:var(--hb-not); border-color:var(--hb-not); }
   #alex-heartbeat .hb-disptoggle button.sel-good { background:var(--hb-good); color:#06140a; border-color:var(--hb-good); }
   #alex-heartbeat .hb-disptoggle button.sel-not { background:var(--hb-not); color:#1a0606; border-color:var(--hb-not); }
   #alex-heartbeat .hb-saverow { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }

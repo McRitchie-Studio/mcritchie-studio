@@ -31,6 +31,9 @@
     <div class="hb-disptoggle">
       <button type="button" @click="disp = 'good'" :class="disp === 'good' ? 'sel-good' : ''">Good</button>
       <button type="button" @click="disp = 'not'" :class="disp === 'not' ? 'sel-not' : ''">Not</button>
+      <button type="submit" name="intent" value="clear" class="clear-disp"
+              title="Clear grade" aria-label="Clear <%= grader %> grade"
+              @click="disp = ''">&times;</button>
     </div>
   </div>
 

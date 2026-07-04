@@ -59,6 +59,22 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     assert_equal "slow to spot the bug", grade.slug
   end
 
+  test "[integration] clearing an action grade removes the persisted selection" do
+    a = capture(stage: "building")
+    post heartbeat_grade_path(a), params: { grader: "alex", disposition: "good", surface: "inline" }
+
+    assert_difference -> { ActionGrade.count }, -1 do
+      post heartbeat_grade_path(a), params: { grader: "alex", intent: "clear", surface: "inline" }, as: :json
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal true, body["cleared"]
+    assert_equal a.id, body["atomic_action_id"]
+    assert_equal "alex", body["grader"]
+    assert_nil grade_for(a, "alex")
+  end
+
   test "[integration] banking a grade lands it in the Insight Bank; discarding excludes it" do
     a = capture(stage: "building")
 

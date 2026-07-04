@@ -65,6 +65,22 @@ class HeartbeatEventGradeTest < ActionDispatch::IntegrationTest
     assert_equal "span was noisy and unfocused", grade.slug
   end
 
+  test "[integration] clearing a span grade removes the persisted selection" do
+    e = span
+    post heartbeat_event_grade_path(e), params: { grader: "alex", disposition: "good" }
+
+    assert_difference -> { ActionGrade.count }, -1 do
+      post heartbeat_event_grade_path(e), params: { grader: "alex", intent: "clear" }, as: :json
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    assert_equal true, body["cleared"]
+    assert_equal e.id, body["atomic_event_id"]
+    assert_equal "alex", body["grader"]
+    assert_nil grade_for(e, "alex")
+  end
+
   test "[integration] banking a span grade lands it in the Insight Bank; discarding excludes it" do
     e = span
 

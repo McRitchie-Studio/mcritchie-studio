@@ -37,4 +37,12 @@ class HeartbeatDrawerTest < ActionView::TestCase
     assert pane, "the output pane must render"
     assert_equal "git push origin feat/x && echo done", pane.text.strip
   end
+
+  test "[component] drawer disposition toggles include a clear X for both graders" do
+    a = action
+
+    render partial: "heartbeat/drawer", locals: { action: a, alex: nil, mcr: nil }
+
+    assert_select ".hb-disptoggle button[name=intent][value=clear].clear-disp", text: "×", count: 2
+  end
 end

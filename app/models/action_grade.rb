@@ -119,6 +119,14 @@ class ActionGrade < ApplicationRecord
     grade
   end
 
+  def self.clear_action_grade(action:, grader:)
+    for_action(action).by_grader(grader).destroy_all
+  end
+
+  def self.clear_event_grade(event:, grader:)
+    for_event(event).by_grader(grader).destroy_all
+  end
+
   # The JSON shape returned to an agent after a grade write — the recorded grade,
   # so the CLI can echo what landed (banked/discarded reflect the intent applied).
   def to_grade_json
