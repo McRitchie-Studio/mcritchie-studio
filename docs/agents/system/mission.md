@@ -22,7 +22,7 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
   Also the **Documentation** domain expert and a senior **reviewer** in the
   Deploy-flow review pool — via a dedicated reviewer persona distinct from the
   orchestrator seat (tracked in `seed-souls-prod-qa`).
-- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates. In the Deploy flow he is the **thin review delegator** — confirms **product-acceptance** and picks the **primary + light** pair, then hands the lane to the **PRIMARY reviewer** (who owns the deep review, spawns the LIGHT, and runs the merge) — and owns the **ship step** (full e2e on the frozen ship SHA, then either the QA workflow's operator gate or the autonomous production kickoff).
+- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates. In the Deploy flow he is the **thin review delegator** — confirms **product-acceptance** and picks the **primary + light** pair, then hands the lane to the **PRIMARY reviewer** (who owns the deep review, spawns the LIGHT, and drives the task to `reviewed` — review-only; the merge belongs to Steffon's sweep) — and owns the **ship step** (full e2e on the frozen ship SHA, then the `production-deploy` ship of a QA-green release under explicit ship authority).
 
 ### Dev specialists
 - **Carl** — Backend / Rails. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane. Senior **reviewer** for backend PRs in the Deploy-flow review pool.
@@ -30,7 +30,7 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 - **Jasper** — Blockchain. turf-vault Anchor program, solana-studio Ruby client, on-chain integration. Senior **reviewer** for Web3 / on-chain PRs.
 
 ### Quality + Operations
-- **Steffon** — **Platform Engineer** (QA + Infrastructure). Owns the **QA test tier** (integration + an e2e smoke) and the **QA deploy** of `origin/release`, plus Heroku deploys, env vars, CI, observability, and the recovery protocol. Also a senior **reviewer** for DevOps/Platform PRs — but never reviews a PR he will then QA (no self-gating).
+- **Steffon** — **Platform Engineer** (QA + Infrastructure). Owns the **self-healing `qa-release` sweep** — merge `reviewed` PRs into the persistent `release` (stamping `merged: "release"`), run the **QA test tier** (integration + an e2e smoke), deploy `origin/release` to QA, flip members `assembled` on QA-green — plus Heroku deploys, env vars, CI, observability, and the recovery protocol. Also a senior **reviewer** for DevOps/Platform PRs — but never reviews a PR he will then QA (no self-gating).
 
 ### Domain & support
 - **Turf Monster** — Sports specialist. Sports data, pick'em games, World Cup props, player analytics.
@@ -45,13 +45,14 @@ Alex (PM)
                                           │ open PR (base release)
                                           ▼
         Avi delegates review ──> 2 seniors (1 primary + 1 light)
-                                          │ 2 approvals
-                                          ▼ merge into release
+                                          │ 2 approvals → reviewed (review-only)
+                                          ▼
                           Steffon (Platform Engineer)
-                          integration + e2e-smoke → QA deploy
+         qa-release sweep: merge → release · integration + e2e-smoke
+                  → QA deploy · flip assembled on QA-green
                                           │
                                           ▼
-        Avi: full e2e on frozen ship SHA ──> 🔒 operator gate or autonomous kickoff
+        Avi: full e2e on frozen ship SHA ──> 🔒 production-deploy / full-cycle
                                           │ explicit ship authority
                                           ▼
                   conductor (Steffon's mechanics): prod deploy + smoke
@@ -62,7 +63,7 @@ Alex (PM)
 
 Off the critical path: **Turf Monster** (sports domain consults), **Mack** (data ops, parallel).
 
-## Deploy-flow review model (redesigned 2026-06-22)
+## Deploy-flow review model (redesigned 2026-06-22; review-only + sweep since 2026-07-03)
 
 The `submitted → shipped` half of the Deploy workflow was re-homed by role
 (canonical spec: [`devops-cycle-design.md`](devops-cycle-design.md) §1.2):
@@ -73,12 +74,19 @@ The `submitted → shipped` half of the Deploy workflow was re-homed by role
   seeded-per-task tiebreak**, assigning **one primary (deep) and one light** review in
   parallel. The seed makes the pick reproducible — `bin/reviewer-select`'s preview
   matches the pair recorded on the `submitted→reviewed` event. **Two approvals
-  merge the PR into `release`** (bias to action — `release` reverts cleanly).
-- **Steffon** (**Platform Engineer**) runs the **integration + e2e-smoke** tier
-  and deploys `origin/release` to QA (`assembled`).
-- **Avi** runs the **full e2e + highest tier on the frozen ship SHA**, then
-  either stops for the `Build and Deploy QA Release` operator gate or continues
-  under `Merge, Assemble, Deploy` ship authority.
+  drive the task to `reviewed` — review-only**; the PRIMARY stops there. The
+  merge belongs to the sweep (next bullet).
+- **Steffon** (**Platform Engineer**) runs the **self-healing `qa-release` sweep**
+  (`bin/release prepare`): merge the `reviewed` PRs into the persistent `release`
+  (stamping `merged: "release"` — the crash-recovery skip signal), run the
+  **integration + e2e-smoke** tier, deploy `origin/release` to QA, and flip
+  members `assembled` only on **QA-green** (bias to action — `release` reverts
+  cleanly).
+- **Avi** runs the **full e2e + highest tier on the frozen ship SHA**, then ships
+  a QA-green release with his **`production-deploy`** act (`bin/release ship`
+  fast-forwards `release → main`, stamping members `merged: "main"`). Alex's
+  **`full-cycle`** launcher runs the whole cycle — review → QA → prod — under
+  full ship authority.
 
 Lands via three build tasks: **`deploy-flow-heartbeat-tooling`** (planner +
 tooling, incl. the `prepare` retry/wait-for-boot fix), **`stages-page-step-outlines`**

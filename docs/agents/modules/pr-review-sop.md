@@ -33,10 +33,10 @@ is the operational how-to for that stage.
 ## When to invoke
 
 Run this whenever a `submitted` task's PR needs review before it can advance —
-as the `review-one` atom inside a `Merge, Assemble, Deploy` / `Build and Deploy
-QA Release` / `Deploy with Task <task>` composition, as the body of a `pr-review`
-/ `pr-review-slow` sweep, inside an `Avi Heartbeat Slow` / `Avi Heartbeat Fast`
-loop, or a one-off review a conductor kicks off by hand. The unit of work is
+as the `review-one` atom inside a `full-cycle` / `Deploy with Task <task>`
+composition, as the body of an Avi Heartbeat `pr-review` / `pr-review-slow`
+sweep (review-only — the merge is Steffon's `qa-release` sweep's), or a one-off
+review a conductor kicks off by hand. The unit of work is
 **one PR / one task**; a queue is just this cascade run per task (`pr-review`), in
 **waves of ≤5 concurrent agents** (the board DB's connection budget — see
 "Concurrency cap" in the operating model).
