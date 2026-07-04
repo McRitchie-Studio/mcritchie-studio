@@ -49,6 +49,54 @@ which is the learning loop and lives outside the release pipeline.
 > stays in the **Next Release** card. `full-cycle` is named to avoid colliding with
 > the read-only `bin/devops-cycle` snapshot tool.
 
+## Launching a heartbeat in a fresh session — the quick start
+
+Every heartbeat starts the same way in a **fresh agent session** (Claude or
+Codex) run from `/Users/alex/projects`. This is the whole boot sequence — a new
+session needs nothing else:
+
+1. **Say a launcher row.** Paste the row-1 prompt (`Avi Heartbeat` · `Steffon
+   Heartbeat` · `Alex Heartbeat`) or any single act row from the /deployments
+   Heartbeats card. The phrase routes through the `qa-release` skill (source:
+   [`docs/agents/skills/qa-release/SKILL.md`](../skills/qa-release/SKILL.md),
+   installed to `~/.claude/skills` + `~/.codex/skills` by
+   `bin/install-agent-docs`), which lands back on this module + §1.4.
+2. **Stamp attribution FIRST** — before any other tool call:
+   `cd /Users/alex/projects/mcritchie-studio && bin/atomic-event heartbeat
+   <avi|steffon|alex>`.
+3. **Run the soul's acts downstream-first** from the mcritchie-studio primary
+   checkout (the board is **prod** by default; pass `--yes` on the release verbs
+   the act owns). Each act's full SOP is in its numbered section below.
+
+The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
+
+| Soul | Acts (downstream-first) | Commands each act drives |
+|---|---|---|
+| **Avi** | `production-deploy` → `pr-review` | `bin/release status` → **if** QA-green: `bin/release ship --yes`; then per `submitted` PR (waves ≤5): `bin/reviewer-select <task>` → the [review-one cascade](pr-review-sop.md) → on approval `bin/task move <task> reviewed` + `bin/release merge <task>` |
+| **Steffon** | `archive-completed` → `qa-deploy` | `bin/release archive --yes` (preview `--dry-run`); then `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` |
+| **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/atomic-event awaiting --limit 10` → `bin/atomic-event grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-deploy` → `production-deploy` (ship authority) |
+
+> **Script-assisted review (Avi).** `bin/avi-heartbeat` is the supervisor script
+> behind the review loop: it composes `bin/devops-cycle`, `bin/reviewer-select`,
+> and `codex exec` reviewer pairs, writes the `bin/task move|block|note` handoffs
+> itself, and prints a retrospective. It is **review-only** — approved tasks stop
+> at `reviewed`; the conductor still owns `bin/release merge`. The working
+> invocation:
+>
+> ```bash
+> bin/avi-heartbeat --run --limit <N> --max-idle-cycles 1 \
+>   --codex-workdir /Users/alex/projects/mcritchie-studio
+> ```
+>
+> - **`--codex-workdir` must be a trusted git checkout.** The default
+>   (`/Users/alex/projects`) is not a git repo, so `codex exec` refuses with
+>   "Not inside a trusted directory" and **every reviewer exits 1**
+>   (`reviewer failure: … exit=1`).
+> - **`--max-idle-cycles 1`** exits once the queue drains; the default (240
+>   polls × 60 s idle-sleep) keeps the supervisor alive ~4 h waiting for new PRs.
+> - Dry-run is the default — only `--run` launches reviewers and writes tasks.
+>   `--fast` reviews in bounded waves; slow (one PR at a time) is the default.
+
 ## The release handoff seam — Steffon owns stages 1–3, Avi owns 4–5
 
 The current-release pizza-tracker (`ApplicationHelper::RELEASE_TRACKER_STAGES`) has

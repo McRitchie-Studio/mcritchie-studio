@@ -31,16 +31,21 @@ is a sequence of them (full detail in §1.4):
   prod; ship-authority gated).
 
 > ⚠️ **Branch at the production decision.**
-> - `Avi Heartbeat Slow`: run `bin/avi-heartbeat --run` from
+> - `Avi Heartbeat Slow`: run `bin/avi-heartbeat --run --codex-workdir
+>   /Users/alex/projects/mcritchie-studio` from
 >   `/Users/alex/projects/mcritchie-studio` — the review-only loop (`pr-review-slow`
 >   WITHOUT the merge/deploy tail): it serializes submitted PR review, moves
 >   approved tasks to `reviewed`, prints a retrospective after its cap, and does
->   not merge, deploy, ship, publish gems, or archive.
-> - `Avi Heartbeat Fast`: run `bin/avi-heartbeat --run --fast` from
->   `/Users/alex/projects/mcritchie-studio` — the review-only loop for stacked
->   queues (bounded PRIMARY + LIGHT waves under the five-agent cap); same
->   reviewed/block/defer rules, and does not merge, deploy, ship, publish gems,
->   or archive.
+>   not merge, deploy, ship, publish gems, or archive. `--codex-workdir` must be
+>   a trusted git checkout (the default projects root is not — `codex exec`
+>   refuses and every reviewer exits 1); add `--max-idle-cycles 1` to exit when
+>   the queue drains. Full flags: the quick-start in
+>   [`heartbeats.md`](../../modules/heartbeats.md).
+> - `Avi Heartbeat Fast`: run `bin/avi-heartbeat --run --fast` with the same
+>   `--codex-workdir` from `/Users/alex/projects/mcritchie-studio` — the
+>   review-only loop for stacked queues (bounded PRIMARY + LIGHT waves under the
+>   five-agent cap); same reviewed/block/defer rules, and does not merge, deploy,
+>   ship, publish gems, or archive.
 > - `Build and Deploy QA Release` = **`pr-review` → `qa-deploy`**: review submitted
 >   PRs, assemble the release, deploy QA, then hand the operator `bin/release ship
 >   --by conductor` (**stops before `production-deploy`**).

@@ -509,9 +509,15 @@ stacked up and needs bounded parallel review:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/avi-heartbeat --run          # Avi Heartbeat Slow
-bin/avi-heartbeat --run --fast   # Avi Heartbeat Fast
+bin/avi-heartbeat --run --codex-workdir "$PWD"          # Avi Heartbeat Slow
+bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # Avi Heartbeat Fast
 ```
+
+`--codex-workdir` must point at a trusted git checkout: the script's default is
+the projects root, which is not a git repo, so `codex exec` refuses ("Not inside
+a trusted directory") and every reviewer exits 1. Full flags (including
+`--max-idle-cycles` to exit when the queue drains): the fresh-session quick
+start in [`heartbeats.md`](../modules/heartbeats.md).
 
 Both modes choose newest `submitted` PRs first, record `bin/reviewer-select`
 intent, launch the selected PRIMARY + LIGHT reviewers with `codex exec`, and
