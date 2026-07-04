@@ -1832,7 +1832,7 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "ABORTED", "real code dirt still gates the ship"
     assert_includes out, "db/schema.rb", "the abort names the real dirty file"
-    refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
+    assert_includes out, "retro-rel-1.md", "generated dirt beside real dirt must be part of the safety check"
   end
 
   # --- ship preflight AUTO-CLEAN: the release-identical dirty-primary case ----
@@ -1998,6 +1998,36 @@ class ReleaseCliTest < Minitest::Test
       assert_equal head_before, `git -C #{dir} rev-parse HEAD`.strip,
                    "no reset ran — HEAD is unmoved and the unpushed commit is intact"
       assert File.exist?(File.join(dir, "unpushed.rb")), "the unpushed local work survives"
+    end
+
+    # (5) A tracked GENERATED artifact mixed with release-identical dirt → REFUSED
+    #     unless the artifact itself is also reconciled. `git reset --hard` resets the
+    #     whole tracked tree, so filtering generated docs out of dirty_files would
+    #     silently discard the ledger while auto-cleaning the merge noise.
+    with_primary_repo do |dir|
+      ledger = File.join(dir, "docs/agents/maintenance/delete-later.md")
+      FileUtils.mkdir_p(File.dirname(ledger))
+      File.write(ledger, "ledger base\n")
+      assert system("git -C #{dir} add docs/agents/maintenance/delete-later.md")
+      assert system("git -C #{dir} commit -q -m 'track generated ledger'")
+      assert system("git -C #{dir} update-ref refs/remotes/origin/main HEAD")
+      File.write(File.join(dir, "from_release.rb"), "release-added\n")
+      assert system("git -C #{dir} add from_release.rb")
+      assert system("git -C #{dir} commit -q -m 'release after ledger'")
+      assert system("git -C #{dir} update-ref refs/remotes/origin/release HEAD")
+      assert system("git -C #{dir} reset --hard refs/remotes/origin/main")
+      File.write(File.join(dir, "from_release.rb"), "release-added\n")
+      assert system("git -C #{dir} add from_release.rb")
+      File.write(ledger, "ledger base\nlocal generated entry\n")
+
+      out = run_real_preflight(dir)
+
+      assert_includes out, "ABORTED", out
+      refute_includes out, "PASSED", out
+      refute_match(%r{auto-cleaning}, out, "no reset runs while generated dirt is unreconciled")
+      assert_equal "ledger base\nlocal generated entry\n", File.read(ledger),
+                   "dirty generated docs are preserved because no reset ran"
+      assert File.exist?(File.join(dir, "from_release.rb")), "no reset ran, so staged merge noise remains too"
     end
   end
 

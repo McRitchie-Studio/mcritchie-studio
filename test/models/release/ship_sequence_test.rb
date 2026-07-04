@@ -227,9 +227,11 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   end
 
   # --- generated-artifact allowlist: a retro doc / the worktree ledger ------
-  # ship_preflight must NOT count KNOWN-GENERATED files as dirt (a retro-*.md or
-  # the delete-later.md ledger routinely sit uncommitted in the deploy checkout
-  # and blocked EVERY ship's ff). Narrow allowlist — real code dirt still gates.
+  # ship_preflight must NOT count KNOWN-GENERATED files as dirt when they are the
+  # only dirt (a retro-*.md or the delete-later.md ledger routinely sit
+  # uncommitted in the deploy checkout and blocked EVERY ship's ff). Narrow
+  # allowlist — real code dirt still gates, and once it gates, generated dirt must
+  # stay in the offender so an auto-clean reset cannot discard it silently.
 
   test "generated_artifact? matches a retro doc and the worktree ledger only" do
     assert S.generated_artifact?("docs/agents/audits/retro-rel-20260624-b2f18e.md")
@@ -250,13 +252,13 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
                  "a retro doc + the worktree ledger are generated artifacts, not real dirt"
   end
 
-  test "preflight_offenders still flags REAL dirt alongside a generated artifact" do
+  test "preflight_offenders keeps generated dirt in the offender when real dirt also exists" do
     o = S.preflight_offenders([state("mcritchie-studio", dirty_files: [
       "docs/agents/audits/retro-rel-1.md", "db/schema.rb"
     ])]).first
     assert o["dirty"], "a real dirty file still gates the ship"
-    assert_equal ["db/schema.rb"], o["dirty_files"],
-                 "the generated artifact is filtered out of the reported dirty files"
+    assert_equal ["docs/agents/audits/retro-rel-1.md", "db/schema.rb"], o["dirty_files"],
+                 "a generated artifact beside real dirt must be reconciled before any reset"
   end
 
   test "preflight_offenders still flags an off-main checkout even with only generated artifacts" do
