@@ -4,7 +4,7 @@ const { test, expect } = require("@playwright/test");
 // resolved and is back in `submitted` renders with the amber tone + RE-REVIEW badge
 // (Task#block_state => :cleared) — not the red UNRESOLVED tone. Read-only against
 // the seeded `e2e-cleared-block-demo` fixture.
-test("a cleared block renders the amber re-review card @qa-readonly", async ({ page }) => {
+test("a cleared block renders the amber re-review card", async ({ page }) => {
   const res = await page.goto("/tasks");
   expect(res.ok()).toBe(true);
 
