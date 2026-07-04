@@ -6,66 +6,145 @@ class Release
   module Conductor
     module_function
 
-    # Record a PR-merge INTO the persistent `release` branch: attach the task to
-    # the active release (opening one if none is active), flipping the TASK from
-    # `reviewed` to `assembled`. This is the membership-at-merge entrypoint that
-    # `bin/release merge` calls after `gh pr merge`. Returns the release. Raises
-    # (via Release#add) if the task isn't `reviewed`.
+    # --- the sweep (Steffon's self-healing qa-deploy, steps 1–3) --------------
+
+    # DETECT the work a qa-deploy run should sweep onto the next release: every
+    # `reviewed` task (whether or not its PR is merged yet — `merged` says which)
+    # plus any `assembled` STRAGGLER — a member of no/another release (a prior RC
+    # shipped/aborted without it) that must re-ride the current candidate. A PURE
+    # read, so the CLI previews it under --dry-run. Returns
+    # { "reviewed" => [tasks], "stragglers" => [tasks] } in board order.
+    # Both lists empty + no active release ⇒ qa-deploy is an idempotent no-op.
+    def sweep_candidates(release = Release.current)
+      {
+        "reviewed"   => Task.where(stage: "reviewed").order(:position).to_a,
+        "stragglers" => straggler_tasks(release)
+      }
+    end
+
+    # The `assembled` tasks NOT riding the given (current) release: a prior
+    # cycle's leftovers. With no active release EVERY assembled task is a
+    # straggler (assembled work always belongs on the next candidate). NULL-safe
+    # by hand: `where.not(release_slug: nil-slug)` would match nothing under SQL
+    # null semantics.
+    def straggler_tasks(release = Release.current)
+      scope = Task.where(stage: "assembled")
+      scope = scope.where("release_slug IS NULL OR release_slug != ?", release.slug) if release
+      scope.order(:position).to_a
+    end
+
+    # SWEEP one task onto the active release (opening one if none): attach it
+    # (release_slug + `merged: "release"`) WITHOUT moving its stage — the
+    # membership write `bin/release merge`/`prepare` record after `gh pr merge`.
+    # The `reviewed → assembled` flip is deferred to qa_green! (QA-green only).
+    # Returns the release.
     #
-    # Idempotent AND self-healing: a member already riding the train at
-    # `assembled` is left untouched, but a member still ATTACHED (release_slug
-    # set) whose stage has regressed off `assembled` — e.g. a re-review reverted
-    # the stage while keeping membership, the live half-state — is RE-RUN through
-    # `add` (which flips a `reviewed` member back to `assembled`, reopening the RC
-    # if it had assembled, and raises for any other stage per the top line). The
-    # old `unless exists?` guard no-op'd that case, so the half-state could never
-    # self-heal and had to be fixed by hand.
+    # Idempotent AND crash-safe: a member already stamped `merged` ("release" OR
+    # "main") is left untouched — sweep! never regresses a `merged: "main"`
+    # member (an interrupted Avi ship) back to "release". That promise is
+    # absolute across releases: the short-circuit below covers CURRENT-release
+    # members, and Release#add refuses the main→release downgrade when a LATER
+    # release re-adopts a cross-release straggler. A member attached but
+    # NOT yet merged-stamped (a pre-`merged`-field row, or a half-recorded batch)
+    # is re-run through `add`, which heals the stamp.
     #
-    # `override: true` is the audited `bin/release merge --override` escape hatch:
-    # it lets `add` attach a NOT-yet-`reviewed` task, AND it stamps the review skip
-    # onto the audit spine. The bypass marker rides on the SAME transition event the
-    # flip writes (Current.task_event_review_bypass → Task#write_stage_event), so the
-    # override leaves a `review_bypassed` paper-trail row — never a silent skip. The
-    # flag is reset in `ensure` so it can't leak onto a later (in-process) transition.
-    #
-    # `usage:` is the best-effort per-transition usage (model/tokens/cost) for the
-    # reviewed→assembled flip, captured by `bin/release merge` from the conductor's
-    # LOCAL session transcript and threaded in (the flip itself runs on prod via
-    # `heroku run`, where there is no transcript). It rides onto the assembled
-    # TaskEvent via Current.with_task_event_usage, which clears it after the flip so
-    # a batched adopt can't mis-attribute the next task. nil → spine-only (web /
-    # transcript-less moves degrade gracefully; usage is never fabricated).
-    def adopt!(task, override: false, usage: nil)
+    # `override: true` is the audited `bin/release merge --override` escape
+    # hatch: a NOT-yet-`reviewed` target is first flipped to `reviewed` with
+    # Current.task_event_review_bypass stamped onto that transition
+    # (Task#write_stage_event), so the review skip leaves a `review_bypassed`
+    # paper-trail row on the audit spine — never a silent skip — and the swept
+    # member then rides the standard reviewed→assembled QA-green flip. The flag
+    # resets in `ensure` so it can't leak onto a later (in-process) transition.
+    def sweep!(task, override: false)
       release = Release.current_or_open!
       stamp_session_mascot(release)
       record_assembly_intent!(task)
       member = release.tasks.find_by(slug: task.slug)
       target = member || task
-      # Only flag a genuine bypass: an override on an already-`reviewed` (or
-      # already-`assembled`) target changes nothing, so it records no skip.
-      Current.task_event_review_bypass = true if override && !%w[reviewed assembled].include?(target.stage)
+      # Already swept (or further along — ff'd to main): nothing to do, and
+      # nothing may be regressed.
+      return release if member && member.merged.present?
 
-      Current.with_task_event_usage(usage) do
-        if member.nil?
-          release.add(task, override: override)
-        elsif member.stage != "assembled"
-          # Hand any non-`assembled` member back to `add` — NOT a narrower
-          # `== "reviewed"` check. `add` heals a `reviewed` one and deliberately
-          # RAISES for any other stage (blocked, etc.), mirroring the nil → add(task)
-          # path above. Narrowing to `== "reviewed"` here would silently no-op those
-          # off-path members, reintroducing the asymmetry the review flagged.
-          release.add(member, override: override)
+      # Only flag a genuine bypass: an override on an already-eligible target
+      # changes nothing, so it records no skip.
+      if override && !%w[reviewed assembled].include?(target.stage)
+        begin
+          Current.task_event_review_bypass = true
+          target.update!(stage: "reviewed")
+        ensure
+          Current.task_event_review_bypass = nil
         end
       end
+
+      release.add(target, override: override)
       release.reload
-    ensure
-      Current.task_event_review_bypass = nil
     end
 
-    # The merge/assembly bookend: the primary reviewer starts the reviewed→assembled
-    # work before the PR is adopted onto the release train. This gives analytics an
-    # explicit start timestamp for the assembly window instead of relying only on the
-    # reviewed→assembled transition. Idempotent through Task#record_intent_event.
+    # The QA-GREEN flip (Steffon's qa-deploy, step 6): QA booted + smoked green,
+    # so every swept `reviewed` member flips to `assembled` (merged stays
+    # "release" — matrix: assembled+release = QA-green, waiting on Avi) and the
+    # release itself assembles. On a QA-deploy FAILURE this is simply never
+    # called — members stay `reviewed` (+ merged "release") for the next
+    # self-healing run. Idempotent: already-`assembled` members (stragglers, or
+    # a re-run) don't move again; assemble! no-ops on an assembled release.
+    #
+    # `usage_by_slug` is the optional best-effort per-member usage for the
+    # reviewed→assembled flip (captured locally by `bin/release prepare`; the
+    # flip runs on prod, transcript-less). Each flip runs inside
+    # Current.with_task_event_usage so the assembled TaskEvent carries it; a
+    # missing entry records the deterministic spine only.
+    def qa_green!(release, usage_by_slug: {})
+      usage_by_slug ||= {}
+      Release.transaction do
+        # Flip PRODUCER-FIRST (gems before consumers, honoring dependencies) so
+        # the assembled column's positions land in the same order the conductor
+        # publishes/deploys in — each stage flip stamps the member's board rank.
+        pending = Release::Ordering.producer_first(release.tasks.where(stage: "reviewed").to_a)
+        pending.each do |task|
+          Current.with_task_event_usage(usage_by_slug[task.slug]) { task.assemble! }
+        end
+        assemble!(release)
+      end
+      release.reload
+    end
+
+    # BLOCK-ON-REGRESSION (Steffon's pre-QA gate): the tier tests on
+    # origin/release caught a regression, so the offending task is EJECTED from
+    # the candidate — detached (release_slug + `merged` cleared) and blocked for
+    # rework with the feedback as a qa_feedback Activity — while the REST of the
+    # RC rides on untouched. Clearing `merged` pairs with the documented git
+    # remediation (revert the member's merge commit on `release`, never a
+    # force-push): after the revert its PR is genuinely off the branch, so the
+    # next sweep of the reworked task correctly re-merges. Returns the task.
+    def eject!(task, feedback: nil)
+      Task.transaction do
+        task.update!(release_slug: nil, merged: nil)
+        task.block!(kind: "rework")
+        if feedback.present?
+          Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: feedback)
+        end
+      end
+      task
+    end
+
+    # Stamp the git-location on a set of members — the `merged: "main"` write
+    # Avi's `bin/release ship` records per repo right after that repo's
+    # `release → main` fast-forward lands on origin (matrix: assembled+main =
+    # ff'd, prod-deploy in flight). An interrupted Avi run reads this to skip
+    # re-ff'ing; Task#ship! re-stamps "main" at the record step regardless, so a
+    # missed stamp degrades to the git no-op, never a wrong deploy. Validated by
+    # Task's `merged` inclusion — an unknown location raises. Returns the slugs.
+    def record_merged!(slugs:, merged:)
+      list = Array(slugs)
+      Task.where(slug: list).find_each { |task| task.update!(merged: merged) }
+      list
+    end
+
+    # The sweep/assembly bookend: the assembly window OPENS when the task is swept
+    # onto the release train (Steffon's qa-deploy), before QA-green concludes it.
+    # This gives analytics an explicit start timestamp for the assembly window
+    # instead of relying only on the reviewed→assembled transition. Idempotent
+    # through Task#record_intent_event.
     def record_assembly_intent!(task, actor: nil)
       return nil unless task&.stage == "reviewed"
 
@@ -82,15 +161,17 @@ class Release
       primary&.dig("slug")
     end
 
-    # Pre-flight REVIEW-GATE screen for `bin/release merge` — the decision the CLI
-    # runs over the requested slugs BEFORE any `gh pr merge`, so an unreviewed PR
-    # can't be merged onto `release` by accident (the incident: PR #138 merged
-    # straight in during the scheduled wait). A PURE read: it only CLASSIFIES; the
-    # bypass itself is RECORDED later, on the audit spine, when adopt! flips an
-    # overridden member (see adopt!). Each slug is one of:
-    #   "reviewed"   — passed review, safe to merge
-    #   "blocked"    — NOT reviewed and no --override → the run must abort
-    #   "overridden" — NOT reviewed but --override given → proceeds, audited at adopt!
+    # Pre-flight REVIEW-GATE screen for the sweep (`bin/release merge`/`prepare`)
+    # — the decision the CLI runs over the requested slugs BEFORE any `gh pr
+    # merge`, so an unreviewed PR can't be merged onto `release` by accident (the
+    # incident: PR #138 merged straight in during the scheduled wait). A PURE
+    # read: it only CLASSIFIES; the bypass itself is RECORDED later, on the audit
+    # spine, when sweep! flips an overridden target (see sweep!). Each slug is
+    # one of:
+    #   "eligible"   — sweepable: `reviewed` (passed review) or `assembled`
+    #                  (a straggler re-riding the next candidate)
+    #   "blocked"    — NOT sweepable and no --override → the run must abort
+    #   "overridden" — NOT sweepable but --override given → proceeds, audited at sweep!
     #   "missing"    — no such task on the board
     # Returns a JSON-serializable decision:
     #   { rows: [{slug, stage, status}], blocked:[slug], overridden:[slug],
@@ -99,10 +180,10 @@ class Release
       rows = Array(slugs).map do |slug|
         task   = Task.find_by(slug: slug)
         status =
-          if task.nil?                   then "missing"
-          elsif task.stage == "reviewed" then "reviewed"
-          elsif override                 then "overridden"
-          else                                "blocked"
+          if task.nil?                                        then "missing"
+          elsif %w[reviewed assembled].include?(task.stage)   then "eligible"
+          elsif override                                      then "overridden"
+          else                                                     "blocked"
           end
         { "slug" => slug, "stage" => task&.stage, "status" => status }
       end
@@ -116,50 +197,56 @@ class Release
       }
     end
 
-    # Assemble the active release for QA. On the persistent-`release` model
-    # membership flips at PR-merge time (adopt!), so prepare! is NO LONGER the
-    # add path: with no `task_slugs` it just finds the current release and
-    # assembles it (the CLI then deploys `origin/release` to QA). It does NOT
-    # auto-add reviewed work.
-    #
-    # `task_slugs` stays for OPERATOR CURATION — explicitly named tasks are
-    # adopt!ed onto the release before assembling (producer-first so members land
-    # at producer-before-consumer positions). Atomic: a non-reviewed or
-    # unknown-repo member raises and rolls the whole prepare! back — no dangling
-    # `assembling` release left behind. Returns the release (nil if none active
-    # and none curated).
-    def prepare!(task_slugs: [], slug: nil)
+    # The SYNCHRONOUS record-side qa-deploy: sweep (curate!) then QA-green flip
+    # (qa_green!) in one transaction — for model-driven flows and tests, where
+    # there is no real QA deploy between the two halves. The production caller
+    # `bin/release prepare` runs the halves SPLIT: curate! (sweep) → git merges +
+    # QA deploy + wait_for_boot → qa_green! ONLY once QA is confirmed up — so a
+    # QA failure leaves the swept members `reviewed` for the next self-healing
+    # run. Atomic: an ineligible or unknown-repo member raises and rolls the
+    # whole prepare! back. Returns the release (nil when there is nothing to
+    # sweep and none is active — the idempotent no-op).
+    def prepare!(task_slugs: [], slug: nil, usage_by_slug: {})
       Release.transaction do
         release = curate!(task_slugs: task_slugs, slug: slug)
         return release unless release
 
-        assemble!(release)
+        qa_green!(release, usage_by_slug: usage_by_slug)
         release
       end
     end
 
-    # The CURATE half of prepare! — adopt any operator-named `task_slugs` onto the
-    # active release (opening one if none + a `slug` is given) and validate the
-    # members, but DO NOT assemble. Split out so the boot-gated CLI can curate +
-    # deploy + wait_for_boot, then assemble ONLY after QA is confirmed up (the
-    # slow-dyno race that left the RC stuck `assembling`).
+    # The SWEEP half of prepare! — steps 1–3 of the self-healing qa-deploy:
+    # detect the work (sweep_candidates), ensure a release exists, and sweep!
+    # each detected task onto it (attach + `merged: "release"`; stages do NOT
+    # move — qa_green! owns the flip). With explicit `task_slugs` the sweep is
+    # narrowed to those tasks (operator curation); with none it sweeps EVERY
+    # `reviewed` task + `assembled` straggler. Nothing detected and nothing
+    # active → nil (the idempotent no-op).
     #
     # SELF-ATOMIC: wraps its own body in a transaction. The atomicity can't be
     # borrowed from prepare!'s wrapper, because the production caller
     # `bin/release prepare` invokes curate! STANDALONE (its own process, no outer
-    # DB txn). Without the wrapper a validate_members! raise AFTER adopt! has
-    # opened a candidate and flipped members to `assembled` would strand a
-    # half-curated release on the board — and the single-active-release rule then
-    # makes that stranded RC block every other session. The transaction rolls the
-    # whole curation back instead. Nested inside prepare!'s transaction, AR joins
-    # the outer txn, so this is a no-op wrapper there. Producer-first. Returns the
-    # active release, or nil when none is active and none was curated.
+    # DB txn). Without the wrapper a validate_members! raise AFTER sweep! has
+    # opened a candidate and attached members would strand a half-curated release
+    # on the board — and the single-active-release rule then makes that stranded
+    # RC block every other session. The transaction rolls the whole curation back
+    # instead. Nested inside prepare!'s transaction, AR joins the outer txn, so
+    # this is a no-op wrapper there. Producer-first. Returns the active release,
+    # or nil when none is active and nothing was swept.
     def curate!(task_slugs: [], slug: nil)
       Release.transaction do
         slugs = Array(task_slugs).compact
-        if slugs.any?
+        tasks =
+          if slugs.any?
+            Task.where(slug: slugs).to_a
+          else
+            candidates = sweep_candidates
+            candidates["reviewed"] + candidates["stragglers"]
+          end
+        if tasks.any?
           Release.open!(slug: slug) if slug.present? && Release.current.nil?
-          Release::Ordering.producer_first(Task.where(slug: slugs).to_a).each { |task| adopt!(task) }
+          Release::Ordering.producer_first(tasks).each { |task| sweep!(task) }
         end
 
         release = Release.current
@@ -167,19 +254,19 @@ class Release
 
         # Repo-aware eligibility: a release can't deploy a repo it doesn't know how
         # to deploy. An unknown-repo member raises here, rolling the whole curation
-        # back (the opened candidate + the adopt!-flipped members) via the wrapper
+        # back (the opened candidate + the swept members) via the wrapper
         # transaction above.
         validate_members!(release) if release
         release
       end
     end
 
-    # Flip the curated, QA-deployed RC assembling→assembled — the ASSEMBLE half of
-    # prepare!. Idempotent: a no-op when the release is already assembled, so
-    # re-running prepare! against an in-flight RC (no new members) never errors.
-    # The CLI calls this LAST, after wait_for_boot confirms the QA dyno is up, so a
-    # slow boot can't leave the RC flipped `assembled` against an app that isn't
-    # actually serving.
+    # Flip the swept, QA-deployed RC assembling→assembled — the release-state half
+    # of qa_green! (which also flips the reviewed MEMBERS). Idempotent: a no-op
+    # when the release is already assembled, so re-running against an in-flight RC
+    # (no new members) never errors. Reached LAST, after wait_for_boot confirms
+    # the QA dyno is up, so a slow boot can't leave the RC flipped `assembled`
+    # against an app that isn't actually serving.
     def assemble!(release)
       release.assemble! if release.state == "assembling"
       record_event!(
@@ -225,14 +312,17 @@ class Release
 
     # The per-member release plan the CLI consumes, in producer-first order:
     # each entry is { slug, branch, kind ("gem"/"app"), repo, version,
-    # post_deploy_cmd }. `branch` is the member's feature branch (apps merge it;
-    # gems have none and ride the record). `version` is the gem's declared version
-    # (nil for apps, and nil for gems when the version_file isn't reachable — the
-    # CLI resolves it locally at publish time). `post_deploy_cmd` is the optional
-    # one-off command (a shell/rake line) the pipeline runs on the deployed app
-    # AFTER it boots — on the QA app in `prepare`, the prod app in `ship` (nil when
-    # the task declares none). This is what `bin/release` reads to skip the merge
-    # for gems, publish them producer-first at ship, and run the post-deploy hook.
+    # post_deploy_cmd, merged }. `branch` is the member's feature branch (apps
+    # merge it; gems have none and ride the record). `version` is the gem's
+    # declared version (nil for apps, and nil for gems when the version_file
+    # isn't reachable — the CLI resolves it locally at publish time).
+    # `post_deploy_cmd` is the optional one-off command (a shell/rake line) the
+    # pipeline runs on the deployed app AFTER it boots — on the QA app in
+    # `prepare`, the prod app in `ship` (nil when the task declares none).
+    # `merged` is the git-location (Task::MERGED_STATES — nil/"release"/"main"),
+    # the crash-recovery signal an interrupted deploy heartbeat reads. This is
+    # what `bin/release` reads to skip the merge for gems, publish them
+    # producer-first at ship, and run the post-deploy hook.
     def member_plan(release)
       release.ordered_members.map do |task|
         kind = task.release_kind
@@ -245,7 +335,8 @@ class Release
           kind: kind.to_s,
           repo: task.release_repo,
           version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil,
-          post_deploy_cmd: task.devops_field("post_deploy_cmd")
+          post_deploy_cmd: task.devops_field("post_deploy_cmd"),
+          merged: task.merged
         }
       end
     end
@@ -404,10 +495,10 @@ class Release
     #   * shipped (what `bin/release ship` fires) → a plain Avi → shipped intent,
     #     superseded when `ship!` lands the shipped transition.
     #   * assembled (what `bin/release prepare` fires) → the Steffon QA intent via
-    #     #record_qa_intent. In the STANDARD flow the merge already flipped the member
-    #     to `assembled`, so a toward-`assembled` intent would no-op (transition exists)
-    #     and never render — the reviewer's blocker. record_qa_intent records it the way
-    #     the board reads as LIVE QA on an already-assembled member instead.
+    #     #record_qa_intent. A swept member is still `reviewed` at prepare time (the
+    #     flip waits for QA-green), so the plain toward-`assembled` intent renders;
+    #     an already-`assembled` member (a straggler / re-run) gets the qa-marked
+    #     toward-`shipped` intent instead so it still reads as LIVE QA.
     def record_deploy_intents!(release, to_stage:, actor: nil)
       return [] unless release
 
@@ -420,19 +511,19 @@ class Release
     end
 
     # The Steffon assembled-QA intent — the live "who's QA-ing the RC now" ticker that
-    # `bin/release prepare` fires. The catch the reviewer flagged: in the standard
-    # pipeline the merge (adopt!) ALREADY flipped the member `reviewed → assembled`, so
-    # by prepare time the assembled transition exists. A naive toward-`assembled` intent
-    # would (a) no-op in record_intent_event and (b) read off the wrong (next) stage on
-    # the board — so Steffon never showed live during the QA window. Instead:
-    #   * already `assembled` (THE standard flow) → record the QA intent toward
-    #     `shipped` with the `qa` marker. It is superseded by the SHIP — the real
-    #     transition that ENDS QA, not the merge that started the window — and the board
-    #     (StageAgentsHelper#open_deploy_intent) re-homes the marked intent into the
-    #     ASSEMBLED lane, distinct from Avi's unmarked ship intent.
-    #   * still `reviewed` (the rare half-state: attached for QA before the merge
-    #     flipped it) → the plain toward-`assembled` intent still renders, since
-    #     NEXT_PIPELINE_STAGE[reviewed] == assembled and no assembled transition exists.
+    # `bin/release prepare` fires, per member stage:
+    #   * still `reviewed` (THE standard flow: swept onto the RC, flip deferred to
+    #     QA-green) → the plain toward-`assembled` intent renders, since
+    #     NEXT_PIPELINE_STAGE[reviewed] == assembled and no assembled transition
+    #     exists yet; qa_green!'s flip supersedes it.
+    #   * already `assembled` (a straggler re-riding the RC, or a re-run after the
+    #     QA-green flip landed) → a toward-`assembled` intent would (a) no-op in
+    #     record_intent_event (the transition exists) and (b) read off the wrong
+    #     (next) stage on the board — so record the QA intent toward `shipped` with
+    #     the `qa` marker instead. It is superseded by the SHIP — the real
+    #     transition that ENDS QA — and the board (StageAgentsHelper#open_deploy_intent)
+    #     re-homes the marked intent into the ASSEMBLED lane, distinct from Avi's
+    #     unmarked ship intent.
     # Idempotent + superseded-on-real-transition either way. Returns the intent (nil
     # once the member has shipped, so a shipped member's prepare call no-ops).
     def record_qa_intent(task, actor:)

@@ -84,7 +84,7 @@ class Release < ApplicationRecord
   end
 
   # The active release if one exists, else open a fresh one. The find-or-create
-  # the merge-time membership path (Conductor#adopt!) leans on so a PR merging
+  # the sweep membership path (Conductor#sweep!) leans on so a PR merging
   # into `release` always lands on an active candidate.
   def self.current_or_open!
     current || open!
@@ -205,46 +205,60 @@ class Release < ApplicationRecord
     release_events.for_step(step).started.exists?
   end
 
-  # Attach a reviewed task to this (assembling) release. The TASK's stage becomes
-  # `assembled` (its PR is now riding the train) — the release's own state is
-  # unchanged. The actual branch merge + per-merge tests are the conductor's job;
-  # this is the membership + stage bookkeeping.
+  # Attach (SWEEP) a task onto this (assembling) release: set its `release_slug`
+  # and stamp `merged: "release"` (its PR is now riding the persistent `release`
+  # branch). The task's STAGE does NOT move here — under the Steffon-owns-the-
+  # middle flow (2026-07-03) a member flips `reviewed → assembled` only on
+  # QA-green (`Release::Conductor.qa_green!`), so a QA-deploy failure leaves it
+  # `reviewed` for the next self-healing sweep. The actual branch merge + the
+  # pre-QA tests are the conductor/CLI's job; this is the membership bookkeeping.
+  #
+  # Eligible stages: `reviewed` (the standard sweep) and `assembled` (a
+  # STRAGGLER — an already-QA-green member a prior RC left behind; it re-attaches
+  # without moving and re-QAs with the new candidate).
   #
   # `override: true` is the explicit, audited escape hatch for
-  # `bin/release merge --override` — it skips the `reviewed` precondition so an
+  # `bin/release merge --override` — it skips the stage precondition so an
   # operator can carry a not-yet-reviewed PR onto the train. The review skip is
-  # itself recorded on the audit spine (Conductor.adopt! stamps
-  # Current.task_event_review_bypass, drained onto the assembled transition), so
-  # the bypass is never silent.
+  # itself recorded on the audit spine (Conductor.sweep! flips the target to
+  # `reviewed` with Current.task_event_review_bypass stamped on that transition),
+  # so the bypass is never silent.
   def add(task, override: false)
-    # Validate the task BEFORE mutating release state, so adopting a non-reviewed
+    # Validate the task BEFORE mutating release state, so sweeping an ineligible
     # task onto an assembled RC doesn't needlessly reopen it. `override` is the
-    # only path that may attach a non-reviewed task (audited by adopt!).
-    unless override || task.stage == "reviewed"
-      raise ArgumentError, "task #{task.slug} is not reviewed (stage: #{task.stage})"
+    # only path that may attach an ineligible-stage task (audited by sweep!).
+    unless override || %w[reviewed assembled].include?(task.stage)
+      raise ArgumentError, "task #{task.slug} is not sweepable (stage: #{task.stage})"
     end
 
     # On the durable `release` branch a PR can merge AFTER we've assembled (QA'd)
-    # the candidate. That late merge must re-open the RC so it re-assembles and
+    # the candidate. That late sweep must re-open the RC so it re-assembles and
     # re-QAs before shipping — so absorb an assembled state by reopening, rather
     # than refusing the member.
     #
-    # Atomic: the reopen and the member flip are ONE unit. The conductor's
-    # late-merge caller (Conductor.adopt! ← `bin/release merge`) runs `add`
+    # Atomic: the reopen and the member attach are ONE unit. The conductor's
+    # late-merge caller (Conductor.sweep! ← `bin/release merge`) runs `add`
     # standalone with no enclosing transaction (unlike prepare!/curate!), so
-    # without this wrapper a failed member flip would leave the RC reopened
-    # (assembling) with the member never attached — a DISTINCT half-state from the
-    # adopt! no-op the incident actually hit (that one — member attached but stage
-    # regressed to reviewed — is healed by adopt!'s reconciliation, not here); this
-    # wrapper is defense-in-depth against a never-observed second mode.
+    # without this wrapper a failed member attach would leave the RC reopened
+    # (assembling) with the member never attached. Defense-in-depth.
     transaction do
       reopen! if state == "assembled"
       raise ArgumentError, "release #{slug} is not assembling (state: #{state})" unless state == "assembling"
 
-      # Adopting the task onto the RC means its PR merged onto the `release`
-      # branch — stamp the git-location alongside the board flip (the assemble
-      # heartbeat's crash-recovery signal). See Task::MERGED_STATES.
-      task.update!(release_slug: slug, stage: "assembled", merged: Task::MERGED_RELEASE)
+      # Sweeping the task onto the RC means its PR merged onto the `release`
+      # branch — stamp the git-location (the qa-deploy heartbeat's crash-recovery
+      # signal: an interrupted Steffon skips re-merging a `merged: "release"`
+      # task). See Task::MERGED_STATES. Stage is untouched: `reviewed` members
+      # flip to `assembled` only on QA-green.
+      #
+      # NEVER downgrade `merged: "main"` → "release". A cross-release straggler
+      # (an interrupted ship stamped it "main"; a LATER release re-adopts it via
+      # this path) is already fast-forwarded onto main — re-stamping "release"
+      # would claim it still waits on the release→main ff. sweep!'s own
+      # never-regress short-circuit only sees CURRENT-release members, so this
+      # is the backstop that keeps that promise absolute.
+      stamp = task.merged == Task::MERGED_MAIN ? Task::MERGED_MAIN : Task::MERGED_RELEASE
+      task.update!(release_slug: slug, merged: stamp)
     end
     task
   end
@@ -297,7 +311,11 @@ class Release < ApplicationRecord
   # branch the git-side remediation — reverting each abandoned member's merge
   # commit on `release` (never a force-push, since `release` is permanent and
   # shared) — is owned by the conductor/CLI as a documented step. The model never
-  # touches git.
+  # touches git. `merged` is deliberately LEFT as-is: an un-reverted member's PR
+  # still rides `release`, so `merged: "release"` stays true and the next sweep
+  # correctly skips re-merging it. If you DO revert a member's merge commit,
+  # clear its `merged` too (`Release::Conductor.eject!` does both for the
+  # single-task regression path).
   def abandon!
     raise ArgumentError, "release #{slug} is already terminal (state: #{state})" unless active?
 

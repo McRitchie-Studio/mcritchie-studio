@@ -10,23 +10,27 @@ class Release
   # WHY IT EXISTS: `Deploy with Task <task>` expedites a SINGLE task to prod by
   # merging its PR into `release` and fast-forwarding `release → main`. That ff
   # drags along EVERYTHING already sitting on `release` ahead of `main` — i.e. any
-  # OTHER task already `assembled` (merged) but not yet `shipped`. So expediting
+  # OTHER task whose code already rides `release` but isn't `shipped`, whether
+  # `assembled` (QA-green) or still `reviewed` with merged:"release" (swept, QA
+  # in flight). So expediting
   # one task is only safe when `release == main` (nothing else is pending). On a
   # DIRTY release the guard REFUSES and OFFERS the `Alex Heartbeat` `full-cycle`
   # launcher (ship the WHOLE release) instead of silently shipping the pending work.
   #
   # It reads TWO independent signals and is FAIL-CLOSED — either one showing
   # pending work makes the release dirty:
-  #   * board — tasks in the `assembled` stage (merged, not yet shipped).
+  #   * board — tasks riding `release` pending ship: `assembled` (QA-green) plus
+  #     `reviewed` with merged:"release" (swept by Steffon, QA in flight).
   #   * git   — commits `origin/release` is ahead of `origin/main`, per repo.
-  # Two signals catch each other's blind spots: a task stuck `assembled` with no
-  # commits still trips the board signal; a stray commit pushed straight to
+  # Two signals catch each other's blind spots: a task stuck on the release with
+  # no commits still trips the board signal; a stray commit pushed straight to
   # `release` with no task still trips the git signal.
   module CleanCheck
     module_function
 
-    # pending_tasks: [{ "slug" =>, "title" => }, …] — tasks in the `assembled`
-    #   stage (the board signal). String OR symbol keys tolerated.
+    # pending_tasks: [{ "slug" =>, "title" => }, …] — tasks riding `release`
+    #   pending ship (the board signal: `assembled`, plus `reviewed` with
+    #   merged:"release"). String OR symbol keys tolerated.
     # repo_states:   [{ "repo" =>, "ahead" => Integer }, …] — commits
     #   origin/release is ahead of origin/main per release repo (the git signal);
     #   ahead == 0 means that repo's release == main.
@@ -63,7 +67,7 @@ class Release
     def dirty_message(pending, ahead)
       lines = ["✗ Deploy with Task refused: `release` is NOT clean (release ≠ main)."]
       if pending.any?
-        lines << "  #{pending.size} task(s) already assembled onto this release, pending ship:"
+        lines << "  #{pending.size} task(s) already riding `release` (swept or QA-green), pending ship:"
         pending.each { |t| lines << "    - #{t['slug']}#{t['title'].to_s.empty? ? '' : " — #{t['title']}"}" }
       end
       if ahead.any?

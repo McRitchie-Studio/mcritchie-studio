@@ -55,25 +55,36 @@ class Devops::VocabularyTest < ActiveSupport::TestCase
                  "the selector role names ARE the vocabulary's reviewer_roles, in order"
   end
 
-  test "[unit] no step diverges — Review's Release Branch reconciled (primary owns the merge)" do
-    steps = Devops::Vocabulary.lanes.flat_map { |lane| lane[:steps] }
-
-    diverging = steps.select { |step| step[:diverges].present? }
+  test "[unit] no step diverges — Release Branch is Steffon's sweep (2026-07-03), review is review-only" do
+    diverging = Devops::Vocabulary.lanes.flat_map { |lane| lane[:steps] }.select { |step| step[:diverges].present? }
     assert_empty diverging,
       "no step should carry a :diverges note — the implemented model now matches the SOP " \
       "(#{diverging.map { |step| step[:label] }.inspect} still diverge)"
 
-    # The Review lane's Release Branch step: the PRIMARY reviewer runs the merge now,
-    # so the old "today the conductor runs it" divergence is gone.
-    release_branch = steps.find { |step| step[:label] == "Release Branch" }
-    assert_not_nil release_branch, "the Review lane's Release Branch step should still exist"
-    assert_nil release_branch[:diverges],
-      "Release Branch is now the primary reviewer's own merge, not a divergence — its :diverges note must be gone"
-    assert_match(/primary/i, release_branch[:expectation])
-    assert_match(/bin\/release merge/i, release_branch[:expectation])
+    # The Release Branch (merge) step lives in STEFFON'S Assemble lane now — his
+    # self-healing sweep owns the merge; the Review lane stops at Reviewed.
+    review   = Devops::Vocabulary.lanes.find { |lane| lane[:lane] == "Review" }
+    assemble = Devops::Vocabulary.lanes.find { |lane| lane[:lane] == "Assemble" }
+
+    assert_nil review[:steps].find { |step| step[:label] == "Release Branch" },
+      "the Review lane must NOT carry the merge — review is review-only (Steffon sweeps)"
+    reviewed = review[:steps].find { |step| step[:stage] == "reviewed" }
+    assert_match(/review-only/i, reviewed[:expectation], "the Reviewed close names the review-only contract")
+
+    release_branch = assemble[:steps].find { |step| step[:label] == "Release Branch" }
+    assert_not_nil release_branch, "the Assemble lane carries the Release Branch sweep step"
+    assert_nil release_branch[:diverges]
+    assert_match(/sweep/i, release_branch[:expectation], "the merge is the self-healing sweep's")
+    assert_match(/merged: release/i, release_branch[:expectation], "the sweep stamps the crash-recovery git-location")
+
+    # The gate step's label matches its expectation — the "Merge Review"
+    # half-rename is gone (everything else calls this step the pre-QA gate).
+    pre_qa_gate = assemble[:steps].find { |step| step[:label] == "Pre-QA Gate" }
+    assert_not_nil pre_qa_gate, "the Assemble lane names its gate step Pre-QA Gate (not the retired Merge Review)"
+    assert_match(/pre-qa gate/i, pre_qa_gate[:expectation])
 
     # Assemble's Main Branch stays the reconciled merge-forward guard.
-    main_branch = steps.find { |step| step[:label] == "Main Branch" }
+    main_branch = assemble[:steps].find { |step| step[:label] == "Main Branch" }
     assert_not_nil main_branch, "the Assemble lane's Main Branch step should still exist"
     assert_nil main_branch[:diverges],
       "Main Branch is the merge-forward guard now, not a divergence — its :diverges note must be gone"

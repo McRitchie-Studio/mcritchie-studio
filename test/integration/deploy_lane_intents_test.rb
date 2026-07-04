@@ -35,11 +35,19 @@ class DeployLaneIntentsTest < ActionView::TestCase
       .find { |c| c.lane == lane }
   end
 
+  # An assembled (QA-green) release with one member — what ship/prepare-re-run
+  # fire over: sweep records membership, qa_green! flips it assembled.
+  def green_release_with(task)
+    rel = Release::Conductor.sweep!(task)
+    Release::Conductor.qa_green!(rel)
+    rel.reload
+  end
+
   # What `bin/release ship` does: record the Avi shipped intent over the assembled
   # RC. The assembled card reserves a 4th (ship) lane that is EMPTY until the intent
   # lands — exactly the slot the operator caught blank.
   test "ship's Avi intent fills the assembled card's empty ship slot, live" do
-    rel    = Release::Conductor.adopt!(member_task("alpha")) # member → assembled at merge
+    rel    = green_release_with(member_task("alpha")) # swept + QA-green → assembled
     member = rel.tasks.first
 
     assert_empty ship_slot(member).stacked, "no ship intent yet → empty reserved slot (the incident)"
@@ -51,15 +59,14 @@ class DeployLaneIntentsTest < ActionView::TestCase
     assert slot.live_since.present?, "the ship slot ticks live from the recorded intent"
   end
 
-  # THE STANDARD FLOW — the reviewer's blocker. `bin/release merge` (Release::Conductor
-  # .adopt!) already flips the member `reviewed → assembled` AT MERGE, so by the time
-  # `bin/release prepare` runs the assembled transition EXISTS. The prepare intent path
-  # must STILL show Steffon QA-ing LIVE on /deployments — driven only by
+  # A member ALREADY past the QA-green flip (a straggler re-riding, or a prepare
+  # re-run): the assembled transition EXISTS, so the prepare intent path must
+  # STILL show Steffon QA-ing LIVE on /deployments — driven only by
   # record_deploy_intents!, with NO hand-run `bin/task intent`.
   test "prepare's QA intent shows Steffon QA live on /deployments for an already-assembled member" do
-    rel    = Release::Conductor.adopt!(member_task("std")) # bin/release merge semantics: member → assembled
+    rel    = green_release_with(member_task("std")) # past the QA-green flip (re-run/straggler)
     member = rel.tasks.first
-    assert_equal "assembled", member.stage, "guard: the merge landed the assembled transition (the standard flow)"
+    assert_equal "assembled", member.stage, "guard: the QA-green flip landed the assembled transition"
 
     before = assembled_slot(member)
     assert_equal %w[steffon], before.stacked.map { |a| a.agent&.slug }, "Steffon owns the assembled column"
@@ -76,12 +83,12 @@ class DeployLaneIntentsTest < ActionView::TestCase
     assert_empty ship_slot(member).stacked, "the ship slot stays empty until Avi's ship intent lands"
   end
 
-  # The rare half-state: a member still attached at `reviewed` at prepare time (not yet
-  # merged). The plain toward-`assembled` QA intent drives the live ticker there too.
-  test "prepare's Steffon intent drives the live QA ticker for a reviewed member" do
-    rel    = Release.open!(slug: "rel-qa-intent")
+  # THE STANDARD SHAPE at prepare time now: a swept member still `reviewed` (the
+  # flip waits for QA-green). The plain toward-`assembled` QA intent drives the
+  # live ticker.
+  test "prepare's Steffon intent drives the live QA ticker for a swept reviewed member" do
     member = member_task("qa")
-    member.update!(release_slug: rel.slug) # attached for QA, still `reviewed`
+    rel    = Release::Conductor.sweep!(member) # swept for QA, still `reviewed`
 
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
 
@@ -94,7 +101,7 @@ class DeployLaneIntentsTest < ActionView::TestCase
   # Once Avi's ship intent is open, HE outranks Steffon — actively shipping — and the
   # live ticker moves to the ship lane, leaving the assembled column static again.
   test "Avi's open ship intent outranks the QA intent on an assembled member" do
-    rel    = Release::Conductor.adopt!(member_task("handoff"))
+    rel    = green_release_with(member_task("handoff"))
     member = rel.tasks.first
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon") # QA live
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")       # ship starts
@@ -107,8 +114,7 @@ class DeployLaneIntentsTest < ActionView::TestCase
   # The intent is OPEN only until the real transition lands — then it's superseded
   # and the task is idle (no live ticker), so a re-record is a clean no-op.
   test "the real shipped transition supersedes the open ship intent" do
-    rel = Release::Conductor.adopt!(member_task("gamma"))
-    rel.assemble!
+    rel = green_release_with(member_task("gamma"))
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
     member = rel.tasks.first
     assert member.reload.open_intent_for("shipped").present?, "open while still assembled"

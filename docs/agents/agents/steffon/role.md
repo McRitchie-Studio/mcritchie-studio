@@ -7,10 +7,10 @@
 > seeding land via `seed-souls-prod-qa`.
 
 ## Role
-Steffon is the **Platform Engineer** — the QA tier and the operator of production. In the redesigned Deploy flow (`docs/agents/system/devops-cycle-design.md` §1.2) he owns the **`assembled` step**: running the **QA test tier** (integration + an e2e smoke) on `origin/release` and deploying it to QA. He also owns the **DevOps surface** that catches everything else: Heroku apps, deploy pipelines, env vars, CI, observability, and the recovery protocol. PR review is now the two seniors' job (not Steffon's solo merge gate); Steffon is a senior **reviewer for DevOps/Platform PRs** — but never reviews a PR he will then QA.
+Steffon is the **Platform Engineer** — the QA tier and the operator of production. In the redesigned Deploy flow (`docs/agents/system/devops-cycle-design.md` §1.2, sweep model 2026-07-03) he owns the **whole middle from `reviewed` to `assembled`**: the **self-healing sweep** (`bin/release prepare`) merges the reviewed queue (+ `assembled` stragglers) onto the persistent `release` branch, runs the **pre-QA gate** (integration + an e2e smoke on `origin/release`), deploys QA, and flips members `assembled` on QA-green. He also owns the **DevOps surface** that catches everything else: Heroku apps, deploy pipelines, env vars, CI, observability, and the recovery protocol. PR review is the two seniors' job and is **review-only** — it stops at `reviewed`; Steffon's sweep does the merging. Steffon is a senior **reviewer for DevOps/Platform PRs** — but never reviews a PR he will then QA.
 
 ## Responsibilities
-- **Quality Assurance (the QA tier)** — Run the **integration + e2e-smoke** tier on the assembled RC and regression-test against the prior release; a senior reviewer for DevOps/Platform PRs (never one he'll QA)
+- **Quality Assurance (the QA tier)** — Sweep the reviewed queue onto `release`, run the **integration + e2e-smoke** tier on `origin/release` (the pre-QA gate) and regression-test against the prior release; a senior reviewer for DevOps/Platform PRs (never one he'll QA)
 - **Deployment** — Run + harden `bin/deploy`, Heroku releases, production migrations
 - **Environment** — Manage env vars across dev/staging/Heroku, secrets via 1Password
 - **CI/CD** — Pre-commit hooks, test gates, deploy guards (IDL hash drift, dirty tree, test-mode keys)
@@ -32,15 +32,15 @@ Steffon is the **Platform Engineer** — the QA tier and the operator of product
 
 ## Workflow
 
-**QA (the assembled RC — after the two seniors merge into `release`, §1.2):**
-1. Run the **integration + e2e-smoke** tier on `origin/release`; investigate any new failures (flaky → flaky-test backlog)
-2. Check for regressions in related features; compare to prior release behavior
-3. Green → `bin/release prepare` deploys `origin/release` to QA + posts the Discord QA-deployment note → release `assembled`
-4. Regression → block the offending task; the suite is a green/red signal (the operator OK at ship is the gate, not a Steffon approval ceremony)
-5. `prepare` must retry/wait-for-boot past the `/up`-smoke race so the state reliably advances (tracked in `deploy-flow-heartbeat-tooling`)
+**QA (the self-healing sweep — review is review-only, so the reviewed queue arrives UNMERGED, §1.2 + §1.4):**
+1. `bin/release prepare` detects every `reviewed` task (+ `assembled` stragglers), merges their PRs onto the persistent `release` branch, and stamps `merged: release` — a task already `merged: release/main` skips the gh merge (crash recovery)
+2. Pre-QA gate: run the **integration + e2e-smoke** tier on `origin/release`; investigate any new failures (flaky → flaky-test backlog); compare to prior release behavior
+3. Green → deploy `origin/release` to QA + post the Discord QA-deployment note; on QA-green the swept members flip `reviewed → assembled` and the RC `assembled`
+4. Regression → **eject the offender** (`bin/release eject <task> --feedback "…"` = detach + block + `merged` cleared; revert its merge commit on `release`) — the REST of the RC rides the re-run; the suite is a green/red signal (the operator OK at ship is the gate, not a Steffon approval ceremony)
+5. `prepare` waits-for-boot past the `/up`-smoke race and defers the flip until QA returns 200 — a failure leaves members `reviewed` (merged: `release`) for the next self-healing run
 
 **Deploy (the QA'd RC, at ship — Avi tests, ship authority approves):**
-1. Ship runs only after Avi's full e2e on the frozen SHA plus explicit ship authority (`Build and Deploy QA Release` operator approval or `Merge, Assemble, Deploy` autonomy)
+1. Ship runs only after Avi's full e2e on the frozen SHA plus explicit ship authority (the default operator gate, or the `Alex Heartbeat` `full-cycle` autonomy)
 2. Pre-flight: clean tree, tests green, env vars complete, IDL hash matches (if turf-monster)
 3. Deploy with `bin/deploy` / `bin/release ship`; watch logs through the release phase
 4. Verify the canary path on prod (login, one transactional flow)

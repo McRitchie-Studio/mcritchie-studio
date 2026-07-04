@@ -18,7 +18,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
                  metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
   end
 
-  test "prepare! opens a new release when none is active and assembles it" do
+  test "prepare! opens a new release when none is active, sweeps, and flips on QA-green" do
     t = reviewed_task
     rel = Release::Conductor.prepare!(task_slugs: [t.slug], slug: "rel-test-new")
 
@@ -26,44 +26,172 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "release", rel.branch # the persistent per-repo release branch
     assert_equal "assembled", rel.state
     assert_equal "assembled", t.reload.stage
+    assert_equal Task::MERGED_RELEASE, t.merged
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
-  # --- adopt! (membership-at-merge: PR merged INTO `release`) ---
+  # --- sweep_candidates (qa-deploy step 1: detect the work) ---
 
-  test "adopt! records membership, flips the task to assembled, opens a release if none" do
+  test "[unit] sweep_candidates detects reviewed tasks and assembled stragglers" do
+    r = reviewed_task("queue")
+    straggler = Task.create!(title: "straggler assembled leftover task", stage: "assembled",
+                             merged: Task::MERGED_RELEASE,
+                             metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+
+    cands = Release::Conductor.sweep_candidates
+
+    assert_includes cands["reviewed"].map(&:slug), r.slug
+    assert_includes cands["stragglers"].map(&:slug), straggler.slug
+  end
+
+  test "[unit] sweep_candidates excludes an assembled member of the CURRENT release (not a straggler)" do
+    member = reviewed_task("member")
+    rel = Release::Conductor.sweep!(member)
+    Release::Conductor.qa_green!(rel) # member → assembled, attached to the active RC
+
+    cands = Release::Conductor.sweep_candidates
+
+    refute_includes cands["stragglers"].map(&:slug), member.slug,
+                    "an assembled member riding the active RC is not a straggler"
+    refute_includes cands["reviewed"].map(&:slug), member.slug
+  end
+
+  test "[unit] sweep_candidates with NO active release treats every assembled task as a straggler" do
+    orphan = Task.create!(title: "orphan assembled task here", stage: "assembled",
+                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    assert_nil Release.current
+
+    cands = Release::Conductor.sweep_candidates
+
+    assert_includes cands["stragglers"].map(&:slug), orphan.slug
+  end
+
+  test "[unit] sweep_candidates is empty when nothing is reviewed and nothing straggles (the no-op signal)" do
+    cands = Release::Conductor.sweep_candidates
+    assert_empty cands["reviewed"]
+    assert_empty cands["stragglers"]
+  end
+
+  # --- sweep! (qa-deploy step 3: membership WITHOUT the stage flip) ---
+
+  test "[unit] sweep! attaches the task with merged:release but does NOT move its stage" do
     assert_nil Release.current
     t = reviewed_task
-    rel = Release::Conductor.adopt!(t)
+    rel = Release::Conductor.sweep!(t)
 
     assert_equal rel, Release.current
-    assert_equal "assembling", rel.state # adopt! records membership; prepare! assembles
-    assert_equal "assembled", t.reload.stage
+    assert_equal "assembling", rel.state
+    assert_equal "reviewed", t.reload.stage, "the stage flip waits for QA-green"
+    assert_equal Task::MERGED_RELEASE, t.merged
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
-  test "adopt! records an assembly intent before the assembled conclusion" do
+  test "[unit] sweep! records an assembly intent (the assembly window opens at sweep)" do
     t = reviewed_task
-    Release::Conductor.adopt!(t)
+    Release::Conductor.sweep!(t)
 
-    events = t.reload.task_events.chronological.to_a
-    intent = events.find { |event| event.intent? && event.to_stage == "assembled" }
-    assembled = events.find { |event| event.transition? && event.to_stage == "assembled" }
-
-    assert_not_nil intent, "merge starts with an assembled intent"
-    assert_not_nil assembled, "merge concludes with an assembled transition"
-    assert_operator intent.occurred_at, :<=, assembled.occurred_at
+    intent = t.reload.task_events.chronological.to_a.find { |e| e.intent? && e.to_stage == "assembled" }
+    assert_not_nil intent, "the sweep opens the assembled intent"
     assert_equal "conductor", intent.source
+  end
+
+  test "[unit] sweep! re-attaches an assembled straggler without moving it" do
+    straggler = Task.create!(title: "straggler assembled leftover task", stage: "assembled",
+                             merged: Task::MERGED_RELEASE,
+                             metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+
+    rel = Release::Conductor.sweep!(straggler)
+
+    assert_equal rel.slug, straggler.reload.release_slug
+    assert_equal "assembled", straggler.stage, "a straggler re-rides without moving"
+    assert_equal Task::MERGED_RELEASE, straggler.merged
+  end
+
+  test "[unit] sweep! never regresses a merged:main member back to release (interrupted Avi)" do
+    rel = Release.open!
+    t = Task.create!(title: "mid ship interrupted task", stage: "assembled",
+                     release_slug: rel.slug, merged: Task::MERGED_MAIN,
+                     metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+
+    Release::Conductor.sweep!(t)
+
+    assert_equal Task::MERGED_MAIN, t.reload.merged, "sweep! must not undo the ff'd-to-main stamp"
+  end
+
+  test "[unit] sweep! preserves merged:main on a CROSS-release straggler (re-adopt never downgrades)" do
+    # Unlike the test above, this straggler belongs to a PRIOR (terminal) release,
+    # so sweep!'s current-member short-circuit never fires — the no-downgrade
+    # guard in Release#add is what keeps the never-regress promise absolute.
+    prior = Release.open!
+    t = Task.create!(title: "prior cycle interrupted task", stage: "assembled",
+                     release_slug: prior.slug, merged: Task::MERGED_MAIN,
+                     metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    prior.update!(state: "shipped") # closed without flipping the member
+
+    rel = Release::Conductor.sweep!(t)
+
+    assert_equal rel.slug, t.reload.release_slug, "the straggler re-rides the new RC"
+    assert_equal Task::MERGED_MAIN, t.merged, "add's backstop keeps the ff'd-to-main stamp"
+    assert_equal "assembled", t.stage, "re-adoption still never moves the stage"
+  end
+
+  test "[unit] sweep! heals an attached member missing its merged stamp (pre-field row)" do
+    rel = Release.open!
+    t = Task.create!(title: "legacy attached member task", stage: "reviewed", release_slug: rel.slug,
+                     metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    assert_nil t.merged
+
+    Release::Conductor.sweep!(t)
+
+    assert_equal Task::MERGED_RELEASE, t.reload.merged, "the sweep backfills the git-location"
+  end
+
+  # --- qa_green! (qa-deploy step 6: the reviewed→assembled flip) ---
+
+  test "[unit] qa_green! flips swept reviewed members to assembled and assembles the RC" do
+    a = reviewed_task("alpha")
+    b = reviewed_task("bravo")
+    rel = Release::Conductor.sweep!(a)
+    Release::Conductor.sweep!(b)
+    assert_equal %w[reviewed reviewed], [a.reload.stage, b.reload.stage]
+
+    Release::Conductor.qa_green!(rel)
+
+    assert_equal "assembled", rel.reload.state
+    assert_equal %w[assembled assembled], [a.reload.stage, b.reload.stage]
+    assert_equal [Task::MERGED_RELEASE, Task::MERGED_RELEASE], [a.merged, b.merged],
+                 "merged stays release — main comes at ship's ff"
+  end
+
+  test "[unit] qa_green! is idempotent — a re-run moves nothing twice" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    Release::Conductor.qa_green!(rel)
+    before = t.reload.task_events.transitions.count
+
+    assert_nothing_raised { Release::Conductor.qa_green!(rel.reload) }
+    assert_equal before, t.reload.task_events.transitions.count, "no duplicate assembled transition"
+    assert_equal "assembled", rel.reload.state
+  end
+
+  test "[unit] a QA failure flips nothing — members stay reviewed for the next self-healing run" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    # qa_green! is simply never called on a failed QA deploy — assert the resting state.
+    assert_equal "reviewed", t.reload.stage
+    assert_equal Task::MERGED_RELEASE, t.merged, "the merge is retained (skip re-merging on the next run)"
+    assert_equal "assembling", rel.reload.state
   end
 
   # --- deploy-side usage capture (model/tokens/cost on the conductor flips) ---
   # bin/release captures the per-transition delta from its LOCAL transcript and
   # threads it in; these prove it lands on the assembled/shipped TaskEvents.
 
-  test "adopt! stamps the assembled TaskEvent with the threaded usage" do
+  test "qa_green! stamps the assembled TaskEvent with the threaded usage" do
     t = reviewed_task
-    Release::Conductor.adopt!(
-      t, usage: { "model" => "claude-opus-4-8", "tokens_in" => 1200, "tokens_out" => 300, "cost" => "0.0125" }
+    rel = Release::Conductor.sweep!(t)
+    Release::Conductor.qa_green!(
+      rel, usage_by_slug: { t.slug => { "model" => "claude-opus-4-8", "tokens_in" => 1200, "tokens_out" => 300, "cost" => "0.0125" } }
     )
 
     event = t.reload.task_events.transitions.find_by(to_stage: "assembled")
@@ -75,20 +203,21 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "0.0125".to_d, event.cost
   end
 
-  test "adopt! without usage records the assembled spine only (no fabrication)" do
+  test "qa_green! without usage records the assembled spine only (no fabrication)" do
     t = reviewed_task
-    Release::Conductor.adopt!(t)
+    rel = Release::Conductor.sweep!(t)
+    Release::Conductor.qa_green!(rel)
 
     event = t.reload.task_events.transitions.find_by(to_stage: "assembled")
     refute event.usage?, "no usage threaded → deterministic spine only"
   end
 
-  test "adopt! clears the usage after the flip so it can't leak to a later transition" do
-    Release::Conductor.adopt!(
-      reviewed_task, usage: { "model" => "claude-opus-4-8", "tokens_in" => 10, "tokens_out" => 5 }
-    )
+  test "qa_green! clears the usage after each flip so it can't leak to a later transition" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    Release::Conductor.qa_green!(rel, usage_by_slug: { t.slug => { "model" => "claude-opus-4-8", "tokens_in" => 10, "tokens_out" => 5 } })
 
-    assert_nil Current.task_event_model, "usage is reset after the flip (batched adopt safety)"
+    assert_nil Current.task_event_model, "usage is reset after the flip (batched flip safety)"
     assert_nil Current.task_event_tokens_in
   end
 
@@ -124,68 +253,48 @@ class Release::ConductorTest < ActiveSupport::TestCase
     refute event.usage?
   end
 
-  test "adopt! attaches to the existing active release" do
+  test "sweep! attaches to the existing active release" do
     first = reviewed_task("first")
-    rel = Release::Conductor.adopt!(first)
-    Release::Conductor.adopt!(reviewed_task("second"))
+    rel = Release::Conductor.sweep!(first)
+    Release::Conductor.sweep!(reviewed_task("second"))
 
     assert_equal 2, rel.reload.tasks.count
   end
 
-  test "adopt! is idempotent — re-adopting the same task is a no-op" do
+  test "sweep! is idempotent — re-sweeping an already-swept task is a no-op (interrupted Steffon skips)" do
     t = reviewed_task
-    rel = Release::Conductor.adopt!(t)
-    again = Release::Conductor.adopt!(t)
+    rel = Release::Conductor.sweep!(t)
+    again = Release::Conductor.sweep!(t)
 
     assert_equal rel.id, again.id
     assert_equal 1, again.tasks.count
+    assert_equal "reviewed", t.reload.stage
   end
 
-  test "adopt! reopens an assembled RC so a late merge re-QAs" do
+  test "sweep! reopens an assembled (QA-green) RC so a late sweep re-QAs" do
     rel = Release::Conductor.prepare!(task_slugs: [reviewed_task("first").slug])
     assert_equal "assembled", rel.state
 
-    Release::Conductor.adopt!(reviewed_task("late"))
+    Release::Conductor.sweep!(reviewed_task("late"))
 
     assert_equal "assembling", rel.reload.state # reopened to re-assemble + re-QA
     assert_equal 2, rel.tasks.count
   end
 
-  test "adopt! raises on a task that is not reviewed" do
+  test "sweep! raises on a task that is not sweepable" do
     designed = Task.create!(title: "designed task not reviewed") # stage: designed
-    assert_raises(ArgumentError) { Release::Conductor.adopt!(designed) }
+    assert_raises(ArgumentError) { Release::Conductor.sweep!(designed) }
   end
 
-  test "adopt! reconciles a stranded member whose stage regressed off assembled" do
-    rel = Release::Conductor.adopt!(reviewed_task("anchor"))
-    late = reviewed_task("late")
-    Release::Conductor.adopt!(late)
-    Release::Conductor.prepare! # QA: assemble the RC
-    assert_equal "assembled", rel.reload.state
-
-    # A re-review touch reverts the member's stage but KEEPS its release_slug —
-    # the exact live half-state (release_slug set, stage "reviewed").
-    late.review!
-    assert_equal "reviewed", late.reload.stage
-    assert_equal rel.slug, late.release_slug
-
-    # Re-adopting must self-heal — the old `unless exists?` guard no-op'd here,
-    # leaving the member stuck at reviewed on an assembled RC (hand-fixed in prod).
-    Release::Conductor.adopt!(late)
-    assert_equal "assembled", late.reload.stage
-    assert_equal "assembling", rel.reload.state # reopened to re-assemble + re-QA
-  end
-
-  test "adopt! on an already-assembled member of an assembled RC is a no-op (no reopen)" do
-    rel = Release::Conductor.adopt!(reviewed_task("member"))
-    Release::Conductor.prepare! # assemble (QA) the RC
+  test "sweep! on an already-swept member of an assembled RC is a no-op (no reopen)" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task("member").slug])
     member = rel.reload.tasks.first
     assert_equal "assembled", rel.state
     assert_equal "assembled", member.stage
 
-    Release::Conductor.adopt!(member)
+    Release::Conductor.sweep!(member)
 
-    assert_equal "assembled", rel.reload.state, "re-adopting an assembled member must NOT reopen the QA'd RC"
+    assert_equal "assembled", rel.reload.state, "re-sweeping a green member must NOT reopen the QA'd RC"
     assert_equal "assembled", member.reload.stage
     assert_equal 1, rel.tasks.count
   end
@@ -194,13 +303,22 @@ class Release::ConductorTest < ActiveSupport::TestCase
   # The guard that stops an unreviewed PR being merged onto `release` by accident
   # (the incident: PR #138 merged straight in during the scheduled wait).
 
-  test "screen_merge passes a reviewed task and reports proceed" do
+  test "screen_merge passes a reviewed task as eligible and reports proceed" do
     t = reviewed_task
     screen = Release::Conductor.screen_merge([t.slug])
 
-    assert_equal "reviewed", screen["rows"].first["status"]
+    assert_equal "eligible", screen["rows"].first["status"]
     assert_equal "reviewed", screen["rows"].first["stage"]
     assert_empty screen["blocked"]
+    assert screen["proceed"]
+  end
+
+  test "screen_merge passes an assembled straggler as eligible (it re-rides the next RC)" do
+    straggler = Task.create!(title: "straggler assembled leftover task", stage: "assembled",
+                             metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    screen = Release::Conductor.screen_merge([straggler.slug])
+
+    assert_equal "eligible", screen["rows"].first["status"]
     assert screen["proceed"]
   end
 
@@ -240,46 +358,141 @@ class Release::ConductorTest < ActiveSupport::TestCase
     refute screen["proceed"], "any blocked slug aborts the batch"
   end
 
-  # --- adopt!(override:) — the audited review-gate bypass ---
+  # --- sweep!(override:) — the audited review-gate bypass ---
 
-  test "adopt! still RAISES on a not-reviewed task without override" do
-    assert_raises(ArgumentError) { Release::Conductor.adopt!(submitted_task) }
+  test "sweep! still RAISES on a not-sweepable task without override" do
+    assert_raises(ArgumentError) { Release::Conductor.sweep!(submitted_task) }
   end
 
-  test "adopt! with override attaches a not-reviewed task and flips it to assembled" do
+  test "sweep! with override flips a not-reviewed task to reviewed and attaches it" do
     t = submitted_task
-    rel = Release::Conductor.adopt!(t, override: true)
+    rel = Release::Conductor.sweep!(t, override: true)
 
-    assert_equal "assembled", t.reload.stage
+    assert_equal "reviewed", t.reload.stage, "the override stands in for review — QA-green still owns assembled"
+    assert_equal Task::MERGED_RELEASE, t.merged
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
-  test "adopt! with override records a review_bypassed event on the audit spine" do
+  test "sweep! with override records a review_bypassed event on the audit spine" do
     t = submitted_task
-    Release::Conductor.adopt!(t, override: true)
+    Release::Conductor.sweep!(t, override: true)
 
-    ev = t.reload.task_events.transitions.where(to_stage: "assembled").order(:occurred_at).last
+    ev = t.reload.task_events.transitions.where(to_stage: "reviewed").order(:occurred_at).last
     assert ev.metadata["review_bypassed"], "the bypassed flip is recorded on the task's spine"
     assert_equal "submitted", ev.from_stage, "the event names the stage the gate was skipped from"
   end
 
-  test "adopt! override on an already-reviewed task records NO bypass (override is a no-op there)" do
+  test "sweep! override on an already-reviewed task records NO bypass (override is a no-op there)" do
     t = reviewed_task
-    Release::Conductor.adopt!(t, override: true)
+    rel = Release::Conductor.sweep!(t, override: true)
+    Release::Conductor.qa_green!(rel)
 
     ev = t.reload.task_events.transitions.where(to_stage: "assembled").last
-    refute ev.metadata["review_bypassed"], "a reviewed task flips normally — no bypass marker"
+    refute ev.metadata["review_bypassed"], "a reviewed task rides normally — no bypass marker"
   end
 
-  test "adopt! does not leak the bypass flag onto a later normal transition" do
-    Release::Conductor.adopt!(submitted_task("bypassed"), override: true)
-    # A subsequent NORMAL adopt (reviewed, no override) must not inherit the flag —
-    # the Current marker is reset in adopt!'s ensure.
+  test "sweep! does not leak the bypass flag onto a later normal transition" do
+    rel = Release::Conductor.sweep!(submitted_task("bypassed"), override: true)
+    # A subsequent NORMAL sweep + flip must not inherit the flag — the Current
+    # marker is reset in sweep!'s ensure.
     normal = reviewed_task("normal")
-    Release::Conductor.adopt!(normal)
+    Release::Conductor.sweep!(normal)
+    Release::Conductor.qa_green!(rel.reload)
 
     ev = normal.reload.task_events.transitions.where(to_stage: "assembled").last
     refute ev.metadata["review_bypassed"], "Current flag is reset in ensure — no leak"
+  end
+
+  # --- eject! (block-on-regression: pull ONE offender off the RC, keep the rest) ---
+
+  test "[unit] eject! detaches and blocks the offender while the rest of the RC rides on" do
+    good = reviewed_task("good")
+    bad  = reviewed_task("bad")
+    rel = Release::Conductor.sweep!(good)
+    Release::Conductor.sweep!(bad)
+
+    Release::Conductor.eject!(bad, feedback: "integration regression on origin/release")
+
+    bad.reload
+    assert_equal "blocked", bad.stage
+    assert_equal "rework", bad.devops_field("block_kind")
+    assert_nil bad.release_slug, "the offender is OFF the candidate"
+    assert_nil bad.merged, "cleared — pairs with the documented merge-commit revert"
+    note = Activity.for_task(bad).by_type("qa_feedback").last
+    assert_equal "integration regression on origin/release", note.description
+
+    good.reload
+    assert_equal "reviewed", good.stage, "the rest of the RC is untouched"
+    assert_equal rel.slug, good.release_slug
+    assert_equal Task::MERGED_RELEASE, good.merged
+    assert_equal [good.slug], rel.reload.tasks.pluck(:slug)
+  end
+
+  test "[unit] eject! without feedback blocks with no qa_feedback note" do
+    bad = reviewed_task("quiet")
+    Release::Conductor.sweep!(bad)
+    before = Activity.for_task(bad).by_type("qa_feedback").count
+
+    Release::Conductor.eject!(bad)
+
+    assert_equal "blocked", bad.reload.stage
+    assert_equal before, Activity.for_task(bad).by_type("qa_feedback").count
+  end
+
+  # --- record_merged! (Avi's ff→main stamp) ---
+
+  test "[unit] record_merged! stamps merged:main on the named members" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    Release::Conductor.qa_green!(rel)
+
+    Release::Conductor.record_merged!(slugs: [t.slug], merged: "main")
+
+    t.reload
+    assert_equal "assembled", t.stage, "the stage flip to shipped is ship!'s — this is just the git-location"
+    assert_equal Task::MERGED_MAIN, t.merged
+  end
+
+  test "[unit] record_merged! rejects an unknown git location" do
+    t = reviewed_task
+    Release::Conductor.sweep!(t)
+    assert_raises(ActiveRecord::RecordInvalid) do
+      Release::Conductor.record_merged!(slugs: [t.slug], merged: "somewhere")
+    end
+  end
+
+  # --- the merged-field matrix, end to end (the crash-recovery spine) ---
+
+  test "[integration] the merged matrix walks nil→release→main across sweep, QA-green, ff, and ship" do
+    t = reviewed_task("matrix")
+    assert_nil t.merged                                       # reviewed + nil    = not swept
+
+    rel = Release::Conductor.sweep!(t)
+    assert_equal %w[reviewed release], [t.reload.stage, t.merged]   # swept / QA-in-flight
+
+    Release::Conductor.qa_green!(rel)
+    assert_equal %w[assembled release], [t.reload.stage, t.merged]  # QA-green, waiting on Avi
+
+    Release::Conductor.record_merged!(slugs: [t.slug], merged: "main")
+    assert_equal %w[assembled main], [t.reload.stage, t.merged]     # ff'd, prod-deploy in flight
+
+    Release::Conductor.ship!(release: rel.reload, deployed_sha: "abc1234", by: "avi")
+    assert_equal %w[shipped main], [t.reload.stage, t.merged]       # done
+  end
+
+  test "[integration] an interrupted qa-deploy resumes: the re-sweep skips nothing it shouldn't and the flip completes" do
+    # Crash shape: the sweep recorded (reviewed + merged:release) but QA never
+    # went green. The next self-healing run re-sweeps (a no-op) and flips on green.
+    t = reviewed_task("interrupted")
+    rel = Release::Conductor.sweep!(t)
+    assert_equal %w[reviewed release], [t.reload.stage, t.merged]
+
+    again = Release::Conductor.sweep!(t.reload) # the next run's sweep — must no-op
+    assert_equal rel.id, again.id
+    assert_equal 1, again.tasks.count
+
+    Release::Conductor.qa_green!(again)
+    assert_equal %w[assembled release], [t.reload.stage, t.merged]
   end
 
   test "prepare! is additive — extends the active release instead of opening a second" do
@@ -319,22 +532,37 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
   end
 
-  # --- curate! / assemble! (the boot-gated split of prepare!) ---
-  # The CLI defers the assemble until wait_for_boot confirms QA is up, so the two
-  # halves are separately callable: curate! adopts + validates without assembling,
-  # assemble! flips assembling→assembled only after boot.
+  # --- curate! / qa_green! (the boot-gated split of prepare!) ---
+  # The CLI defers the QA-green flip until wait_for_boot confirms QA is up, so
+  # the two halves are separately callable: curate! sweeps + validates without
+  # flipping anything, qa_green! flips members + RC only after boot.
 
-  test "curate! adopts the named tasks but leaves the release ASSEMBLING (no flip)" do
+  test "curate! sweeps the named tasks but flips NOTHING (release assembling, members reviewed)" do
     t = reviewed_task
     rel = Release::Conductor.curate!(task_slugs: [t.slug], slug: "rel-curate")
 
     assert_equal "rel-curate", rel.slug
-    assert_equal "assembling", rel.state, "curate! must NOT assemble — that's deferred until QA boots"
-    assert_equal "assembled", t.reload.stage, "membership still flips the task at adopt"
+    assert_equal "assembling", rel.state, "curate! must NOT assemble — that's deferred until QA is green"
+    assert_equal "reviewed", t.reload.stage, "the member flip waits for QA-green too"
+    assert_equal Task::MERGED_RELEASE, t.merged
     assert_includes rel.tasks.pluck(:slug), t.slug
   end
 
-  test "curate! is a no-op returning nil when nothing is active and no --task is given" do
+  test "[unit] curate! with no slugs auto-sweeps the whole detected queue (reviewed + stragglers)" do
+    queued = reviewed_task("queued")
+    straggler = Task.create!(title: "straggler assembled leftover task", stage: "assembled",
+                             merged: Task::MERGED_RELEASE,
+                             metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+
+    rel = Release::Conductor.curate!(task_slugs: [])
+
+    assert_not_nil rel, "detected work opens a candidate"
+    assert_equal [queued.slug, straggler.slug].sort, rel.tasks.pluck(:slug).sort
+    assert_equal "reviewed", queued.reload.stage
+    assert_equal "assembled", straggler.reload.stage, "a straggler re-rides without moving"
+  end
+
+  test "curate! is a no-op returning nil when nothing is detected and nothing is active" do
     assert_nil Release::Conductor.curate!(task_slugs: [])
     assert_equal 0, Release.count
   end
@@ -345,15 +573,16 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { Release::Conductor.curate!(task_slugs: [bad.slug], slug: "rel-bad") }
 
     # curate! is called STANDALONE by `bin/release prepare` (no outer txn), so its
-    # OWN transaction must roll the half-curation back — open! + adopt! already ran
+    # OWN transaction must roll the half-curation back — open! + sweep! already ran
     # before validate_members! raised. Without that wrapper a stranded RC sits on
     # the board and the single-active-release rule blocks every other session.
     assert_equal 0, Release.count, "a failed curate! must not strand a half-curated release"
     assert_nil Release.current, "no active candidate left after the rollback"
-    assert_equal "reviewed", bad.reload.stage, "the rolled-back member stays reviewed (not assembled)"
+    assert_equal "reviewed", bad.reload.stage, "the rolled-back member stays reviewed"
+    assert_nil bad.merged, "the rolled-back member's merged stamp is rolled back too"
   end
 
-  test "assemble! flips a curated RC assembling→assembled (idempotent)" do
+  test "assemble! flips a swept RC assembling→assembled (idempotent)" do
     rel = Release::Conductor.curate!(task_slugs: [reviewed_task.slug], slug: "rel-asm")
     assert_equal "assembling", rel.state
 
@@ -367,33 +596,30 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal 2, rel.release_events.for_step("qa_smoke").count
   end
 
-  test "prepare! is atomic — a non-reviewed task rolls back the new release" do
+  test "prepare! is atomic — a non-sweepable task rolls back the new release" do
     designed = Task.create!(title: "designed task not reviewed")
     assert_raises(ArgumentError) { Release::Conductor.prepare!(task_slugs: [designed.slug]) }
     assert_equal 0, Release.count, "a failed prepare! must not leave a dangling release"
   end
 
-  test "prepare! no longer auto-adds reviewed work — nothing active + no --task is a no-op" do
-    a = reviewed_task("a")
-    b = reviewed_task("b")
-
-    # Membership now flips at PR-merge time (adopt!), not here — with nothing
-    # active and no explicit curation there's nothing to prepare.
+  test "prepare! with nothing detected and nothing active is an idempotent no-op" do
+    # No reviewed work, no stragglers, no active release → nil, and NO release is
+    # fabricated (the heartbeat's schedule-ready no-op property).
     assert_nil Release::Conductor.prepare!(task_slugs: [])
     assert_equal 0, Release.count
-    assert_equal %w[reviewed reviewed], [a.reload.stage, b.reload.stage]
   end
 
-  test "prepare! assembles the active release without pulling in uncurated reviewed work" do
+  test "[integration] prepare! self-heals — the bare call sweeps the whole reviewed queue and flips it on green" do
     member = reviewed_task("member")
-    Release::Conductor.adopt!(member) # merged into release
-    bystander = reviewed_task("bystander") # reviewed but never merged
+    Release::Conductor.sweep!(member) # already swept by a prior (interrupted) run
+    newcomer = reviewed_task("newcomer") # reviewed since — the sweep must pick it up
 
     rel = Release::Conductor.prepare!(task_slugs: [])
 
     assert_equal "assembled", rel.state
-    assert_equal [member.slug], rel.tasks.pluck(:slug)
-    assert_equal "reviewed", bystander.reload.stage, "an uncurated reviewed task must not ride the release"
+    assert_equal [member.slug, newcomer.slug].sort, rel.tasks.pluck(:slug).sort
+    assert_equal "assembled", newcomer.reload.stage, "the newcomer rode the same self-healing run"
+    assert_equal "assembled", member.reload.stage
   end
 
   test "prepare! is idempotent against an already-assembled RC" do
@@ -903,10 +1129,10 @@ class Release::ConductorTest < ActiveSupport::TestCase
     end
   end
 
-  test "adopt! stamps the conductor session's mascot onto the release" do
+  test "sweep! stamps the conductor session's mascot onto the release" do
     seed_pokemon
     Current.conductor_session_id = "sess-conductor"
-    rel = Release::Conductor.adopt!(reviewed_task)
+    rel = Release::Conductor.sweep!(reviewed_task)
 
     assert_equal SessionMascot.for("sess-conductor").mascot_slug, rel.reload.devops_field("mascot")
     assert_equal "sess-conductor", rel.devops_field("mascot_session")
@@ -914,20 +1140,20 @@ class Release::ConductorTest < ActiveSupport::TestCase
     Current.conductor_session_id = nil
   end
 
-  test "adopt! leaves the release unmascoted when no conductor session is in context" do
+  test "sweep! leaves the release unmascoted when no conductor session is in context" do
     seed_pokemon
     Current.conductor_session_id = nil
-    rel = Release::Conductor.adopt!(reviewed_task)
+    rel = Release::Conductor.sweep!(reviewed_task)
     assert_nil rel.reload.devops_field("mascot"), "non-conductor callers never stamp"
   end
 
   test "ship! re-stamps the mascot for the session that ran the deploy (handoff)" do
     seed_pokemon
     Current.conductor_session_id = "sess-merge"
-    rel = Release::Conductor.adopt!(reviewed_task)
-    rel.assemble!
+    rel = Release::Conductor.sweep!(reviewed_task)
+    Release::Conductor.qa_green!(rel)
     merged_face = rel.reload.devops_field("mascot")
-    assert merged_face.present?, "the merging session stamped a face"
+    assert merged_face.present?, "the sweeping session stamped a face"
 
     Current.conductor_session_id = "sess-ship"
     Release::Conductor.ship!(release: rel, deployed_sha: "abc1234")
@@ -945,9 +1171,17 @@ class Release::ConductorTest < ActiveSupport::TestCase
   # intent — so /deployments shows who's on it live with NO hand-run bin/task intent
   # (the 2026-06-25 unfilled-ship-slot incident).
 
+  # An assembled (QA-green) release with the given member — what ship fires over.
+  def green_release_with(task)
+    rel = Release::Conductor.sweep!(task)
+    Release::Conductor.qa_green!(rel)
+    rel.reload
+  end
+
   test "record_deploy_intents! records the Avi shipped intent for every member (what ship fires)" do
-    rel = Release::Conductor.adopt!(reviewed_task("alpha")) # members → assembled at merge
-    Release::Conductor.adopt!(reviewed_task("beta"))
+    rel = green_release_with(reviewed_task("alpha"))
+    Release::Conductor.sweep!(reviewed_task("beta"))
+    Release::Conductor.qa_green!(rel.reload)
 
     slugs = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
 
@@ -960,22 +1194,22 @@ class Release::ConductorTest < ActiveSupport::TestCase
   end
 
   test "record_deploy_intents! defaults the actor to the stage's role owner (Avi ships, Steffon QAs)" do
-    rel = Release::Conductor.adopt!(reviewed_task("shipper"))
+    rel = green_release_with(reviewed_task("shipper"))
     member = rel.tasks.first
 
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped") # actor nil → avi
     assert_equal "avi", member.reload.open_intent_for("shipped").actor
 
-    # A member still at `reviewed` (no assembled transition yet — what prepare's
-    # assembled intent fires over) defaults to Steffon, the QA owner.
+    # A member still at `reviewed` (swept, flip pending — THE standard shape at
+    # prepare time now) defaults to Steffon, the QA owner.
     pending = reviewed_task("pending")
-    pending.update!(release_slug: rel.slug) # attached, still reviewed
+    Release::Conductor.sweep!(pending) # attached, still reviewed
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled") # actor nil → steffon
     assert_equal "steffon", pending.reload.open_intent_for("assembled").actor
   end
 
   test "record_deploy_intents! is idempotent — a re-run reuses the open intent, never stacks" do
-    rel = Release::Conductor.adopt!(reviewed_task)
+    rel = green_release_with(reviewed_task)
     member = rel.tasks.first
 
     first  = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")
@@ -985,20 +1219,20 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal 1, member.reload.task_events.intents.where(to_stage: "shipped").count
   end
 
-  test "prepare's QA intent records on an ALREADY-assembled member (the standard flow)" do
-    # The reviewer's blocker: in the standard pipeline the merge (adopt!) already
-    # flipped the member to `assembled`, so prepare's QA call must NOT no-op. It
-    # records a QA intent that rides toward `shipped` (superseded by the SHIP, not the
-    # merge) carrying the `qa` marker, so the board can render Steffon QA-ing live.
-    rel = Release::Conductor.adopt!(reviewed_task) # member → assembled at merge
+  test "prepare's QA intent still records on an ALREADY-assembled member (straggler / re-run)" do
+    # A member past the QA-green flip (a straggler re-riding, or a prepare re-run)
+    # already has the assembled transition, so prepare's QA call must NOT no-op. It
+    # records a QA intent that rides toward `shipped` (superseded by the SHIP, not
+    # the flip) carrying the `qa` marker, so the board renders Steffon QA-ing live.
+    rel = green_release_with(reviewed_task)
     member = rel.tasks.first
-    assert_equal "assembled", member.stage, "guard: the merge flipped it to assembled"
+    assert_equal "assembled", member.stage, "guard: the QA-green flip landed"
 
     slugs = Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon")
     assert_equal [member.slug], slugs, "the QA intent is recorded even though the assembled transition landed"
 
     qa = member.reload.open_intent_for("shipped")
-    assert qa.present?, "the QA intent rides toward shipped — superseded by the ship, not the merge"
+    assert qa.present?, "the QA intent rides toward shipped — superseded by the ship, not the flip"
     assert_equal "steffon", qa.actor
     assert qa.metadata["qa"], "marked as the QA-lane intent, distinct from Avi's ship intent"
 
@@ -1008,17 +1242,22 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal 1, member.reload.task_events.intents.where(to_stage: "shipped").count
   end
 
-  test "record_deploy_intents! is superseded by the real transition (QA by the ship, ship by ship!)" do
-    rel = Release::Conductor.adopt!(reviewed_task) # member → assembled
+  test "record_deploy_intents! is superseded by the real transition (QA by the flip, ship by ship!)" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t) # swept, still reviewed — the standard prepare shape
     member = rel.tasks.first
     Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled", actor: "steffon") # QA intent
-    rel.assemble!
-    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi")       # ship intent
+    assert member.reload.open_intent_for("assembled").present?, "the plain QA intent renders on a reviewed member"
+
+    Release::Conductor.qa_green!(rel.reload) # the flip supersedes the QA intent
+    assert_nil member.reload.open_intent_for("assembled"), "qa_green!'s assembled transition supersedes the QA intent"
+
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi") # ship intent
     assert member.reload.open_intent_for("shipped").present?, "an open intent toward shipped while still assembled"
 
     Release::Conductor.ship!(release: rel.reload, deployed_sha: "abc1234")
 
-    # The shipped transition supersedes BOTH the QA intent and the ship intent.
+    # The shipped transition supersedes the ship intent (and any straggling QA one).
     assert_nil member.reload.open_intent_for("shipped"), "ship! supersedes every open shipped intent"
     assert_empty Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped", actor: "avi"),
                  "a shipped member's ship call no-ops"

@@ -157,6 +157,9 @@ class ReleaseCliTest < Minitest::Test
   # real shell orchestration without touching Rails or the DB.
   STUB_CONDUCTOR = <<~RUBY
     def conductor(ruby, read_only: false)
+      # prepare's detection read: nothing new to sweep, an active RC in flight —
+      # the self-healing re-run shape, so the deploy half previews the plan below.
+      return { "tasks" => [], "release" => { "slug" => "rel-cli", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
       { "slug" => "rel-cli", "state" => "assembling", "branch" => "release", "repos" => [
         { "repo" => "studio-engine", "kind" => "gem",
           "members" => [{ "slug" => "t-gem", "branch" => nil }] },
@@ -336,6 +339,7 @@ class ReleaseCliTest < Minitest::Test
   # (tax-studio): prepare must WARN + skip its QA deploy, not abort the release.
   ELIGIBILITY_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-cli", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
       { "slug" => "rel-elig", "state" => "assembling", "branch" => "release", "repos" => [
         { "repo" => "mcritchie-studio", "kind" => "app", "qa_app" => "mcritchie-studio",
           "members" => [{ "slug" => "t-studio", "branch" => "feat/studio" }] },
@@ -354,6 +358,253 @@ class ReleaseCliTest < Minitest::Test
                      "an app with no QA env is skipped, not deployed"
     # a properly registered app on the same release still deploys
     assert_includes out, "bin/qa-server deploy mcritchie-studio origin/release"
+  end
+
+  # --- prepare: the self-healing sweep (detect → merge/skip → record → flip) ---
+
+  # Detection returns NOTHING and no release is active → the idempotent no-op.
+  NOOP_PREP_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      { "tasks" => [], "release" => nil, "screen" => {} }
+    end
+  RUBY
+
+  def test_prepare_is_an_idempotent_noop_when_nothing_is_detected_and_nothing_active
+    out = run_cli(["--yes"], call: "prepare; puts('CLEAN-EXIT')", setup: NOOP_PREP_STUB)
+
+    assert_includes out, "Nothing to prepare", "an empty queue reports, never fabricates work"
+    assert_includes out, "idempotent no-op"
+    assert_includes out, "CLEAN-EXIT", "the no-op exits zero (schedule-ready)"
+    refute_includes out, "bin/qa-server deploy", "nothing deploys on a no-op"
+  end
+
+  # A full self-healing sweep: one fresh candidate (gh merge needed), one already
+  # merged (crash-recovery skip), one with no PR (left behind, warning only).
+  SWEEP_FLOW_STUB = <<~'RUBY'
+    def repo_path(_repo) = Dir.pwd
+    def conductor(ruby, read_only: false)
+      if ruby.include?("sweep_candidates")
+        { "tasks" => [
+            { "slug" => "task-new", "stage" => "reviewed", "merged" => "", "pr_url" => "https://gh/pr/9", "repo" => "mcritchie-studio" },
+            { "slug" => "task-swept", "stage" => "reviewed", "merged" => "release", "pr_url" => "https://gh/pr/8", "repo" => "mcritchie-studio" },
+            { "slug" => "task-naked", "stage" => "reviewed", "merged" => "", "pr_url" => "", "repo" => "mcritchie-studio" }
+          ],
+          "release" => nil,
+          "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
+      elsif ruby.include?("sweep!")
+        $stdout.puts("SWEEP-CALL " + ruby.gsub("\n", " "))
+        { "slug" => "rel-sweep", "state" => "assembling", "swept" => %w[task-swept task-new], "repos" => [
+          { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+            "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "task-new", "branch" => "feat/n" }] }
+        ] }
+      elsif ruby.include?("qa_green!")
+        $stdout.puts("QA-GREEN-CALL")
+        { "state" => "assembled" }
+      else
+        {}
+      end
+    end
+    def sh(*a, **_k)
+      return ["release", true] if a.include?("baseRefName")
+      if a[0] == "gh" && a.include?("merge")
+        $stdout.puts("GH-MERGE " + a.find { |x| x.to_s.start_with?("https") }.to_s)
+        return ["", true]
+      end
+      return ["200", true] if a.join(" ").include?("curl")
+      ["", true]
+    end
+    def gh_pr_files(_pr) = []
+  RUBY
+
+  def test_prepare_sweeps_the_detected_queue_with_the_crash_recovery_skip
+    out = run_cli(["--yes"], call: "prepare", setup: SWEEP_FLOW_STUB)
+
+    # The crash-recovery skip: the already-merged PR is NEVER re-merged.
+    assert_includes out, "skip gh pr merge for task-swept — already merged: release"
+    assert_equal 1, out.scan("GH-MERGE").size, "only the fresh PR gh-merges"
+    assert_includes out, "GH-MERGE https://gh/pr/9"
+    refute_includes out, "GH-MERGE https://gh/pr/8", "the merged: release PR skips the gh merge"
+
+    # The unmergeable task is warned + left reviewed — never an abort in prepare.
+    assert_includes out, "task-naked: no PR url"
+    assert_includes out, "left `reviewed` for a later sweep"
+
+    # ONE batched record write sweeps skip + fresh (not the naked one).
+    assert_equal 1, out.scan("SWEEP-CALL").size, "the sweep records in ONE heroku run"
+    sweep = out.lines.find { |l| l.start_with?("SWEEP-CALL") }
+    assert_includes sweep, "task-swept"
+    assert_includes sweep, "task-new"
+    refute_includes sweep, "task-naked", "nothing to merge and nothing merged → not swept"
+
+    # QA booted green → the QA-green flip fires and the RC assembles.
+    assert_equal 1, out.scan("QA-GREEN-CALL").size, "QA-green flips the swept members via qa_green!"
+    assert_includes out, "Assembled rel-sweep"
+  end
+
+  def test_prepare_dry_run_previews_the_sweep_without_recording
+    out = run_cli(["--dry-run"], call: "prepare", setup: SWEEP_FLOW_STUB)
+
+    assert_includes out, "sweep task-new (reviewed)", "the dry run previews the detected sweep"
+    assert_includes out, "skip gh pr merge for task-swept — already merged: release"
+    refute_includes out, "SWEEP-CALL", "a dry run records nothing"
+    refute_includes out, "QA-GREEN-CALL", "a dry run flips nothing"
+  end
+
+  # --task names a slug detection DROPPED (typo, or neither `reviewed` nor an
+  # assembled straggler): the filter runs BEFORE the review-gate screen, so
+  # without the loud fail the slug vanished silently and the run could still end
+  # "✓". prepare must abort BEFORE any merge or deploy.
+  def test_prepare_task_flag_fails_loudly_when_a_named_slug_is_not_sweepable
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        { "tasks" => [
+            { "slug" => "task-real", "stage" => "reviewed", "merged" => "", "pr_url" => "https://gh/pr/9", "repo" => "mcritchie-studio" }
+          ],
+          "release" => nil,
+          "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
+      end
+    RUBY
+    out = run_cli(["--yes", "--task", "task-real", "--task", "task-typo"], setup: setup,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a dropped --task slug must abort — never a silent drop / false success"
+    assert_includes out, "task-typo", "the abort names the missing slug"
+    assert_includes out, "not sweepable", "the abort names the eligibility rule"
+    assert_includes out, "Nothing was merged or deployed", "the loud fail lands before any side effect"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "gh pr merge", "no PR merges after the loud fail"
+    refute_includes out, "bin/qa-server deploy", "no QA deploy after the loud fail"
+  end
+
+  # The surviving --task list still previews/sweeps normally (the loud fail only
+  # fires on a MISSING slug, not on curation itself).
+  def test_prepare_task_flag_sweeps_a_named_slug_that_survives_detection
+    out = run_cli(["--dry-run", "--task", "task-new"], call: "prepare", setup: SWEEP_FLOW_STUB)
+
+    assert_includes out, "sweep task-new (reviewed)", "the named survivor previews"
+    refute_includes out, "not sweepable", "no loud fail when every named slug survived"
+  end
+
+  # --- the Avi handoff line: printed on QA-green ONLY ---------------------------
+
+  def test_prepare_prints_the_avi_handoff_only_on_qa_green
+    out = run_cli(["--yes"], call: "prepare", setup: SWEEP_FLOW_STUB)
+
+    assert_includes out, "Assembled rel-sweep"
+    assert_includes out, "hand off to Avi: `bin/release ship`", "QA-green prepare hands the RC to Avi"
+  end
+
+  def test_prepare_omits_the_avi_handoff_when_qa_is_not_green
+    setup = SWEEP_FLOW_STUB + %(\ndef wait_for_boot(_url) = false)
+    out = run_cli(["--yes"], call: "prepare", setup: setup)
+
+    assert_includes out, "QA is NOT green", "the boot failure is reported"
+    assert_includes out, "Prepared (NOT assembled — QA not green)"
+    refute_includes out, "hand off to Avi",
+                    "a NOT-green prepare must not point at `bin/release ship` — there is nothing to ship yet"
+    refute_includes out, "QA-GREEN-CALL", "no flip on a QA-red prepare"
+  end
+
+  # --- pre-QA gate: the prepare-owned test tier on origin/release --------------
+
+  def test_prepare_dry_run_previews_the_pre_qa_gate_per_app
+    setup = STUB_CONDUCTOR + %(\ndef qa_gate_cmd(repo) = repo == "mcritchie-studio" ? "bin/rails test:integration" : "")
+    out = run_cli(["--dry-run"], call: "prepare", setup: setup)
+
+    assert_includes out, "pre-QA gate: integration + e2e-smoke on origin/release (before any QA deploy)"
+    assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: (cd mcritchie-studio) bin/rails test:integration @ origin/release"
+    assert_includes out, "turf-monster: no qa_test_cmd registered", "an unregistered app self-gates (skip)"
+  end
+
+  def test_pre_qa_gate_runs_before_any_qa_deploy
+    setup = STUB_CONDUCTOR + %(\ndef qa_gate_cmd(_repo) = "bin/rails test:integration")
+    out = run_cli(["--dry-run"], call: "prepare", setup: setup)
+
+    gate_at   = out.index("pre-QA gate mcritchie-studio")
+    deploy_at = out.index("bin/qa-server deploy mcritchie-studio")
+    assert gate_at && deploy_at, "both the gate and the deploy must appear"
+    assert_operator gate_at, :<, deploy_at, "the gate runs BEFORE the QA deploy (members still reviewed)"
+  end
+
+  def test_pre_qa_gate_red_aborts_with_eject_guidance_and_restores_main
+    setup = <<~'RUBY'
+      def repo_path(_repo) = Dir.pwd
+      def qa_gate_cmd(_repo) = "bin/failing-suite"
+      def sh(*a, **_k)
+        $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
+        return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a red pre-QA gate aborts prepare"
+    assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
+    assert_includes out, "git revert -m 1", "…and the merge-commit revert"
+    assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
+    refute_includes out, "PASSED"
+    assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+  end
+
+  # --- eject: block-on-regression (detach + block ONE offender, keep the rest) ---
+
+  def test_eject_records_the_conductor_eject_and_prints_the_revert_guidance
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        $stdout.puts("EJECT-CALL " + ruby.gsub("\n", " "))
+        { "slug" => "task-bad", "stage" => "blocked", "merged" => nil }
+      end
+    RUBY
+    out = run_cli(["task-bad", "--feedback", "integration regression on release"], call: "eject", setup: setup)
+
+    eject = out.lines.find { |l| l.start_with?("EJECT-CALL") }
+    assert_includes eject, "Release::Conductor.eject!", "the record side detaches + blocks via eject!"
+    assert_includes eject, "integration regression on release", "the feedback threads into the qa_feedback note"
+    assert_includes out, "task-bad → blocked (rework)"
+    assert_includes out, "git revert -m 1", "the git unwind guidance is printed"
+    assert_includes out, "bin/release prepare", "…ending at the self-healing re-run"
+  end
+
+  def test_eject_without_a_slug_aborts_with_usage
+    out = run_cli([], call: "begin; eject; rescue SystemExit => e; puts('ABORTED: ' + e.message); end", setup: "")
+    assert_includes out, "ABORTED"
+    assert_includes out, "usage: bin/release eject"
+  end
+
+  # --- record_merged_main: the ship-side merged:"main" stamp -------------------
+
+  def test_record_merged_main_records_the_ff_stamp_through_the_conductor
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        $stdout.puts("MERGED-CALL " + ruby.gsub("\n", " "))
+        {}
+      end
+    RUBY
+    out = run_cli(["--yes"], call: %(record_merged_main(["t-a", "t-b"])), setup: setup)
+
+    merged = out.lines.find { |l| l.start_with?("MERGED-CALL") }
+    assert_includes merged, "Release::Conductor.record_merged!", "the stamp rides the tested conductor primitive"
+    assert_includes merged, "'main'"
+    assert_includes merged, "t-a"
+    assert_includes merged, "t-b"
+  end
+
+  def test_record_merged_main_is_best_effort_and_never_aborts_the_ship
+    setup = %(def conductor(ruby, read_only: false) = abort!("record op failed: board blip"))
+    out = run_cli(["--yes"], call: %(record_merged_main(["t-a"]); puts("CONTINUED")), setup: setup)
+
+    assert_includes out, "merged:main not recorded", "a board blip WARNS"
+    assert_includes out, "CONTINUED", "…and the ship continues (git ffs no-op; ship! re-stamps)"
+  end
+
+  def test_record_merged_main_skips_empty_slugs_and_dry_run
+    setup = %(def conductor(ruby, read_only: false); $stdout.puts("MERGED-CALL"); {}; end)
+    out = run_cli(["--yes"], call: %(record_merged_main([])), setup: setup)
+    refute_includes out, "MERGED-CALL", "no members → no write"
+
+    out = run_cli(["--dry-run"], call: %(record_merged_main(["t-a"])), setup: setup)
+    refute_includes out, "MERGED-CALL", "a dry run stamps nothing"
   end
 
   # --- status / the clean-release GUARD (`Deploy with Task`'s first step) ---
@@ -888,6 +1139,7 @@ class ReleaseCliTest < Minitest::Test
   # ok in dry-run (deployed.ok = DRY), so step 4 runs the QA post-deploy hook.
   POST_DEPLOY_PREP_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-cli", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
       { "slug" => "rel-pd", "state" => "assembling", "branch" => "release", "repos" => [
         { "repo" => "turf-monster", "kind" => "app", "release_branch" => "release",
           "qa_app" => "turf-monster",
@@ -924,14 +1176,16 @@ class ReleaseCliTest < Minitest::Test
     def conductor(ruby, read_only: false)
       payload = conductor_payload(ruby)               # the REAL shell-safe encoder
       $stdout.puts("UNSAFE-PAYLOAD") if payload.include?("Rails.root.join") || payload.include?("(%q(")
-      if ruby.include?("repo_plan")
+      if ruby.include?("sweep_candidates")
+        { "tasks" => [], "release" => { "slug" => "rel-paren", "state" => "assembling" }, "screen" => {} }
+      elsif ruby.include?("repo_plan")
         { "slug" => "rel-paren", "state" => "assembling", "branch" => "release", "repos" => [
           { "repo" => "turf-monster", "kind" => "app", "release_branch" => "release",
             "qa_app" => "turf-monster",
             "members" => [{ "slug" => "t-turf", "branch" => "feat/turf",
               "post_deploy_cmd" => %q{bin/rails runner "load Rails.root.join(%q(db/seeds/54_demo.rb)).to_s"} }] }
         ] }
-      elsif ruby.include?("assemble!")
+      elsif ruby.include?("qa_green!")
         $stdout.puts("ASSEMBLE-REACHED")
         { "state" => "assembled" }
       else
@@ -1096,9 +1350,9 @@ class ReleaseCliTest < Minitest::Test
     assert_equal 1, out.scan("ADOPT-CALL").size, "all adopts run in ONE write conductor call (single dyno)"
 
     adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
-    assert_includes adopt, "task-a", "the single adopt call covers task-a"
-    assert_includes adopt, "task-b", "the single adopt call covers task-b"
-    assert_includes adopt, "adopt!", "the batched call drives Release::Conductor.adopt!"
+    assert_includes adopt, "task-a", "the single sweep call covers task-a"
+    assert_includes adopt, "task-b", "the single sweep call covers task-b"
+    assert_includes adopt, "sweep!", "the batched call drives Release::Conductor.sweep!"
   end
 
   def test_merge_collapses_duplicate_pr_urls_but_adopts_every_task
@@ -1166,7 +1420,7 @@ class ReleaseCliTest < Minitest::Test
     assert_equal 1, out.scan("ADOPT-CALL").size
     adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
     assert_includes adopt, "task-a"
-    assert_includes out, "Merged task-a"
+    assert_includes out, "Swept task-a"
   end
 
   def test_merge_with_no_slug_aborts_with_usage
@@ -1312,25 +1566,25 @@ class ReleaseCliTest < Minitest::Test
     assert_includes adopt, "override: false", "a normal merge threads NO bypass"
   end
 
-  # --- batch_adopt_ruby / batch_resolve_ruby: pure snippet builders ---------
+  # --- batch_sweep_ruby / batch_resolve_ruby: pure snippet builders ---------
   # These build the ONE-shot conductor snippets the batched merge runs; unit-test
   # them directly (eval_helper) so the single-call guarantee + slug embedding are
   # pinned independent of the orchestration.
 
-  def test_batch_adopt_ruby_embeds_every_slug_in_one_runner_snippet
-    out = eval_helper(%(batch_adopt_ruby(["task-a", "task-b", "task-c"])))
+  def test_batch_sweep_ruby_embeds_every_slug_in_one_runner_snippet
+    out = eval_helper(%(batch_sweep_ruby(["task-a", "task-b", "task-c"])))
     assert_includes out, "task-a"
     assert_includes out, "task-b"
     assert_includes out, "task-c"
-    assert_includes out, "Release::Conductor.adopt!", "the snippet drives adopt!"
+    assert_includes out, "Release::Conductor.sweep!", "the snippet drives sweep!"
     assert_equal 1, out.scan("puts(").size, "the snippet emits exactly ONE JSON line for the whole batch"
   end
 
-  def test_batch_adopt_ruby_threads_the_override_flag
-    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"]))), "override: false",
-                    "adopt defaults to NO override"
-    assert_includes eval_helper(%(batch_adopt_ruby(["task-a"], override: true))), "override: true",
-                    "the audited bypass threads into the adopt snippet"
+  def test_batch_sweep_ruby_threads_the_override_flag
+    assert_includes eval_helper(%(batch_sweep_ruby(["task-a"]))), "override: false",
+                    "sweep defaults to NO override"
+    assert_includes eval_helper(%(batch_sweep_ruby(["task-a"], override: true))), "override: true",
+                    "the audited bypass threads into the sweep snippet"
   end
 
   def test_batch_resolve_ruby_embeds_every_slug_and_reads_one_line
@@ -1462,7 +1716,7 @@ class ReleaseCliTest < Minitest::Test
   def test_prepare_narrates_a_steffon_deploy_span
     out = run_cli(["--yes"], call: "prepare", setup: PAREN_POST_DEPLOY_PREP_STUB + NARRATION_CAPTURE)
 
-    assert_includes out, "ATOMIC start --category Remote --reason assemble → deploy RC to QA --agent steffon",
+    assert_includes out, "ATOMIC start --category Remote --reason sweep → deploy RC to QA --agent steffon",
                      "prepare opens a Steffon span"
     assert_match(/ATOMIC end --outcome assembled/, out, "and closes it once the RC is assembled")
   end
@@ -1618,6 +1872,7 @@ class ReleaseCliTest < Minitest::Test
   INTENT_FAIL_PREPARE_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
       abort!("record op failed:\\nFATAL: remaining connection slots are reserved") if ruby.include?("record_deploy_intents!")
+      return { "tasks" => [], "release" => { "slug" => "rel-cli", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
       { "slug" => "rel-cli", "state" => "assembling", "branch" => "release", "repos" => [
         { "repo" => "studio-engine", "kind" => "gem",
           "members" => [{ "slug" => "t-gem", "branch" => nil }] },

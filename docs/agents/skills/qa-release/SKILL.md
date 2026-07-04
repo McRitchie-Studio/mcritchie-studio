@@ -1,6 +1,6 @@
 ---
 name: qa-release
-description: "The composable DevOps launchers — surfaced as the soul heartbeat acts on the /deployments Heartbeats card (any copyable row of each). Avi Heartbeat (acts, downstream-first: production-deploy = ship a QA-green release if one is ready (idempotent no-op otherwise), pr-review = review+merge ALL submitted PRs in waves <=5, pr-review-slow = the same serialized one PR at a time), Steffon Heartbeat (acts, downstream-first: archive-completed = bin/release archive the prior cycle (idempotent no-op otherwise), qa-deploy = bin/release prepare the new RC to QA), Alex Heartbeat (acts: grade-events = the learning loop, share-insights = share the mcr-confirmed insights out via the regenerated lessons doc, full-cycle = the FULL autonomous cycle review->assemble->QA->prod ship with full ship authority). Plus Deploy with Task <task> — expedite ONE task to prod, guarded on a clean release (release == main). Atoms: review-one (one-PR review + merge), pr-review / pr-review-slow, qa-deploy (bin/release prepare), production-deploy (bin/release ship), full-cycle (all three, ship-authority gated). When an agent RUNS a <Soul> Heartbeat its first action is `bin/atomic-event heartbeat <soul>` so every span self-attributes to that soul. The four legacy release chips (Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge Assemble Deploy) are RETIRED — their capability is now pr-review-slow (Avi) and full-cycle (Alex); still recognized as aliases. Invoke when the operator uses one of these phrases, clicks a heartbeat launcher, or asks to prepare/deploy the release. Thin launcher — the full model-agnostic SOP lives in devops-cycle-design.md §1.4 + heartbeats.md."
+description: "The composable DevOps launchers — surfaced as the soul heartbeat acts on the /deployments Heartbeats card (any copyable row of each). The souls BOOKEND the pipeline: Avi reviews + ships, Steffon owns the whole middle. Avi Heartbeat (acts, downstream-first: production-deploy = ship a QA-green release if one is ready (idempotent no-op otherwise), pr-review = review ALL submitted PRs in waves <=5 REVIEW-ONLY (stops at reviewed — Steffon's sweep merges), pr-review-slow = the same serialized one PR at a time), Steffon Heartbeat (acts, downstream-first: archive-completed = bin/release archive the prior cycle (idempotent no-op otherwise), qa-deploy = the SELF-HEALING bin/release prepare: sweep reviewed tasks + assembled stragglers, merge their PRs onto release (skip merged: ones — crash recovery), pre-QA gate, deploy QA, flip members assembled on QA-green), Alex Heartbeat (acts: grade-events = the learning loop, share-insights = share the mcr-confirmed insights out via the regenerated lessons doc, full-cycle = the FULL autonomous cycle review->assemble->QA->prod ship with full ship authority). Plus Deploy with Task <task> — expedite ONE task to prod, guarded on a clean release (release == main). Atoms: review-one (one-PR review, review-only), pr-review / pr-review-slow, qa-deploy (bin/release prepare), production-deploy (bin/release ship; stamps merged: main at each ff), full-cycle (all three, ship-authority gated). When an agent RUNS a <Soul> Heartbeat its first action is `bin/atomic-event heartbeat <soul>` so every span self-attributes to that soul. The four legacy release chips (Avi Heartbeat Slow, Avi Heartbeat Fast, Build and Deploy QA Release, Merge Assemble Deploy) are RETIRED — their capability is now pr-review-slow (Avi) and full-cycle (Alex); still recognized as aliases. Invoke when the operator uses one of these phrases, clicks a heartbeat launcher, or asks to prepare/deploy the release. Thin launcher — the full model-agnostic SOP lives in devops-cycle-design.md §1.4 + heartbeats.md."
 ---
 
 # Release Conductor Launcher
@@ -23,12 +23,15 @@ is a sequence of them (full detail in §1.4):
 
 - **`review-one <task>`** — the PRIMITIVE: the [PR Review SOP](../../modules/pr-review-sop.md)
   on ONE PR (Avi picks the pair → PRIMARY + LIGHT review → all-clear = PRIMARY
-  drives `reviewed` **and** runs `bin/release merge` → `assembled`; else block).
+  drives `reviewed` and STOPS — **review-only**, Steffon's sweep merges; else block).
 - **`pr-review`** — `review-one` fanned across ALL `submitted` PRs, **waves of ≤5**
-  (review **+ merge**). **`pr-review-slow`** — the same, serialized.
-- **`qa-deploy`** — `bin/release prepare --yes` (assemble + deploy `origin/release`
-  to QA). **`production-deploy`** — `bin/release ship` (ff `release → main`, deploy
-  prod; ship-authority gated).
+  (review-only). **`pr-review-slow`** — the same, serialized.
+- **`qa-deploy`** — `bin/release prepare --yes`, the **self-healing sweep**: detect
+  `reviewed` tasks + `assembled` stragglers → merge their PRs onto `release`
+  (skipping `merged:` ones — crash recovery) → pre-QA gate → deploy QA → flip
+  members `assembled` on **QA-green** (a failure leaves them `reviewed` for the
+  next run). **`production-deploy`** — `bin/release ship` (ff `release → main`
+  stamping `merged: "main"`, deploy prod; ship-authority gated).
 
 > ⚠️ **Branch at the production decision.**
 > - `Avi Heartbeat Slow`: run `bin/avi-heartbeat --run --codex-workdir
@@ -67,15 +70,17 @@ the named soul. Operator-launched (copy-paste) today, schedule-ready tomorrow �
 act is idempotent with an explicit precondition + a named exit seam. **Steffon owns
 release stages 1–3, Avi owns 4–5, and "deployed to QA" is the Steffon → Avi
 handoff:**
-- **`Avi Heartbeat`** — Avi. Act **`pr-review`**: review + **merge** ALL submitted
-  PRs (waves ≤5) → each `assembled` or `blocked` (MERGES — unlike the review-only
-  `Avi Heartbeat Slow`/`Fast`). Act **`production-deploy`** (ship authority):
-  **IF** a QA-green release is ready → `bin/release ship --yes` (stages 4–5) → prod
-  → `shipped`; else no-op.
+- **`Avi Heartbeat`** — Avi. Act **`pr-review`**: review ALL submitted PRs (waves
+  ≤5) → each `reviewed` or `blocked` — **review-only**; Steffon's sweep merges.
+  Act **`production-deploy`** (ship authority): **IF** a QA-green release is
+  ready → `bin/release ship --yes` (stages 4–5, `merged: "main"` at each ff) →
+  prod → `shipped`; else no-op.
 - **`Steffon Heartbeat`** — Steffon. Act **`qa-deploy`**: `bin/release prepare
-  --yes` (stages 1–3) → QA → `assembled` on QA, hands off at "deployed to QA" (does
-  NOT ship). Act **`archive-completed`**: `bin/release archive --yes` → shipped
-  tasks + completed releases + merged worktrees archived (idempotent).
+  --yes` (stages 1–3, SELF-HEALING) — sweep the reviewed queue + stragglers,
+  merge PRs onto `release`, pre-QA gate, deploy QA, members `assembled` on
+  QA-green — hands off at "deployed to QA" (does NOT ship). Act
+  **`archive-completed`**: `bin/release archive --yes` → shipped tasks +
+  completed releases + merged worktrees archived (idempotent).
 - **`Alex Heartbeat`** — Alex. Act **`grade-events`**: grade the 10 most recent
   resolved spans at `/alex/heartbeat`, bank the useful insights. Act
   **`share-insights`**: take the `mcr`-confirmed insights, regenerate the lessons
@@ -98,11 +103,11 @@ Load-bearing reminders (full detail in §1.4):
   its own sub-agent — each narrating its review **as its soul** (`--agent`). **Cap the fan-out at 5 concurrent agents** (the board DB's
   connection budget — see "Concurrency cap" in the operating model); review larger
   queues in **waves of ≤5**. On two approvals with no blocker the **PRIMARY**
-  drives its task to `reviewed` AND runs `bin/release merge` (it owns the merge —
-  not the conductor). **Block-and-move** (one block never halts the batch), a
-  **second review round** for stragglers that arrive during `prepare`, then
-  assemble and branch: stop at the ship gate for the QA workflow, or ship for the
-  autonomous workflow.
+  drives its task to `reviewed` and STOPS — review-only; Steffon's `qa-deploy`
+  sweep owns the merge. **Block-and-move** (one block never halts the batch), a
+  **second review round** for stragglers that arrive during `prepare` (a
+  `prepare` re-run sweeps them in), then branch: stop at the ship gate for the QA
+  workflow, or ship for the autonomous workflow.
 - Surface any blocking event as **❌ Block Resolved — <slug>: <reason>** in the
   handoff; omit that section entirely on a clean run.
 - Ship from a **primary checkout**, not a worktree (gems resolve as siblings at the

@@ -12,12 +12,15 @@ everywhere.
 > **This module IS the `review-one <task>` atom** — the indivisible PRIMITIVE the
 > composable deploy launchers are built from (§1.4). One run = **one PR / one
 > task**: Avi picks the pair → PRIMARY (+ LIGHT) review → on all-clear the PRIMARY
-> drives `reviewed` **and runs `bin/release merge`** (→ `assembled`), or **any**
-> reviewer blocks. The plural atoms just LOOP this body over the `submitted`
-> queue: **`pr-review`** runs it fanned across all submitted PRs in **waves of
-> ≤5**; **`pr-review-slow`** runs it serialized, one PR at a time. So the sections
-> below are the body of `review-one`; the loop that turns it into `pr-review` is
-> the concurrency wrapper in §1.4 — nothing here changes between the two.
+> drives the task to **`reviewed` and STOPS** (review-only, 2026-07-03 — the merge
+> is no longer the reviewer's; Steffon's self-healing `qa-deploy` sweeps the
+> reviewed queue, merges the PRs into `release`, and flips members `assembled` on
+> QA-green), or **any** reviewer blocks. The plural atoms just LOOP this body over
+> the `submitted` queue: **`pr-review`** runs it fanned across all submitted PRs
+> in **waves of ≤5**; **`pr-review-slow`** runs it serialized, one PR at a time.
+> So the sections below are the body of `review-one`; the loop that turns it into
+> `pr-review` is the concurrency wrapper in §1.4 — nothing here changes between
+> the two.
 
 It follows the established **2-senior review** model, but **formalizes the agent
 roles**: Avi assigns a **primary** and one or more **light** reviewers, each
@@ -140,10 +143,13 @@ recorded and routed back, not fixed); omit that section entirely on a clean run.
 The **PRIMARY reviewer's verdict decides**; the light reviewers add perspective.
 
 - **All-clear** (no reviewer blocked) → the PRIMARY drives the task to `reviewed`
-  (`bin/task move <task> reviewed`) and **owns the merge** — it runs
-  `bin/release merge <task>` to land the PR in `release`, flipping the task to
-  `assembled`. **Bias to action: green tests = go** (`release` is recoverable by
-  revert). The normal **merge → prepare → ship** pipeline continues from there
+  (`bin/task move <task> reviewed`) — **and stops there.** Review is
+  **review-only** (2026-07-03): the PRIMARY does NOT run `bin/release merge`;
+  Steffon's self-healing **`qa-deploy`** (`bin/release prepare`) sweeps the whole
+  reviewed queue, merges each PR into `release` (stamping `merged: "release"`),
+  and flips members to `assembled` only on QA-green. **Bias to action: green
+  tests = go** — the sweep follows promptly, and `release` is recoverable by
+  revert. The **sweep → QA → ship** pipeline continues from there
   (`devops-cycle-design.md` §1.4).
 - **Any block** → the task is at `blocked` (Step 3), out of the pipeline until the
   builder resubmits.
@@ -161,7 +167,7 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 | 2 | **PRIMARY** | domain soul | deep review; spawns the LIGHT | `Verify --agent <soul>` span + notes |
 | 2 | **LIGHT** | domain soul | focused second read | `Verify --agent <soul>` span + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
-| 4 | **PRIMARY** | domain soul | verdict → `reviewed` + `bin/release merge` | `reviewed → assembled` |
+| 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-deploy sweeps + merges) | `submitted → reviewed` |
 
 ## Where this plugs in
 

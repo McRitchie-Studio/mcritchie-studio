@@ -130,8 +130,8 @@ class ConductorTest < Minitest::Test
     assert status.success?
     # Every stage block appears with its blurb.
     assert_includes out, "submitted — review intake"
-    assert_includes out, "reviewed — merge queue"
-    assert_includes out, "assembled — current release candidate"
+    assert_includes out, "reviewed — sweep queue"
+    assert_includes out, "assembled — QA-green release candidate"
     assert_includes out, "building — Build half"
     assert_includes out, "blocked — needs attention"
     # The actual tasks are listed (per-stage, not the flat list).
@@ -185,7 +185,7 @@ class ConductorTest < Minitest::Test
   def test_plan_reviewed_recommends_release_merge_pipeline_only
     out, _err, _status = run_conductor("plan", "--no-health")
 
-    assert_includes out, "reviewed → MERGE"
+    assert_includes out, "reviewed → SWEEP"
     assert_includes out, "bin/release merge feat-b rolio-r"
     refute_includes out, "bin/release merge feat-b rolio-r client-r",
       "the client app (non-pipeline) reviewed task must not ride a release merge"
