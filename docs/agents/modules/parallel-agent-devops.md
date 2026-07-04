@@ -287,7 +287,7 @@ Use `bin/avi-heartbeat --run --codex-workdir "$PWD"` when Mr. McRitchie wants
 Avi to review submitted PRs unattended for hours without assembling a release
 (`--codex-workdir` must be a trusted git checkout — the projects-root default
 makes `codex exec` refuse and every reviewer exit 1; full flags in the
-[`heartbeats.md`](heartbeats.md) quick start). That is **Avi Heartbeat
+[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md) SOP). That is **Avi Heartbeat
 Slow**: newest `submitted` task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
 again after reviewer completion. Add `--fast` for
@@ -392,13 +392,14 @@ the scout lane as complete until coverage is explicit.
 Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
 groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
 Ready To Assemble, Assembled Release, and scout-gap lanes. Readiness is still
-advisory: Avi owns the final merge, deploy, QA feedback, and production gate.
+advisory: Avi owns review resolution and the production gate; Steffon's
+`qa-deploy` sweep owns merge plus QA deploy.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return
 a concise findings report and one recommendation to Avi: merge-ready,
-wait-for-CI, request-changes, or conductor-review. Avi keeps the final
-integration and deployment decision.
+wait-for-CI, request-changes, or conductor-review. Avi keeps the final review
+decision; the release lane keeps integration and deployment decisions.
 
 After reviewing, the scout records the report on the task as a structured task
 comment:

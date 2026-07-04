@@ -5,7 +5,7 @@ the Deploy workflow (`submitted → reviewed`), factored out so any conductor or
 session can invoke it the same way "all over the place." The release SOP
 ([`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
 §1.4), the [`qa-release` skill](../skills/qa-release/SKILL.md), and the
-[`Avi Heartbeat`](parallel-agent-devops.md) loops all include this module **by
+[`Avi Heartbeat`](../agents/avi/HEARTBEAT.md) loops all include this module **by
 reference** rather than restating it — edit the review contract here and it flows
 everywhere.
 
@@ -174,9 +174,11 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 - [`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
   §1.4 — the canonical stage ownership and the `Review submitted PRs` building
   block; this module is its formalized, agent-role how-to.
-- [`parallel-agent-devops.md`](parallel-agent-devops.md) — the `bin/reviewer-select`
-  mechanics, the review-events API, and the `Avi Heartbeat` loops that run this
+- [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md) — the Avi-owned
+  heartbeat SOP for the `pr-review` and `pr-review-slow` loops that run this
   cascade unattended.
+- [`parallel-agent-devops.md`](parallel-agent-devops.md) — the `bin/reviewer-select`
+  mechanics, review-events API, and broader queue/scout context.
 - [`review-comment-taxonomy.md`](review-comment-taxonomy.md) — which activity type
   (`comment` / `clarification` / `qa_feedback` / `handoff`) a reviewer's note uses.
 - [`qa-release` skill](../skills/qa-release/SKILL.md) — the conductor launcher that
