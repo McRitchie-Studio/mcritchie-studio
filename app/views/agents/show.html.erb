@@ -26,6 +26,29 @@
   <%# HEARTBEAT — only renders for souls that own one (Avi / Steffon / Alex). %>
   <%= render "agents/heartbeat_section", agent: @agent %>
 
+  <% if @agent_doc_tree.any? %>
+    <section class="card p-6 mb-6" data-test="agent-file-tree" data-agent="<%= @agent.slug %>">
+      <div class="mb-4">
+        <h3 class="text-lg font-bold text-heading">Files</h3>
+      </div>
+      <div class="rounded-md border border-subtle bg-inset py-2 font-mono text-sm">
+        <% @agent_doc_tree.each do |node| %>
+          <div class="flex min-h-8 items-center gap-2 px-3 text-secondary" style="padding-left: <%= 0.75 + (node[:depth] * 1.25) %>rem" data-test="agent-file-tree-node" data-path="<%= node[:path] %>" data-kind="<%= node[:directory] ? "directory" : "file" %>">
+            <span class="w-4 text-center text-muted" aria-hidden="true"><%= node[:directory] ? "▸" : "•" %></span>
+            <% if node[:markdown] %>
+              <%= link_to node[:name],
+                          doc_path(node[:doc_path]),
+                          class: "text-primary hover:text-heading transition",
+                          data: { test: "agent-file-tree-link", path: node[:doc_path] } %>
+            <% else %>
+              <span><%= node[:name] %></span>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Skills -->
     <div>
