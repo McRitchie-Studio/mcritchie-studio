@@ -14,31 +14,26 @@
 #
 # Targets the SAME board as the narration stack (ATOMIC_CAPTURE_URL, default
 # http://localhost:3000 — the settings.json wiring points it at prod, like the
-# capture hook) and mints/caches the SAME agent token as bin/atomic-event /
-# bin/atomic-capture-hook (AGENT_API_SECRET → 1Password → repo .env).
+# capture hook) via the shared AgentApi client (bin/lib/agent_api.rb), which
+# mints/caches the SAME agent token as bin/atomic-event / bin/atomic-capture-hook
+# (AGENT_API_SECRET → 1Password → repo .env).
 #
 # NON-FATAL by construction: any failure (no token, unreachable board, empty bank)
 # prints NOTHING and exits 0, so a session with no insights just starts normally —
 # the hook can never block or slow a session start.
 
 require "json"
-require "net/http"
-require "uri"
-require "time"
-require "fileutils"
+require_relative "lib/agent_api"
 
 class SessionInsights
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 4
   DEFAULT_LIMIT = 12
 
-  OP = "/opt/homebrew/bin/op"
-  SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
-  TOKEN_REFRESH_MARGIN = 300
-
   def initialize(env: ENV, out: $stdout)
     @env = env
     @out = out
+    @api = AgentApi.new(env: env, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
   end
 
   # Fetch the feed and, if there is anything to say, print the SessionStart
@@ -91,12 +86,15 @@ class SessionInsights
 
   private
 
-  # GET the feed, returning the array of insight hashes, or nil on any failure.
+  # GET the feed via the shared AgentApi client (token + bearer GET), returning
+  # the array of insight hashes, or nil on any failure. Deliberately NO 401
+  # invalidation here — a stale token just means a silent no-insights start; the
+  # narration stack (which runs all session) handles the cache refresh.
   def fetch_insights
-    tok = token
+    tok = @api.token
     return nil unless tok
 
-    res = http_get("/api/v1/insights?limit=#{limit}", bearer: tok)
+    res = @api.http_get("/api/v1/insights?limit=#{limit}", bearer: tok)
     return nil unless res && res.code.to_i.between?(200, 299)
 
     body = JSON.parse(res.body)
@@ -110,133 +108,8 @@ class SessionInsights
     raw.empty? ? DEFAULT_LIMIT : raw.to_i
   end
 
-  def base_url
-    url = @env["ATOMIC_CAPTURE_URL"].to_s.strip
-    url.empty? ? "http://localhost:3000" : url
-  end
-
-  # ── Token: reuse the shared on-disk cache, mint if missing ────────────────
-
-  def token
-    cached = read_cached_token
-    return cached if cached
-
-    secret = agent_secret
-    return nil unless secret
-
-    res = http_json(:post, "/api/v1/auth", { "secret" => secret }, bearer: nil)
-    return nil unless res && res.code.to_i.between?(200, 299)
-
-    body = JSON.parse(res.body) rescue {}
-    tok = body["token"]
-    write_cached_token(tok, body["expires_at"]) if present?(tok)
-    tok
-  rescue StandardError
-    nil
-  end
-
-  def token_cache_path
-    File.join(projects_dir, ".agents", "atomic-capture", "token.json")
-  end
-
-  def read_cached_token
-    path = token_cache_path
-    return nil unless File.file?(path)
-
-    data = JSON.parse(File.read(path))
-    return nil unless present?(data["token"])
-
-    if present?(data["expires_at"])
-      expires = Time.parse(data["expires_at"])
-      return nil if Time.now >= (expires - TOKEN_REFRESH_MARGIN)
-    end
-    data["token"]
-  rescue StandardError
-    nil
-  end
-
-  def write_cached_token(tok, expires_at)
-    path = token_cache_path
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at))
-  rescue StandardError
-    nil
-  end
-
-  # ENV, then 1Password, then repo .env — the same order as bin/atomic-event.
-  def agent_secret
-    env = @env["AGENT_API_SECRET"].to_s
-    return env unless env.empty?
-
-    if File.executable?(OP)
-      op = begin
-        IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-      rescue StandardError
-        ""
-      end
-      return op unless op.empty?
-    end
-
-    dotenv = File.join(repo_root, ".env")
-    if File.file?(dotenv)
-      line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-      return line.split("=", 2)[1].to_s.strip if line
-    end
-    nil
-  rescue StandardError
-    nil
-  end
-
-  # ── HTTP ───────────────────────────────────────────────────────────────────
-
-  def http_get(path, bearer:)
-    http_request(Net::HTTP::Get, path, nil, bearer: bearer)
-  end
-
-  def http_json(method, path, body, bearer:)
-    klass = { post: Net::HTTP::Post }.fetch(method)
-    http_request(klass, path, body, bearer: bearer)
-  end
-
-  def http_request(klass, path, body, bearer:)
-    uri = URI.join(base_url, path)
-    req = klass.new(uri)
-    req["Authorization"] = "Bearer #{bearer}" if bearer
-    if body
-      req["Content-Type"] = "application/json"
-      req.body = JSON.generate(body)
-    end
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = (uri.scheme == "https")
-    http.open_timeout = OPEN_TIMEOUT
-    http.read_timeout = READ_TIMEOUT
-    http.request(req)
-  rescue StandardError
-    nil
-  end
-
-  # ── Paths + tiny helpers ────────────────────────────────────────────────────
-
-  def projects_dir
-    dir = @env["CLAUDE_PROJECTS_DIR"].to_s.strip
-    dir.empty? ? default_projects_dir : File.expand_path(dir)
-  end
-
-  def repo_root
-    File.expand_path("..", __dir__)
-  end
-
-  def default_projects_dir
-    candidate = File.expand_path("../..", __dir__)
-    if File.basename(candidate) == ".worktrees"
-      File.expand_path("../..", candidate)
-    else
-      candidate
-    end
-  end
-
   def present?(value)
-    !value.nil? && value != false && !value.to_s.strip.empty?
+    @api.present?(value)
   end
 end
 

@@ -32,18 +32,17 @@
 #
 # Targets the SAME endpoint as bin/atomic-capture-hook (ATOMIC_CAPTURE_URL,
 # default http://localhost:3000) — events and actions MUST land on the same
-# server for the server-side span attribution to work. Sources the agent token
-# the same way bin/atomic-capture-hook / bin/task do (AGENT_API_SECRET → 1Password
-# → repo .env), and reuses the hook's on-disk token cache.
+# server for the server-side span attribution to work. Token + HTTP live on the
+# shared AgentApi client (bin/lib/agent_api.rb): the agent secret sources the
+# same way bin/task does (AGENT_API_SECRET → 1Password → repo .env) and the
+# on-disk token cache is shared with the hook.
 #
 # NON-FATAL: this never breaks the agent's flow. Every error is swallowed, a one
 # line note goes to stderr, and the process always exits 0.
 
 require "json"
-require "net/http"
-require "uri"
-require "time"
 require "fileutils"
+require_relative "lib/agent_api"
 
 class AtomicEventCli
   CATEGORIES = %w[
@@ -53,15 +52,12 @@ class AtomicEventCli
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5
 
-  OP = "/opt/homebrew/bin/op"
-  SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
-  TOKEN_REFRESH_MARGIN = 300
-
   def initialize(env: ENV, out: $stdout, err: $stderr, input: $stdin)
     @env = env
     @out = out
     @err = err
     @in  = input
+    @api = AgentApi.new(env: env, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
   end
 
   # Entry point. Parses argv, dispatches the command, and ALWAYS returns (the main
@@ -366,14 +362,14 @@ class AtomicEventCli
     { "task_slug" => nil, "mascot" => nil, "stage" => nil }
   end
 
-  # ── HTTP + auth (cached token, mirrors the capture hook) ───────────────────
+  # ── HTTP + auth (the shared AgentApi client; 401 drops the cached token) ───
 
   def post(path, body)
-    tok = token
+    tok = @api.token
     return nil unless tok
 
-    res = http_json(:post, path, body, bearer: tok)
-    invalidate_token! if res && res.code.to_i == 401
+    res = @api.http_json(:post, path, body, bearer: tok)
+    @api.invalidate_token! if res && res.code.to_i == 401
     res
   rescue StandardError => e
     warn_note("atomic-event POST #{path} failed (ignored): #{e.class}")
@@ -381,11 +377,11 @@ class AtomicEventCli
   end
 
   def get(path)
-    tok = token
+    tok = @api.token
     return nil unless tok
 
-    res = http_json(:get, path, nil, bearer: tok)
-    invalidate_token! if res && res.code.to_i == 401
+    res = @api.http_json(:get, path, nil, bearer: tok)
+    @api.invalidate_token! if res && res.code.to_i == 401
     res
   rescue StandardError => e
     warn_note("atomic-event GET #{path} failed (ignored): #{e.class}")
@@ -412,105 +408,6 @@ class AtomicEventCli
   end
 
   private
-
-  def base_url
-    url = @env["ATOMIC_CAPTURE_URL"].to_s.strip
-    url.empty? ? "http://localhost:3000" : url
-  end
-
-  def token
-    cached = read_cached_token
-    return cached if cached
-
-    secret = agent_secret
-    return nil unless secret
-
-    res = http_json(:post, "/api/v1/auth", { "secret" => secret }, bearer: nil)
-    return nil unless res && res.code.to_i.between?(200, 299)
-
-    body = JSON.parse(res.body) rescue {}
-    tok = body["token"]
-    write_cached_token(tok, body["expires_at"]) if present?(tok)
-    tok
-  rescue StandardError
-    nil
-  end
-
-  def token_cache_path
-    File.join(projects_dir, ".agents", "atomic-capture", "token.json")
-  end
-
-  def read_cached_token
-    path = token_cache_path
-    return nil unless File.file?(path)
-
-    data = JSON.parse(File.read(path))
-    return nil unless present?(data["token"])
-
-    if present?(data["expires_at"])
-      expires = Time.parse(data["expires_at"])
-      return nil if Time.now >= (expires - TOKEN_REFRESH_MARGIN)
-    end
-    data["token"]
-  rescue StandardError
-    nil
-  end
-
-  def write_cached_token(tok, expires_at)
-    path = token_cache_path
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at))
-  rescue StandardError
-    nil
-  end
-
-  def invalidate_token!
-    File.delete(token_cache_path)
-  rescue StandardError
-    nil
-  end
-
-  # ENV, then 1Password, then repo .env — same order as bin/task / the hook.
-  def agent_secret
-    env = @env["AGENT_API_SECRET"].to_s
-    return env unless env.empty?
-
-    if File.executable?(OP)
-      op = begin
-        IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-      rescue StandardError
-        ""
-      end
-      return op unless op.empty?
-    end
-
-    dotenv = File.join(repo_root, ".env")
-    if File.file?(dotenv)
-      line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-      return line.split("=", 2)[1].to_s.strip if line
-    end
-    nil
-  rescue StandardError
-    nil
-  end
-
-  def http_json(method, path, body, bearer:)
-    uri = URI.join(base_url, path)
-    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
-    req = klass.new(uri)
-    req["Authorization"] = "Bearer #{bearer}" if bearer
-    if body
-      req["Content-Type"] = "application/json"
-      req.body = JSON.generate(body)
-    end
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = (uri.scheme == "https")
-    http.open_timeout = OPEN_TIMEOUT
-    http.read_timeout = READ_TIMEOUT
-    http.request(req)
-  rescue StandardError
-    nil
-  end
 
   # ── Marker files (mirror bin/atomic-capture-hook) ──────────────────────────
 
@@ -611,24 +508,10 @@ class AtomicEventCli
     nil
   end
 
-  # ── Paths + tiny helpers ───────────────────────────────────────────────────
+  # ── Paths + tiny helpers (shared resolution lives on AgentApi) ─────────────
 
   def projects_dir
-    dir = @env["CLAUDE_PROJECTS_DIR"].to_s.strip
-    dir.empty? ? default_projects_dir : File.expand_path(dir)
-  end
-
-  def repo_root
-    File.expand_path("..", __dir__)
-  end
-
-  def default_projects_dir
-    candidate = File.expand_path("../..", __dir__)
-    if File.basename(candidate) == ".worktrees"
-      File.expand_path("../..", candidate)
-    else
-      candidate
-    end
+    @api.projects_dir
   end
 
   def first_present(hash, *keys)
@@ -644,7 +527,7 @@ class AtomicEventCli
   end
 
   def present?(value)
-    !value.nil? && value != false && !value.to_s.strip.empty?
+    @api.present?(value)
   end
 
   def warn_note(message)

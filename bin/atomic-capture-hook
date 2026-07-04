@@ -32,11 +32,8 @@
 # docs/agents/system/atomic-capture-hook.md for the settings.json snippet.
 
 require "json"
-require "net/http"
-require "uri"
 require "time"
-require "fileutils"
-require "digest"
+require_relative "lib/agent_api"
 
 # All logic lives on this class so the unit test can `load` the file (the main
 # guard below keeps it from executing) and exercise the pure builders directly.
@@ -92,16 +89,14 @@ class AtomicCaptureHook
   TRANSCRIPT_TAIL_BYTES = 131_072
 
   # Short timeouts — an unreachable endpoint must fail fast, never stall a tool.
+  # These are the TIGHTEST in the stack (this hook fires on EVERY tool call);
+  # they parameterize the shared AgentApi client below.
   OPEN_TIMEOUT = 1
   READ_TIMEOUT = 2
 
-  OP = "/opt/homebrew/bin/op"
-  SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
-  # Reuse a cached token until this margin before its 24h expiry.
-  TOKEN_REFRESH_MARGIN = 300
-
   def initialize(env: ENV)
     @env = env
+    @api = AgentApi.new(env: env, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
   end
 
   # ── Pure builders (unit-tested directly) ─────────────────────────────────
@@ -483,13 +478,15 @@ class AtomicCaptureHook
     deliver(payload) # fork unsupported → inline with short timeouts
   end
 
-  # Auth (cached token) then POST the action. Best-effort; swallows everything.
+  # Auth (cached token via the shared AgentApi client) then POST the action.
+  # Best-effort; swallows everything. A 401 drops the shared token cache so the
+  # next call re-mints.
   def deliver(payload)
-    tok = token
+    tok = @api.token
     return unless tok
 
-    res = http_json(:post, "/api/v1/atomic_actions", payload, bearer: tok)
-    invalidate_token! if res && res.code.to_i == 401
+    res = @api.http_json(:post, "/api/v1/atomic_actions", payload, bearer: tok)
+    @api.invalidate_token! if res && res.code.to_i == 401
   rescue StandardError
     # swallow
   end
@@ -498,109 +495,6 @@ class AtomicCaptureHook
 
   def foreground?
     @env["ATOMIC_CAPTURE_FOREGROUND"].to_s == "1"
-  end
-
-  def base_url
-    url = @env["ATOMIC_CAPTURE_URL"].to_s.strip
-    url.empty? ? "http://localhost:3000" : url
-  end
-
-  # ── Token: mint once, cache to disk under the 24h expiry ─────────────────
-
-  def token
-    cached = read_cached_token
-    return cached if cached
-
-    secret = agent_secret
-    return nil unless secret
-
-    res = http_json(:post, "/api/v1/auth", { "secret" => secret }, bearer: nil)
-    return nil unless res && res.code.to_i.between?(200, 299)
-
-    body = JSON.parse(res.body) rescue {}
-    tok = body["token"]
-    write_cached_token(tok, body["expires_at"]) if present?(tok)
-    tok
-  rescue StandardError
-    nil
-  end
-
-  def token_cache_path
-    File.join(projects_dir, ".agents", "atomic-capture", "token.json")
-  end
-
-  def read_cached_token
-    path = token_cache_path
-    return nil unless File.file?(path)
-
-    data = JSON.parse(File.read(path))
-    return nil unless present?(data["token"])
-
-    if present?(data["expires_at"])
-      expires = Time.parse(data["expires_at"])
-      return nil if Time.now >= (expires - TOKEN_REFRESH_MARGIN)
-    end
-    data["token"]
-  rescue StandardError
-    nil
-  end
-
-  def write_cached_token(tok, expires_at)
-    path = token_cache_path
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at))
-  rescue StandardError
-    nil
-  end
-
-  def invalidate_token!
-    File.delete(token_cache_path)
-  rescue StandardError
-    nil
-  end
-
-  # Same lookup order as bin/task: ENV, then 1Password, then repo .env.
-  def agent_secret
-    env = @env["AGENT_API_SECRET"].to_s
-    return env unless env.empty?
-
-    if File.executable?(OP)
-      op = begin
-        IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-      rescue StandardError
-        ""
-      end
-      return op unless op.empty?
-    end
-
-    dotenv = File.join(repo_root, ".env")
-    if File.file?(dotenv)
-      line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-      return line.split("=", 2)[1].to_s.strip if line
-    end
-    nil
-  rescue StandardError
-    nil
-  end
-
-  # ── HTTP ─────────────────────────────────────────────────────────────────
-
-  def http_json(method, path, body, bearer:)
-    uri = URI.join(base_url, path)
-    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
-    req = klass.new(uri)
-    req["Authorization"] = "Bearer #{bearer}" if bearer
-    if body
-      req["Content-Type"] = "application/json"
-      req.body = JSON.generate(body)
-    end
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = (uri.scheme == "https")
-    http.open_timeout = OPEN_TIMEOUT
-    http.read_timeout = READ_TIMEOUT
-    http.request(req)
-  rescue StandardError
-    nil
   end
 
   # ── Marker file resolution (mirrors bin/agent-marker) ────────────────────
@@ -636,24 +530,10 @@ class AtomicCaptureHook
     nil
   end
 
-  # ── Paths (honor CLAUDE_PROJECTS_DIR like bin/task / bin/statusline) ──────
+  # ── Paths (honor CLAUDE_PROJECTS_DIR — resolution lives on AgentApi) ──────
 
   def projects_dir
-    dir = @env["CLAUDE_PROJECTS_DIR"].to_s.strip
-    dir.empty? ? default_projects_dir : File.expand_path(dir)
-  end
-
-  def repo_root
-    File.expand_path("..", __dir__)
-  end
-
-  def default_projects_dir
-    candidate = File.expand_path("../..", __dir__)
-    if File.basename(candidate) == ".worktrees"
-      File.expand_path("../..", candidate)
-    else
-      candidate
-    end
+    @api.projects_dir
   end
 
   # ── Tiny helpers ─────────────────────────────────────────────────────────
@@ -675,7 +555,7 @@ class AtomicCaptureHook
   end
 
   def present?(value)
-    !value.nil? && value != false && !value.to_s.strip.empty?
+    @api.present?(value)
   end
 end
 
