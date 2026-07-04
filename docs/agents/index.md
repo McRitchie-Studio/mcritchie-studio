@@ -31,7 +31,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   deploy owner for that repo.
 - A pushed feature branch preserves code. `main` is for reviewed integration,
   not backup. Feature agents push their own branch and graduate through PR/QA;
-  Avi or the designated release conductor merges.
+  review is review-only — Steffon's `qa-deploy` sweep merges reviewed work.
 
 ## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
 
@@ -135,12 +135,13 @@ The task lifecycle is two workflows (full spec:
   `designed` through `submitted` (the seam); opening the PR hands off to DevOps.
 - **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. Every repo
   keeps a **persistent `release` branch** (feature PRs target it, never `main`).
-  QA reviews the submitted PR → `reviewed` (approved) or `bin/task block <task>
-  --kind rework --feedback "…"` (back to you). Approved PRs are then **merged
-  into `release`** — which flips the task to `assembled` (`bin/release merge
-  <task>`); the conductor deploys `origin/release` to QA (`bin/release prepare`)
-  and ships by fast-forwarding each repo's `release → main` (`bin/release ship`)
-  → `shipped`.
+  Review is **review-only**: the submitted PR is approved → `reviewed`, or
+  `bin/task block <task> --kind rework --feedback "…"` (back to you) — nobody
+  merges at review. Steffon's self-healing `qa-deploy` sweep (`bin/release
+  prepare`) merges reviewed tasks + `assembled` stragglers into `release`
+  (stamping `merged: "release"`), deploys QA, and flips members `assembled` only
+  on **QA-green**. Avi's `production-deploy` (`bin/release ship`) fast-forwards
+  each repo's `release → main` (stamping `merged: "main"`) → `shipped`.
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
 
@@ -389,10 +390,10 @@ PR URL, local URL, and `devops["checks_run"]`, then move the task to
 `submitted`. Keep the worktree and branch until Avi confirms the PR was merged
 or intentionally abandoned.
 
-For a dedicated review/merge/QA session, use the recurring QA intake prompt in
+For a dedicated review/QA session, use the recurring QA intake prompt in
 `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md`. That cycle
 stops after QA deployment; production rollout needs a separate explicit prompt
-such as `Merge, Assemble, Deploy`.
+(`production-deploy`, or Alex's ship-authority `full-cycle`).
 The conductor queue starts with:
 
 ```bash

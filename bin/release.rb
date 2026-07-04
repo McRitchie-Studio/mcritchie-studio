@@ -985,6 +985,18 @@ end
 # skips it.
 def qa_gate_cmd(repo) = app_meta_for(repo)["qa_test_cmd"].to_s
 
+# Parse a registry test command (`test_cmd` / `qa_test_cmd`) into the argv `sh`
+# execs — Shellwords, not String#split, so quoted/spaced args survive as single
+# elements (same policy as the heroku-run payload seam above). Identical to a
+# plain split for the flag-style commands the registry carries today, so the
+# switch is behavior-preserving. A malformed value (unbalanced quote) aborts
+# NAMING the string instead of executing a garbled command.
+def test_cmd_argv(cmd)
+  Shellwords.split(cmd)
+rescue ArgumentError => e
+  abort!("unparseable test command #{cmd.inspect} (#{e.message}) — fix it in config/release_repos.yml")
+end
+
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
 # origin/release BEFORE anything deploys to QA, so a regression riding the
 # release branch is caught while the members are still `reviewed` (nothing
@@ -1004,6 +1016,9 @@ def pre_qa_gate(app_groups)
       say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
       next
     end
+    # Parse BEFORE the dry-run return and the git dance — a malformed registry
+    # value should abort a preview too, and never churn the sibling checkout.
+    argv = test_cmd_argv(cmd)
     if DRY
       say("  [dry-run] pre-QA gate #{repo}: (cd #{repo}) #{cmd} @ origin/#{RELEASE_BRANCH}")
       next
@@ -1019,7 +1034,7 @@ def pre_qa_gate(app_groups)
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
       abort!("could not ff #{repo} #{RELEASE_BRANCH} to origin/#{RELEASE_BRANCH} (local divergence) — resolve, then re-run") unless ff
       step("pre-QA gate #{repo}: #{cmd}")
-      _, ok = sh(*cmd.split, chdir: path)
+      _, ok = sh(*argv, chdir: path)
     ensure
       sh("git", "-C", path, "checkout", "main", capture: true)
     end
@@ -1656,10 +1671,13 @@ def test_gate(repo)
     return
   end
 
+  # Parse before the dry-run return so a malformed registry value aborts a
+  # preview too (see test_cmd_argv).
+  argv = test_cmd_argv(cmd)
   step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · before prod]")
   return if DRY
 
-  _, ok = sh(*cmd.split, chdir: repo_path(repo))
+  _, ok = sh(*argv, chdir: repo_path(repo))
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
 end
 

@@ -8,8 +8,8 @@ Avi is the Product Owner. Refines tickets, sets the official planning size, cont
 ## Responsibilities
 - **Ticket Refinement + Sizing** — Sharpen issues into acceptance criteria a dev can pick up cold; submit `po_size` per the sealed-bid sizing rubric (`docs/agents/system/sizing-rubric.md`)
 - **Review Delegation (thin pre-step)** — Confirm product-acceptance, then run **`bin/reviewer-select <task>`** to pick the **primary + light** pair (by domain fit + a logged, seeded-per-task tiebreak) and **hand the lane to the PRIMARY reviewer** — who owns it end-to-end: the deep technical review, spawning the LIGHT as its own sub-agent, and, on two approvals with no blocker, driving the task to `reviewed` — **review-only** (2026-07-03): the merge belongs to Steffon's self-healing `qa-release` sweep (§1.2). Stay thin: do **not** run the deep technical review yourself. The selector excludes the QA owner, so never pick Steffon as a reviewer on a PR Steffon will then QA. **`bin/reviewer-select` records by default** — it posts the chosen pair as the `→reviewed` review intent so the deploy-lane crew ticker shows them reviewing live (pass `--no-record`/`--dry` for an advisory-only preview). The seeded tiebreak makes the preview reproducible — for the default QA owner, `bin/reviewer-select`'s pair matches the one recorded on the `submitted→reviewed` event.
-- **Ship Step** — At ship, run the full e2e + highest-tier suite on the **frozen ship SHA**, then either stop for the `Build and Deploy QA Release` operator gate or continue under `Merge, Assemble, Deploy` ship authority
-- **Release Throughput** — Maximize release throughput: get every task that passes QA into a release; default to including, not deferring. This never lowers the QA bar — rigor AND throughput. (Drives the `Build and Deploy QA Release` QA workflow and its production-authorized sibling, `Merge, Assemble, Deploy`.)
+- **Ship Step** — At ship, run the full e2e + highest-tier suite on the **frozen ship SHA**, then ship only under ship authority — the operator-launched `production-deploy` act (`Avi Heartbeat`) or Alex's `full-cycle`; a session without it stops and hands the operator the `bin/release ship` gate
+- **Release Throughput** — Maximize release throughput: get every task that passes QA into a release; default to including, not deferring. This never lowers the QA bar — rigor AND throughput. (Drives the `pr-review` → `qa-release` → `production-deploy` pipeline and its one-trigger form, Alex's ship-authority `full-cycle`.)
 - **Product Coherence** — Make sure shipped features match the spec and the brand
 - **Roadmap** — Help prioritize what ships next based on user value vs cost
 
@@ -40,5 +40,5 @@ Avi is the Product Owner. Refines tickets, sets the official planning size, cont
 
 **Ship step (the QA'd RC — §1.2):**
 1. Run the **full e2e + highest-tier suite on the frozen ship SHA** (the exact prod code)
-2. On green, branch by workflow: `Build and Deploy QA Release` stops for the operator; `Merge, Assemble, Deploy` continues under autonomous ship authority
+2. On green, branch by ship authority: `production-deploy` (operator-launched `Avi Heartbeat` act) and Alex's `full-cycle` continue autonomously; a session without ship authority stops and hands the operator `bin/release ship`
 3. With ship authority, the conductor ships (`bin/release ship`) → prod deploy → smoke → release notes

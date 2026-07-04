@@ -427,33 +427,34 @@ per DevOps stage (source of truth: `ApplicationHelper#devops_kickoffs`). Pasted
 into an agent session run from `/Users/alex/projects`, each kicks off that
 stage's workflow. The feature-agent lane (`designed → building → blocked →
 submitted`) has none — the operator drives those hands-on. The DevOps lane maps
-each command to a deterministic runbook. The same `devops_kickoffs` source
-carries four non-stage meta-triggers rendered as prominent chips in the
-current-release section (`#current-release`) — plus a fifth launcher phrase,
-`Deploy with Task <task>`, that is a typed prompt (not yet a board chip):
+each command to a deterministic runbook. The release-wide launchers are the
+**soul heartbeat acts** on the /deployments **Heartbeats card**
+(`ApplicationHelper#heartbeat_launchers`; every row is a recognized launcher —
+see "The three soul heartbeat launchers" below) — plus one launcher phrase,
+`Deploy with Task <task>`, that is a typed prompt (not a board chip):
 
-- **`Avi Heartbeat Slow`** — the long-running review-only loop for a steady
-  trickle. It serializes submitted PR review newest-first, re-fetches after
-  each PR, moves approved work to `reviewed`, then leaves it for
-  Steffon/release assembly.
-- **`Avi Heartbeat Fast`** — the same review-only loop for stacked queues. It
-  starts bounded waves of PRIMARY + LIGHT reviewer pairs, then resolves each PR
-  with the same fresh-query reviewed/block/defer rules.
-- **`Build and Deploy QA Release`** — the QA-department run. It reviews,
-  assembles, deploys QA, runs ship-readiness, then stops before production.
-- **`Merge, Assemble, Deploy`** — the autonomous production run. It shares the
-  same review/assembly/QA phases, then runs production ship after the same gates
-  pass.
+- **`pr-review`** / **`pr-review-slow`** (`Avi Heartbeat` acts) — review ALL
+  `submitted` PRs, in waves of ≤5 or serialized one PR at a time.
+  **Review-only:** approved work stops at `reviewed` — the merge belongs to
+  Steffon's sweep.
+- **`qa-deploy`** (`Steffon Heartbeat` act) — the **self-healing sweep**: merge
+  reviewed tasks + `assembled` stragglers onto `release`, deploy QA, and flip
+  members `assembled` only on QA-green.
+- **`production-deploy`** (`Avi Heartbeat` act; ship authority) — ship a
+  QA-green release: fast-forward `release → main` and deploy prod; idempotent
+  no-op when nothing is ready.
+- **`full-cycle`** (`Alex Heartbeat` act; full ship authority) — the whole
+  release, review → assemble → QA → prod ship.
 - **`Deploy with Task <task>`** — expedite ONE task to prod. Guarded on a clean
-  release (`release == main`); on a dirty release it refuses and points at
-  `Merge, Assemble, Deploy` (details below).
+  release (`release == main`); on a dirty release it refuses and points at the
+  full release pipeline (`full-cycle`) instead (details below).
 
 #### The composable launcher set — atoms + compositions
 
-The launchers above are not four monoliths — they are **compositions of a small
-set of atoms**, so the same building blocks recombine instead of each flow
-carrying its own copy of the runbook. Learn the atoms once; every launcher is a
-sequence of them.
+The launchers above are not monoliths — they are **a small set of atoms plus
+compositions of them**, so the same building blocks recombine instead of each
+flow carrying its own copy of the runbook. Learn the atoms once; every launcher
+is a sequence of them.
 
 **Atoms** (the indivisible steps — each maps onto an existing `bin/release` verb
 or the `review-one` SOP; none is a new command to build):
