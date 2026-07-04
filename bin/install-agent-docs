@@ -40,6 +40,10 @@ RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
 RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
 ZPROFILE_PATH="${AGENT_RUNTIME_ZPROFILE:-$HOME/.zprofile}"
+# The board the SessionStart insights hook reads (GET /api/v1/insights). Baked
+# into the wired command as ATOMIC_CAPTURE_URL so a fresh session hatches with the
+# curated PROD bank, exactly like the capture hook. Overridable for tests.
+INSIGHTS_BOARD_URL="${AGENT_INSIGHTS_BOARD_URL:-https://mcritchie.studio}"
 MODE="${1:-install}"
 
 # "source:target" pairs (paths use /, so : is a safe delimiter).
@@ -265,10 +269,11 @@ RUBY
 }
 
 render_codex_managed_requirements() {
-  local cmd="$1" managed_dir="$2"
-  ruby - "$cmd" "$managed_dir" <<'RUBY'
+  local cmd="$1" managed_dir="$2" insights_cmd="$3"
+  ruby - "$cmd" "$managed_dir" "$insights_cmd" <<'RUBY'
 cmd = ARGV.fetch(0)
 managed_dir = ARGV.fetch(1)
+insights_cmd = ARGV.fetch(2)
 
 def toml_string(value)
   %("#{value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').gsub("\n", "\\n")}")
@@ -276,7 +281,8 @@ end
 
 puts <<~TOML
   # BEGIN McRitchie Codex mascot managed hook
-  # Mirrors the session Pokemon/app marker into Codex's thread-title footer.
+  # Mirrors the session Pokemon/app marker into Codex's thread-title footer, and
+  # feeds the curated Insight Bank forward into a fresh session (SessionStart).
   [hooks]
   managed_dir = #{toml_string(managed_dir)}
 
@@ -288,6 +294,12 @@ puts <<~TOML
   command = #{toml_string(cmd)}
   timeout = 5
   statusMessage = "Setting session mascot"
+
+  [[hooks.SessionStart.hooks]]
+  type = "command"
+  command = #{toml_string(insights_cmd)}
+  timeout = 15
+  statusMessage = "Loading insights…"
 
   [[hooks.PostToolUse]]
   matcher = "Bash"
@@ -302,16 +314,17 @@ RUBY
 }
 
 install_codex_managed_requirements() {
-  local requirements="$1" cmd="$2" managed_dir="$3" staged="$4"
+  local requirements="$1" cmd="$2" managed_dir="$3" staged="$4" insights_cmd="$5"
   mkdir -p "$(dirname "$staged")"
-  render_codex_managed_requirements "$cmd" "$managed_dir" > "$staged"
+  render_codex_managed_requirements "$cmd" "$managed_dir" "$insights_cmd" > "$staged"
 
-  ruby - "$requirements" "$cmd" "$managed_dir" <<'RUBY'
+  ruby - "$requirements" "$cmd" "$managed_dir" "$insights_cmd" <<'RUBY'
 require "fileutils"
 
 path = ARGV.fetch(0)
 cmd = ARGV.fetch(1)
 managed_dir = ARGV.fetch(2)
+insights_cmd = ARGV.fetch(3)
 begin_marker = "# BEGIN McRitchie Codex mascot managed hook"
 end_marker = "# END McRitchie Codex mascot managed hook"
 
@@ -321,7 +334,8 @@ end
 
 block = <<~TOML
   #{begin_marker}
-  # Mirrors the session Pokemon/app marker into Codex's thread-title footer.
+  # Mirrors the session Pokemon/app marker into Codex's thread-title footer, and
+  # feeds the curated Insight Bank forward into a fresh session (SessionStart).
   [hooks]
   managed_dir = #{toml_string(managed_dir)}
 
@@ -333,6 +347,12 @@ block = <<~TOML
   command = #{toml_string(cmd)}
   timeout = 5
   statusMessage = "Setting session mascot"
+
+  [[hooks.SessionStart.hooks]]
+  type = "command"
+  command = #{toml_string(insights_cmd)}
+  timeout = 15
+  statusMessage = "Loading insights…"
 
   [[hooks.PostToolUse]]
   matcher = "Bash"
@@ -372,10 +392,11 @@ prune_codex_user_hook() {
   local tmp
   tmp="$(mktemp)"
   if jq '
+      def is_managed($c): ($c | contains("/bin/codex-session-title")) or ($c | contains("/bin/session-insights"));
       def prune_event($event):
         if .hooks[$event] then
           .hooks[$event] |= (
-            map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+            map(.hooks = ((.hooks // []) | map(select((is_managed(.command // "")) | not))))
             | map(select(((.hooks // []) | length) > 0))
           )
           | if (.hooks[$event] | length) == 0 then del(.hooks[$event]) else . end
@@ -394,7 +415,7 @@ prune_codex_user_hook() {
 }
 
 install_codex_user_hook() {
-  local hooks="$1" cmd="$2"
+  local hooks="$1" cmd="$2" insights_cmd="$3"
   command -v jq >/dev/null 2>&1 || return 0
 
   mkdir -p "$(dirname "$hooks")"
@@ -402,16 +423,20 @@ install_codex_user_hook() {
 
   local tmp
   tmp="$(mktemp)"
-  if jq --arg cmd "$cmd" '
+  # Remove any prior managed entries (mascot AND insights) before re-appending, so
+  # the fallback is idempotent for both. The insights hook is a SECOND SessionStart
+  # entry (never merged into the mascot entry) so each stays independently prunable.
+  if jq --arg cmd "$cmd" --arg insights_cmd "$insights_cmd" '
+      def is_managed($c): ($c | contains("/bin/codex-session-title")) or ($c | contains("/bin/session-insights"));
       .hooks //= {}
       | .hooks.SessionStart = (
           (.hooks.SessionStart // [])
-          | map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+          | map(.hooks = ((.hooks // []) | map(select((is_managed(.command // "")) | not))))
           | map(select(((.hooks // []) | length) > 0))
         )
       | .hooks.PostToolUse = (
           (.hooks.PostToolUse // [])
-          | map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/codex-session-title") | not)))))
+          | map(.hooks = ((.hooks // []) | map(select((is_managed(.command // "")) | not))))
           | map(select(((.hooks // []) | length) > 0))
         )
       | .hooks.SessionStart += [
@@ -423,6 +448,17 @@ install_codex_user_hook() {
                 command: $cmd,
                 timeout: 5,
                 statusMessage: "Setting session mascot"
+              }
+            ]
+          },
+          {
+            matcher: "startup|resume",
+            hooks: [
+              {
+                type: "command",
+                command: $insights_cmd,
+                timeout: 15,
+                statusMessage: "Loading insights…"
               }
             ]
           }
@@ -442,7 +478,7 @@ install_codex_user_hook() {
     ' "$hooks" > "$tmp"; then
     if ! cmp -s "$hooks" "$tmp"; then
       mv "$tmp" "$hooks"
-      echo "  $hooks (installed user-level Codex SessionStart/PostToolUse fallback -> $cmd)"
+      echo "  $hooks (installed user-level Codex SessionStart/PostToolUse fallback -> $cmd + $insights_cmd)"
     else
       rm -f "$tmp"
     fi
@@ -579,6 +615,46 @@ if command -v jq >/dev/null 2>&1; then
       rm -f "$tmp"
     fi
   fi
+
+  # Wire the SessionStart insights hook so a FRESH session hatches with the top-N
+  # curated Insight Bank lessons injected as context — the OPSD learning loop's
+  # feed-forward (output) stage, so banked grades stop being write-only. The hook
+  # (bin/session-insights) GETs /api/v1/insights and prints the SessionStart
+  # hookSpecificOutput.additionalContext JSON; it is NON-FATAL (empty bank /
+  # unreachable board / no token => prints nothing, exits 0), so it can never block
+  # or slow a session start. Same discipline as the mascot SessionStart hook: point
+  # at the primary checkout (survives worktree cleanup), prune stale worktree
+  # copies, only append when absent. It also bakes ATOMIC_CAPTURE_URL into the
+  # command so the injected lessons are the curated PROD bank, exactly like the
+  # capture hook. See docs/agents/system/atomic-capture-hook.md.
+  tmp="$(mktemp)"
+  if jq 'if .hooks.SessionStart then
+        .hooks.SessionStart |= (
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/session-insights") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      else . end' "$settings" > "$tmp"; then
+    if ! cmp -s "$settings" "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (removed stale worktree SessionStart insights hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+
+  insights_path="$RUNTIME_ROOT/bin/session-insights"
+  insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $insights_path"
+  if ! jq -e --arg path "$insights_path" '[(.hooks.SessionStart // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$insights_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks: [{type: "command", command: $cmd, timeout: 15, statusMessage: "Loading insights…"}]}])' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (added SessionStart insights hook -> $insights_cmd)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
 fi
 
 # Make Codex show the McRitchie marker in its footer early. Codex does not run
@@ -595,9 +671,13 @@ echo "  $ZPROFILE_PATH (ensured agent zsh login shells prepend $RUBY_PATH_PREFIX
 
 codex_hooks="$HOME/.codex/hooks.json"
 codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
+# The Codex feed-forward hook mirrors the Claude one: same board (prod via
+# ATOMIC_CAPTURE_URL), same non-fatal bin/session-insights, wired as a second
+# SessionStart hook alongside the mascot.
+codex_insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $RUNTIME_ROOT/bin/session-insights"
 codex_requirements_staged="$HOME/.codex/mcritchie-requirements.toml"
-if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged"; then
-  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart/PostToolUse hooks -> $codex_hook_cmd)"
+if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged" "$codex_insights_cmd"; then
+  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart/PostToolUse hooks -> $codex_hook_cmd + $codex_insights_cmd)"
   prune_codex_user_hook "$codex_hooks"
 else
   requirements_status="$?"
@@ -607,7 +687,7 @@ else
       ;;
     13)
       echo "  $CODEX_REQUIREMENTS_PATH (admin install required for organic Codex mascot)"
-      install_codex_user_hook "$codex_hooks" "$codex_hook_cmd"
+      install_codex_user_hook "$codex_hooks" "$codex_hook_cmd" "$codex_insights_cmd"
       ;;
     *)
       echo "  $CODEX_REQUIREMENTS_PATH (could not install Codex managed mascot hook)"

@@ -25,6 +25,7 @@ class InstallAgentSkillsTest < Minitest::Test
   SCRIPT   = File.join(ROOT, "bin", "install-agent-docs")
   RUNTIME  = File.join(ROOT, "bin", "agent-runtime")
   WRAP_SRC = File.join(ROOT, "docs", "agents", "skills", "wrap", "SKILL.md")
+  INSIGHTS_BIN = File.join(ROOT, "bin", "session-insights")
 
   def setup
     @sandbox  = Dir.mktmpdir("install-agent-skills")
@@ -183,6 +184,34 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/unknown command/i, err)
   end
 
+  # bin/session-insights is invoked by the SessionStart hook as a BARE PATH, so it
+  # MUST be tracked executable (100755) or the hook fails "Permission denied" on a
+  # fresh clone — the OPSD feed-forward would silently never fire. The git index
+  # mode (not the local fs mode) is the durable, machine-independent contract.
+  def test_unit_session_insights_bin_is_tracked_executable
+    mode, _err, status = Open3.capture3("git", "-C", ROOT, "ls-files", "-s", "bin/session-insights")
+    assert status.success?, "git ls-files failed for bin/session-insights"
+    refute_empty mode, "bin/session-insights must be tracked in git"
+    assert_match(/\A100755\s/, mode,
+      "bin/session-insights must be tracked executable (100755) so the SessionStart " \
+      "hook can run it as a bare path; got: #{mode.inspect}")
+    assert File.executable?(INSIGHTS_BIN), "bin/session-insights must be executable on disk"
+  end
+
+  # The installer SOURCE must wire the feed-forward hook: reference the bin, target
+  # the prod board via ATOMIC_CAPTURE_URL, and register it under SessionStart.
+  def test_unit_installer_source_wires_session_insights_feed_forward
+    src = File.read(SCRIPT)
+    assert_includes src, "bin/session-insights",
+      "installer must wire the session-insights feed-forward hook"
+    assert_match(/AGENT_INSIGHTS_BOARD_URL:-https:\/\/mcritchie\.studio/, src,
+      "installer must default the insights board to prod (overridable via AGENT_INSIGHTS_BOARD_URL)")
+    assert_includes src, "ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL",
+      "the Claude hook command must bake the prod board URL like the capture hook"
+    assert_match(/hooks\.SessionStart/, src,
+      "the insights hook must be registered under SessionStart")
+  end
+
   # ── integration ───────────────────────────────────────────────────────────
 
   def test_integration_install_lands_skill_in_home_agent_skills
@@ -283,7 +312,24 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_equal "#{runtime_root}/bin/statusline", settings.dig("statusLine", "command")
     commands = settings.fetch("hooks").fetch("SessionStart").flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
     assert_includes commands, "#{runtime_root}/bin/task session-mascot"
+    # The feed-forward insights hook is wired alongside the mascot, pointed at the
+    # runtime root (survives worktree cleanup) and the prod board by default.
+    assert_includes commands, "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
     refute commands.any? { |command| command.include?("/.worktrees/") }
+
+    # The insights hook carries a bounded timeout + status message so a fresh
+    # session start never hangs on the network fetch.
+    insights_hook = settings.fetch("hooks").fetch("SessionStart")
+      .flat_map { |entry| entry.fetch("hooks") }
+      .find { |hook| hook.fetch("command").include?("/bin/session-insights") }
+    assert insights_hook, "session-insights must be registered as a SessionStart hook"
+    assert_equal 15, insights_hook["timeout"]
+    assert_equal "Loading insights…", insights_hook["statusMessage"]
+
+    codex_requirements = File.read(installed_codex_requirements)
+    assert_includes codex_requirements,
+      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights")
+    assert_includes codex_requirements, 'statusMessage = "Loading insights…"'
 
     config = File.read(installed_codex_config)
     assert_match(/^check_for_update_on_startup = false$/, config)
@@ -467,10 +513,14 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes out, "Staged managed requirements:"
     refute_includes out, "Review once inside Codex with /hooks"
 
+    assert_includes out, "/bin/session-insights",
+      "the fallback echo should report the wired insights command"
+
     staged = File.join(@home, ".codex", "mcritchie-requirements.toml")
     assert File.file?(staged), "installer should stage the managed requirements for admin install"
     staged_requirements = File.read(staged)
     assert_includes staged_requirements, "/bin/codex-session-title"
+    assert_includes staged_requirements, "/bin/session-insights"
     assert_includes staged_requirements, "[[hooks.SessionStart]]"
     assert_includes staged_requirements, "[[hooks.PostToolUse]]"
 
@@ -483,7 +533,70 @@ class InstallAgentSkillsTest < Minitest::Test
       entry.fetch("hooks", []).map { |hook| hook["command"] }
     end
 
-    assert_equal ["#{runtime_root}/bin/codex-session-title"], session_commands
+    # The fallback wires BOTH the mascot and the feed-forward insights hook under
+    # SessionStart (insights as its own entry so each stays independently prunable);
+    # PostToolUse stays mascot-only.
+    assert_equal [
+      "#{runtime_root}/bin/codex-session-title",
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
+    ], session_commands
     assert_equal ["#{runtime_root}/bin/codex-session-title"], post_tool_commands
+  end
+
+  # ── integration: the feed-forward insights SessionStart hook ────────────────
+
+  def test_integration_wires_session_insights_hook_idempotently
+    skip "jq is required for settings hook install" unless jq_available?
+
+    runtime_root = "/stable/mcritchie-studio"
+    board = "https://board.example"
+    env = { "AGENT_DOCS_RUNTIME_ROOT" => runtime_root, "AGENT_INSIGHTS_BOARD_URL" => board }
+
+    2.times do # idempotent: re-running must not duplicate the hook
+      _out, err, status = run_installer("install", env)
+      assert status.success?, "install failed: #{err}"
+    end
+
+    settings = JSON.parse(File.read(installed_settings))
+    insights = settings.fetch("hooks").fetch("SessionStart")
+      .flat_map { |entry| entry.fetch("hooks") }
+      .select { |hook| hook.fetch("command").include?("/bin/session-insights") }
+    assert_equal 1, insights.length, "exactly one insights hook after two installs"
+    assert_equal "ATOMIC_CAPTURE_URL=#{board} #{runtime_root}/bin/session-insights",
+      insights.first.fetch("command"),
+      "the board URL override must flow into the wired command"
+  end
+
+  def test_integration_prunes_stale_worktree_session_insights_hook
+    skip "jq is required for settings hook install" unless jq_available?
+
+    FileUtils.mkdir_p(File.dirname(installed_settings))
+    File.write(installed_settings, JSON.pretty_generate(
+      "hooks" => {
+        "SessionStart" => [
+          {
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => "/repo/.worktrees/old-slug/bin/session-insights",
+                "timeout" => 15
+              }
+            ]
+          }
+        ]
+      }
+    ))
+
+    runtime_root = "/stable/mcritchie-studio"
+    _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => runtime_root)
+    assert status.success?, "install failed: #{err}"
+
+    commands = JSON.parse(File.read(installed_settings)).fetch("hooks").fetch("SessionStart")
+      .flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
+    refute commands.any? { |command| command.include?("/.worktrees/") },
+      "the stale worktree insights hook must be pruned"
+    assert_equal 1, commands.count { |command| command.include?("/bin/session-insights") },
+      "the pruned worktree hook must be replaced by exactly one runtime-root hook"
+    assert_includes commands, "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
   end
 end

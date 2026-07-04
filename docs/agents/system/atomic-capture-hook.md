@@ -256,23 +256,40 @@ Same board + token as the rest of the stack (`ATOMIC_CAPTURE_URL`,
 `AGENT_API_SECRET` → 1Password → repo `.env`, reusing the shared token cache).
 **NON-FATAL by construction:** no token, an unreachable board, or an empty bank
 prints **nothing** and exits 0 — the hook can never block or slow a session start.
-Codex uses the same SessionStart `hookSpecificOutput.additionalContext` schema.
+`bin/session-insights` is tracked executable (`100755`) because the hook invokes
+it as a bare path.
 
-**Wiring (settings.json).** Registered under `hooks.SessionStart` the same way the
-mascot hook is, with `ATOMIC_CAPTURE_URL` pointed at prod:
+**Wiring — `bin/install-agent-docs` owns it.** As of the *wire-bank-to-session-bridge*
+task the installer registers this hook idempotently, exactly like the capture +
+SessionEnd hooks: it points the command at `$RUNTIME_ROOT/bin/session-insights`
+(survives worktree cleanup), prunes stale `/.worktrees/.../bin/session-insights`
+copies, appends only when absent, and bakes `ATOMIC_CAPTURE_URL` (default
+`https://mcritchie.studio`, overridable via `AGENT_INSIGHTS_BOARD_URL`) so the
+injected lessons are the curated **prod** bank. The wired Claude `settings.json`
+entry:
 
 ```json
 { "hooks": { "SessionStart": [ { "hooks": [
-  { "type": "command", "timeout": 5000, "statusMessage": "Loading insights…",
+  { "type": "command", "timeout": 15, "statusMessage": "Loading insights…",
     "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/session-insights" }
 ] } ] } }
 ```
 
-> **Same rule — activation is the installer's job, not a build session's.**
-> `bin/install-agent-docs` wiring this hook idempotently is a follow-up (like the
-> capture + SessionEnd hooks); the orchestrator activates it **after** this change
-> is reviewed and merged. Relevance ranking by app/shape is a documented follow-up
-> — v1 injects the most recently curated set.
+(Claude hook `timeout` is in **seconds** — 15 comfortably covers the token-cache
+warm path, with the bin's own 2s connect / 4s read timeouts bounding the cold one.)
+
+**Codex** gets the same hook as a **second** `[[hooks.SessionStart.hooks]]` entry
+beside the mascot — in the managed requirements (`/etc/codex/requirements.toml`)
+and, when `/etc` needs admin, the `~/.codex/hooks.json` user fallback. It reuses
+the same `hookSpecificOutput.additionalContext` schema; live consumption depends
+on the McRitchie-patched Codex runtime (the patch targets hook output — confirm
+with `bin/codex-update plan` before relying on Codex-side injection).
+
+> **Activation still needs a fresh session.** Editing `~/.claude/settings.json`
+> mid-session can silence hooks for the *running* session, so after this merges the
+> orchestrator runs `bin/install-agent-docs` and verifies the injection in a **new**
+> session (not the one that ran the installer). Relevance ranking by app/shape is a
+> documented follow-up — v1 injects the most recently curated set.
 
 ### Tests
 
@@ -284,3 +301,11 @@ mascot hook is, with `ATOMIC_CAPTURE_URL` pointed at prod:
 - **[integration]** the real script shelled out against a localhost stub: it mints
   a token, `GET`s the insights, and prints valid SessionStart injection JSON; an
   empty bank prints nothing and exits 0.
+
+`test/commands/install_agent_skills_test.rb` covers the **wiring**:
+
+- **[unit]** the bin is tracked executable (`100755`) and the installer source
+  wires the hook under `SessionStart` with a prod-defaulted `ATOMIC_CAPTURE_URL`.
+- **[integration]** installing lands one prod-targeted `SessionStart` insights hook
+  (Claude + Codex managed requirements + user fallback), is idempotent across
+  re-runs, honors `AGENT_INSIGHTS_BOARD_URL`, and prunes stale worktree copies.
