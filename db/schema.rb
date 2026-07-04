@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_04_024843) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_030600) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -24,12 +24,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_04_024843) do
     t.string "grader", null: false
     t.text "long_form"
     t.string "slug", null: false
+    t.string "source_activity_slug"
     t.datetime "updated_at", null: false
     t.index ["atomic_action_id", "grader"], name: "index_action_grades_on_atomic_action_id_and_grader", unique: true
     t.index ["atomic_action_id"], name: "index_action_grades_on_atomic_action_id"
     t.index ["atomic_event_id", "grader"], name: "index_action_grades_on_atomic_event_id_and_grader", unique: true, where: "(atomic_event_id IS NOT NULL)"
     t.index ["atomic_event_id"], name: "index_action_grades_on_atomic_event_id"
     t.index ["banked"], name: "index_action_grades_on_banked"
+    t.index ["source_activity_slug"], name: "index_action_grades_on_source_activity_slug", unique: true, where: "(source_activity_slug IS NOT NULL)"
   end
 
   create_table "active_storage_attachments", force: :cascade do |t|
