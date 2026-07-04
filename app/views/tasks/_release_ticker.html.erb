@@ -1,10 +1,14 @@
 <%# Live in-progress timer for the Next Release card. The ACTIVE release's timing
     span carries data-release-ticker + data-since (created_at epoch) + data-prefix;
-    this advances it every second so the operator watches the clock climb. It
-    re-queries the DOM each tick, so a Turbo-Streamed card swap (DeploymentsBroadcaster
-    → LiveBoardFx) is picked up automatically with no re-wiring. Installed once and
-    survives Turbo navigations. fmt() MUST match ApplicationHelper#format_elapsed_clock
-    so the server-rendered initial value and the first tick agree. %>
+    this advances it every second so the operator watches the clock climb. A span
+    with data-mode="ago" ticks the OTHER direction of the same math — time since a
+    completed stage's stamp ("4m ago") — so finished nodes stay fresh between card
+    swaps. It re-queries the DOM each tick, so a Turbo-Streamed card swap
+    (DeploymentsBroadcaster → LiveBoardFx) is picked up automatically with no
+    re-wiring. Installed once and survives Turbo navigations. fmt() MUST match
+    ApplicationHelper#format_elapsed_clock and agoFmt() MUST match
+    ApplicationHelper#release_ago_label so the server-rendered initial value and
+    the first tick agree. %>
 <script>
   (function () {
     if (window.__releaseTicker) return;
@@ -18,12 +22,34 @@
       return h + "h " + String(mm).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
     }
 
+    function agoFmt(secs) {
+      if (secs < 60) return secs + "s ago";
+      var m = Math.floor(secs / 60);
+      if (m < 60) return m + "m ago";
+      var h = Math.floor(m / 60);
+      if (h < 24) return h + "h ago";
+      return Math.floor(h / 24) + "d ago";
+    }
+
     function tick() {
       var now = Math.floor(Date.now() / 1000);
       document.querySelectorAll("[data-release-ticker]").forEach(function (el) {
         var since = parseInt(el.dataset.since || "0", 10);
         if (!since) return;
-        el.textContent = (el.dataset.prefix || "") + fmt(Math.max(0, now - since));
+        var secs = Math.max(0, now - since);
+        if (el.dataset.mode === "ago") {
+          el.textContent = agoFmt(secs);
+          if (!el.dataset.titled) {
+            el.dataset.titled = "1";
+            var finished = new Date(since * 1000).toLocaleString([], {
+              month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+            });
+            el.title = "Finished " + finished +
+              (el.dataset.took ? " · took " + el.dataset.took : "");
+          }
+        } else {
+          el.textContent = (el.dataset.prefix || "") + fmt(secs);
+        }
       });
     }
 

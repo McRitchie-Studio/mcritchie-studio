@@ -195,8 +195,11 @@ module ApplicationHelper
   end
 
   # Node timing off the stamps: live seconds while active (start stamp → now,
-  # ticked client-side), a static span once complete (start → complete stamp). A
-  # node missing its start stamp shows no duration rather than a fake zero.
+  # ticked client-side), and once complete the moment the stage FINISHED (the
+  # operator watches the clock climb, then cares when it landed — the ago label
+  # keeps ticking client-side too). The stage's own span survives in the hash for
+  # the tooltip. A node missing its start stamp shows no duration rather than a
+  # fake zero.
   def release_tracker_duration(release, stage, state, now: Time.current)
     started_at = release.stage_stamp(stage[:starts])
     completed_at = release.stage_stamp(stage[:completes])
@@ -213,7 +216,12 @@ module ApplicationHelper
     when :complete
       return {} unless started_at && completed_at
 
-      { duration_seconds: elapsed_seconds(started_at, completed_at), duration_live: false }
+      {
+        duration_seconds: elapsed_seconds(started_at, completed_at),
+        duration_live: false,
+        completed_at: completed_at,
+        ago_seconds: elapsed_seconds(completed_at, now)
+      }
     else
       {}
     end
@@ -224,6 +232,29 @@ module ApplicationHelper
     return "#{seconds}s" if seconds < 60
 
     "#{seconds / 60}m"
+  end
+
+  # Compact single-unit "finished X ago" label for a COMPLETE tracker node. The
+  # ago fmt in _release_ticker.html.erb MUST mirror this so the server-rendered
+  # value and the first client tick agree.
+  def release_ago_label(seconds)
+    seconds = seconds.to_i
+    return "#{seconds}s ago" if seconds < 60
+
+    minutes = seconds / 60
+    return "#{minutes}m ago" if minutes < 60
+
+    hours = minutes / 60
+    return "#{hours}h ago" if hours < 24
+
+    "#{hours / 24}d ago"
+  end
+
+  # Tooltip for a complete node's ago label: the absolute completion time plus
+  # the stage's own span, so the duration the label used to show is one hover away.
+  def release_tracker_completed_title(step)
+    finished = step[:completed_at].in_time_zone.strftime("%b %-d, %-I:%M %p")
+    "Finished #{finished} · took #{release_static_duration_label(step[:duration_seconds])}"
   end
 
   def release_tracker_step_label(stage, state)
