@@ -489,7 +489,8 @@ class ApplicationHelperTest < ActionView::TestCase
                  launchers.map { |l| l[:heartbeat] }
     # Acts run DOWNSTREAM-FIRST: each soul leads with its idempotent close-out
     # action (production-deploy / archive-shipped) before the new-work action.
-    assert_equal ["production-deploy", "pr-review", "pr-review-slow"], launchers[0][:actions]
+    # deploy-with-task trails Avi's list — direct-invoke only, never composed.
+    assert_equal ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], launchers[0][:actions]
     assert_equal ["archive-shipped", "qa-release"], launchers[1][:actions]
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[2][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
@@ -526,8 +527,10 @@ class ApplicationHelperTest < ActionView::TestCase
       # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher.
       assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
     end
-    # The new pr-review-slow (Avi) and full-cycle (Alex) acts are copyable rows.
+    # The new pr-review-slow + deploy-with-task (Avi) and full-cycle (Alex) acts
+    # are copyable rows.
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "pr-review-slow"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "deploy-with-task"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
     # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly three.
     assert_select "[data-test='heartbeat-heart']", count: 3
@@ -542,8 +545,9 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "button[data-row='action'][data-clip='grade-events'] [data-test='action-icon']", text: "🧑🏻‍🏫"
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
-    # One icon per act row: Avi 3 + Steffon 2 + Alex 3 = 8.
-    assert_select "[data-test='action-icon']", count: 8
+    assert_select "button[data-row='action'][data-clip='deploy-with-task'] [data-test='action-icon']", text: "⚡"
+    # One icon per act row: Avi 4 + Steffon 2 + Alex 3 = 9.
+    assert_select "[data-test='action-icon']", count: 9
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
   end
@@ -621,7 +625,7 @@ class ApplicationHelperTest < ActionView::TestCase
     avi = heartbeat_launcher_for("avi")
     assert avi.present?
     assert_equal "Avi Heartbeat", avi[:heartbeat]
-    assert_equal ["production-deploy", "pr-review", "pr-review-slow"], avi[:actions]
+    assert_equal ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], avi[:actions]
 
     assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
     assert_nil heartbeat_launcher_for(nil)

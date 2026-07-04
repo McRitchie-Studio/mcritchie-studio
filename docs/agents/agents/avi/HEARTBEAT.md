@@ -3,7 +3,7 @@
 ## Status: Active
 
 This is Avi's heartbeat launcher. It sets Avi's session attribution and routes to
-three independent act SOPs:
+four independent act SOPs:
 
 - [`production-deploy`](sops/production-deploy.md) - ship a QA-green release to
   production when one is ready.
@@ -11,6 +11,8 @@ three independent act SOPs:
   review-only.
 - [`pr-review-slow`](sops/pr-review-slow.md) - review the submitted queue one PR
   at a time.
+- [`deploy-with-task`](sops/deploy-with-task.md) - expedite ONE named task to
+  production behind the clean-release guard (interactive: it asks "What task?").
 
 Use this file when Mr. McRitchie invokes `Avi Heartbeat`. When he invokes a
 single Avi act directly, read that act's SOP file.
@@ -59,6 +61,10 @@ Run Avi's heartbeat composition downstream-first:
 When Mr. McRitchie launches `Avi Heartbeat`, run both acts in that order. When
 an act is invoked directly, run only that act.
 
+[`deploy-with-task`](sops/deploy-with-task.md) runs only when invoked directly —
+it is a single-task production expedite, never part of the heartbeat
+composition.
+
 ## Handoff
 
 End every Avi heartbeat with a short report:
@@ -70,9 +76,12 @@ End every Avi heartbeat with a short report:
 
 On a clean run with no blockers, omit the blocker section entirely.
 
-## Related References
+## Background — not needed to execute
+
+This heartbeat is a recipe: it routes to the act SOPs above, and each act stands
+alone. These references are context only.
 
 - [`../../modules/heartbeats.md`](../../modules/heartbeats.md) - cross-soul
   heartbeat map.
 - [`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
-  §1.4 - release atom model and pipeline ownership.
+  §1.4 - release atom model and pipeline ownership (architecture).

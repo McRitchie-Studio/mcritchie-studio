@@ -460,7 +460,7 @@ module ApplicationHelper
   # docs/agents/modules/heartbeats.md + the per-agent HEARTBEAT.md launchers.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow"], label: "Ship + review", title: "Avi — ship a ready release, then review new PRs" },
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], label: "Ship + review", title: "Avi — ship a ready release, then review new PRs" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-shipped", "qa-release"],                  label: "Archive + QA",  title: "Steffon — archive shipped work, then QA the release" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" }
     ]
@@ -479,7 +479,8 @@ module ApplicationHelper
     "archive-shipped"   => "Archive shipped tasks + releases",
     "grade-events"      => "Grade 10 recent events for quality",
     "share-insights"    => "Share confirmed insights into the docs",
-    "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod"
+    "full-cycle"        => "Full cycle — review, assemble, QA, ship to prod",
+    "deploy-with-task"  => "Expedite ONE task to prod (asks: what task?)"
   }.freeze
 
   def action_description(act)
@@ -490,7 +491,8 @@ module ApplicationHelper
   # acts get a 1→4 keycap so the buttons read as a sequence across the souls (Avi
   # pr-review 1 → Steffon qa-release 2 → Avi production-deploy 3 → Steffon
   # archive-shipped 4); the off-sequence acts get a themed glyph (🐢 slow review,
-  # 🧑🏻‍🏫 grading, 🌎 the whole cycle). The heartbeat row itself gets a ❤️ in the view.
+  # 🧑🏻‍🏫 grading, 🌎 the whole cycle, ⚡ the single-task expedite). The heartbeat row
+  # itself gets a ❤️ in the view.
   ACTION_ICONS = {
     "pr-review"         => "1️⃣",
     "qa-release"        => "2️⃣",
@@ -499,7 +501,8 @@ module ApplicationHelper
     "pr-review-slow"    => "🐢",
     "grade-events"      => "🧑🏻‍🏫",
     "share-insights"    => "📡",
-    "full-cycle"        => "🌎"
+    "full-cycle"        => "🌎",
+    "deploy-with-task"  => "⚡"
   }.freeze
 
   def action_icon(act)

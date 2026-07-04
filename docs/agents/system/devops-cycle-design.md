@@ -209,9 +209,9 @@ run picks them back up, skipping the already-done merges. A late PR sweeping in
 after the flip **reopens** the RC (`Release#reopen!`) so it re-QAs before
 shipping. At ship, **Avi** first runs the **full e2e + highest-tier suite on the
 frozen ship SHA** (the exact prod code — closing the merge-forward "shipped ≠
-tested" gap); on green the ending depends on the trigger. `Build and Deploy QA
-Release` stops for the operator, while `full-cycle` continues with the
-already-authorized ship. The ship action (surfaced as the current release on
+tested" gap); on green the ending depends on the trigger. A QA-only run
+(`pr-review` → `qa-release`) stops for the operator, while `full-cycle`
+continues with the already-authorized ship. The ship action (surfaced as the current release on
 `/deployments`, not a passive status): `bin/release ship` fast-forwards each
 repo's `main` up to `release` (so `release` collapses into `main`), stamps that
 repo's members `merged: "main"` as each ff lands, deploys prod, and flips
@@ -430,8 +430,7 @@ submitted`) has none — the operator drives those hands-on. The DevOps lane map
 each command to a deterministic runbook. The release-wide launchers are the
 **soul heartbeat acts** on the /deployments **Heartbeats card**
 (`ApplicationHelper#heartbeat_launchers`; every row is a recognized launcher —
-see "The three soul heartbeat launchers" below) — plus one launcher phrase,
-`Deploy with Task <task>`, that is a typed prompt (not a board chip):
+see "The three soul heartbeat launchers" below):
 
 - **`pr-review`** / **`pr-review-slow`** (`Avi Heartbeat` acts) — review ALL
   `submitted` PRs, in waves of ≤5 or serialized one PR at a time.
@@ -445,9 +444,10 @@ see "The three soul heartbeat launchers" below) — plus one launcher phrase,
   no-op when nothing is ready.
 - **`full-cycle`** (`Alex Heartbeat` act; full ship authority) — the whole
   release, review → assemble → QA → prod ship.
-- **`Deploy with Task <task>`** — expedite ONE task to prod. Guarded on a clean
-  release (`release == main`); on a dirty release it refuses and points at the
-  full release pipeline (`full-cycle`) instead (details below).
+- **`deploy-with-task`** (`Avi Heartbeat` act; ship authority for ONE task) —
+  expedite ONE task to prod. Guarded on a clean release (`release == main`); on
+  a dirty release it refuses and points at the full release pipeline
+  (`full-cycle`) instead. Launched bare it asks "What task?".
 
 #### The composable launcher set — atoms + compositions
 
@@ -473,7 +473,7 @@ or the `review-one` SOP; none is a new command to build):
 | Composition | Expands to |
 |---|---|
 | **`full-cycle`** (Alex Heartbeat act; full ship authority) | [`agents/alex/sops/full-cycle.md`](../agents/alex/sops/full-cycle.md): `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
-| **`Deploy with Task <task>`** | **GUARD `release == main`** → `review-one <task>` (→ `reviewed`) → `qa-release` (sweeps + merges it) → `production-deploy` |
+| **`deploy-with-task`** (Avi act; ship authority for ONE task) | [`agents/avi/sops/deploy-with-task.md`](../agents/avi/sops/deploy-with-task.md): **GUARD `release == main`** → `review-one <task>` (→ `reviewed`) → `qa-release` (sweeps + merges it) → `production-deploy`. Interactive — launched bare it asks "What task?". *Formerly the `Deploy with Task <task>` write-up here.* |
 
 > **Retired chips (2026-07-02).** The four legacy release-card chips — `Avi Heartbeat
 > Slow`, `Avi Heartbeat Fast`, `Build and Deploy QA Release`, `Merge, Assemble,
@@ -485,7 +485,7 @@ or the `review-one` SOP; none is a new command to build):
 > loop still exists but is no longer a card chip.
 
 The only NEW code this set required is the clean-release **GUARD** that
-`Deploy with Task` runs first (`bin/release status --clean-only`, backed by the
+`deploy-with-task` runs first (`bin/release status --clean-only`, backed by the
 unit-tested `Release::CleanCheck`); everything else is the atoms recombined.
 
 #### The three soul heartbeat launchers — the Heartbeats card
@@ -513,7 +513,7 @@ live with the souls:
 
 | Soul (row 1) | Acts | Does | Exit seam |
 |---|---|---|---|
-| **Avi** (`Avi Heartbeat`) | `production-deploy` · `pr-review` · `pr-review-slow` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then review submitted PRs — **review-only** (waves ≤5, or serialized via `pr-review-slow`) | the ready release `shipped` (or no-op); then each PR `reviewed`/`blocked` |
+| **Avi** (`Avi Heartbeat`) | `production-deploy` · `pr-review` · `pr-review-slow` · `deploy-with-task` (direct-invoke only) | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then review submitted PRs — **review-only** (waves ≤5, or serialized via `pr-review-slow`) | the ready release `shipped` (or no-op); then each PR `reviewed`/`blocked` |
 | **Steffon** (`Steffon Heartbeat`) | `archive-shipped` · `qa-release` | **downstream-first:** archive shipped tasks (`bin/release archive --yes`) from the prior cycle; then the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | prior cycle `archived` (or no-op); then RC **deployed to QA**, members `assembled` |
 | **Alex** (`Alex Heartbeat`) | `grade-events` · `share-insights` · `full-cycle` | grade the 10 most recent resolved spans at `/alex/heartbeat`; share the `mcr`-confirmed insights out (regenerate the lessons doc + distribute); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; confirmed insights shared out; or the whole release `shipped` |
 
@@ -528,96 +528,28 @@ ends and reports there; Avi's `production-deploy` starts only once it is true.
 These are **operator-launched (copy-paste) today, schedule-ready tomorrow** — each
 act is idempotent, with an explicit precondition + a named exit seam, so a
 scheduler can fire it later without rework (see [`heartbeats.md`](../modules/heartbeats.md)).
-Note `pr-review` is **review-only** (stops at `reviewed`, like the long-running
-**`Avi Heartbeat Slow`/`Fast`** loops below) — Steffon's `qa-release` sweep owns
-the merge and flips members `assembled` on QA-green.
+Note `pr-review` is **review-only** (stops at `reviewed`) — Steffon's `qa-release`
+sweep owns the merge and flips members `assembled` on QA-green.
 
-**`Avi Heartbeat Slow` / `Avi Heartbeat Fast`**  *(long-running review-only loops — stop at reviewed)*
-
-This is the unattended Avi intake loop for hours-long review duty while feature
-agents keep submitting work. Run it from the primary McRitchie Studio checkout.
-Use slow when work is arriving in a trickle; use fast when `submitted` has
-stacked up and needs bounded parallel review:
-
-```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/avi-heartbeat --run --codex-workdir "$PWD"          # Avi Heartbeat Slow
-bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # Avi Heartbeat Fast
-```
-
-`--codex-workdir` must point at a trusted git checkout: the script's default is
-the projects root, which is not a git repo, so `codex exec` refuses ("Not inside
-a trusted directory") and every reviewer exits 1. Full flags (including
-`--max-idle-cycles` to exit when the queue drains): the fresh-session quick
-start in [`heartbeats.md`](../modules/heartbeats.md).
-
-Both modes choose newest `submitted` PRs first, record `bin/reviewer-select`
-intent, launch the selected PRIMARY + LIGHT reviewers with `codex exec`, and
-re-query the production board before deciding each PR. Slow mode processes one
-PR at a time. Fast mode uses `--max-agents 5` by default, which means two
-complete PR review pairs per wave (four reviewer agents, leaving the fifth slot
-idle rather than launching a partial PR lane); keep the cap within the operating
-model's five-agent limit. Two merge-ready reports move the task to
-**`reviewed`** with an Avi handoff note; request-changes blocks the task with
-`qa_feedback`; wait-for-CI or conductor-review is deferred and retried after the
-defer window. The heartbeat does **not** merge into `release`, deploy QA, ship
-production, publish gems, or archive tasks. After ten completed PR reviews by
-default (`--limit 10`), it prints a retrospective covering friction,
-blocked/deferred tasks, blocker commonalities, and future refactor candidates.
-
-**`Build and Deploy QA Release`**  *(the operator's one-trigger QA-department run — stops at the ship gate)*
-
-This is Mr. McRitchie's single trigger for the whole QA department: hand it to an
-agent — **any model (Claude, Codex, …)** — and it walks the persistent-`release`
-model through review, merge, QA deploy, and ship-readiness. It **does not ship to
-production without Mr. McRitchie's confirmation**; after the frozen-SHA ship
-tests pass, stop and hand the operator the `Run Deployment` gate.
-
-> ⚠️ **THIS SOP STOPS BEFORE PROD.** A green review + green QA + green ship-tests
-> produces an assembled RC and a clear `bin/release ship` handoff. Production
-> deploy remains gated across every release repo
-> (mcritchie-studio + satellites).
-
-**`Merge, Assemble, Deploy`**  *(the autonomous production run — shares the QA SOP, then ships)*
-
-This is the production-authorized sibling workflow. It uses the same conductor
-runbook below through review, merge, QA deploy, straggler review, and refreshed
-QA. The difference is the final production decision: after the ship preflight and
-frozen-SHA `avi_ship_gate` pass, the agent runs
-`bin/conductor ship --run` (equivalent to `bin/release ship --by conductor
---yes`). That `--yes` answers only the human confirmation prompt; it does **not**
-skip clean-main preflight, frozen-SHA tests, producer-first gem publish, deploy
-smoke, production `post_deploy_cmd`, or partial-ship recovery.
-
-> ⚠️ **THIS SOP IS PRODUCTION AUTHORITY.** Do not infer it from "prepare QA",
-> "review release", or `Build and Deploy QA Release`. The exact phrase
-> **`Merge, Assemble, Deploy`** — or **`Deploy with Task <task>`** (the single-task
-> expedite), or another explicit production rollout prompt in the session — is
-> what grants the agent authority to cross the ship gate.
-
-> **Cold-start framing — you are the CONDUCTOR (Deploy lane).** When the operator
-> opens a fresh session with just `Build and Deploy QA Release` or
-> `Merge, Assemble, Deploy`, follow **this** SOP — *not* the feature-agent
-> "⛔ STOP before writing code" flow in `CLAUDE.md` (that is the **Build** lane).
-> The conductor **orchestrates** the deploy run on work that is **already** built:
-> it **delegates review** (Avi confirms product-acceptance + picks the pair; the
-> **PRIMARY reviewer** does the deep review, spawns the LIGHT, and drives
-> `reviewed` — review-only), then runs Steffon's **self-healing sweep**
-> (`bin/release prepare` merges the reviewed queue onto `release`, deploys QA,
-> and flips members `assembled` on QA-green). The conductor does **not** review
-> itself, and it does not create a task, take a worktree, or write feature code.
-> Run every command from `/Users/alex/projects/mcritchie-studio`.
+**Per-act procedures live in the registered SOP files, not here.** Each act in
+the atom and composition tables above links its owning
+`docs/agents/agents/<agent>/sops/<sop>.md`, and every SOP is executable
+standalone. This section keeps only the architecture: the atom/composition map
+and the per-stage building blocks the deploy CLI implements. (The retired
+composition write-ups that lived here — `Avi Heartbeat Slow`/`Fast`,
+`Build and Deploy QA Release`, `Merge, Assemble, Deploy` — were absorbed into
+`pr-review-slow`, `pr-review`, `qa-release`, `full-cycle`, and
+`deploy-with-task`.)
 
 > **A non-interactive agent MUST pass `--yes` only for approved confirms.** An
 > agent's shell has no TTY — stdin is EOF, which a confirm prompt reads as
-> **"no"**. The consequence differs per command:
+> **"no"**. The consequence differs per release verb:
 > - **`prepare`** aborts without confirmation in a non-interactive shell. Always
 >   run `bin/release prepare --yes` for the approved QA deploy step.
 > - **`ship`** *aborts loudly* without confirmation — that is intentional. Do not
->   pass `--yes` unless the session trigger is **`Merge, Assemble, Deploy`** or
->   **`Deploy with Task <task>`**, Mr. McRitchie explicitly gives the production
->   ship go in this session, or an already-approved rollout prompt grants ship
->   authority.
+>   pass `--yes` unless the session launched a ship-authority SOP
+>   (`production-deploy`, `full-cycle`, `deploy-with-task`) or Mr. McRitchie
+>   explicitly gives the production ship go in this session.
 > - **`status`** is a read-only report (no confirm); `--clean-only` makes it a
 >   GATE that exits non-zero on a dirty release. It never deploys, so it needs no
 >   ship authority.
@@ -628,102 +560,6 @@ smoke, production `post_deploy_cmd`, or partial-ship recovery.
 > `--yes` bypasses the **human confirm only** — it never skips a test gate
 > (`avi_ship_gate` runs and can still abort the ship). `--prod` is already the
 > default (the board is prod) — don't add it redundantly.
-
-**The block-and-move rule (every review below).** A reviewer block is **not** a
-stop: `bin/task block <slug> --kind rework --feedback "<one complete send-back>"`,
-then move on — one block never holds back the PRs that passed (rework is a separate
-feature-agent cycle). Surface every blocking event — a review send-back, a merge
-conflict that forces a task back, or a ship-time test/preflight abort — as a little
-**❌ Block Resolved** line (`❌ Block Resolved — <slug>: <reason>`; "resolved" =
-recorded and routed back, not fixed). List them in the handoff **only if at least
-one blocking event happened** — omit the section on a clean run.
-
-1. **Survey + assess the candidate.** `bin/conductor plan` — enumerate the Deploy
-   queue **by stage**, name the active release candidate + its `assembled` members
-   (the "active pending release" you fold in), and flag `blocked` + non-pipeline
-   tasks (repos absent from `config/release_repos.yml`; handle them in their own
-   app, never `bin/release merge` them).
-2. **Review round 1 — PARALLEL fan-out (≤5 concurrent).** Fetch the submitted
-   queue (`bin/task list --stage submitted`) and review it in parallel: for each
-   pipeline task run the **nested cascade** (the `Review submitted PRs` runbook
-   below) — spawn **Avi** as the thin gate (product-acceptance + `bin/reviewer-select
-   <task> --busy-auto`, which records the primary+light pair), then spawn the
-   **PRIMARY** reviewer; the PRIMARY spawns the **LIGHT**. **Cap the fan-out at 5
-   concurrent agents** (the board DB's connection budget — see "Concurrency cap" in
-   the operating model): launch in **waves of ≤5**, not the whole queue at once,
-   and don't review one PR start to finish before the next. Both pass with no
-   blocker → the **PRIMARY** drives the task to `reviewed` and STOPS
-   (review-only — the sweep merges); any block → block-and-move.
-3. **Prepare the release — the self-healing sweep.** Run the pre-merge checklist
-   per PR — `gh pr ready <n>` (un-draft), `gh pr edit <n> --base release`
-   (retarget; no-op when `main` == `release`) — then **`bin/release prepare
-   --yes`**: it detects the whole `reviewed` queue (+ `assembled` stragglers),
-   merges each PR into `release` (skipping `merged:` tasks — crash recovery; the
-   overlap warning is advisory), runs the pre-QA gate, deploys `origin/release`
-   to QA (records `release.qa_url`; a `/up 000` right after a Heroku release is
-   usually a still-booting dyno — re-check `curl -s -o /dev/null -w
-   "%{http_code}" <url>/up`), and flips members `assembled` on QA-green. **Bias
-   to throughput: default to including, not deferring.**
-4. **Review round 2 — stragglers.** Reviewing + preparing takes time; new PRs may
-   have landed in `submitted`. Re-fetch `bin/task list --stage submitted` and run
-   the same cascade + block-and-move on anything new. Empty → say so, skip to step 6.
-5. **Assemble again.** Re-run `bin/release prepare --yes` — the self-healing
-   sweep picks up the round-2 `reviewed` tasks into the same candidate (skipping
-   the already-merged members) and refreshes QA. Confirm the refreshed QA app is
-   green.
-6. **Ship decision — gated or autonomous.** From a **primary checkout** (not a
-   worktree — gems resolve as siblings at the projects root), choose the ending
-   that matches the session trigger:
-   - **`Build and Deploy QA Release`** → stop at the production gate and hand off
-     `bin/release ship --by conductor`. Add `--yes` only after explicit ship
-     approval in this session or an already-approved rollout prompt.
-   - **`Merge, Assemble, Deploy`** → run `bin/conductor ship --run`, which
-     executes `bin/release ship --by conductor --yes`.
-
-   Both paths run the same production sequence: preflight (clean-`main`
-   assertion) → `avi_ship_gate` (each app's test suite on the frozen ship SHA;
-   **aborts on any failure** before anything irreversible) → producer-first gem
-   publish → ff each repo's `release → main` → deploy + smoke `/up` → prod
-   `post_deploy_cmd` → members `shipped` → auto-posted release notes. If a gate
-   aborts, report it and don't force past.
-7. **Close the loop (optional).** `bin/release archive --yes` (shipped → archived +
-   reclaim worktrees) and `bin/release retro --yes` (durable learnings doc).
-
-**`Deploy with Task <task>`**  *(expedite ONE task to prod — guarded on a clean release)*
-
-> ⚠️ **THIS SOP IS PRODUCTION AUTHORITY** (like `Merge, Assemble, Deploy`). It
-> takes a **single** freshly-submitted task all the way to prod, skipping the
-> full-queue drain — for when one fix must ship now and nothing else is waiting.
-
-The difference from the full run is the **clean-release GUARD** and the scope of
-one task. Fast-forwarding `release → main` ships **everything** on `release`, so
-expediting one task is only safe when `release == main` — otherwise the ff drags
-along whatever is already `assembled` but unshipped. Run it as:
-
-1. **GUARD — is the release clean?** From the primary checkout, run
-   **`bin/release status --clean-only`**. It reads two signals — the tasks already
-   riding `release` (board: `assembled` plus swept `reviewed` with
-   `merged: "release"`) and each repo's `origin/release`-ahead-of-`origin/main`
-   count (git) — and the pure `Release::CleanCheck` returns clean vs dirty.
-   - **Clean** (`release == main`, exit 0) → continue.
-   - **Dirty** (exit non-zero) → **STOP**. The guard prints the pending work and
-     **refuses**, offering the correct move instead: *"Ship the WHOLE release
-     instead: run the `Alex Heartbeat` `full-cycle` launcher."* Do **not** try to
-     expedite one task past pending work — run `full-cycle` (which ships all of it
-     properly) or wait until the release is shipped and clean. Never force past.
-2. **`review-one <task>`.** Run the single-PR cascade
-   ([`pr-review-sop.md`](../modules/pr-review-sop.md)) for that one task — Avi
-   picks the pair, PRIMARY + LIGHT review; on all-clear the PRIMARY drives
-   `reviewed` (review-only). A block ends the expedite (fix, resubmit, re-run).
-3. **`qa-release`.** `bin/release prepare --yes` — the sweep merges that member's
-   PR onto `release`, deploys QA, and flips it `assembled` on QA-green; confirm
-   `/up` 200.
-4. **`production-deploy`.** From a primary checkout, `bin/release ship --by
-   conductor --yes` — the same gated ship sequence as step 6 above (frozen-SHA
-   `avi_ship_gate` → ff `release → main` → deploy + smoke → members `shipped`).
-
-Because the guard proved `release == main` before step 2, the only new commit the
-ff carries to `main` is the one expedited task — nothing else rides along.
 
 The per-stage commands below are the building blocks the compositions above
 sequence:

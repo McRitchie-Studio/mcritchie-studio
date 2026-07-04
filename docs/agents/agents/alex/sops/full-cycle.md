@@ -60,9 +60,20 @@ Keep the same guards each atom owns:
 - Ship only after QA-green.
 - Do not deploy production unless ship authority is explicit.
 
-For a single-task expedite, use the dedicated `Deploy with Task <task>` SOP from
-`../../../system/devops-cycle-design.md` §1.4 instead of pushing one task past
-pending release work.
+Review and preparation take time; new PRs may land in `submitted` meanwhile.
+After the sweep, re-check `bin/task list --stage submitted` and run one
+straggler round — review anything new, then re-run `bin/release prepare --yes`
+so the same candidate picks up the round-2 `reviewed` tasks and refreshes QA —
+before shipping.
+
+Cold start note: launched bare, you are the conductor (Deploy lane), not a
+feature agent — do not follow the build gate's task/worktree flow. You
+orchestrate review, sweep, and ship on work that is already built; you do not
+review diffs yourself, create tasks, or write feature code.
+
+For a single-task expedite, run Avi's
+[`deploy-with-task`](../../avi/sops/deploy-with-task.md) SOP instead of pushing
+one task past pending release work.
 
 ## Exit Seam
 

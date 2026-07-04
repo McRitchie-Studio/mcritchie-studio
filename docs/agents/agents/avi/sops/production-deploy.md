@@ -60,8 +60,7 @@ Post-ship, `bin/release ship` auto-runs the hub primary's
 Steffon owns the step and its mechanism) so the installed agent docs
 (`~/.claude` + `~/.codex` skills, the projects-root `AGENTS.md`/`CLAUDE.md`)
 match what shipped. If it warns, run the installer from the hub primary by
-hand. Full detail: the `Run Deployment` building block in
-[`devops-cycle-design.md` §1.4](../../../system/devops-cycle-design.md).
+hand.
 
 If the ship gate aborts, do not force past it. Record the blocker and hand it
 off.
@@ -78,7 +77,7 @@ act reports a clean no-op because nothing was ready. Report:
 
 On a clean no-op, report "nothing to ship."
 
-## Related
+## Background — not needed to execute
 
 - [`../../../system/devops-cycle-design.md`](../../../system/devops-cycle-design.md)
-  §1.4 - release atom model and production gate.
+  §1.4 - release atom model and production gate (architecture).
