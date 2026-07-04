@@ -14,12 +14,14 @@ module Insights
   # ONE of a raw action or a narrated span (its XOR) — there is no task/activity
   # target, and every existing read (insight_source / to_insight / the pipeline)
   # reaches provenance THROUGH that span. So a candidate hangs off an AtomicEvent,
-  # never the task. We attribute the block to the NEWEST span on the blocked task
-  # opened at/before the block was raised that is NOT already Alex-graded:
-  #   * before the block  — the trajectory that produced the defect QA caught;
+  # never the task. We attribute the block to the NEWEST BUILDER span on the blocked
+  # task opened at/before the block was raised that is NOT already Alex-graded:
+  #   * before the block   — the trajectory that produced the defect QA caught;
+  #   * base-mascot lane   — excludes soul-attributed review spans (the reviewer
+  #                          often opens Verify right before posting qa_feedback);
   #   * newest of those    — the tightest single proxy for "what caused it" (the last
   #                          thing the builder did before QA bounced it);
-  #   * not already graded  — never clobber a human grade (uniqueness is per
+  #   * not already graded — never clobber a human grade (uniqueness is per
   #                          event+grader) and never reuse one span across two blocks.
   # No attributable span (a pre-narration task, or all pre-block spans already
   # graded) -> we skip that block; a candidate can't hang off nothing.
@@ -107,13 +109,14 @@ module Insights
     end
 
     # See SPAN LINKAGE above. nil when the block carries no task, or the task has no
-    # ungraded span opened at/before the block.
+    # ungraded builder span opened at/before the block.
     def target_span_for(block)
       return nil if block.task_slug.blank?
 
       graded = ActionGrade.by_grader(ALEX).where.not(atomic_event_id: nil).select(:atomic_event_id)
       AtomicEvent.where(task_slug: block.task_slug)
                  .where("opened_at <= ?", block.created_at)
+                 .where(agent: [nil, ""])
                  .where.not(id: graded)
                  .order(opened_at: :desc, seq: :desc, id: :desc)
                  .first

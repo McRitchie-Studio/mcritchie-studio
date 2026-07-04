@@ -5,9 +5,11 @@ require "test_helper"
 # candidates, tied to the span that caused the defect. Covers the seeding, the
 # span-linkage heuristic, idempotency, and the skip cases.
 class Insights::BlockMinerTest < ActiveSupport::TestCase
-  def span(task_slug:, opened_at:, seq: 0, session_id: "sess-mine")
-    AtomicEvent.create!(session_id: session_id, category: "Edit", reason_slug: "did the work",
-                        task_slug: task_slug, opened_at: opened_at, seq: seq)
+  def span(task_slug:, opened_at:, seq: 0, session_id: "sess-mine", category: "Edit",
+           reason_slug: "did the work", agent: nil, stage: "building")
+    AtomicEvent.create!(session_id: session_id, category: category, reason_slug: reason_slug,
+                        task_slug: task_slug, opened_at: opened_at, seq: seq,
+                        agent: agent, stage: stage)
   end
 
   def block(task_slug:, text:, at:)
@@ -89,6 +91,24 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     cand = ActionGrade.seeded_candidates.last
     assert_equal older.id, cand.atomic_event_id, "skips the graded newest span, uses the earlier ungraded one"
     assert_equal "already graded by hand", human.reload.slug, "the human grade is untouched"
+  end
+
+  test "[unit] skips reviewer spans opened before the block and attributes to builder work" do
+    now = Time.current
+    builder = span(task_slug: "t-reviewer", opened_at: now - 20.minutes, seq: 0,
+                   category: "Edit", reason_slug: "build the feature", agent: nil,
+                   stage: "building")
+    reviewer = span(task_slug: "t-reviewer", opened_at: now - 2.minutes, seq: 1,
+                    category: "Verify", reason_slug: "review the PR", agent: "shannon",
+                    stage: "submitted")
+    block(task_slug: "t-reviewer", text: "review caught a regression", at: now - 1.minute)
+    resolution(task_slug: "t-reviewer", at: now)
+
+    Insights::BlockMiner.mine!
+
+    cand = ActionGrade.seeded_candidates.last
+    assert_equal builder.id, cand.atomic_event_id, "reviewer spans should not become the mined defect target"
+    assert_not_equal reviewer.id, cand.atomic_event_id
   end
 
   test "[unit] two resolved blocks on one task map to two distinct spans (no collision)" do
