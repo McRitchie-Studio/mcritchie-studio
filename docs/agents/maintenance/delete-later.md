@@ -231,3 +231,45 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-04 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/wire-bank-to-session-bridge` | worktree | Hidden worktree; branch `feat/wire-bank-to-session-bridge` is clean and HEAD e9c7b3b3 is contained in origin/release; health down, Redis DB 18, database mcritchie_studio_development_wire_bank_to_session_bridge:missing. | Removed with `bin/agent-worktree remove mcritchie-studio wire-bank-to-session-bridge --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/agent-file-links` | worktree | Hidden worktree; branch `feat/agent-file-links` is clean and HEAD 52c81497 is contained in origin/release; health up, Redis DB 28, database mcritchie_studio_development_agent_file_links:ok. | Removed with `bin/agent-worktree remove mcritchie-studio agent-file-links --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/block-mining-insight-lever` | worktree | Hidden worktree; branch `feat/block-mining-insight-lever` is clean and HEAD 80f38086 is contained in origin/release; health down, Redis DB 20, database mcritchie_studio_development_block_mining_insight_lever:missing. | Removed with `bin/agent-worktree remove mcritchie-studio block-mining-insight-lever --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-pr-review-card-captions` | worktree | Hidden worktree; branch `feat/fix-pr-review-card-captions` is clean and HEAD 013e04e9 is contained in origin/release; health down, Redis DB 13, database mcritchie_studio_development_fix_pr_review_card_captions:ok. | Removed with `bin/agent-worktree remove mcritchie-studio fix-pr-review-card-captions --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/name-install-agent-docs-owner` | worktree | Hidden worktree; branch `feat/name-install-agent-docs-owner` is clean and HEAD 4eabae6d is contained in origin/release; health down, Redis DB 15, database mcritchie_studio_development_name_install_agent_docs_owner:missing. | Removed with `bin/agent-worktree remove mcritchie-studio name-install-agent-docs-owner --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/pr-review-launcher-routing` | worktree | Hidden worktree; branch `feat/pr-review-launcher-routing` is clean and HEAD b9ed6d71 is contained in origin/release; health down, Redis DB 18, database mcritchie_studio_development_pr_review_launcher_routing:missing. | Removed with `bin/agent-worktree remove mcritchie-studio pr-review-launcher-routing --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/refresh-adapter-sweep-wording` | worktree | Hidden worktree; branch `feat/refresh-adapter-sweep-wording` is clean and HEAD b8f3184f is contained in origin/release; health down, Redis DB 26, database mcritchie_studio_development_refresh_adapter_sweep_wording:ok. | Removed with `bin/agent-worktree remove mcritchie-studio refresh-adapter-sweep-wording --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/register-qa-test-commands` | worktree | Hidden worktree; branch `feat/register-qa-test-commands` is clean and HEAD b9441440 is contained in origin/release; health down, Redis DB 25, database mcritchie_studio_development_register_qa_test_commands:missing. | Removed with `bin/agent-worktree remove mcritchie-studio register-qa-test-commands --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/release-stage-timestamp-handoff` | worktree | Hidden worktree; branch `feat/release-stage-timestamp-handoff` is clean and HEAD 1d9ec99d is contained in origin/release; health up, Redis DB 12, database mcritchie_studio_development_release_stage_timestamp_handoff:ok. | Removed with `bin/agent-worktree remove mcritchie-studio release-stage-timestamp-handoff --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/rewrite-retired-launcher-spec` | worktree | Hidden worktree; branch `feat/rewrite-retired-launcher-spec` is clean and HEAD 3b101a73 is contained in origin/release; health up, Redis DB 23, database mcritchie_studio_development_rewrite_retired_launcher_spec:ok. | Removed with `bin/agent-worktree remove mcritchie-studio rewrite-retired-launcher-spec --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/shiny-pokemon-mascot-avatars` | worktree | Hidden worktree; branch `feat/shiny-pokemon-mascot-avatars` is clean and HEAD 4716343b is contained in origin/release; health up, Redis DB 9, database mcritchie_studio_development_shiny_pokemon_mascot_avatars:ok. | Removed with `bin/agent-worktree remove mcritchie-studio shiny-pokemon-mascot-avatars --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/sweep-mission-doc-wording` | worktree | Hidden worktree; branch `feat/sweep-mission-doc-wording` is clean and HEAD f1b2cf3a is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_sweep_mission_doc_wording:missing. | Removed with `bin/agent-worktree remove mcritchie-studio sweep-mission-doc-wording --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/sweep-remaining-doc-stragglers` | worktree | Hidden worktree; branch `feat/sweep-remaining-doc-stragglers` is clean and HEAD 4d89ff74 is contained in origin/release; health down, Redis DB 24, database mcritchie_studio_development_sweep_remaining_doc_stragglers:ok. | Removed with `bin/agent-worktree remove mcritchie-studio sweep-remaining-doc-stragglers --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/sweep-retired-sop-names` | worktree | Hidden worktree; branch `feat/sweep-retired-sop-names` is clean and HEAD 692035ed is contained in origin/release; health down, Redis DB 22, database mcritchie_studio_development_sweep_retired_sop_names:missing. | Removed with `bin/agent-worktree remove mcritchie-studio sweep-retired-sop-names --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/update-release-cli-copy` | worktree | Hidden worktree; branch `feat/update-release-cli-copy` is clean and HEAD 3c4ce0a5 is contained in origin/release; health down, Redis DB 29, database mcritchie_studio_development_update_release_cli_copy:missing. | Removed with `bin/agent-worktree remove mcritchie-studio update-release-cli-copy --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
