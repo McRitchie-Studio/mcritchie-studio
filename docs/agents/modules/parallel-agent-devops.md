@@ -271,8 +271,8 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
-bin/avi-heartbeat --run --codex-workdir "$PWD"          # Avi Heartbeat Slow
-bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # Avi Heartbeat Fast
+bin/avi-heartbeat --run --codex-workdir "$PWD"          # pr-review-slow act (one PR at a time)
+bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # pr-review act (bounded waves)
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
@@ -287,11 +287,12 @@ Use `bin/avi-heartbeat --run --codex-workdir "$PWD"` when Mr. McRitchie wants
 Avi to review submitted PRs unattended for hours without assembling a release
 (`--codex-workdir` must be a trusted git checkout — the projects-root default
 makes `codex exec` refuse and every reviewer exit 1; full flags in the
-[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) SOP). That is **Avi Heartbeat
-Slow**: newest `submitted` task first, one PR at a time, fresh
+[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) SOP). That is the
+[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) act: newest `submitted`
+task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
-again after reviewer completion. Add `--fast` for
-**Avi Heartbeat Fast** when submitted PRs have stacked up; it launches bounded
+again after reviewer completion. Add `--fast` for the
+[`pr-review`](../agents/avi/sops/pr-review.md) act when submitted PRs have stacked up; it launches bounded
 waves of selected PRIMARY + LIGHT reviewer pairs, defaulting to the operating
 model's five-agent cap (two complete PR pairs per wave). Both modes leave Avi as
 the final resolver: two-approval work moves to `reviewed` for Steffon/release

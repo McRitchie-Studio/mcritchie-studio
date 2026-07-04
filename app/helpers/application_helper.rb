@@ -444,15 +444,16 @@ module ApplicationHelper
     }
   end
 
-  # The three soul-avatar heartbeat launchers shown in the DevOps card
-  # (#release-duration-card on /deployments, tasks/heartbeat_launchers): a soul
-  # face (linking to /agents/<slug>) over a
-  # PROMPT-LIKE row 1 plus one or more copyable atom acts. Avi's two lanes are now
-  # ONE column with two acts. Every row is an INDEPENDENTLY-copyable valid launch
+  # The three soul-avatar heartbeat launchers shown on the standalone Heartbeats
+  # card (tasks/_heartbeats_card on /deployments, one tasks/_heartbeat_launcher
+  # per soul): a soul face (linking to /agents/<slug>) over a
+  # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
+  # INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
-  # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +acts+ are the
-  # launcher atoms that scope that heartbeat's work (Avi: production-deploy +
-  # pr-review; Steffon: archive-shipped + qa-release; Alex: grade-events). +agent_slug+
+  # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +actions+ are
+  # the launcher acts that scope that heartbeat's work (Avi: production-deploy +
+  # pr-review + pr-review-slow; Steffon: archive-shipped + qa-release; Alex:
+  # grade-events + share-insights + full-cycle). +agent_slug+
   # resolves the soul avatar (reused from the heartbeat Agent column + stage
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
@@ -469,8 +470,8 @@ module ApplicationHelper
   # One-line "what it does" caption for each heartbeat launcher act, keyed by the
   # act slug used in +heartbeat_launchers+. Sourced from
   # docs/agents/modules/heartbeats.md so the agent profile page can annotate each
-  # copyable phrase with the work it launches (Avi: production-deploy + pr-review;
-  # Steffon: archive-shipped + qa-release; Alex: grade-events).
+  # copyable phrase with the work it launches — one caption per act registered in
+  # +heartbeat_launchers+.
   ACTION_DESCRIPTIONS = {
     "pr-review"         => "Review all submitted PRs (review-only — Steffon sweeps)",
     "pr-review-slow"    => "Review submitted PRs one at a time",
