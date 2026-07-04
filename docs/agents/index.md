@@ -31,7 +31,7 @@ Paths below are written for the generated file at `/Users/alex/projects/AGENTS.m
   deploy owner for that repo.
 - A pushed feature branch preserves code. `main` is for reviewed integration,
   not backup. Feature agents push their own branch and graduate through PR/QA;
-  review is review-only — Steffon's `qa-deploy` sweep merges reviewed work.
+  review is review-only — Steffon's `qa-release` sweep merges reviewed work.
 
 ## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
 
@@ -137,7 +137,7 @@ The task lifecycle is two workflows (full spec:
   keeps a **persistent `release` branch** (feature PRs target it, never `main`).
   Review is **review-only**: the submitted PR is approved → `reviewed`, or
   `bin/task block <task> --kind rework --feedback "…"` (back to you) — nobody
-  merges at review. Steffon's self-healing `qa-deploy` sweep (`bin/release
+  merges at review. Steffon's self-healing `qa-release` sweep (`bin/release
   prepare`) merges reviewed tasks + `assembled` stragglers into `release`
   (stamping `merged: "release"`), deploys QA, and flips members `assembled` only
   on **QA-green**. Avi's `production-deploy` (`bin/release ship`) fast-forwards

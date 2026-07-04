@@ -45,7 +45,7 @@ Task lifecycle is two workflows meeting at the `submitted` seam — **Build**
 and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped`. Every repo
 keeps a **persistent `release` branch** that feature PRs merge into (not `main`):
 review is **review-only** — QA reviews → `reviewed` or `bin/task block`s it back;
-Steffon's self-healing `qa-deploy` sweep (`bin/release prepare`) merges reviewed
+Steffon's self-healing `qa-release` sweep (`bin/release prepare`) merges reviewed
 tasks + stragglers into `release` (stamping `merged: "release"`), deploys QA, and
 flips members `assembled` only on QA-green; Avi's `production-deploy`
 (`bin/release ship`) fast-forwards `release → main` (stamping `merged: "main"`).
