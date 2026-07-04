@@ -13,7 +13,7 @@ SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
 `archive-shipped`, `deploy-with-task`, or `full-cycle`, resolve that phrase
 through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
 `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` first and run that
-review-only SOP; do not start with `bin/avi-heartbeat --help`, `bin/qa-intake`,
+review-only SOP; do not start with `bin/pr-review --help`, `bin/qa-intake`,
 or GitHub PR discovery.
 
 ## ⛔ STOP — before writing ANY code (feature, bug, or chore — even a "small" one)

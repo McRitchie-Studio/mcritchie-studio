@@ -271,8 +271,8 @@ bin/devops-cycle --scout-runs tmp/devops-scouts --max-scouts 3
 bin/devops-cycle --scout-coverage tmp/devops-scouts
 bin/devops-cycle --scout-reports
 bin/devops-cycle --readiness
-bin/avi-heartbeat --run --codex-workdir "$PWD"          # pr-review-slow act (one PR at a time)
-bin/avi-heartbeat --run --fast --codex-workdir "$PWD"   # pr-review act (bounded waves)
+bin/pr-review --run --codex-workdir "$PWD"          # pr-review-slow act (one PR at a time)
+bin/pr-review --run --fast --codex-workdir "$PWD"   # pr-review act (bounded waves)
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
@@ -283,7 +283,7 @@ joins each task to latest task conversation notes, and attaches matching
 DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
 before reviewing individual diffs. It is read-only by default.
 
-Use `bin/avi-heartbeat --run --codex-workdir "$PWD"` when Mr. McRitchie wants
+Use `bin/pr-review --run --codex-workdir "$PWD"` when Mr. McRitchie wants
 Avi to review submitted PRs unattended for hours without assembling a release
 (`--codex-workdir` must be a trusted git checkout — the projects-root default
 makes `codex exec` refuse and every reviewer exit 1; full flags in the

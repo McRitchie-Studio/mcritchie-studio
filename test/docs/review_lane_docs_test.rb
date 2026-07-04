@@ -101,7 +101,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     assert_match(/McRitchie SOPs live in \/Users\/alex\/projects\/AGENTS\.md's SOP Invocation Standard/i, body)
     assert_match(/SOPs are first-class registered commands with finite names and stable files/i, body)
     assert_match(/pr-review means read mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md first/i, body)
-    assert_match(/do not start with bin\/avi-heartbeat --help, bin\/qa-intake, or GitHub PR discovery/i, body)
+    assert_match(/do not start with bin\/pr-review --help, bin\/qa-intake, or GitHub PR discovery/i, body)
   end
 
   test "[static] markdown launch docs describe the nested primary→light cascade, review-only" do

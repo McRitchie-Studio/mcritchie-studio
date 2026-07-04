@@ -14,8 +14,7 @@ deploy with explicit ship authority.
 3. Avi's `production-deploy`.
 
 This SOP crosses the production gate. Use it only when Mr. McRitchie launched
-`full-cycle`, launched an Alex heartbeat with full release authority, or
-otherwise granted production ship authority in this session.
+`full-cycle` or otherwise granted production ship authority in this session.
 
 ## Entry
 

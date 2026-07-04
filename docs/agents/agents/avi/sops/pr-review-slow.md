@@ -31,7 +31,7 @@ PRs" and stop.
 Run the serialized supervisor path:
 
 ```bash
-bin/avi-heartbeat --run --max-idle-cycles 1 \
+bin/pr-review --run --max-idle-cycles 1 \
   --codex-workdir /Users/alex/projects/mcritchie-studio
 ```
 

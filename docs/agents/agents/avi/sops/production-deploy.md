@@ -13,8 +13,8 @@ Avi owns release stages 4-5:
 2. Deploying production
 
 This SOP crosses the production gate. Use it only when Mr. McRitchie launched
-`production-deploy`, launched an Avi heartbeat with ship authority, or otherwise
-granted production ship authority in this session.
+`production-deploy` or otherwise granted production ship authority in this
+session.
 
 ## Entry
 

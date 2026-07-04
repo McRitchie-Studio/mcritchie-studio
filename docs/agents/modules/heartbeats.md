@@ -86,7 +86,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 | **Steffon** | `archive-shipped` → `qa-release` | `bin/release archive --yes` (preview `--dry-run`); then `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` |
 | **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/atomic-event awaiting --limit 10` → `bin/atomic-event grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
 
-> **Script-assisted review (Avi).** `bin/avi-heartbeat` is the supervisor script
+> **Script-assisted review (Avi).** `bin/pr-review` is the supervisor script
 > behind the review loop: it composes `bin/devops-cycle`, `bin/reviewer-select`,
 > and `codex exec` reviewer pairs, writes the `bin/task move|block|note` handoffs
 > itself, and prints a retrospective. It is **review-only** — approved tasks stop
@@ -94,7 +94,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 > invocation:
 >
 > ```bash
-> bin/avi-heartbeat --run --limit <N> --max-idle-cycles 1 \
+> bin/pr-review --run --limit <N> --max-idle-cycles 1 \
 >   --codex-workdir /Users/alex/projects/mcritchie-studio
 > ```
 >
@@ -273,8 +273,8 @@ The same as `pr-review`, but **serialized** — one PR at a time.
 > **History.** The 2026-07-02 fold had these acts run `bin/release merge` after
 > approval; 2026-07-03 reversed it (this epic) — review is review-only again, and
 > the merge moved into Steffon's self-healing sweep, which follows promptly. The
-> old `bin/avi-heartbeat` review-only loop still exists but is no longer a card
-> chip.
+> `bin/pr-review` review-only loop (formerly `bin/avi-heartbeat`) still exists
+> but is no longer a card chip.
 
 ## 2. Steffon Heartbeat — `Steffon Heartbeat` / `archive-shipped` / `qa-release`
 
