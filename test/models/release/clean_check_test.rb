@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Pure decision logic for the clean-release GUARD behind `Deploy with Task`
+# Pure decision logic for the clean-release GUARD behind `deploy-with-task`
 # (`bin/release status --clean-only`). No git/board/network here — same IO-free
 # contract as MergePlan/ShipSequence, so it's trivially unit-tested and the shell
 # stays thin. The two signals (assembled tasks + release-ahead-of-main) are
@@ -16,7 +16,9 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     assert_empty v["pending_tasks"]
     assert_empty v["ahead_repos"]
     assert_includes v["message"], "release == main"
-    assert_includes v["message"], "Deploy with Task"
+    # The registered launcher phrase (docs/agents/agents/avi/sops/deploy-with-task.md),
+    # not the retired "Deploy with Task <task>" wording.
+    assert_includes v["message"], "deploy-with-task"
   end
 
   test "clean when both signals are empty" do

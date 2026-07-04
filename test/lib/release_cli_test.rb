@@ -722,7 +722,7 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "MERGED-CALL", "a dry run stamps nothing"
   end
 
-  # --- status / the clean-release GUARD (`Deploy with Task`'s first step) ---
+  # --- status / the clean-release GUARD (`deploy-with-task`'s first step) ---
   # `status` gathers two signals — the board's assembled-but-unshipped tasks (via
   # `conductor`) and per-repo release-ahead-of-main (via `release_ahead_states`) —
   # then Release::CleanCheck decides clean vs dirty. Both reads are stubbed here so
@@ -749,6 +749,7 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "release == main", "a clean release reports release == main"
     assert_includes out, "safe to expedite one task"
+    assert_includes out, "deploy-with-task", "the hint names the registered launcher phrase"
     refute_includes out, "refused", "a clean release is not refused"
   end
 

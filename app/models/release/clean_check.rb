@@ -1,13 +1,13 @@
 class Release
-  # Pure decision logic for the CLEAN-RELEASE GUARD that the `Deploy with Task
-  # <task>` composition runs FIRST. Like Release::Cli / MergePlan / ShipSequence
+  # Pure decision logic for the CLEAN-RELEASE GUARD that Avi's `deploy-with-task`
+  # act runs FIRST. Like Release::Cli / MergePlan / ShipSequence
   # this is deliberately IO-free and Rails-free: it takes the already-gathered
   # board + git state in and returns the clean/dirty verdict plus the
   # operator-facing message out, so the "is it safe to expedite one task" decision
   # lives in ONE unit-tested place. (bin/release `require_relative`s this file
   # directly, so it must load standalone with no Rails dependency.)
   #
-  # WHY IT EXISTS: `Deploy with Task <task>` expedites a SINGLE task to prod by
+  # WHY IT EXISTS: `deploy-with-task` expedites a SINGLE task to prod by
   # merging its PR into `release` and fast-forwarding `release → main`. That ff
   # drags along EVERYTHING already sitting on `release` ahead of `main` — i.e. any
   # OTHER task whose code already rides `release` but isn't `shipped`, whether
@@ -59,13 +59,13 @@ class Release
     end
 
     def clean_message
-      "✓ release is clean (release == main) — safe to expedite one task with `Deploy with Task <task>`."
+      "✓ release is clean (release == main) — safe to expedite one task with the `deploy-with-task` act."
     end
 
     # The refusal + the offer. Never silently drags the pending work to prod: it
     # names WHAT is pending and points at the composition that ships it properly.
     def dirty_message(pending, ahead)
-      lines = ["✗ Deploy with Task refused: `release` is NOT clean (release ≠ main)."]
+      lines = ["✗ deploy-with-task refused: `release` is NOT clean (release ≠ main)."]
       if pending.any?
         lines << "  #{pending.size} task(s) already riding `release` (swept or QA-green), pending ship:"
         pending.each { |t| lines << "    - #{t['slug']}#{t['title'].to_s.empty? ? '' : " — #{t['title']}"}" }
