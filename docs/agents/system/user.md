@@ -33,8 +33,8 @@ The dashboard (`/dashboard`) shows:
 
 ## Activity
 
-- `/activities` — Reverse-chronological feed of all agent activity
-- Filter by agent or activity type via URL params
+- `/activities` — Redirects to `/agents`
+- Agent work history is surfaced through task timelines and the activities API
 
 ## Errors
 

@@ -340,8 +340,9 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_match(/primary/i, deploy["submitted"][:who])
     assert_match(/light/i, deploy["submitted"][:who])
     assert_match(/base/i, deploy["submitted"][:tests])
-    # the PRIMARY reviewer owns the merge at the reviewed step (not the conductor)
-    assert_match(/primary/i, deploy["reviewed"][:who])
+    # Steffon owns the reviewed-stage merge sweep and QA release.
+    assert_match(/steffon/i, deploy["reviewed"][:who])
+    assert_match(/qa-release/i, deploy["reviewed"][:what])
     # Steffon owns QA; Avi runs the frozen-SHA suite; production authority is explicit
     assert_match(/steffon/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
