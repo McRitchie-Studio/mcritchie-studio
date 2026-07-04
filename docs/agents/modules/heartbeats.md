@@ -74,7 +74,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 |---|---|---|
 | **Avi** | `production-deploy` → `pr-review` | `bin/release status` → **if** QA-green: `bin/release ship --yes`; then per `submitted` PR (waves ≤5): `bin/reviewer-select <task>` → the [review-one cascade](pr-review-sop.md) → on approval `bin/task move <task> reviewed` + `bin/release merge <task>` |
 | **Steffon** | `archive-completed` → `qa-deploy` | `bin/release archive --yes` (preview `--dry-run`); then `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` |
-| **Alex** | `grade-events` · `propagate-insights` · `full-cycle` | `bin/atomic-event awaiting --limit 10` → `bin/atomic-event grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-deploy` → `production-deploy` (ship authority) |
+| **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/atomic-event awaiting --limit 10` → `bin/atomic-event grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-deploy` → `production-deploy` (ship authority) |
 
 > **Script-assisted review (Avi).** `bin/avi-heartbeat` is the supervisor script
 > behind the review loop: it composes `bin/devops-cycle`, `bin/reviewer-select`,
