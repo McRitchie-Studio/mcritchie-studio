@@ -886,9 +886,12 @@ the ONE dirty case ship fixes automatically is a primary **on `main` whose dirt 
 ALL already on `origin/release`** — the merged-PR files `bin/release merge`
 re-stages every ship (redundant noise, since `release` is what the ff advances
 `main` to). ship resets it (`git reset --hard origin/main`; the ff re-applies
-release) instead of aborting. **Anything else still blocks** — an off-main branch,
-or *any* dirty file not already on `origin/release` (genuine local work is **never**
-discarded without the operator). Pure decision:
+release) instead of aborting — but ONLY when **HEAD is not ahead of `origin/main`**
+(no unpushed local commits: a reset would orphan them, and the dirty *files* being
+on release says nothing about unpushed *commits*). **Anything else still blocks** —
+an off-main branch, an **HEAD ahead of `origin/main`**, or *any* dirty file not
+already on `origin/release` (genuine local work is **never** discarded without the
+operator). Pure decision:
 `Release::ShipSequence.preflight_offenders` / `.autocleanable?` / `.preflight_message`.
 **Live ship
 crew:** right after ship authorization (so a declined gated ship never shows it),

@@ -293,11 +293,12 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   # local work). The CLI gathers the facts (git I/O); this is the pure verdict.
 
   # A fully-safe (auto-cleanable) offender: on main, facts gathered, main behind
-  # release, dirty, and NOTHING unreconciled.
+  # release, HEAD not ahead of origin/main, dirty, and NOTHING unreconciled.
   def cleanable_offender(overrides = {})
     {
       "repo" => "mcritchie-studio", "on_main" => true, "reconcile_checked" => true,
-      "main_ancestor_of_release" => true, "dirty_files" => ["app/x.rb"], "unreconciled_files" => []
+      "main_ancestor_of_release" => true, "head_at_origin_main" => true,
+      "dirty_files" => ["app/x.rb"], "unreconciled_files" => []
     }.merge(overrides)
   end
 
@@ -320,6 +321,13 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not S.autocleanable?(cleanable_offender("main_ancestor_of_release" => false))
   end
 
+  test "autocleanable? is false when HEAD is AHEAD of origin/main (unpushed commits)" do
+    # The data-loss guard: reset --hard origin/main would ORPHAN an unpushed local
+    # commit. The dirty FILES being on release says nothing about unpushed COMMITS,
+    # so an ahead HEAD must REFUSE even when every other fact says auto-clean.
+    assert_not S.autocleanable?(cleanable_offender("head_at_origin_main" => false))
+  end
+
   test "autocleanable? is false when any dirty file is not on origin/release (local work)" do
     assert_not S.autocleanable?(cleanable_offender("unreconciled_files" => ["app/local_only.rb"]))
   end
@@ -329,8 +337,8 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   end
 
   test "autocleanable? accepts symbol-keyed facts and string boolean flags" do
-    sym = { repo: "x", on_main: true, reconcile_checked: true,
-            main_ancestor_of_release: true, dirty_files: ["a.rb"], unreconciled_files: [] }
+    sym = { repo: "x", on_main: true, reconcile_checked: true, main_ancestor_of_release: true,
+            head_at_origin_main: true, dirty_files: ["a.rb"], unreconciled_files: [] }
     assert S.autocleanable?(sym)
     # A JSON round-trip could stringify the booleans — still honored.
     assert S.autocleanable?(cleanable_offender("main_ancestor_of_release" => "true"))

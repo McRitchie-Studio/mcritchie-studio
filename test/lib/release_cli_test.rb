@@ -1848,10 +1848,11 @@ class ReleaseCliTest < Minitest::Test
         files = repo == "mcritchie-studio" ? ["db/schema.rb", "app/x.rb"] : []
         { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
       end
-      # Facts say: on main, main behind release, and EVERY dirty file already on
-      # origin/release → nothing local is lost → auto-cleanable.
+      # Facts say: on main, main behind release, HEAD not ahead of origin/main, and
+      # EVERY dirty file already on origin/release → nothing local is lost → auto-cleanable.
       def reconcile_offender(offender)
-        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true, "unreconciled_files" => [])
+        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true,
+                       "head_at_origin_main" => true, "unreconciled_files" => [])
       end
       def autoclean_primary!(offender) = puts("AUTOCLEANED " + offender["repo"] + ": " + offender["dirty_files"].join(","))
     RUBY
@@ -1872,7 +1873,8 @@ class ReleaseCliTest < Minitest::Test
       # A dirty file that is NOT on origin/release = genuine local work → REFUSE,
       # never auto-reset (nothing is discarded without the operator).
       def reconcile_offender(offender)
-        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true, "unreconciled_files" => offender["dirty_files"])
+        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true,
+                       "head_at_origin_main" => true, "unreconciled_files" => offender["dirty_files"])
       end
       def autoclean_primary!(offender) = puts("WRONGLY AUTO-CLEANED " + offender["repo"])
     RUBY
@@ -1973,6 +1975,29 @@ class ReleaseCliTest < Minitest::Test
       refute_includes out, "PASSED", out
       assert_equal "local hack not on release\n", File.read(File.join(dir, "shared.rb")),
                    "a tracked local change not on release survives — no reset ran"
+    end
+
+    # (4) The data-loss guard: primary AHEAD of origin/main (an UNPUSHED local
+    #     commit) PLUS the routine release-identical staged dirt → REFUSED. Every
+    #     dirty FILE is on release, but `git reset --hard origin/main` would ORPHAN
+    #     the unpushed COMMIT, so it must NOT run — HEAD stays put and the commit
+    #     survives. (with_primary_repo leaves main == origin/main, so we advance it.)
+    with_primary_repo do |dir|
+      File.write(File.join(dir, "unpushed.rb"), "unpushed local commit\n")
+      assert system("git -C #{dir} add unpushed.rb")
+      assert system("git -C #{dir} commit -q -m 'unpushed local work'") # HEAD now ahead of origin/main
+      File.write(File.join(dir, "from_release.rb"), "release-added\n")   # release-identical staged dirt
+      assert system("git -C #{dir} add from_release.rb")
+      head_before = `git -C #{dir} rev-parse HEAD`.strip
+
+      out = run_real_preflight(dir)
+
+      assert_includes out, "ABORTED", out
+      refute_includes out, "PASSED", out
+      refute_match(%r{auto-cleaning}, out, "an ahead HEAD is NEVER auto-cleaned")
+      assert_equal head_before, `git -C #{dir} rev-parse HEAD`.strip,
+                   "no reset ran — HEAD is unmoved and the unpushed commit is intact"
+      assert File.exist?(File.join(dir, "unpushed.rb")), "the unpushed local work survives"
     end
   end
 

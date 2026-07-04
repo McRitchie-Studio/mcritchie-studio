@@ -1958,6 +1958,10 @@ end
 # offender is returned untouched (never auto-cleanable, so no git is consulted).
 #   * main_ancestor_of_release — origin/main is an ancestor of origin/release, so a
 #     reset to origin/main drops no merged history.
+#   * head_at_origin_main — HEAD is an ancestor of origin/main (i.e. NOT ahead of
+#     it: no unpushed local commits). `git reset --hard origin/main` would ORPHAN
+#     any commit HEAD carries beyond origin/main, so an ahead HEAD must REFUSE — the
+#     files being on release says nothing about unpushed COMMITS.
 #   * unreconciled_files — the dirty files whose content is NOT already on
 #     origin/release (would be LOST by a reset). Empty ⇒ nothing local is lost.
 def reconcile_offender(offender)
@@ -1965,21 +1969,23 @@ def reconcile_offender(offender)
 
   path = repo_path(offender["repo"] || offender[:repo])
   _, ancestor = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/release", capture: true)
+  _, head_at_origin_main = sh("git", "-C", path, "merge-base", "--is-ancestor", "HEAD", "origin/main", capture: true)
   files = Array(offender["dirty_files"] || offender[:dirty_files])
   unreconciled = files.reject { |file| file_on_release?(path, file) }
   offender.merge(
     "reconcile_checked" => true,
     "main_ancestor_of_release" => ancestor,
+    "head_at_origin_main" => head_at_origin_main,
     "unreconciled_files" => unreconciled
   )
 end
 
 # True when `path`'s WORKING-TREE content of `file` is byte-identical to
 # origin/release's version — the safety test for auto-clean (nothing local is
-# lost). Compares git blob hashes, so an untracked-but-identical file reconciles
-# while a genuinely-new untracked file does not (its blob isn't on release). A file
-# that is UNTRACKED (a `git reset --hard` can't clear it), MISSING (a local delete
-# is a change not on release), or absent on release is NOT reconciled → refuse.
+# lost). REFUSES (returns false) any file that is UNTRACKED (a `git reset --hard`
+# can't clear it, and a genuinely-new file must never be discarded), MISSING (a
+# local delete is a change not on release), or absent on origin/release. Otherwise
+# compares git blob hashes: reconciled IFF the worktree blob equals origin/release's.
 def file_on_release?(path, file)
   _, tracked = sh("git", "-C", path, "ls-files", "--error-unmatch", "--", file, capture: true)
   return false unless tracked

@@ -195,6 +195,12 @@ class Release
     #   * main_ancestor_of_release — origin/main is strictly behind origin/release,
     #                             so resetting main to origin/main drops no merged
     #                             history (the ship ff re-applies release's commits),
+    #   * head_at_origin_main    — HEAD is NOT ahead of origin/main (no unpushed
+    #                             local commits). `git reset --hard origin/main`
+    #                             would ORPHAN any commit HEAD carries beyond
+    #                             origin/main; the dirty FILES being on release says
+    #                             nothing about unpushed COMMITS, so an ahead HEAD
+    #                             must REFUSE (never discard unpushed work),
     #   * dirty_files present AND unreconciled_files empty — EVERY dirty file's
     #                             content is already on origin/release, so the reset
     #                             discards only redundant copies; nothing local is lost.
@@ -203,6 +209,7 @@ class Release
       return false unless truthy(o["on_main"] || o[:on_main])
       return false unless truthy(o["reconcile_checked"] || o[:reconcile_checked])
       return false unless truthy(o["main_ancestor_of_release"] || o[:main_ancestor_of_release])
+      return false unless truthy(o["head_at_origin_main"] || o[:head_at_origin_main])
 
       dirty = Array(o["dirty_files"] || o[:dirty_files]).map(&:to_s).reject(&:empty?)
       unreconciled = Array(o["unreconciled_files"] || o[:unreconciled_files]).map(&:to_s).reject(&:empty?)
