@@ -41,7 +41,10 @@ class Release
     #
     # Idempotent AND crash-safe: a member already stamped `merged` ("release" OR
     # "main") is left untouched — sweep! never regresses a `merged: "main"`
-    # member (an interrupted Avi ship) back to "release". A member attached but
+    # member (an interrupted Avi ship) back to "release". That promise is
+    # absolute across releases: the short-circuit below covers CURRENT-release
+    # members, and Release#add refuses the main→release downgrade when a LATER
+    # release re-adopts a cross-release straggler. A member attached but
     # NOT yet merged-stamped (a pre-`merged`-field row, or a half-recorded batch)
     # is re-run through `add`, which heals the stamp.
     #

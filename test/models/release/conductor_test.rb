@@ -118,6 +118,23 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal Task::MERGED_MAIN, t.reload.merged, "sweep! must not undo the ff'd-to-main stamp"
   end
 
+  test "[unit] sweep! preserves merged:main on a CROSS-release straggler (re-adopt never downgrades)" do
+    # Unlike the test above, this straggler belongs to a PRIOR (terminal) release,
+    # so sweep!'s current-member short-circuit never fires — the no-downgrade
+    # guard in Release#add is what keeps the never-regress promise absolute.
+    prior = Release.open!
+    t = Task.create!(title: "prior cycle interrupted task", stage: "assembled",
+                     release_slug: prior.slug, merged: Task::MERGED_MAIN,
+                     metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    prior.update!(state: "shipped") # closed without flipping the member
+
+    rel = Release::Conductor.sweep!(t)
+
+    assert_equal rel.slug, t.reload.release_slug, "the straggler re-rides the new RC"
+    assert_equal Task::MERGED_MAIN, t.merged, "add's backstop keeps the ff'd-to-main stamp"
+    assert_equal "assembled", t.stage, "re-adoption still never moves the stage"
+  end
+
   test "[unit] sweep! heals an attached member missing its merged stamp (pre-field row)" do
     rel = Release.open!
     t = Task.create!(title: "legacy attached member task", stage: "reviewed", release_slug: rel.slug,

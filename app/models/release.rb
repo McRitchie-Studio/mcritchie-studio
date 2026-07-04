@@ -250,7 +250,15 @@ class Release < ApplicationRecord
       # signal: an interrupted Steffon skips re-merging a `merged: "release"`
       # task). See Task::MERGED_STATES. Stage is untouched: `reviewed` members
       # flip to `assembled` only on QA-green.
-      task.update!(release_slug: slug, merged: Task::MERGED_RELEASE)
+      #
+      # NEVER downgrade `merged: "main"` → "release". A cross-release straggler
+      # (an interrupted ship stamped it "main"; a LATER release re-adopts it via
+      # this path) is already fast-forwarded onto main — re-stamping "release"
+      # would claim it still waits on the release→main ff. sweep!'s own
+      # never-regress short-circuit only sees CURRENT-release members, so this
+      # is the backstop that keeps that promise absolute.
+      stamp = task.merged == Task::MERGED_MAIN ? Task::MERGED_MAIN : Task::MERGED_RELEASE
+      task.update!(release_slug: slug, merged: stamp)
     end
     task
   end

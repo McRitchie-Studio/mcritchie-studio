@@ -679,9 +679,9 @@ end
 # `release` branch. For each task: resolve its PR, verify its base is `release`,
 # `gh pr merge` it (SKIPPED for a task already `merged: release/main` — the
 # crash-recovery signal); then sweep ALL the tasks onto the active release in ONE
-# `heroku run` (membership + merged:"release"; stages stay `reviewed` — the
-# `assembled` flip is prepare's QA-green step). Conflicts surface here (at
-# PR-merge), not at deploy.
+# `heroku run` (membership + merged:"release"; stages don't move — the
+# `reviewed`→`assembled` flip is prepare's QA-green step, and an `assembled`
+# straggler keeps its stage). Conflicts surface here (at PR-merge), not at deploy.
 #
 # BATCHED (the per-PR cold-start fix): the OLD merge did a `gh pr merge` + a
 # cold-start `heroku run` record-op PER PR; 3 in a loop blew the 2-min tool
@@ -923,7 +923,8 @@ def merge
     # 6. BATCHED sweep: ALL landed slugs in ONE `heroku run` (single dyno
     #    spin-up, N membership writes). In `ensure` so a partial-failure batch
     #    still records the PRs that DID merge. A board WRITE → suppressed in
-    #    dry-run. Stages stay `reviewed` — prepare's QA-green flips them.
+    #    dry-run. Stages don't move here — prepare's QA-green flips `reviewed`
+    #    members to `assembled`; a swept straggler is already there.
     if swept.any?
       step("record: Release::Conductor.sweep! ×#{swept.size} in ONE run (#{swept.join(', ')})")
       @merge_result = conductor(batch_sweep_ruby(swept, override: override))
@@ -932,7 +933,7 @@ def merge
 
   result = @merge_result || {}
   say("")
-  say("✓ Swept #{swept.join(', ')} onto `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''} — stages stay `reviewed` until QA-green.")
+  say("✓ Swept #{swept.join(', ')} onto `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''} — stages don't move: `reviewed` members flip `assembled` at QA-green (assembled stragglers keep their stage).")
   say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` deploys QA and flips members `assembled` on green.") unless DRY || result.empty?
 end
 
@@ -961,7 +962,7 @@ end
 
 # The one-shot SWEEP write for prepare: open the candidate if none is active
 # (honoring an explicit --slug), sweep! every landed slug (membership +
-# merged:"release"; stages stay `reviewed`), validate the members, and return the
+# merged:"release"; stages don't move), validate the members, and return the
 # per-repo deploy plan — ONE `heroku run` for the whole batch. TRANSACTIONAL: a
 # validate_members! raise rolls the whole sweep back; the gh merges already
 # landed, but the next run self-heals (the gh-merge failure falls back to
@@ -1058,6 +1059,20 @@ def prepare
   cands  = detect["tasks"] || []
   active = detect["release"]
 
+  # 1b. --task is operator CURATION: every NAMED slug must survive detection. A
+  #     typo'd or ineligible slug (not `reviewed`, not an `assembled` straggler)
+  #     is filtered out BEFORE the screen ever sees it, so without this check it
+  #     would drop silently and the run could still end "✓" — a false success.
+  #     Fail loudly BEFORE anything merges or deploys.
+  if task_slugs.any?
+    missing = task_slugs - cands.map { |c| c["slug"] }
+    if missing.any?
+      abort!("--task slug(s) not sweepable: #{missing.join(', ')} — not in the reviewed queue or the " \
+             "assembled stragglers (typo? not yet `reviewed`?). Nothing was merged or deployed; " \
+             "fix the slug (or review the task), then re-run `bin/release prepare`.")
+    end
+  end
+
   # 2. IDEMPOTENT NO-OP: nothing to sweep and nothing in flight → report + stop
   #    (exit 0), never fabricate work. An ACTIVE release with no new candidates
   #    falls through — that's the self-healing re-run (deploy + flip what's
@@ -1073,8 +1088,10 @@ def prepare
     say("  sweep #{c['slug']} (#{c['stage']}#{at}) · #{c['repo']} · #{c['pr_url']}")
   end
 
-  # 2b. Review gate over the sweep list. Auto-detected candidates are sweepable
-  #     by construction (reviewed/assembled); this guards the --task list.
+  # 2b. Review gate over the sweep list — defense-in-depth. Auto-detected
+  #     candidates are sweepable by construction (reviewed/assembled), and a
+  #     --task slug that ISN'T a candidate already failed loudly at 1b (the
+  #     screen only ever sees surviving slugs, so it can't catch a dropped one).
   #     prepare has NO --override — use `bin/release merge --override` for an
   #     audited bypass, then re-run prepare.
   enforce_review_gate!(detect["screen"] || {}) if cands.any?
@@ -1363,8 +1380,12 @@ def prepare
     end
   end
   say("  #{left_reviewed.join(', ')} left `reviewed` (gh merge failed) — resolve + re-run, or `bin/task block` them.") if left_reviewed.any?
-  say("")
-  say("  Review the QA app(s) above, then hand off to Avi: `bin/release ship`.")
+  # The Avi handoff exists only on QA-green — a NOT-green prepare hands off to
+  # NOBODY (the step-8 warning already said: re-run prepare once QA boots).
+  if qa_green
+    say("")
+    say("  Review the QA app(s) above, then hand off to Avi: `bin/release ship`.")
+  end
   close_role_span(qa_green ? "assembled #{rel_slug} → QA" : "prepared #{rel_slug} — QA not green, members stay reviewed")
 rescue SystemExit
   # An abort mid-prepare closes the Steffon span with the abort outcome (best-effort)

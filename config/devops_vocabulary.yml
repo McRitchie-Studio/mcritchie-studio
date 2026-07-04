@@ -89,10 +89,10 @@ lanes:
         gate: "—"
       - type: merge
         label: Release Branch
-        expectation: "The self-healing sweep (bin/release prepare, looping the bin/release merge primitive) lands every reviewed task's PR in the persistent release branch and stamps merged: release — stages stay Reviewed until QA-green. A task already merged: release/main skips the gh merge (crash recovery)."
+        expectation: "The self-healing sweep (bin/release prepare, looping the bin/release merge primitive) lands every reviewed task's PR in the persistent release branch and stamps merged: release — stages don't move: Reviewed members flip to Assembled at QA-green, assembled stragglers keep their stage. A task already merged: release/main skips the gh merge (crash recovery)."
         gate: "review gate (only reviewed/assembled sweep); a conflict surfaces here — block-and-move, the rest ride"
       - type: test
-        label: Merge Review
+        label: Pre-QA Gate
         expectation: "Pre-QA gate: run the next tier (integration + an e2e-smoke, registry qa_test_cmd) on origin/release BEFORE deploying."
         gate: "regression ejects the offender (bin/release eject) — the rest of the RC rides the re-run"
       - type: merge

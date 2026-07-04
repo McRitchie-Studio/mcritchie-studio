@@ -65,6 +65,24 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal Task::MERGED_RELEASE, straggler.merged
   end
 
+  test "[unit] add never downgrades a merged:main straggler back to release (cross-release re-adopt)" do
+    # The interrupted-ship half-state: the prior cycle's ff stamped merged:"main"
+    # but the member never flipped `shipped`. When a LATER release re-adopts it,
+    # sweep!'s never-regress short-circuit can't see it (it only covers
+    # CURRENT-release members) — add itself must refuse the downgrade.
+    prior = Release.open!
+    straggler = Task.create!(title: "interrupted ship straggler task", stage: "assembled",
+                             release_slug: prior.slug, merged: Task::MERGED_MAIN)
+    prior.update!(state: "shipped") # the prior cycle closed without flipping it
+
+    rel = Release.open!
+    rel.add(straggler)
+
+    assert_equal rel.slug, straggler.reload.release_slug, "the straggler re-rides the new RC"
+    assert_equal Task::MERGED_MAIN, straggler.merged,
+                 "its code is already ff'd onto main — add must not re-stamp merged:release"
+  end
+
   test "add from an assembled RC auto-reopens, then adds (a late merge re-QAs)" do
     rel = Release.open!
     rel.assemble!

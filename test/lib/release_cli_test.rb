@@ -450,6 +450,61 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "QA-GREEN-CALL", "a dry run flips nothing"
   end
 
+  # --task names a slug detection DROPPED (typo, or neither `reviewed` nor an
+  # assembled straggler): the filter runs BEFORE the review-gate screen, so
+  # without the loud fail the slug vanished silently and the run could still end
+  # "✓". prepare must abort BEFORE any merge or deploy.
+  def test_prepare_task_flag_fails_loudly_when_a_named_slug_is_not_sweepable
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        { "tasks" => [
+            { "slug" => "task-real", "stage" => "reviewed", "merged" => "", "pr_url" => "https://gh/pr/9", "repo" => "mcritchie-studio" }
+          ],
+          "release" => nil,
+          "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
+      end
+    RUBY
+    out = run_cli(["--yes", "--task", "task-real", "--task", "task-typo"], setup: setup,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a dropped --task slug must abort — never a silent drop / false success"
+    assert_includes out, "task-typo", "the abort names the missing slug"
+    assert_includes out, "not sweepable", "the abort names the eligibility rule"
+    assert_includes out, "Nothing was merged or deployed", "the loud fail lands before any side effect"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "gh pr merge", "no PR merges after the loud fail"
+    refute_includes out, "bin/qa-server deploy", "no QA deploy after the loud fail"
+  end
+
+  # The surviving --task list still previews/sweeps normally (the loud fail only
+  # fires on a MISSING slug, not on curation itself).
+  def test_prepare_task_flag_sweeps_a_named_slug_that_survives_detection
+    out = run_cli(["--dry-run", "--task", "task-new"], call: "prepare", setup: SWEEP_FLOW_STUB)
+
+    assert_includes out, "sweep task-new (reviewed)", "the named survivor previews"
+    refute_includes out, "not sweepable", "no loud fail when every named slug survived"
+  end
+
+  # --- the Avi handoff line: printed on QA-green ONLY ---------------------------
+
+  def test_prepare_prints_the_avi_handoff_only_on_qa_green
+    out = run_cli(["--yes"], call: "prepare", setup: SWEEP_FLOW_STUB)
+
+    assert_includes out, "Assembled rel-sweep"
+    assert_includes out, "hand off to Avi: `bin/release ship`", "QA-green prepare hands the RC to Avi"
+  end
+
+  def test_prepare_omits_the_avi_handoff_when_qa_is_not_green
+    setup = SWEEP_FLOW_STUB + %(\ndef wait_for_boot(_url) = false)
+    out = run_cli(["--yes"], call: "prepare", setup: setup)
+
+    assert_includes out, "QA is NOT green", "the boot failure is reported"
+    assert_includes out, "Prepared (NOT assembled — QA not green)"
+    refute_includes out, "hand off to Avi",
+                    "a NOT-green prepare must not point at `bin/release ship` — there is nothing to ship yet"
+    refute_includes out, "QA-GREEN-CALL", "no flip on a QA-red prepare"
+  end
+
   # --- pre-QA gate: the prepare-owned test tier on origin/release --------------
 
   def test_prepare_dry_run_previews_the_pre_qa_gate_per_app

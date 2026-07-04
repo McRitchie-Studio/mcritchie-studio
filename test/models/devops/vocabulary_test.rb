@@ -77,6 +77,12 @@ class Devops::VocabularyTest < ActiveSupport::TestCase
     assert_match(/sweep/i, release_branch[:expectation], "the merge is the self-healing sweep's")
     assert_match(/merged: release/i, release_branch[:expectation], "the sweep stamps the crash-recovery git-location")
 
+    # The gate step's label matches its expectation — the "Merge Review"
+    # half-rename is gone (everything else calls this step the pre-QA gate).
+    pre_qa_gate = assemble[:steps].find { |step| step[:label] == "Pre-QA Gate" }
+    assert_not_nil pre_qa_gate, "the Assemble lane names its gate step Pre-QA Gate (not the retired Merge Review)"
+    assert_match(/pre-qa gate/i, pre_qa_gate[:expectation])
+
     # Assemble's Main Branch stays the reconciled merge-forward guard.
     main_branch = assemble[:steps].find { |step| step[:label] == "Main Branch" }
     assert_not_nil main_branch, "the Assemble lane's Main Branch step should still exist"
