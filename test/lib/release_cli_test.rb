@@ -1885,6 +1885,97 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "PASSED"
   end
 
+  # --- [integration] ship preflight auto-clean over a REAL git tree -----------
+  # The stubbed tests above cover the WIRING; this drives the DESTRUCTIVE seams for
+  # real — reconcile_offender → file_on_release? → autoclean_primary! (the actual
+  # `git reset --hard origin/main`) — against a temp primary checkout with real
+  # origin/main + origin/release refs. A boolean inversion in file_on_release? or a
+  # wrong ref in autoclean_primary! would silently reset a live primary and destroy
+  # un-merged work with the suite still green; this is the test that would catch it.
+  # NONE of the three seams are stubbed (only repo_path is redirected to the temp
+  # repo). Covers the full adversarial matrix the design claims to handle.
+
+  # A temp PRIMARY checkout on `main` with real remote-tracking refs: origin/release
+  # is AHEAD of origin/main (release ADDS from_release.rb; main is a clean ancestor).
+  # Yields the repo dir, with the working `main` reset to a clean origin/main.
+  def with_primary_repo
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      File.write(File.join(dir, "shared.rb"), "base\n")
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      git.call("add -A")
+      git.call("commit -q -m base")
+      git.call("branch -M main")
+      git.call("update-ref refs/remotes/origin/main HEAD")     # origin/main = base
+      File.write(File.join(dir, "from_release.rb"), "release-added\n")
+      git.call("add -A")
+      git.call("commit -q -m release")
+      git.call("update-ref refs/remotes/origin/release HEAD")  # origin/release ahead of main
+      git.call("reset --hard refs/remotes/origin/main")        # working main behind release, clean
+      yield dir
+    end
+  end
+
+  # Drive the REAL ship_preflight against `dir`: only repo_path is redirected; the
+  # reconcile / file_on_release? / reset seams all run for real. Returns the output.
+  def run_real_preflight(dir)
+    run_cli(["--yes"], setup: %(def repo_path(_repo) = #{dir.inspect}),
+            call: "begin; ship_preflight([{ 'repo' => 'mcritchie-studio' }]); puts('PASSED'); " \
+                  "rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+  end
+
+  def porcelain(dir)
+    IO.popen(["git", "-C", dir, "status", "--porcelain"], &:read).to_s.strip
+  end
+
+  def test_ship_preflight_real_git_autoclean_adversarial_matrix
+    # (1) A release-identical STAGED file → AUTO-CLEANED. The real `git reset --hard
+    #     origin/main` runs; the working tree ends clean and nothing is lost (the
+    #     discarded content still lives on origin/release, which the ship ff re-applies).
+    with_primary_repo do |dir|
+      File.write(File.join(dir, "from_release.rb"), "release-added\n") # byte-identical to origin/release
+      assert system("git -C #{dir} add from_release.rb")
+      out = run_real_preflight(dir)
+
+      assert_includes out, "PASSED", out
+      refute_includes out, "ABORTED", out
+      assert_match(%r{auto-cleaning with `git reset --hard origin/main`}, out, "the real reset path ran")
+      assert_equal "", porcelain(dir), "auto-clean leaves the working tree clean"
+      assert system("git -C #{dir} rev-parse --verify --quiet origin/release:from_release.rb >/dev/null"),
+             "nothing lost: the discarded content still lives on origin/release"
+    end
+
+    # (2) A genuinely-new UNTRACKED file mixed in with release-identical dirt → REFUSED.
+    #     NO reset runs, and the untracked local work survives intact.
+    with_primary_repo do |dir|
+      File.write(File.join(dir, "from_release.rb"), "release-added\n")
+      assert system("git -C #{dir} add from_release.rb")               # release-identical, staged
+      File.write(File.join(dir, "brand_new.rb"), "unmerged local work\n") # untracked, NOT on release
+      out = run_real_preflight(dir)
+
+      assert_includes out, "ABORTED", out
+      refute_includes out, "PASSED", out
+      refute_match(%r{auto-cleaning}, out, "no reset is attempted when any dirt is unreconciled")
+      assert_equal "unmerged local work\n", File.read(File.join(dir, "brand_new.rb")),
+                   "untracked local work is NEVER discarded — no reset ran"
+      assert File.exist?(File.join(dir, "from_release.rb")), "no reset ran, so the staged file also remains"
+    end
+
+    # (3) A locally-modified TRACKED file whose content is NOT on release → REFUSED.
+    #     The local modification survives (no reset).
+    with_primary_repo do |dir|
+      File.write(File.join(dir, "shared.rb"), "local hack not on release\n")
+      out = run_real_preflight(dir)
+
+      assert_includes out, "ABORTED", out
+      refute_includes out, "PASSED", out
+      assert_equal "local hack not on release\n", File.read(File.join(dir, "shared.rb")),
+                   "a tracked local change not on release survives — no reset ran"
+    end
+  end
+
   # --- regression: the silent swallowed-subprocess flake ------------------------
   #
   # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced — it
