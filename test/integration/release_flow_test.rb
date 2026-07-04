@@ -9,30 +9,34 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
                  metadata: { "devops" => { "shape" => "backend", "repositories" => [repo] } })
   end
 
-  test "persistent-release flow: adopt two merged tasks → prepare assembles → ship flips shipped" do
+  test "[integration] persistent-release flow: sweep two tasks → QA-green flips assembled → ship flips shipped" do
     a = app_reviewed("Release flow A")
     b = app_reviewed("Release flow B")
 
-    # PR for A merged INTO the persistent `release` branch → adopt! records
-    # membership + flips the task reviewed→assembled (the release stays open).
-    rel = Release::Conductor.adopt!(a)
+    # PR for A merged INTO the persistent `release` branch → sweep! records
+    # membership + merged:"release"; the STAGE stays reviewed until QA-green.
+    rel = Release::Conductor.sweep!(a)
     assert_equal "release", rel.branch # the persistent per-repo branch
     assert_equal "assembling", rel.state
     # PR for B merged later → the same active release absorbs it.
-    Release::Conductor.adopt!(b)
+    Release::Conductor.sweep!(b)
 
-    assert_equal %w[assembled assembled], [a.reload.stage, b.reload.stage]
+    assert_equal %w[reviewed reviewed], [a.reload.stage, b.reload.stage]
+    assert_equal %w[release release], [a.merged, b.merged]
     assert_equal [rel.slug, rel.slug], [a.release_slug, b.release_slug]
     assert_equal 2, rel.reload.tasks.count
 
-    # prepare assembles the active release (the QA gate); membership is NOT added
-    # here — it already flipped at merge.
+    # prepare re-sweeps (a no-op — both members carry merged:"release") and, on
+    # QA-green, flips the members assembled alongside the release.
     Release::Conductor.prepare!(task_slugs: [])
     assert_equal "assembled", rel.reload.state
+    assert_equal %w[assembled assembled], [a.reload.stage, b.reload.stage]
+    assert_equal 2, rel.tasks.count, "the self-healing sweep never duplicates membership"
 
     rel.ship!(by: "alex")
     assert_equal "shipped", rel.reload.state
     assert_equal %w[shipped shipped], [a.reload.stage, b.reload.stage]
+    assert_equal %w[main main], [a.merged, b.merged], "ship stamps the final git-location"
   end
 
   test "a mixed gem + app release plans the gem first (producer-first) with its version" do

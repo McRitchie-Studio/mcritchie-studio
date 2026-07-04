@@ -10,10 +10,15 @@
 # git + deploy mechanics around it and stops for human judgment on a merge
 # conflict (it never auto-resolves).
 #
-# The integration branch is now PERSISTENT: every repo keeps a single `release`
-# branch that feature PRs merge INTO. Membership flips reviewed→assembled AT
-# MERGE (`bin/release merge`); `prepare` just deploys `origin/release` to QA;
-# `ship` (later) fast-forwards `release` → `main`.
+# The integration branch is PERSISTENT: every repo keeps a single `release`
+# branch that feature PRs merge INTO. The souls BOOKEND the pipeline (2026-07-03):
+# Avi reviews (review-only, stops at `reviewed`) and ships; STEFFON owns the whole
+# middle — his self-healing `prepare` SWEEPS the reviewed queue (+ any assembled
+# stragglers) onto the candidate, merges their PRs into `release`, deploys QA,
+# and flips members `reviewed → assembled` ONLY on QA-green. The task's `merged`
+# column ("release"/"main"/nil) is the git-location crash-recovery signal: an
+# interrupted Steffon run skips re-merging a `merged: release` task; an
+# interrupted Avi run skips re-ff'ing a `merged: main` one.
 #
 # Usage:
 #   bin/release init [--dry-run]
@@ -21,33 +26,55 @@
 #     `origin/main` in every gem + app repo that doesn't already have one.
 #
 #   bin/release merge <task-slug> [<task-slug> ...] [--override] [--prod] [--dry-run]
-#     Record one-or-more PR merges INTO `release`: resolve every task's PR in ONE
-#     read, `gh pr merge` each UNIQUE PR once (base MUST be `release`), then adopt
-#     ALL task slugs in a SINGLE `heroku run` (reviewed→assembled, opening/reopening
-#     the candidate). Several task records can intentionally ride one PR.
-#     REVIEW-GATE GUARD: before any `gh pr merge`, every requested task must be in
-#     the `reviewed` stage — a not-yet-reviewed task ABORTS the whole run (naming
-#     which task is in which stage), so an unreviewed PR can't be merged onto
-#     `release` by accident. `--override` is the explicit escape hatch: it merges a
-#     not-yet-reviewed task anyway AND records a `review_bypassed` event on the task's
-#     audit spine (the same spine `bin/task move` writes) — the bypass is never silent.
+#     The per-task SWEEP primitive (prepare runs this same sweep for the whole
+#     queue): resolve every task's PR in ONE read, `gh pr merge` each UNIQUE PR
+#     once (base MUST be `release`; a task already `merged: release/main` SKIPS
+#     the gh merge — crash recovery), then sweep ALL task slugs in a SINGLE
+#     `heroku run` (membership + merged:"release"; the STAGE stays `reviewed` —
+#     it flips to `assembled` only on prepare's QA-green). Several task records
+#     can intentionally ride one PR.
+#     REVIEW-GATE GUARD: before any `gh pr merge`, every requested task must be
+#     sweepable (`reviewed`, or an `assembled` straggler) — anything else ABORTS
+#     the whole run (naming which task is in which stage). `--override` is the
+#     explicit escape hatch: it sweeps the task anyway AND records a
+#     `review_bypassed` event on the task's audit spine (the same spine `bin/task
+#     move` writes) — the bypass is never silent.
 #     With ≥2 slugs it first prints an overlap planner (colliding files +
-#     suggested order + likely rebases; warning-only). The batched adopt runs in
+#     suggested order + likely rebases; warning-only). The batched sweep runs in
 #     an `ensure`, so a PR that merged is recorded even if a later merge aborts.
 #
 #   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
-#     Assemble the active release + deploy it to QA. Keeps each app's `release`
-#     branch ahead of main (merge-forward guard), then `bin/qa-server deploy
-#     <qa_app> origin/release`. No branch-cut/member-merge here — that happened at
-#     PR-merge time. `--task` is operator curation (adopt named tasks first). Once
-#     each QA dyno boots, runs any member's `devops.post_deploy_cmd` on its QA app
-#     (`heroku run`, records [post-deploy] to checks_run, aborts on non-zero).
-#     Ends with the RC assembled — review the QA app(s), then ship.
+#     Steffon's SELF-HEALING qa-deploy — the whole middle of the pipeline:
+#       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
+#          riding the current RC (nothing + no active release → idempotent no-op).
+#       2. Ensure a candidate exists (Release.current_or_open!).
+#       3. SWEEP: `gh pr merge` each detected task's PR into its repo's `release`
+#          (skipping tasks already `merged: release/main` — crash recovery), then
+#          record membership + merged:"release" in ONE `heroku run`. Stages stay
+#          `reviewed`.
+#       4. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
+#          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
+#          with eject guidance (`bin/release eject` the offender, keep the rest).
+#       5. Deploy origin/release to QA (merge-forward guard → qa-server deploy →
+#          wait-for-boot /up smoke → post_deploy hooks).
+#       6. QA-GREEN → flip the swept members `reviewed → assembled`
+#          (Release::Conductor.qa_green!; merged stays "release") + assemble the
+#          RC. A QA failure leaves them `reviewed` — the next run self-heals.
+#     `--task` narrows the sweep to the named slugs (operator curation).
+#
+#   bin/release eject <task-slug> [--feedback "…"] [--prod] [--dry-run]
+#     BLOCK-ON-REGRESSION: pull ONE offending task off the candidate (the pre-QA
+#     gate caught it) — detaches it (release_slug + merged cleared) and blocks it
+#     for rework with the feedback note, leaving the REST of the RC riding. Then
+#     revert its merge commit on `release` (printed guidance) and re-run
+#     `bin/release prepare`.
 #
 #   bin/release ship [--by NAME] [--prod] [--dry-run]
-#     Promotes the assembled RC to production: ff main → release branch, push
-#     origin, deploy to Heroku, smoke /up, run any member's post_deploy_cmd on the
-#     PROD app (aborts on non-zero), stamp deployed_sha + flip to shipped.
+#     Avi's production-deploy: promotes the QA-green (assembled) RC to production:
+#     ff main → release branch per repo, push origin (stamping each repo's members
+#     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
+#     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
+#     stamp deployed_sha + flip to shipped (shipped+main = done).
 #
 #   bin/release archive [--prod] [--dry-run] [--yes]
 #     The DevOps loop's CONCLUSION (shipped → archived): archive every shipped
@@ -104,6 +131,9 @@ require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
+# SweepPlan is the pure per-task sweep decision (merge / crash-recovery skip /
+# unmergeable) behind prepare's self-healing sweep + merge's skip. Rails-free.
+require_relative "../app/models/release/sweep_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
 # CleanCheck is the pure verdict behind the `Deploy with Task` clean-release GUARD
@@ -645,54 +675,67 @@ def init
 end
 
 # --- merge -----------------------------------------------------------------
-# Record one-or-more PR merges INTO the persistent `release` branch. For each
-# task: resolve its PR, verify its base is `release`, `gh pr merge` it; then adopt
-# ALL the merged tasks onto the active release in ONE `heroku run` (reviewed→
-# assembled). This is the conductor's membership-at-merge command — conflicts
-# surface here (at PR-merge), not in prepare.
+# The per-task SWEEP primitive: record one-or-more PR merges INTO the persistent
+# `release` branch. For each task: resolve its PR, verify its base is `release`,
+# `gh pr merge` it (SKIPPED for a task already `merged: release/main` — the
+# crash-recovery signal); then sweep ALL the tasks onto the active release in ONE
+# `heroku run` (membership + merged:"release"; stages stay `reviewed` — the
+# `assembled` flip is prepare's QA-green step). Conflicts surface here (at
+# PR-merge), not at deploy.
 #
 # BATCHED (the per-PR cold-start fix): the OLD merge did a `gh pr merge` + a
-# cold-start `heroku run` adopt PER PR; 3 in a loop blew the 2-min tool timeout
-# and a mid-run timeout left a PR merged but its task stuck `reviewed`. Now the
-# resolve is ONE read and the adopts are ONE write (single dyno spin-up, N flips),
-# and the adopt runs in an `ensure` so any PR that merged is recorded even if a
-# later step aborts — the half-state can't recur. Single-slug stays identical.
+# cold-start `heroku run` record-op PER PR; 3 in a loop blew the 2-min tool
+# timeout and a mid-run timeout left a PR merged but its task unrecorded. Now the
+# resolve is ONE read and the sweeps are ONE write (single dyno spin-up), and the
+# sweep runs in an `ensure` so any PR that merged is recorded even if a later
+# step aborts. If the record write STILL dies post-merge, the next run's gh-merge
+# failure falls back to pr_merged? (the PR state read), so the half-state
+# self-heals rather than wedging.
 
-# The one-shot read snippet that resolves EVERY merge slug's PR AND runs the
-# review-gate screen in a SINGLE conductor call (one heroku-run spin-up for the
-# whole batch). Pure string builder (slugs are alnum/hyphen, safe under .inspect —
-# same as the existing single-slug `slug.inspect` literals; `override` is a bare
-# bool literal). The screen is a PURE read (Release::Conductor.screen_merge writes
-# nothing), so it's safe inside this read-only resolve and previews under --dry-run.
-# Emits ONE JSON line:
-#   { "tasks": [ { slug, pr_url, repo, stage } | { slug, missing: true } ],
+# The one-shot read snippet that resolves EVERY merge slug's PR + `merged`
+# git-location AND runs the review-gate screen in a SINGLE conductor call (one
+# heroku-run spin-up for the whole batch). Pure string builder (slugs are
+# alnum/hyphen, safe under .inspect — same as the existing single-slug
+# `slug.inspect` literals; `override` is a bare bool literal). The screen is a
+# PURE read (Release::Conductor.screen_merge writes nothing), so it's safe inside
+# this read-only resolve and previews under --dry-run. Emits ONE JSON line:
+#   { "tasks": [ { slug, pr_url, repo, stage, merged } | { slug, missing: true } ],
 #     "screen": { rows:[…], blocked:[…], overridden:[…], missing:[…], proceed: } }
 def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
-  "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage } " \
+  "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage, merged: t.merged.to_s } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
   "puts({ tasks: rows, screen: screen }.to_json)"
 end
 
-# The one-shot write snippet that adopts EVERY merged slug in a SINGLE `heroku
-# run` — N reviewed→assembled flips on one dyno, instead of a cold `heroku run`
-# per PR. adopt! is idempotent/self-healing (see Release::Conductor), so a re-run
-# is safe. `override` threads the audited review-gate bypass through to adopt! —
-# harmless for already-`reviewed` members (records no skip), and for an unreviewed
-# member it both attaches it AND stamps the `review_bypassed` audit event.
-# `usage_map` ({ slug => {model, tokens_in, tokens_out, cost} }, captured locally
-# by move_usage_map) rides each flip's assembled TaskEvent via adopt!(usage:); a
-# slug absent from the map records the deterministic spine only.
-# Emits ONE JSON line: { "adopted": [...], "slug": <last release>, "state" }.
-def batch_adopt_ruby(slugs, usage_map = {}, override: false)
+# The one-shot write snippet that sweeps EVERY slug in a SINGLE `heroku run` — N
+# membership writes on one dyno, instead of a cold `heroku run` per PR. sweep! is
+# idempotent/crash-safe (see Release::Conductor: an already-`merged` member is
+# untouched, never regressed), so a re-run is safe. `override` threads the
+# audited review-gate bypass through to sweep! — harmless for already-sweepable
+# members (records no skip); an unreviewed member is flipped to `reviewed` with
+# the `review_bypassed` audit event stamped on that transition. No usage map:
+# the sweep writes NO stage transition (the reviewed→assembled flip — and its
+# usage capture — happens at prepare's QA-green step).
+# Emits ONE JSON line: { "swept": [...], "slug": <last release>, "state" }.
+def batch_sweep_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
-  "usage = #{usage_map.inspect}; " \
-  "results = slugs.map { |s| r = Release::Conductor.adopt!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}, usage: usage[s]); " \
+  "results = slugs.map { |s| r = Release::Conductor.sweep!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}); " \
   "{ task: s, release: r.slug, state: r.state } }; " \
   "last = results.last; " \
-  "puts({ adopted: results, slug: (last && last[:release]), state: (last && last[:state]) }.to_json)"
+  "puts({ swept: results, slug: (last && last[:release]), state: (last && last[:state]) }.to_json)"
+end
+
+# Is this PR already merged on GitHub? The gh-side crash-recovery read: when a
+# prior run merged the PR but died before the record write (so `merged` is still
+# nil), the next run's `gh pr merge` fails — this read distinguishes "already
+# merged, carry on" from a genuine merge failure. Read-only; goes straight to
+# Open3 (runs even in --dry-run, like gh_pr_files).
+def pr_merged?(pr_url)
+  out, status = Open3.capture2e("gh", "pr", "view", pr_url, "--json", "state", "-q", ".state")
+  status.success? && out.strip == "MERGED"
 end
 
 # A PR's changed-file paths (read-only; goes straight to Open3 so it runs even in
@@ -740,7 +783,7 @@ def merge_overlap_report(infos)
 end
 
 # Multiple task-board records can legitimately point at the same PR. Merge/check
-# each PR once, then adopt every associated task slug after that PR lands.
+# each PR once, then sweep every associated task slug after that PR lands.
 def merge_pr_groups(infos)
   Array(infos).group_by { |info| info["pr_url"].to_s }.map do |pr_url, group|
     slugs = group.map { |info| info["slug"].to_s }.reject(&:empty?)
@@ -761,14 +804,16 @@ def merge_pr_group_label(slugs)
   "#{list.first} (+#{list.size - 1} #{list.size == 2 ? 'task' : 'tasks'})"
 end
 
-# Review-gate guard for `bin/release merge`. The DECISION (which slugs are
-# blocked vs overridden) is Release::Conductor.screen_merge's — this only renders
-# it: it ABORTS the whole run when any requested task isn't `reviewed` (and no
-# --override), naming exactly which task is in which stage and how to override; or
-# prints a loud OVERRIDE banner for the bypassed tasks (whose skip adopt! records
-# on the audit spine). A `nil`/empty screen (e.g. a stub-less dry preview) is a
-# no-op. Both lists carry the offending task's actual stage, pulled from screen
-# rows, so the operator sees "task X is in stage Y" without re-reading the board.
+# Review-gate guard for the sweep (`bin/release merge` + `prepare`). The
+# DECISION (which slugs are blocked vs overridden) is
+# Release::Conductor.screen_merge's — this only renders it: it ABORTS the whole
+# run when any requested task isn't sweepable (`reviewed`, or an `assembled`
+# straggler) and no --override was given, naming exactly which task is in which
+# stage and how to override; or prints a loud OVERRIDE banner for the bypassed
+# tasks (whose skip sweep! records on the audit spine). A `nil`/empty screen
+# (e.g. a stub-less dry preview) is a no-op. Both lists carry the offending
+# task's actual stage, pulled from screen rows, so the operator sees "task X is
+# in stage Y" without re-reading the board.
 def enforce_review_gate!(screen)
   rows  = Array(screen["rows"])
   stage = ->(slug) { (rows.find { |r| r["slug"] == slug } || {})["stage"] || "unknown" }
@@ -776,8 +821,8 @@ def enforce_review_gate!(screen)
   blocked = Array(screen["blocked"])
   if blocked.any?
     named = blocked.map { |slug| "#{slug} (#{stage.call(slug)})" }.join(", ")
-    abort!("review gate: #{named} #{blocked.size == 1 ? 'is' : 'are'} not `reviewed` — " \
-           "get the PR(s) through review first, or pass --override to merge anyway " \
+    abort!("review gate: #{named} #{blocked.size == 1 ? 'is' : 'are'} not sweepable (`reviewed`/`assembled`) — " \
+           "get the PR(s) through review first, or pass --override to sweep anyway " \
            "(the skip is recorded as a `review_bypassed` audit event).")
   end
 
@@ -785,7 +830,7 @@ def enforce_review_gate!(screen)
   return if overridden.empty?
 
   named = overridden.map { |slug| "#{slug} (#{stage.call(slug)})" }.join(", ")
-  say("  ⚠ OVERRIDE: merging #{named} past the review gate — recording a `review_bypassed` audit event per task.")
+  say("  ⚠ OVERRIDE: sweeping #{named} past the review gate — recording a `review_bypassed` audit event per task.")
 end
 
 def merge
@@ -796,37 +841,53 @@ def merge
   slugs = Release::Cli.positional_slugs(ARGV)
   abort!("usage: bin/release merge <task-slug> [<task-slug> ...] [--override]") if slugs.empty?
 
-  say("Merge #{slugs.join(', ')} into `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{override ? ' (OVERRIDE)' : ''}#{DRY ? ' — DRY RUN' : ''}")
+  say("Sweep #{slugs.join(', ')} onto `#{RELEASE_BRANCH}`#{PROD ? ' (PROD board)' : ' (local)'}#{override ? ' (OVERRIDE)' : ''}#{DRY ? ' — DRY RUN' : ''}")
 
-  # 1. Resolve ALL the tasks' PRs AND run the review-gate screen in ONE read (one
-  #    heroku-run spin-up for the whole batch; a read — runs even in dry-run).
+  # 1. Resolve ALL the tasks' PRs + `merged` git-location AND run the review-gate
+  #    screen in ONE read (one heroku-run spin-up for the whole batch; a read —
+  #    runs even in dry-run).
   step("record (read-only): resolve #{slugs.size} task PR(s)")
   resolved = conductor(batch_resolve_ruby(slugs, override: override), read_only: true)
   infos = resolved["tasks"] || []
 
   missing = infos.select { |i| i["missing"] }.map { |i| i["slug"] }
   abort!("task(s) not found on the board: #{missing.join(', ')}") if missing.any?
-  no_pr = infos.select { |i| i["pr_url"].to_s.empty? }.map { |i| i["slug"] }
-  abort!("task(s) have no PR url (devops.pr_url) — set it before merging: #{no_pr.join(', ')}") if no_pr.any?
-  infos.each { |i| say("  task #{i['slug']} (#{i['stage']}) · #{i['repo']} · #{i['pr_url']}") }
+  infos.each do |i|
+    at = i["merged"].to_s.empty? ? "" : " · merged: #{i['merged']}"
+    say("  task #{i['slug']} (#{i['stage']}#{at}) · #{i['repo']} · #{i['pr_url']}")
+  end
 
   # 1b. REVIEW-GATE GUARD (the decision lives in Release::Conductor.screen_merge;
-  #     this only prints + aborts). Runs BEFORE any `gh pr merge`: a not-yet-
-  #     `reviewed` task ABORTS the whole run unless --override is given. With
-  #     --override, the offending tasks proceed but the skip is recorded as a
-  #     `review_bypassed` audit event when adopt! flips them (step 5).
+  #     this only prints + aborts). Runs BEFORE any `gh pr merge`: an unsweepable
+  #     task ABORTS the whole run unless --override is given. With --override,
+  #     the offending tasks proceed but the skip is recorded as a
+  #     `review_bypassed` audit event when sweep! flips them to `reviewed`.
   enforce_review_gate!(resolved["screen"] || {})
 
-  # 2. Overlap planner (warning only) — BEFORE any merge, so the operator sees the
-  #    file collisions + suggested order first.
-  pr_groups = merge_pr_groups(infos)
-  if pr_groups.size < infos.size
-    say("  #{infos.size} task(s) map to #{pr_groups.size} unique PR(s); each PR will be checked and merged once.")
+  # 2. The SWEEP PLAN (pure: Release::SweepPlan): which PRs still need a
+  #    `gh pr merge`, which tasks SKIP it (`merged: release/main` — an
+  #    interrupted prior run; never re-merge), and which have nothing to merge.
+  #    For this EXPLICIT command an unmergeable task (no PR url, nothing merged)
+  #    is a hard abort — the operator named it; silently dropping it would lie.
+  plan = Release::SweepPlan.compute(infos)
+  if plan["unmergeable"].any?
+    abort!("task(s) have no PR url (devops.pr_url) — set it before merging: #{plan['unmergeable'].join(', ')}")
+  end
+  plan["skip"].each do |row|
+    step("skip gh pr merge for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
+  end
+
+  # 3. Overlap planner (warning only) over the PRs that WILL merge — BEFORE any
+  #    merge, so the operator sees the file collisions + suggested order first.
+  to_merge  = infos.select { |i| i["merged"].to_s.empty? }
+  pr_groups = merge_pr_groups(to_merge)
+  if pr_groups.size < to_merge.size
+    say("  #{to_merge.size} task(s) map to #{pr_groups.size} unique PR(s); each PR will be checked and merged once.")
   end
   merge_overlap_report(pr_groups)
 
-  # 3. Verify EVERY PR's base is `release` up front (fail-fast: nothing merged
-  #    yet, so a wrong base can't leave a half-merged batch).
+  # 4. Verify EVERY to-merge PR's base is `release` up front (fail-fast: nothing
+  #    merged yet, so a wrong base can't leave a half-merged batch).
   pr_groups.each do |info|
     pr_url = info["pr_url"]
     base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
@@ -839,96 +900,294 @@ def merge
     end
   end
 
-  # 4. Merge each PR (bases verified). Track which actually merged so the BATCHED
-  #    adopt (step 5, in `ensure`) records every merged PR even if a later merge
-  #    aborts — closing the "PR merged, task stuck reviewed" half-state for good.
-  merged = []
+  # 5. Merge each PR (bases verified). Track everything merged-or-skipped so the
+  #    BATCHED sweep (step 6, in `ensure`) records every landed PR even if a
+  #    later merge aborts — the "PR merged, task unrecorded" half-state can't
+  #    stick. A gh-merge failure falls back to pr_merged?: the PR may have merged
+  #    on a prior interrupted run whose record write died (`merged` still nil).
+  swept = plan["skip"].map { |row| row["slug"] }
   begin
     pr_groups.each do |info|
       pr_url = info["pr_url"]
       step("gh pr merge #{pr_url} --merge")
       _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
+      if !ok && !DRY && pr_merged?(pr_url)
+        say("  ↷ #{pr_url} already merged on GitHub (interrupted prior run) — continuing to the record step")
+        ok = true
+      end
       abort!("gh pr merge failed for #{pr_url} (#{info['slug']}) — resolve on GitHub (conflicts/checks), " \
              "then re-run `bin/release merge` for the remaining slug(s).") unless ok || DRY
-      merged.concat(info["slugs"])
+      swept.concat(info["slugs"])
     end
   ensure
-    # 5. BATCHED adopt: ALL merged slugs in ONE `heroku run` (single dyno spin-up,
-    #    N flips) — the core fix. In `ensure` so a partial-failure batch still
-    #    records the PRs that DID merge. A board WRITE → suppressed in dry-run.
-    if merged.any?
-      step("record: Release::Conductor.adopt! ×#{merged.size} in ONE run (#{merged.join(', ')})")
-      @merge_result = conductor(batch_adopt_ruby(merged, move_usage_map(merged), override: override))
+    # 6. BATCHED sweep: ALL landed slugs in ONE `heroku run` (single dyno
+    #    spin-up, N membership writes). In `ensure` so a partial-failure batch
+    #    still records the PRs that DID merge. A board WRITE → suppressed in
+    #    dry-run. Stages stay `reviewed` — prepare's QA-green flips them.
+    if swept.any?
+      step("record: Release::Conductor.sweep! ×#{swept.size} in ONE run (#{swept.join(', ')})")
+      @merge_result = conductor(batch_sweep_ruby(swept, override: override))
     end
   end
 
   result = @merge_result || {}
   say("")
-  say("✓ Merged #{merged.join(', ')} into `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
-  say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` to QA it.") unless DRY || result.empty?
+  say("✓ Swept #{swept.join(', ')} onto `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''} — stages stay `reviewed` until QA-green.")
+  say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` deploys QA and flips members `assembled` on green.") unless DRY || result.empty?
 end
 
-# --- prepare ---------------------------------------------------------------
+# --- prepare (Steffon's self-healing qa-deploy) ------------------------------
+
+# The one-shot DETECTION read: every `reviewed` task + any `assembled` straggler
+# off the current RC — each with its PR url, repo, and `merged` git-location —
+# plus the review-gate screen over exactly those slugs and the current release.
+# `only_slugs` (from --task) narrows the sweep to the named tasks. A PURE read
+# (sweep_candidates + screen_merge write nothing), so it previews under
+# --dry-run. Emits ONE JSON line:
+#   { "tasks": [{slug, stage, merged, pr_url, repo}], "release": {slug,state}|null,
+#     "screen": { rows:[…], blocked:[…], … } }
+def sweep_detect_ruby(only_slugs)
+  only = only_slugs.empty? ? "nil" : only_slugs.inspect
+  "only = #{only}; " \
+  "c = Release::Conductor.sweep_candidates; " \
+  "tasks = c['reviewed'] + c['stragglers']; " \
+  "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
+  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: t.merged.to_s, " \
+  "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s } }; " \
+  "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
+  "r = Release.current; " \
+  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
+end
+
+# The one-shot SWEEP write for prepare: open the candidate if none is active
+# (honoring an explicit --slug), sweep! every landed slug (membership +
+# merged:"release"; stages stay `reviewed`), validate the members, and return the
+# per-repo deploy plan — ONE `heroku run` for the whole batch. TRANSACTIONAL: a
+# validate_members! raise rolls the whole sweep back; the gh merges already
+# landed, but the next run self-heals (the gh-merge failure falls back to
+# pr_merged?). Emits ONE JSON line: { slug, state, swept, repos }.
+def batch_sweep_with_plan_ruby(slugs, release_slug = nil)
+  open_ruby = release_slug ? "Release.open!(slug: #{release_slug.inspect}) if Release.current.nil?; " : ""
+  "result = Release.transaction { #{open_ruby}" \
+  "slugs = #{slugs.inspect}; " \
+  "slugs.each { |s| Release::Conductor.sweep!(Task.find_by!(slug: s)) }; " \
+  "r = Release.current_or_open!; " \
+  "Release::Conductor.validate_members!(r); " \
+  "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r) } }; " \
+  "puts(result.to_json)"
+end
+
+# The pre-QA gate command an app registers in config/release_repos.yml
+# (`qa_test_cmd`) — the integration + e2e-smoke tier prepare owns
+# (Release::STEP_TEST_TIERS["prepare"]). "" = not registered → the repo
+# self-gates (its suite runs at ship's test_cmd / its own deploy) and the gate
+# skips it.
+def qa_gate_cmd(repo) = app_meta_for(repo)["qa_test_cmd"].to_s
+
+# PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
+# origin/release BEFORE anything deploys to QA, so a regression riding the
+# release branch is caught while the members are still `reviewed` (nothing
+# flipped, nothing deployed). The sibling checkout is brought onto `release` at
+# origin/release for the run and ALWAYS restored to `main` (ensure) — ship's
+# clean-main preflight depends on it. A red gate aborts the WHOLE prepare with
+# eject guidance: block the offender OUT of the RC (`bin/release eject`), revert
+# its merge commit on `release`, then re-run — the sweep self-heals and the REST
+# of the RC rides on. Apps with no qa_test_cmd are skipped (self-gating).
+def pre_qa_gate(app_groups)
+  say("")
+  step("pre-QA gate: integration + e2e-smoke on origin/#{RELEASE_BRANCH} (before any QA deploy)")
+  app_groups.each do |group|
+    repo = group["repo"]
+    cmd  = qa_gate_cmd(repo)
+    if cmd.empty?
+      say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
+      next
+    end
+    if DRY
+      say("  [dry-run] pre-QA gate #{repo}: (cd #{repo}) #{cmd} @ origin/#{RELEASE_BRANCH}")
+      next
+    end
+
+    path = repo_path(repo)
+    abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
+    sh("git", "-C", path, "fetch", "origin", "--quiet")
+    ok = false
+    begin
+      _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
+      abort!("could not checkout #{RELEASE_BRANCH} in #{repo} for the pre-QA gate (dirty tree?) — clean it, then re-run") unless co
+      _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
+      abort!("could not ff #{repo} #{RELEASE_BRANCH} to origin/#{RELEASE_BRANCH} (local divergence) — resolve, then re-run") unless ff
+      step("pre-QA gate #{repo}: #{cmd}")
+      _, ok = sh(*cmd.split, chdir: path)
+    ensure
+      sh("git", "-C", path, "checkout", "main", capture: true)
+    end
+    next if ok
+
+    abort!("pre-QA gate failed for #{repo} (#{cmd}) — a regression is riding origin/#{RELEASE_BRANCH}. " \
+           "Identify the offending task, eject it (`bin/release eject <task> --feedback \"…\"`), revert its " \
+           "merge commit on `#{RELEASE_BRANCH}` (git revert -m 1 <merge-sha>; push), then re-run " \
+           "`bin/release prepare` — the sweep self-heals and the REST of the RC rides on.")
+  end
+end
+
 def prepare
   task_slugs = opt_values("--task")
   slug = opt_value("--slug")
 
-  say("Prepare release#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  say("Prepare release — Steffon qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
-  # On the prod default a non-dry prepare fires a REAL `bin/qa-server deploy`, so
-  # gate it like `ship` does. confirm returns true under --yes (hands-off) and
-  # --dry-run (previews nothing-executed), so both bypass the prompt.
-  return unless confirm("Prepare the current release — assemble + deploy origin/#{RELEASE_BRANCH} to QA?")
+  # On the prod default a non-dry prepare fires REAL `gh pr merge`s + a REAL
+  # `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
+  # under --yes (hands-off) and --dry-run (previews nothing-executed).
+  return unless confirm("Prepare the current release — sweep reviewed work onto `#{RELEASE_BRANCH}` + deploy QA?")
 
-  # Deploy-lane narration: Steffon assembles the RC + deploys it to QA. Open a role
-  # span so the heartbeat attributes this phase to him (matching the board's stage
-  # timeline). Best-effort — see the narrate helpers. `steffon_span` gates the close
-  # in the rescue so an abort BEFORE this point never emits a stray `end`.
-  open_role_span("steffon", "assemble → deploy RC to QA")
+  # Deploy-lane narration: Steffon owns the whole middle — sweep, QA deploy, and
+  # the QA-green flip. Open a role span so the heartbeat attributes this phase to
+  # him (matching the board's stage timeline). Best-effort — see the narrate
+  # helpers. `steffon_span` gates the close in the rescue so an abort BEFORE this
+  # point never emits a stray `end`.
+  open_role_span("steffon", "sweep → deploy RC to QA")
   steffon_span = true
 
-  # 1. Record: CURATE the active release (adopt any explicit --task first), then
-  #    read the per-REPO deploy plan (producer-first; one group per repo). The
-  #    assemble is DEFERRED to step 4 — after wait_for_boot confirms QA is up — so
-  #    a slow dyno can't leave the RC flipped `assembled` against an app that
-  #    isn't serving (the /up-smoke race). Curation is a board WRITE → suppressed
-  #    in --dry-run; the plan READ runs even in dry-run (read_only:) so a dry-run
-  #    previews the REAL plan against the current release without mutating
-  #    anything. Membership comes from PR merges (`bin/release merge`), not prepare.
-  if DRY
-    step("record (read-only preview): Release::Conductor.repo_plan(Release.current)")
-    record_ruby = "r = Release.current"
-  else
-    slugs_ruby = task_slugs.empty? ? "[]" : task_slugs.inspect
-    step("record: Release::Conductor.curate! (assemble deferred until QA boots)")
-    record_ruby = "r = Release::Conductor.curate!(task_slugs: #{slugs_ruby}, slug: #{slug.inspect})"
+  # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
+  #    stragglers with their PR/merged state, the review-gate screen, and the
+  #    current release. `--task` narrows the sweep (operator curation).
+  step("record (read-only): Release::Conductor.sweep_candidates + screen")
+  detect = conductor(sweep_detect_ruby(task_slugs), read_only: true)
+  cands  = detect["tasks"] || []
+  active = detect["release"]
+
+  # 2. IDEMPOTENT NO-OP: nothing to sweep and nothing in flight → report + stop
+  #    (exit 0), never fabricate work. An ACTIVE release with no new candidates
+  #    falls through — that's the self-healing re-run (deploy + flip what's
+  #    already swept).
+  if cands.empty? && active.nil?
+    say("")
+    say("✓ Nothing to prepare — no reviewed work, no assembled stragglers, no active release (idempotent no-op).")
+    close_role_span("qa-deploy no-op — nothing to prepare")
+    return
   end
-  result = conductor(
-    "#{record_ruby}; " \
-    "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r) } : {}).to_json)",
-    read_only: DRY
-  )
+  cands.each do |c|
+    at = c["merged"].to_s.empty? ? "" : " · merged: #{c['merged']}"
+    say("  sweep #{c['slug']} (#{c['stage']}#{at}) · #{c['repo']} · #{c['pr_url']}")
+  end
+
+  # 2b. Review gate over the sweep list. Auto-detected candidates are sweepable
+  #     by construction (reviewed/assembled); this guards the --task list.
+  #     prepare has NO --override — use `bin/release merge --override` for an
+  #     audited bypass, then re-run prepare.
+  enforce_review_gate!(detect["screen"] || {}) if cands.any?
+
+  # 3. SWEEP PLAN (pure: Release::SweepPlan): which PRs need a `gh pr merge`,
+  #    which tasks SKIP it (`merged: release/main` — an interrupted prior run),
+  #    and which can't merge yet. Unlike the explicit `merge` command, an
+  #    unmergeable task here is WARNED + left `reviewed` (it sweeps on a later
+  #    run once its PR url lands) — self-healing never aborts on it.
+  plan = Release::SweepPlan.compute(cands)
+  plan["unmergeable"].each do |s|
+    say("  ⚠ #{s}: no PR url (devops.pr_url) and nothing merged — left `reviewed` for a later sweep")
+  end
+  plan["skip"].each do |row|
+    step("skip gh pr merge for #{row['slug']} — already merged: #{row['merged']} (crash recovery)")
+  end
+
+  # 4. gh-merge the PRs that need it (bases verified fail-fast), sweeping past a
+  #    conflicted PR (block-and-move: it stays `reviewed`, the rest ride). The
+  #    batched record write runs in an `ensure`, so every PR that DID land is
+  #    recorded (+ validated + planned) even if a later step aborts.
+  to_merge  = cands.select { |c| c["merged"].to_s.empty? && !c["pr_url"].to_s.empty? }
+  pr_groups = merge_pr_groups(to_merge)
+  merge_overlap_report(pr_groups)
+  pr_groups.each do |info|
+    pr_url = info["pr_url"]
+    base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
+    base = base.strip
+    abort!("could not read the PR base for #{pr_url} (#{info['slug']}; gh pr view failed) — verify it targets `#{RELEASE_BRANCH}`") if !DRY && !base_ok
+    if !DRY && base != RELEASE_BRANCH
+      abort!("PR #{pr_url} (#{info['slug']}) targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it " \
+             "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
+    end
+  end
+
+  landed = plan["skip"].map { |row| row["slug"] }
+  left_reviewed = []
+  result = {}
+  begin
+    pr_groups.each do |info|
+      pr_url = info["pr_url"]
+      step("gh pr merge #{pr_url} --merge")
+      _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
+      if !ok && !DRY && pr_merged?(pr_url)
+        say("  ↷ #{pr_url} already merged on GitHub (interrupted prior run) — continuing to the record step")
+        ok = true
+      end
+      if ok || DRY
+        landed.concat(info["slugs"])
+      else
+        left_reviewed.concat(info["slugs"])
+        say("  ⚠ gh pr merge failed for #{pr_url} (#{info['slug']}) — left `reviewed` (resolve the conflict " \
+            "on GitHub or `bin/task block` it); sweeping the rest")
+      end
+    end
+  ensure
+    if landed.any? && !DRY
+      step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
+      result = conductor(batch_sweep_with_plan_ruby(landed, slug))
+    end
+  end
+
+  # 4b. No sweep write happened (dry-run, or a pure re-run with nothing new) →
+  #     read the current release's plan read-only so the deploy half still runs.
+  if (result["repos"] || []).empty?
+    step("record (read-only): Release::Conductor.repo_plan(Release.current)")
+    result = conductor(
+      "r = Release.current; " \
+      "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r) } : {}).to_json)",
+      read_only: true
+    )
+  end
 
   rel_slug = result["slug"] || slug || "rel-pending"
   repos    = result["repos"] || []
-  abort!("no active release to prepare — merge task PR(s) into `#{RELEASE_BRANCH}` (`bin/release merge SLUG`) or pass --task SLUG, then re-run") if repos.empty?
+  if repos.empty?
+    if DRY && cands.any?
+      say("")
+      say("✓ Dry run: #{cands.size} task(s) would sweep onto a fresh candidate — the repo plan (and the QA deploy preview) " \
+          "becomes available once the sweep records; re-run without --dry-run.")
+      close_role_span("qa-deploy dry-run — sweep previewed")
+      return
+    end
+    say("")
+    say("✓ Nothing to deploy — the release has no members yet" \
+        "#{left_reviewed.any? ? " (#{left_reviewed.join(', ')} left `reviewed` on merge failure)" : ''}.")
+    close_role_span("qa-deploy no-op — no members to deploy")
+    return
+  end
 
   app_groups = repos.select { |g| g["kind"] == "app" }
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
   record_release_event(rel_slug, "assemble_release", "started")
 
-  # 1b. Record the Steffon assembled QA intent for every member so /deployments shows
-  #     him QA-ing the RC live the moment prepare starts — the Deploy mirror of
-  #     bin/reviewer-select's review intent (no more hand-run `bin/task intent --to
-  #     assembled --actor steffon`). In the STANDARD flow the merge already flipped the
-  #     member to `assembled`, so record_deploy_intents! routes through
-  #     Release::Conductor#record_qa_intent (the QA intent rides toward `shipped` with a
-  #     `qa` marker — superseded by the SHIP, not the merge — and the board re-homes it
-  #     to the assembled lane). Append-only + idempotent. A board WRITE → suppressed in
-  #     --dry-run (conductor prints the plan). BEST-EFFORT (record_deploy_intent): this
-  #     cosmetic ticker write must never abort the QA deploy on a transient prod-board
-  #     failure — it warns and continues.
+  # 5. PRE-QA GATE — the prepare-owned test tier (integration + e2e-smoke) on
+  #    origin/release, BEFORE any QA deploy. A regression aborts with eject
+  #    guidance while every member is still `reviewed`; the rest of the RC rides
+  #    on the re-run.
+  pre_qa_gate(app_groups)
+
+  # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
+  #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
+  #     of bin/reviewer-select's review intent (no more hand-run `bin/task intent
+  #     --to assembled --actor steffon`). Swept members are still `reviewed` (the
+  #     flip waits for QA-green), so record_deploy_intents! records the plain
+  #     toward-`assembled` intent, superseded when qa_green! lands the flip; an
+  #     already-`assembled` member (straggler/re-run) gets the qa-marked
+  #     toward-`shipped` intent instead (see Release::Conductor#record_qa_intent).
+  #     Append-only + idempotent. A board WRITE → suppressed in --dry-run
+  #     (conductor prints the plan). BEST-EFFORT (record_deploy_intent): this
+  #     cosmetic ticker write must never abort the QA deploy on a transient
+  #     prod-board failure — it warns and continues.
   step("record: Steffon assembled QA intent (live crew ticker)")
   record_deploy_intent(
     "Steffon assembled QA intent",
@@ -936,7 +1195,7 @@ def prepare
     "puts({ intent: 'assembled', actor: 'steffon', members: n.size }.to_json)"
   )
 
-  # 2. Per-app: keep the persistent `release` branch ahead of main (merge-forward
+  # 6. Per-app: keep the persistent `release` branch ahead of main (merge-forward
   #    guard), then deploy origin/release to that app's QA. The branch is
   #    populated by PR merges, so there's NO branch-cut/member-merge here. Gems
   #    are NOT deployed — they ride the release as a record, published at ship.
@@ -1038,10 +1297,10 @@ def prepare
                   "sha" => sha, "ok" => (qa_ok || DRY) }
   end
 
-  # 3. Record the QA URL + per-repo deployed SHAs on the release (the board's
+  # 7. Record the QA URL + per-repo deployed SHAs on the release (the board's
   #    current-release header links straight to QA; the SHAs give provenance).
-  #    WRITES → suppressed in dry-run; recorded BEFORE the deferred assemble
-  #    (step 4) but AFTER wait_for_boot, so the board links a booted QA dyno.
+  #    WRITES → suppressed in dry-run; recorded BEFORE the QA-green flip (step 8)
+  #    but AFTER wait_for_boot, so the board links a booted QA dyno.
   primary = deployed.find { |d| d["repo"] == APP } || deployed.first
   if primary && !primary["qa_url"].empty?
     step("record: qa_url #{primary['qa_url']}")
@@ -1052,33 +1311,45 @@ def prepare
     conductor("Release::Conductor.record_qa_shas(release: Release.current, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
   end
 
-  # 4. ASSEMBLE — deferred to here so it lands only AFTER every QA app booted
-  #    (wait_for_boot returned 200) AND every post-deploy hook ran green. A boot
-  #    failure leaves the RC `assembling` so a re-run completes once the dyno is up,
-  #    instead of stranding a half-up RC flipped `assembled`. WRITE → suppressed in
-  #    dry-run.
+  # 8. QA-GREEN FLIP — the flip lands only AFTER every QA app booted
+  #    (wait_for_boot returned 200) AND every post-deploy hook ran green:
+  #    Release::Conductor.qa_green! flips the swept members `reviewed →
+  #    assembled` (merged stays "release") and the RC assembling→assembled. A QA
+  #    failure flips NOTHING — members stay `reviewed` (+ merged "release"), the
+  #    RC stays `assembling`, and the next self-healing run picks them back up
+  #    (skipping the already-done merges). WRITE → suppressed in dry-run.
   boot_failures = deployed.reject { |d| d["ok"] }
+  qa_green = boot_failures.empty?
   if boot_failures.any?
     say("")
-    say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — leaving the release `assembling`.")
-    say("    Re-run `bin/release prepare` once they boot: #{boot_failures.map { |d| d['repo'] }.join(', ')}")
+    say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — QA is NOT green: leaving the release `assembling`,")
+    say("    swept members stay `reviewed` (merged: release). Re-run `bin/release prepare` once they boot")
+    say("    (the sweep skips the already-merged PRs): #{boot_failures.map { |d| d['repo'] }.join(', ')}")
   else
-    # 4a. Post-deploy hooks on the booted QA app(s): run each member's declared
+    # 8a. Post-deploy hooks on the booted QA app(s): run each member's declared
     #     post_deploy_cmd against its QA app, record the [post-deploy] outcome, and
-    #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, re-run
-    #     resumes). dry-run prints the plan; nothing executes.
+    #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, members
+    #     stay `reviewed`, re-run resumes). dry-run prints the plan; nothing executes.
     run_post_deploy(repos, target: :qa)
 
-    # 4b. Flip assembling→assembled now that QA booted + every post-deploy passed.
+    # 8b. QA is green — flip the swept members + the RC. The reviewed→assembled
+    #     usage (captured locally; the flip runs on prod, transcript-less) rides
+    #     each member's assembled TaskEvent.
     unless DRY
-      step("record: Release::Conductor.assemble!(Release.current) (QA booted)")
-      conductor("r = Release.current; Release::Conductor.assemble!(r) if r; puts({ state: r&.reload&.state }.to_json)")
+      flip_slugs = cands.select { |c| c["stage"] == "reviewed" }.map { |c| c["slug"] }
+      usage = move_usage_map(flip_slugs)
+      step("record: Release::Conductor.qa_green!(Release.current) — QA green, flip swept members `assembled`")
+      conductor(
+        "r = Release.current; " \
+        "Release::Conductor.qa_green!(r, usage_by_slug: #{usage.inspect}) if r; " \
+        "puts({ state: r&.reload&.state }.to_json)"
+      )
     end
   end
 
-  # 5. Per-repo summary of what was assembled + QA'd.
+  # 9. Per-repo summary of what was swept + QA'd.
   say("")
-  say("✓ Assembled #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  say("✓ #{qa_green ? 'Assembled' : 'Prepared (NOT assembled — QA not green)'} #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
   gem_groups.each do |g|
     g["members"].each { |m| say("  gem #{g['repo']} (#{m['slug']}) — rides the release; published at ship.") }
   end
@@ -1091,14 +1362,50 @@ def prepare
       say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry `bin/qa-server deploy #{d['qa_app']} origin/#{RELEASE_BRANCH}`")
     end
   end
+  say("  #{left_reviewed.join(', ')} left `reviewed` (gh merge failed) — resolve + re-run, or `bin/task block` them.") if left_reviewed.any?
   say("")
-  say("  Review the QA app(s) above, then `bin/release ship`.")
-  close_role_span("assembled #{rel_slug} → QA")
+  say("  Review the QA app(s) above, then hand off to Avi: `bin/release ship`.")
+  close_role_span(qa_green ? "assembled #{rel_slug} → QA" : "prepared #{rel_slug} — QA not green, members stay reviewed")
 rescue SystemExit
   # An abort mid-prepare closes the Steffon span with the abort outcome (best-effort)
   # before re-raising, so the heartbeat span resolves instead of hanging open.
-  close_role_span("prepare aborted before assemble") if steffon_span
+  close_role_span("prepare aborted before QA-green") if steffon_span
   raise
+end
+
+# --- eject (block-on-regression) ---------------------------------------------
+# Pull ONE offending task off the release candidate — the pre-QA gate (or QA
+# itself) caught a regression it owns. The record side
+# (Release::Conductor.eject!) detaches it (release_slug + merged cleared) and
+# blocks it for rework with the feedback as a qa_feedback note; the REST of the
+# RC rides on untouched. The git side stays with the operator (printed guidance):
+# revert the member's merge commit on `release` — never a force-push — then
+# re-run `bin/release prepare`.
+def eject
+  feedback = opt_value("--feedback")
+  slug = Release::Cli.positional_slugs(ARGV).first
+  abort!("usage: bin/release eject <task-slug> [--feedback \"…\"]") unless slug
+
+  say("Eject #{slug} from the release train#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
+
+  # Free-text feedback is safe to embed via .inspect: the whole snippet rides
+  # `heroku run` as a url-safe Base64 blob (conductor_payload), so quotes/parens
+  # survive the remote re-quoting intact.
+  feedback_ruby = feedback.to_s.empty? ? "nil" : feedback.inspect
+  step("record: Release::Conductor.eject!(#{slug}) — detach + block for rework")
+  result = conductor(
+    "t = Task.find_by!(slug: #{slug.inspect}); " \
+    "Release::Conductor.eject!(t, feedback: #{feedback_ruby}); " \
+    "puts({ slug: t.slug, stage: t.reload.stage, merged: t.merged }.to_json)"
+  )
+  say("  #{slug} → blocked (rework)#{feedback ? ' — feedback noted' : ''}") unless DRY || result.empty?
+
+  say("")
+  say("Now unwind its code from the branch (the record is detached; git is yours):")
+  say("  1. find its merge commit:  git log origin/#{RELEASE_BRANCH} --oneline --merges | head")
+  say("  2. revert it (never force-push): git revert -m 1 <merge-sha> && git push origin #{RELEASE_BRANCH}")
+  say("  3. re-run `bin/release prepare` — the sweep self-heals and the REST of the RC rides on.")
 end
 
 # --- ship (multi-repo, producer-first) -------------------------------------
@@ -1131,12 +1438,15 @@ def status
   say("Release status#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  # 1. Board signal (read-only, runs even in --dry-run): the tasks already
-  #    `assembled` (merged into `release`) but not yet `shipped`, plus the current
-  #    release for context. A read mutates nothing, so it's safe under --dry-run.
-  step("read (read-only): assembled tasks pending ship + Release.current")
+  # 1. Board signal (read-only, runs even in --dry-run): every task whose code is
+  #    already ON `release` but not yet shipped — `assembled` (QA-green, waiting
+  #    on Avi) PLUS `reviewed` with merged:"release" (swept, QA in flight) — and
+  #    the current release for context. A read mutates nothing, so it's safe
+  #    under --dry-run.
+  step("read (read-only): tasks riding `release` pending ship + Release.current")
   board = conductor(
-    "pending = Task.by_stage('assembled').order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
+    "pending = Task.where(stage: 'assembled').or(Task.where(stage: 'reviewed', merged: 'release'))" \
+    ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
     "r = Release.current; " \
     "puts({ pending: pending, release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
     read_only: true
@@ -1295,6 +1605,26 @@ def push_origin_main(repo)
   abort!("could not push origin main in #{repo} (diverged remote?) — resolve, then re-run `bin/release ship`") unless ok || DRY
 end
 
+# Stamp `merged: "main"` on a repo's member tasks right after that repo's
+# `release → main` fast-forward lands on origin — the git-location signal
+# (matrix: assembled+main = ff'd, prod-deploy in flight) an interrupted Avi run
+# reads to skip re-ff'ing. BEST-EFFORT (warn + continue): the ffs are git no-ops
+# on a re-run and Task#ship! re-stamps "main" at the record step, so a board blip
+# here must never abort a mid-train prod deploy. A board WRITE → suppressed in
+# --dry-run (conductor prints the plan).
+def record_merged_main(slugs)
+  slugs = Array(slugs).compact
+  return if DRY || slugs.empty?
+
+  step("record: merged:main for #{slugs.join(', ')} (release → main ff landed)")
+  conductor(
+    "Release::Conductor.record_merged!(slugs: #{slugs.inspect}, merged: 'main'); " \
+    "puts({ merged_main: #{slugs.inspect} }.to_json)"
+  )
+rescue SystemExit, StandardError => e
+  say("  ⚠ merged:main not recorded for #{slugs.join(', ')} (#{e.message}); deploy continues — ship! re-stamps it")
+end
+
 # The conductor's pre-prod test gate: run the registry `test_cmd` at the repo's
 # frozen SHA before the irreversible deploy; scoped-abort on red. repo_script
 # apps SELF-GATE (their own deploy runs tests) → no test_cmd → skipped.
@@ -1381,7 +1711,9 @@ end
 # `gem push` failing closed: a yanked number isn't in the listing → publish_needed?
 # is true → we try to push → RubyGems rejects re-pushing it → publish_gem aborts,
 # BEFORE any app deploys. Records the gem as live for the partial report.
-def ship_gem(repo, version, frozen)
+# `member_slugs` are the gem's release members — stamped `merged: "main"` once the
+# ff lands on origin (the interrupted-Avi crash-recovery signal).
+def ship_gem(repo, version, frozen, member_slugs = [])
   abort!("could not resolve a version for gem #{repo} — check #{repo}/#{gem_meta_for(repo)['version_file']}") if version.empty? && !DRY
 
   if DRY
@@ -1404,6 +1736,7 @@ def ship_gem(repo, version, frozen)
   @ship_live << "gem #{repo} #{version} live on RubyGems"
   ff_main_local(repo, frozen)
   push_origin_main(repo)
+  record_merged_main(member_slugs)
 end
 
 # Auto-re-pin (D1): after ALL gems are live, before any app deploys, re-pin each
@@ -1537,6 +1870,9 @@ def deploy_app(group, frozen)
 
   ff_main_local(repo, frozen) # local only — a no-op ff (avi_ship_gate already ff'd to frozen)
   push_origin_main(repo)
+  # The ff landed on origin — stamp this repo's members merged:"main" (matrix:
+  # assembled+main = prod-in-flight; an interrupted re-run reads it as "ff done").
+  record_merged_main(Array(group["members"]).map { |m| m["slug"] })
 
   case handler
   when :git_push_heroku
@@ -1762,7 +2098,7 @@ def ship
   gem_groups.each do |group|
     repo    = group["repo"]
     version = gem_version_for(repo, group, ship_sha[repo])
-    ship_gem(repo, version, ship_sha[repo])
+    ship_gem(repo, version, ship_sha[repo], Array(group["members"]).map { |m| m["slug"] })
     published_gems[repo] = version
   end
 
@@ -2079,13 +2415,14 @@ if __FILE__ == $PROGRAM_NAME
   when "init"    then init
   when "merge"   then merge
   when "prepare" then prepare
+  when "eject"   then eject
   when "ship"    then ship
   when "status"  then status
   when "archive" then archive
   when "retro"   then retro
   else
-    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|ship|status|archive|retro} " \
-         "[--task SLUG ...] [--slug REL] [--by NAME] [--clean-only] " \
+    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|ship|status|archive|retro} " \
+         "[--task SLUG ...] [--slug REL] [--by NAME] [--feedback …] [--clean-only] " \
          "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
     exit 1
   end

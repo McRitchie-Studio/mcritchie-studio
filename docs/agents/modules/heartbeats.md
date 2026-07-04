@@ -28,8 +28,8 @@ which is the learning loop and lives outside the release pipeline.
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
-| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `assembled` or `blocked` |
-| **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-completed`, `qa-deploy` | shipped work to archive / `assembled` on `release` | prior cycle `archived` (or no-op); then release **deployed to QA** |
+| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
+| **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-completed`, `qa-deploy` | shipped work to archive / `reviewed` work + `assembled` stragglers to sweep | prior cycle `archived` (or no-op); then the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | spans to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
 
 > **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
@@ -110,12 +110,32 @@ five stages:
 | 4 | `confirming` | **Confirming → Confirmed** | Avi | `bin/release ship` |
 | 5 | `production_deploying` | **Deploying → Deployed** | Avi | `bin/release ship` |
 
-**Steffon owns stages 1–3** (Testing → Assembling → Deploying QA) via `qa-deploy`
-(`bin/release prepare`) and stops at **Live on QA**. **Avi owns stages 4–5**
-(Confirming → Deploying) via `production-deploy` (`bin/release ship`) and finishes
-at **Deployed**. The seam between them — **"deployed to QA."** — is the
-**Steffon → Avi handoff**: Steffon's `qa-deploy` ends there and reports it; Avi's
-`production-deploy` begins only once it is true.
+**The souls BOOKEND the pipeline (2026-07-03): Avi reviews and ships; Steffon
+owns the whole middle.** Steffon owns stages 1–3 (Testing → Assembling →
+Deploying QA) via `qa-deploy` (`bin/release prepare`) — which now also owns the
+**merge**: it SWEEPS the reviewed queue onto the candidate, merges each PR into
+`release`, and flips members `reviewed → assembled` only on **QA-green** — and
+stops at **Live on QA**. **Avi owns stages 4–5** (Confirming → Deploying) via
+`production-deploy` (`bin/release ship`) and finishes at **Deployed**. The seam
+between them — **"deployed to QA."** — is the **Steffon → Avi handoff**:
+Steffon's `qa-deploy` ends there and reports it; Avi's `production-deploy` begins
+only once it is true.
+
+**The `merged` column is the crash-recovery spine.** Orthogonal to `stage`, it
+records WHERE the task's code physically is, so an interrupted heartbeat
+contextualizes itself from durable state instead of guessing:
+
+| `stage` + `merged` | Means |
+|---|---|
+| `reviewed` + `nil` | approved, not swept yet |
+| `reviewed` + `release` | swept — PR merged onto `release`, QA in flight |
+| `assembled` + `release` | QA-green, waiting on Avi |
+| `assembled` + `main` | ff'd `release → main`, prod deploy in flight |
+| `shipped` + `main` | done |
+
+An interrupted Steffon run **skips re-merging** a `merged: release` task; an
+interrupted Avi run **skips re-ff'ing** a `merged: main` one (the git ffs no-op
+anyway — the stamp is the readable signal).
 
 ## Operator-launched today, schedule-ready tomorrow  *(DESIGN NOTE — load-bearing)*
 
@@ -126,9 +146,10 @@ three:
 
 1. **Idempotent** — re-running when there is nothing to do is a safe no-op that
    reports "nothing waiting" and exits. `pr-review` on an empty queue,
-   `qa-deploy` with nothing assembled, `production-deploy` on a `release == main`
-   (or no QA-green release), and `archive-completed` with nothing shipped must each
-   just report and stop — never fabricate work.
+   `qa-deploy` with nothing reviewed, no stragglers, and no RC in flight,
+   `production-deploy` on a `release == main` (or no QA-green release), and
+   `archive-completed` with nothing shipped must each just report and stop —
+   never fabricate work.
 2. **Explicit precondition** — each states what must already be true to begin (the
    "Enters at" column above). A scheduler checks the precondition, and skips
    cleanly when it is not met.
@@ -147,28 +168,34 @@ a wiring change, not a rewrite.
 ## 1. Avi Heartbeat — `Avi Heartbeat` / `production-deploy` / `pr-review`
 
 **Enter as Avi.** Two acts, run **downstream-first**: ship a QA-green release if one
-is ready, then review + merge the new submitted PRs. Leading with the idempotent
-`production-deploy` clears any ready release before new merges pile onto it; when
-nothing is ready it is a no-op and falls straight through to `pr-review`. Avi owns
-release **stages 4–5** (post-QA → prod).
+is ready, then review the new submitted PRs (**review-only** — Steffon's
+`qa-deploy` owns the merge). Leading with the idempotent `production-deploy`
+clears any ready release before new reviewed work piles up behind it; when
+nothing is ready it is a no-op and falls straight through to `pr-review`. Avi
+owns release **stages 4–5** (post-QA → prod).
 
 ### Act 1 — `production-deploy`
 
 Ship the assembled, QA-green release to production.
 
 - **Precondition:** a release is **ready** — i.e. Steffon has taken it through
-  `qa-deploy` and it is **`assembled` + deployed to QA (QA-green)**. If nothing is
-  ready to ship (`release == main`, or no QA-green release) → report "nothing to
-  ship" and continue to `pr-review` (idempotent no-op).
+  `qa-deploy` and it is **`assembled` + deployed to QA (QA-green)** (members read
+  `assembled` + `merged: release`). If nothing is ready to ship (`release ==
+  main`, or no QA-green release) → report "nothing to ship" and continue to
+  `pr-review` (idempotent no-op).
 - **Steps:**
   1. Clean the primary checkouts (stash the delete-later ledger if needed) — ship
      from a **primary checkout**, not a worktree (gems resolve as siblings).
   2. `bin/release ship --yes` — drive **stages 4–5** (Confirming → Deploying):
-     fast-forward each repo's `release → main` and deploy production.
-  3. Prod-smoke, green seal, and post release notes.
+     fast-forward each repo's `release → main` (stamping that repo's members
+     `merged: "main"` as each ff lands — the interrupted-run skip signal) and
+     deploy production.
+  3. Prod-smoke, green seal, and post release notes (`ship!` flips members
+     `shipped`, `merged` stays `main`).
   4. Restore the primary checkouts.
 - **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
-  slug.
+  slug. An interrupted run re-runs safely: published gems skip, ffs no-op
+  (`merged: main` members are already over), re-pins are idempotent.
 
 > ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
 > operator launched it (the `Avi Heartbeat` / `production-deploy` chip / phrase) or
@@ -178,7 +205,9 @@ Ship the assembled, QA-green release to production.
 
 ### Act 2 — `pr-review`
 
-Review every waiting PR, merging the approved ones.
+Review every waiting PR. **Review-only (2026-07-03):** approved work stops at
+`reviewed` — the merge belongs to Steffon's self-healing `qa-deploy`, which
+sweeps the reviewed queue promptly.
 
 - **Precondition:** at least one `submitted` PR. Empty queue → report "no
   submitted PRs" and stop (idempotent no-op).
@@ -188,36 +217,39 @@ Review every waiting PR, merging the approved ones.
      **review-one** atom — the [Modular PR Review SOP](pr-review-sop.md):
      `bin/reviewer-select <task>` picks the PRIMARY + LIGHT pair; each reviewer
      narrates **as its soul** (`--agent`) and returns a verdict.
-  3. **Approved** → `bin/task move <task> reviewed` **and** `bin/release merge
-     <task>` (the PRIMARY owns the merge → task flips to `assembled`).
+  3. **Approved** → `bin/task move <task> reviewed` — and STOP (no
+     `bin/release merge`; the task waits `reviewed` + `merged: nil` for the
+     sweep).
   4. **Problems** → `bin/task block <task> --kind rework --feedback "…"` (one
      block never halts the batch).
-- **Exit seam:** every `submitted` PR is resolved — merged (`assembled`) or
-  `blocked`. Report per-PR.
+- **Exit seam:** every `submitted` PR is resolved — `reviewed` (awaiting
+  Steffon's sweep) or `blocked`. Report per-PR.
 
 ### Act 2b — `pr-review-slow`
 
 The same as `pr-review`, but **serialized** — one PR at a time.
 
 - **Precondition:** at least one `submitted` PR. Empty queue → report + stop.
-- **Steps:** the `pr-review` loop with **`--max-agents 1`** — review + merge one PR
-  (`review-one` → on approval `bin/task move <task> reviewed` **and** `bin/release
-  merge <task>`), then **re-query the board** before choosing the next. Use it for a
-  steady trickle or when parallel review waves would thrash the board DB.
-- **Exit seam:** every `submitted` PR resolved — `assembled` or `blocked`.
+- **Steps:** the `pr-review` loop with **`--max-agents 1`** — review one PR
+  (`review-one` → on approval `bin/task move <task> reviewed`, review-only), then
+  **re-query the board** before choosing the next. Use it for a steady trickle or
+  when parallel review waves would thrash the board DB.
+- **Exit seam:** every `submitted` PR resolved — `reviewed` or `blocked`.
 
-> **Retired chips.** `pr-review-slow` (and `pr-review`) replaced the review-**only**
-> `Avi Heartbeat Slow`/`Fast` chips — those stopped at `reviewed` without merging;
-> the acts here **merge** approved work through to `assembled`. The old `bin/avi-heartbeat`
-> review-only loop still exists but is no longer a card chip.
+> **History.** The 2026-07-02 fold had these acts run `bin/release merge` after
+> approval; 2026-07-03 reversed it (this epic) — review is review-only again, and
+> the merge moved into Steffon's self-healing sweep, which follows promptly. The
+> old `bin/avi-heartbeat` review-only loop still exists but is no longer a card
+> chip.
 
 ## 2. Steffon Heartbeat — `Steffon Heartbeat` / `archive-completed` / `qa-deploy`
 
 **Enter as Steffon.** Two acts, run **downstream-first**: archive the closed-out
-cycle, then take the new assembled work through to QA. Leading with the idempotent
-`archive-completed` closes out the previous cycle before starting the next; when
-nothing is shipped to archive it is a no-op and falls through to `qa-deploy`.
-Steffon owns release **stages 1–3** (Testing → Assembling → Deploying QA).
+cycle, then take the new reviewed work through merge, QA, and the QA-green flip.
+Leading with the idempotent `archive-completed` closes out the previous cycle
+before starting the next; when nothing is shipped to archive it is a no-op and
+falls through to `qa-deploy`. Steffon owns release **stages 1–3** (Testing →
+Assembling → Deploying QA) — the whole middle, **including the merge**.
 
 ### Act 1 — `archive-completed`
 
@@ -237,15 +269,29 @@ Close the loop: archive the shipped work and reclaim its worktrees.
 
 ### Act 2 — `qa-deploy`
 
-Start the release and deploy it to QA.
+The **SELF-HEALING sweep**: detect the reviewed queue, merge it onto `release`,
+deploy QA, and flip members `assembled` on QA-green — all one idempotent verb.
 
-- **Precondition:** `assembled` work sits on `release`. Nothing assembled →
-  report "nothing to prepare" and stop (idempotent no-op).
-- **Steps:**
-  1. Confirm the assembled members are on `origin/release`.
-  2. `bin/release prepare --yes` — drive **stages 1–3** (Testing → Assembling →
-     Deploying QA): assemble `origin/release` and deploy it to QA.
-  3. Smoke `https://qa.mcritchie.studio/up`.
+- **Precondition:** work to sweep — `reviewed` tasks, `assembled` stragglers off
+  the current RC, **or** an RC already in flight (an interrupted prior run).
+  Nothing anywhere → report "nothing to prepare" and stop (idempotent no-op).
+- **Steps** — all inside **`bin/release prepare --yes`** (stages 1–3):
+  1. **Detect:** every `reviewed` task + any `assembled` straggler not riding the
+     current RC.
+  2. **Ensure a candidate:** use the in-flight release, else open one.
+  3. **Sweep + merge:** `gh pr merge` each detected task's PR into its repo's
+     `release` (a `merged: release/main` task **skips** the merge — crash
+     recovery), recording membership + `merged: "release"`. **Stages stay
+     `reviewed`.**
+  4. **Pre-QA gate:** the registry `qa_test_cmd` tier (integration + e2e smoke)
+     on `origin/release` BEFORE deploying. A regression → **eject the offender**
+     (`bin/release eject <task> --feedback "…"` + revert its merge commit), keep
+     the rest, re-run.
+  5. **Deploy QA:** merge-forward guard → `bin/qa-server deploy … origin/release`
+     → wait-for-boot → smoke `/up` → QA post-deploy hooks.
+  6. **QA-green flip:** members `reviewed → assembled` (merged stays `release`) +
+     the RC `assembled`. A QA failure flips NOTHING — members stay `reviewed` and
+     the **next run self-heals** (the sweep skips the already-done merges).
 - **Exit seam:** the release candidate is `assembled` and live on QA (stage 3 **Live
   on QA**). Report the QA URL, then hand off to Avi at **"deployed to QA."**
   **Does NOT ship to production** — stages 4–5 are Avi's.
@@ -308,8 +354,10 @@ read-only `bin/devops-cycle` snapshot tool.
   `assembled` release to ship. Nothing anywhere (`release == main`, empty queue) →
   report "nothing to run" and stop (idempotent no-op).
 - **Steps** (the three atoms in sequence — Avi + Steffon + Avi):
-  1. `pr-review` — review + **merge** every `submitted` PR (→ `assembled`).
-  2. `qa-deploy` — `bin/release prepare --yes` (stages 1–3 → live on QA).
+  1. `pr-review` — review every `submitted` PR (review-only → `reviewed`).
+  2. `qa-deploy` — `bin/release prepare --yes` (the self-healing sweep: merge the
+     reviewed queue onto `release`, stages 1–3 → live on QA, members `assembled`
+     on QA-green).
   3. `production-deploy` — `bin/release ship` (stages 4–5 → prod), same frozen-SHA
      tests, deploy smoke, green seal, release notes.
 - **Exit seam:** the whole release `shipped` (stage 5 **Deployed**). Report the prod

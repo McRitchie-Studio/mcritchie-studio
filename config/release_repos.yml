@@ -43,6 +43,14 @@
 # `repo_script` satellites SELF-GATE — their bin/deploy runs their own tests — so
 # they leave `test_cmd` UNSET to avoid running the whole suite twice per ship.
 #
+# Optional per-app `qa_test_cmd` is Steffon's PRE-QA gate: `bin/release prepare`
+# runs it (cwd = the repo, brought onto origin/release) BEFORE any QA deploy —
+# the integration + e2e-smoke tier prepare owns (Release::STEP_TEST_TIERS). A red
+# gate aborts prepare with eject guidance while every swept member is still
+# `reviewed` (nothing flipped, nothing deployed). UNSET = the repo self-gates at
+# ship/its own deploy and the gate skips it. Same double-test caveat as test_cmd:
+# don't point it at the same full suite ship already runs.
+#
 # gem fields:
 #   version_file — path (inside the gem repo) declaring the version to publish.
 #                  Read for the producer-first publish + the board indicator.

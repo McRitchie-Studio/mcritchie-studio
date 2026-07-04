@@ -47,12 +47,22 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_nil Release.current
   end
 
-  test "add attaches a reviewed task and marks it assembled" do
+  test "add attaches (sweeps) a reviewed task without moving its stage" do
     rel = Release.open!
     task = reviewed_task
     rel.add(task)
     assert_equal rel.slug, task.reload.release_slug
-    assert_equal "assembled", task.stage
+    assert_equal "reviewed", task.stage, "the assembled flip waits for QA-green (Conductor.qa_green!)"
+    assert_equal Task::MERGED_RELEASE, task.merged
+  end
+
+  test "add attaches an assembled straggler without moving it" do
+    rel = Release.open!
+    straggler = Task.create!(title: "straggler assembled leftover task", stage: "assembled")
+    rel.add(straggler)
+    assert_equal rel.slug, straggler.reload.release_slug
+    assert_equal "assembled", straggler.stage
+    assert_equal Task::MERGED_RELEASE, straggler.merged
   end
 
   test "add from an assembled RC auto-reopens, then adds (a late merge re-QAs)" do
@@ -63,8 +73,9 @@ class ReleaseTest < ActiveSupport::TestCase
     late = reviewed_task
     rel.add(late)
 
-    assert_equal "assembling", rel.reload.state, "a late merge reopens the candidate"
-    assert_equal "assembled", late.reload.stage, "the late member must flip to assembled, not stay reviewed"
+    assert_equal "assembling", rel.reload.state, "a late sweep reopens the candidate"
+    assert_equal "reviewed", late.reload.stage, "the late member waits for the next QA-green flip"
+    assert_equal Task::MERGED_RELEASE, late.merged
     assert_equal 1, rel.tasks.count
   end
 
@@ -72,13 +83,13 @@ class ReleaseTest < ActiveSupport::TestCase
     rel = Release.open!
     rel.assemble!
     task = reviewed_task
-    # Blow up the member flip AFTER reopen! would have run, so a non-atomic `add`
-    # leaves the RC reopened (assembling) with the member never attached.
+    # Blow up the member attach AFTER reopen! would have run, so a non-atomic
+    # `add` leaves the RC reopened (assembling) with the member never attached.
     def task.update!(*); raise "boom"; end
 
     assert_raises(RuntimeError) { rel.add(task) }
     assert_equal "assembled", rel.reload.state,
-                 "the reopen must roll back when the member flip fails — no half-reopened RC"
+                 "the reopen must roll back when the member attach fails — no half-reopened RC"
   end
 
   test "add still refuses from a terminal release" do
@@ -136,6 +147,8 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal "abandoned", rel.reload.state
     assert_equal "reviewed", task.reload.stage
     assert_nil task.release_slug
+    assert_equal Task::MERGED_RELEASE, task.merged,
+                 "merged stays — un-reverted code still rides `release`, so the next sweep skips re-merging"
   end
 
   test "state must be one of the known states" do
@@ -198,7 +211,7 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { rel.assemble! } # already assembled
   end
 
-  test "add rejects a task that is not reviewed" do
+  test "add rejects a task that is not sweepable (neither reviewed nor assembled)" do
     rel = Release.open!
     designed = Task.create!(title: "Not reviewed yet") # stage: designed
     assert_raises(ArgumentError) { rel.add(designed) }
@@ -356,7 +369,7 @@ class ReleaseTest < ActiveSupport::TestCase
     rel = Release.open!
     task = reviewed_task("merged-release")
     rel.add(task)
-    assert_equal "assembled", task.reload.stage
+    assert_equal "reviewed", task.reload.stage, "the sweep never moves the stage"
     assert_equal Task::MERGED_RELEASE, task.merged
   end
 

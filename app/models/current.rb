@@ -23,23 +23,23 @@ class Current < ActiveSupport::CurrentAttributes
   # the pair via ReviewerSelector — so the avatars populate no matter who drove
   # the transition; set it when Avi curated the pair explicitly.
   attribute :task_event_reviewers
-  # Set ONLY by Release::Conductor.adopt!(override: true) when an operator merges
+  # Set ONLY by Release::Conductor.sweep!(override: true) when an operator sweeps
   # a NOT-yet-`reviewed` PR past the review gate (`bin/release merge --override`).
   # Drained by Task#write_stage_event onto the very transition event the bypassed
-  # flip writes (metadata["review_bypassed"] = true), so the review skip lands on
-  # the same audit spine `bin/task move` writes — the override's paper trail.
+  # flip-to-`reviewed` writes (metadata["review_bypassed"] = true), so the review
+  # skip lands on the same audit spine `bin/task move` writes — the paper trail.
   attribute :task_event_review_bypass
   # The Claude/Codex SESSION id of the conductor running `bin/release`, injected
   # into every conductor record op's `heroku run rails runner` payload (see
   # bin/release#conductor_payload) — local shell env doesn't cross the heroku-run
-  # boundary, so the CLI passes it in-band. Release::Conductor (adopt!/curate!/
+  # boundary, so the CLI passes it in-band. Release::Conductor (sweep!/curate!/
   # ship!) drains it onto the release via Release#stamp_conductor_mascot!, so the
   # deployment wears the SESSION's Pokémon mascot — the agent working it.
   attribute :conductor_session_id
 
   # Set the per-transition usage attributes from a captured-usage hash for the
   # duration of the block, then clear them — so a conductor/release flip that
-  # runs OUTSIDE the request layer (Release::Conductor.adopt!, Release#ship!,
+  # runs OUTSIDE the request layer (Release::Conductor.qa_green!, Release#ship!,
   # driven by bin/release capturing the delta from its local transcript) can
   # stamp model/tokens/cost onto the TaskEvent it's about to write, exactly like
   # a `bin/task move` does via the controller. Clearing after each task is what
