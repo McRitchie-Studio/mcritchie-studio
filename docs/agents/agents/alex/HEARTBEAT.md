@@ -2,15 +2,16 @@
 
 ## Status: Active
 
-This is Alex's specific heartbeat SOP. Use it when Mr. McRitchie launches
-`Alex Heartbeat`, `grade-events`, `share-insights`, or `full-cycle` from the
-`/deployments` Heartbeats card.
+This is Alex's specific heartbeat SOP. It has three act SOPs:
 
-The shared launcher map lives in
-[`../../modules/heartbeats.md`](../../modules/heartbeats.md). The release atom
-model lives in
-[`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
-§1.4. Those pages should summarize and link here for Alex-specific mechanics.
+- `grade-events` - grade recent resolved spans into the learning layer.
+- `share-insights` - publish Mr. McRitchie's confirmed insights to agent docs.
+- `full-cycle` - run review, QA deploy, and production deploy with explicit ship
+  authority.
+
+Use this file when Mr. McRitchie invokes `Alex Heartbeat`, `grade-events`,
+`share-insights`, or `full-cycle`, whether the entry came from a manual prompt,
+automation, or a scheduled run.
 
 ## Scope
 
@@ -23,8 +24,8 @@ the full release pipeline:
 - Run `full-cycle` only when the operator launched that autonomous release act or
   otherwise granted production ship authority in this session.
 
-Do not treat `Alex Heartbeat` as implied production approval unless the launched
-row is `full-cycle` or Mr. McRitchie grants that authority in-session.
+Do not treat `Alex Heartbeat` as implied production approval unless the invoked
+act is `full-cycle` or Mr. McRitchie grants that authority in-session.
 
 ## Entry
 
@@ -41,7 +42,7 @@ reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
-## Act Order
+## Act SOPs
 
 Run Alex's acts in the launched scope:
 
@@ -51,14 +52,14 @@ Run Alex's acts in the launched scope:
 
 When Mr. McRitchie launches `Alex Heartbeat`, run the learning acts first:
 `grade-events`, then `share-insights`. Run `full-cycle` only when the launched
-row or prompt explicitly includes it, or when Mr. McRitchie grants production
+act or prompt explicitly includes it, or when Mr. McRitchie grants production
 ship authority in the same session.
 
 ## Act 1 - `grade-events`
 
 **Precondition:** resolved atomic-event spans are awaiting Alex's grade. If none
 are waiting, report "nothing to grade" and continue to `share-insights` when this
-is the full `Alex Heartbeat` row.
+is the full `Alex Heartbeat` run.
 
 Procedure:
 
@@ -138,3 +139,10 @@ End every Alex heartbeat with a short report:
 - any task blocked during review or ejected during QA
 
 On a clean learning-only run, omit release sections that did not run.
+
+## Related References
+
+- [`../../modules/heartbeats.md`](../../modules/heartbeats.md) - cross-soul
+  heartbeat map.
+- [`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
+  §1.4 - release atom model and pipeline ownership.

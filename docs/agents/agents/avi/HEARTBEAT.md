@@ -2,15 +2,15 @@
 
 ## Status: Active
 
-This is Avi's specific heartbeat SOP. Use it when Mr. McRitchie launches
-`Avi Heartbeat`, `production-deploy`, `pr-review`, or `pr-review-slow` from the
-`/deployments` Heartbeats card.
+This is Avi's specific heartbeat SOP. It has three act SOPs:
 
-The shared launcher map lives in
-[`../../modules/heartbeats.md`](../../modules/heartbeats.md). The release atom
-model lives in
-[`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
-§1.4. Those pages should summarize and link here for Avi-specific mechanics.
+- `production-deploy` - ship a QA-green release to production when one is ready.
+- `pr-review` - review all submitted PRs in bounded waves, review-only.
+- `pr-review-slow` - review the submitted queue one PR at a time.
+
+Use this file when Mr. McRitchie invokes `Avi Heartbeat`, `production-deploy`,
+`pr-review`, or `pr-review-slow`, whether the entry came from a manual prompt,
+automation, or a scheduled run.
 
 ## Scope
 
@@ -40,7 +40,7 @@ reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
-## Act Order
+## Act SOPs
 
 Run Avi acts downstream-first:
 
@@ -48,14 +48,14 @@ Run Avi acts downstream-first:
 2. `pr-review` or `pr-review-slow` - review submitted PRs, review-only.
 
 When Mr. McRitchie launches `Avi Heartbeat`, run both acts in that order. When
-an action row is launched directly, run only that act.
+an act is invoked directly, run only that act.
 
 ## Act 1 - `production-deploy`
 
 **Precondition:** Steffon's `qa-deploy` has already produced a QA-green release:
 members are `assembled` and `merged: release`, and the candidate is live on QA.
 If `release == main` or no QA-green release exists, report "nothing to ship" and
-continue to review work when this is the full `Avi Heartbeat` row.
+continue to review work when this is the full `Avi Heartbeat` run.
 
 **Authority:** This crosses the production gate. It is allowed only when Mr.
 McRitchie launched `Avi Heartbeat`, launched `production-deploy`, or granted
@@ -156,3 +156,10 @@ End every Avi heartbeat with a short report:
 - confirmation that approved work is waiting for Steffon's `qa-deploy` sweep
 
 On a clean run with no blockers, omit the blocker section entirely.
+
+## Related References
+
+- [`../../modules/heartbeats.md`](../../modules/heartbeats.md) - cross-soul
+  heartbeat map.
+- [`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
+  §1.4 - release atom model and pipeline ownership.

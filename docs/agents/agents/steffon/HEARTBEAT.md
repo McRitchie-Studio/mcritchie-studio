@@ -2,15 +2,14 @@
 
 ## Status: Active
 
-This is Steffon's specific heartbeat SOP. Use it when Mr. McRitchie launches
-`Steffon Heartbeat`, `archive-completed`, or `qa-deploy` from the `/deployments`
-Heartbeats card.
+This is Steffon's specific heartbeat SOP. It has two act SOPs:
 
-The shared launcher map lives in
-[`../../modules/heartbeats.md`](../../modules/heartbeats.md). The release atom
-model lives in
-[`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
-§1.4. Those pages should summarize and link here for Steffon-specific mechanics.
+- `archive-completed` - archive shipped work and reclaim completed worktrees.
+- `qa-deploy` - run the self-healing release prepare sweep through QA.
+
+Use this file when Mr. McRitchie invokes `Steffon Heartbeat`,
+`archive-completed`, or `qa-deploy`, whether the entry came from a manual prompt,
+automation, or a scheduled run.
 
 ## Scope
 
@@ -41,7 +40,7 @@ agent explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
-## Act Order
+## Act SOPs
 
 Run Steffon's acts downstream-first:
 
@@ -49,13 +48,13 @@ Run Steffon's acts downstream-first:
 2. `qa-deploy` - sweep reviewed work through release assembly and QA.
 
 When Mr. McRitchie launches `Steffon Heartbeat`, run both acts in that order.
-When an action row is launched directly, run only that act.
+When an act is invoked directly, run only that act.
 
 ## Act 1 - `archive-completed`
 
 **Precondition:** at least one shipped task or completed release is ready to
 archive. If there is nothing to archive, report "nothing to archive" and continue
-to `qa-deploy` when this is the full `Steffon Heartbeat` row.
+to `qa-deploy` when this is the full `Steffon Heartbeat` run.
 
 Procedure:
 
@@ -116,3 +115,10 @@ End every Steffon heartbeat with a short report:
 - confirmation that the release is handed to Avi only after it is deployed to QA
 
 On a clean run with no ejections or blockers, omit the blocker section entirely.
+
+## Related References
+
+- [`../../modules/heartbeats.md`](../../modules/heartbeats.md) - cross-soul
+  heartbeat map.
+- [`../../system/devops-cycle-design.md`](../../system/devops-cycle-design.md)
+  §1.4 - release atom model and pipeline ownership.
