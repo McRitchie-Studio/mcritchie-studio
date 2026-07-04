@@ -403,6 +403,11 @@ active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_
   ["release-stack-current-b", "Current release QA verification"],
   ["release-stack-current-c", "Current release deploy confirmation"]
 ].each { |slug, title| release_member!(active_release, slug: slug, title: title) }
+# Mid-assembly stage stamps (the tracker's time-and-boolean inputs): Tested ✓,
+# Assembling live — so the deployments e2e sees an active node with its ticking
+# per-stage duration.
+active_release.stamp_stage!("testing", at: 10.minutes.ago)
+active_release.stamp_stage!("assembling", at: 8.minutes.ago)
 
 # /intelligence demo: two SHIPPED tasks that each walked the full lifecycle with
 # priced/sized transitions and an actual_size at ship — so the dashboard's cycle

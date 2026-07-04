@@ -211,16 +211,21 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
-  test "[unit] release_tracker_steps maps release slug updates" do
+  test "[unit] release_tracker_steps walks the stage stamps, handoff gaps included" do
     rel = Release.open!
-    assert_equal %i[active pending pending pending pending],
+    # An untouched timeline: every node dark — no stage has claimed the work yet.
+    assert_equal %i[pending pending pending pending pending],
                  release_tracker_steps(rel).map { |step| step[:state] }
     assert_equal [ "Testing", "Assembling", "Deploying QA", "Confirming", "Deploying" ],
                  release_tracker_steps(rel).map { |step| step[:label] }
     assert_equal %i[pending pending pending pending pending],
                  release_tracker_steps(rel).map { |step| step[:connector_state] }
 
-    tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
+    rel.stamp_stage!("testing")
+    assert_equal %i[active pending pending pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+
+    rel.stamp_stage!("assembling")
     assert_equal %i[complete active pending pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
     assert_equal [ "Tested", "Assembling", "Deploying QA", "Confirming", "Deploying" ],
@@ -228,49 +233,45 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal %i[active pending pending pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
 
-    rel.update!(qa_url: "https://qa.mcritchie.studio")
+    rel.stamp_stage!("assembled")
+    assert_equal %i[complete complete pending pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] },
+                 "assembled does not auto-start the QA deploy"
+
+    rel.stamp_stage!("qa_deploying")
     assert_equal %i[complete complete active pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
-    assert_equal [ "Tested", "Assembled", "Deploying QA", "Confirming", "Deploying" ],
-                 release_tracker_steps(rel.reload).map { |step| step[:label] }
     assert_equal %i[complete active pending pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
 
-    rel.assemble!
-    assert_equal %i[complete complete complete active pending],
-                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+    rel.stamp_stage!("qa_deployed")
+    assert_equal %i[complete complete complete pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] },
+                 "Live on QA is Steffon's finish line — Confirming stays dark until Avi starts"
     assert_equal [ "Tested", "Assembled", "Live on QA", "Confirming", "Deploying" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
-    assert_equal %i[complete complete active pending pending],
-                 release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
+    assert_equal %i[complete complete pending pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:connector_state] },
+                 "no connector pulses into the unclaimed handoff"
 
-    rel.reopen!
-    assert_equal %i[complete complete active pending pending],
-                 release_tracker_steps(rel.reload).map { |step| step[:state] },
-                 "a reopened release must not over-advance from sticky assembled_at"
-    assert_equal %i[complete active pending pending pending],
-                 release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
-
-    rel.assemble!
-    rel.record_event!(step: "ship_gate", status: "started", source: "conductor")
+    rel.stamp_stage!("confirming")
     assert_equal %i[complete complete complete active pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] },
-                 "ship-gate start keeps Confirming active"
+                 "Avi's confirming stamp lights stage four"
+    assert_equal %i[complete complete active pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
 
-    rel.record_event!(step: "ship_gate", status: "completed", source: "conductor")
-    assert_equal %i[complete complete complete complete active],
-                 release_tracker_steps(rel.reload).map { |step| step[:state] },
-                 "ship-gate completion advances to Deploying before shipped"
-
-    rel.update!(confirmed_at: Time.current)
-    assert_equal %i[complete complete complete complete active],
+    rel.stamp_stage!("confirmed")
+    assert_equal %i[complete complete complete complete pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
     assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deploying" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
-    assert_equal %i[complete complete complete active pending],
-                 release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
 
-    rel.update!(state: "shipped")
+    rel.stamp_stage!("prod_deploying")
+    assert_equal %i[complete complete complete complete active],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] }
+
+    rel.ship!
     assert_equal %i[complete complete complete complete complete],
                  release_tracker_steps(rel.reload).map { |step| step[:state] }
     assert_equal [ "Tested", "Assembled", "Live on QA", "Confirmed", "Deployed" ],
@@ -279,10 +280,23 @@ class ApplicationHelperTest < ActionView::TestCase
                  release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
   end
 
+  test "[unit] release_tracker_steps winds back with reopen! (re-assembly + re-QA ahead)" do
+    rel = Release.open!
+    rel.stamp_stage!("assembling")
+    rel.stamp_stage!("qa_deploying")
+    rel.stamp_stage!("qa_deployed")
+    rel.assemble!
+
+    rel.reopen!
+    assert_equal %i[complete active pending pending pending],
+                 release_tracker_steps(rel.reload).map { |step| step[:state] },
+                 "a reopened release re-assembles — downstream stamps cleared"
+  end
+
   test "[unit] release_tracker_steps yields five DISTINCT active labels" do
-    # At done_count 0 every step renders its active_label, so this is the full
-    # active-label set. The fix disambiguated the old repeats ("Testing" twice,
-    # "Deploying" twice) into Deploying QA / Confirming / Deploying.
+    # On an untouched timeline every step renders its active_label, so this is
+    # the full active-label set. The fix disambiguated the old repeats ("Testing"
+    # twice, "Deploying" twice) into Deploying QA / Confirming / Deploying.
     labels = release_tracker_steps(Release.open!).map { |step| step[:label] }
     assert_equal [ "Testing", "Assembling", "Deploying QA", "Confirming", "Deploying" ], labels
     assert_equal labels.size, labels.uniq.size, "tracker active labels must be unambiguous"
@@ -292,7 +306,7 @@ class ApplicationHelperTest < ActionView::TestCase
     rel = Release.open!
     tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
     rel.update!(qa_url: "https://qa.mcritchie.studio")
-    rel.assemble!
+    %w[testing assembling assembled qa_deploying qa_deployed confirming].each { |stage| rel.stamp_stage!(stage) }
 
     render partial: "tasks/release_summary", locals: { release: rel, variant: :current }
 
@@ -438,23 +452,22 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal started + 2.minutes, qa[:duration_started_at]
   end
 
-  test "release_tracker_steps does not collapse completed-only assemble events to zero seconds" do
+  test "release_tracker_steps shows NO duration for a completed node missing its start stamp" do
     created = Time.zone.parse("2026-06-29 12:00:00")
     completed = created + 4.minutes + 12.seconds
     rel = Release.open!(created_at: created)
     rel.record_event!(step: "assemble_release", status: "completed", source: "conductor", occurred_at: completed)
-    rel.update_columns(assembled_at: completed, state: "assembling") # rubocop:disable Rails/SkipsModelValidations
 
     steps = release_tracker_steps(rel.reload, now: completed)
     assembling = steps.detect { |step| step[:key] == "assembling" }
 
     assert_equal :complete, assembling[:state]
-    assert_equal 4.minutes + 12.seconds, assembling[:duration_seconds]
-    assert_not assembling[:duration_live]
+    assert_nil assembling[:duration_seconds], "a missing start stamp must not fake a span (or a 0s)"
   end
 
   test "[component] _current_release renders a glow hook + a live in-progress ticker" do
     rel = Release.open!
+    rel.stamp_stage!("assembling") # an active stage carries the live per-node ticker
     render partial: "tasks/current_release", locals: { release: rel }
 
     assert_select "#current-release[data-glow]" # the live-flash tint hook rides the card

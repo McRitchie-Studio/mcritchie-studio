@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_04_024843) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -771,22 +771,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_04_024843) do
   create_table "releases", force: :cascade do |t|
     t.datetime "abandoned_at"
     t.datetime "assembled_at"
+    t.datetime "assembling_started_at"
     t.string "branch"
     t.datetime "confirmed_at"
     t.string "confirmed_by"
+    t.datetime "confirming_started_at"
     t.datetime "created_at", null: false
     t.string "deployed_sha"
     t.integer "duration_cache_version", default: 1, null: false
     t.jsonb "duration_metrics", default: {}, null: false
     t.datetime "duration_metrics_cached_at"
     t.jsonb "metadata", default: {}, null: false
+    t.datetime "prod_deploy_started_at"
     t.string "production_url"
+    t.datetime "qa_deploy_started_at"
+    t.datetime "qa_deployed_at"
     t.string "qa_url"
     t.datetime "release_notes_sent_at"
     t.datetime "shipped_at"
     t.string "slug", null: false
     t.jsonb "smoke_seal", default: {}, null: false
     t.string "state", default: "assembling", null: false
+    t.datetime "testing_started_at"
     t.datetime "updated_at", null: false
     t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true

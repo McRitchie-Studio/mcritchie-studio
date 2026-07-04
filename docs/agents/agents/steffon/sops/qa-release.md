@@ -57,11 +57,23 @@ bin/release prepare --yes
 5. Deploy QA and wait for boot.
 6. Flip members from `reviewed` to `assembled` only after QA is green.
 
+`prepare` also narrates the release's **stage timeline** as it goes — its
+conductor checkpoints (`assemble_release started/completed`, `deploy_qa
+started/completed`) stamp the release's stage timestamps, which drive the
+/deployments tracker live: Assembling yellow → Assembled green → Deploying QA
+yellow → **Live on QA** green. You post nothing extra on the happy path.
+
 Smoke QA after prepare reports success:
 
 ```bash
 curl -fsS https://qa.mcritchie.studio/up
 ```
+
+If a run was interrupted and a stage boundary went unrecorded, backfill it via
+the release events API (`docs/agents/modules/task-board-api.md`, "Release stage
+timeline") — e.g. `POST /api/v1/releases/current/events/qa_deploying/complete`
+once QA is verifiably live. Stamps are first-write-wins, so a re-post is a safe
+no-op.
 
 If the pre-QA gate identifies an offender, eject that task instead of forcing the
 candidate forward:
@@ -75,7 +87,11 @@ Then re-run `bin/release prepare --yes` so the rest of the candidate can ride.
 ## Exit Seam
 
 The release candidate is `assembled` and live on QA; members are `assembled` with
-`merged: release`. Report:
+`merged: release`. On the /deployments tracker the release reads **three greens
+(Tested · Assembled · Live on QA) with Confirming deliberately DARK** — that gap
+is the handoff itself. Do NOT start or stamp `confirming`; stage 4 lights only
+when Avi posts `confirming/start` as he picks the release up
+(`production-deploy`). Report:
 
 - release slug
 - QA URL

@@ -16,6 +16,56 @@ class Release < ApplicationRecord
   # (Was the disposable `release/<slug>` cut per candidate — see the cutover.)
   BRANCH = "release"
 
+  # --- stage timeline ----------------------------------------------------------
+  # The ordered fine-grained stage sequence under the coarse `state` machine. Each
+  # stage maps to ONE timestamp column that acts as a time-AND-boolean: stamped =
+  # the stage started (or landed), blank = not yet. The /deployments pizza-tracker
+  # derives every node's complete/active/pending purely from these stamps, which
+  # is what makes the Steffon→Avi QA handoff explicit: `qa_deployed` (Live on QA,
+  # 3 green) does NOT imply `confirming` — stage 4 stays dark until Avi's
+  # confirming stamp lands (via the release events API).
+  #
+  # `current_stage` is MONOTONIC — the LATEST stamped stage wins — so late or
+  # out-of-order stamps (e.g. the conductor's post-QA-boot assemble! landing after
+  # deploy_qa completed) can never wind the tracker backwards.
+  STAGES = [
+    ["testing",        :testing_started_at],
+    ["assembling",     :assembling_started_at],
+    ["assembled",      :assembled_at],
+    ["qa_deploying",   :qa_deploy_started_at],
+    ["qa_deployed",    :qa_deployed_at],
+    ["confirming",     :confirming_started_at],
+    ["confirmed",      :confirmed_at],
+    ["prod_deploying", :prod_deploy_started_at],
+    ["shipped",        :shipped_at]
+  ].freeze
+  STAGE_NAMES = STAGES.map(&:first).freeze
+  STAGE_STAMP_COLUMNS = STAGES.to_h { |name, column| [name.to_s, column] }.freeze
+
+  # Stages an agent may stamp on the slug-less `current` release BEFORE one is
+  # active (opening a fresh RC): the review/sweep kick-offs. Anything later
+  # requires an already-active release — a late post must never open a ghost RC.
+  STAGES_THAT_MAY_OPEN = %w[testing assembling].freeze
+
+  # (release-event step, status) → the stage that boundary stamps. Every write
+  # path funnels through record_event! (conductor CLI + the release events API),
+  # so posting an event IS the stage notification. `failed` events stamp nothing.
+  # deploy_prod completion is deliberately absent: `shipped` is only ever stamped
+  # by ship!'s state flip, so a stray API post can't mark a live release shipped.
+  EVENT_STAGE_STAMPS = {
+    %w[review_tests started]       => "testing",
+    %w[assemble_release started]   => "assembling",
+    %w[assemble_release completed] => "assembled",
+    %w[deploy_qa started]          => "qa_deploying",
+    %w[deploy_qa completed]        => "qa_deployed",
+    %w[qa_smoke completed]         => "qa_deployed",
+    %w[ship_gate started]          => "confirming",
+    %w[ship_authorized started]    => "confirming",
+    %w[ship_gate completed]        => "confirmed",
+    %w[ship_authorized completed]  => "confirmed",
+    %w[deploy_prod started]        => "prod_deploying"
+  }.freeze
+
   # Per-step test-tier ownership for the Deploy workflow (devops-cycle-design
   # §1.2, "Test-tier → step map"). Each tier runs ONCE, at the step that OWNS it —
   # no step re-runs a lower tier a previous step already proved green:
@@ -181,8 +231,67 @@ class Release < ApplicationRecord
     state == "shipped"
   end
 
+  # --- stage timeline reads/writes ---------------------------------------------
+
+  # The stage's stamp (time-and-boolean): a Time when reached, nil when not.
+  def stage_stamp(stage)
+    column = STAGE_STAMP_COLUMNS.fetch(stage.to_s) do
+      raise ArgumentError, "unknown release stage #{stage.inspect} (known: #{STAGE_NAMES.join(', ')})"
+    end
+    self[column]
+  end
+
+  # Index of the furthest stamped stage (monotonic: the LATEST stage wins, so a
+  # late upstream stamp never regresses it). nil when nothing is stamped yet. A
+  # shipped STATE counts as the terminal stage even if shipped_at was never set
+  # (legacy rows), so a shipped release always reads fully complete.
+  def current_stage_index
+    index = STAGES.rindex { |name, _column| stage_stamp(name).present? }
+    return STAGES.length - 1 if shipped?
+
+    index
+  end
+
+  # The furthest stage name, or nil when the timeline is untouched.
+  def current_stage
+    index = current_stage_index
+    index && STAGES[index].first
+  end
+
+  # true when the timeline is AT or PAST the stage. The tracker's per-node
+  # complete/active/pending derives from exactly this.
+  def stage_reached?(stage)
+    target = STAGE_NAMES.index(stage.to_s)
+    raise ArgumentError, "unknown release stage #{stage.inspect} (known: #{STAGE_NAMES.join(', ')})" unless target
+
+    index = current_stage_index
+    index.present? && index >= target
+  end
+
+  # All stamps keyed by stage name (nil values included) — the API's stage
+  # snapshot, so an agent posting an update sees the whole timeline it moved.
+  def stage_stamps
+    STAGES.to_h { |name, column| [name, self[column]] }
+  end
+
+  # Stamp a stage boundary. FIRST-WRITE-WINS: a stamped stage is immutable, so
+  # replays and idempotent re-runs never rewrite history. Persisting the stamp
+  # broadcasts the release modules (after_commit), which is what flips the live
+  # /deployments tracker for every viewer. Returns self.
+  def stamp_stage!(stage, at: Time.current)
+    column = STAGE_STAMP_COLUMNS.fetch(stage.to_s) do
+      raise ArgumentError, "unknown release stage #{stage.inspect} (known: #{STAGE_NAMES.join(', ')})"
+    end
+    return self if self[column].present?
+
+    update!(column => at)
+    self
+  end
+
   def record_event!(step:, status:, **attrs)
-    ReleaseEvent.record!(release: self, step: step, status: status, **attrs)
+    event = ReleaseEvent.record!(release: self, step: step, status: status, **attrs)
+    stamp_stage_for_event(step, status, at: event.occurred_at)
+    event
   end
 
   def refresh_duration_metrics!
@@ -284,7 +393,10 @@ class Release < ApplicationRecord
 
     usage_by_slug ||= {}
     transaction do
-      update!(state: "shipped", confirmed_by: by, confirmed_at: Time.current)
+      # confirmed_at is a stage stamp (first-write-wins): when Avi already posted
+      # his confirming completion via the events API, ship keeps that earlier,
+      # truer boundary instead of re-dating it to the ship moment.
+      update!(state: "shipped", confirmed_by: by, confirmed_at: confirmed_at || Time.current)
       # Each Task#ship! stamps position = target-column max + 100. Ship members in
       # stable oldest-first order so the newest task in a deployment batch receives
       # the freshest board rank, regardless of how the association was preloaded.
@@ -301,7 +413,19 @@ class Release < ApplicationRecord
   def reopen!
     raise ArgumentError, "release #{slug} is not assembled (state: #{state})" unless state == "assembled"
 
-    update!(state: "assembling")
+    # New members invalidate the prior assembly, QA pass, and any confirmation —
+    # wind the stage timeline back to `assembling` so the tracker honestly shows
+    # the re-assemble + re-QA ahead. The re-run re-stamps each boundary fresh
+    # (first-write-wins applies to the NEW blanks). testing/assembling stamps
+    # stay: the candidate's overall clock keeps its true origin.
+    update!(
+      state: "assembling",
+      assembled_at: nil,
+      qa_deploy_started_at: nil,
+      qa_deployed_at: nil,
+      confirming_started_at: nil,
+      confirmed_at: nil
+    )
   end
 
   # Discard a stuck RC → members fall back to `reviewed` (off the train), and the
@@ -327,17 +451,32 @@ class Release < ApplicationRecord
 
   private
 
+  # The event→stage seam: recording a step boundary stamps the matching stage
+  # (EVENT_STAGE_STAMPS; unmapped steps and `failed` stamp nothing). Uses the
+  # event's occurred_at so a backdated event stamps its true time. stamp_stage!
+  # is first-write-wins, so idempotent event replays are stamp no-ops.
+  def stamp_stage_for_event(step, status, at:)
+    stage = EVENT_STAGE_STAMPS[[step.to_s, status.to_s]]
+    return unless stage
+
+    stamp_stage!(stage, at: at || Time.current)
+  end
+
   def at_most_one_active_release
     scope = Release.where(state: ACTIVE_STATES)
     scope = scope.where.not(id: id) if persisted?
     errors.add(:state, "another release is already active") if scope.exists?
   end
 
+  # First-write-wins like every stage stamp: an agent may have already posted the
+  # boundary (e.g. `assembled` at sweep-merge completion) before the state flip
+  # lands — the earlier, truer time survives. reopen! clears the downstream
+  # stamps, so a re-assembly stamps fresh.
   def set_state_timestamp
     case state
-    when "assembled" then self.assembled_at = Time.current
-    when "shipped"   then self.shipped_at = Time.current
-    when "abandoned" then self.abandoned_at = Time.current
+    when "assembled" then self.assembled_at ||= Time.current
+    when "shipped"   then self.shipped_at ||= Time.current
+    when "abandoned" then self.abandoned_at ||= Time.current
     end
   end
 

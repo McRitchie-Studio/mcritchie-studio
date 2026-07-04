@@ -399,4 +399,116 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal "shipped", task.reload.stage
     assert_equal Task::MERGED_MAIN, task.merged
   end
+
+  # --- stage timeline ----------------------------------------------------------
+
+  test "[unit] a fresh release has an untouched stage timeline" do
+    rel = Release.open!
+    assert_nil rel.current_stage
+    assert_nil rel.current_stage_index
+    Release::STAGE_NAMES.each { |stage| assert_not rel.stage_reached?(stage), "#{stage} must be unreached" }
+    assert_equal Release::STAGE_NAMES, rel.stage_stamps.keys
+    assert rel.stage_stamps.values.all?(&:nil?)
+  end
+
+  test "[unit] stamp_stage! is a first-write-wins time-and-boolean" do
+    rel = Release.open!
+    first = 2.hours.ago.change(usec: 0)
+    rel.stamp_stage!("qa_deploying", at: first)
+    assert_equal first, rel.stage_stamp("qa_deploying")
+    assert rel.stage_reached?("qa_deploying")
+
+    rel.stamp_stage!("qa_deploying", at: Time.current)
+    assert_equal first, rel.reload.stage_stamp("qa_deploying"), "a stamped stage is immutable"
+  end
+
+  test "[unit] stage_stamp/stamp_stage!/stage_reached? reject unknown stages" do
+    rel = Release.open!
+    assert_raises(ArgumentError) { rel.stage_stamp("warp") }
+    assert_raises(ArgumentError) { rel.stamp_stage!("warp") }
+    assert_raises(ArgumentError) { rel.stage_reached?("warp") }
+  end
+
+  test "[unit] current_stage is monotonic — a late upstream stamp never regresses it" do
+    rel = Release.open!
+    rel.stamp_stage!("qa_deployed")
+    assert_equal "qa_deployed", rel.current_stage
+
+    rel.stamp_stage!("assembled") # the conductor's post-QA-boot assemble! lands late
+    assert_equal "qa_deployed", rel.reload.current_stage
+    assert rel.stage_reached?("assembled")
+    assert_not rel.stage_reached?("confirming"), "the Avi handoff is NOT implied by Live on QA"
+  end
+
+  test "[unit] record_event! stamps the mapped stage at the event's occurred_at" do
+    rel = Release.open!
+    at = 30.minutes.ago.change(usec: 0)
+    rel.record_event!(step: "deploy_qa", status: "started", source: "conductor", occurred_at: at)
+    assert_equal at, rel.reload.qa_deploy_started_at
+    assert_equal "qa_deploying", rel.current_stage
+  end
+
+  test "[unit] record_event! ignores failed + unmapped steps for stamping" do
+    rel = Release.open!
+    rel.record_event!(step: "deploy_qa", status: "failed", source: "conductor")
+    rel.record_event!(step: "release_notes", status: "completed", source: "conductor")
+    assert_nil rel.reload.current_stage
+  end
+
+  test "[unit] a deploy_prod completion event can NOT stamp a release shipped" do
+    rel = Release.open!
+    rel.record_event!(step: "deploy_prod", status: "completed", source: "conductor")
+    assert_nil rel.reload.shipped_at, "shipped is only ever stamped by ship!"
+    assert_equal "assembling", rel.state
+  end
+
+  test "[unit] the Steffon→Avi handoff: qa_deployed leaves confirming unstamped until its own start" do
+    rel = Release.open!
+    rel.record_event!(step: "deploy_qa", status: "completed", source: "conductor")
+    assert rel.reload.stage_reached?("qa_deployed")
+    assert_not rel.stage_reached?("confirming")
+
+    rel.record_event!(step: "ship_gate", status: "started", source: "api", actor: "avi")
+    assert rel.reload.stage_reached?("confirming")
+    assert_equal "confirming", rel.current_stage
+  end
+
+  test "[unit] ship! keeps an earlier confirmed_at stamp (first-write-wins)" do
+    rel = Release.open!
+    confirmed = 20.minutes.ago.change(usec: 0)
+    rel.stamp_stage!("confirmed", at: confirmed)
+    rel.ship!(by: "avi")
+    assert_equal confirmed, rel.reload.confirmed_at
+    assert_equal "avi", rel.confirmed_by
+    assert rel.shipped_at.present?
+    assert_equal "shipped", rel.current_stage
+  end
+
+  test "[unit] a shipped STATE reads as the terminal stage even without stamps (legacy rows)" do
+    rel = Release.open!
+    rel.ship!
+    rel.update_columns(shipped_at: nil)
+    assert_equal "shipped", rel.reload.current_stage
+    assert rel.stage_reached?("confirmed")
+  end
+
+  test "[unit] reopen! winds the timeline back to assembling for the re-QA" do
+    rel = Release.open!
+    rel.stamp_stage!("assembling")
+    rel.record_event!(step: "deploy_qa", status: "completed", source: "conductor")
+    rel.assemble!
+    rel.update!(confirming_started_at: 1.minute.ago)
+
+    rel.reopen!
+    rel.reload
+    assert_equal "assembling", rel.state
+    assert_equal "assembling", rel.current_stage, "downstream stamps must clear for the re-assembly"
+    assert_nil rel.assembled_at
+    assert_nil rel.qa_deployed_at
+    assert_nil rel.confirming_started_at
+    assert rel.assembling_started_at.present?, "the candidate keeps its true assembly origin"
+
+    rel.assemble!
+    assert rel.reload.assembled_at.present?, "the re-assembly stamps fresh"
+  end
 end

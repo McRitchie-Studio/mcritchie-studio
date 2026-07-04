@@ -58,6 +58,18 @@ class Release
     def sweep!(task, override: false)
       release = Release.current_or_open!
       stamp_session_mascot(release)
+      # The first sweep IS the start of assembly — record it so the stage
+      # timeline stamps `assembling` (tracker node 2 goes live) without relying
+      # on a separate agent post. Idempotent across the whole sweep wave.
+      unless release.event_started?("assemble_release")
+        record_event!(
+          release: release,
+          step: "assemble_release",
+          status: "started",
+          source: "conductor",
+          idempotency_key: "#{release.slug}:assemble_release:started"
+        )
+      end
       record_assembly_intent!(task)
       member = release.tasks.find_by(slug: task.slug)
       target = member || task

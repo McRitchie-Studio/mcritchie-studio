@@ -43,8 +43,12 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[unit] the endpoints are forbidden outside development/test (production)" do
+    # Resolve the path BEFORE stubbing the env: routes draw lazily, and the dev
+    # namespace only draws when Rails.env.local? — if this test runs first in the
+    # process, drawing under the stub would strip dev_board_* for every later test.
+    path = dev_board_generate_path
     Rails.stub(:env, ActiveSupport::StringInquirer.new("production")) do
-      post dev_board_generate_path
+      post path
       assert_response :forbidden
     end
   end
@@ -75,51 +79,64 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     fixture_releases.order(created_at: :desc).first
   end
 
-  # The live tracker derives its done_count from durable release writes — assert
-  # against the SAME helper the view reads so the toy provably steps the tracker.
-  def done_count(release)
-    ApplicationController.helpers.release_tracker_done_count(release)
+  # The live tracker reads the release's stage stamps — assert against the SAME
+  # model reads the view uses so the toy provably steps the tracker.
+  def tracker_states(release)
+    ApplicationController.helpers.release_tracker_steps(release).map { |step| step[:state] }
   end
 
-  test "[integration] open_release opens a clean fixture release at tracker step 0" do
+  test "[integration] open_release opens a clean fixture release with an untouched timeline" do
     post dev_board_open_release_path
     assert_response :no_content
 
     rel = fixture_release
     assert_not_nil rel, "open_release spawns a marked fixture release"
     assert_equal "assembling", rel.state
-    assert_equal 0, done_count(rel), "a fresh release sits at Testing (done_count 0)"
+    assert_nil rel.current_stage, "a fresh fixture has no stage stamped"
+    assert_equal %i[pending pending pending pending pending], tracker_states(rel)
   end
 
-  test "[integration] advance_release steps Testing → shipped, shipping on the deploy step" do
+  test "[integration] advance_release stamps stage by stage, shipping on the terminal one" do
     post dev_board_open_release_path
     rel = fixture_release
-    assert_equal 0, done_count(rel)
 
-    post dev_board_advance_release_path # 0 -> 1: adopt a member
-    assert_equal 1, done_count(rel.reload)
-    assert rel.tasks.any?, "step 1 adopts a member task"
+    post dev_board_advance_release_path # → testing
+    assert_equal "testing", rel.reload.current_stage
+    assert_equal %i[active pending pending pending pending], tracker_states(rel)
 
-    post dev_board_advance_release_path # 1 -> 2: QA deploy
-    assert_equal 2, done_count(rel.reload)
-    assert rel.qa_url.present?, "step 2 records a QA url"
+    post dev_board_advance_release_path # → assembling (adopts a member for the card pill)
+    assert_equal "assembling", rel.reload.current_stage
+    assert rel.tasks.any?, "the assembling frame adopts a member task"
+    assert_equal %i[complete active pending pending pending], tracker_states(rel)
 
-    post dev_board_advance_release_path # 2 -> 3: assembled (Confirming active)
-    assert_equal 3, done_count(rel.reload)
-    assert_equal "assembled", rel.state
+    post dev_board_advance_release_path # → assembled
+    post dev_board_advance_release_path # → qa_deploying
+    assert_equal %i[complete complete active pending pending], tracker_states(rel.reload)
 
-    # Reaching the deploy step ships in ONE advance — no confirmed-but-unshipped
+    post dev_board_advance_release_path # → qa_deployed: Live on QA, Confirming stays DARK
+    assert_equal %i[complete complete complete pending pending], tracker_states(rel.reload),
+                 "the Steffon→Avi handoff gap renders on the toy too"
+
+    post dev_board_advance_release_path # → confirming
+    assert_equal %i[complete complete complete active pending], tracker_states(rel.reload)
+
+    post dev_board_advance_release_path # → confirmed
+    post dev_board_advance_release_path # → prod_deploying
+    assert_equal %i[complete complete complete complete active], tracker_states(rel.reload)
+
+    # Reaching the terminal stage ships in ONE advance — no confirmed-but-unshipped
     # pause. The release goes straight to shipped and becomes the Last Release.
-    post dev_board_advance_release_path # 3 -> shipped
+    post dev_board_advance_release_path # → shipped
     assert_equal "shipped", rel.reload.state
-    assert_equal 5, done_count(rel)
+    assert_equal %i[complete complete complete complete complete], tracker_states(rel)
     assert_equal rel, Release.last_shipped, "shipping the fixture creates the Last Release"
     assert_nil Release.current, "shipping clears the Next Release slot"
   end
 
   test "[integration] reset_release clears the fixture release and its members" do
     post dev_board_open_release_path
-    post dev_board_advance_release_path # adopt a fixture member task
+    post dev_board_advance_release_path # → testing
+    post dev_board_advance_release_path # → assembling: adopts a fixture member task
     assert fixture_releases.exists?
     fixture_members = Task.where("metadata ->> 'dev_fixture' = 'true'").where.not(release_slug: nil)
     assert fixture_members.exists?, "a fixture member is attached after advancing"

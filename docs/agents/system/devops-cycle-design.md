@@ -164,7 +164,42 @@ the next candidate.
 | `branch` | The persistent integration branch `release` (same name in every repo); feature PRs merge into it, QA deploys from it, and `ship` fast-forwards it into `main`. |
 | `confirmed_at` / `confirmed_by` | The ship authorization at `assembled → shipped` — operator approval for the QA workflow, or the autonomous production kickoff. |
 | `qa_url` / `production_url` / `deployed_sha` / `release_notes_sent_at` | Deploy + notes record. |
+| stage timestamps | The fine-grained **stage timeline** under `state` — see below. |
 | has_many `tasks` | via `tasks.release_slug`. |
+
+**The stage timeline (`Release::STAGES`).** Under the coarse `state` machine the
+release carries an ordered set of timestamp columns, each a **time-and-boolean**
+(stamped = the stage started/landed; blank = not yet). They are the single input
+the /deployments pizza-tracker reads, they stamp **first-write-wins** (a replay
+never rewrites history), and the release's current stage is the **latest**
+stamped one (monotonic — a late upstream write never winds the tracker back):
+
+| Stage | Stamp | Tracker reads |
+|---|---|---|
+| `testing` | `testing_started_at` | node 1 Testing yellow |
+| `assembling` | `assembling_started_at` | node 1 green · node 2 Assembling yellow |
+| `assembled` | `assembled_at` | node 2 green |
+| `qa_deploying` | `qa_deploy_started_at` | node 3 Deploying QA yellow |
+| `qa_deployed` | `qa_deployed_at` | node 3 green **"Live on QA"** — node 4 stays dark |
+| `confirming` | `confirming_started_at` | node 4 Confirming yellow |
+| `confirmed` | `confirmed_at` | node 4 green |
+| `prod_deploying` | `prod_deploy_started_at` | node 5 Deploying yellow |
+| `shipped` | `shipped_at` | node 5 green |
+
+Stamps flow from the release **event trail**: every `record_event!` write — the
+conductor's `bin/release prepare`/`ship` checkpoints AND the agent-facing
+`POST /api/v1/releases/:slug|current/events/:step/(start|complete)` API — maps
+`(step, status)` to its stage stamp (`Release::EVENT_STAGE_STAMPS`). A node
+lights yellow ONLY on its own start stamp, so a finished stage leaves the next
+node **dark until its owner posts their start**. That gap is the explicit
+**Steffon → Avi handoff**: Steffon's qa-release finishes at `qa_deployed` (three
+greens, Confirming dark, "Live on QA"); stage 4 lights only when Avi posts
+`confirming/start` as he picks the candidate up (`production-deploy` SOP).
+`reopen!` (a late sweep onto an assembled RC) clears the `assembled` →
+`confirmed` stamps so the re-assembly + re-QA re-stamp fresh; `shipped` is only
+ever stamped by `ship!`, never by an API post. Full API contract + the
+post-by-post table: `docs/agents/modules/task-board-api.md` ("Release stage
+timeline").
 
 **Task** gains three links:
 
