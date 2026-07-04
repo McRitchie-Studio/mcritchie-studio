@@ -521,7 +521,11 @@ class ApplicationHelperTest < ActionView::TestCase
 
     # The heartbeats live in their own card, one launcher per soul, 3-up grid.
     assert_select "[data-test='heartbeats-card']", count: 1
+    assert_select "[data-test='heartbeats-card'][data-compact-limit='3']", count: 1
+    assert_select "[data-test='heartbeats-card'][x-data*='heartbeatsExpanded']", count: 1
     assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    assert_select "[data-test='heartbeat-compact-toggle']", text: /Show All/
+    assert_select "[data-test='heartbeat-compact-toggle'] span[x-show='heartbeatsExpanded']", text: "Compact"
     # The tracker does NOT live here — it stays in the Current Release card.
     assert_select "[data-test='heartbeats-card'] [data-test='release-tracker-steps']", count: 0
     # Each launcher stacks a soul avatar (LINKING to /agents/<slug>) OVER a prompt-
@@ -545,6 +549,16 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "deploy-with-task"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='2'] button[data-clip='pr-review']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='3'] button[data-clip='production-deploy']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='2'] button[data-clip='qa-release']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='archive-shipped']"
+    assert_select "[data-test='heartbeat-launcher'] > span.text-muted", count: 0
+    # Rows 4+ are still rendered as copy targets, but tucked behind the card toggle.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][data-copy-row-index='4'][x-show='heartbeatsExpanded'][x-cloak]"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][data-copy-row-index='5'][x-show='heartbeatsExpanded'][x-cloak]"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] [data-test='heartbeat-copy-row'][data-copy-row-index='4'][x-show='heartbeatsExpanded'][x-cloak]"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
     # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly three.
     assert_select "[data-test='heartbeat-heart']", count: 3
     assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 3
