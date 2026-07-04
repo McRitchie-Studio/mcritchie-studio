@@ -1,0 +1,16 @@
+<%# The key-method chip — the ONE load-bearing call of a span/action, rendered as
+    [lang badge | monospace code | copy]. Locals: code (required), lang (the badge;
+    blank falls back to "code"). Copy reuses the shared window.copyText
+    (components/copy_text_script — idempotent, safe to render per chip). The chip
+    lives inside clickable grade rows, so every interaction @click.stop's. %>
+<%= render "components/copy_text_script" %>
+<% lang = lang.presence || "code" %>
+<span class="hb-keychip" data-test="key-method-chip" data-lang="<%= lang %>"
+      x-data="{ copied: false }" @click.stop>
+  <span class="hb-keylang" data-test="key-method-lang"><%= lang %></span>
+  <code class="hb-keycode hb-mono" data-test="key-method-code" title="<%= code %>"><%= code %></code>
+  <button type="button" class="hb-keycopy" data-test="key-method-copy"
+          data-clip="<%= code %>" :title="copied ? 'copied' : 'copy'"
+          x-text="copied ? '✓' : '⧉'"
+          @click.stop="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)"></button>
+</span>

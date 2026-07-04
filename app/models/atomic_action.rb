@@ -46,6 +46,16 @@ class AtomicAction < ApplicationRecord
   PENDING  = "pending"
   OUTCOMES = [OK, ERROR, PENDING].freeze
 
+  # Optional key_method (+ lang badge) — the action's load-bearing call. The
+  # capture hook derives it from a bash tool call's command (post-redaction);
+  # explicit capture attrs win. `summary` is the sibling GOAL slug (outcome-free),
+  # derived from the bash call's description.
+  include HasKeyMethod
+
+  MAX_SUMMARY_LENGTH = 160
+
+  before_validation { self.summary = summary.to_s.strip.presence&.first(MAX_SUMMARY_LENGTH) }
+
   # Who took the action. Mirrors the prototype's actor lane.
   HARNESS = "harness" # Claude Code / Codex runtime
   AGENT   = "agent"   # the session agent (on-policy)
@@ -146,6 +156,9 @@ class AtomicAction < ApplicationRecord
       kind:             attrs[:kind],
       event_slug:       attrs[:event_slug],
       result_slug:      attrs[:result_slug],
+      summary:          attrs[:summary],
+      key_method:       attrs[:key_method],
+      key_method_lang:  attrs[:key_method_lang],
       input:            attrs[:input],
       output:           attrs[:output],
       outcome:          attrs[:outcome].presence || PENDING,

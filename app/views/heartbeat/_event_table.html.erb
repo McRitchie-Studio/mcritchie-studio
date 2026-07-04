@@ -76,6 +76,11 @@
                 <span class="hb-result"><%= event.outcome_slug %></span>
               <% end %>
             </span>
+            <% if event.key_method.present? %>
+              <span class="hb-narrline hb-narr-key" data-test="event-key-method">
+                <%= render "heartbeat/key_method_chip", code: event.key_method, lang: event.key_method_lang %>
+              </span>
+            <% end %>
           </td>
           <td><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
                                        agent_slug: event.agent, agent: agents_by_slug[event.agent],
@@ -122,9 +127,18 @@
               <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
               <td class="hb-meta"><div class="hb-sat">
                 <span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
+                <% if action.key_method.present? %>
+                  <span data-test="action-key-method"><%= render "heartbeat/key_method_chip", code: action.key_method, lang: action.key_method_lang %></span>
+                <% end %>
                 <span class="hb-mono hb-taskcell"><%= action.task_slug.presence || "—" %></span>
               </div></td>
-              <td class="hb-meta hb-gradehint" colspan="2">click to grade</td>
+              <td class="hb-meta hb-gradehint" colspan="2">
+                <% if action.summary.present? %>
+                  <span class="hb-subsum" data-test="action-summary" title="click to grade"><%= action.summary %></span>
+                <% else %>
+                  click to grade
+                <% end %>
+              </td>
             </tr>
           <% end %>
         <% else %>
@@ -175,9 +189,18 @@
             <%= tag.td heartbeat_cost(action.cost), class: class_names("hb-meta", "hb-mono", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) %>
             <td class="hb-meta"><div class="hb-sat">
               <span class="hb-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
+              <% if action.key_method.present? %>
+                <span data-test="action-key-method"><%= render "heartbeat/key_method_chip", code: action.key_method, lang: action.key_method_lang %></span>
+              <% end %>
               <span class="hb-mono hb-taskcell"><%= action.task_slug.presence || "—" %></span>
             </div></td>
-            <td class="hb-meta hb-gradehint" colspan="2">click to grade</td>
+            <td class="hb-meta hb-gradehint" colspan="2">
+              <% if action.summary.present? %>
+                <span class="hb-subsum" data-test="action-summary" title="click to grade"><%= action.summary %></span>
+              <% else %>
+                click to grade
+              <% end %>
+            </td>
           </tr>
         <% end %>
       </tbody>

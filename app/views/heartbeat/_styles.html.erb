@@ -134,6 +134,21 @@
   #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:8px; }
   #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
 
+  /* Key-method chip — [lang badge | code | copy]. The one load-bearing call of a
+     span/action, copyable. Lang badge tints by language; the chip never wraps —
+     long code ellipsizes with the full call on the title hover + the copy button. */
+  #alex-heartbeat .hb-keychip { display:inline-flex; align-items:stretch; max-width:100%; border:1px solid var(--hb-line); border-radius:6px; overflow:hidden; background:var(--hb-panel); vertical-align:middle; }
+  #alex-heartbeat .hb-keylang { display:inline-flex; align-items:center; padding:0 6px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--hb-muted); background:var(--hb-panel2); border-right:1px solid var(--hb-line); }
+  #alex-heartbeat .hb-keychip[data-lang="bash"] .hb-keylang { color:var(--hb-good); }
+  #alex-heartbeat .hb-keychip[data-lang="ruby"] .hb-keylang { color:var(--hb-not); }
+  #alex-heartbeat .hb-keychip[data-lang="sql"]  .hb-keylang { color:var(--hb-accent); }
+  #alex-heartbeat .hb-keychip[data-lang="js"]   .hb-keylang { color:var(--hb-bank); }
+  #alex-heartbeat .hb-keycode { padding:1px 7px; font-size:10.5px; color:var(--hb-txt); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #alex-heartbeat .hb-keycopy { border:0; border-left:1px solid var(--hb-line); background:transparent; color:var(--hb-muted); cursor:pointer; padding:0 7px; font-size:10.5px; line-height:1; }
+  #alex-heartbeat .hb-keycopy:hover { color:var(--hb-accent); background:var(--hb-panel2); }
+  /* An action's goal summary — shown in place of the idle grade hint. */
+  #alex-heartbeat .hb-subsum { color:var(--hb-muted); font-size:11px; font-style:normal; }
+
   #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
   #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
   #alex-heartbeat .hb-empty a { color:var(--hb-accent); }

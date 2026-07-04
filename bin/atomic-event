@@ -25,7 +25,11 @@
 # ONE call, so spans resolve instead of hanging half-narrated (`start` also
 # accepts `--outcome` for the same crossover). `close-open` is the session-end
 # teardown (wired to the Claude Code SessionEnd hook): it closes any span still
-# open so the last one never hangs open forever. There is NO per-call classifier
+# open so the last one never hangs open forever. `next`/`end` also take
+# `--key-method <code>` (+ optional `--key-lang bash|ruby|sql|js`) to stamp the
+# COMPLETED span's one load-bearing call — the copyable line another agent would
+# rerun (e.g. `User.find_by(email: ...)`); most spans have none, so it's optional.
+# There is NO per-call classifier
 # and NO reader sub-agent — the agent narrates. Raw tool-calls attribute to
 # whichever span is open (see AtomicAction.capture), so the span vocabulary +
 # outcomes are the coarse, meaningful layer over the raw stream.
@@ -79,8 +83,8 @@ class AtomicEventCli
     when "awaiting"      then awaiting(flags)          # resolved spans still awaiting an Alex grade
     else
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
-                "next --outcome <text> --category <C> --reason <text> [--agent <soul>] [--task <slug>] | " \
-                "end [--outcome <text>] | close-open [--outcome <text>] | " \
+                "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
+                "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
                 "heartbeat <soul> | heartbeat --clear | " \
                 "grade <span-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
                 "awaiting [--limit <n>]")
@@ -133,6 +137,10 @@ class AtomicEventCli
       "category"      => category,
       "reason"        => reason,
       "prior_outcome" => prior_outcome,
+      # `next --key-method` stamps the COMPLETED (auto-closed) span's one
+      # load-bearing call, same crossover semantics as --outcome.
+      "prior_key_method"      => flags["key-method"].to_s.strip,
+      "prior_key_method_lang" => flags["key-lang"].to_s.strip,
       "task_slug"     => present?(task) ? task : marker["task_slug"],
       "mascot"        => marker["mascot"],
       "stage"         => marker["stage"],
@@ -158,7 +166,11 @@ class AtomicEventCli
     res = post("/api/v1/atomic_events/close", {
       "session_id" => sid,
       "agent"      => agent,
-      "outcome"    => outcome
+      "outcome"    => outcome,
+      # `end --key-method` stamps the closing span's one load-bearing call
+      # (e.g. `User.find_by(email: ...)`); --key-lang overrides the inferred badge.
+      "key_method"      => flags["key-method"].to_s.strip,
+      "key_method_lang" => flags["key-lang"].to_s.strip
     }.reject { |_, v| v.to_s.empty? })
 
     report(res, outcome.empty? ? "closed span" : "closed · #{outcome}")

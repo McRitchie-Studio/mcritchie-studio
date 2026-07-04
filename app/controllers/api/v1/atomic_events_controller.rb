@@ -29,7 +29,9 @@ module Api
           mascot:             open_params[:mascot],
           stage:              open_params[:stage],
           agent:              open_params[:agent],
-          prior_outcome_slug: open_params[:prior_outcome]
+          prior_outcome_slug: open_params[:prior_outcome],
+          prior_key_method:      open_params[:prior_key_method],
+          prior_key_method_lang: open_params[:prior_key_method_lang]
         )
         render_data(event, status: :created)
       end
@@ -42,9 +44,11 @@ module Api
       # failure to the caller).
       def close
         event = AtomicEvent.close_event!(
-          session_id:   close_params[:session_id],
-          agent:        close_params[:agent],
-          outcome_slug: close_params[:outcome]
+          session_id:      close_params[:session_id],
+          agent:           close_params[:agent],
+          outcome_slug:    close_params[:outcome],
+          key_method:      close_params[:key_method],
+          key_method_lang: close_params[:key_method_lang]
         )
         return head :no_content if event.nil?
 
@@ -79,7 +83,9 @@ module Api
           :mascot,         # optional STABLE base session Pokémon slug
           :stage,          # optional coarse task stage at open time
           :agent,          # optional acting soul (AtomicEvent::SOULS); unknown → nil
-          :prior_outcome   # optional — "what happened" on the auto-closed prior span
+          :prior_outcome,  # optional — "what happened" on the auto-closed prior span
+          :prior_key_method,      # optional — the completed span's load-bearing call
+          :prior_key_method_lang  # optional badge language; inferred when blank
         )
       end
 
@@ -87,7 +93,9 @@ module Api
         params.permit(
           :session_id, # required — the session whose open span to close
           :agent,      # optional acting soul — selects the LANE to close (unknown → nil lane)
-          :outcome     # optional — "what happened" (stored as outcome_slug)
+          :outcome,    # optional — "what happened" (stored as outcome_slug)
+          :key_method,      # optional — the span's load-bearing call
+          :key_method_lang  # optional badge language; inferred when blank
         )
       end
 

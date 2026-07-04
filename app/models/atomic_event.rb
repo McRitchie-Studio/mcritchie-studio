@@ -26,6 +26,10 @@
 # limit this does not claim to fix. The span/verdict integrity — the graded
 # signal — is what the per-agent lane protects.)
 class AtomicEvent < ApplicationRecord
+  # Optional key_method (+ lang badge) — the span's one load-bearing call, stamped
+  # by the agent at close (`bin/atomic-event next/end --key-method "…"`).
+  include HasKeyMethod
+
   # The agent-declared span vocabulary — a fixed, small set so spans stay
   # comparable across sessions. The agent picks ONE per span.
   CATEGORIES = %w[
@@ -122,6 +126,7 @@ class AtomicEvent < ApplicationRecord
   #                           opened_at: Time.current) => AtomicEvent
   def self.open_event!(session_id:, category:, reason_slug:, task_slug: nil,
                        mascot: nil, stage: nil, agent: nil, prior_outcome_slug: nil,
+                       prior_key_method: nil, prior_key_method_lang: nil,
                        opened_at: Time.current)
     event = new(
       session_id:  session_id,
@@ -141,6 +146,9 @@ class AtomicEvent < ApplicationRecord
       # Stamp the crossed-over span's outcome only when the agent narrated one, so
       # a bare open never blanks an outcome a prior close already set.
       close_attrs[:outcome_slug] = prior_outcome_slug if prior_outcome_slug.present?
+      # Same for the completed span's key method (`next --key-method`). update_all
+      # skips callbacks, so normalize the pair here.
+      close_attrs.merge!(HasKeyMethod.normalize_pair(prior_key_method, prior_key_method_lang)) if prior_key_method.present?
       # Per-agent lanes: auto-close only THIS agent's open span (event.agent is the
       # already-normalized lane key — a known soul or nil), so a parallel soul
       # narration in the same session never closes another soul's in-flight span.
@@ -155,11 +163,19 @@ class AtomicEvent < ApplicationRecord
   # unknown/blank value is the nil lane, the orchestrator's), so a reviewer's close
   # resolves ITS OWN span, not whichever soul opened last. Returns the closed span,
   # or nil when that lane has no open span (a stray close is a no-op, never an error).
-  def self.close_event!(session_id:, agent: nil, outcome_slug: nil, closed_at: Time.current)
+  def self.close_event!(session_id:, agent: nil, outcome_slug: nil,
+                        key_method: nil, key_method_lang: nil, closed_at: Time.current)
     event = for_session(session_id).where(agent: normalize_agent_value(agent)).open.order(:seq).last
     return nil unless event
 
-    event.update!(outcome_slug: outcome_slug.presence, closed_at: closed_at)
+    attrs = { outcome_slug: outcome_slug.presence, closed_at: closed_at }
+    # Stamp the span's key method only when the close narrates one — a bare close
+    # never blanks a key method the open already set.
+    if key_method.present?
+      attrs[:key_method]      = key_method
+      attrs[:key_method_lang] = key_method_lang
+    end
+    event.update!(attrs)
     event
   end
 

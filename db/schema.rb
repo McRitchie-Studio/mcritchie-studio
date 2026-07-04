@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_03_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_024843) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -205,6 +205,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_120000) do
     t.string "event_slug"
     t.boolean "feedback_anchor", default: false, null: false
     t.text "input"
+    t.text "key_method"
+    t.string "key_method_lang"
     t.string "kind", null: false
     t.string "mascot"
     t.string "model"
@@ -216,6 +218,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_120000) do
     t.string "session_id", null: false
     t.string "source_turn_uuid"
     t.string "stage"
+    t.string "summary"
     t.string "task_slug"
     t.integer "tokens_in", default: 0, null: false
     t.integer "tokens_out", default: 0, null: false
@@ -233,6 +236,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_120000) do
     t.string "category", null: false
     t.datetime "closed_at"
     t.datetime "created_at", null: false
+    t.text "key_method"
+    t.string "key_method_lang"
     t.string "mascot"
     t.datetime "opened_at", null: false
     t.string "outcome_slug"

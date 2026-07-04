@@ -462,6 +462,7 @@ hb_capture = lambda do |row|
   AtomicAction.capture(
     session_id: hb_session, task_slug: row[:task], mascot: (row.key?(:mascot) ? row[:mascot] : "snorlax"),
     kind: row[:kind], event_slug: row[:ev], result_slug: row[:rs], input: row[:in], outcome: row[:outcome] || "ok",
+    summary: row[:sm], key_method: row[:km], key_method_lang: row[:kl],
     actor: row[:actor], model: row[:model], tokens_in: row[:ti].to_i, tokens_out: row[:to].to_i,
     cost: hb_price.call(row[:ti].to_i, row[:to].to_i, row[:model]), stage: row[:stage],
     occurred_at: hb_base + (hb_i * 30).seconds
@@ -474,8 +475,9 @@ hb_capture.call(kind: "boot", actor: "harness", stage: nil, mascot: nil, in: "sp
 
 hb_spans = [
   { category: "Explore", reason: "find the capture seam", outcome: "located the model and schema seam", stage: "building",
+    km: "AtomicAction.capture(session_id:, kind:, input:)", kl: "ruby",
     rows: [
-      { kind: "explore", actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 9400, to: 360, in: "grep -rn AtomicEvent app/models", ev: "Explore the model and schema seam", rs: "Found the capture seam quickly" },
+      { kind: "explore", actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 9400, to: 360, in: "grep -rn AtomicEvent app/models", ev: "Explore the model and schema seam", rs: "Found the capture seam quickly", sm: "find the capture model seam", km: "grep -rn AtomicEvent app/models", kl: "bash" },
       { kind: "edit",    actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 6800, to: 2400, in: "app/views/heartbeat/_event_table.html.erb", ev: "Implement the event trajectory view", rs: "Controller view and helper written" }
     ] },
   { category: "Verify", reason: "run the unit suite", outcome: "green after a fix", stage: "building",
@@ -497,6 +499,7 @@ hb_spans.each do |span|
   next if span[:outcome].nil? # leave the final span open -> "…in progress"
 
   AtomicEvent.close_event!(session_id: hb_session, outcome_slug: span[:outcome],
+                           key_method: span[:km], key_method_lang: span[:kl],
                            closed_at: hb_base + (hb_i * 30).seconds + 5.seconds)
 end
 

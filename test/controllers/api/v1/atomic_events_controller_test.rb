@@ -159,6 +159,40 @@ module Api
         assert_equal "green suite", event.outcome_slug
       end
 
+      test "[integration] close stamps the span's key method with an inferred lang" do
+        post api_v1_atomic_events_path,
+             params: { session_id: "sess-km", category: "Edit", reason: "add the guard" },
+             headers: @headers, as: :json
+
+        post close_api_v1_atomic_events_path,
+             params: { session_id: "sess-km", outcome: "guard added",
+                       key_method: "User.find_by(email: ...)" },
+             headers: @headers, as: :json
+
+        assert_response :ok
+        event = AtomicEvent.for_session("sess-km").order(:seq).last
+        assert_equal "User.find_by(email: ...)", event.key_method
+        assert_equal "ruby", event.key_method_lang
+      end
+
+      test "[integration] create with prior_key_method stamps the auto-closed prior span" do
+        post api_v1_atomic_events_path,
+             params: { session_id: "sess-km2", category: "Explore", reason: "orient" },
+             headers: @headers, as: :json
+
+        post api_v1_atomic_events_path,
+             params: { session_id: "sess-km2", category: "Edit", reason: "make the change",
+                       prior_outcome: "seam found",
+                       prior_key_method: "grep -rn AtomicEvent app/models", prior_key_method_lang: "bash" },
+             headers: @headers, as: :json
+
+        assert_response :created
+        prior = AtomicEvent.for_session("sess-km2").order(:seq).first
+        assert_equal "grep -rn AtomicEvent app/models", prior.key_method
+        assert_equal "bash", prior.key_method_lang
+        assert_nil AtomicEvent.for_session("sess-km2").order(:seq).last.key_method
+      end
+
       test "[integration] closing with no open span is a 204 no-op" do
         post close_api_v1_atomic_events_path,
              params: { session_id: "sess-none", outcome: "nothing to close" },
