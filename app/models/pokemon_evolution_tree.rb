@@ -1,72 +1,32 @@
-# Gen-1 evolution families used for subagent mascot allocation. The Pokémon
-# reference table intentionally remains identity-only; this service owns the
-# small piece of behavior that needs family membership.
+# Evolution families used for subagent mascot allocation, derived from the
+# Pokémon reference columns (base + evolution) so one source of truth covers
+# both generations — the hardcoded Gen 1 groups this replaced predated those
+# columns. A family is the base form plus everything reachable through the
+# evolution lists, in walk order (base first). Babies stay out: they are
+# reference data only and are never assigned as mascots.
 class PokemonEvolutionTree
-  GROUPS = [
-    %w[bulbasaur ivysaur venusaur],
-    %w[charmander charmeleon charizard],
-    %w[squirtle wartortle blastoise],
-    %w[caterpie metapod butterfree],
-    %w[weedle kakuna beedrill],
-    %w[pidgey pidgeotto pidgeot],
-    %w[rattata raticate],
-    %w[spearow fearow],
-    %w[ekans arbok],
-    %w[pikachu raichu],
-    %w[sandshrew sandslash],
-    %w[nidoran-f nidorina nidoqueen],
-    %w[nidoran-m nidorino nidoking],
-    %w[clefairy clefable],
-    %w[vulpix ninetales],
-    %w[jigglypuff wigglytuff],
-    %w[zubat golbat],
-    %w[oddish gloom vileplume],
-    %w[paras parasect],
-    %w[venonat venomoth],
-    %w[diglett dugtrio],
-    %w[meowth persian],
-    %w[psyduck golduck],
-    %w[mankey primeape],
-    %w[growlithe arcanine],
-    %w[poliwag poliwhirl poliwrath],
-    %w[abra kadabra alakazam],
-    %w[machop machoke machamp],
-    %w[bellsprout weepinbell victreebel],
-    %w[tentacool tentacruel],
-    %w[geodude graveler golem],
-    %w[ponyta rapidash],
-    %w[slowpoke slowbro],
-    %w[magnemite magneton],
-    %w[doduo dodrio],
-    %w[seel dewgong],
-    %w[grimer muk],
-    %w[shellder cloyster],
-    %w[gastly haunter gengar],
-    %w[drowzee hypno],
-    %w[krabby kingler],
-    %w[voltorb electrode],
-    %w[exeggcute exeggutor],
-    %w[cubone marowak],
-    %w[koffing weezing],
-    %w[rhyhorn rhydon],
-    %w[horsea seadra],
-    %w[goldeen seaking],
-    %w[staryu starmie],
-    %w[magikarp gyarados],
-    %w[eevee vaporeon jolteon flareon],
-    %w[omanyte omastar],
-    %w[kabuto kabutops],
-    %w[dratini dragonair dragonite]
-  ].map(&:freeze).freeze
-
-  BY_SLUG = GROUPS.each_with_object({}) do |tree, index|
-    tree.each { |slug| index[slug] = tree }
-  end.freeze
-
+  # The family for a slug, as an ordered slug array including the input's whole
+  # line (asking from Charizard still returns the Charmander family). Unknown
+  # slugs collapse to a single-member family so callers never get a surprise [].
   def self.for(slug)
     key = slug.to_s.strip
     return [] if key.empty?
 
-    BY_SLUG.fetch(key, [key])
+    pokemon = Pokemon.find_by(slug: key)
+    return [key] unless pokemon
+
+    family_of(pokemon).presence || [key]
+  end
+
+  def self.family_of(pokemon)
+    root = pokemon.base_form? ? pokemon : Pokemon.find_by(slug: pokemon.base) || pokemon
+    ordered = []
+    frontier = [root]
+    until frontier.empty?
+      ordered.concat(frontier.map(&:slug))
+      next_slugs = frontier.flat_map { |member| Array(member.evolution) }.uniq - ordered
+      frontier = Pokemon.where(slug: next_slugs).to_a
+    end
+    ordered
   end
 end

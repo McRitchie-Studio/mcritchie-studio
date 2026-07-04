@@ -67,15 +67,17 @@ module Api
 
       def create_bellsprout_tree!
         [
-          [69, "Bellsprout", "bellsprout"],
-          [70, "Weepinbell", "weepinbell"],
-          [71, "Victreebel", "victreebel"]
-        ].each do |dex, name, slug|
+          [69, "Bellsprout", "bellsprout", ["weepinbell"]],
+          [70, "Weepinbell", "weepinbell", ["victreebel"]],
+          [71, "Victreebel", "victreebel", []]
+        ].each do |dex, name, slug, evolution|
           Pokemon.find_or_create_by!(slug: slug) do |pokemon|
             pokemon.dex = dex
             pokemon.name = name
             pokemon.types = %w[grass poison]
             pokemon.generation = 1
+            pokemon.base = "bellsprout" # families derive from the columns now
+            pokemon.evolution = evolution
           end
         end
       end

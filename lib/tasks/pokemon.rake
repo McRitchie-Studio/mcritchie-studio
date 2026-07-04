@@ -98,9 +98,12 @@ namespace :pokemon do
       warn "fetched ##{format('%03d', dex)} #{row['name']}"
       row
     end
-    # Merge the fetched slice into the file: rows outside the slice are kept
-    # verbatim, so a RANGE=152-251 run cannot churn the committed Kanto rows.
+    # Merge the fetched slice into the file: rows outside the slice keep their
+    # fetched fields verbatim, so a RANGE=152-251 run cannot churn the committed
+    # Kanto rows. Family fields are then (re)derived across the WHOLE set —
+    # they are cross-row facts (Johto gave Onix an evolution), not per-row ones.
     rows = (existing.reject { |row| range.cover?(row["dex"]) } + fetched).sort_by { |row| row["dex"] }
+    stamp_family_fields(rows)
     File.write(DATA_FILE, "#{JSON.pretty_generate(rows)}\n")
     puts "wrote #{rows.size} Pokémon (fetched #{fetched.size}) → #{DATA_FILE}"
   end
@@ -199,6 +202,62 @@ namespace :pokemon do
 
   def get_json(url)
     JSON.parse(Net::HTTP.get(URI(url)))
+  end
+
+  # Derive base/evolution/baby for EVERY row from PokéAPI species links
+  # (evolves_from_species + is_baby), clipped to the rows present: an
+  # out-of-range relative (Munchlax above Snorlax, Magmortar below Magmar)
+  # simply doesn't exist here, which is exactly the Gen 1–2 view we want.
+  #
+  #   base      — the family's spawnable root. Walking parents up from any form
+  #               lands on the family base; a baby root hands the crown to its
+  #               evolution (Cleffa → Clefairy). Tyrogue (a baby root with THREE
+  #               branches) has no single heir and stays self-based — the spawn
+  #               pool excludes him via the baby lists instead.
+  #   evolution — the slugs this form evolves INTO next (within the set).
+  #   baby      — on each base: its family's baby forms (all three Hitmons
+  #               carry ["tyrogue"]).
+  def stamp_family_fields(rows)
+    by_dex = rows.index_by { |row| row["dex"] }
+    parent = {}
+    is_baby = {}
+    rows.each do |row|
+      dex = row["dex"]
+      species = get_json("#{POKEAPI}/pokemon-species/#{dex}")
+      is_baby[dex] = species["is_baby"] == true
+      from = species.dig("evolves_from_species", "url").to_s[%r{/(\d+)/?\z}, 1]&.to_i
+      parent[dex] = from if from && by_dex.key?(from)
+      warn "species ##{format('%03d', dex)} #{row['slug']}#{' (baby)' if is_baby[dex]}"
+    end
+
+    children = Hash.new { |hash, key| hash[key] = [] }
+    parent.each { |dex, from| children[from] << dex }
+
+    rows.each do |row|
+      dex = row["dex"]
+      row["base"] = by_dex.fetch(family_base_dex(dex, parent, children, is_baby))["slug"]
+      row["evolution"] = children[dex].sort.map { |child| by_dex.fetch(child)["slug"] }
+      row["baby"] = []
+    end
+    rows.each do |row|
+      next unless is_baby[row["dex"]]
+
+      children[row["dex"]].each do |child_dex|
+        base_slug = by_dex.fetch(child_dex)["base"]
+        base_row = rows.find { |candidate| candidate["slug"] == base_slug }
+        base_row["baby"] |= [row["slug"]]
+      end
+    end
+  end
+
+  def family_base_dex(dex, parent, children, is_baby)
+    path = [dex]
+    path << parent[path.last] while parent[path.last]
+    root = path.last
+    return root unless is_baby[root]
+    return path[-2] if path.length > 1 # the first form above the baby
+
+    children[root].one? ? children[root].first : root # Cleffa → Clefairy; Tyrogue stays
   end
 
   # The dex slice a task works — RANGE=<from>-<to> (e.g. RANGE=152-251), the
