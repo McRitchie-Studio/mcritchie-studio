@@ -2,9 +2,10 @@
   <h2 class="text-2xl font-bold text-heading mb-6">Agents</h2>
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
     <% @agents.each do |agent| %>
-      <%= link_to agent_path(agent.slug), class: "card overflow-hidden block hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition" do %>
-        <div class="relative aspect-[5/3] flex items-center justify-center"
-             style="background-color: <%= agent.avatar_color %>;">
+      <% docs = @agent_docs_by_slug.fetch(agent.slug, []) %>
+      <article class="card overflow-hidden hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition" data-test="agent-card" data-agent="<%= agent.slug %>">
+        <%= link_to agent_path(agent.slug), class: "relative aspect-[5/3] flex items-center justify-center block",
+            style: "background-color: #{agent.avatar_color};", aria: { label: "#{agent.name} profile" } do %>
           <span class="text-white font-bold text-5xl"><%= agent.avatar_initials %></span>
           <% if agent.avatar.present? %>
             <img src="<%= agent.avatar %>"
@@ -13,11 +14,23 @@
                  loading="lazy"
                  onerror="this.remove()">
           <% end %>
-        </div>
+        <% end %>
+        <% if docs.any? %>
+          <div class="px-4 pt-3 flex flex-wrap gap-2" data-test="agent-file-links">
+            <% docs.each do |doc| %>
+              <%= link_to doc[:label],
+                          doc_path(doc[:path]),
+                          class: "inline-flex min-h-7 items-center rounded border border-white/10 bg-white/5 px-2.5 text-[11px] font-semibold text-secondary hover:border-primary/40 hover:text-heading transition",
+                          data: { test: "agent-file-link", file: doc[:path] } %>
+            <% end %>
+          </div>
+        <% end %>
         <div class="p-4">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <h3 class="text-heading font-bold text-base leading-tight truncate"><%= agent.name %></h3>
+              <h3 class="text-heading font-bold text-base leading-tight truncate">
+                <%= link_to agent.name, agent_path(agent.slug), class: "hover:text-primary transition" %>
+              </h3>
               <p class="text-secondary text-xs mt-0.5"><%= agent.title %></p>
             </div>
             <div class="flex items-center gap-1.5 flex-shrink-0 mt-1">
@@ -37,7 +50,7 @@
             <% end %>
           </div>
         </div>
-      <% end %>
+      </article>
     <% end %>
   </div>
 </section>
