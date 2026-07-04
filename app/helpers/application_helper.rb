@@ -451,8 +451,8 @@ module ApplicationHelper
   # ONE column with two acts. Every row is an INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
   # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +acts+ are the
-  # launcher atoms that scope that heartbeat's work (Avi: pr-review + production-
-  # deploy; Steffon: qa-deploy + archive-completed; Alex: grade-events). +agent_slug+
+  # launcher atoms that scope that heartbeat's work (Avi: production-deploy +
+  # pr-review; Steffon: archive-completed + qa-deploy; Alex: grade-events). +agent_slug+
   # resolves the soul avatar (reused from the heartbeat Agent column + stage
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
@@ -469,8 +469,8 @@ module ApplicationHelper
   # One-line "what it does" caption for each heartbeat launcher act, keyed by the
   # act slug used in +heartbeat_launchers+. Sourced from
   # docs/agents/modules/heartbeats.md so the agent profile page can annotate each
-  # copyable phrase with the work it launches (Avi: pr-review + production-deploy;
-  # Steffon: qa-deploy + archive-completed; Alex: grade-events).
+  # copyable phrase with the work it launches (Avi: production-deploy + pr-review;
+  # Steffon: archive-completed + qa-deploy; Alex: grade-events).
   ACTION_DESCRIPTIONS = {
     "pr-review"         => "Review + merge all submitted PRs",
     "pr-review-slow"    => "Review + merge submitted PRs one at a time",
