@@ -203,4 +203,45 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
       assert_nothing_raised { assert_nil DeploymentsBroadcaster.release_modules }
     end
   end
+
+  # --- block tone: the single-card render derives ever_blocked from the loaded
+  #     activities (no per-card ever_blocked? query) so the tri-state tone holds --
+
+  # The root card <div>'s class list, pulled from the broadcast card so a tone
+  # assertion sees ONLY the card's own tone class — not a footer button's
+  # hover:bg-* utility (every card carries hover:bg-amber-50 / hover:bg-red-50).
+  def broadcast_card_class(stream, slug)
+    stream.to_html[/<div id="card-#{Regexp.escape(slug)}"[^>]*\bclass="([^"]*)"/, 1].to_s
+  end
+
+  test "[integration] a cleared block broadcasts the amber re-review tone (ever_blocked derived from the loaded activities)" do
+    task = built_submitted_task
+    # A resolved QA block: it WAS blocked (a qa_feedback), the block is cleared (a
+    # resolves_feedback handoff), and it sits back in `submitted` — so the derived
+    # ever_blocked is true, unresolved is false, and the card wears amber.
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix Y")
+    Activity.create!(task_slug: task.slug, activity_type: "handoff", description: "fixed Y",
+                     metadata: { "resolves_feedback" => true })
+    intent = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_event(intent) }
+
+    tone = broadcast_card_class(streams.first, task.slug)
+    assert_includes tone, "bg-amber-50", "a qa_feedback in the loaded set → ever_blocked=true → amber re-review tone"
+    assert_not_includes tone, "bg-red-50", "a cleared (resolved) block is amber, not red"
+    assert_not_includes tone, "bg-surface", "a cleared block is not the plain tone"
+    assert_includes streams.first.to_html, "RE-REVIEW", "the cleared card carries the re-review badge"
+  end
+
+  test "[integration] a never-blocked card broadcasts the plain tone (ever_blocked derived false)" do
+    task = built_submitted_task # no qa_feedback in its activities
+    intent = task.record_intent_event(to_stage: "reviewed", reviewers: REVIEWERS)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_event(intent) }
+
+    tone = broadcast_card_class(streams.first, task.slug)
+    assert_includes tone, "bg-surface", "no qa_feedback in the loaded set → ever_blocked=false → plain tone"
+    assert_not_includes tone, "bg-amber-50", "a never-blocked card is plain, not amber"
+    assert_not_includes tone, "bg-red-50", "a never-blocked card is plain, not red"
+  end
 end
