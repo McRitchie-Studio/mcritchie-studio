@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_04_030600) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_090100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -733,6 +733,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_04_030600) do
     t.integer "hp"
     t.string "name", null: false
     t.string "primary_type"
+    t.string "shiny_avatar_fallback_url"
+    t.string "shiny_avatar_url"
+    t.string "shiny_sprite_url"
     t.string "slug", null: false
     t.integer "special_attack"
     t.integer "special_defense"
@@ -838,6 +841,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_04_030600) do
     t.string "mascot_slug", null: false
     t.string "parent_session_id"
     t.string "session_id", null: false
+    t.boolean "shiny", default: false, null: false
     t.datetime "updated_at", null: false
     t.index ["parent_session_id"], name: "index_session_mascots_on_parent_session_id"
     t.index ["session_id"], name: "index_session_mascots_on_session_id", unique: true
