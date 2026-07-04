@@ -1,0 +1,37 @@
+require "test_helper"
+
+# Integration tier: a shiny mascot's board card renders the SHINY sprite in its
+# build-lane crew circle, through the real /tasks board render path
+# (build_step_columns → task_mascot_face → Pokemon#display_sprite).
+class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
+  setup do
+    Pokemon.create!(dex: 303, name: "Gyarados", slug: "gyarados", types: %w[water flying],
+                    generation: 1,
+                    sprite_url: "https://img.test/normal-sprite.png",
+                    shiny_sprite_url: "https://img.test/shiny-sprite.png")
+  end
+
+  test "tasks board card wears the shiny sprite for a shiny mascot" do
+    task = Pokemon.stub(:roll_shiny?, true) do
+      Task.create!(title: "Shiny mascot board card", stage: "building")
+    end
+    assert_predicate task, :mascot_shiny?
+
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{task.slug} img[src='https://img.test/shiny-sprite.png']"
+    assert_select "#card-#{task.slug} img[src='https://img.test/normal-sprite.png']", count: 0
+  end
+
+  test "tasks board card keeps the normal sprite for an ordinary mascot" do
+    task = Pokemon.stub(:roll_shiny?, false) do
+      Task.create!(title: "Plain mascot board card", stage: "building")
+    end
+    assert_not task.mascot_shiny?
+
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{task.slug} img[src='https://img.test/normal-sprite.png']"
+    assert_select "#card-#{task.slug} img[src='https://img.test/shiny-sprite.png']", count: 0
+  end
+end

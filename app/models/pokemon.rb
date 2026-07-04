@@ -137,15 +137,54 @@ class Pokemon < ApplicationRecord
     types.filter_map { |type| by_key[type]&.emoji }.join
   end
 
+  # Shiny odds for ONE mascot draw — 1-in-N. Production runs the canonical
+  # 1-in-100; dev and QA run 1-in-10 so shinies actually show up while working.
+  # QA runs the production Rails env, so it's told apart by QA_ENV=true (set by
+  # bin/qa-server on every QA app — same signal as ApplicationHelper#qa_environment?).
+  # SHINY_ODDS overrides everything for tuning/demo ("SHINY_ODDS=1" = always shiny).
+  # 0 (never) under test so every task-creating test stays deterministic — shiny
+  # specs opt in by stubbing roll_shiny? (or setting SHINY_ODDS).
+  def self.shiny_odds
+    explicit = ENV["SHINY_ODDS"].to_i
+    return explicit if explicit.positive?
+    return 0 if Rails.env.test?
+
+    qa = ENV["QA_ENV"].to_s.strip.downcase == "true"
+    Rails.env.production? && !qa ? 100 : 10
+  end
+
+  # Roll ONE shiny check at the current odds. Called once per mascot draw — shiny
+  # is a property of the DRAW (the session/task's mascot instance), never of the
+  # Pokémon row itself.
+  def self.roll_shiny?
+    odds = shiny_odds
+    odds.positive? && rand(odds).zero?
+  end
+
   # The image to render for this Pokémon: the tightly-cropped primary
   # (avatar_url), falling back to the original uncropped artwork
   # (avatar_fallback_url) and finally the pixel sprite. Callers that want the
   # explicit backup read avatar_fallback_url directly (e.g. an <img onerror>).
-  def display_avatar
-    avatar_url.presence || avatar_fallback_url.presence || sprite_url
+  # A shiny draw prefers the shiny chain but still lands on the normal art when
+  # the shiny mirror isn't provisioned — a shiny mascot never goes faceless.
+  def display_avatar(shiny: false)
+    (shiny ? shiny_display_avatar : nil) ||
+      avatar_url.presence || avatar_fallback_url.presence || sprite_url
+  end
+
+  # The pixel sprite for small chips (board crew circles, heartbeat rows) —
+  # shiny-aware with the same never-faceless fallback.
+  def display_sprite(shiny: false)
+    (shiny_sprite_url.presence if shiny) || sprite_url
   end
 
   def to_param
     slug
+  end
+
+  private
+
+  def shiny_display_avatar
+    shiny_avatar_url.presence || shiny_avatar_fallback_url.presence || shiny_sprite_url.presence
   end
 end
