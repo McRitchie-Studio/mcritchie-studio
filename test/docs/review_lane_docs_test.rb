@@ -46,8 +46,13 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   # reviews (review-only), Steffon's sweep merges. Nobody "reviews + merges" in
   # one breath. Catches the "conductor reviews, merges, and deploys" / "Avi
   # reviews and merges" / "primary reviews and merges" framings (incl. the §1.4
-  # cold-start block) that the per-file phrase checks above missed.
+  # cold-start block) that the per-file phrase checks above missed. Includes the
+  # adapter SOURCES (index.md → /Users/alex/projects/AGENTS.md, claude.md →
+  # projects-root CLAUDE.md) so a regression to pre-sweep phrasing in the
+  # generated entry docs fails the suite too.
   REVIEW_DOCS = %w[
+    index.md
+    claude.md
     agents/avi/role.md
     system/devops-cycle-design.md
     modules/heartbeats.md
@@ -64,6 +69,37 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       refute_match(/primary[^.\n]{0,120}runs bin\/release merge/im, body,
         "#{rel}: the PRIMARY no longer merges — review-only since 2026-07-03; the sweep owns it")
     end
+  end
+
+  test "[static] generated agent entrypoint defines the SOP invocation standard before generic triage" do
+    body = norm("index.md")
+    standard = body.index("SOP Invocation Standard")
+    first_rules = body.index("First Rules")
+    assert standard, "index.md must expose the SOP invocation standard near the top"
+    assert first_rules, "index.md must keep First Rules after the SOP standard"
+    assert_operator standard, :<, first_rules,
+      "SOP names must resolve before the broader operating rules can send agents into generic triage"
+    assert_match(/SOPs are first-class registered commands in this workspace/i, body)
+    assert_match(/The set is finite, the names are stable, and every SOP name maps to a repo file/i, body)
+    assert_match(/Do not treat an SOP name as ordinary prose, generic GitHub triage, or a broad workflow request/i, body)
+    assert_match(/McRitchie operating procedures are normal repo docs, not installed skills/i, body)
+    assert_match(/Agent-specific SOPs live at mcritchie-studio\/docs\/agents\/agents\/<agent>\/sops\/<sop>\.md/i, body)
+    assert_match(/pr-review \| Avi \| mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md/i, body)
+    assert_match(/read the mapped HEARTBEAT\.md or SOP file before queue inspection, --help probing, GitHub PR discovery, or tool\/plugin selection/i, body)
+  end
+
+  test "[static] claude adapter also points SOP invocations to AGENTS standard first" do
+    body = norm("claude.md")
+    standard = body.index("SOP invocation standard")
+    devops_gate = body.index("STOP — before writing ANY code")
+    assert standard, "Claude adapter must expose SOP routing before the DevOps gate"
+    assert devops_gate, "Claude adapter must keep the DevOps gate"
+    assert_operator standard, :<, devops_gate,
+      "SOP prompts must be resolved before generic workflow handling"
+    assert_match(/McRitchie SOPs live in \/Users\/alex\/projects\/AGENTS\.md's SOP Invocation Standard/i, body)
+    assert_match(/SOPs are first-class registered commands with finite names and stable files/i, body)
+    assert_match(/pr-review means read mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md first/i, body)
+    assert_match(/do not start with bin\/avi-heartbeat --help, bin\/qa-intake, or GitHub PR discovery/i, body)
   end
 
   test "[static] markdown launch docs describe the nested primary→light cascade, review-only" do

@@ -13,14 +13,16 @@ four ordered release actions, a themed glyph on the rest):
 - **The action rows** — one copyable row each, ordered **downstream-first** (each
   soul leads with its idempotent close-out action, so the number icons read
   descending):
-  - **Avi** → `3️⃣ production-deploy` · `1️⃣ pr-review` · `🐢 pr-review-slow`
+  - **Avi** → `3️⃣ production-deploy` · `1️⃣ pr-review` · `🐢 pr-review-slow` ·
+    `⚡ deploy-with-task`
   - **Steffon** → `4️⃣ archive-shipped` · `2️⃣ qa-release`
   - **Alex** → `🧑🏻‍🏫 grade-events` · `📡 share-insights` · `🌎 full-cycle`
 
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
 `/Users/alex/projects`, launches that heartbeat. All rows are **recognized
-launchers** — listed in the generated root `AGENTS.md` SOP Quick Index and in
+launchers** — listed in the generated root `AGENTS.md` SOP Invocation Standard
+registry and in
 [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps
 a single release **atom** (see §1.4's atom table), except `alex` /
 `grade-events`, which is the learning loop and lives outside the release
@@ -33,7 +35,7 @@ Each soul's action-level procedure lives with that soul:
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|
-| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow` | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
+| **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow`, `deploy-with-task` (direct-invoke only) | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-shipped`, `qa-release` | shipped work to archive / `reviewed` work + `assembled` stragglers to sweep | prior cycle `archived` (or no-op); then the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | spans to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
 
@@ -212,6 +214,13 @@ Ship the assembled, QA-green release to production.
   3. Prod-smoke, green seal, and post release notes (`ship!` flips members
      `shipped`, `merged` stays `main`).
   4. Restore the primary checkouts.
+  5. Post-ship agent-docs sync — ship auto-runs the hub primary's
+     `bin/install-agent-docs` (non-fatal, never aborts a completed ship), so the
+     installed docs (`~/.claude` + `~/.codex` skills, the projects-root
+     `AGENTS.md`/`CLAUDE.md`) match what just shipped. **Steffon owns this step
+     and its mechanism** (the `Run Deployment` building block in
+     [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md)); if it
+     warns, run the installer from the hub primary by hand.
 - **Exit seam:** `shipped` (stage 5 **Deployed**). Report the prod SHA + release
   slug. An interrupted run re-runs safely: published gems skip, ffs no-op
   (`merged: main` members are already over), re-pins are idempotent.
@@ -357,7 +366,9 @@ act is named for its audience — the next agents — not the doc-write mechanic
   1. Regenerate the tracked lessons doc from the confirmed insights (composes with
      the lever-3 generator — `bin/rails insights:doc`, scoped to the confirmed set).
   2. `bin/install-agent-docs` to distribute the regenerated doc across the runtimes
-     (`~/.claude` + `~/.codex`), so the confirmed lessons reach every agent.
+     (`~/.claude` + `~/.codex`), so the confirmed lessons reach every agent. (No
+     longer the only owned installer run — `bin/release ship` auto-syncs the
+     installed docs post-ship; see §1 Act 1, step 5.)
 - **Exit seam:** the confirmed insights are in the tracked doc and distributed. A
   re-run with nothing newly confirmed is a clean no-op.
 
@@ -387,8 +398,8 @@ read-only `bin/devops-cycle` snapshot tool.
 > — run it only when the operator launched it (the `Alex Heartbeat` / `full-cycle`
 > phrase) or otherwise granted ship authority in-session. It uses the SAME
 > deterministic gates as `production-deploy`; `--yes` answers only the human
-> confirm. For expediting ONE task on a clean release, use `Deploy with Task
-> <task>` instead (§1.4).
+> confirm. For expediting ONE task on a clean release, use Avi's
+> [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) act instead.
 
 ---
 

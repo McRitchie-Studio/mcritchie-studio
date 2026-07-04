@@ -41,6 +41,10 @@ and stop.
 
 ## Procedure
 
+Normalize any PR the sweep should carry: `gh pr ready <n>` un-drafts it and
+`gh pr edit <n> --base release` retargets a mis-based PR (a no-op when the base
+is already `release`).
+
 Run the self-healing prepare sweep:
 
 ```bash

@@ -1360,6 +1360,60 @@ class ReleaseCliTest < Minitest::Test
     assert_operator deploy_at, :<, hook_at, "the post-deploy hook runs AFTER the app deploys + smokes"
   end
 
+  # --- post-ship agent-docs sync (the OWNED bin/install-agent-docs run) -------
+  # Ship's step 7b runs bin/install-agent-docs AFTER the ship record + restored
+  # primaries — post-SHIP, not post-merge, because the installer reads the LOCAL
+  # hub checkout's docs and only then does the primary's `main` hold exactly what
+  # shipped. NON-FATAL by construction: a docs sync must never abort a ship.
+
+  def test_ship_dry_run_syncs_agent_docs_after_the_shipped_banner
+    out = run_cli(["--dry-run"], call: "ship", setup: POST_DEPLOY_SHIP_STUB)
+
+    shipped_at = out.index("Shipped rel-pd-ship")
+    sync_at    = out.index("sync installed agent docs")
+    assert shipped_at && sync_at, "both the shipped banner and the docs-sync step must appear"
+    assert_operator shipped_at, :<, sync_at,
+                    "the docs sync runs POST-ship (after the shipped record), never before"
+    assert_includes out, "install-agent-docs", "the dry run prints the installer command"
+  end
+
+  def test_sync_agent_docs_runs_the_primary_checkouts_installer
+    setup = <<~RUBY
+      def sh(*a, **_k)
+        $stdout.puts("SH-ARGV " + a.inspect)
+        ["installed-docs-output", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs")
+
+    assert_includes out, "mcritchie-studio/bin/install-agent-docs",
+                     "the sync shells the hub checkout's own installer"
+    refute_includes out[/SH-ARGV.*/].to_s, ".worktrees",
+                     "always the PRIMARY checkout's installer — never a worktree's unshipped docs"
+    assert_includes out, "installed-docs-output", "the installer's output is surfaced to the operator"
+  end
+
+  def test_sync_agent_docs_failure_never_aborts_the_ship
+    setup = <<~RUBY
+      def sh(*_a, **_k) = ["boom", false]
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs; puts('SHIP-CONTINUES')")
+
+    assert_includes out, "agent-docs install failed", "a failed install warns with the by-hand fix"
+    assert_includes out, "SHIP-CONTINUES", "a docs-sync failure never aborts the completed ship"
+  end
+
+  def test_sync_agent_docs_exception_never_aborts_the_ship
+    setup = <<~RUBY
+      def sh(*_a, **_k) = raise("no such installer")
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs; puts('SHIP-CONTINUES')")
+
+    assert_includes out, "agent-docs install skipped (no such installer)",
+                     "an installer exception is rescued and reported with the by-hand fix"
+    assert_includes out, "SHIP-CONTINUES", "an installer exception never aborts the completed ship"
+  end
+
   # A non-zero exit from `heroku run` must ABORT the pipeline. Drive run_post_deploy
   # directly (DRY=false) with `sh` stubbed to FAIL — but the stub first ECHOES its
   # argv, so we also prove the EXECUTED command carries `--exit-code` (the flag that

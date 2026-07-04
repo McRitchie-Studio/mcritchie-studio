@@ -55,6 +55,13 @@
   #alex-heartbeat .pl-confirmed::before { content:"✓ "; }
   #alex-heartbeat .pl-empty { color:var(--hb-faint); font-size:12px; padding:26px 16px; text-align:center; }
   #alex-heartbeat .pl-flash { margin-bottom:14px; padding:9px 14px; border-radius:9px; font-size:12.5px; border:1px solid var(--hb-line); background:var(--hb-panel); color:var(--hb-good); }
+  /* Candidates band — block-mined "not" grades awaiting promotion, sitting above the
+     three-column loop as its newest raw material (a resolved QA block → a lesson). */
+  #alex-heartbeat .pl-cands { margin-bottom:18px; border:1px solid var(--hb-not); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
+  #alex-heartbeat .pl-cands .pl-colhd { border-bottom:1px solid var(--hb-line); }
+  #alex-heartbeat .pl-cands .pl-colhd h2 { color:var(--hb-not); }
+  #alex-heartbeat .pl-cands .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:0; max-height:none; }
+  #alex-heartbeat .pl-cands .pl-row { border-right:1px solid var(--hb-line); box-shadow:inset 3px 0 0 var(--hb-not); }
 </style>
 
 <section id="alex-heartbeat" data-test="alex-pipeline">
@@ -74,6 +81,37 @@
 
   <% if notice.present? %><div class="pl-flash" data-test="pl-flash"><%= notice %></div><% end %>
   <% if alert.present? %><div class="pl-flash" style="color:var(--hb-not)"><%= alert %></div><% end %>
+
+  <%# ── Candidates awaiting grade · block-mined "not" grades ─────────────────
+      Each is a resolved QA block (a pre-labeled failure) the miner tied to the
+      span that caused it. Read-only surfacing: grade/bank it from the span's
+      heartbeat drawer to promote it into Column 2. %>
+  <% if @candidates.present? %>
+    <section class="pl-cands" data-test="pl-candidates">
+      <div class="pl-colhd">
+        <div class="pl-step">Mined from blocks</div>
+        <h2>&#9935; Candidates awaiting grade <span class="pl-count"><%= @candidates.size %> from resolved blocks</span></h2>
+      </div>
+      <div class="pl-list">
+        <% @candidates.each do |cand| %>
+          <% span = cand.atomic_event %>
+          <div class="pl-row" data-test="pl-candidate" data-source-activity="<%= cand.source_activity_slug %>">
+            <div>
+              <span class="pl-slug"><%= cand.slug %></span>
+              <span class="pl-disp not"><%= cand.disposition.upcase %></span>
+            </div>
+            <% if cand.long_form.present? %><p class="pl-long"><%= cand.long_form %></p><% end %>
+            <% if span&.task_slug.present? %>
+              <p class="pl-from">
+                block on <%= span.task_slug %> &middot;
+                <%= link_to "grade span", heartbeat_event_feedback_path(span.id), data: { test: "pl-candidate-grade" } %>
+              </p>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
 
   <div class="pl-grid">
     <%# ── Column 1 · Actions (spans) ─────────────────────────────────────── %>
