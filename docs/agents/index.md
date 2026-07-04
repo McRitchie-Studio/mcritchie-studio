@@ -313,6 +313,7 @@ assigned that lane.
 | Avi production deploy SOP | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
 | Avi PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | Avi slow PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |

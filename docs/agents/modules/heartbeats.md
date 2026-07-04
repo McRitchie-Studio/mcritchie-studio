@@ -21,7 +21,8 @@ four ordered release actions, a themed glyph on the rest):
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
 `/Users/alex/projects`, launches that heartbeat. All rows are **recognized
-launchers** — listed in the generated root `AGENTS.md` SOP Quick Index and in
+launchers** — listed in the generated root `AGENTS.md` SOP Invocation Standard
+registry and in
 [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps
 a single release **atom** (see §1.4's atom table), except `alex` /
 `grade-events`, which is the learning loop and lives outside the release
