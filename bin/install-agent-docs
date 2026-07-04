@@ -6,6 +6,7 @@
 #   docs/agents/claude.md       -> $PROJECTS_DIR/CLAUDE.md        (Claude Code adapter; @imports AGENTS.md)
 #   docs/agents/skills/<name>/  -> $HOME/.claude/skills/<name>/   (user-global Claude Code skills)
 #   docs/agents/skills/<name>/  -> $HOME/.codex/skills/<name>/    (user-global Codex skills)
+#   retired managed skills      -> removed from the same runtime skill dirs
 #
 # Claude Code auto-loads CLAUDE.md (and its @imports) but NOT AGENTS.md, so both
 # files are required to give every agent the same operating model. This keeps the
@@ -63,6 +64,9 @@ SKILLS_DEST_DIRS=(
   "$HOME/.claude/skills"
   "$HOME/.codex/skills"
 )
+RETIRED_SKILLS=(
+  "qa-release"
+)
 SKILL_PAIRS=()
 if [ -d "$SKILLS_SRC_DIR" ]; then
   # -mindepth 2: only mirror files INSIDE a <name>/ skill dir, so a top-level
@@ -80,10 +84,10 @@ usage() {
   cat <<USAGE
 Usage: bin/install-agent-docs [install|check]
 
-install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md)
-         and the user-global skills to ~/.claude/skills + ~/.codex/skills.
+install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md),
+         mirror user-global skills, and prune retired managed skills.
 check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md plus ~/.claude/skills and
-         ~/.codex/skills match the tracked sources.
+         ~/.codex/skills match the tracked sources, with retired skills absent.
 USAGE
 }
 
@@ -134,12 +138,30 @@ if [ "$MODE" = "check" ]; then
       status=1
     fi
   done
+  for skill in "${RETIRED_SKILLS[@]}"; do
+    for dest_dir in "${SKILLS_DEST_DIRS[@]}"; do
+      retired="$dest_dir/$skill"
+      if [ -e "$retired" ]; then
+        echo "ERROR: retired managed skill still installed: $retired" >&2
+        status=1
+      fi
+    done
+  done
   [ "$status" -eq 0 ] || echo "Run: cd $ROOT && bin/install-agent-docs" >&2
   exit "$status"
 fi
 
 mkdir -p "$PROJECTS_DIR"
 echo "Installed:"
+for skill in "${RETIRED_SKILLS[@]}"; do
+  for dest_dir in "${SKILLS_DEST_DIRS[@]}"; do
+    retired="$dest_dir/$skill"
+    if [ -e "$retired" ]; then
+      rm -rf "$retired"
+      echo "  removed retired skill $retired"
+    fi
+  done
+done
 for pair in "${ALL_PAIRS[@]}"; do
   src="${pair%%:*}"; tgt="${pair##*:}"
   install_pair "$src" "$tgt"

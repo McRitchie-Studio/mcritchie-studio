@@ -252,6 +252,17 @@ assigned that lane.
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
+| Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| Avi production deploy SOP | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| Avi PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
+| Avi slow PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
+| Alex share insights SOP | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
+| Alex full cycle SOP | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
@@ -270,6 +281,31 @@ assigned that lane.
 | Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
+
+## Launcher Phrase / SOP Quick Index
+
+Launcher phrases are plain text prompts, not installed skills. When Mr.
+McRitchie says one of these phrases, read the owning soul's `HEARTBEAT.md` when
+the phrase is a heartbeat launcher, then read the specific SOP file linked below.
+A heartbeat may set agent attribution and choose the act order, then it
+references the SOP. The SOP files are independent and do not depend on the
+heartbeat.
+
+| Invocation | Owner | Read |
+|------------|-------|------|
+| `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
+| `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
+| `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `qa-deploy` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
+| `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
+| `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 
 ## Repos
 

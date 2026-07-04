@@ -74,7 +74,8 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/people/search` — GET JSON people search (ILIKE on first_name, last_name, slug, aliases). Used by News edit sidebar.
 - `/people/duplicates` — GET admin UI listing detected duplicate Person groups (Levenshtein distance scoring).
 - `/people/merge` — GET render the person-merge form (pick keep/merge slugs). `POST /people/merge` → `PeopleController#merge_execute` consolidates contracts, roster spots, coaches, and athlete grades from source → keep person, then deletes source.
-- `/activities` — Activity feed
+- `/activities` — Redirects to `/agents`; historical activity remains available
+  through task timelines and the API
 - `/usages` — Usage table
 - `/toast_test` — Toast notification test page (all variants, server-side flash test)
 - `/admin/dashboard` — Admin dashboard with four quick links, a users table, and a request-log table backed by `error_logs`.

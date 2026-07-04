@@ -25,6 +25,7 @@ class InstallAgentSkillsTest < Minitest::Test
   SCRIPT   = File.join(ROOT, "bin", "install-agent-docs")
   RUNTIME  = File.join(ROOT, "bin", "agent-runtime")
   WRAP_SRC = File.join(ROOT, "docs", "agents", "skills", "wrap", "SKILL.md")
+  QA_RELEASE_SRC = File.join(ROOT, "docs", "agents", "skills", "qa-release", "SKILL.md")
   INSIGHTS_BIN = File.join(ROOT, "bin", "session-insights")
 
   def setup
@@ -84,6 +85,13 @@ class InstallAgentSkillsTest < Minitest::Test
 
   def installed_wraps
     [installed_claude_wrap, installed_codex_wrap]
+  end
+
+  def installed_qa_release_dirs
+    [
+      File.join(@home, ".claude", "skills", "qa-release"),
+      File.join(@home, ".codex", "skills", "qa-release")
+    ]
   end
 
   def installed_settings
@@ -158,6 +166,11 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_match(/AGENTS\.md/, body, "active-doc routing should point at the shared agent entry")
     refute_match(/per `CLAUDE\.md`/, body,
       "the shared wrap skill must not route active-doc work solely through CLAUDE.md")
+  end
+
+  def test_unit_qa_release_skill_is_retired_from_canonical_source
+    refute File.exist?(QA_RELEASE_SRC),
+      "qa-release must be a plain launcher phrase routed by AGENTS/docs, not an installed skill"
   end
 
   def test_unit_wrap_degrades_gracefully_without_personal_trimmer
@@ -276,6 +289,35 @@ class InstallAgentSkillsTest < Minitest::Test
       _out, err, status = run_installer("check")
       refute status.success?, "check must fail when a tracked skill is missing locally"
       assert_match(%r{ERROR:.*skills/wrap/SKILL\.md}, err)
+    end
+  end
+
+  def test_integration_install_prunes_retired_qa_release_skill
+    installed_qa_release_dirs.each do |dir|
+      FileUtils.mkdir_p(dir)
+      File.write(File.join(dir, "SKILL.md"), "stale qa-release skill")
+    end
+
+    out, err, status = run_installer("install")
+
+    assert status.success?, "install failed: #{err}"
+    installed_qa_release_dirs.each do |dir|
+      refute File.exist?(dir), "install must remove retired managed skill #{dir}"
+      assert_includes out, "removed retired skill #{dir}"
+    end
+  end
+
+  def test_integration_check_fails_when_retired_qa_release_skill_is_installed
+    installed_qa_release_dirs.each do |dir|
+      FileUtils.mkdir_p(dir)
+      File.write(File.join(dir, "SKILL.md"), "stale qa-release skill")
+    end
+
+    _out, err, status = run_installer("check")
+
+    refute status.success?, "check must fail while retired qa-release is still installed"
+    installed_qa_release_dirs.each do |dir|
+      assert_includes err, "ERROR: retired managed skill still installed: #{dir}"
     end
   end
 

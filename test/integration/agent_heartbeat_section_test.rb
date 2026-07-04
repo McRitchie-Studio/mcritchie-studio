@@ -15,6 +15,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
   setup do
     Agent.find_or_create_by!(slug: "avi")  { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+    Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
   end
 
@@ -48,6 +49,19 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
     assert_match "Share confirmed insights into the docs", response.body
+  end
+
+  test "Steffon's heartbeat soul renders renamed SOP acts" do
+    get agent_path("steffon")
+    assert_response :success
+
+    assert_select "[data-test='agent-heartbeat-section'][data-agent='steffon']", count: 1
+    assert_select "[data-test='heartbeat-name'][data-clip='Steffon Heartbeat']"
+    assert_select "[data-test='action']", count: 2
+    assert_select "[data-test='action'][data-action='archive-shipped'][data-clip='archive-shipped']"
+    assert_select "[data-test='action'][data-action='qa-release'][data-clip='qa-release']"
+    assert_match "Archive shipped tasks", response.body
+    assert_match "Prepare + deploy the QA release", response.body
   end
 
   test "a non-heartbeat agent's page renders no heartbeat section" do
