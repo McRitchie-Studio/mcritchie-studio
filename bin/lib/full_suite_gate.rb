@@ -113,7 +113,10 @@ module FullSuiteGate
   # vs the current tree hash — so a stale refusal shows WHY (which code it was
   # certified for) instead of an opaque "STALE".
   def recorded_fingerprints(checks, lane)
-    Array(checks).filter_map { |line| extract_fingerprint(line, lane) }.uniq
+    Array(checks).each_with_object([]) do |line, values|
+      fp = extract_fingerprint(line, lane)
+      values << fp if fp
+    end.uniq
   end
 
   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
