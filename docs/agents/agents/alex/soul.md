@@ -66,7 +66,13 @@ McRitchie.
 
 ## Protocols I follow
 
-- [`HEARTBEAT.md`](HEARTBEAT.md) — Alex heartbeat learning loop and full-cycle SOP
+- [`HEARTBEAT.md`](HEARTBEAT.md) — Alex heartbeat learning loop and full-cycle launcher
+- [`sops/grade-events.md`](sops/grade-events.md) — grade resolved spans into the
+  learning layer
+- [`sops/share-insights.md`](sops/share-insights.md) — publish confirmed insights
+  into agent docs
+- [`sops/full-cycle.md`](sops/full-cycle.md) — run review, QA, and production ship
+  with explicit authority
 - [`git-protocol.md`](../../system/git-protocol.md) — for cross-agent coordination patterns
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — `pm_size` is mine; I size from business value, blind to spec details
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — I approve new lanes only after two real incidents

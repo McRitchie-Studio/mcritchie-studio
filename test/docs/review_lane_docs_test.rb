@@ -50,7 +50,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
   REVIEW_DOCS = %w[
     agents/avi/role.md
     system/devops-cycle-design.md
-    skills/qa-release/SKILL.md
+    modules/heartbeats.md
     modules/parallel-agent-devops.md
   ].freeze
 
@@ -66,12 +66,19 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     end
   end
 
-  test "[static] the qa-release SKILL describes the nested primary→light cascade, review-only" do
-    body = norm("skills/qa-release/SKILL.md")
+  test "[static] markdown launch docs describe the nested primary→light cascade, review-only" do
+    body = norm("modules/parallel-agent-devops.md")
     assert_match(/nested cascade/i, body)
     assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body)
-    assert_match(/review-only/i, body, "the SKILL states the review-only contract")
+    assert_match(/review-only/i, body, "the launch docs state the review-only contract")
+
+    body = norm("agents/steffon/sops/qa-release.md")
     assert_match(/self-healing/i, body, "…and hands the merge to Steffon's self-healing sweep")
+
+    Dir.glob(AGENTS.join("agents", "*", "sops", "*.md")).each do |path|
+      refute_match(/atomic-event heartbeat/i, File.read(path),
+        "#{path}: act SOPs must stay independent of heartbeat attribution")
+    end
   end
 
   test "[static] the SOP vocabulary hands the merge to Steffon's sweep (no divergence notes)" do

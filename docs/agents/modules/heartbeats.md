@@ -20,11 +20,11 @@ four ordered release actions, a themed glyph on the rest):
 **Every row is independently copyable** (the row-1 heartbeat prompt and each act),
 and **any of them**, pasted into a fresh agent session run from
 `/Users/alex/projects`, launches that heartbeat. All rows are **recognized
-launchers** — wired into
-[`qa-release/SKILL.md`](../skills/qa-release/SKILL.md) and
-[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps a
-single release **atom** (see §1.4's atom table), except `alex` / `grade-events`,
-which is the learning loop and lives outside the release pipeline.
+launchers** — listed in the generated root `AGENTS.md` SOP Quick Index and in
+[`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md). Each act wraps
+a single release **atom** (see §1.4's atom table), except `alex` /
+`grade-events`, which is the learning loop and lives outside the release
+pipeline.
 
 Each soul's action-level procedure lives with that soul:
 [`Avi`](../agents/avi/HEARTBEAT.md),
@@ -62,16 +62,15 @@ session needs nothing else:
 
 1. **Say a launcher row.** Paste the row-1 prompt (`Avi Heartbeat` · `Steffon
    Heartbeat` · `Alex Heartbeat`) or any single act row from the /deployments
-   Heartbeats card. The phrase routes through the `qa-release` skill (source:
-   [`docs/agents/skills/qa-release/SKILL.md`](../skills/qa-release/SKILL.md),
-   installed to `~/.claude/skills` + `~/.codex/skills` by
-   `bin/install-agent-docs`), which lands back on this module + §1.4.
+   Heartbeats card. The generated root `AGENTS.md` maps those launcher phrases
+   directly to this module, the owning soul's `HEARTBEAT.md`, and the relevant
+   SOP file. No installed skill is required.
 2. **Stamp attribution FIRST** — before any other tool call:
    `cd /Users/alex/projects/mcritchie-studio && bin/atomic-event heartbeat
    <avi|steffon|alex>`.
 3. **Run the soul's acts downstream-first** from the mcritchie-studio primary
    checkout (the board is **prod** by default; pass `--yes` on the release verbs
-   the act owns). The full per-soul SOPs are
+   the act owns). The full per-soul heartbeat launchers are
    [`Avi`](../agents/avi/HEARTBEAT.md),
    [`Steffon`](../agents/steffon/HEARTBEAT.md), and
    [`Alex`](../agents/alex/HEARTBEAT.md); the numbered sections below summarize
@@ -176,10 +175,13 @@ a wiring change, not a rewrite.
 
 ## 1. Avi Heartbeat — `Avi Heartbeat` / `production-deploy` / `pr-review`
 
-Canonical step-by-step SOP:
+Canonical heartbeat launcher:
 [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md). The summary below
-keeps the cross-soul page readable; Avi's own heartbeat doc wins for Avi
-mechanics.
+keeps the cross-soul page readable; Avi's standalone act SOPs win for Avi
+mechanics:
+[`production-deploy`](../agents/avi/sops/production-deploy.md),
+[`pr-review`](../agents/avi/sops/pr-review.md), and
+[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md).
 
 **Enter as Avi.** Two acts, run **downstream-first**: ship a QA-green release if one
 is ready, then review the new submitted PRs (**review-only** — Steffon's
@@ -189,6 +191,9 @@ nothing is ready it is a no-op and falls straight through to `pr-review`. Avi
 owns release **stages 4–5** (post-QA → prod).
 
 ### Act 1 — `production-deploy`
+
+Canonical SOP:
+[`../agents/avi/sops/production-deploy.md`](../agents/avi/sops/production-deploy.md).
 
 Ship the assembled, QA-green release to production.
 
@@ -219,6 +224,9 @@ Ship the assembled, QA-green release to production.
 
 ### Act 2 — `pr-review`
 
+Canonical SOP:
+[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md).
+
 Review every waiting PR. **Review-only (2026-07-03):** approved work stops at
 `reviewed` — the merge belongs to Steffon's self-healing `qa-release`, which
 sweeps the reviewed queue promptly.
@@ -241,6 +249,9 @@ sweeps the reviewed queue promptly.
 
 ### Act 2b — `pr-review-slow`
 
+Canonical SOP:
+[`../agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md).
+
 The same as `pr-review`, but **serialized** — one PR at a time.
 
 - **Precondition:** at least one `submitted` PR. Empty queue → report + stop.
@@ -258,7 +269,7 @@ The same as `pr-review`, but **serialized** — one PR at a time.
 
 ## 2. Steffon Heartbeat — `Steffon Heartbeat` / `archive-shipped` / `qa-release`
 
-Canonical step-by-step SOP:
+Canonical heartbeat launcher:
 [`../agents/steffon/HEARTBEAT.md`](../agents/steffon/HEARTBEAT.md). The summary
 below keeps the cross-soul page readable; Steffon's own heartbeat doc wins for
 Steffon mechanics.
@@ -290,10 +301,13 @@ on QA-green. `qa-deploy` is the legacy alias.
 
 ## 3. Alex Heartbeat — `Alex Heartbeat` / `grade-events` / `share-insights` / `full-cycle`
 
-Canonical step-by-step SOP:
+Canonical heartbeat launcher:
 [`../agents/alex/HEARTBEAT.md`](../agents/alex/HEARTBEAT.md). The summary below
-keeps the cross-soul page readable; Alex's own heartbeat doc wins for Alex
-mechanics.
+keeps the cross-soul page readable; Alex's standalone act SOPs win for Alex
+mechanics:
+[`grade-events`](../agents/alex/sops/grade-events.md),
+[`share-insights`](../agents/alex/sops/share-insights.md), and
+[`full-cycle`](../agents/alex/sops/full-cycle.md).
 
 **Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
 events for the learning layer, share the CONFIRMED insights out to every agent, and
@@ -303,6 +317,9 @@ operator view of the first two: Actions (spans) → Insights (Alex grades) →
 Confirmations (McRitchie's `mcr` grades).
 
 ### Act 1 — `grade-events`
+
+Canonical SOP:
+[`../agents/alex/sops/grade-events.md`](../agents/alex/sops/grade-events.md).
 
 Grade a batch of recent trajectory events for quality so the learning layer keeps
 only what makes the next agent smarter.
@@ -326,6 +343,9 @@ only what makes the next agent smarter.
 
 ### Act 2 — `share-insights`
 
+Canonical SOP:
+[`../agents/alex/sops/share-insights.md`](../agents/alex/sops/share-insights.md).
+
 Take the insights Mr. McRitchie has **confirmed** (column 3 of the pipeline — the
 `mcr`-graded subset) and share them out through the platform's docs, so every next
 agent starts with the confirmed lessons. (Renamed from `propagate-insights`: the
@@ -342,6 +362,9 @@ act is named for its audience — the next agents — not the doc-write mechanic
   re-run with nothing newly confirmed is a clean no-op.
 
 ### Act 3 — `full-cycle`
+
+Canonical SOP:
+[`../agents/alex/sops/full-cycle.md`](../agents/alex/sops/full-cycle.md).
 
 Run the **whole DevOps cycle** end to end — the launcher that replaced the retired
 `Merge, Assemble, Deploy` chip. Named `full-cycle` to avoid colliding with the
@@ -372,5 +395,5 @@ read-only `bin/devops-cycle` snapshot tool.
 **Source of truth for the launcher mapping:**
 `ApplicationHelper#heartbeat_launchers` (the card) →
 [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md) (the atoms +
-this launcher set) → [`qa-release/SKILL.md`](../skills/qa-release/SKILL.md) (the
-agent-side recognizer). If they drift, §1.4 wins; fix the others in the same pass.
+this launcher set) → root `AGENTS.md` / [`index.md`](../index.md) (the quick
+launcher index). If they drift, §1.4 wins; fix the others in the same pass.

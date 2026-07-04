@@ -13,11 +13,10 @@ merge release work, deploy QA, or ship production.
 
 ## Entry
 
-Run from the McRitchie Studio primary checkout:
+Run this SOP from the McRitchie Studio primary checkout:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/atomic-event heartbeat steffon
 ```
 
 Use the production board by default. Do not add `--local`.
@@ -28,9 +27,7 @@ Use the production board by default. Do not add `--local`.
 - The worktree cleanup candidate is merged or main-equivalent.
 - No feature worktree with unmerged or dirty work is reclaimed.
 
-If there is nothing to archive, report "nothing to archive" and stop. During a
-full `Steffon Heartbeat` run, continue to
-[`qa-release`](qa-release.md).
+If there is nothing to archive, report "nothing to archive" and stop.
 
 ## Procedure
 
@@ -64,5 +61,4 @@ On a clean no-op, report "nothing to archive."
 
 ## Related
 
-- [`../HEARTBEAT.md`](../HEARTBEAT.md) - Steffon heartbeat entry point.
-- [`qa-release.md`](qa-release.md) - next Steffon act in a full heartbeat run.
+- [`qa-release.md`](qa-release.md) - Steffon's release prepare SOP.

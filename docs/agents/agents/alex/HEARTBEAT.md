@@ -2,16 +2,18 @@
 
 ## Status: Active
 
-This is Alex's specific heartbeat SOP. It has three act SOPs:
+This is Alex's heartbeat launcher. It sets Alex's session attribution and routes
+to three independent act SOPs:
 
-- `grade-events` - grade recent resolved spans into the learning layer.
-- `share-insights` - publish Mr. McRitchie's confirmed insights to agent docs.
-- `full-cycle` - run review, QA deploy, and production deploy with explicit ship
-  authority.
+- [`grade-events`](sops/grade-events.md) - grade recent resolved spans into the
+  learning layer.
+- [`share-insights`](sops/share-insights.md) - publish Mr. McRitchie's confirmed
+  insights to agent docs.
+- [`full-cycle`](sops/full-cycle.md) - run review, QA deploy, and production
+  deploy with explicit ship authority.
 
-Use this file when Mr. McRitchie invokes `Alex Heartbeat`, `grade-events`,
-`share-insights`, or `full-cycle`, whether the entry came from a manual prompt,
-automation, or a scheduled run.
+Use this file when Mr. McRitchie invokes `Alex Heartbeat`. When he invokes a
+single Alex act directly, read that act's SOP file.
 
 ## Scope
 
@@ -42,91 +44,23 @@ reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
+Keep attribution here. The act SOP files below are standalone procedures and do
+not run `bin/atomic-event heartbeat alex` themselves.
+
 ## Act SOPs
 
 Run Alex's acts in the launched scope:
 
-1. `grade-events` - grade recent resolved spans.
-2. `share-insights` - publish Mr. McRitchie's confirmed insights.
-3. `full-cycle` - run review -> QA -> production with explicit ship authority.
+1. [`grade-events`](sops/grade-events.md) - grade recent resolved spans.
+2. [`share-insights`](sops/share-insights.md) - publish Mr. McRitchie's confirmed
+   insights.
+3. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
+   explicit ship authority.
 
 When Mr. McRitchie launches `Alex Heartbeat`, run the learning acts first:
 `grade-events`, then `share-insights`. Run `full-cycle` only when the launched
 act or prompt explicitly includes it, or when Mr. McRitchie grants production
 ship authority in the same session.
-
-## Act 1 - `grade-events`
-
-**Precondition:** resolved atomic-event spans are awaiting Alex's grade. If none
-are waiting, report "nothing to grade" and continue to `share-insights` when this
-is the full `Alex Heartbeat` run.
-
-Procedure:
-
-```bash
-bin/atomic-event awaiting --limit 10
-bin/atomic-event grade <span-id> --disposition good --slug "<4-7 words>" --bank
-bin/atomic-event grade <span-id> --disposition not --slug "<4-7 words>" --discard
-```
-
-Grade the oldest waiting spans first. Bank only insights that make the next agent
-smarter; discard generic narration, routine success, and anything that should not
-become instruction.
-
-The browser path at `/alex/heartbeat` is the operator/admin equivalent. The CLI
-grades as Alex; Mr. McRitchie's confirmation lane remains in the browser
-pipeline.
-
-**Exit seam:** about 10 spans graded, with useful insights banked and weak ones
-discarded. Report how many were banked and discarded.
-
-## Act 2 - `share-insights`
-
-**Precondition:** at least one insight has been confirmed by Mr. McRitchie
-(`grader: "mcr"`). If none are confirmed, report "nothing to share" and stop.
-
-Procedure:
-
-```bash
-bin/rails insights:doc
-bin/install-agent-docs
-```
-
-Regenerate the tracked lessons doc from confirmed insights, then distribute the
-generated docs to the installed agent runtimes. If the generated doc changes,
-include it in the branch or follow-up handoff that owns the docs update.
-
-**Exit seam:** confirmed insights are present in the tracked lessons doc and
-installed for the next agent sessions. Report the changed doc path and install
-result.
-
-## Act 3 - `full-cycle`
-
-**Precondition:** Mr. McRitchie launched `full-cycle`, launched `Alex Heartbeat`
-with full release authority, or otherwise granted production ship authority in
-this session. There must also be work to move: submitted PRs to review, reviewed
-work to prepare, or an assembled release to ship. Empty queue is a clean no-op.
-
-Procedure:
-
-```bash
-bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
-# pr-review atom: review submitted PRs to reviewed or blocked
-bin/release prepare --yes
-bin/release ship --yes
-```
-
-`full-cycle` composes the existing atoms: Avi-style review-only PR review,
-Steffon's self-healing `qa-release`, then Avi's `production-deploy`. Keep the same
-guards each atom owns: waves of five or fewer reviewers, QA-green before ship,
-and no production deploy unless ship authority is explicit.
-
-For a single-task expedite, use the dedicated `Deploy with Task <task>` SOP from
-§1.4 instead of pushing one task past pending release work.
-
-**Exit seam:** the release is shipped, or the run cleanly reports no work. Report
-the reviewed/blocked tasks, QA URL, production SHA, release slug, and smoke
-result when a ship happens.
 
 ## Handoff
 

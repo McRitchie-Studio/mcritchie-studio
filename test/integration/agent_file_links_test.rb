@@ -45,6 +45,12 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='agent-file-link'][data-file='agents/avi/role.md'][href=?]",
                     doc_path("agents/avi/role.md"),
                     text: "role.md"
+      assert_select "[data-test='agent-file-link'][data-file='agents/avi/sops/production-deploy.md'][href=?]",
+                    doc_path("agents/avi/sops/production-deploy.md"),
+                    text: "production-deploy.md"
+      assert_select "[data-test='agent-file-link'][data-file='agents/avi/sops/pr-review.md'][href=?]",
+                    doc_path("agents/avi/sops/pr-review.md"),
+                    text: "pr-review.md"
       assert_select "[data-test='agent-file-link'][data-file='agents/avi/avatar.png']", count: 0
     end
 
@@ -52,12 +58,18 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='agent-file-link'][data-file='agents/alex/HEARTBEAT.md'][href=?]",
                     doc_path("agents/alex/HEARTBEAT.md"),
                     text: "HEARTBEAT.md"
+      assert_select "[data-test='agent-file-link'][data-file='agents/alex/sops/full-cycle.md'][href=?]",
+                    doc_path("agents/alex/sops/full-cycle.md"),
+                    text: "full-cycle.md"
     end
 
     assert_select "[data-test='agent-card'][data-agent='steffon']" do
       assert_select "[data-test='agent-file-link'][data-file='agents/steffon/HEARTBEAT.md'][href=?]",
                     doc_path("agents/steffon/HEARTBEAT.md"),
                     text: "HEARTBEAT.md"
+      assert_select "[data-test='agent-file-link'][data-file='agents/steffon/sops/qa-release.md'][href=?]",
+                    doc_path("agents/steffon/sops/qa-release.md"),
+                    text: "qa-release.md"
     end
 
     assert_select "[data-test='agent-card'][data-agent='turf-monster']" do
@@ -80,5 +92,37 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select ".prose-themed h1", text: "QA Release"
+
+    get doc_path("agents/avi/sops/production-deploy.md")
+    assert_response :success
+
+    assert_select ".prose-themed h1", text: "Production Deploy"
+
+    get doc_path("agents/alex/sops/full-cycle.md")
+    assert_response :success
+
+    assert_select ".prose-themed h1", text: "Full Cycle"
+  end
+
+  test "agent show renders the agent docs file tree" do
+    get agent_path("steffon")
+    assert_response :success
+
+    assert_select "[data-test='agent-file-tree'][data-agent='steffon']" do
+      assert_select "[data-test='agent-file-tree-node'][data-path='sops'][data-kind='directory']",
+                    text: /sops/
+      assert_select "[data-test='agent-file-tree-link'][data-path='agents/steffon/HEARTBEAT.md'][href=?]",
+                    doc_path("agents/steffon/HEARTBEAT.md"),
+                    text: "HEARTBEAT.md"
+      assert_select "[data-test='agent-file-tree-link'][data-path='agents/steffon/sops/archive-shipped.md'][href=?]",
+                    doc_path("agents/steffon/sops/archive-shipped.md"),
+                    text: "archive-shipped.md"
+      assert_select "[data-test='agent-file-tree-link'][data-path='agents/steffon/sops/qa-release.md'][href=?]",
+                    doc_path("agents/steffon/sops/qa-release.md"),
+                    text: "qa-release.md"
+      assert_select "[data-test='agent-file-tree-node'][data-path='avatar.png'][data-kind='file']",
+                    text: /avatar\.png/
+      assert_select "[data-test='agent-file-tree-link'][data-path='agents/steffon/avatar.png']", count: 0
+    end
   end
 end

@@ -2,16 +2,16 @@
 
 ## Status: Active
 
-This is Steffon's specific heartbeat SOP. It has two act SOPs:
+This is Steffon's heartbeat launcher. It sets Steffon's session attribution and
+routes to two independent act SOPs:
 
 - [`archive-shipped`](sops/archive-shipped.md) - archive shipped work and
   reclaim completed worktrees.
 - [`qa-release`](sops/qa-release.md) - run the self-healing release prepare sweep
   through QA.
 
-Use this file when Mr. McRitchie invokes `Steffon Heartbeat`,
-`archive-shipped`, or `qa-release`, whether the entry came from a manual prompt,
-automation, or a scheduled run.
+Use this file when Mr. McRitchie invokes `Steffon Heartbeat`. When he invokes a
+single Steffon act directly, read that act's SOP file.
 
 ## Scope
 
@@ -42,9 +42,12 @@ agent explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
+Keep attribution here. The act SOP files below are standalone procedures and do
+not run `bin/atomic-event heartbeat steffon` themselves.
+
 ## Act SOPs
 
-Run Steffon's acts downstream-first:
+Run Steffon's heartbeat composition downstream-first:
 
 1. [`archive-shipped`](sops/archive-shipped.md) - close out shipped work from the
    prior cycle.

@@ -20,11 +20,10 @@ QA and ready for Avi's production-deploy act. It does not ship production.
 
 ## Entry
 
-Run from the McRitchie Studio primary checkout:
+Run this SOP from the McRitchie Studio primary checkout:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/atomic-event heartbeat steffon
 ```
 
 Use the production board by default. Do not add `--local`.
@@ -88,5 +87,4 @@ On a clean no-op, report "nothing to prepare."
 
 ## Related
 
-- [`../HEARTBEAT.md`](../HEARTBEAT.md) - Steffon heartbeat entry point.
 - [`archive-shipped.md`](archive-shipped.md) - prior Steffon closeout act.

@@ -4,10 +4,11 @@ This is the **reusable, self-contained PR-review procedure** — the review half
 the Deploy workflow (`submitted → reviewed`), factored out so any conductor or QA
 session can invoke it the same way "all over the place." The release SOP
 ([`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
-§1.4), the [`qa-release` skill](../skills/qa-release/SKILL.md), and the
-[`Avi Heartbeat`](../agents/avi/HEARTBEAT.md) loops all include this module **by
-reference** rather than restating it — edit the review contract here and it flows
-everywhere.
+§1.4), the [heartbeats launcher map](heartbeats.md), and Avi's
+[`pr-review`](../agents/avi/sops/pr-review.md) /
+[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) SOPs all include this
+module **by reference** rather than restating it — edit the review contract here
+and it flows everywhere.
 
 > **This module IS the `review-one <task>` atom** — the indivisible PRIMITIVE the
 > composable deploy launchers are built from (§1.4). One run = **one PR / one
@@ -174,12 +175,12 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 - [`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
   §1.4 — the canonical stage ownership and the `Review submitted PRs` building
   block; this module is its formalized, agent-role how-to.
-- [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md) — the Avi-owned
-  heartbeat SOP for the `pr-review` and `pr-review-slow` loops that run this
-  cascade unattended.
+- [`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) and
+  [`../agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md)
+  — the Avi-owned SOPs that run this cascade unattended.
 - [`parallel-agent-devops.md`](parallel-agent-devops.md) — the `bin/reviewer-select`
   mechanics, review-events API, and broader queue/scout context.
 - [`review-comment-taxonomy.md`](review-comment-taxonomy.md) — which activity type
   (`comment` / `clarification` / `qa_feedback` / `handoff`) a reviewer's note uses.
-- [`qa-release` skill](../skills/qa-release/SKILL.md) — the conductor launcher that
-  invokes this review cascade as Review round 1.
+- [`heartbeats.md`](heartbeats.md) — the launcher map that invokes this review
+  cascade as Review round 1.

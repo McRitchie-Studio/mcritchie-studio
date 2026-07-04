@@ -461,17 +461,17 @@ or the `review-one` SOP; none is a new command to build):
 | Atom | Is | Command / SOP |
 |---|---|---|
 | **`review-one <task>`** | the PRIMITIVE — the Modular PR-Review SOP on ONE PR (Avi `reviewer-select` → PRIMARY + LIGHT in parallel → all-clear = PRIMARY drives `reviewed` and STOPS — review-only; else block) | [`pr-review-sop.md`](../modules/pr-review-sop.md) |
-| **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review-only — Steffon's sweep merges) | the loop in step 2 below |
-| **`pr-review-slow`** | the same, **serialized** — one PR at a time | the loop, `--max-agents 1` |
+| **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review-only — Steffon's sweep merges) | [`agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) |
+| **`pr-review-slow`** | the same, **serialized** — one PR at a time | [`agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md) |
 | **`qa-release`** | the SELF-HEALING sweep: detect `reviewed` + stragglers → merge PRs into `release` (skip `merged:` ones) → pre-QA gate → deploy QA → members `assembled` on QA-green | [`agents/steffon/sops/qa-release.md`](../agents/steffon/sops/qa-release.md) / `bin/release prepare --yes` |
 | **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
-| **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`) — **ship-authority gated** | `bin/release ship` |
+| **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`) — **ship-authority gated** | [`agents/avi/sops/production-deploy.md`](../agents/avi/sops/production-deploy.md) / `bin/release ship` |
 
 **Compositions** (the operator-facing launcher phrases = a sequence of atoms):
 
 | Composition | Expands to |
 |---|---|
-| **`full-cycle`** (Alex Heartbeat act; full ship authority) | `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
+| **`full-cycle`** (Alex Heartbeat act; full ship authority) | [`agents/alex/sops/full-cycle.md`](../agents/alex/sops/full-cycle.md): `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
 | **`Deploy with Task <task>`** | **GUARD `release == main`** → `review-one <task>` (→ `reviewed`) → `qa-release` (sweeps + merges it) → `production-deploy` |
 
 > **Retired chips (2026-07-02).** The four legacy release-card chips — `Avi Heartbeat
@@ -497,9 +497,9 @@ a **prompt-like row 1** (`Avi Heartbeat` / `Steffon Heartbeat` / `Alex Heartbeat
 plus one or more **copyable action rows**, each with a leading icon (❤️ on the
 heartbeat row; `1️⃣`–`4️⃣` on the four ordered release actions, a themed glyph on the
 rest). **Any row**, pasted into a fresh session, is a **recognized launcher**. The
-5-stage release tracker stays in the **Next Release** card. Cross-soul SOP:
-[`heartbeats.md`](../modules/heartbeats.md). Per-soul heartbeat SOPs live with
-the souls:
+5-stage release tracker stays in the **Next Release** card. Cross-soul launcher
+map: [`heartbeats.md`](../modules/heartbeats.md). Per-soul heartbeat launchers
+live with the souls:
 [`Avi`](../agents/avi/HEARTBEAT.md),
 [`Steffon`](../agents/steffon/HEARTBEAT.md), and
 [`Alex`](../agents/alex/HEARTBEAT.md).

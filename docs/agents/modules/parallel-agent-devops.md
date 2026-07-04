@@ -287,7 +287,7 @@ Use `bin/avi-heartbeat --run --codex-workdir "$PWD"` when Mr. McRitchie wants
 Avi to review submitted PRs unattended for hours without assembling a release
 (`--codex-workdir` must be a trusted git checkout — the projects-root default
 makes `codex exec` refuse and every reviewer exit 1; full flags in the
-[`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md) SOP). That is **Avi Heartbeat
+[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) SOP). That is **Avi Heartbeat
 Slow**: newest `submitted` task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
 again after reviewer completion. Add `--fast` for

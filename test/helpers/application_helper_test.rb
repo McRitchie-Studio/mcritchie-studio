@@ -593,7 +593,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
   test "[unit] action_description maps the known acts to their captions" do
     assert_equal "Review + merge all submitted PRs", action_description("pr-review")
-    assert_equal "Review + merge submitted PRs one at a time", action_description("pr-review-slow")
+    assert_equal "Review submitted PRs one at a time", action_description("pr-review-slow")
     assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
     assert_equal "Prepare + deploy the QA release", action_description("qa-release")
     assert_equal "Archive shipped tasks + releases", action_description("archive-shipped")

@@ -457,10 +457,10 @@ module ApplicationHelper
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
   # genuinely launchable on its own; each is a recognized launcher in
-  # docs/agents/modules/heartbeats.md + qa-release/SKILL.md.
+  # docs/agents/modules/heartbeats.md + the per-agent HEARTBEAT.md launchers.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow"], label: "Ship + review", title: "Avi — ship a ready release, then review + merge new PRs" },
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow"], label: "Ship + review", title: "Avi — ship a ready release, then review new PRs" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-shipped", "qa-release"],                  label: "Archive + QA",  title: "Steffon — archive shipped work, then QA the release" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" }
     ]
@@ -473,7 +473,7 @@ module ApplicationHelper
   # Steffon: archive-shipped + qa-release; Alex: grade-events).
   ACTION_DESCRIPTIONS = {
     "pr-review"         => "Review + merge all submitted PRs",
-    "pr-review-slow"    => "Review + merge submitted PRs one at a time",
+    "pr-review-slow"    => "Review submitted PRs one at a time",
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-release"        => "Prepare + deploy the QA release",
     "archive-shipped"   => "Archive shipped tasks + releases",
