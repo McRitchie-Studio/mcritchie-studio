@@ -5,6 +5,22 @@ class PokemonTest < ActiveSupport::TestCase
     Pokemon.create!(dex: dex, name: slug.capitalize, slug: slug, generation: generation)
   end
 
+  # A full three-stage line rooted at Charmander (base → evolves → evolves again).
+  def three_stage_line!
+    Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander",
+                    base: "charmander", evolution: ["charmeleon"])
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon",
+                    base: "charmander", evolution: ["charizard"])
+    Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", base: "charmander")
+  end
+
+  # A two-stage line rooted at Diglett (base evolves once, then stops).
+  def two_stage_line!
+    Pokemon.create!(dex: 50, name: "Diglett", slug: "diglett",
+                    base: "diglett", evolution: ["dugtrio"])
+    Pokemon.create!(dex: 51, name: "Dugtrio", slug: "dugtrio", base: "diglett")
+  end
+
   # --- Validations ---
 
   test "requires dex, name, and slug" do
@@ -115,6 +131,75 @@ class PokemonTest < ActiveSupport::TestCase
 
   test "draw returns nil when the deck is empty" do
     assert_nil Pokemon.draw
+  end
+
+  # --- Three-stage draw weighting ---
+
+  test "three_stage_base_slugs picks only the fully-evolving roots" do
+    three_stage_line!    # charmander → charmeleon → charizard
+    two_stage_line!      # diglett → dugtrio
+    make(143, "snorlax") # single-stage
+
+    assert_equal ["charmander"], Pokemon.three_stage_base_slugs
+  end
+
+  test "three_stage_base_slugs is the base root, not the mid-stage that also evolves" do
+    three_stage_line!
+    # Charmeleon evolves too, but it is not a base form (base != slug), so it is
+    # never a spawn root — only Charmander is.
+    slugs = Pokemon.three_stage_base_slugs
+    assert_includes slugs, "charmander"
+    assert_not_includes slugs, "charmeleon"
+  end
+
+  test "draw_bag enters three-stage lines twice and shorter lines once" do
+    three_stage_line!    # 3-stage
+    two_stage_line!      # 2-stage
+    make(143, "snorlax") # single-stage
+
+    counts = Pokemon.draw_bag.map(&:slug).tally
+    assert_equal Pokemon::THREE_STAGE_DRAW_WEIGHT, counts["charmander"]
+    assert_equal 1, counts["diglett"]
+    assert_equal 1, counts["snorlax"]
+    # deck is 3 bases; the three-stage one is doubled → 4 draw slots.
+    assert_equal 4, Pokemon.draw_bag.size
+  end
+
+  test "draw_bag honours exclude and keeps weighting on the full-deck fallback" do
+    three_stage_line!
+    make(143, "snorlax")
+
+    # Snorlax excluded → only the doubled Charmander remains.
+    assert_equal %w[charmander charmander], Pokemon.draw_bag(exclude: ["snorlax"]).map(&:slug)
+    # Everything excluded → fall back to the whole deck, still weighted.
+    assert_equal 3, Pokemon.draw_bag(exclude: Pokemon.deck.pluck(:slug)).size # charmander×2 + snorlax
+  end
+
+  test "draw only ever returns a deck member from the weighted bag" do
+    three_stage_line!
+    make(143, "snorlax")
+    deck = Pokemon.deck.pluck(:slug).to_set
+    50.times { assert_includes deck, Pokemon.draw.slug }
+  end
+
+  test "the seeded deck weights the 24 three-stage roots into the draw bag" do
+    capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
+
+    # Three-stage roots are a fixed 24 across Gen 1–2 — independent of the spawn
+    # base count, which siblings legitimately move (e.g. reclassify-togepi-and-
+    # tyrogue). This is the weighting invariant this PR owns.
+    assert_equal 24, Pokemon.three_stage_base_slugs.size
+    # Derive the expected bag from the deck rather than hardcode a base count, so
+    # this stays green whether the deck is 131 or 129: every base is one slot, and
+    # each of the 24 three-stage roots adds one more (129 + 24 = 153, 131 + 24 = 155).
+    assert_equal Pokemon.deck.count + 24, Pokemon.draw_bag.size
+
+    deep = Pokemon.three_stage_base_slugs.to_set
+    assert_includes deep, "charmander"  # charmander → charmeleon → charizard
+    assert_includes deep, "dratini"     # dratini → dragonair → dragonite
+    assert_not_includes deep, "diglett" # diglett → dugtrio (two-stage)
+    assert_not_includes deep, "snorlax" # single-stage
+    assert_not_includes deep, "eevee"   # branches, but every branch is terminal
   end
 
   # --- Committed data file (db/seeds/data/pokemon.json) ---

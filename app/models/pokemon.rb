@@ -13,6 +13,12 @@ class Pokemon < ApplicationRecord
   # with the model that owns types, not scattered across the controller and view.
   TYPE_ENUMERAL_CATEGORY = "pokemon_type".freeze
 
+  # How many times a three-stage line (base → evolves → evolves again) enters the
+  # mascot draw bag relative to shorter lines. The 24 fully-evolving roots
+  # (Charmander, Dratini, Larvitar, …) felt too rare at flat one-in-the-deck odds,
+  # so they draw at this multiple — every other base stays at weight 1. See .draw_bag.
+  THREE_STAGE_DRAW_WEIGHT = 2
+
   validates :dex, presence: true,
                   uniqueness: true,
                   numericality: { only_integer: true, greater_than: 0 }
@@ -50,15 +56,43 @@ class Pokemon < ApplicationRecord
     spawnable
   end
 
-  # Draw one random Pokémon for a mascot, skipping any slug in `exclude` (the
-  # mascots already held by live tasks). Deck-draw without replacement; if every
-  # base form is somehow taken it falls back to the full deck rather than
-  # returning nil, so a task always gets a face.
-  def self.draw(exclude: [])
+  # The base slugs whose evolutionary line runs a full three stages — the base
+  # evolves, and that evolution itself evolves again (the "2 evolutions off base"
+  # roots; 24 across Gen 1–2). Two set-based queries, no N+1: `evolvers` is every
+  # form that can evolve into something, and a base is three-stage exactly when one
+  # of its own evolutions is itself an evolver. These draw at THREE_STAGE_DRAW_WEIGHT.
+  # (The jsonb `where.not(evolution: [])` predicate over-selects, so empties are
+  # dropped in Ruby — the same reason .baby_slugs flattens.)
+  def self.three_stage_base_slugs
+    evolvers = pluck(:slug, :evolution).filter_map { |slug, evolution| slug if Array(evolution).present? }.to_set
+    deck.pluck(:slug, :evolution).filter_map do |slug, evolution|
+      slug if Array(evolution).any? { |next_slug| evolvers.include?(next_slug) }
+    end
+  end
+
+  # The weighted bag the mascot draw samples: the deck minus mascots already
+  # `exclude`d (falling back to the whole deck when everything is spoken for), with
+  # every three-stage line entered THREE_STAGE_DRAW_WEIGHT times so the
+  # fully-evolving families surface that much more often. Over the seeded deck the
+  # 24 three-stage roots are counted twice (129 bases → a 153-slot bag).
+  def self.draw_bag(exclude: [])
     taken = Array(exclude).compact_blank
     pool = deck.where.not(slug: taken)
     pool = deck unless pool.exists?
-    pool.order(Arel.sql("RANDOM()")).first
+
+    deep = three_stage_base_slugs.to_set
+    pool.flat_map do |pokemon|
+      deep.include?(pokemon.slug) ? Array.new(THREE_STAGE_DRAW_WEIGHT, pokemon) : [pokemon]
+    end
+  end
+
+  # Draw one random Pokémon for a mascot, skipping any slug in `exclude` (the
+  # mascots already held by live tasks). Deck-draw without replacement; if every
+  # base form is somehow taken it falls back to the full deck rather than
+  # returning nil, so a task always gets a face. Three-stage lines are weighted
+  # (see .draw_bag / THREE_STAGE_DRAW_WEIGHT), so the draw is no longer uniform.
+  def self.draw(exclude: [])
+    draw_bag(exclude: exclude).sample
   end
 
   # Draw from a caller-curated slug pool (e.g. a parent session's evolution
