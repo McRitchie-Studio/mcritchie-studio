@@ -122,6 +122,77 @@ class AtomicCaptureHookTest < Minitest::Test
     refute h.narration?({ "tool_name" => "Bash" })
   end
 
+  # ── [unit] compound-command drop rule (the deterministic-capture fix) ──────
+  # The drop decision is PER SEGMENT: a call is dropped only when EVERY segment is
+  # navigation or narration. A `cd X && <work>` KEEPS the work — the fix for the
+  # observed bug where a leading `cd` ate the whole command (3 spans, 0 actions).
+
+  def test_unit_droppable_only_when_every_segment_is_overhead
+    h = hook
+    [
+      "cd /repo",                                             # bare nav
+      "cd /a && cd /b",                                       # nav + nav
+      "bin/atomic-event start --category Edit --reason x",    # bare narration
+      "cd /repo && bin/atomic-event next --outcome y --category Edit --reason z" # nav + narration
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      assert h.droppable?(event), "#{command.inspect} is pure overhead → dropped"
+    end
+
+    [
+      "cd /repo && git commit -m x",                          # the regression: work behind a cd
+      "cd /wt/app && bin/agent-worktree finish app task --push --pr",
+      "bin/atomic-event next --outcome y --category Edit --reason z && bin/task update t --checks x",
+      "git status && cd /elsewhere"                           # work first, nav second
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      refute h.droppable?(event), "#{command.inspect} carries real work → captured"
+    end
+
+    # Non-Bash / empty commands are never droppable.
+    refute h.droppable?({ "tool_name" => "Edit", "tool_input" => { "command" => "cd /x" } })
+    refute h.droppable?({ "tool_name" => "Bash", "tool_input" => {} })
+    refute h.droppable?({ "tool_name" => "Bash" })
+  end
+
+  def test_unit_navigation_and_narration_predicates_require_all_segments
+    h = hook
+    refute h.navigation?({ "tool_name" => "Bash", "tool_input" => { "command" => "cd /x && git commit" } }),
+           "a work segment means the command is not PURE navigation"
+    assert h.navigation?({ "tool_name" => "Bash", "tool_input" => { "command" => "cd /x && pushd /y" } }),
+           "a chain of only directory moves is pure navigation"
+    refute h.narration?({ "tool_name" => "Bash", "tool_input" => { "command" => "bin/atomic-event end && git push" } }),
+           "a work segment means the command is not PURE narration"
+  end
+
+  # ── [unit] deterministic span attribution (open-span marker) ──────────────
+  # build_payload stamps atomic_event_id from the local marker bin/atomic-event
+  # writes, so the action pins to the span open at tool-call time — not whatever the
+  # server finds open when this async POST lands.
+
+  def test_unit_build_payload_stamps_the_open_span_from_the_marker
+    Dir.mktmpdir do |proj|
+      write_open_span_marker(proj, SESSION, 4242)
+      event = { "session_id" => SESSION, "tool_name" => "Bash",
+                "tool_input" => { "command" => "git status" }, "tool_response" => {} }
+
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event)
+
+      assert_equal 4242, payload["atomic_event_id"], "the action pins to the OPEN span the marker records"
+    end
+  end
+
+  def test_unit_build_payload_open_span_is_nil_without_a_marker
+    Dir.mktmpdir do |proj|
+      event = { "session_id" => SESSION, "tool_name" => "Bash",
+                "tool_input" => { "command" => "git status" }, "tool_response" => {} }
+
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event)
+
+      assert_nil payload["atomic_event_id"], "no marker ⇒ nil ⇒ the server derives the span"
+    end
+  end
+
   # ── [unit] serialization + truncation ────────────────────────────────────
 
   def test_unit_serialize_json_encodes_non_strings
@@ -457,6 +528,25 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  def test_integration_compound_cd_and_work_is_captured_with_the_open_span
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      write_open_span_marker(proj, SESSION, 909)
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Bash",
+        "tool_input" => { "command" => "cd /repo && git commit -m x" },
+        "tool_response" => { "stdout" => "" }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_actions" }
+      refute_nil post, "work behind a leading `cd` must be CAPTURED, not dropped whole"
+      assert_equal 909, JSON.parse(post[:body])["atomic_event_id"],
+                   "the captured action pins to the open-span marker → deterministic attribution"
+    end
+  end
+
   def test_integration_always_exits_zero_even_when_endpoint_is_down
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "task_slug" => "x")
@@ -593,6 +683,12 @@ class AtomicCaptureHookTest < Minitest::Test
     sessions = File.join(projects_dir, ".agents", "sessions")
     FileUtils.mkdir_p(sessions)
     File.write(File.join(sessions, "#{session_id}.json"), JSON.generate(attrs))
+  end
+
+  def write_open_span_marker(projects_dir, session_id, id)
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    FileUtils.mkdir_p(sessions)
+    File.write(File.join(sessions, "#{session_id}.open-span"), "#{id}\n")
   end
 
   def base_env(projects_dir)

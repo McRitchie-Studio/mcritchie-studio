@@ -61,6 +61,28 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
+  # ── [unit] open-span marker (deterministic attribution) ───────────────────
+  # The marker records the session's currently-open span id so bin/atomic-capture-hook
+  # can pin every action to it. write stores an id; record_open_span pulls it from a
+  # 2xx open response (no-op on failure); clear removes it.
+  def test_unit_open_span_marker_write_record_and_clear
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      path = c.send(:open_span_path, SESSION)
+
+      c.send(:write_open_span, SESSION, 777)
+      assert_equal "777", File.read(path).strip, "write stores the span id"
+
+      c.send(:record_open_span, SESSION, stub_res("200 OK", "data" => { "id" => 888 }))
+      assert_equal "888", File.read(path).strip, "record_open_span pulls data.id from a 2xx open"
+      c.send(:record_open_span, SESSION, stub_res("500", "error" => "boom"))
+      assert_equal "888", File.read(path).strip, "a failed open leaves the prior marker untouched"
+
+      c.send(:clear_open_span, SESSION)
+      refute File.exist?(path), "clear removes the marker"
+    end
+  end
+
   def test_unit_session_prefers_explicit_then_env
     assert_equal "flag-sid", cli.resolve_session_id("session" => "flag-sid")
     assert_equal "claude-sid",
@@ -173,6 +195,33 @@ class AtomicEventCliTest < Minitest::Test
       assert_equal "narrated-trajectory-events", body["task_slug"]
       assert_equal "caterpie", body["mascot"]
       assert_equal "building", body["stage"]
+    end
+  end
+
+  # ── [integration] open-span marker lifecycle (deterministic attribution) ──
+  def test_integration_start_records_the_open_span_marker
+    Dir.mktmpdir do |proj|
+      run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
+
+      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.open-span")
+      assert File.file?(marker), "start writes the open-span marker"
+      assert_equal "1", File.read(marker).strip, "with the id the open response returned"
+    end
+  end
+
+  def test_integration_end_clears_the_open_span_marker
+    Dir.mktmpdir do |proj|
+      marker = seed_open_span_marker(proj, SESSION, 1)
+      run_cli(%W[end --session #{SESSION} --outcome done], proj: proj)
+      refute File.exist?(marker), "end deletes the open-span marker"
+    end
+  end
+
+  def test_integration_close_open_clears_the_open_span_marker
+    Dir.mktmpdir do |proj|
+      marker = seed_open_span_marker(proj, SESSION, 1)
+      run_cli(%W[close-open --session #{SESSION} --outcome bye], proj: proj)
+      refute File.exist?(marker), "close-open (SessionEnd) deletes the open-span marker"
     end
   end
 
@@ -499,6 +548,19 @@ class AtomicEventCliTest < Minitest::Test
     sessions = File.join(projects_dir, ".agents", "sessions")
     FileUtils.mkdir_p(sessions)
     File.write(File.join(sessions, "#{session_id}.json"), JSON.generate(attrs))
+  end
+
+  def seed_open_span_marker(projects_dir, session_id, id)
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    FileUtils.mkdir_p(sessions)
+    path = File.join(sessions, "#{session_id}.open-span")
+    File.write(path, "#{id}\n")
+    path
+  end
+
+  # A minimal HTTP-response double for record_open_span (needs #code + #body).
+  def stub_res(code, body_hash)
+    Struct.new(:code, :body).new(code, JSON.generate(body_hash))
   end
 
   # The worktree DESK marker (.agent-context.json) — carries the BOUND task's
