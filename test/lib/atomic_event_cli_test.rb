@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Tests for bin/atomic-event — the agent's self-narration CLI (start/end a span).
+# Tests for bin/atomic-event — the agent's self-narration CLI (start/end an activity).
 #
 #   ruby -Itest test/lib/agent_activity_cli_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
@@ -131,7 +131,7 @@ class AgentActivityCliTest < Minitest::Test
 
   # ── [unit] task_slug inference from a feat/<slug> branch ──────────────────
   # The MARKER fallback: with no desk/session task_slug, resolve_marker infers the
-  # task from a `feat/<slug>` checkout branch so a span is task-attributed even
+  # task from a `feat/<slug>` checkout branch so an activity is task-attributed even
   # before a task-bind write. (The `--task` flag is the explicit stamp — below.)
 
   def test_unit_task_slug_from_branch_reads_only_feat_branches
@@ -173,9 +173,9 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # ── [integration] start POSTs an open span ───────────────────────────────
+  # ── [integration] start POSTs an open activity ───────────────────────────
 
-  def test_integration_start_mints_token_and_opens_span
+  def test_integration_start_mints_token_and_opens_activity
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION,
                            "task_slug" => "narrated-trajectory-events", "mascot" => "caterpie", "stage" => "building")
@@ -209,8 +209,8 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # ── [integration] --task stamps the span's task explicitly ────────────────
-  # The observed fix: a session's FIRST span is task-attributed immediately via
+  # ── [integration] --task stamps the activity's task explicitly ────────────
+  # The observed fix: a session's FIRST activity is task-attributed immediately via
   # --task, instead of a blank TASK until a late `bin/task`/`bind-task` write.
 
   def test_integration_task_flag_stamps_task_slug_on_the_first_span
@@ -222,13 +222,13 @@ class AgentActivityCliTest < Minitest::Test
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       refute_nil open, "expected a POST /api/v1/agent_activities"
       assert_equal "capture-and-deploy-attribution", JSON.parse(open[:body])["task_slug"],
-                   "--task stamps the task on the very first span"
+                   "--task stamps the task on the very first activity"
     end
   end
 
   def test_integration_task_flag_overrides_the_marker_task_slug
     Dir.mktmpdir do |proj|
-      # The marker says one task; --task explicitly overrides it for this span.
+      # The marker says one task; --task explicitly overrides it for this activity.
       write_session_marker(proj, SESSION, "task_slug" => "marker-task", "mascot" => "shellder")
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient --task explicit-task],
                          proj: proj)
@@ -295,9 +295,9 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # ── [integration] --agent stamps the acting soul on the span ─────────────
+  # ── [integration] --agent stamps the acting soul on the activity ──────────
 
-  def test_integration_start_stamps_agent_on_the_open_span
+  def test_integration_start_stamps_agent_on_the_open_activity
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "mascot" => "shellder")
       requests = run_cli(%W[start --session #{SESSION} --category Edit --reason add-guard --agent avi], proj: proj)
@@ -305,7 +305,7 @@ class AgentActivityCliTest < Minitest::Test
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       refute_nil open, "expected a POST /api/v1/agent_activities"
       body = JSON.parse(open[:body])
-      assert_equal "avi", body["agent"], "--agent rides the open-span POST"
+      assert_equal "avi", body["agent"], "--agent rides the open-activity POST"
       assert_equal "shellder", body["mascot"], "the base session mascot rides alongside, unchanged"
     end
   end
@@ -333,25 +333,25 @@ class AgentActivityCliTest < Minitest::Test
 
   # ── [integration] grade + awaiting — the agent grade-events flow ──────────
 
-  def test_integration_grade_posts_disposition_slug_and_intent_to_the_span
+  def test_integration_grade_posts_disposition_slug_and_intent_to_the_activity
     Dir.mktmpdir do |proj|
-      requests = run_cli(%W[grade 42 --disposition not --slug noisy-span --bank], proj: proj)
+      requests = run_cli(%W[grade 42 --disposition not --slug noisy-activity --bank], proj: proj)
 
       grade = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/42/grade" }
-      refute_nil grade, "grade POSTs to the span's grade endpoint"
+      refute_nil grade, "grade POSTs to the activity grade endpoint"
       body = JSON.parse(grade[:body])
       assert_equal "not", body["disposition"]
-      assert_equal "noisy-span", body["slug"]
+      assert_equal "noisy-activity", body["slug"]
       assert_equal "bank", body["intent"], "--bank becomes intent=bank"
       refute body.key?("grader"), "the CLI never sends a grader — the server forces alex"
     end
   end
 
-  def test_integration_grade_without_a_span_id_posts_nothing
+  def test_integration_grade_without_an_activity_id_posts_nothing
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[grade --disposition good], proj: proj)
 
-      assert_empty requests.select { |r| r[:path].to_s.include?("/grade") }, "no span id → no grade POST"
+      assert_empty requests.select { |r| r[:path].to_s.include?("/grade") }, "no activity id → no grade POST"
     end
   end
 
@@ -372,7 +372,7 @@ class AgentActivityCliTest < Minitest::Test
       write_session_marker(proj, SESSION, "mascot" => "shellder")
       # `atomic-event heartbeat avi` sets the sticky (local, no HTTP)…
       run_cli(%W[heartbeat avi --session #{SESSION}], proj: proj)
-      # …so a subsequent BARE start (no --agent) attributes the span to avi.
+      # …so a subsequent BARE start (no --agent) attributes the activity to avi.
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
 
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
@@ -463,12 +463,12 @@ class AgentActivityCliTest < Minitest::Test
                          proj: proj)
 
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
-      refute_nil open, "next opens the new span (carrying the prior outcome)"
+      refute_nil open, "next opens the new activity (carrying the prior outcome)"
       body = JSON.parse(open[:body])
       assert_equal SESSION, body["session_id"]
       assert_equal "Edit", body["category"]
       assert_equal "add-the-guard", body["reason"]
-      assert_equal "found-the-bug", body["prior_outcome"], "the prior span's outcome rides the SAME call"
+      assert_equal "found-the-bug", body["prior_outcome"], "the prior activity's outcome rides the SAME call"
     end
   end
 
@@ -635,7 +635,7 @@ class AgentActivityCliTest < Minitest::Test
     return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close_all"
     if method == "POST" && path.match?(%r{\A/api/v1/agent_activities/\d+/grade\z})
       return ["201 Created", JSON.generate("data" => { "id" => 5, "grader" => "alex", "disposition" => "not",
-                                                       "slug" => "noisy span", "banked" => true })]
+                                                       "slug" => "noisy activity", "banked" => true })]
     end
     if method == "GET" && path.start_with?("/api/v1/agent_activities/awaiting_grade")
       return ["200 OK", JSON.generate("data" => [{ "id" => 7, "category" => "Verify",

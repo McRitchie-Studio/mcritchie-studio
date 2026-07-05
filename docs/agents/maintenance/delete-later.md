@@ -300,3 +300,6 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-04 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/task-mascot-evolution-gates` | worktree | Hidden worktree; branch `feat/task-mascot-evolution-gates` is clean and HEAD d5039813 is contained in origin/release; health up, Redis DB 15, database mcritchie_studio_development_task_mascot_evolution_gates:ok. | Removed with `bin/agent-worktree remove mcritchie-studio task-mascot-evolution-gates --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/rename-heartbeat-link-to-outcomes` | worktree | Hidden worktree; branch `feat/rename-heartbeat-link-to-outcomes` is clean and HEAD 024b70dd is contained in origin/release; health down, Redis DB 20, database mcritchie_studio_development_rename_heartbeat_link_to_outcomes:ok. | Removed with `bin/agent-worktree remove mcritchie-studio rename-heartbeat-link-to-outcomes --yes` during approved lifecycle cleanup. | removed 2026-07-05 |

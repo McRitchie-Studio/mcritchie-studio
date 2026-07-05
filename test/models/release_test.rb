@@ -429,6 +429,30 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { rel.stage_reached?("warp") }
   end
 
+  test "[unit] stage_started_at_or_before returns the stage's own start stamp when present" do
+    rel = Release.open!
+    stamp = Time.zone.parse("2026-06-29 12:00:00")
+    rel.stamp_stage!("qa_deploying", at: stamp)
+    assert_equal stamp, rel.stage_started_at_or_before("qa_deploying")
+  end
+
+  test "[unit] stage_started_at_or_before falls back to the nearest EARLIER stamp, then release-open" do
+    created = Time.zone.parse("2026-06-29 12:00:00")
+    rel = Release.open!(created_at: created)
+    rel.stamp_stage!("qa_deployed", at: created + 5.minutes) # an upstream boundary is stamped
+
+    # confirming's OWN start is missing; the nearest earlier stamp is qa_deployed_at
+    # (a stage starts no sooner than the latest upstream boundary). A LATER stamp is
+    # never borrowed as a start.
+    assert_equal created + 5.minutes, rel.stage_started_at_or_before("confirming")
+    # testing sits before any stamp → floors at the release's open time, never nil.
+    assert_equal created, rel.stage_started_at_or_before("testing")
+  end
+
+  test "[unit] stage_started_at_or_before rejects an unknown stage" do
+    assert_raises(ArgumentError) { Release.open!.stage_started_at_or_before("warp") }
+  end
+
   test "[unit] current_stage is monotonic — a late upstream stamp never regresses it" do
     rel = Release.open!
     rel.stamp_stage!("qa_deployed")

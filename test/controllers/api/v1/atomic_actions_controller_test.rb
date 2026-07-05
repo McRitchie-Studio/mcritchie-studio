@@ -169,6 +169,34 @@ module Api
         end
       end
 
+      test "[unit] permits atomic_event_id so the hook can pin the open span" do
+        captured = nil
+        stub = lambda do |attrs|
+          captured = attrs
+          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+        end
+
+        AtomicAction.stub(:capture, stub) do
+          post api_v1_atomic_actions_path,
+               params: @body.merge(atomic_event_id: 4242), headers: @headers, as: :json
+        end
+
+        assert_response :created
+        assert_equal 4242, captured[:atomic_event_id],
+                     "atomic_event_id reaches capture → deterministic span attribution"
+      end
+
+      test "[integration] pins the action to the hook-supplied atomic_event_id" do
+        event = AtomicEvent.open_event!(session_id: "sess-abc", category: "Explore", reason_slug: "orient")
+
+        post api_v1_atomic_actions_path,
+             params: @body.merge(atomic_event_id: event.id), headers: @headers, as: :json
+
+        assert_response :created
+        assert_equal event.id, AtomicAction.order(:created_at).last.atomic_event_id,
+                     "the supplied open-span id wins over the server-derived one"
+      end
+
       test "[integration] a captured action derives cost from the stamped model + tokens" do
         post api_v1_agent_actions_path,
              params: @body.merge(model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000),

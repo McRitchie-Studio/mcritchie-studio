@@ -55,8 +55,9 @@ class AtomicCaptureHook
 
   # NAVIGATION — matched PER SEGMENT (see command_segments): a segment is navigation
   # when its first token is cd / pushd / popd / pwd. A bare directory move owns no
-  # activity and is ~84% of the noise. A command is dropped only when EVERY segment
-  # is navigation (or narration, below), so `cd X && <work>` KEEPS the work.
+  # activity and is ~84% of the noise. A command is dropped only when EVERY segment is
+  # navigation (or narration, below) — so `cd X && <work>` KEEPS the work, unlike the
+  # old first-token-of-the-whole-command rule that dropped it whole (see droppable?).
   NAV_COMMAND = /\A\s*(?:cd|pushd|popd|pwd)\b/.freeze
 
   # NARRATION is DROPPED too — a Bash call whose invocation IS `bin/agent-activity`
@@ -248,7 +249,10 @@ class AtomicCaptureHook
   # narration (a bin/agent-activity/bin/atomic-event invocation). A compound call
   # that mixes overhead with real work — `cd X && git commit`,
   # `bin/agent-activity next && bin/task update` — is NOT droppable, so the work
-  # is captured. Non-Bash / empty commands are never droppable.
+  # droppable, so the work is CAPTURED. This is the deterministic guarantee: every
+  # substantive tool call becomes an action, never silently eaten by a leading `cd`.
+  # (The historical rule dropped on the FIRST token alone, so `cd X && <work>` was
+  # lost whole — the bug this fixes.) Non-Bash / empty commands are never droppable.
   def droppable?(event)
     segments = command_segments(bash_command(event))
     return false if segments.empty?
@@ -256,7 +260,7 @@ class AtomicCaptureHook
     segments.all? { |segment| NAV_COMMAND.match?(segment) || NARRATION_COMMAND.match?(segment) }
   end
 
-  # PURE-classification predicates (every segment matches one pattern). Kept as
+  # PURE-classification predicates (every segment matches the one pattern). Kept as
   # the documented, unit-pinned split behind droppable?; a single-segment command
   # behaves exactly as the old first-token rule did.
   def navigation?(event)
@@ -273,9 +277,10 @@ class AtomicCaptureHook
     !segments.empty? && segments.all? { |segment| pattern.match?(segment) }
   end
 
-  # Split a shell command into sequenced segments on && || ; | & and newlines,
-  # trimmed, blanks removed. Deliberately quote-naive and biased to KEEP: a
-  # mis-split can only cause an extra captured row, never a dropped one.
+  # Split a shell command into its sequenced segments on && || ; | & and newlines,
+  # trimmed, blanks removed. Deliberately quote-naive: a mis-split can only cause a
+  # false KEEP (an extra captured row), NEVER a false DROP — so real work is never
+  # lost to a command that merely embeds a separator inside a quoted string.
   def command_segments(command)
     command.to_s.split(/\s*(?:&&|\|\||[;&|\n])\s*/).map(&:strip).reject(&:empty?)
   end

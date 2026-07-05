@@ -4,7 +4,7 @@
     create/move/delete flourishes every viewer sees), so there's no bespoke animation
     here. Hidden entirely outside Rails.env.local?. %>
 <% if Rails.env.local? %>
-  <div x-data="devBoardTools()" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
+  <div x-data="devBoardTools()" data-test="dev-board-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
     <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400/90"
           title="Dev/test only — never shipped to production">Dev</span>
     <button type="button" @click="post('generate')" :disabled="busy"

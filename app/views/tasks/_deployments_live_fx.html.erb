@@ -1,9 +1,9 @@
 <%# Live /deployments board animations, driven by the real DeploymentsBroadcaster
     Turbo Streams (turbo_stream_from "deployments") for EVERY connected viewer:
-      • create (prepend a new card)      → pop + type-coloured glow flash + bubbles
+      • create (prepend a new card)      → pop + type-coloured glow flash + confetti
       • move   (remove old + prepend new)→ old card shrinks out & its column reclaims
                                            the gap (FLIP), then the new card grows in
-      • delete/archive (remove)          → card shrinks out, column reclaims the gap
+      • archive/delete (remove)          → distinct fadeouts, column reclaims the gap
       • replace (intent / in-place)      → a subtle glow pulse, no bubbles
     Event type is read from the Turbo Stream action itself (no buttons). Glow colour
     comes from the card's data-glow (its mascot's primary type colour). Only rendered
@@ -20,11 +20,17 @@
            border-color: rgb(var(--lbfx-glow, 249 115 22) / 1); }
     100% { box-shadow: 0 0 0 0 rgb(var(--lbfx-glow, 249 115 22) / 0); border-color: rgb(var(--lbfx-glow, 249 115 22) / 0); }
   }
+
+  /* Keep cards above active confetti. Particles render below this z-layer, so
+     they peek out around the sides instead of covering card text. */
+  .lbfx-confetti-active .kanban-card { position: relative; z-index: 30; }
+  .lbfx-confetti-active .kanban-card.lbfx-card-front,
+  .lbfx-card-front { position: relative; z-index: 40; }
 </style>
 <script>
   // Installed once; survives Turbo navigations.
   window.LiveBoardFx = window.LiveBoardFx || (function () {
-    const BUBBLE_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
+    const CONFETTI_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
 
     // The release modules above the board (replaced on a release state change) —
     // the dropzone observer never sees them, so they're flashed straight from the
@@ -66,46 +72,88 @@
       setTimeout(() => { card.classList.remove("lbfx-glow"); card.style.removeProperty("--lbfx-glow"); }, 850);
     }
 
-    // A ring of little coloured bubbles bursting up-and-out from (cx, cy).
-    function spawnBubbles(cx, cy) {
-      const N = 22;
+    function liftCard(card) {
+      document.body.classList.add("lbfx-confetti-active");
+      card.classList.add("lbfx-card-front");
+      setTimeout(() => card.classList.remove("lbfx-card-front"), 950);
+      setTimeout(() => document.body.classList.remove("lbfx-confetti-active"), 1450);
+    }
+
+    // Larger confetti pieces sit behind the lifted card and shoot from the side
+    // edges. The center stays hidden by the card, so text remains readable.
+    function spawnConfettiBehind(card) {
+      const r = card.getBoundingClientRect();
+      if (!r.width) return;
+      const N = 34;
       for (let i = 0; i < N; i++) {
-        const b = document.createElement("div");
-        const size = 4 + Math.random() * 9;
-        b.style.cssText =
-          "position:fixed;left:" + cx + "px;top:" + cy + "px;width:" + size + "px;height:" + size +
-          "px;border-radius:9999px;pointer-events:none;z-index:60;background:" +
-          BUBBLE_COLORS[i % BUBBLE_COLORS.length] + ";box-shadow:0 0 8px rgba(255,255,255,.35);";
-        document.body.appendChild(b);
-        const angle = (Math.PI * 2 * i) / N + (Math.random() - 0.5) * 0.6;
-        const dist = 36 + Math.random() * 80;
-        const dx = Math.cos(angle) * dist;
-        const dy = Math.sin(angle) * dist - 26;
-        b.animate(
+        const piece = document.createElement("div");
+        const side = i % 2 === 0 ? -1 : 1;
+        const width = 8 + Math.random() * 11;
+        const height = 7 + Math.random() * 15;
+        const startX = side < 0 ? r.left + 3 + Math.random() * 10 : r.right - 3 - Math.random() * 10;
+        const startY = r.top + r.height * (0.18 + Math.random() * 0.64);
+        const dx = side * (42 + Math.random() * 118);
+        const dy = (Math.random() - 0.5) * 136 - 18;
+        const spin = side * (160 + Math.random() * 360);
+        piece.style.cssText =
+          "position:fixed;left:" + startX + "px;top:" + startY + "px;width:" + width + "px;height:" + height +
+          "px;border-radius:3px;pointer-events:none;z-index:20;background:" +
+          CONFETTI_COLORS[i % CONFETTI_COLORS.length] + ";box-shadow:0 0 10px rgba(255,255,255,.32);";
+        document.body.appendChild(piece);
+        piece.animate(
           [
-            { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
-            { transform: "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px)) scale(0)", opacity: 0 }
+            { transform: "translate(-50%,-50%) rotate(0deg) scale(.65)", opacity: 0.95 },
+            { transform: "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px)) rotate(" + spin + "deg) scale(1)", opacity: 0.85, offset: 0.58 },
+            { transform: "translate(calc(-50% + " + (dx * 1.15) + "px), calc(-50% + " + (dy + 36) + "px)) rotate(" + (spin * 1.35) + "deg) scale(.25)", opacity: 0 }
           ],
-          { duration: 650 + Math.random() * 450, easing: "cubic-bezier(.2,.7,.3,1)" }
-        ).onfinish = () => b.remove();
+          { duration: 850 + Math.random() * 500, easing: "cubic-bezier(.18,.78,.2,1)" }
+        ).onfinish = () => piece.remove();
       }
     }
 
-    // The full arrival flourish: glow + bubbles, and (unless the caller drives its
+    // The full arrival flourish: glow + side confetti, and (unless the caller drives its
     // own scale, e.g. the move grow-in) a pop.
     function burst(card, pop) {
       const r = card.getBoundingClientRect();
       if (!r.width) return;
       if (pop !== false) card.classList.add("lbfx-pop");
+      liftCard(card);
       glow(card);
       if (pop !== false) setTimeout(() => card.classList.remove("lbfx-pop"), 520);
-      spawnBubbles(r.left + r.width / 2, r.top + r.height / 2);
+      spawnConfettiBehind(card);
     }
 
     // Remove a card while its column reclaims the gap smoothly — FLIP the siblings
     // (transform between measured before/after positions) so the dropzone's space-y
     // margins can't cause a pause/snap. Resolves so a move's incoming card can wait.
-    function collapseOut(card, done) {
+    function exitAnimation(action) {
+      if (action === "archive") {
+        return {
+          frames: [
+            { opacity: 1, transform: "translateY(0) scale(1)", filter: "saturate(1)" },
+            { opacity: .78, transform: "translateY(-6px) scale(.98)", filter: "saturate(.9)", offset: .35 },
+            { opacity: 0, transform: "translateY(20px) scale(.86)", filter: "saturate(.65)" }
+          ],
+          options: { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" }
+        };
+      }
+      if (action === "delete") {
+        return {
+          frames: [
+            { opacity: 1, transform: "translateX(0) rotate(0deg) scale(1)", filter: "blur(0)" },
+            { opacity: .55, transform: "translateX(8px) rotate(1deg) scale(.96)", filter: "blur(0)", offset: .42 },
+            { opacity: 0, transform: "translateX(28px) rotate(-2deg) scale(.72)", filter: "blur(1px)" }
+          ],
+          options: { duration: 430, easing: "cubic-bezier(.35,0,.2,1)", fill: "forwards" }
+        };
+      }
+      return {
+        frames: [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.55)" }],
+        options: { duration: 450, easing: "linear", fill: "forwards" }
+      };
+    }
+
+    function collapseOut(card, done, exitAction) {
       let signalDone;
       const promise = new Promise((res) => { signalDone = res; });
       const finish = () => { if (done) done(); signalDone(); };
@@ -128,6 +176,7 @@
         left: (rect.left - zr.left - (parseFloat(zs.borderLeftWidth) || 0) + zone.scrollLeft) + "px",
         margin: "0", zIndex: "5", pointerEvents: "none", transformOrigin: "center top"
       });
+      if (exitAction) card.dataset.exitAction = exitAction;
 
       siblings.forEach((c, i) => {
         const delta = beforeTop[i] - c.getBoundingClientRect().top;
@@ -142,10 +191,8 @@
         });
       });
 
-      card.animate(
-        [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.55)" }],
-        { duration: 450, easing: "linear", fill: "forwards" }
-      ).onfinish = () => { zone.style.position = restorePos; finish(); };
+      const fx = exitAnimation(exitAction);
+      card.animate(fx.frames, fx.options).onfinish = () => { delete card.dataset.exitAction; zone.style.position = restorePos; finish(); };
       return promise;
     }
 
@@ -227,7 +274,7 @@
             return;
           }
 
-          const p = collapseOut(document.getElementById(target), () => removeNow(el));
+          const p = collapseOut(document.getElementById(target), () => removeNow(el), stream.dataset.exitAction);
           collapsing.set(target, p);
           setTimeout(() => collapsing.delete(target), 1200); // not a move if no prepend follows
         };

@@ -162,4 +162,49 @@ class ConsolidatedTimelineTest < ActionView::TestCase
 
     assert_select "[data-test='timeline-sizing']", false
   end
+
+  # A third-stage evolution (Charmeleon → Charizard at the assemble gate) renders its
+  # own "Evolve" reel right after Reviewed → Assembled, and that assembled card is
+  # left to Steffon alone (its mascot companion moved onto the reel).
+  test "renders an Evolve reel card after Reviewed to Assembled and leaves Steffon alone" do
+    Agent.create!(name: "Steffon", slug: "steffon")
+    # Seed the line so the third_evolution base-form guard resolves (Charmeleon enters
+    # the assemble gate as a non-base evolution).
+    [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
+      Pokemon.where(slug: slug).first_or_initialize
+             .update!(dex: dex, name: slug.capitalize, slug: slug, generation: 1, base: "charmander", evolution: evo, baby: [])
+    end
+    task = Task.create!(title: "component evolve card task")
+    task.task_events.delete_all
+    snap = ->(slug) { { "mascot" => { "slug" => slug, "name" => slug.capitalize, "avatar" => "https://example.test/#{slug}.png" } } }
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmeleon"])
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600,
+                      metadata: snap["charmeleon"].merge("reviewers" => [{ "slug" => "carl", "weight" => "primary" },
+                                                                          { "slug" => "shannon", "weight" => "light" }]))
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["charizard"])
+    task.update_columns(stage: "assembled")
+
+    render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: Agent.all.to_a, events: task.task_events.to_a }
+
+    # the reel — its own card, badged "Evolve", showing prior form → evolved form
+    assert_select "[data-test='timeline-block'][data-stage='evolve']", count: 1
+    assert_select "[data-test='timeline-evolution']"
+    assert_includes rendered, "Evolve"
+    assert_select "[data-test='timeline-evolution-from']", text: /Charmeleon/
+    assert_select "[data-test='timeline-evolution-to']", text: /Charizard/
+    assert_select "[data-test='timeline-evolution-trigger']", text: /Steffon/
+
+    # it shares the standard card anatomy: badge on top, then a metric block and a
+    # Started → Completed footer (model/tokens/cost blank — duration + stamps only)
+    assert_select "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-metrics']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='evolve']", text: /Started/
+    assert_select "[data-test='timeline-block'][data-stage='evolve']", text: /Completed/
+
+    # the real Reviewed → Assembled card carries Steffon, NOT the mascot companion
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Steffon']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Charizard']", count: 0
+  end
 end

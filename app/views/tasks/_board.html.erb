@@ -81,7 +81,10 @@ function kanbanBoard(live) {
       this.$el.dataset.alpineReady = 'true';
       this.$nextTick(() => {
         this.initSortables();
-        if (this.live) this.observeLive();
+        if (this.live) {
+          this.observeLive();
+          if (!window.LiveBoardFx) this.installExitStreamFallback();
+        }
       });
     },
 
@@ -122,6 +125,39 @@ function kanbanBoard(live) {
         el.style.transform = '';
       });
       setTimeout(() => { el.classList.remove('ring-2', 'ring-primary'); el.style.transition = ''; }, 900);
+    },
+
+    installExitStreamFallback() {
+      if (window.__kanbanExitStreamFallbackInstalled) return;
+      window.__kanbanExitStreamFallbackInstalled = true;
+      document.addEventListener('turbo:before-stream-render', (event) => {
+        const stream = event.target;
+        const action = stream.getAttribute('action');
+        const target = stream.getAttribute('target') || '';
+        const exitAction = stream.dataset.exitAction;
+        if (action !== 'remove' || !target.startsWith('card-') || !exitAction) return;
+
+        const renderNow = event.detail.render;
+        event.detail.render = async (el) => {
+          const card = document.getElementById(target);
+          if (!card) { renderNow(el); return; }
+
+          await this.animateCardExit(card, exitAction);
+          if (exitAction === 'archive') {
+            const archivedZone = document.getElementById('dropzone-archived');
+            if (archivedZone) {
+              archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
+              card.dataset.stage = 'archived';
+              this.resetCardExit(card);
+              this.updateCounts();
+              return;
+            }
+          }
+
+          renderNow(el);
+          this.updateCounts();
+        };
+      });
     },
 
     initSortables() {
@@ -215,38 +251,85 @@ function kanbanBoard(live) {
       });
     },
 
+    responseError(resp, fallback) {
+      return resp.json().then((err) => new Error(err.error || fallback)).catch(() => new Error(fallback));
+    },
+
+    exitKeyframes(kind) {
+      if (kind === 'archive') {
+        return [
+          { opacity: 1, transform: 'translateY(0) scale(1)', filter: 'saturate(1)' },
+          { opacity: 0.78, transform: 'translateY(-6px) scale(0.98)', filter: 'saturate(0.9)', offset: 0.35 },
+          { opacity: 0, transform: 'translateY(20px) scale(0.86)', filter: 'saturate(0.65)' }
+        ];
+      }
+      if (kind === 'delete') {
+        return [
+          { opacity: 1, transform: 'translateX(0) rotate(0deg) scale(1)', filter: 'blur(0)' },
+          { opacity: 0.55, transform: 'translateX(8px) rotate(1deg) scale(0.96)', filter: 'blur(0)', offset: 0.42 },
+          { opacity: 0, transform: 'translateX(28px) rotate(-2deg) scale(0.72)', filter: 'blur(1px)' }
+        ];
+      }
+      return [
+        { opacity: 1, transform: 'scale(1)' },
+        { opacity: 0, transform: 'scale(0.55)' }
+      ];
+    },
+
+    async animateCardExit(card, kind) {
+      if (!card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      card.dataset.exitAction = kind;
+      card.style.pointerEvents = 'none';
+      const animation = card.animate(this.exitKeyframes(kind), {
+        duration: kind === 'archive' ? 520 : 430,
+        easing: kind === 'archive' ? 'cubic-bezier(.2,.8,.2,1)' : 'cubic-bezier(.35,0,.2,1)',
+        fill: 'forwards'
+      });
+      await animation.finished.catch(() => {});
+    },
+
+    resetCardExit(card) {
+      if (!card) return;
+      card.getAnimations({ subtree: false }).forEach((animation) => animation.cancel());
+      delete card.dataset.exitAction;
+      card.style.pointerEvents = '';
+      card.style.opacity = '';
+      card.style.transform = '';
+      card.style.filter = '';
+    },
+
     async archiveTask(slug) {
       if (this._pendingMoves[slug]) return;
       this._pendingMoves[slug] = true;
 
       const card = document.getElementById('card-' + slug);
-      const oldStage = card?.dataset.stage;
-      const archivedZone = document.getElementById('dropzone-archived');
-
-      if (card && archivedZone) {
-        archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
-        card.dataset.stage = 'archived';
-        this.updateCounts();
-      }
 
       try {
+        if (card) await this.animateCardExit(card, 'archive');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-        const resp = await fetch('/tasks/' + slug + '/archive.json', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+        const resp = await fetch('/tasks/' + slug + '.json', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrfToken },
+          body: JSON.stringify({ task: { stage: 'archived' } })
         });
-        if (!resp.ok) throw new Error('Archive failed');
+        if (!resp.ok) throw await this.responseError(resp, 'Archive failed');
+        const updated = await resp.json().catch(() => null);
+        if (!updated || updated.stage !== 'archived') throw new Error('Archive failed');
+        if (card) {
+          const archivedZone = document.getElementById('dropzone-archived');
+          if (archivedZone) {
+            archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
+            card.dataset.stage = 'archived';
+            this.resetCardExit(card);
+          } else {
+            card.remove();
+          }
+          this.updateCounts();
+        }
         this.showToast('Task archived', 'success');
       } catch (err) {
-        if (card && oldStage) {
-          const oldZone = this.zoneForStage(oldStage);
-          if (oldZone) {
-            oldZone.insertBefore(card, oldZone.querySelector('.kanban-empty'));
-            card.dataset.stage = oldStage;
-            this.updateCounts();
-          }
-        }
-        this.showToast(err.message, 'error');
+        this.resetCardExit(card);
+        this.showToast(err.message || 'Archive failed', 'error');
       } finally {
         delete this._pendingMoves[slug];
       }
@@ -260,17 +343,21 @@ function kanbanBoard(live) {
       const card = document.getElementById('card-' + slug);
 
       try {
+        if (card) await this.animateCardExit(card, 'delete');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
         const resp = await fetch('/tasks/' + slug + '.json', {
           method: 'DELETE',
-          headers: { 'X-CSRF-Token': csrfToken }
+          headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
         });
-        if (!resp.ok) throw new Error('Delete failed');
-        if (card) card.remove();
-        this.updateCounts();
+        if (resp.status !== 204) throw await this.responseError(resp, 'Delete failed');
+        if (card) {
+          card.remove();
+          this.updateCounts();
+        }
         this.showToast('Task deleted', 'success');
       } catch (err) {
-        this.showToast(err.message, 'error');
+        this.resetCardExit(card);
+        this.showToast(err.message || 'Delete failed', 'error');
       } finally {
         delete this._pendingMoves[slug];
       }
@@ -310,11 +397,7 @@ function kanbanBoard(live) {
           <span>All Stages</span>
         </button>
       <% end %>
-      <div class="ml-auto flex items-center gap-2 flex-wrap">
-        <%# Local-only board toys (generate / move / delete a fixture task) — dev/test
-            only, hidden in production. Handy for demoing the live board. %>
-        <%= render "dev_board_tools" %>
-        <%= render "dev_deploy_tools" %>
+      <div class="ml-auto flex items-center gap-2 flex-wrap" data-test="board-header-actions">
         <% if archived %>
           <button @click="showArchived = !showArchived"
                   :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
@@ -344,17 +427,27 @@ function kanbanBoard(live) {
       appears once it has a task; unmapped slugs (e.g. rolio, pre-emoji) still show
       as a text chip. Sits right above the stage-header row. %>
   <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
-  <% if board_apps.any? %>
-    <div class="flex flex-wrap items-center gap-2 mb-4">
-      <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
-      <% board_apps.each do |app| %>
-        <button type="button"
-                @click="toggleApp('<%= app %>')"
-                :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
-          <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
-          <span><%= app %></span>
-        </button>
+  <% if board_apps.any? || Rails.env.local? %>
+    <div class="flex flex-wrap items-center gap-2 mb-4" data-test="board-filter-row">
+      <% if board_apps.any? %>
+        <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
+        <% board_apps.each do |app| %>
+          <button type="button"
+                  @click="toggleApp('<%= app %>')"
+                  :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
+            <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
+            <span><%= app %></span>
+          </button>
+        <% end %>
+      <% end %>
+      <% if Rails.env.local? %>
+        <%# Local-only board toys sit with the app filters, keeping demo controls
+            close to the board they affect instead of floating over release cards. %>
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <%= render "dev_board_tools" %>
+          <%= render "dev_deploy_tools" %>
+        </div>
       <% end %>
     </div>
   <% end %>

@@ -125,27 +125,75 @@ class AtomicCaptureHookTest < Minitest::Test
     refute h.narration?({ "tool_name" => "Bash" })
   end
 
+  # ── [unit] compound-command drop rule (the deterministic-capture fix) ──────
+  # The drop decision is PER SEGMENT: a call is dropped only when EVERY segment is
+  # navigation or narration. A `cd X && <work>` KEEPS the work - the fix for the
+  # observed bug where a leading `cd` ate the whole command.
+
   def test_unit_droppable_only_when_every_segment_is_overhead
     h = hook
     [
-      "cd /repo",
-      "cd /a && pushd /b",
-      "bin/atomic-event start --category Edit --reason x",
-      "bin/agent-activity start --category Edit --reason x",
-      "cd /repo && bin/agent-activity next --outcome y --category Edit --reason z"
+      "cd /repo",                                             # bare nav
+      "cd /a && cd /b",                                       # nav + nav
+      "bin/atomic-event start --category Edit --reason x",    # bare narration
+      "bin/agent-activity start --category Edit --reason x",   # canonical bare narration
+      "cd /repo && bin/agent-activity next --outcome y --category Edit --reason z" # nav + narration
     ].each do |command|
       event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
-      assert h.droppable?(event), "#{command.inspect} is pure overhead and should be dropped"
+      assert h.droppable?(event), "#{command.inspect} is pure overhead → dropped"
     end
 
     [
-      "cd /repo && git commit -m x",
+      "cd /repo && git commit -m x",                          # the regression: work behind a cd
       "cd /wt/app && bin/agent-worktree finish app task --push --pr",
       "bin/agent-activity next --outcome y --category Edit --reason z && bin/task update t --checks x",
-      "git status && cd /elsewhere"
+      "git status && cd /elsewhere"                           # work first, nav second
     ].each do |command|
       event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
-      refute h.droppable?(event), "#{command.inspect} includes real work and must be captured"
+      refute h.droppable?(event), "#{command.inspect} carries real work → captured"
+    end
+
+    # Non-Bash / empty commands are never droppable.
+    refute h.droppable?({ "tool_name" => "Edit", "tool_input" => { "command" => "cd /x" } })
+    refute h.droppable?({ "tool_name" => "Bash", "tool_input" => {} })
+    refute h.droppable?({ "tool_name" => "Bash" })
+  end
+
+  def test_unit_navigation_and_narration_predicates_require_all_segments
+    h = hook
+    refute h.navigation?({ "tool_name" => "Bash", "tool_input" => { "command" => "cd /x && git commit" } }),
+           "a work segment means the command is not PURE navigation"
+    assert h.navigation?({ "tool_name" => "Bash", "tool_input" => { "command" => "cd /x && pushd /y" } }),
+           "a chain of only directory moves is pure navigation"
+    refute h.narration?({ "tool_name" => "Bash", "tool_input" => { "command" => "bin/atomic-event end && git push" } }),
+           "a work segment means the command is not PURE narration"
+  end
+
+  # ── [unit] deterministic activity attribution (open-activity marker) ─────
+  # build_payload stamps agent_activity_id from the local marker bin/agent-activity
+  # writes, so the action pins to the activity open at tool-call time - not whatever the
+  # server finds open when this async POST lands.
+
+  def test_unit_build_payload_stamps_the_open_activity_from_the_marker
+    Dir.mktmpdir do |proj|
+      write_open_activity_marker(proj, SESSION, 4242)
+      event = { "session_id" => SESSION, "tool_name" => "Bash",
+                "tool_input" => { "command" => "git status" }, "tool_response" => {} }
+
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event)
+
+      assert_equal 4242, payload["agent_activity_id"], "the action pins to the open activity the marker records"
+    end
+  end
+
+  def test_unit_build_payload_open_activity_is_nil_without_a_marker
+    Dir.mktmpdir do |proj|
+      event = { "session_id" => SESSION, "tool_name" => "Bash",
+                "tool_input" => { "command" => "git status" }, "tool_response" => {} }
+
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event)
+
+      assert_nil payload["agent_activity_id"], "no marker => nil => the server derives the activity"
     end
   end
 

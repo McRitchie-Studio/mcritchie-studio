@@ -3,11 +3,12 @@
 `bin/atomic-capture-hook` is the **Phase B live-capture** producer: a Claude Code
 `PostToolUse` hook that streams every tool call into the atomic-capture endpoint,
 so a fresh Claude Code session populates the per-action trajectory at
-`/alex/heartbeat` **live** — one `AtomicAction` row per tool call.
+`/alex/heartbeat` **live** - one `AgentAction` row per tool call.
 
-It is the half-2 producer for the consumer half (the `/api/v1/atomic_actions`
-endpoint, owned by the `atomic-capture-api-endpoint` task and `AtomicAction`
-model). The hook only writes; the endpoint persists.
+It is the half-2 producer for the consumer half (the `/api/v1/agent_actions`
+endpoint and `AgentAction` model). The hook only writes; the endpoint persists.
+The legacy `/api/v1/atomic_actions` route remains a compatibility alias, but new
+docs and installs should point at `/api/v1/agent_actions`.
 
 ## What it does
 
@@ -19,9 +20,9 @@ On a `PostToolUse` event, Claude Code passes JSON on stdin:
   "tool_input": { … }, "tool_response": { … } }
 ```
 
-The hook maps that to the `AtomicAction.capture` contract and POSTs it (flat JSON,
+The hook maps that to the `AgentAction.capture` contract and POSTs it (flat JSON,
 matching the `/api/v1` convention) to
-`${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/atomic_actions`:
+`${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/agent_actions`:
 
 | Capture field | Source |
 |---------------|--------|
@@ -37,10 +38,11 @@ matching the `/api/v1` convention) to
 | `model`       | the **session model** — see below (nil ⇒ key dropped, column stays null) |
 | `occurred_at` | now (UTC ISO-8601) |
 | `task_slug`, `stage`, `mascot` | the **active-feature marker** (see below) |
+| `agent_activity_id` | the open activity marker written by `bin/agent-activity` / `bin/atomic-event` |
+| `tokens_in`, `tokens_out`, `cache_read_tokens`, `source_turn_uuid` | newest assistant turn usage + UUID from the session transcript, when available |
 
-`tokens_in`/`tokens_out`/`cost` and `event_slug`/`result_slug`/`seq` are
-**intentionally absent** — a hook can't know them; the model fills its defaults
-and derives `seq` per session.
+`cost` and `event_slug`/`result_slug`/`seq` are **intentionally absent** - a hook
+can't know them; the model fills its defaults and derives `seq` per session.
 
 ### Secret redaction (never ship a secret off the box)
 
@@ -80,25 +82,31 @@ secret-free) telemetry is a separate concern.
 
 ### What it DROPS (never a row)
 
-A Bash call is dropped **before** any POST only when it is pure overhead — it
+A Bash call is dropped **before** any POST only when it is pure overhead - it
 owns no narrated activity and would otherwise land in "Unlabeled". The decision
 is made per shell segment (splitting the command on `&&`, `||`, `;`, `|`, `&`,
 and newlines): the call drops only when every segment is overhead.
 
-- **Navigation** — a segment whose first token is `cd` / `pushd` / `popd` / `pwd`
+- **Navigation** - a segment whose first token is `cd` / `pushd` / `popd` / `pwd`
   (a bare directory move; ~84% of the raw noise).
-- **Narration** — a segment whose invocation **is** `bin/agent-activity` or its
+- **Narration** - a segment whose invocation **is** `bin/agent-activity` or its
   compatibility alias `bin/atomic-event`. It's the activity machinery itself, so
   capturing the call that declares an activity would double-record it as a raw
-  action. Matches only an actual invocation segment — any path prefix
-  (`/abs/…/bin/agent-activity`, `./bin/atomic-event`) and optional leading
-  `ENV=val` assignments — never a command that merely *mentions* the string
+  action. Matches only an actual invocation segment - any path prefix
+  (`/abs/.../bin/agent-activity`, `./bin/atomic-event`) and optional leading
+  `ENV=val` assignments - never a command that merely *mentions* the string
   (`grep atomic-event`, `cat bin/atomic-event`, an edit to the file).
 
-Mixed commands are kept. `cd X && git status` captures the command because it
-contains real work; `cd X && bin/agent-activity next ...` drops because both
-segments are overhead. The split is quote-naive and biased to keep, so a separator
-inside a quoted string can only cause an extra captured row, never a dropped one.
+Because the rule is per-segment, a compound call that mixes overhead with real
+work is captured, never dropped: `cd /repo && git commit` keeps the commit, and
+`bin/agent-activity next && bin/task update ...` keeps the update. Only a
+fully-overhead call drops: a bare `cd`, a chain of directory moves,
+`bin/agent-activity start`, or `cd /repo && bin/agent-activity next` (navigation
++ narration, no work). This is the deterministic guarantee - every substantive
+tool call becomes a row, never silently eaten by a leading `cd` (the historical
+first-token rule dropped `cd X && <work>` whole; that was the bug). The split is
+quote-naive and biased to keep, so a separator inside a quoted string can only
+cause an extra captured row, never a dropped one.
 
 The hook also reads the local per-session open-activity marker written by
 `bin/agent-activity` and stamps `agent_activity_id` on the payload. That pins the
@@ -159,7 +167,7 @@ model allows a null `task_slug`).
 The agent token is sourced **exactly like `bin/task`**: `AGENT_API_SECRET` from
 the environment, else 1Password (`op://agents/Agent API Secret/AGENT_API_SECRET`),
 else the repo `.env`. The minted bearer token is then sent as
-`Authorization: Bearer <token>` to `/api/v1/atomic_actions`.
+`Authorization: Bearer <token>` to `/api/v1/agent_actions`.
 
 ## Install — `settings.json` snippet
 
@@ -239,7 +247,7 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
   detection, marker derivation, and the full payload shape (loaded in process; the
   bin's main is guarded so `load` is side-effect free).
 - **[integration]** the real script shelled out against a localhost stub HTTP
-  server: it mints a token, then POSTs the right shape to `/api/v1/atomic_actions`
+  server: it mints a token, then POSTs the right shape to `/api/v1/agent_actions`
   with `Authorization: Bearer …`; a missing `session_id` posts nothing; a closed
   port still exits 0.
 

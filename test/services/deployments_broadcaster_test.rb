@@ -79,6 +79,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal 1, streams.size
     assert_equal "remove", streams.first["action"]
     assert_equal "card-#{task.slug}", streams.first["target"]
+    assert_equal "archive", streams.first["data-exit-action"]
   end
 
   test "a building→blocked transition REMOVES then PREPENDS into the Building column" do
@@ -146,6 +147,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal 1, streams.size
     assert_equal "remove", streams.first["action"]
     assert_equal "card-some-slug", streams.first["target"]
+    assert_equal "delete", streams.first["data-exit-action"]
   end
 
   test "[unit] task_removed is guarded — a dead cable can't break the destroy" do
