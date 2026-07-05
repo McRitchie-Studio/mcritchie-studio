@@ -1,5 +1,5 @@
 <% if Rails.env.local? %>
-  <div x-data="devDeployTools()" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
+  <div x-data="devDeployTools()" data-test="dev-deploy-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
     <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400/90"
           title="Dev/test only — steps a fixture release through the tracker">Deploy</span>
     <button type="button" @click="post('open_release')" :disabled="busy"
