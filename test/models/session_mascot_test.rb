@@ -50,6 +50,23 @@ class SessionMascotTest < ActiveSupport::TestCase
     assert_equal sm.mascot_slug, sm.pokemon.slug
   end
 
+  test "create_with_draw! draws from the weighted deck across the DB → record seam" do
+    # Grow one of the setup's single-stage forms into a full three-stage line, so
+    # the weighting is exercised end to end (model → DB → persisted SessionMascot).
+    Pokemon.find_by!(slug: "charmander").update!(evolution: ["charmeleon"])
+    Pokemon.create!(dex: 205, name: "Charmeleon", slug: "charmeleon",
+                    base: "charmander", evolution: ["charizard"])
+    Pokemon.create!(dex: 206, name: "Charizard", slug: "charizard", base: "charmander")
+
+    assert_equal ["charmander"], Pokemon.three_stage_base_slugs
+    # 5 base forms in the deck; the three-stage root is doubled → one extra slot.
+    assert_equal @deck.size + 1, Pokemon.draw_bag.size
+
+    sm = SessionMascot.create_with_draw!("sess-weighted")
+    assert sm.persisted?
+    assert_includes @deck.map(&:slug), sm.mascot_slug
+  end
+
   test "subagent draws from parent evolution tree excluding the parent mascot" do
     create_bellsprout_tree!
     SessionMascot.create!(session_id: "parent", mascot_slug: "victreebel")
