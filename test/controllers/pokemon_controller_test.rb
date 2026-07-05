@@ -16,6 +16,55 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", "https://example.test/pokemon/143.png"
   end
 
+  test "grid cards and list thumbnails flip to shiny art on click" do
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal],
+                    generation: 1,
+                    avatar_url: "https://example.test/pokemon/143-cropped.png",
+                    sprite_url: "https://example.test/pokemon/143-sprite.png",
+                    shiny_avatar_url: "https://example.test/pokemon/143-shiny-cropped.png",
+                    shiny_sprite_url: "https://example.test/pokemon/143-shiny-sprite.png")
+
+    get pokemon_path
+    assert_response :success
+
+    # Grid: one toggle button wraps BOTH renditions; the shiny one starts cloaked
+    # (hidden + lazy, so it isn't fetched until the first flip).
+    assert_select "[data-test=pokemon-grid] button[data-test=shiny-toggle]" do
+      assert_select "img[src=?]", "https://example.test/pokemon/143-cropped.png"
+      assert_select "img[src=?][x-cloak]", "https://example.test/pokemon/143-shiny-cropped.png"
+    end
+    # List: the sprite thumbnail flips the same way.
+    assert_select "[data-test=pokemon-list] button[data-test=list-shiny-toggle]" do
+      assert_select "img[src=?]", "https://example.test/pokemon/143-sprite.png"
+      assert_select "img[src=?][x-cloak]", "https://example.test/pokemon/143-shiny-sprite.png"
+    end
+  end
+
+  test "grid cards wear their next evolutions as circles; single-stage cards wear none" do
+    Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander", types: %w[fire],
+                    generation: 1, base: "charmander", evolution: ["charmeleon"],
+                    avatar_url: "https://example.test/pokemon/4.png",
+                    sprite_url: "https://example.test/pokemon/4-sprite.png")
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon", types: %w[fire],
+                    generation: 1, base: "charmander", evolution: ["charizard"],
+                    avatar_url: "https://example.test/pokemon/5.png",
+                    sprite_url: "https://example.test/pokemon/5-sprite.png")
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal],
+                    generation: 1,
+                    avatar_url: "https://example.test/pokemon/143.png",
+                    sprite_url: "https://example.test/pokemon/143-sprite.png")
+
+    get pokemon_path
+    assert_response :success
+
+    # Charmander's card carries Charmeleon's sprite as a circle…
+    assert_select "[data-test=pokemon-grid] img[data-test=evolution-circle][src=?]",
+                  "https://example.test/pokemon/5-sprite.png"
+    # …and it's the only card wearing circles: Snorlax has no line ahead, and
+    # Charmeleon's next step (Charizard) isn't seeded here so it renders none.
+    assert_select "[data-test=pokemon-grid] [data-test=evolution-circles]", count: 1
+  end
+
   test "index renders Johto rows alongside Kanto, ordered by dex" do
     Pokemon.create!(dex: 152, name: "Chikorita", slug: "chikorita", types: %w[grass],
                     hp: 45, attack: 49, defense: 65, special_attack: 49,
