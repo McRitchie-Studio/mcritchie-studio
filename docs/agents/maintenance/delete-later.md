@@ -321,3 +321,12 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-05 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/surface-third-evolution-moment` | worktree | Hidden worktree; branch `feat/surface-third-evolution-moment` is clean and HEAD b4440ddf is contained in origin/release; health up, Redis DB 12, database mcritchie_studio_development_surface_third_evolution_moment:ok. | Removed with `bin/agent-worktree remove mcritchie-studio surface-third-evolution-moment --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/blocked-mascot-evolution` | worktree | Hidden worktree; branch `feat/blocked-mascot-evolution` is clean and HEAD de6b5b1f is contained in origin/release; health up, Redis DB 25, database mcritchie_studio_development_blocked_mascot_evolution:ok. | Removed with `bin/agent-worktree remove mcritchie-studio blocked-mascot-evolution --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/standardize-agent-taxonomy` | worktree | Hidden worktree; branch `feat/standardize-agent-taxonomy` is clean and HEAD eeaa7979 is contained in origin/release; health up, Redis DB 13, database mcritchie_studio_development_standardize_agent_taxonomy:ok. | Removed with `bin/agent-worktree remove mcritchie-studio standardize-agent-taxonomy --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/trim-timer-seconds` | worktree | Hidden worktree; branch `feat/trim-timer-seconds` is clean and HEAD 3879b22c is contained in origin/release; health up, Redis DB 23, database mcritchie_studio_development_trim_timer_seconds:ok. | Removed with `bin/agent-worktree remove mcritchie-studio trim-timer-seconds --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
