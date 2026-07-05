@@ -1136,4 +1136,90 @@ class DorCheckTest < Minitest::Test
     end
     assert_equal 0, code, out # the local-dev bridge isn't a versioned constraint
   end
+
+  # --- CI-status gate: the merge gate refuses a red / not-yet-green PR ----------
+  # Closes the report's #1 blocker class — a PR green LOCALLY but red on GitHub CI,
+  # because the local cert doesn't run the browser test:system lane. DOR_CHECK_CI_STATUS
+  # injects the verdict so these never shell out to gh (mirrors DOR_CHECK_SUITE_EVIDENCE).
+  CI_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/1").freeze
+
+  def ci_check(state, devops = CI_PR, *args)
+    with_changed_files("app/models/agent.rb") do
+      with_env("DOR_CHECK_CI_STATUS" => state) { check(devops, *args) }
+    end
+  end
+
+  def test_merge_gate_fails_when_github_ci_is_red
+    out, code = ci_check("red")
+    assert_equal 1, code, out
+    assert_match(/GitHub CI is RED/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_merge_gate_holds_while_ci_is_still_running
+    out, code = ci_check("pending")
+    assert_equal 1, code, out
+    assert_match(/still RUNNING/, out)
+  end
+
+  def test_merge_gate_passes_when_ci_is_green
+    out, code = ci_check("green")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/GitHub CI green/, out)
+  end
+
+  def test_gh_or_network_error_is_a_note_never_a_block
+    out, code = ci_check("unverified")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/UNVERIFIED/, out)
+  end
+
+  def test_merge_gate_blocks_a_closed_pr
+    # A closed PR's green checks are HISTORICAL, not a live review target — the gate
+    # must not let a stale pr_url pass as green (carl's PR #399 review catch).
+    out, code = ci_check("closed")
+    assert_equal 1, code, out
+    assert_match(/is CLOSED/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_merge_gate_blocks_a_merged_pr
+    out, code = ci_check("merged")
+    assert_equal 1, code, out
+    assert_match(/is MERGED/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_missing_pr_is_silent_and_stays_ready
+    # No PR yet + no injection → :no_pr via the real (gh-free) path. dor-check runs
+    # before the PR exists on the normal path, so the CI gate has nothing to verify:
+    # it stays SILENT (no note, no block, no shell-out to gh).
+    out, code = with_changed_files("app/models/agent.rb") do
+      with_env("DOR_CHECK_CI_STATUS" => nil) { check(BACKEND_CONTRACT) }
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    refute_match(/GitHub CI|CI gate|UNVERIFIED/, out)
+  end
+
+  def test_build_gate_ignores_ci_status
+    # DoR-to-Build never looks at CI (no PR/code yet) — a red token must not block build.
+    out, code = with_env("DOR_CHECK_CI_STATUS" => "red") do
+      check({ "shape" => "backend", "repositories" => ["m"], "risk_tags" => ["x"],
+              "acceptance" => ["a"], "test_plan" => ["unit"], "checks_run" => [] }, "--gate", "build")
+    end
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Build met/, out)
+  end
+
+  def test_ci_red_surfaces_in_the_json_verdict
+    out, code = ci_check("red", CI_PR, "--json")
+    assert_equal 1, code, out
+    j = JSON.parse(out)
+    refute j["ready"]
+    assert_equal "red", j.dig("ci", "state")
+    assert(j["errors"].any? { |e| e.match?(/RED/) }, out)
+  end
 end

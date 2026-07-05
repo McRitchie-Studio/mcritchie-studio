@@ -73,6 +73,7 @@ require "yaml"
 require "optparse"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
+require_relative "lib/ci_status"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (feature_shapes.yml) and the
 # token .env resolve from here and STAY here — the shape taxonomy is studio-owned.
@@ -568,6 +569,30 @@ if gate != "build" && shape_def && !dor_tiers.empty?
   errors << suite_evidence_error(suite_eval, task["slug"] || slug) unless suite_eval[:ok]
 end
 
+# CI-status gate (merge gate only). Local certification proves the code is green on
+# THIS machine; this proves it's green on GITHUB — closing the gap where a PR passes
+# `bin/rails test` locally but fails the browser `test:system` lane CI also runs, so
+# a red PR reaches review and eats the round-trip (the report's #1 blocker class).
+# BLOCKS on a failing or still-running PR; a missing PR / no checks / gh error is a
+# non-blocking note added with the suggestions below (the gate re-runs after push).
+ci = nil
+if gate != "build"
+  ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
+  case ci[:state]
+  when :red
+    errors << "GitHub CI is RED for the PR (#{Array(ci[:failing]).join(", ")}) — a red PR handed to review is the " \
+      "#1 blocker class (the local cert doesn't run the browser test:system lane CI does). Fix, push, and re-run " \
+      "dor-check once CI is green."
+  when :pending
+    errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. Wait for it " \
+      "to finish and re-run dor-check; don't hand a not-yet-green PR to review."
+  when :closed, :merged
+    errors << "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
+      "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
+      "devops.pr_url (a stale or already-merged PR?) before advancing to review."
+  end
+end
+
 ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?
 
 # Non-blocking SUGGESTIONS (never affect `ready`). The canonical post_deploy_cmd
@@ -585,6 +610,20 @@ if present?(post_deploy_cmd) && fragile_runner_load?(post_deploy_cmd)
     "the current command is valid and not blocking."
 end
 
+# A PR that EXISTS but whose CI couldn't be confirmed green is flagged (non-blocking):
+# it never lowers `ready` (blocking on infra flakiness would be its own churn), but it
+# says loudly that CI is unverified so the handoff isn't blind. A task with NO PR yet
+# is SILENT — dor-check runs before the PR exists on the normal path, so there's
+# nothing to verify and no note to make.
+case ci && ci[:state]
+when :none
+  suggestions << "CI gate: the PR reports no GitHub checks yet — CI is UNVERIFIED. Confirm the workflow triggered " \
+    "before handing off."
+when :unverified
+  suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
+    "manually before the handoff."
+end
+
 # --- output ---------------------------------------------------------------
 
 if options[:json]
@@ -597,6 +636,7 @@ if options[:json]
     suggestions: suggestions,
     missing_metadata: missing_meta,
     missing_tiers: missing_tiers,
+    ci: ci && { state: ci[:state], failing: ci[:failing], pending: ci[:pending], count: ci[:count] }.compact,
     full_suite: suite_eval && {
       ok: suite_eval[:ok],
       bypass: suite_eval[:bypass],
@@ -617,6 +657,11 @@ if ready
     puts "  ⚠ FULL-SUITE GATE BYPASSED: #{suite_eval[:bypass]}"
   elsif suite_eval && suite_eval[:fingerprint]
     puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
+  end
+  if ci && ci[:state] == :green
+    puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
+  elsif ci && %i[none unverified].include?(ci[:state])
+    puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
   end
   puts "  → ready to advance #{boundary}"
   print_suggestions.call
