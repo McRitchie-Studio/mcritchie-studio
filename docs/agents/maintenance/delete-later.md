@@ -303,3 +303,21 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-05 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/rename-heartbeat-link-to-outcomes` | worktree | Hidden worktree; branch `feat/rename-heartbeat-link-to-outcomes` is clean and HEAD 024b70dd is contained in origin/release; health down, Redis DB 20, database mcritchie_studio_development_rename_heartbeat_link_to_outcomes:ok. | Removed with `bin/agent-worktree remove mcritchie-studio rename-heartbeat-link-to-outcomes --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/archive-task-animations` | worktree | Hidden worktree; branch `feat/archive-task-animations` is clean and HEAD 2a7ea98e is contained in origin/release; health up, Redis DB 9, database mcritchie_studio_development_archive_task_animations:ok. | Removed with `bin/agent-worktree remove mcritchie-studio archive-task-animations --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/confetti-behind-card-pop` | worktree | Hidden worktree; branch `feat/confetti-behind-card-pop` is clean and HEAD fe47e033 is contained in origin/release; health up, Redis DB 22, database mcritchie_studio_development_confetti_behind_card_pop:ok. | Removed with `bin/agent-worktree remove mcritchie-studio confetti-behind-card-pop --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/deterministic-session-action-capture` | worktree | Hidden worktree; branch `feat/deterministic-session-action-capture` is clean and HEAD d6b1af8f is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_deterministic_session_act_927ab9ee:missing. | Removed with `bin/agent-worktree remove mcritchie-studio deterministic-session-action-capture --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/guard-avi-ship-gate` | worktree | Hidden worktree; branch `feat/guard-avi-ship-gate` is clean and HEAD 0e16381d is contained in origin/release; health down, Redis DB 15, database mcritchie_studio_development_guard_avi_ship_gate:missing. | Removed with `bin/agent-worktree remove mcritchie-studio guard-avi-ship-gate --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/release-tracker-started-ago-labels` | worktree | Hidden worktree; branch `feat/release-tracker-started-ago-labels` is clean and HEAD 069d550f is contained in origin/release; health up, Redis DB 18, database mcritchie_studio_development_release_tracker_started_ago_labels:ok. | Removed with `bin/agent-worktree remove mcritchie-studio release-tracker-started-ago-labels --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/surface-third-evolution-moment` | worktree | Hidden worktree; branch `feat/surface-third-evolution-moment` is clean and HEAD b4440ddf is contained in origin/release; health up, Redis DB 12, database mcritchie_studio_development_surface_third_evolution_moment:ok. | Removed with `bin/agent-worktree remove mcritchie-studio surface-third-evolution-moment --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
