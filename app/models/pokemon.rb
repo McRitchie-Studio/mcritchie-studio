@@ -35,9 +35,10 @@ class Pokemon < ApplicationRecord
   end
 
   # The spawnable roots: each family's base form, minus baby forms (reference
-  # data only — they never spawn). Tyrogue is the one self-based baby (his three
-  # Hitmon branches are each their own family), which is why the baby-list
-  # exclusion exists on top of base == slug.
+  # data only — they never spawn). The baby-list exclusion guards a self-based
+  # baby (base == slug yet on a baby list); no Gen 1–2 form is one today — Togepi
+  # and Tyrogue are reclassified as ordinary bases (lib/tasks/pokemon.rake
+  # NOT_BABY) — but the guard stays for any future branching baby with no heir.
   def self.spawnable
     where(arel_table[:base].eq(arel_table[:slug])).where.not(slug: baby_slugs)
   end

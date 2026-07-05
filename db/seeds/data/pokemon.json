@@ -2720,11 +2720,9 @@
     "shiny_avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee-shiny-cropped.png",
     "shiny_avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee-shiny.png",
     "shiny_sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/106-hitmonlee-shiny-sprite.png",
-    "base": "hitmonlee",
+    "base": "tyrogue",
     "evolution": [],
-    "baby": [
-      "tyrogue"
-    ]
+    "baby": []
   },
   {
     "dex": 107,
@@ -2746,11 +2744,9 @@
     "shiny_avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan-shiny-cropped.png",
     "shiny_avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan-shiny.png",
     "shiny_sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/107-hitmonchan-shiny-sprite.png",
-    "base": "hitmonchan",
+    "base": "tyrogue",
     "evolution": [],
-    "baby": [
-      "tyrogue"
-    ]
+    "baby": []
   },
   {
     "dex": 108,
@@ -4475,7 +4471,7 @@
     "shiny_avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/175-togepi-shiny-cropped.png",
     "shiny_avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/175-togepi-shiny.png",
     "shiny_sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/175-togepi-shiny-sprite.png",
-    "base": "togetic",
+    "base": "togepi",
     "evolution": [
       "togetic"
     ],
@@ -4502,11 +4498,9 @@
     "shiny_avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/176-togetic-shiny-cropped.png",
     "shiny_avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/176-togetic-shiny.png",
     "shiny_sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/176-togetic-shiny-sprite.png",
-    "base": "togetic",
+    "base": "togepi",
     "evolution": [],
-    "baby": [
-      "togepi"
-    ]
+    "baby": []
   },
   {
     "dex": 177,
@@ -6035,11 +6029,9 @@
     "shiny_avatar_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/237-hitmontop-shiny-cropped.png",
     "shiny_avatar_fallback_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/237-hitmontop-shiny.png",
     "shiny_sprite_url": "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/237-hitmontop-shiny-sprite.png",
-    "base": "hitmontop",
+    "base": "tyrogue",
     "evolution": [],
-    "baby": [
-      "tyrogue"
-    ]
+    "baby": []
   },
   {
     "dex": 238,
