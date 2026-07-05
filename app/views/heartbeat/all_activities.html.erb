@@ -29,6 +29,15 @@
     </header>
 
     <div class="hb-toolbar">
+      <% if @sessions.size > 1 %>
+        <%= form_with url: heartbeat_all_activities_path, method: :get, data: { turbo: false } do %>
+          <span class="hb-lab">Session</span>
+          <%= select_tag :session_id,
+                options_for_select(@sessions, @session_id),
+                include_blank: "All sessions",
+                class: "hb-sel", onchange: "this.form.requestSubmit()" %>
+        <% end %>
+      <% end %>
       <%= render "heartbeat/nav", current: :all_activities, insights_count: ActionGrade.banked.count %>
       <span class="hb-legend">
         <span><b>activity:</b> category &middot; reason &rarr; result</span>
@@ -45,14 +54,14 @@
 
     <nav class="hb-pager" data-test="hb-pager" aria-label="All Activities pages">
       <% if @has_prev %>
-        <%= link_to "&lsaquo; Newer".html_safe, heartbeat_all_activities_path(page: @page - 1),
+        <%= link_to "&lsaquo; Newer".html_safe, heartbeat_all_activities_path(page: @page - 1, session_id: @session_id),
               class: "hb-btn", data: { turbo: false, test: "hb-pager-prev" } %>
       <% else %>
         <span class="hb-btn hb-pager-off">&lsaquo; Newer</span>
       <% end %>
       <span class="hb-pager-at" data-test="hb-pager-at">Page <%= @page %></span>
       <% if @has_next %>
-        <%= link_to "Older &rsaquo;".html_safe, heartbeat_all_activities_path(page: @page + 1),
+        <%= link_to "Older &rsaquo;".html_safe, heartbeat_all_activities_path(page: @page + 1, session_id: @session_id),
               class: "hb-btn", data: { turbo: false, test: "hb-pager-next" } %>
       <% else %>
         <span class="hb-btn hb-pager-off">Older &rsaquo;</span>

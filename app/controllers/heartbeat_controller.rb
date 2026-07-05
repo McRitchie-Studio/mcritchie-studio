@@ -53,10 +53,15 @@ class HeartbeatController < ApplicationController
   end
 
   # Every narrated AgentActivity across all sessions, newest-first, paginated
-  # 100 per page — the cross-session companion to #show.
+  # 100 per page — the cross-session companion to #show. An optional
+  # ?session_id= narrows the list to one session (blank = every session);
+  # @sessions feeds the same mascot-labelled picker the per-session #show uses.
   def all_activities
+    @session_id = params[:session_id].presence
+    @sessions   = session_options
     @page  = [params[:page].to_i, 1].max
     scope  = AgentActivity.order(opened_at: :desc, seq: :desc, id: :desc)
+    scope  = scope.for_session(@session_id) if @session_id
     @total = scope.count
     @activities = scope.offset((@page - 1) * ALL_ACTIVITIES_PER_PAGE).limit(ALL_ACTIVITIES_PER_PAGE).to_a
 
