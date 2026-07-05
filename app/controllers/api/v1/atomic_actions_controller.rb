@@ -50,6 +50,9 @@ module Api
         params.permit(
           :session_id,       # required — the session this action belongs to
           :kind,             # required — read | edit | bash | verify | delegate | …
+          # optional span FK — the span OPEN at tool-call time; the hook stamps it from
+          # the local marker → deterministic attribution; absent ⇒ derived server-side.
+          :atomic_event_id,
           :task_slug,        # optional slug FK; null for pre-task actions
           :mascot,           # optional session/task Pokémon slug
           :input,            # optional action input (prompt / command / args)
