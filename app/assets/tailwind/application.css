@@ -92,6 +92,24 @@
     opacity: 0.7;
   }
 
+  .release-confirming-glow::before {
+    background:
+      linear-gradient(
+        45deg,
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55,
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55
+      );
+    background-size: 400%;
+  }
+
   @keyframes taskCardAssembledSteam {
     0% {
       background-position: 0 0;

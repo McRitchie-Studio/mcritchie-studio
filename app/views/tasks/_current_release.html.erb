@@ -9,17 +9,9 @@
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% if rel %>
   <% release_confirming_glow = rel.stage_reached?("confirming") && !rel.stage_reached?("shipped") %>
-  <% release_glow_color = rel.mascot&.signature_color.presence || "#a78bfa" %>
-  <% release_type_enumerals = release_confirming_glow && rel.mascot ? Pokemon.type_enumerals : {} %>
-  <% release_glow_type_colors = if rel.mascot && release_type_enumerals.present?
-       rel.mascot.types.filter_map { |type| release_type_enumerals[type]&.color.presence }
-                  .select { |color| color.to_s.match?(/\A#[0-9a-f]{6}\z/i) }
-                  .uniq
-     else
-       []
-     end %>
-  <% release_glow_color_a = release_glow_type_colors.first || release_glow_color %>
-  <% release_glow_color_b = release_glow_type_colors.second || release_glow_color_a %>
+  <% release_glow_color = release_confirming_glow ? "#a78bfa" : rel.mascot&.signature_color.presence %>
+  <% release_glow_color_a = "#fb0094" %>
+  <% release_glow_color_b = "#00c4ff" %>
   <% release_glow_style = if release_confirming_glow
        "--task-card-glow-color: #{release_glow_color}; " \
          "--task-card-glow-color-a: #{release_glow_color_a}; " \
@@ -36,7 +28,7 @@
   <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
       type colour; blank → the fx falls back to its default warm-orange pulse. %>
   <div id="current-release"
-       data-glow="<%= release_confirming_glow ? release_glow_color : rel.mascot&.signature_color %>"
+       data-glow="<%= release_glow_color %>"
        <% if release_confirming_glow %>data-stage-glow="confirming"<% end %>
        <% if release_glow_style %>style="<%= release_glow_style %>"<% end %>
        class="<%= release_card_class %>">

@@ -75,8 +75,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     card = css_select("#current-release").first
     assert_equal "confirming", card["data-stage-glow"]
     assert_includes card["class"], "release-confirming-glow"
-    assert_includes card["style"], "--task-card-glow-color-a: #a78bfa"
-    assert_includes card["style"], "--task-card-glow-color-b: #a78bfa"
+    assert_includes card["style"], "--task-card-glow-color-a: #fb0094"
+    assert_includes card["style"], "--task-card-glow-color-b: #00c4ff"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end

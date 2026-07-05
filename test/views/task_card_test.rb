@@ -107,7 +107,8 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, "mask-composite: exclude"
     assert_includes css, "padding: 2px"
     assert_not_includes css, ".task-card-stage-glow-assembled::after"
-    assert_not_includes css, "#fb0094"
+    assert_includes css, "var(--task-card-glow-color-a"
+    assert_includes css, "#fb0094"
     assert_includes css, "@keyframes taskCardAssembledSteam"
   end
 
