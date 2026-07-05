@@ -120,6 +120,23 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal "dropzone-building", streams[1]["target"]
   end
 
+  test "an assembled broadcast keeps both mascot type colors in the gradient" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "fire", color: "#EE8130", rank: 900)
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", color: "#A98FF3", rank: 200)
+    Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", types: %w[fire flying],
+                    primary_type: "fire", generation: 1)
+    task = Task.create!(title: "Live assembled gradient task", stage: "reviewed",
+                        metadata: { "devops" => { "mascot" => "charizard", "mascot_color" => "#EE8130" } })
+    task.update!(stage: "assembled")
+    event = task.task_events.transitions.last
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_event(event) }
+
+    card = streams.find { |stream| stream["action"] == "prepend" }
+    assert_includes card.to_html, "--task-card-glow-color-a: #EE8130"
+    assert_includes card.to_html, "--task-card-glow-color-b: #A98FF3"
+  end
+
   # --- [unit] the hook + the SEV-1 guard --------------------------------------
 
   test "the after-commit hook skips backfilled (bulk history) events" do
