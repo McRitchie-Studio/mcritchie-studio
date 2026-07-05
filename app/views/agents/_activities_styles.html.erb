@@ -33,7 +33,7 @@
   #alex-heartbeat .aa-th-chev { width:26px; padding-left:10px !important; padding-right:0 !important; }
   #alex-heartbeat .aa-th-agent { width:212px; }
   #alex-heartbeat .aa-th-cost { width:118px; }
-  #alex-heartbeat .aa-th-details { width:190px; }
+  #alex-heartbeat .aa-th-details { width:232px; }
   #alex-heartbeat .aa-th-grade { width:150px; }
 
   /* Activity (primary) rows sit on the panel; hover lifts to panel2; the category
@@ -83,6 +83,13 @@
 
   /* Details column: time+status / task / action-count(+spinner). */
   #alex-heartbeat .aa-details { min-width:150px; }
+  /* The head line (time+status, or #seq KIND + outcome) never wraps — it clips with a
+     soft right-edge fade instead of dropping a badge to a second line. Children keep
+     their size (flex:0 0 auto) so the badge overflows-and-fades rather than squishing. */
+  #alex-heartbeat .aa-detailhead { flex-wrap:nowrap; overflow:hidden; min-width:0;
+    -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent);
+    mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent); }
+  #alex-heartbeat .aa-detailhead > * { flex:0 0 auto; }
   #alex-heartbeat .aa-time { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; white-space:nowrap; }
   #alex-heartbeat .aa-task { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
   #alex-heartbeat .aa-count { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
