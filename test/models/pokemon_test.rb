@@ -72,6 +72,27 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "charmeleon", Pokemon.draw_from_slugs(%w[charmeleon]).slug
   end
 
+  test "second_evolution_form? is true for three-stage roots" do
+    Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander",
+                    base: "charmander", evolution: ["charmeleon"])
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon",
+                    base: "charmander", evolution: ["charizard"])
+    Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", base: "charmander")
+
+    assert_predicate Pokemon.find_by!(slug: "charmander"), :second_evolution_form?
+    assert_not Pokemon.find_by!(slug: "charmeleon").second_evolution_form?
+  end
+
+  test "second_evolution_form? ignores baby forms behind the current form" do
+    Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu",
+                    base: "pikachu", evolution: ["raichu"], baby: ["pichu"])
+    Pokemon.create!(dex: 26, name: "Raichu", slug: "raichu", base: "pikachu")
+    Pokemon.create!(dex: 172, name: "Pichu", slug: "pichu",
+                    base: "pikachu", evolution: ["pikachu"])
+
+    assert_not Pokemon.find_by!(slug: "pikachu").second_evolution_form?
+  end
+
   test "draw returns a Pokemon from the deck" do
     make(143, "snorlax")
     assert_equal "snorlax", Pokemon.draw.slug

@@ -756,7 +756,7 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert build_step_board?(Task.new(stage: "submitted"), :build), "build board keeps the split through submitted"
     assert_not build_step_board?(Task.new(stage: "submitted"), :deploy)
     assert_not build_step_board?(Task.new(stage: "reviewed"), :deploy)
-    assert_not build_step_board?(Task.new(stage: "blocked"), :build)
+    assert build_step_board?(Task.new(stage: "blocked"), :build), "build board keeps blocked cards in the three-slot rhythm"
   end
 
   # Component tier: the single MascotAgent construction point is shiny-aware —
@@ -773,22 +773,31 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_nil task_mascot_face(plain_task, nil)
   end
 
-  # --- third evolution: the Evolve card + the first-crew reveal ----------------
+  # --- final evolution: the Evolve card + the first-crew reveal ----------------
 
-  # A full designed→…→assembled(/shipped) journey whose mascot evolves at the two
-  # gates — base → first-evo at submitted, → third form at assembled — so a third-
-  # stage evolution surfaces. Snapshots are baked directly for control over each
+  # A full designed→…→reviewed(/shipped) journey whose mascot evolves at the two
+  # gates — base → first-evo at submitted, → final form at reviewed — so a final
+  # evolution surfaces. Snapshots are baked directly for control over each
   # form (the gate mechanics themselves live in TaskMascotEvolutionTest).
   # Known dexes so the seed is collision-proof against shared-DB leftovers.
   FORM_DEX = { "charmander" => 4, "charmeleon" => 5, "charizard" => 6, "diglett" => 50, "dugtrio" => 51 }.freeze
 
   def evolving_journey(stage:, base: "charmander", first: "charmeleon", third: "charizard")
-    # Seed the real line so the third_evolution base-form guard resolves — `base` is
-    # its own base; `first`/`third` descend from it. Idempotent (first_or_initialize).
+    # Seed the real line so final_evolution can check whether the reviewed snapshot
+    # is terminal. Idempotent (first_or_initialize).
     { base => base, first => base, third => base }.each do |slug, base_slug|
+      evolution = if slug == base && first != base
+                    [first]
+                  elsif slug == base && third != base
+                    [third]
+                  elsif slug == first && third != first
+                    [third]
+                  else
+                    []
+                  end
       Pokemon.where(slug: slug).first_or_initialize
              .update!(dex: FORM_DEX.fetch(slug), name: slug.capitalize, slug: slug,
-                      generation: 1, base: base_slug, baby: [])
+                      generation: 1, base: base_slug, evolution: evolution, baby: [])
     end
     task = Task.create!(title: "evolving #{base} #{stage} task")
     task.task_events.delete_all
@@ -799,7 +808,7 @@ class StageAgentsHelperTest < ActionView::TestCase
     TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
                       occurred_at: 4.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap[first])
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
-                      occurred_at: 3.hours.ago, seconds_in_from: 3600, metadata: snap[first].merge("reviewers" => REVIEWERS))
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600, metadata: snap[third].merge("reviewers" => REVIEWERS))
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap[third])
     if stage == "shipped"
@@ -810,8 +819,8 @@ class StageAgentsHelperTest < ActionView::TestCase
     task.reload
   end
 
-  test "third_evolution detects the new form produced at the assembled gate" do
-    evo = third_evolution(evolving_journey(stage: "assembled"))
+  test "final_evolution detects the new form produced at the reviewed gate" do
+    evo = final_evolution(evolving_journey(stage: "assembled"))
 
     assert_not_nil evo
     assert_equal "charmeleon", evo.from["slug"]
@@ -820,19 +829,20 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal "https://example.test/charizard.png", evo.to_face.avatar
   end
 
-  test "third_evolution is nil for a 2-stage line that assembles unevolved" do
-    # A 2-stage line reaches its final form at SUBMITTED; the assembled gate makes no
-    # new form (its snapshot == the reviewed form), so there is no third evolution —
-    # even though devops.mascot_stage would read 2 (the gate is stamped regardless).
-    journey = evolving_journey(stage: "assembled", base: "diglett", first: "dugtrio", third: "dugtrio")
-    assert_nil third_evolution(journey)
+  test "final_evolution detects a 2-stage line that waits until reviewed" do
+    journey = evolving_journey(stage: "assembled", base: "diglett", first: "diglett", third: "dugtrio")
+    evo = final_evolution(journey)
+
+    assert_not_nil evo
+    assert_equal "diglett", evo.from["slug"]
+    assert_equal "dugtrio", evo.to["slug"]
   end
 
-  test "third_evolution is nil before the task assembles" do
-    assert_nil third_evolution(deploy_task(stage: "reviewed", reviewers: REVIEWERS))
+  test "final_evolution is nil before the task is reviewed" do
+    assert_nil final_evolution(deploy_task(stage: "submitted", reviewers: REVIEWERS))
   end
 
-  test "third_evolution reads the real submit + assemble evolution end to end" do
+  test "final_evolution reads the real submit + review evolution end to end" do
     [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
       Pokemon.where(slug: slug).first_or_initialize
              .update!(dex: dex, name: slug.capitalize, slug: slug, generation: 1, base: "charmander", evolution: evo, baby: [])
@@ -842,19 +852,17 @@ class StageAgentsHelperTest < ActionView::TestCase
                         metadata: { "devops" => { "mascot" => "charmander", "session_id" => "s1", "mascot_session" => "s1" } })
     task.reload.submit!
     task.review!
-    task.assemble!
 
-    evo = third_evolution(task.reload)
-    assert_not_nil evo, "charmeleon → charizard at the assemble gate is a third evolution"
+    evo = final_evolution(task.reload)
+    assert_not_nil evo, "charmeleon → charizard at the reviewed gate is a final evolution"
     assert_equal "charmeleon", evo.from["slug"]
     assert_equal "charizard", evo.to["slug"]
   end
 
-  test "third_evolution is nil when the assemble gate does the FIRST evolution (skipped submit)" do
-    # A task that reaches assembled WITHOUT passing the submit gate evolves base →
-    # first form AT the assemble gate (Charmander → Charmeleon). That is a FIRST
-    # evolution, not a third — it must NOT get an Evolve card. (Regression for
-    # jasper's PR #391 review: the guard is that the ENTERING form is non-base.)
+  test "final_evolution is nil when review does a non-final first evolution" do
+    # A task that reaches reviewed WITHOUT passing the submit gate evolves base →
+    # first form AT the review gate (Charmander → Charmeleon). That is not final,
+    # so it must NOT get an Evolve card.
     %w[charmander charmeleon].each_with_index do |slug, i|
       Pokemon.where(slug: slug).first_or_initialize
              .update!(dex: 4 + i, name: slug.capitalize, slug: slug, generation: 1,
@@ -866,25 +874,26 @@ class StageAgentsHelperTest < ActionView::TestCase
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago, actor: "carl", metadata: snap["charmander"])
     TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
                       occurred_at: 2.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmander"])
-    # straight to assembled — the submit gate was skipped, so this is the FIRST evolution
-    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "assembled",
-                      occurred_at: 1.hour.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["charmeleon"])
-    task.update_columns(stage: "assembled")
+    # straight to reviewed — the submit gate was skipped, so this is the FIRST evolution
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "reviewed",
+                      occurred_at: 1.hour.ago, seconds_in_from: 1800,
+                      metadata: snap["charmeleon"].merge("reviewers" => REVIEWERS))
+    task.update_columns(stage: "reviewed")
 
-    assert_nil third_evolution(task.reload),
-               "a first evolution at a skipped-submit assemble is not a third evolution"
+    assert_nil final_evolution(task.reload),
+               "a first evolution at a skipped-submit review is not a final evolution"
   end
 
-  test "stage_timeline strips the assembled companion and splices an Evolve card after it" do
+  test "stage_timeline splices an Evolve card after review and strips later companions" do
     blocks = stage_timeline(evolving_journey(stage: "shipped"), @agents)
 
-    assert_equal %w[designed building submitted reviewed assembled evolve shipped],
+    assert_equal %w[designed building submitted reviewed evolve assembled shipped],
                  blocks.map { |b| b.evolution? ? "evolve" : b.to_stage },
-                 "the Evolve card sits right after Reviewed → Assembled, before shipped"
+                 "the Evolve card sits right after Submitted → Reviewed"
 
     assembled = blocks.find { |b| b.to_stage == "assembled" && !b.evolution? }
     assert_equal %w[steffon], assembled.agents.map { |a| a.agent&.slug },
-                 "Reviewed → Assembled is Steffon alone — the mascot companion moved to the Evolve card"
+                 "Reviewed → Assembled is Steffon alone — the final mascot moved to the Evolve card"
     refute assembled.agents.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) }
 
     shipped = blocks.find { |b| b.to_stage == "shipped" }
@@ -895,26 +904,26 @@ class StageAgentsHelperTest < ActionView::TestCase
     evolve = blocks.find(&:evolution?)
     assert_equal "Charmeleon", evolve.evolution.from.name
     assert_equal "Charizard", evolve.evolution.to.name
-    assert_equal @steffon, evolve.evolution.trigger.agent, "Steffon triggered the evolution"
+    assert_equal @shannon, evolve.evolution.trigger.agent, "the primary reviewer triggered the evolution"
   end
 
-  test "stage_timeline keeps the assembled companion and adds no Evolve card for a 2-stage line" do
-    blocks = stage_timeline(evolving_journey(stage: "assembled", base: "diglett", first: "dugtrio", third: "dugtrio"), @agents)
+  test "stage_timeline celebrates a 2-stage final evolution at review" do
+    blocks = stage_timeline(evolving_journey(stage: "assembled", base: "diglett", first: "diglett", third: "dugtrio"), @agents)
 
-    refute blocks.any?(&:evolution?), "a 2-stage line earns no Evolve card"
+    assert blocks.any?(&:evolution?), "a 2-stage line earns its final Evolve card at review"
     assembled = blocks.find { |b| b.to_stage == "assembled" }
-    assert assembled.agents.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) },
-           "with no third evolution the companion still rides the assembled card"
+    refute assembled.agents.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) },
+           "the final mascot belongs to the Evolve card, not the assembled card"
   end
 
-  test "crew_columns stacks the evolved third form on the build crew and clears the deploy companion" do
+  test "crew_columns stacks the evolved final form on the build crew and clears the deploy companion" do
     task = evolving_journey(stage: "shipped")
     cols = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy)
     build = cols.find { |c| c.lane == :build }
     assembled = cols.find { |c| c.lane == :assembled }
     shipped = cols.find { |c| c.lane == :shipped }
 
-    assert_equal "Charizard", build.stacked.last.name, "the evolved third form joins the FIRST (build) crew"
+    assert_equal "Charizard", build.stacked.last.name, "the evolved final form joins the FIRST (build) crew"
     assert build.stacked.any? { |a| a.name == "Charmeleon" }, "the first-evo form stays on the build crew"
     assert_equal %w[steffon], assembled.stacked.map { |a| a.agent&.slug }
     refute assembled.stacked.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) }, "no mascot companion beside Steffon"
@@ -922,14 +931,14 @@ class StageAgentsHelperTest < ActionView::TestCase
     refute shipped.stacked.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) }, "no mascot companion beside Avi"
   end
 
-  test "crew_columns leaves the deploy companion in place for a 2-stage line" do
-    task = evolving_journey(stage: "shipped", base: "diglett", first: "dugtrio", third: "dugtrio")
+  test "crew_columns stacks a 2-stage final form and clears the deploy companion" do
+    task = evolving_journey(stage: "shipped", base: "diglett", first: "diglett", third: "dugtrio")
     cols = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy)
     build = cols.find { |c| c.lane == :build }
     assembled = cols.find { |c| c.lane == :assembled }
 
-    assert_equal 3, build.stacked.size, "no extra form appended — designed · building · submitted only"
-    assert assembled.stacked.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) },
-           "the companion still rides the assembled cluster when nothing evolved there"
+    assert_equal "Dugtrio", build.stacked.last.name
+    refute assembled.stacked.any? { |a| a.agent.is_a?(StageAgentsHelper::MascotAgent) },
+           "the companion leaves the assembled cluster when the final form has its own reveal"
   end
 end

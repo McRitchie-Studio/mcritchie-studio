@@ -40,9 +40,9 @@ class TaskEventEvolutionTest < ActiveSupport::TestCase
     assert_equal "charmeleon", snapshot_for(task, "submitted")["slug"]
     assert_equal "https://example.test/pokemon/5-charmeleon-cropped.png",
                  snapshot_for(task, "submitted")["avatar"]
-    # Deploy lane bakes snapshots too now — reviewed keeps the mid form even
-    # though the live mascot is Charizard by the end of the walk.
-    assert_equal "charmeleon", snapshot_for(task, "reviewed")["slug"]
+    # The review gate evolved the mascot BEFORE its event baked; later deploy
+    # lane snapshots keep that final form.
+    assert_equal "charizard", snapshot_for(task, "reviewed")["slug"]
     assert_equal "charizard", snapshot_for(task, "assembled")["slug"]
     # The live task mascot finished fully evolved.
     assert_equal "charizard", task.reload.devops["mascot"]

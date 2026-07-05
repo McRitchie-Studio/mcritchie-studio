@@ -86,6 +86,13 @@ class Pokemon < ApplicationRecord
     self.class.where(slug: Array(evolution))
   end
 
+  # True when this form can evolve once, then that evolved form can evolve again.
+  # Babies do not count as a prior form here: Pikachu has Pichu as a baby, but only
+  # one forward evolution (Raichu), so this returns false for Pikachu.
+  def second_evolution_form?
+    evolutions.any? { |pokemon| Array(pokemon.evolution).present? }
+  end
+
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build
   # it once per page and look up each badge's color + emoji with no extra queries
   # (avoids an N+1 over the 151 rows). Empty when the enumeral table/gem isn't
