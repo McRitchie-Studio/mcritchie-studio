@@ -52,7 +52,7 @@ If status reports `release == main`, stop immediately. Otherwise validate the
 production-board release timestamp before lighting stage 4:
 
 ```bash
-heroku run -a mcritchie-studio --no-tty rails runner \
+heroku run -a mcritchie-studio --no-tty --exit-code rails runner \
   'r = Release.current;
    ready = r&.state == "assembled" && r.qa_deployed_at.present?;
    puts({
