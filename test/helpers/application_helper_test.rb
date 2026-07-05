@@ -302,14 +302,16 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal labels.size, labels.uniq.size, "tracker active labels must be unambiguous"
   end
 
-  test "[unit] release_ago_label picks the largest single unit" do
+  test "[unit] release_ago_label uses hours and minutes once hourly" do
     assert_equal "0s ago", release_ago_label(0)
     assert_equal "59s ago", release_ago_label(59)
     assert_equal "1m ago", release_ago_label(60)
     assert_equal "59m ago", release_ago_label((60 * 60) - 1)
-    assert_equal "1h ago", release_ago_label(60 * 60)
-    assert_equal "23h ago", release_ago_label((24 * 60 * 60) - 1)
-    assert_equal "1d ago", release_ago_label(24 * 60 * 60)
+    assert_equal "1h 00m ago", release_ago_label(60 * 60)
+    assert_equal "1h 04m ago", release_ago_label(60 * 60 + 4.minutes + 9.seconds)
+    assert_equal "23h 59m ago", release_ago_label((24 * 60 * 60) - 1)
+    assert_equal "24h 00m ago", release_ago_label(24 * 60 * 60)
+    assert_equal "180h 24m ago", release_ago_label(180.hours + 24.minutes + 14.seconds)
   end
 
   test "[unit] a complete tracker node carries its completion stamp and ago seconds" do
@@ -547,7 +549,9 @@ class ApplicationHelperTest < ActionView::TestCase
 
       assert_select "[data-test='release-tracker-step'][data-stage='assembling'] " \
                     "[data-test='release-tracker-duration'][data-release-ticker]",
-                    text: "180h 24m"
+                    text: /\A180h 24m(?: ago)?\z/ do |spans|
+        assert_no_match(/\d+s\b/, spans.first.text)
+      end
     end
   end
 
