@@ -1,8 +1,8 @@
 <%# Secondary board links above the page title: back to the admin dashboard
-    (admins only), the Stages guide, the Intelligence dashboard, and the Alex
-    learning heartbeat. The Deploy lane additionally links the OPSD Pipeline and
-    Insights surfaces. Wrapped in a nav so cross-page link checks and screen
-    readers find them on every board surface.
+    (admins only), the Stages guide, the Intelligence dashboard, and the
+    cross-session Outcomes (all-spans) view. The Deploy lane additionally links
+    the OPSD Pipeline and Insights surfaces. Wrapped in a nav so cross-page link
+    checks and screen readers find them on every board surface.
     Local: current ("tasks" | "deployments" | "stages") marks the active page. %>
 <% current = local_assigns.fetch(:current, nil) %>
 <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Board sections">
@@ -15,7 +15,7 @@
         class: "transition #{current == 'stages' ? 'text-primary font-medium' : 'text-muted hover:text-heading'}" %>
   <%= link_to "Intelligence", intelligence_path,
         class: "text-muted hover:text-heading transition" %>
-  <%= link_to "Alex Heartbeat", alex_heartbeat_path,
+  <%= link_to "🎭 Outcomes", heartbeat_all_spans_path,
         class: "text-muted hover:text-heading transition" %>
   <% if current == "deployments" %>
     <%= link_to "Pipeline", alex_pipeline_path,
