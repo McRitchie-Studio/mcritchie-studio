@@ -26,7 +26,11 @@
 # ONE call, so activities resolve instead of hanging half-narrated (`start` also
 # accepts `--outcome` for the same crossover). `close-open` is the session-end
 # teardown (wired to the Claude Code SessionEnd hook): it closes any activity still
-# open so the last one never hangs open forever. `next`/`end` also take
+# open so the last one never hangs open forever. `action --summary <text>` self-
+# reports ONE off-box action to the currently-open activity — for subprocess work
+# the PostToolUse capture hook can't see (bin/release's git/gh/`heroku run` all run
+# inside a single Bash tool call), so a deploy span shows genuine rows instead of
+# "No raw actions attributed". `next`/`end` also take
 # `--key-method <code>` (+ optional `--key-lang bash|ruby|sql|js`) to stamp the
 # COMPLETED activity's one load-bearing call — the copyable line another agent would
 # rerun (e.g. `User.find_by(email: ...)`); most activities have none, so it's optional.
@@ -75,6 +79,7 @@ class AgentActivityCli
     when "start", "next" then start(flags) # `next` = boundary open (carries --outcome)
     when "end"           then finish(flags)
     when "close-open"    then close_open(flags)
+    when "action"        then action(flags) # self-report ONE off-box action to the open activity
     when "heartbeat"     then heartbeat(argv, flags) # sticky acting-agent for a soul run
     when "grade"         then grade_activity(argv, flags) # bearer AGENT grade of a resolved activity
     when "awaiting"      then awaiting(flags)             # resolved activities still awaiting an Alex grade
@@ -82,6 +87,7 @@ class AgentActivityCli
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
                 "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
                 "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
+                "action --summary <text> [--kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
                 "heartbeat <soul> | heartbeat --clear | " \
                 "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
                 "awaiting [--limit <n>]")
@@ -204,6 +210,45 @@ class AgentActivityCli
     clear_open_activity(sid)
 
     report(res, "closed open activities · #{outcome}")
+  end
+
+  # Self-report ONE raw action to the session's currently-open activity — for
+  # OFF-BOX work the PostToolUse capture hook can't see. bin/release does its real
+  # work (git / gh / `heroku run` conductor snippets) as SUBPROCESSES inside a
+  # SINGLE Bash tool call, so none of it fires the hook; its Remote deploy span
+  # would show "No raw actions attributed". Each `step()` in that span calls this
+  # so the span carries genuine rows. Pinned to the OPEN-activity marker (the exact
+  # span the caller opened), exactly as a captured tool-call would be. No open
+  # activity → nothing to attribute to → a swallowed no-op. Same best-effort,
+  # never-fatal posture as the rest of this CLI.
+  def action(flags)
+    sid = resolve_session_id(flags)
+    return warn_note("atomic-event: no session id — nothing to report") unless present?(sid)
+
+    activity_id = read_open_activity(sid)
+    return warn_note("atomic-event action: no open activity — skipped") unless present?(activity_id)
+
+    summary = flags["summary"].to_s.strip
+    return warn_note("atomic-event action needs --summary") if summary.empty?
+
+    marker = resolve_marker(session_id: sid)
+    res = post("/api/v1/agent_actions", {
+      "session_id"        => sid,
+      "agent_activity_id" => activity_id,
+      # kind is the action taxonomy (read | edit | bash | verify | …); a deploy
+      # step is a shell op, so `bash` is the honest default.
+      "kind"              => (present?(flags["kind"]) ? flags["kind"].to_s.strip : "bash"),
+      "summary"           => summary,
+      "key_method"        => flags["key-method"].to_s.strip,
+      "key_method_lang"   => flags["key-lang"].to_s.strip,
+      "outcome"           => "ok",
+      "actor"             => "agent",
+      "task_slug"         => marker["task_slug"],
+      "mascot"            => marker["mascot"],
+      "stage"             => marker["stage"]
+    }.reject { |_, v| v.to_s.empty? })
+
+    report(res, "action · #{summary}")
   end
 
   # Sets (or clears) the session's STICKY acting-agent — the soul that EVERY
@@ -528,6 +573,20 @@ class AgentActivityCli
     path = open_activity_path(session_id)
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, "#{id}\n")
+  rescue StandardError
+    nil
+  end
+
+  # Read the id of the session's currently-open activity from the marker `start`
+  # wrote — the SAME file bin/atomic-capture-hook reads to deterministically pin an
+  # action. `action` uses it to attribute an off-box row to the open span. nil when
+  # no activity is open (marker absent/empty), so a caller outside a span no-ops.
+  def read_open_activity(session_id)
+    path = open_activity_path(session_id)
+    return nil unless File.file?(path)
+
+    id = File.read(path).strip
+    id.empty? ? nil : id
   rescue StandardError
     nil
   end
