@@ -194,37 +194,30 @@ module ApplicationHelper
     release_tracker_state(release, next_stage)
   end
 
-  # Node timing off the stamps: live seconds while active (start stamp → now,
-  # ticked client-side), and once complete the moment the stage FINISHED (the
-  # operator watches the clock climb, then cares when it landed — the ago label
-  # keeps ticking client-side too). The stage's own span survives in the hash for
-  # the tooltip. A node missing its start stamp shows no duration rather than a
-  # fake zero.
+  # Node timing off the stamps: every REACHED node (active or complete) shows how
+  # long ago that stage STARTED — release_ago_label(now → started_at), ticked
+  # client-side. started_at is the stage's own start stamp with a lower-bound
+  # fallback (stage_started_at_or_before), so a node whose own start event was
+  # never posted still reads a sensible "started X ago" instead of blanking. The
+  # stage's own span (started → completed) survives as duration_seconds for the
+  # tooltip's "took Xm", present only once the stage has finished. A pending node
+  # returns {} and renders no timing.
   def release_tracker_duration(release, stage, state, now: Time.current)
-    started_at = release.stage_stamp(stage[:starts])
+    return {} if state.to_sym == :pending
+
+    started_at = release.stage_started_at_or_before(stage[:starts])
+    own_started_at = release.stage_stamp(stage[:starts])
     completed_at = release.stage_stamp(stage[:completes])
 
-    case state.to_sym
-    when :active
-      return {} unless started_at
-
-      {
-        duration_seconds: elapsed_seconds(started_at, now),
-        duration_started_at: started_at,
-        duration_live: true
-      }
-    when :complete
-      return {} unless started_at && completed_at
-
-      {
-        duration_seconds: elapsed_seconds(started_at, completed_at),
-        duration_live: false,
-        completed_at: completed_at,
-        ago_seconds: elapsed_seconds(completed_at, now)
-      }
-    else
-      {}
-    end
+    {
+      started_at: started_at,
+      ago_seconds: elapsed_seconds(started_at, now),
+      duration_live: state.to_sym == :active,
+      completed_at: completed_at,
+      # "took" is only real when the stage's OWN start stamp is known — never off
+      # the fallback anchor, which would overstate the span from release-open.
+      duration_seconds: own_started_at && completed_at ? elapsed_seconds(own_started_at, completed_at) : nil
+    }
   end
 
   def release_static_duration_label(seconds)
@@ -234,9 +227,9 @@ module ApplicationHelper
     "#{seconds / 60}m"
   end
 
-  # Compact single-unit "finished X ago" label for a COMPLETE tracker node. The
-  # ago fmt in _release_ticker.html.erb MUST mirror this so the server-rendered
-  # value and the first client tick agree.
+  # Compact single-unit "X ago" label for a tracker node (time since the stage
+  # started). The ago fmt in _release_ticker.html.erb MUST mirror this so the
+  # server-rendered value and the first client tick agree.
   def release_ago_label(seconds)
     seconds = seconds.to_i
     return "#{seconds}s ago" if seconds < 60
@@ -250,11 +243,14 @@ module ApplicationHelper
     "#{hours / 24}d ago"
   end
 
-  # Tooltip for a complete node's ago label: the absolute completion time plus
-  # the stage's own span, so the duration the label used to show is one hover away.
-  def release_tracker_completed_title(step)
-    finished = step[:completed_at].in_time_zone.strftime("%b %-d, %-I:%M %p")
-    "Finished #{finished} · took #{release_static_duration_label(step[:duration_seconds])}"
+  # Tooltip for a node's started-ago label: the absolute start time, plus the
+  # stage's own span once it has finished ("took Xm") so a completed stage's
+  # duration is one hover away. An in-flight stage has no span yet, so the
+  # tooltip is just its start time.
+  def release_tracker_started_title(step)
+    started = step[:started_at].in_time_zone.strftime("%b %-d, %-I:%M %p")
+    base = "Started #{started}"
+    step[:duration_seconds] ? "#{base} · took #{release_static_duration_label(step[:duration_seconds])}" : base
   end
 
   def release_tracker_step_label(stage, state)
