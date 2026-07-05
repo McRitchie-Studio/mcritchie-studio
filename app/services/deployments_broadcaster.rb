@@ -38,7 +38,14 @@ class DeploymentsBroadcaster
   # entry point, called from Task's after_destroy_commit. Guarded like the rest.
   def self.task_removed(slug)
     Studio::Cable.safe_broadcast do
-      Turbo::StreamsChannel.broadcast_remove_to(STREAM, target: "card-#{slug}")
+      Turbo::StreamsChannel.broadcast_stream_to(
+        STREAM,
+        content: ApplicationController.helpers.turbo_stream_action_tag(
+          :remove,
+          target: "card-#{slug}",
+          data: { exit_action: "delete" }
+        )
+      )
     end
   end
 
@@ -99,7 +106,10 @@ class DeploymentsBroadcaster
   end
 
   def remove_card
-    Turbo::StreamsChannel.broadcast_remove_to(STREAM, target: card_id)
+    Turbo::StreamsChannel.broadcast_stream_to(
+      STREAM,
+      content: turbo_stream_action_tag(:remove, target: card_id, data: { exit_action: "archive" })
+    )
   end
 
   def move_card

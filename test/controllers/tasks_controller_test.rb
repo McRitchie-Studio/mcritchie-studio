@@ -19,6 +19,29 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "Tasks"
   end
 
+  test "[component] task cards use shared JSON routes and distinct exit animations" do
+    get tasks_path
+
+    assert_response :success
+    assert_select "button[data-test='task-card-archive']"
+    assert_select "button[data-test='task-card-delete']"
+    assert_includes response.body, "fetch('/tasks/' + slug + '.json'"
+    assert_includes response.body, "method: 'PATCH'"
+    assert_includes response.body, "animateCardExit(card, 'archive')"
+    assert_includes response.body, "animateCardExit(card, 'delete')"
+    assert_not_includes response.body, "/tasks/' + slug + '/archive.json"
+  end
+
+  test "[integration] json patch archives through the shared task update path" do
+    log_in_as(@admin)
+
+    patch task_path(@new_task.slug, format: :json), params: { task: { stage: "archived" } }
+
+    assert_response :success
+    assert_equal "application/json", response.media_type
+    assert_equal "archived", @new_task.reload.stage
+  end
+
   test "deployments shows the current-release header when a release exists" do
     rel = Release.open!(branch: "release/header-test", qa_url: "https://qa.example/tasks", deployed_sha: "abc1234def567")
     @new_task.update!(stage: "reviewed")
