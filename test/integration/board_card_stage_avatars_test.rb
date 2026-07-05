@@ -310,6 +310,38 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # A third-stage evolution (Charmeleon → Charizard at Steffon's assemble gate) shows
+  # the evolved form stacked onto the FIRST (build) crew — the mascot's lineage lives
+  # together on the card it was born on — and NOT beside Steffon on the assembled
+  # cluster (its companion moved to the build crew).
+  test "a third-evolution card stacks the evolved form on the first (build) crew" do
+    task = Task.create!(title: "third evolution board card", stage: "assembled")
+    task.task_events.delete_all
+    snap = ->(slug, name) { { "mascot" => { "slug" => slug, "name" => name, "avatar" => "https://example.test/#{slug}.png" } } }
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 7.hours.ago, actor: "carl", metadata: snap["charmander", "Charmander"])
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 6.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmander", "Charmander"])
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmeleon", "Charmeleon"])
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600,
+                      metadata: snap["charmeleon", "Charmeleon"].merge("reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
+                                                                                       { "slug" => "carl", "weight" => "light" }]))
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["charizard", "Charizard"])
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      # the evolved third form joins the FIRST (build) crew cluster
+      assert_select "[data-test='crew-cluster'][data-lane='build'] img[src='https://example.test/charizard.png']", count: 1
+      # …and is NOT duplicated beside Steffon on the assembled cluster
+      assert_select "[data-test='crew-cluster'][data-lane='assembled'] img[src='https://example.test/charizard.png']", count: 0
+      assert_select "[data-test='crew-cluster'][data-lane='assembled'] div[title^='Steffon']", count: 1
+    end
+  end
+
   test "a blocked card keeps a build crew face and blocked marker" do
     Pokemon.create!(dex: 52, name: "Meowth", slug: "meowth", generation: 1,
                     sprite_url: "https://example.test/meowth-sprite.png")
