@@ -57,7 +57,9 @@
   /* Agent column — the reused stacked avatar+name cell, kept snug. Activity (primary)
      rows wear a bigger xs avatar + bolder name so they read as a higher altitude than
      the drill-down action rows, which keep the compact xxs face. */
-  #alex-heartbeat .aa-agent { min-width:132px; }
+  /* The agent cell centers its avatar+name block vertically in the row (the other
+     columns stay top-aligned as 3-sub-row stacks). */
+  #alex-heartbeat .aa-agent { min-width:132px; vertical-align:middle; }
   #alex-heartbeat .aa-arow .aa-agent .hb-nameprimary { font-size:15px; }
   #alex-heartbeat .aa-arow .aa-agent .hb-namesub { font-size:12.5px; }
   #alex-heartbeat .aa-arow .aa-agent .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-24px; }
