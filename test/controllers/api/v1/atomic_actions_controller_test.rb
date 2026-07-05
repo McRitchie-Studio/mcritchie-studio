@@ -53,6 +53,24 @@ module Api
         assert_equal 1234, captured[:duration_ms]
       end
 
+      test "[unit] permits deterministic activity pins from hook clients" do
+        captured = nil
+        stub = lambda do |attrs|
+          captured = attrs
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+        end
+
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
+               params: @body.merge(agent_activity_id: 123, atomic_event_id: 456),
+               headers: @headers, as: :json
+        end
+
+        assert_response :created
+        assert_equal 123, captured[:agent_activity_id]
+        assert_equal 456, captured[:atomic_event_id], "legacy pre-taxonomy alias still reaches capture"
+      end
+
       test "[integration] create persists summary + key_method (lang inferred when absent)" do
         post api_v1_agent_actions_path,
              params: @body.merge(kind: "bash",
@@ -197,6 +215,17 @@ module Api
         assert_equal 0, action.seq, "first action of a fresh session is position 0"
         assert_equal action.id, body["id"]
         assert_equal "edit", body["kind"]
+      end
+
+      test "[integration] create persists a stamped agent_activity_id" do
+        activity = AgentActivity.open_event!(session_id: "sess-abc", category: "Explore", reason_slug: "pin")
+
+        post api_v1_agent_actions_path,
+             params: @body.merge(agent_activity_id: activity.id),
+             headers: @headers, as: :json
+
+        assert_response :created
+        assert_equal activity.id, AgentAction.order(:created_at).last.agent_activity_id
       end
 
       test "[integration] minimal body (just session_id + kind) captures with defaults" do

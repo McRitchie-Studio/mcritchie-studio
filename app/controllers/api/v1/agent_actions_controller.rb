@@ -51,6 +51,8 @@ module Api
           :session_id,       # required — the session this action belongs to
           :kind,             # required — read | edit | bash | verify | delegate | …
           :task_slug,        # optional slug FK; null for pre-task actions
+          :agent_activity_id, # optional deterministic activity pin from the local hook marker
+          :atomic_event_id,   # compatibility alias for pre-taxonomy capture clients
           :mascot,           # optional session/task Pokémon slug
           :input,            # optional action input (prompt / command / args)
           :output,           # optional action output (result / stdout / diff)

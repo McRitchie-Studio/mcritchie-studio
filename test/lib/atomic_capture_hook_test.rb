@@ -57,9 +57,9 @@ class AtomicCaptureHookTest < Minitest::Test
   end
 
   # ── [unit] navigation drop ───────────────────────────────────────────────
-  # Navigation (a bare directory move) owns no narrated span and is ~84% of the
-  # noise, so it is DROPPED — never POSTed. A Bash call is navigation when its
-  # command's first token is cd / pushd / popd / pwd.
+  # Navigation (a bare directory move) owns no narrated activity and is ~84% of
+  # the noise, so it is DROPPED - never POSTed. A Bash call is navigation when
+  # every shell segment starts with cd / pushd / popd / pwd.
 
   def test_unit_navigation_flags_directory_moves
     h = hook
@@ -71,7 +71,8 @@ class AtomicCaptureHookTest < Minitest::Test
 
   def test_unit_navigation_ignores_non_nav_bash_and_other_tools
     h = hook
-    ["ls -la", "git status", "cargo build", "cdless", "pwdx", "echo cd"].each do |command|
+    ["ls -la", "git status", "cargo build", "cdless", "pwdx", "echo cd",
+     "cd /repo && git status", "pwd && bin/rails test"].each do |command|
       event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
       refute h.navigation?(event), "#{command.inspect} is NOT navigation"
     end
@@ -82,9 +83,9 @@ class AtomicCaptureHookTest < Minitest::Test
   end
 
   # ── [unit] narration drop ────────────────────────────────────────────────
-  # A Bash call whose invocation IS `bin/atomic-event` (the self-narration CLI) is
-  # DROPPED like navigation — it's the span machinery, not work, and would otherwise
-  # fall into "Unlabeled". Precise: only an INVOCATION, never a mention.
+  # A Bash call whose invocation IS `bin/agent-activity` / `bin/atomic-event`
+  # (the self-narration CLI) is DROPPED like navigation - it is the activity
+  # machinery, not work. Precise: only an INVOCATION, never a mention.
 
   def test_unit_narration_flags_agent_activity_invocations
     h = hook
@@ -93,6 +94,8 @@ class AtomicCaptureHookTest < Minitest::Test
       "/Users/alex/projects/mcritchie-studio/bin/atomic-event next --outcome y --category Edit --reason z",
       "./bin/atomic-event end",
       "  bin/atomic-event close-open",
+      "bin/agent-activity start --category Explore --reason x",
+      "./bin/agent-activity next --outcome y --category Edit --reason z",
       "FOO=bar bin/atomic-event start --category Edit --reason z",           # inline ENV= prefix
       "ATOMIC_CAPTURE_URL=http://x /abs/bin/atomic-event end"                # ENV= + abs path
     ].each do |command|
@@ -120,6 +123,30 @@ class AtomicCaptureHookTest < Minitest::Test
     refute h.narration?({ "tool_name" => "Edit", "tool_input" => { "command" => "bin/atomic-event start" } })
     refute h.narration?({ "tool_name" => "Bash", "tool_input" => {} })
     refute h.narration?({ "tool_name" => "Bash" })
+  end
+
+  def test_unit_droppable_only_when_every_segment_is_overhead
+    h = hook
+    [
+      "cd /repo",
+      "cd /a && pushd /b",
+      "bin/atomic-event start --category Edit --reason x",
+      "bin/agent-activity start --category Edit --reason x",
+      "cd /repo && bin/agent-activity next --outcome y --category Edit --reason z"
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      assert h.droppable?(event), "#{command.inspect} is pure overhead and should be dropped"
+    end
+
+    [
+      "cd /repo && git commit -m x",
+      "cd /wt/app && bin/agent-worktree finish app task --push --pr",
+      "bin/agent-activity next --outcome y --category Edit --reason z && bin/task update t --checks x",
+      "git status && cd /elsewhere"
+    ].each do |command|
+      event = { "tool_name" => "Bash", "tool_input" => { "command" => command } }
+      refute h.droppable?(event), "#{command.inspect} includes real work and must be captured"
+    end
   end
 
   # ── [unit] serialization + truncation ────────────────────────────────────
@@ -262,6 +289,7 @@ class AtomicCaptureHookTest < Minitest::Test
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION,
                             "task_slug" => "tool-call-capture-hook", "stage" => "building", "mascot" => "caterpie")
+      write_open_activity_marker(proj, SESSION, 909)
       event = {
         "session_id" => SESSION, "cwd" => "/nope",
         "tool_name" => "Edit",
@@ -274,6 +302,7 @@ class AtomicCaptureHookTest < Minitest::Test
       assert_equal "tool-call-capture-hook", payload["task_slug"]
       assert_equal "building", payload["stage"]
       assert_equal "caterpie", payload["mascot"]
+      assert_equal 909, payload["agent_activity_id"]
       assert_equal "agent", payload["actor"]
       assert_equal "ok", payload["outcome"]
       assert_equal "2026-06-30T12:00:00Z", payload["occurred_at"]
@@ -288,6 +317,19 @@ class AtomicCaptureHookTest < Minitest::Test
       refute payload.key?("seq")
       refute payload.key?("event_slug")
       refute payload.key?("cost"), "the hook never sends cost — capture DERIVES it server-side"
+    end
+  end
+
+  def test_unit_build_payload_reads_the_legacy_open_span_marker
+    Dir.mktmpdir do |proj|
+      write_open_activity_marker(proj, SESSION, 808, legacy: true)
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Read", "tool_input" => {}, "tool_response" => {}
+      }
+
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_payload(event, now: Time.utc(2026, 6, 30, 12, 0, 0))
+      assert_equal 808, payload["agent_activity_id"]
     end
   end
 
@@ -457,6 +499,26 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  def test_integration_compound_cd_and_work_is_captured_with_the_open_activity
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      write_open_activity_marker(proj, SESSION, 909)
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Bash",
+        "tool_input" => { "command" => "cd /repo && git commit -m x" },
+        "tool_response" => { "stdout" => "[feat abc123] x" }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_actions" }
+      refute_nil post, "work behind a leading cd must be captured, not dropped whole"
+      body = JSON.parse(post[:body])
+      assert_equal 909, body["agent_activity_id"]
+      assert_includes body["input"], "git commit"
+    end
+  end
+
   def test_integration_always_exits_zero_even_when_endpoint_is_down
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "task_slug" => "x")
@@ -593,6 +655,15 @@ class AtomicCaptureHookTest < Minitest::Test
     sessions = File.join(projects_dir, ".agents", "sessions")
     FileUtils.mkdir_p(sessions)
     File.write(File.join(sessions, "#{session_id}.json"), JSON.generate(attrs))
+  end
+
+  def write_open_activity_marker(projects_dir, session_id, id, legacy: false)
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    FileUtils.mkdir_p(sessions)
+    suffix = legacy ? "open-span" : "open-activity"
+    path = File.join(sessions, "#{session_id}.#{suffix}")
+    File.write(path, "#{id}\n")
+    path
   end
 
   def base_env(projects_dir)

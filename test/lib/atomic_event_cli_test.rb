@@ -61,6 +61,29 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_unit_open_activity_marker_round_trip_and_clear
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      path = c.send(:open_activity_path, SESSION)
+      legacy = c.send(:legacy_open_span_path, SESSION)
+
+      c.send(:write_open_activity, SESSION, 777)
+      assert_equal "777", File.read(path).strip
+
+      c.send(:record_open_activity, SESSION, stub_response("201 Created", "data" => { "id" => 888 }))
+      assert_equal "888", File.read(path).strip
+
+      c.send(:record_open_activity, SESSION, stub_response("500 Error", "error" => "boom"))
+      assert_equal "888", File.read(path).strip, "failed open responses leave the last good marker intact"
+
+      FileUtils.mkdir_p(File.dirname(legacy))
+      File.write(legacy, "999\n")
+      c.send(:clear_open_activity, SESSION)
+      refute File.exist?(path)
+      refute File.exist?(legacy), "taxonomy-rename compatibility marker clears too"
+    end
+  end
+
   def test_unit_session_prefers_explicit_then_env
     assert_equal "flag-sid", cli.resolve_session_id("session" => "flag-sid")
     assert_equal "claude-sid",
@@ -176,6 +199,16 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_integration_start_records_the_open_activity_marker
+    Dir.mktmpdir do |proj|
+      run_cli(%W[start --session #{SESSION} --category Explore --reason find-issue-with-api], proj: proj)
+
+      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.open-activity")
+      assert File.file?(marker), "start writes the local open-activity marker"
+      assert_equal "1", File.read(marker).strip
+    end
+  end
+
   # ── [integration] --task stamps the span's task explicitly ────────────────
   # The observed fix: a session's FIRST span is task-attributed immediately via
   # --task, instead of a blank TASK until a late `bin/task`/`bind-task` write.
@@ -226,6 +259,18 @@ class AgentActivityCliTest < Minitest::Test
       body = JSON.parse(close[:body])
       assert_equal SESSION, body["session_id"]
       assert_equal "located-the-bug", body["outcome"]
+    end
+  end
+
+  def test_integration_end_clears_the_open_activity_marker
+    Dir.mktmpdir do |proj|
+      marker = seed_open_activity_marker(proj, SESSION, 1)
+      legacy = seed_open_activity_marker(proj, SESSION, 2, legacy: true)
+
+      run_cli(%W[end --session #{SESSION} --outcome located-the-bug], proj: proj)
+
+      refute File.exist?(marker)
+      refute File.exist?(legacy), "legacy open-span marker clears with the canonical marker"
     end
   end
 
@@ -375,6 +420,18 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_integration_session_end_clears_the_open_activity_marker
+    Dir.mktmpdir do |proj|
+      marker = seed_open_activity_marker(proj, SESSION, 1)
+      legacy = seed_open_activity_marker(proj, SESSION, 2, legacy: true)
+
+      run_cli(%W[close-open --session #{SESSION} --outcome done], proj: proj)
+
+      refute File.exist?(marker)
+      refute File.exist?(legacy), "SessionEnd clears both activity marker names"
+    end
+  end
+
   # ── [integration] base mascot stays the session's own across a task bind ──
 
   def test_integration_base_mascot_stays_the_session_mascot_across_a_task_bind
@@ -501,6 +558,15 @@ class AgentActivityCliTest < Minitest::Test
     File.write(File.join(sessions, "#{session_id}.json"), JSON.generate(attrs))
   end
 
+  def seed_open_activity_marker(projects_dir, session_id, id, legacy: false)
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    FileUtils.mkdir_p(sessions)
+    suffix = legacy ? "open-span" : "open-activity"
+    path = File.join(sessions, "#{session_id}.#{suffix}")
+    File.write(path, "#{id}\n")
+    path
+  end
+
   # The worktree DESK marker (.agent-context.json) — carries the BOUND task's
   # context (task slug + its builder mascot). resolve_marker walks up from cwd to
   # find it, so tests write it at the proj dir they chdir into.
@@ -577,5 +643,9 @@ class AgentActivityCliTest < Minitest::Test
     end
 
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
+  end
+
+  def stub_response(code, body_hash)
+    Struct.new(:code, :body).new(code, JSON.generate(body_hash))
   end
 end

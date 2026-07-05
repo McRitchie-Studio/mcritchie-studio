@@ -144,6 +144,10 @@ class AgentActivityCli
       "agent"         => agent
     }.reject { |_, v| v.to_s.empty? })
 
+    # DETERMINISTIC attribution: record the just-opened activity id in a local
+    # marker so the capture hook pins subsequent actions to THIS activity.
+    record_open_activity(sid, res)
+
     opened = "opened #{category} · #{reason}"
     report(res, prior_outcome.empty? ? opened : "#{prior_outcome} → #{opened}")
   end
@@ -170,6 +174,10 @@ class AgentActivityCli
       "key_method_lang" => flags["key-lang"].to_s.strip
     }.reject { |_, v| v.to_s.empty? })
 
+    # Activity closed — clear the marker so actions after it attribute to nothing
+    # until the next activity opens.
+    clear_open_activity(sid)
+
     report(res, outcome.empty? ? "closed activity" : "closed · #{outcome}")
   end
 
@@ -190,9 +198,10 @@ class AgentActivityCli
       "outcome"    => outcome
     })
 
-    # Session end also drops any STICKY heartbeat agent so it can never leak into a
-    # later run that happens to reuse this session id.
+    # Session end also drops any STICKY heartbeat agent + open-activity marker so
+    # neither can leak into a later run that happens to reuse this session id.
     clear_acting_agent(sid)
+    clear_open_activity(sid)
 
     report(res, "closed open activities · #{outcome}")
   end
@@ -485,6 +494,48 @@ class AgentActivityCli
   def clear_acting_agent(session_id)
     path = acting_agent_path(session_id)
     File.delete(path) if File.file?(path)
+  rescue StandardError
+    nil
+  end
+
+  # ── Open-activity marker (per-session, session-scoped) ───────────────────
+  # A sibling of the session marker holding the id of the session's currently open
+  # activity. start/next write it from the open response; end/close-open delete it.
+  # bin/atomic-capture-hook reads it to stamp agent_activity_id on every captured
+  # action, making attribution deterministic: pinned to the activity open at
+  # tool-call time, not resolved against whatever the server finds open when the
+  # async POST lands. The legacy .open-span file is cleared too for sessions
+  # crossing the taxonomy rename.
+  def open_activity_path(session_id)
+    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+    File.join(projects_dir, ".agents", "sessions", "#{safe}.open-activity")
+  end
+
+  def legacy_open_span_path(session_id)
+    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+    File.join(projects_dir, ".agents", "sessions", "#{safe}.open-span")
+  end
+
+  def record_open_activity(session_id, res)
+    return unless res && res.code.to_i.between?(200, 299)
+
+    write_open_activity(session_id, parse_data(res)["id"])
+  end
+
+  def write_open_activity(session_id, id)
+    return unless present?(id)
+
+    path = open_activity_path(session_id)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{id}\n")
+  rescue StandardError
+    nil
+  end
+
+  def clear_open_activity(session_id)
+    [open_activity_path(session_id), legacy_open_span_path(session_id)].each do |path|
+      File.delete(path) if File.file?(path)
+    end
   rescue StandardError
     nil
   end

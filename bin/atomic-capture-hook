@@ -53,22 +53,20 @@ class AtomicCaptureHook
     "WebFetch" => "research", "WebSearch" => "research"
   }.freeze
 
-  # NAVIGATION is DROPPED — the agent narrates meaningful ACTIVITIES (AgentActivity)
-  # and raw tool-calls attribute to whichever activity is open; a bare directory move owns
-  # no activity and is ~84% of the noise, so it never becomes a row. A Bash call is
-  # navigation when its command's first token is cd / pushd / popd / pwd.
+  # NAVIGATION — matched PER SEGMENT (see command_segments): a segment is navigation
+  # when its first token is cd / pushd / popd / pwd. A bare directory move owns no
+  # activity and is ~84% of the noise. A command is dropped only when EVERY segment
+  # is navigation (or narration, below), so `cd X && <work>` KEEPS the work.
   NAV_COMMAND = /\A\s*(?:cd|pushd|popd|pwd)\b/.freeze
 
   # NARRATION is DROPPED too — a Bash call whose invocation IS `bin/agent-activity`
   # or the compatibility `bin/atomic-event` (the agent's self-narration CLI) is
-  # the activity machinery itself, not work. The
-  # PostToolUse hook fires on that call like any other, so storing it as a raw
-  # action drops it into "Unlabeled" (it owns no activity — it declares one). So we
-  # drop it, exactly like navigation. Matches ONLY a narration CLI INVOCATION —
-  # any path prefix (`/abs/…/bin/agent-activity`, `./bin/atomic-event`) and optional
-  # leading `ENV=val` assignments — never a command that merely MENTIONS the string
-  # (`grep atomic-event`, `cat bin/atomic-event`, editing the file). A `cd … &&
-  # bin/atomic-event` already drops as navigation (first token `cd`).
+  # the activity machinery itself, not work. Matched PER SEGMENT, so `cd X &&
+  # bin/agent-activity next` drops (both segments are overhead), while
+  # `bin/agent-activity next && git commit` is kept (the commit is real work).
+  # Matches ONLY a narration CLI INVOCATION — any path prefix
+  # (`/abs/…/bin/agent-activity`, `./bin/atomic-event`) and optional leading
+  # `ENV=val` assignments — never a command that merely mentions the string.
   NARRATION_COMMAND = %r{
     \A\s*
     (?:\w+=\S*\s+)*   # optional leading ENV=val assignments
@@ -115,6 +113,11 @@ class AtomicCaptureHook
     key_method = bash_key_method(event)
     {
       "session_id" => event["session_id"],
+      # DETERMINISTIC attribution: pin the action to the activity that was OPEN
+      # when the tool ran (from the local marker bin/agent-activity writes), not
+      # the activity the server happens to find open when this async POST lands.
+      # nil => omitted => AgentAction.capture falls back to server-side lookup.
+      "agent_activity_id" => read_open_activity(event["session_id"]),
       "kind" => map_kind(event["tool_name"]),
       "task_slug" => marker["task_slug"],
       "stage" => marker["stage"],
@@ -240,19 +243,41 @@ class AtomicCaptureHook
     { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
   end
 
-  # True when the event is a NAVIGATION tool-call (dropped, never POSTed): a Bash
-  # call whose command's first token is cd / pushd / popd / pwd. Anything else —
-  # including every non-Bash tool — is not navigation.
-  def navigation?(event)
-    NAV_COMMAND.match?(bash_command(event))
+  # DROPPABLE — a tool-call that is PURE overhead, never a row. True only when
+  # EVERY shell segment of the command is navigation (cd/pushd/popd/pwd) OR
+  # narration (a bin/agent-activity/bin/atomic-event invocation). A compound call
+  # that mixes overhead with real work — `cd X && git commit`,
+  # `bin/agent-activity next && bin/task update` — is NOT droppable, so the work
+  # is captured. Non-Bash / empty commands are never droppable.
+  def droppable?(event)
+    segments = command_segments(bash_command(event))
+    return false if segments.empty?
+
+    segments.all? { |segment| NAV_COMMAND.match?(segment) || NARRATION_COMMAND.match?(segment) }
   end
 
-  # True when the event is a NARRATION tool-call (dropped, never POSTed): a Bash
-  # call whose invocation IS `bin/agent-activity`/`bin/atomic-event` (the self-narration CLI is the activity
-  # machinery, not work). Non-Bash tools and commands that merely mention the string
-  # are NOT narration. See NARRATION_COMMAND.
+  # PURE-classification predicates (every segment matches one pattern). Kept as
+  # the documented, unit-pinned split behind droppable?; a single-segment command
+  # behaves exactly as the old first-token rule did.
+  def navigation?(event)
+    all_segments_match?(bash_command(event), NAV_COMMAND)
+  end
+
   def narration?(event)
-    NARRATION_COMMAND.match?(bash_command(event))
+    all_segments_match?(bash_command(event), NARRATION_COMMAND)
+  end
+
+  # True when the command splits into >=1 segment and EVERY segment matches +pattern+.
+  def all_segments_match?(command, pattern)
+    segments = command_segments(command)
+    !segments.empty? && segments.all? { |segment| pattern.match?(segment) }
+  end
+
+  # Split a shell command into sequenced segments on && || ; | & and newlines,
+  # trimmed, blanks removed. Deliberately quote-naive and biased to KEEP: a
+  # mis-split can only cause an extra captured row, never a dropped one.
+  def command_segments(command)
+    command.to_s.split(/\s*(?:&&|\|\||[;&|\n])\s*/).map(&:strip).reject(&:empty?)
   end
 
   # The Bash command string for an event, or "" for a non-Bash tool / missing
@@ -472,8 +497,7 @@ class AtomicCaptureHook
     raw = stdin.read
     event = JSON.parse(raw)
     return unless present?(event["session_id"]) # nothing to attribute → skip
-    return if navigation?(event)                # navigation is dropped — never a row
-    return if narration?(event)                 # bin/atomic-event narration is dropped too
+    return if droppable?(event)                 # navigation/narration overhead — never a row
 
     payload = build_payload(event)
     dispatch(payload)
@@ -552,6 +576,31 @@ class AtomicCaptureHook
     return nil unless File.file?(path)
 
     JSON.parse(File.read(path))
+  rescue StandardError
+    nil
+  end
+
+  # The id of the session's currently open activity, read from the sibling marker
+  # that bin/agent-activity writes on open (start/next) and deletes on close
+  # (end/close-open). Stamping it in the payload pins the action to the activity
+  # open at tool-call time, independent of when this async POST lands. Reads the
+  # legacy .open-span marker as a compatibility fallback for sessions crossing the
+  # taxonomy rename.
+  def read_open_activity(session_id)
+    sid = session_id.to_s.strip
+    return nil if sid.empty?
+
+    safe = sid.gsub(/[^A-Za-z0-9._-]/, "")
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    paths = [
+      File.join(sessions, "#{safe}.open-activity"),
+      File.join(sessions, "#{safe}.open-span")
+    ]
+    path = paths.find { |candidate| File.file?(candidate) }
+    return nil unless path
+
+    id = File.read(path).to_s.strip.to_i
+    id.positive? ? id : nil
   rescue StandardError
     nil
   end

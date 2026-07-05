@@ -34,11 +34,11 @@
 # HeartbeatHelper#heartbeat_usage_totals) so a fan-out isn't multi-counted.
 #
 # Activity attribution (agent_activity_id): the agent self-narrates its work as
-# OPEN/CLOSE AgentActivities; each captured action attributes SERVER-SIDE to the
-# session's current OPEN activity (AgentActivity.for_session(sid).open.order(:seq).last).
-# The caller never sets it — it's derived here, best-effort: no open activity (or a
-# lookup hiccup) simply yields a null agent_activity_id and capture proceeds. An
-# explicit agent_activity_id in attrs still wins (in-process callers can pin it).
+# OPEN/CLOSE AgentActivities; each captured action prefers the explicit
+# agent_activity_id stamped by the local hook marker, then falls back server-side to
+# the session's current OPEN activity (AgentActivity.for_session(sid).open.order(:seq).last).
+# A missing marker/open activity simply yields a null agent_activity_id and capture
+# proceeds.
 class AgentAction < ApplicationRecord
   # The outcome of a single action — the local credit signal.
   OK       = "ok"
@@ -88,7 +88,7 @@ class AgentAction < ApplicationRecord
                     optional: true, inverse_of: :agent_actions
 
   # The narrated activity this raw tool-call rolls up under — the session's OPEN
-  # AgentActivity at capture time (attributed server-side, see .capture). Optional:
+  # AgentActivity at capture time (prefer explicit pin, else server fallback; see .capture). Optional:
   # an action captured with no open activity carries a null agent_activity_id.
   belongs_to :agent_activity, optional: true, inverse_of: :agent_actions
   belongs_to :atomic_event, class_name: "AgentActivity", foreign_key: :agent_activity_id,

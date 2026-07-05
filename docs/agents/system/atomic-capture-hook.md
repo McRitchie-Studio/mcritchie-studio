@@ -80,20 +80,30 @@ secret-free) telemetry is a separate concern.
 
 ### What it DROPS (never a row)
 
-Two classes of Bash call are dropped **before** any POST — they own no narrated
-activity and would otherwise land in "Unlabeled":
+A Bash call is dropped **before** any POST only when it is pure overhead — it
+owns no narrated activity and would otherwise land in "Unlabeled". The decision
+is made per shell segment (splitting the command on `&&`, `||`, `;`, `|`, `&`,
+and newlines): the call drops only when every segment is overhead.
 
-- **Navigation** — a command whose first token is `cd` / `pushd` / `popd` / `pwd`
+- **Navigation** — a segment whose first token is `cd` / `pushd` / `popd` / `pwd`
   (a bare directory move; ~84% of the raw noise).
-- **Narration** — a command whose invocation **is** `bin/agent-activity` or its
+- **Narration** — a segment whose invocation **is** `bin/agent-activity` or its
   compatibility alias `bin/atomic-event`. It's the activity machinery itself, so
   capturing the call that declares an activity would double-record it as a raw
-  action. Matches only an actual invocation — any path prefix
+  action. Matches only an actual invocation segment — any path prefix
   (`/abs/…/bin/agent-activity`, `./bin/atomic-event`) and optional leading
   `ENV=val` assignments — never a command that merely *mentions* the string
-  (`grep atomic-event`, `cat bin/atomic-event`, an edit to the file). A
-  `cd … && bin/agent-activity` already
-  drops as navigation (first token `cd`).
+  (`grep atomic-event`, `cat bin/atomic-event`, an edit to the file).
+
+Mixed commands are kept. `cd X && git status` captures the command because it
+contains real work; `cd X && bin/agent-activity next ...` drops because both
+segments are overhead. The split is quote-naive and biased to keep, so a separator
+inside a quoted string can only cause an extra captured row, never a dropped one.
+
+The hook also reads the local per-session open-activity marker written by
+`bin/agent-activity` and stamps `agent_activity_id` on the payload. That pins the
+action to the activity open at tool-call time instead of relying on whatever the
+server finds open when the async POST arrives.
 
 ### Model derivation — what's actually available to the hook
 
