@@ -586,6 +586,10 @@ if gate != "build"
   when :pending
     errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. Wait for it " \
       "to finish and re-run dor-check; don't hand a not-yet-green PR to review."
+  when :closed, :merged
+    errors << "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
+      "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
+      "devops.pr_url (a stale or already-merged PR?) before advancing to review."
   end
 end
 

@@ -48,8 +48,9 @@ class CiStatusTest < Minitest::Test
   end
 
   def test_a_bare_token_short_circuits_the_gh_call
-    # the DOR_CHECK_CI_STATUS injection seam — used by the dor-check CLI tests.
-    %i[green red pending none unverified no_pr].each do |state|
+    # the DOR_CHECK_CI_STATUS injection seam — used by the dor-check CLI tests. Includes
+    # closed/merged: a non-open PR is its own verdict, never green (carl's review catch).
+    %i[green red pending none unverified no_pr closed merged].each do |state|
       assert_equal state, CiStatus.evaluate("https://github.com/x/pull/1", state.to_s)[:state]
     end
   end

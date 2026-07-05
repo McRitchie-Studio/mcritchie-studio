@@ -1176,6 +1176,22 @@ class DorCheckTest < Minitest::Test
     assert_match(/UNVERIFIED/, out)
   end
 
+  def test_merge_gate_blocks_a_closed_pr
+    # A closed PR's green checks are HISTORICAL, not a live review target — the gate
+    # must not let a stale pr_url pass as green (carl's PR #399 review catch).
+    out, code = ci_check("closed")
+    assert_equal 1, code, out
+    assert_match(/is CLOSED/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_merge_gate_blocks_a_merged_pr
+    out, code = ci_check("merged")
+    assert_equal 1, code, out
+    assert_match(/is MERGED/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
   def test_missing_pr_is_silent_and_stays_ready
     # No PR yet + no injection → :no_pr via the real (gh-free) path. dor-check runs
     # before the PR exists on the normal path, so the CI gate has nothing to verify:

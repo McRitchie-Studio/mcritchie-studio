@@ -1036,10 +1036,12 @@ an *immediate, cheap* send-back that never consumes review-judgment tokens. This
 is the structural fix for the review ping-pong: most "PR not ready" churn becomes
 a pre-PR mechanical check.
 
-On the **merge gate**, `dor-check` also reads the PR's **real GitHub CI**
-(`gh pr checks`, folded to one verdict by `bin/lib/ci_status.rb`): a **failing**
-or **still-running** PR is refused, an **all-green** PR passes, and a task with
-**no PR yet** stays silent (nothing to verify). This closes the blocker-analysis
+On the **merge gate**, `dor-check` also verifies the PR is **open** and reads its
+**real GitHub CI** (`gh pr view --json state` then `gh pr checks`, folded to one
+verdict by `bin/lib/ci_status.rb`): a **failing**, **still-running**, or
+**closed/merged** PR is refused — a closed PR's green checks are *historical*, not
+a live target, so a stale `pr_url` never passes as green — an **all-green open** PR
+passes, and a task with **no PR yet** stays silent (nothing to verify). This closes the blocker-analysis
 **#1 class** — a PR green *locally* but red on CI, because the local cert runs
 `bin/rails test` and **not** the browser `test:system` lane GitHub also runs. It
 rides the existing gate-zero re-run: the feature agent's pre-PR run is silent on
