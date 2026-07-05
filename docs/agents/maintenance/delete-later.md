@@ -333,3 +333,15 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-05 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/gate-dor-check-on-github-ci` | worktree | Hidden worktree; branch `feat/gate-dor-check-on-github-ci` is clean and HEAD 8fb95a73 is contained in origin/release; health down, Redis DB 26, database mcritchie_studio_development_gate_dor_check_on_github_ci:missing. | Removed with `bin/agent-worktree remove mcritchie-studio gate-dor-check-on-github-ci --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/deployment-link-menu` | worktree | Hidden worktree; branch `feat/deployment-link-menu` is clean and HEAD 25d856fa is contained in origin/release; health up, Redis DB 28, database mcritchie_studio_development_deployment_link_menu:ok. | Removed with `bin/agent-worktree remove mcritchie-studio deployment-link-menu --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/reclassify-togepi-and-tyrogue` | worktree | Hidden worktree; branch `feat/reclassify-togepi-and-tyrogue` is clean and HEAD 0e48d5e4 is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_reclassify_togepi_and_tyrogue:missing. | Removed with `bin/agent-worktree remove mcritchie-studio reclassify-togepi-and-tyrogue --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/restore-card-title-marquee` | worktree | Hidden worktree; branch `feat/restore-card-title-marquee` is clean and HEAD 32d37f76 is contained in origin/release; health down, Redis DB 9, database mcritchie_studio_development_restore_card_title_marquee:ok. | Removed with `bin/agent-worktree remove mcritchie-studio restore-card-title-marquee --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/submitted-blocked-glow` | worktree | Hidden worktree; branch `feat/submitted-blocked-glow` is clean and HEAD f412538b is contained in origin/release; health up, Redis DB 20, database mcritchie_studio_development_submitted_blocked_glow:ok. | Removed with `bin/agent-worktree remove mcritchie-studio submitted-blocked-glow --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
