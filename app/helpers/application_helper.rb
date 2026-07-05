@@ -234,10 +234,9 @@ module ApplicationHelper
     "#{seconds / 60}m"
   end
 
-  # Compact "X ago" label. Below an hour it keeps the existing seconds/minutes
-  # form; at an hour it switches to the standard Hh MMm shape and drops seconds.
-  # The ago fmt in _release_ticker.html.erb MUST mirror this so the
-  # server-rendered value and the first client tick agree.
+  # Compact single-unit "finished X ago" label for a COMPLETE tracker node. The
+  # ago fmt in _release_ticker.html.erb MUST mirror this so the server-rendered
+  # value and the first client tick agree.
   def release_ago_label(seconds)
     seconds = seconds.to_i
     return "#{seconds}s ago" if seconds < 60
@@ -245,6 +244,7 @@ module ApplicationHelper
     minutes = seconds / 60
     return "#{minutes}m ago" if minutes < 60
 
+    # Hourly labels use the standard Hh MMm shape, with seconds dropped.
     hours, mins = minutes.divmod(60)
     format("%dh %02dm ago", hours, mins)
   end
