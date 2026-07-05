@@ -15,10 +15,53 @@
 <% review_in_progress = local_assigns.key?(:review_in_progress) ? local_assigns[:review_in_progress] : task.review_in_progress? %>
 <% ever_blocked = local_assigns.key?(:ever_blocked) ? local_assigns[:ever_blocked] : nil %>
 <% block_state = task.block_state(unresolved: unresolved_feedback.present?, ever_blocked: ever_blocked) %>
+<% mascot_signature_color = mascot&.signature_color(type_enumerals).presence || task.devops["mascot_color"].presence %>
+<% mascot_signature_color = nil unless mascot_signature_color.to_s.match?(/\A#[0-9a-f]{6}\z/i) %>
 <% card_tone = case block_state
    when :blocked then "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/70 dark:bg-red-950/40 dark:border-red-800/60 dark:hover:border-red-600/70 dark:hover:bg-red-900/40"
    when :cleared then "bg-amber-50 border-amber-200 hover:border-amber-300 hover:bg-amber-100/70 dark:bg-amber-950/40 dark:border-amber-800/60 dark:hover:border-amber-600/70 dark:hover:bg-amber-900/40"
    else "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
+   end %>
+<% card_glow_kind = if block_state == :blocked
+     "blocked"
+   elsif %w[submitted reviewed assembled].include?(task.stage)
+     task.stage
+   end %>
+<% card_glow_color = case card_glow_kind
+   when "blocked" then "#ef4444"
+   when "reviewed" then mascot_signature_color || "#22d3ee"
+   when "assembled" then mascot_signature_color || "#a78bfa"
+   else mascot_signature_color || "#f59e0b"
+   end %>
+<% card_glow_type_colors = if mascot && type_enumerals
+     mascot.types.filter_map { |type| type_enumerals[type]&.color.presence }
+            .select { |color| color.to_s.match?(/\A#[0-9a-f]{6}\z/i) }
+            .uniq
+   else
+     []
+   end %>
+<% card_glow_color_a = card_glow_type_colors.first || card_glow_color %>
+<% card_glow_color_b = card_glow_type_colors.second || card_glow_color_a %>
+<% card_glow_large = %w[reviewed assembled].include?(card_glow_kind) %>
+<% card_glow_border_mix = card_glow_large ? 58 : 46 %>
+<% card_glow_shadow = if card_glow_large
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
+       "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
+       "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
+       "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+   else
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), " \
+       "0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
+       "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+   end %>
+<% card_glow_style = if card_glow_kind
+     "--task-card-glow-color: #{card_glow_color}; " \
+       "--task-card-glow-color-a: #{card_glow_color_a}; " \
+       "--task-card-glow-color-b: #{card_glow_color_b}; " \
+       "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) #{card_glow_border_mix}%, transparent); " \
+       "--task-card-glow-shadow: #{card_glow_shadow}; " \
+       "border-color: var(--task-card-glow-border-color); " \
+       "box-shadow: var(--task-card-glow-shadow);"
    end %>
 <div id="card-<%= task.slug %>"
      data-slug="<%= task.slug %>"
@@ -26,15 +69,17 @@
      data-agent="<%= task.agent_slug %>"
      data-apps="<%= task.devops_repositories.join(",") %>"
      data-href="<%= task_path(task.slug) %>"
+     <% if card_glow_kind %>data-stage-glow="<%= card_glow_kind %>"<% end %>
      <%# Mascot's primary type colour — the live board tints its create/move glow with it. %>
-     data-glow="<%= mascot&.signature_color(type_enumerals) %>"
+     data-glow="<%= mascot_signature_color %>"
      x-data="{ hovered: false, mx: 0, my: 0 }"
      x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= task.devops_repositories.join(",") %>')"
      @mouseenter="hovered = true"
      @mouseleave="hovered = false"
      @mousedown="mx = $event.clientX; my = $event.clientY"
      @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
-     class="kanban-card relative <%= card_tone %> rounded-lg border p-3 cursor-pointer transition group">
+     <% if card_glow_style %>style="<%= card_glow_style %>"<% end %>
+     class="kanban-card relative <%= card_tone %> <%= "task-card-stage-glow task-card-stage-glow-#{card_glow_kind}" if card_glow_kind %> rounded-lg border p-3 cursor-pointer transition group">
 
   <%# Title — human-readable text gets a fixed two-line box so long task names
       stay readable without horizontal clipping or hover-only marquee movement.

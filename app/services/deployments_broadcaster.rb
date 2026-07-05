@@ -160,6 +160,7 @@ class DeploymentsBroadcaster
       agents: Agent.order(:position).to_a,
       crew_board: :deploy,
       mascot: Pokemon.find_by(slug: @task.devops_field("mascot").to_s.presence),
+      type_enumerals: type_enumerals,
       latest_activity: activities.max_by(&:created_at),
       activity_count: activities.size,
       ever_blocked: activities.any?(&:blocking_feedback?),
@@ -175,5 +176,9 @@ class DeploymentsBroadcaster
     @activities ||= Activity.for_task(@task)
                             .where(activity_type: Activity::TASK_CONVERSATION_TYPES)
                             .to_a
+  end
+
+  def type_enumerals
+    @type_enumerals ||= Pokemon.type_enumerals
   end
 end

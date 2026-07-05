@@ -4,6 +4,8 @@ require "test_helper"
 # broadcaster re-renders for a live push), with the slug/stage data hooks the
 # client uses to find, move, and replace it.
 class TaskCardTest < ActionView::TestCase
+  TypeColor = Struct.new(:color, :rank, :emoji, keyword_init: true)
+
   setup do
     Agent.create!(name: "Carl", slug: "carl")
     @agents = Agent.all.to_a
@@ -24,11 +26,90 @@ class TaskCardTest < ActionView::TestCase
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 
     card = css_select("#card-#{task.slug}").first
+    assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
+    assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_includes card["class"], "dark:bg-red-950/40"
     assert_includes card["class"], "hover:bg-red-100/70"
+    assert_includes card["style"], "--task-card-glow-color: #ef4444"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+    assert_includes card["style"], "border-color: var(--task-card-glow-border-color)"
+    assert_includes card["style"], "box-shadow: var(--task-card-glow-shadow)"
     assert_includes rendered, "hover:text-red-700"
     assert_includes rendered, "dark:hover:text-red-300"
+  end
+
+  test "submitted card glows with the mascot signature color" do
+    task = Task.create!(title: "Submitted glow task", stage: "submitted")
+    mascot = Pokemon.create!(dex: 158, name: "Totodile", slug: "totodile", types: %w[water],
+                             primary_type: "water", generation: 2)
+    type_enumerals = { "water" => TypeColor.new(color: "#6390F0", rank: 10, emoji: "💧") }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_equal "#6390F0", card["data-glow"]
+    assert_includes card["class"], "task-card-stage-glow-submitted"
+    assert_includes card["style"], "--task-card-glow-color: #6390F0"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+  end
+
+  test "reviewed card uses the larger steady glow" do
+    task = Task.create!(title: "Reviewed glow task", stage: "reviewed",
+                        metadata: { "devops" => { "mascot_color" => "#22d3ee" } })
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "reviewed", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-reviewed"
+    assert_includes card["style"], "--task-card-glow-color: #22d3ee"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+  end
+
+  test "assembled card uses the larger animated gradient glow" do
+    task = Task.create!(title: "Assembled glow task", stage: "assembled")
+    mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],
+                             primary_type: "fire", generation: 1)
+    type_enumerals = {
+      "fire" => TypeColor.new(color: "#EE8130", rank: 900, emoji: "🔥"),
+      "flying" => TypeColor.new(color: "#A98FF3", rank: 200, emoji: "💨")
+    }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "assembled", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-assembled"
+    assert_includes card["style"], "--task-card-glow-color: #EE8130"
+    assert_includes card["style"], "--task-card-glow-color-a: #EE8130"
+    assert_includes card["style"], "--task-card-glow-color-b: #A98FF3"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+
+    css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_includes css, ".task-card-stage-glow-assembled::before"
+    assert_includes css, ".release-confirming-glow::before"
+    assert_includes css, "animation: taskCardAssembledSteam"
+    assert_includes css, "background-size: 400%"
+    assert_includes css, "drop-shadow(0 0 10px"
+    assert_includes css, "-webkit-mask-composite: xor"
+    assert_includes css, "mask-composite: exclude"
+    assert_includes css, "padding: 2px"
+    assert_not_includes css, ".task-card-stage-glow-assembled::after"
+    assert_includes css, "var(--task-card-glow-color-a"
+    assert_includes css, "#fb0094"
+    assert_includes css, "@keyframes taskCardAssembledSteam"
   end
 
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do
@@ -140,7 +221,9 @@ class TaskCardTest < ActionView::TestCase
                      unresolved_feedback: feedback, ever_blocked: true }
 
     card = css_select("#card-#{task.slug}").first
+    assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
+    assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_select "[data-test='unresolved-feedback']"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
@@ -154,6 +237,9 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"], "bg-surface"
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-submitted"
+    assert_includes card["style"], "--task-card-glow-color: #f59e0b"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 end
