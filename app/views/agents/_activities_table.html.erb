@@ -19,8 +19,8 @@
         <th class="aa-th-chev"></th>
         <th class="aa-th-agent">Agent</th>
         <th>Activity</th>
-        <th class="aa-collapsible">Cost</th>
-        <th class="aa-collapsible">Details</th>
+        <th class="aa-collapsible aa-th-cost">Cost</th>
+        <th class="aa-collapsible aa-th-details">Details</th>
         <th class="aa-collapsible aa-th-grade">Alex</th>
         <th class="aa-collapsible aa-th-grade">McRitchie</th>
       </tr>
@@ -54,7 +54,7 @@
           </td>
           <td class="aa-agent"><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
                                        agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
-                                       mascot_test: "aa-activity-mascot") %></td>
+                                       mascot_test: "aa-activity-mascot", size: "xs") %></td>
 
           <td class="aa-activity">
             <div class="aa-stack">
@@ -108,12 +108,12 @@
           <%= render "agents/activities_grade_cell", kind: :activity, target: activity, grader: "mcr", grade: mcr_g %>
         </tr>
 
-        <%# Mobile priority-columns — the collapsed Cost/Details/grade summary revealed by
-            the per-row "more" toggle. Read-only mirror bound to the row's live grade state. %>
-        <tr class="aa-mobile-detail" :class="{ 'is-open': mopen }">
+        <%# Mobile priority-columns — the collapsed Cost/Details/grade panel, revealed
+            together with the raw actions when the activity row is tapped (x-show="open",
+            no separate toggle). Interactive grade controls bound to the row's live state. %>
+        <tr class="aa-mobile-detail" x-show="open">
           <td colspan="7">
-            <button type="button" class="aa-mtoggle" @click.stop="mopen = !mopen" x-text="mopen ? '× less' : '⋯ more'">⋯ more</button>
-            <div class="aa-md-grid" x-show="mopen">
+            <div class="aa-md-grid">
               <div class="aa-md-block">
                 <div class="aa-md-label">Cost</div>
                 <div class="aa-cost-amt"><%= heartbeat_cost(totals[:cost]) %></div>

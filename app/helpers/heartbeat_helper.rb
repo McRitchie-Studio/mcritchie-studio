@@ -342,24 +342,26 @@ module HeartbeatHelper
   # signature_color is never hit per row). `submascot` dims the mascot on the
   # drill-down rows; `mascot_test` stamps the base mascot's data-test hook (e.g.
   # "event-mascot"). Faces are the compact agent_avatar "xxs" (24px) size.
-  def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil, submascot: false, mascot_test: nil)
+  def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil, submascot: false, mascot_test: nil, size: "xxs")
     mascot_slug = mascot_slug.presence
     agent_slug  = agent_slug.presence
     mascot_name = pokemon&.name.presence || mascot_slug&.titleize
     soul = (agent || Agent.new(slug: agent_slug, name: agent_slug.titleize)) if agent_slug
 
     # Avatar faces — the acting SOUL rides ON TOP of the base mascot in a tight
-    # overlapping vertical cluster (the soul keeps its own per-soul ring tint).
+    # overlapping vertical cluster (the soul keeps its own per-soul ring tint). `size`
+    # sizes both faces via components/agent_avatar (default "xxs"); a caller can bump it
+    # (e.g. the /agents/activities primary rows use "xs") to distinguish altitudes.
     soul_face =
       if agent_slug
-        tag.span(render(partial: "components/agent_avatar", locals: { agent: soul, size: "xxs" }),
+        tag.span(render(partial: "components/agent_avatar", locals: { agent: soul, size: size }),
                  class: "hb-ava hb-soulava", style: "color: #{soul.status_color}",
                  title: soul.name, data: { test: "agent-soul", soul: agent_slug })
       end
     mascot_face =
       if mascot_slug
         face = StageAgentsHelper::MascotAgent.new(name: mascot_name, avatar: pokemon&.sprite_url, color: nil)
-        tag.span(render(partial: "components/agent_avatar", locals: { agent: face, size: "xxs" }),
+        tag.span(render(partial: "components/agent_avatar", locals: { agent: face, size: size }),
                  class: class_names("hb-ava", "hb-mascotava", "hb-submascot" => submascot || agent_slug.present?),
                  title: mascot_name, data: mascot_test ? { test: mascot_test } : {})
       end

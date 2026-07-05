@@ -11,7 +11,10 @@
      so the 7-column grid can breathe on narrower desktops. */
   #alex-heartbeat.aa-page { height:auto; min-height:calc(100vh - var(--nav-h, 7rem)); position:relative; }
   #alex-heartbeat .aa-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-  #alex-heartbeat .aa-headactions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  /* align-items:stretch so the Filter / Deployments buttons match the stat cards'
+     height — one uniform row instead of short pills beside tall boxes. */
+  #alex-heartbeat .aa-headactions { display:flex; align-items:stretch; gap:10px; flex-wrap:wrap; }
+  #alex-heartbeat .aa-headactions .hb-btn { align-items:center; }
   #alex-heartbeat .aa-filtercount { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--hb-accent); color:#06131f; font-size:10px; font-weight:800; }
   #alex-heartbeat .aa-activefilters { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 0; }
   #alex-heartbeat .aa-chipfilter { display:inline-flex; align-items:center; gap:6px; background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:999px; padding:3px 6px 3px 9px; font-size:11px; color:var(--hb-txt); text-decoration:none; }
@@ -20,10 +23,17 @@
   #alex-heartbeat .aa-chipclear { color:var(--hb-muted); font-size:11px; text-decoration:underline; text-underline-offset:2px; }
 
   /* ---- The grid table ---------------------------------------------------- */
-  #alex-heartbeat table.aa-tbl { border-collapse:collapse; width:100%; min-width:1140px; font-size:12.5px; }
+  /* table-layout:fixed pins every column to its declared width so the Cost / Details
+     columns DON'T re-measure (and jump the whole table) when an activity expands and
+     its actions bring differently-sized content. Activity is the one unsized column,
+     so it absorbs all the slack. Mobile switches back to auto (see the media block). */
+  #alex-heartbeat table.aa-tbl { border-collapse:collapse; width:100%; min-width:1140px; font-size:12.5px; table-layout:fixed; }
   #alex-heartbeat table.aa-tbl thead th { position:sticky; top:0; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 12px; border-bottom:1px solid var(--hb-line); white-space:nowrap; z-index:3; }
   #alex-heartbeat table.aa-tbl tbody td { padding:9px 12px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
   #alex-heartbeat .aa-th-chev { width:26px; padding-left:10px !important; padding-right:0 !important; }
+  #alex-heartbeat .aa-th-agent { width:190px; }
+  #alex-heartbeat .aa-th-cost { width:118px; }
+  #alex-heartbeat .aa-th-details { width:190px; }
   #alex-heartbeat .aa-th-grade { width:150px; }
 
   /* Activity (primary) rows sit on the panel; hover lifts to panel2; the category
@@ -44,8 +54,13 @@
   #alex-heartbeat .aa-rfaint { color:var(--hb-faint); }
   #alex-heartbeat .aa-empty-sub { color:var(--hb-faint); }
 
-  /* Agent column — the reused stacked avatar+name cell, kept snug. */
+  /* Agent column — the reused stacked avatar+name cell, kept snug. Activity (primary)
+     rows wear a bigger xs avatar + bolder name so they read as a higher altitude than
+     the drill-down action rows, which keep the compact xxs face. */
   #alex-heartbeat .aa-agent { min-width:132px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-nameprimary { font-size:14px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-namesub { font-size:12px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-18px; }
 
   /* Activity column: badge+goal / →result(fade) / key command. */
   #alex-heartbeat .aa-activity { min-width:290px; max-width:420px; }
@@ -120,13 +135,15 @@
   #alex-heartbeat .aa-filter-head p { margin:2px 0 0; font-size:11px; color:var(--hb-muted); }
   #alex-heartbeat .aa-filter-close { background:transparent; border:0; color:var(--hb-muted); font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; }
   #alex-heartbeat .aa-filter-close:hover { color:var(--hb-txt); }
-  #alex-heartbeat .aa-filter-list { flex:1 1 auto; overflow:auto; padding:8px; display:flex; flex-direction:column; gap:4px; }
-  #alex-heartbeat .aa-filter-session { display:flex; align-items:center; gap:10px; padding:8px 9px; border:1px solid transparent; border-radius:10px; text-decoration:none; color:var(--hb-txt); }
+  #alex-heartbeat .aa-filter-list { flex:1 1 auto; overflow:auto; padding:8px 8px 18px; display:flex; flex-direction:column; gap:5px; }
+  /* --aa-type is the session's Pokémon primary-type colour (set per row); it rides the
+     left accent bar and the sprite ring, falling back to neutral when absent. */
+  #alex-heartbeat .aa-filter-session { display:flex; align-items:center; gap:10px; padding:9px 10px; border:1px solid transparent; border-radius:10px; text-decoration:none; color:var(--hb-txt); box-shadow:inset 3px 0 0 var(--aa-type, transparent); }
   #alex-heartbeat .aa-filter-session:hover { background:var(--hb-panel2); }
   #alex-heartbeat .aa-filter-session.is-selected { border-color:var(--hb-accent); background:var(--hb-panel2); }
   #alex-heartbeat .aa-fs-check { width:16px; height:16px; border-radius:5px; border:1px solid var(--hb-line); display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:#06131f; flex:0 0 auto; }
   #alex-heartbeat .aa-filter-session.is-selected .aa-fs-check { background:var(--hb-accent); border-color:var(--hb-accent); }
-  #alex-heartbeat .aa-fs-sprite { width:30px; height:30px; border-radius:50%; background:var(--hb-panel2); border:1px solid var(--hb-line); object-fit:contain; flex:0 0 auto; image-rendering:pixelated; }
+  #alex-heartbeat .aa-fs-sprite { width:32px; height:32px; border-radius:50%; background:var(--hb-panel2); border:2px solid var(--aa-type, var(--hb-line)); object-fit:contain; flex:0 0 auto; image-rendering:pixelated; }
   #alex-heartbeat .aa-fs-body { min-width:0; flex:1 1 auto; }
   #alex-heartbeat .aa-fs-name { font-weight:600; font-size:12.5px; display:flex; align-items:center; gap:5px; }
   #alex-heartbeat .aa-fs-shiny { color:var(--hb-bank); font-size:10px; }
@@ -145,19 +162,18 @@
 
   @media (max-width:860px) {
     #alex-heartbeat.aa-page { padding:14px 12px 18px; }
-    /* Capping every wide cell child to a vw fraction keeps the auto-layout table within
-       the viewport (so the goal ellipsizes) without table-layout:fixed, which — with
-       display:none columns — mis-reserves width and over-squeezes the Activity column. */
-    #alex-heartbeat table.aa-tbl { min-width:0; width:100%; }
+    /* Auto layout on mobile: table-layout:fixed mis-reserves width for the display:none
+       columns and over-squeezes Activity; capping the wide cell children to vw fractions
+       keeps the auto table within the viewport (the goal ellipsizes) instead. */
+    #alex-heartbeat table.aa-tbl { min-width:0; width:100%; table-layout:auto; }
     #alex-heartbeat .aa-keycmd .hb-keycode { max-width:42vw; }
     /* Priority columns: keep Agent + Activity; collapse Cost/Details/grades. */
     #alex-heartbeat .aa-collapsible { display:none !important; }
-    /* The detail row stays visible on mobile so its "more" toggle is reachable; the
-       grid it reveals is x-show="mopen". */
+    /* The detail panel opens together with the raw actions on a row tap (x-show="open"),
+       no separate toggle — the operator asked for a single tap-to-open. On mobile the
+       row's shown display is table-row (x-show toggles the inline display:none). */
     #alex-heartbeat tr.aa-mobile-detail { display:table-row; }
-    #alex-heartbeat tr.aa-mobile-detail > td { padding:2px 12px 10px 34px; }
-    #alex-heartbeat .aa-mtoggle { display:inline-flex; align-items:center; gap:4px; background:var(--hb-panel2); border:1px solid var(--hb-line); border-radius:7px; color:var(--hb-muted); font-size:10.5px; padding:3px 8px; cursor:pointer; }
-    #alex-heartbeat .aa-md-grid { margin-top:8px; }
+    #alex-heartbeat tr.aa-mobile-detail > td { padding:4px 12px 12px 34px; }
     /* Let Agent + Activity shrink to the viewport instead of forcing a scroll. */
     #alex-heartbeat .aa-th-chev, #alex-heartbeat .aa-chev { width:18px; padding-left:8px !important; }
     #alex-heartbeat .aa-agent { min-width:0; }

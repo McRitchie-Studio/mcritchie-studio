@@ -47,15 +47,21 @@ module ActivityFeed
                             .order(opened_at: :desc).pluck(:session_id, :mascot).reverse.to_h
     slug_for = ->(id) { mascots[id]&.mascot_slug.presence || fallback[id] }
     pokemon  = Pokemon.where(slug: (mascots.values.map(&:mascot_slug) + fallback.values).compact.uniq).index_by(&:slug)
+    # { type_key => hex } in one query so each session row can wear its Pokémon's
+    # primary-type colour with no per-row lookup (empty {} when the enumeral gem/table
+    # isn't installed — the view then falls back to the neutral accent).
+    type_colors = Pokemon.type_colors
 
     ids.map do |id|
-      mon = pokemon[slug_for.call(id)]
+      mon  = pokemon[slug_for.call(id)]
+      type = mon && (mon.primary_type.presence || mon.types&.first)
       {
         id:         id,
         short:      id.to_s.first(8),
         name:       mon&.name || id.to_s.first(8),
         sprite_url: mon&.sprite_url,
         shiny:      !!mascots[id]&.shiny,
+        type_color: type && type_colors[type],
         count:      counts[id].to_i,
         last_at:    times[id],
         selected:   selected.include?(id.to_s)
