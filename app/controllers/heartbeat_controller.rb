@@ -214,6 +214,21 @@ class HeartbeatController < ApplicationController
   def grade_event
     @event = AtomicEvent.find(params[:id])
     grader = params[:grader].to_s
+
+    if params[:intent] == "clear"
+      unless ActionGrade::GRADERS.include?(grader)
+        render json: { error: "Grader is not included in the list" }, status: :unprocessable_entity
+        return
+      end
+
+      @grade = ActionGrade.for_event(@event).by_grader(grader).first
+      rescue_and_log(target: @grade || @event) do
+        @grade&.destroy!
+        render json: { atomic_action_id: nil, atomic_event_id: @event.id, grader: grader, cleared: true }
+      end
+      return
+    end
+
     @grade = ActionGrade.for_event(@event).by_grader(grader).first_or_initialize(grader: grader)
 
     rescue_and_log(target: @grade) do

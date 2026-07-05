@@ -3,14 +3,22 @@
     E2 grade_event endpoint) plus the current grade marker (disposition dot + slug),
     server-rendered from the passed grades (so tests + a no-JS load see them) and bound
     to the row's Alpine `grades` state so any save updates live via hb:span-graded.
-    @click.stop keeps the radios from bubbling to the row (which now opens the fuller
-    grade drawer on click — the old "grade ▸" button was dropped). Locals: event, alex
+    @click.stop keeps the radios from bubbling to the row's raw-action expand toggle.
+    The form + marker stack vertically to keep each grader's column compact. Locals: event, alex
     (ActionGrade | nil), mcr (ActionGrade | nil). %>
 <td class="hb-evtfbcell" data-test="event-grade-cell" @click.stop>
-  <%= render "heartbeat/event_inline_grade", event: event, grader: "alex", grade: alex %>
-  <%= render "heartbeat/event_grade_mark", grader: "alex", grade: alex %>
+  <div class="hb-evtfbstack">
+    <%= render "heartbeat/event_inline_grade", event: event, grader: "alex", grade: alex %>
+    <div class="hb-evtmarkslot">
+      <%= render "heartbeat/event_grade_mark", grader: "alex", grade: alex %>
+    </div>
+  </div>
 </td>
 <td class="hb-evtfbcell" data-test="event-grade-cell-mcr" @click.stop>
-  <%= render "heartbeat/event_inline_grade", event: event, grader: "mcr", grade: mcr %>
-  <%= render "heartbeat/event_grade_mark", grader: "mcr", grade: mcr %>
+  <div class="hb-evtfbstack">
+    <%= render "heartbeat/event_inline_grade", event: event, grader: "mcr", grade: mcr %>
+    <div class="hb-evtmarkslot">
+      <%= render "heartbeat/event_grade_mark", grader: "mcr", grade: mcr %>
+    </div>
+  </div>
 </td>

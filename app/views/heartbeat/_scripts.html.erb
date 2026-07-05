@@ -44,6 +44,10 @@
       },
       onGraded(detail) {
         if (!detail || String(detail.atomic_event_id) !== String(this.eventId)) return;
+        if (detail.cleared) {
+          this.grades[detail.grader] = null;
+          return;
+        }
         this.grades[detail.grader] = {
           disposition: detail.disposition,
           slug: detail.slug,
@@ -71,6 +75,25 @@
           window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
         } catch (err) {
           /* network error — leave the radio; a reload reflects server truth */
+        }
+      },
+      async clearGrade(ev) {
+        var form = ev.target.closest("form");
+        if (!form) return;
+        var body = new FormData(form);
+        body.set("intent", "clear");
+        body.delete("disposition");
+        try {
+          var resp = await fetch(form.action, {
+            method: "POST",
+            headers: { "Accept": "application/json" },
+            body: body
+          });
+          var data = await resp.json();
+          if (!resp.ok) return;
+          window.dispatchEvent(new CustomEvent("hb:span-graded", { detail: data }));
+        } catch (err) {
+          /* network error — leave the visible grade; a reload reflects server truth */
         }
       }
     };
