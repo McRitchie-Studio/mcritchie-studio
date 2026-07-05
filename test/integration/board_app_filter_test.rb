@@ -27,6 +27,19 @@ class BoardAppFilterTest < ActionDispatch::IntegrationTest
 
     # Chip content: select by the readable `:class` binding, then check label/emoji.
     doc   = Nokogiri::HTML(@response.body)
+    filter_row = doc.at_css("[data-test='board-filter-row']")
+    assert filter_row, "deployments should render the shared app/demo filter row"
+    assert filter_row.at_css("[data-test='dev-board-tools']"),
+           "dev fixture controls should live beside app filters"
+    assert filter_row.at_css("[data-test='dev-deploy-tools']"),
+           "dev release controls should live beside app filters"
+    header_actions = doc.at_css("[data-test='board-header-actions']")
+    assert header_actions, "the board header actions container should remain present"
+    assert_nil header_actions.at_css("[data-test='dev-board-tools']"),
+               "demo controls should not float in the deployments header controls"
+    assert_nil header_actions.at_css("[data-test='dev-deploy-tools']"),
+               "deploy controls should not float in the deployments header controls"
+
     chips = doc.css("button").select { |b| b[":class"].to_s.include?("appHidden(") }
     apps  = chips.map { |b| b[":class"][/appHidden\('([^']+)'\)/, 1] }
     assert_includes apps, "rolio"

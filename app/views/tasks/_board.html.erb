@@ -309,11 +309,7 @@ function kanbanBoard(live) {
           <span>All Stages</span>
         </button>
       <% end %>
-      <div class="ml-auto flex items-center gap-2 flex-wrap">
-        <%# Local-only board toys (generate / move / delete a fixture task) — dev/test
-            only, hidden in production. Handy for demoing the live board. %>
-        <%= render "dev_board_tools" %>
-        <%= render "dev_deploy_tools" %>
+      <div class="ml-auto flex items-center gap-2 flex-wrap" data-test="board-header-actions">
         <% if archived %>
           <button @click="showArchived = !showArchived"
                   :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
@@ -343,17 +339,27 @@ function kanbanBoard(live) {
       appears once it has a task; unmapped slugs (e.g. rolio, pre-emoji) still show
       as a text chip. Sits right above the stage-header row. %>
   <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
-  <% if board_apps.any? %>
-    <div class="flex flex-wrap items-center gap-2 mb-4">
-      <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
-      <% board_apps.each do |app| %>
-        <button type="button"
-                @click="toggleApp('<%= app %>')"
-                :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
-          <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
-          <span><%= app %></span>
-        </button>
+  <% if board_apps.any? || Rails.env.local? %>
+    <div class="flex flex-wrap items-center gap-2 mb-4" data-test="board-filter-row">
+      <% if board_apps.any? %>
+        <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
+        <% board_apps.each do |app| %>
+          <button type="button"
+                  @click="toggleApp('<%= app %>')"
+                  :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
+            <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
+            <span><%= app %></span>
+          </button>
+        <% end %>
+      <% end %>
+      <% if Rails.env.local? %>
+        <%# Local-only board toys sit with the app filters, keeping demo controls
+            close to the board they affect instead of floating over release cards. %>
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <%= render "dev_board_tools" %>
+          <%= render "dev_deploy_tools" %>
+        </div>
       <% end %>
     </div>
   <% end %>
