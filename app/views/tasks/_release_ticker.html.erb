@@ -19,16 +19,15 @@
       var m = Math.floor(secs / 60), s = secs % 60;
       if (m < 60) return m + "m " + String(s).padStart(2, "0") + "s";
       var h = Math.floor(m / 60), mm = m % 60;
-      return h + "h " + String(mm).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
+      return h + "h " + String(mm).padStart(2, "0") + "m";
     }
 
     function agoFmt(secs) {
       if (secs < 60) return secs + "s ago";
       var m = Math.floor(secs / 60);
       if (m < 60) return m + "m ago";
-      var h = Math.floor(m / 60);
-      if (h < 24) return h + "h ago";
-      return Math.floor(h / 24) + "d ago";
+      var h = Math.floor(m / 60), mm = m % 60;
+      return h + "h " + String(mm).padStart(2, "0") + "m ago";
     }
 
     function tick() {
