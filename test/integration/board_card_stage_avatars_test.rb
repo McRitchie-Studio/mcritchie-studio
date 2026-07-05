@@ -315,6 +315,12 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
   # together on the card it was born on — and NOT beside Steffon on the assembled
   # cluster (its companion moved to the build crew).
   test "a third-evolution card stacks the evolved form on the first (build) crew" do
+    # Seed the line so the third_evolution base-form guard resolves (Charmeleon, the
+    # form entering the assemble gate, is a non-base evolution).
+    [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
+      Pokemon.where(slug: slug).first_or_initialize
+             .update!(dex: dex, name: slug.capitalize, slug: slug, generation: 1, base: "charmander", evolution: evo, baby: [])
+    end
     task = Task.create!(title: "third evolution board card", stage: "assembled")
     task.task_events.delete_all
     snap = ->(slug, name) { { "mascot" => { "slug" => slug, "name" => name, "avatar" => "https://example.test/#{slug}.png" } } }

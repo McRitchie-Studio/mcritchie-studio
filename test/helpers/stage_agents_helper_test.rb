@@ -779,7 +779,17 @@ class StageAgentsHelperTest < ActionView::TestCase
   # gates — base → first-evo at submitted, → third form at assembled — so a third-
   # stage evolution surfaces. Snapshots are baked directly for control over each
   # form (the gate mechanics themselves live in TaskMascotEvolutionTest).
+  # Known dexes so the seed is collision-proof against shared-DB leftovers.
+  FORM_DEX = { "charmander" => 4, "charmeleon" => 5, "charizard" => 6, "diglett" => 50, "dugtrio" => 51 }.freeze
+
   def evolving_journey(stage:, base: "charmander", first: "charmeleon", third: "charizard")
+    # Seed the real line so the third_evolution base-form guard resolves — `base` is
+    # its own base; `first`/`third` descend from it. Idempotent (first_or_initialize).
+    { base => base, first => base, third => base }.each do |slug, base_slug|
+      Pokemon.where(slug: slug).first_or_initialize
+             .update!(dex: FORM_DEX.fetch(slug), name: slug.capitalize, slug: slug,
+                      generation: 1, base: base_slug, baby: [])
+    end
     task = Task.create!(title: "evolving #{base} #{stage} task")
     task.task_events.delete_all
     snap = ->(slug) { { "mascot" => { "slug" => slug, "name" => slug.capitalize, "avatar" => "https://example.test/#{slug}.png" } } }
@@ -838,6 +848,31 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_not_nil evo, "charmeleon → charizard at the assemble gate is a third evolution"
     assert_equal "charmeleon", evo.from["slug"]
     assert_equal "charizard", evo.to["slug"]
+  end
+
+  test "third_evolution is nil when the assemble gate does the FIRST evolution (skipped submit)" do
+    # A task that reaches assembled WITHOUT passing the submit gate evolves base →
+    # first form AT the assemble gate (Charmander → Charmeleon). That is a FIRST
+    # evolution, not a third — it must NOT get an Evolve card. (Regression for
+    # jasper's PR #391 review: the guard is that the ENTERING form is non-base.)
+    %w[charmander charmeleon].each_with_index do |slug, i|
+      Pokemon.where(slug: slug).first_or_initialize
+             .update!(dex: 4 + i, name: slug.capitalize, slug: slug, generation: 1,
+                      base: "charmander", evolution: (i.zero? ? ["charmeleon"] : ["charizard"]), baby: [])
+    end
+    task = Task.create!(title: "skipped submit assemble task")
+    task.task_events.delete_all
+    snap = ->(slug) { { "mascot" => { "slug" => slug, "name" => slug.capitalize, "avatar" => "https://example.test/#{slug}.png" } } }
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago, actor: "carl", metadata: snap["charmander"])
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 2.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmander"])
+    # straight to assembled — the submit gate was skipped, so this is the FIRST evolution
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "assembled",
+                      occurred_at: 1.hour.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["charmeleon"])
+    task.update_columns(stage: "assembled")
+
+    assert_nil third_evolution(task.reload),
+               "a first evolution at a skipped-submit assemble is not a third evolution"
   end
 
   test "stage_timeline strips the assembled companion and splices an Evolve card after it" do

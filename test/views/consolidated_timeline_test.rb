@@ -168,6 +168,12 @@ class ConsolidatedTimelineTest < ActionView::TestCase
   # left to Steffon alone (its mascot companion moved onto the reel).
   test "renders an Evolve reel card after Reviewed to Assembled and leaves Steffon alone" do
     Agent.create!(name: "Steffon", slug: "steffon")
+    # Seed the line so the third_evolution base-form guard resolves (Charmeleon enters
+    # the assemble gate as a non-base evolution).
+    [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
+      Pokemon.where(slug: slug).first_or_initialize
+             .update!(dex: dex, name: slug.capitalize, slug: slug, generation: 1, base: "charmander", evolution: evo, baby: [])
+    end
     task = Task.create!(title: "component evolve card task")
     task.task_events.delete_all
     snap = ->(slug) { { "mascot" => { "slug" => slug, "name" => slug.capitalize, "avatar" => "https://example.test/#{slug}.png" } } }

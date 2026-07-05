@@ -439,6 +439,8 @@ module StageAgentsHelper
   end
 
   def third_evolution(task, events: nil)
+    return nil unless Pokemon.table_exists?
+
     transitions = Array(events || task.task_events)
                   .select { |e| e.transition? && e.to_stage }
                   .sort_by { |e| [e.occurred_at, e.id.to_i] }
@@ -455,6 +457,16 @@ module StageAgentsHelper
     to_snap = evt.mascot_snapshot
     return nil if from_snap["slug"].blank? || to_snap["slug"].blank?
     return nil if from_snap["slug"] == to_snap["slug"]
+
+    # A genuine THIRD evolution means the mascot ALREADY evolved once at the submit
+    # gate before this assemble step — so the form ENTERING the gate is itself an
+    # evolution, never a base form. Without this guard a task that reaches assembled
+    # WITHOUT passing the submit gate (a skipped or bypassed submit) evolves base →
+    # first form AT the gate, and that FIRST evolution (Charmander → Charmeleon) would
+    # render as a bogus Evolve card. The lookup is bounded — only the few
+    # assembled/shipped cards whose mascot actually changed at the gate reach it.
+    entering = Pokemon.find_by(slug: from_snap["slug"])
+    return nil if entering.nil? || entering.base_form?
 
     ThirdEvolution.new(event: evt, from: from_snap, to: to_snap)
   end
