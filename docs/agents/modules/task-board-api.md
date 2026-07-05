@@ -14,7 +14,7 @@ this file in the same pass.
 > ⚠️ **Mostly current, with legacy examples below.** The live task model is the
 > two-workflow 8-stage one (`designed → building → submitted → reviewed →
 > assembled → shipped`, plus `blocked`/`archived`). The endpoints table and
-> lifecycle-event sections are current; any older examples that mention named
+> task-transition sections are current; any older examples that mention named
 > legacy transition routes should be treated as historical and replaced with
 > either `PATCH stage` or the event APIs documented here.
 
@@ -91,9 +91,9 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `DELETE` | `/tasks/:slug` | Delete a task |
 | `POST` | `/tasks/:slug/intent` | Record live agent intent for a target stage |
 | `POST` | `/tasks/:slug/review_events` | Record a primary/light reviewer check-in |
-| `POST` | `/tasks/:slug/events/:stage/start` | Record a task lifecycle start event |
-| `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task lifecycle stage/checkpoint |
-| `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task lifecycle step and block the task |
+| `POST` | `/tasks/:slug/events/:stage/start` | Record a task transition start checkpoint |
+| `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task transition stage/checkpoint |
+| `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task transition step and block the task |
 | `POST` | `/releases/:slug/events/:step/start` | Record a release checkpoint start (stamps the stage timeline; `:slug` accepts `current`) |
 | `POST` | `/releases/:slug/events/:step/complete` | Complete a release checkpoint (stamps the stage timeline; `:slug` accepts `current`) |
 | `POST` | `/releases/:slug/events/:step/fail` | Fail a release checkpoint (never stamps a stage) |
@@ -341,7 +341,7 @@ Mid-review `started`/`info` check-ins may be spine-only. Pass
 `idempotency_key` on every automated broadcast so retries return the existing
 checkpoint instead of stacking duplicates.
 
-The older task lifecycle aliases still work:
+The older task transition aliases still work:
 
 ```bash
 POST /api/v1/tasks/:slug/events/heavy_review/complete
