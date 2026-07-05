@@ -312,24 +312,29 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "1d ago", release_ago_label(24 * 60 * 60)
   end
 
-  test "[unit] a complete tracker node carries its completion stamp and ago seconds" do
+  test "[unit] a reached tracker node carries its started_at and ago seconds" do
     rel = Release.open!
     rel.stamp_stage!("testing")
     rel.stamp_stage!("assembling")
 
     tested = release_tracker_steps(rel.reload, now: 5.minutes.from_now).first
     assert_equal :complete, tested[:state]
+    assert_equal rel.stage_stamp("testing"), tested[:started_at]
     assert_equal rel.stage_stamp("assembling"), tested[:completed_at]
     assert_in_delta 5.minutes.to_i, tested[:ago_seconds], 2,
-                    "ago_seconds is completion stamp → now, not the stage span"
+                    "ago_seconds is the stage's START stamp → now"
     assert_equal false, tested[:duration_live]
+    assert_not_nil tested[:duration_seconds], "own start → completion span survives for the took tooltip"
 
-    # The active node keeps its live count-up shape — no completion fields.
+    # The active node now ALSO carries started-ago (its live clock IS this ago) —
+    # with no completion fields yet.
     assembling = release_tracker_steps(rel.reload).second
     assert_equal :active, assembling[:state]
-    assert tested[:duration_seconds].present?
+    assert assembling[:duration_live]
+    assert_equal rel.stage_stamp("assembling"), assembling[:started_at]
+    assert assembling[:ago_seconds] >= 0, "an active node ticks its own started-ago"
     assert_nil assembling[:completed_at]
-    assert_nil assembling[:ago_seconds]
+    assert_nil assembling[:duration_seconds], "no completed span yet, so no took"
   end
 
   test "[component] _release_summary renders the current release tracker stages" do
@@ -359,32 +364,36 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='release-tracker-step'][data-state='active'] [data-test='release-tracker-connector'][data-state='pending']"
   end
 
-  test "[component] complete tracker nodes show finished-ago, active keeps the count-up" do
+  test "[component] every reached tracker node shows started-ago, active included" do
     rel = Release.open!
     tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
     %w[testing assembling assembled qa_deploying].each { |stage| rel.stamp_stage!(stage) }
 
     render partial: "tasks/release_tracker", locals: { release: rel }
 
-    # Complete nodes: an ago-mode ticker anchored on the COMPLETION stamp, with
-    # the absolute time + old stage span demoted to the hover title.
+    # Complete nodes: an ago-mode ticker anchored on the stage's OWN START stamp,
+    # with the absolute start time + the stage span demoted to the hover title.
     assert_select "[data-test='release-tracker-step'][data-state='complete']", 2
     %w[testing assembling].each do |key|
-      completes = key == "testing" ? "assembling" : "assembled"
       assert_select "[data-test='release-tracker-step'][data-stage='#{key}'] " \
                     "[data-test='release-tracker-duration'][data-release-ticker][data-mode='ago']" \
-                    "[data-since='#{rel.stage_stamp(completes).to_i}']",
+                    "[data-since='#{rel.stage_stamp(key).to_i}']",
                     text: /\A\d+[smhd] ago\z/ do |spans|
-        assert_match(/\AFinished .+ · took \d+[sm]\z/, spans.first["title"])
+        assert_match(/\AStarted .+ · took \d+[sm]\z/, spans.first["title"])
         assert_match(/\A\d+[sm]\z/, spans.first["data-took"],
                      "data-took feeds the browser-local title rewrite")
       end
     end
 
-    # The active node still counts UP from its start stamp — no ago mode.
+    # The ACTIVE node now shows started-ago too (its live clock IS this ago),
+    # anchored on its start stamp — ago mode, but no took yet (stage unfinished).
     assert_select "[data-test='release-tracker-step'][data-stage='qa_deploying'] " \
-                  "[data-test='release-tracker-duration'][data-release-ticker]" \
-                  "[data-since='#{rel.stage_stamp("qa_deploying").to_i}']:not([data-mode])"
+                  "[data-test='release-tracker-duration'][data-release-ticker][data-mode='ago']" \
+                  "[data-since='#{rel.stage_stamp("qa_deploying").to_i}']",
+                  text: /\A\d+[smhd] ago\z/ do |spans|
+      assert_nil spans.first["data-took"], "an in-flight stage has no span yet, so no took"
+      assert_match(/\AStarted /, spans.first["title"])
+    end
   end
 
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
@@ -489,7 +498,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "3m", release_static_duration_label(3.minutes + 22.seconds)
   end
 
-  test "release_tracker_steps carries live and completed stage durations" do
+  test "release_tracker_steps carries started-ago timing for every reached node" do
     rel = Release.open!
     started = Time.zone.parse("2026-06-29 12:00:00")
     rel.record_event!(step: "assemble_release", status: "started", source: "conductor", occurred_at: started)
@@ -501,26 +510,36 @@ class ApplicationHelperTest < ActionView::TestCase
     assembling = steps.detect { |step| step[:key] == "assembling" }
     qa = steps.detect { |step| step[:key] == "qa_deploying" }
 
+    # A COMPLETE node: "started X ago" off its own start stamp, plus a real "took".
     assert_equal :complete, assembling[:state]
-    assert_equal 90, assembling[:duration_seconds]
+    assert_equal started, assembling[:started_at]
+    assert_equal 180, assembling[:ago_seconds], "started 3m before now"
+    assert_equal 90, assembling[:duration_seconds], "own start → completed span survives for the took tooltip"
     assert_not assembling[:duration_live]
+
+    # The ACTIVE node: "started X ago" too (its live clock is this ago, not mm:ss);
+    # no span yet, so no took.
     assert_equal :active, qa[:state]
-    assert_equal 60, qa[:duration_seconds]
+    assert_equal started + 2.minutes, qa[:started_at]
+    assert_equal 60, qa[:ago_seconds]
     assert qa[:duration_live]
-    assert_equal started + 2.minutes, qa[:duration_started_at]
+    assert_nil qa[:duration_seconds], "an in-flight stage has no completed span yet"
   end
 
-  test "release_tracker_steps shows NO duration for a completed node missing its start stamp" do
+  test "release_tracker_steps falls back to release-open for a node missing its start stamp" do
     created = Time.zone.parse("2026-06-29 12:00:00")
     completed = created + 4.minutes + 12.seconds
     rel = Release.open!(created_at: created)
+    # assemble completed but its 'started' was never posted (a frequent late/missing stamp).
     rel.record_event!(step: "assemble_release", status: "completed", source: "conductor", occurred_at: completed)
 
     steps = release_tracker_steps(rel.reload, now: completed)
     assembling = steps.detect { |step| step[:key] == "assembling" }
 
     assert_equal :complete, assembling[:state]
-    assert_nil assembling[:duration_seconds], "a missing start stamp must not fake a span (or a 0s)"
+    assert_equal created, assembling[:started_at], "no own start stamp → fall back to release open, never blank"
+    assert_equal 252, assembling[:ago_seconds]
+    assert_nil assembling[:duration_seconds], "took stays nil off a fallback anchor — never overstate the span"
   end
 
   test "[component] _current_release renders a glow hook + a live in-progress ticker" do

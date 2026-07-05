@@ -241,6 +241,24 @@ class Release < ApplicationRecord
     self[column]
   end
 
+  # A stage's "started at" for the tracker: its own start stamp when present,
+  # else the nearest EARLIER stamped boundary as a lower-bound estimate (a stage
+  # starts no sooner than the latest upstream stamp), falling back to the
+  # release's open time as the floor. So every reached tracker node always has a
+  # started_at even when its own start event was never posted — testing/review
+  # and assembling starts are frequently un-instrumented or arrive late (see the
+  # STAGES comment above), which otherwise left those nodes' timing blank.
+  def stage_started_at_or_before(stage)
+    index = STAGE_NAMES.index(stage.to_s)
+    raise ArgumentError, "unknown release stage #{stage.inspect} (known: #{STAGE_NAMES.join(', ')})" unless index
+
+    index.downto(0) do |i|
+      stamp = self[STAGES[i].last]
+      return stamp if stamp.present?
+    end
+    created_at
+  end
+
   # Index of the furthest stamped stage (monotonic: the LATEST stage wins, so a
   # late upstream stamp never regresses it). nil when nothing is stamped yet. A
   # shipped STATE counts as the terminal stage even if shipped_at was never set

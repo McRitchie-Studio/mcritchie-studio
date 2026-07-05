@@ -22,26 +22,19 @@
         <% end %>
       </span>
       <span class="max-w-20 text-center text-[10px] font-semibold leading-tight <%= release_tracker_label_classes(step[:state]) %>" data-test="release-tracker-label"><%= step[:label] %></span>
-      <% if step[:duration_seconds] %>
-        <% if step[:duration_live] && step[:duration_started_at] %>
-          <span class="font-mono text-[10px] leading-none tabular-nums text-secondary"
-                data-test="release-tracker-duration"
-                data-release-ticker
-                data-since="<%= step[:duration_started_at].to_i %>"><%= format_elapsed_clock(step[:duration_seconds]) %></span>
-        <% elsif step[:completed_at] %>
-          <%# title is the app-TZ fallback; the ago ticker re-stamps it browser-local
-              off data-since + data-took so the operator reads their own clock. %>
-          <span class="font-mono text-[10px] leading-none tabular-nums text-muted"
-                data-test="release-tracker-duration"
-                data-release-ticker
-                data-mode="ago"
-                data-since="<%= step[:completed_at].to_i %>"
-                data-took="<%= release_static_duration_label(step[:duration_seconds]) %>"
-                title="<%= release_tracker_completed_title(step) %>"><%= release_ago_label(step[:ago_seconds]) %></span>
-        <% else %>
-          <span class="font-mono text-[10px] leading-none tabular-nums text-muted"
-                data-test="release-tracker-duration"><%= release_static_duration_label(step[:duration_seconds]) %></span>
-        <% end %>
+      <% if step[:started_at] %>
+        <%# Every reached node shows how long ago the stage STARTED — the active
+            node too (its live clock is this same "X ago", not a mm:ss count-up).
+            title is the app-TZ fallback; the ago ticker re-stamps it browser-local
+            off data-since (+ data-took once finished) so the operator reads their
+            own clock. Active stays a touch brighter as the liveness cue. %>
+        <span class="font-mono text-[10px] leading-none tabular-nums <%= step[:duration_live] ? 'text-secondary' : 'text-muted' %>"
+              data-test="release-tracker-duration"
+              data-release-ticker
+              data-mode="ago"
+              data-since="<%= step[:started_at].to_i %>"
+              <% if step[:duration_seconds] %>data-took="<%= release_static_duration_label(step[:duration_seconds]) %>"<% end %>
+              title="<%= release_tracker_started_title(step) %>"><%= release_ago_label(step[:ago_seconds]) %></span>
       <% else %>
         <span class="h-3" aria-hidden="true"></span>
       <% end %>

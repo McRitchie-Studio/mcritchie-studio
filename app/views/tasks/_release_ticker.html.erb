@@ -2,7 +2,7 @@
     span carries data-release-ticker + data-since (created_at epoch) + data-prefix;
     this advances it every second so the operator watches the clock climb. A span
     with data-mode="ago" ticks the OTHER direction of the same math — time since a
-    completed stage's stamp ("4m ago") — so finished nodes stay fresh between card
+    tracker stage STARTED ("4m ago") — so every reached node stays fresh between card
     swaps. It re-queries the DOM each tick, so a Turbo-Streamed card swap
     (DeploymentsBroadcaster → LiveBoardFx) is picked up automatically with no
     re-wiring. Installed once and survives Turbo navigations. fmt() MUST match
@@ -41,10 +41,10 @@
           el.textContent = agoFmt(secs);
           if (!el.dataset.titled) {
             el.dataset.titled = "1";
-            var finished = new Date(since * 1000).toLocaleString([], {
+            var startedAt = new Date(since * 1000).toLocaleString([], {
               month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
             });
-            el.title = "Finished " + finished +
+            el.title = "Started " + startedAt +
               (el.dataset.took ? " · took " + el.dataset.took : "");
           }
         } else {
