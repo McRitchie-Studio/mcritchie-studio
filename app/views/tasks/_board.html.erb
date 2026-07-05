@@ -78,6 +78,7 @@ function kanbanBoard(live) {
     },
 
     init() {
+      this.$el.dataset.alpineReady = 'true';
       this.$nextTick(() => {
         this.initSortables();
         if (this.live) this.observeLive();
@@ -289,7 +290,7 @@ function kanbanBoard(live) {
 }
 </script>
 
-<section x-data="kanbanBoard(<%= live_updates.to_json %>)" class="min-h-screen">
+<section x-data="kanbanBoard(<%= live_updates.to_json %>)" data-test="kanban-board" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">

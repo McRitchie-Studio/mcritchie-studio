@@ -14,6 +14,7 @@ class BoardAppFilterSystemTest < ApplicationSystemTestCase
     )
 
     visit deployments_path
+    assert_selector "[data-test='kanban-board'][data-alpine-ready='true']"
 
     # Both cards start visible.
     assert_selector "#card-#{rolio.slug}", visible: true
