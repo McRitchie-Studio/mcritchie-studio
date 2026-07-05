@@ -71,12 +71,12 @@
           <% end %>
 
           <% if block.evolution? %>
-            <%# EVOLVE — a synthetic card spliced in after Reviewed → Assembled for a
-                third-stage evolution. Shares the standard card anatomy: a single
+            <%# EVOLVE — a synthetic card spliced in after Submitted → Reviewed for a
+                final evolution. Shares the standard card anatomy: a single
                 "Evolve" badge on top, then the reel (prior form → evolved form) + who
                 triggered it as the crew, then the shared metric + footer sections
                 below. Model / tokens / cost stay blank — they belong to the real
-                Reviewed → Assembled card and are never double-counted. %>
+                Submitted → Reviewed card and are never double-counted. %>
             <div class="flex flex-wrap items-center justify-center gap-2 mb-3" data-test="timeline-transition">
               <%= render "components/badge", text: "Evolve", scheme: "violet" %>
             </div>

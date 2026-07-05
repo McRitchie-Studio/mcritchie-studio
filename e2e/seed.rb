@@ -533,7 +533,7 @@ TaskEvent.create!(task_slug: hb_task, from_stage: "designed", to_stage: "buildin
                   metadata: { "backfilled" => true })
 
 # Mascot-evolution demo: a task whose Pokémon evolves at the two pipeline gates
-# (submitted → Croconaw, assembled → Feraligatr). The task-page e2e asserts the
+# (submitted → Croconaw, reviewed → Feraligatr). The task-page e2e asserts the
 # timeline shows the line progressing while historical cards keep their form.
 # The Totodile line deliberately avoids slugs the unit suites create! ad hoc
 # (Charmander, Snorlax, Chikorita…), so leftover e2e rows can't collide there.
@@ -549,7 +549,7 @@ SessionMascot.create!(session_id: "sess-evolution-demo", mascot_slug: "totodile"
 evolution_task = Task.create!(
   title: "Mascot evolution demo",
   slug: "mascot-evolution-demo",
-  description: "Fixture for the mascot-evolution timeline e2e — Totodile submits as Croconaw and assembles as Feraligatr.",
+  description: "Fixture for the mascot-evolution timeline e2e — Totodile submits as Croconaw and reviews as Feraligatr.",
   stage: "designed",
   priority: 1,
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"],

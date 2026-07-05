@@ -67,11 +67,11 @@ class Task < ApplicationRecord
   # Build is the feature agent's, Deploy is DevOps's.
   BUILD_STAGES  = %w[designed building submitted].freeze
   # The two pipeline gates where a task's Pokémon evolves (one step each): the
-  # story submit and the QA-green assemble — Charmander tasks submit as
-  # Charmeleon and assemble as Charizard. The value is the evolution stage the
+  # feature submit and the successful senior review — Charmander tasks submit as
+  # Charmeleon and review as Charizard. The value is the evolution stage the
   # gate leaves the mascot at (devops.mascot_stage), which is what makes a
   # blocked→resubmitted loop idempotent. See #evolve_stage_mascot.
-  MASCOT_EVOLUTION_GATES = { "submitted" => 1, "assembled" => 2 }.freeze
+  MASCOT_EVOLUTION_GATES = { "submitted" => 1, "reviewed" => 2 }.freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
   NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
                         "submitted" => "reviewed", "reviewed" => "assembled",
@@ -1108,7 +1108,7 @@ class Task < ApplicationRecord
   # that owned THAT event, so a later rework handoff — or a gate evolution
   # (#evolve_stage_mascot) — can repaint the current task mascot without
   # rewriting history: the submitted card keeps Charmeleon after the task
-  # assembles as Charizard. On the submitted→reviewed transition this
+  # reviews as Charizard. On the submitted→reviewed transition this
   # also carries the TWO reviewers (+ primary/light) so the avatars UI can render
   # WHO reviewed — the single `actor` stays the primary mover. An explicit
   # Current.task_event_reviewers (set when Avi curated the pair) wins; otherwise
@@ -1304,13 +1304,15 @@ class Task < ApplicationRecord
     devops.delete("mascot_stage")
   end
 
-  # Evolve the TASK's copy of its mascot at a pipeline gate (submitted/assembled)
-  # — one step per gate, random pick on a branching line (Eevee), a no-op when
-  # the line is done (Snorlax, or already fully evolved). The SESSION's mascot is
-  # untouched: a session working two tasks keeps its own stable Pokémon while
-  # each task's copy evolves with its progress. devops.mascot_stage records the
-  # gate consumed, so a blocked→resubmitted loop never double-evolves; it is not
-  # a client (DEVOPS_KEYS) field, so board updates can't clobber it.
+  # Evolve the TASK's copy of its mascot at a pipeline gate (submitted/reviewed).
+  # The submit gate is reserved for three-stage families, so Charmander submits as
+  # Charmeleon while Pikachu stays Pikachu. The review gate then evolves whatever
+  # can still evolve, celebrating the successful Submitted → Reviewed turn with
+  # the mascot's final form. The SESSION's mascot is untouched: a session working
+  # two tasks keeps its own stable Pokémon while each task's copy evolves with
+  # progress. devops.mascot_stage records the gate consumed, so a blocked→resubmitted
+  # loop never double-evolves; it is not a client (DEVOPS_KEYS) field, so board
+  # updates can't clobber it.
   def evolve_stage_mascot
     return unless Pokemon.table_exists?
     self.metadata ||= {}
@@ -1325,6 +1327,8 @@ class Task < ApplicationRecord
     return unless pokemon
 
     devops["mascot_stage"] = gate
+    return if gate == 1 && !pokemon.second_evolution_form?
+
     evolved = pokemon.evolutions.order(Arel.sql("RANDOM()")).first
     return unless evolved # nowhere to go — the gate is still consumed
 
