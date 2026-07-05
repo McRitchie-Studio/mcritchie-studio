@@ -330,3 +330,6 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-05 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/trim-timer-seconds` | worktree | Hidden worktree; branch `feat/trim-timer-seconds` is clean and HEAD 3879b22c is contained in origin/release; health up, Redis DB 23, database mcritchie_studio_development_trim_timer_seconds:ok. | Removed with `bin/agent-worktree remove mcritchie-studio trim-timer-seconds --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/gate-dor-check-on-github-ci` | worktree | Hidden worktree; branch `feat/gate-dor-check-on-github-ci` is clean and HEAD 8fb95a73 is contained in origin/release; health down, Redis DB 26, database mcritchie_studio_development_gate_dor_check_on_github_ci:missing. | Removed with `bin/agent-worktree remove mcritchie-studio gate-dor-check-on-github-ci --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
