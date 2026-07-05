@@ -183,6 +183,37 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "assembling", rel.reload.state
   end
 
+  # --- Live-on-QA stamp is ATOMIC with the member flip (regression) ---
+  # deploy_qa:completed ("Live on QA" green) used to be stamped by bin/release a
+  # step BEFORE this flip (record_qa_deploy), so the /deployments tracker showed a
+  # green Live-on-QA while the members were still `reviewed`. qa_green! now owns
+  # the stamp so the tracker can never reach `qa_deployed` before the members do.
+
+  test "[unit] qa_green! with a qa_url stamps Live-on-QA atomic with the flip" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    refute rel.stage_reached?("qa_deployed"), "not live before the flip"
+
+    Release::Conductor.qa_green!(rel, qa_url: "https://qa.example.test")
+
+    assert_equal "assembled", t.reload.stage, "member flipped"
+    assert rel.reload.stage_reached?("qa_deployed"), "Live-on-QA stamped in the same call as the flip"
+    assert_equal "https://qa.example.test", rel.release_events.where(step: "deploy_qa", status: "completed").last&.url
+  end
+
+  test "[unit] qa_green! falls back to the release's recorded qa_url for the deploy_qa stamp" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    Release::Conductor.record_qa_url(release: rel, qa_url: "https://qa.example.test") # step-7 URL write
+
+    Release::Conductor.qa_green!(rel.reload) # no explicit qa_url — falls back to release.qa_url
+
+    assert_equal "assembled", t.reload.stage
+    assert_equal "https://qa.example.test",
+                 rel.reload.release_events.where(step: "deploy_qa", status: "completed").last&.url,
+                 "the recorded qa_url flows into the deploy_qa:completed stamp via the fallback"
+  end
+
   # --- deploy-side usage capture (model/tokens/cost on the conductor flips) ---
   # bin/release captures the per-transition delta from its LOCAL transcript and
   # threads it in; these prove it lands on the assembled/shipped TaskEvents.
@@ -880,12 +911,18 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "reviewed", mystery.reload.stage, "the rolled-back task stays reviewed"
   end
 
-  # --- record_qa_deploy ---
+  # --- record_qa_url ---
 
-  test "record_qa_deploy stores the qa_url on the release" do
-    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
-    Release::Conductor.record_qa_deploy(release: rel, qa_url: "https://qa.example.test")
-    assert_equal "https://qa.example.test", rel.reload.qa_url
+  test "[unit] record_qa_url stores the qa_url WITHOUT stamping Live-on-QA" do
+    # sweep! (NOT prepare!) so qa_green! hasn't run yet — this isolates the step-7
+    # URL write, the exact window the old record_qa_deploy lit Live-on-QA green in.
+    rel = Release::Conductor.sweep!(reviewed_task)
+    Release::Conductor.record_qa_url(release: rel, qa_url: "https://qa.example.test")
+    rel.reload
+
+    assert_equal "https://qa.example.test", rel.qa_url
+    refute rel.stage_reached?("qa_deployed"),
+           "record_qa_url records the URL only — the deploy_qa:completed stamp is qa_green!'s job"
   end
 
   # --- record_qa_shas ---

@@ -105,7 +105,7 @@ class Release
     # flip runs on prod, transcript-less). Each flip runs inside
     # Current.with_task_event_usage so the assembled TaskEvent carries it; a
     # missing entry records the deterministic spine only.
-    def qa_green!(release, usage_by_slug: {})
+    def qa_green!(release, usage_by_slug: {}, qa_url: nil)
       usage_by_slug ||= {}
       Release.transaction do
         # Flip PRODUCER-FIRST (gems before consumers, honoring dependencies) so
@@ -116,6 +116,26 @@ class Release
           Current.with_task_event_usage(usage_by_slug[task.slug]) { task.assemble! }
         end
         assemble!(release)
+        # Stamp Live-on-QA (deploy_qa:completed → `qa_deployed`) HERE — atomic
+        # with the member flip — so the /deployments tracker only reaches "Live
+        # on QA" green once the members are ACTUALLY `assembled`. bin/release used
+        # to stamp it a step EARLIER (record_qa_deploy, before this flip and
+        # before the post-deploy hooks), so a viewer saw a green "Live on QA"
+        # while the members were still `reviewed`, and a failure in that gap left
+        # a lying all-green release. `qa_url` comes from the caller (real prepare)
+        # or the URL record_qa_url already persisted; blank in the model/test path
+        # (no real QA deploy) → nothing stamped, exactly as before.
+        live_url = qa_url.presence || release.qa_url.presence
+        if live_url
+          record_event!(
+            release: release,
+            step: "deploy_qa",
+            status: "completed",
+            source: "conductor",
+            url: live_url,
+            idempotency_key: "#{release.slug}:deploy_qa:#{live_url}:completed"
+          )
+        end
       end
       release.reload
     end
@@ -440,17 +460,13 @@ class Release
     end
 
     # Record the QA deployment URL on the release (the deploy itself is run by
-    # bin/qa-server). Lets the board's current-release header link straight to QA.
-    def record_qa_deploy(release:, qa_url:)
+    # bin/qa-server). Lets the board's current-release header link straight to QA
+    # while the candidate is still in flight. It deliberately does NOT stamp the
+    # stage-advancing `deploy_qa:completed` event — that lands in qa_green!,
+    # atomic with the reviewed→assembled member flip, so "Live on QA" green never
+    # precedes the members actually being assembled (see qa_green!).
+    def record_qa_url(release:, qa_url:)
       release.update!(qa_url: qa_url)
-      record_event!(
-        release: release,
-        step: "deploy_qa",
-        status: "completed",
-        source: "conductor",
-        url: qa_url,
-        idempotency_key: "#{release.slug}:deploy_qa:#{qa_url}:completed"
-      )
       release
     end
 
