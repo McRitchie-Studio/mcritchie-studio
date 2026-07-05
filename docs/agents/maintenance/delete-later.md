@@ -273,3 +273,30 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-04 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/update-release-cli-copy` | worktree | Hidden worktree; branch `feat/update-release-cli-copy` is clean and HEAD 3c4ce0a5 is contained in origin/release; health down, Redis DB 29, database mcritchie_studio_development_update_release_cli_copy:missing. | Removed with `bin/agent-worktree remove mcritchie-studio update-release-cli-copy --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/add-johto-pokemon-roster` | worktree | Hidden worktree; branch `feat/add-johto-pokemon-roster` is clean and HEAD 16b2faf1 is contained in origin/release; health down, Redis DB 36, database mcritchie_studio_development_add_johto_pokemon_roster:ok. | Removed with `bin/agent-worktree remove mcritchie-studio add-johto-pokemon-roster --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/base-level-spawn-pool` | worktree | Hidden worktree; branch `feat/base-level-spawn-pool` is clean and HEAD da12ec64 is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_base_level_spawn_pool:ok. | Removed with `bin/agent-worktree remove mcritchie-studio base-level-spawn-pool --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/compact-heartbeat-commands` | worktree | Hidden worktree; branch `feat/compact-heartbeat-commands` is clean and HEAD 1c7b766e is contained in origin/release; health up, Redis DB 33, database mcritchie_studio_development_compact_heartbeat_commands:ok. | Removed with `bin/agent-worktree remove mcritchie-studio compact-heartbeat-commands --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/completed-stage-ago-time` | worktree | Hidden worktree; branch `feat/completed-stage-ago-time` is clean and HEAD 0cc28846 is contained in origin/release; health down, Redis DB 9, database mcritchie_studio_development_completed_stage_ago_time:ok. | Removed with `bin/agent-worktree remove mcritchie-studio completed-stage-ago-time --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/inline-span-badges` | worktree | Hidden worktree; branch `feat/inline-span-badges` is clean and HEAD 928ed90b is contained in origin/release; health up, Redis DB 13, database mcritchie_studio_development_inline_span_badges:ok. | Removed with `bin/agent-worktree remove mcritchie-studio inline-span-badges --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/pokemon-roster-shiny-evolutions` | worktree | Hidden worktree; branch `feat/pokemon-roster-shiny-evolutions` is clean and HEAD 7ba7f7b2 is contained in origin/release; health up, Redis DB 12, database mcritchie_studio_development_pokemon_roster_shiny_evolutions:ok. | Removed with `bin/agent-worktree remove mcritchie-studio pokemon-roster-shiny-evolutions --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/remove-deployment-copy-buttons` | worktree | Hidden worktree; branch `feat/remove-deployment-copy-buttons` is clean and HEAD 35c3d405 is contained in origin/release; health up, Redis DB 34, database mcritchie_studio_development_remove_deployment_copy_buttons:ok. | Removed with `bin/agent-worktree remove mcritchie-studio remove-deployment-copy-buttons --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/rename-review-supervisor-script` | worktree | Hidden worktree; branch `feat/rename-review-supervisor-script` is clean and HEAD 9e8ff5a8 is contained in origin/release; health down, Redis DB 31, database mcritchie_studio_development_rename_review_supervisor_script:missing. | Removed with `bin/agent-worktree remove mcritchie-studio rename-review-supervisor-script --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
+
+<!-- agent-worktree remove 2026-07-04 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/task-mascot-evolution-gates` | worktree | Hidden worktree; branch `feat/task-mascot-evolution-gates` is clean and HEAD d5039813 is contained in origin/release; health up, Redis DB 15, database mcritchie_studio_development_task_mascot_evolution_gates:ok. | Removed with `bin/agent-worktree remove mcritchie-studio task-mascot-evolution-gates --yes` during approved lifecycle cleanup. | removed 2026-07-04 |
