@@ -25,8 +25,8 @@ class DeploymentsLiveFxTest < ActionView::TestCase
 
     assert_includes rendered, ".lbfx-glow.lbfx-glow-stage"
     assert_includes rendered, "@keyframes lbfxGlowToStage"
-    assert_includes rendered, "var(--task-card-glow-color) 34%"
-    assert_includes rendered, "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes rendered, "box-shadow: var(--task-card-glow-shadow)"
+    assert_includes rendered, "border-color: var(--task-card-glow-border-color)"
     assert_includes rendered, "function stageGlowHex(card)"
     assert_includes rendered, "!!card.dataset.stageGlow"
     assert_includes rendered, "card.classList.add(\"lbfx-glow-stage\")"

@@ -32,7 +32,10 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "dark:bg-red-950/40"
     assert_includes card["class"], "hover:bg-red-100/70"
     assert_includes card["style"], "--task-card-glow-color: #ef4444"
-    assert_includes card["style"], "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+    assert_includes card["style"], "border-color: var(--task-card-glow-border-color)"
+    assert_includes card["style"], "box-shadow: var(--task-card-glow-shadow)"
     assert_includes rendered, "hover:text-red-700"
     assert_includes rendered, "dark:hover:text-red-300"
   end
@@ -52,7 +55,43 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "#6390F0", card["data-glow"]
     assert_includes card["class"], "task-card-stage-glow-submitted"
     assert_includes card["style"], "--task-card-glow-color: #6390F0"
-    assert_includes card["style"], "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+  end
+
+  test "reviewed card uses the larger steady glow" do
+    task = Task.create!(title: "Reviewed glow task", stage: "reviewed",
+                        metadata: { "devops" => { "mascot_color" => "#22d3ee" } })
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "reviewed", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-reviewed"
+    assert_includes card["style"], "--task-card-glow-color: #22d3ee"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+  end
+
+  test "assembled card uses the larger spinning glow" do
+    task = Task.create!(title: "Assembled glow task", stage: "assembled",
+                        metadata: { "devops" => { "mascot_color" => "#a78bfa" } })
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "assembled", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-assembled"
+    assert_includes card["style"], "--task-card-glow-color: #a78bfa"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+
+    css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_includes css, ".task-card-stage-glow-assembled::before"
+    assert_includes css, "animation: taskCardAssembledGlowSpin"
+    assert_includes css, "@keyframes taskCardAssembledGlowSpin"
   end
 
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do

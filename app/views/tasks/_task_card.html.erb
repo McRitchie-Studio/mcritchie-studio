@@ -24,16 +24,33 @@
    end %>
 <% card_glow_kind = if block_state == :blocked
      "blocked"
-   elsif task.stage == "submitted"
-     "submitted"
+   elsif %w[submitted reviewed assembled].include?(task.stage)
+     task.stage
    end %>
-<% card_glow_color = card_glow_kind == "blocked" ? "#ef4444" : (mascot_signature_color || "#f59e0b") %>
+<% card_glow_color = case card_glow_kind
+   when "blocked" then "#ef4444"
+   when "reviewed" then mascot_signature_color || "#22d3ee"
+   when "assembled" then mascot_signature_color || "#a78bfa"
+   else mascot_signature_color || "#f59e0b"
+   end %>
+<% card_glow_large = %w[reviewed assembled].include?(card_glow_kind) %>
+<% card_glow_border_mix = card_glow_large ? 58 : 46 %>
+<% card_glow_shadow = if card_glow_large
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
+       "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
+       "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
+       "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+   else
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), " \
+       "0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
+       "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+   end %>
 <% card_glow_style = if card_glow_kind
      "--task-card-glow-color: #{card_glow_color}; " \
-       "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent); " \
-       "box-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), " \
-       "0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
-       "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent);"
+       "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) #{card_glow_border_mix}%, transparent); " \
+       "--task-card-glow-shadow: #{card_glow_shadow}; " \
+       "border-color: var(--task-card-glow-border-color); " \
+       "box-shadow: var(--task-card-glow-shadow);"
    end %>
 <div id="card-<%= task.slug %>"
      data-slug="<%= task.slug %>"

@@ -24,10 +24,8 @@
   @keyframes lbfxGlowToStage {
     0%   { box-shadow: 0 0 18px 4px rgb(var(--lbfx-glow, 249 115 22) / .95), 0 0 44px 12px rgb(var(--lbfx-glow, 249 115 22) / .5);
            border-color: rgb(var(--lbfx-glow, 249 115 22) / 1); }
-    100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent),
-                        0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent),
-                        0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent);
-           border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent); }
+    100% { box-shadow: var(--task-card-glow-shadow);
+           border-color: var(--task-card-glow-border-color); }
   }
 
   /* Keep cards above active confetti. Particles render below this z-layer, so

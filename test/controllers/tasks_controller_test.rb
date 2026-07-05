@@ -395,11 +395,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug}[data-glow]"
   end
 
-  test "[integration] deployments cards glow for submitted and blocked stages" do
+  test "[integration] deployments cards glow for deploy lane attention stages" do
     submitted = Task.create!(
       title: "Submitted glow board task",
       stage: "submitted",
       metadata: { "devops" => { "mascot_color" => "#6390F0", "repositories" => ["mcritchie-studio"] } }
+    )
+    reviewed = Task.create!(
+      title: "Reviewed glow board task",
+      stage: "reviewed",
+      metadata: { "devops" => { "mascot_color" => "#22d3ee", "repositories" => ["mcritchie-studio"] } }
+    )
+    assembled = Task.create!(
+      title: "Assembled glow board task",
+      stage: "assembled",
+      metadata: { "devops" => { "mascot_color" => "#a78bfa", "repositories" => ["mcritchie-studio"] } }
     )
     blocked = Task.create!(title: "Blocked glow board task", stage: "blocked")
 
@@ -410,6 +420,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "submitted", submitted_card["data-stage-glow"]
     assert_includes submitted_card["class"], "task-card-stage-glow-submitted"
     assert_includes submitted_card["style"], "--task-card-glow-color: #6390F0"
+
+    reviewed_card = css_select("#dropzone-reviewed #card-#{reviewed.slug}").first
+    assert_equal "reviewed", reviewed_card["data-stage-glow"]
+    assert_includes reviewed_card["class"], "task-card-stage-glow-reviewed"
+    assert_includes reviewed_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+
+    assembled_card = css_select("#dropzone-assembled #card-#{assembled.slug}").first
+    assert_equal "assembled", assembled_card["data-stage-glow"]
+    assert_includes assembled_card["class"], "task-card-stage-glow-assembled"
+    assert_includes assembled_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
 
     blocked_card = css_select("#dropzone-building #card-#{blocked.slug}").first
     assert_equal "blocked", blocked_card["data-stage-glow"]
