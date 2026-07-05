@@ -1,42 +1,43 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/atomic-event — the agent's SELF-NARRATION CLI. The agent declares the
-# meaningful SPANS of its own trajectory as it works:
+# bin/atomic-event — compatibility entrypoint for the agent's SELF-NARRATION CLI.
+# The canonical name is bin/agent-activity. The agent declares the meaningful
+# ACTIVITIES of its own trajectory as it works:
 #
 #   bin/atomic-event start --category Explore --reason "find issue with api"
-#   … (the agent's raw tool-calls attribute server-side to this open span) …
+#   … (the agent's raw tool-calls attribute server-side to this open activity) …
 #   bin/atomic-event next  --outcome "found the nil-guard" \
 #                          --category Edit --reason "add the guard"
-#   … (more work under the new span) …
+#   … (more work under the new activity) …
 #   bin/atomic-event end   --outcome "guard added, tests green"
 #
-# `start` opens a span (auto-closing any prior open one); `end` closes the
-# session's open span with an outcome. `start`/`next` also take `--agent <soul>`
-# (avi/carl/…) to stamp the ACTING soul on the span, distinct from the base
+# `start` opens an activity (auto-closing any prior open one); `end` closes the
+# session's open activity with an outcome. `start`/`next` also take `--agent <soul>`
+# (avi/carl/…) to stamp the ACTING soul on the activity, distinct from the base
 # session mascot — an unknown slug is coerced to nil server-side. They also take
-# `--task <slug>` to stamp the span's task EXPLICITLY — so the FIRST working span
+# `--task <slug>` to stamp the activity's task EXPLICITLY — so the FIRST working activity
 # is task-attributed immediately, instead of a blank TASK until a later
 # `bin/task`/`bind-task` write populates the session marker. `--task` wins over
 # the desk/session marker; absent it, resolve_marker still infers the task from a
 # `feat/<slug>` checkout branch. `next` is the
 # BOUNDARY transition — it
-# closes the prior span WITH an outcome and opens the next one WITH a reason in
-# ONE call, so spans resolve instead of hanging half-narrated (`start` also
+# closes the prior activity WITH an outcome and opens the next one WITH a reason in
+# ONE call, so activities resolve instead of hanging half-narrated (`start` also
 # accepts `--outcome` for the same crossover). `close-open` is the session-end
-# teardown (wired to the Claude Code SessionEnd hook): it closes any span still
+# teardown (wired to the Claude Code SessionEnd hook): it closes any activity still
 # open so the last one never hangs open forever. `next`/`end` also take
 # `--key-method <code>` (+ optional `--key-lang bash|ruby|sql|js`) to stamp the
-# COMPLETED span's one load-bearing call — the copyable line another agent would
-# rerun (e.g. `User.find_by(email: ...)`); most spans have none, so it's optional.
+# COMPLETED activity's one load-bearing call — the copyable line another agent would
+# rerun (e.g. `User.find_by(email: ...)`); most activities have none, so it's optional.
 # There is NO per-call classifier
 # and NO reader sub-agent — the agent narrates. Raw tool-calls attribute to
-# whichever span is open (see AtomicAction.capture), so the span vocabulary +
+# whichever activity is open (see AgentAction.capture), so the activity vocabulary +
 # outcomes are the coarse, meaningful layer over the raw stream.
 #
 # Targets the SAME endpoint as bin/atomic-capture-hook (ATOMIC_CAPTURE_URL,
 # default http://localhost:3000) — events and actions MUST land on the same
-# server for the server-side span attribution to work. Token + HTTP live on the
+# server for the server-side activity attribution to work. Token + HTTP live on the
 # shared AgentApi client (bin/lib/agent_api.rb): the agent secret sources the
 # same way bin/task does (AGENT_API_SECRET → 1Password → repo .env) and the
 # on-disk token cache is shared with the hook.
@@ -48,7 +49,7 @@ require "json"
 require "fileutils"
 require_relative "lib/agent_api"
 
-class AtomicEventCli
+class AgentActivityCli
   CATEGORIES = %w[
     Explore Edit Verify Version Workflow Delegate Clarify Remote Research Plan
   ].freeze
@@ -75,14 +76,14 @@ class AtomicEventCli
     when "end"           then finish(flags)
     when "close-open"    then close_open(flags)
     when "heartbeat"     then heartbeat(argv, flags) # sticky acting-agent for a soul run
-    when "grade"         then grade_span(argv, flags) # bearer AGENT grade of a resolved span
-    when "awaiting"      then awaiting(flags)          # resolved spans still awaiting an Alex grade
+    when "grade"         then grade_activity(argv, flags) # bearer AGENT grade of a resolved activity
+    when "awaiting"      then awaiting(flags)             # resolved activities still awaiting an Alex grade
     else
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
                 "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
                 "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
                 "heartbeat <soul> | heartbeat --clear | " \
-                "grade <span-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
+                "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
                 "awaiting [--limit <n>]")
     end
   rescue StandardError => e
@@ -104,36 +105,36 @@ class AtomicEventCli
     end
 
     # BOUNDARY transition: --outcome (the `next` idiom, also valid on `start`)
-    # stamps the auto-closed prior span's outcome as we cross into this one, so a
-    # span resolves in the same call that opens the next instead of hanging with a
+    # stamps the auto-closed prior activity's outcome as we cross into this one, so an
+    # activity resolves in the same call that opens the next instead of hanging with a
     # NULL outcome. Empty ⇒ dropped below ⇒ legacy behavior (prior auto-closes null).
     prior_outcome = flags["outcome"].to_s.strip
 
-    # --agent stamps the ACTING soul on the span, distinct from the base session
+    # --agent stamps the ACTING soul on the activity, distinct from the base session
     # mascot. Passed through verbatim — the server coerces an unknown slug to nil
-    # (AtomicEvent::SOULS), so we never validate it here. When --agent is ABSENT,
+    # (AgentActivity::SOULS), so we never validate it here. When --agent is ABSENT,
     # fall back to the session's STICKY acting-agent (set by `atomic-event heartbeat
-    # <soul>`), so a `<Soul> Heartbeat` self-attributes EVERY span as the soul —
+    # <soul>`), so a `<Soul> Heartbeat` self-attributes EVERY activity as the soul —
     # stacked over the stable base mascot — without re-passing --agent each call.
     # Explicit --agent always WINS over the sticky (a delegated reviewer keeps its
     # own soul); the sticky clears at session end (close-open) or `heartbeat --clear`.
     agent = flags["agent"].to_s.strip
     agent = read_acting_agent(sid).to_s if agent.empty?
 
-    # --task stamps the span's task EXPLICITLY and WINS over the desk/session
-    # marker — so a session's FIRST span is task-attributed immediately, without
+    # --task stamps the activity's task EXPLICITLY and WINS over the desk/session
+    # marker — so a session's FIRST activity is task-attributed immediately, without
     # waiting for a `bin/task`/`bind-task` write to populate the session marker
     # (the observed blank-TASK-until-late-bind case). Absent it, resolve_marker
     # still resolves the task from the desk marker or a `feat/<slug>` branch.
     task = flags["task"].to_s.strip
 
     marker = resolve_marker(session_id: sid)
-    res = post("/api/v1/atomic_events", {
+    res = post("/api/v1/agent_activities", {
       "session_id"    => sid,
       "category"      => category,
       "reason"        => reason,
       "prior_outcome" => prior_outcome,
-      # `next --key-method` stamps the COMPLETED (auto-closed) span's one
+      # `next --key-method` stamps the COMPLETED (auto-closed) activity's one
       # load-bearing call, same crossover semantics as --outcome.
       "prior_key_method"      => flags["key-method"].to_s.strip,
       "prior_key_method_lang" => flags["key-lang"].to_s.strip,
@@ -154,25 +155,25 @@ class AtomicEventCli
     outcome = flags["outcome"].to_s.strip
     # Resolve the acting soul the SAME way `start` does (explicit --agent, else the
     # session's sticky heartbeat agent) and send it, so close targets THIS soul's
-    # LANE — a reviewer's `end` resolves its own span, not whichever soul opened
+    # LANE — a reviewer's `end` resolves its own activity, not whichever soul opened
     # last in the shared session. Empty ⇒ the nil lane (the orchestrator's).
     agent = flags["agent"].to_s.strip
     agent = read_acting_agent(sid).to_s if agent.empty?
 
-    res = post("/api/v1/atomic_events/close", {
+    res = post("/api/v1/agent_activities/close", {
       "session_id" => sid,
       "agent"      => agent,
       "outcome"    => outcome,
-      # `end --key-method` stamps the closing span's one load-bearing call
+      # `end --key-method` stamps the closing activity's one load-bearing call
       # (e.g. `User.find_by(email: ...)`); --key-lang overrides the inferred badge.
       "key_method"      => flags["key-method"].to_s.strip,
       "key_method_lang" => flags["key-lang"].to_s.strip
     }.reject { |_, v| v.to_s.empty? })
 
-    report(res, outcome.empty? ? "closed span" : "closed · #{outcome}")
+    report(res, outcome.empty? ? "closed activity" : "closed · #{outcome}")
   end
 
-  # Session-end teardown — closes ANY span still open for the session so the last
+  # Session-end teardown — closes ANY activity still open for the session so the last
   # one never hangs open forever (and trailing actions never fall into
   # "Unlabeled"). Wired to the Claude Code SessionEnd hook, which pipes its event
   # JSON on stdin; we take the session id from a --session flag or the harness env
@@ -184,7 +185,7 @@ class AtomicEventCli
 
     outcome = flags["outcome"].to_s.strip
     outcome = "session ended" if outcome.empty?
-    res = post("/api/v1/atomic_events/close_all", {
+    res = post("/api/v1/agent_activities/close_all", {
       "session_id" => sid,
       "outcome"    => outcome
     })
@@ -193,12 +194,12 @@ class AtomicEventCli
     # later run that happens to reuse this session id.
     clear_acting_agent(sid)
 
-    report(res, "closed open spans · #{outcome}")
+    report(res, "closed open activities · #{outcome}")
   end
 
   # Sets (or clears) the session's STICKY acting-agent — the soul that EVERY
-  # subsequent span attributes to until session end or `heartbeat --clear`. This is
-  # how a `<Soul> Heartbeat` self-attributes its OWN top-level spans (orient,
+  # subsequent activity attributes to until session end or `heartbeat --clear`. This is
+  # how a `<Soul> Heartbeat` self-attributes its OWN top-level activities (orient,
   # workflow, verify) as the soul, stacked over the stable base session mascot,
   # instead of the observed fall-back to the base mascot alone. An explicit
   # `--agent` on an individual `start`/`next` still WINS over the sticky, so a
@@ -216,7 +217,7 @@ class AtomicEventCli
 
     if flags.key?("clear") || positional == "clear" || positional == "off"
       clear_acting_agent(sid)
-      @out.puts("atomic-event: heartbeat cleared — spans return to the base session mascot")
+      @out.puts("atomic-event: heartbeat cleared — activities return to the base session mascot")
       return
     end
 
@@ -225,20 +226,20 @@ class AtomicEventCli
     return warn_note("atomic-event: heartbeat needs a soul (e.g. `heartbeat avi`) or `heartbeat --clear`") if soul.empty?
 
     write_acting_agent(sid, soul)
-    @out.puts("atomic-event: heartbeat set — every span attributes to #{soul} " \
+    @out.puts("atomic-event: heartbeat set — every activity attributes to #{soul} " \
               "(stacked over the base mascot) until `heartbeat --clear` or session end")
   end
 
-  # `grade <span-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`
-  # — the bearer AGENT grade of a resolved span (the CLI half of the Alex heartbeat
-  # grade-events loop; the browser drawer is admin-only). The span id is the LEADING
+  # `grade <activity-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`
+  # — the bearer AGENT grade of a resolved activity (the CLI half of the Alex heartbeat
+  # grade-events loop; the browser drawer is admin-only). The activity id is the LEADING
   # positional. The server FORCES the grader to alex (the mcr audit stays admin-only),
   # so no --grader flag exists. Reports what landed, but ALWAYS exits 0.
-  def grade_span(argv, flags)
+  def grade_activity(argv, flags)
     first = argv.first.to_s.strip
-    span_id = first.start_with?("--") ? "" : first
-    if span_id.empty?
-      return warn_note("atomic-event grade needs a span id " \
+    activity_id = first.start_with?("--") ? "" : first
+    if activity_id.empty?
+      return warn_note("atomic-event grade needs an activity id " \
                        "(e.g. `grade 42 --disposition good --slug \"clean sharp outcome\"`)")
     end
 
@@ -251,12 +252,12 @@ class AtomicEventCli
       "intent"      => intent
     }.reject { |_, v| v.to_s.empty? }
 
-    res = post("/api/v1/atomic_events/#{span_id}/grade", body)
+    res = post("/api/v1/agent_activities/#{activity_id}/grade", body)
     if res && res.code.to_i.between?(200, 299)
       data = parse_data(res)
       mark = data["disposition"] == "not" ? "✗" : "✓"
       tail = data["banked"] ? " · banked" : (data["discarded"] ? " · discarded" : "")
-      @out.puts("atomic-event: graded span #{span_id} #{mark} #{data['slug']}#{tail}")
+      @out.puts("atomic-event: graded activity #{activity_id} #{mark} #{data['slug']}#{tail}")
     elsif res
       warn_note("atomic-event: grade failed — server said #{res.code}")
     else
@@ -264,24 +265,24 @@ class AtomicEventCli
     end
   end
 
-  # `awaiting [--limit <n>]` — the resolved spans still awaiting an Alex grade (the
+  # `awaiting [--limit <n>]` — the resolved activities still awaiting an Alex grade (the
   # READ half of grade-events), so the agent knows WHAT to grade and their ids
-  # without scraping the HTML page. One line per span; ALWAYS exits 0.
+  # without scraping the HTML page. One line per activity; ALWAYS exits 0.
   def awaiting(flags)
     limit = flags["limit"].to_s.strip
-    path = "/api/v1/atomic_events/awaiting_grade"
+    path = "/api/v1/agent_activities/awaiting_grade"
     path += "?limit=#{limit}" unless limit.empty?
 
     res = get(path)
     unless res && res.code.to_i.between?(200, 299)
-      return warn_note("atomic-event: couldn't fetch spans awaiting grade")
+      return warn_note("atomic-event: couldn't fetch activities awaiting grade")
     end
 
     rows = parse_data(res)
     rows = [] unless rows.is_a?(Array)
-    return @out.puts("atomic-event: no spans awaiting grade") if rows.empty?
+    return @out.puts("atomic-event: no activities awaiting grade") if rows.empty?
 
-    @out.puts("Spans awaiting an Alex grade (#{rows.size}):")
+    @out.puts("Activities awaiting an Alex grade (#{rows.size}):")
     rows.each do |r|
       outcome = present?(r["outcome"]) ? r["outcome"] : "(no outcome)"
       task = present?(r["task_slug"]) ? "  [#{r['task_slug']}]" : ""
@@ -344,7 +345,7 @@ class AtomicEventCli
     nil
   end
 
-  # Resolve the span's context. task_slug / stage describe the DESK — the nearest
+  # Resolve the activity's context. task_slug / stage describe the DESK — the nearest
   # .agent-context.json walking up from cwd (the worktree) wins, else the
   # per-session marker.
   #
@@ -363,7 +364,7 @@ class AtomicEventCli
     context = desk || session
     {
       # task_slug: the desk/session marker first, then infer from a `feat/<slug>`
-      # checkout branch so a span is task-attributed even before a task-bind write
+      # checkout branch so an activity is task-attributed even before a task-bind write
       # populates the marker. (The base-mascot split below is unchanged — mascot is
       # the SESSION's own Pokémon, never the desk/task builder mascot.)
       "task_slug" => first_present(context, "task_record_slug", "task_slug", "slug") || infer_task_from_branch,
@@ -455,7 +456,7 @@ class AtomicEventCli
 
   # ── Sticky heartbeat acting-agent (per-session, session-scoped) ────────────
   # A sibling of the session marker keyed by session_id, holding ONE soul slug in
-  # plain text. Presence = a `<Soul> Heartbeat` is running and every span should
+  # plain text. Presence = a `<Soul> Heartbeat` is running and every activity should
   # attribute to that soul. Deliberately a SEPARATE file from the mascot marker
   # (which `bin/task` owns) so we never read-modify-write / clobber it.
   def acting_agent_path(session_id)
@@ -492,7 +493,7 @@ class AtomicEventCli
 
   # Infer the task slug from a `feat/<slug>` checkout branch when neither the desk
   # nor the session marker carries one — so a session working a task from a feature
-  # checkout stamps the TASK from its FIRST span, without waiting for a
+  # checkout stamps the TASK from its FIRST activity, without waiting for a
   # `bin/task`/`bind-task` write. The `--task <slug>` flag is the EXPLICIT stamp
   # (it wins over this); this is the branch-name fallback. The pure split is
   # task_slug_from_branch, unit-testable without a git checkout.
@@ -509,7 +510,7 @@ class AtomicEventCli
 
   # The checkout's git branch, or nil — best-effort (a non-repo / detached HEAD /
   # git failure yields nil). Bounded shell-out; never raises. Only reached when the
-  # markers lack a task_slug, so it costs a git call at most once per span.
+  # markers lack a task_slug, so it costs a git call at most once per activity.
   def current_git_branch(dir = Dir.pwd)
     return nil unless present?(dir) && File.directory?(dir.to_s)
 
@@ -550,6 +551,6 @@ end
 
 # Only run when invoked directly (not when `load`ed by a test).
 if $PROGRAM_NAME == __FILE__
-  AtomicEventCli.new.run(ARGV)
+  AgentActivityCli.new.run(ARGV)
   exit 0 # ALWAYS succeed — narration must never fail the session
 end

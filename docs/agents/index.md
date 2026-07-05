@@ -26,7 +26,7 @@ SOP locations:
 
 Invocation rule:
 
-1. Open the required trajectory span.
+1. Open the required trajectory activity.
 2. Resolve the invocation in the finite registry below, including legacy aliases.
 3. Read the mapped `HEARTBEAT.md` or SOP file before queue inspection,
    `--help` probing, GitHub PR discovery, or tool/plugin selection.
@@ -93,54 +93,56 @@ supervisor described there. Approved work stops at `reviewed`; Steffon's
 ## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
 
 This is how you work here: **as you work you MUST narrate your trajectory into
-events — without being asked.** Narration is the default, not an add-on; a fresh
+activities — without being asked.** Narration is the default, not an add-on; a fresh
 session with no explicit prompt still narrates from its first real unit of work.
-Your raw tool-calls attribute server-side to whichever span is currently open, so
-a session with no spans reads as a wall of raw tool calls instead of "Explore:
+Your raw tool-calls attribute server-side to whichever activity is currently open, so
+a session with no activities reads as a wall of raw tool calls instead of "Explore:
 find api issue → found the nil-guard". Do not wait to be told — **your FIRST
-span opens BEFORE your first tool call**: an `Explore` (or `Plan`) "orient" span —
+activity opens BEFORE your first tool call**: an `Explore` (or `Plan`) "orient" activity —
 read the task, scan the code you'll touch — even on a small, pinpointed change. Go
 straight to `Edit` and your orientation strands in the "Unlabeled" bucket, so the
-"understand the task" beat is lost. Open the orient span first, then keep the trail
+"understand the task" beat is lost. Open the orient activity first, then keep the trail
 going to handoff.
 
-Open a span at each natural work boundary:
+Open an activity at each natural work boundary:
 
 ```bash
-bin/atomic-event start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
+bin/agent-activity start --category <Explore|Edit|Verify|Version|Workflow|Delegate|Clarify|Remote|Research|Plan> --reason "what am I doing"
 ```
 
 When one unit of work ends and the next begins, roll the boundary in **one call**
-— close the prior span with its outcome and open the next together:
+— close the prior activity with its result and open the next together:
 
 ```bash
-bin/atomic-event next --outcome "what just happened" --category <C> --reason "what's next"
+bin/agent-activity next --outcome "what just happened" --category <C> --reason "what's next"
 ```
 
-Close the final open span when the work (or the session) is done:
+Close the final open activity when the work (or the session) is done:
 
 ```bash
-bin/atomic-event end --outcome "what happened"
+bin/agent-activity end --outcome "what happened"
 ```
 
-- **Lead with orient** — your opening span is `Explore`/`Plan` and opens BEFORE
+- `bin/atomic-event` remains a compatibility alias for existing hooks and older docs.
+- **Lead with orient** — your opening activity is `Explore`/`Plan` and opens BEFORE
   any tool runs; nothing should land in "Unlabeled" at the top of a session.
-- **Keep spans meaningful** — one per unit of work, not one per tool call
-  (navigate `cd` **and** the `bin/atomic-event` narration calls themselves are
-  dropped automatically; opening a new span auto-closes the prior one).
-- **Stamp the task on your first span** — add `--task <slug>` to `start`/`next`
-  so the span is task-attributed immediately, instead of a blank TASK until a
+- **Keep activities meaningful** — one per unit of work, not one per tool call
+  (navigate `cd` **and** the `bin/agent-activity`/`bin/atomic-event` narration
+  calls themselves are dropped automatically; opening a new activity auto-closes
+  the prior one).
+- **Stamp the task on your first activity** — add `--task <slug>` to `start`/`next`
+  so the activity is task-attributed immediately, instead of a blank TASK until a
   later `bin/task`/`bind-task` write lands. In a `feat/<slug>` worktree it's
   inferred from the branch, so `--task` is mainly for a primary/conductor
   checkout working a specific task.
-- **Always give an outcome** — every `next`/`end` records what actually happened
+- **Always give a result** — every `next`/`end` records what actually happened
   ("Explore: find api issue → found the nil-guard"), not just the intent; an
-  outcome-less span is a wasted span.
-- **Log the span's key method when it has one** — add `--key-method "<code>"`
+  activity without a result is a wasted activity.
+- **Log the activity's key method when it has one** — add `--key-method "<code>"`
   (+ optional `--key-lang bash|ruby|sql|js`) to `next`/`end` when the completed
-  span had ONE load-bearing call worth copying — the line another agent (or the
+  activity had ONE load-bearing call worth copying — the line another agent (or the
   operator) would rerun, e.g. `--key-method "User.find_by(email: ...)" --key-lang
-  ruby`. Most spans have none; skip it rather than invent one. It renders on the
+  ruby`. Most activities have none; skip it rather than invent one. It renders on the
   heartbeat rows as a copyable chip with a language badge. (Raw bash actions get
   theirs automatically — the capture hook logs each Bash call's command as its
   `key_method` and its description as its goal `summary`, so keep writing good

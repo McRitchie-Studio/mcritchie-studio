@@ -49,5 +49,5 @@ next agent sessions. Report the changed doc path and install result.
 
 ## Related
 
-- [`grade-events.md`](grade-events.md) - grades resolved spans into the learning
+- [`grade-events.md`](grade-events.md) - grades resolved activities into the learning
   layer.

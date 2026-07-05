@@ -128,11 +128,11 @@ class AgentApiTest < Minitest::Test
   # extraction parameterized it; this pins each script's original numbers.
 
   def test_unit_each_script_keeps_its_original_timeouts
-    load_bin("atomic-event") unless defined?(AtomicEventCli)
+    load_bin("atomic-event") unless defined?(AgentActivityCli)
     load_bin("session-insights") unless defined?(SessionInsights)
     load_bin("atomic-capture-hook") unless defined?(AtomicCaptureHook)
 
-    assert_equal [2, 5], timeouts_of(AtomicEventCli.new(env: {})), "bin/atomic-event: open 2s / read 5s"
+    assert_equal [2, 5], timeouts_of(AgentActivityCli.new(env: {})), "bin/atomic-event: open 2s / read 5s"
     assert_equal [2, 4], timeouts_of(SessionInsights.new(env: {})), "bin/session-insights: open 2s / read 4s"
     assert_equal [1, 2], timeouts_of(AtomicCaptureHook.new(env: {})), "bin/atomic-capture-hook: open 1s / read 2s"
   end
@@ -162,10 +162,10 @@ class AgentApiTest < Minitest::Test
     Dir.mktmpdir do |proj|
       with_stub_server do |port, requests|
         c = client("CLAUDE_PROJECTS_DIR" => proj, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}")
-        res = c.http_json(:post, "/api/v1/atomic_events", { "category" => "Edit" }, bearer: "tok-1")
+        res = c.http_json(:post, "/api/v1/agent_activities", { "category" => "Edit" }, bearer: "tok-1")
 
         assert_equal "201", res.code
-        post = requests.find { |r| r[:path] == "/api/v1/atomic_events" }
+        post = requests.find { |r| r[:path] == "/api/v1/agent_activities" }
         assert_equal "Bearer tok-1", post[:headers]["authorization"]
         assert_equal "application/json", post[:headers]["content-type"]
         assert_equal({ "category" => "Edit" }, JSON.parse(post[:body]))
@@ -217,7 +217,7 @@ class AgentApiTest < Minitest::Test
   end
 
   # A one-shot localhost stub recording every request; serves /api/v1/auth mints,
-  # 201s atomic_events POSTs, and 200s everything else.
+  # 201s agent_activities POSTs, and 200s everything else.
   def with_stub_server
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]

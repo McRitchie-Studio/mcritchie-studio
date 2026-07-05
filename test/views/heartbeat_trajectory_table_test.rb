@@ -6,7 +6,7 @@ require "test_helper"
 # Alex/McRitchie radios) need a real id, so the rows are persisted.
 class HeartbeatTrajectoryTableTest < ActionView::TestCase
   def action(attrs)
-    AtomicAction.create!({ session_id: "s", kind: "edit", occurred_at: Time.current,
+    AgentAction.create!({ session_id: "s", kind: "edit", occurred_at: Time.current,
                            outcome: "ok", actor: "agent" }.merge(attrs))
   end
 

@@ -7,7 +7,7 @@ require "test_helper"
 class Insights::BlockMinerTest < ActiveSupport::TestCase
   def span(task_slug:, opened_at:, seq: 0, session_id: "sess-mine", category: "Edit",
            reason_slug: "did the work", agent: nil, stage: "building")
-    AtomicEvent.create!(session_id: session_id, category: category, reason_slug: reason_slug,
+    AgentActivity.create!(session_id: session_id, category: category, reason_slug: reason_slug,
                         task_slug: task_slug, opened_at: opened_at, seq: seq,
                         agent: agent, stage: stage)
   end
@@ -35,7 +35,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
 
     assert_equal ActionGrade::ALEX, cand.grader
     assert_equal ActionGrade::NOT, cand.disposition
-    assert_equal newest.id, cand.atomic_event_id, "attributes to the newest span opened before the block"
+    assert_equal newest.id, cand.agent_activity_id, "attributes to the newest span opened before the block"
     assert_equal blk.slug, cand.source_activity_slug
     assert_equal "The stage transition bypasses the server guard", cand.slug, "slug is the first 7 feedback words"
     assert_equal blk.description, cand.long_form, "the full block feedback is the lesson"
@@ -81,7 +81,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     now = Time.current
     older  = span(task_slug: "t-graded", opened_at: now - 20.minutes, seq: 0)
     newest = span(task_slug: "t-graded", opened_at: now - 10.minutes, seq: 1)
-    human = ActionGrade.create!(atomic_event: newest, grader: ActionGrade::ALEX,
+    human = ActionGrade.create!(agent_activity: newest, grader: ActionGrade::ALEX,
                                 disposition: ActionGrade::GOOD, slug: "already graded by hand")
     block(task_slug: "t-graded", text: "regression slipped through review", at: now - 5.minutes)
     resolution(task_slug: "t-graded", at: now - 1.minute)
@@ -89,7 +89,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     Insights::BlockMiner.mine!
 
     cand = ActionGrade.seeded_candidates.last
-    assert_equal older.id, cand.atomic_event_id, "skips the graded newest span, uses the earlier ungraded one"
+    assert_equal older.id, cand.agent_activity_id, "skips the graded newest span, uses the earlier ungraded one"
     assert_equal "already graded by hand", human.reload.slug, "the human grade is untouched"
   end
 
@@ -107,8 +107,8 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     Insights::BlockMiner.mine!
 
     cand = ActionGrade.seeded_candidates.last
-    assert_equal builder.id, cand.atomic_event_id, "reviewer spans should not become the mined defect target"
-    assert_not_equal reviewer.id, cand.atomic_event_id
+    assert_equal builder.id, cand.agent_activity_id, "reviewer spans should not become the mined defect target"
+    assert_not_equal reviewer.id, cand.agent_activity_id
   end
 
   test "[unit] two resolved blocks on one task map to two distinct spans (no collision)" do
@@ -126,7 +126,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
       Insights::BlockMiner.mine!
     end
 
-    event_ids = ActionGrade.seeded_candidates.pluck(:atomic_event_id)
+    event_ids = ActionGrade.seeded_candidates.pluck(:agent_activity_id)
     assert_equal [s0.id, s2.id].sort, event_ids.sort, "earlier block -> s0, later block -> newest ungraded s2"
   end
 
@@ -142,7 +142,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
 
     Insights::BlockMiner.mine!(task_slug: "t-a")
 
-    slugs = ActionGrade.seeded_candidates.map { |g| g.atomic_event.task_slug }
+    slugs = ActionGrade.seeded_candidates.map { |g| g.agent_activity.task_slug }
     assert_equal ["t-a"], slugs.uniq, "only the scoped task's block is mined"
   end
 end

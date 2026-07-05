@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-This is Alex's `grade-events` SOP. It grades recent resolved trajectory spans so
+This is Alex's `grade-events` SOP. It grades recent resolved trajectory activities so
 useful agent behavior can become reusable memory.
 
 ## Scope
@@ -22,7 +22,7 @@ Use the production board by default. Do not add `--local`.
 
 ## Preconditions
 
-Resolved atomic-event spans are awaiting Alex's grade. If none are waiting,
+Resolved agent activities are awaiting Alex's grade. If none are waiting,
 report "nothing to grade" and stop.
 
 ## Procedure
@@ -30,14 +30,14 @@ report "nothing to grade" and stop.
 Review the waiting queue:
 
 ```bash
-bin/atomic-event awaiting --limit 10
+bin/agent-activity awaiting --limit 10
 ```
 
-Grade the oldest waiting spans first:
+Grade the oldest waiting activities first:
 
 ```bash
-bin/atomic-event grade <span-id> --disposition good --slug "<4-7 words>" --bank
-bin/atomic-event grade <span-id> --disposition not --slug "<4-7 words>" --discard
+bin/agent-activity grade <activity-id> --disposition good --slug "<4-7 words>" --bank
+bin/agent-activity grade <activity-id> --disposition not --slug "<4-7 words>" --discard
 ```
 
 Bank only insights that make the next agent smarter. Discard generic narration,
@@ -49,7 +49,7 @@ pipeline.
 
 ## Exit Seam
 
-About 10 spans are graded, with useful insights banked and weak ones discarded.
+About 10 activities are graded, with useful insights banked and weak ones discarded.
 Report how many were banked and discarded.
 
 ## Related

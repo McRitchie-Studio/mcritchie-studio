@@ -2,7 +2,7 @@
 <% content_for(:full_width, true) %>
 
 <%# The Insight Bank — exactly ActionGrade.banked, the curated lessons mined from the
-    trajectory that make each next agent smarter. Same fixed-dark surface as the
+    activity/action log that make each next agent smarter. Same fixed-dark surface as the
     heartbeat it is reached from. %>
 <style>
   #alex-insights {
@@ -39,7 +39,7 @@
     <div>
       <h1>&#128161; Insight Bank</h1>
       <p class="hb-sub">
-        The curated lessons banked from the atomic trajectory — <%= pluralize(@insights.size, "insight") %> so far.
+        The curated lessons banked from activities and actions — <%= pluralize(@insights.size, "insight") %> so far.
         Each is a grade Alex (or the McRitchie audit) kept as a lesson worth carrying into the next session.
       </p>
     </div>
@@ -53,7 +53,7 @@
   <% else %>
     <div class="hb-empty" data-test="insight-bank-empty">
       <b>No insights banked yet</b>
-      <p>Grade an event on the <%= link_to "heartbeat", alex_heartbeat_path, data: { turbo: false } %>, open its drawer, and choose &#128161; Bank to curate it here.</p>
+      <p>Grade an activity on the <%= link_to "heartbeat", alex_heartbeat_path, data: { turbo: false } %>, open its drawer, and choose &#128161; Bank to curate it here.</p>
     </div>
   <% end %>
 </section>

@@ -31,7 +31,7 @@ module Insights
     # rows dropped (the same set render shows, so counts can't diverge).
     def banked_insights
       ActionGrade.banked
-                 .includes(:atomic_action, :atomic_event)
+                 .includes(:agent_action, :agent_activity)
                  .order(updated_at: :desc)
                  .map { |g| normalize(g) }
                  .reject { |i| i[:slug].to_s.strip.empty? }
@@ -45,7 +45,7 @@ module Insights
         disposition: grade.disposition,
         long_form: grade.long_form,
         grader: grade.grader,
-        task_slug: (grade.atomic_action&.task_slug || grade.atomic_event&.task_slug)
+        task_slug: (grade.agent_action&.task_slug || grade.agent_activity&.task_slug)
       }
     end
 
@@ -58,8 +58,8 @@ module Insights
 
       out = +header(generated_at, rows.size)
       if rows.empty?
-        out << "\n_No insights banked yet. Grade resolved spans and `--bank` the ones worth carrying\n" \
-               "forward (`bin/atomic-event grade <span> --bank`), then regenerate with " \
+        out << "\n_No insights banked yet. Grade resolved activities and `--bank` the ones worth carrying\n" \
+               "forward (`bin/agent-activity grade <activity-id> --bank`), then regenerate with " \
                "`bin/rails insights:doc`._\n"
         return out
       end
@@ -76,7 +76,7 @@ module Insights
       <<~HEAD
         <!-- GENERATED FROM THE INSIGHT BANK — DO NOT EDIT BY HAND.
              The Insight Bank (ActionGrade.banked) is canonical; this doc is derived.
-             Curate lessons: `bin/atomic-event grade <span> --disposition good|not --slug "…" --bank`
+             Curate lessons: `bin/agent-activity grade <activity-id> --disposition good|not --slug "…" --bank`
              Regenerate:     `bin/rails insights:doc` (reads the bank on the board) -->
 
         # Insight Bank — distilled agent lessons

@@ -64,9 +64,9 @@ class ReleaseCliTest < Minitest::Test
   # Null the ambient agent-session vars for every release subprocess. A live
   # Claude/Codex session exports CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID, which the
   # subprocess would otherwise inherit — making bin/release's best-effort deploy-lane
-  # narration (atomic_event) resolve a real session and shell out to bin/atomic-event
+  # narration (agent_activity) resolve a real session and shell out to bin/atomic-event
   # mid-test. Neutralizing them keeps narration inert unless a test opts in (the
-  # deploy-span tests stub atomic_event directly). Tests that need a session set it
+  # deploy-span tests stub agent_activity directly). Tests that need a session set it
   # inline via ENV[...] (see the with_conductor_session tests).
   NEUTRALIZED_ENV = { "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }.freeze
 
@@ -1839,7 +1839,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   # --- deploy-lane self-narration: Steffon assembles, Avi ships ---------------
-  # bin/release opens+closes an AtomicEvent SPAN around its deploy phases stamped
+  # bin/release opens+closes an AgentActivity SPAN around its deploy phases stamped
   # with the ROLE soul the board already attributes them to — Steffon on prepare
   # (assemble → QA), Avi on ship (→ prod) — so the heartbeat's deploy spans match
   # the board's stage timeline. Best-effort + non-fatal: skipped under --dry-run
@@ -1847,13 +1847,13 @@ class ReleaseCliTest < Minitest::Test
 
   # Capture the narration args instead of shelling out to the real bin/atomic-event.
   NARRATION_CAPTURE = <<~RUBY
-    def atomic_event(*a) = $stdout.puts("ATOMIC " + a.join(" "))
+    def agent_activity(*a) = $stdout.puts("ATOMIC " + a.join(" "))
   RUBY
 
   def test_narration_helpers_stamp_the_role_agent_and_close_with_an_outcome
     setup = <<~RUBY
       $events = []
-      def atomic_event(*a) = ($events << a)
+      def agent_activity(*a) = ($events << a)
       def conductor_session_id = "sess-x"
     RUBY
     out = run_cli(["--yes"], setup: setup,
@@ -1866,18 +1866,18 @@ class ReleaseCliTest < Minitest::Test
                      "close_role_span closes it with an outcome"
   end
 
-  def test_atomic_event_is_a_noop_under_dry_run
+  def test_agent_activity_is_a_noop_under_dry_run
     setup = %(def conductor_session_id = "sess-x")
     out = run_cli(["--dry-run"], setup: setup,
-                  call: %(print(atomic_event("start", "--category", "Remote", "--reason", "x").inspect)))
+                  call: %(print(agent_activity("start", "--category", "Remote", "--reason", "x").inspect)))
     assert_equal "nil", out, "a dry-run narrates nothing (best-effort no-op)"
   end
 
-  def test_atomic_event_is_a_noop_without_a_conductor_session
+  def test_agent_activity_is_a_noop_without_a_conductor_session
     # NEUTRALIZED_ENV nulls the session vars → conductor_session_id is nil → no-op;
     # telemetry must never shell out (or fail) when there's no session to attribute.
     out = run_cli(["--yes"], setup: "",
-                  call: %(print(atomic_event("start", "--category", "Remote", "--reason", "x").inspect)))
+                  call: %(print(agent_activity("start", "--category", "Remote", "--reason", "x").inspect)))
     assert_equal "nil", out, "no conductor session → nothing to narrate"
   end
 

@@ -79,20 +79,20 @@ Rails.application.routes.draw do
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
   get  "alex/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
   post "alex/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
-  # Span-level grade (E2): upsert one grade for a narrated AtomicEvent span. JSON
-  # only by design — E2 stays view-free so it never collides with E3, which owns
-  # every heartbeat view/partial and the turbo_stream grading path.
-  post "alex/heartbeat/events/:id/grade",     to: "heartbeat#grade_event", as: :heartbeat_event_grade
-  # The per-SPAN grading drawer body (E3): the span-level analogue of the per-action
-  # feedback drawer, lazy-loaded into the same shared turbo-frame on a span's grade
-  # click. Read-only GET; its editors POST to the E2 grade_event endpoint above.
-  get  "alex/heartbeat/events/:id/feedback", to: "heartbeat#feedback_event", as: :heartbeat_event_feedback
-  # Every AtomicEvent SPAN across ALL sessions, newest-first, paginated 100/page —
-  # the cross-session analogue of the per-session heartbeat (heartbeat#show). Reuses
-  # the same span table + drawer; linked from the heartbeat's in-context navbar.
-  get  "alex/heartbeat/spans", to: "heartbeat#all_spans", as: :heartbeat_all_spans
+  # Activity-level grade: upsert one grade for a narrated AgentActivity. JSON only
+  # by design so it stays view-free from the drawer/turbo stream path.
+  post "alex/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
+  # The per-activity grading drawer body, lazy-loaded into the shared turbo-frame
+  # on an activity's grade click. Old /events paths stay as compatibility aliases.
+  get  "alex/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
+  post "alex/heartbeat/events/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_event_grade
+  get  "alex/heartbeat/events/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_event_feedback
+  # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
+  # the cross-session analogue of the per-session heartbeat.
+  get  "alex/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
+  get  "alex/heartbeat/spans", to: "heartbeat#all_activities", as: :heartbeat_all_spans
   get  "alex/insights", to: "heartbeat#insights", as: :alex_insights
-  # The OPSD distillation pipeline, left→right: Actions (spans) → Insights (Alex's
+  # The OPSD distillation pipeline, left→right: Activities → Insights (Alex's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
   get  "alex/pipeline", to: "heartbeat#pipeline", as: :alex_pipeline
@@ -285,15 +285,21 @@ Rails.application.routes.draw do
       end
       resources :activities, only: [:index, :create]
       resources :usages, only: [:index, :create]
-      # Live-capture sink for the forward-only atomic trajectory — the live-capture
-      # hook POSTs one AtomicAction per agent step. Best-effort: a capture miss
+      # Live-capture sink for the forward-only action log — the live-capture
+      # hook POSTs one AgentAction per agent step. Best-effort: a capture miss
       # returns 204, never a 500 (telemetry must not break the work it observes).
+      resources :agent_actions, only: [:create]
       resources :atomic_actions, only: [:create]
-      # Agent-narration sink — the agent OPENs a meaningful span (category+reason)
-      # and CLOSEs it with an outcome; raw actions attribute to the open span.
-      # POST /api/v1/atomic_events opens (carrying an optional prior_outcome for the
-      # BOUNDARY transition); /close closes the current span; /close_all is the
-      # session-end teardown that closes every still-open span.
+      # Agent-narration sink — the agent OPENs a meaningful activity
+      # (category+reason) and CLOSEs it with a result; raw actions attribute to the
+      # open activity.
+      resources :agent_activities, only: [:create] do
+        collection do
+          post :close
+          post :close_all
+        end
+      end
+      # Compatibility path for existing capture/narration hooks.
       resources :atomic_events, only: [:create] do
         collection do
           post :close
@@ -301,10 +307,12 @@ Rails.application.routes.draw do
         end
       end
       # Learning-loop grading — the bearer AGENT path for the Alex heartbeat
-      # grade-events loop. `awaiting` lists resolved spans still ungraded by Alex;
-      # `grade` upserts Alex's grade of one span. The grader is FORCED to alex here
+      # grade-events loop. `awaiting` lists resolved activities still ungraded by
+      # Alex; `grade` upserts Alex's grade of one activity. The grader is FORCED to alex here
       # (the mcr audit-of-Alex stays admin-browser-only), so the shared agent token
       # can never forge McRitchie's audit.
+      get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
+      post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity
       get  "atomic_events/awaiting_grade", to: "event_grades#awaiting", as: :awaiting_grade_atomic_events
       post "atomic_events/:id/grade",      to: "event_grades#create",   as: :grade_atomic_event
       # Eagerly draw (or return) a session's Pokémon mascot before any task exists,

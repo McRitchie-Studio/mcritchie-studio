@@ -13,8 +13,8 @@ module Api
       end
 
       def resolved_span(session_id:, reason: "resolved span here")
-        AtomicEvent.open_event!(session_id: session_id, category: "Verify", reason_slug: reason)
-        AtomicEvent.close_event!(session_id: session_id, outcome_slug: "done")
+        AgentActivity.open_event!(session_id: session_id, category: "Verify", reason_slug: reason)
+        AgentActivity.close_event!(session_id: session_id, outcome_slug: "done")
       end
 
       # ---- awaiting_grade -------------------------------------------------------
@@ -22,7 +22,7 @@ module Api
       test "[integration] awaiting_grade lists resolved ungraded spans with content" do
         span = resolved_span(session_id: "ctl-aw", reason: "grade this span")
 
-        get api_v1_awaiting_grade_atomic_events_path, headers: @headers
+        get api_v1_awaiting_grade_agent_activities_path, headers: @headers
 
         assert_response :ok
         body = response.parsed_body
@@ -34,7 +34,7 @@ module Api
       end
 
       test "[integration] awaiting_grade requires auth — 401 without a token" do
-        get api_v1_awaiting_grade_atomic_events_path
+        get api_v1_awaiting_grade_agent_activities_path
         assert_response :unauthorized
       end
 
@@ -44,7 +44,7 @@ module Api
         span = resolved_span(session_id: "ctl-grade")
 
         assert_difference -> { ActionGrade.count }, 1 do
-          post api_v1_grade_atomic_event_path(span.id),
+          post api_v1_grade_agent_activity_path(span.id),
                params: { disposition: "good", slug: "clean sharp outcome", intent: "bank" },
                headers: @headers, as: :json
         end
@@ -60,7 +60,7 @@ module Api
       test "[integration] grade FORCES the grader to alex — a client-supplied mcr is ignored" do
         span = resolved_span(session_id: "ctl-force")
 
-        post api_v1_grade_atomic_event_path(span.id),
+        post api_v1_grade_agent_activity_path(span.id),
              params: { grader: "mcr", disposition: "good", slug: "cannot forge the audit" },
              headers: @headers, as: :json
 
@@ -71,7 +71,7 @@ module Api
       end
 
       test "[integration] grade on a missing span is a 404" do
-        post api_v1_grade_atomic_event_path(999_999),
+        post api_v1_grade_agent_activity_path(999_999),
              params: { disposition: "good" }, headers: @headers, as: :json
 
         assert_response :not_found
@@ -80,27 +80,27 @@ module Api
       test "[integration] a failed grade write is captured with the span as target context" do
         span = resolved_span(session_id: "ctl-errlog")
 
-        ActionGrade.stub(:record_event_grade, ->(**) { raise "write blew up" }) do
+        ActionGrade.stub(:record_activity_grade, ->(**) { raise "write blew up" }) do
           assert_difference -> { ErrorLog.count }, 1 do
             # in test env the unexpected error re-raises; our rescue has already
             # written the target-linked ErrorLog before re-raising.
             assert_raises(RuntimeError) do
-              post api_v1_grade_atomic_event_path(span.id),
+              post api_v1_grade_agent_activity_path(span.id),
                    params: { disposition: "good" }, headers: @headers, as: :json
             end
           end
         end
 
         log = ErrorLog.order(:id).last
-        assert_equal span, log.target, "the failed write is linked to its span, not a bare 500"
-        assert_equal "span ##{span.id}", log.target_name
+        assert_equal span, log.target, "the failed write is linked to its activity, not a bare 500"
+        assert_equal "activity ##{span.id}", log.target_name
       end
 
       test "[integration] grade requires auth — 401 without a token" do
         span = resolved_span(session_id: "ctl-noauth")
 
         assert_no_difference -> { ActionGrade.count } do
-          post api_v1_grade_atomic_event_path(span.id), params: { disposition: "good" }, as: :json
+          post api_v1_grade_agent_activity_path(span.id), params: { disposition: "good" }, as: :json
         end
 
         assert_response :unauthorized

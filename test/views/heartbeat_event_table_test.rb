@@ -1,30 +1,30 @@
 require "test_helper"
 
 # [component] the event-grouped heartbeat table partial — the PRIMARY rows are
-# agent-narrated AtomicEvent spans (category · reason -> outcome), each rolling up
-# the raw AtomicActions attributed to it as a read-only drill-down. Actions with a
-# null atomic_event_id render in the trailing "Unlabeled" group. Read-only: the
+# agent-narrated AgentActivity spans (category · reason -> outcome), each rolling up
+# the raw AgentActions attributed to it as a read-only drill-down. Actions with a
+# null agent_activity_id render in the trailing "Unlabeled" group. Read-only: the
 # table has no inline grading controls (grading lives in the drawer).
 class HeartbeatEventTableTest < ActionView::TestCase
   def event(**attrs)
-    AtomicEvent.create!({ session_id: "s", category: "Explore", reason_slug: "find issue with api",
+    AgentActivity.create!({ session_id: "s", category: "Explore", reason_slug: "find issue with api",
                           opened_at: Time.current, seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
   def action(**attrs)
-    AtomicAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current }.merge(attrs))
   end
 
   test "[component] renders each span as a row with category, reason, and outcome" do
     closed = event(category: "Explore", reason_slug: "find issue with api",
                    outcome_slug: "found the nil-guard", closed_at: Time.current, seq: 0)
-    a1 = action(atomic_event_id: closed.id, seq: 0, kind: "grep",
-                event_slug: "Grep for the capture seam", input: "grep -rn AtomicAction app/models")
-    a2 = action(atomic_event_id: closed.id, seq: 1, kind: "read", event_slug: "Read the model")
+    a1 = action(agent_activity_id: closed.id, seq: 0, kind: "grep",
+                event_slug: "Grep for the capture seam", input: "grep -rn AgentAction app/models")
+    a2 = action(agent_activity_id: closed.id, seq: 1, kind: "read", event_slug: "Read the model")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[closed, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[closed, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "table[data-test=heartbeat-event-table]"
     assert_select "tbody[data-test=heartbeat-event][data-category=Explore]"
@@ -40,8 +40,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     open = event(category: "Workflow", reason_slug: "certify and open the PR",
                  outcome_slug: nil, closed_at: nil, seq: 0)
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[open, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[open, []]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "[data-test=event-in-progress]"
     assert_match(/in progress/, rendered)
@@ -50,11 +50,11 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] a span drills down into its attributed actions with kind and input" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    a1 = action(atomic_event_id: ev.id, seq: 0, kind: "grep",
-                event_slug: "Grep the seam", input: "grep -rn AtomicEvent app/models")
+    a1 = action(agent_activity_id: ev.id, seq: 0, kind: "grep",
+                event_slug: "Grep the seam", input: "grep -rn AgentActivity app/models")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "tr[data-test=heartbeat-event-action]", 1
     assert_select "tr[data-test=heartbeat-event-action] .hb-kind", text: /#0\s+grep/
@@ -64,27 +64,27 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "tr[data-test=heartbeat-event-action] .hb-sat [data-test=action-outcome]", false
     # the raw tool-call input surfaces in the drill-down
     assert_select "tr[data-test=heartbeat-event-action] .hb-subnarr .hb-subinput",
-                  text: "grep -rn AtomicEvent app/models"
-    assert_includes rendered, "grep -rn AtomicEvent app/models"
+                  text: "grep -rn AgentActivity app/models"
+    assert_includes rendered, "grep -rn AgentActivity app/models"
   end
 
   test "[component] actions drill down oldest to newest within a span" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    first  = action(atomic_event_id: ev.id, seq: 0, event_slug: "alpha first read")
-    second = action(atomic_event_id: ev.id, seq: 1, event_slug: "omega later read")
+    first  = action(agent_activity_id: ev.id, seq: 0, event_slug: "alpha first read")
+    second = action(agent_activity_id: ev.id, seq: 1, event_slug: "omega later read")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [first, second]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [first, second]]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_operator rendered.index("alpha first read"), :<, rendered.index("omega later read")
   end
 
   test "[component] actions with a null span land in the read-only Unlabeled group" do
-    orphan = action(atomic_event_id: nil, seq: 0, kind: "bash",
+    orphan = action(agent_activity_id: nil, seq: 0, kind: "bash",
                     event_slug: "Unnarrated boot step", input: "spin up the runtime")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [], unlabeled: [orphan], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [], unlabeled: [orphan], pokemon_by_slug: {} }
 
     assert_select "tbody[data-test=heartbeat-unlabeled]"
     assert_select "tbody[data-test=heartbeat-unlabeled] .hb-catchip", text: "Unlabeled"
@@ -93,12 +93,12 @@ class HeartbeatEventTableTest < ActionView::TestCase
   end
 
   test "[component] every unlabeled action collapses into a SINGLE consolidated group" do
-    a = action(atomic_event_id: nil, seq: 0, kind: "boot", event_slug: "first orphan", session_id: "s1")
-    b = action(atomic_event_id: nil, seq: 1, kind: "boot", event_slug: "second orphan", session_id: "s2")
-    c = action(atomic_event_id: nil, seq: 2, kind: "boot", event_slug: "third orphan", session_id: "s1")
+    a = action(agent_activity_id: nil, seq: 0, kind: "boot", event_slug: "first orphan", session_id: "s1")
+    b = action(agent_activity_id: nil, seq: 1, kind: "boot", event_slug: "second orphan", session_id: "s2")
+    c = action(agent_activity_id: nil, seq: 2, kind: "boot", event_slug: "third orphan", session_id: "s1")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [], unlabeled: [a, b, c], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [], unlabeled: [a, b, c], pokemon_by_slug: {} }
 
     # exactly ONE Unlabeled group, holding every orphan action — never several
     assert_select "tbody[data-test=heartbeat-unlabeled]", 1
@@ -107,10 +107,10 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] drilled-down action rows carry no inline radios — they open the drawer" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    a1 = action(atomic_event_id: ev.id, seq: 0)
+    a1 = action(agent_activity_id: ev.id, seq: 0)
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
     # the span row now carries quick-grade radios, but the ACTION drill-down row does not
     assert_select "tr[data-test=heartbeat-event-action] input[type=radio]", false
@@ -120,11 +120,11 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] the span row rolls up its actions into Pokémon, model, tokens, and cost" do
     ev = event(seq: 0, mascot: "snorlax", closed_at: Time.current, outcome_slug: "done")
-    a1 = action(atomic_event_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
-    a2 = action(atomic_event_id: ev.id, seq: 1, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
+    a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
+    a2 = action(agent_activity_id: ev.id, seq: 1, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
 
     # aggregated across the span's actions, not per-action; model + tokens now stack
     # inside one merged cell (each keeping its data-test hook)
@@ -142,8 +142,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     ev = event(seq: 0, reason_slug: "find issue with api",
                outcome_slug: "found the nil-guard", closed_at: Time.current)
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
     # The title line carries the reason plus compact inline metadata.
     assert_select "td.hb-narr [data-test=event-reason]", text: "find issue with api"
@@ -155,12 +155,12 @@ class HeartbeatEventTableTest < ActionView::TestCase
   test "[component] each span row carries inline good/not quick-grade radios for both graders" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
     # a quick-grade form per grader, both posting to the E2 span grade endpoint
     assert_select "form[data-test=event-inline-grade]", 2
-    assert_select "form[data-test=event-inline-grade][action=?]", heartbeat_event_grade_path(ev), 2
+    assert_select "form[data-test=event-inline-grade][action=?]", heartbeat_activity_grade_path(ev), 2
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[name=disposition][value=good]"
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[name=disposition][value=not]"
     assert_select "form[data-test=event-inline-grade][data-grader=mcr] input[type=hidden][name=grader][value=mcr]"
@@ -171,8 +171,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
   test "[component] the two graders' quick-grades sit in SEPARATE Alex + McRitchie cells, no grade button" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
     # Grade split into two columns: an Alex cell and a McRitchie audit cell, each holding
     # ONLY its own grader's inline quick-grade form (not one shared, side-by-side row).
@@ -192,12 +192,12 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] an existing span grade pre-checks its inline disposition radio" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "alex", disposition: "good",
                                 slug: "clean span with a crisp outcome")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
-                     event_grades: { ev.id => { "alex" => grade } } }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+                     activity_grades: { ev.id => { "alex" => grade } } }
 
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=good][checked]"
     assert_select "form[data-test=event-inline-grade][data-grader=alex] input[value=not][checked]", false
@@ -208,8 +208,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     open_span = event(seq: 0, reason_slug: "certify and open the PR", closed_at: nil, outcome_slug: nil)
     done_span = event(seq: 1, reason_slug: "run the unit suite", closed_at: Time.current, outcome_slug: "green")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[open_span, []], [done_span, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[open_span, []], [done_span, []]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "[data-test=event-status]", text: "open"
     assert_select "[data-test=event-status]", text: "done"
@@ -217,10 +217,10 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] the command column stays reserved when a span has no key method" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "green")
-    a1 = action(atomic_event_id: ev.id, seq: 0)
+    a1 = action(agent_activity_id: ev.id, seq: 0)
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select ".hb-sat [data-test=event-key-method]", text: ""
     assert_select ".hb-sat [data-test=event-action-count]", false
@@ -234,8 +234,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     te   = TaskEvent.new(task_slug: slug, from_stage: "building", to_stage: "submitted",
                          kind: "transition", occurred_at: 2.minutes.ago)
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
                      stage_transitions: { slug => [te] } }
 
     # the board badge pill, humanized + stage-colored, with a stable data hook
@@ -251,8 +251,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     te   = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition",
                          occurred_at: 5.minutes.ago) # before the span opened
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
                      stage_transitions: { slug => [te] } }
 
     assert_select "[data-test=event-status]", text: "done"
@@ -262,28 +262,28 @@ class HeartbeatEventTableTest < ActionView::TestCase
   test "[component] the span row itself expands raw actions on click" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
     # the whole event row is the clickable affordance into its raw action drill-down
     assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]", 1
     assert_includes rendered, '@click="open = !open"'
-    assert_not_includes rendered, heartbeat_event_feedback_path(ev)
+    assert_not_includes rendered, heartbeat_activity_feedback_path(ev)
     # the old dedicated "grade ▸" button was removed
     assert_select "[data-test=event-grade-open]", false
   end
 
   test "[component] a shared turn fades the tokens AND cost cells of every action after the first" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    first  = action(atomic_event_id: ev.id, seq: 0, source_turn_uuid: "turn-A",
+    first  = action(agent_activity_id: ev.id, seq: 0, source_turn_uuid: "turn-A",
                     tokens_in: 9400, tokens_out: 360, cost: 0.05)
-    second = action(atomic_event_id: ev.id, seq: 1, source_turn_uuid: "turn-A",
+    second = action(agent_activity_id: ev.id, seq: 1, source_turn_uuid: "turn-A",
                     tokens_in: 9400, tokens_out: 360, cost: 0.05)
     # the controller's session-level walk marks the 2nd action of the shared turn
     shared = Set.new([second.id])
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [first, second]]], unlabeled: [], pokemon_by_slug: {},
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [first, second]]], unlabeled: [], pokemon_by_slug: {},
                      shared_turn_ids: shared }
 
     # the turn's first action keeps its normal color — no faded cell
@@ -299,15 +299,15 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] a solo-turn action and a blank-turn action are never faded" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    solo  = action(atomic_event_id: ev.id, seq: 0, source_turn_uuid: "turn-solo",
+    solo  = action(agent_activity_id: ev.id, seq: 0, source_turn_uuid: "turn-solo",
                    tokens_in: 100, tokens_out: 10, cost: 0.01)
-    blank = action(atomic_event_id: ev.id, seq: 1, source_turn_uuid: nil,
+    blank = action(agent_activity_id: ev.id, seq: 1, source_turn_uuid: nil,
                    tokens_in: 200, tokens_out: 20, cost: 0.02)
     # neither is a duplicate, so the controller flags nothing
     shared = Set.new
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [solo, blank]]], unlabeled: [], pokemon_by_slug: {},
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [solo, blank]]], unlabeled: [], pokemon_by_slug: {},
                      shared_turn_ids: shared }
 
     assert_select "td.hb-turn-shared", false
@@ -316,16 +316,16 @@ class HeartbeatEventTableTest < ActionView::TestCase
   test "[component] exactly one primary per turn even when the turn's calls split across spans" do
     span1 = event(seq: 0, reason_slug: "first span", closed_at: Time.current, outcome_slug: "done")
     span2 = event(seq: 1, reason_slug: "second span", closed_at: Time.current, outcome_slug: "done")
-    primary = action(atomic_event_id: span1.id, seq: 0, source_turn_uuid: "turn-split",
+    primary = action(agent_activity_id: span1.id, seq: 0, source_turn_uuid: "turn-split",
                      tokens_in: 9400, tokens_out: 360, cost: 0.05)
-    echo    = action(atomic_event_id: span2.id, seq: 1, source_turn_uuid: "turn-split",
+    echo    = action(agent_activity_id: span2.id, seq: 1, source_turn_uuid: "turn-split",
                      tokens_in: 9400, tokens_out: 360, cost: 0.05)
     # the controller walks the WHOLE session chronologically, so the echo (in span2)
     # is the sole duplicate even though it lives under a different span than the primary
     shared = Set.new([echo.id])
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[span1, [primary]], [span2, [echo]]], unlabeled: [],
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[span1, [primary]], [span2, [echo]]], unlabeled: [],
                      pokemon_by_slug: {}, shared_turn_ids: shared }
 
     # the primary (in span1) stays full color; only the echo (in span2) fades its two cells
@@ -335,14 +335,14 @@ class HeartbeatEventTableTest < ActionView::TestCase
   end
 
   test "[component] a shared turn in the Unlabeled group fades its later rows too" do
-    first  = action(atomic_event_id: nil, seq: 0, source_turn_uuid: "turn-U",
+    first  = action(agent_activity_id: nil, seq: 0, source_turn_uuid: "turn-U",
                     tokens_in: 9400, tokens_out: 360, cost: 0.05)
-    second = action(atomic_event_id: nil, seq: 1, source_turn_uuid: "turn-U",
+    second = action(agent_activity_id: nil, seq: 1, source_turn_uuid: "turn-U",
                     tokens_in: 9400, tokens_out: 360, cost: 0.05)
     shared = Set.new([second.id])
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [], unlabeled: [first, second], pokemon_by_slug: {},
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [], unlabeled: [first, second], pokemon_by_slug: {},
                      shared_turn_ids: shared }
 
     assert_select "tbody[data-test=heartbeat-unlabeled] tr[data-seq='0'] td.hb-turn-shared", false
@@ -350,8 +350,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
   end
 
   test "[component] the mascot column header now reads Agent" do
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "thead th", text: "Agent"
     assert_select "thead th", text: "Pokémon", count: 0
@@ -362,8 +362,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
     ev   = event(seq: 0, mascot: "shellder", agent: "avi", closed_at: Time.current, outcome_slug: "reviewed")
     poke = Pokemon.new(slug: "shellder", name: "Shellder")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: { "shellder" => poke },
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: { "shellder" => poke },
                      agents_by_slug: { "avi" => avi } }
 
     # the acting soul avatar renders server-side (Nokogiri-visible) ON TOP, tinted
@@ -379,8 +379,8 @@ class HeartbeatEventTableTest < ActionView::TestCase
   test "[component] a span with no acting soul renders the base mascot as a SOLO stack (no soul)" do
     ev = event(seq: 0, mascot: "sandshrew", agent: nil, closed_at: Time.current, outcome_slug: "done")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
     # still an agent-stack, but flagged solo with no acting-soul avatar and no sub name
     assert_select "[data-test=agent-stack].hb-solo"
@@ -393,23 +393,23 @@ class HeartbeatEventTableTest < ActionView::TestCase
   test "[component] drill-down actions inherit their span's acting soul" do
     avi = Agent.new(slug: "avi", name: "Avi", metadata: { "emoji" => "📋" })
     ev  = event(seq: 0, mascot: "shellder", agent: "avi", closed_at: Time.current, outcome_slug: "reviewed")
-    a1  = action(atomic_event_id: ev.id, seq: 0, mascot: "shellder", kind: "read")
+    a1  = action(agent_activity_id: ev.id, seq: 0, mascot: "shellder", kind: "read")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {},
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {},
                      agents_by_slug: { "avi" => avi } }
 
     assert_select "tr[data-test=heartbeat-event-action] [data-test=agent-soul][data-soul=avi]"
   end
 
-  test "[component] a span's existing grade markers render server-side from event_grades" do
+  test "[component] a span's existing grade markers render server-side from activity_grades" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(atomic_event: ev, grader: "alex", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "alex", disposition: "good",
                                 slug: "tight span with a clean outcome")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
-                     event_grades: { ev.id => { "alex" => grade } } }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
+                     activity_grades: { ev.id => { "alex" => grade } } }
 
     # the Alex marker is server-rendered (Nokogiri-visible), carrying its slug
     assert_select "[data-test=event-grade-alex]"
@@ -420,31 +420,31 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] a span's key method replaces the right status/action line" do
     closed = event(outcome_slug: "seam found", closed_at: Time.current,
-                   key_method: "AtomicAction.capture(session_id:)", key_method_lang: "ruby")
+                   key_method: "AgentAction.capture(session_id:)", key_method_lang: "ruby")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[closed, []]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[closed, []]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "td.hb-narr [data-test=event-key-method]", false
     assert_select ".hb-sat [data-test=event-key-method] [data-test=key-method-chip][data-lang=ruby]", count: 1
     assert_select ".hb-sat [data-test=event-action-count]", false
     assert_select "[data-test=key-method-chip] [data-test=key-method-lang]", text: "ruby"
-    assert_select "[data-test=key-method-chip] [data-test=key-method-code]", text: "AtomicAction.capture(session_id:)"
+    assert_select "[data-test=key-method-chip] [data-test=key-method-code]", text: "AgentAction.capture(session_id:)"
     # The copy button carries the full call as its clip payload (Alpine renders the glyph).
-    assert_select "[data-test=key-method-copy][data-clip=?]", "AtomicAction.capture(session_id:)"
+    assert_select "[data-test=key-method-copy][data-clip=?]", "AgentAction.capture(session_id:)"
     assert_includes rendered, "window.copyText", "the shared copy helper ships with the chip"
   end
 
   test "[component] an action row renders its key-method chip and its goal summary" do
     closed = event(outcome_slug: "done", closed_at: Time.current)
-    with = action(atomic_event_id: closed.id, seq: 0, kind: "bash",
+    with = action(agent_activity_id: closed.id, seq: 0, kind: "bash",
                   summary: "list board tasks to find slugs",
                   task_slug: "inline-span-badges",
                   key_method: "bin/task list | head -60", key_method_lang: "bash")
-    bare = action(atomic_event_id: closed.id, seq: 1, kind: "read")
+    bare = action(agent_activity_id: closed.id, seq: 1, kind: "read")
 
-    render partial: "heartbeat/event_table",
-           locals: { event_rows: [[closed, [with, bare]]], unlabeled: [], pokemon_by_slug: {} }
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[closed, [with, bare]]], unlabeled: [], pokemon_by_slug: {} }
 
     assert_select "tr[data-test=heartbeat-event-action] [data-test=action-key-method] " \
                   "[data-test=key-method-chip][data-lang=bash]", count: 1

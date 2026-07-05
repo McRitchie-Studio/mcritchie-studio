@@ -37,15 +37,15 @@ Each soul's action-level procedure lives with that soul:
 |---|---|---|---|---|
 | **Avi** (`avi`) | `Avi Heartbeat` | `production-deploy`, `pr-review`, `pr-review-slow`, `deploy-with-task` (direct-invoke only) | a QA-green (`assembled`) release ready to ship / submitted PRs waiting | the ready release `shipped` (or no-op); then each PR `reviewed` or `blocked` (review-only — Steffon sweeps) |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-shipped`, `qa-release` | shipped work to archive / `reviewed` work + `assembled` stragglers to sweep | prior cycle `archived` (or no-op); then the RC swept, **live on QA, members `assembled` on QA-green** |
-| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | spans to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
+| **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
 
 > **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
-> `bin/atomic-event heartbeat <soul>` (e.g. `bin/atomic-event heartbeat avi`) so
-> EVERY span self-attributes to that soul — stacked over the stable base session
+> `bin/agent-activity heartbeat <soul>` (e.g. `bin/agent-activity heartbeat avi`) so
+> EVERY activity self-attributes to that soul — stacked over the stable base session
 > mascot — without re-passing `--agent` on each `start`/`next`. An explicit
-> `--agent` on a span still WINS over the sticky (a delegated reviewer keeps its
-> own soul). It clears on `bin/atomic-event heartbeat --clear` or at session end
-> (`close-open`). This is why the heartbeat's own orient/workflow spans show the
+> `--agent` on an activity still WINS over the sticky (a delegated reviewer keeps its
+> own soul). It clears on `bin/agent-activity heartbeat --clear` or at session end
+> (`close-open`). This is why the heartbeat's own orient/workflow activities show the
 > soul instead of falling back to the base mascot.
 >
 > **Launchers consolidated (2026-07-03).** The `pr-review-slow` (Avi) and
@@ -68,7 +68,7 @@ session needs nothing else:
    directly to this module, the owning soul's `HEARTBEAT.md`, and the relevant
    SOP file. No installed skill is required.
 2. **Stamp attribution FIRST** — before any other tool call:
-   `cd /Users/alex/projects/mcritchie-studio && bin/atomic-event heartbeat
+   `cd /Users/alex/projects/mcritchie-studio && bin/agent-activity heartbeat
    <avi|steffon|alex>`.
 3. **Run the soul's acts downstream-first** from the mcritchie-studio primary
    checkout (the board is **prod** by default; pass `--yes` on the release verbs
@@ -84,7 +84,7 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 |---|---|---|
 | **Avi** | `production-deploy` → `pr-review` | `bin/release status` → **if** QA-green: `bin/release ship --yes`; then per `submitted` PR (waves ≤5): `bin/reviewer-select <task>` → the [review-one cascade](pr-review-sop.md) → on approval `bin/task move <task> reviewed` (**no merge**; Steffon's `qa-release` sweeps) |
 | **Steffon** | `archive-shipped` → `qa-release` | `bin/release archive --yes` (preview `--dry-run`); then `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` |
-| **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/atomic-event awaiting --limit 10` → `bin/atomic-event grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
+| **Alex** | `grade-events` · `share-insights` · `full-cycle` | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc` + `bin/install-agent-docs`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
 
 > **Script-assisted review (Avi).** `bin/pr-review` is the supervisor script
 > behind the review loop: it composes `bin/devops-cycle`, `bin/reviewer-select`,
@@ -319,10 +319,10 @@ mechanics:
 [`full-cycle`](../agents/alex/sops/full-cycle.md).
 
 **Enter as Alex** (the Lead Orchestrator). Three acts: grade recent trajectory
-events for the learning layer, share the CONFIRMED insights out to every agent, and
+activities for the learning layer, share the CONFIRMED insights out to every agent, and
 — with ship authority — run the whole DevOps cycle end to end. The distillation
 pipeline at [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) is the
-operator view of the first two: Actions (spans) → Insights (Alex grades) →
+operator view of the first two: Activities → Insights (Alex grades) →
 Confirmations (McRitchie's `mcr` grades).
 
 ### Act 1 — `grade-events`
@@ -330,22 +330,22 @@ Confirmations (McRitchie's `mcr` grades).
 Canonical SOP:
 [`../agents/alex/sops/grade-events.md`](../agents/alex/sops/grade-events.md).
 
-Grade a batch of recent trajectory events for quality so the learning layer keeps
+Grade a batch of recent trajectory activities for quality so the learning layer keeps
 only what makes the next agent smarter.
 
-- **Precondition:** resolved spans awaiting a grade (there usually are). None
+- **Precondition:** resolved activities awaiting a grade (there usually are). None
   ungraded → report "nothing to grade" and stop (idempotent no-op).
 - **Steps (first-class CLI path — bearer-gated, no HTML scraping):**
-  1. `bin/atomic-event awaiting [--limit 10]` — the resolved spans Alex hasn't
+  1. `bin/agent-activity awaiting [--limit 10]` — the resolved activities Alex hasn't
      graded yet (id + category · reason → outcome + task), oldest → newest.
-  2. Grade each: `bin/atomic-event grade <span-id> --disposition good|not
+  2. Grade each: `bin/agent-activity grade <activity-id> --disposition good|not
      --slug "<4–7 words>" [--long-form "<anchor>"]`.
   3. **Bank** the ones that make the next agent smarter (`--bank`); **discard** the
      rest (`--discard`). Banked insights feed forward via `bin/session-insights`.
   4. The browser drawer at `/alex/heartbeat` is the equivalent **admin** path
      (same writes; it also owns the **`mcr` audit-of-Alex** lane, which the agent
      CLI cannot write — the bearer `grade` endpoint always grades as `alex`).
-- **Exit seam:** ~10 spans graded, useful insights banked. (Mr. McRitchie audits a
+- **Exit seam:** ~10 activities graded, useful insights banked. (Mr. McRitchie audits a
   shrinking sample as the signal proves out — he does so on the
   [`/alex/pipeline`](https://mcritchie.studio/alex/pipeline) page, where **Confirm**
   promotes an insight into column 3 as an `mcr` grade.)

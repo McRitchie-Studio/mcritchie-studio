@@ -603,8 +603,8 @@ if command -v jq >/dev/null 2>&1; then
     fi
   fi
 
-  # Wire the SessionEnd hook so a session's last narrated span never hangs open
-  # forever: `bin/atomic-event close-open` closes any still-open span (reading the
+  # Wire the SessionEnd hook so a session's last narrated activity never hangs open
+  # forever: `bin/agent-activity close-open` closes any still-open activity (reading the
   # session id off the SessionEnd stdin payload) with a generic "session ended"
   # outcome, so trailing actions never fall into "Unlabeled". Same discipline as
   # the PostToolUse hook: point at the primary checkout (survives worktree
@@ -613,7 +613,7 @@ if command -v jq >/dev/null 2>&1; then
   tmp="$(mktemp)"
   if jq 'if .hooks.SessionEnd then
         .hooks.SessionEnd |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/atomic-event close-open") | not)))))
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/(atomic-event|agent-activity) close-open") | not)))))
           | map(select(((.hooks // []) | length) > 0))
         )
       else . end' "$settings" > "$tmp"; then
@@ -627,7 +627,7 @@ if command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  close_open_cmd="$RUNTIME_ROOT/bin/atomic-event close-open"
+  close_open_cmd="$RUNTIME_ROOT/bin/agent-activity close-open"
   if ! jq -e --arg cmd "$close_open_cmd" '[(.hooks.SessionEnd // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     if jq --arg cmd "$close_open_cmd" '.hooks //= {} | .hooks.SessionEnd = ((.hooks.SessionEnd // []) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}])' "$settings" > "$tmp"; then

@@ -1,0 +1,108 @@
+module Api
+  module V1
+    class AgentActivitiesController < BaseController
+      # The agent-narration sink. The agent self-declares meaningful activities
+      # (via `bin/agent-activity`, with `bin/atomic-event` kept as a compatibility
+      # command): it OPENs an activity with a category + reason, raw tool-calls
+      # attribute server-side to that open activity (see AgentAction.capture), and
+      # it CLOSEs the activity with a result. One activity is open per session lane.
+      #
+      # Authed exactly like AgentActionsController — a Bearer api_auth token.
+
+      # POST /api/v1/agent_activities
+      #
+      # Open a new activity for the session, auto-closing any prior open activity.
+      # Returns 201 with the opened activity. An invalid category / blank reason is
+      # a 422 (VALIDATION_FAILED) via BaseController.
+      #
+      # BOUNDARY transition: `prior_outcome` (from `bin/agent-activity next` /
+      # `start --outcome`) stamps the auto-closed prior activity's outcome_slug as
+      # the agent crosses into this one, so activities stop hanging half-narrated.
+      def create
+        activity = AgentActivity.open_activity!(
+          session_id:         open_params[:session_id],
+          category:           open_params[:category],
+          reason_slug:        open_params[:reason],
+          task_slug:          open_params[:task_slug],
+          mascot:             open_params[:mascot],
+          stage:              open_params[:stage],
+          agent:              open_params[:agent],
+          prior_outcome_slug: open_params[:prior_outcome],
+          prior_key_method:      open_params[:prior_key_method],
+          prior_key_method_lang: open_params[:prior_key_method_lang]
+        )
+        render_data(activity, status: :created)
+      end
+
+      # POST /api/v1/agent_activities/close
+      #
+      # Close the session's current open activity, stamping the narrated result
+      # (`outcome` maps to outcome_slug). A stray close with no open activity is a
+      # best-effort no-op → 204 (never an error — telemetry must not surface as a
+      # failure to the caller).
+      def close
+        activity = AgentActivity.close_activity!(
+          session_id:      close_params[:session_id],
+          agent:           close_params[:agent],
+          outcome_slug:    close_params[:outcome],
+          key_method:      close_params[:key_method],
+          key_method_lang: close_params[:key_method_lang]
+        )
+        return head :no_content if activity.nil?
+
+        render_data(activity, status: :ok)
+      end
+
+      # POST /api/v1/agent_activities/close_all
+      #
+      # Session-end teardown (behind `bin/agent-activity close-open` + the Claude Code
+      # SessionEnd hook): close EVERY still-open activity for the session with a shared
+      # generic result, so a session's last activity never hangs open forever. Returns
+      # 200 with the count closed, or a 204 no-op when nothing was open (never an
+      # error — a session teardown must not surface as a failure to the caller).
+      def close_all
+        count = AgentActivity.close_all_open!(
+          session_id:   close_all_params[:session_id],
+          outcome_slug: close_all_params[:outcome]
+        )
+        return head :no_content if count.zero?
+
+        render_data({ closed: count }, status: :ok)
+      end
+
+      private
+
+      def open_params
+        params.permit(
+          :session_id,     # required — the session this activity belongs to
+          :category,       # required — Explore | Edit | Verify | … (AgentActivity::CATEGORIES)
+          :reason,         # required — "what am I doing" (stored as reason_slug)
+          :task_slug,      # optional slug FK; null for pre-task activities
+          :mascot,         # optional STABLE base session Pokémon slug
+          :stage,          # optional coarse task stage at open time
+          :agent,          # optional acting soul (AgentActivity::SOULS); unknown → nil
+          :prior_outcome,  # optional — "what happened" on the auto-closed prior activity
+          :prior_key_method,      # optional — the completed activity's load-bearing call
+          :prior_key_method_lang  # optional badge language; inferred when blank
+        )
+      end
+
+      def close_params
+        params.permit(
+          :session_id, # required — the session whose open activity to close
+          :agent,      # optional acting soul — selects the LANE to close (unknown → nil lane)
+          :outcome,    # optional — "what happened" (stored as outcome_slug)
+          :key_method,      # optional — the activity's load-bearing call
+          :key_method_lang  # optional badge language; inferred when blank
+        )
+      end
+
+      def close_all_params
+        params.permit(
+          :session_id, # required — the session whose open activities to close
+          :outcome     # optional — shared teardown result (e.g. "session ended")
+        )
+      end
+    end
+  end
+end

@@ -29,17 +29,17 @@ class AviSizingJobTest < ActiveJob::TestCase
     assert_equal "large", task.reload.po_size
   end
 
-  test "attributes the sizing as an agent=avi AtomicEvent on the creating session" do
+  test "attributes the sizing as an agent=avi AgentActivity on the creating session" do
     task = designed_unsized_task(session_id: "sess-abc123")
 
     Avi::Sizer.stub(:new, ->(*) { StubSizer.new("small") }) do
-      assert_difference -> { AtomicEvent.where(session_id: "sess-abc123", agent: "avi").count }, 1 do
+      assert_difference -> { AgentActivity.where(session_id: "sess-abc123", agent: "avi").count }, 1 do
         AviSizingJob.perform_now(task.slug)
       end
     end
 
     assert_equal "small", task.reload.po_size
-    event = AtomicEvent.where(session_id: "sess-abc123", agent: "avi").order(:id).last
+    event = AgentActivity.where(session_id: "sess-abc123", agent: "avi").order(:id).last
     assert_equal task.slug, event.task_slug
     assert_equal "Plan", event.category
     assert event.closed?, "the sizing span must be self-contained (already closed)"

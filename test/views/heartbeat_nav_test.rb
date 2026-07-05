@@ -16,7 +16,7 @@ class HeartbeatNavTest < ActionView::TestCase
   end
 
   test "[component] the deployments back link renders on the All Spans surface too" do
-    render partial: "heartbeat/nav", locals: { current: :all_spans, insights_count: 0 }
+    render partial: "heartbeat/nav", locals: { current: :all_activities, insights_count: 0 }
 
     assert css_select("a[data-test=hb-nav-deployments]").any?,
            "the Deployments back link must render regardless of the active surface"

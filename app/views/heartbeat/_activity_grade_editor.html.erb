@@ -1,16 +1,16 @@
-<%# One span grade editor inside the span drawer — Alex's grade, or the McRitchie audit
+<%# One activity grade editor inside the activity drawer — Alex's grade, or the McRitchie audit
     of it (same shape as the per-action _grade_editor). It POSTs to E2's grade_event
-    endpoint via fetch (heartbeatEventEditor.submit), which returns JSON — so this is a
+    endpoint via fetch (heartbeatActivityEditor.submit), which returns JSON — so this is a
     hand-written form (not form_with/turbo_stream): the fetch carries the Rails CSRF
-    token from the hidden field, and on success dispatches the hb:span-graded event the
-    span row listens for. The nested x-data holds the live word count `n`, the toggled
+    token from the hidden field, and on success dispatches the hb:activity-graded event the
+    activity row listens for. The nested x-data holds the live word count `n`, the toggled
     disposition `disp`, the banked/discarded flags, and the save/error state. Locals:
-    event, grader, who, role_label, grade (ActionGrade | nil), save_label, allow_bank
+    activity, grader, who, role_label, grade (ActionGrade | nil), save_label, allow_bank
     (Alex only — banking curates Alex's grade into the Insight Bank). %>
 <% n0 = heartbeat_word_count(grade&.slug) %>
-<form action="<%= heartbeat_event_grade_path(event) %>" method="post" class="hb-fbblock hb-evtfbblock"
+<form action="<%= heartbeat_activity_grade_path(activity) %>" method="post" class="hb-fbblock hb-evtfbblock"
       data-test="span-grade-form" data-grader="<%= grader %>"
-      x-data="heartbeatEventEditor({ n: <%= n0 %>, disp: '<%= grade&.disposition %>', banked: <%= !!grade&.banked %>, discarded: <%= !!grade&.discarded %> })"
+      x-data="heartbeatActivityEditor({ n: <%= n0 %>, disp: '<%= grade&.disposition %>', banked: <%= !!grade&.banked %>, discarded: <%= !!grade&.discarded %> })"
       @submit.prevent="submit($event)">
   <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
   <input type="hidden" name="grader" value="<%= grader %>">
@@ -19,7 +19,7 @@
   <div class="hb-field">
     <label>4&ndash;7 word slug</label>
     <input type="text" name="slug" class="hb-input" value="<%= grade&.slug %>"
-           placeholder="4–7 words — what the span did, critically"
+           placeholder="4-7 words — what the activity did, critically"
            @input="n = wordCount($event.target.value)">
     <div class="hb-wc" :class="(n >= 4 && n <= 7) ? 'ok' : 'off'"
          x-text="n + ' words (aim 4–7)'"><%= n0 %> words (aim 4&ndash;7)</div>
@@ -37,7 +37,7 @@
   <div class="hb-field">
     <label>Long-form (as needed)</label>
     <textarea name="long_form" class="hb-textarea"
-              placeholder="optional — anchor the lesson, name the span-level pattern"><%= grade&.long_form %></textarea>
+              placeholder="optional — anchor the lesson, name the activity-level pattern"><%= grade&.long_form %></textarea>
   </div>
 
   <div class="hb-saverow">

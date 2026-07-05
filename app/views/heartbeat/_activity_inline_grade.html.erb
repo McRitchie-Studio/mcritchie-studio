@@ -1,13 +1,13 @@
-<%# Inline quick-grade for a span — the good/not disposition radios for ONE grader
-    (Alex, or the McRitchie audit of Alex). The span analogue of the per-action
-    _feedback_cell radios: they POST grader + disposition to E2's JSON grade_event
-    endpoint via the span row's `quickGrade` fetch (@change), which dispatches
-    hb:span-graded so the row's live markers update in place. The fuller "grade ▸"
+<%# Inline quick-grade for an activity — the good/not disposition radios for ONE grader
+    (Alex, or the McRitchie audit of Alex). The activity analogue of the per-action
+    _feedback_cell radios: they POST grader + disposition to the JSON activity grade
+    endpoint via the activity row's `quickGrade` fetch (@change), which dispatches
+    hb:activity-graded so the row's live markers update in place. The fuller "grade ▸"
     drawer stays the home for the slug / long-form / bank detail — these are the fast
     lane. The checked state is server-rendered (Nokogiri-visible, no-JS correct) and
     bound to the row's Alpine `grades.<grader>` so a drawer/quick save syncs it live.
-    Locals: event, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
-<form action="<%= heartbeat_event_grade_path(event) %>" method="post"
+    Locals: activity, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+<form action="<%= heartbeat_activity_grade_path(activity) %>" method="post"
       class="hb-radioform hb-evtquick-form" data-test="event-inline-grade"
       data-grader="<%= grader %>" @submit.prevent>
   <%= hidden_field_tag :authenticity_token, form_authenticity_token %>

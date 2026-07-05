@@ -1,9 +1,9 @@
 <% content_for(:title, "Alex · Learning Heartbeat") %>
 <% content_for(:full_width, true) %>
 
-<%# Alex learning heartbeat — the agent-narrated event-span table. Each row is an
-    AtomicEvent (category, reason -> outcome) that rolls up the raw tool-calls
-    attributed to it; expand a span to drill into those actions read-only, or drop into
+<%# Alex learning heartbeat — the agent-narrated activity table. Each row is an
+    AgentActivity (category, reason -> result) that rolls up the raw tool-calls
+    attributed to it; expand an activity to drill into those actions read-only, or drop into
     the trailing "Unlabeled" group for the tool-calls the agent never narrated. A
     deliberate fixed-dark dashboard (like the launcher terminal, which stays dark on a
     light desktop) sitting on the theme-aware body. The palette mirrors the prototype;
@@ -18,15 +18,15 @@
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
-        <h1>Event Trajectory &middot; Alex Heartbeat</h1>
+        <h1>Session Activities &middot; Alex Heartbeat</h1>
         <p>
-          The spans this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; outcome.
-          Expand a span to drill into the raw tool-calls it framed; open one to grade the action and its McRitchie audit.
+          The activities this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; result.
+          Expand an activity to drill into the raw actions it framed; open one to grade it and its McRitchie audit.
         </p>
       </div>
       <% session_totals = heartbeat_usage_totals(@actions) %>
       <div class="hb-stats">
-        <div class="hb-stat"><b><%= @events.size %></b><span>spans</span></div>
+        <div class="hb-stat"><b><%= @activities.size %></b><span>activities</span></div>
         <div class="hb-stat"><b><%= @actions.size %></b><span>actions</span></div>
         <div class="hb-stat"><b><%= heartbeat_tokens_compact(session_totals[:tokens_total]) %></b><span>tokens</span></div>
         <div class="hb-stat"><b><%= heartbeat_cost(session_totals[:cost]) %></b><span>cost</span></div>
@@ -50,21 +50,21 @@
       <% end %>
       <%= render "heartbeat/nav", current: :session, insights_count: @counts[:insights] %>
       <span class="hb-legend">
-        <span><b>span:</b> category &middot; reason &rarr; outcome</span>
-        <span><b>drill down:</b> expand a span &middot; click an action to grade</span>
+        <span><b>activity:</b> category &middot; reason &rarr; result</span>
+        <span><b>drill down:</b> expand an activity &middot; click an action to grade</span>
       </span>
     </div>
   </div>
 
-  <% if @event_rows.any? || @unlabeled.any? %>
-    <%= render "heartbeat/event_table", event_rows: @event_rows, unlabeled: @unlabeled,
+  <% if @activity_rows.any? || @unlabeled.any? %>
+    <%= render "heartbeat/activity_table", activity_rows: @activity_rows, unlabeled: @unlabeled,
           pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
-          event_grades: @event_grades, shared_turn_ids: @shared_turn_ids,
+          activity_grades: @activity_grades, shared_turn_ids: @shared_turn_ids,
           stage_transitions: @stage_transitions %>
   <% else %>
     <div class="hb-empty" data-test="heartbeat-empty">
-      <b>No trajectory captured yet</b>
-      <p>Capture is forward-only — spans and actions land here as sessions run. Seed a demo trajectory locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+      <b>No activities captured yet</b>
+      <p>Capture is forward-only — activities and actions land here as sessions run. Seed demo activity locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
       <p><%= link_to "&lsaquo; back to the session launcher".html_safe, launcher_path %></p>
     </div>
   <% end %>

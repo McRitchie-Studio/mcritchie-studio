@@ -1,0 +1,70 @@
+<% content_for(:title, "Alex · All Activities") %>
+<% content_for(:full_width, true) %>
+
+<%# Alex learning heartbeat — the cross-session activity table. Every AgentActivity
+    across all sessions, newest-first, paginated 100 per page. It reuses the exact
+    per-session chrome (styles, scripts, the activity table partial, the grading drawer)
+    so an activity reads identically here and on the per-session heartbeat; only the header
+    and the pager differ. There is no "Unlabeled" group here (that is per-session
+    context) — a single Unlabeled group per view is never exceeded. %>
+<%= render "heartbeat/styles" %>
+
+<%= render "heartbeat/scripts" %>
+
+<section id="alex-heartbeat" data-test="heartbeat-all-activities" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+  <div class="hb-head">
+    <header class="hb-topbar">
+      <div class="hb-title">
+        <h1>All Activities &middot; Alex Heartbeat</h1>
+        <p>
+          Every narrated activity across all sessions, newest &rarr; oldest.
+          Expand an activity to drill into the raw actions it framed; grade it inline or open one to grade the McRitchie audit.
+        </p>
+      </div>
+      <div class="hb-stats">
+        <div class="hb-stat"><b><%= @total %></b><span>activities</span></div>
+        <div class="hb-stat"><b><%= @page %></b><span>page</span></div>
+        <div class="hb-stat"><b><%= HeartbeatController::ALL_ACTIVITIES_PER_PAGE %></b><span>per page</span></div>
+      </div>
+    </header>
+
+    <div class="hb-toolbar">
+      <%= render "heartbeat/nav", current: :all_activities, insights_count: ActionGrade.banked.count %>
+      <span class="hb-legend">
+        <span><b>activity:</b> category &middot; reason &rarr; result</span>
+        <span><b>drill down:</b> expand an activity &middot; click an action to grade</span>
+      </span>
+    </div>
+  </div>
+
+  <% if @activity_rows.any? %>
+    <%= render "heartbeat/activity_table", activity_rows: @activity_rows, unlabeled: [],
+          pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+          activity_grades: @activity_grades, shared_turn_ids: @shared_turn_ids,
+          stage_transitions: @stage_transitions %>
+
+    <nav class="hb-pager" data-test="hb-pager" aria-label="All Activities pages">
+      <% if @has_prev %>
+        <%= link_to "&lsaquo; Newer".html_safe, heartbeat_all_activities_path(page: @page - 1),
+              class: "hb-btn", data: { turbo: false, test: "hb-pager-prev" } %>
+      <% else %>
+        <span class="hb-btn hb-pager-off">&lsaquo; Newer</span>
+      <% end %>
+      <span class="hb-pager-at" data-test="hb-pager-at">Page <%= @page %></span>
+      <% if @has_next %>
+        <%= link_to "Older &rsaquo;".html_safe, heartbeat_all_activities_path(page: @page + 1),
+              class: "hb-btn", data: { turbo: false, test: "hb-pager-next" } %>
+      <% else %>
+        <span class="hb-btn hb-pager-off">Older &rsaquo;</span>
+      <% end %>
+    </nav>
+  <% else %>
+    <div class="hb-empty" data-test="heartbeat-empty">
+      <b>No activities captured yet</b>
+      <p>Capture is forward-only — activities land here as sessions run. Seed demo activity locally with <code class="hb-mono">rake atomic:demo_seed</code>.</p>
+      <p><%= link_to "&lsaquo; back to the per-session heartbeat".html_safe, alex_heartbeat_path %></p>
+    </div>
+  <% end %>
+
+  <%= render "heartbeat/drawer_host" %>
+</section>

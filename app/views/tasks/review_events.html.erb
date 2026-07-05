@@ -11,10 +11,10 @@
   <div class="card p-6">
     <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p class="label-upper">Review Events</p>
+        <p class="label-upper">Review Activity</p>
         <h2 class="mt-1 text-2xl font-bold text-heading"><%= @task.title %></h2>
         <p class="mt-2 max-w-3xl text-sm text-muted">
-          Heavy and light reviewer check-ins are recorded as append-only task events, so long-running reviews show their actual progress instead of only a final stage move.
+          Heavy and light reviewer check-ins are recorded as append-only review activity, so long-running reviews show their actual progress instead of only a final stage move.
         </p>
       </div>
       <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
@@ -30,7 +30,7 @@
     <div class="mt-5 rounded-lg border border-subtle bg-surface-alt p-3" data-test="review-api-contract">
       <p class="label-upper">Broadcast API</p>
       <code class="mt-2 block break-all rounded bg-surface px-3 py-2 text-xs text-secondary">POST /api/v1/tasks/<%= @task.slug %>/review_events</code>
-      <p class="mt-2 text-xs text-muted">Roles accept <code>primary</code>, <code>light</code>, and the legacy <code>heavy_review</code>/<code>light_review</code> aliases. Completed and failed agent events include usage.</p>
+      <p class="mt-2 text-xs text-muted">Roles accept <code>primary</code>, <code>light</code>, and the legacy <code>heavy_review</code>/<code>light_review</code> aliases. Completed and failed review check-ins include usage.</p>
     </div>
   </div>
 

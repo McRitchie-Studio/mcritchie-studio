@@ -12,7 +12,7 @@
 #                 process (the bin's main is guarded so `load` is side-effect free).
 #   [integration] the real script, shelled out against a localhost stub HTTP
 #                 server, mints a token then POSTs the right shape to
-#                 /api/v1/atomic_actions.
+#                 /api/v1/agent_actions.
 
 require "minitest/autorun"
 require "json"
@@ -86,7 +86,7 @@ class AtomicCaptureHookTest < Minitest::Test
   # DROPPED like navigation — it's the span machinery, not work, and would otherwise
   # fall into "Unlabeled". Precise: only an INVOCATION, never a mention.
 
-  def test_unit_narration_flags_atomic_event_invocations
+  def test_unit_narration_flags_agent_activity_invocations
     h = hook
     [
       "bin/atomic-event start --category Explore --reason x",
@@ -383,8 +383,8 @@ class AtomicCaptureHookTest < Minitest::Test
       refute_nil auth, "expected a POST /api/v1/auth to mint a token"
       assert_equal "test-secret", JSON.parse(auth[:body])["secret"]
 
-      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_actions" }
-      refute_nil post, "expected a POST /api/v1/atomic_actions"
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_actions" }
+      refute_nil post, "expected a POST /api/v1/agent_actions"
       assert_equal "Bearer stub-token", post[:headers]["authorization"]
 
       body = JSON.parse(post[:body])
@@ -413,8 +413,8 @@ class AtomicCaptureHookTest < Minitest::Test
       }
       requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
 
-      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_actions" }
-      refute_nil post, "expected a POST /api/v1/atomic_actions"
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_actions" }
+      refute_nil post, "expected a POST /api/v1/agent_actions"
       refute_includes post[:body], secret,
                       "a secret must NOT reach the wire — redaction happens before the POST"
       assert_match(/redact/i, JSON.parse(post[:body])["output"].to_s, "the field is marked redacted")
@@ -443,7 +443,7 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
-  def test_integration_atomic_event_narration_is_dropped_no_post
+  def test_integration_agent_activity_narration_is_dropped_no_post
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "task_slug" => "x")
       event = {
@@ -471,7 +471,7 @@ class AtomicCaptureHookTest < Minitest::Test
   end
 
   # ── [unit] secret redaction (audit 2026-07-02 high finding #6) ───────────
-  # tool_input / tool_response are the sole source of AtomicAction.input/output,
+  # tool_input / tool_response are the sole source of AgentAction.input/output,
   # which render on the PUBLIC /alex/heartbeat surface. The hook must never ship a
   # secret off the machine. Two layers: whole-field suppression for secret-reading
   # commands/files (a bare value has no key to match), and pattern redaction for
@@ -572,7 +572,7 @@ class AtomicCaptureHookTest < Minitest::Test
     # No false positives: env-ish non-secrets, normal file reads, plain output.
     command = "RAILS_ENV=test PORT=3007 bin/rails test"
     payload = payload_for(tool_name: "Bash", tool_input: { "command" => command },
-                          tool_response: "5 runs, 0 failures\ndef insight_source\n  atomic_action\nend")
+                          tool_response: "5 runs, 0 failures\ndef insight_source\n  agent_action\nend")
     assert_includes payload["input"].to_s, "RAILS_ENV=test", "a non-secret KEY=VALUE is preserved"
     assert_includes payload["input"].to_s, "PORT=3007"
     assert_includes payload["output"].to_s, "0 failures", "ordinary output passes through"
@@ -650,7 +650,7 @@ class AtomicCaptureHookTest < Minitest::Test
 
   def response_for(method, path)
     return ["200 OK", JSON.generate("token" => "stub-token", "expires_at" => (Time.now + 86_400).utc.iso8601)] if path == "/api/v1/auth"
-    return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_actions"
+    return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_actions"
 
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
   end

@@ -157,13 +157,17 @@ class Task < ApplicationRecord
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
-  # Forward-only per-action trajectory (AtomicAction.capture). Nullify on destroy
+  has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
+                              inverse_of: :task, dependent: :destroy
+  # Forward-only per-action trajectory (AgentAction.capture). Nullify on destroy
   # so the finest-grain telemetry survives a task teardown as orphaned history.
-  has_many :atomic_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
-  # Agent-narrated trajectory SPANS (AtomicEvent.open_event!/close_event!) — the
+  has_many :agent_actions, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  has_many :atomic_actions, class_name: "AgentAction", foreign_key: :task_slug, primary_key: :slug
+  # Agent-narrated activities (AgentActivity.open_activity!/close_activity!) — the
   # coarse, meaningful layer the raw actions attribute under. Nullify on destroy so
-  # the narrated history survives a task teardown as orphaned spans.
-  has_many :atomic_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  # the narrated history survives a task teardown as orphaned activities.
+  has_many :agent_activities, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
+  has_many :atomic_events, class_name: "AgentActivity", foreign_key: :task_slug, primary_key: :slug
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true

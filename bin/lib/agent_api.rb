@@ -7,7 +7,7 @@ require "time"
 require "fileutils"
 
 # AgentApi — the ONE agent-API client behind the narration/insights bin stack
-# (bin/atomic-event, bin/atomic-capture-hook, bin/session-insights). Each of
+# (bin/agent-activity, bin/atomic-capture-hook, bin/session-insights). Each of
 # those used to RE-IMPLEMENT the same boilerplate: mint the 24h agent token
 # (POST /api/v1/auth { secret }), cache it on disk at
 # <projects>/.agents/atomic-capture/token.json (ONE cache shared across the
@@ -21,7 +21,7 @@ require "fileutils"
 # narration CLI and the SessionStart hook afford a little more). Everything the
 # scripts agreed on — cache path, refresh margin, secret order, base_url —
 # stays shared and unparameterized. The 401 policy stays with the CALLER: the
-# client only EXPOSES invalidate_token! (bin/atomic-event and the capture hook
+# client only EXPOSES invalidate_token! (bin/agent-activity and the capture hook
 # invalidate on a 401; bin/session-insights deliberately never does).
 #
 # Same error posture as the scripts it serves: BEST-EFFORT, never raises —
@@ -48,8 +48,8 @@ class AgentApi
 
   # ── Base URL ───────────────────────────────────────────────────────────────
 
-  # Events, actions and insights MUST land on the same server for the
-  # server-side span attribution to work — so the whole stack shares this one
+  # Activities, actions and insights MUST land on the same server for the
+  # server-side activity attribution to work — so the whole stack shares this one
   # ATOMIC_CAPTURE_URL resolution.
   def base_url
     url = @env["ATOMIC_CAPTURE_URL"].to_s.strip

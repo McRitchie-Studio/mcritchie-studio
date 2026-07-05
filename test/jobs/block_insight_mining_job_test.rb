@@ -5,7 +5,7 @@ require "test_helper"
 class BlockInsightMiningJobTest < ActiveJob::TestCase
   def resolved_block(task_slug:)
     now = Time.current
-    AtomicEvent.create!(session_id: "sess-job", category: "Edit", reason_slug: "worked",
+    AgentActivity.create!(session_id: "sess-job", category: "Edit", reason_slug: "worked",
                         task_slug: task_slug, opened_at: now - 10.minutes, seq: 0)
     Activity.create!(task_slug: task_slug, activity_type: "qa_feedback",
                      description: "the guard was bypassed", created_at: now - 5.minutes)

@@ -1,0 +1,24 @@
+<%# The activity's grade — split into TWO COLUMNS: Alex, and the McRitchie audit. Each
+    cell holds that grader's inline quick-grade good/not radios (POSTing straight to the
+    activity grade endpoint) plus the current grade marker (disposition dot + slug),
+    server-rendered from the passed grades (so tests + a no-JS load see them) and bound
+    to the row's Alpine `grades` state so any save updates live via hb:activity-graded.
+    @click.stop keeps the radios from bubbling to the row's raw-action expand toggle.
+    The form + marker stack vertically to keep each grader's column compact. Locals: activity, alex
+    (ActionGrade | nil), mcr (ActionGrade | nil). %>
+<td class="hb-evtfbcell" data-test="event-grade-cell" @click.stop>
+  <div class="hb-evtfbstack">
+    <%= render "heartbeat/activity_inline_grade", activity: activity, grader: "alex", grade: alex %>
+    <div class="hb-evtmarkslot">
+      <%= render "heartbeat/activity_grade_mark", grader: "alex", grade: alex %>
+    </div>
+  </div>
+</td>
+<td class="hb-evtfbcell" data-test="event-grade-cell-mcr" @click.stop>
+  <div class="hb-evtfbstack">
+    <%= render "heartbeat/activity_inline_grade", activity: activity, grader: "mcr", grade: mcr %>
+    <div class="hb-evtmarkslot">
+      <%= render "heartbeat/activity_grade_mark", grader: "mcr", grade: mcr %>
+    </div>
+  </div>
+</td>

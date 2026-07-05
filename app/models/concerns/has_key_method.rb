@@ -1,6 +1,6 @@
 # The optional "key method" of a unit of work — the ONE load-bearing call worth
 # copying out of the trail (e.g. `User.find_by(email: ...)`, `bin/release prepare
-# --yes`). Shared by AtomicEvent (agent-provided at span close) and AtomicAction
+# --yes`). Shared by AgentActivity (agent-provided at activity close) and AgentAction
 # (hook-derived from a bash command). The UI renders it as a chip with a leading
 # LANGUAGE badge + a copy button, so `key_method_lang` is normalized here: an
 # explicit lang always wins; a blank one is inferred from the code's shape.

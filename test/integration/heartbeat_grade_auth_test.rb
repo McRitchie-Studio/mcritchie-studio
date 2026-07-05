@@ -7,16 +7,16 @@ require "test_helper"
 # is being built. This deliberately re-opens audit finding #5 (writes public, mcr
 # forgeable) as a conscious tradeoff; re-gate before real multi-user exposure. Reads
 # were already public. The Insight Bank must still render a banked SPAN grade (the
-# #337 crash fix) instead of 500ing on a nil atomic_action.
+# #337 crash fix) instead of 500ing on a nil agent_action.
 class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
   def action(**attrs)
-    AtomicAction.create!({ session_id: "auth-int", kind: "edit", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: "auth-int", kind: "edit", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current,
                            event_slug: "Implement the view code" }.merge(attrs))
   end
 
   def span(**attrs)
-    AtomicEvent.create!({ session_id: "auth-int", category: "Explore",
+    AgentActivity.create!({ session_id: "auth-int", category: "Explore",
                           reason_slug: "find issue with api", opened_at: Time.current,
                           seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
@@ -37,7 +37,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     e = span
 
     assert_difference -> { ActionGrade.count }, 1 do
-      post heartbeat_event_grade_path(e), params: { grader: "mcr", disposition: "good" }, as: :json
+      post heartbeat_activity_grade_path(e), params: { grader: "mcr", disposition: "good" }, as: :json
     end
 
     assert_response :success
@@ -58,7 +58,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
 
   test "[integration] a banked SPAN grade renders on the Insight Bank without crashing" do
     e = span(reason_slug: "trace the nil-guard", task_slug: nil)
-    grade = ActionGrade.create!(atomic_event: e, grader: "alex", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: e, grader: "alex", disposition: "good",
                                 slug: "promote this span to a guardrail")
     grade.bank!
 
@@ -71,7 +71,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
 
   test "[integration] a banked span grade carrying a task slug renders its provenance" do
     e = span(reason_slug: "sharp narrated outcome", task_slug: "some-task-slug", seq: 3)
-    grade = ActionGrade.create!(atomic_event: e, grader: "mcr", disposition: "not",
+    grade = ActionGrade.create!(agent_activity: e, grader: "mcr", disposition: "not",
                                 slug: "the span was noisy")
     grade.bank!
 

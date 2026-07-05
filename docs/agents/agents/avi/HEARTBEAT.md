@@ -36,17 +36,17 @@ Run from the McRitchie Studio primary checkout:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/atomic-event heartbeat avi
+bin/agent-activity heartbeat avi
 ```
 
-Then keep normal trajectory spans open with `bin/atomic-event start|next|end`.
-The heartbeat command makes spans self-attribute to Avi unless a delegated
+Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
+The heartbeat command makes activities self-attribute to Avi unless a delegated
 reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
 Keep attribution here. The act SOP files below are standalone procedures and do
-not run `bin/atomic-event heartbeat avi` themselves.
+not run `bin/agent-activity heartbeat avi` themselves.
 
 ## Act SOPs
 

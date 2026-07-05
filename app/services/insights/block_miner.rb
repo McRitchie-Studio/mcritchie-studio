@@ -1,29 +1,29 @@
 module Insights
   # Mines RESOLVED QA blocks into ActionGrade CANDIDATES — extending the learning
-  # loop from grading spans to mining the block ledger.
+  # loop from grading activities to mining the block ledger.
   #
   # A QA block is a PRE-LABELED failure case: QA looked at the work and said "this
   # is wrong, here's why." When a task goes blocked -> resolved — a `qa_feedback`
   # Activity later cleared by a `resolves_feedback` handoff (Activity#blocking_feedback?
   # / #resolves_feedback?) — the pair is a complete, human-labeled defect. This
   # service turns each such block into a disposition:"not" ActionGrade candidate,
-  # tying the block's feedback text (the lesson) to the span that caused the defect,
+  # tying the block's feedback text (the lesson) to the activity that caused the defect,
   # so the pipeline can surface it awaiting grade. That's free labeled training data.
   #
-  # SPAN LINKAGE (the model-consistency decision): an ActionGrade targets EXACTLY
-  # ONE of a raw action or a narrated span (its XOR) — there is no task/activity
+  # ACTIVITY LINKAGE (the model-consistency decision): an ActionGrade targets EXACTLY
+  # ONE of a raw action or a narrated activity (its XOR) — there is no task
   # target, and every existing read (insight_source / to_insight / the pipeline)
-  # reaches provenance THROUGH that span. So a candidate hangs off an AtomicEvent,
-  # never the task. We attribute the block to the NEWEST BUILDER span on the blocked
+  # reaches provenance THROUGH that activity. So a candidate hangs off an AgentActivity,
+  # never the task. We attribute the block to the NEWEST BUILDER activity on the blocked
   # task opened at/before the block was raised that is NOT already Alex-graded:
   #   * before the block   — the trajectory that produced the defect QA caught;
-  #   * base-mascot lane   — excludes soul-attributed review spans (the reviewer
+  #   * base-mascot lane   — excludes soul-attributed review activities (the reviewer
   #                          often opens Verify right before posting qa_feedback);
   #   * newest of those    — the tightest single proxy for "what caused it" (the last
   #                          thing the builder did before QA bounced it);
   #   * not already graded — never clobber a human grade (uniqueness is per
-  #                          event+grader) and never reuse one span across two blocks.
-  # No attributable span (a pre-narration task, or all pre-block spans already
+  #                          activity+grader) and never reuse one activity across two blocks.
+  # No attributable activity (a pre-narration task, or all pre-block activities already
   # graded) -> we skip that block; a candidate can't hang off nothing.
   #
   # IDEMPOTENT: `source_activity_slug` (the block's Activity slug) carries a unique
@@ -82,18 +82,18 @@ module Insights
     end
 
     # Seed the ONE candidate for a block, or nil (already mined / no attributable
-    # span / a captured failure). The unique index backstops the exists? guard
+    # activity / a captured failure). The unique index backstops the exists? guard
     # against a race — a RecordNotUnique there is a clean idempotent no-op.
     def seed_candidate(block)
       return if ActionGrade.exists?(source_activity_slug: block.slug)
 
-      span = target_span_for(block)
-      return unless span
+      activity = target_activity_for(block)
+      return unless activity
 
       ActionGrade.create!(
         grader:               ALEX,
         disposition:          ActionGrade::NOT,
-        atomic_event:         span,
+        agent_activity:       activity,
         slug:                 candidate_slug(block),
         long_form:            block.description,
         source_activity_slug: block.slug
@@ -108,13 +108,13 @@ module Insights
       nil
     end
 
-    # See SPAN LINKAGE above. nil when the block carries no task, or the task has no
-    # ungraded builder span opened at/before the block.
-    def target_span_for(block)
+    # See ACTIVITY LINKAGE above. nil when the block carries no task, or the task has no
+    # ungraded builder activity opened at/before the block.
+    def target_activity_for(block)
       return nil if block.task_slug.blank?
 
-      graded = ActionGrade.by_grader(ALEX).where.not(atomic_event_id: nil).select(:atomic_event_id)
-      AtomicEvent.where(task_slug: block.task_slug)
+      graded = ActionGrade.by_grader(ALEX).where.not(agent_activity_id: nil).select(:agent_activity_id)
+      AgentActivity.where(task_slug: block.task_slug)
                  .where("opened_at <= ?", block.created_at)
                  .where(agent: [nil, ""])
                  .where.not(id: graded)

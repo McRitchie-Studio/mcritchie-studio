@@ -67,15 +67,15 @@
       <h3 class="text-lg font-bold text-heading mb-3">Integrity</h3>
       <dl class="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Task Events</dt>
+          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Task Transitions</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["task_event_count"].to_i) %></dd>
         </div>
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Release Events</dt>
+          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Release Steps</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["release_event_count"].to_i) %></dd>
         </div>
         <div>
-          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Missing Task Spans</dt>
+          <dt class="text-[10px] uppercase tracking-wide text-muted font-semibold">Missing Task Durations</dt>
           <dd class="font-mono text-heading"><%= number_with_delimiter(integrity["missing_task_stage_spans"].to_i) %></dd>
         </div>
         <div>
@@ -125,7 +125,7 @@
 
   <section class="rounded-lg border border-subtle bg-surface overflow-hidden">
     <div class="px-4 py-3 border-b border-subtle">
-      <h3 class="text-lg font-bold text-heading">Release Events</h3>
+      <h3 class="text-lg font-bold text-heading">Release Steps</h3>
     </div>
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm">

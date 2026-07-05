@@ -80,7 +80,7 @@ After prompts, confirm summary and proceed.
    - Update `docs/ECOSYSTEM.md` to add the new repo row + per-repo summary entry
    - Update `docs/agents/system/house-burn-down.md` to add the row in The Ecosystem table
    - Capture any agent-workflow lesson the new app teaches in the **Insight Bank**
-     (`bin/atomic-event grade <span> --bank`), not a hand-edited doc; update
+     (`bin/agent-activity grade <activity-id> --bank`), not a hand-edited doc; update
      `docs/ECOSYSTEM.md` for ecosystem assumptions
 7. **DNS instructions**: print to stdout:
    ```

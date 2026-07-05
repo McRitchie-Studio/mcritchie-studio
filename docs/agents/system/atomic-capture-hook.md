@@ -81,17 +81,18 @@ secret-free) telemetry is a separate concern.
 ### What it DROPS (never a row)
 
 Two classes of Bash call are dropped **before** any POST — they own no narrated
-span and would otherwise land in "Unlabeled":
+activity and would otherwise land in "Unlabeled":
 
 - **Navigation** — a command whose first token is `cd` / `pushd` / `popd` / `pwd`
   (a bare directory move; ~84% of the raw noise).
-- **Narration** — a command whose invocation **is** `bin/atomic-event` (the
-  agent's self-narration CLI). It's the span machinery itself, so capturing the
-  call that declares a span would double-record it as a raw action. Matches only
-  an actual invocation — any path prefix (`/abs/…/bin/atomic-event`,
-  `./bin/atomic-event`) and optional leading `ENV=val` assignments — never a
-  command that merely *mentions* the string (`grep atomic-event`, `cat
-  bin/atomic-event`, an edit to the file). A `cd … && bin/atomic-event` already
+- **Narration** — a command whose invocation **is** `bin/agent-activity` or its
+  compatibility alias `bin/atomic-event`. It's the activity machinery itself, so
+  capturing the call that declares an activity would double-record it as a raw
+  action. Matches only an actual invocation — any path prefix
+  (`/abs/…/bin/agent-activity`, `./bin/atomic-event`) and optional leading
+  `ENV=val` assignments — never a command that merely *mentions* the string
+  (`grep atomic-event`, `cat bin/atomic-event`, an edit to the file). A
+  `cd … && bin/agent-activity` already
   drops as navigation (first token `cd`).
 
 ### Model derivation — what's actually available to the hook
@@ -182,14 +183,14 @@ would scope it.)
 > same way it wires the status line and SessionStart mascot hook. The orchestrator
 > runs `bin/install-agent-docs` **after** this change is reviewed and merged.
 
-## SessionEnd hook — close the last open span
+## SessionEnd hook — close the last open activity
 
 The companion producer is the **SessionEnd** hook, which runs
-`bin/atomic-event close-open` when a Claude Code session terminates. It closes any
-span still open for the session (reading the session id off the SessionEnd stdin
-payload) with a generic `session ended` outcome — so a session's **last** span
+`bin/agent-activity close-open` when a Claude Code session terminates. It closes any
+activity still open for the session (reading the session id off the SessionEnd stdin
+payload) with a generic `session ended` outcome — so a session's **last** activity
 never hangs open forever and trailing actions never fall into "Unlabeled". It is
-best-effort and always exits 0, exactly like the atomic-event narration CLI.
+best-effort and always exits 0, exactly like the activity narration CLI.
 
 Add to `~/.claude/settings.json` (command points at the **primary checkout** so it
 survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason —
@@ -204,7 +205,7 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/alex/projects/mcritchie-studio/bin/atomic-event close-open",
+            "command": "/Users/alex/projects/mcritchie-studio/bin/agent-activity close-open",
             "timeout": 5
           }
         ]
@@ -216,7 +217,7 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
 
 > **Same rule — do not hand-edit the operator's global settings from a build
 > session.** `bin/install-agent-docs` wires this SessionEnd hook idempotently
-> (pointing at `$RUNTIME_ROOT/bin/atomic-event close-open`, pruning stale worktree
+> (pointing at `$RUNTIME_ROOT/bin/agent-activity close-open`, pruning stale worktree
 > entries) the same way it wires the PostToolUse capture hook. The orchestrator
 > runs it **after** this change is reviewed and merged.
 
