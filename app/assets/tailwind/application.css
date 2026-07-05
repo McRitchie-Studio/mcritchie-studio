@@ -49,30 +49,35 @@
 }
 
 @layer components {
-  .task-card-stage-glow-assembled {
+  .task-card-stage-glow-assembled,
+  .release-confirming-glow {
     isolation: isolate;
+    position: relative;
   }
 
-  .task-card-stage-glow-assembled::before {
+  .task-card-stage-glow-assembled::before,
+  .release-confirming-glow::before {
     content: "";
     position: absolute;
-    inset: -18px;
-    z-index: -1;
     pointer-events: none;
-    border-radius: 1rem;
-    padding: 18px;
+    border-radius: 0.75rem;
     background:
-      conic-gradient(
-        from 0deg,
-        transparent 0deg 44deg,
-        color-mix(in srgb, var(--task-card-glow-color) 62%, transparent) 64deg,
-        transparent 104deg 188deg,
-        color-mix(in srgb, var(--task-card-glow-color) 42%, transparent) 216deg,
-        transparent 256deg 360deg
+      linear-gradient(
+        45deg,
+        var(--task-card-glow-color-a, var(--task-card-glow-color)),
+        color-mix(in srgb, var(--task-card-glow-color-a, var(--task-card-glow-color)) 68%, white),
+        var(--task-card-glow-color-b, var(--task-card-glow-color)),
+        color-mix(in srgb, var(--task-card-glow-color-b, var(--task-card-glow-color)) 74%, black),
+        var(--task-card-glow-color-a, var(--task-card-glow-color)),
+        color-mix(in srgb, var(--task-card-glow-color-b, var(--task-card-glow-color)) 70%, white),
+        var(--task-card-glow-color-b, var(--task-card-glow-color)),
+        color-mix(in srgb, var(--task-card-glow-color-a, var(--task-card-glow-color)) 72%, black)
       );
-    filter: blur(14px);
-    opacity: 0.78;
-    animation: taskCardAssembledGlowSpin 5.5s linear infinite;
+    background-size: 400%;
+    animation: taskCardAssembledSteam 18s linear infinite;
+    filter:
+      drop-shadow(0 0 10px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent))
+      drop-shadow(0 0 26px color-mix(in srgb, var(--task-card-glow-color) 18%, transparent));
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
@@ -81,17 +86,30 @@
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
     mask-composite: exclude;
+    inset: -2px;
+    z-index: -1;
+    padding: 2px;
+    opacity: 0.7;
   }
 
-  @keyframes taskCardAssembledGlowSpin {
-    to {
-      transform: rotate(360deg);
+  @keyframes taskCardAssembledSteam {
+    0% {
+      background-position: 0 0;
+    }
+
+    50% {
+      background-position: 400% 0;
+    }
+
+    100% {
+      background-position: 0 0;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .task-card-stage-glow-assembled::before {
-      animation-duration: 18s;
+    .task-card-stage-glow-assembled::before,
+    .release-confirming-glow::before {
+      animation-duration: 42s;
     }
   }
 

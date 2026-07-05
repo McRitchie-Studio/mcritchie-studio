@@ -74,24 +74,41 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "assembled card uses the larger spinning glow" do
-    task = Task.create!(title: "Assembled glow task", stage: "assembled",
-                        metadata: { "devops" => { "mascot_color" => "#a78bfa" } })
+  test "assembled card uses the larger animated gradient glow" do
+    task = Task.create!(title: "Assembled glow task", stage: "assembled")
+    mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],
+                             primary_type: "fire", generation: 1)
+    type_enumerals = {
+      "fire" => TypeColor.new(color: "#EE8130", rank: 900, emoji: "🔥"),
+      "flying" => TypeColor.new(color: "#A98FF3", rank: 200, emoji: "💨")
+    }
 
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "assembled", card["data-stage-glow"]
     assert_includes card["class"], "task-card-stage-glow-assembled"
-    assert_includes card["style"], "--task-card-glow-color: #a78bfa"
+    assert_includes card["style"], "--task-card-glow-color: #EE8130"
+    assert_includes card["style"], "--task-card-glow-color-a: #EE8130"
+    assert_includes card["style"], "--task-card-glow-color-b: #A98FF3"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
     assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
 
     css = Rails.root.join("app/assets/tailwind/application.css").read
     assert_includes css, ".task-card-stage-glow-assembled::before"
-    assert_includes css, "animation: taskCardAssembledGlowSpin"
-    assert_includes css, "@keyframes taskCardAssembledGlowSpin"
+    assert_includes css, ".release-confirming-glow::before"
+    assert_includes css, "animation: taskCardAssembledSteam"
+    assert_includes css, "background-size: 400%"
+    assert_includes css, "drop-shadow(0 0 10px"
+    assert_includes css, "-webkit-mask-composite: xor"
+    assert_includes css, "mask-composite: exclude"
+    assert_includes css, "padding: 2px"
+    assert_not_includes css, ".task-card-stage-glow-assembled::after"
+    assert_not_includes css, "#fb0094"
+    assert_includes css, "@keyframes taskCardAssembledSteam"
   end
 
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do

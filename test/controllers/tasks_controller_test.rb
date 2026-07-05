@@ -60,6 +60,27 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "abc1234" # deployed SHA (7-char)
   end
 
+  test "[integration] current release gets animated border glow once confirming starts" do
+    Release.delete_all
+    rel = Release.open!(branch: "release/confirming-glow")
+
+    get deployments_path
+    assert_response :success
+    assert_select "#current-release.release-confirming-glow", count: 0
+
+    rel.stamp_stage!("confirming")
+
+    get deployments_path
+    assert_response :success
+    card = css_select("#current-release").first
+    assert_equal "confirming", card["data-stage-glow"]
+    assert_includes card["class"], "release-confirming-glow"
+    assert_includes card["style"], "--task-card-glow-color-a: #a78bfa"
+    assert_includes card["style"], "--task-card-glow-color-b: #a78bfa"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+  end
+
   test "[integration] deployments renders the three heartbeat launchers in the Heartbeats card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
