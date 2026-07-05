@@ -81,14 +81,15 @@
      <% if card_glow_style %>style="<%= card_glow_style %>"<% end %>
      class="kanban-card relative <%= card_tone %> <%= "task-card-stage-glow task-card-stage-glow-#{card_glow_kind}" if card_glow_kind %> rounded-lg border p-3 cursor-pointer transition group">
 
-  <%# Title — human-readable text gets a fixed two-line box so long task names
-      stay readable without horizontal clipping or hover-only marquee movement.
-      Archive/delete moved to the footer so nothing covers it. %>
+  <%# Title — single-line overflow-fade: long names never wrap or break. They fade
+      at the overflowing edge (mask-image) and marquee-scroll to the end while the
+      card is hovered, snapping back on leave. Archive/delete live in the footer. %>
   <a href="<%= task_path(task.slug) %>"
      class="block mb-1.5 hover:text-primary transition"
+     data-test="task-card-title"
      title="<%= task.title %>">
-    <span class="block text-heading font-semibold text-sm leading-tight line-clamp-2 break-words"
-          data-test="task-card-title"><%= task.title %></span>
+    <%= render "components/overflow_fade", text: task.title, scroll_when: "hovered",
+          class: "text-heading font-semibold text-sm" %>
   </a>
 
   <%# Stage crew (agent-events summary) sits directly under the title — build-lane

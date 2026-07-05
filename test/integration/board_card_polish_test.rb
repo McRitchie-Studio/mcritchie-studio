@@ -71,7 +71,7 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} div.whitespace-nowrap.overflow-hidden", minimum: 1
   end
 
-  test "long card title and activity preview clamp to readable two-line text" do
+  test "long card title marquees on one line while activity preview clamps to two" do
     task = Task.create!(title: "Suite Consistency Cleanup Review Card",
                         stage: "blocked")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
@@ -80,11 +80,14 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    assert_select "#card-#{task.slug} [data-test='task-card-title'].line-clamp-2.break-words",
+    # the title never wraps: one line, edge fade + hover marquee (overflow_fade)
+    assert_select "#card-#{task.slug} a[data-test='task-card-title'] [x-ref='fadeInner']",
                   text: /Suite Consistency Cleanup/, count: 1
+    assert_select "#card-#{task.slug} [data-test='task-card-title'].line-clamp-2", count: 0
+    # the activity preview still clamps to a readable two lines (not a marquee)
     assert_select "#card-#{task.slug} [data-test='activity-description'].line-clamp-2.break-words",
                   text: /QA review found one remaining/, count: 1
-    assert_select "#card-#{task.slug} a[title=?]", task.title, count: 1
+    assert_select "#card-#{task.slug} a[data-test='task-card-title'][title=?]", task.title, count: 1
   end
 
   test "the size badge leads the slug row instead of the footer meta row" do
@@ -152,7 +155,7 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-2", count: 0
   end
 
-  test "long title and activity text are line-clamped instead of horizontally clipped" do
+  test "long title marquees on one line while activity text clamps to two" do
     task = Task.create!(title: "Long Card Title", stage: "submitted")
     task.update_column(:title, "Long Board Card Title That Must Stay Inside The Card")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
@@ -161,12 +164,14 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
+    # the title link never wraps: one line, edge fade + hover marquee (overflow_fade)
     assert_select "#card-#{task.slug} > a.line-clamp-2", count: 0
-    assert_select "#card-#{task.slug} > a [data-test='task-card-title'].line-clamp-2.break-words",
-                  text: /Long Board Card Title/
+    assert_select "#card-#{task.slug} > a[data-test='task-card-title'] [x-ref='fadeInner']",
+                  text: /Long Board Card Title/, count: 1
+    assert_select "#card-#{task.slug} > a[data-test='task-card-title'].line-clamp-2.break-words", count: 0
+    # the activity preview keeps its two-line clamp (not a marquee)
     assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words",
                   text: /QA review found one remaining visual regression/
-    assert_select "#card-#{task.slug} > a [x-ref='fadeInner']", count: 0
     assert_select "#card-#{task.slug} [data-test='activity-box'] [x-ref='fadeInner']", count: 0
   end
 end
