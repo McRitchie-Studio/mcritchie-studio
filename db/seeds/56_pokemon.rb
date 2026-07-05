@@ -9,7 +9,8 @@ puts "\n--- Pokémon (Gen 1–2) ---"
 
 POKEMON_FIELDS = %w[
   name slug types hp attack defense special_attack special_defense speed
-  generation avatar_url avatar_fallback_url sprite_url
+  generation base evolution baby
+  avatar_url avatar_fallback_url sprite_url
   shiny_avatar_url shiny_avatar_fallback_url shiny_sprite_url
 ].freeze
 

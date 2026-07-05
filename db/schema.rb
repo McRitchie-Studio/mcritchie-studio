@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_04_090100) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -726,9 +726,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_04_090100) do
     t.integer "attack"
     t.string "avatar_fallback_url"
     t.string "avatar_url"
+    t.jsonb "baby", default: [], null: false
+    t.string "base"
     t.datetime "created_at", null: false
     t.integer "defense"
     t.integer "dex", null: false
+    t.jsonb "evolution", default: [], null: false
     t.integer "generation", default: 1, null: false
     t.integer "hp"
     t.string "name", null: false

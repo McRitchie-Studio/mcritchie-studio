@@ -19,22 +19,40 @@ class Pokemon < ApplicationRecord
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true
 
+  # A Pokémon with no seeded family is its own base (a single-stage form), so
+  # ad-hoc rows are spawnable without ceremony. Babies and evolved forms get
+  # their real base from the seed data.
+  before_validation { self.base = slug if base.blank? }
+
   scope :by_dex, -> { order(:dex) }
   scope :gen1, -> { where(generation: 1) }
   scope :gen2, -> { where(generation: 2) }
 
-  # The deck the mascot draw pulls from — deliberately still the original 151.
-  # The Johto rows are seeded reference data only until the base-level spawn
-  # pool lands (tasks/base-level-spawn-pool), which reshapes the deck around
-  # evolutionary base forms across both generations.
+  # Every baby form's slug — babies live on their base's `baby` list (pikachu
+  # carries ["pichu"]), so the set is the union of those lists.
+  def self.baby_slugs
+    where.not(baby: []).pluck(:baby).flatten.uniq
+  end
+
+  # The spawnable roots: each family's base form, minus baby forms (reference
+  # data only — they never spawn). Tyrogue is the one self-based baby (his three
+  # Hitmon branches are each their own family), which is why the baby-list
+  # exclusion exists on top of base == slug.
+  def self.spawnable
+    where(arel_table[:base].eq(arel_table[:slug])).where.not(slug: baby_slugs)
+  end
+
+  # The deck the mascot draw pulls from — every Gen 1–2 base form. Sessions and
+  # tasks spawn at the bottom of an evolutionary line; the task's copy of the
+  # mascot can then evolve at pipeline gates (tasks/task-mascot-evolution-gates).
   def self.deck
-    gen1
+    spawnable
   end
 
   # Draw one random Pokémon for a mascot, skipping any slug in `exclude` (the
   # mascots already held by live tasks). Deck-draw without replacement; if every
-  # Pokémon is somehow taken (>151 live tasks) it falls back to the full deck
-  # rather than returning nil, so a task always gets a face.
+  # base form is somehow taken it falls back to the full deck rather than
+  # returning nil, so a task always gets a face.
   def self.draw(exclude: [])
     taken = Array(exclude).compact_blank
     pool = deck.where.not(slug: taken)
@@ -42,17 +60,30 @@ class Pokemon < ApplicationRecord
     pool.order(Arel.sql("RANDOM()")).first
   end
 
+  # Draw from a caller-curated slug pool (e.g. a parent session's evolution
+  # family). Deliberately NOT restricted to the deck: evolved forms aren't
+  # spawnable roots, but a subagent drawing from its parent's family may wear one.
   def self.draw_from_slugs(slugs, exclude: [])
     candidates = Array(slugs).compact_blank
     return nil if candidates.empty?
 
     available = candidates - Array(exclude).compact_blank
     available = candidates if available.empty?
-    deck.where(slug: available).order(Arel.sql("RANDOM()")).first
+    where(slug: available).order(Arel.sql("RANDOM()")).first
   end
 
   def self.evolution_tree_for(slug)
     PokemonEvolutionTree.for(slug)
+  end
+
+  # Is this form the bottom of its evolutionary line?
+  def base_form?
+    base == slug
+  end
+
+  # The rows this form can evolve into next (Eevee has five; Snorlax none).
+  def evolutions
+    self.class.where(slug: Array(evolution))
   end
 
   # { type_key => Studio::Enumeral } for every seeded type, in ONE query — build

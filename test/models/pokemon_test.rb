@@ -26,10 +26,50 @@ class PokemonTest < ActiveSupport::TestCase
 
   # --- Deck / draw ---
 
-  test "deck is only generation 1" do
+  test "deck spans both generations' base forms" do
     g1 = make(143, "snorlax", generation: 1)
-    make(152, "chikorita", generation: 2)
-    assert_equal [g1.id], Pokemon.deck.pluck(:id)
+    g2 = make(152, "chikorita", generation: 2)
+    assert_equal [g1.id, g2.id].sort, Pokemon.deck.pluck(:id).sort
+  end
+
+  test "deck excludes evolved forms — only each family's base spawns" do
+    charmander = Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander",
+                                 base: "charmander", evolution: ["charmeleon"])
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon",
+                    base: "charmander", evolution: ["charizard"])
+    Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", base: "charmander")
+
+    assert_equal [charmander.id], Pokemon.deck.pluck(:id)
+  end
+
+  test "deck excludes baby forms even when self-based (the Tyrogue case)" do
+    hitmonlee = Pokemon.create!(dex: 106, name: "Hitmonlee", slug: "hitmonlee",
+                                baby: ["tyrogue"])
+    Pokemon.create!(dex: 236, name: "Tyrogue", slug: "tyrogue",
+                    evolution: %w[hitmonlee hitmonchan hitmontop])
+    # Tyrogue is self-based (three separate Hitmon families, no single heir)…
+    assert Pokemon.find_by!(slug: "tyrogue").base_form?
+    # …but the baby list keeps him out of the spawn pool.
+    assert_equal [hitmonlee.id], Pokemon.deck.pluck(:id)
+  end
+
+  test "deck excludes a baby based on its family base (the Cleffa case)" do
+    clefairy = Pokemon.create!(dex: 35, name: "Clefairy", slug: "clefairy",
+                               evolution: ["clefable"], baby: ["cleffa"])
+    Pokemon.create!(dex: 173, name: "Cleffa", slug: "cleffa",
+                    base: "clefairy", evolution: ["clefairy"])
+
+    assert_equal [clefairy.id], Pokemon.deck.pluck(:id)
+  end
+
+  test "a Pokémon with no seeded family is its own base" do
+    assert make(143, "snorlax").base_form?
+    assert_equal "snorlax", Pokemon.find_by!(slug: "snorlax").base
+  end
+
+  test "draw_from_slugs reaches evolved forms outside the deck" do
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon", base: "charmander")
+    assert_equal "charmeleon", Pokemon.draw_from_slugs(%w[charmeleon]).slug
   end
 
   test "draw returns a Pokemon from the deck" do
@@ -73,6 +113,48 @@ class PokemonTest < ActiveSupport::TestCase
       assert r["shiny_sprite_url"].end_with?("/#{key}-shiny-sprite.png"), "##{r['dex']} shiny_sprite_url"
       assert r["types"].present? && r["hp"].present?, "##{r['dex']} types/stats"
     end
+  end
+
+  test "data file family fields match the operator's evolution model" do
+    rows = JSON.parse(File.read(Rails.root.join("db/seeds/data/pokemon.json")))
+    by = rows.index_by { |r| r["slug"] }
+
+    assert(rows.all? { |r| r["base"].present? && r["evolution"].is_a?(Array) && r["baby"].is_a?(Array) })
+
+    # A three-stage line points down to its base; the middle form knows the next step.
+    assert_equal "charmander", by["charizard"]["base"]
+    assert_equal ["charizard"], by["charmeleon"]["evolution"]
+    # Single-stage forms are their own base with nowhere to go.
+    assert_equal "snorlax", by["snorlax"]["base"]
+    assert_empty by["snorlax"]["evolution"]
+    # Babies point at the family base; the base carries them.
+    assert_equal "clefairy", by["cleffa"]["base"]
+    assert_equal ["cleffa"], by["clefairy"]["baby"]
+    assert_equal "magmar", by["magby"]["base"]
+    # Tyrogue: the one self-based baby (three separate Hitmon families).
+    assert_equal "tyrogue", by["tyrogue"]["base"]
+    %w[hitmonlee hitmonchan hitmontop].each { |slug| assert_equal ["tyrogue"], by[slug]["baby"] }
+    # Branching lines list every next step available within Gen 1–2.
+    assert_equal %w[espeon flareon jolteon umbreon vaporeon], by["eevee"]["evolution"].sort
+    assert_equal %w[slowbro slowking], by["slowpoke"]["evolution"].sort
+    assert_equal %w[bellossom vileplume], by["gloom"]["evolution"].sort
+    assert_equal %w[politoed poliwrath], by["poliwhirl"]["evolution"].sort
+    # Johto retro-upgrades to Kanto lines.
+    assert_equal ["steelix"], by["onix"]["evolution"]
+    assert_equal ["scizor"], by["scyther"]["evolution"]
+    assert_equal ["crobat"], by["golbat"]["evolution"]
+    assert_equal ["blissey"], by["chansey"]["evolution"]
+    assert_equal ["kingdra"], by["seadra"]["evolution"]
+    # Out-of-range relatives don't exist: Marill roots itself (Azurill is Gen 3)
+    # and Porygon2's Gen 4 successor is absent.
+    assert_equal "marill", by["marill"]["base"]
+    assert_empty by["porygon2"]["evolution"]
+
+    babies = rows.flat_map { |r| r["baby"] }.uniq.sort
+    assert_equal %w[cleffa elekid igglybuff magby pichu smoochum togepi tyrogue], babies
+
+    spawnable = rows.select { |r| r["base"] == r["slug"] && !babies.include?(r["slug"]) }
+    assert_equal 131, spawnable.size
   end
 
   # --- Seed (idempotency from the committed JSON) ---
@@ -120,6 +202,22 @@ class PokemonTest < ActiveSupport::TestCase
 
     p.update!(avatar_fallback_url: nil)
     assert_equal "sprite.png", p.display_avatar
+  end
+
+  test "seed carries the family columns and shapes the 131-base deck" do
+    capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
+
+    charizard = Pokemon.find_by!(slug: "charizard")
+    assert_equal "charmander", charizard.base
+    assert_empty charizard.evolution
+
+    deck = Pokemon.deck.pluck(:slug)
+    assert_equal 131, deck.size
+    assert_includes deck, "totodile"
+    assert_includes deck, "snorlax"
+    assert_not_includes deck, "tyrogue"   # baby, even though self-based
+    assert_not_includes deck, "charizard" # evolved form
+    assert_not_includes deck, "cleffa"    # baby
   end
 
   test "seed splits the generations at the Kanto/Johto boundary" do
