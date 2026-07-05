@@ -2,7 +2,7 @@ require "test_helper"
 
 # Component tier (ui-only shape): render the real board + current-release
 # partials through their controllers and assert the polished card behaviour —
-# the two-line clamped title, the data-driven app emoji, the footer
+# the single-line overflow-fade title, the data-driven app emoji, the footer
 # actions, the whole-card click target, and the removal of the → QA chip.
 class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
   test "kanban card: full-width title link, app emojis, footer actions, click target" do
@@ -19,11 +19,14 @@ class TaskCardAppEmojisTest < ActionDispatch::IntegrationTest
       # Feature 6: the whole card is the click target (carries its destination).
       assert_select "[data-href=?]", task_path(task.slug)
 
-      # Feature 1: the link carries the destination; its inner title owns clamping.
+      # Feature 1: the link carries the destination; its inner title fades and
+      # marquee-scrolls on one line (overflow_fade) — it never wraps or breaks.
       assert_select "a[href=?]", task_path(task.slug) do |links|
         assert links.first.text.include?(task.title), "title link should carry the task title"
       end
-      assert_select "[data-test='task-card-title'].line-clamp-2.break-words", text: task.title, count: 1
+      assert_select "a[data-test='task-card-title'][title=?]", task.title, count: 1
+      assert_select "a[data-test='task-card-title'] [x-ref='fadeInner']", count: 1
+      assert_select "[data-test='task-card-title'].line-clamp-2", count: 0
 
       # Slug row: the slug shows with the affected-app emojis grouped under a
       # title attribute listing the repos.
