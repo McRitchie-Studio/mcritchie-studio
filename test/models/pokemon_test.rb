@@ -42,15 +42,19 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal [charmander.id], Pokemon.deck.pluck(:id)
   end
 
-  test "deck excludes baby forms even when self-based (the Tyrogue case)" do
-    hitmonlee = Pokemon.create!(dex: 106, name: "Hitmonlee", slug: "hitmonlee",
-                                baby: ["tyrogue"])
-    Pokemon.create!(dex: 236, name: "Tyrogue", slug: "tyrogue",
-                    evolution: %w[hitmonlee hitmonchan hitmontop])
-    # Tyrogue is self-based (three separate Hitmon families, no single heir)…
-    assert Pokemon.find_by!(slug: "tyrogue").base_form?
-    # …but the baby list keeps him out of the spawn pool.
-    assert_equal [hitmonlee.id], Pokemon.deck.pluck(:id)
+  test "deck excludes a self-based baby via its baby list (defensive guard)" do
+    # No live Gen 1–2 form is a self-based baby after Togepi/Tyrogue were
+    # reclassified as ordinary bases, but the guard stays for a future branching
+    # baby (base == slug yet on a baby list). Synthetic family: a baby root whose
+    # branch carries it, so the union of baby lists keeps the root out.
+    branch = Pokemon.create!(dex: 901, name: "Branchmon", slug: "branchmon",
+                             baby: ["rootmon"])
+    Pokemon.create!(dex: 902, name: "Rootmon", slug: "rootmon",
+                    evolution: %w[branchmon])
+    # Rootmon is self-based (no single heir to hand the crown to)…
+    assert Pokemon.find_by!(slug: "rootmon").base_form?
+    # …but its baby list keeps it out of the spawn pool.
+    assert_equal [branch.id], Pokemon.deck.pluck(:id)
   end
 
   test "deck excludes a baby based on its family base (the Cleffa case)" do
@@ -152,9 +156,18 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "clefairy", by["cleffa"]["base"]
     assert_equal ["cleffa"], by["clefairy"]["baby"]
     assert_equal "magmar", by["magby"]["base"]
-    # Tyrogue: the one self-based baby (three separate Hitmon families).
+    # Togepi/Tyrogue: reclassified as non-babies, so each roots its own family.
+    # Togepi is its family's base (Togetic evolves from it); Tyrogue roots the
+    # merged Hitmon family — the three Hitmons are its branch evolutions, no baby.
+    assert_equal "togepi", by["togepi"]["base"]
+    assert_equal ["togetic"], by["togepi"]["evolution"]
+    assert_empty by["togetic"]["baby"]
     assert_equal "tyrogue", by["tyrogue"]["base"]
-    %w[hitmonlee hitmonchan hitmontop].each { |slug| assert_equal ["tyrogue"], by[slug]["baby"] }
+    assert_equal %w[hitmonchan hitmonlee hitmontop], by["tyrogue"]["evolution"].sort
+    %w[hitmonlee hitmonchan hitmontop].each do |slug|
+      assert_equal "tyrogue", by[slug]["base"]
+      assert_empty by[slug]["baby"]
+    end
     # Branching lines list every next step available within Gen 1–2.
     assert_equal %w[espeon flareon jolteon umbreon vaporeon], by["eevee"]["evolution"].sort
     assert_equal %w[slowbro slowking], by["slowpoke"]["evolution"].sort
@@ -172,10 +185,10 @@ class PokemonTest < ActiveSupport::TestCase
     assert_empty by["porygon2"]["evolution"]
 
     babies = rows.flat_map { |r| r["baby"] }.uniq.sort
-    assert_equal %w[cleffa elekid igglybuff magby pichu smoochum togepi tyrogue], babies
+    assert_equal %w[cleffa elekid igglybuff magby pichu smoochum], babies
 
     spawnable = rows.select { |r| r["base"] == r["slug"] && !babies.include?(r["slug"]) }
-    assert_equal 131, spawnable.size
+    assert_equal 129, spawnable.size
   end
 
   # --- Seed (idempotency from the committed JSON) ---
@@ -225,7 +238,7 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "sprite.png", p.display_avatar
   end
 
-  test "seed carries the family columns and shapes the 131-base deck" do
+  test "seed carries the family columns and shapes the 129-base deck" do
     capture_io { load Rails.root.join("db/seeds/56_pokemon.rb").to_s }
 
     charizard = Pokemon.find_by!(slug: "charizard")
@@ -233,10 +246,13 @@ class PokemonTest < ActiveSupport::TestCase
     assert_empty charizard.evolution
 
     deck = Pokemon.deck.pluck(:slug)
-    assert_equal 131, deck.size
+    assert_equal 129, deck.size
     assert_includes deck, "totodile"
     assert_includes deck, "snorlax"
-    assert_not_includes deck, "tyrogue"   # baby, even though self-based
+    assert_includes deck, "togepi"        # reclassified base (Togetic is its evolution)
+    assert_not_includes deck, "togetic"   # now Togepi's evolution
+    assert_includes deck, "tyrogue"       # reclassified base of the merged Hitmon family
+    assert_not_includes deck, "hitmonlee" # now a Tyrogue branch evolution
     assert_not_includes deck, "charizard" # evolved form
     assert_not_includes deck, "cleffa"    # baby
   end

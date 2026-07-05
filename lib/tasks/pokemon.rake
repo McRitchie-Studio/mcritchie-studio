@@ -33,6 +33,16 @@ namespace :pokemon do
   # (resembles mcritchie.studio); the generic `s3…amazonaws.com` host does not.
   S3_BASE = "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon".freeze
 
+  # Forms PokéAPI flags as babies (species.is_baby) that we deliberately treat as
+  # ordinary spawnable bases instead — stamp_family_fields consults this so a
+  # re-fetch reproduces the override rather than re-demoting them.
+  #   togepi  — its only in-range relative is Togetic, so as a non-baby it roots
+  #             its own family (Togetic becomes its evolution). Togekiss is Gen 4.
+  #   tyrogue — a branching baby: as a base it unifies the three Hitmon forms into
+  #             one family that evolves to a random branch at a gate, instead of
+  #             three standalone Hitmon bases.
+  NOT_BABY = %w[togepi tyrogue].freeze
+
   # The handful of Pokémon whose display name isn't just the title-cased slug.
   DISPLAY_NAMES = {
     "nidoran-f" => "Nidoran♀",
@@ -224,7 +234,7 @@ namespace :pokemon do
     rows.each do |row|
       dex = row["dex"]
       species = get_json("#{POKEAPI}/pokemon-species/#{dex}")
-      is_baby[dex] = species["is_baby"] == true
+      is_baby[dex] = species["is_baby"] == true && !NOT_BABY.include?(row["slug"])
       from = species.dig("evolves_from_species", "url").to_s[%r{/(\d+)/?\z}, 1]&.to_i
       parent[dex] = from if from && by_dex.key?(from)
       warn "species ##{format('%03d', dex)} #{row['slug']}#{' (baby)' if is_baby[dex]}"
