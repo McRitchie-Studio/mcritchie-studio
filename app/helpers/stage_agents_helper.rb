@@ -252,6 +252,8 @@ module StageAgentsHelper
       end
     end
 
+    apply_third_evolution!(by_lane, third_evolution(task, events: events))
+
     lanes = %i[build review assembled]
     # The deploy/ship lane is reserved on the assembled column too — not just once
     # shipped. An assembled card holds the empty fourth slot so it never reflows when
@@ -260,6 +262,27 @@ module StageAgentsHelper
     # earlier three (a block lands from reviewed or assembled).
     lanes << :shipped if %w[assembled shipped].include?(task.stage)
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
+  end
+
+  # Board mirror of the timeline's Evolve card: when a task reached a THIRD form at
+  # the assembled gate, stack that evolved form onto the FIRST (build) crew — the
+  # mascot's whole lineage lives together on the card it was born on — and drop the
+  # now-redundant companion from the deploy (assembled/shipped) clusters so the
+  # evolved face shows once (on the first crew), not again beside Steffon/Avi. A
+  # no-op unless a third evolution fired, and left untouched when there is no build
+  # crew to home the form (so the deploy companion still carries it). Mutates the
+  # by-lane cluster map in place.
+  def apply_third_evolution!(by_lane, evo)
+    return unless evo
+
+    build = by_lane[:build]
+    return unless build
+
+    build.stacked += [StageAgent.new(stage: "assembled", agent: evo.to_face)]
+    %i[assembled shipped].each do |lane|
+      cluster = by_lane[lane]
+      cluster.stacked = cluster.stacked.reject { |a| a.agent.is_a?(MascotAgent) } if cluster
+    end
   end
 
   def blocked_build_crew(task, mascot)
@@ -389,6 +412,65 @@ module StageAgentsHelper
                    weight: nil, agent: agent, seconds: nil)
   end
 
+  # A task's THIRD-stage evolution — the NEW form its Pokémon reaches at Steffon's
+  # assembled gate (Mareep submits as Flaaffy, then assembles as Ampharos). Present
+  # only when a form actually appeared there, so 1-/2-stage lines and not-yet-
+  # assembled tasks return nil. History-stable and presentation-only: it reads the
+  # mascot SNAPSHOTS baked on the TaskEvents — the assembled transition's form vs the
+  # form that ENTERED the gate (the snapshot on the event that landed the task in the
+  # stage the assemble came from) — never the live task or a schema field. The
+  # snapshot diff, not devops.mascot_stage, is the source of truth: the stage is
+  # stamped at the gate even when nothing evolves (Task#evolve_stage_mascot), so a
+  # 2-stage line still reads mascot_stage == 2 with no new form. This is the single
+  # source both surfaces consume: the timeline lifts the reveal into its own "Evolve"
+  # card (leaving Steffon alone on Reviewed → Assembled), and the board card stacks
+  # the evolved form onto the FIRST (build) crew.
+  EvolutionReel = Struct.new(:from, :to, :trigger, keyword_init: true)
+  ThirdEvolution = Struct.new(:event, :from, :to, keyword_init: true) do
+    def from_face = snapshot_face(from)
+    def to_face   = snapshot_face(to)
+
+    private
+
+    def snapshot_face(snap)
+      MascotAgent.new(name: snap["name"].presence || snap["slug"],
+                      avatar: snap["avatar"].presence, color: snap["color"].presence)
+    end
+  end
+
+  def third_evolution(task, events: nil)
+    return nil unless Pokemon.table_exists?
+
+    transitions = Array(events || task.task_events)
+                  .select { |e| e.transition? && e.to_stage }
+                  .sort_by { |e| [e.occurred_at, e.id.to_i] }
+    idx = transitions.rindex { |e| e.to_stage == "assembled" }
+    return nil unless idx&.positive?
+
+    evt = transitions[idx]
+    # The form that ENTERED the assembled gate: the snapshot on the event that landed
+    # the task in the stage the assemble came from (normally →reviewed), falling back
+    # to the immediately-preceding transition when that landing event is missing.
+    entered = transitions[0...idx].reverse.find { |e| e.to_stage == evt.from_stage } ||
+              transitions[idx - 1]
+    from_snap = entered.mascot_snapshot
+    to_snap = evt.mascot_snapshot
+    return nil if from_snap["slug"].blank? || to_snap["slug"].blank?
+    return nil if from_snap["slug"] == to_snap["slug"]
+
+    # A genuine THIRD evolution means the mascot ALREADY evolved once at the submit
+    # gate before this assemble step — so the form ENTERING the gate is itself an
+    # evolution, never a base form. Without this guard a task that reaches assembled
+    # WITHOUT passing the submit gate (a skipped or bypassed submit) evolves base →
+    # first form AT the gate, and that FIRST evolution (Charmander → Charmeleon) would
+    # render as a bogus Evolve card. The lookup is bounded — only the few
+    # assembled/shipped cards whose mascot actually changed at the gate reach it.
+    entering = Pokemon.find_by(slug: from_snap["slug"])
+    return nil if entering.nil? || entering.base_form?
+
+    ThirdEvolution.new(event: evt, from: from_snap, to: to_snap)
+  end
+
   # The CONSOLIDATED timeline for /tasks/:id — one ordered list that replaces the
   # separate "Stage Crew" + "Stage Timeline" panels. Every completed TRANSITION is
   # a block (from→to, the agent(s) that COMPLETED it, time-in-stage, and the
@@ -399,9 +481,13 @@ module StageAgentsHelper
   # TimelineBlock in pipeline order.
   TimelineBlock = Struct.new(:event, :from_label, :to_label, :from_stage, :to_stage,
                              :occurred_at, :seconds, :agents, :model, :tokens, :cost,
-                             :source, :live_since, :in_progress, :backfilled, keyword_init: true) do
+                             :source, :live_since, :in_progress, :backfilled, :evolution,
+                             keyword_init: true) do
     def in_progress? = in_progress
     def usage? = model.present? || tokens.present? || cost.present?
+    # An "Evolve" card — a synthetic reel spliced in after the assembled block for a
+    # third-stage evolution; it carries an EvolutionReel instead of a real transition.
+    def evolution? = evolution.present?
   end
 
   def stage_timeline(task, agents, events: nil, mascot: nil)
@@ -443,7 +529,41 @@ module StageAgentsHelper
       )
     end
 
+    insert_evolution_card!(blocks, third_evolution(task, events: events))
+
     blocks
+  end
+
+  # Lift the assembled gate's THIRD evolution into its own "Evolve" reel right after
+  # Steffon's Reviewed → Assembled card. The reel becomes the SINGLE home of the
+  # evolved form, so the mascot companion is stripped off BOTH deploy cards — Steffon's
+  # assembled AND Avi's shipped — leaving each soul alone; the Evolve card is credited
+  # to whoever triggered the assemble. A no-op unless a third evolution fired. Mutates
+  # `blocks` in place.
+  def insert_evolution_card!(blocks, evo)
+    return unless evo
+
+    idx = blocks.index { |b| b.event&.id == evo.event.id }
+    return unless idx
+
+    assembled = blocks[idx]
+    trigger = assembled.agents.find { |a| !a.agent.is_a?(MascotAgent) }
+    assembled.agents = assembled.agents.reject { |a| a.agent.is_a?(MascotAgent) }
+    if (shipped = blocks.find { |b| b.to_stage == "shipped" })
+      shipped.agents = shipped.agents.reject { |a| a.agent.is_a?(MascotAgent) }
+    end
+
+    blocks.insert(idx + 1, TimelineBlock.new(
+                             event: evo.event, from_label: "Evolve", to_label: "Evolve",
+                             from_stage: nil, to_stage: nil, occurred_at: evo.event.occurred_at,
+                             # Carry the assemble event's timing so the shared metric +
+                             # footer sections read a Duration and a Started → Completed
+                             # stamp, like every other card. Model / tokens / cost stay
+                             # blank — those belong to the Reviewed → Assembled card.
+                             seconds: evo.event.seconds_in_from, agents: [], model: nil, tokens: nil, cost: nil,
+                             source: nil, live_since: nil, in_progress: false, backfilled: false,
+                             evolution: EvolutionReel.new(from: evo.from_face, to: evo.to_face, trigger: trigger)
+                           ))
   end
 
   def merge_live_build_work!(blocks, work)

@@ -60,7 +60,7 @@
       <% blocks.each do |block| %>
         <% started_at = (block.occurred_at && block.seconds) ? block.occurred_at - block.seconds : nil %>
         <li class="relative isolate flex flex-col bg-surface rounded-lg p-3 border <%= block.in_progress? ? "border-green-400/50" : "border-subtle" %>"
-            data-test="timeline-block" data-stage="<%= block.to_stage %>" data-in-progress="<%= block.in_progress? %>">
+            data-test="timeline-block" data-stage="<%= block.evolution? ? "evolve" : block.to_stage %>" data-in-progress="<%= block.in_progress? %>">
           <% if block.in_progress? %>
             <%# Live-work indicator: a soft green tint PULSING behind the card content
                 (replaces the old "in progress" pill — the duration ticker tells the
@@ -70,6 +70,44 @@
                   class="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-green-500/15 animate-pulse"></span>
           <% end %>
 
+          <% if block.evolution? %>
+            <%# EVOLVE — a synthetic card spliced in after Reviewed → Assembled for a
+                third-stage evolution. Shares the standard card anatomy: a single
+                "Evolve" badge on top, then the reel (prior form → evolved form) + who
+                triggered it as the crew, then the shared metric + footer sections
+                below. Model / tokens / cost stay blank — they belong to the real
+                Reviewed → Assembled card and are never double-counted. %>
+            <div class="flex flex-wrap items-center justify-center gap-2 mb-3" data-test="timeline-transition">
+              <%= render "components/badge", text: "Evolve", scheme: "violet" %>
+            </div>
+            <div class="flex flex-col items-center justify-center gap-2 mb-3 min-h-[4rem]" data-test="timeline-evolution">
+              <div class="flex items-center justify-center gap-3">
+                <div class="flex flex-col items-center gap-1.5 min-w-0" data-test="timeline-evolution-from">
+                  <div class="rounded-full ring-2 ring-surface shrink-0">
+                    <%= render "components/agent_avatar", agent: block.evolution.from, size: "md" %>
+                  </div>
+                  <span class="text-sm text-heading truncate max-w-[7rem]"><%= block.evolution.from.name %></span>
+                </div>
+                <span class="text-muted text-lg" aria-hidden="true">&rarr;</span>
+                <div class="flex flex-col items-center gap-1.5 min-w-0" data-test="timeline-evolution-to">
+                  <div class="rounded-full ring-2 ring-primary/60 shrink-0">
+                    <%= render "components/agent_avatar", agent: block.evolution.to, size: "md" %>
+                  </div>
+                  <span class="text-sm text-heading font-medium truncate max-w-[7rem]"><%= block.evolution.to.name %></span>
+                </div>
+              </div>
+              <% if block.evolution.trigger %>
+                <div class="flex items-center gap-1.5 text-[11px] text-muted" data-test="timeline-evolution-trigger">
+                  <span aria-hidden="true">&#9889;</span>
+                  <span>triggered by</span>
+                  <div class="rounded-full ring-1 ring-surface shrink-0">
+                    <%= render "components/agent_avatar", agent: block.evolution.trigger, size: "xxs" %>
+                  </div>
+                  <span class="text-secondary font-medium"><%= block.evolution.trigger.name %></span>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
           <%# 1 — stage transition, centered. Deploy-lane live intent cards show only
               the active stage badge until the transition lands; build-lane live work
               is different because `building` is the intent stage, so its existing
@@ -119,6 +157,7 @@
               <span class="self-center text-sm text-muted">&mdash;</span>
             <% end %>
           </div>
+          <% end %>
 
           <%# 3 — uniform metric block: Model · Tokens · Cost · Duration (— when not reported) %>
           <dl class="grid grid-cols-2 gap-x-3 gap-y-2 mb-3 text-xs" data-test="timeline-metrics">
