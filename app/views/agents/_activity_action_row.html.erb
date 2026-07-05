@@ -1,0 +1,73 @@
+<%# One raw AgentAction as a drill-down row under its activity — revealed when the
+    activity is expanded (x-show="open", inherited from the parent tbody). It mirrors the
+    activity row's 7 columns but with the action's own shape: the Action column is TWO
+    sub-rows (#seq KIND + summary, then the load-bearing key-method command); Cost is
+    two sub-rows (cost, tokens — no model at this altitude); Details is #seq KIND + the
+    [ok] outcome badge, then the raw tool-input JSON. The two grade cells persist Alex +
+    McRitchie grades on the action itself (the action-level ActionGrade). The row carries
+    its own grade Alpine scope but no `open`, so x-show reads the activity's expand flag.
+    Locals: action, activity, agents_by_slug, pokemon_by_slug, action_grades,
+    shared_turn_ids. %>
+<% outcome = heartbeat_outcome_meta(action.outcome) %>
+<% action_pokemon = pokemon_by_slug[action.mascot] %>
+<% turn_shared = shared_turn_ids.include?(action.id) %>
+<% grades_for = action_grades[action.id] || {} %>
+<% alex_g = grades_for[ActionGrade::ALEX] %>
+<% mcr_g  = grades_for[ActionGrade::MCR] %>
+<tr class="aa-subrow" data-test="aa-action" data-seq="<%= action.seq %>"
+    data-row-id="<%= action.id %>" data-id-field="agent_action_id"
+    data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
+    data-alex-long="<%= alex_g&.long_form %>" data-alex-graded="<%= alex_g.present? %>"
+    data-alex-banked="<%= !!alex_g&.banked %>"
+    data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
+    data-mcr-long="<%= mcr_g&.long_form %>" data-mcr-graded="<%= mcr_g.present? %>"
+    data-mcr-banked="<%= !!mcr_g&.banked %>"
+    x-show="open" x-data="agentsActionRow()" x-init="hydrateGrades($el)"
+    @aa:graded.window="onGraded($event.detail)"
+    style="--hb-edge: <%= outcome[:color] %>">
+  <td class="aa-chev" aria-hidden="true"></td>
+  <td class="aa-agent"><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon,
+                                                 agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                                 submascot: true) %></td>
+  <td class="aa-activity">
+    <div class="aa-stack">
+      <div class="aa-r aa-r-wrap aa-actionhead">
+        <span class="aa-seqbadge">#<%= action.seq %></span>
+        <span class="aa-kindbadge"><%= action.kind %></span>
+        <span class="aa-action-summary" data-test="aa-action-summary"><%= action.summary.presence || action.event_slug.presence || "—" %></span>
+      </div>
+      <div class="aa-r aa-keycmd" data-test="aa-action-keymethod">
+        <% if action.key_method.present? %>
+          <%= render "heartbeat/key_method_chip", code: action.key_method, lang: action.key_method_lang %>
+        <% else %>
+          <span class="aa-empty-sub">—</span>
+        <% end %>
+      </div>
+    </div>
+  </td>
+  <td class="aa-cost aa-collapsible <%= "aa-turn-shared" if turn_shared %>"
+      title="<%= heartbeat_shared_turn_title if turn_shared %>">
+    <div class="aa-stack">
+      <div class="aa-r aa-cost-amt" data-test="aa-action-cost"><%= heartbeat_cost(action.cost) %></div>
+      <div class="aa-r aa-cost-tok"><%= heartbeat_tokens(action) %></div>
+    </div>
+  </td>
+  <td class="aa-details aa-collapsible">
+    <div class="aa-stack">
+      <div class="aa-r aa-r-wrap">
+        <span class="aa-seqbadge">#<%= action.seq %></span>
+        <span class="aa-kindbadge"><%= action.kind %></span>
+        <span class="aa-outcome" data-test="aa-action-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
+      </div>
+      <div class="aa-r">
+        <% if action.input.present? %>
+          <span class="aa-json" data-test="aa-action-input" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
+        <% else %>
+          <span class="aa-empty-sub">—</span>
+        <% end %>
+      </div>
+    </div>
+  </td>
+  <%= render "agents/activities_grade_cell", kind: :action, target: action, grader: "alex", grade: alex_g %>
+  <%= render "agents/activities_grade_cell", kind: :action, target: action, grader: "mcr", grade: mcr_g %>
+</tr>

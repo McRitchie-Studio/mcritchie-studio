@@ -1,0 +1,53 @@
+<%# The inner grade controls — the good/not radios + × nullify on top, the note
+    (disposition dot + slug, then long-form) beneath — shared by the desktop grade <td>
+    cell AND the mobile priority-columns detail, so grading works in both places from
+    one source. Accessibility: the radios are visually hidden but stay focusable and
+    keyboard-operable (see .aa-rb input in the stylesheet), wrapped in an aria-labelled
+    radiogroup that names the grader. Server-rendered from `grade` (tests + no-JS
+    correct) and bound to the row's Alpine grades.<grader> for live updates.
+    Locals: kind (:activity | :action), target, grader ("alex"|"mcr"), grade
+    (ActionGrade|nil), test_pref (data-test namespace — "aa-activity"/"aa-action" for the
+    canonical cell, "…-m" for the mobile copy so hooks never collide). %>
+<% endpoint = kind == :activity ? heartbeat_activity_grade_path(target) : heartbeat_grade_path(target) %>
+<% role     = grader == "mcr" ? "M" : "A" %>
+<% who      = grader == "mcr" ? "Mr. McRitchie" : "Alex" %>
+<div class="aa-gradebox">
+  <form action="<%= endpoint %>" method="post" class="aa-graderow" data-grader="<%= grader %>"
+        data-test="<%= test_pref %>-grade-form-<%= grader %>" aria-label="<%= who %> grade" @submit.prevent>
+    <%= hidden_field_tag :authenticity_token, form_authenticity_token, id: nil %>
+    <input type="hidden" name="grader" value="<%= grader %>">
+    <span class="aa-graderole" aria-hidden="true"><%= role %></span>
+    <span class="aa-radiogrp" role="radiogroup" aria-label="<%= who %> grade">
+      <label class="aa-rb <%= "on-good" if grade&.good? %>"
+             :class="{ 'on-good': grades.<%= grader %> && grades.<%= grader %>.disposition === 'good' }">
+        <input type="radio" name="disposition" value="good" <%= "checked" if grade&.good? %>
+               aria-label="<%= who %>: good"
+               :checked="grades.<%= grader %> && grades.<%= grader %>.disposition === 'good'"
+               @change="quickGrade($event)">
+        Good
+      </label>
+      <label class="aa-rb <%= "on-not" if grade&.not_good? %>"
+             :class="{ 'on-not': grades.<%= grader %> && grades.<%= grader %>.disposition === 'not' }">
+        <input type="radio" name="disposition" value="not" <%= "checked" if grade&.not_good? %>
+               aria-label="<%= who %>: not good"
+               :checked="grades.<%= grader %> && grades.<%= grader %>.disposition === 'not'"
+               @change="quickGrade($event)">
+        Not
+      </label>
+    </span>
+    <button type="button" class="aa-gradeclear <%= "is-visible" if grade.present? %>"
+            title="Clear feedback" aria-label="Clear <%= who %> feedback"
+            :class="{ 'is-visible': !!grades.<%= grader %> }" :disabled="!grades.<%= grader %>"
+            @click.stop="clearGrade($event)">&times;</button>
+  </form>
+
+  <div class="aa-note" data-test="<%= test_pref %>-note-<%= grader %>"
+       x-show="grades.<%= grader %>" <%= raw(grade ? "" : 'style="display:none"') %>>
+    <span class="aa-notedot" :class="grades.<%= grader %> && grades.<%= grader %>.disposition === 'good' ? 'is-good' : 'is-not'"></span>
+    <span class="aa-noteslug" x-text="grades.<%= grader %> ? grades.<%= grader %>.slug : ''"><%= grade&.slug %></span>
+    <span class="aa-bankmark" title="banked insight" x-show="grades.<%= grader %> && grades.<%= grader %>.banked" <%= raw(grade&.banked ? "" : 'style="display:none"') %>>&#128161;</span>
+  </div>
+  <div class="aa-note aa-notelong" x-show="grades.<%= grader %> && grades.<%= grader %>.long_form"
+       <%= raw(grade&.long_form.present? ? "" : 'style="display:none"') %>
+       x-text="grades.<%= grader %> ? grades.<%= grader %>.long_form : ''"><%= grade&.long_form %></div>
+</div>

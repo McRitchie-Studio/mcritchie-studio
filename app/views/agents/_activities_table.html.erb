@@ -1,0 +1,156 @@
+<%# The reimagined activity feed table. Seven columns — Agent, Activity, Cost, Details,
+    Alex, McRitchie — each a 3-sub-row stack; every activity is a collapsible tbody whose
+    expand reveals its raw actions (newest-first) as drill-down rows. On mobile the four
+    aa-collapsible columns (Cost/Details/Alex/McRitchie) hide behind a per-row "more"
+    toggle that opens a compact detail row (priority columns). All rolled-up numbers come
+    from the controller-loaded activity_rows array (no per-row query). Locals: activity_rows
+    (Array of [AgentActivity, [AgentAction,...]]), pokemon_by_slug, agents_by_slug,
+    activity_grades, action_grades, shared_turn_ids, stage_transitions. %>
+<% pokemon_by_slug ||= {} %>
+<% agents_by_slug ||= {} %>
+<% activity_grades ||= {} %>
+<% action_grades ||= {} %>
+<% stage_transitions ||= {} %>
+<% shared_turn_ids ||= Set.new %>
+<div class="hb-scroll aa-scroll">
+  <table class="aa-tbl" data-test="agents-activities-table" data-sticky-table-header="false">
+    <thead>
+      <tr>
+        <th class="aa-th-chev"></th>
+        <th class="aa-th-agent">Agent</th>
+        <th>Activity</th>
+        <th class="aa-collapsible">Cost</th>
+        <th class="aa-collapsible">Details</th>
+        <th class="aa-collapsible aa-th-grade">Alex</th>
+        <th class="aa-collapsible aa-th-grade">McRitchie</th>
+      </tr>
+    </thead>
+
+    <% activity_rows.each do |activity, actions| %>
+      <% cat = heartbeat_category_meta(activity.category) %>
+      <% totals = heartbeat_activity_totals(actions) %>
+      <% status = heartbeat_activity_status_meta(activity, stage_transitions) %>
+      <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
+      <% pokemon = pokemon_by_slug[mascot_slug] %>
+      <% grades_for = activity_grades[activity.id] || {} %>
+      <% alex_g = grades_for[ActionGrade::ALEX] %>
+      <% mcr_g = grades_for[ActionGrade::MCR] %>
+      <tbody class="aa-group" data-test="aa-activity" data-activity-id="<%= activity.id %>"
+             data-row-id="<%= activity.id %>" data-id-field="agent_activity_id"
+             data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
+             data-alex-long="<%= alex_g&.long_form %>" data-alex-graded="<%= alex_g.present? %>"
+             data-alex-banked="<%= !!alex_g&.banked %>"
+             data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
+             data-mcr-long="<%= mcr_g&.long_form %>" data-mcr-graded="<%= mcr_g.present? %>"
+             data-mcr-banked="<%= !!mcr_g&.banked %>"
+             x-data="agentsActivityRow()" x-init="hydrateGrades($el)"
+             @aa:graded.window="onGraded($event.detail)">
+        <tr class="aa-arow" data-test="aa-activity-row" @click="open = !open" style="--hb-edge: <%= cat[:accent] %>">
+          <td class="aa-chev">
+            <button type="button" class="aa-chevbtn" @click.stop="open = !open"
+                    :aria-expanded="open ? 'true' : 'false'" aria-label="Toggle raw actions">
+              <span class="hb-chev" :class="open ? 'hb-chev-open' : ''" aria-hidden="true">&#9656;</span>
+            </button>
+          </td>
+          <td class="aa-agent"><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
+                                       agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                       mascot_test: "aa-activity-mascot") %></td>
+
+          <td class="aa-activity">
+            <div class="aa-stack">
+              <div class="aa-r aa-r-wrap">
+                <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>" data-test="aa-activity-category"><%= activity.category %></span>
+                <span class="aa-goal" data-test="aa-activity-goal"><%= activity.reason_slug.presence || "—" %></span>
+              </div>
+              <div class="aa-r aa-resultline">
+                <span class="aa-arrow" aria-hidden="true">&rarr;</span>
+                <% if activity.open? || activity.outcome_slug.blank? %>
+                  <span class="aa-inprogress" data-test="aa-activity-result"><%= heartbeat_activity_result(activity) %></span>
+                <% else %>
+                  <span class="aa-resultfade" data-test="aa-activity-result"><%= render "components/overflow_fade", text: activity.outcome_slug %></span>
+                <% end %>
+              </div>
+              <div class="aa-r aa-keycmd" data-test="aa-activity-keymethod">
+                <% if activity.key_method.present? %>
+                  <%= render "heartbeat/key_method_chip", code: activity.key_method, lang: activity.key_method_lang %>
+                <% else %>
+                  <span class="aa-empty-sub">—</span>
+                <% end %>
+              </div>
+            </div>
+          </td>
+
+          <td class="aa-cost aa-collapsible">
+            <div class="aa-stack">
+              <div class="aa-r aa-cost-amt" data-test="aa-activity-cost"><%= heartbeat_cost(totals[:cost]) %></div>
+              <div class="aa-r aa-cost-model" title="<%= totals[:model].presence || "no model (board / harness steps only)" %>"><%= heartbeat_model_short(totals[:model]) %></div>
+              <div class="aa-r aa-cost-tok"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></div>
+            </div>
+          </td>
+
+          <td class="aa-details aa-collapsible">
+            <div class="aa-stack">
+              <div class="aa-r aa-r-wrap">
+                <span class="aa-time" data-test="aa-activity-time" title="<%= activity.opened_at&.iso8601 %>"><%= heartbeat_time(activity.opened_at) %></span>
+                <%= heartbeat_activity_status_badge(status) %>
+              </div>
+              <div class="aa-r">
+                <span class="aa-task" data-test="aa-activity-task"><%= activity.task_slug.presence || "—" %></span>
+              </div>
+              <div class="aa-r">
+                <span class="aa-count" data-test="aa-activity-count"><%= pluralize(actions.size, "action") %></span>
+                <% if activity.open? %><span class="aa-spinner" title="activity still open"></span><% end %>
+              </div>
+            </div>
+          </td>
+
+          <%= render "agents/activities_grade_cell", kind: :activity, target: activity, grader: "alex", grade: alex_g %>
+          <%= render "agents/activities_grade_cell", kind: :activity, target: activity, grader: "mcr", grade: mcr_g %>
+        </tr>
+
+        <%# Mobile priority-columns — the collapsed Cost/Details/grade summary revealed by
+            the per-row "more" toggle. Read-only mirror bound to the row's live grade state. %>
+        <tr class="aa-mobile-detail" :class="{ 'is-open': mopen }">
+          <td colspan="7">
+            <button type="button" class="aa-mtoggle" @click.stop="mopen = !mopen" x-text="mopen ? '× less' : '⋯ more'">⋯ more</button>
+            <div class="aa-md-grid" x-show="mopen">
+              <div class="aa-md-block">
+                <div class="aa-md-label">Cost</div>
+                <div class="aa-cost-amt"><%= heartbeat_cost(totals[:cost]) %></div>
+                <div class="aa-cost-model"><%= heartbeat_model_short(totals[:model]) %></div>
+                <div class="aa-cost-tok"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></div>
+              </div>
+              <div class="aa-md-block">
+                <div class="aa-md-label">Details</div>
+                <div class="aa-time"><%= heartbeat_time(activity.opened_at) %></div>
+                <div class="aa-task"><%= activity.task_slug.presence || "—" %></div>
+                <div class="aa-count"><%= pluralize(actions.size, "action") %></div>
+              </div>
+              <div class="aa-md-block">
+                <div class="aa-md-label">Alex</div>
+                <%= render "agents/activities_grade_controls", kind: :activity, target: activity,
+                      grader: "alex", grade: alex_g, test_pref: "aa-activity-m" %>
+              </div>
+              <div class="aa-md-block">
+                <div class="aa-md-label">McRitchie</div>
+                <%= render "agents/activities_grade_controls", kind: :activity, target: activity,
+                      grader: "mcr", grade: mcr_g, test_pref: "aa-activity-m" %>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <% if actions.any? %>
+          <%= render partial: "agents/activity_action_row", collection: actions, as: :action,
+                locals: { activity: activity, agents_by_slug: agents_by_slug, pokemon_by_slug: pokemon_by_slug,
+                          action_grades: action_grades, shared_turn_ids: shared_turn_ids } %>
+        <% else %>
+          <tr class="aa-subrow aa-emptyrow" x-show="open">
+            <td class="aa-chev" aria-hidden="true"></td>
+            <td colspan="6">No raw actions attributed to this activity.</td>
+          </tr>
+        <% end %>
+      </tbody>
+    <% end %>
+  </table>
+</div>

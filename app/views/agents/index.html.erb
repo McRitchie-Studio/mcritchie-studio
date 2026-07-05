@@ -1,5 +1,10 @@
 <section>
-  <h2 class="text-2xl font-bold text-heading mb-6">Agents</h2>
+  <div class="flex items-center justify-between gap-3 mb-6">
+    <h2 class="text-2xl font-bold text-heading">Agents</h2>
+    <%= link_to activities_agents_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-secondary hover:border-primary/40 hover:text-heading transition", data: { test: "agents-activities-link" } do %>
+      Activities feed <span aria-hidden="true">&rarr;</span>
+    <% end %>
+  </div>
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
     <% @agents.each do |agent| %>
       <% docs = @agent_docs_by_slug.fetch(agent.slug, []) %>
