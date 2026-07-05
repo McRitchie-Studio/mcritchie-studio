@@ -29,18 +29,49 @@ Use the production board by default. Do not add `--local`.
 ## Preconditions
 
 - Steffon's `qa-release` has produced a QA-green release.
+- The active release is `assembled` and `qa_deployed_at` is stamped.
 - Members are `assembled` and `merged: release`.
 - The release candidate is live on QA.
 - The primary checkout is clean enough to ship.
 
-If `release == main` or no QA-green release exists, report "nothing to ship" and
-stop.
+If `release == main`, no release is active, the active release is still
+`assembling`, or `qa_deployed_at` is blank, report "nothing to ship" and stop.
 
 ## Procedure
 
-**Announce the handoff first.** The QA-green release sits at three greens with
-Confirming dark — Steffon's finish line. The moment you begin confirming (before
-any checks), notify the release so the /deployments tracker lights stage 4
+**Gate before activating Avi.** Do not post `confirming/start` just because
+`Release.current` exists. The Avi handoff exists only when the next release is
+already live on QA: `Release.current.state == "assembled"` and the
+`qa_deployed_at` stage timestamp is present.
+
+```bash
+bin/release status
+```
+
+If status reports `release == main`, stop immediately. Otherwise validate the
+production-board release timestamp before lighting stage 4:
+
+```bash
+heroku run -a mcritchie-studio --no-tty rails runner \
+  'r = Release.current;
+   ready = r&.state == "assembled" && r.qa_deployed_at.present?;
+   puts({
+     ready: ready,
+     release: r&.slug,
+     state: r&.state,
+     qa_deployed_at: r&.qa_deployed_at&.iso8601,
+     qa_url: r&.qa_url
+   }.to_json);
+   exit(ready ? 0 : 1)'
+```
+
+If that command exits nonzero, the release is not ready for Avi. Do not stamp
+`confirming/start`, do not run `bin/release ship`, and report "nothing to ship"
+with the printed release state.
+
+**Announce the handoff only after that guard passes.** The QA-green release sits
+at three greens with Confirming dark — Steffon's finish line. The moment you
+begin confirming, notify the release so the /deployments tracker lights stage 4
 yellow under your name (`docs/agents/modules/task-board-api.md`, "Release stage
 timeline"):
 
@@ -53,12 +84,6 @@ api POST /api/v1/releases/current/events/confirming/start '{"event": {"actor": "
 safe no-op. (If you skip this and go straight to `bin/release ship`, its
 `ship_gate started` checkpoint stamps `confirming` then — but only at ship time,
 which under-reports your confirmation work; post the start when the work starts.)
-
-Check readiness:
-
-```bash
-bin/release status
-```
 
 Run ship only when status shows a ready QA-green release:
 
