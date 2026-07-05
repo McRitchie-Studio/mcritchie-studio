@@ -3,8 +3,8 @@
     traces it back to whatever it was mined from and whether it is Alex's grade or
     the McRitchie audit of Alex.
 
-    A grade targets EITHER a raw action OR a narrated span (ActionGrade's XOR), so
-    read the provenance from whichever is set — a span grade has no atomic_action
+    A grade targets EITHER a raw action OR a narrated activity (ActionGrade's XOR), so
+    read the provenance from whichever is set — an activity grade has no agent_action
     (dereferencing it unconditionally 500'd the whole bank). Both nil means the
     target was deleted (has_many :nullify), so the lesson outlives its source. %>
 <% source = grade.insight_source %>
@@ -16,7 +16,7 @@
   </div>
   <div class="hb-imeta">
     <% if source %>
-      from <%= grade.event_grade? ? "span " : "" %>#<%= source.seq %><%= " &middot; #{grade.insight_label}".html_safe if grade.insight_label.present? %>
+      from <%= grade.activity_grade? ? "activity " : "" %>#<%= source.seq %><%= " &middot; #{grade.insight_label}".html_safe if grade.insight_label.present? %>
       <%= " &middot; #{source.task_slug}".html_safe if source.task_slug.present? %>
     <% else %>
       source since removed

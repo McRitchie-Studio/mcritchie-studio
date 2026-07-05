@@ -1,0 +1,49 @@
+<%# The per-activity grading drawer body, lazy-loaded into the shared turbo-frame when the
+    operator clicks an activity's grade button. The activity-level mirror of _drawer: a header,
+    a key/value summary (category, status, opened, the rolled-up token/cost/model of the
+    actions it framed), then Alex's activity grade editor and the McRitchie audit editor.
+    The editors POST to the activity grade endpoint via fetch (heartbeatActivityEditor),
+    so the drawer stays a read-only GET. Locals: activity, actions (its attributed
+    AgentActions), alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
+<%= turbo_frame_tag "hb-drawer" do %>
+  <% activity ||= local_assigns[:event] %>
+  <% stage_transitions ||= {} %>
+  <% cat = heartbeat_category_meta(activity.category) %>
+  <% status = heartbeat_activity_status_meta(activity, stage_transitions) %>
+  <% totals = heartbeat_activity_totals(actions) %>
+  <div class="hb-dh">
+    <button type="button" class="hb-dclose" @click="closeDrawer()" aria-label="Close drawer">&times;</button>
+    <h2>
+      <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>"><%= activity.category %></span>
+      <%= activity.reason_slug %>
+    </h2>
+    <div class="hb-dsub">
+      &rarr;
+      <% if activity.open? || activity.outcome_slug.blank? %>
+        <span class="hb-inprogress"><%= heartbeat_activity_result(activity) %></span>
+      <% else %>
+        <%= activity.outcome_slug %>
+      <% end %>
+    </div>
+  </div>
+  <div class="hb-db">
+    <div class="hb-kv">
+      <span class="hb-k">Status</span><span><%= heartbeat_activity_status_badge(status) %></span>
+      <span class="hb-k">Category</span><span><%= activity.category %></span>
+      <span class="hb-k">Task</span><span class="hb-mono"><%= activity.task_slug.presence || "—" %></span>
+      <span class="hb-k">Opened</span><span class="hb-mono" title="<%= activity.opened_at&.iso8601 %>"><%= heartbeat_time(activity.opened_at) %></span>
+      <span class="hb-k">Actions</span><span><%= pluralize(actions.size, "action") %></span>
+      <span class="hb-k">Model</span><span class="hb-mono"><%= heartbeat_model_short(totals[:model]) %></span>
+      <span class="hb-k">Tokens</span><span class="hb-mono"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></span>
+      <span class="hb-k">Cost</span><span class="hb-mono"><%= heartbeat_cost(totals[:cost]) %></span>
+    </div>
+
+    <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::ALEX,
+          who: "Alex", role_label: "grades this activity", grade: alex,
+          save_label: "Save Alex grade", allow_bank: true %>
+
+    <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::MCR,
+          who: "Mr. McRitchie → Alex", role_label: "audits Alex's activity grade", grade: mcr,
+          save_label: "Save audit", allow_bank: false %>
+  </div>
+<% end %>

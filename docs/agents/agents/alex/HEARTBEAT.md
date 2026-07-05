@@ -5,7 +5,7 @@
 This is Alex's heartbeat launcher. It sets Alex's session attribution and routes
 to three independent act SOPs:
 
-- [`grade-events`](sops/grade-events.md) - grade recent resolved spans into the
+- [`grade-events`](sops/grade-events.md) - grade recent resolved activities into the
   learning layer.
 - [`share-insights`](sops/share-insights.md) - publish Mr. McRitchie's confirmed
   insights to agent docs.
@@ -20,7 +20,7 @@ single Alex act directly, read that act's SOP file.
 Alex owns the learning loop and, when explicitly launched with ship authority,
 the full release pipeline:
 
-- Grade recent trajectory spans so useful agent behavior becomes reusable memory.
+- Grade recent trajectory activities so useful agent behavior becomes reusable memory.
 - Share Mr. McRitchie's confirmed insights into the generated lessons doc and
   installed agent docs.
 - Run `full-cycle` only when the operator launched that autonomous release act or
@@ -35,23 +35,23 @@ Run from the McRitchie Studio primary checkout:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/atomic-event heartbeat alex
+bin/agent-activity heartbeat alex
 ```
 
-Then keep normal trajectory spans open with `bin/atomic-event start|next|end`.
-The heartbeat command makes spans self-attribute to Alex unless a delegated
+Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
+The heartbeat command makes activities self-attribute to Alex unless a delegated
 reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
 
 Keep attribution here. The act SOP files below are standalone procedures and do
-not run `bin/atomic-event heartbeat alex` themselves.
+not run `bin/agent-activity heartbeat alex` themselves.
 
 ## Act SOPs
 
 Run Alex's acts in the launched scope:
 
-1. [`grade-events`](sops/grade-events.md) - grade recent resolved spans.
+1. [`grade-events`](sops/grade-events.md) - grade recent resolved activities.
 2. [`share-insights`](sops/share-insights.md) - publish Mr. McRitchie's confirmed
    insights.
 3. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with

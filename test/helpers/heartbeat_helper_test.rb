@@ -36,22 +36,22 @@ class HeartbeatHelperTest < ActionView::TestCase
   end
 
   test "tokens pair dashes a usageless action and renders in/out otherwise" do
-    quiet = AtomicAction.new(tokens_in: 0, tokens_out: 0)
-    busy  = AtomicAction.new(tokens_in: 9400, tokens_out: 360)
+    quiet = AgentAction.new(tokens_in: 0, tokens_out: 0)
+    busy  = AgentAction.new(tokens_in: 9400, tokens_out: 360)
     assert_equal "—", heartbeat_tokens(quiet)
     assert_equal "9.4k/360", heartbeat_tokens(busy)
   end
 
   test "tokens display shows FRESH spend and excludes cache_read" do
     # A long-session turn: tiny fresh spend, huge cache_read carried only for cost.
-    action = AtomicAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000)
+    action = AgentAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000)
     assert_equal "5.0k/250", heartbeat_tokens(action), "the cell reads fresh tokens, not the 300K+ cache read"
   end
 
   test "usage totals sum the fresh tokens only, never cache_read" do
     actions = [
-      AtomicAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000, cost: 0.18, source_turn_uuid: "t1"),
-      AtomicAction.new(tokens_in: 3000, tokens_out: 100, cache_read_tokens: 120_000, cost: 0.07, source_turn_uuid: "t2")
+      AgentAction.new(tokens_in: 5000, tokens_out: 250, cache_read_tokens: 304_000, cost: 0.18, source_turn_uuid: "t1"),
+      AgentAction.new(tokens_in: 3000, tokens_out: 100, cache_read_tokens: 120_000, cost: 0.07, source_turn_uuid: "t2")
     ]
     totals = heartbeat_usage_totals(actions)
 
@@ -74,20 +74,20 @@ class HeartbeatHelperTest < ActionView::TestCase
   end
 
   test "[unit] category meta gives each declared span an accent, and falls back for the unknown" do
-    AtomicEvent::CATEGORIES.each do |category|
+    AgentActivity::CATEGORIES.each do |category|
       assert_match(/\A#[0-9a-f]{6}\z/, heartbeat_category_meta(category)[:accent], "#{category} needs a hex accent")
     end
     assert_equal "#8b949e", heartbeat_category_meta("Nonsense")[:accent]
   end
 
   test "[unit] event outcome shows the outcome_slug when closed, else the in-progress placeholder" do
-    closed = AtomicEvent.new(closed_at: Time.current, outcome_slug: "found the nil-guard")
-    open   = AtomicEvent.new(closed_at: nil, outcome_slug: nil)
-    closed_no_outcome = AtomicEvent.new(closed_at: Time.current, outcome_slug: "")
+    closed = AgentActivity.new(closed_at: Time.current, outcome_slug: "found the nil-guard")
+    open   = AgentActivity.new(closed_at: nil, outcome_slug: nil)
+    closed_no_outcome = AgentActivity.new(closed_at: Time.current, outcome_slug: "")
 
-    assert_equal "found the nil-guard", heartbeat_event_outcome(closed)
-    assert_equal HeartbeatHelper::IN_PROGRESS, heartbeat_event_outcome(open)
-    assert_equal HeartbeatHelper::IN_PROGRESS, heartbeat_event_outcome(closed_no_outcome)
+    assert_equal "found the nil-guard", heartbeat_activity_result(closed)
+    assert_equal HeartbeatHelper::IN_PROGRESS, heartbeat_activity_result(open)
+    assert_equal HeartbeatHelper::IN_PROGRESS, heartbeat_activity_result(closed_no_outcome)
   end
 
   test "[unit] time formats a stamp and dashes a blank one" do
@@ -120,12 +120,12 @@ class HeartbeatHelperTest < ActionView::TestCase
 
   test "[unit] event totals sum tokens + cost and pick the dominant model and mascot across a span" do
     actions = [
-      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, model: "claude-opus-4-8", mascot: "snorlax"),
-      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, model: "claude-opus-4-8", mascot: "snorlax"),
-      AtomicAction.new(tokens_in: 0, tokens_out: 0, cost: 0, model: nil, mascot: nil)
+      AgentAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, model: "claude-opus-4-8", mascot: "snorlax"),
+      AgentAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, model: "claude-opus-4-8", mascot: "snorlax"),
+      AgentAction.new(tokens_in: 0, tokens_out: 0, cost: 0, model: nil, mascot: nil)
     ]
 
-    totals = heartbeat_event_totals(actions)
+    totals = heartbeat_activity_totals(actions)
 
     assert_equal 16_200, totals[:tokens_in]
     assert_equal 2_760, totals[:tokens_out]
@@ -136,7 +136,7 @@ class HeartbeatHelperTest < ActionView::TestCase
   end
 
   test "[unit] event totals over no actions are all zero / nil (a span that framed nothing)" do
-    totals = heartbeat_event_totals([])
+    totals = heartbeat_activity_totals([])
 
     assert_equal 0, totals[:tokens_total]
     assert_equal 0.0, totals[:cost]
@@ -149,11 +149,11 @@ class HeartbeatHelperTest < ActionView::TestCase
     # turn-A's usage. Two more actions belong to turn-B. A naive per-action sum
     # would triple-count turn-A; dedupe must count each turn once.
     actions = [
-      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
-      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
-      AtomicAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
-      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B"),
-      AtomicAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B")
+      AgentAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AgentAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AgentAction.new(tokens_in: 9400, tokens_out: 360, cost: 0.05, source_turn_uuid: "turn-A"),
+      AgentAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B"),
+      AgentAction.new(tokens_in: 6800, tokens_out: 2400, cost: 0.09, source_turn_uuid: "turn-B")
     ]
 
     totals = heartbeat_usage_totals(actions)
@@ -167,8 +167,8 @@ class HeartbeatHelperTest < ActionView::TestCase
   test "[unit] usage totals count each blank-turn action on its own (no shared turn)" do
     # Pre-usage / board / harness rows carry no source_turn_uuid — each is distinct.
     actions = [
-      AtomicAction.new(tokens_in: 100, tokens_out: 10, cost: 0.01, source_turn_uuid: nil),
-      AtomicAction.new(tokens_in: 200, tokens_out: 20, cost: 0.02, source_turn_uuid: nil)
+      AgentAction.new(tokens_in: 100, tokens_out: 10, cost: 0.01, source_turn_uuid: nil),
+      AgentAction.new(tokens_in: 200, tokens_out: 20, cost: 0.02, source_turn_uuid: nil)
     ]
 
     totals = heartbeat_usage_totals(actions)
@@ -180,11 +180,11 @@ class HeartbeatHelperTest < ActionView::TestCase
 
   test "[unit] event totals inherit the turn dedupe" do
     actions = [
-      AtomicAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X"),
-      AtomicAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X")
+      AgentAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X"),
+      AgentAction.new(tokens_in: 5000, tokens_out: 100, cost: 0.02, model: "claude-opus-4-8", source_turn_uuid: "turn-X")
     ]
 
-    totals = heartbeat_event_totals(actions)
+    totals = heartbeat_activity_totals(actions)
 
     assert_equal 5000, totals[:tokens_in], "the shared turn's usage is counted once"
     assert_equal 100, totals[:tokens_out]
@@ -193,8 +193,8 @@ class HeartbeatHelperTest < ActionView::TestCase
   end
 
   test "[unit] span status badge distinguishes an open span from a closed one" do
-    open_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: nil))
-    done_meta = heartbeat_span_status_meta(AtomicEvent.new(closed_at: Time.current))
+    open_meta = heartbeat_activity_status_meta(AgentActivity.new(closed_at: nil))
+    done_meta = heartbeat_activity_status_meta(AgentActivity.new(closed_at: Time.current))
 
     assert_equal "open", open_meta[:label]
     assert_equal "done", done_meta[:label]
@@ -203,10 +203,10 @@ class HeartbeatHelperTest < ActionView::TestCase
 
   test "[unit] a span whose task transitioned in-window badges as the target stage" do
     slug  = "stage-change-status-badge"
-    event = AtomicEvent.new(task_slug: slug, opened_at: 3.minutes.ago, closed_at: 1.minute.ago)
+    event = AgentActivity.new(task_slug: slug, opened_at: 3.minutes.ago, closed_at: 1.minute.ago)
     te    = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition", occurred_at: 2.minutes.ago)
 
-    meta = heartbeat_span_status_meta(event, { slug => [te] })
+    meta = heartbeat_activity_status_meta(event, { slug => [te] })
 
     assert_equal "submitted", meta[:stage]
     assert_equal "Submitted", meta[:label], "stage badge label reuses Task::STAGE_LABELS"
@@ -215,36 +215,36 @@ class HeartbeatHelperTest < ActionView::TestCase
 
   test "[unit] the LAST in-window transition wins the stage badge" do
     slug   = "multi-move"
-    event  = AtomicEvent.new(task_slug: slug, opened_at: 5.minutes.ago, closed_at: Time.current)
+    event  = AgentActivity.new(task_slug: slug, opened_at: 5.minutes.ago, closed_at: Time.current)
     first  = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition", occurred_at: 4.minutes.ago)
     second = TaskEvent.new(task_slug: slug, to_stage: "reviewed",  kind: "transition", occurred_at: 1.minute.ago)
 
-    meta = heartbeat_span_status_meta(event, { slug => [first, second] })
+    meta = heartbeat_activity_status_meta(event, { slug => [first, second] })
     assert_equal "reviewed", meta[:stage]
   end
 
   test "[unit] a transition outside the span window falls back to the done badge" do
     slug   = "outside-window"
-    event  = AtomicEvent.new(task_slug: slug, opened_at: 2.minutes.ago, closed_at: 1.minute.ago)
+    event  = AgentActivity.new(task_slug: slug, opened_at: 2.minutes.ago, closed_at: 1.minute.ago)
     before = TaskEvent.new(task_slug: slug, to_stage: "submitted", kind: "transition", occurred_at: 5.minutes.ago)
 
-    meta = heartbeat_span_status_meta(event, { slug => [before] })
+    meta = heartbeat_activity_status_meta(event, { slug => [before] })
     assert_equal "done", meta[:label]
     assert_nil meta[:stage]
   end
 
   test "[unit] a span with no task_slug ignores transitions and stays open/done" do
-    event = AtomicEvent.new(task_slug: nil, opened_at: 2.minutes.ago, closed_at: 1.minute.ago)
+    event = AgentActivity.new(task_slug: nil, opened_at: 2.minutes.ago, closed_at: 1.minute.ago)
     other = TaskEvent.new(task_slug: "other", to_stage: "submitted", kind: "transition", occurred_at: 90.seconds.ago)
 
-    meta = heartbeat_span_status_meta(event, { "other" => [other] })
+    meta = heartbeat_activity_status_meta(event, { "other" => [other] })
     assert_equal "done", meta[:label]
     assert_nil meta[:stage]
   end
 
   test "[unit] status meta with no transitions map still returns the plain open/done badge" do
-    assert_equal "open", heartbeat_span_status_meta(AtomicEvent.new(closed_at: nil, opened_at: Time.current))[:label]
-    assert_equal "done", heartbeat_span_status_meta(AtomicEvent.new(closed_at: Time.current, opened_at: Time.current))[:label]
+    assert_equal "open", heartbeat_activity_status_meta(AgentActivity.new(closed_at: nil, opened_at: Time.current))[:label]
+    assert_equal "done", heartbeat_activity_status_meta(AgentActivity.new(closed_at: Time.current, opened_at: Time.current))[:label]
   end
 
   test "[unit] pretty json expands structure with 2-space indent and real newlines" do
@@ -336,7 +336,7 @@ class HeartbeatHelperTest < ActionView::TestCase
   # Persisted so each action carries a real id — heartbeat_shared_turn_ids keys the
   # duplicate set by action.id (the flag the row partial checks).
   def turn_action(**attrs)
-    AtomicAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: "s", kind: "grep", outcome: "ok", actor: "agent",
                            occurred_at: Time.current, seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 

@@ -260,8 +260,8 @@ Release progress is also recorded as explicit `ReleaseEvent` checkpoints
 back to legacy `Release` fields, so `ship_gate:completed` can visibly finish the
 Confirming step before `deploy_prod:started` begins production work. Steps that
 take measurable work should be bookended with `started` and `completed`; older
-completed-only checkpoints render as instant spans so their recorded timestamp is
-still visible in release analytics.
+completed-only checkpoints render as instant duration rows so their recorded
+timestamp is still visible in release analytics.
 
 Release analytics are cached on the `Release` record. `Release::DurationCache`
 stores `duration_metrics` (versioned JSON), `duration_metrics_cached_at`, and
@@ -541,8 +541,8 @@ live with the souls:
 [`Alex`](../agents/alex/HEARTBEAT.md).
 
 > **Sticky attribution.** The FIRST action of a `<Soul> Heartbeat` is
-> `bin/atomic-event heartbeat <soul>` — it sets a session-sticky acting-agent so
-> every span self-attributes to that soul (stacked over the base mascot) without
+> `bin/agent-activity heartbeat <soul>` — it sets a session-sticky acting-agent so
+> every activity self-attributes to that soul (stacked over the base mascot) without
 > re-passing `--agent`; an explicit `--agent` still wins, and it clears at session
 > end (`close-open`) or `heartbeat --clear`.
 
@@ -550,7 +550,7 @@ live with the souls:
 |---|---|---|---|
 | **Avi** (`Avi Heartbeat`) | `production-deploy` · `pr-review` · `pr-review-slow` · `deploy-with-task` (direct-invoke only) | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then review submitted PRs — **review-only** (waves ≤5, or serialized via `pr-review-slow`) | the ready release `shipped` (or no-op); then each PR `reviewed`/`blocked` |
 | **Steffon** (`Steffon Heartbeat`) | `archive-shipped` · `qa-release` | **downstream-first:** archive shipped tasks (`bin/release archive --yes`) from the prior cycle; then the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | prior cycle `archived` (or no-op); then RC **deployed to QA**, members `assembled` |
-| **Alex** (`Alex Heartbeat`) | `grade-events` · `share-insights` · `full-cycle` | grade the 10 most recent resolved spans at `/alex/heartbeat`; share the `mcr`-confirmed insights out (regenerate the lessons doc + distribute); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; confirmed insights shared out; or the whole release `shipped` |
+| **Alex** (`Alex Heartbeat`) | `grade-events` · `share-insights` · `full-cycle` | grade the 10 most recent resolved activities at `/alex/heartbeat`; share the `mcr`-confirmed insights out (regenerate the lessons doc + distribute); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; confirmed insights shared out; or the whole release `shipped` |
 
 **The release handoff seam.** The pizza-tracker (`RELEASE_TRACKER_STAGES`) is five
 stages: 1 **Testing**, 2 **Assembling**, 3 **Deploying QA**, 4 **Confirming**, 5

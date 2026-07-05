@@ -23,7 +23,7 @@ class ReviewEventsTest < ApplicationSystemTestCase
     )
 
     visit task_path(task.slug)
-    click_link "Review Events"
+    click_link "Review Activity"
 
     assert_current_path review_events_task_path(task.slug)
     assert_text "HEAVY SWIMLANE"

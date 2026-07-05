@@ -372,7 +372,7 @@ module Api
 
         task = Task.find_by!(slug: slug)
         assert_equal "medium", task.po_size
-        assert AtomicEvent.exists?(session_id: "sess-int-9", agent: "avi", task_slug: slug),
+        assert AgentActivity.exists?(session_id: "sess-int-9", agent: "avi", task_slug: slug),
                "sizing must surface in the creator's heartbeat as an agent=avi event"
       end
     end

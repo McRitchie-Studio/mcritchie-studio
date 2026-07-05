@@ -6,7 +6,7 @@ require "test_helper"
 # in a real <table> (a bare <td> is dropped by the HTML parser assert_select uses).
 class HeartbeatFeedbackCellTest < ActionView::TestCase
   def action(**attrs)
-    AtomicAction.create!({ session_id: "fbcell", kind: "edit", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: "fbcell", kind: "edit", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current,
                            event_slug: "Implement the view code" }.merge(attrs))
   end
@@ -32,7 +32,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
 
   test "[component] a stored disposition renders as the selected radio and shows the slug" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(atomic_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
                                 slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD)
 
     render_table(a, { a.id => { "alex" => grade } })
@@ -44,7 +44,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
 
   test "[component] a not disposition highlights the not radio" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(atomic_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
                                 slug: "slow diagnosing the column", disposition: ActionGrade::NOT)
 
     render_table(a, { a.id => { "alex" => grade } })
@@ -55,7 +55,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
 
   test "[component] a banked grade shows the bank marker" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(atomic_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
                                 slug: "promote this to a guardrail", disposition: ActionGrade::GOOD, banked: true)
 
     render_table(a, { a.id => { "alex" => grade } })
@@ -66,7 +66,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
 
   test "[component] a discarded grade shows the discard marker" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(atomic_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
                                 slug: "noise not worth keeping here", disposition: ActionGrade::NOT, discarded: true)
 
     render_table(a, { a.id => { "alex" => grade } })
@@ -77,7 +77,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
 
   test "[component] a long-form note shows the long-form marker" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(atomic_action: a, grader: ActionGrade::ALEX,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::ALEX,
                                 slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD,
                                 long_form: "Anchor: flag the gap before building.")
 

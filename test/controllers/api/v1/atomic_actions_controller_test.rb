@@ -5,7 +5,7 @@ require "minitest/mock"
 
 module Api
   module V1
-    class AtomicActionsControllerTest < ActionDispatch::IntegrationTest
+    class AgentActionsControllerTest < ActionDispatch::IntegrationTest
       setup do
         @task = tasks(:new_task)
         @headers = {
@@ -16,7 +16,7 @@ module Api
           kind: "edit",
           task_slug: @task.slug,
           mascot: "rotom",
-          input: "write app/controllers/api/v1/atomic_actions_controller.rb",
+          input: "write app/controllers/api/v1/agent_actions_controller.rb",
           output: "file created",
           outcome: "ok",
           actor: "harness",
@@ -28,15 +28,15 @@ module Api
 
       # ---- [unit] params -> capture mapping ------------------------------------
 
-      test "[unit] maps the request body onto AtomicAction.capture attributes" do
+      test "[unit] maps the request body onto AgentAction.capture attributes" do
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
-          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
         end
 
-        AtomicAction.stub(:capture, stub) do
-          post api_v1_atomic_actions_path, params: @body, headers: @headers, as: :json
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path, params: @body, headers: @headers, as: :json
         end
 
         assert_response :created
@@ -44,7 +44,7 @@ module Api
         assert_equal "edit", captured[:kind]
         assert_equal @task.slug, captured[:task_slug]
         assert_equal "rotom", captured[:mascot]
-        assert_equal "write app/controllers/api/v1/atomic_actions_controller.rb", captured[:input]
+        assert_equal "write app/controllers/api/v1/agent_actions_controller.rb", captured[:input]
         assert_equal "file created", captured[:output]
         assert_equal "ok", captured[:outcome]
         assert_equal "harness", captured[:actor]
@@ -53,15 +53,33 @@ module Api
         assert_equal 1234, captured[:duration_ms]
       end
 
+      test "[unit] permits deterministic activity pins from hook clients" do
+        captured = nil
+        stub = lambda do |attrs|
+          captured = attrs
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+        end
+
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
+               params: @body.merge(agent_activity_id: 123, atomic_event_id: 456),
+               headers: @headers, as: :json
+        end
+
+        assert_response :created
+        assert_equal 123, captured[:agent_activity_id]
+        assert_equal 456, captured[:atomic_event_id], "legacy pre-taxonomy alias still reaches capture"
+      end
+
       test "[integration] create persists summary + key_method (lang inferred when absent)" do
-        post api_v1_atomic_actions_path,
+        post api_v1_agent_actions_path,
              params: @body.merge(kind: "bash",
                                  summary: "list board tasks to find slugs",
                                  key_method: "bin/task list | head -60"),
              headers: @headers, as: :json
 
         assert_response :created
-        action = AtomicAction.order(:id).last
+        action = AgentAction.order(:id).last
         assert_equal "list board tasks to find slugs", action.summary
         assert_equal "bin/task list | head -60", action.key_method
         assert_equal "bash", action.key_method_lang, "blank lang falls to the concern's inference"
@@ -71,11 +89,11 @@ module Api
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
-          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
         end
 
-        AtomicAction.stub(:capture, stub) do
-          post api_v1_atomic_actions_path,
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
                params: { session_id: "sess-1", kind: "read", outcome: "", actor: "", occurred_at: "" },
                headers: @headers, as: :json
         end
@@ -91,11 +109,11 @@ module Api
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
-          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
         end
 
-        AtomicAction.stub(:capture, stub) do
-          post api_v1_atomic_actions_path,
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
                params: @body.merge(model: "claude-opus-4-8"), headers: @headers, as: :json
         end
 
@@ -104,22 +122,22 @@ module Api
       end
 
       test "[integration] a captured action persists its stamped model" do
-        post api_v1_atomic_actions_path,
+        post api_v1_agent_actions_path,
              params: @body.merge(model: "claude-opus-4-8"), headers: @headers, as: :json
 
         assert_response :created
-        assert_equal "claude-opus-4-8", AtomicAction.order(:created_at).last.model
+        assert_equal "claude-opus-4-8", AgentAction.order(:created_at).last.model
       end
 
       test "[unit] permits usage fields (tokens + source turn) as integers" do
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
-          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
         end
 
-        AtomicAction.stub(:capture, stub) do
-          post api_v1_atomic_actions_path,
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
                params: @body.merge(tokens_in: "4000", tokens_out: "250",
                                    cache_read_tokens: "304000", source_turn_uuid: "turn-9"),
                headers: @headers, as: :json
@@ -136,11 +154,11 @@ module Api
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
-          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
         end
 
-        AtomicAction.stub(:capture, stub) do
-          post api_v1_atomic_actions_path,
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
                params: @body.merge(cost: "9.99", event_slug: "x", result_slug: "y", seq: 42),
                headers: @headers, as: :json
         end
@@ -180,24 +198,24 @@ module Api
       end
 
       test "[integration] a captured action derives cost from the stamped model + tokens" do
-        post api_v1_atomic_actions_path,
+        post api_v1_agent_actions_path,
              params: @body.merge(model: "claude-opus-4-8", tokens_in: 1_000_000, tokens_out: 200_000),
              headers: @headers, as: :json
 
         assert_response :created
-        action = AtomicAction.order(:created_at).last
+        action = AgentAction.order(:created_at).last
         assert_equal 1_000_000, action.tokens_in
         assert_equal "10.0".to_d, action.cost, "cost is priced server-side from model + tokens"
       end
 
       test "[integration] cache_read is stored apart and priced at the cache tier, not lumped" do
-        post api_v1_atomic_actions_path,
+        post api_v1_agent_actions_path,
              params: @body.merge(model: "claude-opus-4-8", tokens_in: 5_000, tokens_out: 250,
                                  cache_read_tokens: 304_000),
              headers: @headers, as: :json
 
         assert_response :created
-        action = AtomicAction.order(:created_at).last
+        action = AgentAction.order(:created_at).last
         assert_equal 5_000, action.tokens_in, "the fresh tokens are what the caller sent"
         assert_equal 304_000, action.cache_read_tokens
         assert_equal 5_250, action.tokens_total, "the display total excludes cache_read"
@@ -206,15 +224,15 @@ module Api
 
       # ---- [integration] persistence -------------------------------------------
 
-      test "[integration] create persists one AtomicAction and returns 201 with it" do
+      test "[integration] create persists one AgentAction and returns 201 with it" do
         action = nil
-        assert_difference -> { AtomicAction.count }, 1 do
-          post api_v1_atomic_actions_path, params: @body, headers: @headers, as: :json
+        assert_difference -> { AgentAction.count }, 1 do
+          post api_v1_agent_actions_path, params: @body, headers: @headers, as: :json
         end
 
         assert_response :created
         body = response.parsed_body.fetch("data")
-        action = AtomicAction.order(:created_at).last
+        action = AgentAction.order(:created_at).last
         assert_equal "sess-abc", action.session_id
         assert_equal "edit", action.kind
         assert_equal @task.slug, action.task_slug
@@ -227,33 +245,44 @@ module Api
         assert_equal "edit", body["kind"]
       end
 
+      test "[integration] create persists a stamped agent_activity_id" do
+        activity = AgentActivity.open_event!(session_id: "sess-abc", category: "Explore", reason_slug: "pin")
+
+        post api_v1_agent_actions_path,
+             params: @body.merge(agent_activity_id: activity.id),
+             headers: @headers, as: :json
+
+        assert_response :created
+        assert_equal activity.id, AgentAction.order(:created_at).last.agent_activity_id
+      end
+
       test "[integration] minimal body (just session_id + kind) captures with defaults" do
-        assert_difference -> { AtomicAction.count }, 1 do
-          post api_v1_atomic_actions_path,
+        assert_difference -> { AgentAction.count }, 1 do
+          post api_v1_agent_actions_path,
                params: { session_id: "sess-min", kind: "read" },
                headers: @headers, as: :json
         end
 
         assert_response :created
-        action = AtomicAction.order(:created_at).last
-        assert_equal AtomicAction::PENDING, action.outcome
-        assert_equal AtomicAction::AGENT, action.actor
+        action = AgentAction.order(:created_at).last
+        assert_equal AgentAction::PENDING, action.outcome
+        assert_equal AgentAction::AGENT, action.actor
         assert action.occurred_at.present?, "occurred_at defaults to capture time"
       end
 
       # ---- [integration] auth ---------------------------------------------------
 
       test "[integration] requires auth — 401 without a token" do
-        assert_no_difference -> { AtomicAction.count } do
-          post api_v1_atomic_actions_path, params: @body, as: :json
+        assert_no_difference -> { AgentAction.count } do
+          post api_v1_agent_actions_path, params: @body, as: :json
         end
 
         assert_response :unauthorized
       end
 
       test "[integration] requires auth — 401 with an invalid token" do
-        assert_no_difference -> { AtomicAction.count } do
-          post api_v1_atomic_actions_path, params: @body,
+        assert_no_difference -> { AgentAction.count } do
+          post api_v1_agent_actions_path, params: @body,
                headers: { "Authorization" => "Bearer not-a-real-token" }, as: :json
         end
 
@@ -263,9 +292,9 @@ module Api
       # ---- [integration] best-effort: a capture miss never 500s -----------------
 
       test "[integration] a capture miss returns 204 and never 500s the caller" do
-        AtomicAction.stub(:capture, nil) do
-          assert_no_difference -> { AtomicAction.count } do
-            post api_v1_atomic_actions_path, params: @body, headers: @headers, as: :json
+        AgentAction.stub(:capture, nil) do
+          assert_no_difference -> { AgentAction.count } do
+            post api_v1_agent_actions_path, params: @body, headers: @headers, as: :json
           end
         end
 

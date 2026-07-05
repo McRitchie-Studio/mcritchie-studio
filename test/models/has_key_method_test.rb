@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] HasKeyMethod — the shared key_method (+ lang badge) normalization behind
-# AtomicEvent and AtomicAction. infer_lang and normalize_pair are PURE module
+# AgentActivity and AgentAction. infer_lang and normalize_pair are PURE module
 # functions; the ladder's terminal default is bash (the trail is mostly shell).
 class HasKeyMethodTest < ActiveSupport::TestCase
   test "[unit] infer_lang recognizes ruby, sql, and js, and defaults to bash" do
@@ -37,12 +37,12 @@ class HasKeyMethodTest < ActiveSupport::TestCase
   end
 
   test "[unit] the before_validation applies the pair on both models" do
-    event = AtomicEvent.create!(session_id: "s-km", category: "Explore", reason_slug: "orient",
+    event = AgentActivity.create!(session_id: "s-km", category: "Explore", reason_slug: "orient",
                                 opened_at: Time.current, key_method: "  bin/task list  ")
     assert_equal "bin/task list", event.key_method
     assert_equal "bash", event.key_method_lang
 
-    action = AtomicAction.create!(session_id: "s-km", kind: "bash", outcome: "ok", actor: "agent",
+    action = AgentAction.create!(session_id: "s-km", kind: "bash", outcome: "ok", actor: "agent",
                                   occurred_at: Time.current, key_method: "Task.find_by(slug: 'x')")
     assert_equal "ruby", action.key_method_lang
   end

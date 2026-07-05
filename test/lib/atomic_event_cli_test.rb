@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# Tests for bin/atomic-event — the agent's self-narration CLI (start/end a span).
+# Tests for bin/atomic-event — the agent's self-narration CLI (start/end an activity).
 #
-#   ruby -Itest test/lib/atomic_event_cli_test.rb
+#   ruby -Itest test/lib/agent_activity_cli_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
 # Two tiers (backend shape):
@@ -23,12 +23,12 @@ require "time"
 
 load File.expand_path("../../bin/atomic-event", __dir__)
 
-class AtomicEventCliTest < Minitest::Test
+class AgentActivityCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/atomic-event", __dir__)
   SESSION = "3bb327a7-8676-4cf5-ce12-81804d9cb728"
 
   def cli(env = {})
-    AtomicEventCli.new(env: { "CLAUDE_PROJECTS_DIR" => "/nonexistent-#{rand(10_000)}" }.merge(env))
+    AgentActivityCli.new(env: { "CLAUDE_PROJECTS_DIR" => "/nonexistent-#{rand(10_000)}" }.merge(env))
   end
 
   # ── [unit] argv + session resolution ─────────────────────────────────────
@@ -61,25 +61,26 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
-  # ── [unit] open-span marker (deterministic attribution) ───────────────────
-  # The marker records the session's currently-open span id so bin/atomic-capture-hook
-  # can pin every action to it. write stores an id; record_open_span pulls it from a
-  # 2xx open response (no-op on failure); clear removes it.
-  def test_unit_open_span_marker_write_record_and_clear
+  def test_unit_open_activity_marker_round_trip_and_clear
     Dir.mktmpdir do |proj|
       c = cli("CLAUDE_PROJECTS_DIR" => proj)
-      path = c.send(:open_span_path, SESSION)
+      path = c.send(:open_activity_path, SESSION)
+      legacy = c.send(:legacy_open_span_path, SESSION)
 
-      c.send(:write_open_span, SESSION, 777)
-      assert_equal "777", File.read(path).strip, "write stores the span id"
+      c.send(:write_open_activity, SESSION, 777)
+      assert_equal "777", File.read(path).strip
 
-      c.send(:record_open_span, SESSION, stub_res("200 OK", "data" => { "id" => 888 }))
-      assert_equal "888", File.read(path).strip, "record_open_span pulls data.id from a 2xx open"
-      c.send(:record_open_span, SESSION, stub_res("500", "error" => "boom"))
-      assert_equal "888", File.read(path).strip, "a failed open leaves the prior marker untouched"
+      c.send(:record_open_activity, SESSION, stub_response("201 Created", "data" => { "id" => 888 }))
+      assert_equal "888", File.read(path).strip
 
-      c.send(:clear_open_span, SESSION)
-      refute File.exist?(path), "clear removes the marker"
+      c.send(:record_open_activity, SESSION, stub_response("500 Error", "error" => "boom"))
+      assert_equal "888", File.read(path).strip, "failed open responses leave the last good marker intact"
+
+      FileUtils.mkdir_p(File.dirname(legacy))
+      File.write(legacy, "999\n")
+      c.send(:clear_open_activity, SESSION)
+      refute File.exist?(path)
+      refute File.exist?(legacy), "taxonomy-rename compatibility marker clears too"
     end
   end
 
@@ -94,7 +95,7 @@ class AtomicEventCliTest < Minitest::Test
 
   def test_unit_category_vocabulary_matches_the_model
     assert_equal %w[Explore Edit Verify Version Workflow Delegate Clarify Remote Research Plan],
-                 AtomicEventCli::CATEGORIES
+                 AgentActivityCli::CATEGORIES
   end
 
   # ── [unit] resolve_marker: base mascot = session, task_slug/stage = desk ──
@@ -130,7 +131,7 @@ class AtomicEventCliTest < Minitest::Test
 
   # ── [unit] task_slug inference from a feat/<slug> branch ──────────────────
   # The MARKER fallback: with no desk/session task_slug, resolve_marker infers the
-  # task from a `feat/<slug>` checkout branch so a span is task-attributed even
+  # task from a `feat/<slug>` checkout branch so an activity is task-attributed even
   # before a task-bind write. (The `--task` flag is the explicit stamp — below.)
 
   def test_unit_task_slug_from_branch_reads_only_feat_branches
@@ -172,9 +173,9 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
-  # ── [integration] start POSTs an open span ───────────────────────────────
+  # ── [integration] start POSTs an open activity ───────────────────────────
 
-  def test_integration_start_mints_token_and_opens_span
+  def test_integration_start_mints_token_and_opens_activity
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION,
                            "task_slug" => "narrated-trajectory-events", "mascot" => "caterpie", "stage" => "building")
@@ -184,8 +185,8 @@ class AtomicEventCliTest < Minitest::Test
       auth = requests.find { |r| r[:path] == "/api/v1/auth" }
       refute_nil auth, "expected a token mint"
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
-      refute_nil open, "expected a POST /api/v1/atomic_events"
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      refute_nil open, "expected a POST /api/v1/agent_activities"
       assert_equal "Bearer stub-token", open[:headers]["authorization"]
 
       body = JSON.parse(open[:body])
@@ -198,35 +199,18 @@ class AtomicEventCliTest < Minitest::Test
     end
   end
 
-  # ── [integration] open-span marker lifecycle (deterministic attribution) ──
-  def test_integration_start_records_the_open_span_marker
+  def test_integration_start_records_the_open_activity_marker
     Dir.mktmpdir do |proj|
-      run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
+      run_cli(%W[start --session #{SESSION} --category Explore --reason find-issue-with-api], proj: proj)
 
-      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.open-span")
-      assert File.file?(marker), "start writes the open-span marker"
-      assert_equal "1", File.read(marker).strip, "with the id the open response returned"
+      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.open-activity")
+      assert File.file?(marker), "start writes the local open-activity marker"
+      assert_equal "1", File.read(marker).strip
     end
   end
 
-  def test_integration_end_clears_the_open_span_marker
-    Dir.mktmpdir do |proj|
-      marker = seed_open_span_marker(proj, SESSION, 1)
-      run_cli(%W[end --session #{SESSION} --outcome done], proj: proj)
-      refute File.exist?(marker), "end deletes the open-span marker"
-    end
-  end
-
-  def test_integration_close_open_clears_the_open_span_marker
-    Dir.mktmpdir do |proj|
-      marker = seed_open_span_marker(proj, SESSION, 1)
-      run_cli(%W[close-open --session #{SESSION} --outcome bye], proj: proj)
-      refute File.exist?(marker), "close-open (SessionEnd) deletes the open-span marker"
-    end
-  end
-
-  # ── [integration] --task stamps the span's task explicitly ────────────────
-  # The observed fix: a session's FIRST span is task-attributed immediately via
+  # ── [integration] --task stamps the activity's task explicitly ────────────
+  # The observed fix: a session's FIRST activity is task-attributed immediately via
   # --task, instead of a blank TASK until a late `bin/task`/`bind-task` write.
 
   def test_integration_task_flag_stamps_task_slug_on_the_first_span
@@ -235,21 +219,21 @@ class AtomicEventCliTest < Minitest::Test
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient --task capture-and-deploy-attribution],
                          proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
-      refute_nil open, "expected a POST /api/v1/atomic_events"
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      refute_nil open, "expected a POST /api/v1/agent_activities"
       assert_equal "capture-and-deploy-attribution", JSON.parse(open[:body])["task_slug"],
-                   "--task stamps the task on the very first span"
+                   "--task stamps the task on the very first activity"
     end
   end
 
   def test_integration_task_flag_overrides_the_marker_task_slug
     Dir.mktmpdir do |proj|
-      # The marker says one task; --task explicitly overrides it for this span.
+      # The marker says one task; --task explicitly overrides it for this activity.
       write_session_marker(proj, SESSION, "task_slug" => "marker-task", "mascot" => "shellder")
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient --task explicit-task],
                          proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       body = JSON.parse(open[:body])
       assert_equal "explicit-task", body["task_slug"], "--task wins over the marker's task_slug"
       assert_equal "shellder", body["mascot"], "the base mascot still rides from the session marker"
@@ -261,7 +245,7 @@ class AtomicEventCliTest < Minitest::Test
       requests = run_cli(%W[next --session #{SESSION} --outcome done --category Edit --reason go --task t-next],
                          proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       assert_equal "t-next", JSON.parse(open[:body])["task_slug"], "--task rides the boundary open too"
     end
   end
@@ -270,11 +254,23 @@ class AtomicEventCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[end --session #{SESSION} --outcome located-the-bug], proj: proj)
 
-      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close" }
-      refute_nil close, "expected a POST /api/v1/atomic_events/close"
+      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close" }
+      refute_nil close, "expected a POST /api/v1/agent_activities/close"
       body = JSON.parse(close[:body])
       assert_equal SESSION, body["session_id"]
       assert_equal "located-the-bug", body["outcome"]
+    end
+  end
+
+  def test_integration_end_clears_the_open_activity_marker
+    Dir.mktmpdir do |proj|
+      marker = seed_open_activity_marker(proj, SESSION, 1)
+      legacy = seed_open_activity_marker(proj, SESSION, 2, legacy: true)
+
+      run_cli(%W[end --session #{SESSION} --outcome located-the-bug], proj: proj)
+
+      refute File.exist?(marker)
+      refute File.exist?(legacy), "legacy open-span marker clears with the canonical marker"
     end
   end
 
@@ -282,7 +278,7 @@ class AtomicEventCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[end --session #{SESSION} --outcome approve --agent carl], proj: proj)
 
-      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close" }
+      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close" }
       assert_equal "carl", JSON.parse(close[:body])["agent"], "--agent rides the close so it hits carl's lane"
     end
   end
@@ -294,22 +290,22 @@ class AtomicEventCliTest < Minitest::Test
       run_cli(%W[heartbeat steffon --session #{SESSION}], proj: proj)
       requests = run_cli(%W[end --session #{SESSION} --outcome shipped], proj: proj)
 
-      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close" }
+      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close" }
       assert_equal "steffon", JSON.parse(close[:body])["agent"], "end inherits the sticky acting soul"
     end
   end
 
-  # ── [integration] --agent stamps the acting soul on the span ─────────────
+  # ── [integration] --agent stamps the acting soul on the activity ──────────
 
-  def test_integration_start_stamps_agent_on_the_open_span
+  def test_integration_start_stamps_agent_on_the_open_activity
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "mascot" => "shellder")
       requests = run_cli(%W[start --session #{SESSION} --category Edit --reason add-guard --agent avi], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
-      refute_nil open, "expected a POST /api/v1/atomic_events"
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      refute_nil open, "expected a POST /api/v1/agent_activities"
       body = JSON.parse(open[:body])
-      assert_equal "avi", body["agent"], "--agent rides the open-span POST"
+      assert_equal "avi", body["agent"], "--agent rides the open-activity POST"
       assert_equal "shellder", body["mascot"], "the base session mascot rides alongside, unchanged"
     end
   end
@@ -320,7 +316,7 @@ class AtomicEventCliTest < Minitest::Test
       requests = run_cli(%W[next --session #{SESSION} --outcome done --category Edit --reason go --agent carl],
                          proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       assert_equal "carl", JSON.parse(open[:body])["agent"]
     end
   end
@@ -330,32 +326,32 @@ class AtomicEventCliTest < Minitest::Test
       write_session_marker(proj, SESSION, "mascot" => "shellder")
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       refute JSON.parse(open[:body]).key?("agent"), "a bare start sends no agent key"
     end
   end
 
   # ── [integration] grade + awaiting — the agent grade-events flow ──────────
 
-  def test_integration_grade_posts_disposition_slug_and_intent_to_the_span
+  def test_integration_grade_posts_disposition_slug_and_intent_to_the_activity
     Dir.mktmpdir do |proj|
-      requests = run_cli(%W[grade 42 --disposition not --slug noisy-span --bank], proj: proj)
+      requests = run_cli(%W[grade 42 --disposition not --slug noisy-activity --bank], proj: proj)
 
-      grade = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/42/grade" }
-      refute_nil grade, "grade POSTs to the span's grade endpoint"
+      grade = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/42/grade" }
+      refute_nil grade, "grade POSTs to the activity grade endpoint"
       body = JSON.parse(grade[:body])
       assert_equal "not", body["disposition"]
-      assert_equal "noisy-span", body["slug"]
+      assert_equal "noisy-activity", body["slug"]
       assert_equal "bank", body["intent"], "--bank becomes intent=bank"
       refute body.key?("grader"), "the CLI never sends a grader — the server forces alex"
     end
   end
 
-  def test_integration_grade_without_a_span_id_posts_nothing
+  def test_integration_grade_without_an_activity_id_posts_nothing
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[grade --disposition good], proj: proj)
 
-      assert_empty requests.select { |r| r[:path].to_s.include?("/grade") }, "no span id → no grade POST"
+      assert_empty requests.select { |r| r[:path].to_s.include?("/grade") }, "no activity id → no grade POST"
     end
   end
 
@@ -363,7 +359,7 @@ class AtomicEventCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[awaiting --limit 5], proj: proj)
 
-      fetch = requests.find { |r| r[:method] == "GET" && r[:path].start_with?("/api/v1/atomic_events/awaiting_grade") }
+      fetch = requests.find { |r| r[:method] == "GET" && r[:path].start_with?("/api/v1/agent_activities/awaiting_grade") }
       refute_nil fetch, "awaiting GETs the awaiting_grade endpoint"
       assert_includes fetch[:path], "limit=5"
     end
@@ -376,10 +372,10 @@ class AtomicEventCliTest < Minitest::Test
       write_session_marker(proj, SESSION, "mascot" => "shellder")
       # `atomic-event heartbeat avi` sets the sticky (local, no HTTP)…
       run_cli(%W[heartbeat avi --session #{SESSION}], proj: proj)
-      # …so a subsequent BARE start (no --agent) attributes the span to avi.
+      # …so a subsequent BARE start (no --agent) attributes the activity to avi.
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       body = JSON.parse(open[:body])
       assert_equal "avi", body["agent"], "the bare start inherits the sticky heartbeat agent"
       assert_equal "shellder", body["mascot"], "base mascot stays the session's own; the soul stacks on top"
@@ -393,7 +389,7 @@ class AtomicEventCliTest < Minitest::Test
       # A delegated reviewer passes its OWN --agent — it must win over the sticky.
       requests = run_cli(%W[start --session #{SESSION} --category Delegate --reason review --agent carl], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       assert_equal "carl", JSON.parse(open[:body])["agent"], "explicit --agent overrides the sticky heartbeat agent"
     end
   end
@@ -405,7 +401,7 @@ class AtomicEventCliTest < Minitest::Test
       run_cli(%W[heartbeat --clear --session #{SESSION}], proj: proj)
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       refute JSON.parse(open[:body]).key?("agent"), "after --clear a bare start sends no agent"
     end
   end
@@ -419,8 +415,20 @@ class AtomicEventCliTest < Minitest::Test
       run_cli(%W[close-open --session #{SESSION} --outcome done], proj: proj)
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       refute JSON.parse(open[:body]).key?("agent"), "session end cleared the sticky; the next start sends no agent"
+    end
+  end
+
+  def test_integration_session_end_clears_the_open_activity_marker
+    Dir.mktmpdir do |proj|
+      marker = seed_open_activity_marker(proj, SESSION, 1)
+      legacy = seed_open_activity_marker(proj, SESSION, 2, legacy: true)
+
+      run_cli(%W[close-open --session #{SESSION} --outcome done], proj: proj)
+
+      refute File.exist?(marker)
+      refute File.exist?(legacy), "SessionEnd clears both activity marker names"
     end
   end
 
@@ -437,7 +445,7 @@ class AtomicEventCliTest < Minitest::Test
 
       requests = run_cli(%W[start --session #{SESSION} --category Verify --reason review], proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       body = JSON.parse(open[:body])
       assert_equal "shellder", body["mascot"],
                    "base mascot stays the session's own, not the bound task's builder mascot"
@@ -454,13 +462,13 @@ class AtomicEventCliTest < Minitest::Test
       requests = run_cli(%W[next --session #{SESSION} --outcome found-the-bug --category Edit --reason add-the-guard],
                          proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
-      refute_nil open, "next opens the new span (carrying the prior outcome)"
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      refute_nil open, "next opens the new activity (carrying the prior outcome)"
       body = JSON.parse(open[:body])
       assert_equal SESSION, body["session_id"]
       assert_equal "Edit", body["category"]
       assert_equal "add-the-guard", body["reason"]
-      assert_equal "found-the-bug", body["prior_outcome"], "the prior span's outcome rides the SAME call"
+      assert_equal "found-the-bug", body["prior_outcome"], "the prior activity's outcome rides the SAME call"
     end
   end
 
@@ -469,7 +477,7 @@ class AtomicEventCliTest < Minitest::Test
       requests = run_cli(%W[start --session #{SESSION} --outcome wrapped-explore --category Edit --reason change-it],
                          proj: proj)
 
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       body = JSON.parse(open[:body])
       assert_equal "wrapped-explore", body["prior_outcome"]
     end
@@ -478,7 +486,7 @@ class AtomicEventCliTest < Minitest::Test
   def test_integration_start_without_outcome_omits_prior_outcome
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason look], proj: proj)
-      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events" }
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
       refute JSON.parse(open[:body]).key?("prior_outcome"), "a bare start sends no prior_outcome key"
     end
   end
@@ -491,8 +499,8 @@ class AtomicEventCliTest < Minitest::Test
       requests = run_cli(%w[close-open], proj: proj, with_session_env: false,
                          stdin: JSON.generate("session_id" => SESSION, "reason" => "logout"))
 
-      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close_all" }
-      refute_nil close_all, "close-open posts to /api/v1/atomic_events/close_all"
+      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close_all" }
+      refute_nil close_all, "close-open posts to /api/v1/agent_activities/close_all"
       body = JSON.parse(close_all[:body])
       assert_equal SESSION, body["session_id"], "the session id comes from the stdin payload"
       assert_equal "session ended", body["outcome"], "defaults to a generic teardown outcome"
@@ -503,7 +511,7 @@ class AtomicEventCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[close-open --session #{SESSION} --outcome wrapped-it-up], proj: proj)
 
-      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/atomic_events/close_all" }
+      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close_all" }
       body = JSON.parse(close_all[:body])
       assert_equal SESSION, body["session_id"]
       assert_equal "wrapped-it-up", body["outcome"]
@@ -550,17 +558,13 @@ class AtomicEventCliTest < Minitest::Test
     File.write(File.join(sessions, "#{session_id}.json"), JSON.generate(attrs))
   end
 
-  def seed_open_span_marker(projects_dir, session_id, id)
+  def seed_open_activity_marker(projects_dir, session_id, id, legacy: false)
     sessions = File.join(projects_dir, ".agents", "sessions")
     FileUtils.mkdir_p(sessions)
-    path = File.join(sessions, "#{session_id}.open-span")
+    suffix = legacy ? "open-span" : "open-activity"
+    path = File.join(sessions, "#{session_id}.#{suffix}")
     File.write(path, "#{id}\n")
     path
-  end
-
-  # A minimal HTTP-response double for record_open_span (needs #code + #body).
-  def stub_res(code, body_hash)
-    Struct.new(:code, :body).new(code, JSON.generate(body_hash))
   end
 
   # The worktree DESK marker (.agent-context.json) — carries the BOUND task's
@@ -626,18 +630,22 @@ class AtomicEventCliTest < Minitest::Test
 
   def response_for(method, path)
     return ["200 OK", JSON.generate("token" => "stub-token", "expires_at" => (Time.now + 86_400).utc.iso8601)] if path == "/api/v1/auth"
-    return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_events"
-    return ["200 OK", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/atomic_events/close"
-    return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/atomic_events/close_all"
-    if method == "POST" && path.match?(%r{\A/api/v1/atomic_events/\d+/grade\z})
+    return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_activities"
+    return ["200 OK", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close"
+    return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close_all"
+    if method == "POST" && path.match?(%r{\A/api/v1/agent_activities/\d+/grade\z})
       return ["201 Created", JSON.generate("data" => { "id" => 5, "grader" => "alex", "disposition" => "not",
-                                                       "slug" => "noisy span", "banked" => true })]
+                                                       "slug" => "noisy activity", "banked" => true })]
     end
-    if method == "GET" && path.start_with?("/api/v1/atomic_events/awaiting_grade")
+    if method == "GET" && path.start_with?("/api/v1/agent_activities/awaiting_grade")
       return ["200 OK", JSON.generate("data" => [{ "id" => 7, "category" => "Verify",
                                                    "reason" => "review the diff", "outcome" => "approved" }])]
     end
 
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
+  end
+
+  def stub_response(code, body_hash)
+    Struct.new(:code, :body).new(code, JSON.generate(body_hash))
   end
 end

@@ -48,9 +48,9 @@
   #alex-heartbeat .hb-chev { display:inline-block; transition:transform .15s; color:var(--hb-faint); font-size:11px; }
   #alex-heartbeat .hb-chev-open { transform:rotate(90deg); }
 
-  /* Event-span table — spans are the primary rows; expanding one drills into its
-     attributed raw actions (read-only). Wider now: the span rows carry the rolled-up
-     Pokémon / Model / Tokens / Cost columns plus a span-grade affordance. */
+  /* Activity table — activities are the primary rows; expanding one drills into its
+     attributed raw actions (read-only). Wider now: the activity rows carry the
+     rolled-up Pokemon / Model / Tokens / Cost columns plus an activity-grade affordance. */
   /* Narrower now: merging Model+Tokens into one column and stacking the narration /
      avatars trims the table's minimum width the operator asked to reclaim. */
   #alex-heartbeat table.hb-evt-tbl { min-width:980px; }
@@ -97,7 +97,7 @@
   #alex-heartbeat .hb-taskcell { color:var(--hb-muted); font-size:10.5px; }
   #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
   /* Two-line narration — the reason on line 1, the "-> outcome" beneath it, so the
-     span cell stays narrow instead of running reason and outcome across one wide row. */
+     activity cell stays narrow instead of running reason and outcome across one wide row. */
   #alex-heartbeat .hb-narr { min-width:220px; }
   #alex-heartbeat .hb-narrline { display:block; }
   #alex-heartbeat .hb-span-title { display:flex; align-items:center; flex-wrap:wrap; gap:6px; width:fit-content; max-width:100%; cursor:pointer; }
@@ -107,7 +107,7 @@
   /* Merged Model / Tokens column — model on top, the compact in/out tokens beneath. */
   #alex-heartbeat .hb-modeltok .hb-mt-model { display:block; }
   #alex-heartbeat .hb-modeltok .hb-mt-tokens { display:block; margin-top:2px; color:var(--hb-faint); font-size:11px; }
-  /* Inline span quick-grade — the good/not radios for both graders on the span row,
+  /* Inline activity quick-grade — the good/not radios for both graders on the activity row,
      laid out HORIZONTALLY side by side (A ● Good ● Not   M ● Good ● Not) on ONE row so
      the Grade cell reads short-and-wide instead of tall, sitting above the "grade ▸"
      button + markers. Reuses the .hb-rb radio chips; each grader group carries its

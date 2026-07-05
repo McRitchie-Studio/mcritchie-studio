@@ -9,7 +9,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   setup { log_in_as(users(:alex)) }
 
   def capture(**attrs)
-    AtomicAction.create!({ session_id: "fb-int", kind: "edit", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: "fb-int", kind: "edit", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current,
                            event_slug: "Implement the view code" }.merge(attrs))
   end
@@ -19,7 +19,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] the read-only event heartbeat links each action to its drawer + the Insight Bank" do
-    a = capture(stage: "building") # no atomic_event_id -> renders in the Unlabeled group
+    a = capture(stage: "building") # no agent_activity_id -> renders in the Unlabeled group
 
     get alex_heartbeat_path
 
@@ -137,7 +137,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] the action drawer surfaces the FULL tool-call input and output" do
-    long_input = "grep -rn AtomicAction app/models #{"x" * 400}"
+    long_input = "grep -rn AgentAction app/models #{"x" * 400}"
     long_output = "Found 12 matches across 3 files #{"y" * 400}"
     a = capture(stage: "building", input: long_input, output: long_output)
 

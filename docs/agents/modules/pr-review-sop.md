@@ -99,9 +99,9 @@ nested chain from `devops-cycle-design.md` §1.2).
 attributes it to them, not to the base session mascot:
 
 ```bash
-bin/atomic-event start --category Verify --agent <soul> --reason "review: <scope>"
+bin/agent-activity start --category Verify --agent <soul> --reason "review: <scope>"
 # … diff, checks, tests, DoR …
-bin/atomic-event end --outcome "<verdict>: <one-line reason>"
+bin/agent-activity end --outcome "<verdict>: <one-line reason>"
 ```
 
 > The **`--agent <soul>`** flag is being added in parallel by task
@@ -165,8 +165,8 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 | # | Actor | Agent (`subagent_type`) | Does | Records |
 |---|---|---|---|---|
 | 1 | **Avi** (thin gate) | `avi` | product-acceptance + `bin/reviewer-select` | review intent (pair) on the task |
-| 2 | **PRIMARY** | domain soul | deep review; spawns the LIGHT | `Verify --agent <soul>` span + notes |
-| 2 | **LIGHT** | domain soul | focused second read | `Verify --agent <soul>` span + notes |
+| 2 | **PRIMARY** | domain soul | deep review; spawns the LIGHT | `Verify --agent <soul>` activity + notes |
+| 2 | **LIGHT** | domain soul | focused second read | `Verify --agent <soul>` activity + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
 | 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed` |
 

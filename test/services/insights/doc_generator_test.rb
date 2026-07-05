@@ -51,9 +51,9 @@ module Insights
     # ── [integration] generate! reads the bank and writes the doc ────────────
 
     def banked(slug:, **overrides)
-      a = AtomicAction.capture(session_id: "gen-#{slug.object_id}", kind: "edit", outcome: "ok",
+      a = AgentAction.capture(session_id: "gen-#{slug.object_id}", kind: "edit", outcome: "ok",
                                task_slug: overrides.delete(:task_slug))
-      g = ActionGrade.create!({ atomic_action: a, grader: "alex", slug: slug, disposition: "good" }.merge(overrides))
+      g = ActionGrade.create!({ agent_action: a, grader: "alex", slug: slug, disposition: "good" }.merge(overrides))
       g.bank!
       g
     end
@@ -61,7 +61,7 @@ module Insights
     test "[integration] generate! writes only banked lessons to the target path" do
       banked(slug: "bank this good lesson", task_slug: "feat-y")
       banked(slug: "avoid this bad pattern", disposition: "not")
-      ActionGrade.create!(atomic_action: AtomicAction.capture(session_id: "gen-unbanked", kind: "read"),
+      ActionGrade.create!(agent_action: AgentAction.capture(session_id: "gen-unbanked", kind: "read"),
                           grader: "alex", slug: "not banked at all", disposition: "good") # unbanked → excluded
 
       Dir.mktmpdir do |dir|

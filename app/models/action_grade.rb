@@ -1,18 +1,17 @@
 # The grading layer over the learning heartbeat — Alex's feedback record.
 #
 # A grade targets EXACTLY ONE of two things (an additive dual-FK, not a
-# polymorphic rewrite): a raw `atomic_action` (the original per-tool-call path)
-# OR a narrated `atomic_event` SPAN (the agent-declared trajectory). The model
+# polymorphic rewrite): a raw agent action OR a narrated agent activity. The model
 # enforces the XOR; each FK is independently unique per grader.
 #
 # Either target can carry up to TWO ActionGrade rows, distinguished by the
 # `grader` column:
 #
-#   grader = "alex"  — Alex's grade of the action/span itself.
+#   grader = "alex"  — Alex's grade of the action/activity itself.
 #   grader = "mcr"   — Mr. McRitchie's audit OF Alex's grade for that target
 #                      (the recursive audit: McRitchie grades Alex's grading).
 #
-# The (atomic_action_id, grader) and (atomic_event_id, grader) pairs are each
+# The (agent_action_id, grader) and (agent_activity_id, grader) pairs are each
 # unique, so a target holds at most one Alex grade and one McRitchie audit —
 # never two of either.
 #
@@ -26,7 +25,7 @@
 # (sl=slug, d=disposition, lg=long-form, banked, discarded).
 #
 # Writes here RAISE on failure by design — a grade is a deliberate user action,
-# not best-effort telemetry like AtomicAction.capture. The calling controller/job
+# not best-effort telemetry like AgentAction.capture. The calling controller/job
 # (the heartbeat UI wiring, T4) is responsible for wrapping these in rescue_and_log
 # with target/parent context, per backend discipline.
 class ActionGrade < ApplicationRecord
@@ -50,8 +49,14 @@ class ActionGrade < ApplicationRecord
 
   # Dual, mutually exclusive targets — both optional at the association level so a
   # grade can hang off EITHER one. The XOR below guarantees exactly one is set.
-  belongs_to :atomic_action, optional: true, inverse_of: :action_grades
-  belongs_to :atomic_event,  optional: true, inverse_of: :action_grades
+  belongs_to :agent_action, optional: true, inverse_of: :action_grades
+  belongs_to :agent_activity,  optional: true, inverse_of: :action_grades
+  belongs_to :atomic_action, class_name: "AgentAction", foreign_key: :agent_action_id,
+                             optional: true
+  belongs_to :atomic_event, class_name: "AgentActivity", foreign_key: :agent_activity_id,
+                            optional: true
+  alias_attribute :atomic_action_id, :agent_action_id
+  alias_attribute :atomic_event_id, :agent_activity_id
 
   # Provenance for a machine-seeded CANDIDATE (see Insights::BlockMiner): the
   # qa_feedback Activity (the QA block) this grade was mined from. Slug FK (the
@@ -63,20 +68,21 @@ class ActionGrade < ApplicationRecord
   validates :grader, inclusion: { in: GRADERS }
   validates :disposition, inclusion: { in: DISPOSITIONS }
   validates :slug, presence: true
-  # Exactly one target — a grade is of an action OR a span, never both, never
-  # neither (replaces the old atomic_action presence guarantee).
+  # Exactly one target — a grade is of an action OR an activity, never both, never
+  # neither (replaces the old agent_action presence guarantee).
   validate :exactly_one_target
   # One Alex grade + one McRitchie audit PER TARGET — never two of either. The
   # uniqueness is scoped per FK and only fires for the FK that is actually set,
-  # so an action grade and a span grade by the same grader never collide.
-  validates :grader, uniqueness: { scope: :atomic_action_id }, if: -> { atomic_action_id.present? }
-  validates :grader, uniqueness: { scope: :atomic_event_id },  if: -> { atomic_event_id.present? }
+  # so an action grade and an activity grade by the same grader never collide.
+  validates :grader, uniqueness: { scope: :agent_action_id }, if: -> { agent_action_id.present? }
+  validates :grader, uniqueness: { scope: :agent_activity_id },  if: -> { agent_activity_id.present? }
 
   scope :by_grader,  ->(grader) { where(grader: grader) }
   scope :banked,     -> { where(banked: true) }            # the Insight Bank
   scope :discarded,  -> { where(discarded: true) }
-  scope :for_action, ->(action) { where(atomic_action_id: action) }
-  scope :for_event,  ->(event) { where(atomic_event_id: event) }
+  scope :for_action, ->(action) { where(agent_action_id: action) }
+  scope :for_activity, ->(activity) { where(agent_activity_id: activity) }
+  scope :for_event, ->(event) { for_activity(event) }
   # Machine-seeded candidates mined from resolved QA blocks (Insights::BlockMiner).
   scope :seeded_candidates, -> { where.not(source_activity_slug: nil) }
   # Candidates still AWAITING grade — seeded but not yet banked into the Insight
@@ -93,22 +99,22 @@ class ActionGrade < ApplicationRecord
   # documented follow-up; v1 is the most recently curated set.)
   def self.insight_feed(limit: DEFAULT_FEED_LIMIT)
     capped = limit.to_i.clamp(1, MAX_FEED_LIMIT)
-    banked.includes(:atomic_action, :atomic_event).order(updated_at: :desc).limit(capped)
+    banked.includes(:agent_action, :agent_activity).order(updated_at: :desc).limit(capped)
   end
 
-  # Upsert the ONE grade for (event, grader) — the shared write behind BOTH the
-  # admin browser drawer and the bearer agent path (bin/atomic-event grade). It
+  # Upsert the ONE grade for (activity, grader) — the shared write behind BOTH the
+  # admin browser drawer and the bearer agent path (bin/agent-activity grade). It
   # matches the drawer's semantics: disposition defaults to GOOD, slug defaults to
-  # the span's reason, `long_form` only writes when GIVEN (pass :unset to leave it),
+  # the activity's reason, `long_form` only writes when GIVEN (pass :unset to leave it),
   # and an `intent` of "bank"/"discard" routes through bank!/discard!. Raises on an
   # invalid write (a grade is a deliberate act, not best-effort telemetry).
   #
   # `grader` is the CALLER's responsibility to constrain — the agent path passes
   # ALEX and NEVER MCR, so McRitchie's audit-of-Alex lane stays admin-only.
-  def self.record_event_grade(event:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
-    grade = for_event(event).by_grader(grader).first_or_initialize(grader: grader)
+  def self.record_activity_grade(activity:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
+    grade = for_activity(activity).by_grader(grader).first_or_initialize(grader: grader)
     grade.disposition = disposition.presence || grade.disposition.presence || GOOD
-    grade.slug        = slug.presence || grade.slug.presence || event.reason_slug
+    grade.slug        = slug.presence || grade.slug.presence || activity.reason_slug
     grade.long_form   = long_form unless long_form == :unset
     grade.save!
 
@@ -119,12 +125,16 @@ class ActionGrade < ApplicationRecord
     grade
   end
 
+  def self.record_event_grade(event:, **kwargs)
+    record_activity_grade(activity: event, **kwargs)
+  end
+
   # The JSON shape returned to an agent after a grade write — the recorded grade,
   # so the CLI can echo what landed (banked/discarded reflect the intent applied).
   def to_grade_json
     { "id" => id, "grader" => grader, "disposition" => disposition, "slug" => slug,
       "long_form" => long_form, "banked" => banked, "discarded" => discarded,
-      "atomic_event_id" => atomic_event_id }.compact
+      "agent_activity_id" => agent_activity_id }.compact
   end
 
   # Curate this grade into the Insight Bank. Banking and discarding are mutually
@@ -157,10 +167,12 @@ class ActionGrade < ApplicationRecord
     disposition == NOT
   end
 
-  # True when this grade targets a narrated span rather than a raw action.
-  def event_grade?
-    atomic_event_id.present?
+  # True when this grade targets a narrated activity rather than a raw action.
+  def activity_grade?
+    agent_activity_id.present?
   end
+
+  alias_method :event_grade?, :activity_grade?
 
   # True when this grade was MACHINE-SEEDED from a resolved QA block
   # (Insights::BlockMiner) rather than authored by a grader — carries the
@@ -170,23 +182,23 @@ class ActionGrade < ApplicationRecord
     source_activity_slug.present?
   end
 
-  # The record this banked lesson was mined from — its action OR its span (the XOR
+  # The record this banked lesson was mined from — its action OR its activity (the XOR
   # target), or nil when that source was later removed (has_many :nullify), so a
   # banked insight can outlive what it graded. The Insight Bank reads provenance
-  # through this instead of dereferencing atomic_action unconditionally (which 500'd
-  # the whole bank the moment a SPAN grade was banked).
+  # through this instead of dereferencing agent_action unconditionally (which 500'd
+  # the whole bank the moment an activity grade was banked).
   def insight_source
-    atomic_action || atomic_event
+    agent_action || agent_activity
   end
 
-  # A short human label for the insight's source: a span reads by its narration
+  # A short human label for the insight's source: an activity reads by its narration
   # category, a raw action by its event slug (falling back to its tool kind). nil
   # when the source is unknown/removed.
   def insight_label
     source = insight_source
     return nil unless source
 
-    event_grade? ? source.category : (source.event_slug.presence || source.kind)
+    activity_grade? ? source.category : (source.event_slug.presence || source.kind)
   end
 
   # The feed-forward shape of one banked insight: the lesson (`slug` + optional
@@ -201,18 +213,18 @@ class ActionGrade < ApplicationRecord
       "disposition" => disposition,
       "long_form"   => long_form.presence,
       "grader"      => grader,
-      "task_slug"   => (atomic_action&.task_slug || atomic_event&.task_slug)
+      "task_slug"   => (agent_action&.task_slug || agent_activity&.task_slug)
     }.compact
   end
 
   private
 
-  # XOR: a grade must target EXACTLY ONE of an action or a span. Zero targets
-  # (the old "atomic_action must exist") and two targets are both invalid.
+  # XOR: a grade must target EXACTLY ONE of an action or an activity. Zero targets
+  # (the old "agent_action must exist") and two targets are both invalid.
   def exactly_one_target
-    targets = [atomic_action_id, atomic_event_id].count(&:present?)
+    targets = [agent_action_id, agent_activity_id].count(&:present?)
     return if targets == 1
 
-    errors.add(:base, "must grade exactly one of an action or an event")
+    errors.add(:base, "must grade exactly one of an action or an activity")
   end
 end

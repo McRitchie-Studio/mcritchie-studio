@@ -1,20 +1,20 @@
 require "test_helper"
 
 # [integration] GET /alex/heartbeat — the Alex avenue now renders agent-narrated
-# EVENT SPANS as the primary rows, read from AtomicEvent.for_session(...).chronological
-# (oldest -> newest). The raw AtomicActions attributed to each span (atomic_event_id)
-# roll up underneath as a read-only drill-down; actions with a null atomic_event_id
+# EVENT SPANS as the primary rows, read from AgentActivity.for_session(...).chronological
+# (oldest -> newest). The raw AgentActions attributed to each span (agent_activity_id)
+# roll up underneath as a read-only drill-down; actions with a null agent_activity_id
 # fall into the "Unlabeled" group. Read-only meta surface, so it needs no auth.
 class AlexHeartbeatTest < ActionDispatch::IntegrationTest
   def event(session: "sess-A", at: Time.current, **attrs)
-    AtomicEvent.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
+    AgentActivity.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
                           opened_at: at, seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
   def action(event: nil, session: "sess-A", at: Time.current, **attrs)
-    AtomicAction.create!({ session_id: session, kind: "grep", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: session, kind: "grep", outcome: "ok", actor: "agent",
                            seq: attrs.fetch(:seq, 0), occurred_at: at,
-                           atomic_event_id: event&.id }.merge(attrs))
+                           agent_activity_id: event&.id }.merge(attrs))
   end
 
   test "alex_heartbeat_path routes to the trajectory view, repointed off the launcher placeholder" do
@@ -26,7 +26,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     explore = event(seq: 0, category: "Explore", reason_slug: "find issue with api",
                     outcome_slug: "found the nil-guard", closed_at: 1.minute.ago, at: 3.minutes.ago)
     action(event: explore, seq: 0, at: 3.minutes.ago, kind: "grep",
-           event_slug: "Grep the capture seam", input: "grep -rn AtomicAction app/models")
+           event_slug: "Grep the capture seam", input: "grep -rn AgentAction app/models")
     verify = event(seq: 1, category: "Verify", reason_slug: "run the unit suite",
                    outcome_slug: "green", closed_at: 30.seconds.ago, at: 90.seconds.ago)
     action(event: verify, seq: 1, at: 90.seconds.ago, kind: "bash", event_slug: "Run the tests")
@@ -57,7 +57,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_match(/in progress/, response.body)
   end
 
-  test "actions with a null atomic_event_id render in the Unlabeled group" do
+  test "actions with a null agent_activity_id render in the Unlabeled group" do
     action(event: nil, seq: 0, kind: "boot", event_slug: "Unnarrated boot step")
 
     get alex_heartbeat_path(session_id: "sess-A")
@@ -105,7 +105,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "aside[data-test=heartbeat-drawer]"
     assert_select "a[href=?]", alex_insights_path, text: /Insight Bank/
     # the heartbeat navbar links across to the cross-session All Spans page
-    assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_spans_path
+    assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_activities_path
     # ...and back out to the Deployments board
     assert_select "a[href=?][data-test=hb-nav-deployments]", deployments_path
   end
@@ -202,19 +202,19 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "tr.hb-evtrow.hb-clickrow[data-test=heartbeat-event-row]"
     assert_select "[data-test=event-grade-open]", false
     assert_includes response.body, '@click="open = !open"'
-    assert_no_match heartbeat_event_feedback_path(ev), response.body
+    assert_no_match heartbeat_activity_feedback_path(ev), response.body
   end
 
   test "the span-grade drawer body loads both span editors posting to the E2 endpoint" do
     ev = event(seq: 0, closed_at: 1.minute.ago, outcome_slug: "done")
     action(event: ev, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
 
-    get heartbeat_event_feedback_path(ev)
+    get heartbeat_activity_feedback_path(ev)
 
     assert_response :success
     assert_select "turbo-frame#hb-drawer"
     assert_select "form[data-test=span-grade-form]", 2
-    assert_select "form[action=?]", heartbeat_event_grade_path(ev), 2
+    assert_select "form[action=?]", heartbeat_activity_grade_path(ev), 2
   end
 
   # A span whose task changed STAGE during the span's window badges as the new stage
@@ -280,7 +280,7 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     # grade the span through E2, exactly as the drawer's fetch does — an admin-only
     # write, so authenticate first (grade WRITES are gated; see HeartbeatGradeAuthTest)
     log_in_as(users(:alex))
-    post heartbeat_event_grade_path(ev),
+    post heartbeat_activity_grade_path(ev),
          params: { grader: "alex", disposition: "good", slug: "clean span with a sharp outcome" }
     assert_response :success
 

@@ -17,11 +17,11 @@
 # storm the LLM) — a failed sizing degrades to "unsized", it never blocks the task.
 class AviSizingJob < ApplicationJob
   AGENT = "avi".freeze
-  # A self-contained, already-closed narration span — Avi's sizing is one discrete
-  # act, not an open-ended span, so we never touch the creating session's
-  # single-open-span invariant (opening a real span would auto-close whatever the
+  # A self-contained, already-closed narration activity — Avi's sizing is one discrete
+  # act, not an open-ended activity, so we never touch the creating session's
+  # single-open-activity invariant (opening a real activity would auto-close whatever the
   # builder is narrating live).
-  SPAN_CATEGORY = "Plan".freeze
+  ACTIVITY_CATEGORY = "Plan".freeze
 
   def perform(task_slug)
     task = Task.find_by(slug: task_slug)
@@ -47,7 +47,7 @@ class AviSizingJob < ApplicationJob
   private
 
   # Record the sizing as an agent=avi event so the heartbeat Agent column shows
-  # Avi did this. Preferred path: stamp a closed AtomicEvent on the CREATING
+  # Avi did this. Preferred path: stamp a closed AgentActivity on the CREATING
   # session (captured by bin/task on create into devops.session_id) so it shows in
   # that session's heartbeat, attributed to Avi. No session (CI/manual create) ->
   # fall back to a task-scoped Activity so the attribution is never lost.
@@ -59,16 +59,16 @@ class AviSizingJob < ApplicationJob
     session_id = task.devops_session_id
     if session_id.present?
       now = Time.current
-      AtomicEvent.create!(
+      AgentActivity.create!(
         session_id: session_id,
-        category: SPAN_CATEGORY,
+        category: ACTIVITY_CATEGORY,
         reason_slug: "Avi shirt-sizes #{task.slug}",
         outcome_slug: "sized #{size}",
         task_slug: task.slug,
         agent: AGENT,
         mascot: task.devops["mascot"].presence,
         stage: task.stage,
-        seq: AtomicEvent.next_seq_for(session_id),
+        seq: AgentActivity.next_seq_for(session_id),
         opened_at: now,
         closed_at: now
       )

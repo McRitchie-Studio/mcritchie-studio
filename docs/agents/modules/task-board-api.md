@@ -14,7 +14,7 @@ this file in the same pass.
 > ⚠️ **Mostly current, with legacy examples below.** The live task model is the
 > two-workflow 8-stage one (`designed → building → submitted → reviewed →
 > assembled → shipped`, plus `blocked`/`archived`). The endpoints table and
-> lifecycle-event sections are current; any older examples that mention named
+> task-transition sections are current; any older examples that mention named
 > legacy transition routes should be treated as historical and replaced with
 > either `PATCH stage` or the event APIs documented here.
 
@@ -91,9 +91,9 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `DELETE` | `/tasks/:slug` | Delete a task |
 | `POST` | `/tasks/:slug/intent` | Record live agent intent for a target stage |
 | `POST` | `/tasks/:slug/review_events` | Record a primary/light reviewer check-in |
-| `POST` | `/tasks/:slug/events/:stage/start` | Record a task lifecycle start event |
-| `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task lifecycle stage/checkpoint |
-| `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task lifecycle step and block the task |
+| `POST` | `/tasks/:slug/events/:stage/start` | Record a task transition start checkpoint |
+| `POST` | `/tasks/:slug/events/:stage/complete` | Complete a task transition stage/checkpoint |
+| `POST` | `/tasks/:slug/events/:stage/fail` | Fail a named task transition step and block the task |
 | `POST` | `/releases/:slug/events/:step/start` | Record a release checkpoint start (stamps the stage timeline; `:slug` accepts `current`) |
 | `POST` | `/releases/:slug/events/:step/complete` | Complete a release checkpoint (stamps the stage timeline; `:slug` accepts `current`) |
 | `POST` | `/releases/:slug/events/:step/fail` | Fail a release checkpoint (never stamps a stage) |
@@ -165,13 +165,14 @@ Successful responses return `{ "data": { "delivered": true|false,
 Unknown task slugs return `422 UNKNOWN_TASKS`; missing webhook config on a live
 send returns `422 MISSING_WEBHOOK`.
 
-### Lifecycle Event APIs
+### Transition APIs
 
-Agents should prefer the event endpoints for new automation. The legacy task
-stage `PATCH` still exists, but event endpoints give the board a deterministic
-paper trail and enforce usage metadata on completed/failed agent work.
+Agents should prefer the transition endpoints for new automation. The legacy task
+stage `PATCH` still exists, but transition endpoints give the board a deterministic
+paper trail and enforce usage metadata on completed/failed agent work. The
+underlying route still uses `/events/` for backwards compatibility.
 
-Task lifecycle endpoints:
+Task transition endpoints:
 
 ```bash
 POST /api/v1/tasks/:slug/events/:stage/start
@@ -207,7 +208,7 @@ deploy_prod prod_smoke release_notes archive_tasks
 The tracker aliases also work: `testing`, `assembling`, `qa_deploying`,
 `confirming`, and `production_deploying`.
 
-#### Release stage timeline (the /deployments tracker)
+#### Release Transition Timeline (the /deployments tracker)
 
 The release carries an ordered set of **stage timestamps** — each acts as a time
 AND a boolean (stamped = the stage started/landed, blank = not yet) — and the
@@ -271,7 +272,7 @@ For `complete` and `fail` calls from agent/API/CLI sources, usage is mandatory:
 server-side writers such as `bin/release` use `source: "conductor"` and may
 record spine-only events. Steps that take measurable work should write `start`
 and then `complete` or `fail`; completed-only legacy checkpoints render as
-instant spans in release analytics so their timestamp remains visible. Repeated
+instant activities in release analytics so their timestamp remains visible. Repeated
 calls should pass `idempotency_key` so retries return the existing release event
 instead of stacking duplicates.
 
@@ -340,7 +341,7 @@ Mid-review `started`/`info` check-ins may be spine-only. Pass
 `idempotency_key` on every automated broadcast so retries return the existing
 checkpoint instead of stacking duplicates.
 
-The older task lifecycle aliases still work:
+The older task transition aliases still work:
 
 ```bash
 POST /api/v1/tasks/:slug/events/heavy_review/complete
@@ -435,9 +436,9 @@ seeds the usage baseline, so design work is accounted on the next conclusion:
 timeline marks that same `Designed → Building` card live; it does not append a
 second `Building` card.
 
-**Release duration cache.** `Release::DurationCache` derives stage spans from
+**Release duration cache.** `Release::DurationCache` derives stage durations from
 task intents to conclusions (`building`, `reviewing`, `assembled`, `shipped`)
-and release spans from `ReleaseEvent`s. Cached metrics live on
+and release durations from `ReleaseEvent`s. Cached metrics live on
 `releases.duration_metrics` with `duration_metrics_cached_at` and
 `duration_cache_version`. Task/release event writes refresh the owning release
 best-effort, `bin/rails releases:refresh_duration_metrics` refreshes the last

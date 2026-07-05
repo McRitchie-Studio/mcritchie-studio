@@ -4,14 +4,14 @@
 # bin/atomic-capture-hook — Claude Code PostToolUse hook that streams every tool
 # call into the atomic-capture endpoint (Phase B live-capture). A FRESH Claude
 # Code session, with this wired as a PostToolUse hook, populates the per-action
-# trajectory at /alex/heartbeat LIVE — one AtomicAction row per tool call.
+# trajectory at /alex/heartbeat LIVE — one AgentAction row per tool call.
 #
 # Claude Code invokes a PostToolUse hook with the event JSON on STDIN:
 #   { session_id, transcript_path, cwd, hook_event_name,
 #     tool_name, tool_input, tool_response }
-# We map that to the AtomicAction.capture contract (owned by the parallel task
+# We map that to the AgentAction.capture contract (owned by the parallel task
 # atomic-capture-api-endpoint) and POST it to
-#   ${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/atomic_actions
+#   ${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/agent_actions
 # using the SAME agent token bin/task mints (POST /api/v1/auth { secret }).
 #
 # ── Telemetry must never break the work it observes ────────────────────────
@@ -38,7 +38,7 @@ require_relative "lib/agent_api"
 # All logic lives on this class so the unit test can `load` the file (the main
 # guard below keeps it from executing) and exercise the pure builders directly.
 class AtomicCaptureHook
-  # AtomicAction outcomes / actors (mirror app/models/atomic_action.rb).
+  # AgentAction outcomes / actors (mirror app/models/agent_action.rb).
   OK    = "ok"
   ERROR = "error"
   AGENT = "agent"
@@ -55,26 +55,24 @@ class AtomicCaptureHook
 
   # NAVIGATION — matched PER SEGMENT (see command_segments): a segment is navigation
   # when its first token is cd / pushd / popd / pwd. A bare directory move owns no
-  # span and is ~84% of the noise. A command is dropped only when EVERY segment is
+  # activity and is ~84% of the noise. A command is dropped only when EVERY segment is
   # navigation (or narration, below) — so `cd X && <work>` KEEPS the work, unlike the
   # old first-token-of-the-whole-command rule that dropped it whole (see droppable?).
   NAV_COMMAND = /\A\s*(?:cd|pushd|popd|pwd)\b/.freeze
 
-  # NARRATION is DROPPED too — a Bash call whose invocation IS `bin/atomic-event`
-  # (the agent's self-narration CLI) is the span machinery itself, not work. The
-  # PostToolUse hook fires on that call like any other, so storing it as a raw
-  # action drops it into "Unlabeled" (it owns no span — it declares one). So we
-  # drop it, exactly like navigation. Matched PER SEGMENT — so `cd X && bin/atomic-event
-  # next` drops (both segments are overhead), while `bin/atomic-event next && git commit`
-  # is KEPT (the commit is real work). Matches ONLY an atomic-event INVOCATION — any
-  # path prefix (`/abs/…/bin/atomic-event`, `./bin/atomic-event`) and optional leading
-  # `ENV=val` assignments — never a command that merely MENTIONS the string
-  # (`grep atomic-event`, `cat bin/atomic-event`, editing the file).
+  # NARRATION is DROPPED too — a Bash call whose invocation IS `bin/agent-activity`
+  # or the compatibility `bin/atomic-event` (the agent's self-narration CLI) is
+  # the activity machinery itself, not work. Matched PER SEGMENT, so `cd X &&
+  # bin/agent-activity next` drops (both segments are overhead), while
+  # `bin/agent-activity next && git commit` is kept (the commit is real work).
+  # Matches ONLY a narration CLI INVOCATION — any path prefix
+  # (`/abs/…/bin/agent-activity`, `./bin/atomic-event`) and optional leading
+  # `ENV=val` assignments — never a command that merely mentions the string.
   NARRATION_COMMAND = %r{
     \A\s*
     (?:\w+=\S*\s+)*   # optional leading ENV=val assignments
     (?:[^\s]*/)?      # optional path prefix (/abs/…/, ./, ../…)
-    bin/atomic-event
+    bin/(?:atomic-event|agent-activity)
     (?:\s|\z)         # a bare invocation, or followed by args/whitespace
   }x.freeze
 
@@ -103,7 +101,7 @@ class AtomicCaptureHook
 
   # ── Pure builders (unit-tested directly) ─────────────────────────────────
 
-  # Map a PostToolUse event hash → the flat AtomicAction.capture payload.
+  # Map a PostToolUse event hash → the flat AgentAction.capture payload.
   # task_slug / stage / mascot come from the active-feature marker; model + token
   # usage + the source turn id come from the SAME assistant transcript line (read
   # once here). tokens_in/out are the FRESH spend and cache_read_tokens the re-used
@@ -116,11 +114,11 @@ class AtomicCaptureHook
     key_method = bash_key_method(event)
     {
       "session_id" => event["session_id"],
-      # DETERMINISTIC attribution: pin the action to the span that was OPEN when the
-      # tool ran (from the local marker bin/atomic-event writes), NOT the span the
-      # server happens to find open when this async POST lands. nil ⇒ omitted ⇒
-      # capture falls back to the server's open-span lookup.
-      "atomic_event_id" => read_open_span(event["session_id"]),
+      # DETERMINISTIC attribution: pin the action to the activity that was OPEN
+      # when the tool ran (from the local marker bin/agent-activity writes), not
+      # the activity the server happens to find open when this async POST lands.
+      # nil => omitted => AgentAction.capture falls back to server-side lookup.
+      "agent_activity_id" => read_open_activity(event["session_id"]),
       "kind" => map_kind(event["tool_name"]),
       "task_slug" => marker["task_slug"],
       "stage" => marker["stage"],
@@ -222,7 +220,7 @@ class AtomicCaptureHook
     nil
   end
 
-  # Fold an assistant turn's `message.usage` into the AtomicAction token contract,
+  # Fold an assistant turn's `message.usage` into the AgentAction token contract,
   # keeping FRESH spend and RE-USED context apart:
   #   * tokens_in  = input + cache_creation — the fresh prompt-side tokens actually
   #     processed this turn (cache_creation folded in at 1x; its true rate is 1.25x,
@@ -246,10 +244,11 @@ class AtomicCaptureHook
     { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
   end
 
-  # DROPPABLE — a tool-call that is PURE overhead, never a row. True only when EVERY
-  # shell segment of the command is navigation (cd/pushd/popd/pwd) OR narration
-  # (a bin/atomic-event invocation). A compound call that mixes overhead with real
-  # work — `cd X && git commit`, `bin/atomic-event next && bin/task update` — is NOT
+  # DROPPABLE — a tool-call that is PURE overhead, never a row. True only when
+  # EVERY shell segment of the command is navigation (cd/pushd/popd/pwd) OR
+  # narration (a bin/agent-activity/bin/atomic-event invocation). A compound call
+  # that mixes overhead with real work — `cd X && git commit`,
+  # `bin/agent-activity next && bin/task update` — is NOT droppable, so the work
   # droppable, so the work is CAPTURED. This is the deterministic guarantee: every
   # substantive tool call becomes an action, never silently eaten by a leading `cd`.
   # (The historical rule dropped on the FIRST token alone, so `cd X && <work>` was
@@ -272,7 +271,7 @@ class AtomicCaptureHook
     all_segments_match?(bash_command(event), NARRATION_COMMAND)
   end
 
-  # True when the command splits into ≥1 segment and EVERY segment matches +pattern+.
+  # True when the command splits into >=1 segment and EVERY segment matches +pattern+.
   def all_segments_match?(command, pattern)
     segments = command_segments(command)
     !segments.empty? && segments.all? { |segment| pattern.match?(segment) }
@@ -296,7 +295,7 @@ class AtomicCaptureHook
     input.is_a?(Hash) ? input["command"].to_s : ""
   end
 
-  # The bash call's `description` param → the hook-derived AtomicAction.summary
+  # The bash call's `description` param → the hook-derived AgentAction.summary
   # (the action's GOAL slug, outcome-free). Only Bash carries a description;
   # nil leaves the column empty. Pattern-redacted like any stored text.
   def bash_summary(event)
@@ -307,7 +306,7 @@ class AtomicCaptureHook
     desc.empty? ? nil : redact_secrets(desc)
   end
 
-  # The bash call's command → the hook-derived AtomicAction.key_method (the
+  # The bash call's command → the hook-derived AgentAction.key_method (the
   # copy-and-rerun line on the heartbeat rows). SAME redaction policy as the
   # `input` field — this lands on the PUBLIC surface. nil for non-Bash tools.
   def bash_key_method(event)
@@ -329,7 +328,7 @@ class AtomicCaptureHook
   end
 
   # ── Secret redaction (audit 2026-07-02 high finding #6) ───────────────────
-  # tool_input / tool_response are the SOLE source of AtomicAction.input/output,
+  # tool_input / tool_response are the SOLE source of AgentAction.input/output,
   # which render on the PUBLIC /alex/heartbeat surface — so a secret must never be
   # stored (and never leaves the box: we redact HERE, before the POST). Two layers:
   #   1. WHOLE-FIELD suppression when the tool touches secret MATERIAL — a Bash
@@ -477,7 +476,7 @@ class AtomicCaptureHook
   # from SessionMascot) — NOT the desk's .agent-context.json mascot, which carries
   # the BOUND TASK's builder mascot and would FLIP the base when a session works a
   # task built by a different soul (the Shellder→Sandshrew switch). This keeps an
-  # action's base mascot aligned with its span's (see bin/atomic-event). The desk
+  # action's base mascot aligned with its activity's (see bin/agent-activity). The desk
   # mascot is only a fallback for a session with no mascot of its own yet. Returns
   # a hash with string keys (possibly nil values) and never raises.
   def resolve_marker(cwd:, session_id:)
@@ -503,7 +502,7 @@ class AtomicCaptureHook
     raw = stdin.read
     event = JSON.parse(raw)
     return unless present?(event["session_id"]) # nothing to attribute → skip
-    return if droppable?(event)                 # PURE navigation and/or narration — never work
+    return if droppable?(event)                 # navigation/narration overhead — never a row
 
     payload = build_payload(event)
     dispatch(payload)
@@ -541,7 +540,7 @@ class AtomicCaptureHook
     tok = @api.token
     return unless tok
 
-    res = @api.http_json(:post, "/api/v1/atomic_actions", payload, bearer: tok)
+    res = @api.http_json(:post, "/api/v1/agent_actions", payload, bearer: tok)
     @api.invalidate_token! if res && res.code.to_i == 401
   rescue StandardError
     # swallow
@@ -586,19 +585,24 @@ class AtomicCaptureHook
     nil
   end
 
-  # The id of the session's CURRENTLY OPEN span, read from the sibling marker that
-  # bin/atomic-event writes on open (start/next) and deletes on close (end/close-open).
-  # Stamping it in the payload makes attribution DETERMINISTIC — the action pins to
-  # the span open at tool-call time, independent of when this async POST lands. nil
-  # (no marker / no open span / unparsable) ⇒ omitted ⇒ capture falls back to the
-  # server's open-span lookup. Best-effort; never raises.
-  def read_open_span(session_id)
+  # The id of the session's currently open activity, read from the sibling marker
+  # that bin/agent-activity writes on open (start/next) and deletes on close
+  # (end/close-open). Stamping it in the payload pins the action to the activity
+  # open at tool-call time, independent of when this async POST lands. Reads the
+  # legacy .open-span marker as a compatibility fallback for sessions crossing the
+  # taxonomy rename.
+  def read_open_activity(session_id)
     sid = session_id.to_s.strip
     return nil if sid.empty?
 
     safe = sid.gsub(/[^A-Za-z0-9._-]/, "")
-    path = File.join(projects_dir, ".agents", "sessions", "#{safe}.open-span")
-    return nil unless File.file?(path)
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    paths = [
+      File.join(sessions, "#{safe}.open-activity"),
+      File.join(sessions, "#{safe}.open-span")
+    ]
+    path = paths.find { |candidate| File.file?(candidate) }
+    return nil unless path
 
     id = File.read(path).to_s.strip.to_i
     id.positive? ? id : nil

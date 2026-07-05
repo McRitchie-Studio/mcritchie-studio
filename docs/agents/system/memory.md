@@ -8,7 +8,7 @@ The bank is the **single source of truth**; the tracked doc
 [`docs/agents/shared/insights.md`](../shared/insights.md) is **GENERATED** from it
 (`bin/rails insights:doc`) and must **not** be hand-edited.
 
-- **Curate a lesson** — bank it: `bin/atomic-event grade <span> --disposition
+- **Curate a lesson** — bank it: `bin/agent-activity grade <activity-id> --disposition
   good|not --slug "<4–7 words>" [--long-form "<anchor>"] --bank` (Alex heartbeat
   `grade-events`). The audit-of-Alex (`grader: mcr`) is McRitchie's admin path.
 - **Feed it forward** — a fresh session **will** load the top-N via the planned

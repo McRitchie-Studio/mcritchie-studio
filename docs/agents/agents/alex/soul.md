@@ -67,7 +67,7 @@ McRitchie.
 ## Protocols I follow
 
 - [`HEARTBEAT.md`](HEARTBEAT.md) — Alex heartbeat learning loop and full-cycle launcher
-- [`sops/grade-events.md`](sops/grade-events.md) — grade resolved spans into the
+- [`sops/grade-events.md`](sops/grade-events.md) — grade resolved activities into the
   learning layer
 - [`sops/share-insights.md`](sops/share-insights.md) — publish confirmed insights
   into agent docs

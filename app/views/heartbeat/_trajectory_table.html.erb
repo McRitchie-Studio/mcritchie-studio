@@ -1,6 +1,6 @@
-<%# The FLAT per-action trajectory table (one row per raw tool-call, grouped by
-    stage) with the inline T5 feedback columns. As of the event-grouped heartbeat
-    this is no longer the default `show` render — `_event_table` (spans as primary
+<%# The FLAT per-action table (one row per raw tool-call, grouped by
+    stage) with the inline T5 feedback columns. As of the activity-grouped heartbeat
+    this is no longer the default `show` render — `_activity_table` (activities as primary
     rows) is — but it stays as a tested component and the inline-cell markup that
     `grade.turbo_stream` reuses. Rows run oldest to
     newest and are bucketed into per-stage groups (the null-stage "Session" group
@@ -10,8 +10,8 @@
     drawer. Locals: groups (Array of [stage, actions]), pokemon_by_slug, grades
     (lookup of action_id => { grader => ActionGrade }), agents_by_slug (soul slug =>
     Agent) and agent_slug_by_action (action_id => the acting soul slug INHERITED
-    from the action's span) for the stacked acting-soul-over-base-mascot Agent
-    cell — both default empty, so an action with no span-soul shows just its
+    from the action's activity) for the stacked acting-soul-over-base-mascot Agent
+    cell — both default empty, so an action with no activity-soul shows just its
     mascot. %>
 <% pokemon_by_slug ||= {} %>
 <% agents_by_slug ||= {} %>
@@ -27,7 +27,7 @@
     <thead>
       <tr>
         <th>#</th>
-        <th>Event</th>
+        <th>Action</th>
         <th>Result</th>
         <th>Stage</th>
         <th>Task</th>
@@ -36,7 +36,7 @@
         <th>Tokens</th>
         <th>Cost</th>
         <th>Actor</th>
-        <th>Outcome</th>
+        <th>Result</th>
         <th>Alex feedback</th>
         <th>Audit (McR &rarr; Alex)</th>
       </tr>

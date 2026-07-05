@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Canonical activity narration command.
+# bin/atomic-event remains as the compatibility entrypoint used by existing hooks.
+load File.expand_path("atomic-event", __dir__)
+AgentActivityCli.new.run(ARGV)
+exit 0

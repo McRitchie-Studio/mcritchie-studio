@@ -13,7 +13,7 @@
 #     a completion concept) and is NEVER part of the duration spine — the next
 #     transition measures back to the prior TRANSITION, skipping intents.
 #
-#   CHECKPOINT — an agent-visible lifecycle event that does not move the task's
+#   CHECKPOINT — an agent-visible task event that does not move the task's
 #     coarse stage: design complete, heavy/light review complete, failed sub-step,
 #     or another named checkpoint. The status lives in metadata["status"].
 #

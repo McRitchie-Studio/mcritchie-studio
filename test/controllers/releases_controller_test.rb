@@ -66,7 +66,7 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", all_deployments_path(page: 1), text: "Previous"
   end
 
-  test "[integration] release detail renders cached stage and event tables" do
+  test "[integration] release detail renders cached stage and release-step tables" do
     release = release_with_member
 
     get deployment_path(release)
@@ -74,7 +74,7 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", release.slug
     assert_select "section", text: /Member Tasks/
-    assert_select "section", text: /Release Events/
+    assert_select "section", text: /Release Steps/
     assert_select "a[href=?]", task_path(release.tasks.first.slug)
   end
 end

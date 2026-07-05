@@ -1,8 +1,8 @@
-# Display helpers for the Alex learning-heartbeat trajectory table — pure label /
+# Display helpers for the Alex learning-heartbeat activity table — pure label /
 # palette / formatter functions, kept here (not in the view) so they unit-test in
-# isolation. The table itself is read-only; nothing here mutates an AtomicAction.
+# isolation. The table itself is read-only; nothing here mutates an AgentAction.
 module HeartbeatHelper
-  # Actor lane -> human description (mirrors AtomicAction's actor constants). The
+  # Actor lane -> human description (mirrors AgentAction's actor constants). The
   # cell shows the short slug; this is surfaced via `title` on hover.
   HEARTBEAT_ACTOR_DESCRIPTIONS = {
     "harness" => "Claude Code / Codex runtime",
@@ -35,7 +35,7 @@ module HeartbeatHelper
                      description: "Archived — terminal" }
   }.freeze
 
-  # Outcome -> badge metadata (the local credit signal). Drives the Outcome cell
+  # Action result -> badge metadata (the local credit signal). Drives the Result
   # badge AND the row's left-edge accent, the read-only analog of the prototype's
   # disposition edge.
   HEARTBEAT_OUTCOME_META = {
@@ -44,17 +44,15 @@ module HeartbeatHelper
     "pending" => { label: "pending", color: "#6e7681" }
   }.freeze
 
-  # Category -> { accent, description } for an AtomicEvent span's badge + tooltip.
-  # These are the agent-declared span vocabulary (AtomicEvent::CATEGORIES); the
-  # accent tints the span badge and its left-edge on the event-grouped heartbeat.
-  # Distinct, readable-on-dark hues so a glance separates the ten span kinds.
+  # Category -> { accent, description } for an AgentActivity badge + tooltip.
+  # These are the agent-declared activity vocabulary (AgentActivity::CATEGORIES).
   HEARTBEAT_CATEGORY_META = {
     "Explore"  => { accent: "#58a6ff", description: "Explore — read, grep, and locate the seam" },
     "Edit"     => { accent: "#fb923c", description: "Edit — write or change the code" },
     "Verify"   => { accent: "#3fb950", description: "Verify — run tests and checks" },
     "Version"  => { accent: "#a371f7", description: "Version — commit, branch, and push" },
     "Workflow" => { accent: "#d29922", description: "Workflow — board, task, and process steps" },
-    "Delegate" => { accent: "#f778ba", description: "Delegate — hand a span to a sub-agent" },
+    "Delegate" => { accent: "#f778ba", description: "Delegate — hand an activity to a sub-agent" },
     "Clarify"  => { accent: "#7ee787", description: "Clarify — intake, triage, and questions" },
     "Remote"   => { accent: "#79c0ff", description: "Remote — network, API, and remote ops" },
     "Research" => { accent: "#ffa657", description: "Research — web, docs, and reference lookup" },
@@ -62,9 +60,9 @@ module HeartbeatHelper
   }.freeze
 
   # The read-only label for an unlabeled group — raw tool-calls the agent never
-  # narrated into a span (a null atomic_event_id). Kept as one constant so the
+  # narrated into an activity (a null agent_activity_id). Kept as one constant so the
   # view, the badge, and any tests read the same string.
-  HEARTBEAT_UNLABELED = { accent: "#5c6573", description: "Unlabeled — context the agent did not narrate into a span" }.freeze
+  HEARTBEAT_UNLABELED = { accent: "#5c6573", description: "Unlabeled — context the agent did not narrate into an activity" }.freeze
 
   def heartbeat_category_meta(category)
     HEARTBEAT_CATEGORY_META.fetch(category.to_s) do
@@ -110,8 +108,8 @@ module HeartbeatHelper
   end
 
   # The same "in/out" pair from raw counts rather than an action — the aggregated
-  # form the EVENT row uses (summed across a span's rolled-up actions). "—" when
-  # the span spent nothing (a span of pure board/harness steps carries no usage).
+  # form the activity row uses (summed across an activity's rolled-up actions).
+  # "—" when the activity spent nothing (pure board/harness steps carry no usage).
   def heartbeat_tokens_pair(tokens_in, tokens_out)
     ti = tokens_in.to_i
     to = tokens_out.to_i
@@ -166,7 +164,7 @@ module HeartbeatHelper
   # PRIMARY and keeps its normal color; every SUBSEQUENT action sharing that turn
   # is a duplicate whose id lands here, so the view fades its tokens/cost cells to
   # signal the spend is inherited. Exactly ONE primary per turn across the WHOLE
-  # session, even when a turn's calls land under different spans. Actions with a
+  # session, even when a turn's calls land under different activities. Actions with a
   # blank source_turn_uuid are each their own primary and never appear here.
   # Display-only — mirrors the dedupe in heartbeat_usage_totals, changes NO value.
   def heartbeat_shared_turn_ids(actions)
@@ -183,14 +181,14 @@ module HeartbeatHelper
     end
   end
 
-  # Roll a span's attributed actions up into the totals the EVENT row shows: summed
+  # Roll an activity's attributed actions up into the totals the activity row shows: summed
   # in/out tokens, summed cost (all DEDUPED by source_turn_uuid, see above), and the
-  # span's dominant model (the model most of its actions ran on). Pure aggregation
-  # over the in-memory array the controller already loaded under each span
-  # (@event_rows), so the event table adds NO query per row — the N+1 the task
+  # activity's dominant model (the model most of its actions ran on). Pure aggregation
+  # over the in-memory array the controller already loaded under each activity
+  # (@activity_rows), so the activity table adds NO query per row — the N+1 the task
   # explicitly forbids. `mascot` is the most common action mascot, a fallback the
-  # view uses only when the span carries no mascot of its own.
-  def heartbeat_event_totals(actions)
+  # view uses only when the activity carries no mascot of its own.
+  def heartbeat_activity_totals(actions)
     actions = Array(actions)
     totals  = heartbeat_usage_totals(actions)
     {
@@ -203,7 +201,7 @@ module HeartbeatHelper
     }
   end
 
-  # The most frequent non-blank value in a list (the span's dominant model/mascot),
+  # The most frequent non-blank value in a list (the activity's dominant model/mascot),
   # or nil when the list is empty/all-blank. Ties resolve to the first-seen value.
   def heartbeat_dominant(values)
     values.filter_map { |v| v.to_s.presence }
@@ -229,36 +227,37 @@ module HeartbeatHelper
     text.to_s.strip.split(/\s+/).reject(&:empty?).length
   end
 
-  # The close-side of a span on the event-grouped heartbeat: the narrated
+  # The close-side of an activity on the activity-grouped heartbeat: the narrated
   # outcome_slug when the agent closed it, or the "…in progress" placeholder while
-  # the span is still OPEN (open? / no outcome). Read-only display only.
+  # the activity is still OPEN (open? / no outcome). Read-only display only.
   IN_PROGRESS = "…in progress"
 
-  def heartbeat_event_outcome(event)
-    return IN_PROGRESS if event.open? || event.outcome_slug.blank?
+  def heartbeat_activity_result(activity)
+    return IN_PROGRESS if activity.open? || activity.outcome_slug.blank?
 
-    event.outcome_slug
+    activity.outcome_slug
   end
 
-  # A span's lifecycle badge for the Status column — the distinct signal the operator
-  # asked for so an OPEN span reads as legitimately in-progress, not a hung/broken
+  # An activity's lifecycle badge for the Status column — the distinct signal the operator
+  # asked for so an OPEN activity reads as legitimately in-progress, not a hung/broken
   # row. "open" is amber (still running); "done" is a quiet slate (closed), kept
   # deliberately NOT green so it never reads as a "good" grade verdict.
-  HEARTBEAT_SPAN_STATUS = {
+  HEARTBEAT_ACTIVITY_STATUS = {
     open: { label: "open", color: "#d29922" },
     done: { label: "done", color: "#8b949e" }
   }.freeze
+  HEARTBEAT_SPAN_STATUS = HEARTBEAT_ACTIVITY_STATUS
 
-  # A span's Status/Task badge. When the span's task changed STAGE during the span's
+  # An activity's Status/Task badge. When the activity's task changed STAGE during the activity's
   # window, the badge becomes that target stage — humanized + colored with the SAME
   # board palette /tasks and /deployments use (Task::STAGE_LABELS + stage_scheme +
-  # the components/badge pill), so a stage-change span reads as its new stage instead
+  # the components/badge pill), so a stage-change activity reads as its new stage instead
   # of the generic "done". `stage_transitions` is the controller's bulk map
   # { task_slug => [chronological transition TaskEvents] }; when it is empty (no
   # task_slug, no transitions loaded) this falls straight back to the open/done badge,
   # so the helper is safe to call with no map (the drawer/isolated renders do).
-  def heartbeat_span_status_meta(event, stage_transitions = {})
-    if (to_stage = heartbeat_span_stage_change(event, stage_transitions))
+  def heartbeat_activity_status_meta(activity, stage_transitions = {})
+    if (to_stage = heartbeat_activity_stage_change(activity, stage_transitions))
       return {
         stage:  to_stage,
         label:  Task::STAGE_LABELS.fetch(to_stage, to_stage.to_s.humanize),
@@ -266,33 +265,33 @@ module HeartbeatHelper
       }
     end
 
-    HEARTBEAT_SPAN_STATUS[event.open? ? :open : :done]
+    HEARTBEAT_ACTIVITY_STATUS[activity.open? ? :open : :done]
   end
 
-  # The stage a span's task CHANGED TO during the span's window, or nil. A span
-  # badges as a stage change when a kind:"transition" TaskEvent for the span's
-  # task_slug lands inside [opened_at, closed_at] (an OPEN span's window runs to
+  # The stage an activity's task CHANGED TO during the activity's window, or nil. An activity
+  # badges as a stage change when a kind:"transition" TaskEvent for the activity's
+  # task_slug lands inside [opened_at, closed_at] (an OPEN activity's window runs to
   # now); the LAST such transition wins. `stage_transitions` is the pre-grouped
   # bulk map { task_slug => [chronological transitions] } — a blank slug / no
   # transitions returns nil, so this never triggers a per-row query.
-  def heartbeat_span_stage_change(event, stage_transitions = {})
-    slug = event.task_slug.presence
-    return nil if slug.blank? || event.opened_at.blank?
+  def heartbeat_activity_stage_change(activity, stage_transitions = {})
+    slug = activity.task_slug.presence
+    return nil if slug.blank? || activity.opened_at.blank?
 
     transitions = (stage_transitions || {})[slug]
     return nil if transitions.blank?
 
-    window_end = event.closed_at || Time.current
-    transitions.select { |te| te.occurred_at >= event.opened_at && te.occurred_at <= window_end }
+    window_end = activity.closed_at || Time.current
+    transitions.select { |te| te.occurred_at >= activity.opened_at && te.occurred_at <= window_end }
                .last&.to_stage
   end
 
-  # Render a span's status badge from its status meta. A stage-change span renders
+  # Render an activity's status badge from its status meta. A stage-change activity renders
   # the shared board badge pill (components/badge — exact /tasks + /deployments
   # look, both themes) wrapped in the stable event-status test hook; every other
-  # span keeps the lightweight open/done outcome chip. One code path for the table
+  # activity keeps the lightweight open/done outcome chip. One code path for the table
   # AND the drawer so they never drift.
-  def heartbeat_span_status_badge(status)
+  def heartbeat_activity_status_badge(status)
     if status[:stage].present?
       tag.span(render("components/badge", text: status[:label], scheme: status[:scheme]),
                class: "hb-outcome-badge", data: { test: "event-status", stage: status[:stage] })
@@ -302,8 +301,14 @@ module HeartbeatHelper
     end
   end
 
+  alias_method :heartbeat_event_totals, :heartbeat_activity_totals
+  alias_method :heartbeat_event_outcome, :heartbeat_activity_result
+  alias_method :heartbeat_span_status_meta, :heartbeat_activity_status_meta
+  alias_method :heartbeat_span_stage_change, :heartbeat_activity_stage_change
+  alias_method :heartbeat_span_status_badge, :heartbeat_activity_status_badge
+
   # Short, dense timestamp for the "Opened" cell ("Jun 30, 14:07"); the full
-  # timestamp rides along in the cell's title. Blank-safe so a span missing an
+  # timestamp rides along in the cell's title. Blank-safe so an activity missing an
   # opened_at still renders a dash rather than raising.
   def heartbeat_time(time)
     return "—" if time.blank?
@@ -323,7 +328,7 @@ module HeartbeatHelper
 
   # The compact "Agent" cell — a tight vertical stack of "small avatar + NAME" rows
   # (the original 📋 Avi / ✦ Magikarp text layout, but with the real avatar image in
-  # place of the emoji). The acting SOUL (AtomicEvent#agent) rides ON TOP — bold, in
+  # place of the emoji). The acting SOUL (AgentActivity#agent) rides ON TOP — bold, in
   # its own tint — over the base session mascot BENEATH it (muted). The name is
   # VISIBLE beside each face (not just a hover title) so a glance reads WHO acted.
   # Most rows carry no acting soul (a nil agent) and collapse to a SINGLE mascot row

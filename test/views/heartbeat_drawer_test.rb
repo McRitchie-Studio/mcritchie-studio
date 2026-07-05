@@ -7,7 +7,7 @@ require "test_helper"
 # (2-space indent + real newlines) when parseable, and untouched when they are not.
 class HeartbeatDrawerTest < ActionView::TestCase
   def action(**attrs)
-    AtomicAction.create!({ session_id: "d", kind: "read_file", outcome: "ok", actor: "agent",
+    AgentAction.create!({ session_id: "d", kind: "read_file", outcome: "ok", actor: "agent",
                            seq: 0, occurred_at: Time.current }.merge(attrs))
   end
 
