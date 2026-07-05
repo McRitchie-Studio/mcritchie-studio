@@ -259,11 +259,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       "the Tasks link must not be width-hidden on /stages"
   end
 
-  test "[component] deployments board links to the Alex learning heartbeat" do
+  test "[component] deployments board links to the cross-session Outcomes spans view" do
     get deployments_path
     assert_response :success
-    assert_select %(nav[aria-label="Board sections"] a[href="#{alex_heartbeat_path}"]),
-      text: "Alex Heartbeat",
+    assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_spans_path}"]),
+      text: "🎭 Outcomes",
       count: 1
   end
 
@@ -291,13 +291,14 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] the Alex Heartbeat link rides every board surface" do
+  test "[component] the Outcomes link rides every board surface" do
     # _board_top_links is shared, so the shortcut shows on tasks + stages too.
     [tasks_path, stages_path].each do |path|
       get path
       assert_response :success
-      assert_select %(nav[aria-label="Board sections"] a[href="#{alex_heartbeat_path}"]), { count: 1 },
-        "expected the Alex Heartbeat link on #{path}"
+      assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_spans_path}"]),
+        { text: "🎭 Outcomes", count: 1 },
+        "expected the Outcomes link on #{path}"
     end
   end
 
