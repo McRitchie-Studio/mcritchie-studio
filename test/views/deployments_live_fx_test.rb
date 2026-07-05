@@ -32,4 +32,27 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "card.classList.add(\"lbfx-glow-stage\")"
     assert_includes rendered, "card.classList.remove(\"lbfx-glow\", \"lbfx-glow-stage\")"
   end
+
+  test "reviewed arrivals use a distinct behind-card gust" do
+    render partial: "tasks/deployments_live_fx"
+
+    assert_includes rendered, ".lbfx-reviewed-arrive"
+    assert_includes rendered, ".lbfx-reviewed-swell"
+    assert_includes rendered, "spawnReviewedGustBehind(card)"
+    assert_includes rendered, "spawnReviewedWake(card)"
+    assert_includes rendered, "REVIEWED_GUST_COLORS"
+    assert_includes rendered, "card.dataset.stage === \"reviewed\""
+    assert_includes rendered, "reviewedBurst(card, pop)"
+  end
+
+  test "archive removals can dissolve through the mist exit" do
+    render partial: "tasks/deployments_live_fx"
+
+    assert_includes rendered, "MIST_COLORS"
+    assert_includes rendered, "spawnMist(card)"
+    assert_includes rendered, "exitAction === \"archive\""
+    assert_includes rendered, "stream.dataset.exitAction"
+    assert_includes rendered, "filter: \"blur(9px)\""
+    assert_includes rendered, "z-index:45"
+  end
 end

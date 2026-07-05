@@ -27,6 +27,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "button[data-test='task-card-delete']"
     assert_includes response.body, "fetch('/tasks/' + slug + '.json'"
     assert_includes response.body, "method: 'PATCH'"
+    assert_includes response.body, "const useLiveExit = !!window.LiveBoardFx"
+    assert_includes response.body, "if (card && !useLiveExit) await this.animateCardExit(card, 'archive')"
     assert_includes response.body, "animateCardExit(card, 'archive')"
     assert_includes response.body, "animateCardExit(card, 'delete')"
     assert_not_includes response.body, "/tasks/' + slug + '/archive.json"
