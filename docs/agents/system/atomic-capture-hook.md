@@ -80,19 +80,32 @@ secret-free) telemetry is a separate concern.
 
 ### What it DROPS (never a row)
 
-Two classes of Bash call are dropped **before** any POST — they own no narrated
-span and would otherwise land in "Unlabeled":
+A Bash call is dropped **before** any POST only when it is **pure overhead** — it
+owns no narrated span and would otherwise land in "Unlabeled". The decision is made
+**per shell segment** (splitting the command on `&&` `||` `;` `|` `&` and
+newlines): the call drops only when **every** segment is overhead. Two kinds of
+segment count as overhead:
 
-- **Navigation** — a command whose first token is `cd` / `pushd` / `popd` / `pwd`
+- **Navigation** — a segment whose first token is `cd` / `pushd` / `popd` / `pwd`
   (a bare directory move; ~84% of the raw noise).
-- **Narration** — a command whose invocation **is** `bin/atomic-event` (the
+- **Narration** — a segment whose invocation **is** `bin/atomic-event` (the
   agent's self-narration CLI). It's the span machinery itself, so capturing the
   call that declares a span would double-record it as a raw action. Matches only
   an actual invocation — any path prefix (`/abs/…/bin/atomic-event`,
   `./bin/atomic-event`) and optional leading `ENV=val` assignments — never a
   command that merely *mentions* the string (`grep atomic-event`, `cat
-  bin/atomic-event`, an edit to the file). A `cd … && bin/atomic-event` already
-  drops as navigation (first token `cd`).
+  bin/atomic-event`, an edit to the file).
+
+Because the rule is per-segment, a compound call that mixes overhead with **real
+work is CAPTURED, never dropped** — `cd /repo && git commit` keeps the commit, and
+`bin/atomic-event next && bin/task update …` keeps the update. Only a
+fully-overhead call drops: a bare `cd`, a chain of directory moves,
+`bin/atomic-event start`, or `cd /repo && bin/atomic-event next` (navigation +
+narration, no work). This is the deterministic guarantee — every substantive tool
+call becomes a row, never silently eaten by a leading `cd` (the historical
+first-token rule dropped `cd X && <work>` whole; that was the bug). The split is
+quote-naive and biased to KEEP, so a separator embedded inside a quoted string can
+only cause an extra captured row, never a dropped one.
 
 ### Model derivation — what's actually available to the hook
 
