@@ -66,6 +66,12 @@ class Task < ApplicationRecord
   # The two workflows, split at the `submitted` seam (which belongs to both):
   # Build is the feature agent's, Deploy is DevOps's.
   BUILD_STAGES  = %w[designed building submitted].freeze
+  # The two pipeline gates where a task's Pokémon evolves (one step each): the
+  # story submit and the QA-green assemble — Charmander tasks submit as
+  # Charmeleon and assemble as Charizard. The value is the evolution stage the
+  # gate leaves the mascot at (devops.mascot_stage), which is what makes a
+  # blocked→resubmitted loop idempotent. See #evolve_stage_mascot.
+  MASCOT_EVOLUTION_GATES = { "submitted" => 1, "assembled" => 2 }.freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
   NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
                         "submitted" => "reviewed", "reviewed" => "assembled",
@@ -194,6 +200,11 @@ class Task < ApplicationRecord
   # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
   before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
+  # Evolution AFTER the session sync: a handoff-resubmit first swaps to the new
+  # session's base Pokémon, then evolves it — so the gate always evolves the
+  # mascot that owns the transition. Runs before the after_update TaskEvent, so
+  # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
+  before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
@@ -1093,9 +1104,11 @@ class Task < ApplicationRecord
     )
   end
 
-  # Extra, non-spine event metadata. Build-lane transitions snapshot the mascot
-  # that owned THAT event, so a later rework handoff can repaint the current task
-  # mascot without rewriting history. On the submitted→reviewed transition this
+  # Extra, non-spine event metadata. EVERY staged transition snapshots the mascot
+  # that owned THAT event, so a later rework handoff — or a gate evolution
+  # (#evolve_stage_mascot) — can repaint the current task mascot without
+  # rewriting history: the submitted card keeps Charmeleon after the task
+  # assembles as Charizard. On the submitted→reviewed transition this
   # also carries the TWO reviewers (+ primary/light) so the avatars UI can render
   # WHO reviewed — the single `actor` stays the primary mover. An explicit
   # Current.task_event_reviewers (set when Avi curated the pair) wins; otherwise
@@ -1120,8 +1133,6 @@ class Task < ApplicationRecord
   end
 
   def stage_mascot_event_metadata
-    return {} unless Task::BUILD_STAGES.include?(stage)
-
     slug = devops["mascot"].presence
     return {} unless slug
 
@@ -1289,6 +1300,39 @@ class Task < ApplicationRecord
     devops["mascot_shiny"] = shiny
     devops["mascot_color"] = pokemon&.signature_color
     devops["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
+    # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
+    devops.delete("mascot_stage")
+  end
+
+  # Evolve the TASK's copy of its mascot at a pipeline gate (submitted/assembled)
+  # — one step per gate, random pick on a branching line (Eevee), a no-op when
+  # the line is done (Snorlax, or already fully evolved). The SESSION's mascot is
+  # untouched: a session working two tasks keeps its own stable Pokémon while
+  # each task's copy evolves with its progress. devops.mascot_stage records the
+  # gate consumed, so a blocked→resubmitted loop never double-evolves; it is not
+  # a client (DEVOPS_KEYS) field, so board updates can't clobber it.
+  def evolve_stage_mascot
+    return unless Pokemon.table_exists?
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+    # Personas own the mascot fields (an agent name, not a Pokémon) — never evolve.
+    return if devops["persona"].to_s.strip.present?
+
+    gate = Task::MASCOT_EVOLUTION_GATES[stage]
+    return if gate.nil? || devops["mascot_stage"].to_i >= gate
+
+    pokemon = Pokemon.find_by(slug: devops["mascot"].presence)
+    return unless pokemon
+
+    devops["mascot_stage"] = gate
+    evolved = pokemon.evolutions.order(Arel.sql("RANDOM()")).first
+    return unless evolved # nowhere to go — the gate is still consumed
+
+    devops["mascot"] = evolved.slug
+    devops["mascot_color"] = evolved.signature_color
+    devops["mascot_emoji"] = [("✨" if mascot_shiny?), evolved.type_emoji.presence].compact.join.presence
+  rescue StandardError => e
+    Rails.logger.warn("[mascot-evolution] skipped (non-fatal): #{e.class}: #{e.message}")
   end
 
   # Persona override: when a task carries devops.persona (an agent slug — "act as
@@ -1320,6 +1364,7 @@ class Task < ApplicationRecord
       devops["mascot_shiny"] = nil
       devops["mascot_color"] = nil
       devops["mascot_emoji"] = nil
+      devops.delete("mascot_stage")
       sync_session_mascot
       return
     end

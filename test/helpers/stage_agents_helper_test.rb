@@ -261,10 +261,14 @@ class StageAgentsHelperTest < ActionView::TestCase
     # Build lane → the mascot
     assert_equal "Snorlax", by_stage["designed"].first.name
     assert_equal "https://example.test/snorlax-sprite.png", by_stage["building"].first.avatar
-    # Deploy lane → the real crew, no mascot
-    assert_equal %w[shannon carl steffon avi],
-                 (by_stage["reviewed"] + by_stage["assembled"] + by_stage["shipped"]).map { |g| g.agent&.slug }
+    # Deploy lane → the real crew LEADS each card; reviewed stays the pure pair.
+    assert_equal %w[shannon carl], by_stage["reviewed"].map { |g| g.agent&.slug }
+    assert_equal "steffon", by_stage["assembled"].first.agent&.slug
+    assert_equal "avi", by_stage["shipped"].first.agent&.slug
     assert_not_equal "https://example.test/snorlax-sprite.png", by_stage["shipped"].first.avatar
+    # …and assembled/shipped ALSO carry the task's (possibly gate-evolved)
+    # Pokémon as a companion face — how the second evolution shows itself.
+    assert_equal %w[Snorlax Snorlax], [by_stage["assembled"].last, by_stage["shipped"].last].map(&:name)
   end
 
   test "stage_timeline keeps historical build mascots after a rework handoff" do

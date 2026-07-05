@@ -99,7 +99,7 @@ class TaskEventTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  test "build-lane transitions snapshot the current mascot on the event" do
+  test "every staged transition snapshots the current mascot on the event" do
     Pokemon.create!(dex: 87, name: "Dewgong", slug: "dewgong", generation: 1,
                     sprite_url: "https://example.test/dewgong.png")
     Pokemon.create!(dex: 88, name: "Grimer", slug: "grimer", generation: 1,
@@ -121,7 +121,9 @@ class TaskEventTest < ActiveSupport::TestCase
     assert_equal "dewgong", designed.metadata.dig("mascot", "slug")
     assert_equal "dewgong", first_build.metadata.dig("mascot", "slug")
     assert_equal "dewgong", submitted.metadata.dig("mascot", "slug")
-    assert_nil blocked.metadata["mascot"], "blocked is not a build-lane stage"
+    # Deploy/side stages bake too now (the evolution gates need history to keep
+    # each card's form) — the block card keeps the mascot that hit the blocker.
+    assert_equal "dewgong", blocked.metadata.dig("mascot", "slug")
     assert_equal "grimer", rework_build.metadata.dig("mascot", "slug")
   end
 
