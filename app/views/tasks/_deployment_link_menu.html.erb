@@ -1,0 +1,13 @@
+<details class="relative" data-test="deployment-link-menu">
+  <summary class="btn btn-neutral btn-sm cursor-pointer select-none">
+    Links
+  </summary>
+  <div class="absolute right-0 z-30 mt-2 w-40 overflow-hidden rounded-lg border border-subtle bg-surface shadow-lg shadow-primary-900/10 dark:shadow-black/30">
+    <%= link_to "Stages", stages_path,
+          class: "block px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-alt hover:text-heading transition",
+          data: { test: "deployment-link-menu-stages" } %>
+    <%= link_to "Docs", review_events_hub_path,
+          class: "block px-3 py-2 text-sm font-medium text-secondary hover:bg-surface-alt hover:text-heading transition",
+          data: { test: "deployment-link-menu-docs" } %>
+  </div>
+</details>

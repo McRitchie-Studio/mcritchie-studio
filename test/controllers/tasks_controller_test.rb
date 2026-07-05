@@ -335,6 +335,20 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] deployments older links move into the header menu" do
+    get deployments_path
+    assert_response :success
+
+    assert_select %(nav[aria-label="Board sections"] a[href="#{stages_path}"]), count: 0
+    assert_select %([data-test="deployment-link-menu"] a[href="#{stages_path}"]),
+      text: "Stages",
+      count: 1
+    assert_select %([data-test="deployment-link-menu"] a[href="#{review_events_hub_path}"]),
+      text: "Docs",
+      count: 1
+    assert_select %([data-test="submitted-review-docs-link"]), count: 0
+  end
+
   test "[component] the Activities link rides every board surface" do
     # _board_top_links is shared, so the shortcut shows on tasks + stages too.
     [tasks_path, stages_path].each do |path|
@@ -803,11 +817,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   test "each board page cross-links to the other boards" do
     # The active board hides its own (redundant) toggle button, so a page links
-    # to the OTHER board(s); Stages stays reachable from the top-links nav.
+    # to the OTHER board(s); Stages stays reachable from top-links or the
+    # /deployments older-links menu.
     { tasks_path => "tasks", deployments_path => "deployments", stages_path => "stages" }.each do |page, current|
       get page
       assert_response :success
-      assert_select %(nav a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages nav link"
+      if current == "deployments"
+        assert_select %([data-test="deployment-link-menu"] a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages menu link"
+      else
+        assert_select %(nav a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages nav link"
+      end
       assert_select %(nav a[href="#{tasks_path}"]), { minimum: 1 }, "#{page} missing Tasks nav link" unless current == "tasks"
       assert_select %(nav a[href="#{deployments_path}"]), { minimum: 1 }, "#{page} missing Deployments nav link" unless current == "deployments"
     end

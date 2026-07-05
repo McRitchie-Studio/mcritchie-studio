@@ -408,6 +408,9 @@ function kanbanBoard(live) {
         <% if logged_in? %>
           <%= link_to "New Task", new_task_path, class: "btn btn-primary" %>
         <% end %>
+        <% if current_page == "deployments" %>
+          <%= render "deployment_link_menu" %>
+        <% end %>
       </div>
     </div>
   </div>
@@ -472,7 +475,7 @@ function kanbanBoard(live) {
             <h3 class="text-sm font-bold text-heading uppercase tracking-wider">
               <%= Task::STAGE_LABELS.fetch(stage) %>
             </h3>
-            <% if stage == "submitted" %>
+            <% if stage == "submitted" && current_page != "deployments" %>
               <%= link_to "docs",
                     review_events_hub_path,
                     class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",

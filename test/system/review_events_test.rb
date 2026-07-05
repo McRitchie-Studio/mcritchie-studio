@@ -32,7 +32,7 @@ class ReviewEventsTest < ApplicationSystemTestCase
     assert_text "System test sees the light smoke checkpoint."
   end
 
-  test "[e2e] operator opens review process hub from submitted column docs link" do
+  test "[e2e] operator opens review process hub from deployment link menu" do
     Agent.create!(name: "Carl", slug: "carl")
     Agent.create!(name: "Shannon", slug: "shannon")
     task = Task.create!(title: "review hub system task", stage: "submitted")
@@ -42,7 +42,8 @@ class ReviewEventsTest < ApplicationSystemTestCase
     )
 
     visit deployments_path
-    find("[data-test='submitted-review-docs-link']").click
+    find("[data-test='deployment-link-menu'] summary").click
+    find("[data-test='deployment-link-menu-docs']").click
 
     assert_current_path review_events_hub_path
     assert_text "Review Process Hub"
