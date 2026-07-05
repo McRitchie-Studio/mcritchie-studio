@@ -142,16 +142,16 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "tr[data-test=aa-action] td[data-test=aa-action-grade-mcr] form[action=?]", heartbeat_grade_path(act)
   end
 
-  test "[component] the activity agent avatar is bigger (xs) than the action avatar (xxs)" do
+  test "[component] the activity agent avatar is bigger (sm) than the action avatar (xxs)" do
     ev = activity(mascot: "snorlax", closed_at: Time.current, outcome_slug: "done")
     act = action(agent_activity_id: ev.id, seq: 0, mascot: "snorlax")
 
     render_table [[ev, [act]]]
 
-    # the primary activity row wears the xs (w-8) face; the drill-down action keeps xxs (w-6)
-    assert_select "tr.aa-arow .aa-agent .w-8"
+    # the primary activity row wears the sm (w-10) face; the drill-down action keeps xxs (w-6)
+    assert_select "tr.aa-arow .aa-agent .w-10"
     assert_select "tr[data-test=aa-action] .aa-agent .w-6"
-    assert_select "tr[data-test=aa-action] .aa-agent .w-8", false
+    assert_select "tr[data-test=aa-action] .aa-agent .w-10", false
   end
 
   test "[component] the action row carries its grade hydration data and no model cell" do
