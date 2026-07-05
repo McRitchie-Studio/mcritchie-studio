@@ -303,9 +303,10 @@ function kanbanBoard(live) {
       this._pendingMoves[slug] = true;
 
       const card = document.getElementById('card-' + slug);
+      const useLiveExit = !!window.LiveBoardFx;
 
       try {
-        if (card) await this.animateCardExit(card, 'archive');
+        if (card && !useLiveExit) await this.animateCardExit(card, 'archive');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
         const resp = await fetch('/tasks/' + slug + '.json', {
           method: 'PATCH',
@@ -315,7 +316,7 @@ function kanbanBoard(live) {
         if (!resp.ok) throw await this.responseError(resp, 'Archive failed');
         const updated = await resp.json().catch(() => null);
         if (!updated || updated.stage !== 'archived') throw new Error('Archive failed');
-        if (card) {
+        if (card && !useLiveExit) {
           const archivedZone = document.getElementById('dropzone-archived');
           if (archivedZone) {
             archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));

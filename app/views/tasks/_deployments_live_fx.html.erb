@@ -1,9 +1,11 @@
 <%# Live /deployments board animations, driven by the real DeploymentsBroadcaster
     Turbo Streams (turbo_stream_from "deployments") for EVERY connected viewer:
       • create (prepend a new card)      → pop + type-coloured glow flash + confetti
+      • reviewed arrival                 → smooth-sailing gust burst from behind
       • move   (remove old + prepend new)→ old card shrinks out & its column reclaims
                                            the gap (FLIP), then the new card grows in
-      • archive/delete (remove)          → distinct fadeouts, column reclaims the gap
+      • archive (remove)                 → card dissolves into mist
+      • delete (remove)                  → distinct fadeout, column reclaims the gap
       • replace (intent / in-place)      → a subtle glow pulse, no bubbles
     Event type is read from the Turbo Stream action itself (no buttons). Glow colour
     comes from the card's data-glow (its mascot's primary type colour). Only rendered
@@ -11,6 +13,13 @@
 <style>
   .lbfx-pop { animation: lbfxPop .5s cubic-bezier(.2, 1.4, .3, 1); }
   @keyframes lbfxPop { 0% { transform: scale(.85); } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+  .lbfx-reviewed-arrive { animation: lbfxReviewedArrive .7s cubic-bezier(.16, 1.2, .25, 1); }
+  @keyframes lbfxReviewedArrive {
+    0% { transform: translateY(8px) scale(.9); }
+    58% { transform: translateY(-2px) scale(1.045); }
+    100% { transform: translateY(0) scale(1); }
+  }
 
   /* A flash, not a bloom — brightest on frame one, then fades. Colour from
      --lbfx-glow (the card's mascot type colour); falls back to a warm orange. */
@@ -28,6 +37,15 @@
            border-color: var(--task-card-glow-border-color); }
   }
 
+  .lbfx-reviewed-swell { animation: lbfxReviewedSwell .95s ease-out; }
+  @keyframes lbfxReviewedSwell {
+    0%   { box-shadow: 0 0 20px 5px rgb(45 212 191 / .95), 0 0 54px 16px rgb(125 211 252 / .45);
+           border-color: rgb(45 212 191 / 1); }
+    45%  { box-shadow: 0 0 26px 8px rgb(250 204 21 / .72), 0 0 68px 22px rgb(103 232 249 / .44);
+           border-color: rgb(250 204 21 / .9); }
+    100% { box-shadow: 0 0 0 0 rgb(45 212 191 / 0); border-color: rgb(45 212 191 / 0); }
+  }
+
   /* Keep cards above active confetti. Particles render below this z-layer, so
      they peek out around the sides instead of covering card text. */
   .lbfx-confetti-active .kanban-card { position: relative; z-index: 30; }
@@ -38,6 +56,8 @@
   // Installed once; survives Turbo navigations.
   window.LiveBoardFx = window.LiveBoardFx || (function () {
     const CONFETTI_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
+    const REVIEWED_GUST_COLORS = ["#67e8f9", "#5eead4", "#fef3c7", "#ffffff", "#22d3ee"];
+    const MIST_COLORS = ["rgba(226,232,240,.64)", "rgba(191,219,254,.5)", "rgba(203,213,225,.56)", "rgba(255,255,255,.52)"];
 
     // The release modules above the board (replaced on a release state change) —
     // the dropzone observer never sees them, so they're flashed straight from the
@@ -88,6 +108,11 @@
       }, 850);
     }
 
+    function reviewedGlow(card) {
+      card.classList.add("lbfx-reviewed-swell");
+      setTimeout(() => card.classList.remove("lbfx-reviewed-swell"), 1000);
+    }
+
     function liftCard(card) {
       document.body.classList.add("lbfx-confetti-active");
       card.classList.add("lbfx-card-front");
@@ -127,6 +152,89 @@
       }
     }
 
+    // Reviewed is the "smooth sailing" moment: longer mint/cyan ribbons blow out
+    // from behind the card edges while the card stays in front.
+    function spawnReviewedGustBehind(card) {
+      const r = card.getBoundingClientRect();
+      if (!r.width) return;
+      const N = 32;
+      for (let i = 0; i < N; i++) {
+        const ribbon = document.createElement("div");
+        const side = i % 2 === 0 ? -1 : 1;
+        const width = 18 + Math.random() * 30;
+        const height = 7 + Math.random() * 9;
+        const startX = side < 0 ? r.left - 5 + Math.random() * 8 : r.right + 5 - Math.random() * 8;
+        const startY = r.top + r.height * (0.16 + Math.random() * 0.68);
+        const dx = side * (92 + Math.random() * 176);
+        const dy = -50 + Math.random() * 112;
+        const spin = side * (90 + Math.random() * 220);
+        ribbon.style.cssText =
+          "position:fixed;left:" + startX + "px;top:" + startY + "px;width:" + width + "px;height:" + height +
+          "px;border-radius:9999px;pointer-events:none;z-index:35;background:" +
+          REVIEWED_GUST_COLORS[i % REVIEWED_GUST_COLORS.length] + ";box-shadow:0 0 16px rgba(103,232,249,.58),0 0 28px rgba(250,204,21,.22);";
+        document.body.appendChild(ribbon);
+        ribbon.animate(
+          [
+            { transform: "translate(-50%,-50%) rotate(" + (-side * 8) + "deg) scaleX(.72)", opacity: 1 },
+            { transform: "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px)) rotate(" + spin + "deg) scaleX(1.16)", opacity: 0.9, offset: 0.48 },
+            { transform: "translate(calc(-50% + " + (dx * 1.18) + "px), calc(-50% + " + (dy + 24) + "px)) rotate(" + (spin * 1.25) + "deg) scaleX(.22)", opacity: 0 }
+          ],
+          { duration: 920 + Math.random() * 460, easing: "cubic-bezier(.16,.84,.24,1)" }
+        ).onfinish = () => ribbon.remove();
+      }
+    }
+
+    function spawnReviewedWake(card) {
+      const r = card.getBoundingClientRect();
+      if (!r.width) return;
+      for (let i = 0; i < 2; i++) {
+        const wake = document.createElement("div");
+        const padX = 20 + i * 18;
+        const padY = 14 + i * 12;
+        wake.style.cssText =
+          "position:fixed;left:" + (r.left + r.width / 2) + "px;top:" + (r.top + r.height / 2) + "px;width:" + (r.width + padX) +
+          "px;height:" + (r.height + padY) + "px;border-radius:14px;pointer-events:none;z-index:35;border:2px solid rgba(103,232,249,.72);" +
+          "background:radial-gradient(circle at center, rgba(94,234,212,.2), rgba(103,232,249,.08) 45%, rgba(250,204,21,.12) 68%, transparent 72%);" +
+          "box-shadow:0 0 24px rgba(103,232,249,.42),0 0 42px rgba(250,204,21,.2);";
+        document.body.appendChild(wake);
+        wake.animate(
+          [
+            { transform: "translate(-50%,-50%) scale(.72)", opacity: 0.78 },
+            { transform: "translate(-50%,-50%) scale(1.08)", opacity: 0.54, offset: 0.48 },
+            { transform: "translate(-50%,-50%) scale(1.34)", opacity: 0 }
+          ],
+          { duration: 760 + i * 180, easing: "cubic-bezier(.16,.84,.24,1)" }
+        ).onfinish = () => wake.remove();
+      }
+    }
+
+    function spawnMist(card) {
+      const r = card.getBoundingClientRect();
+      if (!r.width) return;
+      const N = 32;
+      for (let i = 0; i < N; i++) {
+        const puff = document.createElement("div");
+        const size = 14 + Math.random() * 30;
+        const startX = r.left + r.width * (0.1 + Math.random() * 0.8);
+        const startY = r.top + r.height * (0.12 + Math.random() * 0.76);
+        const dx = (Math.random() - 0.5) * 120;
+        const dy = (Math.random() - 0.68) * 100;
+        puff.style.cssText =
+          "position:fixed;left:" + startX + "px;top:" + startY + "px;width:" + size + "px;height:" + size +
+          "px;border-radius:9999px;pointer-events:none;z-index:45;background:" +
+          MIST_COLORS[i % MIST_COLORS.length] + ";filter:blur(" + (2 + Math.random() * 4) + "px);";
+        document.body.appendChild(puff);
+        puff.animate(
+          [
+            { transform: "translate(-50%,-50%) scale(.35)", opacity: 0 },
+            { transform: "translate(calc(-50% + " + (dx * 0.5) + "px), calc(-50% + " + (dy * 0.5) + "px)) scale(1)", opacity: 0.72, offset: 0.32 },
+            { transform: "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px)) scale(1.8)", opacity: 0 }
+          ],
+          { duration: 780 + Math.random() * 360, easing: "ease-out" }
+        ).onfinish = () => puff.remove();
+      }
+    }
+
     // The full arrival flourish: glow + side confetti, and (unless the caller drives its
     // own scale, e.g. the move grow-in) a pop.
     function burst(card, pop) {
@@ -139,36 +247,56 @@
       spawnConfettiBehind(card);
     }
 
-    // Remove a card while its column reclaims the gap smoothly — FLIP the siblings
-    // (transform between measured before/after positions) so the dropzone's space-y
-    // margins can't cause a pause/snap. Resolves so a move's incoming card can wait.
-    function exitAnimation(action) {
-      if (action === "archive") {
-        return {
-          frames: [
-            { opacity: 1, transform: "translateY(0) scale(1)", filter: "saturate(1)" },
-            { opacity: .78, transform: "translateY(-6px) scale(.98)", filter: "saturate(.9)", offset: .35 },
-            { opacity: 0, transform: "translateY(20px) scale(.86)", filter: "saturate(.65)" }
-          ],
-          options: { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" }
-        };
+    function reviewedBurst(card, pop) {
+      const r = card.getBoundingClientRect();
+      if (!r.width) return;
+      if (pop !== false) card.classList.add("lbfx-reviewed-arrive");
+      liftCard(card);
+      reviewedGlow(card);
+      if (pop !== false) setTimeout(() => card.classList.remove("lbfx-reviewed-arrive"), 740);
+      spawnReviewedWake(card);
+      spawnReviewedGustBehind(card);
+    }
+
+    function arrivalBurst(card, pop) {
+      if (card.dataset.stage === "reviewed") {
+        reviewedBurst(card, pop);
+      } else {
+        burst(card, pop);
       }
-      if (action === "delete") {
-        return {
-          frames: [
+    }
+
+    function animateExit(card, exitAction, done) {
+      if (exitAction === "archive") {
+        spawnMist(card);
+        card.animate(
+          [
+            { opacity: 1, filter: "blur(0px)", transform: "scale(1)" },
+            { opacity: 0.62, filter: "blur(2px)", transform: "scale(.98)", offset: 0.34 },
+            { opacity: 0, filter: "blur(9px)", transform: "scale(.86)" }
+          ],
+          { duration: 760, easing: "ease-in", fill: "forwards" }
+        ).onfinish = done;
+      } else if (exitAction === "delete") {
+        card.animate(
+          [
             { opacity: 1, transform: "translateX(0) rotate(0deg) scale(1)", filter: "blur(0)" },
             { opacity: .55, transform: "translateX(8px) rotate(1deg) scale(.96)", filter: "blur(0)", offset: .42 },
             { opacity: 0, transform: "translateX(28px) rotate(-2deg) scale(.72)", filter: "blur(1px)" }
           ],
-          options: { duration: 430, easing: "cubic-bezier(.35,0,.2,1)", fill: "forwards" }
-        };
+          { duration: 430, easing: "cubic-bezier(.35,0,.2,1)", fill: "forwards" }
+        ).onfinish = done;
+      } else {
+        card.animate(
+          [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.55)" }],
+          { duration: 450, easing: "linear", fill: "forwards" }
+        ).onfinish = done;
       }
-      return {
-        frames: [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.55)" }],
-        options: { duration: 450, easing: "linear", fill: "forwards" }
-      };
     }
 
+    // Remove a card while its column reclaims the gap smoothly — FLIP the siblings
+    // (transform between measured before/after positions) so the dropzone's space-y
+    // margins can't cause a pause/snap. Resolves so a move's incoming card can wait.
     function collapseOut(card, done, exitAction) {
       let signalDone;
       const promise = new Promise((res) => { signalDone = res; });
@@ -190,7 +318,7 @@
         height: rect.height + "px",
         top: (rect.top - zr.top - (parseFloat(zs.borderTopWidth) || 0) + zone.scrollTop) + "px",
         left: (rect.left - zr.left - (parseFloat(zs.borderLeftWidth) || 0) + zone.scrollLeft) + "px",
-        margin: "0", zIndex: "5", pointerEvents: "none", transformOrigin: "center top"
+        margin: "0", zIndex: exitAction === "archive" ? "35" : "5", pointerEvents: "none", transformOrigin: "center top"
       });
       if (exitAction) card.dataset.exitAction = exitAction;
 
@@ -207,8 +335,7 @@
         });
       });
 
-      const fx = exitAnimation(exitAction);
-      card.animate(fx.frames, fx.options).onfinish = () => { delete card.dataset.exitAction; zone.style.position = restorePos; finish(); };
+      animateExit(card, exitAction, () => { delete card.dataset.exitAction; zone.style.position = restorePos; finish(); });
       return promise;
     }
 
@@ -234,7 +361,7 @@
           { duration: 380, easing: "ease-out", fill: "both" }
         );
         grow.onfinish = () => { card.style.opacity = ""; card.style.transformOrigin = ""; grow.cancel(); };
-        burst(card, false);
+        arrivalBurst(card, false);
       });
     }
 
@@ -254,7 +381,7 @@
       } else if (action === "replace") {     // in-place update
         requestAnimationFrame(() => glow(node));
       } else {                                // CREATE
-        requestAnimationFrame(() => burst(node, true));
+        requestAnimationFrame(() => arrivalBurst(node, true));
       }
     }
 

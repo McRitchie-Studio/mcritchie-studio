@@ -69,7 +69,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal "dropzone-designed", streams.first["target"]
   end
 
-  test "a task leaving the board (→ archived) REMOVES its card" do
+  test "a task leaving the board (→ archived) REMOVES its card with a mist exit hint" do
     task = built_submitted_task
     task.update!(stage: "archived")
     event = task.task_events.transitions.last
