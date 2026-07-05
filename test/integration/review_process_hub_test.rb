@@ -6,7 +6,7 @@ class ReviewProcessHubIntegrationTest < ActionDispatch::IntegrationTest
     Agent.create!(name: "Shannon", slug: "shannon")
   end
 
-  test "[integration] submitted column links to review process hub" do
+  test "[integration] deployment link menu links to review process hub" do
     task = Task.create!(title: "hub submitted task", stage: "submitted")
     task.record_intent_event(
       to_stage: "reviewed",
@@ -15,7 +15,7 @@ class ReviewProcessHubIntegrationTest < ActionDispatch::IntegrationTest
 
     get deployments_path
     assert_response :success
-    assert_select "[data-test='submitted-review-docs-link'][href=?]", review_events_hub_path
+    assert_select "[data-test='deployment-link-menu-docs'][href=?]", review_events_hub_path
 
     get review_events_hub_path
     assert_response :success
