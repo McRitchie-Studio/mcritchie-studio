@@ -470,18 +470,20 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal 0, elapsed_seconds(t, t - 60), "a negative span clamps to 0, never a bogus past"
   end
 
-  test "format_elapsed_clock renders a seconds-precision H/M/S clock, zero-padded" do
+  test "format_elapsed_clock renders seconds below hours and H/M after" do
     assert_equal "0s", format_elapsed_clock(0)
     assert_equal "45s", format_elapsed_clock(45)
     assert_equal "7m 23s", format_elapsed_clock(7 * 60 + 23)
     assert_equal "7m 03s", format_elapsed_clock(7 * 60 + 3), "trailing units zero-pad for a stable width"
-    assert_equal "1h 04m 09s", format_elapsed_clock(3600 + 4 * 60 + 9)
+    assert_equal "1h 04m", format_elapsed_clock(3600 + 4 * 60 + 9)
+    assert_equal "180h 24m", format_elapsed_clock(180.hours + 24.minutes + 14.seconds)
   end
 
   test "release_elapsed_clock counts seconds from the release's created_at" do
     rel = Release.new(state: "assembling", created_at: Time.utc(2026, 1, 1, 0, 0, 0))
     assert_equal "0s", release_elapsed_clock(rel, now: Time.utc(2026, 1, 1, 0, 0, 0))
     assert_equal "7m 23s", release_elapsed_clock(rel, now: Time.utc(2026, 1, 1, 0, 7, 23))
+    assert_equal "1h 04m", release_elapsed_clock(rel, now: Time.utc(2026, 1, 1, 1, 4, 9))
   end
 
   test "release_static_duration_label renders seconds or whole minutes" do
@@ -532,6 +534,21 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "#current-release [data-release-ticker][data-since=?]", rel.created_at.to_i.to_s
     assert_select "#current-release [data-test='release-timing']", text: /\Ain progress · /
     assert_select "#current-release [data-test='release-tracker-duration'][data-release-ticker]", minimum: 1
+  end
+
+  test "[component] active release tracker hides seconds after one hour" do
+    now = Time.zone.local(2026, 6, 29, 12, 0, 0)
+
+    travel_to now do
+      rel = Release.open!
+      rel.stamp_stage!("assembling", at: now - 180.hours - 24.minutes - 14.seconds)
+
+      render partial: "tasks/release_tracker", locals: { release: rel }
+
+      assert_select "[data-test='release-tracker-step'][data-stage='assembling'] " \
+                    "[data-test='release-tracker-duration'][data-release-ticker]",
+                    text: "180h 24m"
+    end
   end
 
   test "devops_next_html badges whole-word stage names only" do

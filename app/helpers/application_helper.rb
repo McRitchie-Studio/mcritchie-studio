@@ -326,17 +326,17 @@ module ApplicationHelper
     [(to - from).to_i, 0].max
   end
 
-  # The seconds-precision elapsed clock for the ACTIVE Next Release ticker — the
-  # SERVER-side initial value the _release_ticker JS then advances every second
-  # ("45s" / "7m 23s" / "1h 04m 23s"). Mirrors that JS `fmt()` EXACTLY so the
-  # first tick doesn't jump format. `now` is injectable for deterministic tests.
+  # The elapsed clock for the ACTIVE Next Release ticker -- the SERVER-side
+  # initial value the _release_ticker JS then advances every second ("45s" /
+  # "7m 23s" / "1h 04m"). Mirrors that JS `fmt()` EXACTLY so the first tick
+  # doesn't jump format. `now` is injectable for deterministic tests.
   def release_elapsed_clock(release, now: Time.current)
     format_elapsed_clock(elapsed_seconds(release.created_at, now) || 0)
   end
 
-  # secs → tight H/M/S clock, dropping leading-zero units and zero-padding the
-  # trailing ones so the width is stable as it ticks: "45s", "7m 23s",
-  # "1h 04m 23s". The single source of truth the JS ticker re-implements.
+  # secs -> tight elapsed clock, dropping leading-zero units and zero-padding
+  # trailing units while they tick: "45s", "7m 23s", "1h 04m". At an hour the
+  # UI switches to hours + minutes and drops seconds.
   def format_elapsed_clock(secs)
     secs = secs.to_i
     return "#{secs}s" if secs < 60
@@ -345,7 +345,7 @@ module ApplicationHelper
     return format("%dm %02ds", minutes, seconds) if minutes < 60
 
     hours, mins = minutes.divmod(60)
-    format("%dh %02dm %02ds", hours, mins, seconds)
+    format("%dh %02dm", hours, mins)
   end
 
   # Canonical app/repo slug → emoji map for the compact app indicators on task
