@@ -19,4 +19,17 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_not_includes rendered, "spawnBubbles"
     assert_not_includes rendered, "z-index:60"
   end
+
+  test "stage glow cards fade the live flash into their steady border shine" do
+    render partial: "tasks/deployments_live_fx"
+
+    assert_includes rendered, ".lbfx-glow.lbfx-glow-stage"
+    assert_includes rendered, "@keyframes lbfxGlowToStage"
+    assert_includes rendered, "var(--task-card-glow-color) 34%"
+    assert_includes rendered, "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
+    assert_includes rendered, "function stageGlowHex(card)"
+    assert_includes rendered, "!!card.dataset.stageGlow"
+    assert_includes rendered, "card.classList.add(\"lbfx-glow-stage\")"
+    assert_includes rendered, "card.classList.remove(\"lbfx-glow\", \"lbfx-glow-stage\")"
+  end
 end

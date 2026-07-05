@@ -4,6 +4,8 @@ require "test_helper"
 # broadcaster re-renders for a live push), with the slug/stage data hooks the
 # client uses to find, move, and replace it.
 class TaskCardTest < ActionView::TestCase
+  TypeColor = Struct.new(:color, :rank, :emoji, keyword_init: true)
+
   setup do
     Agent.create!(name: "Carl", slug: "carl")
     @agents = Agent.all.to_a
@@ -24,11 +26,33 @@ class TaskCardTest < ActionView::TestCase
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 
     card = css_select("#card-#{task.slug}").first
+    assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
+    assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_includes card["class"], "dark:bg-red-950/40"
     assert_includes card["class"], "hover:bg-red-100/70"
+    assert_includes card["style"], "--task-card-glow-color: #ef4444"
+    assert_includes card["style"], "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
     assert_includes rendered, "hover:text-red-700"
     assert_includes rendered, "dark:hover:text-red-300"
+  end
+
+  test "submitted card glows with the mascot signature color" do
+    task = Task.create!(title: "Submitted glow task", stage: "submitted")
+    mascot = Pokemon.create!(dex: 158, name: "Totodile", slug: "totodile", types: %w[water],
+                             primary_type: "water", generation: 2)
+    type_enumerals = { "water" => TypeColor.new(color: "#6390F0", rank: 10, emoji: "💧") }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_equal "#6390F0", card["data-glow"]
+    assert_includes card["class"], "task-card-stage-glow-submitted"
+    assert_includes card["style"], "--task-card-glow-color: #6390F0"
+    assert_includes card["style"], "border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
   end
 
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do
@@ -140,7 +164,9 @@ class TaskCardTest < ActionView::TestCase
                      unresolved_feedback: feedback, ever_blocked: true }
 
     card = css_select("#card-#{task.slug}").first
+    assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
+    assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_select "[data-test='unresolved-feedback']"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
@@ -154,6 +180,9 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"], "bg-surface"
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-submitted"
+    assert_includes card["style"], "--task-card-glow-color: #f59e0b"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 end

@@ -395,6 +395,28 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug}[data-glow]"
   end
 
+  test "[integration] deployments cards glow for submitted and blocked stages" do
+    submitted = Task.create!(
+      title: "Submitted glow board task",
+      stage: "submitted",
+      metadata: { "devops" => { "mascot_color" => "#6390F0", "repositories" => ["mcritchie-studio"] } }
+    )
+    blocked = Task.create!(title: "Blocked glow board task", stage: "blocked")
+
+    get deployments_path
+    assert_response :success
+
+    submitted_card = css_select("#card-#{submitted.slug}").first
+    assert_equal "submitted", submitted_card["data-stage-glow"]
+    assert_includes submitted_card["class"], "task-card-stage-glow-submitted"
+    assert_includes submitted_card["style"], "--task-card-glow-color: #6390F0"
+
+    blocked_card = css_select("#dropzone-building #card-#{blocked.slug}").first
+    assert_equal "blocked", blocked_card["data-stage-glow"]
+    assert_includes blocked_card["class"], "task-card-stage-glow-blocked"
+    assert_includes blocked_card["style"], "--task-card-glow-color: #ef4444"
+  end
+
   test "deployments shows a Last Release section + Current empty state when nothing is active" do
     Release.delete_all
     shipped = Release.open!(branch: "release/last-test",

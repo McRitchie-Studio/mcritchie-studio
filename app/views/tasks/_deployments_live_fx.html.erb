@@ -15,10 +15,19 @@
   /* A flash, not a bloom — brightest on frame one, then fades. Colour from
      --lbfx-glow (the card's mascot type colour); falls back to a warm orange. */
   .lbfx-glow { animation: lbfxGlow .8s ease-out; }
+  .lbfx-glow.lbfx-glow-stage { animation-name: lbfxGlowToStage; }
   @keyframes lbfxGlow {
     0%   { box-shadow: 0 0 18px 4px rgb(var(--lbfx-glow, 249 115 22) / .95), 0 0 44px 12px rgb(var(--lbfx-glow, 249 115 22) / .5);
            border-color: rgb(var(--lbfx-glow, 249 115 22) / 1); }
     100% { box-shadow: 0 0 0 0 rgb(var(--lbfx-glow, 249 115 22) / 0); border-color: rgb(var(--lbfx-glow, 249 115 22) / 0); }
+  }
+  @keyframes lbfxGlowToStage {
+    0%   { box-shadow: 0 0 18px 4px rgb(var(--lbfx-glow, 249 115 22) / .95), 0 0 44px 12px rgb(var(--lbfx-glow, 249 115 22) / .5);
+           border-color: rgb(var(--lbfx-glow, 249 115 22) / 1); }
+    100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent),
+                        0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent),
+                        0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent);
+           border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent); }
   }
 
   /* Keep cards above active confetti. Particles render below this z-layer, so
@@ -64,12 +73,21 @@
       return ((n >> 16) & 255) + " " + ((n >> 8) & 255) + " " + (n & 255);
     }
 
+    function stageGlowHex(card) {
+      return getComputedStyle(card).getPropertyValue("--task-card-glow-color").trim();
+    }
+
     // Tint + flash the glow from the card's data-glow (mascot type colour).
     function glow(card) {
-      const rgb = hexToRgb(card.dataset.glow);
+      const steadyStageGlow = !!card.dataset.stageGlow;
+      const rgb = hexToRgb(card.dataset.glow || stageGlowHex(card));
       if (rgb) card.style.setProperty("--lbfx-glow", rgb);
+      if (steadyStageGlow) card.classList.add("lbfx-glow-stage");
       card.classList.add("lbfx-glow");
-      setTimeout(() => { card.classList.remove("lbfx-glow"); card.style.removeProperty("--lbfx-glow"); }, 850);
+      setTimeout(() => {
+        card.classList.remove("lbfx-glow", "lbfx-glow-stage");
+        card.style.removeProperty("--lbfx-glow");
+      }, 850);
     }
 
     function liftCard(card) {
