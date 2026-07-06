@@ -245,9 +245,13 @@ sweeps the reviewed queue promptly.
 - **Steps:**
   1. `bin/qa-intake --refresh` → the queue of `submitted` PRs.
   2. For each PR, in **waves of ≤5** (the board DB connection cap), run the
-     **review-one** atom — the [Modular PR Review SOP](pr-review-sop.md):
-     `bin/reviewer-select <task>` picks the PRIMARY + LIGHT pair; each reviewer
-     narrates **as its soul** (`--agent`) and returns a verdict.
+     **review-one** atom — the [Modular PR Review SOP](pr-review-sop.md): as the
+     **supervisor**, `bin/reviewer-select <task>` picks the PRIMARY + LIGHT pair,
+     then spawn **both in parallel** as siblings — the PRIMARY runs
+     [`pr-review-primary.md`](../agents/avi/sops/pr-review-primary.md), the LIGHT
+     runs [`pr-review-light.md`](../agents/avi/sops/pr-review-light.md); each
+     reviewer narrates **as its soul** (`--agent`) and returns a verdict; the
+     supervisor collects both and gates. Avi never reviews the code himself.
   3. **Approved** → `bin/task move <task> reviewed` — and STOP (no
      `bin/release merge`; the task waits `reviewed` + `merged: nil` for the
      sweep).
