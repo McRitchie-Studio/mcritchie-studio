@@ -31,7 +31,8 @@
       <span class="hb-k">Status</span><span><%= heartbeat_activity_status_badge(status) %></span>
       <span class="hb-k">Category</span><span><%= activity.category %></span>
       <span class="hb-k">Task</span><span class="hb-mono"><%= activity.task_slug.presence || "—" %></span>
-      <span class="hb-k">Opened</span><span class="hb-mono" title="<%= activity.opened_at&.iso8601 %>"><%= heartbeat_time(activity.opened_at) %></span>
+      <span class="hb-k">Opened</span><span class="hb-mono" title="<%= activity.opened_at&.iso8601 %>"><%= heartbeat_time_seconds(activity.opened_at) %></span>
+      <span class="hb-k">Completed</span><span class="hb-mono" title="<%= activity.closed_at&.iso8601 %>"><%= activity.closed_at ? heartbeat_time_seconds(activity.closed_at) : "—" %></span>
       <span class="hb-k">Actions</span><span><%= pluralize(actions.size, "action") %></span>
       <span class="hb-k">Model</span><span class="hb-mono"><%= heartbeat_model_short(totals[:model]) %></span>
       <span class="hb-k">Tokens</span><span class="hb-mono"><%= heartbeat_tokens_pair(totals[:tokens_in], totals[:tokens_out]) %></span>

@@ -46,6 +46,33 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_match "Grep the capture seam", response.body
   end
 
+  test "renders activity + action timestamps at second precision on the page" do
+    started = Time.zone.local(2026, 7, 6, 19, 24, 11)
+    ev = event(seq: 0, category: "Verify", reason_slug: "run the unit suite",
+               outcome_slug: "green", at: started, closed_at: Time.zone.local(2026, 7, 6, 19, 28, 22))
+    action(event: ev, seq: 0, at: started, duration_ms: 251_000, kind: "bash", event_slug: "Run the tests")
+
+    get alex_heartbeat_path(session_id: "sess-A")
+
+    assert_response :success
+    # activity card: completed_at + created_at down to the second
+    assert_select "[data-test=activity-completed]", text: "Jul 6, 19:28:22"
+    assert_select "[data-test=activity-created]", text: /Jul 6, 19:24:11/
+    # action row: the created -> completed span, exact format
+    assert_select "[data-test=action-span]", text: "created at Jul 6, 19:24:11 - completed at 19:28:22"
+  end
+
+  test "second-precision timestamps persist through the database round-trip" do
+    started = Time.zone.local(2026, 7, 6, 19, 24, 11)
+    ev = event(seq: 0, at: started, closed_at: Time.zone.local(2026, 7, 6, 19, 28, 22))
+    act = action(event: ev, seq: 0, at: started, duration_ms: 251_000)
+
+    assert_equal 11, ev.reload.opened_at.sec
+    assert_equal 22, ev.closed_at.sec
+    assert_equal 11, act.reload.occurred_at.sec
+    assert_equal 251_000, act.duration_ms
+  end
+
   test "an open span with no outcome renders the in-progress placeholder" do
     event(seq: 0, category: "Workflow", reason_slug: "certify and open the PR",
           outcome_slug: nil, closed_at: nil)

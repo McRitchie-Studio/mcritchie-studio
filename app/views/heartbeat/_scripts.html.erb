@@ -99,6 +99,35 @@
     };
   };
 
+  // The OPEN activity's live elapsed timer. `startedAtEpoch` is the activity's
+  // created/opened_at as UNIX seconds (server-rendered); the component ticks once a
+  // second, formatting now-minus-start as "H:MM:SS" (or "M:SS" under an hour) so the
+  // top of an open activity card counts UP in real time until it closes. Defined
+  // inline (plain script, not a module) for the same reason as the factories above —
+  // Alpine's `defer` evaluates x-data BEFORE importmap modules load. self-clears its
+  // interval on teardown so a re-rendered / removed card never leaks a timer.
+  window.hbElapsed = function (startedAtEpoch) {
+    return {
+      label: "",
+      timer: null,
+      pad(n) { return (n < 10 ? "0" : "") + n; },
+      tick() {
+        var secs = Math.max(0, Math.floor(Date.now() / 1000) - startedAtEpoch);
+        var h = Math.floor(secs / 3600);
+        var m = Math.floor((secs % 3600) / 60);
+        var s = secs % 60;
+        this.label = h > 0
+          ? h + ":" + this.pad(m) + ":" + this.pad(s)
+          : m + ":" + this.pad(s);
+      },
+      start() {
+        this.tick();
+        this.timer = setInterval(this.tick.bind(this), 1000);
+      },
+      stop() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
+    };
+  };
+
   // The activity grade editor inside the activity drawer. Because the grade endpoint
   // returns JSON (view-free by design), this submits via fetch rather than a turbo
   // form: it posts the form (CSRF token + fields + the clicked intent), reflects the

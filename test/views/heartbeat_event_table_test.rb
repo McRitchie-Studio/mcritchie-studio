@@ -145,11 +145,58 @@ class HeartbeatEventTableTest < ActionView::TestCase
     render partial: "heartbeat/activity_table",
            locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # The title line carries the reason plus compact inline metadata.
+    # The narration line carries the category chip + the reason; the action count and
+    # the status badge moved to the activity card (the leading cell).
+    assert_select "td.hb-narr .hb-catchip", text: "Explore"
     assert_select "td.hb-narr [data-test=event-reason]", text: "find issue with api"
-    assert_select "td.hb-narr [data-test=event-inline-action-count]", text: "0 actions"
-    assert_select "td.hb-narr [data-test=event-inline-status] .hb-outcome", text: "done"
+    assert_select "td.hb-evtcard [data-test=event-inline-action-count]", text: "0 actions"
+    assert_select "td.hb-evtcard [data-test=event-status]", text: "done"
     assert_select "td.hb-narr .hb-narrline.hb-narr-result", text: /found the nil-guard/
+  end
+
+  test "[component] a closed activity card shows completed_at and created_at at second precision" do
+    ev = event(seq: 0, opened_at: Time.zone.local(2026, 7, 6, 19, 24, 11),
+               closed_at: Time.zone.local(2026, 7, 6, 19, 28, 22), outcome_slug: "done")
+
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "td.hb-evtcard [data-test=activity-completed]", text: "Jul 6, 19:28:22"
+    assert_select "td.hb-evtcard [data-test=activity-created]", text: /created Jul 6, 19:24:11/
+    # a closed card has no ticking timer and no spinner
+    assert_select "td.hb-evtcard [data-test=activity-elapsed]", false
+    assert_select "td.hb-evtcard [data-test=activity-spinner]", false
+    # the task slug anchors the bottom of the card
+    assert_select "td.hb-evtcard [data-test=event-task-slug]"
+  end
+
+  test "[component] an open activity card shows the live elapsed timer and a spinner, no completed stamp" do
+    ev = event(seq: 0, opened_at: 5.minutes.ago, closed_at: nil, outcome_slug: nil)
+
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
+
+    # the ticking timer seeds server-side from opened_at (hbElapsed keeps it live)
+    assert_select "td.hb-evtcard [data-test=activity-elapsed]"
+    assert_match(/hbElapsed\(/, rendered)
+    assert_select "td.hb-evtcard [data-test=activity-spinner]"
+    assert_select "td.hb-evtcard [data-test=activity-completed]", false
+    assert_select "td.hb-evtcard [data-test=event-status]", text: "open"
+  end
+
+  test "[component] an action row shows the created -> completed span with the outcome floated right" do
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
+    a1 = action(agent_activity_id: ev.id, seq: 0, kind: "bash", outcome: "ok",
+                occurred_at: Time.zone.local(2026, 7, 6, 19, 24, 11), duration_ms: 251_000,
+                event_slug: "Run the suite")
+
+    render partial: "heartbeat/activity_table",
+           locals: { activity_rows: [[ev, [a1]]], unlabeled: [], pokemon_by_slug: {} }
+
+    assert_select "tr[data-test=heartbeat-event-action] .hb-subnarr [data-test=action-span]",
+                  text: "created at Jul 6, 19:24:11 - completed at 19:28:22"
+    assert_select "tr[data-test=heartbeat-event-action] .hb-subnarr .hb-suboutcome[data-test=action-outcome]",
+                  text: "ok"
   end
 
   test "[component] each span row carries inline good/not quick-grade radios for both graders" do

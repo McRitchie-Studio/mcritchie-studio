@@ -6,7 +6,7 @@ const { test, expect } = require("@playwright/test");
 // couple of closed spans, a final OPEN span ("…in progress"), plus one pre-narration
 // action in the read-only "Unlabeled" group.
 test("alex heartbeat renders the narrated event spans as the primary rows", async ({ page }) => {
-  await page.goto("/alex/heartbeat");
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   const table = page.locator("[data-test='heartbeat-event-table']");
   await expect(table).toBeVisible();
@@ -28,7 +28,7 @@ test("alex heartbeat renders the narrated event spans as the primary rows", asyn
 // A span is collapsed by default; expanding it (Alpine) reveals the raw actions
 // attributed to it — kind + input — as read-only drill-down rows.
 test("expanding a span drills down into its attributed actions", async ({ page }) => {
-  await page.goto("/alex/heartbeat");
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
   const firstAction = span.locator("tr[data-test='heartbeat-event-action']").first();
@@ -46,7 +46,7 @@ test("expanding a span drills down into its attributed actions", async ({ page }
 // action a bash one + a goal summary — each renders as a copyable chip with a
 // leading language badge and a copy button (the operator's key-method ask).
 test("key methods render as copyable chips with language badges", async ({ page }) => {
-  await page.goto("/alex/heartbeat");
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   // The span-level chip sits under the narration lines.
   const spanChip = page.locator("[data-test='event-key-method'] [data-test='key-method-chip']").first();
@@ -67,7 +67,7 @@ test("key methods render as copyable chips with language badges", async ({ page 
 
 // Grading is preserved: clicking a drilled-down action opens the per-action drawer.
 test("clicking a drilled-down action opens its grading drawer", async ({ page }) => {
-  await page.goto("/alex/heartbeat");
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
   await span.locator("tr[data-test='heartbeat-event-row']").click();
@@ -79,10 +79,11 @@ test("clicking a drilled-down action opens its grading drawer", async ({ page })
 // The event row rolls its attributed actions up into the Pokémon / Model / Tokens /
 // Cost columns and a distinct open-vs-done status badge (the operator's screenshot ask).
 test("the span rows show the rolled-up mascot, model, tokens, cost, and status", async ({ page }) => {
-  await page.goto("/alex/heartbeat");
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
-  await expect(explore.locator("[data-test='event-mascot']")).toContainText("Snorlax");
+  // the mascot name rides on the avatar's title (the face itself is a sprite/initial)
+  await expect(explore.locator("[data-test='event-mascot']")).toHaveAttribute("title", "Snorlax");
   await expect(explore.locator("[data-test='event-model']")).toContainText("opus-4-8");
   // 9.4k/360 + 6.8k/2.4k summed across the span's two seeded actions
   await expect(explore.locator("[data-test='event-tokens']")).toContainText("16.2k/2.8k");
@@ -98,18 +99,46 @@ test("the span rows show the rolled-up mascot, model, tokens, cost, and status",
   await expect(workflow.locator("[data-test='event-status']")).toHaveText("open");
 });
 
-// The merged Status/Task cell separates the status badge from the rolled-up action
-// count with a bullet, and a span whose task changed STAGE in-window badges as that
-// new stage using the shared board pill.
-test("the status line bullets the badge from the action count and badges a stage change", async ({ page }) => {
-  await page.goto("/alex/heartbeat");
+// The activity card carries the status badge (TOP, floated right) and the rolled-up
+// action count (MIDDLE, floated right); a span whose task changed STAGE in-window
+// badges as that new stage using the shared board pill.
+test("the activity card carries the status badge and action count and badges a stage change", async ({ page }) => {
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  const card = explore.locator("[data-test='activity-card']");
   // stage-change badge: the task moved to `building` during this span's window
-  await expect(explore.locator("[data-test='event-status'][data-stage='building']")).toContainText("Building");
-  // the bullet sits between the badge and the "N action(s)" count in the same row
-  await expect(explore.locator(".hb-satline .hb-bullet")).toBeVisible();
-  await expect(explore.locator("[data-test='event-action-count']")).toContainText("action");
+  await expect(card.locator("[data-test='event-status'][data-stage='building']")).toContainText("Building");
+  // the rolled-up action count sits on the card's middle line
+  await expect(card.locator("[data-test='event-inline-action-count']")).toContainText("action");
+});
+
+// The card renders finish/start times to the SECOND: a closed span shows its
+// completed_at (top) and created_at (middle); the open span counts UP with a live
+// elapsed timer and a spinner instead.
+test("activity + action timestamps render at second precision", async ({ page }) => {
+  await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
+
+  // A closed span's card shows completed_at (top) and created_at (middle), each with
+  // a HH:MM:SS clock — a colon-delimited time, not the minute-only heartbeat stamp.
+  const verify = page.locator("[data-test='heartbeat-event'][data-category='Verify']");
+  const verifyCard = verify.locator("[data-test='activity-card']");
+  await expect(verifyCard.locator("[data-test='activity-completed']")).toContainText(/\d{2}:\d{2}:\d{2}/);
+  await expect(verifyCard.locator("[data-test='activity-created']")).toContainText("created");
+
+  // The still-open Workflow span counts up with a live timer + spinner, no completed.
+  const workflowCard = page
+    .locator("[data-test='heartbeat-event'][data-category='Workflow']")
+    .locator("[data-test='activity-card']");
+  await expect(workflowCard.locator("[data-test='activity-elapsed']")).toBeVisible();
+  await expect(workflowCard.locator("[data-test='activity-spinner']")).toBeVisible();
+  await expect(workflowCard.locator("[data-test='activity-completed']")).toHaveCount(0);
+
+  // Expanding the Explore span reveals its action rows, whose top line is the
+  // created -> completed span.
+  const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
+  await explore.locator("tr[data-test='heartbeat-event-row'] td.hb-seq").click();
+  await expect(explore.locator("[data-test='action-span']").first()).toContainText("created at");
 });
 
 // The launcher's Alex avenue links straight to the heartbeat trajectory.

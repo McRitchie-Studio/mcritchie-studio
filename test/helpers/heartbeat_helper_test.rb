@@ -134,6 +134,46 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "Jun 30, 14:07", heartbeat_time(Time.zone.local(2026, 6, 30, 14, 7))
   end
 
+  test "[unit] time_seconds renders the full date down to the second, dashing a blank" do
+    assert_equal "—", heartbeat_time_seconds(nil)
+    assert_equal "Jul 6, 19:24:11", heartbeat_time_seconds(Time.zone.local(2026, 7, 6, 19, 24, 11))
+  end
+
+  test "[unit] clock renders the bare wall-clock, dashing a blank" do
+    assert_equal "—", heartbeat_clock(nil)
+    assert_equal "19:28:22", heartbeat_clock(Time.zone.local(2026, 7, 6, 19, 28, 22))
+  end
+
+  test "[unit] elapsed formats seconds as M:SS under an hour and H:MM:SS above, flooring at 0:00" do
+    assert_equal "0:00", heartbeat_elapsed(0)
+    assert_equal "0:00", heartbeat_elapsed(-5)
+    assert_equal "1:05", heartbeat_elapsed(65)
+    assert_equal "4:11", heartbeat_elapsed(251)
+    assert_equal "1:01:01", heartbeat_elapsed(3661)
+  end
+
+  test "[unit] action completed_at is start plus duration, nil without a positive duration" do
+    started = Time.zone.local(2026, 7, 6, 19, 24, 11)
+    ran   = AgentAction.new(occurred_at: started, duration_ms: 251_000)
+    instant = AgentAction.new(occurred_at: started, duration_ms: nil)
+    zero  = AgentAction.new(occurred_at: started, duration_ms: 0)
+
+    assert_equal started + 251.seconds, heartbeat_action_completed_at(ran)
+    assert_nil heartbeat_action_completed_at(instant)
+    assert_nil heartbeat_action_completed_at(zero)
+    assert_nil heartbeat_action_completed_at(AgentAction.new(occurred_at: nil, duration_ms: 5000))
+  end
+
+  test "[unit] action span renders created -> completed exactly, created-only without a duration" do
+    started = Time.zone.local(2026, 7, 6, 19, 24, 11)
+    ran   = AgentAction.new(occurred_at: started, duration_ms: 251_000)
+    instant = AgentAction.new(occurred_at: started, duration_ms: nil)
+
+    assert_equal "created at Jul 6, 19:24:11 - completed at 19:28:22", heartbeat_action_span(ran)
+    assert_equal "created at Jul 6, 19:24:11", heartbeat_action_span(instant)
+    assert_equal "—", heartbeat_action_span(AgentAction.new(occurred_at: nil))
+  end
+
   test "[unit] input preview single-lines, clips long input, and dashes blanks" do
     assert_equal "—", heartbeat_input_preview(nil)
     assert_equal "—", heartbeat_input_preview("   ")
