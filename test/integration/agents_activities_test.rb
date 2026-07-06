@@ -96,6 +96,17 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=aa-active-filters]"
   end
 
+  test "the active-filters row always renders (reserves space) even with no filter" do
+    activity(session: "sess-A", reason_slug: "some activity here")
+
+    get activities_agents_path
+
+    assert_response :success
+    # present even unfiltered so adding a filter never jumps the table
+    assert_select "[data-test=aa-active-filters]", text: /Showing all sessions/
+    assert_select "[data-test=aa-active-filter]", false
+  end
+
   test "multi-selects sessions (OR) with a comma-joined ?sessions=" do
     activity(session: "sess-A", reason_slug: "activity in session A", at: 3.minutes.ago)
     activity(session: "sess-B", reason_slug: "activity in session B", at: 2.minutes.ago)
@@ -145,14 +156,14 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_no_match(/only in A/, response.body)
   end
 
-  test "paginates 100 per page and threads the sessions filter through the pager" do
-    101.times { |i| activity(session: "sess-A", reason_slug: "activity number #{i}", seq: i, at: i.minutes.ago) }
+  test "paginates 10 per page and threads the sessions filter through the pager" do
+    11.times { |i| activity(session: "sess-A", reason_slug: "activity number #{i}", seq: i, at: i.minutes.ago) }
     activity(session: "sess-B", reason_slug: "stray B activity", at: 500.minutes.ago)
 
     get activities_agents_path(sessions: "sess-A")
 
     assert_response :success
-    assert_select "tbody[data-test=aa-activity]", 100
+    assert_select "tbody[data-test=aa-activity]", 10
     assert_select "a[data-test=aa-pager-next][href=?]", activities_agents_path(page: 2, sessions: "sess-A")
     assert_select "a[data-test=aa-pager-prev]", false
     assert_no_match(/stray B activity/, response.body)

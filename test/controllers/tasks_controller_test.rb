@@ -308,9 +308,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[component] deployments board links to the cross-session Activities view" do
     get deployments_path
     assert_response :success
-    assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_activities_path}"]),
+    # the reimagined /agents/activities feed, not the old /alex/heartbeat/activities page
+    assert_select %(nav[aria-label="Board sections"] a[href="#{activities_agents_path}"]),
       text: "🎭 Activities",
       count: 1
+    assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_activities_path}"]), count: 0
   end
 
   test "[component] deployments board links to the Alex pipeline and insights" do
@@ -356,7 +358,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     [tasks_path, stages_path].each do |path|
       get path
       assert_response :success
-      assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_activities_path}"]),
+      assert_select %(nav[aria-label="Board sections"] a[href="#{activities_agents_path}"]),
         { text: "🎭 Activities", count: 1 },
         "expected the Activities link on #{path}"
     end

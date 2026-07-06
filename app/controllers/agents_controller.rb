@@ -6,7 +6,7 @@ class AgentsController < ApplicationController
   include ActivityFeed
 
   # Page size for the cross-session activity feed, matched to the heartbeat's.
-  ACTIVITIES_PER_PAGE = 100
+  ACTIVITIES_PER_PAGE = 10
 
   # The reimagined cross-session activity feed — every narrated AgentActivity across
   # all sessions, newest-first, with its drilled-down raw actions (also newest-first)
