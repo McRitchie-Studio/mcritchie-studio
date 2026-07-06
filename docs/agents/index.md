@@ -337,6 +337,7 @@ assigned that lane.
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |
+| Result distillation (findings not raw ops) | `mcritchie-studio/docs/agents/modules/result-distillation.md` |
 | Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
 | Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
 | Current final closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-17.md` |
