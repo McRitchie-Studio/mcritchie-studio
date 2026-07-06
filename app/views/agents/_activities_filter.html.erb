@@ -26,7 +26,7 @@
           <% toggle_url = toggle_ids.any? ? activities_agents_path(sessions: toggle_ids.join(",")) : activities_agents_path %>
           <%= link_to toggle_url, class: class_names("aa-filter-session", "is-selected" => session[:selected]),
                 style: ("--aa-type: #{session[:type_color]}" if session[:type_color].present?),
-                data: { turbo: false, test: "aa-filter-session", session_id: session[:id], selected: session[:selected] } do %>
+                data: { test: "aa-filter-session", session_id: session[:id], selected: session[:selected] } do %>
             <span class="aa-fs-check"><%= "✓" if session[:selected] %></span>
             <% if session[:sprite_url].present? %>
               <img class="aa-fs-sprite" src="<%= session[:sprite_url] %>" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
@@ -43,7 +43,7 @@
 
       <div class="aa-filter-foot">
         <% if active_ids.any? %>
-          <%= link_to "Clear all", activities_agents_path, class: "hb-btn", data: { turbo: false, test: "aa-filter-clear" } %>
+          <%= link_to "Clear all", activities_agents_path, class: "hb-btn", data: { test: "aa-filter-clear" } %>
         <% else %>
           <span class="aa-rfaint">No filters applied</span>
         <% end %>
