@@ -366,6 +366,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] the Pokedex link rides every board surface" do
+    [tasks_path, deployments_path, stages_path].each do |path|
+      get path
+      assert_response :success
+      assert_select %(nav[aria-label="Board sections"] a[href="#{pokedex_path}"]),
+        { text: "Pokédex", count: 1 },
+        "expected the Pokédex link on #{path}"
+    end
+  end
+
   test "board header omits the removed All Agents agent filter" do
     get tasks_path
     assert_response :success
