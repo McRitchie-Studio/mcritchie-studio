@@ -85,19 +85,22 @@ module HeartbeatHelper
   end
 
   # The test-scope registry (config/devops_test_suites.yml) — the SINGLE source
-  # for a test-scope run's phase/tier/host. It MERGES both scope sections so the
-  # band enriches release runs (`release_scopes:`, bin/release) AND local cert runs
-  # (`full_suite_scopes:`, bin/full-suite-check) alike; their keys are distinct, so
-  # a collision (release_scopes wins) never arises today. The Test-runs band DERIVES
-  # this metadata at render from the run's event_slug (the scope key) so it is never
-  # stored on the action and never drifts when a scope is re-tiered. Memoized per
-  # process; a missing/malformed file degrades to {} so a run row still renders
-  # (just without the meta chips). Mirrors bin/release.rb's own TEST_SCOPES reader —
-  # the registry describes, it never gates.
+  # for a test-scope run's phase/tier/host. It MERGES all three scope sections so
+  # the band enriches release runs (`release_scopes:`, bin/release), local cert runs
+  # (`full_suite_scopes:`, bin/full-suite-check), AND ingested CI runs (`ci_scopes:`,
+  # bin/ci-scope-capture) alike; their keys are distinct (release_/full_suite_/ci_),
+  # so a collision never arises today. The Test-runs band DERIVES this metadata at
+  # render from the run's event_slug (the scope key) so it is never stored on the
+  # action and never drifts when a scope is re-tiered. Memoized per process; a
+  # missing/malformed file degrades to {} so a run row still renders (just without
+  # the meta chips). Mirrors bin/release.rb's own TEST_SCOPES reader — the registry
+  # describes, it never gates.
   RELEASE_SCOPES =
     begin
       cfg = YAML.load_file(Rails.root.join("config/devops_test_suites.yml")) || {}
-      cfg.fetch("full_suite_scopes", {}).merge(cfg.fetch("release_scopes", {}))
+      cfg.fetch("full_suite_scopes", {})
+         .merge(cfg.fetch("release_scopes", {}))
+         .merge(cfg.fetch("ci_scopes", {}))
     rescue StandardError
       {}
     end

@@ -136,6 +136,17 @@ class AgentAction < ApplicationRecord
   def self.capture(attrs = {})
     attrs = attrs.to_h.symbolize_keys
 
+    # Idempotency (opt-in): a source that RE-READS the same verdict — CI ingestion
+    # (bin/ci-scope-capture) re-reading a PR's checks when dor-check/preflight run
+    # twice — carries a stable key (ci:<pr>:<sha>:<job>). Find-first short-circuits
+    # the duplicate BEFORE we do any create work; the partial unique index is the
+    # hard guard against a concurrent double-write (handled below). Blank key =
+    # the ordinary non-idempotent path (every generic tool-call action).
+    idempotency_key = attrs[:idempotency_key].to_s.strip.presence
+    if idempotency_key && (existing = find_by(idempotency_key: idempotency_key))
+      return existing
+    end
+
     model_value      = attrs.fetch(:model) { Current.task_event_model }.presence
     tokens_in_value  = (attrs.fetch(:tokens_in)  { Current.task_event_tokens_in }  || 0).to_i
     tokens_out_value = (attrs.fetch(:tokens_out) { Current.task_event_tokens_out } || 0).to_i
@@ -181,8 +192,14 @@ class AgentAction < ApplicationRecord
       actor:            attrs[:actor].presence || AGENT,
       feedback_anchor:  attrs.fetch(:feedback_anchor, false) || false,
       occurred_at:      attrs[:occurred_at] || Time.current,
-      duration_ms:      attrs[:duration_ms]
+      duration_ms:      attrs[:duration_ms],
+      idempotency_key:  idempotency_key
     )
+  rescue ActiveRecord::RecordNotUnique
+    # Lost a race on the partial unique index (a concurrent capture wrote the same
+    # idempotency_key first). Return the winner instead of nil — the caller gets
+    # the persisted row, and no ErrorLog noise for an expected dedupe.
+    idempotency_key ? find_by(idempotency_key: idempotency_key) : nil
   rescue StandardError => e
     # Telemetry is best-effort: log and move on, NEVER re-raise into the caller.
     # Double-guard the logger itself so a failing ErrorLog can't break the action.

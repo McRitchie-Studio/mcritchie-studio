@@ -340,6 +340,34 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_integration_action_forwards_idempotency_key_for_ci_ingestion
+    # bin/ci-scope-capture sends ci:<pr>:<sha>:<job> so a re-read never doubles a
+    # row; the verb must forward it into the POST body for capture to dedupe on.
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      seed_open_activity_marker(proj, SESSION, 3)
+      requests = run_cli(
+        %W[action --session #{SESSION} --summary ci-test --kind test_scope
+           --event-slug ci_test --result-slug pass --idempotency-key ci:7:deadbeef:test],
+        proj: proj
+      )
+      body = JSON.parse(requests.find { |r| r[:path] == "/api/v1/agent_actions" }[:body])
+      assert_equal "ci:7:deadbeef:test", body["idempotency_key"]
+      assert_equal "ci_test", body["event_slug"]
+    end
+  end
+
+  def test_integration_action_omits_a_blank_idempotency_key
+    # A plain action carries no key — it must be dropped, not sent as "".
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      seed_open_activity_marker(proj, SESSION, 4)
+      requests = run_cli(%W[action --session #{SESSION} --summary plain-step], proj: proj)
+      body = JSON.parse(requests.find { |r| r[:path] == "/api/v1/agent_actions" }[:body])
+      refute body.key?("idempotency_key"), "a blank idempotency_key must be dropped from the body"
+    end
+  end
+
   def test_integration_end_falls_back_to_the_sticky_heartbeat_agent
     Dir.mktmpdir do |proj|
       # a `<Soul> Heartbeat` sets the sticky; a later bare `end` must still close

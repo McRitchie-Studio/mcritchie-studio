@@ -173,6 +173,34 @@ module Api
         assert_equal "pass", captured[:result_slug], "result_slug is now caller-settable (pass|fail verdict)"
       end
 
+      test "[unit] permits the idempotency_key for CI ingestion re-reads" do
+        captured = nil
+        stub = lambda do |attrs|
+          captured = attrs
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+        end
+
+        AgentAction.stub(:capture, stub) do
+          post api_v1_agent_actions_path,
+               params: @body.merge(idempotency_key: "ci:7:deadbeef:test"), headers: @headers, as: :json
+        end
+
+        assert_response :created
+        assert_equal "ci:7:deadbeef:test", captured[:idempotency_key], "the dedupe key reaches capture"
+      end
+
+      test "[integration] a re-POST with the same idempotency_key persists exactly one row" do
+        params = @body.merge(kind: "test_scope", event_slug: "ci_test", result_slug: "pass",
+                             idempotency_key: "ci:7:deadbeef:test")
+
+        assert_difference -> { AgentAction.count }, 1, "the second POST dedupes on the key" do
+          2.times { post api_v1_agent_actions_path, params: params, headers: @headers, as: :json }
+        end
+
+        assert_response :created
+        assert_equal 1, AgentAction.where(idempotency_key: "ci:7:deadbeef:test").count
+      end
+
       test "[unit] permits atomic_event_id so the hook can pin the open span" do
         captured = nil
         stub = lambda do |attrs|

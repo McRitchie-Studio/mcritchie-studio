@@ -246,6 +246,10 @@ class AgentActivityCli
       "event_slug"        => flags["event-slug"].to_s.strip,
       "result_slug"       => flags["result-slug"].to_s.strip,
       "duration_ms"       => flags["duration-ms"].to_s.strip,
+      # Stable dedupe key — CI ingestion (bin/ci-scope-capture) sends
+      # ci:<pr>:<sha>:<job> so re-reading a PR's checks never doubles a row. Blank
+      # on every other action, dropped below.
+      "idempotency_key"   => flags["idempotency-key"].to_s.strip,
       "outcome"           => "ok",
       "actor"             => "agent",
       "task_slug"         => marker["task_slug"],

@@ -341,6 +341,43 @@ class AgentActionTest < ActiveSupport::TestCase
     assert_includes task.agent_actions, action
   end
 
+  # ---- [integration] idempotency: a re-read must not double a row ------------
+  # CI ingestion (bin/ci-scope-capture) re-reads a PR's checks when dor-check /
+  # preflight run twice; a stable idempotency_key (ci:<pr>:<sha>:<job>) makes the
+  # second capture a no-op that returns the SAME persisted row.
+
+  test "[unit] capture dedupes on idempotency_key — same key twice yields one row" do
+    key = "ci:42:abc123:test"
+    first = second = nil
+
+    assert_difference -> { AgentAction.where(idempotency_key: key).count }, 1 do
+      first = AgentAction.capture(session_id: "idem-sess", kind: "test_scope",
+                                  event_slug: "ci_test", result_slug: "pass", idempotency_key: key)
+      second = AgentAction.capture(session_id: "idem-sess", kind: "test_scope",
+                                   event_slug: "ci_test", result_slug: "pass", idempotency_key: key)
+    end
+
+    assert first.persisted?
+    assert_equal first.id, second.id, "the second capture returns the FIRST row, not a duplicate"
+  end
+
+  test "[unit] a distinct idempotency_key writes a distinct row" do
+    a = AgentAction.capture(session_id: "idem-sess", kind: "test_scope",
+                            event_slug: "ci_test", result_slug: "pass", idempotency_key: "ci:42:sha1:test")
+    b = AgentAction.capture(session_id: "idem-sess", kind: "test_scope",
+                            event_slug: "ci_test", result_slug: "pass", idempotency_key: "ci:42:sha2:test")
+
+    refute_equal a.id, b.id, "a new sha (distinct key) is a distinct verdict row"
+  end
+
+  test "[unit] a blank idempotency_key never dedupes (the ordinary path)" do
+    a = AgentAction.capture(session_id: "plain-sess", kind: "read")
+    b = AgentAction.capture(session_id: "plain-sess", kind: "read")
+
+    refute_equal a.id, b.id, "keyless actions are always distinct rows"
+    assert_nil a.idempotency_key
+  end
+
   # ---- [integration] best-effort: a capture failure never breaks the caller --
 
   test "[integration] a capture error is swallowed logged and returns nil" do
