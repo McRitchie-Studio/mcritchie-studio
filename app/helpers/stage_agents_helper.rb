@@ -210,11 +210,15 @@ module StageAgentsHelper
   end
 
   def crew_columns(task, entries, board:, mascot: nil, agents: nil, events: nil)
-    return blocked_build_step_columns(task, entries, mascot, agents) if board == :build && task.blocked?
+    # A blocked card reads the SAME on both boards — design · building · blocker+✕
+    # (blocked_stage_columns). The build lane is split back out so slots 1/2 name the
+    # design + build mascots and slot 3 is the actual blocking agent (never the mascot),
+    # matching the /tasks build-board rhythm; the Deploy board would otherwise collapse
+    # the build lane into one circle and paint the ✕ on the mascot instead of the blocker.
+    return blocked_stage_columns(task, entries, mascot, agents) if task.blocked?
     return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
-    by_lane[:build] ||= blocked_build_crew(task, mascot) if task.blocked?
 
     # Surface LIVE deploy-stage work (review picked · Steffon QA · Avi ship) as a
     # ticking cluster in its lane before the transition lands — the Deploy mirror of
@@ -259,8 +263,8 @@ module StageAgentsHelper
     # The deploy/ship lane is reserved on the assembled column too — not just once
     # shipped. An assembled card holds the empty fourth slot so it never reflows when
     # the ship lands, and the open ship intent (Avi deploying) surfaced by
-    # in_progress_work above fills that slot with a LIVE ticker. Blocked keeps the
-    # earlier three (a block lands from reviewed or assembled).
+    # in_progress_work above fills that slot with a LIVE ticker. (A blocked card never
+    # reaches here — it returns its own design · building · blocker columns above.)
     lanes << :shipped if %w[assembled shipped].include?(task.stage)
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
   end
@@ -277,18 +281,6 @@ module StageAgentsHelper
     return unless build
 
     build.stacked += [StageAgent.new(stage: "reviewed", agent: evo.to_face)]
-  end
-
-  def blocked_build_crew(task, mascot)
-    face = task_mascot_face(task, mascot)
-    return nil unless face
-
-    CrewCluster.new(
-      lane: :build,
-      stacked: [StageAgent.new(stage: "building", agent: face)],
-      seconds: nil,
-      live_since: nil
-    )
   end
 
   # /tasks build board: the three build steps split out, each wearing the task's
@@ -320,10 +312,12 @@ module StageAgentsHelper
     end
   end
 
-  # /tasks build board: blocked cards still live in the Building column, so they
-  # keep the same three-slot rhythm as active building cards. The first two slots
-  # are the design/build mascots; the third is the blocking actor.
-  def blocked_build_step_columns(task, entries, mascot, agents)
+  # A blocked card's three slots, board-agnostic: design mascot · build mascot · the
+  # blocking actor (slot 3). On /tasks a blocked card still lives in the Building
+  # column, so this matches the active-building three-slot rhythm; on /deployments it
+  # splits the otherwise-collapsed build lane back out to the same shape. The partial
+  # paints the red ✕ on the last filled slot — the blocker.
+  def blocked_stage_columns(task, entries, mascot, agents)
     face = task_mascot_face(task, mascot)
     by_to_stage = entries.index_by(&:stage)
     blocker = blocked_stage_agent(task, face, agents)
