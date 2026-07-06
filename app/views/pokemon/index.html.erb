@@ -1,133 +1,140 @@
-<section x-data="{ view: (localStorage.getItem('pokemonView') || 'list') }"
-         x-init="$watch('view', v => localStorage.setItem('pokemonView', v))">
-  <div class="flex items-baseline justify-between mb-6 gap-4 flex-wrap">
-    <h2 class="text-2xl font-bold text-heading">Pokémon <span class="text-muted text-base font-normal">· reference data</span></h2>
-    <div class="flex items-center gap-3">
-      <span class="text-secondary text-sm"><%= @pokemon.size %> seeded</span>
-      <%# List / Grid toggle — client-side view state, persisted to localStorage. %>
-      <div class="inline-flex rounded-lg border border-subtle overflow-hidden" role="group" aria-label="View">
-        <button type="button" @click="view = 'list'"
-                :class="view === 'list' ? 'bg-primary text-white' : 'bg-surface text-secondary hover:text-heading'"
-                class="px-3 py-1.5 text-sm font-medium transition" data-test="view-list">List</button>
-        <button type="button" @click="view = 'grid'"
-                :class="view === 'grid' ? 'bg-primary text-white' : 'bg-surface text-secondary hover:text-heading'"
-                class="px-3 py-1.5 text-sm font-medium transition border-l border-subtle" data-test="view-grid">Grid</button>
-      </div>
+<% content_for(:title, "Pokédex") %>
+
+<section class="space-y-6" data-test="pokedex">
+  <div class="flex items-end justify-between gap-4 flex-wrap">
+    <div>
+      <p class="label-upper">Pokédex</p>
+      <h1 class="text-2xl md:text-3xl font-bold text-heading">Spawned Pokémon</h1>
     </div>
+    <%= link_to "← Dashboard", dashboard_path, class: "text-muted hover:text-heading transition text-sm" %>
   </div>
 
-  <%# List view — the dense data table (small sprite thumbnails). %>
-  <div x-show="view === 'list'" x-cloak class="card overflow-x-auto" data-test="pokemon-list">
+  <div class="grid gap-4 lg:grid-cols-2">
+    <article class="card p-5 min-h-64" data-test="latest-pokemon-card">
+      <div class="flex items-center justify-between gap-3 mb-5">
+        <h2 class="text-lg font-semibold text-heading">Last New Pokémon</h2>
+        <% if @latest_spawn&.shiny %>
+          <span class="text-xs font-semibold text-amber-700 bg-amber-100 rounded px-2 py-1">Shiny</span>
+        <% end %>
+      </div>
+
+      <% if @latest_spawn %>
+        <div class="flex items-center gap-5">
+          <div class="w-32 h-32 rounded-lg border border-subtle bg-surface flex items-center justify-center shrink-0">
+            <img src="<%= @latest_spawn.pokemon.display_avatar(shiny: @latest_spawn.shiny) %>"
+                 alt="<%= @latest_spawn.pokemon.name %>"
+                 class="max-w-28 max-h-28 object-contain"
+                 loading="lazy"
+                 onerror="this.onerror=null; this.src='<%= @latest_spawn.pokemon.display_sprite(shiny: @latest_spawn.shiny) %>'">
+          </div>
+
+          <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm min-w-0">
+            <dt class="text-muted">Name</dt>
+            <dd class="text-heading font-semibold truncate"><%= @latest_spawn.pokemon.name %></dd>
+
+            <dt class="text-muted">Created</dt>
+            <dd class="text-body">
+              <time datetime="<%= @latest_spawn.created_at.iso8601 %>">
+                <%= l(@latest_spawn.created_at, format: :short) %>
+              </time>
+            </dd>
+
+            <dt class="text-muted">Task</dt>
+            <dd class="min-w-0">
+              <% if @latest_spawn.task %>
+                <%= link_to @latest_spawn.task.title, task_path(@latest_spawn.task.slug),
+                      class: "text-primary hover:underline truncate block" %>
+              <% else %>
+                <span class="text-secondary">No task yet</span>
+              <% end %>
+            </dd>
+          </dl>
+        </div>
+      <% else %>
+        <div class="h-40 flex items-center justify-center text-secondary text-sm" data-test="latest-pokemon-empty">
+          No spawned Pokémon yet.
+        </div>
+      <% end %>
+    </article>
+
+    <article class="card p-5" data-test="pokemon-stats-card">
+      <h2 class="text-lg font-semibold text-heading mb-5">Stats</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="rounded-lg border border-subtle bg-surface p-4">
+          <p class="text-xs text-muted">Total Pokémon</p>
+          <p class="mt-2 text-3xl font-bold text-heading tabular-nums"><%= number_with_delimiter(@pokedex.total_pokemon) %></p>
+        </div>
+        <div class="rounded-lg border border-subtle bg-surface p-4">
+          <p class="text-xs text-muted">Summoned Pokémon</p>
+          <p class="mt-2 text-3xl font-bold text-heading tabular-nums"><%= number_with_delimiter(@pokedex.summoned_pokemon) %></p>
+        </div>
+        <div class="rounded-lg border border-subtle bg-surface p-4">
+          <p class="text-xs text-muted">Shiny Pokémon</p>
+          <p class="mt-2 text-3xl font-bold text-heading tabular-nums"><%= number_with_delimiter(@pokedex.shiny_pokemon) %></p>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="card overflow-x-auto" data-test="recent-pokemon-actions">
     <table class="w-full text-sm">
       <thead class="text-secondary border-b border-subtle">
         <tr>
-          <th class="text-left p-3"></th>
-          <th class="text-left p-3">#</th>
-          <th class="text-left p-3">Name</th>
-          <th class="text-left p-3">Slug</th>
-          <th class="text-left p-3">Types</th>
-          <th class="text-right p-3">HP</th>
-          <th class="text-right p-3">Atk</th>
-          <th class="text-right p-3">Def</th>
-          <th class="text-right p-3">SpA</th>
-          <th class="text-right p-3">SpD</th>
-          <th class="text-right p-3">Spe</th>
-          <th class="text-right p-3">Gen</th>
-          <th class="text-left p-3">Avatar (S3)</th>
+          <th class="text-left p-3">Pokémon</th>
+          <th class="text-left p-3">Action</th>
+          <th class="text-left p-3">Task</th>
+          <th class="text-left p-3">Outcome</th>
+          <th class="text-right p-3">When</th>
         </tr>
       </thead>
       <tbody>
-        <% @pokemon.each do |p| %>
-          <tr class="border-b border-subtle/50 hover:bg-surface">
-            <td class="p-2">
-              <%# Click flips the sprite to its shiny mirror — two imgs so each
-                  keeps its own onerror fallback; the hidden one isn't fetched. %>
-              <button type="button" x-data="{ shiny: false }" @click="shiny = !shiny"
-                      :aria-pressed="shiny" title="<%= p.name %> — click for shiny"
-                      class="cursor-pointer" data-test="list-shiny-toggle">
-                <img x-show="!shiny" src="<%= p.sprite_url %>" alt="<%= p.name %>" width="40" height="40"
-                     class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.visibility='hidden'">
-                <img x-show="shiny" x-cloak src="<%= p.display_sprite(shiny: true) %>" alt="<%= p.name %> (shiny)"
-                     width="40" height="40"
-                     class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.visibility='hidden'">
-              </button>
-            </td>
-            <td class="p-3 text-muted tabular-nums"><%= format("%03d", p.dex) %></td>
-            <td class="p-3 font-medium text-heading whitespace-nowrap"><%= p.name %></td>
-            <td class="p-3 text-secondary font-mono text-xs"><%= p.slug %></td>
-            <td class="p-3">
-              <div class="flex gap-1">
-                <% p.types.each do |type| %>
-                  <%= render "type_badge", type: type, enumeral: @type_enumerals[type] %>
+        <% if @recent_actions.any? %>
+          <% @recent_actions.each do |row| %>
+            <% action = row.action %>
+            <% pokemon = row.pokemon %>
+            <tr class="border-b border-subtle/50 hover:bg-surface" data-test="recent-pokemon-action">
+              <td class="p-3">
+                <div class="flex items-center gap-3">
+                  <img src="<%= pokemon.display_sprite %>" alt="<%= pokemon.name %>"
+                       class="w-10 h-10 object-contain shrink-0"
+                       loading="lazy"
+                       onerror="this.style.visibility='hidden'">
+                  <div>
+                    <div class="font-medium text-heading"><%= pokemon.name %></div>
+                    <div class="text-xs text-muted font-mono"><%= pokemon.slug %></div>
+                  </div>
+                </div>
+              </td>
+              <td class="p-3 min-w-56">
+                <div class="text-heading font-medium"><%= action.kind.to_s.humanize %></div>
+                <div class="text-secondary text-xs truncate max-w-md">
+                  <%= action.summary.presence || action.result_slug.presence || action.event_slug.presence || "Action #{action.seq}" %>
+                </div>
+              </td>
+              <td class="p-3">
+                <% if action.task %>
+                  <%= link_to action.task.title, task_path(action.task.slug),
+                        class: "text-primary hover:underline whitespace-nowrap" %>
+                <% else %>
+                  <span class="text-muted">—</span>
                 <% end %>
-              </div>
-            </td>
-            <td class="p-3 text-right text-secondary tabular-nums"><%= p.hp %></td>
-            <td class="p-3 text-right text-secondary tabular-nums"><%= p.attack %></td>
-            <td class="p-3 text-right text-secondary tabular-nums"><%= p.defense %></td>
-            <td class="p-3 text-right text-secondary tabular-nums"><%= p.special_attack %></td>
-            <td class="p-3 text-right text-secondary tabular-nums"><%= p.special_defense %></td>
-            <td class="p-3 text-right text-secondary tabular-nums"><%= p.speed %></td>
-            <td class="p-3 text-right text-muted tabular-nums"><%= p.generation %></td>
-            <td class="p-3">
-              <% if p.avatar_url.present? %>
-                <a href="<%= p.avatar_url %>" target="_blank" rel="noopener" class="text-primary hover:underline text-xs">S3 ↗</a>
-              <% end %>
+              </td>
+              <td class="p-3 text-secondary"><%= action.outcome.to_s.humanize %></td>
+              <td class="p-3 text-right text-muted whitespace-nowrap">
+                <time datetime="<%= action.occurred_at.iso8601 %>">
+                  <%= l(action.occurred_at, format: :short) %>
+                </time>
+              </td>
+            </tr>
+          <% end %>
+        <% else %>
+          <tr>
+            <td colspan="5" class="p-8 text-center text-secondary" data-test="recent-pokemon-empty">
+              No Pokémon actions yet.
             </td>
           </tr>
         <% end %>
       </tbody>
     </table>
   </div>
-
-  <%# Grid view — larger high-res avatars, lazy-loaded so the page stays light
-      until the grid is shown (a hidden lazy img is not fetched). %>
-  <div x-show="view === 'grid'" x-cloak
-       class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4" data-test="pokemon-grid">
-    <% @pokemon.each do |p| %>
-      <div class="card p-3 flex flex-col items-center text-center" x-data="{ shiny: false }">
-        <% evolutions = Array(p.evolution).filter_map { |slug| @pokemon_by_slug[slug] } %>
-        <% if evolutions.any? %>
-          <%# The line ahead of this form — its next evolutions as small circles
-              (Eevee wears five; a final/single-stage form wears none). %>
-          <div class="w-full flex items-center justify-center gap-1 mb-1" data-test="evolution-circles">
-            <% evolutions.each do |evo| %>
-              <img src="<%= evo.display_sprite %>" alt="<%= evo.name %>" title="<%= evo.name %>"
-                   width="28" height="28"
-                   class="w-7 h-7 rounded-full border border-subtle bg-surface object-contain"
-                   loading="lazy" data-test="evolution-circle"
-                   onerror="this.style.visibility='hidden'">
-            <% end %>
-          </div>
-        <% end %>
-        <%# Click flips the artwork to its shiny mirror — two imgs so each keeps
-            its own onerror fallback chain; the hidden one isn't fetched. %>
-        <button type="button" @click="shiny = !shiny" :aria-pressed="shiny"
-                title="<%= p.name %> — click for shiny"
-                class="aspect-square w-full flex items-center justify-center cursor-pointer"
-                data-test="shiny-toggle">
-          <img x-show="!shiny" src="<%= p.display_avatar %>" alt="<%= p.name %>"
-               class="max-h-32 w-auto object-contain" loading="lazy"
-               onerror="this.onerror=null; this.src='<%= p.avatar_fallback_url.presence || p.sprite_url %>'">
-          <img x-show="shiny" x-cloak src="<%= p.display_avatar(shiny: true) %>" alt="<%= p.name %> (shiny)"
-               class="max-h-32 w-auto object-contain" loading="lazy"
-               onerror="this.onerror=null; this.src='<%= p.shiny_avatar_fallback_url.presence || p.sprite_url %>'">
-        </button>
-        <div class="mt-2 text-muted text-xs tabular-nums">
-          #<%= format("%03d", p.dex) %><span x-show="shiny" x-cloak> ✨</span>
-        </div>
-        <div class="text-heading font-medium text-sm"><%= p.name %></div>
-        <div class="flex flex-wrap justify-center gap-1 mt-1">
-          <% p.types.each do |type| %>
-            <%= render "type_badge", type: type, enumeral: @type_enumerals[type] %>
-          <% end %>
-        </div>
-      </div>
-    <% end %>
-  </div>
-
-  <p class="text-muted text-xs mt-3">
-    Both the sprite and the high-res avatar are served from S3
-    (<code>mcritchie-studio-production/pokemon/</code>), populated once by <code>rake pokemon:upload_images</code>.
-  </p>
 </section>
