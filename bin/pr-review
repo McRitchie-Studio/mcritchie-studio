@@ -275,6 +275,13 @@ def reviewer_prompt(task, reviewer, role, reviewers)
     Checks already reported:
     #{bullet_list(metadata.fetch("checks_run", []))}
 
+    Narrate your review as your own soul so the heartbeat attributes it to you.
+    Open your activity BEFORE any review work:
+    bin/agent-activity start --category Verify --agent #{reviewer_slug} --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
+
+    Close it with your verdict when the review is done:
+    bin/agent-activity end --outcome "<verdict>: <one-line reason>"
+
     Review instructions:
     - Inspect task metadata, PR body, diff, changed files, docs, tests, CI, and merge safety.
     - Check whether the PR could overwrite or conflict with another agent's work.

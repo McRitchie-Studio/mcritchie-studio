@@ -99,16 +99,16 @@ nested chain from `devops-cycle-design.md` §1.2).
 attributes it to them, not to the base session mascot:
 
 ```bash
-bin/agent-activity start --category Verify --agent <soul> --reason "review: <scope>"
+bin/agent-activity start --category Verify --agent <soul> --task <task-slug> --reason "review: <task-slug>"
 # … diff, checks, tests, DoR …
 bin/agent-activity end --outcome "<verdict>: <one-line reason>"
 ```
 
-> The **`--agent <soul>`** flag is being added in parallel by task
-> `agent-attribution-on-events`. Until it lands, a reviewer that omits `--agent`
-> falls back to the session's **base mascot** — the review still narrates, it just
-> attributes to the mascot instead of the soul. Reference `--agent` in reviewer
-> prompts now so the roles light up the Agent column the moment the flag ships.
+> The **`--agent <soul>`** and **`--task <slug>`** flags are live (task
+> `agent-attribution-on-events`). A reviewer that omits `--agent` falls back to
+> the session's **base mascot** — the review still narrates, it just attributes
+> to the mascot instead of the soul. `bin/pr-review` interpolates both flags
+> into each reviewer prompt automatically.
 
 Each reviewer goes through the review cycle and **responds with concise notes**:
 
