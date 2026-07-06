@@ -27,13 +27,17 @@
    elsif %w[submitted reviewed assembled].include?(task.stage)
      task.stage
    end %>
+<% card_glow_classes = if card_glow_kind
+     ["task-card-stage-glow", "task-card-stage-glow-#{card_glow_kind}", ("studio-border-glow" unless card_glow_kind == "blocked")].compact.join(" ")
+   end %>
 <% card_glow_color = case card_glow_kind
    when "blocked" then "#ef4444"
+   when "submitted" then "#22c55e"
    when "reviewed" then mascot_signature_color || "#22d3ee"
    when "assembled" then mascot_signature_color || "#a78bfa"
    else mascot_signature_color || "#f59e0b"
    end %>
-<% card_glow_type_colors = if mascot && type_enumerals
+<% card_glow_type_colors = if card_glow_kind == "assembled" && mascot && type_enumerals
      mascot.types.filter_map { |type| type_enumerals[type]&.color.presence }
             .select { |color| color.to_s.match?(/\A#[0-9a-f]{6}\z/i) }
             .uniq
@@ -42,9 +46,22 @@
    end %>
 <% card_glow_color_a = card_glow_type_colors.first || card_glow_color %>
 <% card_glow_color_b = card_glow_type_colors.second || card_glow_color_a %>
+<% card_glow_seed = if card_glow_kind && card_glow_kind != "blocked"
+     task.slug.to_s.each_byte.reduce(0) { |memo, byte| ((memo * 33) + byte) % 10_000 }
+   end %>
+<% card_glow_motion_style = if card_glow_seed
+     "--studio-border-glow-offset: #{card_glow_seed % 400}%; " \
+       "--studio-border-glow-duration: #{18 + (card_glow_seed % 9)}s; " \
+       "--studio-border-glow-angle: #{38 + (card_glow_seed % 18)}deg; "
+   end %>
 <% card_glow_large = %w[reviewed assembled].include?(card_glow_kind) %>
 <% card_glow_border_mix = card_glow_large ? 58 : 46 %>
-<% card_glow_shadow = if card_glow_large
+<% card_glow_shadow = if card_glow_kind == "assembled"
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color-a) 44%, transparent), " \
+       "0 0 34px color-mix(in srgb, var(--task-card-glow-color-b) 38%, transparent), " \
+       "0 0 82px color-mix(in srgb, var(--task-card-glow-color-a) 22%, transparent), " \
+       "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
+   elsif card_glow_large
      "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
        "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
        "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
@@ -55,7 +72,8 @@
        "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
    end %>
 <% card_glow_style = if card_glow_kind
-     "--task-card-glow-color: #{card_glow_color}; " \
+     "#{card_glow_motion_style}" \
+       "--task-card-glow-color: #{card_glow_color}; " \
        "--task-card-glow-color-a: #{card_glow_color_a}; " \
        "--task-card-glow-color-b: #{card_glow_color_b}; " \
        "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) #{card_glow_border_mix}%, transparent); " \
@@ -79,7 +97,7 @@
      @mousedown="mx = $event.clientX; my = $event.clientY"
      @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
      <% if card_glow_style %>style="<%= card_glow_style %>"<% end %>
-     class="kanban-card relative <%= card_tone %> <%= "task-card-stage-glow task-card-stage-glow-#{card_glow_kind}" if card_glow_kind %> rounded-lg border p-3 cursor-pointer transition group">
+     class="kanban-card relative <%= card_tone %> <%= card_glow_classes %> rounded-lg border p-3 cursor-pointer transition group">
 
   <%# Title — single-line overflow-fade: long names never wrap or break. They fade
       at the overflowing edge (mask-image) and marquee-scroll to the end while the

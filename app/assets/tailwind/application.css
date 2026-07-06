@@ -49,53 +49,17 @@
 }
 
 @layer components {
-  .task-card-stage-glow-assembled,
-  .release-confirming-glow {
-    isolation: isolate;
-    position: relative;
-  }
-
-  .task-card-stage-glow-assembled::before,
-  .release-confirming-glow::before {
-    content: "";
-    position: absolute;
-    pointer-events: none;
-    border-radius: 0.75rem;
-    background:
+  .studio-border-glow {
+    --studio-border-glow-opacity: 0.82;
+    --studio-border-glow-halo-opacity: 0.28;
+    --studio-border-glow-halo-blur: 18px;
+    --studio-border-glow-angle: 45deg;
+    --studio-border-glow-offset: 0%;
+    --studio-border-glow-duration: 20s;
+    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration) linear infinite;
+    --studio-border-glow-gradient:
       linear-gradient(
-        45deg,
-        var(--task-card-glow-color-a, var(--task-card-glow-color)),
-        color-mix(in srgb, var(--task-card-glow-color-a, var(--task-card-glow-color)) 68%, white),
-        var(--task-card-glow-color-b, var(--task-card-glow-color)),
-        color-mix(in srgb, var(--task-card-glow-color-b, var(--task-card-glow-color)) 74%, black),
-        var(--task-card-glow-color-a, var(--task-card-glow-color)),
-        color-mix(in srgb, var(--task-card-glow-color-b, var(--task-card-glow-color)) 70%, white),
-        var(--task-card-glow-color-b, var(--task-card-glow-color)),
-        color-mix(in srgb, var(--task-card-glow-color-a, var(--task-card-glow-color)) 72%, black)
-      );
-    background-size: 400%;
-    animation: taskCardAssembledSteam 18s linear infinite;
-    filter:
-      drop-shadow(0 0 10px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent))
-      drop-shadow(0 0 26px color-mix(in srgb, var(--task-card-glow-color) 18%, transparent));
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    inset: -2px;
-    z-index: -1;
-    padding: 2px;
-    opacity: 0.7;
-  }
-
-  .release-confirming-glow::before {
-    background:
-      linear-gradient(
-        45deg,
+        var(--studio-border-glow-angle, 45deg),
         #fb0094,
         #00c4ff,
         #34d399,
@@ -107,28 +71,152 @@
         #fbbf24,
         #ff2d55
       );
-    background-size: 400%;
+    isolation: isolate;
+    position: relative;
   }
 
-  @keyframes taskCardAssembledSteam {
-    0% {
-      background-position: 0 0;
-    }
+  .studio-border-glow::before,
+  .studio-border-glow::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    border-radius: inherit;
+    background: var(--studio-border-glow-gradient);
+    background-size: 400%;
+    animation: var(--studio-border-glow-animation);
+  }
 
-    50% {
-      background-position: 400% 0;
+  .studio-border-glow::before {
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    inset: -2px;
+    z-index: -1;
+    padding: 2px;
+    opacity: var(--studio-border-glow-opacity);
+  }
+
+  .studio-border-glow::after {
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    inset: -10px;
+    z-index: -2;
+    padding: 10px;
+    filter: blur(var(--studio-border-glow-halo-blur));
+    opacity: var(--studio-border-glow-halo-opacity);
+    transform: translateZ(0);
+  }
+
+  @keyframes studioBorderGlowSteam {
+    0% {
+      background-position: var(--studio-border-glow-offset, 0%) 0;
     }
 
     100% {
-      background-position: 0 0;
+      background-position: calc(var(--studio-border-glow-offset, 0%) + 400%) 0;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .task-card-stage-glow-assembled::before,
-    .release-confirming-glow::before {
-      animation-duration: 42s;
+    .studio-border-glow::before,
+    .studio-border-glow::after {
+      animation: none;
     }
+  }
+
+  .task-card-stage-glow {
+    --studio-border-glow-opacity: 0.82;
+    --studio-border-glow-halo-opacity: 0.28;
+    --studio-border-glow-halo-blur: 18px;
+    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        var(--studio-border-glow-angle, 45deg),
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55,
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55
+      );
+  }
+
+  .task-card-stage-glow-submitted {
+    --studio-border-glow-opacity: 0.78;
+    --studio-border-glow-halo-opacity: 0.26;
+    --studio-border-glow-halo-blur: 16px;
+    --studio-border-glow-animation: none;
+    --studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), #22c55e, #22c55e);
+  }
+
+  .task-card-stage-glow-reviewed {
+    --studio-border-glow-opacity: 0.86;
+    --studio-border-glow-halo-opacity: 0.3;
+    --studio-border-glow-halo-blur: 20px;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        var(--studio-border-glow-angle, 45deg),
+        #facc15,
+        #2563eb,
+        #facc15,
+        #2563eb,
+        #facc15,
+        #2563eb
+      );
+  }
+
+  .task-card-stage-glow-assembled {
+    --studio-border-glow-opacity: 0.9;
+    --studio-border-glow-halo-opacity: 0.34;
+    --studio-border-glow-halo-blur: 22px;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        var(--studio-border-glow-angle, 45deg),
+        var(--task-card-glow-color-a, #fb0094),
+        var(--task-card-glow-color-b, #00c4ff),
+        var(--task-card-glow-color-a, #34d399),
+        var(--task-card-glow-color-b, #fbbf24),
+        var(--task-card-glow-color-a, #ff2d55),
+        var(--task-card-glow-color-b, #fb0094),
+        var(--task-card-glow-color-a, #00c4ff),
+        var(--task-card-glow-color-b, #34d399)
+      );
+  }
+
+  .release-confirming-glow {
+    --studio-border-glow-opacity: 0.9;
+    --studio-border-glow-halo-opacity: 0.34;
+    --studio-border-glow-halo-blur: 24px;
+    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        var(--studio-border-glow-angle, 45deg),
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55,
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55
+      );
   }
 
   .sticky-data-table {
