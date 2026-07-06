@@ -37,7 +37,7 @@
         <th>Agent</th>
         <th>Model / Tokens</th>
         <th>Cost</th>
-        <th>Command / Task</th>
+        <th>Command</th>
         <th>Alex</th>
         <th>McRitchie</th>
       </tr>
@@ -63,19 +63,35 @@
         <tr class="hb-evtrow hb-clickrow" data-test="heartbeat-event-row" @click="open = !open"
             style="--hb-edge: <%= cat[:accent] %>">
           <td class="hb-seq" @click.stop="open = !open" title="expand raw actions"><span class="hb-chev" :class="open ? 'hb-chev-open' : ''">&#9656;</span></td>
-          <td>
-            <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= activity.category %></span>
-            <div class="hb-meta hb-mono hb-evttime" title="<%= activity.opened_at&.iso8601 %>"><%= heartbeat_time(activity.opened_at) %></div>
+          <%# The activity mini-card: TOP a live ticking elapsed timer (open) or the
+              completed_at at second precision (closed) with the status badge floated
+              right; MIDDLE the created_at at second precision with the action count
+              (a spinner while open) on the right; BOTTOM the task slug. %>
+          <td class="hb-evtcard" data-test="activity-card">
+            <div class="hb-cardrow hb-cardtop">
+              <% if activity.open? %>
+                <span class="hb-timer" data-test="activity-elapsed" title="elapsed since opened"
+                      x-data="hbElapsed(<%= activity.opened_at.to_i %>)" x-init="start()" x-text="label"><%= heartbeat_elapsed((Time.current - activity.opened_at).to_i) %></span>
+              <% else %>
+                <span class="hb-completed hb-mono" data-test="activity-completed" title="<%= activity.closed_at&.iso8601 %>"><%= heartbeat_time_seconds(activity.closed_at) %></span>
+              <% end %>
+              <span class="hb-cardbadge"><%= heartbeat_activity_status_badge(status) %></span>
+            </div>
+            <div class="hb-cardrow hb-cardmid">
+              <span class="hb-created hb-mono" data-test="activity-created" title="<%= activity.opened_at&.iso8601 %>">created <%= heartbeat_time_seconds(activity.opened_at) %></span>
+              <span class="hb-cardactions">
+                <% if activity.open? %><span class="hb-spinner" data-test="activity-spinner" aria-hidden="true"></span><% end %>
+                <span class="hb-inline-actions" data-test="event-inline-action-count"><%= pluralize(actions.size, "action") %></span>
+              </span>
+            </div>
+            <div class="hb-cardrow hb-cardbot">
+              <span class="hb-mono hb-taskcell" data-test="event-task-slug"><%= activity.task_slug.presence || "—" %></span>
+            </div>
           </td>
           <td class="hb-span hb-narr">
             <span class="hb-narrline hb-span-title">
+              <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>"><%= activity.category %></span>
               <span class="hb-slug" data-test="event-reason"><%= activity.reason_slug %></span>
-              <span class="hb-bullet" aria-hidden="true">&middot;</span>
-              <span class="hb-inline-actions" data-test="event-inline-action-count"><%= pluralize(actions.size, "action") %></span>
-              <span class="hb-bullet" aria-hidden="true">&middot;</span>
-              <span class="hb-inline-status" data-test="event-inline-status">
-                <%= heartbeat_activity_status_badge(status) %>
-              </span>
             </span>
             <span class="hb-narrline hb-narr-result">
               <span class="hb-arrow">&rarr;</span>
@@ -100,7 +116,6 @@
                 <%= render "heartbeat/key_method_chip", code: activity.key_method, lang: activity.key_method_lang %>
               <% end %>
             </div>
-            <span class="hb-mono hb-taskcell"><%= activity.task_slug.presence || "—" %></span>
           </div></td>
           <%= render "heartbeat/activity_feedback_cell", activity: activity, alex: alex_g, mcr: mcr_g %>
         </tr>
@@ -121,14 +136,18 @@
                 </span>
               </td>
               <td class="hb-subnarr">
+                <%# TOP line: the created -> completed span; the outcome badge floats right. %>
                 <span class="hb-subtitle">
-                  <span class="hb-subslug"><%= action.event_slug.presence || "—" %></span>
-                  <span class="hb-bullet" aria-hidden="true">&middot;</span>
-                  <span class="hb-outcome" data-test="action-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
+                  <span class="hb-action-span hb-mono" data-test="action-span"><%= heartbeat_action_span(action) %></span>
+                  <span class="hb-outcome hb-suboutcome" data-test="action-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
                 </span>
-                <% if action.input.present? %>
-                  <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
-                <% end %>
+                <span class="hb-subline2">
+                  <span class="hb-subslug"><%= action.event_slug.presence || "—" %></span>
+                  <% if action.input.present? %>
+                    <span class="hb-bullet" aria-hidden="true">&middot;</span>
+                    <span class="hb-subinput hb-mono" title="<%= action.input %>"><%= heartbeat_input_preview(action.input) %></span>
+                  <% end %>
+                </span>
               </td>
               <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon,
                                            agent_slug: activity.agent, agent: agents_by_slug[activity.agent],

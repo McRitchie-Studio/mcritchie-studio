@@ -55,6 +55,20 @@
      avatars trims the table's minimum width the operator asked to reclaim. */
   #alex-heartbeat table.hb-evt-tbl { min-width:980px; }
   #alex-heartbeat .hb-evttime { font-size:10px; margin-top:2px; color:var(--hb-faint); }
+  /* Activity mini-card (the leading cell): three stacked rows — TOP the live elapsed
+     timer (open) or completed_at at second precision (closed) with the status badge
+     floated right; MIDDLE the created_at at second precision with the action count
+     (a spinner while open) on the right; BOTTOM the task slug. */
+  #alex-heartbeat .hb-evtcard { min-width:206px; }
+  #alex-heartbeat .hb-cardrow { display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-cardmid, #alex-heartbeat .hb-cardbot { margin-top:3px; }
+  #alex-heartbeat .hb-timer { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:13px; font-weight:700; color:var(--hb-accent); font-variant-numeric:tabular-nums; }
+  #alex-heartbeat .hb-completed { font-size:12px; font-weight:600; color:var(--hb-txt); }
+  #alex-heartbeat .hb-cardbadge { margin-left:auto; }
+  #alex-heartbeat .hb-created { font-size:11px; color:var(--hb-faint); }
+  #alex-heartbeat .hb-cardactions { margin-left:auto; display:inline-flex; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-spinner { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--hb-line); border-top-color:var(--hb-accent); animation:hb-spin .8s linear infinite; }
+  @keyframes hb-spin { to { transform:rotate(360deg); } }
   #alex-heartbeat .hb-submascot { color:var(--hb-mascot); opacity:.85; }
   /* Compact Agent cell — a tight vertical stack of "small avatar + NAME" rows (the
      original 📋 Avi / ✦ Magikarp text layout, with the real avatar image in place of
@@ -141,6 +155,11 @@
   #alex-heartbeat tr.hb-subrow td.hb-subseq-gutter { padding-left:10px; }
   #alex-heartbeat .hb-subnarr { display:flex; flex-direction:column; gap:3px; }
   #alex-heartbeat .hb-subtitle { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+  /* Action row: the created -> completed span leads the top line; the outcome badge
+     floats to the right edge of the action's narration cell (freed by the span). */
+  #alex-heartbeat .hb-action-span { color:var(--hb-faint); font-size:11px; }
+  #alex-heartbeat .hb-suboutcome { margin-left:auto; }
+  #alex-heartbeat .hb-subline2 { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
   #alex-heartbeat .hb-subslug { color:var(--hb-txt); }
   #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:0; }
   #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
