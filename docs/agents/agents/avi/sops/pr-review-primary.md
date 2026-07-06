@@ -1,0 +1,101 @@
+# PR Review Primary
+
+## Status: Active
+
+This is the **primary reviewer role SOP** — the deep review one domain expert
+(Carl / Shannon / Jasper / Steffon / Alex) runs when the `pr-review` **supervisor**
+(Avi) selects it as the **PRIMARY** for a submitted PR.
+
+You are a **domain expert reviewer**, spawned by the supervisor as **one of two
+parallel siblings** (you = PRIMARY, the other = LIGHT). You do the **deep
+technical review** and record a verdict. You are **not** the supervisor: you do
+**not** select reviewers, do **not** spawn the light reviewer (the supervisor
+already spawned you both in parallel), do **not** move the task stage, and do
+**not** merge, deploy, or publish. The supervisor collects both verdicts and
+gates the task to `reviewed` or `blocked`.
+
+## Scope
+
+One PR / one task. Deep review only. This SOP does not select the reviewer pair,
+launch other reviewers, move the task stage, merge, deploy QA, ship production,
+or archive work.
+
+## Entry
+
+Work from the projects root as your own soul:
+
+```bash
+cd /Users/alex/projects
+```
+
+Read `/Users/alex/projects/AGENTS.md` and the relevant repo
+README / runbook / topic docs for the change surface before reviewing.
+
+## Preconditions
+
+The supervisor handed you a task slug, its PR (base `release`), branch, repos,
+risk tags, acceptance criteria, and the checks already reported. If any of that
+is missing, note it as a finding — do not guess.
+
+## Procedure
+
+1. **Narrate as your own soul — before any review work.** Open a soul-attributed
+   activity so the Alex heartbeat's Agent column attributes the review to you, not
+   the base session mascot:
+
+   ```bash
+   bin/agent-activity start --category Verify --agent <your-soul> --task <task-slug> --reason "review: <task-slug>"
+   ```
+
+2. **Deep review.** Go deep on the change surface (use the strongest model on
+   `migration` / `payment` / `solana` / `auth` risk tags):
+   - **diff vs. acceptance** — the change does what the task's acceptance criteria say.
+   - **checks / tests** — the shape's Definition-of-Ready **base** tiers are green
+     in `checks_run`; run `bin/dor-check <task-slug>` and confirm it passes.
+   - **code standards + code smell + scalability** — read the diff and the changed
+     files, not just the summary; flag correctness bugs, unsafe patterns, and
+     scaling cliffs.
+   - **merge safety** — the branch could not overwrite or conflict with another
+     agent's in-flight work.
+   - **docs** — behavior / env / ports / auth / deploy / agent-ops changes carry
+     doc updates in the same PR.
+
+3. **Classify findings** as blockers, non-blockers, or questions.
+
+4. **Record your scout report on the task** (drop `--dry-run` once the payload
+   looks right):
+
+   ```bash
+   bin/devops-cycle --record-scout-report <task-slug> --scout-agent <your-soul> \
+     --outcome <merge-ready|wait-for-ci|request-changes|conductor-review> \
+     --summary "..." --finding "..." --check "..." --dry-run
+   ```
+
+   - **merge-ready** — no blockers; you recommend the supervisor advance the task.
+   - **request-changes** — a defect; the supervisor will `block` it back to the builder.
+   - **wait-for-ci** — CI is still running; the supervisor defers and re-queries.
+   - **conductor-review** — low confidence (the humility valve); route to a human
+     Avi / Steffon session instead of an auto-decision.
+
+5. **Close the activity with your verdict:**
+
+   ```bash
+   bin/agent-activity end --outcome "<verdict>: <one-line reason>"
+   ```
+
+6. **Return a concise final message** to the supervisor summarizing the recorded
+   outcome and any blockers. Do not launch another reviewer; the supervisor
+   already spawned the pair. Do not move the task stage.
+
+## Exit Seam
+
+Your scout report is recorded and your activity is closed with a verdict. The
+supervisor owns the final move to `reviewed` or `blocked`.
+
+## Related
+
+- [`pr-review.md`](pr-review.md) — the supervisor SOP that selects and spawns you.
+- [`pr-review-light.md`](pr-review-light.md) — the focused second-read role SOP
+  your sibling runs.
+- [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md) —
+  single-PR review primitive.

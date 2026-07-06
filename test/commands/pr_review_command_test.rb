@@ -437,4 +437,102 @@ class PrReviewCommandTest < Minitest::Test
     assert_equal "dry-new", reviewer_call.first
     assert_includes reviewer_call, "--no-record"
   end
+
+  # [unit] The supervisor selects the primary+light pair, spawns BOTH role
+  # reviewers in parallel, and NEVER performs a review itself. Each reviewer is
+  # pointed at its own role SOP (pr-review-primary.md / pr-review-light.md), and
+  # the reviewer-select step narrates as "select primary+light reviewers", never
+  # "summon Avi". (Regression guard for the 3-level supervisor hierarchy.)
+  def test_supervisor_spawns_two_role_reviewers_in_parallel_and_never_reviews
+    newest = task("role-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("role-pr", created_at: "2026-06-29T12:00:00Z",
+                               reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([newest]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "CODEX_SLEEP" => "0.05" })
+    assert status.success?, err
+
+    # The supervisor narrates reviewer-select as a SELECTION, never as summoning an Avi reviewer.
+    assert_includes out, "select primary+light reviewers",
+                    "the supervisor narrates the reviewer-select step as a selection"
+    refute_match(/summon\s+avi/i, out, "the supervisor never summons an Avi reviewer")
+
+    # Exactly the two SELECTED souls get a prompt — no supervisor/avi review prompt exists.
+    prompts = prompt_files_by_reviewer
+    assert_equal %w[carl shannon], prompts.keys.sort,
+                 "only the two selected souls review; the supervisor never reviews"
+
+    # Each reviewer runs ITS role SOP in ITS role.
+    primary = prompts.fetch("carl")
+    light = prompts.fetch("shannon")
+    assert_includes primary, "as carl, a pr-review primary reviewer"
+    assert_includes primary, "docs/agents/agents/avi/sops/pr-review-primary.md"
+    refute_includes primary, "pr-review-light.md"
+    assert_includes light, "as shannon, a pr-review light reviewer"
+    assert_includes light, "docs/agents/agents/avi/sops/pr-review-light.md"
+    refute_includes light, "pr-review-primary.md"
+
+    # Both prompts frame Avi as a thin supervisor that never reviews — no #417 "summon"/"nests" framing.
+    [primary, light].each do |prompt|
+      assert_match(/never reviews code/i, prompt, "the supervisor is framed as a thin gate that never reviews")
+      refute_match(/summon/i, prompt)
+      refute_match(/nests its reviewers/i, prompt)
+    end
+
+    # Both reviewers are spawned BEFORE the supervisor gates the verdict — the
+    # parallel sibling structure, not primary-spawns-light.
+    sequence = json_lines(@sequence_log)
+    move_index = sequence.index { |entry| entry.first == "task" && entry[1] == "move" }
+    assert move_index, "expected a supervisor task move after both reviewers ran"
+    codex_before_move = sequence.first(move_index).count { |entry| entry.first == "codex" }
+    assert_equal 2, codex_before_move,
+                 "both role reviewers spawn in parallel before the supervisor collects verdicts"
+  end
+
+  # [integration] A full review run (spawn stubbed by the codex fake) attributes
+  # the primary and light roles to exactly the souls bin/reviewer-select picked —
+  # the selection matches execution end to end (prompt role SOP, soul-attributed
+  # narration, and the supervisor's verdict handoff).
+  def test_review_run_attributes_primary_and_light_to_the_reviewer_select_pick
+    # Override the selection so the pick is unambiguous and different from the default pair.
+    write_exec("reviewer-select", <<~RUBY)
+      #!#{RbConfig.ruby}
+      require "json"
+      File.open(ENV.fetch("REVIEWER_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
+      puts JSON.generate("reviewers" => [
+        { "slug" => "jasper", "weight" => "primary" },
+        { "slug" => "steffon", "weight" => "light" }
+      ])
+    RUBY
+
+    newest = task("attr-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("attr-pr", created_at: "2026-06-29T12:00:00Z",
+                               reports: [report("jasper", "merge-ready"), report("steffon", "merge-ready")])
+    write_snapshots(snapshot([newest]), snapshot([reviewed]))
+
+    _out, err, status = run_heartbeat("--run", "--limit", "1")
+    assert status.success?, err
+
+    # The SELECTED souls execute, in the SELECTED roles, each on its role SOP.
+    prompts = prompt_files_by_reviewer
+    assert_equal %w[jasper steffon], prompts.keys.sort, "the reviewer-select pick is who executes"
+    assert_includes prompts.fetch("jasper"), "as jasper, a pr-review primary reviewer"
+    assert_includes prompts.fetch("jasper"), "docs/agents/agents/avi/sops/pr-review-primary.md"
+    assert_includes prompts.fetch("steffon"), "as steffon, a pr-review light reviewer"
+    assert_includes prompts.fetch("steffon"), "docs/agents/agents/avi/sops/pr-review-light.md"
+
+    # Each spawned reviewer narrates its Verify activity attributed to its own soul.
+    narrations = json_lines(@narration_log).to_h { |reviewer, _slug, lines| [reviewer, lines] }
+    assert_equal %w[jasper steffon], narrations.keys.sort
+    narrations.each do |soul, lines|
+      start_line = lines.find { |line| line.include?("agent-activity start") }
+      assert start_line, "#{soul} must open a soul-attributed activity"
+      assert_includes start_line, "--agent #{soul}"
+      assert_includes start_line, "--task attr-pr"
+    end
+
+    # The final verdict handoff is the supervisor's (avi), not a reviewer's.
+    moves = json_lines(@task_log).select { |args| args.first == "move" }
+    assert_equal [["move", "attr-pr", "reviewed", "--actor", "avi"]], moves
+  end
 end

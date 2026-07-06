@@ -12,8 +12,9 @@ and it flows everywhere.
 
 > **This module IS the `review-one <task>` atom** — the indivisible PRIMITIVE the
 > composable deploy launchers are built from (§1.4). One run = **one PR / one
-> task**: Avi picks the pair → PRIMARY (+ LIGHT) review → on all-clear the PRIMARY
-> drives the task to **`reviewed` and STOPS** (review-only, 2026-07-03 — the merge
+> task**: Avi (the SUPERVISOR) picks + spawns the pair **in parallel** → PRIMARY +
+> LIGHT review as **siblings** → on all-clear the **supervisor** gates the task to
+> **`reviewed` and STOPS** (review-only, 2026-07-03 — the merge
 > is no longer the reviewer's; Steffon's self-healing `qa-release` sweeps the
 > reviewed queue, merges the PRs into `release`, and flips members `assembled` on
 > QA-green), or **any** reviewer blocks. The plural atoms just LOOP this body over
@@ -24,11 +25,14 @@ and it flows everywhere.
 > the two.
 
 It follows the established **2-senior review** model, but **formalizes the agent
-roles**: Avi assigns a **primary** and one or more **light** reviewers, each
-reviewer reviews **as their own soul**, and each review shows up in the Agent
-column of the Alex heartbeat (`/alex/heartbeat`) attributed to that soul. Nothing
-here overrides the canonical stage ownership in `devops-cycle-design.md` §1.2 — it
-is the operational how-to for that stage.
+roles** in a **3-level hierarchy**: the session Pokémon (identity) → **Avi, the
+SUPERVISOR** (a thin gate + orchestration that **never reviews code**) → the
+**domain experts** who actually review. Avi selects a **primary** and one **light**
+reviewer and spawns **both in parallel** as siblings; each reviewer reviews **as
+their own soul**, and each review shows up in the Agent column of the Alex
+heartbeat (`/alex/heartbeat`) attributed to that soul. Nothing here overrides the
+canonical stage ownership in `devops-cycle-design.md` §1.2 — it is the operational
+how-to for that stage.
 
 ## When to invoke
 
@@ -64,8 +68,9 @@ lane) and **one or more LIGHT** reviewers (a focused second perspective).
 
 ## Step 1 — Avi assigns the reviewers
 
-The conductor **spawns Avi** (Agent tool, `subagent_type: avi`) as a **thin
-delegation gate** — Avi does not do the deep technical review himself. Avi:
+The conductor **spawns Avi** (Agent tool, `subagent_type: avi`) as the **review
+SUPERVISOR** — a thin gate + orchestration that **never reviews the code
+itself**. Avi:
 
 1. Confirms **product-acceptance** — does the open PR (base `release`) meet the
    task's acceptance criteria?
@@ -85,15 +90,18 @@ kicks off, before `→ reviewed` lands. Pass `--no-record` / `--dry` only for an
 advisory-only preview. (The manual fallback is
 `bin/task intent <task> --to reviewed --actor <primary>`.)
 
-Avi then **hands the lane to the PRIMARY**.
+Avi then **spawns both the primary and the light reviewer in parallel** (Step 2)
+— they are his own sibling children, not a hand-off to be re-delegated.
 
 ## Step 2 — Reviewers review AS their soul
 
-The conductor spawns the **PRIMARY** reviewer (Agent tool, its domain
-`subagent_type`), handed all the technical-review goals and ownership of the rest
-of the lane. The **PRIMARY spawns the LIGHT** reviewer as its own sub-agent, so
-the primary already holds full context when the light's verdict returns (the
-nested chain from `devops-cycle-design.md` §1.2).
+The supervisor spawns **both** reviewers (Agent tool, each its domain
+`subagent_type`) **in parallel as siblings** — the PRIMARY runs the deep review
+([`../agents/avi/sops/pr-review-primary.md`](../agents/avi/sops/pr-review-primary.md)),
+the LIGHT runs the focused second read
+([`../agents/avi/sops/pr-review-light.md`](../agents/avi/sops/pr-review-light.md)).
+The primary does **not** spawn the light; the supervisor oversees both
+concurrently and collects both verdicts. Avi performs **no** review of his own.
 
 **Each reviewer narrates their review as their own soul** so the Agent column
 attributes it to them, not to the base session mascot:
@@ -141,11 +149,13 @@ recorded and routed back, not fixed); omit that section entirely on a clean run.
 
 ## Step 4 — Verdict
 
-The **PRIMARY reviewer's verdict decides**; the light reviewers add perspective.
+The **supervisor collects both verdicts and gates**; the PRIMARY's deep verdict
+carries the most weight, the LIGHT adds a focused second perspective.
 
-- **All-clear** (no reviewer blocked) → the PRIMARY drives the task to `reviewed`
-  (`bin/task move <task> reviewed`) — **and stops there.** Review is
-  **review-only** (2026-07-03): the PRIMARY does NOT run `bin/release merge`;
+- **All-clear** (no reviewer blocked) → the **supervisor** drives the task to
+  `reviewed` (`bin/task move <task> reviewed --actor avi`) — **and stops there.**
+  Review is **review-only** (2026-07-03): the supervisor does NOT run
+  `bin/release merge`;
   Steffon's self-healing **`qa-release`** (`bin/release prepare`) sweeps the whole
   reviewed queue, merges each PR into `release` (stamping `merged: "release"`),
   and flips members to `assembled` only on QA-green. **Bias to action: green
@@ -164,11 +174,11 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 
 | # | Actor | Agent (`subagent_type`) | Does | Records |
 |---|---|---|---|---|
-| 1 | **Avi** (thin gate) | `avi` | product-acceptance + `bin/reviewer-select` | review intent (pair) on the task |
-| 2 | **PRIMARY** | domain soul | deep review; spawns the LIGHT | `Verify --agent <soul>` activity + notes |
-| 2 | **LIGHT** | domain soul | focused second read | `Verify --agent <soul>` activity + notes |
+| 1 | **Avi** (SUPERVISOR — never reviews) | `avi` | product-acceptance + `bin/reviewer-select`; **spawns both reviewers in parallel** | review intent (pair) on the task |
+| 2 | **PRIMARY** | domain soul | deep review (runs `pr-review-primary.md`) | `Verify --agent <soul>` activity + notes |
+| 2 | **LIGHT** | domain soul | focused second read (runs `pr-review-light.md`); **sibling** of the primary | `Verify --agent <soul>` activity + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
-| 4 | **PRIMARY** | domain soul | verdict → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed` |
+| 4 | **Avi** (SUPERVISOR) | `avi` | collects **both** verdicts → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed` |
 
 ## Where this plugs in
 
@@ -177,7 +187,10 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
   block; this module is its formalized, agent-role how-to.
 - [`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) and
   [`../agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md)
-  — the Avi-owned SOPs that run this cascade unattended.
+  — the Avi-owned SUPERVISOR SOPs that run this cascade unattended, spawning the
+  [`pr-review-primary.md`](../agents/avi/sops/pr-review-primary.md) and
+  [`pr-review-light.md`](../agents/avi/sops/pr-review-light.md) role SOPs in
+  parallel.
 - [`parallel-agent-devops.md`](parallel-agent-devops.md) — the `bin/reviewer-select`
   mechanics, review-events API, and broader queue/scout context.
 - [`review-comment-taxonomy.md`](review-comment-taxonomy.md) — which activity type
