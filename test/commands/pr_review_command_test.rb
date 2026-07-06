@@ -22,6 +22,7 @@ class PrReviewCommandTest < Minitest::Test
     @codex_log = File.join(@dir, "codex.log")
     @task_log = File.join(@dir, "task.log")
     @sequence_log = File.join(@dir, "sequence.log")
+    @narration_log = File.join(@dir, "narration.log")
     write_fakes
   end
 
@@ -58,6 +59,9 @@ class PrReviewCommandTest < Minitest::Test
       File.open(ENV.fetch("CODEX_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
       prompt = STDIN.read
       slug = prompt[/reviewer for ([A-Za-z0-9._-]+)/, 1] || "unknown"
+      reviewer = prompt[/as ([A-Za-z0-9._-]+), a pr-review/, 1] || "unknown"
+      narration = prompt.scan(%r{^bin/agent-activity .*$})
+      File.open(ENV.fetch("NARRATION_LOG"), "a") { |f| f.puts JSON.generate([reviewer, slug, narration]) }
       File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["codex", slug, ARGV]) }
       sleep ENV.fetch("CODEX_SLEEP", "0").to_f
       if (idx = ARGV.index("-o"))
@@ -167,7 +171,8 @@ class PrReviewCommandTest < Minitest::Test
       "REVIEWER_LOG" => @reviewer_log,
       "CODEX_LOG" => @codex_log,
       "TASK_LOG" => @task_log,
-      "SEQUENCE_LOG" => @sequence_log
+      "SEQUENCE_LOG" => @sequence_log,
+      "NARRATION_LOG" => @narration_log
     }.merge(env)
 
     Open3.capture3(
@@ -185,6 +190,24 @@ class PrReviewCommandTest < Minitest::Test
     return [] unless File.exist?(path)
 
     File.readlines(path).map { |line| JSON.parse(line) }
+  end
+
+  # Prompt files are written by launch_reviewer as <slug>--<role>--<reviewer>.prompt
+  # in both dry-run and run mode; keyed by reviewer slug here.
+  def prompt_files_by_reviewer
+    Dir[File.join(@output, "**", "*.prompt")].each_with_object({}) do |path, map|
+      reviewer = File.basename(path, ".prompt").split("--").last
+      map[reviewer] = File.read(path)
+    end
+  end
+
+  def assert_narration_instructions(prompt, reviewer_slug, task_slug)
+    assert_includes prompt,
+                    "bin/agent-activity start --category Verify --agent #{reviewer_slug} " \
+                    "--task #{task_slug} --reason \"review: #{task_slug}\"",
+                    "#{reviewer_slug} prompt must open a soul-attributed Verify activity"
+    assert_includes prompt, "bin/agent-activity end --outcome",
+                    "#{reviewer_slug} prompt must close the activity with the verdict"
   end
 
   def test_prefers_latest_submitted_at_over_task_creation_time
@@ -346,6 +369,54 @@ class PrReviewCommandTest < Minitest::Test
     assert_equal "bad-pr", block_call[1]
     assert_includes block_call, "--kind"
     assert_includes block_call, "rework"
+  end
+
+  def test_reviewer_prompt_instructs_each_reviewer_to_narrate_as_its_soul
+    newest = task("narrated-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("narrated-pr", created_at: "2026-06-29T12:00:00Z",
+                                   reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([newest]), snapshot([reviewed]))
+
+    _out, err, status = run_heartbeat("--once")
+
+    assert status.success?, err
+    prompts = prompt_files_by_reviewer
+    assert_equal %w[carl shannon], prompts.keys.sort, "expected a prompt file per selected reviewer"
+
+    prompts.each do |reviewer_slug, prompt|
+      assert_narration_instructions(prompt, reviewer_slug, "narrated-pr")
+      assert_includes prompt,
+                      "bin/devops-cycle --record-scout-report narrated-pr --scout-agent #{reviewer_slug}",
+                      "scout-report recording must remain in the prompt"
+    end
+  end
+
+  def test_run_mode_delivers_narration_instructions_to_each_spawned_reviewer
+    task_record = task("narrated-run", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("narrated-run", created_at: "2026-06-29T12:00:00Z",
+                                    reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([task_record]), snapshot([reviewed]))
+
+    _out, err, status = run_heartbeat("--run", "--limit", "1")
+
+    assert status.success?, err
+    narrations = json_lines(@narration_log).to_h { |reviewer, _slug, lines| [reviewer, lines] }
+    assert_equal %w[carl shannon], narrations.keys.sort, "each spawned reviewer must receive the prompt on stdin"
+
+    narrations.each do |reviewer_slug, lines|
+      start_line = lines.find { |line| line.include?("agent-activity start") }
+      end_line = lines.find { |line| line.include?("agent-activity end") }
+      assert start_line, "#{reviewer_slug} stdin prompt missing bin/agent-activity start"
+      assert end_line, "#{reviewer_slug} stdin prompt missing bin/agent-activity end"
+      assert_includes start_line, "--category Verify"
+      assert_includes start_line, "--agent #{reviewer_slug}"
+      assert_includes start_line, "--task narrated-run"
+      assert_includes end_line, "--outcome"
+    end
+
+    moves = json_lines(@task_log).select { |args| args.first == "move" }
+    assert_equal [["move", "narrated-run", "reviewed", "--actor", "avi"]], moves,
+                 "verdict handoff must remain unchanged"
   end
 
   def test_dry_run_selects_reviewers_without_recording_intent_or_launching_codex
