@@ -2043,6 +2043,167 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
   end
 
+  # --- production smoke seal: cwd-anchored + genuinely NON-BLOCKING ------------
+  # rel-20260705-8fe04b partial ship: `bin/release ship` run from the projects
+  # root (not the hub checkout) reached step 5c, where the seal invoked a bare
+  # CWD-RELATIVE `bin/prod-smoke` — Open3.capture2e RAISES Errno::ENOENT on an
+  # unresolvable path (it never returns ok=false), so the "non-blocking SEAL"
+  # aborted the ship AFTER the prod deploy but BEFORE step 6's Conductor.ship!,
+  # stranding the board at `assembled`. Two guarantees under test:
+  #   1. the smoke invocation is ANCHORED to the hub checkout
+  #      (chdir: repo_path(APP)) — cwd-independent, like every other
+  #      repo-scoped command in this CLI;
+  #   2. an unresolvable/missing script DEGRADES to a red seal (+ the recorded
+  #      verdict + rollback guidance), never an uncaught exception — the
+  #      documented "alerts but never aborts the ship" contract.
+
+  # Inert record seam: seal/board writes are observed (SEAL-WRITE), never run
+  # heroku. The REAL Release::SmokeSeal model is exercised (bin/release.rb
+  # require_relatives it standalone).
+  SEAL_STUB = <<~'RUBY'
+    def record_release_event(*_a, **_k); end
+    def conductor(ruby, read_only: false)
+      $stdout.puts("SEAL-WRITE " + ruby.gsub("\n", " "))
+      {}
+    end
+  RUBY
+
+  # (app_groups, ship_sha, rel_slug) — the hub deployed on this ship.
+  SEAL_ARGS = %q([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => "cafebabe11111111111111111111111111111111" }, "rel-seal")
+
+  def test_seal_anchors_prod_smoke_to_the_hub_checkout
+    setup = SEAL_STUB + <<~'RUBY'
+      def repo_path(_repo) = "/srv/projects/mcritchie-studio"
+      def sh(*a, capture: false, chdir: nil)
+        $stdout.puts("SMOKE-CHDIR #{chdir.inspect}") if a[0] == "bin/prod-smoke"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "production_smoke_seal(#{SEAL_ARGS}); puts('SEAL-RETURNED')")
+
+    assert_includes out, %(SMOKE-CHDIR "/srv/projects/mcritchie-studio"),
+                     "the smoke invocation must anchor to repo_path(APP), never the caller's cwd"
+    assert_includes out, "SEAL-RETURNED"
+  end
+
+  def test_seal_degrades_a_raising_smoke_invocation_to_a_red_seal_not_an_abort
+    # `sh` raising SystemCallError is EXACTLY what the real helper does on an
+    # unresolvable path — Open3.capture2e raises Errno::ENOENT, it never
+    # returns ok=false.
+    setup = SEAL_STUB + <<~'RUBY'
+      def repo_path(_repo) = "/srv/projects/mcritchie-studio"
+      def sh(*a, capture: false, chdir: nil)
+        raise Errno::ENOENT, "bin/prod-smoke" if a[0] == "bin/prod-smoke"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; production_smoke_seal(#{SEAL_ARGS}); puts('SEAL-RETURNED'); rescue SystemCallError => e; puts('RAISED: ' + e.class.name); end")
+
+    assert_includes out, "SEAL-RETURNED",
+                     "an unresolvable smoke script must degrade, never raise out of the seal"
+    refute_includes out, "RAISED:", "the seal is non-blocking by contract — no uncaught SystemCallError"
+    assert_includes out, "PRODUCTION SMOKE SEAL FAILED", "the degraded run is a RED seal with the alert"
+    assert_includes out, "heroku rollback", "the rollback guidance still prints"
+    seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") }
+    assert seal_write, "the red seal is still recorded on the release"
+    assert_includes seal_write, "passed: false"
+    assert_includes seal_write, "bin/prod-smoke", "the seal summary carries the underlying error"
+  end
+
+  def test_seal_green_run_records_green_and_prints_no_rollback
+    setup = SEAL_STUB + <<~'RUBY'
+      def repo_path(_repo) = "/srv/projects/mcritchie-studio"
+      def sh(*a, capture: false, chdir: nil)
+        return ["1 spec, 0 failures\n", true] if a[0] == "bin/prod-smoke"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "production_smoke_seal(#{SEAL_ARGS}); puts('SEAL-RETURNED')")
+
+    seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") }
+    assert seal_write, "a green run records the seal"
+    assert_includes seal_write, "passed: true"
+    assert_includes seal_write, "@qa-readonly green", "the green summary is unchanged"
+    refute_includes out, "PRODUCTION SMOKE SEAL FAILED"
+    refute_includes out, "heroku rollback", "no rollback guidance on a green seal"
+    assert_includes out, "SEAL-RETURNED"
+  end
+
+  def test_seal_normal_red_run_still_records_red_and_prints_rollback_without_aborting
+    # A smoke suite that RAN and failed (ok=false, no raise) keeps its existing
+    # shape: red seal, "see ship log" summary, rollback guidance, normal return.
+    setup = SEAL_STUB + <<~'RUBY'
+      def repo_path(_repo) = "/srv/projects/mcritchie-studio"
+      def sh(*a, capture: false, chdir: nil)
+        return ["2 specs failed\n", false] if a[0] == "bin/prod-smoke"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "production_smoke_seal(#{SEAL_ARGS}); puts('SEAL-RETURNED')")
+
+    seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") }
+    assert seal_write
+    assert_includes seal_write, "passed: false"
+    assert_includes seal_write, "see ship log", "a normal red run keeps its summary"
+    assert_includes out, "PRODUCTION SMOKE SEAL FAILED"
+    assert_includes out, "heroku rollback"
+    assert_includes out, "SEAL-RETURNED", "a red seal never aborts the ship"
+  end
+
+  # [integration] Across the REAL `sh` → Open3 boundary (no sh stub): the script
+  # resolves via repo_path(APP) even when the process cwd is a foreign directory
+  # — the exact incident shape (ship run from the projects root).
+  def test_seal_integration_resolves_the_smoke_script_via_the_hub_checkout_not_the_cwd
+    Dir.mktmpdir do |dir|
+      hub = File.join(dir, "hub")
+      Dir.mkdir(hub)
+      Dir.mkdir(File.join(hub, "bin"))
+      script = File.join(hub, "bin", "prod-smoke")
+      File.write(script, "#!/usr/bin/env sh\necho SMOKE-RAN-FROM-HUB\nexit 0\n")
+      File.chmod(0o755, script)
+      elsewhere = File.join(dir, "elsewhere")
+      Dir.mkdir(elsewhere)
+
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\n)
+      out = run_cli(["--yes"], setup: setup,
+                    call: %(Dir.chdir(#{elsewhere.inspect}); begin; production_smoke_seal(#{SEAL_ARGS}); puts('SEAL-RETURNED'); rescue SystemCallError => e; puts('RAISED: ' + e.class.name); end))
+
+      assert_includes out, "SMOKE-RAN-FROM-HUB",
+                      "the script must resolve via repo_path(APP) from a foreign cwd"
+      refute_includes out, "RAISED:", "a foreign cwd must never ENOENT-abort the seal"
+      assert_includes out, "SEAL-RETURNED"
+      seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") }
+      assert seal_write
+      assert_includes seal_write, "passed: true"
+    end
+  end
+
+  # [integration] A hub checkout genuinely MISSING the script: the real Open3
+  # Errno::ENOENT degrades to a recorded red seal + rollback, returning normally.
+  def test_seal_integration_missing_script_degrades_to_a_red_seal_across_the_real_sh_boundary
+    Dir.mktmpdir do |dir|
+      hub = File.join(dir, "hub") # exists, but has NO bin/prod-smoke
+      Dir.mkdir(hub)
+
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\n)
+      out = run_cli(["--yes"], setup: setup,
+                    call: %(Dir.chdir(#{hub.inspect}); begin; production_smoke_seal(#{SEAL_ARGS}); puts('SEAL-RETURNED'); rescue SystemCallError => e; puts('RAISED: ' + e.class.name); end))
+
+      assert_includes out, "SEAL-RETURNED",
+                      "a genuinely missing script degrades (real Open3 ENOENT), never raises out"
+      refute_includes out, "RAISED:"
+      assert_includes out, "PRODUCTION SMOKE SEAL FAILED"
+      assert_includes out, "heroku rollback"
+      seal_write = out.lines.find { |l| l.start_with?("SEAL-WRITE") }
+      assert seal_write, "the red seal is recorded even when the script never ran"
+      assert_includes seal_write, "passed: false"
+    end
+  end
+
   # --- regression: the silent swallowed-subprocess flake ------------------------
   #
   # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced — it
