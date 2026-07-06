@@ -27,6 +27,23 @@ PRs" and stop.
 
 ## Procedure
 
+**Summon this act as an Avi subagent (interactive tree visibility).** When a
+session drives a devops cycle interactively (a terminal is attached), summon this
+act as its OWNING SOUL instead of running the supervisor bare in a background
+shell: launch an **Avi** subagent via the Agent tool (`subagent_type: avi`) and
+have that subagent run the procedure below. It renders as a live node in the
+Claude Code sub-agent tree, and — because Avi thin-delegates and the PRIMARY
+reviewer spawns the LIGHT — that Avi node NESTS its reviewers as its own child
+subagents, so the review fan-out shows up as a deeper branch under Avi rather
+than a flat wall of background shells. Feature builds already delegate through
+the Agent tool this way; this extends the same pattern to the review lane.
+
+- **Caveat.** The tree is a convenience, not the record of truth: it is
+  ephemeral (it vanishes when the session ends) and the autonomous heartbeat
+  runs with no terminal, so it renders no tree at all. The durable,
+  full-visibility surface is the Activities timeline — narrate every act there
+  regardless of whether a tree is showing.
+
 **Kick off the release timeline.** A review wave is the `Testing` stage of the
 NEXT release — notify the release so the /deployments tracker lights stage 1
 yellow (`docs/agents/modules/task-board-api.md`, "Release stage timeline"). This

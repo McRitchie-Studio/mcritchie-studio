@@ -52,6 +52,28 @@ bin/release prepare --yes
 bin/release ship --yes
 ```
 
+**Summon posture per atom (interactive tree visibility).** When you drive
+`full-cycle` interactively (a terminal is attached), summon each atom with the
+posture its own SOP prescribes, so the crew shows up as a live Claude Code
+sub-agent tree:
+
+1. **Review** — summon an **Avi** subagent via the Agent tool
+   (`subagent_type: avi`) that runs the `pr-review` procedure and NESTS its
+   reviewers (Avi thin-delegates; the PRIMARY reviewer spawns the LIGHT) as a
+   deeper branch.
+2. **QA release** — summon a **Steffon** subagent (`subagent_type: steffon`)
+   that executes `bin/release prepare --yes`.
+3. **Ship** — DIRECT-DRIVE `bin/release ship --yes` from THIS orchestrating
+   session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
+   and a wrapper agent that dies mid-ship would orphan the `release → main` state
+   with no terminal to recover it.
+
+- **Caveat.** `bin/release` is a script, so a summoned subagent is a thin driver
+  around it — the tree node is real, but the script's subprocess internals live
+  inside that agent. The tree is ephemeral (it dies with the session) and the
+  autonomous heartbeat has no terminal, so it renders no tree. The durable,
+  full-visibility surface is the Activities timeline, not the sub-agent tree.
+
 Keep the same guards each atom owns:
 
 - Review in waves of five or fewer reviewers.
