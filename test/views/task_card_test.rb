@@ -74,7 +74,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "deploy attention cards use the Studio rainbow border glow" do
+  test "deploy attention cards support single two-color and rainbow border glows" do
     task = Task.create!(title: "Assembled glow task", stage: "assembled")
     mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],
                              primary_type: "fire", generation: 1)
@@ -106,16 +106,23 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, ".task-card-stage-glow-reviewed::after"
     assert_includes css, ".task-card-stage-glow-assembled::after"
     assert_includes css, ".release-confirming-glow::after"
-    assert_includes css, "animation: deploymentRainbowSteam 20s linear infinite"
+    assert_includes css, ".task-card-stage-glow-submitted"
+    assert_includes css, "--deployment-border-gradient: linear-gradient(45deg, #22c55e, #22c55e)"
+    assert_includes css, "--deployment-border-animation: none"
+    assert_includes css, ".task-card-stage-glow-reviewed"
+    assert_includes css, "#facc15"
+    assert_includes css, "#2563eb"
+    assert_includes css, "--deployment-border-animation: deploymentBorderSteam 20s linear infinite"
+    assert_includes css, "animation: var(--deployment-border-animation)"
     assert_includes css, "background-size: 400%"
-    assert_includes css, "filter: blur(var(--deployment-rainbow-halo-blur))"
+    assert_includes css, "filter: blur(var(--deployment-border-halo-blur))"
     assert_includes css, "-webkit-mask-composite: xor"
     assert_includes css, "mask-composite: exclude"
     assert_includes css, "padding: 2px"
     assert_includes css, "#fb0094"
     assert_includes css, "#00c4ff"
     assert_includes css, "#34d399"
-    assert_includes css, "@keyframes deploymentRainbowSteam"
+    assert_includes css, "@keyframes deploymentBorderSteam"
     assert_includes css, "animation: none"
     assert_not_includes css, ".task-card-stage-glow-blocked::before"
   end

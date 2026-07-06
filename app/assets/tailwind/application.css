@@ -50,10 +50,11 @@
 
 @layer components {
   .task-card-stage-glow {
-    --deployment-rainbow-border-opacity: 0.82;
-    --deployment-rainbow-halo-opacity: 0.28;
-    --deployment-rainbow-halo-blur: 18px;
-    --deployment-rainbow-gradient:
+    --deployment-border-opacity: 0.82;
+    --deployment-border-halo-opacity: 0.28;
+    --deployment-border-halo-blur: 18px;
+    --deployment-border-animation: deploymentBorderSteam 20s linear infinite;
+    --deployment-border-gradient:
       linear-gradient(
         45deg,
         #fb0094,
@@ -69,11 +70,36 @@
       );
   }
 
+  .task-card-stage-glow-submitted {
+    --deployment-border-opacity: 0.78;
+    --deployment-border-halo-opacity: 0.26;
+    --deployment-border-halo-blur: 16px;
+    --deployment-border-animation: none;
+    --deployment-border-gradient: linear-gradient(45deg, #22c55e, #22c55e);
+  }
+
+  .task-card-stage-glow-reviewed {
+    --deployment-border-opacity: 0.86;
+    --deployment-border-halo-opacity: 0.3;
+    --deployment-border-halo-blur: 20px;
+    --deployment-border-gradient:
+      linear-gradient(
+        45deg,
+        #facc15,
+        #2563eb,
+        #facc15,
+        #2563eb,
+        #facc15,
+        #2563eb
+      );
+  }
+
   .release-confirming-glow {
-    --deployment-rainbow-border-opacity: 0.9;
-    --deployment-rainbow-halo-opacity: 0.34;
-    --deployment-rainbow-halo-blur: 24px;
-    --deployment-rainbow-gradient:
+    --deployment-border-opacity: 0.9;
+    --deployment-border-halo-opacity: 0.34;
+    --deployment-border-halo-blur: 24px;
+    --deployment-border-animation: deploymentBorderSteam 20s linear infinite;
+    --deployment-border-gradient:
       linear-gradient(
         45deg,
         #fb0094,
@@ -109,9 +135,9 @@
     position: absolute;
     pointer-events: none;
     border-radius: inherit;
-    background: var(--deployment-rainbow-gradient);
+    background: var(--deployment-border-gradient);
     background-size: 400%;
-    animation: deploymentRainbowSteam 20s linear infinite;
+    animation: var(--deployment-border-animation);
   }
 
   .task-card-stage-glow-submitted::before,
@@ -129,7 +155,7 @@
     inset: -2px;
     z-index: -1;
     padding: 2px;
-    opacity: var(--deployment-rainbow-border-opacity);
+    opacity: var(--deployment-border-opacity);
   }
 
   .task-card-stage-glow-submitted::after,
@@ -138,12 +164,12 @@
   .release-confirming-glow::after {
     inset: -7px;
     z-index: -2;
-    filter: blur(var(--deployment-rainbow-halo-blur));
-    opacity: var(--deployment-rainbow-halo-opacity);
+    filter: blur(var(--deployment-border-halo-blur));
+    opacity: var(--deployment-border-halo-opacity);
     transform: translateZ(0);
   }
 
-  @keyframes deploymentRainbowSteam {
+  @keyframes deploymentBorderSteam {
     0% {
       background-position: 0 0;
     }
