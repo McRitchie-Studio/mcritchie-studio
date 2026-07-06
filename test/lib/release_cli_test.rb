@@ -1945,6 +1945,246 @@ class ReleaseCliTest < Minitest::Test
                  "prepare's steps self-report actions into the open Remote span")
   end
 
+  # --- test-scope telemetry: run_test_scope wraps every release gate ----------
+  # Every gate the CLI runs (pre_qa_gate, the QA/prod /up smokes, post-deploy
+  # hooks, the ship test gate, the prod smoke seal) goes through run_test_scope,
+  # which emits one START + one COMPLETED/FAILED AgentAction per run — carrying
+  # {scope key, host, pass|fail, parsed counts, duration, command} — through the
+  # SAME self-report path step() uses (gated on $role_span_open, DRY-inert). The
+  # emission is captured by stubbing agent_activity (never shelling out).
+
+  # Give the wrapper a captured narration channel + an open role span so
+  # scope_action fires (the exact gating step() rides).
+  SCOPE_EMIT_STUB = <<~RUBY
+    $events = []
+    def agent_activity(*a) = ($events << a)
+    def conductor_session_id = "sess-x"
+    $role_span_open = true
+  RUBY
+
+  def test_run_test_scope_emits_start_and_completed_with_counts_on_success
+    setup = SCOPE_EMIT_STUB +
+            %(def sh(*_a, **_k) = ["141 runs, 320 assertions, 0 failures, 0 errors", true])
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(run_test_scope("ship_test_gate", "bin/rails", "test", repo: "mcritchie-studio"); print($events.inspect)))
+
+    assert_includes out, "test scope ship_test_gate START", "the wrapper emits a START action"
+    assert_includes out, "test scope ship_test_gate COMPLETED", "…and a COMPLETED action on success"
+    assert_includes out, "mcritchie-studio", "the emitted action carries the repo/host"
+    assert_includes out, "141 runs, 320 assertions, 0 failures, 0 errors", "…the parsed minitest counts"
+    assert_includes out, "pass", "…and the pass verdict"
+  end
+
+  def test_run_test_scope_emits_failed_and_returns_false_when_the_command_fails
+    setup = SCOPE_EMIT_STUB +
+            %(def sh(*_a, **_k) = ["3 runs, 3 assertions, 1 failures, 0 errors", false])
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(_o, ok = run_test_scope("qa_post_deploy", "heroku", "run", repo: "turf-monster-qa"); ) +
+                        %(print("OK=" + ok.inspect + " " + $events.inspect)))
+
+    assert_includes out, "OK=false", "the wrapper returns the command's ok flag (false) unchanged"
+    assert_includes out, "test scope qa_post_deploy FAILED", "a failed command emits a FAILED action"
+    assert_includes out, "fail", "…with the fail verdict"
+    assert_includes out, "1 failures", "…and the parsed counts"
+  end
+
+  def test_run_test_scope_emits_failed_then_reraises_when_the_command_raises
+    # A raised SystemCallError (Open3 ENOENT on a bad path) must RE-RAISE so the
+    # caller's rescue still fires — production_smoke_seal degrades it to a red
+    # seal — but a FAILED action is emitted first.
+    setup = SCOPE_EMIT_STUB +
+            %(def sh(*_a, **_k); raise Errno::ENOENT, "bin/prod-smoke"; end)
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(begin; run_test_scope("prod_smoke_seal", "bin/prod-smoke", "mcritchie-studio", repo: "mcritchie-studio"); ) +
+                        %(puts("NO-RAISE"); rescue SystemCallError => e; puts("RAISED " + e.class.name); end; print($events.inspect)))
+
+    assert_includes out, "RAISED Errno::ENOENT", "a raising command re-raises (the seal degradation depends on it)"
+    refute_includes out, "NO-RAISE", "the wrapper does not swallow the raise"
+    assert_includes out, "test scope prod_smoke_seal FAILED", "…but a FAILED action is emitted first"
+    assert_includes out, "Errno::ENOENT", "…naming the error class"
+  end
+
+  def test_run_test_scope_emits_nothing_outside_a_role_span
+    setup = <<~RUBY
+      $events = []
+      def agent_activity(*a) = ($events << a)
+      def conductor_session_id = "sess-x"
+      $role_span_open = false
+      def sh(*_a, **_k) = ["7 runs, 7 assertions, 0 failures, 0 errors", true]
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(run_test_scope("pre_qa_gate", "bin/rails", "test", repo: "mcritchie-studio"); print($events.inspect)))
+
+    assert_equal "[]", out, "no open role span → nothing to attribute → no telemetry (the step() gate)"
+  end
+
+  def test_run_test_scope_is_inert_under_dry_run
+    # A dry-run executes NOTHING: sh short-circuits before its `system`, and the
+    # telemetry rides agent_activity which is DRY-gated before its `system`. So
+    # no shell-out fires at all — neither the command nor the narration.
+    setup = <<~RUBY
+      $syscalls = []
+      def system(*a, **_k); $syscalls << a; true; end
+      def conductor_session_id = "sess-x"
+      $role_span_open = true
+    RUBY
+    out = run_cli(["--dry-run"], setup: setup,
+                  call: %(run_test_scope("ship_test_gate", "bin/rails", "test", repo: "mcritchie-studio"); ) +
+                        %(print("SYSCALLS-EMPTY=" + $syscalls.empty?.to_s)))
+
+    assert_includes out, "SYSCALLS-EMPTY=true",
+                     "a dry-run wraps but executes nothing — command + telemetry both inert (no shell-out)"
+  end
+
+  # --- parse_test_counts: lenient, nil when nothing recognizable --------------
+
+  def test_parse_test_counts_sums_minitest_summary_lines
+    assert_equal %("141 runs, 320 assertions, 0 failures, 0 errors"),
+                 eval_helper(%q{parse_test_counts("141 runs, 320 assertions, 0 failures, 0 errors").inspect}),
+                 "a single minitest summary line parses verbatim"
+    # `rails test test:system` prints one summary line PER lane — they sum.
+    assert_equal %("15 runs, 28 assertions, 1 failures, 2 errors"),
+                 eval_helper(%q{parse_test_counts("10 runs, 20 assertions, 1 failures, 0 errors\n5 runs, 8 assertions, 0 failures, 2 errors").inspect}),
+                 "multiple minitest summary lines are summed across lanes"
+  end
+
+  def test_parse_test_counts_reads_playwright_and_up_code_and_returns_nil_otherwise
+    assert_equal %("12 passed"),
+                 eval_helper(%q{parse_test_counts("Running 12 tests\n12 passed (3.2s)").inspect}),
+                 "playwright's 'N passed' parses"
+    assert_equal %("12 passed, 2 failed"),
+                 eval_helper(%q{parse_test_counts("12 passed\n2 failed").inspect}),
+                 "…with a failed count when present"
+    assert_equal %("http 200"),
+                 eval_helper(%q{parse_test_counts("200").inspect}),
+                 "a bare 3-digit /up probe body parses as an http code"
+    assert_equal "nil",
+                 eval_helper(%q{parse_test_counts("some unrecognizable output").inspect}),
+                 "nothing recognizable → nil (the summary just omits counts)"
+  end
+
+  # [integration] A REAL release gate (run_post_deploy) runs its command THROUGH
+  # run_test_scope end-to-end: the hardened heroku argv still executes, and the
+  # scope telemetry is emitted into the open span with the target-derived key.
+  def test_post_deploy_runs_through_the_telemetry_wrapper_end_to_end
+    setup = SCOPE_EMIT_STUB + <<~RUBY
+      def sh(*a, **_k)
+        $stdout.puts("SH-ARGV " + a.inspect)
+        ["1 runs, 1 assertions, 0 failures, 0 errors", true]
+      end
+      def conductor(*_a, **_k) = {}
+      REPOS = [{ "repo" => "turf-monster", "kind" => "app", "qa_app" => "turf-monster",
+                 "members" => [{ "slug" => "t-turf", "post_deploy_cmd" => "rake db:migrate" }] }]
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "run_post_deploy(REPOS, target: :qa); print($events.inspect)")
+
+    assert_includes out, "SH-ARGV", "the gate's heroku command still executes through the wrapper"
+    assert_includes out, %q("--exit-code"), "…with its argv hardening intact"
+    assert_includes out, "test scope qa_post_deploy START", "the QA post-deploy runs as a telemetered scope"
+    assert_includes out, "test scope qa_post_deploy COMPLETED", "…emitting a COMPLETED action end-to-end"
+  end
+
+  # --- gem_release_check: a gem's own release-check is a telemetered ship scope --
+  # publish_gem runs the gem's declared `release_check --build` before the push;
+  # it now runs THROUGH run_test_scope (a `gem_release_check` release scope) so it
+  # emits START + COMPLETED/FAILED like every other gate, while keeping its
+  # abort-before-publish semantics. studio-engine declares `bin/release-check`.
+
+  # A tmpdir hub whose bin/<script> exists so publish_gem's File.exist? guard fires.
+  def with_release_check_repo(script = "bin/release-check")
+    Dir.mktmpdir do |dir|
+      Dir.mkdir(File.join(dir, "bin"))
+      File.write(File.join(dir, script), "#!/usr/bin/env sh\nexit 0\n")
+      File.chmod(0o755, File.join(dir, script))
+      yield dir
+    end
+  end
+
+  def test_gem_release_check_runs_through_the_telemetry_wrapper
+    with_release_check_repo do |dir|
+      setup = SCOPE_EMIT_STUB + <<~RUBY
+        def repo_path(_repo) = #{dir.inspect}
+        def sh(*a, **_k)
+          $stdout.puts("SH " + a.inspect)
+          ["3 runs, 3 assertions, 0 failures, 0 errors", true]  # release-check green (and gem build/push/tag)
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %(publish_gem("studio-engine", "0.9.0"); print($events.inspect)))
+
+      assert_includes out, %(SH ["bin/release-check", "--build"]),
+                       "the release-check still executes with --build"
+      assert_includes out, "test scope gem_release_check START", "…now wrapped: a START action is emitted"
+      assert_includes out, "test scope gem_release_check COMPLETED", "…and a COMPLETED action on a green check"
+      assert_includes out, "studio-engine", "the emitted action carries the gem repo/host"
+    end
+  end
+
+  def test_gem_release_check_failure_emits_failed_and_aborts_before_publish
+    with_release_check_repo do |dir|
+      setup = SCOPE_EMIT_STUB + <<~RUBY
+        def repo_path(_repo) = #{dir.inspect}
+        def sh(*a, **_k)
+          $stdout.puts("SH " + a.inspect)
+          return ["1 runs, 1 assertions, 1 failures, 0 errors", false] if a[0] == "bin/release-check"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %(begin; publish_gem("studio-engine", "0.9.0"); puts("NO-ABORT"); ) +
+                          %(rescue SystemExit => e; puts("ABORTED: " + e.message); end; print($events.inspect)))
+
+      assert_includes out, "test scope gem_release_check FAILED", "a red release-check emits a FAILED action"
+      assert_includes out, "ABORTED", "…and still aborts before publishing (existing gate behavior preserved)"
+      assert_includes out, "release-check failed"
+      refute_includes out, "NO-ABORT", "the gem must not publish past a red release-check"
+      refute_includes out, %(SH ["gem", "push"), "nothing is pushed after the red check aborts"
+    end
+  end
+
+  # --- qa_smoke: `completed` only AFTER the blocking QA post-deploy hook passes --
+  # The stage stamp must not go green prematurely: prepare records qa_smoke
+  # `started` at the first QA deploy, `failed` on a boot failure, and `completed`
+  # only once every app booted AND run_post_deploy (blocking, abort!s on failure)
+  # returned green — the same "never a step early" rule 8b uses for deploy_qa.
+
+  # Capture the qa_smoke ReleaseEvent stage stamps (step + status) without a board.
+  RRE_ECHO = %(def record_release_event(_slug, step, status, *_a, **_k); $stdout.puts("RRE " + step.to_s + " " + status.to_s); end)
+
+  def test_prepare_records_qa_smoke_completed_only_after_the_post_deploy_hook_passes
+    out = run_cli(["--yes"], setup: SWEEP_FLOW_STUB + RRE_ECHO, call: "prepare")
+
+    assert_includes out, "RRE qa_smoke started", "the QA smoke opens at the first QA deploy"
+    assert_includes out, "RRE qa_smoke completed", "…and closes green once QA booted + post-deploy passed"
+    refute_includes out, "RRE qa_smoke failed", "a green run never records a failed stamp"
+    started_at   = out.index("RRE qa_smoke started")
+    completed_at = out.index("RRE qa_smoke completed")
+    assert_operator started_at, :<, completed_at, "completed lands after started"
+  end
+
+  def test_prepare_does_not_record_qa_smoke_completed_when_the_post_deploy_hook_aborts
+    # A blocking QA post-deploy hook that aborts must leave qa_smoke NOT green —
+    # the premature-green bug: the stamp used to land before this hook ran.
+    setup = SWEEP_FLOW_STUB + RRE_ECHO + %(\ndef run_post_deploy(*_a, **_k); abort!("post-deploy boom"); end)
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end))
+
+    assert_includes out, "RRE qa_smoke started", "the smoke still opens at the QA deploy"
+    assert_includes out, "ABORTED", "the blocking post-deploy hook aborts prepare"
+    refute_includes out, "RRE qa_smoke completed",
+                     "qa_smoke must NOT be stamped completed when the blocking post-deploy hook aborts"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_prepare_records_qa_smoke_failed_on_a_boot_failure
+    setup = SWEEP_FLOW_STUB + RRE_ECHO + %(\ndef wait_for_boot(_url) = false)
+    out = run_cli(["--yes"], setup: setup, call: "prepare")
+
+    assert_includes out, "RRE qa_smoke started", "the smoke opens at the QA deploy"
+    assert_includes out, "RRE qa_smoke failed", "a boot failure closes the smoke as failed"
+    refute_includes out, "RRE qa_smoke completed", "a boot failure never records a completed stamp"
+  end
+
   # --- ship preflight: every app checkout on a clean `main` before any ff ----
   # ship ff's each app repo's main → frozen SHA; a checkout left on a pr-NNN
   # branch (review agent) or with a stale schema.rb breaks the ff mid-ship. The

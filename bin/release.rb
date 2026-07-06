@@ -403,6 +403,105 @@ def close_role_span(outcome)
   $role_span_open = false
 end
 
+# --- test-scope telemetry (best-effort) --------------------------------------
+# Every test scope this CLI runs is a logged, GRADEABLE unit: run_test_scope
+# emits one START and one COMPLETED/FAILED AgentAction per run through the same
+# self-report path step() uses (agent_action → bin/agent-activity action). The
+# scope registry (config/devops_test_suites.yml `release_scopes:`) declares each
+# scope's stable key + phase/tier/host/blocks metadata. Telemetry is BEST-EFFORT
+# + NON-FATAL by the step()/agent_action contract: gated on $role_span_open
+# (outside a role span there is no activity to attribute to), inert under
+# --dry-run and without a conductor session (agent_activity guards both), and
+# any telemetry error is swallowed — only the COMMAND result is load-bearing.
+#
+# ReleaseEvent channel note: ReleaseEvent::STEPS whitelists step names
+# (inclusion validation), so per-scope telemetry deliberately stays on the
+# AgentAction channel — inventing new release-event steps would be rejected by
+# the model (and pollute the /deployments tracker if whitelisted). The gates'
+# existing release-event pairs (ship_gate, qa_smoke, prod_smoke, …) are
+# unchanged.
+
+# The release-scope registry: scope key → {phase, tier, host, blocks, mutates}.
+# Missing file / malformed YAML degrades to {} — the registry enriches
+# telemetry; it must never break the CLI.
+TEST_SCOPES =
+  begin
+    (YAML.load_file(File.expand_path("../config/devops_test_suites.yml", __dir__)) || {})
+      .fetch("release_scopes", {})
+  rescue StandardError
+    {}
+  end
+
+def scope_meta(key) = TEST_SCOPES[key.to_s] || {}
+
+# Lenient result-count parsing — nil when nothing recognizable (that's fine;
+# the summary just omits counts):
+#   minitest    "141 runs, 320 assertions, 0 failures, 0 errors" — SUMMED across
+#               summary lines (`rails test test:system` prints one per lane)
+#   playwright  "12 passed" (+ "2 failed" when present)
+#   /up probe   a bare 3-digit http code body ("200")
+def parse_test_counts(out)
+  text = out.to_s
+  runs = text.scan(/(\d+) runs?, (\d+) assertions?, (\d+) failures?, (\d+) errors?/)
+  if runs.any?
+    sums = runs.transpose.map { |col| col.sum(&:to_i) }
+    return format("%d runs, %d assertions, %d failures, %d errors", *sums)
+  end
+  if (passed = text[/(\d+) passed/, 1])
+    failed = text[/(\d+) failed/, 1]
+    return failed ? "#{passed} passed, #{failed} failed" : "#{passed} passed"
+  end
+  code = text.strip
+  return "http #{code}" if code.match?(/\A\d{3}\z/)
+
+  nil
+end
+
+# Emit one test-scope AgentAction, best-effort. Keeps step()'s $role_span_open
+# gating; any error is swallowed (agent_action already swallows its own — this
+# belt-and-suspenders covers the summary plumbing too).
+def scope_action(summary, key_method: nil)
+  agent_action(summary, key_method: key_method) if $role_span_open
+rescue StandardError
+  nil
+end
+
+# Run ONE registered test scope: emit START, run the command via sh() with the
+# call site's exact capture:/chdir: (or the given block — wait_for_boot's /up
+# poll is one scope but many curls; a block must return [out, ok]), then emit
+# COMPLETED/FAILED carrying {scope key, repo/host, pass|fail, counts, duration,
+# command}. Returns [out, ok] exactly like sh(), so call sites keep their exact
+# abort!/non-blocking behavior. A command that RAISES (Open3 ENOENT etc.) still
+# emits the FAILED action, then RE-RAISES — the call site's rescue semantics
+# (production_smoke_seal degrades it to a red seal) stay untouched.
+def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, &block)
+  meta  = scope_meta(key)
+  where = repo.to_s.empty? ? meta["host"].to_s : repo.to_s
+  printable = (label || cmd.join(" ")).to_s
+  scope_action("test scope #{key} START · #{where} · #{printable}")
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  begin
+    out, ok = block ? block.call : sh(*cmd, capture: capture, chdir: chdir)
+  rescue StandardError => e
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    scope_action("test scope #{key} FAILED · #{where} · fail · #{e.class}: #{e.message} · " \
+                 "#{format('%.1fs', elapsed)} · #{printable}", key_method: printable)
+    raise
+  end
+  elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  begin
+    parts = ["test scope #{key} #{ok ? 'COMPLETED' : 'FAILED'}", where, ok ? "pass" : "fail"]
+    counts = parse_test_counts(out)
+    parts << counts if counts
+    parts << format("%.1fs", elapsed)
+    parts << printable
+    scope_action(parts.join(" · "), key_method: printable)
+  rescue StandardError
+    nil # telemetry never breaks a release — the command result below is what matters
+  end
+  [out, ok]
+end
+
 # Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.
 # The snippet must `puts` a single JSON line; we return the parsed Hash. The
 # snippet rides as a shell-safe Base64 bootstrap (see conductor_payload) so any
@@ -611,7 +710,8 @@ def run_post_deploy(repos, target:)
     end
 
     step("post-deploy #{task}: #{printed}")
-    out, ok = sh(*heroku_argv, capture: true)
+    post_deploy_scope = target == :qa ? "qa_post_deploy" : "prod_post_deploy"
+    out, ok = run_test_scope(post_deploy_scope, *heroku_argv, capture: true, repo: app, label: "#{task}: #{cmd}")
     print(out)
     record_post_deploy_check(task: task, app: app, cmd: cmd, ok: ok)
     # In ship, add successful runs to the partial-ship "what's live" trail.
@@ -648,7 +748,7 @@ def publish_gem(repo, version)
   #    it ships one, so a red gem never gets pushed.
   if (rc = meta["release_check"]) && (DRY || File.exist?(File.join(path, rc)))
     step("gem check: #{repo} #{rc} --build")
-    _, ok = sh(rc, "--build", chdir: path)
+    _, ok = run_test_scope("gem_release_check", rc, "--build", chdir: path, repo: repo, label: "#{rc} --build")
     abort!("#{repo} release-check failed — fix before publishing (nothing pushed)") unless ok || DRY
   end
 
@@ -1063,7 +1163,7 @@ def pre_qa_gate(app_groups)
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
       abort!("could not ff #{repo} #{RELEASE_BRANCH} to origin/#{RELEASE_BRANCH} (local divergence) — resolve, then re-run") unless ff
       step("pre-QA gate #{repo}: #{cmd}")
-      _, ok = sh(*argv, chdir: path)
+      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: path, repo: repo)
     ensure
       sh("git", "-C", path, "checkout", "main", capture: true)
     end
@@ -1345,7 +1445,14 @@ def prepare
       record_release_event(rel_slug, "qa_smoke", "started")
       qa_smoke_started = true
     end
-    qa_ok &&= wait_for_boot(qa_url_for(qa_app))
+    # Route the /up boot poll through the telemetry wrapper (one scope, many
+    # curls → block returns [out, ok]). `.last` keeps qa_ok a BOOLEAN (the raw
+    # [out, ok] array is always truthy and would poison the ok flag downstream);
+    # `&&=` still short-circuits, so a failed earlier step never runs the poll.
+    qa_ok &&= run_test_scope("qa_up_smoke", repo: qa_app) do
+      booted = wait_for_boot(qa_url_for(qa_app))
+      [booted ? "200" : "", booted]
+    end.last
 
     # d. capture the deployed SHA (origin/release after any merge-forward).
     sha = ""
@@ -1384,7 +1491,17 @@ def prepare
   #    (skipping the already-done merges). WRITE → suppressed in dry-run.
   boot_failures = deployed.reject { |d| d["ok"] }
   qa_green = boot_failures.empty?
+  # Close the qa_smoke release event opened above (it recorded `started` but never
+  # a terminal status — the started-without-completed gap). `qa_smoke` IS a
+  # whitelisted ReleaseEvent::STEP, so this closes the existing pair, not a new
+  # step. Fired ONCE (matching the single `started`), guarded on qa_smoke_started.
+  # `failed` lands here on a boot failure; `completed` is DEFERRED into the else
+  # branch — it must land only after QA is ACTUALLY green through the BLOCKING
+  # post-deploy hook, never a premature green (same reason 8b defers
+  # deploy_qa:completed to the flip — "never a step early"). Best-effort.
   if boot_failures.any?
+    record_release_event(rel_slug, "qa_smoke", "failed",
+                         message: "#{boot_failures.size} app(s) never returned /up 200") if qa_smoke_started
     say("")
     say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — QA is NOT green: leaving the release `assembling`,")
     say("    swept members stay `reviewed` (merged: release). Re-run `bin/release prepare` once they boot")
@@ -1395,6 +1512,13 @@ def prepare
     #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, members
     #     stay `reviewed`, re-run resumes). dry-run prints the plan; nothing executes.
     run_post_deploy(repos, target: :qa)
+
+    # QA is ACTUALLY green now — every app booted (/up 200) AND the blocking
+    # post-deploy hook passed (run_post_deploy abort!s on failure, so REACHING
+    # this line means it's green). Only NOW close qa_smoke `completed`; a
+    # post-deploy abort must never leave a premature `completed` behind.
+    record_release_event(rel_slug, "qa_smoke", "completed",
+                         message: "all QA apps booted (/up 200) + post-deploy hooks green") if qa_smoke_started
 
     # 8b. QA is green — flip the swept members + the RC, and stamp Live-on-QA
     #     (deploy_qa:completed) in the SAME conductor call so the /deployments
@@ -1713,7 +1837,7 @@ def test_gate(repo)
   step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · before prod]")
   return if DRY
 
-  _, ok = sh(*argv, chdir: repo_path(repo))
+  _, ok = run_test_scope("ship_test_gate", *argv, chdir: repo_path(repo), repo: repo, label: cmd)
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
 end
 
@@ -1962,7 +2086,12 @@ def deploy_app(group, frozen)
       say("  (no smoke_url for #{repo} — smoke skipped)")
     else
       step("smoke: GET #{smoke}/up")
-      code, = sh("/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "#{smoke}/up", capture: true)
+      # Block form so the emitted pass/fail reflects the HTTP code, not curl's
+      # exit (curl exits 0 even on a 500 with -o/-w); abort semantics unchanged.
+      code, = run_test_scope("prod_up_smoke", repo: repo, label: "curl #{smoke}/up") do
+        out, = sh("/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "#{smoke}/up", capture: true)
+        [out, out.strip == "200"]
+      end
       say("  /up → #{code}") unless DRY
       abort!("smoke failed for #{repo} (#{smoke}/up != 200)") if !DRY && code.strip != "200"
     end
@@ -2054,7 +2183,12 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   # Open3 raises SystemCallError on a bad path, it never returns ok=false.
   smoke_error = nil
   begin
-    out, ok = sh("bin/prod-smoke", APP, capture: true, chdir: repo_path(APP))
+    # Routed through the telemetry wrapper WITHOUT changing the seal's semantics:
+    # same chdir + capture, and run_test_scope RE-RAISES a raised SystemCallError
+    # (bad/missing script path) after emitting its FAILED action, so the rescue
+    # below still degrades it to a red seal (never ok=false from Open3 raising).
+    out, ok = run_test_scope("prod_smoke_seal", "bin/prod-smoke", APP,
+                             capture: true, chdir: repo_path(APP), repo: APP)
   rescue SystemCallError => e
     out, ok, smoke_error = "", false, e.message
   end
