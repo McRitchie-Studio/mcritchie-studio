@@ -237,9 +237,15 @@
           <span class="text-[9px] text-muted normal-case tracking-normal"><%= activity_count %> notes</span>
         <% end %>
       </div>
-      <p class="mt-1 text-[11px] leading-snug text-secondary line-clamp-2 break-words"
-         data-test="activity-description"
-         title="<%= latest_activity.description %>"><%= latest_activity.description %></p>
+      <%# Comment/notes preview — a single line that fades at its overflowing edge and
+          marquee-scrolls to the end while the card is hovered (mirrors the title via the
+          card-level Alpine `hovered`), snapping back on leave. The full note stays
+          available through the title tooltip. %>
+      <div class="mt-1 min-w-0" data-test="activity-description"
+           title="<%= latest_activity.description %>">
+        <%= render "components/overflow_fade", text: latest_activity.description,
+              scroll_when: "hovered", class: "text-[11px] leading-snug text-secondary" %>
+      </div>
     </div>
   <% end %>
 
