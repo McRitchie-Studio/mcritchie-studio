@@ -95,7 +95,7 @@
 
   <%# Mobile priority-columns — the collapsed Cost/Details/grade panel, revealed
       together with the raw actions when the activity row is tapped (x-show="open"). %>
-  <tr class="aa-mobile-detail" x-show="open">
+  <tr class="aa-mobile-detail" id="aa-mobile-detail-<%= activity.id %>" x-show="open">
     <td colspan="7">
       <div class="aa-md-grid">
         <div class="aa-md-block">
