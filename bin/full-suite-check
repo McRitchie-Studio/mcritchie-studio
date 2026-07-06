@@ -23,6 +23,17 @@
 #   bin/full-suite-check <task-slug> --print   # run + print the evidence lines, don't record
 #   bin/full-suite-check --print               # run standalone (no task), just print
 #
+# Test-scope telemetry: each lane self-reports a kind=test_scope AgentAction
+# (event_slug=<lane key>, result_slug=pass|fail, duration_ms) through the SAME
+# `bin/agent-activity action` verb bin/release.rb's run_test_scope uses, so a
+# LOCAL cert run is a gradeable unit in /alex/pipeline like a release run. It is
+# best-effort/non-fatal, gated on a live session, and inert when no activity is
+# open (the verb self-checks) — telemetry NEVER breaks or slows a cert. The lane
+# keys are registered under `full_suite_scopes:` in config/devops_test_suites.yml.
+# CI telemetry (emitting the same verdicts from GitHub Actions) is a documented
+# follow-up — task `test-telemetry-from-ci` — deferred because it needs a new CI
+# secret to mint a board token and a non-session attribution path; NOT built here.
+#
 # Test/CI seams (so the orchestration is exercisable without a real multi-minute run):
 #   FULL_SUITE_TEST_DB_RESET_CMD  override the test DB reset command
 #                                (default: bin/rails db:test:purge db:test:prepare)
@@ -30,6 +41,8 @@
 #   FULL_SUITE_TEST_CMD     override the test lane command   (default: bin/rails test)
 #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
 #   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
+#   FULL_SUITE_AGENT_ACTIVITY  override the narration CLI path (default: bin/agent-activity);
+#                              tests point it at a stub that logs the emit argv
 #
 # Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
 # fingerprint (nothing certified).
@@ -44,6 +57,22 @@ require_relative "lib/repo_root"
 # CODE we run + fingerprint, though, roots at the agent's worktree (below).
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = File.expand_path("task", __dir__)
+
+# The narration CLI — the SAME emit seam bin/release.rb's run_test_scope
+# self-reports through (its agent_action shells this exact `action` verb). We fire
+# it FORGET-fully for telemetry only; FULL_SUITE_AGENT_ACTIVITY overrides it for
+# tests (a stub that logs argv instead of POSTing).
+AGENT_ACTIVITY = ENV.fetch("FULL_SUITE_AGENT_ACTIVITY", File.expand_path("agent-activity", __dir__))
+
+# Stable test-scope key per cert lane — registered under `full_suite_scopes:` in
+# config/devops_test_suites.yml (which supplies each key's phase/tier/host chips
+# on the /alex/pipeline Test-runs band). NEVER rename a key casually: emitted
+# telemetry and grading key off it. A label absent from this map emits nothing.
+LANE_SCOPES = {
+  "test-db-reset" => "full_suite_db_reset",
+  "full-suite"    => "full_suite_test",
+  "rubocop"       => "full_suite_rubocop"
+}.freeze
 
 options = { print: false }
 OptionParser.new do |o|
@@ -123,10 +152,54 @@ rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
 skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"
 
+# The live agent session id (Claude or Codex), or "" when none — the telemetry
+# session gate. Blank means "no session to attribute to": skip the emit entirely,
+# exactly as bin/release.rb's agent_activity does (`return unless session`).
+def agent_session_id
+  id = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  id.empty? ? ENV["CODEX_THREAD_ID"].to_s.strip : id
+end
+
+# Best-effort test-scope telemetry — the local-cert MIRROR of bin/release.rb's
+# run_test_scope. Emits ONE kind=test_scope AgentAction per lane through the SAME
+# `bin/agent-activity action` verb release.rb self-reports through, tagged
+# event_slug=<scope key>, result_slug=pass|fail, duration_ms=<wall-clock>. So a
+# local `bin/full-suite-check` cert becomes a gradeable unit in /alex/pipeline
+# exactly like a release run.
+#
+# GUARDS mirror run_test_scope EXACTLY so telemetry NEVER breaks or slows a cert:
+#   - session gate: no CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID → skip the
+#     shell-out (agent_activity's own `return unless session`).
+#   - span gate: the `action` verb SELF-CHECKS the open-activity marker and no-ops
+#     when none is open — so a cert run outside a narrated activity emits nothing.
+#   - best-effort: output is discarded, every error is swallowed, and the verb
+#     always exits 0 — the LANE's own pass/fail is the only load-bearing result.
+def emit_test_scope(scope, ok, duration_ms, cmd)
+  return unless scope
+  return if agent_session_id.empty?
+
+  verdict = ok ? "pass" : "fail"
+  summary = "test scope #{scope} #{ok ? 'COMPLETED' : 'FAILED'} · local · #{verdict} · " \
+            "#{format('%.1fs', duration_ms / 1000.0)} · #{cmd}"
+  system(AGENT_ACTIVITY, "action",
+         "--summary", summary,
+         "--kind", "test_scope",
+         "--event-slug", scope,
+         "--result-slug", verdict,
+         "--duration-ms", duration_ms.to_s,
+         "--key-method", cmd.to_s,
+         out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil # telemetry never breaks a cert — the lane result the caller returns is what matters
+end
+
 def run_lane(label, cmd, root, env: {})
   warn "== #{label}: #{cmd} =="
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   ok = system(env, cmd, chdir: root)
+  duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
+  emit_test_scope(LANE_SCOPES[label], ok, duration_ms, cmd)
   ok
 end
 

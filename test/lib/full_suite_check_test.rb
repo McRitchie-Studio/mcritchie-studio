@@ -249,4 +249,110 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal "#!/bin/sh\necho not-ours\n", File.read(foreign), "a foreign hook must be left untouched"
     end
   end
+
+  # --- test-scope telemetry (A3) -----------------------------------------------
+  # Each cert lane self-reports a kind=test_scope AgentAction through the SAME
+  # bin/agent-activity `action` verb bin/release.rb's run_test_scope uses. We point
+  # FULL_SUITE_AGENT_ACTIVITY at a STUB that logs its argv (no board POST) and FORCE
+  # the session env so a shelled run never emits into THIS live session — it emits
+  # into the fake session we set, or (when blank) not at all.
+
+  # The session env keys the emit's session gate reads. Neutralize BOTH so the test
+  # never inherits the live session; the caller sets CLAUDE_CODE_SESSION_ID.
+  SESSION_KEYS = %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].freeze
+
+  # A stub agent-activity: appends its tab-joined argv to STUB_LOG, exits 0.
+  def write_activity_stub(dir)
+    stub = File.join(dir, "fake-agent-activity")
+    File.write(stub, <<~RUBY)
+      #!#{RbConfig.ruby}
+      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(ARGV.join("\\t")) }
+    RUBY
+    FileUtils.chmod("+x", stub)
+    stub
+  end
+
+  # Run the cert with the emit seam pointed at `agent_activity` and the session env
+  # forced to `session` ("" ⇒ no session). Returns [out, exitcode, emits] where
+  # emits is an Array<Hash> of parsed emit flags (empty when nothing emitted).
+  def run_check_with_telemetry(dir, agent_activity:, session:, test_cmd: "true", rubocop_cmd: "true", reset_cmd: "true")
+    log = File.join(dir, "emit.log")
+    env = {
+      "FULL_SUITE_ROOT" => dir,
+      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
+      "FULL_SUITE_TEST_CMD" => test_cmd,
+      "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd,
+      "FULL_SUITE_AGENT_ACTIVITY" => agent_activity,
+      "STUB_LOG" => log
+    }
+    SESSION_KEYS.each { |k| env[k] = (k == "CLAUDE_CODE_SESSION_ID" ? session : "") }
+    out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
+    code = $?.exitstatus
+    emits = File.exist?(log) ? File.readlines(log, chomp: true).map { |line| parse_emit(line) } : []
+    [out, code, emits]
+  end
+
+  # Parse a tab-joined `action …` argv into { "flag" => value } (drops the -- prefix).
+  def parse_emit(line)
+    parts = line.split("\t")
+    parts.each_index.each_with_object({}) do |i, flags|
+      flags[parts[i].sub(/\A--/, "")] = parts[i + 1] if parts[i].start_with?("--")
+    end
+  end
+
+  def test_emits_a_tagged_test_scope_action_per_lane
+    # [unit] each green lane self-reports kind=test_scope + event_slug + pass + duration_ms.
+    with_repo do |dir|
+      stub = write_activity_stub(dir)
+      out, code, emits = run_check_with_telemetry(dir, agent_activity: stub, session: "fake-session-abc")
+      assert_equal 0, code, out
+      assert_equal %w[full_suite_db_reset full_suite_test full_suite_rubocop],
+                   emits.map { |e| e["event-slug"] }, "one tagged emit per lane, in run order"
+      emits.each do |e|
+        assert_equal "test_scope", e["kind"]
+        assert_equal "pass", e["result-slug"]
+        assert_match(/\A\d+\z/, e["duration-ms"].to_s, "duration_ms is a millisecond integer")
+        refute_nil e["summary"], "carries a human summary"
+      end
+    end
+  end
+
+  def test_telemetry_is_a_no_op_when_no_session_is_present
+    # [unit] no live session ⇒ the session gate skips the shell-out entirely, so the
+    # cert stays green and emits NOTHING (mirrors run_test_scope's session guard).
+    with_repo do |dir|
+      stub = write_activity_stub(dir)
+      out, code, emits = run_check_with_telemetry(dir, agent_activity: stub, session: "")
+      assert_equal 0, code, out
+      assert_empty emits, "no session ⇒ no emit"
+    end
+  end
+
+  def test_telemetry_never_breaks_a_cert_when_the_emit_seam_is_broken
+    # [unit] a missing/broken agent-activity must be swallowed — the cert's own
+    # lane result is the ONLY load-bearing outcome; telemetry never fails it.
+    with_repo do |dir|
+      out, code, = run_check_with_telemetry(
+        dir, agent_activity: File.join(dir, "does-not-exist"), session: "fake-session-xyz"
+      )
+      assert_equal 0, code, "broken telemetry target must not fail a green cert: #{out}"
+    end
+  end
+
+  def test_cert_run_self_reports_lanes_end_to_end_including_a_fail_verdict
+    # [integration] a full cert run self-reports every lane it runs — a red rubocop
+    # lane emits result_slug=fail (and still exits the cert non-zero), while the
+    # lanes before it emit pass, all in run order.
+    with_repo do |dir|
+      stub = write_activity_stub(dir)
+      out, code, emits = run_check_with_telemetry(dir, agent_activity: stub, session: "fake-session-def", rubocop_cmd: "false")
+      assert_equal 1, code, "a red lane fails the cert: #{out}"
+      by_slug = emits.to_h { |e| [e["event-slug"], e["result-slug"]] }
+      assert_equal "pass", by_slug["full_suite_db_reset"]
+      assert_equal "pass", by_slug["full_suite_test"]
+      assert_equal "fail", by_slug["full_suite_rubocop"], "the red lane self-reports a fail verdict"
+      assert_equal %w[full_suite_db_reset full_suite_test full_suite_rubocop],
+                   emits.map { |e| e["event-slug"] }, "lanes self-report in run order"
+    end
+  end
 end
