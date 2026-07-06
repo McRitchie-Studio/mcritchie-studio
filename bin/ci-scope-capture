@@ -1,0 +1,233 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ci-scope-capture — make a PR's GitHub Actions run GRADEABLE by ingesting its
+# check verdicts LOCALLY, the same shape a local cert (bin/full-suite-check) and a
+# release run (bin/release) already emit.
+#
+# WHY LOCAL INGESTION (no CI POST): CI has no board token and a fork PR couldn't be
+# trusted with one, so instead of POSTing FROM GitHub Actions we READ the finished
+# checks with `gh pr checks` and SELF-REPORT them from the session — reusing the
+# EXACT `bin/agent-activity action` verb bin/release.rb and bin/full-suite-check
+# self-report through. CI results just become another SOURCE of kind=test_scope
+# AgentActions on /alex/pipeline. NO CI secret, NO ci.yml change, NO server change.
+#
+# It reads:  gh pr checks <pr> --json name,bucket,startedAt,completedAt
+#   bucket ∈ pass | fail | pending | skipping | cancel
+# For each job whose bucket is pass or fail (pending/skipping/cancel are skipped —
+# not a verdict yet), it emits ONE test_scope action:
+#   event_slug  = ci_<normalized job name>   (ci_test, ci_lint, ci_scan_ruby, ci_scan_js)
+#   result_slug = pass | fail
+#   duration_ms = completedAt - startedAt, in ms
+#   idempotency_key = ci:<pr>:<headSha>:<jobName>   (so a re-read never doubles a row)
+# The ci_<key>s are registered under `ci_scopes:` in config/devops_test_suites.yml,
+# which supplies each row's phase/tier/host chips on the pipeline's Test-runs band.
+#
+# GUARDS mirror bin/full-suite-check's emit_test_scope EXACTLY so telemetry NEVER
+# breaks or slows anything and is a pure no-op with no session/span:
+#   - session gate: no CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID → emit nothing.
+#   - span gate: the `action` verb SELF-CHECKS the open-activity marker and no-ops
+#     when none is open — so running this outside a narrated activity emits nothing.
+#   - best-effort: output discarded, every error swallowed; the script ALWAYS exits 0.
+# Idempotency is enforced server-side by AgentAction.capture (find-first on the key
+# + a partial unique index), so re-reading a PR's checks (dor-check / preflight run
+# twice) never creates a duplicate row.
+#
+# Usage:
+#   bin/ci-scope-capture <pr-number>          # ingest that PR's checks
+#   bin/ci-scope-capture <task-slug>          # resolve the PR from the task, then ingest
+#   bin/ci-scope-capture <pr>  --dry-run      # print what WOULD emit, POST nothing
+#
+# Test/CI seams (so the parse+emit is exercisable without hitting the network):
+#   CI_SCOPE_CHECKS_JSON     literal `gh pr checks --json …` JSON to parse (skips the gh call)
+#   CI_SCOPE_HEAD_SHA        the PR head sha for the idempotency key (skips `gh pr view`)
+#   CI_SCOPE_PR              force the PR number (skips task/branch resolution)
+#   CI_SCOPE_AGENT_ACTIVITY  override the narration CLI path (default: bin/agent-activity);
+#                            tests point it at a stub that logs the emit argv
+
+require "json"
+require "time"
+
+ROOT = File.expand_path("..", __dir__)
+TASK_BIN = File.expand_path("task", __dir__)
+
+# The narration CLI — the SAME emit seam bin/full-suite-check and bin/release.rb
+# self-report through. Fired forget-fully for telemetry only; overridable for tests.
+AGENT_ACTIVITY = ENV.fetch("CI_SCOPE_AGENT_ACTIVITY", File.expand_path("agent-activity", __dir__))
+
+# The check-run buckets that carry a real verdict. pending/skipping/cancel are not
+# a completed pass/fail, so they emit nothing (a later re-read picks them up).
+VERDICT_BUCKETS = { "pass" => "pass", "fail" => "fail" }.freeze
+
+# The live agent session id (Claude or Codex), or "" when none — the telemetry
+# session gate. Blank means "no session to attribute to": skip the emit entirely,
+# exactly as bin/full-suite-check's emit_test_scope does.
+def agent_session_id
+  id = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
+  id.empty? ? ENV["CODEX_THREAD_ID"].to_s.strip : id
+end
+
+# Run a command, return its STDOUT (String), swallowing every failure to "". Used
+# for the read-only gh / task lookups — a missing binary or a non-zero exit (e.g.
+# `gh pr checks` exits non-zero when a check failed, yet still prints its JSON)
+# must degrade to a best-effort no-op, never raise.
+def capture_stdout(*cmd)
+  out = IO.popen(cmd, err: File::NULL, &:read)
+  out.to_s
+rescue StandardError
+  ""
+end
+
+# Normalize a check-run name to its stable ci_<name> scope key. For GitHub Actions
+# the check name is the job name (test, lint, scan_ruby, scan_js); a required-check
+# name can be prefixed "Workflow / job", so keep only the last "/"-segment. Returns
+# nil for a name that normalizes to empty.
+def normalize_job_name(name)
+  base = name.to_s.split(%r{\s*/\s*}).last.to_s
+  slug = base.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
+  slug.empty? ? nil : "ci_#{slug}"
+end
+
+# Elapsed ms between two ISO8601 stamps, or 0 when either is blank/unparseable —
+# the duration chip degrades to nothing rather than sinking the row.
+def duration_ms(started_at, completed_at)
+  return 0 if started_at.to_s.strip.empty? || completed_at.to_s.strip.empty?
+
+  ((Time.parse(completed_at) - Time.parse(started_at)) * 1000).round
+rescue ArgumentError, TypeError
+  0
+end
+
+# The PR number for the argument: an explicit override, a bare number / PR URL, or
+# a task slug resolved via the board's devops.pr (then a `gh pr view feat/<slug>`
+# fallback). "" when it can't be resolved.
+def resolve_pr(arg)
+  forced = ENV["CI_SCOPE_PR"].to_s.strip
+  return forced unless forced.empty?
+  return arg if arg =~ /\A\d+\z/
+  if (m = arg[%r{/pull/(\d+)}, 1])
+    return m
+  end
+
+  from_task = capture_stdout(TASK_BIN, "field", arg, "pr").to_s.scan(/\d+/).last
+  return from_task if from_task
+
+  capture_stdout("gh", "pr", "view", "feat/#{arg}", "--json", "number", "--jq", ".number").strip
+end
+
+# The PR head sha for the idempotency key: an explicit override, else `gh pr view`.
+# "" when unknown — the emit then omits the key rather than risk a WRONG one that
+# would collide a new-sha verdict with an old row (best-effort: better a possible
+# dup than a lost verdict).
+def resolve_head_sha(pr)
+  forced = ENV["CI_SCOPE_HEAD_SHA"].to_s.strip
+  return forced unless forced.empty?
+  return "" if pr.to_s.strip.empty?
+
+  capture_stdout("gh", "pr", "view", pr, "--json", "headRefOid", "--jq", ".headRefOid").strip
+end
+
+# The raw `gh pr checks --json …` JSON for a PR: the CI_SCOPE_CHECKS_JSON seam wins
+# (tests inject a fixture), else shell gh. gh pr checks EXITS NON-ZERO when a check
+# is failing/pending but still prints the JSON, so we read stdout regardless.
+def checks_json(pr)
+  injected = ENV["CI_SCOPE_CHECKS_JSON"]
+  return injected unless injected.to_s.strip.empty?
+
+  capture_stdout("gh", "pr", "checks", pr, "--json", "name,bucket,startedAt,completedAt")
+end
+
+# Parse the checks JSON into [{name, bucket, started_at, completed_at}, …], or []
+# on any malformed/empty input — a bad read degrades to "nothing to ingest".
+def parse_checks(raw)
+  data = JSON.parse(raw.to_s)
+  rows = data.is_a?(Hash) ? data["checks"] : data
+  Array(rows).map do |row|
+    {
+      "name" => row["name"].to_s,
+      "bucket" => row["bucket"].to_s,
+      "started_at" => row["startedAt"].to_s,
+      "completed_at" => row["completedAt"].to_s
+    }
+  end
+rescue JSON::ParserError, TypeError
+  []
+end
+
+# Best-effort test-scope telemetry for ONE CI job — the CI-ingestion MIRROR of
+# bin/full-suite-check's emit_test_scope. Emits ONE kind=test_scope AgentAction
+# through the SAME `bin/agent-activity action` verb, tagged event_slug=<ci scope>,
+# result_slug=pass|fail, duration_ms, plus the stable idempotency_key. Guards match
+# emit_test_scope EXACTLY: session gate, output discarded, errors swallowed. When
+# --dry-run, prints the argv instead of shelling.
+def emit_ci_scope(scope, verdict, ms, job_name, idem_key, dry_run:)
+  return if scope.nil?
+  return if agent_session_id.empty?
+
+  summary = "test scope #{scope} #{verdict == 'pass' ? 'COMPLETED' : 'FAILED'} · ci · #{verdict} · " \
+            "#{format('%.1fs', ms / 1000.0)} · #{job_name}"
+  argv = [AGENT_ACTIVITY, "action",
+          "--summary", summary,
+          "--kind", "test_scope",
+          "--event-slug", scope,
+          "--result-slug", verdict,
+          "--duration-ms", ms.to_s,
+          "--key-method", "gh pr checks"]
+  argv += ["--idempotency-key", idem_key] unless idem_key.to_s.empty?
+
+  if dry_run
+    warn "would emit: #{argv.drop(2).join(' ')}"
+    return
+  end
+
+  system(*argv, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil # telemetry never breaks — this is a read-only ingest, there is no caller to fail
+end
+
+def main(argv)
+  dry_run = argv.delete("--dry-run")
+  arg = argv.shift.to_s.strip
+  if arg.empty?
+    warn "usage: bin/ci-scope-capture <pr-number|task-slug> [--dry-run]"
+    return 0
+  end
+
+  pr = resolve_pr(arg)
+  if pr.to_s.strip.empty?
+    warn "ci-scope-capture: could not resolve a PR from #{arg.inspect} — nothing ingested."
+    return 0
+  end
+
+  head_sha = resolve_head_sha(pr)
+  checks = parse_checks(checks_json(pr))
+  if checks.empty?
+    warn "ci-scope-capture: no CI checks found for PR ##{pr} — nothing ingested."
+    return 0
+  end
+
+  emitted = 0
+  skipped = 0
+  checks.each do |check|
+    verdict = VERDICT_BUCKETS[check["bucket"]]
+    if verdict.nil?
+      skipped += 1
+      next
+    end
+
+    scope = normalize_job_name(check["name"])
+    ms = duration_ms(check["started_at"], check["completed_at"])
+    idem_key = head_sha.empty? ? "" : "ci:#{pr}:#{head_sha}:#{check['name']}"
+    emit_ci_scope(scope, verdict, ms, check["name"], idem_key, dry_run: dry_run)
+    emitted += 1
+  end
+
+  gate = agent_session_id.empty? ? " (no session — inert)" : ""
+  warn "ci-scope-capture: PR ##{pr} — #{emitted} verdict(s) ingested, #{skipped} pending/skipped#{gate}."
+  0
+rescue StandardError => e
+  warn "ci-scope-capture: swallowed #{e.class}: #{e.message} — telemetry never breaks."
+  0
+end
+
+exit(main(ARGV))

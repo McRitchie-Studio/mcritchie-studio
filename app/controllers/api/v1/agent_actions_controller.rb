@@ -72,7 +72,8 @@ module Api
           :source_turn_uuid, # optional assistant-turn id N actions may share (dedupe key)
           :stage,            # optional coarse task stage at capture time
           :occurred_at,      # optional ISO8601; defaults to capture time
-          :duration_ms       # optional wall-clock duration
+          :duration_ms,      # optional wall-clock duration
+          :idempotency_key   # optional stable dedupe key (CI ingestion re-reads a PR's checks)
         )
       end
     end

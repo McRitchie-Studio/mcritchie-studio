@@ -1,6 +1,6 @@
 # Canonical test-scope registry.
 #
-# Three sections:
+# Four sections:
 #   apps.<slug>.suites — the per-app test-suite CATALOG (`bin/devops-tests`
 #     prints it for fresh sessions; docs/agents/modules/testing.md documents it).
 #   release_scopes — the scopes `bin/release` RUNS (run_test_scope in
@@ -12,12 +12,17 @@
 #     is a gradeable /alex/pipeline unit like a release run. Kept SEPARATE from
 #     release_scopes so bin/release.rb's registry stays release-only; the pipeline
 #     helper reads BOTH sections for phase/tier/host chips.
+#   ci_scopes — the GitHub Actions jobs `bin/ci-scope-capture` INGESTS. It reads a
+#     PR's `gh pr checks` and self-reports one kind=test_scope AgentAction per
+#     completed job through the SAME `action` verb — so a CI run is a gradeable
+#     /alex/pipeline unit like a local cert or release run, WITHOUT a CI secret,
+#     ci.yml change, or server POST from CI. Keys match ci.yml's jobs.
 #
 # Every suite/scope carries a STABLE `key` (never rename one casually — emitted
 # telemetry and grading key off it) plus:
 #   phase:  build | ci | qa | ship   — where in the pipeline it runs
 #   tier:   unit | integration | e2e | smoke | build | hook | full
-#   host:   local | qa | devnet | production
+#   host:   local | qa | devnet | production | ci   (ci = a GitHub Actions runner)
 #   blocks: blocking | seal | advisory — blocking gates abort their pipeline;
 #           a seal records a verdict post-deploy without aborting; advisory
 #           informs only
@@ -289,5 +294,42 @@ full_suite_scopes:
     phase: build
     tier: build
     host: local
+    blocks: blocking
+    mutates: false
+
+# The GitHub Actions jobs bin/ci-scope-capture INGESTS from a PR's `gh pr checks`.
+# Each maps a ci.yml job to a stable test_scope key (event_slug = the key below),
+# so a completed CI job becomes a gradeable /alex/pipeline unit like a local cert.
+# host: ci — a GitHub Actions runner, not a local/qa/prod host. blocking: these
+# are the PR's required checks (ci.yml runs them on every pull_request). The job
+# name is normalized to ci_<name> at capture; a job with no key here still emits
+# (its event_slug just lands without phase/tier/host chips).
+ci_scopes:
+  ci_test:
+    description: ci.yml `test` job — bin/rails db:test:prepare test test:system on a GitHub runner (the full CI suite)
+    phase: ci
+    tier: full
+    host: ci
+    blocks: blocking
+    mutates: false
+  ci_lint:
+    description: ci.yml `lint` job — bin/rubocop -f github on a GitHub runner
+    phase: ci
+    tier: build
+    host: ci
+    blocks: blocking
+    mutates: false
+  ci_scan_ruby:
+    description: ci.yml `scan_ruby` job — bin/brakeman static analysis on a GitHub runner
+    phase: ci
+    tier: build
+    host: ci
+    blocks: blocking
+    mutates: false
+  ci_scan_js:
+    description: ci.yml `scan_js` job — bin/importmap audit on a GitHub runner
+    phase: ci
+    tier: build
+    host: ci
     blocks: blocking
     mutates: false

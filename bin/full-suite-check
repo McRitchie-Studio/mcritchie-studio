@@ -30,9 +30,10 @@
 # best-effort/non-fatal, gated on a live session, and inert when no activity is
 # open (the verb self-checks) — telemetry NEVER breaks or slows a cert. The lane
 # keys are registered under `full_suite_scopes:` in config/devops_test_suites.yml.
-# CI telemetry (emitting the same verdicts from GitHub Actions) is a documented
-# follow-up — task `test-telemetry-from-ci` — deferred because it needs a new CI
-# secret to mint a board token and a non-session attribution path; NOT built here.
+# CI telemetry emits the SAME test_scope verdicts for a PR's GitHub Actions run —
+# not from CI (no board token there) but by LOCAL INGESTION: bin/ci-scope-capture
+# reads `gh pr checks` and self-reports them through this exact `action` verb
+# (`ci_scopes:` in the same registry). Same source, another origin.
 #
 # Test/CI seams (so the orchestration is exercisable without a real multi-minute run):
 #   FULL_SUITE_TEST_DB_RESET_CMD  override the test DB reset command

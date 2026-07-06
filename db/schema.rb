@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_05_030000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_06_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -87,6 +87,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_05_030000) do
     t.integer "duration_ms"
     t.string "event_slug"
     t.boolean "feedback_anchor", default: false, null: false
+    t.string "idempotency_key"
     t.text "input"
     t.text "key_method"
     t.string "key_method_lang"
@@ -108,6 +109,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_05_030000) do
     t.datetime "updated_at", null: false
     t.index ["agent_activity_id"], name: "index_agent_actions_on_agent_activity_id"
     t.index ["feedback_anchor"], name: "index_agent_actions_on_feedback_anchor"
+    t.index ["idempotency_key"], name: "index_agent_actions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["occurred_at"], name: "index_agent_actions_on_occurred_at"
     t.index ["session_id", "seq"], name: "index_agent_actions_on_session_id_and_seq"
     t.index ["source_turn_uuid"], name: "index_agent_actions_on_source_turn_uuid"
