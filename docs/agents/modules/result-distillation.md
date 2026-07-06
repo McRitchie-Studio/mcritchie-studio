@@ -35,18 +35,24 @@ run, a query that informs a verdict or the next step — the agent records a
 recorded with:
 
 ```bash
-bin/agent-activity action --summary "checked <X>, found <Y>, therefore <Z>"
+bin/agent-activity action --finding --summary "checked <X>, found <Y>, therefore <Z>"
 ```
 
-`action` self-reports one finding as an `AgentAction` (actor `agent`) attached to
-the currently-open activity, so the trajectory shows the *judgment* beside the raw
-rows instead of a bare re-read the next reader has to interpret. It is
-**non-fatal** narration — it never blocks the work.
+`--finding` is the load-bearing flag: it tags the row `kind=finding` (the blessed
+shorthand for `--kind finding`), so the trajectory renders a `FINDING · <conclusion>`
+row and findings stay queryable as **one class**. Omit it and the action defaults
+to `kind=bash` — a raw operation row, not the distilled finding this policy is
+about. `action` self-reports one finding as an `AgentAction` (actor `agent`)
+attached to the currently-open activity, so the trajectory shows the *judgment*
+beside the raw rows instead of a bare re-read the next reader has to interpret. It
+is **non-fatal** narration — it never blocks the work.
 
-Routine **paging re-reads** — reopening a file only to see the next chunk, with no
-judgment attached — are **not** findings and should be **suppressed** rather than
-distilled (that suppression is a separate mechanism; this policy governs the
-positive case: *when there IS judgment, record it*).
+Routine **paging re-reads** — reopening the harness's OWN spilled tool-output (a
+large result the harness wrote to a file under a `tool-results/` directory) only to
+read the next chunk, with no judgment attached — are **not** findings and are
+**suppressed** by a separate mechanism. That suppression targets **only** those
+spill-file re-reads; genuine source-file paging is deliberately **kept**. This
+policy governs the positive case: *when there IS judgment, record it.*
 
 ## Two grains, nested
 
@@ -55,7 +61,7 @@ policy is about **using them as a reduction ladder**, not about new machinery.
 
 | Grain | What it is | How it's recorded | Answers |
 |---|---|---|---|
-| **Action-level finding** | The judgment on ONE decision-bearing result | `bin/agent-activity action --summary "checked X, found Y, therefore Z"` | "What did this result tell me?" |
+| **Action-level finding** | The judgment on ONE decision-bearing result | `bin/agent-activity action --finding --summary "checked X, found Y, therefore Z"` | "What did this result tell me?" |
 | **Activity-level verdict** | The outcome that SYNTHESIZES an activity's findings | the `--outcome` on `bin/agent-activity next` / `end` | "What did this unit of work conclude?" |
 
 The verdict is the coarser reduction: it rolls several action-level findings into
@@ -71,7 +77,7 @@ feed the learning loop.
 
 ```
 raw tool result        (DATA — auto-captured, one row per tool call)
-  └─ action finding     (DATA + judgment — bin/agent-activity action --summary)
+  └─ action finding     (DATA + judgment — bin/agent-activity action --finding --summary)
        └─ activity verdict   (the --outcome that synthesizes the findings)
             └─ learning-loop insight   (Alex heartbeat distills verdicts → banked insight)
 ```
@@ -96,6 +102,9 @@ noise dressed as signal.
 
 ## How to record a finding
 
+- Always pass `--finding` — `bin/agent-activity action --finding --summary "…"`.
+  It tags the row `kind=finding` so it renders as a `FINDING` row and stays
+  queryable as one class; without it the action is a plain `kind=bash` row.
 - Keep the `--summary` to one line in `validate → resolve` form — name the check,
   the observation, and the consequence. "Ran dor-check, it passed" is weak; "ran
   dor-check, it flagged missing integration tier, therefore added the request
