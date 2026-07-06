@@ -94,6 +94,9 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "assembled", card["data-stage-glow"]
     assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-assembled"
+    assert_match(/--studio-border-glow-offset: \d+%;/, card["style"])
+    assert_match(/--studio-border-glow-duration: \d+s;/, card["style"])
+    assert_match(/--studio-border-glow-angle: \d+deg;/, card["style"])
     assert_includes card["style"], "--task-card-glow-color: #EE8130"
     assert_includes card["style"], "--task-card-glow-color-a: #EE8130"
     assert_includes card["style"], "--task-card-glow-color-b: #A98FF3"
@@ -106,7 +109,9 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, ".studio-border-glow::before"
     assert_includes css, ".studio-border-glow::after"
     assert_includes css, ".task-card-stage-glow-submitted"
-    assert_includes css, "--studio-border-glow-gradient: linear-gradient(45deg, #22c55e, #22c55e)"
+    assert_includes css, "--studio-border-glow-offset: 0%"
+    assert_includes css, "--studio-border-glow-duration: 20s"
+    assert_includes css, "--studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), #22c55e, #22c55e)"
     assert_includes css, "--studio-border-glow-animation: none"
     assert_includes css, ".task-card-stage-glow-reviewed"
     assert_includes css, "#facc15"
@@ -114,7 +119,9 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, ".task-card-stage-glow-assembled"
     assert_includes css, "var(--task-card-glow-color-a, #fb0094)"
     assert_includes css, "var(--task-card-glow-color-b, #00c4ff)"
-    assert_includes css, "--studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite"
+    assert_includes css, "--studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration) linear infinite"
+    assert_includes css, "background-position: var(--studio-border-glow-offset, 0%) 0"
+    assert_includes css, "background-position: calc(var(--studio-border-glow-offset, 0%) + 400%) 0"
     assert_includes css, "animation: var(--studio-border-glow-animation)"
     assert_includes css, "background-size: 400%"
     assert_includes css, "filter: blur(var(--studio-border-glow-halo-blur))"
@@ -133,6 +140,26 @@ class TaskCardTest < ActionView::TestCase
     assert_not_includes css, ".task-card-stage-glow-assembled::before"
     assert_not_includes css, ".release-confirming-glow::before"
     assert_not_includes css, ".task-card-stage-glow-blocked::before"
+  end
+
+  test "stage glow cards receive different deterministic motion offsets" do
+    first = Task.create!(title: "Alpha glow motion", stage: "assembled")
+    second = Task.create!(title: "Omega glow motion", stage: "assembled")
+
+    render inline: <<~ERB, locals: { first: first.reload, second: second.reload, agents: @agents }
+      <%= render partial: "tasks/task_card", locals: { task: first, agents: agents, crew_board: :deploy } %>
+      <%= render partial: "tasks/task_card", locals: { task: second, agents: agents, crew_board: :deploy } %>
+    ERB
+
+    styles = [first, second].map { |task| css_select("#card-#{task.slug}").first["style"] }
+    offsets = styles.map { |style| style[/--studio-border-glow-offset: ([^;]+)/, 1] }
+    durations = styles.map { |style| style[/--studio-border-glow-duration: ([^;]+)/, 1] }
+    angles = styles.map { |style| style[/--studio-border-glow-angle: ([^;]+)/, 1] }
+
+    assert_equal 2, offsets.compact.size
+    assert_equal offsets.uniq, offsets, "cards should not share the same glow phase"
+    assert_equal 2, durations.compact.size
+    assert_equal 2, angles.compact.size
   end
 
   test "assembled single type mascot repeats one color for the animated border" do

@@ -45,6 +45,14 @@
    end %>
 <% card_glow_color_a = card_glow_type_colors.first || card_glow_color %>
 <% card_glow_color_b = card_glow_type_colors.second || card_glow_color_a %>
+<% card_glow_seed = if card_glow_kind && card_glow_kind != "blocked"
+     task.slug.to_s.each_byte.reduce(0) { |memo, byte| ((memo * 33) + byte) % 10_000 }
+   end %>
+<% card_glow_motion_style = if card_glow_seed
+     "--studio-border-glow-offset: #{card_glow_seed % 400}%; " \
+       "--studio-border-glow-duration: #{18 + (card_glow_seed % 9)}s; " \
+       "--studio-border-glow-angle: #{38 + (card_glow_seed % 18)}deg; "
+   end %>
 <% card_glow_large = %w[reviewed assembled].include?(card_glow_kind) %>
 <% card_glow_border_mix = card_glow_large ? 58 : 46 %>
 <% card_glow_shadow = if card_glow_kind == "assembled"
@@ -63,7 +71,8 @@
        "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
    end %>
 <% card_glow_style = if card_glow_kind
-     "--task-card-glow-color: #{card_glow_color}; " \
+     "#{card_glow_motion_style}" \
+       "--task-card-glow-color: #{card_glow_color}; " \
        "--task-card-glow-color-a: #{card_glow_color_a}; " \
        "--task-card-glow-color-b: #{card_glow_color_b}; " \
        "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) #{card_glow_border_mix}%, transparent); " \

@@ -53,10 +53,13 @@
     --studio-border-glow-opacity: 0.82;
     --studio-border-glow-halo-opacity: 0.28;
     --studio-border-glow-halo-blur: 18px;
-    --studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite;
+    --studio-border-glow-angle: 45deg;
+    --studio-border-glow-offset: 0%;
+    --studio-border-glow-duration: 20s;
+    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration) linear infinite;
     --studio-border-glow-gradient:
       linear-gradient(
-        45deg,
+        var(--studio-border-glow-angle, 45deg),
         #fb0094,
         #00c4ff,
         #34d399,
@@ -117,15 +120,11 @@
 
   @keyframes studioBorderGlowSteam {
     0% {
-      background-position: 0 0;
-    }
-
-    50% {
-      background-position: 400% 0;
+      background-position: var(--studio-border-glow-offset, 0%) 0;
     }
 
     100% {
-      background-position: 0 0;
+      background-position: calc(var(--studio-border-glow-offset, 0%) + 400%) 0;
     }
   }
 
@@ -140,10 +139,10 @@
     --studio-border-glow-opacity: 0.82;
     --studio-border-glow-halo-opacity: 0.28;
     --studio-border-glow-halo-blur: 18px;
-    --studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite;
+    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
     --studio-border-glow-gradient:
       linear-gradient(
-        45deg,
+        var(--studio-border-glow-angle, 45deg),
         #fb0094,
         #00c4ff,
         #34d399,
@@ -162,7 +161,7 @@
     --studio-border-glow-halo-opacity: 0.26;
     --studio-border-glow-halo-blur: 16px;
     --studio-border-glow-animation: none;
-    --studio-border-glow-gradient: linear-gradient(45deg, #22c55e, #22c55e);
+    --studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), #22c55e, #22c55e);
   }
 
   .task-card-stage-glow-reviewed {
@@ -171,7 +170,7 @@
     --studio-border-glow-halo-blur: 20px;
     --studio-border-glow-gradient:
       linear-gradient(
-        45deg,
+        var(--studio-border-glow-angle, 45deg),
         #facc15,
         #2563eb,
         #facc15,
@@ -187,7 +186,7 @@
     --studio-border-glow-halo-blur: 22px;
     --studio-border-glow-gradient:
       linear-gradient(
-        45deg,
+        var(--studio-border-glow-angle, 45deg),
         var(--task-card-glow-color-a, #fb0094),
         var(--task-card-glow-color-b, #00c4ff),
         var(--task-card-glow-color-a, #34d399),
@@ -203,10 +202,10 @@
     --studio-border-glow-opacity: 0.9;
     --studio-border-glow-halo-opacity: 0.34;
     --studio-border-glow-halo-blur: 24px;
-    --studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite;
+    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
     --studio-border-glow-gradient:
       linear-gradient(
-        45deg,
+        var(--studio-border-glow-angle, 45deg),
         #fb0094,
         #00c4ff,
         #34d399,

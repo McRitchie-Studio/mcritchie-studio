@@ -473,6 +473,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "assembled", assembled_card["data-stage-glow"]
     assert_includes assembled_card["class"], "studio-border-glow"
     assert_includes assembled_card["class"], "task-card-stage-glow-assembled"
+    assert_match(/--studio-border-glow-offset: \d+%;/, assembled_card["style"])
+    assert_match(/--studio-border-glow-duration: \d+s;/, assembled_card["style"])
+    assert_match(/--studio-border-glow-angle: \d+deg;/, assembled_card["style"])
     assert_includes assembled_card["style"], "--task-card-glow-color-a: #a78bfa"
     assert_includes assembled_card["style"], "--task-card-glow-color-b: #a78bfa"
     assert_includes assembled_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
