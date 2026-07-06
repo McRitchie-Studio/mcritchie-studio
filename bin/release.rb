@@ -2044,11 +2044,24 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   end
 
   record_release_event(rel_slug, "prod_smoke", "started")
-  out, ok = sh("bin/prod-smoke", APP, capture: true)
+  # ANCHOR the script to the hub checkout: bin/prod-smoke is cwd-relative, and a
+  # ship run from outside the hub (rel-20260705-8fe04b ran from the projects
+  # root) made Open3 raise Errno::ENOENT — aborting AFTER the prod deploy but
+  # BEFORE step 6's Conductor.ship!, stranding the board at `assembled`. Every
+  # other repo-scoped command resolves via repo_path; so does the seal now.
+  # And because the seal is non-blocking BY CONTRACT (see above), an
+  # unresolvable/missing script DEGRADES to a red seal instead of raising —
+  # Open3 raises SystemCallError on a bad path, it never returns ok=false.
+  smoke_error = nil
+  begin
+    out, ok = sh("bin/prod-smoke", APP, capture: true, chdir: repo_path(APP))
+  rescue SystemCallError => e
+    out, ok, smoke_error = "", false, e.message
+  end
   print out unless out.to_s.empty?
 
   host    = PROD_URL
-  summary = ok ? "@qa-readonly green vs #{host}" : "@qa-readonly FAILED vs #{host} — see ship log"
+  summary = ok ? "@qa-readonly green vs #{host}" : "@qa-readonly FAILED vs #{host} — #{smoke_error || 'see ship log'}"
   smoke_status = ok ? "completed" : "failed"
   seal    = Release::SmokeSeal.from_result(passed: ok, summary: summary)
 
