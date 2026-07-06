@@ -128,7 +128,7 @@ class AtomicCaptureHook
       "tokens_out" => usage[:tokens_out],
       "cache_read_tokens" => usage[:cache_read_tokens],
       "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
-      "summary" => bash_summary(event),
+      "summary" => action_summary(event),
       "key_method" => key_method,
       "key_method_lang" => key_method ? "bash" : nil,
       "input" => redacted_field(serialize(event["tool_input"]), event, suppress: write_tool?(event)),
@@ -295,9 +295,81 @@ class AtomicCaptureHook
     input.is_a?(Hash) ? input["command"].to_s : ""
   end
 
+  # The action's human GOAL slug for the heartbeat — the outcome-free summary the
+  # trajectory row renders next to its KIND (READ/DELEGATE/…). Bash keeps its
+  # EXISTING description-derived label (bash_summary, untouched). Every OTHER tool
+  # had no description so its row rendered blank ("READ —", "DELEGATE —"); here we
+  # synthesize a concise label from the tool's most meaningful param instead, so a
+  # non-Bash action reads meaningfully. nil ⇒ the column stays empty (a tool with
+  # no usable param). Pattern-redacted like any stored text; best-effort/never raises.
+  def action_summary(event)
+    return bash_summary(event) if event["tool_name"].to_s == "Bash"
+
+    label = synthesize_summary(event["tool_name"].to_s, tool_input_hash(event)).to_s.strip
+    label.empty? ? nil : redact_secrets(label)
+  rescue StandardError
+    nil
+  end
+
+  # Per-tool label synthesis for NON-Bash tools — the most meaningful param folded
+  # into a short "<verb> <subject>" goal. Returns "" when the param is missing, so
+  # action_summary leaves the column nil (safe no-op, never a fabricated label):
+  #   Read/Edit/Write/NotebookEdit → "<Tool> <file basename>" (e.g. "Read task-board-api.md")
+  #   Grep                         → 'Grep "<pattern>"'
+  #   Glob                         → "Glob <pattern>"
+  #   Task/Agent (delegate)        → the tool `description` param (the 3-5 word
+  #                                  subagent label — makes DELEGATE rows read)
+  #   WebFetch                     → "WebFetch <url>"
+  #   WebSearch                    → 'WebSearch "<query>"'
+  #   AskUserQuestion              → the first question's header
+  # Any other/unmapped tool → "" (no synthetic label). Pure + total.
+  def synthesize_summary(tool, input)
+    case tool
+    when "Read", "Edit", "Write", "NotebookEdit"
+      file = input["file_path"] || input["notebook_path"]
+      present?(file) ? "#{tool} #{File.basename(file.to_s)}" : ""
+    when "Grep"
+      pattern = input["pattern"]
+      present?(pattern) ? %(Grep "#{pattern}") : ""
+    when "Glob"
+      pattern = input["pattern"]
+      present?(pattern) ? "Glob #{pattern}" : ""
+    when "Task", "Agent"
+      input["description"].to_s.strip
+    when "WebFetch"
+      url = input["url"]
+      present?(url) ? "WebFetch #{url}" : ""
+    when "WebSearch"
+      query = input["query"]
+      present?(query) ? %(WebSearch "#{query}") : ""
+    when "AskUserQuestion"
+      ask_question_header(input)
+    else
+      ""
+    end
+  end
+
+  # The first non-blank question header from an AskUserQuestion tool_input, or "".
+  # Claude Code shapes it as { "questions" => [ { "header" => "…", … } ] }.
+  def ask_question_header(input)
+    questions = input["questions"]
+    return "" unless questions.is_a?(Array)
+
+    q = questions.find { |item| item.is_a?(Hash) && present?(item["header"]) }
+    q ? q["header"].to_s.strip : ""
+  end
+
+  # The tool_input hash for an event, or {} — the shared, nil-safe accessor behind
+  # the per-tool synthesizers (a non-hash/missing input yields no label).
+  def tool_input_hash(event)
+    input = event.fetch("tool_input") { {} }
+    input.is_a?(Hash) ? input : {}
+  end
+
   # The bash call's `description` param → the hook-derived AgentAction.summary
   # (the action's GOAL slug, outcome-free). Only Bash carries a description;
-  # nil leaves the column empty. Pattern-redacted like any stored text.
+  # nil leaves the column empty. Pattern-redacted like any stored text. This
+  # stays Bash-ONLY and UNCHANGED — action_summary routes non-Bash tools away.
   def bash_summary(event)
     return nil unless event["tool_name"].to_s == "Bash"
 

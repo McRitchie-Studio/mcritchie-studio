@@ -791,15 +791,20 @@ class AtomicCaptureHookTest < Minitest::Test
     assert_equal "List board tasks to find the two slugs", payload["summary"]
   end
 
-  def test_unit_non_bash_events_carry_neither_summary_nor_key_method
-    event = { "tool_name" => "Edit", "tool_input" => { "file_path" => "/x", "description" => "not a bash description" } }
+  # key_method stays BASH-ONLY (nil for other tools), as does bash_summary (the
+  # Bash-specific helper). But the payload SUMMARY is now SYNTHESIZED for non-Bash
+  # tools — from the tool's own param (here the Edit's file basename), NEVER the
+  # `description` key (that is Bash-only), so DELEGATE/READ/EDIT rows read.
+  def test_unit_non_bash_events_have_no_key_method_but_get_a_synthesized_summary
+    event = { "tool_name" => "Edit", "tool_input" => { "file_path" => "/a/b/config.rb", "description" => "not a bash description" } }
     h = hook
 
-    assert_nil h.bash_summary(event)
+    assert_nil h.bash_summary(event), "the Bash-only summary helper stays nil for non-Bash"
     assert_nil h.bash_key_method(event)
     payload = h.build_payload(event, now: Time.utc(2026, 7, 4, 12, 0, 0))
     assert_nil payload["key_method"]
     assert_nil payload["key_method_lang"]
+    assert_equal "Edit config.rb", payload["summary"], "synthesized from the file basename, not the description"
   end
 
   def test_unit_bash_key_method_is_secret_redacted_like_input
@@ -811,5 +816,96 @@ class AtomicCaptureHookTest < Minitest::Test
     refute_includes h.bash_key_method(event), "sk_live_abc123", "the command's secret VALUE is masked"
     assert_includes h.bash_key_method(event), "STRIPE_SECRET_KEY", "the KEY survives so the line stays legible"
     refute_includes h.bash_summary(event), "sk_live_abc123", "the description is pattern-redacted too"
+  end
+
+  # ── [unit] non-Bash label synthesis (the blank-row fix) ───────────────────
+  # Every non-Bash tool used to render a blank goal ("READ —", "DELEGATE —").
+  # action_summary now synthesizes a concise label from the tool's most
+  # meaningful param. Bash stays routed to bash_summary (unchanged).
+
+  def test_unit_action_summary_synthesizes_a_label_per_tool_kind
+    h = hook
+    {
+      # Read/Edit/Write/NotebookEdit → "<Tool> <basename>"
+      [{ "tool_name" => "Read",  "tool_input" => { "file_path" => "/a/b/task-board-api.md" } }] => "Read task-board-api.md",
+      [{ "tool_name" => "Edit",  "tool_input" => { "file_path" => "bin/atomic-capture-hook" } }] => "Edit atomic-capture-hook",
+      [{ "tool_name" => "Write", "tool_input" => { "file_path" => "/tmp/x/foo.rb" } }]           => "Write foo.rb",
+      [{ "tool_name" => "NotebookEdit", "tool_input" => { "notebook_path" => "/n/analysis.ipynb" } }] => "NotebookEdit analysis.ipynb",
+      # Grep → quoted pattern; Glob → the pattern
+      [{ "tool_name" => "Grep", "tool_input" => { "pattern" => "def build_payload" } }] => %(Grep "def build_payload"),
+      [{ "tool_name" => "Glob", "tool_input" => { "pattern" => "**/*.rb" } }]            => "Glob **/*.rb",
+      # Task/Agent (delegate) → the subagent description (the biggest win)
+      [{ "tool_name" => "Task",  "tool_input" => { "description" => "Explore api issue", "subagent_type" => "Explore" } }] => "Explore api issue",
+      [{ "tool_name" => "Agent", "tool_input" => { "description" => "Review the PR diff" } }]                              => "Review the PR diff",
+      # WebFetch → url; WebSearch → quoted query
+      [{ "tool_name" => "WebFetch",  "tool_input" => { "url" => "https://example.com/x", "prompt" => "summarize" } }] => "WebFetch https://example.com/x",
+      [{ "tool_name" => "WebSearch", "tool_input" => { "query" => "rails 8.1 release notes" } }]                      => %(WebSearch "rails 8.1 release notes"),
+      # AskUserQuestion → the first question header
+      [{ "tool_name" => "AskUserQuestion", "tool_input" => { "questions" => [{ "header" => "Deploy target", "question" => "Where to?" }] } }] => "Deploy target"
+    }.each do |(event), expected|
+      assert_equal expected, h.action_summary(event), "#{event['tool_name']} should synthesize #{expected.inspect}"
+    end
+  end
+
+  def test_unit_action_summary_is_nil_safe_when_the_param_is_missing
+    h = hook
+    [
+      { "tool_name" => "Read",  "tool_input" => {} },
+      { "tool_name" => "Grep",  "tool_input" => {} },
+      { "tool_name" => "Glob",  "tool_input" => { "pattern" => "" } },
+      { "tool_name" => "Task",  "tool_input" => {} },
+      { "tool_name" => "WebFetch", "tool_input" => {} },
+      { "tool_name" => "WebSearch", "tool_input" => nil },
+      { "tool_name" => "AskUserQuestion", "tool_input" => { "questions" => [] } },
+      { "tool_name" => "SomeNewTool", "tool_input" => { "whatever" => "x" } }, # unmapped → no label
+      { "tool_name" => "Read" } # no tool_input key at all
+    ].each do |event|
+      assert_nil h.action_summary(event), "#{event['tool_name']} with no usable param must yield nil (no fabricated label)"
+    end
+  end
+
+  def test_unit_action_summary_keeps_bash_exactly_as_bash_summary
+    # Bash is routed to bash_summary UNCHANGED: description present → that string;
+    # description absent → nil (the command is NOT synthesized into a summary).
+    h = hook
+    with_desc = { "tool_name" => "Bash",
+                  "tool_input" => { "command" => "ls -la", "description" => "List the files" } }
+    no_desc   = { "tool_name" => "Bash", "tool_input" => { "command" => "ls -la" } }
+
+    assert_equal "List the files", h.action_summary(with_desc)
+    assert_equal h.bash_summary(with_desc), h.action_summary(with_desc)
+    assert_nil h.action_summary(no_desc), "a Bash call with no description stays nil, as before"
+  end
+
+  def test_unit_action_summary_redacts_secrets_in_the_synthesized_label
+    # The synthesized label lands on the PUBLIC heartbeat surface, so a secret in a
+    # searched pattern / fetched URL is pattern-redacted just like any stored text.
+    h = hook
+    grep = { "tool_name" => "Grep", "tool_input" => { "pattern" => "AGENT_API_SECRET=s3cr3t-do-not-leak" } }
+    refute_includes h.action_summary(grep), "s3cr3t-do-not-leak", "a secret in the pattern is masked"
+    assert_includes h.action_summary(grep), "AGENT_API_SECRET", "the key survives so the row stays legible"
+  end
+
+  # ── [integration] a non-Bash action carries the synthesized summary ───────
+
+  def test_integration_non_bash_action_posts_the_synthesized_summary
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "label-non-bash-capture-actions")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope",
+        "tool_name" => "Task",
+        "tool_input" => { "description" => "Explore api issue", "subagent_type" => "Explore",
+                          "prompt" => "find the nil guard" },
+        "tool_response" => { "ok" => true }
+      }
+      requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj })
+
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_actions" }
+      refute_nil post, "expected a POST /api/v1/agent_actions for the delegate action"
+      body = JSON.parse(post[:body])
+      assert_equal "delegate", body["kind"]
+      assert_equal "Explore api issue", body["summary"],
+                   "the DELEGATE row carries the subagent description end-to-end"
+    end
   end
 end
