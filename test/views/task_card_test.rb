@@ -41,7 +41,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes rendered, "dark:hover:text-red-300"
   end
 
-  test "submitted card glows with the mascot signature color" do
+  test "submitted card keeps the single-color green stage glow" do
     task = Task.create!(title: "Submitted glow task", stage: "submitted")
     mascot = Pokemon.create!(dex: 158, name: "Totodile", slug: "totodile", types: %w[water],
                              primary_type: "water", generation: 2)
@@ -56,7 +56,9 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "#6390F0", card["data-glow"]
     assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-submitted"
-    assert_includes card["style"], "--task-card-glow-color: #6390F0"
+    assert_includes card["style"], "--task-card-glow-color: #22c55e"
+    assert_includes card["style"], "--task-card-glow-color-a: #22c55e"
+    assert_includes card["style"], "--task-card-glow-color-b: #22c55e"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
     assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
   end
@@ -310,7 +312,7 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "submitted", card["data-stage-glow"]
     assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-submitted"
-    assert_includes card["style"], "--task-card-glow-color: #f59e0b"
+    assert_includes card["style"], "--task-card-glow-color: #22c55e"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 end

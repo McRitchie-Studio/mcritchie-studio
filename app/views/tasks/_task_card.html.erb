@@ -32,11 +32,12 @@
    end %>
 <% card_glow_color = case card_glow_kind
    when "blocked" then "#ef4444"
+   when "submitted" then "#22c55e"
    when "reviewed" then mascot_signature_color || "#22d3ee"
    when "assembled" then mascot_signature_color || "#a78bfa"
    else mascot_signature_color || "#f59e0b"
    end %>
-<% card_glow_type_colors = if mascot && type_enumerals
+<% card_glow_type_colors = if card_glow_kind == "assembled" && mascot && type_enumerals
      mascot.types.filter_map { |type| type_enumerals[type]&.color.presence }
             .select { |color| color.to_s.match?(/\A#[0-9a-f]{6}\z/i) }
             .uniq

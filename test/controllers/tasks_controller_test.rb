@@ -461,7 +461,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "submitted", submitted_card["data-stage-glow"]
     assert_includes submitted_card["class"], "studio-border-glow"
     assert_includes submitted_card["class"], "task-card-stage-glow-submitted"
-    assert_includes submitted_card["style"], "--task-card-glow-color: #6390F0"
+    assert_includes submitted_card["style"], "--task-card-glow-color: #22c55e"
+    assert_includes submitted_card["style"], "--task-card-glow-color-a: #22c55e"
+    assert_includes submitted_card["style"], "--task-card-glow-color-b: #22c55e"
 
     reviewed_card = css_select("#dropzone-reviewed #card-#{reviewed.slug}").first
     assert_equal "reviewed", reviewed_card["data-stage-glow"]
