@@ -25,7 +25,12 @@ class PokemonEvolutionTree
     until frontier.empty?
       ordered.concat(frontier.map(&:slug))
       next_slugs = frontier.flat_map { |member| Array(member.evolution) }.uniq - ordered
-      frontier = Pokemon.where(slug: next_slugs).to_a
+      # A SQL `IN` returns rows in the DB's heap/physical order, NOT next_slugs
+      # order — so re-order the loaded records to follow next_slugs, keeping the
+      # branching-evolution walk deterministic (base first, then each branch in
+      # the evolution list's order) regardless of insertion/seed order.
+      found = Pokemon.where(slug: next_slugs).index_by(&:slug)
+      frontier = next_slugs.filter_map { |slug| found[slug] }
     end
     ordered
   end

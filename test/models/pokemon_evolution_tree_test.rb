@@ -16,10 +16,15 @@ class PokemonEvolutionTreeTest < ActiveSupport::TestCase
     end
   end
 
-  test "for fans out over branching evolutions" do
-    Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", evolution: %w[vaporeon jolteon])
-    Pokemon.create!(dex: 134, name: "Vaporeon", slug: "vaporeon", base: "eevee")
+  test "for fans out over branching evolutions in evolution-list order" do
+    # Seed the branch rows in the REVERSE of Eevee's evolution list so a heap-order
+    # (SQL `IN`) return would surface them jolteon-first and this assertion would
+    # fail. The family walk must re-order the where() results to follow the
+    # evolution list, not the DB's physical/heap row order — this pins the fix
+    # deterministically instead of relying on the seed-dependent flake.
     Pokemon.create!(dex: 135, name: "Jolteon", slug: "jolteon", base: "eevee")
+    Pokemon.create!(dex: 134, name: "Vaporeon", slug: "vaporeon", base: "eevee")
+    Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", evolution: %w[vaporeon jolteon])
 
     assert_equal %w[eevee vaporeon jolteon], PokemonEvolutionTree.for("jolteon")
   end
