@@ -560,4 +560,24 @@ evolution_task.submit!
 evolution_task.review!
 evolution_task.assemble!
 
+# ── Distillation pipeline · Test runs band + a gradeable test-run insight ──────
+# A couple of release test-scope VERDICTS (kind:test_scope with a pass|fail
+# result_slug) so the pipeline's "Test runs" band renders, plus a banked Alex
+# grade on the passing one so it also surfaces as a Column-2 insight carrying an
+# ACTION Confirm button (the confirm-of-action path). The scope keys resolve to
+# phase/tier/host via config/devops_test_suites.yml at render.
+test_run_pass = AgentAction.create!(
+  session_id: "sess-test-runs", kind: "test_scope", event_slug: "ship_test_gate",
+  result_slug: "pass", task_slug: hb_task, occurred_at: Time.current, duration_ms: 12_300,
+  summary: "test scope ship_test_gate COMPLETED · mcritchie-studio · pass · " \
+           "141 runs, 320 assertions, 0 failures, 0 errors · 12.3s · bin/rails test"
+)
+AgentAction.create!(
+  session_id: "sess-test-runs", kind: "test_scope", event_slug: "qa_up_smoke",
+  result_slug: "fail", occurred_at: Time.current, duration_ms: 4_200,
+  summary: "test scope qa_up_smoke FAILED · qa · fail · http 503 · 4.2s · /up poll"
+)
+ActionGrade.create!(agent_action: test_run_pass, grader: "alex", disposition: "good",
+                    slug: "ship gate stayed green").bank!
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events"
