@@ -14,7 +14,7 @@
 <% grades_for = action_grades[action.id] || {} %>
 <% alex_g = grades_for[ActionGrade::ALEX] %>
 <% mcr_g  = grades_for[ActionGrade::MCR] %>
-<tr class="aa-subrow" data-test="aa-action" data-seq="<%= action.seq %>"
+<tr class="aa-subrow" id="aa-action-<%= action.id %>" data-test="aa-action" data-seq="<%= action.seq %>"
     data-row-id="<%= action.id %>" data-id-field="agent_action_id"
     data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
     data-alex-long="<%= alex_g&.long_form %>" data-alex-graded="<%= alex_g.present? %>"

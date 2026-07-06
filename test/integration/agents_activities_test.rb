@@ -36,6 +36,22 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_operator body.index("newer activity here"), :<, body.index("older activity here")
   end
 
+  test "subscribes to the live agents_activities stream and gives rows stable dom ids" do
+    ev = activity(reason_slug: "a live activity")
+    act = action(ev, event_slug: "a live action")
+
+    get activities_agents_path
+
+    assert_response :success
+    # the turbo-cable stream source the browser subscribes through for live updates
+    assert_select "turbo-cable-stream-source"
+    # stable ids so ActivitiesBroadcaster can target the tbody + action row
+    assert_select "tbody#aa-activity-#{ev.id}"
+    assert_select "tr#aa-action-#{act.id}"
+    # the thead insert-after target for new activities
+    assert_select "thead#aa-activities-head"
+  end
+
   test "drills the raw actions under an activity, newest-first" do
     ev = activity(reason_slug: "an activity with actions")
     action(ev, seq: 0, at: 3.minutes.ago, event_slug: "the older action")

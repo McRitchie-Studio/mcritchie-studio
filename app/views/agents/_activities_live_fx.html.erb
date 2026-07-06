@@ -1,0 +1,30 @@
+<%# Flash-on-update for the live feed — the activities analogue of LiveBoardFx. Listens
+    for the incoming Turbo Stream renders and, for a REPLACE of an activity or action row
+    (aa-activity-<id> / aa-action-<id>), briefly flashes the freshly-patched element after
+    Turbo swaps it in. Only replaces flash (an UPDATE); create inserts (after/append) do
+    not. Idempotent (guards against a double render). %>
+<script>
+  (function () {
+    if (window.__aaLiveFx) return;
+    window.__aaLiveFx = true;
+    var FLASH_MS = 900;
+    document.addEventListener("turbo:before-stream-render", function (event) {
+      var stream = event.target;
+      if (!stream || typeof stream.getAttribute !== "function") return;
+      var action = stream.getAttribute("action");
+      var target = stream.getAttribute("target");
+      if (action !== "replace" && action !== "update") return;
+      if (!target || !/^aa-(activity|action)-\d+$/.test(target)) return;
+      var original = event.detail.render;
+      event.detail.render = function (streamElement) {
+        original(streamElement);
+        var el = document.getElementById(target);
+        if (!el) return;
+        el.classList.remove("aa-flash");
+        void el.offsetWidth; // force reflow so the animation restarts on re-update
+        el.classList.add("aa-flash");
+        setTimeout(function () { el.classList.remove("aa-flash"); }, FLASH_MS);
+      };
+    });
+  })();
+</script>

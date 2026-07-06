@@ -70,6 +70,13 @@ class AgentActivity < ApplicationRecord
   # invalid record, so a bad --agent value never sinks a best-effort narration.
   before_validation :normalize_agent
 
+  # Live-update the /agents/activities feed. Guarded inside ActivitiesBroadcaster's
+  # safe_broadcast, so a dead cable never breaks a narration write. Note: the prior
+  # activity that open_activity! auto-closes via update_all does NOT fire this (no
+  # callbacks on update_all) — only a genuine close_activity! update broadcasts.
+  after_create_commit  { ActivitiesBroadcaster.activity_created(self) }
+  after_update_commit  { ActivitiesBroadcaster.activity_updated(self) }
+
   scope :for_session,  ->(session_id) { where(session_id: session_id) }
   scope :open,         -> { where(closed_at: nil) }
   scope :closed,       -> { where.not(closed_at: nil) }

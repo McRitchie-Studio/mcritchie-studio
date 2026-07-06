@@ -140,4 +140,45 @@ module ActivityFeed
                .group_by(&:agent_action_id)
                .transform_values { |grades| grades.index_by(&:grader) }
   end
+
+  # The full locals to render ONE agents/_activity_row partial (a single activity tbody).
+  # Used by ActivitiesBroadcaster so a live broadcast renders the SAME markup the table
+  # loop does (the dual-render-path discipline). Actions default to the activity's own,
+  # newest-first — matching AgentsController#activities' ordering.
+  def activity_row_locals(activity, actions = nil)
+    actions ||= activity.agent_actions.order(occurred_at: :desc, seq: :desc, id: :desc).to_a
+    {
+      activity: activity,
+      actions: actions,
+      pokemon_by_slug: pokemon_lookup(actions, [activity]),
+      agents_by_slug: agent_soul_lookup([activity]),
+      activity_grades: activity_grade_lookup([activity]),
+      action_grades: action_grade_lookup(actions),
+      shared_turn_ids: feed_shared_turn_ids(actions),
+      stage_transitions: stage_transitions_for([activity])
+    }
+  end
+
+  # The locals to render ONE agents/_activity_action_row partial. shared_turn_ids is
+  # empty — the fade is a whole-session presentation nicety not worth recomputing for a
+  # single live action row.
+  def action_row_locals(action)
+    activity = action.agent_activity
+    {
+      action: action,
+      activity: activity,
+      agents_by_slug: activity ? agent_soul_lookup([activity]) : {},
+      pokemon_by_slug: pokemon_lookup([action], activity ? [activity] : []),
+      action_grades: action_grade_lookup([action]),
+      shared_turn_ids: Set.new
+    }
+  end
+
+  # The shared-turn dup ids for an activity's actions, computed off a chronological pass
+  # (the fade is defined by first-seen order) via the heartbeat helper — works outside a
+  # request (e.g. in the broadcaster) through the app-wide helper proxy.
+  def feed_shared_turn_ids(actions)
+    chronological = Array(actions).sort_by { |a| [a.occurred_at || Time.at(0), a.seq.to_i, a.id] }
+    ApplicationController.helpers.heartbeat_shared_turn_ids(chronological)
+  end
 end
