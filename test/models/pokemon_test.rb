@@ -407,6 +407,16 @@ class PokemonTest < ActiveSupport::TestCase
     assert_equal "grass", bulbasaur.signature_type
   end
 
+  test "signature recovers types from seed data for sparse rows" do
+    capture_io { load Rails.root.join("db/seeds/57_pokemon_type_colors.rb").to_s }
+    lugia = Pokemon.create!(dex: 249, name: "Lugia", slug: "lugia", types: [])
+
+    assert_equal %w[psychic flying], lugia.type_keys
+    assert_equal "psychic", lugia.signature_type
+    assert_equal "#F95587", lugia.signature_color
+    assert_equal "👁️💨", lugia.type_emoji
+  end
+
   test "type_color returns the color for a type, or nil" do
     Studio::Enumeral.create!(category: "pokemon_type", key: "fire", color: "#EE8130")
     charizard = make(6, "charizard")

@@ -136,6 +136,19 @@ class Pokemon < ApplicationRecord
     Studio::Enumeral.catalog(TYPE_ENUMERAL_CATEGORY).index_by(&:key)
   end
 
+  def self.seed_data_by_slug
+    @seed_data_by_slug ||= begin
+      path = Rails.root.join("db/seeds/data/pokemon.json")
+      JSON.parse(path.read).index_by { |row| row["slug"].to_s }
+    rescue Errno::ENOENT, JSON::ParserError
+      {}
+    end
+  end
+
+  def self.seed_data_for(slug)
+    seed_data_by_slug[slug.to_s]
+  end
+
   # { type_key => hex color } for every seeded type — the color-only convenience
   # over .type_enumerals.
   def self.type_colors
@@ -149,6 +162,12 @@ class Pokemon < ApplicationRecord
     Studio::Enumeral.color_for(TYPE_ENUMERAL_CATEGORY, type)
   end
 
+  # Prefer the row's JSON types, but recover from sparse legacy/demo rows by
+  # reading the committed seed data for the same slug.
+  def type_keys
+    Array(types).presence || Array(self.class.seed_data_for(slug)&.fetch("types", []))
+  end
+
   # The RAW primary type — this Pokémon's LEAST common one, the type with the
   # highest commonality rank (rank counts up as a type gets rarer). This is the
   # type that best identifies the Pokémon, so a dual-type wears the rarer side:
@@ -159,8 +178,9 @@ class Pokemon < ApplicationRecord
   # (Pokemon.type_enumerals) to rank many Pokémon without a query each.
   def computed_primary_type(by_key = nil)
     by_key ||= self.class.type_enumerals
-    types.filter_map { |type| by_key[type] }.max_by { |enumeral| enumeral.rank || -1 }&.key ||
-      types.first
+    keys = type_keys
+    keys.filter_map { |type| by_key[type] }.max_by { |enumeral| enumeral.rank || -1 }&.key ||
+      keys.first
   end
 
   # Compute and CACHE every Pokémon's primary_type (its identifying least-common
@@ -212,7 +232,7 @@ class Pokemon < ApplicationRecord
   # is seeded. bin/statusline shows this in place of the 🛠 ⊙ glyphs.
   def type_emoji(by_key = nil)
     by_key ||= self.class.type_enumerals
-    types.filter_map { |type| by_key[type]&.emoji }.join
+    type_keys.filter_map { |type| by_key[type]&.emoji }.join
   end
 
   # Shiny odds for ONE mascot draw — 1-in-N. Production runs the canonical

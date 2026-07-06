@@ -4,7 +4,7 @@ require "test_helper"
 # broadcaster re-renders for a live push), with the slug/stage data hooks the
 # client uses to find, move, and replace it.
 class TaskCardTest < ActionView::TestCase
-  TypeColor = Struct.new(:color, :rank, :emoji, keyword_init: true)
+  TypeColor = Struct.new(:key, :color, :rank, :emoji, keyword_init: true)
 
   setup do
     Agent.create!(name: "Carl", slug: "carl")
@@ -41,7 +41,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes rendered, "dark:hover:text-red-300"
   end
 
-  test "submitted card keeps the single-color green stage glow" do
+  test "submitted card uses the mascot color as a subtle single-color glow" do
     task = Task.create!(title: "Submitted glow task", stage: "submitted")
     mascot = Pokemon.create!(dex: 158, name: "Totodile", slug: "totodile", types: %w[water],
                              primary_type: "water", generation: 2)
@@ -56,11 +56,30 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "#6390F0", card["data-glow"]
     assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-submitted"
-    assert_includes card["style"], "--task-card-glow-color: #22c55e"
-    assert_includes card["style"], "--task-card-glow-color-a: #22c55e"
-    assert_includes card["style"], "--task-card-glow-color-b: #22c55e"
-    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
-    assert_includes card["style"], "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
+    assert_includes card["style"], "--task-card-glow-color: #6390F0"
+    assert_includes card["style"], "--task-card-glow-color-a: #6390F0"
+    assert_includes card["style"], "--task-card-glow-color-b: #6390F0"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
+    assert_includes card["style"], "0 0 36px color-mix(in srgb, var(--task-card-glow-color) 10%, transparent)"
+  end
+
+  test "submitted sparse mascot recovers its seed type color" do
+    task = Task.create!(title: "Submitted Lugia task", stage: "submitted")
+    mascot = Pokemon.create!(dex: 249, name: "Lugia", slug: "lugia", types: [], generation: 2)
+    type_enumerals = {
+      "psychic" => TypeColor.new(key: "psychic", color: "#F95587", rank: 1_200, emoji: "👁️"),
+      "flying" => TypeColor.new(key: "flying", color: "#A98FF3", rank: 200, emoji: "💨")
+    }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_includes card["style"], "--task-card-glow-color: #F95587"
+    assert_includes card["style"], "--task-card-glow-color-a: #F95587"
+    assert_includes card["style"], "--task-card-glow-color-b: #F95587"
   end
 
   test "reviewed card uses the larger steady glow" do
@@ -74,12 +93,12 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-reviewed"
     assert_includes card["style"], "--task-card-glow-color: #22d3ee"
-    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
-    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
-    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 52%, transparent)"
+    assert_includes card["style"], "0 0 64px color-mix(in srgb, var(--task-card-glow-color) 16%, transparent)"
+    assert_not_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "deploy attention cards support fixed and pokemon-color border glows" do
+  test "deploy attention cards step up from subtle to medium to pokemon-color border glows" do
     task = Task.create!(title: "Assembled glow task", stage: "assembled")
     mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],
                              primary_type: "fire", generation: 1)
@@ -113,12 +132,14 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, ".task-card-stage-glow-submitted"
     assert_includes css, "--studio-border-glow-offset: 0%"
     assert_includes css, "--studio-border-glow-duration: 20s"
-    assert_includes css, "--studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), #22c55e, #22c55e)"
+    assert_includes css, "--studio-border-glow-opacity: 0.62"
+    assert_includes css, "--studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), var(--task-card-glow-color, #22c55e), var(--task-card-glow-color, #22c55e))"
     assert_includes css, "--studio-border-glow-animation: none"
     assert_includes css, ".task-card-stage-glow-reviewed"
-    assert_includes css, "#facc15"
-    assert_includes css, "#2563eb"
+    assert_includes css, "--studio-border-glow-opacity: 0.78"
+    assert_includes css, "color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff)"
     assert_includes css, ".task-card-stage-glow-assembled"
+    assert_includes css, "--studio-border-glow-opacity: 0.9"
     assert_includes css, "var(--task-card-glow-color-a, #fb0094)"
     assert_includes css, "var(--task-card-glow-color-b, #00c4ff)"
     assert_includes css, "--studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration) linear infinite"
@@ -157,9 +178,10 @@ class TaskCardTest < ActionView::TestCase
     offsets = styles.map { |style| style[/--studio-border-glow-offset: ([^;]+)/, 1] }
     durations = styles.map { |style| style[/--studio-border-glow-duration: ([^;]+)/, 1] }
     angles = styles.map { |style| style[/--studio-border-glow-angle: ([^;]+)/, 1] }
+    tuples = offsets.zip(durations, angles)
 
     assert_equal 2, offsets.compact.size
-    assert_equal offsets.uniq, offsets, "cards should not share the same glow phase"
+    assert_equal tuples.uniq, tuples, "cards should not share the same glow motion tuple"
     assert_equal 2, durations.compact.size
     assert_equal 2, angles.compact.size
   end
@@ -180,6 +202,25 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "task-card-stage-glow-assembled"
     assert_includes card["style"], "--task-card-glow-color-a: #F7D02C"
     assert_includes card["style"], "--task-card-glow-color-b: #F7D02C"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
+  end
+
+  test "assembled sparse dual type mascot recovers both seed colors" do
+    task = Task.create!(title: "Assembled Lugia task", stage: "assembled")
+    mascot = Pokemon.create!(dex: 249, name: "Lugia", slug: "lugia", types: [], generation: 2)
+    type_enumerals = {
+      "psychic" => TypeColor.new(key: "psychic", color: "#F95587", rank: 1_200, emoji: "👁️"),
+      "flying" => TypeColor.new(key: "flying", color: "#A98FF3", rank: 200, emoji: "💨")
+    }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "assembled", card["data-stage-glow"]
+    assert_includes card["style"], "--task-card-glow-color-a: #F95587"
+    assert_includes card["style"], "--task-card-glow-color-b: #A98FF3"
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
   end
 
@@ -313,6 +354,9 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-submitted"
     assert_includes card["style"], "--task-card-glow-color: #22c55e"
+    assert_includes card["style"], "--task-card-glow-color-a: #22c55e"
+    assert_includes card["style"], "--task-card-glow-color-b: #22c55e"
+    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 end

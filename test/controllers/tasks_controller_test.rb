@@ -461,15 +461,18 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "submitted", submitted_card["data-stage-glow"]
     assert_includes submitted_card["class"], "studio-border-glow"
     assert_includes submitted_card["class"], "task-card-stage-glow-submitted"
-    assert_includes submitted_card["style"], "--task-card-glow-color: #22c55e"
-    assert_includes submitted_card["style"], "--task-card-glow-color-a: #22c55e"
-    assert_includes submitted_card["style"], "--task-card-glow-color-b: #22c55e"
+    assert_includes submitted_card["style"], "--task-card-glow-color: #6390F0"
+    assert_includes submitted_card["style"], "--task-card-glow-color-a: #6390F0"
+    assert_includes submitted_card["style"], "--task-card-glow-color-b: #6390F0"
+    assert_includes submitted_card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
+    assert_includes submitted_card["style"], "0 0 36px color-mix(in srgb, var(--task-card-glow-color) 10%, transparent)"
 
     reviewed_card = css_select("#dropzone-reviewed #card-#{reviewed.slug}").first
     assert_equal "reviewed", reviewed_card["data-stage-glow"]
     assert_includes reviewed_card["class"], "studio-border-glow"
     assert_includes reviewed_card["class"], "task-card-stage-glow-reviewed"
-    assert_includes reviewed_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+    assert_includes reviewed_card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 52%, transparent)"
+    assert_includes reviewed_card["style"], "0 0 64px color-mix(in srgb, var(--task-card-glow-color) 16%, transparent)"
 
     assembled_card = css_select("#dropzone-assembled #card-#{assembled.slug}").first
     assert_equal "assembled", assembled_card["data-stage-glow"]

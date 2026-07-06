@@ -32,13 +32,13 @@
    end %>
 <% card_glow_color = case card_glow_kind
    when "blocked" then "#ef4444"
-   when "submitted" then "#22c55e"
+   when "submitted" then mascot_signature_color || "#22c55e"
    when "reviewed" then mascot_signature_color || "#22d3ee"
    when "assembled" then mascot_signature_color || "#a78bfa"
    else mascot_signature_color || "#f59e0b"
    end %>
 <% card_glow_type_colors = if card_glow_kind == "assembled" && mascot && type_enumerals
-     mascot.types.filter_map { |type| type_enumerals[type]&.color.presence }
+     mascot.type_keys.filter_map { |type| type_enumerals[type]&.color.presence }
             .select { |color| color.to_s.match?(/\A#[0-9a-f]{6}\z/i) }
             .uniq
    else
@@ -54,18 +54,25 @@
        "--studio-border-glow-duration: #{18 + (card_glow_seed % 9)}s; " \
        "--studio-border-glow-angle: #{38 + (card_glow_seed % 18)}deg; "
    end %>
-<% card_glow_large = %w[reviewed assembled].include?(card_glow_kind) %>
-<% card_glow_border_mix = card_glow_large ? 58 : 46 %>
+<% card_glow_border_mix = case card_glow_kind
+   when "submitted" then 42
+   when "reviewed" then 52
+   when "assembled" then 58
+   else 46
+   end %>
 <% card_glow_shadow = if card_glow_kind == "assembled"
      "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color-a) 44%, transparent), " \
        "0 0 34px color-mix(in srgb, var(--task-card-glow-color-b) 38%, transparent), " \
        "0 0 82px color-mix(in srgb, var(--task-card-glow-color-a) 22%, transparent), " \
        "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
-   elsif card_glow_large
-     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
-       "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
-       "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
-       "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+   elsif card_glow_kind == "reviewed"
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
+       "0 0 28px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
+       "0 0 64px color-mix(in srgb, var(--task-card-glow-color) 16%, transparent)"
+   elsif card_glow_kind == "submitted"
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 28%, transparent), " \
+       "0 0 16px color-mix(in srgb, var(--task-card-glow-color) 20%, transparent), " \
+       "0 0 36px color-mix(in srgb, var(--task-card-glow-color) 10%, transparent)"
    else
      "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), " \
        "0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
