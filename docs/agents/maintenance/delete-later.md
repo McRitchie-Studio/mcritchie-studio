@@ -363,3 +363,42 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-05 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/weight-three-stage-mascot-draws` | worktree | Hidden worktree; branch `feat/weight-three-stage-mascot-draws` is clean and HEAD b57a2dee is contained in origin/release; health down, Redis DB 12, database mcritchie_studio_development_weight_three_stage_mascot_draws:missing. | Removed with `bin/agent-worktree remove mcritchie-studio weight-three-stage-mascot-draws --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/avi-supervisor-review-hierarchy` | worktree | Hidden worktree; branch `feat/avi-supervisor-review-hierarchy` is clean and HEAD a365e538 is contained in origin/release; health down, Redis DB 36, database mcritchie_studio_development_avi_supervisor_review_hierarchy:missing. | Removed with `bin/agent-worktree remove mcritchie-studio avi-supervisor-review-hierarchy --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/filter-refresh-without-reload` | worktree | Hidden worktree; branch `feat/filter-refresh-without-reload` is clean and HEAD e67fd110 is contained in origin/release; health up, Redis DB 11, database mcritchie_studio_development_filter_refresh_without_reload:ok. | Removed with `bin/agent-worktree remove mcritchie-studio filter-refresh-without-reload --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-boundary-close-broadcast` | worktree | Hidden worktree; branch `feat/fix-boundary-close-broadcast` is clean and HEAD e0565916 is contained in origin/release; health down, Redis DB 24, database mcritchie_studio_development_fix_boundary_close_broadcast:missing. | Removed with `bin/agent-worktree remove mcritchie-studio fix-boundary-close-broadcast --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-pipeline-smoke-selector` | worktree | Hidden worktree; branch `feat/fix-pipeline-smoke-selector` is clean and HEAD 3ca36601 is contained in origin/release; health down, Redis DB 23, database mcritchie_studio_development_fix_pipeline_smoke_selector:missing. | Removed with `bin/agent-worktree remove mcritchie-studio fix-pipeline-smoke-selector --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/grade-test-scope-runs` | worktree | Hidden worktree; branch `feat/grade-test-scope-runs` is clean and HEAD 9d5f3a8d is contained in origin/release; health down, Redis DB 26, database mcritchie_studio_development_grade_test_scope_runs:missing. | Removed with `bin/agent-worktree remove mcritchie-studio grade-test-scope-runs --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/harden-prod-smoke-seal` | worktree | Hidden worktree; branch `feat/harden-prod-smoke-seal` is clean and HEAD c24d55b9 is contained in origin/release; health down, Redis DB 22, database mcritchie_studio_development_harden_prod_smoke_seal:missing. | Removed with `bin/agent-worktree remove mcritchie-studio harden-prod-smoke-seal --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/keep-mascot-off-deploy-cards` | worktree | Hidden worktree; branch `feat/keep-mascot-off-deploy-cards` is clean and HEAD 802fdbc9 is contained in origin/release; health up, Redis DB 13, database mcritchie_studio_development_keep_mascot_off_deploy_cards:ok. | Removed with `bin/agent-worktree remove mcritchie-studio keep-mascot-off-deploy-cards --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/live-activities-via-websockets` | worktree | Hidden worktree; branch `feat/live-activities-via-websockets` is clean and HEAD 85c8c50d is contained in origin/release; health up, Redis DB 25, database mcritchie_studio_development_live_activities_via_websockets:ok. | Removed with `bin/agent-worktree remove mcritchie-studio live-activities-via-websockets --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/narrate-pr-reviewer-activities` | worktree | Hidden worktree; branch `feat/narrate-pr-reviewer-activities` is clean and HEAD 2536ac53 is contained in origin/release; health down, Redis DB 20, database mcritchie_studio_development_narrate_pr_reviewer_activities:missing. | Removed with `bin/agent-worktree remove mcritchie-studio narrate-pr-reviewer-activities --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/repoint-activities-nav-link` | worktree | Hidden worktree; branch `feat/repoint-activities-nav-link` is clean and HEAD 37e1f23e is contained in origin/release; health up, Redis DB 18, database mcritchie_studio_development_repoint_activities_nav_link:ok. | Removed with `bin/agent-worktree remove mcritchie-studio repoint-activities-nav-link --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/summon-devops-acts-as-subagents` | worktree | Hidden worktree; branch `feat/summon-devops-acts-as-subagents` is clean and HEAD dd2c1482 is contained in origin/release; health down, Redis DB 15, database mcritchie_studio_development_summon_devops_acts_as_subagents:missing. | Removed with `bin/agent-worktree remove mcritchie-studio summon-devops-acts-as-subagents --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/test-scope-telemetry-registry` | worktree | Hidden worktree; branch `feat/test-scope-telemetry-registry` is clean and HEAD 0d125c74 is contained in origin/release; health down, Redis DB 9, database mcritchie_studio_development_test_scope_telemetry_registry:missing. | Removed with `bin/agent-worktree remove mcritchie-studio test-scope-telemetry-registry --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/test-telemetry-local-and-ci` | worktree | Hidden worktree; branch `feat/test-telemetry-local-and-ci` is clean and HEAD 51a2b6d6 is contained in origin/release; health down, Redis DB 28, database mcritchie_studio_development_test_telemetry_local_and_ci:missing. | Removed with `bin/agent-worktree remove mcritchie-studio test-telemetry-local-and-ci --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
