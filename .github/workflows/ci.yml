@@ -74,7 +74,24 @@ jobs:
 
     steps:
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y google-chrome-stable curl libjemalloc2 libvips postgresql-client
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+
+      # Pin a MATCHED Chrome + chromedriver pair for the system-test lane.
+      # Previously we apt-installed the floating `google-chrome-stable` (e.g.
+      # Chrome 150) while Selenium Manager resolved the latest-PUBLISHED
+      # chromedriver (e.g. 149) during the post-bump publish-lag window -- a
+      # MAJOR-version skew. Under that skew Capybara's native coordinate-click
+      # lands on the DOM-adjacent element as a just-opened menu lays out,
+      # intermittently failing `test:system` across every PR (not PR-specific).
+      # Chrome for Testing releases chrome and chromedriver together from one
+      # version manifest, so install-chromedriver gives a guaranteed matched
+      # pair and eliminates the skew window.
+      - name: Set up matched Chrome + chromedriver (Chrome for Testing)
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          install-chromedriver: true
+          install-dependencies: true
 
       - name: Checkout code
         uses: actions/checkout@v7
