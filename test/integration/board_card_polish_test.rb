@@ -71,11 +71,12 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} div.whitespace-nowrap.overflow-hidden", minimum: 1
   end
 
-  test "long card title marquees on one line while activity preview clamps to two" do
+  test "long card title and activity preview each marquee on one line" do
     task = Task.create!(title: "Suite Consistency Cleanup Review Card",
                         stage: "blocked")
+    note = "QA review found one remaining generated-doc blocker that needs action before merge."
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
-                     description: "QA review found one remaining generated-doc blocker that needs action before merge.")
+                     description: note)
 
     get tasks_path
     assert_response :success
@@ -84,9 +85,12 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} a[data-test='task-card-title'] [x-ref='fadeInner']",
                   text: /Suite Consistency Cleanup/, count: 1
     assert_select "#card-#{task.slug} [data-test='task-card-title'].line-clamp-2", count: 0
-    # the activity preview still clamps to a readable two lines (not a marquee)
-    assert_select "#card-#{task.slug} [data-test='activity-description'].line-clamp-2.break-words",
+    # the activity preview marquees on one line too now (overflow_fade), no longer a clamp
+    assert_select "#card-#{task.slug} [data-test='activity-description'] [x-ref='fadeInner']",
                   text: /QA review found one remaining/, count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-description'].line-clamp-2", count: 0
+    # the full note stays reachable via the tooltip on the preview wrapper
+    assert_select "#card-#{task.slug} [data-test='activity-description'][title=?]", note, count: 1
     assert_select "#card-#{task.slug} a[data-test='task-card-title'][title=?]", task.title, count: 1
   end
 
@@ -151,11 +155,11 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-1", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].py-1", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'] div.mb-0.leading-none", count: 1
-    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words", count: 1
+    assert_select "#card-#{task.slug} [data-test='activity-box'] [data-test='activity-description']", count: 1
     assert_select "#card-#{task.slug} [data-test='activity-box'].mt-2", count: 0
   end
 
-  test "long title marquees on one line while activity text clamps to two" do
+  test "long title and activity text each marquee on one line" do
     task = Task.create!(title: "Long Card Title", stage: "submitted")
     task.update_column(:title, "Long Board Card Title That Must Stay Inside The Card")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
@@ -169,9 +173,9 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} > a[data-test='task-card-title'] [x-ref='fadeInner']",
                   text: /Long Board Card Title/, count: 1
     assert_select "#card-#{task.slug} > a[data-test='task-card-title'].line-clamp-2.break-words", count: 0
-    # the activity preview keeps its two-line clamp (not a marquee)
-    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words",
-                  text: /QA review found one remaining visual regression/
-    assert_select "#card-#{task.slug} [data-test='activity-box'] [x-ref='fadeInner']", count: 0
+    # the activity preview marquees on one line too now (overflow_fade), no longer a clamp
+    assert_select "#card-#{task.slug} [data-test='activity-box'] p.line-clamp-2.break-words", count: 0
+    assert_select "#card-#{task.slug} [data-test='activity-box'] [x-ref='fadeInner']",
+                  text: /QA review found one remaining visual regression/, count: 1
   end
 end
