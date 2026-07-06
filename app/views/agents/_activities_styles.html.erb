@@ -72,14 +72,18 @@
   #alex-heartbeat .aa-arow .aa-agent .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-24px; }
 
   /* Activity column: badge+goal / →result(fade) / key command. */
-  #alex-heartbeat .aa-activity { min-width:290px; max-width:420px; }
-  #alex-heartbeat .aa-goal { font-weight:600; color:var(--hb-txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; min-width:0; }
+  /* The Activity column is the one unsized column under table-layout:fixed, so it
+     already absorbs all the slack — the goal/result/command just need to FILL it (no
+     fixed-px caps) so more shows when the window is wide; they ellipsize/fade at the
+     real cell edge, and fixed layout clips them to the column so nothing overflows. */
+  #alex-heartbeat .aa-activity { min-width:290px; }
+  #alex-heartbeat .aa-goal { font-weight:600; color:var(--hb-txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
   #alex-heartbeat .aa-resultline { color:var(--hb-muted); min-width:0; }
   #alex-heartbeat .aa-resultline .aa-arrow { color:var(--hb-faint); flex:0 0 auto; }
-  #alex-heartbeat .aa-resultfade { flex:1 1 auto; min-width:0; max-width:340px; }
+  #alex-heartbeat .aa-resultfade { flex:1 1 auto; min-width:0; }
   #alex-heartbeat .aa-inprogress { color:var(--hb-muted); font-style:italic; }
   #alex-heartbeat .aa-keycmd { min-width:0; }
-  #alex-heartbeat .aa-keycmd .hb-keycode { max-width:300px; }
+  #alex-heartbeat .aa-keycmd .hb-keycode { max-width:100%; }
 
   /* Cost column: cost / model / tokens. */
   #alex-heartbeat .aa-cost { min-width:104px; }
