@@ -30,7 +30,7 @@ matching the `/api/v1` convention) to
 | `kind`        | `tool_name` mapped: Read/Glob/Grep→`read`, Edit/Write/NotebookEdit→`edit`, Bash→`bash`, Task/Agent→`delegate`, WebFetch/WebSearch→`research`; **unknown→tool name downcased** |
 | `input`       | `tool_input` serialized, **secret-redacted**, then truncated (~3 KB) |
 | `output`      | `tool_response` serialized, **secret-redacted**, then truncated (~3 KB) |
-| `summary`     | **Bash only** — the call's `description` param (the goal slug the agent wrote), pattern-redacted; other tools ⇒ absent |
+| `summary`     | the action's goal slug, **pattern-redacted** (like `input`/`key_method`). Bash → the call's `description` param (the goal the agent wrote); every **other tool synthesizes** a label from its most meaningful param — Read/Edit/Write/NotebookEdit → `<Tool> <file basename>`, Grep → `Grep "<pattern>"`, Glob → `Glob <pattern>`, Task/Agent (delegate) → the `description` param, WebFetch → `WebFetch <url>`, WebSearch → `WebSearch "<query>"`, AskUserQuestion → the first question's header; a missing param / unmapped tool ⇒ absent |
 | `key_method`  | **Bash only** — the call's `command` (the copy-and-rerun line on the heartbeat rows), **same redaction policy as `input`**; other tools ⇒ absent |
 | `key_method_lang` | `bash` when `key_method` is present (the UI's language badge) |
 | `outcome`     | `ok`, or `error` when `tool_response` carries an explicit failure signal (`error` / `is_error:true` / `success:false` / `interrupted:true`) — a noisy stderr is **not** a failure |
