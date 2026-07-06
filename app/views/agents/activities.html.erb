@@ -39,19 +39,24 @@
       </div>
     </header>
 
-    <% if active_sessions.any? %>
-      <div class="aa-activefilters" data-test="aa-active-filters">
+    <%# Always rendered so adding/removing a filter never jumps the table (reserves its
+        own row); shows the active chips when filtered, a faint hint otherwise. %>
+    <div class="aa-activefilters" data-test="aa-active-filters">
+      <% if active_sessions.any? %>
         <span class="aa-rfaint">Filtered to</span>
         <% active_sessions.each do |session| %>
           <% rest = @session_ids - [session[:id]] %>
           <% remove_url = rest.any? ? activities_agents_path(sessions: rest.join(",")) : activities_agents_path %>
-          <%= link_to remove_url, class: "aa-chipfilter", data: { turbo: false, test: "aa-active-filter" } do %>
-            <%= session[:name] %><span class="aa-x" aria-hidden="true">&times;</span>
+          <%= link_to remove_url, class: "aa-chipfilter", data: { turbo: false, test: "aa-active-filter" },
+                style: ("--aa-type: #{session[:type_color]}" if session[:type_color].present?) do %>
+            <span class="aa-chipdot" aria-hidden="true"></span><%= session[:name] %><span class="aa-x" aria-hidden="true">&times;</span>
           <% end %>
         <% end %>
         <%= link_to "clear", activities_agents_path, class: "aa-chipclear", data: { turbo: false } %>
-      </div>
-    <% end %>
+      <% else %>
+        <span class="aa-rfaint">Showing all sessions</span>
+      <% end %>
+    </div>
   </div>
 
   <% if @activity_rows.any? %>

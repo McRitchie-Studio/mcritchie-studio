@@ -1,6 +1,6 @@
 <%# Secondary board links above the page title: back to the admin dashboard
     (admins only), the Stages guide outside /deployments, the Intelligence dashboard, and the
-    cross-session Activities view. The Deploy lane additionally links
+    reimagined cross-session Activities feed (/agents/activities). The Deploy lane additionally links
     the OPSD Pipeline and Insights surfaces. Wrapped in a nav so cross-page link
     checks and screen readers find them on every board surface.
     Local: current ("tasks" | "deployments" | "stages") marks the active page. %>
@@ -17,7 +17,7 @@
   <% end %>
   <%= link_to "Intelligence", intelligence_path,
         class: "text-muted hover:text-heading transition" %>
-  <%= link_to "🎭 Activities", heartbeat_all_activities_path,
+  <%= link_to "🎭 Activities", activities_agents_path,
         class: "text-muted hover:text-heading transition" %>
   <% if current == "deployments" %>
     <%= link_to "Pipeline", alex_pipeline_path,
