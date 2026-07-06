@@ -345,3 +345,21 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-05 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/submitted-blocked-glow` | worktree | Hidden worktree; branch `feat/submitted-blocked-glow` is clean and HEAD f412538b is contained in origin/release; health up, Redis DB 20, database mcritchie_studio_development_submitted_blocked_glow:ok. | Removed with `bin/agent-worktree remove mcritchie-studio submitted-blocked-glow --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/agents-activities-page-redesign` | worktree | Hidden worktree; branch `feat/agents-activities-page-redesign` is clean and HEAD 7c677a36 is contained in origin/release; health up, Redis DB 9, database mcritchie_studio_development_agents_activities_page_redesign:ok. | Removed with `bin/agent-worktree remove mcritchie-studio agents-activities-page-redesign --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/deploy-spans-self-report-actions` | worktree | Hidden worktree; branch `feat/deploy-spans-self-report-actions` is clean and HEAD e0fdcc57 is contained in origin/release; health down, Redis DB 15, database mcritchie_studio_development_deploy_spans_self_report_actions:missing. | Removed with `bin/agent-worktree remove mcritchie-studio deploy-spans-self-report-actions --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/filter-activities-by-session` | worktree | Hidden worktree; branch `feat/filter-activities-by-session` is clean and HEAD 886c9124 is contained in origin/release; health down, Redis DB 13, database mcritchie_studio_development_filter_activities_by_session:ok. | Removed with `bin/agent-worktree remove mcritchie-studio filter-activities-by-session --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-live-on-qa-stamp-timing` | worktree | Hidden worktree; branch `feat/fix-live-on-qa-stamp-timing` is clean and HEAD 2c7e0306 is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_fix_live_on_qa_stamp_timing:missing. | Removed with `bin/agent-worktree remove mcritchie-studio fix-live-on-qa-stamp-timing --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/reviewed-mist-animations` | worktree | Hidden worktree; branch `feat/reviewed-mist-animations` is clean and HEAD be48a958 is contained in origin/release; health down, Redis DB 24, database mcritchie_studio_development_reviewed_mist_animations:ok. | Removed with `bin/agent-worktree remove mcritchie-studio reviewed-mist-animations --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
+
+<!-- agent-worktree remove 2026-07-05 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/weight-three-stage-mascot-draws` | worktree | Hidden worktree; branch `feat/weight-three-stage-mascot-draws` is clean and HEAD b57a2dee is contained in origin/release; health down, Redis DB 12, database mcritchie_studio_development_weight_three_stage_mascot_draws:missing. | Removed with `bin/agent-worktree remove mcritchie-studio weight-three-stage-mascot-draws --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
