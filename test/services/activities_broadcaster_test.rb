@@ -68,6 +68,20 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     assert_includes replace.to_html, "it blew up on the edge case"
   end
 
+  test "open_activity! boundary close broadcasts a replace of the auto-closed prior activity" do
+    first = AgentActivity.open_activity!(session_id: "s", category: "Explore", reason_slug: "look")
+
+    streams = capture_turbo_stream_broadcasts(ActivitiesBroadcaster::STREAM) do
+      AgentActivity.open_activity!(session_id: "s", category: "Edit", reason_slug: "change",
+                                   prior_outcome_slug: "resolved it")
+    end
+
+    replace = streams.find { |st| st["action"] == "replace" && st["target"] == "aa-activity-#{first.id}" }
+    assert replace, "the auto-closed prior activity must broadcast a live replace of its tbody"
+    assert_includes replace.to_html, "resolved it",
+                    "the replaced row carries the stamped close outcome, not the stale open state"
+  end
+
   test "an unlabeled action (nil activity) broadcasts nothing" do
     streams = capture_turbo_stream_broadcasts(ActivitiesBroadcaster::STREAM) do
       action(nil, agent_activity_id: nil)
