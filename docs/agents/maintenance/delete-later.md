@@ -365,7 +365,7 @@ This ledger tracks files and directories that look removable once replacement do
 | `/Users/alex/projects/mcritchie-studio/.worktrees/weight-three-stage-mascot-draws` | worktree | Hidden worktree; branch `feat/weight-three-stage-mascot-draws` is clean and HEAD b57a2dee is contained in origin/release; health down, Redis DB 12, database mcritchie_studio_development_weight_three_stage_mascot_draws:missing. | Removed with `bin/agent-worktree remove mcritchie-studio weight-three-stage-mascot-draws --yes` during approved lifecycle cleanup. | removed 2026-07-05 |
 
 <!-- agent-worktree remove 2026-07-06 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/avi-supervisor-review-hierarchy` | worktree | Hidden worktree; branch `feat/avi-supervisor-review-hierarchy` is clean and HEAD a365e538 is contained in origin/release; health down, Redis DB 36, database mcritchie_studio_development_avi_supervisor_review_hierarchy:missing. | Removed with `bin/agent-worktree remove mcritchie-studio avi-supervisor-review-hierarchy --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+| `/Users/alex/projects/mcritchie-studio/.worktrees/avi-supervisor-review-hierarchy` | worktree | Hidden worktree; branch `feat/avi-supervisor-review-hierarchy` is clean and HEAD 0f9159d6 is contained in origin/release; health down, Redis DB 9, database mcritchie_studio_development_avi_supervisor_review_hierarchy:missing. | Removed with `bin/agent-worktree remove mcritchie-studio avi-supervisor-review-hierarchy --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
 
 <!-- agent-worktree remove 2026-07-06 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/filter-refresh-without-reload` | worktree | Hidden worktree; branch `feat/filter-refresh-without-reload` is clean and HEAD e67fd110 is contained in origin/release; health up, Redis DB 11, database mcritchie_studio_development_filter_refresh_without_reload:ok. | Removed with `bin/agent-worktree remove mcritchie-studio filter-refresh-without-reload --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
@@ -402,3 +402,24 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-06 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/test-telemetry-local-and-ci` | worktree | Hidden worktree; branch `feat/test-telemetry-local-and-ci` is clean and HEAD 51a2b6d6 is contained in origin/release; health down, Redis DB 28, database mcritchie_studio_development_test_telemetry_local_and_ci:missing. | Removed with `bin/agent-worktree remove mcritchie-studio test-telemetry-local-and-ci --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/blocked-card-crew-layout` | worktree | Hidden worktree; branch `feat/blocked-card-crew-layout` is clean and HEAD c9edad46 is contained in origin/release; health up, Redis DB 13, database mcritchie_studio_development_blocked_card_crew_layout:ok. | Removed with `bin/agent-worktree remove mcritchie-studio blocked-card-crew-layout --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/deployment-rainbow-border` | worktree | Hidden worktree; branch `feat/submitted-mascot-glow` is clean and HEAD 3128fafd is contained in origin/release; health up, Redis DB 12, database mcritchie_studio_development_deployment_rainbow_border:ok. | Removed with `bin/agent-worktree remove mcritchie-studio deployment-rainbow-border --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/label-non-bash-capture-actions` | worktree | Hidden worktree; branch `feat/label-non-bash-capture-actions` is clean and HEAD 699a00ed is contained in origin/release; health down, Redis DB 34, database mcritchie_studio_development_label_non_bash_capture_actions:missing. | Removed with `bin/agent-worktree remove mcritchie-studio label-non-bash-capture-actions --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/live-action-insert-at-top` | worktree | Hidden worktree; branch `feat/live-action-insert-at-top` is clean and HEAD 62caf539 is contained in origin/release; health down, Redis DB 33, database mcritchie_studio_development_live_action_insert_at_top:ok. | Removed with `bin/agent-worktree remove mcritchie-studio live-action-insert-at-top --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/pokemon-evolution-order-flake` | worktree | Hidden worktree; branch `feat/pokemon-evolution-order-flake` is clean and HEAD 2d8118b2 is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_pokemon_evolution_order_flake:missing. | Removed with `bin/agent-worktree remove mcritchie-studio pokemon-evolution-order-flake --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/restore-comment-hover-marquee` | worktree | Hidden worktree; branch `feat/restore-comment-hover-marquee` is clean and HEAD 4bf1faf4 is contained in origin/release; health up, Redis DB 31, database mcritchie_studio_development_restore_comment_hover_marquee:ok. | Removed with `bin/agent-worktree remove mcritchie-studio restore-comment-hover-marquee --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/test-telemetry-from-ci` | worktree | Hidden worktree; branch `feat/test-telemetry-from-ci` is clean and HEAD d342414b is contained in origin/release; health down, Redis DB 29, database mcritchie_studio_development_test_telemetry_from_ci:missing. | Removed with `bin/agent-worktree remove mcritchie-studio test-telemetry-from-ci --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
