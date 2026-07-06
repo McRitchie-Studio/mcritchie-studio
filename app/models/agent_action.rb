@@ -100,6 +100,12 @@ class AgentAction < ApplicationRecord
   # subset. Destroyed with the action so grades never outlive what they grade.
   has_many :action_grades, dependent: :destroy, inverse_of: :agent_action
 
+  # Live-update the /agents/activities drill-down. Guarded inside ActivitiesBroadcaster's
+  # safe_broadcast so a cable failure never breaks the best-effort capture write. Actions
+  # with a nil agent_activity_id (unlabeled) are skipped by the broadcaster.
+  after_create_commit  { ActivitiesBroadcaster.action_created(self) }
+  after_update_commit  { ActivitiesBroadcaster.action_updated(self) }
+
   validates :session_id, presence: true
   validates :kind, presence: true
   validates :occurred_at, presence: true

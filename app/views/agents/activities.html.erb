@@ -13,6 +13,16 @@
 <%= render "heartbeat/styles" %>
 <%= render "agents/activities_styles" %>
 <%= render "agents/activities_scripts" %>
+<%= render "agents/activities_live_fx" %>
+
+<%# Live websocket feed: AgentActivity/AgentAction create+update broadcasts (via
+    ActivitiesBroadcaster) stream into the table below — additive, newest-first. %>
+<%= turbo_stream_from "agents_activities" %>
+<%# TEST-ONLY: the e2e spec reads this to POST a real activity/action and assert the
+    live update — never rendered outside test (it is a valid api_auth token). %>
+<% if Rails.env.test? %>
+  <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth) %>">
+<% end %>
 
 <% active_sessions = @session_filters.select { |session| session[:selected] } %>
 
