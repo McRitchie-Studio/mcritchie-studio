@@ -62,17 +62,36 @@ test("a new action streams into its activity's drill-down live", async ({ page }
   ).toBeVisible({ timeout: 10_000 });
 
   // Capture a raw action for that session — it attributes to the open activity and
-  // appends into its drill-down, live.
-  const action = await page.request.post("/api/v1/agent_actions", {
+  // streams into its drill-down, live.
+  const first = await page.request.post("/api/v1/agent_actions", {
     headers: auth,
     data: { session_id: session, kind: "grep", outcome: "ok", actor: "agent",
-            event_slug: "a live-streamed action", summary: "a live-streamed action row" },
+            event_slug: "older action", summary: "an OLDER live action" },
   });
-  expect(action.ok()).toBeTruthy();
-
+  expect(first.ok()).toBeTruthy();
   await expect(
-    page.locator("tr[data-test='aa-action'] [data-test='aa-action-summary']", { hasText: "a live-streamed action row" })
+    page.locator("tr[data-test='aa-action'] [data-test='aa-action-summary']", { hasText: "an OLDER live action" })
   ).toHaveCount(1, { timeout: 10_000 });
+
+  // A SECOND (newer) action must insert at the TOP of the drill-down, not the bottom.
+  const second = await page.request.post("/api/v1/agent_actions", {
+    headers: auth,
+    data: { session_id: session, kind: "bash", outcome: "ok", actor: "agent",
+            event_slug: "newer action", summary: "a NEWER live action" },
+  });
+  expect(second.ok()).toBeTruthy();
+  await expect(
+    page.locator("tr[data-test='aa-action'] [data-test='aa-action-summary']", { hasText: "a NEWER live action" })
+  ).toHaveCount(1, { timeout: 10_000 });
+
+  // Newest-first: the second action's row comes BEFORE the first in DOM order (they sit
+  // adjacent in the same activity tbody, so full-list indices compare correctly).
+  const summaries = await page.locator("tr[data-test='aa-action'] [data-test='aa-action-summary']").allInnerTexts();
+  const newerIdx = summaries.findIndex((t) => t.includes("a NEWER live action"));
+  const olderIdx = summaries.findIndex((t) => t.includes("an OLDER live action"));
+  expect(newerIdx).toBeGreaterThanOrEqual(0);
+  expect(olderIdx).toBeGreaterThanOrEqual(0);
+  expect(newerIdx).toBeLessThan(olderIdx);
 
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });

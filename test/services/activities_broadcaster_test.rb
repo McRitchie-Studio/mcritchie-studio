@@ -39,7 +39,7 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     assert_includes replace.to_html, "found the nil-guard"
   end
 
-  test "action create broadcasts remove-empty then append into its activity" do
+  test "action create broadcasts remove-empty then inserts the row at the top of the drill-down" do
     a = activity
     created = nil
     streams = capture_turbo_stream_broadcasts(ActivitiesBroadcaster::STREAM) do
@@ -47,12 +47,15 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     end
 
     remove = streams.find { |s| s["action"] == "remove" }
-    append = streams.find { |s| s["action"] == "append" }
+    after  = streams.find { |s| s["action"] == "after" }
     assert remove, "expected a remove of the empty placeholder"
     assert_equal "aa-empty-#{a.id}", remove["target"]
-    assert append, "expected an append of the new action row"
-    assert_equal "aa-activity-#{a.id}", append["target"]
-    assert_includes append.to_html, "aa-action-#{created.id}"
+    # inserted AFTER the mobile-detail row → first among the action rows (newest-first),
+    # not appended to the bottom of the tbody
+    assert after, "expected an 'after' insert of the new action row at the top"
+    assert_equal "aa-mobile-detail-#{a.id}", after["target"]
+    assert_includes after.to_html, "aa-action-#{created.id}"
+    assert_nil streams.find { |s| s["action"] == "append" }, "must not append to the bottom"
   end
 
   test "action update broadcasts a replace of its row" do

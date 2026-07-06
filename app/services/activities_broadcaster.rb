@@ -40,16 +40,18 @@ class ActivitiesBroadcaster
     )
   end
 
-  # A new raw action → append its row into its activity's drill-down (additive; the
-  # per-activity action count is intentionally not re-synced). First clears the "no raw
-  # actions" placeholder (a no-op once actions already exist).
+  # A new raw action → insert its row at the TOP of its activity's drill-down (the feed
+  # is newest-first). It goes right AFTER the mobile-detail row — so it lands first among
+  # the action rows on desktop, and after the detail panel (not before it) on mobile.
+  # Additive; the per-activity action count is intentionally not re-synced. Also clears
+  # the "no raw actions" placeholder (a no-op once actions already exist).
   def deliver_action_created(action)
     activity_id = action.agent_activity_id
     return unless activity_id # unlabeled actions never appear on this feed
 
     Turbo::StreamsChannel.broadcast_remove_to(STREAM, target: "aa-empty-#{activity_id}")
-    Turbo::StreamsChannel.broadcast_append_to(
-      STREAM, target: "aa-activity-#{activity_id}", partial: ACTION_ROW, locals: action_row_locals(action)
+    Turbo::StreamsChannel.broadcast_after_to(
+      STREAM, target: "aa-mobile-detail-#{activity_id}", partial: ACTION_ROW, locals: action_row_locals(action)
     )
   end
 

@@ -191,14 +191,14 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_no_match(/only in A/, response.body)
   end
 
-  test "paginates 10 per page and threads the sessions filter through the pager" do
-    11.times { |i| activity(session: "sess-A", reason_slug: "activity number #{i}", seq: i, at: i.minutes.ago) }
+  test "paginates 25 per page and threads the sessions filter through the pager" do
+    26.times { |i| activity(session: "sess-A", reason_slug: "activity number #{i}", seq: i, at: i.minutes.ago) }
     activity(session: "sess-B", reason_slug: "stray B activity", at: 500.minutes.ago)
 
     get activities_agents_path(sessions: "sess-A")
 
     assert_response :success
-    assert_select "tbody[data-test=aa-activity]", 10
+    assert_select "tbody[data-test=aa-activity]", 25
     assert_select "a[data-test=aa-pager-next][href=?]", activities_agents_path(page: 2, sessions: "sess-A")
     assert_select "a[data-test=aa-pager-prev]", false
     assert_no_match(/stray B activity/, response.body)
