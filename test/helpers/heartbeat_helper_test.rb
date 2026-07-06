@@ -24,6 +24,34 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "Claude Code / Codex runtime", heartbeat_actor_description("harness")
   end
 
+  test "release scope meta derives phase/tier/host for a registered scope key" do
+    meta = heartbeat_release_scope_meta("ship_test_gate")
+    assert_equal "ship", meta["phase"]
+    assert_equal "full", meta["tier"]
+    assert_equal "local", meta["host"]
+  end
+
+  test "release scope meta is an empty hash for an unregistered scope key" do
+    assert_equal({}, heartbeat_release_scope_meta("no_such_scope"))
+    assert_equal({}, heartbeat_release_scope_meta(nil))
+  end
+
+  test "test scope counts re-parses minitest, playwright, and http shapes from the summary" do
+    assert_equal "141 runs, 320 assertions, 0 failures, 0 errors",
+                 heartbeat_test_scope_counts("… · pass · 141 runs, 320 assertions, 0 failures, 0 errors · 1.2s · x")
+    assert_equal "12 passed, 2 failed", heartbeat_test_scope_counts("… · fail · 12 passed, 2 failed · 3s")
+    assert_equal "http 200", heartbeat_test_scope_counts("… · pass · http 200 · 0.4s")
+    assert_nil heartbeat_test_scope_counts("… · pass · nothing recognizable here")
+    assert_nil heartbeat_test_scope_counts(nil)
+  end
+
+  test "duration renders sub-second in ms and longer in seconds, nil when unmeasured" do
+    assert_equal "830ms", heartbeat_duration(830)
+    assert_equal "1.2s", heartbeat_duration(1200)
+    assert_nil heartbeat_duration(0)
+    assert_nil heartbeat_duration(nil)
+  end
+
   test "model short drops the claude vendor prefix and a tier suffix" do
     assert_equal "opus-4-8", heartbeat_model_short("claude-opus-4-8")
     assert_equal "opus-4-8", heartbeat_model_short("claude-opus-4-8[1m]")

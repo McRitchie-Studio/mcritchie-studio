@@ -62,6 +62,17 @@
   #alex-heartbeat .pl-cands .pl-colhd h2 { color:var(--hb-not); }
   #alex-heartbeat .pl-cands .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:0; max-height:none; }
   #alex-heartbeat .pl-cands .pl-row { border-right:1px solid var(--hb-line); box-shadow:inset 3px 0 0 var(--hb-not); }
+  /* Test runs band — recent release test-scope VERDICTS, each a gradeable unit.
+     Mirrors the Candidates band's grid layout; sits above the loop as raw material
+     that FEEDS it (a graded test run → a lesson). Neutral (blue) header, not the
+     red candidates edge; a per-row red inset appears only on an Alex "not" grade. */
+  #alex-heartbeat .pl-truns { margin-bottom:18px; border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
+  #alex-heartbeat .pl-truns .pl-colhd h2 { color:var(--hb-accent); }
+  #alex-heartbeat .pl-truns .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:0; max-height:none; }
+  #alex-heartbeat .pl-truns .pl-row { border-right:1px solid var(--hb-line); }
+  #alex-heartbeat .pl-scope-meta { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  #alex-heartbeat .pl-tag { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.06em; color:var(--hb-faint); border:1px solid var(--hb-line); border-radius:5px; padding:1px 6px; }
+  #alex-heartbeat .pl-counts { color:var(--hb-muted); font-size:11.5px; font-family:ui-monospace,"SF Mono",Menlo,monospace; margin:7px 0 0; }
 </style>
 
 <section id="alex-heartbeat" data-test="alex-pipeline">
@@ -107,6 +118,48 @@
                 <%= link_to "grade activity", heartbeat_activity_feedback_path(activity.id), data: { test: "pl-candidate-grade" } %>
               </p>
             <% end %>
+          </div>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+
+  <%# ── Test runs · release test-scope verdicts, each gradeable ──────────────
+      Every COMPLETED/FAILED release test scope (bin/release run_test_scope) is a
+      tagged AgentAction (kind:test_scope + pass|fail result_slug). Read-only
+      surfacing: grade it from the action drawer to feed it into Column 2, then
+      Confirm it into Column 3 — parity with an activity. phase/tier/host are
+      DERIVED from the scope registry at render, never stored (no re-tier drift). %>
+  <% if @test_runs.present? %>
+    <section class="pl-truns" data-test="pl-test-runs">
+      <div class="pl-colhd">
+        <div class="pl-step">Release test scopes</div>
+        <h2>&#129514; Test runs <span class="pl-count"><%= @test_runs.size %> graded verdicts</span></h2>
+      </div>
+      <div class="pl-list">
+        <% @test_runs.each do |run| %>
+          <% meta = heartbeat_release_scope_meta(run.event_slug) %>
+          <% pass = run.result_slug == "pass" %>
+          <% is_not = @test_run_grades.dig(run.id, ActionGrade::ALEX)&.not_good? %>
+          <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-test-run" data-scope="<%= run.event_slug %>">
+            <div>
+              <span class="pl-slug"><%= run.event_slug %></span>
+              <span class="pl-disp <%= pass ? "good" : "not" %>" data-test="pl-test-verdict"><%= pass ? "pass" : "fail" %></span>
+            </div>
+            <% if meta["phase"].present? || meta["tier"].present? || meta["host"].present? %>
+              <div class="pl-scope-meta">
+                <% if meta["phase"].present? %><span class="pl-tag" title="phase"><%= meta["phase"] %></span><% end %>
+                <% if meta["tier"].present? %><span class="pl-tag" title="tier"><%= meta["tier"] %></span><% end %>
+                <% if meta["host"].present? %><span class="pl-tag" title="host"><%= meta["host"] %></span><% end %>
+              </div>
+            <% end %>
+            <% counts = heartbeat_test_scope_counts(run.summary) %>
+            <% dur = heartbeat_duration(run.duration_ms) %>
+            <% if counts || dur %><p class="pl-counts"><%= [counts, dur].compact.join(" · ") %></p><% end %>
+            <p class="pl-from">
+              <% if run.task_slug.present? %>on <%= run.task_slug %> &middot; <% end %>
+              <%= link_to "grade", heartbeat_feedback_path(run.id), data: { test: "pl-test-run-grade" } %>
+            </p>
           </div>
         <% end %>
       </div>

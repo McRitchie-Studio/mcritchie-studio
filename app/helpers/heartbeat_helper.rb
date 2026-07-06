@@ -84,6 +84,53 @@ module HeartbeatHelper
     HEARTBEAT_OUTCOME_META[outcome.to_s] || { label: outcome.to_s, color: "#6e7681" }
   end
 
+  # The release-scope registry (config/devops_test_suites.yml `release_scopes:`) —
+  # the SINGLE source for a test-scope run's phase/tier/host. The pipeline's Test
+  # runs band DERIVES this metadata at render from the run's event_slug (the scope
+  # key) so it is never stored on the action and never drifts when a scope is
+  # re-tiered. Memoized per process; a missing/malformed file degrades to {} so a
+  # run row still renders (just without the meta chips). Mirrors bin/release.rb's
+  # own TEST_SCOPES reader — the registry describes, it never gates.
+  RELEASE_SCOPES =
+    begin
+      (YAML.load_file(Rails.root.join("config/devops_test_suites.yml")) || {})
+        .fetch("release_scopes", {})
+    rescue StandardError
+      {}
+    end
+
+  # The {phase, tier, host, blocks, mutates} metadata for a scope key (string
+  # keys), or {} when the key is unregistered — a run whose scope was renamed
+  # still renders, just without derived chips.
+  def heartbeat_release_scope_meta(scope_key)
+    RELEASE_SCOPES[scope_key.to_s] || {}
+  end
+
+  # Re-extract the recognizable test-count segment from a test-scope run's summary
+  # ("141 runs, 320 assertions, 0 failures, 0 errors", "12 passed, 2 failed",
+  # "http 200"), or nil. The counts are NOT a stored column — the emit folds them
+  # into the summary string — so the band re-reads them here with the SAME shapes
+  # bin/release.rb's parse_test_counts produces. Blank-safe.
+  def heartbeat_test_scope_counts(summary)
+    text = summary.to_s
+    return Regexp.last_match(0) if text =~ /\d+ runs?, \d+ assertions?, \d+ failures?, \d+ errors?/
+    return Regexp.last_match(0) if text =~ /\d+ passed(?:, \d+ failed)?/
+    return Regexp.last_match(0) if text =~ /http \d{3}/
+
+    nil
+  end
+
+  # Compact human duration for a test-scope run from its stored duration_ms
+  # ("1.2s", "830ms"), or nil when unmeasured. duration_ms is the authoritative
+  # column (the emit sends elapsed*1000), so the band reads it directly rather
+  # than re-parsing the summary string.
+  def heartbeat_duration(duration_ms)
+    ms = duration_ms.to_i
+    return nil unless ms.positive?
+
+    ms >= 1000 ? "#{(ms / 1000.0).round(1)}s" : "#{ms}ms"
+  end
+
   # Short model label for the dense cell ("claude-opus-4-8" -> "opus-4-8"); the
   # full id is surfaced via `title` on hover. Drops a leading vendor prefix and a
   # trailing tier suffix like "[1m]" so the cell stays narrow.
