@@ -56,6 +56,23 @@ wall of background shells. **Avi supervises; he does not review** — the two
 experts under him are the reviewers. Feature builds already delegate through the
 Agent tool this way; this extends the same pattern to the review lane.
 
+**Emit two intent-labeled delegate actions — one per reviewer (enforced).** Avi
+(the supervisor) spawns the pair with **two** Agent-tool calls, in a **single
+message so they run in parallel**, and the Agent-tool `description` on each call
+**is** the action label the timeline records:
+
+- `summon primary review: <soul>` — the PRIMARY, pointed at
+  [`pr-review-primary.md`](pr-review-primary.md).
+- `summon light review: <soul>` — the LIGHT, pointed at
+  [`pr-review-light.md`](pr-review-light.md).
+
+Both reviewers are Avi's own children. **The primary must NOT spawn its sibling**
+— if the primary summons anyone, the roles have inverted; stop and re-spawn both
+from the supervisor. This is the drift the hardening closes: a live review had
+Avi spawn only the primary, the primary then spawn its sibling, and the light
+drive the verdict. Two supervisor-emitted, role-labeled delegate actions make the
+structure legible and keep the primary from re-delegating.
+
 - **Caveat.** The tree is a convenience, not the record of truth: it is
   ephemeral (it vanishes when the session ends) and the autonomous heartbeat
   runs with no terminal, so it renders no tree at all. The durable,

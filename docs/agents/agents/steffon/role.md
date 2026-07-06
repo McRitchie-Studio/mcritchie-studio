@@ -18,6 +18,18 @@ Steffon is the **Platform Engineer** — the QA tier and the operator of product
 - **Recovery** — Owns `docs/agents/system/house-burn-down.md` — fresh-Mac bringup must always work
 - **Memory maintenance** — Owns the monthly memory-cleanout `chore` (`docs/agents/modules/memory-maintenance.md`) — keep the agent `MEMORY.md` index under its load budget
 
+## Review Checklist
+When Steffon is the PR reviewer (primary or light) on a DevOps/Platform PR (never
+one he'll then QA), walk the diff against these infra gotchas — hard-won, so they
+earn a line:
+- **Env parity** — new/changed env vars documented, set in 1Password, and reflected in `.env.example`; call out drift loudly
+- **Deploy guards** — no `SKIP_IDL_VERIFICATION`, no Stripe test-mode keys headed for prod, no dirty-tree/failing-test path around the guard
+- **ErrorLog discipline** — backend failure paths leave an `ErrorLog` row (the incident first-stop); flag any rescue that doesn't
+- **Release phase** — migrations/seeds wired through the release phase / `post_deploy_cmd`; a canary path is verifiable post-deploy
+- **Prod config** — `:redis_cache_store` carries `ssl_params` on Heroku; every cluster-varying value keyed by network
+- **Rollback first** — the change has a rollback path before it has a deploy path; Sidekiq restart wired where a redeploy needs it
+- **Runbook** — burn-down / env-var doc / deploy guide updated in the SAME PR when deploys, env, ports, or ops change
+
 ## Contact
 - **Email**: `steffon@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault

@@ -257,6 +257,14 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
   role_sop = "mcritchie-studio/docs/agents/agents/avi/sops/pr-review-#{role}.md"
   role_blurb = role == "primary" ? "the deep primary review" : "the focused light second read"
+  role_responsibility =
+    if role == "primary"
+      "As the PRIMARY you are the review OWNER: you run the gates (dor-check / cert / CI / acceptance match) " \
+        "and you DRIVE the verdict (merge-ready or request-changes). Your deep review is the driving recommendation."
+    else
+      "As the LIGHT you are a focused second read through your domain lens. You do NOT run the gates and do NOT " \
+        "drive the verdict — report your findings up to the primary/supervisor (any reviewer can still block on a defect)."
+    end
 
   <<~PROMPT
     Work from /Users/alex/projects as #{reviewer_slug}, a pr-review #{role} reviewer for #{task.fetch("slug")}.
@@ -264,6 +272,8 @@ def reviewer_prompt(task, reviewer, role, reviewers)
     Read /Users/alex/projects/AGENTS.md and the relevant repo README/runbook/docs before reviewing.
 
     Run your role SOP end to end (#{role_blurb}): #{role_sop}
+
+    #{role_responsibility}
 
     Avi is the review SUPERVISOR — a thin gate who never reviews code himself. He confirmed
     product-acceptance, ran bin/reviewer-select to pick this primary+light pair, and spawned you
@@ -315,6 +325,16 @@ def safe_filename(value)
   value.to_s.gsub(/[^A-Za-z0-9._-]+/, "-").gsub(/\A-+|-+\z/, "")
 end
 
+# The intent-labeled delegate action the supervisor emits for each reviewer it
+# spawns — the deterministic-path echo of the interactive Agent-tool `description`
+# ("summon primary review: <soul>" / "summon light review: <soul>"). Making the
+# two labels legible here is the enforcement half of harden-review-lane-roles:
+# BOTH reviewers are the supervisor's own parallel children (the primary never
+# spawns the light), and each spawn is announced with its role-tagged intent.
+def delegate_action_label(role, reviewer_slug)
+  "summon #{role} review: #{reviewer_slug}"
+end
+
 def run_directory
   @run_directory ||= begin
     dir = File.join(File.expand_path(OPTIONS.fetch(:output_dir), ROOT), Time.now.utc.strftime("%Y%m%dT%H%M%SZ-#{$$}"))
@@ -341,14 +361,15 @@ def launch_reviewer(task, reviewer, role, reviewers)
   File.write(prompt_path, prompt)
 
   cmd = codex_command(last_path)
+  action = delegate_action_label(role, reviewer_slug)
   unless OPTIONS.fetch(:run)
-    puts "  dry-run: would launch #{role} #{reviewer_slug}"
+    puts "  dry-run: would #{action}"
     puts "           #{shell_join(cmd)} < #{prompt_path}"
     return { reviewer: reviewer_slug, role: role, prompt_path: prompt_path, dry_run: true, success: true }
   end
 
   pid = Process.spawn(*cmd, in: prompt_path, out: log_path, err: [:child, :out], chdir: ROOT)
-  puts "  launched #{role} #{reviewer_slug} pid=#{pid} log=#{log_path}"
+  puts "  #{action} (pid=#{pid} log=#{log_path})"
   { reviewer: reviewer_slug, role: role, pid: pid, prompt_path: prompt_path, log_path: log_path, last_path: last_path }
 rescue StandardError => e
   { reviewer: reviewer_slug, role: role, success: false, error: e.message }
