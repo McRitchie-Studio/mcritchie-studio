@@ -2,8 +2,9 @@
     span carries data-release-ticker + data-since (created_at epoch) + data-prefix;
     this advances it every second so the operator watches the clock climb. A span
     with data-mode="ago" ticks the OTHER direction of the same math — time since a
-    tracker stage STARTED ("4m ago") — so every reached node stays fresh between card
-    swaps. It re-queries the DOM each tick, so a Turbo-Streamed card swap
+    tracker stage STARTED ("4m ago"). data-mode="countdown" uses the same elapsed
+    seconds against a stage-average target and flips to negative after overrun.
+    It re-queries the DOM each tick, so a Turbo-Streamed card swap
     (DeploymentsBroadcaster → LiveBoardFx) is picked up automatically with no
     re-wiring. Installed once and survives Turbo navigations. fmt() MUST match
     ApplicationHelper#format_elapsed_clock and agoFmt() MUST match
@@ -36,7 +37,19 @@
         var since = parseInt(el.dataset.since || "0", 10);
         if (!since) return;
         var secs = Math.max(0, now - since);
-        if (el.dataset.mode === "ago") {
+        if (el.dataset.mode === "countdown") {
+          var average = parseInt(el.dataset.averageSeconds || "0", 10);
+          if (!average) return;
+          var remaining = average - secs;
+          var overrun = remaining < 0;
+          el.dataset.overrun = overrun ? "true" : "false";
+          el.textContent = (overrun ? "-" : "") + fmt(Math.abs(remaining));
+
+          var averageTitle = el.dataset.averageTitle || "Historical average";
+          el.title = averageTitle + ": " + fmt(average) +
+            " · elapsed " + fmt(secs) + " · " +
+            (overrun ? "over by " + fmt(Math.abs(remaining)) : fmt(remaining) + " left");
+        } else if (el.dataset.mode === "ago") {
           el.textContent = agoFmt(secs);
           if (!el.dataset.titled) {
             el.dataset.titled = "1";

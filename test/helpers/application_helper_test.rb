@@ -339,6 +339,68 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_nil assembling[:duration_seconds], "no completed span yet, so no took"
   end
 
+  test "[unit] release tracker averages use the last three shipped deployments" do
+    now = Time.zone.parse("2026-07-06 12:00:00")
+    create_shipped_tracker_release(slug: "rel-old", shipped_at: now - 4.hours, assembling_seconds: 90.minutes)
+    create_shipped_tracker_release(slug: "rel-one", shipped_at: now - 3.hours, assembling_seconds: 10.minutes)
+    create_shipped_tracker_release(slug: "rel-two", shipped_at: now - 2.hours, assembling_seconds: 20.minutes)
+    create_shipped_tracker_release(slug: "rel-three", shipped_at: now - 1.hour, assembling_seconds: 30.minutes)
+
+    averages = release_tracker_average_seconds_by_stage(limit: 3)
+
+    assembling = averages.fetch("assembling")
+    assert_equal 20.minutes.to_i, assembling.fetch(:average_seconds)
+    assert_equal 3, assembling.fetch(:sample_count)
+  end
+
+  test "[unit] release countdown label shows negative time after the average" do
+    assert_equal "5m 43s",
+                 release_countdown_label(average_seconds: 10.minutes, elapsed_seconds: 4.minutes + 17.seconds)
+    assert_equal "-5m 43s",
+                 release_countdown_label(average_seconds: 10.minutes, elapsed_seconds: 15.minutes + 43.seconds)
+  end
+
+  test "[component] active tracker node renders the last-three countdown only there" do
+    now = Time.zone.parse("2026-07-06 12:00:00")
+    create_shipped_tracker_release(slug: "rel-one", shipped_at: now - 3.hours, assembling_seconds: 10.minutes)
+    create_shipped_tracker_release(slug: "rel-two", shipped_at: now - 2.hours, assembling_seconds: 10.minutes)
+    create_shipped_tracker_release(slug: "rel-three", shipped_at: now - 1.hour, assembling_seconds: 10.minutes)
+
+    travel_to now do
+      rel = Release.open!(created_at: now - 5.minutes)
+      rel.stamp_stage!("assembling", at: now - 4.minutes - 17.seconds)
+
+      render partial: "tasks/release_tracker", locals: { release: rel.reload }
+
+      assert_select "[data-test='release-tracker-duration'][data-mode='countdown']", count: 1
+      assert_select "[data-test='release-tracker-step'][data-stage='assembling'][data-state='active'] " \
+                    "[data-test='release-tracker-duration'][data-mode='countdown']" \
+                    "[data-average-seconds='600'][data-sample-count='3'][data-overrun='false']",
+                    text: "5m 43s"
+      assert_select "[data-test='release-tracker-step'][data-stage='testing'] " \
+                    "[data-test='release-tracker-duration'][data-mode='countdown']",
+                    count: 0
+    end
+  end
+
+  test "[component] active tracker countdown goes negative past the average" do
+    now = Time.zone.parse("2026-07-06 12:00:00")
+    create_shipped_tracker_release(slug: "rel-one", shipped_at: now - 3.hours, assembling_seconds: 10.minutes)
+    create_shipped_tracker_release(slug: "rel-two", shipped_at: now - 2.hours, assembling_seconds: 10.minutes)
+    create_shipped_tracker_release(slug: "rel-three", shipped_at: now - 1.hour, assembling_seconds: 10.minutes)
+
+    travel_to now do
+      rel = Release.open!(created_at: now - 15.minutes)
+      rel.stamp_stage!("assembling", at: now - 12.minutes)
+
+      render partial: "tasks/release_tracker", locals: { release: rel.reload }
+
+      assert_select "[data-test='release-tracker-step'][data-stage='assembling'][data-state='active'] " \
+                    "[data-test='release-tracker-duration'][data-mode='countdown'][data-overrun='true']",
+                    text: "-2m 00s"
+    end
+  end
+
   test "[component] _release_summary renders the current release tracker stages" do
     rel = Release.open!
     tasks(:queued_task).update!(stage: "assembled", release_slug: rel.slug)
@@ -754,5 +816,37 @@ class ApplicationHelperTest < ActionView::TestCase
 
     assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
     assert_nil heartbeat_launcher_for(nil)
+  end
+
+  def create_shipped_tracker_release(slug:, shipped_at:, assembling_seconds:)
+    testing_seconds = 2.minutes
+    qa_seconds = 5.minutes
+    confirming_seconds = 3.minutes
+    prod_seconds = 4.minutes
+    total_seconds = testing_seconds + assembling_seconds + qa_seconds + confirming_seconds + prod_seconds
+    testing_started_at = shipped_at - total_seconds
+    assembling_started_at = testing_started_at + testing_seconds
+    assembled_at = assembling_started_at + assembling_seconds
+    qa_deploy_started_at = assembled_at
+    qa_deployed_at = qa_deploy_started_at + qa_seconds
+    confirming_started_at = qa_deployed_at
+    confirmed_at = confirming_started_at + confirming_seconds
+    prod_deploy_started_at = confirmed_at
+
+    Release.create!(slug: slug, branch: "release", state: "shipped").tap do |release|
+      release.update_columns( # rubocop:disable Rails/SkipsModelValidations
+        created_at: testing_started_at,
+        updated_at: shipped_at,
+        testing_started_at: testing_started_at,
+        assembling_started_at: assembling_started_at,
+        assembled_at: assembled_at,
+        qa_deploy_started_at: qa_deploy_started_at,
+        qa_deployed_at: qa_deployed_at,
+        confirming_started_at: confirming_started_at,
+        confirmed_at: confirmed_at,
+        prod_deploy_started_at: prod_deploy_started_at,
+        shipped_at: shipped_at
+      )
+    end
   end
 end

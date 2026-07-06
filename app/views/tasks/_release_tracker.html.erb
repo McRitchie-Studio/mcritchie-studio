@@ -4,8 +4,9 @@
     self-contained, testable unit (single render site — the Next Release card).
     Locals:
       release  the active Release to chart (required)
-    Steps + per-stage durations come from release_tracker_steps; the live stage
-    ticks down to the second via _release_ticker (data-release-ticker). %>
+    Steps + per-stage durations come from release_tracker_steps; the active stage
+    counts down from the last-three-release average via _release_ticker
+    (data-release-ticker). %>
 <% rel = local_assigns.fetch(:release) %>
 <% tracker_steps = release_tracker_steps(rel) %>
 <div class="grid grid-cols-5 gap-1" data-test="release-tracker-steps">
@@ -22,10 +23,23 @@
         <% end %>
       </span>
       <span class="max-w-20 text-center text-[10px] font-semibold leading-tight <%= release_tracker_label_classes(step[:state]) %>" data-test="release-tracker-label"><%= step[:label] %></span>
-      <% if step[:started_at] %>
+      <% if step[:countdown_label] %>
+        <%# The ACTIVE node alone gets the prediction clock: count down from the
+            last-three shipped release average, then flip to a negative overrun.
+            Completed nodes keep their started-ago timing; pending nodes stay blank. %>
+        <span class="font-mono text-[10px] leading-none tabular-nums text-secondary data-[overrun=true]:text-red-300"
+              data-test="release-tracker-duration"
+              data-release-ticker
+              data-mode="countdown"
+              data-since="<%= step[:started_at].to_i %>"
+              data-average-seconds="<%= step[:average_seconds] %>"
+              data-sample-count="<%= step[:average_sample_count] %>"
+              data-average-title="<%= release_tracker_average_source_label(step[:average_sample_count]) %>"
+              data-overrun="<%= step[:countdown_seconds].negative? %>"
+              title="<%= release_tracker_countdown_title(step) %>"><%= step[:countdown_label] %></span>
+      <% elsif step[:started_at] %>
         <%# Every reached node shows how long ago the stage STARTED — the active
-            node too (its live clock is this same "X ago", not a mm:ss count-up).
-            title is the app-TZ fallback; the ago ticker re-stamps it browser-local
+            node too when no average exists. title is the app-TZ fallback; the ago ticker re-stamps it browser-local
             off data-since (+ data-took once finished) so the operator reads their
             own clock. Active stays a touch brighter as the liveness cue. %>
         <span class="font-mono text-[10px] leading-none tabular-nums <%= step[:duration_live] ? 'text-secondary' : 'text-muted' %>"

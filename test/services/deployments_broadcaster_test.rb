@@ -212,6 +212,26 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes last.to_html, active.slug, "Last Release wears the just-shipped release"
   end
 
+  test "[integration] release_modules carries the active-stage countdown payload" do
+    now = Time.zone.parse("2026-07-06 12:00:00")
+    create_shipped_tracker_release(slug: "rel-countdown-one", shipped_at: now - 3.hours)
+    create_shipped_tracker_release(slug: "rel-countdown-two", shipped_at: now - 2.hours)
+    create_shipped_tracker_release(slug: "rel-countdown-three", shipped_at: now - 1.hour)
+
+    travel_to now do
+      active = Release.open!(created_at: now - 5.minutes)
+      active.stamp_stage!("assembling", at: now - 4.minutes)
+
+      streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
+      current = streams.find { |s| s["target"] == "current-release" }
+
+      assert_includes current.to_html, %(data-mode="countdown")
+      assert_includes current.to_html, %(data-average-seconds="600")
+      assert_includes current.to_html, %(data-sample-count="3")
+      assert_includes current.to_html, "6m 00s"
+    end
+  end
+
   test "[integration] Release wires the module broadcast on after_commit" do
     assert Release._commit_callbacks.any? { |c| c.filter == :broadcast_release_modules },
       "Release must broadcast the live release modules after a commit"
@@ -262,5 +282,32 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes tone, "bg-surface", "no qa_feedback in the loaded set → ever_blocked=false → plain tone"
     assert_not_includes tone, "bg-amber-50", "a never-blocked card is plain, not amber"
     assert_not_includes tone, "bg-red-50", "a never-blocked card is plain, not red"
+  end
+
+  def create_shipped_tracker_release(slug:, shipped_at:)
+    testing_started_at = shipped_at - 24.minutes
+    assembling_started_at = testing_started_at + 2.minutes
+    assembled_at = assembling_started_at + 10.minutes
+    qa_deploy_started_at = assembled_at
+    qa_deployed_at = qa_deploy_started_at + 5.minutes
+    confirming_started_at = qa_deployed_at
+    confirmed_at = confirming_started_at + 3.minutes
+    prod_deploy_started_at = confirmed_at
+
+    Release.create!(slug: slug, branch: "release", state: "shipped").tap do |release|
+      release.update_columns( # rubocop:disable Rails/SkipsModelValidations
+        created_at: testing_started_at,
+        updated_at: shipped_at,
+        testing_started_at: testing_started_at,
+        assembling_started_at: assembling_started_at,
+        assembled_at: assembled_at,
+        qa_deploy_started_at: qa_deploy_started_at,
+        qa_deployed_at: qa_deployed_at,
+        confirming_started_at: confirming_started_at,
+        confirmed_at: confirmed_at,
+        prod_deploy_started_at: prod_deploy_started_at,
+        shipped_at: shipped_at
+      )
+    end
   end
 end
