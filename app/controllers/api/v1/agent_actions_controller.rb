@@ -27,9 +27,11 @@ module Api
       private
 
       # The live-capture request contract. The caller does NOT set cost (capture
-      # DERIVES it from model + tokens + cache_read via MODEL_RATES) or the
-      # event/result slugs (those arrive null and are filled by capture's defaults +
-      # Current.task_event_* fallbacks). It DOES now carry the transcript-derived
+      # DERIVES it from model + tokens + cache_read via MODEL_RATES). The generic
+      # tool-call hook also leaves the event/result slugs null; the test-scope
+      # telemetry path (bin/release run_test_scope → bin/atomic-event action) DOES
+      # send :event_slug (the scope key) + :result_slug (pass|fail) on the verdict
+      # action, so a release test run is a gradeable unit. It DOES now carry the transcript-derived
       # usage — model, the FRESH tokens (in/out), the RE-USED cache_read_tokens (for
       # cost only), and the source_turn_uuid the tokens came from. Blank scalars are
       # dropped so capture's own defaults engage (e.g. a missing occurred_at →
@@ -49,7 +51,9 @@ module Api
       def capture_params
         params.permit(
           :session_id,       # required — the session this action belongs to
-          :kind,             # required — read | edit | bash | verify | delegate | …
+          :kind,             # required — read | edit | bash | verify | delegate | test_scope | …
+          :event_slug,       # optional test-scope key on a release verdict action
+          :result_slug,      # optional pass | fail verdict on a test-scope run
           :task_slug,        # optional slug FK; null for pre-task actions
           :agent_activity_id, # optional deterministic activity pin from the local hook marker
           :atomic_event_id,   # compatibility alias for pre-taxonomy capture clients

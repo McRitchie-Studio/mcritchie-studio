@@ -387,9 +387,15 @@ end
 # the narration CLI's `action` verb — inert under --dry-run and with no conductor
 # session (agent_activity guards both), and a no-op when no activity is open (the
 # verb self-checks the open-activity marker).
-def agent_action(summary, key_method: nil)
+def agent_action(summary, key_method: nil, kind: nil, event_slug: nil, result_slug: nil, duration_ms: nil)
   args = ["action", "--summary", summary.to_s]
   args += ["--key-method", key_method.to_s] if key_method
+  # Verdict-only tag fields — a graded test-scope run carries them; a plain step
+  # (or a START emit) passes them nil and they never reach the POST body.
+  args += ["--kind", kind.to_s] if kind
+  args += ["--event-slug", event_slug.to_s] if event_slug
+  args += ["--result-slug", result_slug.to_s] if result_slug
+  args += ["--duration-ms", duration_ms.to_s] if duration_ms
   agent_activity(*args)
 end
 
@@ -460,8 +466,11 @@ end
 # Emit one test-scope AgentAction, best-effort. Keeps step()'s $role_span_open
 # gating; any error is swallowed (agent_action already swallows its own — this
 # belt-and-suspenders covers the summary plumbing too).
-def scope_action(summary, key_method: nil)
-  agent_action(summary, key_method: key_method) if $role_span_open
+def scope_action(summary, key_method: nil, kind: nil, event_slug: nil, result_slug: nil, duration_ms: nil)
+  if $role_span_open
+    agent_action(summary, key_method: key_method, kind: kind, event_slug: event_slug,
+                 result_slug: result_slug, duration_ms: duration_ms)
+  end
 rescue StandardError
   nil
 end
@@ -474,6 +483,12 @@ end
 # abort!/non-blocking behavior. A command that RAISES (Open3 ENOENT etc.) still
 # emits the FAILED action, then RE-RAISES — the call site's rescue semantics
 # (production_smoke_seal degrades it to a red seal) stay untouched.
+#
+# The VERDICT emit (COMPLETED/FAILED only — never START) is TAGGED to make the run
+# a first-class GRADEABLE unit in /alex/pipeline: kind="test_scope", event_slug=the
+# scope key, result_slug=pass|fail, duration_ms=the wall-clock. These ride the same
+# best-effort self-report path; a bare START stays untagged so the pipeline's
+# `kind:"test_scope" AND result_slug present` filter never surfaces it.
 def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, &block)
   meta  = scope_meta(key)
   where = repo.to_s.empty? ? meta["host"].to_s : repo.to_s
@@ -485,7 +500,9 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
     scope_action("test scope #{key} FAILED · #{where} · fail · #{e.class}: #{e.message} · " \
-                 "#{format('%.1fs', elapsed)} · #{printable}", key_method: printable)
+                 "#{format('%.1fs', elapsed)} · #{printable}", key_method: printable,
+                 kind: "test_scope", event_slug: key.to_s, result_slug: "fail",
+                 duration_ms: (elapsed * 1000).round)
     raise
   end
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
@@ -495,7 +512,9 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     parts << counts if counts
     parts << format("%.1fs", elapsed)
     parts << printable
-    scope_action(parts.join(" · "), key_method: printable)
+    scope_action(parts.join(" · "), key_method: printable,
+                 kind: "test_scope", event_slug: key.to_s, result_slug: ok ? "pass" : "fail",
+                 duration_ms: (elapsed * 1000).round)
   rescue StandardError
     nil # telemetry never breaks a release — the command result below is what matters
   end

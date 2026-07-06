@@ -2036,6 +2036,53 @@ class ReleaseCliTest < Minitest::Test
                      "a dry-run wraps but executes nothing — command + telemetry both inert (no shell-out)"
   end
 
+  # --- verdict tagging: the COMPLETED/FAILED emit is a GRADEABLE test_scope -----
+  # A2: run_test_scope tags ONLY the verdict emit with the fields that make the run
+  # a first-class gradeable unit in /alex/pipeline — kind=test_scope, event_slug=the
+  # scope key, result_slug=pass|fail, duration_ms — while the START emit stays plain
+  # (so the pipeline's `kind:test_scope AND result_slug present` filter skips it).
+
+  def test_run_test_scope_tags_only_the_verdict_action_as_a_gradeable_test_scope
+    setup = SCOPE_EMIT_STUB +
+            %(def sh(*_a, **_k) = ["141 runs, 320 assertions, 0 failures, 0 errors", true])
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(run_test_scope("ship_test_gate", "bin/rails", "test", repo: "mcritchie-studio"); ) +
+                        %(start = $events.find { |e| e.join(" ").include?("START") }; ) +
+                        %(done  = $events.find { |e| e.join(" ").include?("COMPLETED") }; ) +
+                        %(print("START=" + start.inspect + "\\nDONE=" + done.inspect)))
+
+    start_line, done_line = out.split("\nDONE=", 2)
+
+    # The verdict emit carries every gradeable tag field.
+    assert_includes done_line, "--kind",        "the verdict action is tagged with a kind"
+    assert_includes done_line, "test_scope",    "…kind=test_scope so the pipeline can select it"
+    assert_includes done_line, "--event-slug",  "…tagged with the scope key"
+    assert_includes done_line, "ship_test_gate"
+    assert_includes done_line, "--result-slug", "…tagged with the pass|fail verdict"
+    assert_includes done_line, "pass"
+    assert_includes done_line, "--duration-ms", "…and the wall-clock duration"
+
+    # START stays plain — no tag fields — so it never lands in the pipeline band.
+    refute_includes start_line, "--kind",        "the START emit stays untagged"
+    refute_includes start_line, "test_scope"
+    refute_includes start_line, "--result-slug"
+  end
+
+  def test_run_test_scope_tags_a_failed_verdict_with_result_slug_fail
+    setup = SCOPE_EMIT_STUB +
+            %(def sh(*_a, **_k) = ["3 runs, 3 assertions, 1 failures, 0 errors", false])
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(run_test_scope("qa_post_deploy", "heroku", "run", repo: "turf-monster-qa"); ) +
+                        %(done = $events.find { |e| e.join(" ").include?("FAILED") }; print(done.inspect)))
+
+    assert_includes out, "--kind",        "a failed run is still a tagged, gradeable verdict"
+    assert_includes out, "test_scope"
+    assert_includes out, "--event-slug"
+    assert_includes out, "qa_post_deploy"
+    assert_includes out, "--result-slug"
+    assert_includes out, "fail", "…with result_slug fail"
+  end
+
   # --- parse_test_counts: lenient, nil when nothing recognizable --------------
 
   def test_parse_test_counts_sums_minitest_summary_lines
