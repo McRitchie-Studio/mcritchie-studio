@@ -43,7 +43,17 @@ class ReviewEventsTest < ApplicationSystemTestCase
 
     visit deployments_path
     find("[data-test='deployment-link-menu'] summary").click
-    find("[data-test='deployment-link-menu-docs']").click
+
+    # The dropdown stacks "Stages" directly above "Docs". Under a chromedriver/
+    # chrome version skew in CI, a native click fired before the just-opened
+    # <details> menu had laid out mis-landed on the adjacent "Stages" link
+    # (asserted "/stages" instead of "/review_events"). Wait for the menu to be
+    # fully open, resolve the Docs link by its unique hook (verifying its href so
+    # a selector drift can't pass silently), then click that exact element.
+    assert_selector "[data-test='deployment-link-menu'][open]"
+    docs_link = find("[data-test='deployment-link-menu-docs']")
+    assert_equal review_events_hub_path, URI.parse(docs_link[:href]).path
+    docs_link.click
 
     assert_current_path review_events_hub_path
     assert_text "Review Process Hub"

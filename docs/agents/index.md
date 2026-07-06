@@ -45,6 +45,8 @@ required execution path. Do not follow a Background reference to run an SOP.
 |------------|-------|------------|
 | `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| `pr-review-primary` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-primary.md` |
+| `pr-review-light` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-light.md` |
 | `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
@@ -313,8 +315,10 @@ assigned that lane.
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi production deploy SOP | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
-| Avi PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
+| Avi PR review SOP (supervisor) | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | Avi slow PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| Avi primary reviewer role SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-primary.md` |
+| Avi light reviewer role SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-light.md` |
 | Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
@@ -358,6 +362,8 @@ depend on the heartbeat.
 | `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
 | `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
 | `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
+| `pr-review-primary` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-primary.md` |
+| `pr-review-light` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-light.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |

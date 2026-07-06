@@ -10,9 +10,15 @@
 #   * codex exec for each selected reviewer
 #   * bin/task move|block|note for Avi's final handoff
 #
+# This is the SUPERVISOR: it selects the primary+light pair (bin/reviewer-select)
+# and spawns BOTH role reviewers IN PARALLEL as sibling children — the primary
+# runs pr-review-primary.md, the light runs pr-review-light.md — then collects
+# both verdicts and gates. It NEVER performs a review itself (Avi is a thin gate,
+# not a reviewer).
+#
 # Slow mode reviews one submitted PR at a time and always re-queries the board
 # after a review before choosing the next PR. Fast mode starts bounded waves of
-# PRIMARY + LIGHT review pairs for stacked queues, then resolves each reviewed
+# primary + light review pairs for stacked queues, then resolves each reviewed
 # PR with the same final board re-query and handoff rules. Both modes stop after
 # --limit completed reviews and print a deterministic retrospective.
 
@@ -249,12 +255,19 @@ def reviewer_prompt(task, reviewer, role, reviewers)
   reviewer_slug = reviewer.fetch("slug")
   peer_text = reviewers.map { |r| "#{r["slug"]} (#{r["weight"] || "reviewer"})" }.join(" + ")
 
+  role_sop = "mcritchie-studio/docs/agents/agents/avi/sops/pr-review-#{role}.md"
+  role_blurb = role == "primary" ? "the deep primary review" : "the focused light second read"
+
   <<~PROMPT
     Work from /Users/alex/projects as #{reviewer_slug}, a pr-review #{role} reviewer for #{task.fetch("slug")}.
 
     Read /Users/alex/projects/AGENTS.md and the relevant repo README/runbook/docs before reviewing.
 
-    The pr-review supervisor is reviewing in #{OPTIONS.fetch(:mode)} mode. Avi has selected this pair:
+    Run your role SOP end to end (#{role_blurb}): #{role_sop}
+
+    Avi is the review SUPERVISOR — a thin gate who never reviews code himself. He confirmed
+    product-acceptance, ran bin/reviewer-select to pick this primary+light pair, and spawned you
+    and your peer IN PARALLEL as sibling reviewers (#{OPTIONS.fetch(:mode)} mode). You are the #{role}:
     #{peer_text}
 
     Task: #{task.fetch("task_url")}
@@ -428,10 +441,17 @@ def start_review(task, review_number)
   puts "  submitted_at=#{task["submitted_at"] || "-"} created_at=#{task["created_at"]} task=#{task["task_url"]}"
   puts "  pr=#{task.dig("devops", "pr_url") || "missing"}"
 
+  # Supervisor step: Avi (thin gate) SELECTS the primary+light pair — he never
+  # reviews code himself, so this narrates as "select primary+light reviewers"
+  # (NOT "summon Avi").
   reviewers = select_reviewers(slug)
   reviewer_slugs = reviewers.map { |reviewer| reviewer.fetch("slug") }
-  puts "  reviewers=#{reviewer_slugs.join(" + ")}"
+  puts "  select primary+light reviewers: #{reviewer_slugs.join(" + ")}"
 
+  # Spawn BOTH role reviewers IN PARALLEL as sibling children of the supervisor —
+  # reviewers[0] = primary (deep review), reviewers[1] = light (second read). They
+  # are launched non-blocking here and both waited on later in finish_review, so
+  # they run concurrently; the supervisor never performs a review itself.
   roles = %w[primary light]
   launches = reviewers.each_with_index.map do |reviewer, index|
     launch_reviewer(task, reviewer, roles.fetch(index), reviewers)
