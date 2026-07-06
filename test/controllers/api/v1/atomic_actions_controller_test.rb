@@ -150,7 +150,7 @@ module Api
         assert_equal "turn-9", captured[:source_turn_uuid]
       end
 
-      test "[unit] still does not permit cost or distillation slugs (cost is DERIVED)" do
+      test "[unit] permits the test-scope verdict slugs but still derives cost and seq" do
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
@@ -159,14 +159,18 @@ module Api
 
         AgentAction.stub(:capture, stub) do
           post api_v1_agent_actions_path,
-               params: @body.merge(cost: "9.99", event_slug: "x", result_slug: "y", seq: 42),
+               params: @body.merge(cost: "9.99", event_slug: "ship_test_gate", result_slug: "pass", seq: 42),
                headers: @headers, as: :json
         end
 
         assert_response :created
-        %i[cost event_slug result_slug seq].each do |forbidden|
+        # cost is DERIVED (model + tokens) and seq is server-assigned — never caller-settable.
+        %i[cost seq].each do |forbidden|
           assert_not captured.key?(forbidden), "#{forbidden} must not be caller-settable"
         end
+        # …but the test-scope telemetry path (A2) DOES set the verdict slugs, so they pass through.
+        assert_equal "ship_test_gate", captured[:event_slug], "event_slug is now caller-settable (verdict tagging)"
+        assert_equal "pass", captured[:result_slug], "result_slug is now caller-settable (pass|fail verdict)"
       end
 
       test "[unit] permits atomic_event_id so the hook can pin the open span" do
