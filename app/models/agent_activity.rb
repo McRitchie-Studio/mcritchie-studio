@@ -73,7 +73,8 @@ class AgentActivity < ApplicationRecord
   # Live-update the /agents/activities feed. Guarded inside ActivitiesBroadcaster's
   # safe_broadcast, so a dead cable never breaks a narration write. Note: the prior
   # activity that open_activity! auto-closes via update_all does NOT fire this (no
-  # callbacks on update_all) — only a genuine close_activity! update broadcasts.
+  # callbacks on update_all) — so open_activity! broadcasts that close explicitly
+  # after commit (see below), keeping the closed row live on the feed.
   after_create_commit  { ActivitiesBroadcaster.activity_created(self) }
   after_update_commit  { ActivitiesBroadcaster.activity_updated(self) }
 
@@ -147,6 +148,7 @@ class AgentActivity < ApplicationRecord
     )
     raise ActiveRecord::RecordInvalid, activity unless activity.valid?
 
+    closed_prior_ids = []
     transaction do
       close_attrs = { closed_at: opened_at, updated_at: opened_at }
       # Stamp the crossed-over activity's result only when the agent narrated one,
@@ -158,8 +160,17 @@ class AgentActivity < ApplicationRecord
       # Per-agent lanes: auto-close only THIS agent's open activity (activity.agent is the
       # already-normalized lane key — a known soul or nil), so a parallel soul
       # narration in the same session never closes another soul's in-flight activity.
-      for_session(session_id).where(agent: activity.agent).open.update_all(close_attrs)
+      lane = for_session(session_id).where(agent: activity.agent).open
+      closed_prior_ids = lane.pluck(:id)
+      lane.update_all(close_attrs)
       activity.save!
+    end
+    # update_all skips the after_update_commit broadcaster, so the just-closed prior
+    # activity would otherwise stay visually OPEN on the /agents/activities feed. Re-query
+    # the closed rows post-commit (fresh close state + stamped outcome) and broadcast each
+    # in place — the same live update a callback-firing close_activity! would emit.
+    if closed_prior_ids.any?
+      where(id: closed_prior_ids).find_each { |prior| ActivitiesBroadcaster.activity_updated(prior) }
     end
     activity
   end

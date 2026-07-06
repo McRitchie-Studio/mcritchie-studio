@@ -241,6 +241,33 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert_equal "already green", AgentActivity.for_session("keep-sess").order(:seq).first.outcome_slug
   end
 
+  # ---- [unit] BOUNDARY transition: the auto-closed prior span broadcasts live -
+
+  test "[unit] open_event! broadcasts the auto-closed prior span so it updates live" do
+    first = AgentActivity.open_event!(session_id: "bcast-sess", category: "Explore", reason_slug: "look")
+
+    updated = []
+    ActivitiesBroadcaster.stub(:activity_updated, ->(a) { updated << a }) do
+      AgentActivity.open_event!(session_id: "bcast-sess", category: "Edit",
+                                reason_slug: "change", prior_outcome_slug: "found it")
+    end
+
+    assert_equal [first.id], updated.map(&:id),
+                 "the auto-closed prior span must broadcast a live update (update_all skips its after_update_commit)"
+    assert_equal "found it", updated.first.outcome_slug,
+                 "the broadcast row must carry the stamped close state, not the stale open row"
+    assert updated.first.closed?, "the broadcast row reflects the closed span"
+  end
+
+  test "[unit] a bare open_event! (no prior open span) broadcasts no spurious update" do
+    updated = []
+    ActivitiesBroadcaster.stub(:activity_updated, ->(a) { updated << a }) do
+      AgentActivity.open_event!(session_id: "solo-sess", category: "Explore", reason_slug: "first")
+    end
+
+    assert_empty updated, "opening the first span in a lane closes nothing, so it broadcasts no update"
+  end
+
   # ---- [integration] session-end teardown: close_all_open! ------------------
 
   test "[integration] close_all_open! closes the open span with a shared outcome" do
