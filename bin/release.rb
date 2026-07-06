@@ -263,7 +263,17 @@ ASSUME_YES = Release::Cli.take_flag(ARGV, "--yes")
 
 def abort!(msg) = abort("✗ #{msg}")
 def say(msg) = puts(msg)
-def step(msg) = puts("→ #{msg}")
+
+# A discrete deploy operation: printed to the release log AND — inside a role span
+# (prepare/ship) — self-reported as ONE AgentAction so the Remote deploy span shows
+# genuine rows. bin/release's real work runs as SUBPROCESSES of a single Bash tool
+# call, invisible to the PostToolUse capture hook, so without this the span reads
+# "No raw actions attributed". Gated on $role_span_open so steps OUTSIDE a span
+# (status/merge reads) don't spawn a report with nothing to attribute to.
+def step(msg)
+  puts("→ #{msg}")
+  agent_action(msg) if $role_span_open
+end
 
 # Loud banner printed at the top of prepare/ship when --local opted out of the
 # production board. The local db is stale, so a release run against it won't
@@ -354,6 +364,11 @@ end
 # --dry-run (a preview narrates nothing) and when no conductor session is
 # resolvable (nothing to attribute the activity to).
 
+# True while bin/release holds an OPEN role span (open_role_span … close_role_span),
+# so step() knows to self-report its actions into it. Off-span steps skip the
+# report — there's no span to attribute them to.
+$role_span_open = false
+
 # Fire one bin/agent-activity subcommand, best-effort. The command itself always
 # exits 0; we still swallow everything and redirect its stdout/stderr so the
 # narration never disturbs the release log or aborts the run.
@@ -366,12 +381,26 @@ rescue StandardError
   nil
 end
 
+# Self-report ONE off-box action into the open role span, so the Remote deploy
+# span carries real rows for work the PostToolUse hook can't see (git / gh /
+# `heroku run` all run as subprocesses of ONE Bash tool call). Thin shell-out to
+# the narration CLI's `action` verb — inert under --dry-run and with no conductor
+# session (agent_activity guards both), and a no-op when no activity is open (the
+# verb self-checks the open-activity marker).
+def agent_action(summary, key_method: nil)
+  args = ["action", "--summary", summary.to_s]
+  args += ["--key-method", key_method.to_s] if key_method
+  agent_activity(*args)
+end
+
 def open_role_span(agent, reason)
+  $role_span_open = true
   agent_activity("start", "--category", "Remote", "--reason", reason, "--agent", agent)
 end
 
 def close_role_span(outcome)
   agent_activity("end", "--outcome", outcome)
+  $role_span_open = false
 end
 
 # Invoke a Release::Conductor snippet — locally, or on prod via `heroku run`.

@@ -173,6 +173,19 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  # ── [unit] read_open_activity: the reader `action` pins rows with ─────────
+
+  def test_unit_read_open_activity_round_trips_the_marker
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      assert_nil c.send(:read_open_activity, SESSION), "no marker → nil (no span open)"
+      c.send(:write_open_activity, SESSION, 42)
+      assert_equal "42", c.send(:read_open_activity, SESSION), "reads back the id `start` wrote"
+      c.send(:clear_open_activity, SESSION)
+      assert_nil c.send(:read_open_activity, SESSION), "cleared → nil"
+    end
+  end
+
   # ── [integration] start POSTs an open activity ───────────────────────────
 
   def test_integration_start_mints_token_and_opens_activity
@@ -280,6 +293,50 @@ class AgentActivityCliTest < Minitest::Test
 
       close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close" }
       assert_equal "carl", JSON.parse(close[:body])["agent"], "--agent rides the close so it hits carl's lane"
+    end
+  end
+
+  # ── [integration] action self-reports an off-box row to the open activity ──
+  # bin/release's deploy steps run as subprocesses the PostToolUse hook can't see;
+  # `action` pins each to the open span (the marker) so the span shows real rows.
+
+  def test_integration_action_reports_to_the_open_activity
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION,
+                           "task_slug" => "deploy-spans-self-report-actions", "mascot" => "scyther", "stage" => "assembled")
+      seed_open_activity_marker(proj, SESSION, 1) # the span bin/release opened
+
+      requests = run_cli(%W[action --session #{SESSION} --summary qa-deploy-mcritchie-studio], proj: proj)
+
+      post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_actions" }
+      refute_nil post, "action POSTs one agent_action"
+      body = JSON.parse(post[:body])
+      assert_equal SESSION, body["session_id"]
+      assert_equal "1", body["agent_activity_id"], "pinned to the open activity from the marker"
+      assert_equal "qa-deploy-mcritchie-studio", body["summary"]
+      assert_equal "bash", body["kind"], "a deploy step is a shell op → the bash default"
+      assert_equal "scyther", body["mascot"]
+      assert_equal "assembled", body["stage"]
+    end
+  end
+
+  def test_integration_action_without_an_open_activity_is_a_noop
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      # No open-activity marker (no span open) → nothing to attribute to → no POST,
+      # and it never even mints a token (the marker check precedes the HTTP).
+      requests = run_cli(%W[action --session #{SESSION} --summary orphan-step], proj: proj)
+      assert_nil requests.find { |r| r[:path] == "/api/v1/agent_actions" }, "no open activity → action does not POST"
+    end
+  end
+
+  def test_integration_action_with_explicit_kind_overrides_the_bash_default
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      seed_open_activity_marker(proj, SESSION, 9)
+      requests = run_cli(%W[action --session #{SESSION} --summary verify-boot --kind verify], proj: proj)
+      post = requests.find { |r| r[:path] == "/api/v1/agent_actions" }
+      assert_equal "verify", JSON.parse(post[:body])["kind"]
     end
   end
 
@@ -631,6 +688,7 @@ class AgentActivityCliTest < Minitest::Test
   def response_for(method, path)
     return ["200 OK", JSON.generate("token" => "stub-token", "expires_at" => (Time.now + 86_400).utc.iso8601)] if path == "/api/v1/auth"
     return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_activities"
+    return ["201 Created", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_actions"
     return ["200 OK", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close"
     return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close_all"
     if method == "POST" && path.match?(%r{\A/api/v1/agent_activities/\d+/grade\z})

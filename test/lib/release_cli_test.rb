@@ -1901,6 +1901,50 @@ class ReleaseCliTest < Minitest::Test
     assert_match(/ATOMIC end --outcome shipped/, out, "and closes it once shipped to prod")
   end
 
+  # bin/release's real work (git / gh / heroku run) runs as SUBPROCESSES of one Bash
+  # tool call, invisible to the PostToolUse capture hook — so its Remote deploy span
+  # read "No raw actions attributed". step() now self-reports each in-span operation
+  # as an AgentAction (bin/agent-activity action) so the span carries genuine rows.
+
+  def test_step_self_reports_an_action_only_inside_a_role_span
+    setup = <<~RUBY
+      $events = []
+      def agent_activity(*a) = ($events << a)
+      def conductor_session_id = "sess-x"
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(step("before span"); ) +
+                        %(open_role_span("steffon", "sweep → deploy RC to QA"); ) +
+                        %(step("qa deploy: bin/qa-server deploy foo"); ) +
+                        %(close_role_span("assembled rel-x → QA"); ) +
+                        %(step("after span"); print($events.inspect)))
+
+    assert_includes out, %(["action", "--summary", "qa deploy: bin/qa-server deploy foo"]),
+                     "a step INSIDE the role span self-reports an AgentAction"
+    refute_includes out, %(["action", "--summary", "before span"]),
+                     "a step BEFORE the span opens does not (nothing to attribute to)"
+    refute_includes out, %(["action", "--summary", "after span"]),
+                     "a step AFTER the span closes does not"
+  end
+
+  def test_agent_action_is_a_noop_under_dry_run
+    # agent_action rides agent_activity, which no-ops under --dry-run — a preview
+    # narrates and self-reports nothing.
+    setup = %(def conductor_session_id = "sess-x")
+    out = run_cli(["--dry-run"], setup: setup,
+                  call: %(print(agent_action("qa deploy: foo").inspect)))
+    assert_equal "nil", out, "a dry-run self-reports no action"
+  end
+
+  # [integration] prepare's in-span steps self-report actions end-to-end (the paren
+  # post_deploy stub reaches assemble under --yes; narration is captured, not shelled).
+  def test_prepare_self_reports_step_actions_into_the_span
+    out = run_cli(["--yes"], call: "prepare", setup: PAREN_POST_DEPLOY_PREP_STUB + NARRATION_CAPTURE)
+
+    assert_match(/ATOMIC action --summary /, out,
+                 "prepare's steps self-report actions into the open Remote span")
+  end
+
   # --- ship preflight: every app checkout on a clean `main` before any ff ----
   # ship ff's each app repo's main → frozen SHA; a checkout left on a pr-NNN
   # branch (review agent) or with a stale schema.rb breaks the ff mid-ship. The
