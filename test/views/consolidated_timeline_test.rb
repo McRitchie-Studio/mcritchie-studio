@@ -205,4 +205,40 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Steffon']", count: 1
     assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Charizard']", count: 0
   end
+
+  # A NON-evolving mascot earns no Evolve reel — but it must still stay off the
+  # deploy cards. Reviewed → Assembled and Assembled → Shipped render their stage
+  # owners (Steffon / Avi) alone; the mascot lives only on the Build lane.
+  test "keeps a non-evolving mascot off the deploy cards — Steffon and Avi ride them alone" do
+    Agent.create!(name: "Steffon", slug: "steffon")
+    Agent.create!(name: "Avi", slug: "avi")
+    Pokemon.create!(dex: 131, name: "Lapras", slug: "lapras", generation: 1,
+                    sprite_url: "https://example.test/lapras.png")
+    task = Task.create!(title: "component deploy no-mascot task",
+                        metadata: { "devops" => { "mascot" => "lapras" } })
+    task.task_events.delete_all
+    snap = { "mascot" => { "slug" => "lapras", "name" => "Lapras", "avatar" => "https://example.test/lapras.png" } }
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 3.hours.ago, seconds_in_from: 3600,
+                      metadata: snap.merge("reviewers" => [{ "slug" => "carl", "weight" => "primary" },
+                                                           { "slug" => "shannon", "weight" => "light" }]))
+    TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 1.hour.ago, seconds_in_from: 600, actor: "avi", metadata: snap)
+    task.update_columns(stage: "shipped")
+
+    render partial: "tasks/consolidated_timeline",
+           locals: { task: task.reload, agents: Agent.all.to_a, events: task.task_events.to_a }
+
+    # Lapras doesn't evolve → no Evolve reel …
+    assert_select "[data-test='timeline-block'][data-stage='evolve']", count: 0
+    # … and the deploy cards are their stage owners alone — no Lapras companion.
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Steffon']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='assembled'] [data-test='timeline-crew-member'][title^='Lapras']", count: 0
+    assert_select "[data-test='timeline-block'][data-stage='shipped'] [data-test='timeline-crew-member'][title^='Avi']", count: 1
+    assert_select "[data-test='timeline-block'][data-stage='shipped'] [data-test='timeline-crew-member'][title^='Lapras']", count: 0
+  end
 end
