@@ -157,26 +157,25 @@
   }
 
   .task-card-stage-glow-submitted {
-    --studio-border-glow-opacity: 0.78;
-    --studio-border-glow-halo-opacity: 0.26;
-    --studio-border-glow-halo-blur: 16px;
+    --studio-border-glow-opacity: 0.62;
+    --studio-border-glow-halo-opacity: 0.16;
+    --studio-border-glow-halo-blur: 12px;
     --studio-border-glow-animation: none;
-    --studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), #22c55e, #22c55e);
+    --studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), var(--task-card-glow-color, #22c55e), var(--task-card-glow-color, #22c55e));
   }
 
   .task-card-stage-glow-reviewed {
-    --studio-border-glow-opacity: 0.86;
-    --studio-border-glow-halo-opacity: 0.3;
-    --studio-border-glow-halo-blur: 20px;
+    --studio-border-glow-opacity: 0.78;
+    --studio-border-glow-halo-opacity: 0.24;
+    --studio-border-glow-halo-blur: 16px;
     --studio-border-glow-gradient:
       linear-gradient(
         var(--studio-border-glow-angle, 45deg),
-        #facc15,
-        #2563eb,
-        #facc15,
-        #2563eb,
-        #facc15,
-        #2563eb
+        var(--task-card-glow-color, #22d3ee),
+        color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff),
+        var(--task-card-glow-color, #22d3ee),
+        color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff),
+        var(--task-card-glow-color, #22d3ee)
       );
   }
 
