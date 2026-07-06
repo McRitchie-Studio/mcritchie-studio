@@ -27,10 +27,12 @@
 # accepts `--outcome` for the same crossover). `close-open` is the session-end
 # teardown (wired to the Claude Code SessionEnd hook): it closes any activity still
 # open so the last one never hangs open forever. `action --summary <text>` self-
-# reports ONE off-box action to the currently-open activity — for subprocess work
+# reports ONE off-box action to the currently-open activity — either subprocess work
 # the PostToolUse capture hook can't see (bin/release's git/gh/`heroku run` all run
 # inside a single Bash tool call), so a deploy span shows genuine rows instead of
-# "No raw actions attributed". `next`/`end` also take
+# "No raw actions attributed"; or, with `--finding`, a DISTILLED FINDING (a
+# validate→resolve conclusion the agent reached) that lands as "FINDING · <text>"
+# on the heartbeat. `next`/`end` also take
 # `--key-method <code>` (+ optional `--key-lang bash|ruby|sql|js`) to stamp the
 # COMPLETED activity's one load-bearing call — the copyable line another agent would
 # rerun (e.g. `User.find_by(email: ...)`); most activities have none, so it's optional.
@@ -57,6 +59,14 @@ class AgentActivityCli
   CATEGORIES = %w[
     Explore Edit Verify Version Workflow Delegate Clarify Remote Research Plan
   ].freeze
+
+  # The canonical action KIND for a DISTILLED FINDING — a validate→resolve
+  # CONCLUSION the agent reached, self-reported to the open activity via
+  # `action --summary "<conclusion>" --finding` (or `--kind finding`). A finding is
+  # not a tool op; giving it one stable verb makes the row read "FINDING · <conclusion>"
+  # on the heartbeat and keeps distilled findings queryable as one class. Everything
+  # else keeps the honest default (`--kind <k>`, else `bash` for a deploy step).
+  FINDING_KIND = "finding"
 
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5
@@ -87,7 +97,7 @@ class AgentActivityCli
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
                 "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
                 "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
-                "action --summary <text> [--kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
+                "action --summary <text> [--finding | --kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
                 "heartbeat <soul> | heartbeat --clear | " \
                 "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
                 "awaiting [--limit <n>]")
@@ -212,14 +222,20 @@ class AgentActivityCli
     report(res, "closed open activities · #{outcome}")
   end
 
-  # Self-report ONE raw action to the session's currently-open activity — for
-  # OFF-BOX work the PostToolUse capture hook can't see. bin/release does its real
-  # work (git / gh / `heroku run` conductor snippets) as SUBPROCESSES inside a
-  # SINGLE Bash tool call, so none of it fires the hook; its Remote deploy span
-  # would show "No raw actions attributed". Each `step()` in that span calls this
-  # so the span carries genuine rows. Pinned to the OPEN-activity marker (the exact
-  # span the caller opened), exactly as a captured tool-call would be. No open
-  # activity → nothing to attribute to → a swallowed no-op. Same best-effort,
+  # Self-report ONE raw action to the session's currently-open activity. Two uses,
+  # both pinned to the OPEN-activity marker (the exact span the caller opened),
+  # exactly as a captured tool-call would be:
+  #   1. OFF-BOX work the PostToolUse capture hook can't see — bin/release does its
+  #      real work (git / gh / `heroku run` conductor snippets) as SUBPROCESSES
+  #      inside a SINGLE Bash tool call, so none of it fires the hook and its Remote
+  #      deploy span would show "No raw actions attributed"; each `step()` calls this
+  #      so the span carries genuine rows.
+  #   2. A DISTILLED FINDING (`--finding` / `--kind finding`) — a validate→resolve
+  #      CONCLUSION the agent reached, which by nature is thought, not a tool op, so
+  #      the hook never captures it. Self-reporting it under the canonical FINDING_KIND
+  #      verb lands it as "FINDING · <conclusion>" on the heartbeat, so a distilled
+  #      insight reads well and stays queryable as one class.
+  # No open activity → nothing to attribute to → a swallowed no-op. Same best-effort,
   # never-fatal posture as the rest of this CLI.
   def action(flags)
     sid = resolve_session_id(flags)
@@ -235,9 +251,10 @@ class AgentActivityCli
     res = post("/api/v1/agent_actions", {
       "session_id"        => sid,
       "agent_activity_id" => activity_id,
-      # kind is the action taxonomy (read | edit | bash | verify | …); a deploy
-      # step is a shell op, so `bash` is the honest default.
-      "kind"              => (present?(flags["kind"]) ? flags["kind"].to_s.strip : "bash"),
+      # kind is the action taxonomy (read | edit | bash | verify | finding | …); a
+      # distilled finding self-reports under FINDING_KIND, a deploy step is a shell
+      # op so `bash` is the honest default (see action_kind).
+      "kind"              => action_kind(flags),
       "summary"           => summary,
       "key_method"        => flags["key-method"].to_s.strip,
       "key_method_lang"   => flags["key-lang"].to_s.strip,
@@ -258,6 +275,16 @@ class AgentActivityCli
     }.reject { |_, v| v.to_s.empty? })
 
     report(res, "action · #{summary}")
+  end
+
+  # The KIND stamped on a self-reported action. `--finding` (a bare shorthand flag)
+  # or an explicit `--kind finding` both resolve to the canonical FINDING_KIND, so a
+  # distilled conclusion reads as "FINDING · …" on the heartbeat. Otherwise the
+  # explicit `--kind <k>` wins, else `bash` — a deploy step is a shell op.
+  def action_kind(flags)
+    return FINDING_KIND if flags.key?("finding") || flags["kind"].to_s.strip == FINDING_KIND
+
+    present?(flags["kind"]) ? flags["kind"].to_s.strip : "bash"
   end
 
   # Sets (or clears) the session's STICKY acting-agent — the soul that EVERY

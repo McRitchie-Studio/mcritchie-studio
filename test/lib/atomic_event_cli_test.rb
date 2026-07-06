@@ -340,6 +340,35 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  # A DISTILLED FINDING self-reports under the canonical `finding` verb so it reads
+  # as "FINDING · <conclusion>" on the heartbeat — via the `--finding` shorthand or
+  # an explicit `--kind finding`. Both must stamp kind=finding with the conclusion.
+  def test_integration_action_finding_shorthand_stamps_the_finding_verb
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      seed_open_activity_marker(proj, SESSION, 7)
+      requests = run_cli(
+        %W[action --session #{SESSION} --summary paging-reads-are-plumbing --finding],
+        proj: proj
+      )
+      body = JSON.parse(requests.find { |r| r[:path] == "/api/v1/agent_actions" }[:body])
+      assert_equal "finding", body["kind"], "--finding shorthand resolves to the finding verb"
+      assert_equal "paging-reads-are-plumbing", body["summary"]
+    end
+  end
+
+  def test_integration_action_explicit_kind_finding_reads_as_a_finding
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "task_slug" => "x")
+      seed_open_activity_marker(proj, SESSION, 8)
+      requests = run_cli(
+        %W[action --session #{SESSION} --summary validate-then-resolve --kind finding],
+        proj: proj
+      )
+      assert_equal "finding", JSON.parse(requests.find { |r| r[:path] == "/api/v1/agent_actions" }[:body])["kind"]
+    end
+  end
+
   def test_integration_action_forwards_idempotency_key_for_ci_ingestion
     # bin/ci-scope-capture sends ci:<pr>:<sha>:<job> so a re-read never doubles a
     # row; the verb must forward it into the POST body for capture to dedupe on.
