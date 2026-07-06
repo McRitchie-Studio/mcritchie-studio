@@ -74,7 +74,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "assembled card uses the larger animated gradient glow" do
+  test "deploy attention cards use the Studio rainbow border glow" do
     task = Task.create!(title: "Assembled glow task", stage: "assembled")
     mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],
                              primary_type: "fire", generation: 1)
@@ -98,18 +98,26 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
 
     css = Rails.root.join("app/assets/tailwind/application.css").read
+    assert_includes css, ".task-card-stage-glow-submitted::before"
+    assert_includes css, ".task-card-stage-glow-reviewed::before"
     assert_includes css, ".task-card-stage-glow-assembled::before"
     assert_includes css, ".release-confirming-glow::before"
-    assert_includes css, "animation: taskCardAssembledSteam"
+    assert_includes css, ".task-card-stage-glow-submitted::after"
+    assert_includes css, ".task-card-stage-glow-reviewed::after"
+    assert_includes css, ".task-card-stage-glow-assembled::after"
+    assert_includes css, ".release-confirming-glow::after"
+    assert_includes css, "animation: deploymentRainbowSteam 20s linear infinite"
     assert_includes css, "background-size: 400%"
-    assert_includes css, "drop-shadow(0 0 10px"
+    assert_includes css, "filter: blur(var(--deployment-rainbow-halo-blur))"
     assert_includes css, "-webkit-mask-composite: xor"
     assert_includes css, "mask-composite: exclude"
     assert_includes css, "padding: 2px"
-    assert_not_includes css, ".task-card-stage-glow-assembled::after"
-    assert_includes css, "var(--task-card-glow-color-a"
     assert_includes css, "#fb0094"
-    assert_includes css, "@keyframes taskCardAssembledSteam"
+    assert_includes css, "#00c4ff"
+    assert_includes css, "#34d399"
+    assert_includes css, "@keyframes deploymentRainbowSteam"
+    assert_includes css, "animation: none"
+    assert_not_includes css, ".task-card-stage-glow-blocked::before"
   end
 
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do
