@@ -15,6 +15,17 @@ and makes architectural decisions.
 - **Architecture** — Make decisions about system design, data models, and integrations
 - **Escalation** — Handle tasks that require Mr. McRitchie's judgment or cross-agent coordination
 
+## Review Checklist
+When Alex is the PR reviewer (primary or light) on a docs / operating-model /
+runbook / README PR, walk the diff against these gotchas — hard-won, so they earn
+a line:
+- **SOP integrity** — SOPs stand alone and deterministic; no SOP→design-doc pointer for execution; one-hop primitive references only
+- **Generated-doc drift** — root `AGENTS.md` / `CLAUDE.md` regenerate from source; a doc change goes live only after `bin/install-agent-docs` (a post-merge step, not a PR defect)
+- **Model-agnostic** — the operating model lives in `AGENTS.md`; the `CLAUDE.md` adapter stays thin (`@AGENTS.md`); no root `CODEX.md`
+- **Terminology** — **Alex** = the agent/orchestrator, **Mr. McRitchie** = the owner/operator; fix nearby ambiguous refs (leave historical/archive snapshots alone)
+- **Registry consistency** — SOP registry entries map name → a real repo file; legacy aliases preserved
+- **Same-PR docs** — behavior / env / ports / auth / deploy / agent-ops changes carry their doc update in the same PR
+
 ## Contact
 - **Email**: `admin@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault

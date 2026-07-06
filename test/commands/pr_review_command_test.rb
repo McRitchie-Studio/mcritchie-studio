@@ -429,7 +429,8 @@ class PrReviewCommandTest < Minitest::Test
 
     assert status.success?, err
     assert_includes out, "pr-review DRY-RUN"
-    assert_includes out, "dry-run: would launch primary carl"
+    assert_includes out, "dry-run: would summon primary review: carl"
+    assert_includes out, "dry-run: would summon light review: shannon"
     assert_empty json_lines(@codex_log)
     assert_empty json_lines(@task_log)
 
@@ -534,5 +535,60 @@ class PrReviewCommandTest < Minitest::Test
     # The final verdict handoff is the supervisor's (avi), not a reviewer's.
     moves = json_lines(@task_log).select { |args| args.first == "move" }
     assert_equal [["move", "attr-pr", "reviewed", "--actor", "avi"]], moves
+  end
+
+  # [unit] The supervisor announces each parallel spawn with an intent-labeled
+  # delegate action — "summon primary review: <soul>" and "summon light review:
+  # <soul>" — the deterministic-path echo of the interactive Agent-tool
+  # `description`. Two role-tagged, supervisor-emitted spawns are what keep the
+  # primary from re-delegating (harden-review-lane-roles).
+  def test_supervisor_emits_two_intent_labeled_delegate_actions
+    newest = task("labeled-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("labeled-pr", created_at: "2026-06-29T12:00:00Z",
+                                  reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([newest]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "CODEX_SLEEP" => "0.05" })
+
+    assert status.success?, err
+    assert_includes out, "summon primary review: carl",
+                    "the supervisor emits a role-tagged delegate action for the primary"
+    assert_includes out, "summon light review: shannon",
+                    "the supervisor emits a role-tagged delegate action for the light"
+    # The label is role-specific: the primary is never announced as a light spawn.
+    refute_includes out, "summon light review: carl"
+    refute_includes out, "summon primary review: shannon"
+    # The supervisor never summons an Avi reviewer — Avi IS the supervisor.
+    refute_match(/summon\s+avi/i, out)
+  end
+
+  # [unit] The role split is legible in the spawned prompts: the PRIMARY prompt
+  # frames it as the review OWNER that runs the gates and DRIVES the verdict; the
+  # LIGHT prompt disclaims both. This is the responsibility half of the hardening
+  # — primary owns gates + verdict, light is a focused second read that reports up.
+  def test_reviewer_prompts_carry_the_primary_light_responsibility_split
+    newest = task("split-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("split-pr", created_at: "2026-06-29T12:00:00Z",
+                                reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([newest]), snapshot([reviewed]))
+
+    _out, err, status = run_heartbeat("--once")
+    assert status.success?, err
+
+    prompts = prompt_files_by_reviewer
+    primary = prompts.fetch("carl")
+    light = prompts.fetch("shannon")
+
+    # PRIMARY = review owner: runs the gates AND drives the verdict.
+    assert_match(/PRIMARY you are the review OWNER/i, primary)
+    assert_match(/run the gates/i, primary)
+    assert_match(/DRIVE the verdict/i, primary)
+
+    # LIGHT = focused second read: does NOT run the gates, does NOT drive the verdict.
+    assert_match(/LIGHT you are a focused second read/i, light)
+    assert_match(/do NOT run the gates/i, light)
+    assert_match(/do NOT\s+.*drive the verdict/im, light)
+    # The light never claims to own/drive the verdict.
+    refute_match(/you DRIVE the verdict/i, light)
   end
 end

@@ -144,4 +144,61 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     refute_match(/primary/i, release_branch[:expectation],
       "the merge no longer belongs to the PRIMARY reviewer — review is review-only")
   end
+
+  # harden-review-lane-roles: the supervisor spawns BOTH reviewers as its own
+  # parallel children, announced by two intent-labeled delegate actions — the
+  # primary never spawns the light. Both the interactive SOP and the shared
+  # primitive must name the two labels so the interactive Agent-tool path can't
+  # drift back to "Avi spawns only the primary; the primary spawns the light".
+  test "[integration] the pr-review SOP and primitive name the two intent-labeled delegate actions" do
+    [
+      "agents/avi/sops/pr-review.md",
+      "modules/pr-review-sop.md"
+    ].each do |rel|
+      body = norm(rel)
+      assert_match(/summon primary review/i, body,
+        "#{rel}: the primary spawn is an intent-labeled delegate action")
+      assert_match(/summon light review/i, body,
+        "#{rel}: the light spawn is an intent-labeled delegate action")
+      assert_match(/parallel/i, body, "#{rel}: both reviewers spawn in parallel")
+      refute_match(/spawns?\s+the\s+light/i, body,
+        "#{rel}: the primary must NOT spawn the light — the supervisor spawns both")
+    end
+  end
+
+  # harden-review-lane-roles: the role SOPs sharpen the split — PRIMARY owns the
+  # gates + drives the verdict, LIGHT is a focused second read that does neither.
+  test "[integration] the primary and light role SOPs sharpen the gate/verdict ownership split" do
+    primary = norm("agents/avi/sops/pr-review-primary.md")
+    assert_match(/review OWNER/i, primary, "the PRIMARY is the review owner")
+    assert_match(/own the gates/i, primary, "the PRIMARY owns the gates")
+    assert_match(/DRIVE the verdict/i, primary, "the PRIMARY drives the verdict")
+
+    light = norm("agents/avi/sops/pr-review-light.md")
+    assert_match(/focused second read/i, light, "the LIGHT is a focused second read")
+    assert_match(/do not run the gates/i, light, "the LIGHT does not run the gates")
+    assert_match(/do not drive the verdict/i, light, "the LIGHT does not drive the verdict")
+    # The light must not claim the primary's ownership.
+    refute_match(/you own the gates/i, light,
+      "the LIGHT never owns the gates — that is the primary's")
+  end
+
+  # harden-review-lane-roles: each reviewer soul carries a per-domain REVIEW
+  # CHECKLIST of hard-won gotchas in its own role.md (domain = soul + checklist).
+  REVIEWER_CHECKLISTS = {
+    "agents/carl/role.md" => /N\+1/i,
+    "agents/shannon/role.md" => /space-separated/i,
+    "agents/jasper/role.md" => /EXPECTED_IDL_HASH/i,
+    "agents/steffon/role.md" => /SKIP_IDL_VERIFICATION/i,
+    "agents/alex/role.md" => /install-agent-docs/i
+  }.freeze
+
+  test "[integration] each reviewer soul role.md carries a per-domain Review Checklist" do
+    REVIEWER_CHECKLISTS.each do |rel, domain_anchor|
+      body = norm(rel)
+      assert_match(/Review Checklist/i, body, "#{rel}: reviewer soul must carry a Review Checklist")
+      assert_match(domain_anchor, body,
+        "#{rel}: the checklist must include its domain's hard-won gotcha")
+    end
+  end
 end

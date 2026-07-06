@@ -103,6 +103,21 @@ the LIGHT runs the focused second read
 The primary does **not** spawn its sibling; the supervisor oversees both
 concurrently and collects both verdicts. Avi performs **no** review of his own.
 
+The supervisor emits **two intent-labeled delegate actions**, one per reviewer,
+in a **single message so they run in parallel** — the Agent-tool `description`
+**is** the action label: **`summon primary review: <soul>`** and
+**`summon light review: <soul>`**. (`bin/pr-review` prints the same two labels on
+the deterministic path.) Two supervisor-emitted, role-tagged spawns keep the
+structure legible and keep the primary from re-delegating.
+
+**The split is role, not just depth.** The **PRIMARY is the review OWNER**: it
+runs the gates (`bin/dor-check` / cert / CI / acceptance) and **drives the
+verdict** (merge-ready or request-changes). The **LIGHT is a focused second read**
+through its domain lens that **reports up to the primary**: it does **not** run
+the gates and does **not** drive the verdict — though **any reviewer can block**
+on a defect. This closes the observed drift where Avi spawned only the primary,
+the primary spawned the light, and the light drove the verdict (role inversion).
+
 **Each reviewer narrates their review as their own soul** so the Agent column
 attributes it to them, not to the base session mascot:
 
@@ -174,9 +189,9 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 
 | # | Actor | Agent (`subagent_type`) | Does | Records |
 |---|---|---|---|---|
-| 1 | **Avi** (SUPERVISOR — never reviews) | `avi` | product-acceptance + `bin/reviewer-select`; **spawns both reviewers in parallel** | review intent (pair) on the task |
-| 2 | **PRIMARY** | domain soul | deep review (runs `pr-review-primary.md`) | `Verify --agent <soul>` activity + notes |
-| 2 | **LIGHT** | domain soul | focused second read (runs `pr-review-light.md`); **sibling** of the primary | `Verify --agent <soul>` activity + notes |
+| 1 | **Avi** (SUPERVISOR — never reviews) | `avi` | product-acceptance + `bin/reviewer-select`; **spawns both reviewers in parallel** via two labeled delegates — `summon primary review: <soul>` + `summon light review: <soul>` | review intent (pair) on the task |
+| 2 | **PRIMARY** (review OWNER) | domain soul | deep review + **owns the gates** (dor/cert/CI/acceptance) + **drives the verdict** (runs `pr-review-primary.md`) | `Verify --agent <soul>` activity + notes |
+| 2 | **LIGHT** | domain soul | focused second read through its domain lens; **reports up to the primary**; no gates, no verdict-drive (runs `pr-review-light.md`); **sibling** of the primary | `Verify --agent <soul>` activity + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
 | 4 | **Avi** (SUPERVISOR) | `avi` | collects **both** verdicts → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed` |
 
