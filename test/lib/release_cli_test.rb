@@ -2084,6 +2084,107 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "test scope qa_post_deploy COMPLETED", "…emitting a COMPLETED action end-to-end"
   end
 
+  # --- gem_release_check: a gem's own release-check is a telemetered ship scope --
+  # publish_gem runs the gem's declared `release_check --build` before the push;
+  # it now runs THROUGH run_test_scope (a `gem_release_check` release scope) so it
+  # emits START + COMPLETED/FAILED like every other gate, while keeping its
+  # abort-before-publish semantics. studio-engine declares `bin/release-check`.
+
+  # A tmpdir hub whose bin/<script> exists so publish_gem's File.exist? guard fires.
+  def with_release_check_repo(script = "bin/release-check")
+    Dir.mktmpdir do |dir|
+      Dir.mkdir(File.join(dir, "bin"))
+      File.write(File.join(dir, script), "#!/usr/bin/env sh\nexit 0\n")
+      File.chmod(0o755, File.join(dir, script))
+      yield dir
+    end
+  end
+
+  def test_gem_release_check_runs_through_the_telemetry_wrapper
+    with_release_check_repo do |dir|
+      setup = SCOPE_EMIT_STUB + <<~RUBY
+        def repo_path(_repo) = #{dir.inspect}
+        def sh(*a, **_k)
+          $stdout.puts("SH " + a.inspect)
+          ["3 runs, 3 assertions, 0 failures, 0 errors", true]  # release-check green (and gem build/push/tag)
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %(publish_gem("studio-engine", "0.9.0"); print($events.inspect)))
+
+      assert_includes out, %(SH ["bin/release-check", "--build"]),
+                       "the release-check still executes with --build"
+      assert_includes out, "test scope gem_release_check START", "…now wrapped: a START action is emitted"
+      assert_includes out, "test scope gem_release_check COMPLETED", "…and a COMPLETED action on a green check"
+      assert_includes out, "studio-engine", "the emitted action carries the gem repo/host"
+    end
+  end
+
+  def test_gem_release_check_failure_emits_failed_and_aborts_before_publish
+    with_release_check_repo do |dir|
+      setup = SCOPE_EMIT_STUB + <<~RUBY
+        def repo_path(_repo) = #{dir.inspect}
+        def sh(*a, **_k)
+          $stdout.puts("SH " + a.inspect)
+          return ["1 runs, 1 assertions, 1 failures, 0 errors", false] if a[0] == "bin/release-check"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %(begin; publish_gem("studio-engine", "0.9.0"); puts("NO-ABORT"); ) +
+                          %(rescue SystemExit => e; puts("ABORTED: " + e.message); end; print($events.inspect)))
+
+      assert_includes out, "test scope gem_release_check FAILED", "a red release-check emits a FAILED action"
+      assert_includes out, "ABORTED", "…and still aborts before publishing (existing gate behavior preserved)"
+      assert_includes out, "release-check failed"
+      refute_includes out, "NO-ABORT", "the gem must not publish past a red release-check"
+      refute_includes out, %(SH ["gem", "push"), "nothing is pushed after the red check aborts"
+    end
+  end
+
+  # --- qa_smoke: `completed` only AFTER the blocking QA post-deploy hook passes --
+  # The stage stamp must not go green prematurely: prepare records qa_smoke
+  # `started` at the first QA deploy, `failed` on a boot failure, and `completed`
+  # only once every app booted AND run_post_deploy (blocking, abort!s on failure)
+  # returned green — the same "never a step early" rule 8b uses for deploy_qa.
+
+  # Capture the qa_smoke ReleaseEvent stage stamps (step + status) without a board.
+  RRE_ECHO = %(def record_release_event(_slug, step, status, *_a, **_k); $stdout.puts("RRE " + step.to_s + " " + status.to_s); end)
+
+  def test_prepare_records_qa_smoke_completed_only_after_the_post_deploy_hook_passes
+    out = run_cli(["--yes"], setup: SWEEP_FLOW_STUB + RRE_ECHO, call: "prepare")
+
+    assert_includes out, "RRE qa_smoke started", "the QA smoke opens at the first QA deploy"
+    assert_includes out, "RRE qa_smoke completed", "…and closes green once QA booted + post-deploy passed"
+    refute_includes out, "RRE qa_smoke failed", "a green run never records a failed stamp"
+    started_at   = out.index("RRE qa_smoke started")
+    completed_at = out.index("RRE qa_smoke completed")
+    assert_operator started_at, :<, completed_at, "completed lands after started"
+  end
+
+  def test_prepare_does_not_record_qa_smoke_completed_when_the_post_deploy_hook_aborts
+    # A blocking QA post-deploy hook that aborts must leave qa_smoke NOT green —
+    # the premature-green bug: the stamp used to land before this hook ran.
+    setup = SWEEP_FLOW_STUB + RRE_ECHO + %(\ndef run_post_deploy(*_a, **_k); abort!("post-deploy boom"); end)
+    out = run_cli(["--yes"], setup: setup,
+                  call: %(begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end))
+
+    assert_includes out, "RRE qa_smoke started", "the smoke still opens at the QA deploy"
+    assert_includes out, "ABORTED", "the blocking post-deploy hook aborts prepare"
+    refute_includes out, "RRE qa_smoke completed",
+                     "qa_smoke must NOT be stamped completed when the blocking post-deploy hook aborts"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_prepare_records_qa_smoke_failed_on_a_boot_failure
+    setup = SWEEP_FLOW_STUB + RRE_ECHO + %(\ndef wait_for_boot(_url) = false)
+    out = run_cli(["--yes"], setup: setup, call: "prepare")
+
+    assert_includes out, "RRE qa_smoke started", "the smoke opens at the QA deploy"
+    assert_includes out, "RRE qa_smoke failed", "a boot failure closes the smoke as failed"
+    refute_includes out, "RRE qa_smoke completed", "a boot failure never records a completed stamp"
+  end
+
   # --- ship preflight: every app checkout on a clean `main` before any ff ----
   # ship ff's each app repo's main → frozen SHA; a checkout left on a pr-NNN
   # branch (review agent) or with a stale schema.rb breaks the ff mid-ship. The

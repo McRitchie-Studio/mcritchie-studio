@@ -231,6 +231,13 @@ release_scopes:
     host: local
     blocks: blocking
     mutates: false
+  gem_release_check:
+    description: A gem's own release-check (--build = syntax + unit + build) before publish (release_repos.yml gems.<repo>.release_check)
+    phase: ship
+    tier: build
+    host: local
+    blocks: blocking
+    mutates: false
   prod_up_smoke:
     description: Post-prod-deploy /up hard-gate (deploy_app, git_push_heroku adapter smoke_url)
     phase: ship

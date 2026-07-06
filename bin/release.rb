@@ -748,7 +748,7 @@ def publish_gem(repo, version)
   #    it ships one, so a red gem never gets pushed.
   if (rc = meta["release_check"]) && (DRY || File.exist?(File.join(path, rc)))
     step("gem check: #{repo} #{rc} --build")
-    _, ok = sh(rc, "--build", chdir: path)
+    _, ok = run_test_scope("gem_release_check", rc, "--build", chdir: path, repo: repo, label: "#{rc} --build")
     abort!("#{repo} release-check failed — fix before publishing (nothing pushed)") unless ok || DRY
   end
 
@@ -1493,17 +1493,15 @@ def prepare
   qa_green = boot_failures.empty?
   # Close the qa_smoke release event opened above (it recorded `started` but never
   # a terminal status — the started-without-completed gap). `qa_smoke` IS a
-  # whitelisted ReleaseEvent::STEP, so this is closing an existing pair, not
-  # inventing a step. Fired ONCE (matching the single `started`) here where the
-  # boot poll resolves ACROSS all apps: completed when every app booted, failed
-  # otherwise. Best-effort (record_release_event swallows board-write errors).
-  if qa_smoke_started
-    record_release_event(
-      rel_slug, "qa_smoke", qa_green ? "completed" : "failed",
-      message: qa_green ? "all QA apps booted (/up 200)" : "#{boot_failures.size} app(s) never returned /up 200"
-    )
-  end
+  # whitelisted ReleaseEvent::STEP, so this closes the existing pair, not a new
+  # step. Fired ONCE (matching the single `started`), guarded on qa_smoke_started.
+  # `failed` lands here on a boot failure; `completed` is DEFERRED into the else
+  # branch — it must land only after QA is ACTUALLY green through the BLOCKING
+  # post-deploy hook, never a premature green (same reason 8b defers
+  # deploy_qa:completed to the flip — "never a step early"). Best-effort.
   if boot_failures.any?
+    record_release_event(rel_slug, "qa_smoke", "failed",
+                         message: "#{boot_failures.size} app(s) never returned /up 200") if qa_smoke_started
     say("")
     say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — QA is NOT green: leaving the release `assembling`,")
     say("    swept members stay `reviewed` (merged: release). Re-run `bin/release prepare` once they boot")
@@ -1514,6 +1512,13 @@ def prepare
     #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, members
     #     stay `reviewed`, re-run resumes). dry-run prints the plan; nothing executes.
     run_post_deploy(repos, target: :qa)
+
+    # QA is ACTUALLY green now — every app booted (/up 200) AND the blocking
+    # post-deploy hook passed (run_post_deploy abort!s on failure, so REACHING
+    # this line means it's green). Only NOW close qa_smoke `completed`; a
+    # post-deploy abort must never leave a premature `completed` behind.
+    record_release_event(rel_slug, "qa_smoke", "completed",
+                         message: "all QA apps booted (/up 200) + post-deploy hooks green") if qa_smoke_started
 
     # 8b. QA is green — flip the swept members + the RC, and stamp Live-on-QA
     #     (deploy_qa:completed) in the SAME conductor call so the /deployments
