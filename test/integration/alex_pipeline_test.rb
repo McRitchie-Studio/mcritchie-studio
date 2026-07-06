@@ -199,4 +199,59 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     end
     assert_equal "second", ActionGrade.for_event(s).by_grader("mcr").first.slug
   end
+
+  # ── confirm-of-action · a banked test-run grade reaches Column 3 ─────────────
+  # An insight can target a raw ACTION (a banked test-run grade), not just an
+  # activity — Confirm handles both so the test-run grade reaches Column 3, parity.
+
+  test "[integration] a banked test-run grade shows in Column 2 with an action Confirm button" do
+    run = make_test_run(scope: "ship_test_gate", result: "pass", session_id: "cfa-1")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "good",
+                        slug: "ship gate stayed green").bank!
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-insight]" do
+      assert_select ".pl-slug", text: "ship gate stayed green"
+    end
+    # the Confirm button posts to the action's confirm URL with the agent_action_id form param
+    assert_select "[data-test=pl-confirm-action-btn]"
+    assert_select "form[action=?]", alex_pipeline_confirm_path(run.id)
+    assert_select "input[name=agent_action_id][value=?]", run.id.to_s
+  end
+
+  test "[integration] Confirm on an action records an mcr grade for it and lists it in Column 3" do
+    run = make_test_run(scope: "pre_qa_gate", result: "fail", session_id: "cfa-2")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "not",
+                        slug: "pre-qa gate flaked").bank!
+    log_in_as(users(:alex)) # admin — the write is gated until make-grading-actions-public lands
+
+    assert_difference -> { ActionGrade.for_action(run).by_grader("mcr").count }, 1 do
+      post alex_pipeline_confirm_path(run.id), params: { slug: "pre-qa gate flaked", agent_action_id: run.id }
+    end
+
+    assert_redirected_to alex_pipeline_path(anchor: "col-confirmations")
+    conf = ActionGrade.for_action(run).by_grader("mcr").first
+    assert_equal "good", conf.disposition
+    assert_equal "pre-qa gate flaked", conf.slug
+
+    get alex_pipeline_path
+    # the insight now reads Confirmed, not a button
+    assert_select "[data-test=pl-insight-confirmed]"
+    assert_select "[data-test=pl-confirmation]" do
+      assert_select ".pl-slug", text: "pre-qa gate flaked"
+    end
+  end
+
+  test "[integration] re-confirming the same action updates the one mcr row (idempotent)" do
+    run = make_test_run(scope: "qa_up_smoke", result: "pass", session_id: "cfa-3")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "good", slug: "qa boot green").bank!
+    log_in_as(users(:alex))
+
+    post alex_pipeline_confirm_path(run.id), params: { slug: "first", agent_action_id: run.id }
+    assert_no_difference -> { ActionGrade.by_grader("mcr").count } do
+      post alex_pipeline_confirm_path(run.id), params: { slug: "second", agent_action_id: run.id }
+    end
+    assert_equal "second", ActionGrade.for_action(run).by_grader("mcr").first.slug
+  end
 end

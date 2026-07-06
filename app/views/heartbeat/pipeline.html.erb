@@ -214,8 +214,13 @@
           <div class="pl-empty">No insights yet — Alex banks them with <code>grade-events</code>.</div>
         <% end %>
         <% @insights.each do |insight| %>
+          <%# An insight targets EITHER an activity OR a raw action (the XOR) — the
+              Confirm affordance handles both, so a banked test-run grade confirms
+              to Column 3 with the same parity an activity insight has. %>
           <% activity_id = insight.agent_activity_id %>
-          <% confirmed = activity_id && @confirmed_activity_ids.include?(activity_id) %>
+          <% action_id = insight.agent_action_id %>
+          <% confirmed = (activity_id && @confirmed_activity_ids.include?(activity_id)) ||
+                         (action_id && @confirmed_action_ids.include?(action_id)) %>
           <div class="pl-row" data-test="pl-insight">
             <div>
               <span class="pl-slug"><%= insight.slug %></span>
@@ -230,6 +235,14 @@
               <div class="pl-confirm">
                 <%= button_to "Confirm", alex_pipeline_confirm_path(activity_id),
                       params: { slug: insight.slug }, data: { test: "pl-confirm-btn" } %>
+              </div>
+            <% elsif action_id %>
+              <div class="pl-confirm">
+                <%# The route needs an :id segment; the controller keys the action
+                    branch off the agent_action_id FORM param, so pass both. %>
+                <%= button_to "Confirm", alex_pipeline_confirm_path(action_id),
+                      params: { slug: insight.slug, agent_action_id: action_id },
+                      data: { test: "pl-confirm-action-btn" } %>
               </div>
             <% end %>
           </div>

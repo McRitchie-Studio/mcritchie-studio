@@ -111,6 +111,9 @@ class HeartbeatController < ApplicationController
     # pass|fail result_slug; a bare START is untagged and excluded). Each is a
     # gradeable AgentAction the band links to the existing action drawer; its
     # phase/tier/host are DERIVED at render from the scope registry, never stored.
+    # A3+ FOLLOW-UP (deferred, out of scope here): cross-release aggregation /
+    # pass-rate trends earn a TestRun projection table (AgentAction after_create) —
+    # analytics, not a grading target. This band is the newest-N read only.
     @test_runs = AgentAction.where(kind: "test_scope").where.not(result_slug: nil)
                             .order(occurred_at: :desc).limit(PIPELINE_TEST_RUNS).to_a
     # Their Alex grades, in one query, keyed { action_id => { grader => grade } } —
@@ -141,23 +144,37 @@ class HeartbeatController < ApplicationController
     # shows "confirmed" instead of a Confirm button.
     @confirmed_activity_ids = ActionGrade.by_grader(ActionGrade::MCR)
                                       .where.not(agent_activity_id: nil).pluck(:agent_activity_id).to_set
+    # The action-target parallel: which raw actions (e.g. a banked test-run grade)
+    # already carry an mcr confirmation, so an action-target insight shows "confirmed".
+    @confirmed_action_ids = ActionGrade.by_grader(ActionGrade::MCR)
+                                       .where.not(agent_action_id: nil).pluck(:agent_action_id).to_set
   end
 
-  # Record Mr. McRitchie's confirmation (an `mcr` grade) of an insight's activity, then
-  # redirect back to the pipeline — a no-JS form action for the column-2 Confirm
-  # button. Upserts the one (activity, mcr) row (idempotent: re-confirming updates it).
-  # A write, so on the current release gate it needs admin; it goes public with the
+  # Record Mr. McRitchie's confirmation (an `mcr` grade) of an insight, then redirect
+  # back to the pipeline — a no-JS form action for the column-2 Confirm button. The
+  # insight targets EITHER a narrated activity OR a raw action (ActionGrade's XOR),
+  # so this confirms whichever the button names: an :agent_action_id param confirms
+  # the action (e.g. a banked test-run grade), otherwise :id confirms the activity.
+  # Upserts the one (target, mcr) row (idempotent: re-confirming updates it). A write,
+  # so on the current release gate it needs admin; it goes public with the
   # make-grading-actions-public change.
   def confirm
-    activity = AgentActivity.find(params[:id])
-    grade = ActionGrade.for_activity(activity).by_grader(ActionGrade::MCR)
-                       .first_or_initialize(grader: ActionGrade::MCR)
+    grade, slug_default =
+      if params[:agent_action_id].present?
+        action = AgentAction.find(params[:agent_action_id])
+        [ActionGrade.for_action(action).by_grader(ActionGrade::MCR).first_or_initialize(grader: ActionGrade::MCR),
+         default_grade_slug(action)]
+      else
+        activity = AgentActivity.find(params[:id])
+        [ActionGrade.for_activity(activity).by_grader(ActionGrade::MCR).first_or_initialize(grader: ActionGrade::MCR),
+         activity.reason_slug]
+      end
     grade.disposition = ActionGrade::GOOD
-    grade.slug        = params[:slug].presence || grade.slug.presence || activity.reason_slug
+    grade.slug        = params[:slug].presence || grade.slug.presence || slug_default
     rescue_and_log(target: grade) { grade.save! }
     redirect_to alex_pipeline_path(anchor: "col-confirmations"), notice: "Confirmed “#{grade.slug}”."
   rescue ActiveRecord::RecordNotFound
-    redirect_to alex_pipeline_path, alert: "That activity no longer exists."
+    redirect_to alex_pipeline_path, alert: "That insight no longer exists."
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
