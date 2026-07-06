@@ -100,7 +100,7 @@ The supervisor spawns **both** reviewers (Agent tool, each its domain
 ([`../agents/avi/sops/pr-review-primary.md`](../agents/avi/sops/pr-review-primary.md)),
 the LIGHT runs the focused second read
 ([`../agents/avi/sops/pr-review-light.md`](../agents/avi/sops/pr-review-light.md)).
-The primary does **not** spawn the light; the supervisor oversees both
+The primary does **not** spawn its sibling; the supervisor oversees both
 concurrently and collects both verdicts. Avi performs **no** review of his own.
 
 **Each reviewer narrates their review as their own soul** so the Agent column

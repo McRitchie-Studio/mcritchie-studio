@@ -58,8 +58,9 @@ posture its own SOP prescribes, so the crew shows up as a live Claude Code
 sub-agent tree:
 
 1. **Review** — summon an **Avi** subagent via the Agent tool
-   (`subagent_type: avi`) that runs the `pr-review` procedure and NESTS its
-   reviewers (Avi thin-delegates; the PRIMARY reviewer spawns the LIGHT) as a
+   (`subagent_type: avi`) that SUPERVISES the `pr-review` procedure. Avi never
+   reviews the code himself; he spawns the PRIMARY and LIGHT reviewers in
+   parallel as sibling children, so the two experts NEST under the Avi node as a
    deeper branch.
 2. **QA release** — summon a **Steffon** subagent (`subagent_type: steffon`)
    that executes `bin/release prepare --yes`.

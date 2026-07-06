@@ -127,9 +127,10 @@ McRitchie Studio task record.
 
 ## QA / Avi Review
 
-Avi owns PR **intake** as a thin delegation gate — product-acceptance + reviewer
-selection. The **PRIMARY reviewer** then owns the rest of the lane: the deep
-review and spawning the **LIGHT** as its own sub-agent — **review-only**
+Avi owns PR **intake** as the review SUPERVISOR — a thin gate that never reviews
+the code: product-acceptance + reviewer selection. He then **spawns the PRIMARY
+and LIGHT reviewers in parallel** as siblings — the PRIMARY does the deep review,
+the LIGHT a focused second read — **review-only**
 (2026-07-03): approved work stops at `reviewed`, and Steffon's self-healing
 `qa-release` sweep (`bin/release prepare`) merges it into `release` and flips it
 `assembled` on QA-green.
@@ -239,9 +240,10 @@ bin/conductor qa    [--run]   # thin drive: bin/release prepare (deploy origin/r
 ```
 
 `plan` maps each stage to its deterministic next command: `submitted` →
-`bin/reviewer-select <slug>` (then spawn the **nested cascade** — Avi (thin gate)
-→ the **PRIMARY** reviewer, which spawns the **LIGHT**; the **review needs
-AGENTS**, so conductor surfaces the assignment, it never fabricates a verdict);
+`bin/reviewer-select <slug>` (then spawn the reviewers — Avi (SUPERVISOR, never
+reviews) spawns the **PRIMARY** and **LIGHT** experts **in parallel** as siblings;
+the **review needs AGENTS**, so conductor surfaces the assignment, it never
+fabricates a verdict);
 `reviewed` → `bin/release prepare` (the self-healing sweep merges the whole
 queue; `bin/release merge <slugs>` stays as the per-task primitive); `assembled`
 → QA-green already — the ship gate. It flags `blocked` + non-pipeline
@@ -560,9 +562,10 @@ The intended cycle is:
 
 1. Feature agent opens a PR.
 2. Feature agent moves the task to `submitted`.
-3. The review lane runs: Avi thin-delegates → the **PRIMARY** reviewer does the
-   deep review, spawns the LIGHT, and on two approvals drives the task to
-   `reviewed` (review-only). Steffon's sweep (`bin/release prepare`, or the
+3. The review lane runs: Avi (SUPERVISOR) spawns the **PRIMARY** and **LIGHT**
+   reviewers **in parallel** as siblings — the PRIMARY does the deep review, the
+   LIGHT a focused second read — and on two approvals the supervisor drives the
+   task to `reviewed` (review-only). Steffon's sweep (`bin/release prepare`, or the
    per-task `bin/release merge <task> [<task> …]` primitive) does the `gh pr
    merge` + membership record — one OR many slugs, merged once each, swept in a
    **single `heroku run`** (stages stay `reviewed` until QA-green); with ≥2

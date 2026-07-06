@@ -2,11 +2,14 @@
 
 require "test_helper"
 
-# Guard for the review-lane SOP: Avi thin-delegates → the PRIMARY reviewer owns
-# the lane and SPAWNS the LIGHT (the nested chain, never a flat peer spawn), and
-# — since move-release-assembly-to-steffon (2026-07-03) — review is REVIEW-ONLY:
-# the merge belongs to Steffon's self-healing qa-release sweep, which flips
-# members assembled on QA-green. These assertions are deliberate tripwires:
+# Guard for the review-lane SOP (3-level supervisor hierarchy, 2026-07-06): the
+# session Pokémon → Avi the SUPERVISOR (a thin gate that NEVER reviews the code)
+# → the domain experts. Avi picks the pair (bin/reviewer-select) and SPAWNS both
+# the PRIMARY and LIGHT reviewers IN PARALLEL as sibling children (NOT the old
+# "primary spawns the light" nested chain), collects both verdicts, and gates.
+# And — since move-release-assembly-to-steffon (2026-07-03) — review is
+# REVIEW-ONLY: the merge belongs to Steffon's self-healing qa-release sweep, which
+# flips members assembled on QA-green. These assertions are deliberate tripwires:
 # revert the model and they fail.
 class ReviewLaneDocsTest < ActiveSupport::TestCase
   AGENTS = Rails.root.join("docs", "agents")
@@ -18,12 +21,16 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     File.read(AGENTS.join(rel)).gsub(/[*`]/, "").gsub(/\s+/, " ")
   end
 
-  test "[static] avi role.md frames Avi as a thin delegate and the primary owning the lane" do
+  test "[static] avi role.md frames Avi as the review SUPERVISOR who spawns both experts in parallel and never reviews" do
     body = norm("agents/avi/role.md")
-    assert_match(/primary reviewer/i, body, "the PRIMARY reviewer is named as the lane owner")
-    assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body,
-      "the PRIMARY must spawn the LIGHT (the nested chain, not a flat peer spawn)")
-    assert_match(/thin/i, body, "Avi's review role is now a thin delegation pre-step")
+    assert_match(/primary reviewer/i, body, "the PRIMARY reviewer is named")
+    assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR, not a reviewer")
+    assert_match(/never[^.\n]{0,40}review/i, body, "Avi never reviews the code himself")
+    assert_match(/parallel/i, body, "Avi spawns the primary and light IN PARALLEL")
+    refute_match(/spawns?\s+the\s+light/i, body,
+      "the primary must NOT spawn the light — Avi spawns both in parallel (siblings)")
+    refute_match(/nested chain/i, body, "review is no longer a nested chain")
+    assert_match(/thin/i, body, "Avi's review role is a thin gate")
     refute_match(/\bheavy\b/i, body, "the heavy→primary rename must not regress in the docs")
   end
 
@@ -33,8 +40,12 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     assert_match(/self-healing/i, body, "Steffon's qa-release is the self-healing sweep")
     assert_match(/sweep[^.\n]{0,300}merged: "release"/im, body,
       "the sweep stamps the merged git-location (the crash-recovery signal)")
-    assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body,
-      "the PRIMARY spawns the LIGHT as its own sub-agent")
+    assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR")
+    assert_match(/spawns?[^.\n]{0,120}parallel/im, body,
+      "Avi spawns the primary and light IN PARALLEL (not primary-spawns-light)")
+    refute_match(/spawns?\s+the\s+light/i, body,
+      "the primary must NOT spawn the light — Avi spawns both in parallel (siblings)")
+    refute_match(/nested chain/i, body, "review is no longer a nested chain — siblings under Avi")
     # The old primary-owns-merge framing must be gone (reversed 2026-07-03).
     refute_match(/primary[^.\n]{0,120}runs bin\/release merge/im, body,
       "the PRIMARY no longer runs the merge — review is review-only; Steffon sweeps")
@@ -104,10 +115,13 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     assert_match(/do not start with bin\/pr-review --help, bin\/qa-intake, or GitHub PR discovery/i, body)
   end
 
-  test "[static] markdown launch docs describe the nested primary→light cascade, review-only" do
+  test "[static] markdown launch docs describe the parallel primary+light siblings under the supervisor, review-only" do
     body = norm("modules/parallel-agent-devops.md")
-    assert_match(/nested cascade/i, body)
-    assert_match(/primary[^.\n]{0,160}spawn[^.\n]{0,40}light/im, body)
+    assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR")
+    assert_match(/parallel/i, body, "the two experts are spawned in parallel as siblings")
+    refute_match(/nested cascade/i, body, "review is no longer a nested cascade")
+    refute_match(/spawns?\s+the\s+light/i, body,
+      "the primary must NOT spawn the light — Avi spawns both in parallel")
     assert_match(/review-only/i, body, "the launch docs state the review-only contract")
 
     body = norm("agents/steffon/sops/qa-release.md")

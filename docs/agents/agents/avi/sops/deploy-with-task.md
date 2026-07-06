@@ -64,9 +64,10 @@ Use the production board by default. Do not add `--local`.
 2. **Review the one task.** Run the single-PR cascade from the registered
    review primitive
    [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md):
-   Avi confirms product acceptance and picks the pair
-   (`bin/reviewer-select <task> --busy-auto`); the PRIMARY reviewer performs
-   the deep review, spawns the LIGHT reviewer, and on all-clear drives
+   Avi (the SUPERVISOR) confirms product acceptance and picks the pair
+   (`bin/reviewer-select <task> --busy-auto`), then spawns the PRIMARY and LIGHT
+   reviewers in parallel as siblings — the PRIMARY does the deep review, the
+   LIGHT a focused second read; on all-clear the supervisor drives
    `bin/task move <task> reviewed`. Any block ends the expedite — fix,
    resubmit, re-run this SOP.
 

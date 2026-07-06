@@ -39,7 +39,7 @@ Review runs in three levels; keep them distinct:
    [`pr-review-primary.md`](pr-review-primary.md)); one is the **LIGHT** (focused
    second read, runs [`pr-review-light.md`](pr-review-light.md)). They are
    **siblings under Avi**, spawned **in parallel** — the primary does **not**
-   spawn the light.
+   spawn its sibling.
 
 ## Procedure
 
