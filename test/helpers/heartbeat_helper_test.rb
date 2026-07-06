@@ -36,6 +36,17 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal({}, heartbeat_release_scope_meta(nil))
   end
 
+  test "release scope meta also enriches local full-suite cert lanes (full_suite_scopes)" do
+    # bin/full-suite-check's lanes register under full_suite_scopes:; the band
+    # merges both sections so a LOCAL cert run gets phase/tier/host chips too.
+    meta = heartbeat_release_scope_meta("full_suite_test")
+    assert_equal "build", meta["phase"]
+    assert_equal "full", meta["tier"]
+    assert_equal "local", meta["host"]
+    assert_equal "build", heartbeat_release_scope_meta("full_suite_rubocop")["tier"]
+    assert_equal "build", heartbeat_release_scope_meta("full_suite_db_reset")["tier"]
+  end
+
   test "test scope counts re-parses minitest, playwright, and http shapes from the summary" do
     assert_equal "141 runs, 320 assertions, 0 failures, 0 errors",
                  heartbeat_test_scope_counts("… · pass · 141 runs, 320 assertions, 0 failures, 0 errors · 1.2s · x")

@@ -1,11 +1,17 @@
 # Canonical test-scope registry.
 #
-# Two sections:
+# Three sections:
 #   apps.<slug>.suites — the per-app test-suite CATALOG (`bin/devops-tests`
 #     prints it for fresh sessions; docs/agents/modules/testing.md documents it).
 #   release_scopes — the scopes `bin/release` RUNS (run_test_scope in
 #     bin/release.rb resolves a scope key here and emits START/COMPLETED/FAILED
 #     telemetry stamped with this metadata).
+#   full_suite_scopes — the LOCAL cert lanes `bin/full-suite-check` RUNS. Each
+#     lane self-reports a kind=test_scope AgentAction (via the same
+#     bin/agent-activity `action` verb) tagged with its key here, so a local cert
+#     is a gradeable /alex/pipeline unit like a release run. Kept SEPARATE from
+#     release_scopes so bin/release.rb's registry stays release-only; the pipeline
+#     helper reads BOTH sections for phase/tier/host chips.
 #
 # Every suite/scope carries a STABLE `key` (never rename one casually — emitted
 # telemetry and grading key off it) plus:
@@ -258,4 +264,30 @@ release_scopes:
     tier: e2e
     host: production
     blocks: seal
+    mutates: false
+
+# The LOCAL cert lanes bin/full-suite-check runs, in order. Each is a gradeable
+# test_scope verdict on /alex/pipeline (event_slug = the key below). Blocking:
+# a red lane fails the cert. host: local — the agent's own machine, no deploy.
+full_suite_scopes:
+  full_suite_db_reset:
+    description: Reset the test DB before certifying (bin/rails db:test:purge db:test:prepare) — must be clean or the suite is not certified
+    phase: build
+    tier: build
+    host: local
+    blocks: blocking
+    mutates: true
+  full_suite_test:
+    description: The ENTIRE Rails suite on the exact code being shipped (bin/rails test, no file args) — the full-suite half of the cert
+    phase: build
+    tier: full
+    host: local
+    blocks: blocking
+    mutates: false
+  full_suite_rubocop:
+    description: FULL rubocop on the whole repo (bin/rubocop, no path args) — the lint half of the cert
+    phase: build
+    tier: build
+    host: local
+    blocks: blocking
     mutates: false
