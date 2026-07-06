@@ -74,7 +74,39 @@ jobs:
 
     steps:
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y google-chrome-stable curl libjemalloc2 libvips postgresql-client
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+
+      # System-test lane browser. Install Chrome via Chrome for Testing, then let
+      # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
+      # matched chromedriver at runtime. Do NOT let setup-chrome install its own.
+      #
+      # Why `install-chromedriver: true` skews: `chrome-version: stable` and
+      # `install-chromedriver: true` resolve chrome-stable and chromedriver-stable
+      # INDEPENDENTLY. During Chrome-for-Testing's publish-lag window they land on
+      # DIFFERENT majors (observed on run 28823528715: Chrome 149.0.7827.200 +
+      # chromedriver 150.0.7871.46). Selenium Manager PREFERS a driver already on
+      # PATH -- on a major mismatch it only WARNS ("advised to delete the driver in
+      # PATH and retry"), then uses it anyway -> SessionNotCreatedError, failing
+      # `test:system`. `stable` does NOT guarantee a matched chrome/driver pair.
+      #
+      # Fix: install-chromedriver:false leaves NO driver on PATH, so Selenium
+      # Manager resolves the driver that matches the installed Chrome from the CfT
+      # known-good manifest (e.g. chrome 149.0.7827.200 -> chromedriver
+      # 149.0.7827.155). Self-healing across Chrome bumps -- nothing to pin/maintain.
+      # The eviction step below removes any chromedriver preinstalled on the runner
+      # image that would otherwise shadow Selenium Manager's matched pick.
+      - name: Install Chrome (Chrome for Testing), no bundled chromedriver
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          install-chromedriver: false
+          install-dependencies: true
+
+      - name: Evict any chromedriver on PATH so Selenium Manager fetches a matched one
+        run: |
+          for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
+          sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
+          echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
       - name: Checkout code
         uses: actions/checkout@v7
