@@ -1,3 +1,27 @@
+# Canonical test-scope registry.
+#
+# Two sections:
+#   apps.<slug>.suites — the per-app test-suite CATALOG (`bin/devops-tests`
+#     prints it for fresh sessions; docs/agents/modules/testing.md documents it).
+#   release_scopes — the scopes `bin/release` RUNS (run_test_scope in
+#     bin/release.rb resolves a scope key here and emits START/COMPLETED/FAILED
+#     telemetry stamped with this metadata).
+#
+# Every suite/scope carries a STABLE `key` (never rename one casually — emitted
+# telemetry and grading key off it) plus:
+#   phase:  build | ci | qa | ship   — where in the pipeline it runs
+#   tier:   unit | integration | e2e | smoke | build | hook | full
+#   host:   local | qa | devnet | production
+#   blocks: blocking | seal | advisory — blocking gates abort their pipeline;
+#           a seal records a verdict post-deploy without aborting; advisory
+#           informs only
+#   mutates: true when it creates or changes data
+# The older per-suite fields (lane/environment/trigger/command/blocks_merge/
+# notes) are unchanged — bin/devops-tests still reads them.
+#
+# A suite and a release scope can share a key when they are the SAME scope seen
+# from both sides (the hub's production read-only smoke IS the conductor's
+# prod_smoke_seal).
 apps:
   mcritchie-studio:
     display_name: McRitchie Studio
@@ -8,6 +32,11 @@ apps:
     production_url: https://mcritchie.studio
     suites:
       - name: Rails unit and controller
+        key: studio_rails_test
+        phase: ci
+        tier: unit
+        host: local
+        blocks: blocking
         lane: pr_review_gate
         environment: local
         trigger: Every feature PR and before deploy
@@ -16,6 +45,11 @@ apps:
         mutates: false
         notes: Covers models, controllers, jobs, and integration request flows.
       - name: Tailwind build
+        key: studio_tailwind_build
+        phase: ci
+        tier: build
+        host: local
+        blocks: blocking
         lane: pr_review_gate
         environment: local
         trigger: UI/CSS/theme PRs and before deploy
@@ -24,6 +58,11 @@ apps:
         mutates: false
         notes: Proves Tailwind v4 assets compile before QA or production.
       - name: Local browser smoke
+        key: studio_local_e2e
+        phase: build
+        tier: e2e
+        host: local
+        blocks: blocking
         lane: local_proof
         environment: local
         trigger: UI/auth/task-flow PRs
@@ -32,6 +71,11 @@ apps:
         mutates: true
         notes: Uses local worktree database and local email capture.
       - name: QA read-only smoke
+        key: studio_qa_readonly
+        phase: qa
+        tier: e2e
+        host: qa
+        blocks: advisory
         lane: qa_acceptance
         environment: qa
         trigger: After QA deploy
@@ -40,6 +84,11 @@ apps:
         mutates: false
         notes: Banner, signin, task board, and public page health checks.
       - name: Production read-only smoke
+        key: prod_smoke_seal
+        phase: ship
+        tier: e2e
+        host: production
+        blocks: seal
         lane: production_smoke
         environment: production
         trigger: Post-ship, after the /up hard-gate (bin/release step 5c)
@@ -58,6 +107,11 @@ apps:
     production_url: https://turfmonster.media
     suites:
       - name: Rails unit and controller
+        key: turf_rails_test
+        phase: ci
+        tier: unit
+        host: local
+        blocks: blocking
         lane: pr_review_gate
         environment: local
         trigger: Every feature PR and before deploy
@@ -66,6 +120,11 @@ apps:
         mutates: false
         notes: Required for model/controller/job changes.
       - name: Local browser smoke
+        key: turf_local_e2e
+        phase: build
+        tier: e2e
+        host: local
+        blocks: blocking
         lane: local_proof
         environment: local
         trigger: UI/auth/contest PRs
@@ -74,6 +133,11 @@ apps:
         mutates: true
         notes: Uses worktree DB, local email capture, and local-safe seeded data.
       - name: QA read-only smoke
+        key: turf_qa_readonly
+        phase: qa
+        tier: e2e
+        host: qa
+        blocks: advisory
         lane: qa_acceptance
         environment: qa
         trigger: After QA deploy
@@ -82,6 +146,11 @@ apps:
         mutates: false
         notes: Banner, signin, contests index, wallet chooser presence, and public page health.
       - name: QA devnet mutating smoke
+        key: turf_qa_devnet_mutating
+        phase: qa
+        tier: e2e
+        host: qa
+        blocks: advisory
         lane: qa_acceptance
         environment: qa
         trigger: After Solana, wallet, contest, or entry changes reach QA
@@ -90,6 +159,11 @@ apps:
         mutates: true
         notes: Devnet-only contest create/enter checks. Never run against production.
       - name: Devnet on-chain smoke
+        key: turf_devnet_deep
+        phase: qa
+        tier: e2e
+        host: devnet
+        blocks: advisory
         lane: nightly_deep
         environment: devnet
         trigger: Manually or nightly for Solana/contract integration changes
@@ -98,6 +172,11 @@ apps:
         mutates: true
         notes: Uses real devnet resources and funded test wallets.
       - name: Production read-only smoke
+        key: turf_prod_smoke
+        phase: ship
+        tier: smoke
+        host: production
+        blocks: advisory
         lane: production_smoke
         environment: production
         trigger: After approved production deploy
@@ -106,6 +185,11 @@ apps:
         mutates: false
         notes: Release, dynos, /up, key routes, payment flags, and core identities.
       - name: Production live email smoke
+        key: turf_prod_email_smoke
+        phase: ship
+        tier: smoke
+        host: production
+        blocks: advisory
         lane: production_smoke
         environment: production
         trigger: Explicit operator approval only
@@ -113,3 +197,58 @@ apps:
         blocks_merge: false
         mutates: true
         notes: Sends a real magic link and checks worker delivery.
+
+# The scopes `bin/release` RUNS (bin/release.rb run_test_scope). Keyed by stable
+# scope key; the wrapper stamps this metadata into every START/COMPLETED/FAILED
+# AgentAction it emits. `blocks: blocking` scopes abort! their pipeline exactly
+# as before — the registry describes, it never overrides gate semantics.
+release_scopes:
+  pre_qa_gate:
+    description: Per-app integration tier on origin/release before any QA deploy (release_repos.yml qa_test_cmd)
+    phase: qa
+    tier: integration
+    host: local
+    blocks: blocking
+    mutates: false
+  qa_up_smoke:
+    description: Post-QA-deploy /up boot poll (wait_for_boot) — QA is not green until every app serves 200
+    phase: qa
+    tier: smoke
+    host: qa
+    blocks: blocking
+    mutates: false
+  qa_post_deploy:
+    description: Member-declared post_deploy_cmd on the QA app (heroku run --exit-code)
+    phase: qa
+    tier: hook
+    host: qa
+    blocks: blocking
+    mutates: true
+  ship_test_gate:
+    description: Avi ship gate — per-app registry test_cmd on the FROZEN ship SHA before ship authority (release_repos.yml test_cmd)
+    phase: ship
+    tier: full
+    host: local
+    blocks: blocking
+    mutates: false
+  prod_up_smoke:
+    description: Post-prod-deploy /up hard-gate (deploy_app, git_push_heroku adapter smoke_url)
+    phase: ship
+    tier: smoke
+    host: production
+    blocks: blocking
+    mutates: false
+  prod_post_deploy:
+    description: Member-declared post_deploy_cmd on the production app (heroku run --exit-code)
+    phase: ship
+    tier: hook
+    host: production
+    blocks: blocking
+    mutates: true
+  prod_smoke_seal:
+    description: Post-ship @qa-readonly suite vs prod (bin/prod-smoke) — records a seal, never aborts
+    phase: ship
+    tier: e2e
+    host: production
+    blocks: seal
+    mutates: false
