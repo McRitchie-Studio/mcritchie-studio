@@ -241,6 +241,11 @@ class AgentActivityCli
       "summary"           => summary,
       "key_method"        => flags["key-method"].to_s.strip,
       "key_method_lang"   => flags["key-lang"].to_s.strip,
+      # Test-scope verdict tags (bin/release run_test_scope) — blank on a plain
+      # action, dropped below so only a real verdict carries them.
+      "event_slug"        => flags["event-slug"].to_s.strip,
+      "result_slug"       => flags["result-slug"].to_s.strip,
+      "duration_ms"       => flags["duration-ms"].to_s.strip,
       "outcome"           => "ok",
       "actor"             => "agent",
       "task_slug"         => marker["task_slug"],

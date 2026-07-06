@@ -62,6 +62,17 @@
   #alex-heartbeat .pl-cands .pl-colhd h2 { color:var(--hb-not); }
   #alex-heartbeat .pl-cands .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:0; max-height:none; }
   #alex-heartbeat .pl-cands .pl-row { border-right:1px solid var(--hb-line); box-shadow:inset 3px 0 0 var(--hb-not); }
+  /* Test runs band — recent release test-scope VERDICTS, each a gradeable unit.
+     Mirrors the Candidates band's grid layout; sits above the loop as raw material
+     that FEEDS it (a graded test run → a lesson). Neutral (blue) header, not the
+     red candidates edge; a per-row red inset appears only on an Alex "not" grade. */
+  #alex-heartbeat .pl-truns { margin-bottom:18px; border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
+  #alex-heartbeat .pl-truns .pl-colhd h2 { color:var(--hb-accent); }
+  #alex-heartbeat .pl-truns .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:0; max-height:none; }
+  #alex-heartbeat .pl-truns .pl-row { border-right:1px solid var(--hb-line); }
+  #alex-heartbeat .pl-scope-meta { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  #alex-heartbeat .pl-tag { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.06em; color:var(--hb-faint); border:1px solid var(--hb-line); border-radius:5px; padding:1px 6px; }
+  #alex-heartbeat .pl-counts { color:var(--hb-muted); font-size:11.5px; font-family:ui-monospace,"SF Mono",Menlo,monospace; margin:7px 0 0; }
 </style>
 
 <section id="alex-heartbeat" data-test="alex-pipeline">
@@ -113,6 +124,10 @@
     </section>
   <% end %>
 
+  <%# ── Test runs · release test-scope verdicts, each gradeable (extracted so it
+      renders + component-tests in isolation). Hidden internally when empty. %>
+  <%= render "heartbeat/test_runs_band", test_runs: @test_runs, test_run_grades: @test_run_grades %>
+
   <div class="pl-grid">
     <%# ── Column 1 · Activities ──────────────────────────────────────────── %>
     <div class="pl-col" id="col-actions">
@@ -161,8 +176,13 @@
           <div class="pl-empty">No insights yet — Alex banks them with <code>grade-events</code>.</div>
         <% end %>
         <% @insights.each do |insight| %>
+          <%# An insight targets EITHER an activity OR a raw action (the XOR) — the
+              Confirm affordance handles both, so a banked test-run grade confirms
+              to Column 3 with the same parity an activity insight has. %>
           <% activity_id = insight.agent_activity_id %>
-          <% confirmed = activity_id && @confirmed_activity_ids.include?(activity_id) %>
+          <% action_id = insight.agent_action_id %>
+          <% confirmed = (activity_id && @confirmed_activity_ids.include?(activity_id)) ||
+                         (action_id && @confirmed_action_ids.include?(action_id)) %>
           <div class="pl-row" data-test="pl-insight">
             <div>
               <span class="pl-slug"><%= insight.slug %></span>
@@ -177,6 +197,14 @@
               <div class="pl-confirm">
                 <%= button_to "Confirm", alex_pipeline_confirm_path(activity_id),
                       params: { slug: insight.slug }, data: { test: "pl-confirm-btn" } %>
+              </div>
+            <% elsif action_id %>
+              <div class="pl-confirm">
+                <%# The route needs an :id segment; the controller keys the action
+                    branch off the agent_action_id FORM param, so pass both. %>
+                <%= button_to "Confirm", alex_pipeline_confirm_path(action_id),
+                      params: { slug: insight.slug, agent_action_id: action_id },
+                      data: { test: "pl-confirm-action-btn" } %>
               </div>
             <% end %>
           </div>

@@ -1,0 +1,43 @@
+<%# Test runs band · release test-scope verdicts, each a gradeable unit.
+    Every COMPLETED/FAILED release test scope (bin/release run_test_scope) is a
+    tagged AgentAction (kind:test_scope + pass|fail result_slug). Read-only
+    surfacing: grade it from the action drawer to feed it into Column 2, then
+    Confirm it into Column 3 — parity with an activity. phase/tier/host are DERIVED
+    from the scope registry at render, never stored (no re-tier drift). Extracted
+    from the pipeline page so it renders — and unit-tests — in isolation.
+    Locals: test_runs (Array<AgentAction>), test_run_grades ({id => {grader => grade}}). %>
+<% if test_runs.present? %>
+  <section class="pl-truns" data-test="pl-test-runs">
+    <div class="pl-colhd">
+      <div class="pl-step">Release test scopes</div>
+      <h2>&#129514; Test runs <span class="pl-count"><%= test_runs.size %> graded verdicts</span></h2>
+    </div>
+    <div class="pl-list">
+      <% test_runs.each do |run| %>
+        <% meta = heartbeat_release_scope_meta(run.event_slug) %>
+        <% pass = run.result_slug == "pass" %>
+        <% is_not = test_run_grades.dig(run.id, ActionGrade::ALEX)&.not_good? %>
+        <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-test-run" data-scope="<%= run.event_slug %>">
+          <div>
+            <span class="pl-slug"><%= run.event_slug %></span>
+            <span class="pl-disp <%= pass ? "good" : "not" %>" data-test="pl-test-verdict"><%= pass ? "pass" : "fail" %></span>
+          </div>
+          <% if meta["phase"].present? || meta["tier"].present? || meta["host"].present? %>
+            <div class="pl-scope-meta">
+              <% if meta["phase"].present? %><span class="pl-tag" title="phase"><%= meta["phase"] %></span><% end %>
+              <% if meta["tier"].present? %><span class="pl-tag" title="tier"><%= meta["tier"] %></span><% end %>
+              <% if meta["host"].present? %><span class="pl-tag" title="host"><%= meta["host"] %></span><% end %>
+            </div>
+          <% end %>
+          <% counts = heartbeat_test_scope_counts(run.summary) %>
+          <% dur = heartbeat_duration(run.duration_ms) %>
+          <% if counts || dur %><p class="pl-counts"><%= [counts, dur].compact.join(" · ") %></p><% end %>
+          <p class="pl-from">
+            <% if run.task_slug.present? %>on <%= run.task_slug %> &middot; <% end %>
+            <%= link_to "grade", heartbeat_feedback_path(run.id), data: { test: "pl-test-run-grade" } %>
+          </p>
+        </div>
+      <% end %>
+    </div>
+  </section>
+<% end %>

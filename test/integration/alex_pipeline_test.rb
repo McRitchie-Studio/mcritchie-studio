@@ -64,6 +64,73 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # ── test runs · release test-scope verdicts, each gradeable ─────────────────
+
+  def make_test_run(scope:, result:, session_id: "tr-1", summary: nil, duration_ms: 1200, **attrs)
+    AgentAction.create!({
+      session_id: session_id, kind: "test_scope", event_slug: scope, result_slug: result,
+      summary: summary || "test scope #{scope} #{result == 'pass' ? 'COMPLETED' : 'FAILED'} · mcritchie-studio · #{result}",
+      duration_ms: duration_ms, occurred_at: Time.current, seq: 0, outcome: "ok", actor: "agent"
+    }.merge(attrs))
+  end
+
+  test "[integration] the test-runs band renders a verdict with scope key, pass pill, derived meta, counts and grade link" do
+    run = make_test_run(scope: "ship_test_gate", result: "pass", task_slug: "some-task",
+                   summary: "test scope ship_test_gate COMPLETED · mcritchie-studio · pass · " \
+                            "141 runs, 320 assertions, 0 failures, 0 errors · 12.3s · bin/rails test")
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-test-runs]"
+    assert_select "[data-test=pl-test-run]" do
+      assert_select ".pl-slug", text: "ship_test_gate"
+      assert_select "[data-test=pl-test-verdict].good", text: "pass"
+      # phase/tier/host DERIVED from the scope registry (ship_test_gate → ship/full/local)
+      assert_select ".pl-tag", text: "ship"
+      assert_select ".pl-tag", text: "full"
+      assert_select ".pl-tag", text: "local"
+      # counts re-parsed from the summary; duration from the stored duration_ms
+      assert_select ".pl-counts", text: /141 runs/
+    end
+    # the run links to the EXISTING action grading drawer (parity with a candidate)
+    assert_select "a[href=?]", heartbeat_feedback_path(run.id)
+  end
+
+  test "[integration] a failed verdict renders the fail pill" do
+    make_test_run(scope: "qa_post_deploy", result: "fail", session_id: "tr-fail",
+             summary: "test scope qa_post_deploy FAILED · turf-monster-qa · fail · 1 failures · 3.1s · heroku run")
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-test-verdict].not", text: "fail"
+  end
+
+  test "[integration] an untagged START action never lands in the test-runs band" do
+    # A START emit is kind:bash with no result_slug — excluded by the band query.
+    AgentAction.create!(session_id: "tr-start", kind: "bash", event_slug: "ship_test_gate",
+                        summary: "test scope ship_test_gate START · mcritchie-studio · bin/rails test",
+                        occurred_at: Time.current, seq: 0, outcome: "ok", actor: "agent")
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-test-runs]", { count: 0 }, "no verdicts → the band is hidden"
+    assert_select "[data-test=pl-test-run]", { count: 0 }
+  end
+
+  test "[integration] an Alex 'not' grade flags a test-run row" do
+    run = make_test_run(scope: "pre_qa_gate", result: "pass", session_id: "tr-not")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "not", slug: "flaky integration gate")
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-test-run].is-not", { count: 1 }
+  end
+
+  test "[integration] the test-runs band is hidden when there are none" do
+    get alex_pipeline_path
+    assert_select "[data-test=pl-test-runs]", { count: 0 }
+  end
+
   # ── candidates awaiting grade · block-mined "not" grades ────────────────────
 
   def block_mined_candidate(task_slug:, session_id:, banked: false)
@@ -131,5 +198,60 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
       post alex_pipeline_confirm_path(s.id), params: { slug: "second" }
     end
     assert_equal "second", ActionGrade.for_event(s).by_grader("mcr").first.slug
+  end
+
+  # ── confirm-of-action · a banked test-run grade reaches Column 3 ─────────────
+  # An insight can target a raw ACTION (a banked test-run grade), not just an
+  # activity — Confirm handles both so the test-run grade reaches Column 3, parity.
+
+  test "[integration] a banked test-run grade shows in Column 2 with an action Confirm button" do
+    run = make_test_run(scope: "ship_test_gate", result: "pass", session_id: "cfa-1")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "good",
+                        slug: "ship gate stayed green").bank!
+
+    get alex_pipeline_path
+
+    assert_select "[data-test=pl-insight]" do
+      assert_select ".pl-slug", text: "ship gate stayed green"
+    end
+    # the Confirm button posts to the action's confirm URL with the agent_action_id form param
+    assert_select "[data-test=pl-confirm-action-btn]"
+    assert_select "form[action=?]", alex_pipeline_confirm_path(run.id)
+    assert_select "input[name=agent_action_id][value=?]", run.id.to_s
+  end
+
+  test "[integration] Confirm on an action records an mcr grade for it and lists it in Column 3" do
+    run = make_test_run(scope: "pre_qa_gate", result: "fail", session_id: "cfa-2")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "not",
+                        slug: "pre-qa gate flaked").bank!
+    log_in_as(users(:alex)) # admin — the write is gated until make-grading-actions-public lands
+
+    assert_difference -> { ActionGrade.for_action(run).by_grader("mcr").count }, 1 do
+      post alex_pipeline_confirm_path(run.id), params: { slug: "pre-qa gate flaked", agent_action_id: run.id }
+    end
+
+    assert_redirected_to alex_pipeline_path(anchor: "col-confirmations")
+    conf = ActionGrade.for_action(run).by_grader("mcr").first
+    assert_equal "good", conf.disposition
+    assert_equal "pre-qa gate flaked", conf.slug
+
+    get alex_pipeline_path
+    # the insight now reads Confirmed, not a button
+    assert_select "[data-test=pl-insight-confirmed]"
+    assert_select "[data-test=pl-confirmation]" do
+      assert_select ".pl-slug", text: "pre-qa gate flaked"
+    end
+  end
+
+  test "[integration] re-confirming the same action updates the one mcr row (idempotent)" do
+    run = make_test_run(scope: "qa_up_smoke", result: "pass", session_id: "cfa-3")
+    ActionGrade.create!(agent_action: run, grader: "alex", disposition: "good", slug: "qa boot green").bank!
+    log_in_as(users(:alex))
+
+    post alex_pipeline_confirm_path(run.id), params: { slug: "first", agent_action_id: run.id }
+    assert_no_difference -> { ActionGrade.by_grader("mcr").count } do
+      post alex_pipeline_confirm_path(run.id), params: { slug: "second", agent_action_id: run.id }
+    end
+    assert_equal "second", ActionGrade.for_action(run).by_grader("mcr").first.slug
   end
 end

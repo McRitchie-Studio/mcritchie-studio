@@ -33,3 +33,32 @@ test("alex pipeline renders the three distillation columns @qa-readonly", async 
   await expect(allActivities).toBeVisible();
   await expect(allActivities).toHaveAttribute("href", "/alex/heartbeat/activities");
 });
+
+// [e2e] A2 happy path (seeded, local only — NOT @qa-readonly, since it asserts
+// seeded rows): the "Test runs" band renders the release test-scope verdicts, a
+// pass and a fail pill, the phase/tier/host chips derived from the scope
+// registry, and a grade link; and a banked test-run grade surfaces as a Column-2
+// insight with an ACTION Confirm button (confirm-of-action parity).
+test("alex pipeline shows the gradeable test-runs band", async ({ page }) => {
+  const res = await page.goto("/alex/pipeline");
+  expect(res.ok()).toBe(true);
+
+  const band = page.locator("[data-test='pl-test-runs']");
+  await expect(band).toBeVisible();
+
+  // The seeded passing verdict: scope key + pass pill + derived meta chips + grade link.
+  const passRun = page.locator("[data-test='pl-test-run'][data-scope='ship_test_gate']");
+  await expect(passRun).toBeVisible();
+  await expect(passRun.locator("[data-test='pl-test-verdict']")).toHaveText("pass");
+  await expect(passRun).toContainText("ship");
+  await expect(passRun).toContainText("full");
+  await expect(passRun).toContainText("local");
+  await expect(passRun.locator("[data-test='pl-test-run-grade']")).toBeVisible();
+
+  // The seeded failing verdict shows a fail pill.
+  const failRun = page.locator("[data-test='pl-test-run'][data-scope='qa_up_smoke']");
+  await expect(failRun.locator("[data-test='pl-test-verdict']")).toHaveText("fail");
+
+  // The banked test-run grade is a Column-2 insight carrying an action Confirm button.
+  await expect(page.locator("[data-test='pl-confirm-action-btn']").first()).toBeVisible();
+});
