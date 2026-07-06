@@ -87,16 +87,16 @@
         a screenshot taken over the card does not push faces outside the card. %>
     <% crew_size = board == :build ? "sm" : "xs" %>
     <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
-    <%# When the task is blocked, the LAST filled compartment is where it stalled
-        (a block lands from reviewed or assembled) — its timer turns into a red ✕. %>
+    <%# A blocked card reads design · building · blocker; the blocker is the LAST
+        filled compartment (slot 3), and its timer turns into a red ✕. %>
     <% blocked = task.stage == "blocked" %>
     <% block_idx = (columns.rindex { |c| c.stacked.any? } if blocked) %>
-    <%# Fixed grid (3 columns, or 4 on the assembled + shipped columns — blocked
-        mirrors the earlier three) so the crew is one solid row; each compartment
-        centered in its column, an unreached stage left blank. On an assembled card the
-        fourth slot is reserved (empty placeholder, or Avi's live deploy intent) so the
-        card never reflows when it ships. The Build board (/tasks) splits the build
-        steps; Deploy collapses them. %>
+    <%# Fixed grid (3 columns, or 4 on the assembled + shipped columns) so the crew is
+        one solid row; each compartment centered in its column, an unreached stage left
+        blank. On an assembled card the fourth slot is reserved (empty placeholder, or
+        Avi's live deploy intent) so the card never reflows when it ships. The Build
+        board (/tasks) splits the build steps; Deploy collapses them — except a blocked
+        card, which splits back to design · building · blocker on both boards. %>
     <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
          data-test="stage-agent-avatars" title="Stage crew">
       <% columns.each_with_index do |cluster, ci| %>

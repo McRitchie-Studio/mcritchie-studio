@@ -1,6 +1,10 @@
 require "test_helper"
 
 class StageAgentsHelperTest < ActionView::TestCase
+  # The rendered-partial (component) tests reach ApplicationHelper for the corner
+  # duration pill (compact_stage_duration); make it available to the view context.
+  helper ApplicationHelper
+
   setup do
     @shannon = Agent.create!(name: "Shannon", slug: "shannon")
     @carl    = Agent.create!(name: "Carl", slug: "carl")
@@ -33,6 +37,23 @@ class StageAgentsHelperTest < ActionView::TestCase
   end
 
   REVIEWERS = [{ "slug" => "shannon", "weight" => "primary" }, { "slug" => "carl", "weight" => "light" }].freeze
+
+  # A task that walked designed → building → submitted → blocked wearing `slug`'s
+  # mascot, with the block landing from `blocker`. Deterministic per-stage durations so
+  # the design (420s) and build (2160s) slots carry stable corner pills.
+  def blocked_journey_task(slug:, blocker:)
+    task = Task.create!(title: "blocked journey #{slug} task", stage: "blocked",
+                        metadata: { "devops" => { "mascot" => slug } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 2.hours.ago, seconds_in_from: 420)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 90.minutes.ago, seconds_in_from: 2160)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "blocked",
+                      occurred_at: 1.hour.ago, actor: blocker)
+    task.reload
+  end
 
   # --- resolve_actor_agent ----------------------------------------------------
 
@@ -437,10 +458,40 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_not_nil ship.live_since
   end
 
-  test "crew_columns gives a blocked task Assembled's three columns" do
-    task = Task.create!(title: "crew columns blocked task", stage: "blocked")
-    cols = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy)
-    assert_equal %i[build review assembled], cols.map(&:lane), "blocked mirrors Assembled (build · review · assembled)"
+  # A blocked card reads design · building · blocker on the DEPLOY board too (not just
+  # /tasks): the collapsed build lane splits back out so slots 1/2 name the design +
+  # build mascots and slot 3 is the actual blocking agent — never the mascot with a ✕.
+  test "crew_columns gives a blocked deploy card design · building · blocker (not the mascot)" do
+    Pokemon.create!(dex: 249, name: "Lugia", slug: "lugia", generation: 2,
+                    sprite_url: "https://example.test/lugia-sprite.png")
+    task = blocked_journey_task(slug: "lugia", blocker: "avi")
+    mon = Pokemon.find_by(slug: "lugia")
+
+    cols = crew_columns(task, stage_agent_groups(task, @agents, mascot: mon),
+                        board: :deploy, mascot: mon, agents: @agents)
+
+    assert_equal %i[designed building blocked], cols.map(&:lane),
+                 "a blocked deploy card splits the build lane back out: design · building · blocker"
+    assert_equal "Lugia", cols[0].stacked.first&.name, "slot 1 is the design mascot"
+    assert_equal "Lugia", cols[1].stacked.first&.name, "slot 2 is the build mascot"
+    assert_equal @avi, cols[2].stacked.first&.agent, "slot 3 is the blocking agent, not the mascot"
+    assert_equal 420, cols[0].seconds, "slot 1 carries the time spent designing"
+    assert_equal 2160, cols[1].seconds, "slot 2 carries the time spent building"
+  end
+
+  # Component tier: the rendered blocked card fills all three slots and paints the red
+  # ✕ on the blocker (last filled slot) — no dashed empty circles for a blocked card.
+  test "a blocked deploy card renders three filled slots with the ✕ on the blocker" do
+    Pokemon.create!(dex: 250, name: "Ho-Oh", slug: "ho-oh", generation: 2,
+                    sprite_url: "https://example.test/hooh-sprite.png")
+    task = blocked_journey_task(slug: "ho-oh", blocker: "avi")
+
+    render "components/stage_agent_avatars", task: task, agents: @agents,
+           variant: :stack, board: :deploy, mascot: Pokemon.find_by(slug: "ho-oh")
+
+    assert_equal 3, rendered.scan('data-test="crew-cluster"').size, "all three slots are filled"
+    assert_no_match(/data-test="crew-empty"/, rendered, "a blocked card shows no dashed empty slots")
+    assert_match(/data-test="crew-blocked"/, rendered, "the blocker slot wears the red ✕")
   end
 
   test "crew_columns splits the build steps for designed/building even on the Deploy board" do
