@@ -267,9 +267,9 @@ module StageAgentsHelper
 
   # Board mirror of the timeline's Evolve card: when the reviewed gate produces a
   # final form, stack that evolved form onto the FIRST (build) crew — the mascot's
-  # whole lineage lives together on the card it was born on — and drop the now-
-  # redundant companion from later deploy clusters. A no-op unless a final evolution
-  # fired. Mutates the by-lane cluster map in place.
+  # whole lineage lives together on the card it was born on. The deploy clusters
+  # already carry no mascot (it never rides them), so there is nothing to strip. A
+  # no-op unless a final evolution fired. Mutates the by-lane cluster map in place.
   def apply_final_evolution!(by_lane, evo)
     return unless evo
 
@@ -277,10 +277,6 @@ module StageAgentsHelper
     return unless build
 
     build.stacked += [StageAgent.new(stage: "reviewed", agent: evo.to_face)]
-    %i[assembled shipped].each do |lane|
-      cluster = by_lane[lane]
-      cluster.stacked = cluster.stacked.reject { |a| a.agent.is_a?(MascotAgent) } if cluster
-    end
   end
 
   def blocked_build_crew(task, mascot)
@@ -395,11 +391,13 @@ module StageAgentsHelper
   # →reviewed event's metadata (the canonical write target, NOT Task.metadata),
   # else the single mover. Build-lane stages wear the task's mascot (the feature
   # agent's face) from the event snapshot when present, falling back to the current
-  # task mascot for legacy rows; the Deploy tail keeps its real actor. An
-  # actor-LESS assembled/shipped move (a conductor/model transition that recorded
-  # only the spine) is attributed to the stage's canonical role owner (Steffon QAs
-  # `assembled`, Avi ships) so the Deploy crew never goes blank — but a PRESENT yet
-  # unresolved actor (a raw session id) keeps its palette stand-in, not overridden.
+  # task mascot for legacy rows. The Deploy tail is its real actor ALONE — the
+  # mascot never rides the assembled/shipped cards; it lives on the Build lane and
+  # (when it evolves) the Evolve reel. An actor-LESS assembled/shipped move (a
+  # conductor/model transition that recorded only the spine) is attributed to the
+  # stage's canonical role owner (Steffon QAs `assembled`, Avi ships) so the Deploy
+  # crew never goes blank — but a PRESENT yet unresolved actor (a raw session id)
+  # keeps its palette stand-in, not overridden.
   def event_stage_agents(evt, by_slug, mascot_agent)
     stage = evt.to_stage
     if Task::BUILD_STAGES.include?(stage)
@@ -421,30 +419,13 @@ module StageAgentsHelper
       end
     elsif evt.actor.present?
       [StageAgent.new(stage: stage, from_label: evt.from_label, label: evt.actor, weight: nil,
-                      agent: (mascot_agent if Task::BUILD_STAGES.include?(stage)) || resolve_actor_agent(evt.actor, by_slug),
-                      seconds: evt.seconds_in_from)] + [deploy_mascot_companion(evt, mascot_agent)].compact
+                      agent: resolve_actor_agent(evt.actor, by_slug), seconds: evt.seconds_in_from)]
     elsif (owner = (STAGE_OWNER[stage] && by_slug[STAGE_OWNER[stage]]))
       [StageAgent.new(stage: stage, from_label: evt.from_label, label: owner.slug, weight: nil,
-                      agent: owner, seconds: evt.seconds_in_from)] + [deploy_mascot_companion(evt, mascot_agent)].compact
+                      agent: owner, seconds: evt.seconds_in_from)]
     else
-      [deploy_mascot_companion(evt, mascot_agent)].compact
+      []
     end
-  end
-
-  # The stages whose crew card carries the task's Pokémon ALONGSIDE the deploy
-  # soul when no final-evolution reel has claimed it. Reviewed stays the pure
-  # senior pair (the two-column review layout is deliberate).
-  MASCOT_COMPANION_STAGES = %w[assembled shipped].freeze
-
-  def deploy_mascot_companion(evt, mascot_agent)
-    return nil unless MASCOT_COMPANION_STAGES.include?(evt.to_stage)
-
-    agent = event_mascot_agent(evt, mascot_agent)
-    return nil unless agent
-
-    StageAgent.new(stage: evt.to_stage, from_label: evt.from_label,
-                   label: evt.mascot_snapshot["slug"].presence || agent.name,
-                   weight: nil, agent: agent, seconds: nil)
   end
 
   # A task's final evolution — the NEW final form its Pokémon reaches at the
@@ -558,9 +539,10 @@ module StageAgentsHelper
   end
 
   # Lift the reviewed gate's final evolution into its own "Evolve" reel right after
-  # the Submitted → Reviewed card. The reel becomes the single timeline home of the
-  # evolved form, so later deploy cards keep Steffon/Avi alone. A no-op unless a
-  # final evolution fired. Mutates `blocks` in place.
+  # the Submitted → Reviewed card — the single timeline home of the evolved form.
+  # Later deploy cards are already Steffon/Avi alone (the mascot never rides them),
+  # so there is nothing to strip. A no-op unless a final evolution fired. Mutates
+  # `blocks` in place.
   def insert_evolution_card!(blocks, evo)
     return unless evo
 
@@ -569,11 +551,6 @@ module StageAgentsHelper
 
     reviewed = blocks[idx]
     trigger = reviewed.agents.find { |a| !a.agent.is_a?(MascotAgent) }
-    %w[assembled shipped].each do |stage|
-      if (block = blocks.find { |b| b.to_stage == stage })
-        block.agents = block.agents.reject { |a| a.agent.is_a?(MascotAgent) }
-      end
-    end
 
     blocks.insert(idx + 1, TimelineBlock.new(
                              event: evo.event, from_label: "Evolve", to_label: "Evolve",

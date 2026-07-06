@@ -261,14 +261,29 @@ class StageAgentsHelperTest < ActionView::TestCase
     # Build lane → the mascot
     assert_equal "Snorlax", by_stage["designed"].first.name
     assert_equal "https://example.test/snorlax-sprite.png", by_stage["building"].first.avatar
-    # Deploy lane → the real crew LEADS each card; reviewed stays the pure pair.
+    # Deploy lane → the real crew ALONE; reviewed stays the pure pair.
     assert_equal %w[shannon carl], by_stage["reviewed"].map { |g| g.agent&.slug }
-    assert_equal "steffon", by_stage["assembled"].first.agent&.slug
-    assert_equal "avi", by_stage["shipped"].first.agent&.slug
+    assert_equal %w[steffon], by_stage["assembled"].map { |g| g.agent&.slug }
+    assert_equal %w[avi], by_stage["shipped"].map { |g| g.agent&.slug }
     assert_not_equal "https://example.test/snorlax-sprite.png", by_stage["shipped"].first.avatar
-    # …and assembled/shipped ALSO carry the task's (possibly gate-evolved)
-    # Pokémon as a companion face — how the second evolution shows itself.
-    assert_equal %w[Snorlax Snorlax], [by_stage["assembled"].last, by_stage["shipped"].last].map(&:name)
+    # …and the mascot never rides the deploy cards — it lives on the Build lane
+    # (and, when it evolves, the Evolve reel), not beside Steffon/Avi.
+    refute [by_stage["assembled"], by_stage["shipped"]].flatten.any? { |g| g.agent.is_a?(StageAgentsHelper::MascotAgent) },
+           "no mascot companion rides assembled/shipped"
+  end
+
+  test "the mascot never rides the deploy cards even without an evolution" do
+    # A non-evolving mascot (no Evolve reel to claim it) must still stay OFF the
+    # deploy cards — the regression guard for the removed companion. Passing a live
+    # mascot means the pre-change code WOULD have added it beside Steffon/Avi.
+    mon = Pokemon.create!(dex: 131, name: "Lapras", slug: "lapras-deploy", generation: 1,
+                          sprite_url: "https://example.test/lapras.png")
+    by_stage = stage_agent_groups(deploy_task(stage: "shipped", reviewers: REVIEWERS), @agents, mascot: mon)
+               .group_by(&:stage)
+
+    assert_equal %w[steffon], by_stage["assembled"].map { |g| g.agent&.slug }
+    assert_equal %w[avi], by_stage["shipped"].map { |g| g.agent&.slug }
+    refute [by_stage["assembled"], by_stage["shipped"]].flatten.any? { |g| g.agent.is_a?(StageAgentsHelper::MascotAgent) }
   end
 
   test "stage_timeline keeps historical build mascots after a rework handoff" do
