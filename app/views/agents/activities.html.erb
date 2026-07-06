@@ -28,6 +28,12 @@
 
 <section id="alex-heartbeat" class="aa-page" data-test="agents-activities"
          x-data="agentsActivities()" @keydown.escape.window="closeFilter()">
+  <%# The whole feed (stats, active-filters, table, pager, sidebar) lives in a turbo-frame
+      so a filter / pager click fetches the filtered data in the BACKGROUND and swaps just
+      this frame — no full-page reload. The section's Alpine (filterOpen) stays OUTSIDE the
+      frame, so the sidebar stays open across swaps; data-turbo-action="advance" keeps the
+      URL (and back button) in sync. Links inside the frame auto-target it. %>
+  <turbo-frame id="aa-activities-frame" data-turbo-action="advance">
   <div class="hb-head">
     <header class="aa-topbar">
       <div class="hb-title">
@@ -57,12 +63,12 @@
         <% active_sessions.each do |session| %>
           <% rest = @session_ids - [session[:id]] %>
           <% remove_url = rest.any? ? activities_agents_path(sessions: rest.join(",")) : activities_agents_path %>
-          <%= link_to remove_url, class: "aa-chipfilter", data: { turbo: false, test: "aa-active-filter" },
+          <%= link_to remove_url, class: "aa-chipfilter", data: { test: "aa-active-filter" },
                 style: ("--aa-type: #{session[:type_color]}" if session[:type_color].present?) do %>
             <span class="aa-chipdot" aria-hidden="true"></span><%= session[:name] %><span class="aa-x" aria-hidden="true">&times;</span>
           <% end %>
         <% end %>
-        <%= link_to "clear", activities_agents_path, class: "aa-chipclear", data: { turbo: false } %>
+        <%= link_to "clear", activities_agents_path, class: "aa-chipclear" %>
       <% else %>
         <span class="aa-rfaint">Showing all sessions</span>
       <% end %>
@@ -78,14 +84,14 @@
     <nav class="hb-pager" data-test="aa-pager" aria-label="Activity pages">
       <% if @has_prev %>
         <%= link_to "&lsaquo; Newer".html_safe, activities_agents_path(page: @page - 1, sessions: @session_ids.presence&.join(",")),
-              class: "hb-btn", data: { turbo: false, test: "aa-pager-prev" } %>
+              class: "hb-btn", data: { test: "aa-pager-prev" } %>
       <% else %>
         <span class="hb-btn hb-pager-off">&lsaquo; Newer</span>
       <% end %>
       <span class="hb-pager-at" data-test="aa-pager-at">Page <%= @page %></span>
       <% if @has_next %>
         <%= link_to "Older &rsaquo;".html_safe, activities_agents_path(page: @page + 1, sessions: @session_ids.presence&.join(",")),
-              class: "hb-btn", data: { turbo: false, test: "aa-pager-next" } %>
+              class: "hb-btn", data: { test: "aa-pager-next" } %>
       <% else %>
         <span class="hb-btn hb-pager-off">Older &rsaquo;</span>
       <% end %>
@@ -96,7 +102,7 @@
       <p>
         <% if @session_ids.any? %>
           No narrated activities in the selected session(s).
-          <%= link_to "Clear the filter", activities_agents_path, data: { turbo: false } %>.
+          <%= link_to "Clear the filter", activities_agents_path %>.
         <% else %>
           Capture is forward-only — activities land here as agent sessions run.
         <% end %>
@@ -105,4 +111,5 @@
   <% end %>
 
   <%= render "agents/activities_filter", sessions: @session_filters, active_ids: @session_ids %>
+  </turbo-frame>
 </section>

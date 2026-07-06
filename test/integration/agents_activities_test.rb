@@ -52,6 +52,25 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "thead#aa-activities-head"
   end
 
+  test "wraps the feed in a turbo-frame so filter/pager clicks refresh in the background" do
+    ev = activity(reason_slug: "a framed activity")
+
+    get activities_agents_path
+
+    assert_response :success
+    # the whole feed lives in an advancing turbo-frame; a filter/pager link inside it
+    # swaps just the frame (no full reload) and the url advances
+    assert_select "turbo-frame#aa-activities-frame[data-turbo-action=advance]"
+    assert_select "turbo-frame#aa-activities-frame table[data-test=agents-activities-table]"
+    assert_select "turbo-frame#aa-activities-frame [data-test=aa-filter]"
+    assert_select "turbo-frame#aa-activities-frame tbody#aa-activity-#{ev.id}"
+    # the in-frame nav links no longer opt out of turbo (they navigate the frame)
+    assert_select "a[data-test=aa-filter-session][data-turbo=false]", false
+    assert_select "nav[data-test=aa-pager] a[data-turbo=false]", false
+    # a real navigation away (Deployments) still bypasses turbo
+    assert_select "a[href=?][data-turbo=false]", deployments_path
+  end
+
   test "drills the raw actions under an activity, newest-first" do
     ev = activity(reason_slug: "an activity with actions")
     action(ev, seq: 0, at: 3.minutes.ago, event_slug: "the older action")
