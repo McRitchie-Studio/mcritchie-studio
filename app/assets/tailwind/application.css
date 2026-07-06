@@ -49,12 +49,99 @@
 }
 
 @layer components {
+  .studio-border-glow {
+    --studio-border-glow-opacity: 0.82;
+    --studio-border-glow-halo-opacity: 0.28;
+    --studio-border-glow-halo-blur: 18px;
+    --studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        45deg,
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55,
+        #fb0094,
+        #00c4ff,
+        #34d399,
+        #fbbf24,
+        #ff2d55
+      );
+    isolation: isolate;
+    position: relative;
+  }
+
+  .studio-border-glow::before,
+  .studio-border-glow::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    border-radius: inherit;
+    background: var(--studio-border-glow-gradient);
+    background-size: 400%;
+    animation: var(--studio-border-glow-animation);
+  }
+
+  .studio-border-glow::before {
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    inset: -2px;
+    z-index: -1;
+    padding: 2px;
+    opacity: var(--studio-border-glow-opacity);
+  }
+
+  .studio-border-glow::after {
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    inset: -10px;
+    z-index: -2;
+    padding: 10px;
+    filter: blur(var(--studio-border-glow-halo-blur));
+    opacity: var(--studio-border-glow-halo-opacity);
+    transform: translateZ(0);
+  }
+
+  @keyframes studioBorderGlowSteam {
+    0% {
+      background-position: 0 0;
+    }
+
+    50% {
+      background-position: 400% 0;
+    }
+
+    100% {
+      background-position: 0 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .studio-border-glow::before,
+    .studio-border-glow::after {
+      animation: none;
+    }
+  }
+
   .task-card-stage-glow {
-    --deployment-border-opacity: 0.82;
-    --deployment-border-halo-opacity: 0.28;
-    --deployment-border-halo-blur: 18px;
-    --deployment-border-animation: deploymentBorderSteam 20s linear infinite;
-    --deployment-border-gradient:
+    --studio-border-glow-opacity: 0.82;
+    --studio-border-glow-halo-opacity: 0.28;
+    --studio-border-glow-halo-blur: 18px;
+    --studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite;
+    --studio-border-glow-gradient:
       linear-gradient(
         45deg,
         #fb0094,
@@ -71,18 +158,18 @@
   }
 
   .task-card-stage-glow-submitted {
-    --deployment-border-opacity: 0.78;
-    --deployment-border-halo-opacity: 0.26;
-    --deployment-border-halo-blur: 16px;
-    --deployment-border-animation: none;
-    --deployment-border-gradient: linear-gradient(45deg, #22c55e, #22c55e);
+    --studio-border-glow-opacity: 0.78;
+    --studio-border-glow-halo-opacity: 0.26;
+    --studio-border-glow-halo-blur: 16px;
+    --studio-border-glow-animation: none;
+    --studio-border-glow-gradient: linear-gradient(45deg, #22c55e, #22c55e);
   }
 
   .task-card-stage-glow-reviewed {
-    --deployment-border-opacity: 0.86;
-    --deployment-border-halo-opacity: 0.3;
-    --deployment-border-halo-blur: 20px;
-    --deployment-border-gradient:
+    --studio-border-glow-opacity: 0.86;
+    --studio-border-glow-halo-opacity: 0.3;
+    --studio-border-glow-halo-blur: 20px;
+    --studio-border-glow-gradient:
       linear-gradient(
         45deg,
         #facc15,
@@ -95,11 +182,11 @@
   }
 
   .release-confirming-glow {
-    --deployment-border-opacity: 0.9;
-    --deployment-border-halo-opacity: 0.34;
-    --deployment-border-halo-blur: 24px;
-    --deployment-border-animation: deploymentBorderSteam 20s linear infinite;
-    --deployment-border-gradient:
+    --studio-border-glow-opacity: 0.9;
+    --studio-border-glow-halo-opacity: 0.34;
+    --studio-border-glow-halo-blur: 24px;
+    --studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite;
+    --studio-border-glow-gradient:
       linear-gradient(
         45deg,
         #fb0094,
@@ -113,96 +200,6 @@
         #fbbf24,
         #ff2d55
       );
-  }
-
-  .task-card-stage-glow-submitted,
-  .task-card-stage-glow-reviewed,
-  .task-card-stage-glow-assembled,
-  .release-confirming-glow {
-    isolation: isolate;
-    position: relative;
-  }
-
-  .task-card-stage-glow-submitted::before,
-  .task-card-stage-glow-reviewed::before,
-  .task-card-stage-glow-assembled::before,
-  .release-confirming-glow::before,
-  .task-card-stage-glow-submitted::after,
-  .task-card-stage-glow-reviewed::after,
-  .task-card-stage-glow-assembled::after,
-  .release-confirming-glow::after {
-    content: "";
-    position: absolute;
-    pointer-events: none;
-    border-radius: inherit;
-    background: var(--deployment-border-gradient);
-    background-size: 400%;
-    animation: var(--deployment-border-animation);
-  }
-
-  .task-card-stage-glow-submitted::before,
-  .task-card-stage-glow-reviewed::before,
-  .task-card-stage-glow-assembled::before,
-  .release-confirming-glow::before {
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    inset: -2px;
-    z-index: -1;
-    padding: 2px;
-    opacity: var(--deployment-border-opacity);
-  }
-
-  .task-card-stage-glow-submitted::after,
-  .task-card-stage-glow-reviewed::after,
-  .task-card-stage-glow-assembled::after,
-  .release-confirming-glow::after {
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    inset: -10px;
-    z-index: -2;
-    padding: 10px;
-    filter: blur(var(--deployment-border-halo-blur));
-    opacity: var(--deployment-border-halo-opacity);
-    transform: translateZ(0);
-  }
-
-  @keyframes deploymentBorderSteam {
-    0% {
-      background-position: 0 0;
-    }
-
-    50% {
-      background-position: 400% 0;
-    }
-
-    100% {
-      background-position: 0 0;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .task-card-stage-glow-submitted::before,
-    .task-card-stage-glow-reviewed::before,
-    .task-card-stage-glow-assembled::before,
-    .release-confirming-glow::before,
-    .task-card-stage-glow-submitted::after,
-    .task-card-stage-glow-reviewed::after,
-    .task-card-stage-glow-assembled::after,
-    .release-confirming-glow::after {
-      animation: none;
-    }
   }
 
   .sticky-data-table {

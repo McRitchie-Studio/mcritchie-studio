@@ -27,6 +27,9 @@
    elsif %w[submitted reviewed assembled].include?(task.stage)
      task.stage
    end %>
+<% card_glow_classes = if card_glow_kind
+     ["task-card-stage-glow", "task-card-stage-glow-#{card_glow_kind}", ("studio-border-glow" unless card_glow_kind == "blocked")].compact.join(" ")
+   end %>
 <% card_glow_color = case card_glow_kind
    when "blocked" then "#ef4444"
    when "reviewed" then mascot_signature_color || "#22d3ee"
@@ -79,7 +82,7 @@
      @mousedown="mx = $event.clientX; my = $event.clientY"
      @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
      <% if card_glow_style %>style="<%= card_glow_style %>"<% end %>
-     class="kanban-card relative <%= card_tone %> <%= "task-card-stage-glow task-card-stage-glow-#{card_glow_kind}" if card_glow_kind %> rounded-lg border p-3 cursor-pointer transition group">
+     class="kanban-card relative <%= card_tone %> <%= card_glow_classes %> rounded-lg border p-3 cursor-pointer transition group">
 
   <%# Title — single-line overflow-fade: long names never wrap or break. They fade
       at the overflowing edge (mask-image) and marquee-scroll to the end while the

@@ -29,6 +29,7 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
     assert_includes card["class"], "task-card-stage-glow-blocked"
+    assert_not_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "dark:bg-red-950/40"
     assert_includes card["class"], "hover:bg-red-100/70"
     assert_includes card["style"], "--task-card-glow-color: #ef4444"
@@ -53,6 +54,7 @@ class TaskCardTest < ActionView::TestCase
     card = css_select("#card-#{task.slug}").first
     assert_equal "submitted", card["data-stage-glow"]
     assert_equal "#6390F0", card["data-glow"]
+    assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-submitted"
     assert_includes card["style"], "--task-card-glow-color: #6390F0"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 46%, transparent)"
@@ -67,6 +69,7 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "reviewed", card["data-stage-glow"]
+    assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-reviewed"
     assert_includes card["style"], "--task-card-glow-color: #22d3ee"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
@@ -89,6 +92,7 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "assembled", card["data-stage-glow"]
+    assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-assembled"
     assert_includes card["style"], "--task-card-glow-color: #EE8130"
     assert_includes card["style"], "--task-card-glow-color-a: #EE8130"
@@ -98,24 +102,19 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
 
     css = Rails.root.join("app/assets/tailwind/application.css").read
-    assert_includes css, ".task-card-stage-glow-submitted::before"
-    assert_includes css, ".task-card-stage-glow-reviewed::before"
-    assert_includes css, ".task-card-stage-glow-assembled::before"
-    assert_includes css, ".release-confirming-glow::before"
-    assert_includes css, ".task-card-stage-glow-submitted::after"
-    assert_includes css, ".task-card-stage-glow-reviewed::after"
-    assert_includes css, ".task-card-stage-glow-assembled::after"
-    assert_includes css, ".release-confirming-glow::after"
+    assert_includes css, ".studio-border-glow {"
+    assert_includes css, ".studio-border-glow::before"
+    assert_includes css, ".studio-border-glow::after"
     assert_includes css, ".task-card-stage-glow-submitted"
-    assert_includes css, "--deployment-border-gradient: linear-gradient(45deg, #22c55e, #22c55e)"
-    assert_includes css, "--deployment-border-animation: none"
+    assert_includes css, "--studio-border-glow-gradient: linear-gradient(45deg, #22c55e, #22c55e)"
+    assert_includes css, "--studio-border-glow-animation: none"
     assert_includes css, ".task-card-stage-glow-reviewed"
     assert_includes css, "#facc15"
     assert_includes css, "#2563eb"
-    assert_includes css, "--deployment-border-animation: deploymentBorderSteam 20s linear infinite"
-    assert_includes css, "animation: var(--deployment-border-animation)"
+    assert_includes css, "--studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite"
+    assert_includes css, "animation: var(--studio-border-glow-animation)"
     assert_includes css, "background-size: 400%"
-    assert_includes css, "filter: blur(var(--deployment-border-halo-blur))"
+    assert_includes css, "filter: blur(var(--studio-border-glow-halo-blur))"
     assert_includes css, "-webkit-mask-composite: xor"
     assert_includes css, "mask-composite: exclude"
     assert_includes css, "padding: 2px"
@@ -124,8 +123,12 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, "#fb0094"
     assert_includes css, "#00c4ff"
     assert_includes css, "#34d399"
-    assert_includes css, "@keyframes deploymentBorderSteam"
+    assert_includes css, "@keyframes studioBorderGlowSteam"
     assert_includes css, "animation: none"
+    assert_not_includes css, ".task-card-stage-glow-submitted::before"
+    assert_not_includes css, ".task-card-stage-glow-reviewed::before"
+    assert_not_includes css, ".task-card-stage-glow-assembled::before"
+    assert_not_includes css, ".release-confirming-glow::before"
     assert_not_includes css, ".task-card-stage-glow-blocked::before"
   end
 
@@ -241,6 +244,7 @@ class TaskCardTest < ActionView::TestCase
     assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
     assert_includes card["class"], "task-card-stage-glow-blocked"
+    assert_not_includes card["class"], "studio-border-glow"
     assert_select "[data-test='unresolved-feedback']"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
@@ -255,6 +259,7 @@ class TaskCardTest < ActionView::TestCase
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"], "bg-surface"
     assert_equal "submitted", card["data-stage-glow"]
+    assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "task-card-stage-glow-submitted"
     assert_includes card["style"], "--task-card-glow-color: #f59e0b"
     assert_select "[data-test='cleared-feedback']", count: 0

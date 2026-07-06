@@ -24,7 +24,7 @@
          "border-color: var(--task-card-glow-border-color); " \
          "box-shadow: var(--task-card-glow-shadow);"
      end %>
-  <% release_card_class = [card_class, ("release-confirming-glow" if release_confirming_glow)].compact.join(" ") %>
+  <% release_card_class = [card_class, ("studio-border-glow release-confirming-glow" if release_confirming_glow)].compact.join(" ") %>
   <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
       type colour; blank → the fx falls back to its default warm-orange pulse. %>
   <div id="current-release"

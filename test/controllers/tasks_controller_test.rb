@@ -69,6 +69,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
     assert_select "#current-release.release-confirming-glow", count: 0
+    assert_select "#current-release.studio-border-glow", count: 0
 
     rel.stamp_stage!("confirming")
 
@@ -76,6 +77,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     card = css_select("#current-release").first
     assert_equal "confirming", card["data-stage-glow"]
+    assert_includes card["class"], "studio-border-glow"
     assert_includes card["class"], "release-confirming-glow"
     assert_includes card["style"], "--task-card-glow-color-a: #fb0094"
     assert_includes card["style"], "--task-card-glow-color-b: #00c4ff"
@@ -457,22 +459,26 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     submitted_card = css_select("#card-#{submitted.slug}").first
     assert_equal "submitted", submitted_card["data-stage-glow"]
+    assert_includes submitted_card["class"], "studio-border-glow"
     assert_includes submitted_card["class"], "task-card-stage-glow-submitted"
     assert_includes submitted_card["style"], "--task-card-glow-color: #6390F0"
 
     reviewed_card = css_select("#dropzone-reviewed #card-#{reviewed.slug}").first
     assert_equal "reviewed", reviewed_card["data-stage-glow"]
+    assert_includes reviewed_card["class"], "studio-border-glow"
     assert_includes reviewed_card["class"], "task-card-stage-glow-reviewed"
     assert_includes reviewed_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
 
     assembled_card = css_select("#dropzone-assembled #card-#{assembled.slug}").first
     assert_equal "assembled", assembled_card["data-stage-glow"]
+    assert_includes assembled_card["class"], "studio-border-glow"
     assert_includes assembled_card["class"], "task-card-stage-glow-assembled"
     assert_includes assembled_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
 
     blocked_card = css_select("#dropzone-building #card-#{blocked.slug}").first
     assert_equal "blocked", blocked_card["data-stage-glow"]
     assert_includes blocked_card["class"], "task-card-stage-glow-blocked"
+    assert_not_includes blocked_card["class"], "studio-border-glow"
     assert_includes blocked_card["style"], "--task-card-glow-color: #ef4444"
   end
 
