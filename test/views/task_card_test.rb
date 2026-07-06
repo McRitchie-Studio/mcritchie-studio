@@ -77,7 +77,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "deploy attention cards support single two-color and rainbow border glows" do
+  test "deploy attention cards support fixed and pokemon-color border glows" do
     task = Task.create!(title: "Assembled glow task", stage: "assembled")
     mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],
                              primary_type: "fire", generation: 1)
@@ -98,8 +98,8 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "--task-card-glow-color-a: #EE8130"
     assert_includes card["style"], "--task-card-glow-color-b: #A98FF3"
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
-    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent)"
-    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+    assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color-a) 22%, transparent)"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
 
     css = Rails.root.join("app/assets/tailwind/application.css").read
     assert_includes css, ".studio-border-glow {"
@@ -111,6 +111,9 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, ".task-card-stage-glow-reviewed"
     assert_includes css, "#facc15"
     assert_includes css, "#2563eb"
+    assert_includes css, ".task-card-stage-glow-assembled"
+    assert_includes css, "var(--task-card-glow-color-a, #fb0094)"
+    assert_includes css, "var(--task-card-glow-color-b, #00c4ff)"
     assert_includes css, "--studio-border-glow-animation: studioBorderGlowSteam 20s linear infinite"
     assert_includes css, "animation: var(--studio-border-glow-animation)"
     assert_includes css, "background-size: 400%"
@@ -130,6 +133,25 @@ class TaskCardTest < ActionView::TestCase
     assert_not_includes css, ".task-card-stage-glow-assembled::before"
     assert_not_includes css, ".release-confirming-glow::before"
     assert_not_includes css, ".task-card-stage-glow-blocked::before"
+  end
+
+  test "assembled single type mascot repeats one color for the animated border" do
+    task = Task.create!(title: "Assembled single type task", stage: "assembled")
+    mascot = Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", types: %w[electric],
+                             primary_type: "electric", generation: 1)
+    type_enumerals = { "electric" => TypeColor.new(color: "#F7D02C", rank: 400, emoji: "⚡") }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "assembled", card["data-stage-glow"]
+    assert_includes card["class"], "studio-border-glow"
+    assert_includes card["class"], "task-card-stage-glow-assembled"
+    assert_includes card["style"], "--task-card-glow-color-a: #F7D02C"
+    assert_includes card["style"], "--task-card-glow-color-b: #F7D02C"
+    assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
   end
 
   test "the activity label has no surrounding whitespace (it would render as a gap before the note count)" do

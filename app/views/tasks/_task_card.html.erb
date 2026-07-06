@@ -47,7 +47,12 @@
 <% card_glow_color_b = card_glow_type_colors.second || card_glow_color_a %>
 <% card_glow_large = %w[reviewed assembled].include?(card_glow_kind) %>
 <% card_glow_border_mix = card_glow_large ? 58 : 46 %>
-<% card_glow_shadow = if card_glow_large
+<% card_glow_shadow = if card_glow_kind == "assembled"
+     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color-a) 44%, transparent), " \
+       "0 0 34px color-mix(in srgb, var(--task-card-glow-color-b) 38%, transparent), " \
+       "0 0 82px color-mix(in srgb, var(--task-card-glow-color-a) 22%, transparent), " \
+       "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
+   elsif card_glow_large
      "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
        "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
        "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \

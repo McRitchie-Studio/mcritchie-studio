@@ -473,7 +473,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "assembled", assembled_card["data-stage-glow"]
     assert_includes assembled_card["class"], "studio-border-glow"
     assert_includes assembled_card["class"], "task-card-stage-glow-assembled"
-    assert_includes assembled_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+    assert_includes assembled_card["style"], "--task-card-glow-color-a: #a78bfa"
+    assert_includes assembled_card["style"], "--task-card-glow-color-b: #a78bfa"
+    assert_includes assembled_card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
 
     blocked_card = css_select("#dropzone-building #card-#{blocked.slug}").first
     assert_equal "blocked", blocked_card["data-stage-glow"]

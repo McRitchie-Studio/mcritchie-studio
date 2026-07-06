@@ -181,6 +181,24 @@
       );
   }
 
+  .task-card-stage-glow-assembled {
+    --studio-border-glow-opacity: 0.9;
+    --studio-border-glow-halo-opacity: 0.34;
+    --studio-border-glow-halo-blur: 22px;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        45deg,
+        var(--task-card-glow-color-a, #fb0094),
+        var(--task-card-glow-color-b, #00c4ff),
+        var(--task-card-glow-color-a, #34d399),
+        var(--task-card-glow-color-b, #fbbf24),
+        var(--task-card-glow-color-a, #ff2d55),
+        var(--task-card-glow-color-b, #fb0094),
+        var(--task-card-glow-color-a, #00c4ff),
+        var(--task-card-glow-color-b, #34d399)
+      );
+  }
+
   .release-confirming-glow {
     --studio-border-glow-opacity: 0.9;
     --studio-border-glow-halo-opacity: 0.34;
