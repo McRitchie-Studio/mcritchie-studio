@@ -1361,11 +1361,14 @@ def prepare
   # 7. Record the QA URL + per-repo deployed SHAs on the release (the board's
   #    current-release header links straight to QA; the SHAs give provenance).
   #    WRITES → suppressed in dry-run; recorded BEFORE the QA-green flip (step 8)
-  #    but AFTER wait_for_boot, so the board links a booted QA dyno.
+  #    but AFTER wait_for_boot, so the board links a booted QA dyno. This records
+  #    the URL ONLY — the stage-advancing `deploy_qa:completed` stamp ("Live on
+  #    QA" green) is deferred to qa_green! (step 8b) so it lands atomic with the
+  #    member flip, never a step early.
   primary = deployed.find { |d| d["repo"] == APP } || deployed.first
   if primary && !primary["qa_url"].empty?
     step("record: qa_url #{primary['qa_url']}")
-    conductor("Release::Conductor.record_qa_deploy(release: Release.current, qa_url: #{primary['qa_url'].inspect}); puts({qa_url: #{primary['qa_url'].inspect}}.to_json)")
+    conductor("Release::Conductor.record_qa_url(release: Release.current, qa_url: #{primary['qa_url'].inspect}); puts({qa_url: #{primary['qa_url'].inspect}}.to_json)")
   end
   unless qa_shas.empty?
     step("record: qa_shas #{qa_shas.map { |r, s| "#{r}@#{s.to_s[0, 7]}" }.join(', ')}")
@@ -1393,16 +1396,19 @@ def prepare
     #     stay `reviewed`, re-run resumes). dry-run prints the plan; nothing executes.
     run_post_deploy(repos, target: :qa)
 
-    # 8b. QA is green — flip the swept members + the RC. The reviewed→assembled
-    #     usage (captured locally; the flip runs on prod, transcript-less) rides
-    #     each member's assembled TaskEvent.
+    # 8b. QA is green — flip the swept members + the RC, and stamp Live-on-QA
+    #     (deploy_qa:completed) in the SAME conductor call so the /deployments
+    #     tracker reaches "Live on QA" atomic with the flip (never a step early).
+    #     The reviewed→assembled usage (captured locally; the flip runs on prod,
+    #     transcript-less) rides each member's assembled TaskEvent.
     unless DRY
       flip_slugs = cands.select { |c| c["stage"] == "reviewed" }.map { |c| c["slug"] }
       usage = move_usage_map(flip_slugs)
-      step("record: Release::Conductor.qa_green!(Release.current) — QA green, flip swept members `assembled`")
+      live_qa_url = primary && !primary["qa_url"].to_s.empty? ? primary["qa_url"] : nil
+      step("record: Release::Conductor.qa_green!(Release.current) — QA green, flip swept members `assembled` + stamp Live-on-QA")
       conductor(
         "r = Release.current; " \
-        "Release::Conductor.qa_green!(r, usage_by_slug: #{usage.inspect}) if r; " \
+        "Release::Conductor.qa_green!(r, usage_by_slug: #{usage.inspect}, qa_url: #{live_qa_url.inspect}) if r; " \
         "puts({ state: r&.reload&.state }.to_json)"
       )
     end
