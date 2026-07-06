@@ -41,6 +41,21 @@ and stop.
 
 ## Procedure
 
+**Summon this act as a Steffon subagent (interactive tree visibility).** When a
+session drives a devops cycle interactively (a terminal is attached), summon this
+act as its OWNING SOUL instead of running the sweep bare in a background shell:
+launch a **Steffon** subagent via the Agent tool (`subagent_type: steffon`) and
+have that subagent execute `bin/release prepare --yes` (the full procedure
+below). It renders as a live node in the Claude Code sub-agent tree under the
+orchestrator.
+
+- **Caveat.** `bin/release` is a script, so the Steffon subagent is a thin driver
+  around it: the tree node is real, but the sweep's subprocess internals (the
+  merges, the pre-QA gate, the QA deploy) run INSIDE that agent and are not their
+  own tree nodes. The tree is also ephemeral (it dies with the session) and the
+  autonomous heartbeat runs with no terminal, so it renders no tree. The durable,
+  full-visibility surface is the Activities timeline — narrate the act there.
+
 Normalize any PR the sweep should carry: `gh pr ready <n>` un-drafts it and
 `gh pr edit <n> --base release` retargets a mis-based PR (a no-op when the base
 is already `release`).

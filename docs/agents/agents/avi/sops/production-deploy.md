@@ -39,6 +39,20 @@ If `release == main`, no release is active, the active release is still
 
 ## Procedure
 
+**Direct-drive this act — do NOT wrap it in a subagent.** Unlike `pr-review` and
+`qa-release` (which an interactive session summons as their owning-soul Agent-tool
+subagents for tree visibility), the production ship is DIRECT-DRIVEN by the
+orchestrating session itself. Run `bin/release ship --yes` in your own session;
+do NOT delegate it to a wrapper subagent.
+
+- **Rationale.** This is the one IRREVERSIBLE gate. A wrapper subagent that dies
+  mid-ship (crash, timeout, killed terminal) would orphan the ship with no
+  attached terminal to recover it, leaving a partial `release → main` state that
+  nobody owns. Keeping the ship in the orchestrator's own hands means the gate is
+  never held by an ephemeral agent that can vanish. Tree visibility is not worth
+  orphaning the irreversible act — the durable record is the Activities timeline
+  and the release's stage timeline, not the sub-agent tree.
+
 **Gate before activating Avi.** Do not post `confirming/start` just because
 `Release.current` exists. The Avi handoff exists only when the next release is
 already live on QA: `Release.current.state == "assembled"` and the
