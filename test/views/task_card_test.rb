@@ -119,6 +119,8 @@ class TaskCardTest < ActionView::TestCase
     assert_includes css, "-webkit-mask-composite: xor"
     assert_includes css, "mask-composite: exclude"
     assert_includes css, "padding: 2px"
+    assert_includes css, "inset: -10px"
+    assert_includes css, "padding: 10px"
     assert_includes css, "#fb0094"
     assert_includes css, "#00c4ff"
     assert_includes css, "#34d399"

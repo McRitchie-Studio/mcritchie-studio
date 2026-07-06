@@ -162,8 +162,17 @@
   .task-card-stage-glow-reviewed::after,
   .task-card-stage-glow-assembled::after,
   .release-confirming-glow::after {
-    inset: -7px;
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    inset: -10px;
     z-index: -2;
+    padding: 10px;
     filter: blur(var(--deployment-border-halo-blur));
     opacity: var(--deployment-border-halo-opacity);
     transform: translateZ(0);
