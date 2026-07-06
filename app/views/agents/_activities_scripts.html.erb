@@ -1,0 +1,101 @@
+<%# Alpine factories for /agents/activities. Plain window functions (NOT module
+    exports) because Alpine loads via defer and evaluates x-data BEFORE importmap
+    modules resolve. agentsGradeState is the shared inline-grade behaviour (hydrate
+    markers from server-rendered data-*, quick-grade + clear by fetch, live update via
+    the aa:graded event); the activity row composes it with expand + mobile-detail
+    state, the action row uses it bare and inherits the parent tbody's `open`. %>
+<script>
+  // Shared inline-grade state for one gradable row (an activity or an action). idField
+  // ("agent_activity_id" | "agent_action_id") comes from the element's data so the same
+  // code services both; onGraded only reacts to the aa:graded event whose payload
+  // targets THIS row's id, so an activity grade never bleeds into an action row.
+  window.agentsGradeState = function () {
+    return {
+      rowId: null,
+      idField: null,
+      grades: { alex: null, mcr: null },
+      hydrateGrades(el) {
+        this.rowId = el.dataset.rowId;
+        this.idField = el.dataset.idField;
+        this.grades.alex = this.readGrade(el.dataset, "alex");
+        this.grades.mcr = this.readGrade(el.dataset, "mcr");
+      },
+      readGrade(data, who) {
+        if (data[who + "Graded"] !== "true") return null;
+        return {
+          disposition: data[who + "Disp"] || "",
+          slug: data[who + "Slug"] || "",
+          long_form: data[who + "Long"] || "",
+          banked: data[who + "Banked"] === "true"
+        };
+      },
+      onGraded(detail) {
+        if (!detail || !this.idField) return;
+        if (String(detail[this.idField]) !== String(this.rowId)) return;
+        if (detail.cleared) { this.grades[detail.grader] = null; return; }
+        this.grades[detail.grader] = {
+          disposition: detail.disposition,
+          slug: detail.slug,
+          long_form: detail.long_form || "",
+          banked: !!detail.banked
+        };
+      },
+      // A good/not radio changed: POST the little form (CSRF + grader + disposition) to
+      // its grade endpoint and broadcast aa:graded so this row's marker flips live.
+      async quickGrade(ev) {
+        var form = ev.target.closest("form");
+        if (!form) return;
+        try {
+          var resp = await fetch(form.action, { method: "POST", headers: { "Accept": "application/json" }, body: new FormData(form) });
+          var data = await resp.json();
+          if (!resp.ok) return;
+          window.dispatchEvent(new CustomEvent("aa:graded", { detail: data }));
+        } catch (err) { /* network error — a reload reflects server truth */ }
+      },
+      // The × nullify: POST intent=clear (no disposition) to the same endpoint.
+      async clearGrade(ev) {
+        var form = ev.target.closest("form");
+        if (!form) return;
+        var body = new FormData(form);
+        body.set("intent", "clear");
+        body.delete("disposition");
+        try {
+          var resp = await fetch(form.action, { method: "POST", headers: { "Accept": "application/json" }, body: body });
+          var data = await resp.json();
+          if (!resp.ok) return;
+          window.dispatchEvent(new CustomEvent("aa:graded", { detail: data }));
+        } catch (err) { /* network error — a reload reflects server truth */ }
+      }
+    };
+  };
+
+  // The activity tbody: expand/collapse of its raw actions (open), the mobile
+  // priority-columns detail toggle (mopen), plus the shared grade state.
+  window.agentsActivityRow = function () {
+    return Object.assign({ open: false, mopen: false }, window.agentsGradeState());
+  };
+
+  // An action row: grade state only. It intentionally defines NO `open`, so its
+  // x-show="open" resolves UP to the parent tbody's expand flag (Alpine v3 stacked
+  // scopes). It DOES define its own `grades` (via agentsGradeState), which deliberately
+  // SHADOWS the tbody's grades so the row shows the ACTION's grades, not the activity's.
+  // Keep it that way: hoisting `grades` to a shared ancestor would silently cross-wire
+  // activity and action grades.
+  window.agentsActionRow = function () {
+    return window.agentsGradeState();
+  };
+
+  // The page section: owns the slide-in filter sidebar, with focus returned to the
+  // toggle button on close for keyboard users.
+  window.agentsActivities = function () {
+    return {
+      filterOpen: false,
+      openFilter() { this.filterOpen = true; },
+      closeFilter() {
+        this.filterOpen = false;
+        var toggle = document.querySelector('[data-test="aa-filter-toggle"]');
+        if (toggle) toggle.focus();
+      }
+    };
+  };
+</script>

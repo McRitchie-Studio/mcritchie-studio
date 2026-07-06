@@ -19,6 +19,10 @@ class HeartbeatController < ApplicationController
   # the bearer-gated /api/v1 endpoint, which still forces `grader: alex` (lever 2).
   skip_before_action :require_authentication
 
+  # The shared feed read-layer (session_options, pokemon/soul/grade/transition
+  # lookups) — the same bulk queries /agents/activities reuses.
+  include ActivityFeed
+
   # Page size for the cross-session All Activities view.
   ALL_ACTIVITIES_PER_PAGE = 100
   ALL_SPANS_PER_PAGE = ALL_ACTIVITIES_PER_PAGE
@@ -175,6 +179,24 @@ class HeartbeatController < ApplicationController
   def grade
     @action = AgentAction.find(params[:id])
     grader  = params[:grader].to_s
+
+    # Nullify — the /agents/activities inline action-grade cell's × button clears
+    # that grader's grade (the action-level analogue of #grade_activity's clear
+    # branch). JSON only, matching the inline fetch consumer.
+    if params[:intent] == "clear"
+      unless ActionGrade::GRADERS.include?(grader)
+        render json: { error: "Grader is not included in the list" }, status: :unprocessable_entity
+        return
+      end
+
+      @grade = ActionGrade.for_action(@action).by_grader(grader).first
+      rescue_and_log(target: @grade || @action) do
+        @grade&.destroy!
+        render json: { agent_action_id: @action.id, agent_activity_id: nil, grader: grader, cleared: true }
+      end
+      return
+    end
+
     @grade  = ActionGrade.for_action(@action).by_grader(grader).first_or_initialize(grader: grader)
 
     rescue_and_log(target: @grade) do
@@ -285,81 +307,6 @@ class HeartbeatController < ApplicationController
     groups << [nil, session_group] if session_group
     grouped.each { |stage, stage_actions| groups << [stage, stage_actions] }
     groups
-  end
-
-  # Distinct sessions for the switcher, most-recent first, as [[label, id], ...].
-  # The id set is the union of every session that has captured an action OR narrated
-  # an activity, keyed by its latest timestamp so an activity-only session still appears.
-  # Each label then leads with the session's Pokémon mascot ("Bulbasaur · e2f6eb27")
-  # so the picker reads as its handle, falling back to the bare session id when no
-  # mascot was ever drawn for it (pre-mascot or seed sessions).
-  def session_options
-    times = AgentAction.group(:session_id).maximum(:occurred_at)
-    ids = times.merge(AgentActivity.group(:session_id).maximum(:opened_at)) { |_id, a, b| [a, b].max }
-               .sort_by { |_id, last_at| last_at }
-               .reverse
-               .map { |id, _last_at| id }
-    labels = session_mascot_labels(ids)
-    ids.map { |id| [labels[id] || id, id] }
-  end
-
-  # { session_id => "Pokémon · shortid" } for the sessions whose mascot resolves to
-  # a seeded Pokémon. Two bulk queries — mascots by session_id, then Pokémon by
-  # slug — so the switcher never N+1s, mirroring #pokemon_lookup.
-  def session_mascot_labels(ids)
-    return {} if ids.empty?
-
-    mascots = SessionMascot.where(session_id: ids).index_by(&:session_id)
-    pokemon = Pokemon.where(slug: mascots.values.map(&:mascot_slug).uniq).index_by(&:slug)
-    ids.each_with_object({}) do |id, labels|
-      name = pokemon[mascots[id]&.mascot_slug]&.name
-      labels[id] = "#{name} · #{id.first(8)}" if name
-    end
-  end
-
-  # One query for every mascot on the page so the Pokémon column reuses the
-  # seeded Pokémon (name/emoji) instead of N+1 lookups; falls back to the slug.
-  # Covers BOTH the raw actions AND the narrated activities — the activity rows now
-  # show a mascot too.
-  def pokemon_lookup(actions, activities = [])
-    slugs = (actions.filter_map { |action| action.mascot.presence } +
-             activities.filter_map { |activity| activity.mascot.presence }).uniq
-    return {} if slugs.empty?
-
-    Pokemon.where(slug: slugs).index_by(&:slug)
-  end
-
-  # One query for every acting SOUL on the page so the stacked Agent column reuses
-  # the seeded Agent identity (name/emoji/status_color) instead of N+1 lookups. A
-  # activity's `agent` is the soul that acted (avi/carl/…); the drill-down actions
-  # inherit their activity's agent, so this single lookup covers both. Most activities carry
-  # a nil agent (the base session mascot did it), so the set is usually tiny/empty.
-  def agent_soul_lookup(activities)
-    slugs = activities.filter_map { |activity| activity.agent.presence }.uniq
-    return {} if slugs.empty?
-
-    Agent.where(slug: slugs).index_by(&:slug)
-  end
-
-  # The stage-change spine for visible activities — every kind:"transition"
-  # TaskEvent for the activities' task_slugs, grouped for status badges.
-  def stage_transitions_for(activities)
-    slugs = activities.filter_map { |activity| activity.task_slug.presence }.uniq
-    return {} if slugs.empty?
-
-    TaskTransition.where(task_slug: slugs)
-             .order(:occurred_at, :id)
-             .group_by(&:task_slug)
-  end
-
-  # Every activity's current grades in one query, grouped by activity id then keyed
-  # by grader.
-  def activity_grade_lookup(activities)
-    return {} if activities.empty?
-
-    ActionGrade.where(agent_activity_id: activities.map(&:id))
-               .group_by(&:agent_activity_id)
-               .transform_values { |grades| grades.index_by(&:grader) }
   end
 
   # The three live feedback tallies for a session: how many Alex graded, how many

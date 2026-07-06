@@ -1,0 +1,93 @@
+<% content_for(:title, "Agents · Activities") %>
+<% content_for(:full_width, true) %>
+
+<%# /agents/activities — the reimagined cross-session activity feed: every narrated
+    AgentActivity newest-first with its drilled-down raw actions, inline Alex + McRitchie
+    grades on both, and a slide-in Pokémon-session filter that combines the old
+    cross-session table and the per-session view into one URL-driven surface. It renders
+    inside #alex-heartbeat so it inherits the shared component styles (avatar, chips,
+    key-method, grade radios) and the dark palette of its heartbeat sibling; the aa-*
+    layer adds the 7-column x 3-sub-row grid, the sidebar, and mobile priority-columns. %>
+<%# Reuse the heartbeat component styles (the #alex-heartbeat base + palette, avatar,
+    chips, key-method chip, buttons, scroll box) then layer the aa-* grid on top. %>
+<%= render "heartbeat/styles" %>
+<%= render "agents/activities_styles" %>
+<%= render "agents/activities_scripts" %>
+
+<% active_sessions = @session_filters.select { |session| session[:selected] } %>
+
+<section id="alex-heartbeat" class="aa-page" data-test="agents-activities"
+         x-data="agentsActivities()" @keydown.escape.window="closeFilter()">
+  <div class="hb-head">
+    <header class="aa-topbar">
+      <div class="hb-title">
+        <h1>Activities</h1>
+        <p>
+          Every narrated activity across all agent sessions, newest &rarr; oldest.
+          Expand an activity to drill into the raw actions it framed; grade any of them inline.
+        </p>
+      </div>
+      <div class="aa-headactions">
+        <div class="hb-stats">
+          <div class="hb-stat"><b><%= @total %></b><span>activities</span></div>
+          <div class="hb-stat"><b><%= @page %></b><span>page</span></div>
+        </div>
+        <button type="button" class="hb-btn" data-test="aa-filter-toggle" @click="openFilter()">
+          &#9776; Filter<% if active_sessions.any? %> <span class="aa-filtercount" data-test="aa-filter-count"><%= active_sessions.size %></span><% end %>
+        </button>
+        <%= link_to "&lsaquo; Deployments".html_safe, deployments_path, class: "hb-btn", data: { turbo: false } %>
+      </div>
+    </header>
+
+    <% if active_sessions.any? %>
+      <div class="aa-activefilters" data-test="aa-active-filters">
+        <span class="aa-rfaint">Filtered to</span>
+        <% active_sessions.each do |session| %>
+          <% rest = @session_ids - [session[:id]] %>
+          <% remove_url = rest.any? ? activities_agents_path(sessions: rest.join(",")) : activities_agents_path %>
+          <%= link_to remove_url, class: "aa-chipfilter", data: { turbo: false, test: "aa-active-filter" } do %>
+            <%= session[:name] %><span class="aa-x" aria-hidden="true">&times;</span>
+          <% end %>
+        <% end %>
+        <%= link_to "clear", activities_agents_path, class: "aa-chipclear", data: { turbo: false } %>
+      </div>
+    <% end %>
+  </div>
+
+  <% if @activity_rows.any? %>
+    <%= render "agents/activities_table", activity_rows: @activity_rows,
+          pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+          activity_grades: @activity_grades, action_grades: @action_grades,
+          shared_turn_ids: @shared_turn_ids, stage_transitions: @stage_transitions %>
+
+    <nav class="hb-pager" data-test="aa-pager" aria-label="Activity pages">
+      <% if @has_prev %>
+        <%= link_to "&lsaquo; Newer".html_safe, activities_agents_path(page: @page - 1, sessions: @session_ids.presence&.join(",")),
+              class: "hb-btn", data: { turbo: false, test: "aa-pager-prev" } %>
+      <% else %>
+        <span class="hb-btn hb-pager-off">&lsaquo; Newer</span>
+      <% end %>
+      <span class="hb-pager-at" data-test="aa-pager-at">Page <%= @page %></span>
+      <% if @has_next %>
+        <%= link_to "Older &rsaquo;".html_safe, activities_agents_path(page: @page + 1, sessions: @session_ids.presence&.join(",")),
+              class: "hb-btn", data: { turbo: false, test: "aa-pager-next" } %>
+      <% else %>
+        <span class="hb-btn hb-pager-off">Older &rsaquo;</span>
+      <% end %>
+    </nav>
+  <% else %>
+    <div class="hb-empty" data-test="aa-empty">
+      <b>No activities<%= " for this filter" if @session_ids.any? %></b>
+      <p>
+        <% if @session_ids.any? %>
+          No narrated activities in the selected session(s).
+          <%= link_to "Clear the filter", activities_agents_path, data: { turbo: false } %>.
+        <% else %>
+          Capture is forward-only — activities land here as agent sessions run.
+        <% end %>
+      </p>
+    </div>
+  <% end %>
+
+  <%= render "agents/activities_filter", sessions: @session_filters, active_ids: @session_ids %>
+</section>

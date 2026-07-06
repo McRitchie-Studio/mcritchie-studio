@@ -1,6 +1,52 @@
 class AgentsController < ApplicationController
   skip_before_action :require_authentication
 
+  # The shared activity-feed read layer (session lists, pokemon/soul/grade/transition
+  # bulk lookups) — the same queries the /alex/heartbeat surface uses.
+  include ActivityFeed
+
+  # Page size for the cross-session activity feed, matched to the heartbeat's.
+  ACTIVITIES_PER_PAGE = 100
+
+  # The reimagined cross-session activity feed — every narrated AgentActivity across
+  # all sessions, newest-first, with its drilled-down raw actions (also newest-first)
+  # and inline Alex/McRitchie grade cells on BOTH. An optional ?sessions= (comma list
+  # or array) narrows to a multi-select of Pokémon sessions (blank = every session);
+  # @session_filters feeds the slide-in filter sidebar. Read-only — grading POSTs to
+  # the existing heartbeat grade endpoints.
+  def activities
+    @session_ids = parse_session_ids(params[:sessions])
+    @page  = [params[:page].to_i, 1].max
+
+    scope  = AgentActivity.order(opened_at: :desc, seq: :desc, id: :desc)
+    scope  = scope.where(session_id: @session_ids) if @session_ids.any?
+    @total = scope.count
+    @activities = scope.offset((@page - 1) * ACTIVITIES_PER_PAGE).limit(ACTIVITIES_PER_PAGE).to_a
+
+    # Drill-down actions, DISPLAYED newest-first under each activity (the operator's
+    # sort). One query, grouped in Ruby, so the whole page adds no per-row query.
+    actions_by_activity = AgentAction.where(agent_activity_id: @activities.map(&:id))
+                                     .order(occurred_at: :desc, seq: :desc, id: :desc)
+                                     .to_a.group_by(&:agent_activity_id)
+    @activity_rows = @activities.map { |activity| [activity, actions_by_activity[activity.id] || []] }
+    page_actions = actions_by_activity.values.flatten
+
+    # The shared-turn fade marks the 2nd+ tool-call of each metered turn; it is defined
+    # by CHRONOLOGICAL first-seen, so compute it on a chronological pass even though the
+    # rows RENDER newest-first.
+    chronological = page_actions.sort_by { |a| [a.occurred_at || Time.at(0), a.seq.to_i, a.id] }
+    @shared_turn_ids = helpers.heartbeat_shared_turn_ids(chronological)
+
+    @session_filters = session_filter_options(@session_ids)
+    @pokemon_by_slug = pokemon_lookup(page_actions, @activities)
+    @agents_by_slug  = agent_soul_lookup(@activities)
+    @activity_grades = activity_grade_lookup(@activities)
+    @action_grades   = action_grade_lookup(page_actions)
+    @stage_transitions = stage_transitions_for(@activities)
+    @has_prev = @page > 1
+    @has_next = @page * ACTIVITIES_PER_PAGE < @total
+  end
+
   def index
     @agents = Agent.includes(:tasks).order(:position)
     @agent_docs_by_slug = agent_docs_by_slug(@agents.map(&:slug))
@@ -16,6 +62,14 @@ class AgentsController < ApplicationController
   end
 
   private
+
+  # Normalise the ?sessions= filter into a clean, de-duped id list. Accepts either a
+  # comma-joined string ("a,b") or a Rails array param (sessions[]=a&sessions[]=b),
+  # so both the sidebar's URL writes and a hand-typed link work.
+  def parse_session_ids(raw)
+    Array(raw).flat_map { |value| value.to_s.split(",") }
+              .map(&:strip).reject(&:blank?).uniq
+  end
 
   def agent_docs_by_slug(slugs)
     slugs.to_h do |slug|

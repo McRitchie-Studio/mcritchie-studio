@@ -147,7 +147,12 @@ Rails.application.routes.draw do
   end
 
   # HTML
-  resources :agents, only: [:index, :show], param: :slug
+  # The cross-session, filterable activity feed reimagined under the agents surface.
+  # `collection` so /agents/activities routes to #activities instead of #show
+  # (param :slug would otherwise swallow "activities" as an agent slug).
+  resources :agents, only: [:index, :show], param: :slug do
+    collection { get :activities }
+  end
   resources :tasks, param: :slug do
     collection do
       post :reorder

@@ -1,0 +1,11 @@
+<%# One grader's inline grade column cell — the desktop <td> wrapper around the shared
+    grade controls. Used identically for an activity row and an action row (only the POST
+    endpoint + data-test namespace differ). aa-collapsible so it hides behind the mobile
+    "more" toggle, where the same controls re-render interactively. @click.stop keeps the
+    controls from toggling the activity's expand. Locals: kind (:activity | :action),
+    target, grader ("alex" | "mcr"), grade (ActionGrade | nil). %>
+<% test_pref = kind == :activity ? "aa-activity" : "aa-action" %>
+<td class="aa-gradecell aa-collapsible" data-test="<%= test_pref %>-grade-<%= grader %>" @click.stop>
+  <%= render "agents/activities_grade_controls", kind: kind, target: target, grader: grader,
+        grade: grade, test_pref: test_pref %>
+</td>

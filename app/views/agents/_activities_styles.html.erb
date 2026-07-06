@@ -1,0 +1,194 @@
+<%# The /agents/activities layer on top of the reused heartbeat component styles.
+    The page renders inside #alex-heartbeat (so the shared avatar / chip / key-method /
+    grade component styles resolve and the dark palette matches its sibling), and this
+    sheet adds the reimagined 7-column x 3-sub-row grid, the slide-in Pokémon filter
+    sidebar, and the mobile priority-columns behaviour. Every rule is scoped under
+    #alex-heartbeat and prefixed aa- so it never collides with the hb- table. %>
+<style>
+  #alex-heartbeat [x-cloak] { display:none !important; }
+  /* The page shell reuses #alex-heartbeat's dark shell but relaxes the fixed viewport
+     height so the sidebar overlay and pager sit naturally, and drops the huge min-width
+     so the 7-column grid can breathe on narrower desktops. */
+  #alex-heartbeat.aa-page { height:auto; min-height:calc(100vh - var(--nav-h, 7rem)); position:relative; }
+  #alex-heartbeat .aa-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  /* align-items:stretch so the Filter / Deployments buttons match the stat cards'
+     height — one uniform row instead of short pills beside tall boxes. */
+  #alex-heartbeat .aa-headactions { display:flex; align-items:stretch; gap:10px; flex-wrap:wrap; }
+  #alex-heartbeat .aa-headactions .hb-btn { align-items:center; }
+  #alex-heartbeat .aa-filtercount { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--hb-accent); color:#06131f; font-size:10px; font-weight:800; }
+  #alex-heartbeat .aa-activefilters { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:10px 0 0; }
+  #alex-heartbeat .aa-chipfilter { display:inline-flex; align-items:center; gap:6px; background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:999px; padding:3px 6px 3px 9px; font-size:11px; color:var(--hb-txt); text-decoration:none; }
+  #alex-heartbeat .aa-chipfilter:hover { border-color:var(--hb-accent); }
+  #alex-heartbeat .aa-chipfilter .aa-x { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--hb-panel2); color:var(--hb-muted); font-size:11px; line-height:1; }
+  #alex-heartbeat .aa-chipclear { color:var(--hb-muted); font-size:11px; text-decoration:underline; text-underline-offset:2px; }
+
+  /* ---- The grid table ---------------------------------------------------- */
+  /* table-layout:fixed pins every column to its declared width so the Cost / Details
+     columns DON'T re-measure (and jump the whole table) when an activity expands and
+     its actions bring differently-sized content. Activity is the one unsized column,
+     so it absorbs all the slack. Mobile switches back to auto (see the media block). */
+  #alex-heartbeat table.aa-tbl { border-collapse:collapse; width:100%; min-width:1140px; font-size:12.5px; table-layout:fixed; }
+  #alex-heartbeat table.aa-tbl thead th { position:sticky; top:0; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 12px; border-bottom:1px solid var(--hb-line); white-space:nowrap; z-index:3; }
+  #alex-heartbeat table.aa-tbl tbody td { padding:9px 12px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
+  #alex-heartbeat .aa-th-chev { width:26px; padding-left:10px !important; padding-right:0 !important; }
+  #alex-heartbeat .aa-th-agent { width:212px; }
+  #alex-heartbeat .aa-th-cost { width:118px; }
+  #alex-heartbeat .aa-th-details { width:232px; }
+  #alex-heartbeat .aa-th-grade { width:150px; }
+
+  /* Activity (primary) rows sit on the panel; hover lifts to panel2; the category
+     accent rides the left edge. */
+  #alex-heartbeat tr.aa-arow { cursor:pointer; }
+  #alex-heartbeat tr.aa-arow > td { background:var(--hb-panel); }
+  #alex-heartbeat tr.aa-arow:hover > td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.aa-arow > td.aa-chev { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat .aa-chev { color:var(--hb-faint); white-space:nowrap; width:26px; padding-left:10px !important; padding-right:0 !important; }
+  #alex-heartbeat .aa-chev .hb-chev { font-size:11px; }
+
+  /* Every 3-sub-row column is a vertical stack; each sub-row keeps a steady min-height
+     so the three stacks line up row-to-row across columns. */
+  #alex-heartbeat .aa-stack { display:flex; flex-direction:column; gap:3px; }
+  #alex-heartbeat .aa-r { display:flex; align-items:center; gap:6px; min-height:19px; }
+  #alex-heartbeat .aa-r.aa-r-wrap { flex-wrap:wrap; }
+  #alex-heartbeat .aa-rmuted { color:var(--hb-muted); }
+  #alex-heartbeat .aa-rfaint { color:var(--hb-faint); }
+  #alex-heartbeat .aa-empty-sub { color:var(--hb-faint); }
+
+  /* Agent column — the reused stacked avatar+name cell, kept snug. Activity (primary)
+     rows wear a bigger xs avatar + bolder name so they read as a higher altitude than
+     the drill-down action rows, which keep the compact xxs face. */
+  /* The agent cell centers its avatar+name block vertically in the row (the other
+     columns stay top-aligned as 3-sub-row stacks). */
+  #alex-heartbeat .aa-agent { min-width:132px; vertical-align:middle; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-nameprimary { font-size:15px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-namesub { font-size:12.5px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-24px; }
+
+  /* Activity column: badge+goal / →result(fade) / key command. */
+  #alex-heartbeat .aa-activity { min-width:290px; max-width:420px; }
+  #alex-heartbeat .aa-goal { font-weight:600; color:var(--hb-txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; min-width:0; }
+  #alex-heartbeat .aa-resultline { color:var(--hb-muted); min-width:0; }
+  #alex-heartbeat .aa-resultline .aa-arrow { color:var(--hb-faint); flex:0 0 auto; }
+  #alex-heartbeat .aa-resultfade { flex:1 1 auto; min-width:0; max-width:340px; }
+  #alex-heartbeat .aa-inprogress { color:var(--hb-muted); font-style:italic; }
+  #alex-heartbeat .aa-keycmd { min-width:0; }
+  #alex-heartbeat .aa-keycmd .hb-keycode { max-width:300px; }
+
+  /* Cost column: cost / model / tokens. */
+  #alex-heartbeat .aa-cost { min-width:104px; }
+  #alex-heartbeat .aa-cost-amt { color:var(--hb-txt); font-family:ui-monospace,monospace; font-size:12px; }
+  #alex-heartbeat .aa-cost-model { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; }
+  #alex-heartbeat .aa-cost-tok { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
+  #alex-heartbeat .aa-turn-shared { opacity:.55; }
+
+  /* Details column: time+status / task / action-count(+spinner). */
+  #alex-heartbeat .aa-details { min-width:150px; }
+  /* The head line (time+status, or #seq KIND + outcome) never wraps — it clips with a
+     soft right-edge fade instead of dropping a badge to a second line. Children keep
+     their size (flex:0 0 auto) so the badge overflows-and-fades rather than squishing. */
+  #alex-heartbeat .aa-detailhead { flex-wrap:nowrap; overflow:hidden; min-width:0;
+    -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent);
+    mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent); }
+  #alex-heartbeat .aa-detailhead > * { flex:0 0 auto; }
+  #alex-heartbeat .aa-time { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; white-space:nowrap; }
+  #alex-heartbeat .aa-task { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
+  #alex-heartbeat .aa-count { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
+  #alex-heartbeat .aa-spinner { display:inline-block; width:11px; height:11px; border:2px solid var(--hb-line); border-top-color:var(--hb-accent); border-radius:50%; animation:aa-spin .8s linear infinite; }
+  @keyframes aa-spin { to { transform:rotate(360deg); } }
+
+  /* Grade columns — the two identical Alex / McRitchie cells: good/not radios + × on
+     top, the note (disposition dot + slug, then long-form) in the two sub-rows below. */
+  #alex-heartbeat td.aa-gradecell { width:150px; }
+  #alex-heartbeat .aa-gradebox { display:flex; flex-direction:column; gap:4px; }
+  #alex-heartbeat .aa-graderow { display:flex; align-items:center; gap:6px; margin:0; }
+  #alex-heartbeat .aa-graderole { font-size:9px; font-weight:800; color:var(--hb-faint); letter-spacing:.4px; width:10px; flex:0 0 auto; }
+  #alex-heartbeat .aa-radiogrp { display:inline-flex; gap:4px; }
+  #alex-heartbeat .aa-rb { display:inline-flex; align-items:center; gap:3px; font-size:10.5px; color:var(--hb-muted); border:1px solid var(--hb-line); border-radius:6px; padding:2px 7px; cursor:pointer; user-select:none; }
+  /* Visually hidden but STILL focusable + keyboard-operable (not display:none, which
+     drops the radio from the a11y tree). :focus-within rings the label. */
+  #alex-heartbeat .aa-rb input { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  #alex-heartbeat .aa-rb:focus-within { outline:2px solid var(--hb-accent); outline-offset:1px; }
+  /* The expand affordance is a real button so keyboard users can open the drill-down. */
+  #alex-heartbeat .aa-chevbtn { background:transparent; border:0; margin:0; padding:2px 4px; cursor:pointer; color:inherit; display:inline-flex; align-items:center; border-radius:5px; }
+  #alex-heartbeat .aa-chevbtn:focus-visible { outline:2px solid var(--hb-accent); outline-offset:1px; }
+  #alex-heartbeat .aa-rb.on-good { border-color:var(--hb-good); color:var(--hb-good); }
+  #alex-heartbeat .aa-rb.on-not { border-color:var(--hb-not); color:var(--hb-not); }
+  #alex-heartbeat .aa-gradeclear { border:0; background:transparent; color:var(--hb-faint); cursor:pointer; font-size:13px; line-height:1; padding:0 2px; opacity:0; pointer-events:none; transition:opacity .12s; }
+  #alex-heartbeat .aa-gradeclear.is-visible { opacity:1; pointer-events:auto; }
+  #alex-heartbeat .aa-gradeclear:hover { color:var(--hb-not); }
+  #alex-heartbeat .aa-note { display:flex; align-items:center; gap:5px; min-height:16px; font-size:10.5px; color:var(--hb-muted); }
+  #alex-heartbeat .aa-notedot { width:7px; height:7px; border-radius:50%; background:var(--hb-faint); flex:0 0 auto; }
+  #alex-heartbeat .aa-notedot.is-good { background:var(--hb-good); }
+  #alex-heartbeat .aa-notedot.is-not { background:var(--hb-not); }
+  #alex-heartbeat .aa-noteslug { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px; }
+  #alex-heartbeat .aa-notelong { color:var(--hb-faint); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; }
+  #alex-heartbeat .aa-bankmark { color:var(--hb-bank); }
+
+  /* Action (drill-down) rows — read on the base bg, indented, revealed on expand. */
+  #alex-heartbeat tr.aa-subrow > td { background:var(--hb-bg); }
+  #alex-heartbeat tr.aa-subrow:hover > td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.aa-subrow > td.aa-chev { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat tr.aa-subrow.aa-emptyrow > td { color:var(--hb-faint); font-style:italic; }
+  #alex-heartbeat .aa-actionhead { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  #alex-heartbeat .aa-seqbadge { font-family:ui-monospace,monospace; font-size:10px; color:var(--hb-muted); background:var(--hb-panel2); border:1px solid var(--hb-line); border-radius:5px; padding:1px 5px; white-space:nowrap; }
+  #alex-heartbeat .aa-kindbadge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--hb-muted); }
+  #alex-heartbeat .aa-action-summary { color:var(--hb-txt); font-weight:500; }
+  #alex-heartbeat .aa-outcome { font-size:8.5px; font-weight:700; letter-spacing:.4px; line-height:1; padding:2px 5px; border-radius:4px; border:1px solid currentColor; text-transform:uppercase; }
+  #alex-heartbeat .aa-json { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:10.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
+
+  /* ---- The slide-in Pokémon filter sidebar ------------------------------- */
+  #alex-heartbeat .aa-filter-backdrop { position:fixed; inset:0; background:rgba(1,4,9,.55); z-index:60; }
+  #alex-heartbeat .aa-filter { position:fixed; top:0; right:0; bottom:0; width:340px; max-width:88vw; background:var(--hb-panel); border-left:1px solid var(--hb-line); z-index:61; display:flex; flex-direction:column; box-shadow:-12px 0 32px rgba(1,4,9,.5); }
+  #alex-heartbeat .aa-filter-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 16px 12px; border-bottom:1px solid var(--hb-line); }
+  #alex-heartbeat .aa-filter-head h2 { margin:0; font-size:14px; font-weight:700; }
+  #alex-heartbeat .aa-filter-head p { margin:2px 0 0; font-size:11px; color:var(--hb-muted); }
+  #alex-heartbeat .aa-filter-close { background:transparent; border:0; color:var(--hb-muted); font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; }
+  #alex-heartbeat .aa-filter-close:hover { color:var(--hb-txt); }
+  #alex-heartbeat .aa-filter-list { flex:1 1 auto; overflow:auto; padding:8px 8px 18px; display:flex; flex-direction:column; gap:5px; }
+  /* --aa-type is the session's Pokémon primary-type colour (set per row); it rides the
+     left accent bar and the sprite ring, falling back to neutral when absent. */
+  #alex-heartbeat .aa-filter-session { display:flex; align-items:center; gap:10px; padding:9px 10px; border:1px solid transparent; border-radius:10px; text-decoration:none; color:var(--hb-txt); box-shadow:inset 3px 0 0 var(--aa-type, transparent); }
+  #alex-heartbeat .aa-filter-session:hover { background:var(--hb-panel2); }
+  #alex-heartbeat .aa-filter-session.is-selected { border-color:var(--hb-accent); background:var(--hb-panel2); }
+  #alex-heartbeat .aa-fs-check { width:16px; height:16px; border-radius:5px; border:1px solid var(--hb-line); display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:#06131f; flex:0 0 auto; }
+  #alex-heartbeat .aa-filter-session.is-selected .aa-fs-check { background:var(--hb-accent); border-color:var(--hb-accent); }
+  #alex-heartbeat .aa-fs-sprite { width:32px; height:32px; border-radius:50%; background:var(--hb-panel2); border:2px solid var(--aa-type, var(--hb-line)); object-fit:contain; flex:0 0 auto; image-rendering:pixelated; }
+  #alex-heartbeat .aa-fs-body { min-width:0; flex:1 1 auto; }
+  #alex-heartbeat .aa-fs-name { font-weight:600; font-size:12.5px; display:flex; align-items:center; gap:5px; }
+  #alex-heartbeat .aa-fs-shiny { color:var(--hb-bank); font-size:10px; }
+  #alex-heartbeat .aa-fs-meta { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:10.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #alex-heartbeat .aa-filter-foot { padding:10px 16px; border-top:1px solid var(--hb-line); display:flex; gap:8px; align-items:center; justify-content:space-between; }
+  #alex-heartbeat .aa-filter-empty { color:var(--hb-muted); text-align:center; padding:24px 12px; font-size:12px; }
+
+  /* ---- Mobile priority-columns ------------------------------------------- */
+  /* The per-row "more" toggle only exists on mobile. */
+  #alex-heartbeat .aa-mtoggle { display:none; }
+  #alex-heartbeat tr.aa-mobile-detail { display:none; }
+  #alex-heartbeat tr.aa-mobile-detail > td { background:var(--hb-panel); border-bottom:1px solid var(--hb-line); padding:6px 12px 12px 38px; }
+  #alex-heartbeat .aa-md-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+  #alex-heartbeat .aa-md-block { min-width:0; }
+  #alex-heartbeat .aa-md-label { font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-faint); margin-bottom:3px; }
+
+  @media (max-width:860px) {
+    #alex-heartbeat.aa-page { padding:14px 12px 18px; }
+    /* Auto layout on mobile: table-layout:fixed mis-reserves width for the display:none
+       columns and over-squeezes Activity; capping the wide cell children to vw fractions
+       keeps the auto table within the viewport (the goal ellipsizes) instead. */
+    #alex-heartbeat table.aa-tbl { min-width:0; width:100%; table-layout:auto; }
+    #alex-heartbeat .aa-keycmd .hb-keycode { max-width:42vw; }
+    /* Priority columns: keep Agent + Activity; collapse Cost/Details/grades. */
+    #alex-heartbeat .aa-collapsible { display:none !important; }
+    /* The detail panel opens together with the raw actions on a row tap (x-show="open"),
+       no separate toggle — the operator asked for a single tap-to-open. On mobile the
+       row's shown display is table-row (x-show toggles the inline display:none). */
+    #alex-heartbeat tr.aa-mobile-detail { display:table-row; }
+    #alex-heartbeat tr.aa-mobile-detail > td { padding:4px 12px 12px 34px; }
+    /* Let Agent + Activity shrink to the viewport instead of forcing a scroll. */
+    #alex-heartbeat .aa-th-chev, #alex-heartbeat .aa-chev { width:18px; padding-left:8px !important; }
+    #alex-heartbeat .aa-agent { min-width:0; }
+    #alex-heartbeat .aa-agent .hb-nameprimary, #alex-heartbeat .aa-agent .hb-namesub { max-width:22vw; overflow:hidden; text-overflow:ellipsis; }
+    #alex-heartbeat .aa-activity { min-width:0; max-width:none; }
+    #alex-heartbeat .aa-goal { max-width:54vw; }
+    #alex-heartbeat .aa-resultfade { max-width:50vw; }
+  }
+</style>
