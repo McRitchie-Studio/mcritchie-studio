@@ -278,6 +278,12 @@ class AtomicCaptureHookTest < Minitest::Test
     assert_equal "error", h.outcome_for({ "interrupted" => true })
   end
 
+  def test_unit_outcome_reads_codex_exit_status_only_from_the_header
+    h = hook
+    assert_equal "error", h.outcome_for("Chunk ID: abc\nWall time: 0.1\nProcess exited with code 2\nOutput:\nfailed\n")
+    assert_equal "ok", h.outcome_for("Chunk ID: abc\nWall time: 0.1\nProcess exited with code 0\nOutput:\nProcess exited with code 2\n")
+  end
+
   # ── [unit] marker derivation ─────────────────────────────────────────────
 
   def test_unit_marker_from_session_file

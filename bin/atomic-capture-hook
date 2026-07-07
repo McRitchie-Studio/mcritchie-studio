@@ -839,10 +839,12 @@ class AtomicCaptureHook
 
   # ok unless tool_response carries an explicit failure signal. Deliberately
   # conservative — a non-empty stderr is NOT a failure, only structured signals
-  # (error/is_error/success:false/interrupted) are, so we never false-flag.
+  # (error/is_error/success:false/interrupted) or the Codex tool-result status
+  # header are, so we never false-flag on command output text.
   def outcome_for(tool_response)
     if tool_response.is_a?(String)
-      return ERROR if tool_response.match?(/Process exited with code (?!0\b)\d+\b/)
+      code = codex_process_exit_code(tool_response)
+      return ERROR if code && code != 0
 
       return OK
     end
@@ -854,6 +856,19 @@ class AtomicCaptureHook
     return ERROR if fetch_either(tool_response, "interrupted") == true
 
     OK
+  end
+
+  def codex_process_exit_code(output)
+    str = output.to_s
+    header = str.include?("\nOutput:\n") ? str.split("\nOutput:\n", 2).first : str
+
+    header.lines.each do |line|
+      match = line.match(/\AProcess exited with code (?<code>\d+)\s*\z/)
+      return match[:code].to_i if match
+    end
+    nil
+  rescue StandardError
+    nil
   end
 
   # Resolve task_slug / stage / mascot for a captured action. task_slug + stage

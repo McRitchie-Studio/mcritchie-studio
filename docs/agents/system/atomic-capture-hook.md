@@ -48,7 +48,7 @@ The canonical capture fields are:
 | `summary`     | the action's goal slug, **pattern-redacted** (like `input`/`key_method`). Bash → the call's `description` param (the goal the agent wrote); every **other tool synthesizes** a label from its most meaningful param — Read/Edit/Write/NotebookEdit → `<Tool> <file basename>`, Grep → `Grep "<pattern>"`, Glob → `Glob <pattern>`, Task/Agent (delegate) → the `description` param, WebFetch → `WebFetch <url>`, WebSearch → `WebSearch "<query>"`, AskUserQuestion → the first question's header; a missing param / unmapped tool ⇒ absent |
 | `key_method`  | **Bash only** — the call's `command` (the copy-and-rerun line on the heartbeat rows), **same redaction policy as `input`**; other tools ⇒ absent |
 | `key_method_lang` | `bash` when `key_method` is present (the UI's language badge) |
-| `outcome`     | `ok`, or `error` when `tool_response` carries an explicit failure signal (`error` / `is_error:true` / `success:false` / `interrupted:true`) — a noisy stderr is **not** a failure |
+| `outcome`     | `ok`, or `error` when `tool_response` carries an explicit failure signal (`error` / `is_error:true` / `success:false` / `interrupted:true`) or a Codex tool-result status header reports `Process exited with code N` where `N != 0` — a noisy stderr or echoed output text is **not** a failure |
 | `actor`       | `agent` |
 | `model`       | the **session model** — see below (nil ⇒ key dropped, column stays null) |
 | `occurred_at` | now (UTC ISO-8601) |
@@ -289,8 +289,9 @@ timeout = 5
 `test/lib/atomic_capture_hook_test.rb`:
 
 - **[unit]** the pure builders — `tool_name`→`kind` mapping, truncation, outcome
-  detection, marker derivation, and the full payload shape (loaded in process; the
-  bin's main is guarded so `load` is side-effect free).
+  detection, provider-adapter normalization, Codex transcript recovery, marker
+  derivation, and the full payload shape (loaded in process; the bin's main is
+  guarded so `load` is side-effect free).
 - **[integration]** the real script shelled out against a localhost stub HTTP
   server: it mints a token, then POSTs the right shape to `/api/v1/agent_actions`
   with `Authorization: Bearer …`; a missing `session_id` posts nothing; a closed
