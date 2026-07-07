@@ -245,8 +245,8 @@ class Pokemon < ApplicationRecord
     shiny ? "#{raw.presence}#{SHINY_EMOJI}" : raw.presence
   end
 
-  # Shiny odds for ONE mascot draw — 1-in-N. Production runs 1-in-50; dev and QA
-  # run 1-in-5 so shinies actually show up while working.
+  # Shiny odds for ONE mascot draw — 1-in-N. Production runs 1-in-25; dev and QA
+  # run 1-in-2 so shinies actually show up while working.
   # QA runs the production Rails env, so it's told apart by QA_ENV=true (set by
   # bin/qa-server on every QA app — same signal as ApplicationHelper#qa_environment?).
   # SHINY_ODDS overrides everything for tuning/demo ("SHINY_ODDS=1" = always shiny).
@@ -258,7 +258,7 @@ class Pokemon < ApplicationRecord
     return 0 if Rails.env.test?
 
     qa = ENV["QA_ENV"].to_s.strip.downcase == "true"
-    Rails.env.production? && !qa ? 50 : 5
+    Rails.env.production? && !qa ? 25 : 2
   end
 
   # Roll ONE shiny check at the current odds. Called once per mascot draw — shiny

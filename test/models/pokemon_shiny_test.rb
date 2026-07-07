@@ -19,10 +19,10 @@ class PokemonShinyTest < ActiveSupport::TestCase
 
   # --- Odds ---
 
-  test "shiny odds are 1-in-5 on development" do
+  test "shiny odds are 1-in-2 on development" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => nil) do
       Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("development")) do
-        assert_equal 5, Pokemon.shiny_odds
+        assert_equal 2, Pokemon.shiny_odds
       end
     end
   end
@@ -34,18 +34,18 @@ class PokemonShinyTest < ActiveSupport::TestCase
     end
   end
 
-  test "shiny odds are 1-in-50 on production" do
+  test "shiny odds are 1-in-25 on production" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => nil) do
       Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("production")) do
-        assert_equal 50, Pokemon.shiny_odds
+        assert_equal 25, Pokemon.shiny_odds
       end
     end
   end
 
-  test "QA (production Rails env plus QA_ENV) keeps the 1-in-5 odds" do
+  test "QA (production Rails env plus QA_ENV) keeps the 1-in-2 odds" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => "true") do
       Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("production")) do
-        assert_equal 5, Pokemon.shiny_odds
+        assert_equal 2, Pokemon.shiny_odds
       end
     end
   end
