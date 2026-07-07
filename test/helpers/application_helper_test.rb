@@ -116,6 +116,25 @@ class ApplicationHelperTest < ActionView::TestCase
     assert badge.html_safe?
   end
 
+  test "[component] release member summary highlights largest tasks and counts the rest" do
+    medium = Task.create!(title: "Medium studio work", stage: "reviewed", dev_size: "medium",
+                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    large = Task.create!(title: "Large studio effort", stage: "reviewed", po_size: "large",
+                         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    small = Task.create!(title: "Small turf chore", stage: "reviewed", po_size: "small",
+                         metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+    xl = Task.create!(title: "Expensive turf repair", stage: "reviewed", actual_size: "xl",
+                      metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+
+    summary = release_member_condensed_summary([medium, large, small, xl])
+
+    assert_equal [xl, large], summary[:highlights]
+    assert_equal [
+      { emoji: "🪎", count: 1, repositories: ["mcritchie-studio"] },
+      { emoji: "🐊", count: 1, repositories: ["turf-monster"] }
+    ], summary[:repo_counts]
+  end
+
   # Component-tier: render the board card's slug-row markup (mirrors
   # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
   # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.
@@ -185,7 +204,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes pills[2]["style"], "border-left-color: color-mix(in srgb, var(--color-text) 28%, var(--color-border));"
   end
 
-  test "[component] _release_summary keeps Current Release member pills wrapping" do
+  test "[component] _release_summary condenses Current Release member row" do
     Release.delete_all
     rel = Release.open!(branch: "release/current-wrap")
     3.times do |index|
@@ -199,16 +218,19 @@ class ApplicationHelperTest < ActionView::TestCase
 
     render partial: "tasks/release_summary", locals: { release: rel.reload, variant: :current }
 
-    assert_select "[data-test='release-member-list'].flex-wrap.gap-2", count: 1
+    assert_select "[data-test='release-member-list'].flex-wrap", count: 1
     assert_select "[data-test='release-member-stack']", count: 0
 
     pills = css_select("[data-test='release-member-pill']")
-    assert_equal 3, pills.size
+    assert_equal 2, pills.size
     pills.each do |pill|
+      assert_includes pill["class"], "w-56"
       assert_not_includes pill["class"], "-ml-20"
       assert_not_includes pill["class"], "border-l"
-      assert_not_includes pill["style"], "box-shadow"
+      assert_not_includes pill["style"].to_s, "box-shadow"
+      assert_includes pill.to_html, "mask-image: linear-gradient(to right"
     end
+    assert_select "[data-test='release-member-repo-count']", text: /· 🪎 1/
   end
 
   test "[unit] release_tracker_steps walks the stage stamps, handoff gaps included" do

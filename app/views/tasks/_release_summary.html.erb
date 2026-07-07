@@ -14,7 +14,6 @@
 <% link_class = current ? "text-primary hover:underline" : "text-secondary hover:underline" %>
 <% pill_class = current ? "px-2 py-1 rounded bg-inset text-xs text-body hover:text-heading flex items-center gap-1.5 border border-subtle" : "px-2 py-1 rounded bg-inset text-xs text-muted hover:text-body flex items-center gap-1.5 border border-subtle" %>
 <% stacked_pill_class = "relative shrink-0 min-w-28 max-w-[15rem] overflow-hidden whitespace-nowrap hover:z-50 focus:z-50 focus:outline-none focus:ring-2 focus:ring-primary/60" %>
-<% stack_members = !current %>
 <%# Optional trailing content rendered to the right of the member-pills row
     (e.g. the QA-release kickoff chip on the Current card). %>
 <% trailing = local_assigns.fetch(:trailing, nil) %>
@@ -79,27 +78,44 @@
       <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)
           inline on the right of the same row. Last Release pills stay on one
           overlapping row so compact release cards expose each task's left edge;
-          Current Release keeps readable wrapped pills while the operator curates
-          the active train. %>
+          Current Release shows two primary tasks and summarizes the rest by repo. %>
       <div class="mt-3 flex items-start justify-between gap-3 flex-wrap" data-test="release-members-row">
-        <div class="<%= stack_members ? "isolate flex min-w-0 max-w-full flex-nowrap overflow-hidden pr-2" : "flex flex-wrap gap-2 min-w-0" %>" data-test="<%= stack_members ? "release-member-stack" : "release-member-list" %>">
-          <% members.each_with_index do |t, index| %>
-            <% overlap_class = stack_members && index.positive? ? "-ml-20 border-l" : "" %>
-            <% overlap_style = if stack_members && index.positive?
-                 [
-                   "box-shadow: -10px 0 14px -12px color-mix(in srgb, var(--color-text) 70%, transparent);",
-                   "border-left-color: color-mix(in srgb, var(--color-text) 28%, var(--color-border));"
-                 ].join(" ")
-               end %>
-            <%= link_to task_path(t.slug),
-                        class: [pill_class, (stacked_pill_class if stack_members), overlap_class].reject(&:blank?).join(" "),
-                        style: ["z-index: #{index + 1};", overlap_style].compact.join(" "),
-                        data: { test: "release-member-pill" } do %>
-              <%= app_emoji_badge(t.devops_repositories) %>
-              <span class="min-w-0 truncate"><%= truncate(t.title, length: 42) %></span>
+        <% if current %>
+          <% summary = release_member_condensed_summary(members) %>
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0" data-test="release-member-list">
+            <% summary[:highlights].each do |t| %>
+              <%= link_to task_path(t.slug),
+                          class: [pill_class, "w-56 shrink-0 overflow-hidden"].join(" "),
+                          data: { test: "release-member-pill", release_member: "highlight" },
+                          title: t.title do %>
+                <%= app_emoji_badge(t.devops_repositories) %>
+                <span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap" style="<%= right_fade_style(stop: 76) %>"><%= t.title %></span>
+              <% end %>
             <% end %>
-          <% end %>
-        </div>
+            <% summary[:repo_counts].each do |entry| %>
+              <span class="shrink-0 text-xs text-muted tabular-nums" data-test="release-member-repo-count" title="<%= entry[:repositories].join(", ") %>">· <span class="leading-none"><%= entry[:emoji] %></span> <%= entry[:count] %></span>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="isolate flex min-w-0 max-w-full flex-nowrap overflow-hidden pr-2" data-test="release-member-stack">
+            <% members.each_with_index do |t, index| %>
+              <% overlap_class = index.positive? ? "-ml-20 border-l" : "" %>
+              <% overlap_style = if index.positive?
+                   [
+                     "box-shadow: -10px 0 14px -12px color-mix(in srgb, var(--color-text) 70%, transparent);",
+                     "border-left-color: color-mix(in srgb, var(--color-text) 28%, var(--color-border));"
+                   ].join(" ")
+                 end %>
+              <%= link_to task_path(t.slug),
+                          class: [pill_class, stacked_pill_class, overlap_class].reject(&:blank?).join(" "),
+                          style: ["z-index: #{index + 1};", overlap_style].compact.join(" "),
+                          data: { test: "release-member-pill" } do %>
+                <%= app_emoji_badge(t.devops_repositories) %>
+                <span class="min-w-0 truncate"><%= truncate(t.title, length: 42) %></span>
+              <% end %>
+            <% end %>
+          </div>
+        <% end %>
         <% if trailing %><div class="shrink-0"><%= trailing %></div><% end %>
       </div>
     <% end %>

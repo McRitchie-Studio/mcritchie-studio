@@ -436,6 +436,14 @@ module ApplicationHelper
     "rolio"            => "📇"
   }.freeze
 
+  RELEASE_MEMBER_HIGHLIGHT_LIMIT = 2
+  TASK_SIZE_WEIGHTS = {
+    "small"  => 1,
+    "medium" => 2,
+    "large"  => 3,
+    "xl"     => 4
+  }.freeze
+
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
   def app_emoji(repo)
     APP_EMOJIS[repo.to_s.strip.downcase]
@@ -456,6 +464,44 @@ module ApplicationHelper
     return if emojis.none?
 
     tag.span(emojis.join(" "), class: css, title: Array(repos).join(", "))
+  end
+
+  # Current release cards show the two largest member tasks as readable links,
+  # then summarize the remaining members by app/repo emoji.
+  def release_member_condensed_summary(members, highlight_limit: RELEASE_MEMBER_HIGHLIGHT_LIMIT)
+    members = Array(members)
+    highlights = release_member_highlights(members, limit: highlight_limit)
+    remaining = members.reject { |task| highlights.include?(task) }
+
+    {
+      highlights: highlights,
+      repo_counts: release_member_repo_counts(remaining)
+    }
+  end
+
+  def release_member_highlights(members, limit: RELEASE_MEMBER_HIGHLIGHT_LIMIT)
+    Array(members).each_with_index
+                  .sort_by { |task, index| [-release_member_expense_weight(task), index] }
+                  .first(limit)
+                  .map(&:first)
+  end
+
+  def release_member_repo_counts(tasks)
+    Array(tasks).each_with_object({}) do |task, counts|
+      task.devops_repositories.each do |repo|
+        emoji = app_emoji(repo)
+        next if emoji.blank?
+
+        counts[emoji] ||= { emoji: emoji, count: 0, repositories: [] }
+        counts[emoji][:count] += 1
+        counts[emoji][:repositories] << repo unless counts[emoji][:repositories].include?(repo)
+      end
+    end.values
+  end
+
+  def release_member_expense_weight(task)
+    size = [task.actual_size, task.dev_size, task.po_size].find(&:present?)
+    TASK_SIZE_WEIGHTS.fetch(size.to_s, 0)
   end
 
   # Single source for the right-edge fade mask used on the task card's single-line
