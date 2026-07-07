@@ -116,6 +116,31 @@ class ApplicationHelperTest < ActionView::TestCase
     assert badge.html_safe?
   end
 
+  test "release rainbow glow style centralizes the shared release glow recipe" do
+    style = release_rainbow_glow_style
+
+    assert_includes style, "--task-card-glow-color: #a78bfa"
+    assert_includes style, "--task-card-glow-color-a: #fb0094"
+    assert_includes style, "--task-card-glow-color-b: #00c4ff"
+    assert_includes style, "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes style, "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+    assert_includes style, "border-color: var(--task-card-glow-border-color)"
+    assert_includes style, "box-shadow: var(--task-card-glow-shadow)"
+    assert_not_includes style, "--lbfx-fresh-delay"
+  end
+
+  test "release fresh glow style adds deterministic motion and freshness phase" do
+    rel = Release.new(slug: "rel-test-glow")
+    style = release_fresh_glow_style(rel, elapsed_ms: 2_500)
+
+    assert_includes style, "--studio-border-glow-offset:"
+    assert_includes style, "--studio-border-glow-duration:"
+    assert_includes style, "--studio-border-glow-angle:"
+    assert_includes style, "--lbfx-fresh-delay: -2500ms"
+    assert_includes style, "--task-card-glow-color-a: #fb0094"
+    assert_includes style, "--task-card-glow-color-b: #00c4ff"
+  end
+
   # Component-tier: render the board card's slug-row markup (mirrors
   # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
   # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.

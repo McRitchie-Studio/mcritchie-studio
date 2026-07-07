@@ -124,6 +124,19 @@
     const REVIEWED_GUST_COLORS = ["#67e8f9", "#5eead4", "#fef3c7", "#ffffff", "#22d3ee"];
     const MIST_COLORS = ["rgba(226,232,240,.64)", "rgba(191,219,254,.5)", "rgba(203,213,225,.56)", "rgba(255,255,255,.52)"];
     const FRESH_DEPLOY_MS = 8000;
+    const FRESH_DEPLOY_STYLE_PROPS = [
+      "--lbfx-fresh-delay",
+      "--studio-border-glow-offset",
+      "--studio-border-glow-duration",
+      "--studio-border-glow-angle",
+      "--task-card-glow-color",
+      "--task-card-glow-color-a",
+      "--task-card-glow-color-b",
+      "--task-card-glow-border-color",
+      "--task-card-glow-shadow",
+      "border-color",
+      "box-shadow"
+    ];
 
     // The release modules above the board (replaced on a release state change) —
     // the dropzone observer never sees them, so they're flashed straight from the
@@ -198,17 +211,7 @@
       card.classList.remove("lbfx-fresh-deploy", "studio-border-glow", "release-fresh-glow");
       card.classList.add("opacity-75");
       card.dataset.freshDeploy = "false";
-      card.style.removeProperty("--lbfx-fresh-delay");
-      card.style.removeProperty("--studio-border-glow-offset");
-      card.style.removeProperty("--studio-border-glow-duration");
-      card.style.removeProperty("--studio-border-glow-angle");
-      card.style.removeProperty("--task-card-glow-color");
-      card.style.removeProperty("--task-card-glow-color-a");
-      card.style.removeProperty("--task-card-glow-color-b");
-      card.style.removeProperty("--task-card-glow-border-color");
-      card.style.removeProperty("--task-card-glow-shadow");
-      card.style.removeProperty("border-color");
-      card.style.removeProperty("box-shadow");
+      FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop));
       if (!card.getAttribute("style")) card.removeAttribute("style");
     }
 

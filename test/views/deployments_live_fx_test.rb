@@ -56,9 +56,11 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "card.classList.remove(\"lbfx-fresh-deploy\", \"studio-border-glow\", \"release-fresh-glow\")"
     assert_includes rendered, "card.classList.add(\"opacity-75\")"
     assert_includes rendered, "card.dataset.freshDeploy = \"false\""
-    assert_includes rendered, "card.style.removeProperty(\"--task-card-glow-shadow\")"
-    assert_includes rendered, "card.style.removeProperty(\"border-color\")"
-    assert_includes rendered, "card.style.removeProperty(\"box-shadow\")"
+    assert_includes rendered, "const FRESH_DEPLOY_STYLE_PROPS = ["
+    assert_includes rendered, "\"--task-card-glow-shadow\""
+    assert_includes rendered, "\"border-color\""
+    assert_includes rendered, "\"box-shadow\""
+    assert_includes rendered, "FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop))"
     assert_includes rendered, "card.removeAttribute(\"style\")"
   end
 
