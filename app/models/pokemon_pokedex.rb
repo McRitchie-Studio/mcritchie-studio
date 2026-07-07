@@ -31,6 +31,10 @@ class PokemonPokedex
     @latest_spawn ||= latest_session_spawn || latest_task_spawn
   end
 
+  def latest_shiny_spawn
+    @latest_shiny_spawn ||= latest_session_spawn(shiny: true) || latest_task_spawn(shiny: true)
+  end
+
   def recent_actions
     return [] if pokemon_slugs.empty?
 
@@ -44,10 +48,10 @@ class PokemonPokedex
 
   private
 
-  def latest_session_spawn
-    mascot = SessionMascot.where(mascot_slug: pokemon_slugs)
-                           .order(created_at: :desc, id: :desc)
-                           .first
+  def latest_session_spawn(shiny: nil)
+    mascots = SessionMascot.where(mascot_slug: pokemon_slugs)
+    mascots = mascots.where(shiny: shiny) unless shiny.nil?
+    mascot = mascots.order(created_at: :desc, id: :desc).first
     return nil unless mascot
 
     pokemon = pokemon_by_slug[mascot.mascot_slug]
@@ -61,10 +65,10 @@ class PokemonPokedex
     )
   end
 
-  def latest_task_spawn
-    task = Task.where("NULLIF(metadata->'devops'->>'mascot', '') IS NOT NULL")
-               .order(created_at: :desc, id: :desc)
-               .first
+  def latest_task_spawn(shiny: nil)
+    tasks = Task.where("NULLIF(metadata->'devops'->>'mascot', '') IS NOT NULL")
+    tasks = tasks.where("metadata->'devops'->>'mascot_shiny' = 'true'") if shiny
+    task = tasks.order(created_at: :desc, id: :desc).first
     return nil unless task
 
     pokemon = pokemon_by_slug[task.devops_field("mascot")]

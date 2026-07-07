@@ -1,0 +1,46 @@
+<article class="card p-5 min-h-64" data-test="<%= data_test %>">
+  <div class="flex items-center justify-between gap-3 mb-5">
+    <h2 class="text-lg font-semibold text-heading"><%= title %></h2>
+    <% if spawn&.shiny %>
+      <span class="text-xs font-semibold text-amber-700 bg-amber-100 rounded px-2 py-1">Shiny</span>
+    <% end %>
+  </div>
+
+  <% if spawn %>
+    <div class="flex items-center gap-5">
+      <div class="w-32 h-32 rounded-lg border border-subtle bg-surface flex items-center justify-center shrink-0">
+        <img src="<%= spawn.pokemon.display_avatar(shiny: spawn.shiny) %>"
+             alt="<%= spawn.pokemon.name %>"
+             class="max-w-28 max-h-28 object-contain"
+             loading="lazy"
+             onerror="this.onerror=null; this.src='<%= spawn.pokemon.display_sprite(shiny: spawn.shiny) %>'">
+      </div>
+
+      <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm min-w-0">
+        <dt class="text-muted">Name</dt>
+        <dd class="text-heading font-semibold truncate"><%= spawn.pokemon.name %></dd>
+
+        <dt class="text-muted">Created</dt>
+        <dd class="text-body">
+          <time datetime="<%= spawn.created_at.iso8601 %>">
+            <%= l(spawn.created_at, format: :short) %>
+          </time>
+        </dd>
+
+        <dt class="text-muted">Task</dt>
+        <dd class="min-w-0">
+          <% if spawn.task %>
+            <%= link_to spawn.task.title, task_path(spawn.task.slug),
+                  class: "text-primary hover:underline truncate block" %>
+          <% else %>
+            <span class="text-secondary">No task yet</span>
+          <% end %>
+        </dd>
+      </dl>
+    </div>
+  <% else %>
+    <div class="h-40 flex items-center justify-center text-secondary text-sm" data-test="<%= empty_test %>">
+      <%= empty_text %>
+    </div>
+  <% end %>
+</article>
