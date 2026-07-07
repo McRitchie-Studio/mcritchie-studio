@@ -33,7 +33,7 @@ module Dev
         stage: "designed",
         metadata: {
           FIXTURE_MARK => true,
-          "devops" => { "repositories" => ["mcritchie-studio"], "mascot" => mascot&.slug }.compact
+          "devops" => fixture_devops(mascot)
         }
       )
       # The card animates in live via the shared LiveBoardFx (off the genesis
@@ -121,8 +121,9 @@ module Dev
     # mascot — only used when nothing is active, so the Ship toy still has something
     # to deploy.
     def open_fixture_release
+      mascot = Pokemon.draw
       Release.open!.tap do |release|
-        release.update!(metadata: { FIXTURE_MARK => true, "devops" => { "mascot" => Pokemon.draw&.slug }.compact })
+        release.update!(metadata: { FIXTURE_MARK => true, "devops" => fixture_devops(mascot) })
       end
     end
 
@@ -135,13 +136,27 @@ module Dev
 
     # Attach a throwaway member task so the release card shows a member pill.
     def add_fixture_member(release)
+      mascot = Pokemon.draw
       Task.create!(
         title: SAMPLE_TITLES.sample,
         slug: "dev-fixture-rel-#{SecureRandom.hex(3)}",
         stage: "assembled",
         release_slug: release.slug,
-        metadata: { FIXTURE_MARK => true, "devops" => { "repositories" => ["mcritchie-studio"], "mascot" => Pokemon.draw&.slug }.compact }
+        metadata: { FIXTURE_MARK => true, "devops" => fixture_devops(mascot) }
       )
+    end
+
+    def fixture_devops(mascot)
+      devops = { "repositories" => ["mcritchie-studio"] }
+      return devops unless mascot
+
+      shiny = Pokemon.roll_shiny?
+      devops.merge(
+        "mascot" => mascot.slug,
+        "mascot_shiny" => shiny,
+        "mascot_color" => mascot.signature_color,
+        "mascot_emoji" => mascot.status_emoji(shiny: shiny)
+      ).compact
     end
 
     # Tear down every fixture release + its fixture member tasks. Scoped to the

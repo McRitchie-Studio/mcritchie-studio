@@ -48,6 +48,10 @@ module StageAgentsHelper
       agent&.name.presence || label
     end
 
+    def shiny?
+      agent.respond_to?(:shiny?) && agent.shiny?
+    end
+
     # The deep-review seat. Recognizes the legacy "heavy" weight as "primary" too,
     # so review intents recorded BEFORE the rename (TaskEvent.metadata still says
     # "heavy") render identically to new "primary" ones — no data migration of the
@@ -72,13 +76,17 @@ module StageAgentsHelper
   # mascot's signature type color (its least-common type, via Pokemon#signature_color);
   # it backs the avatar circle so e.g. Dragonite wears Dragon, falling back to the
   # name-derived palette color when no type is seeded.
-  MascotAgent = Struct.new(:name, :avatar, :color, keyword_init: true) do
+  MascotAgent = Struct.new(:name, :avatar, :color, :shiny, keyword_init: true) do
     def avatar_initials
       name.to_s[0, 1].upcase
     end
 
     def avatar_color
       color.presence || Agent.avatar_color_for(name)
+    end
+
+    def shiny?
+      shiny == true
     end
   end
 
@@ -93,7 +101,8 @@ module StageAgentsHelper
     MascotAgent.new(
       name: name,
       avatar: snapshot["avatar"].presence,
-      color: snapshot["color"].presence
+      color: snapshot["color"].presence,
+      shiny: snapshot["shiny"] == true
     )
   end
 
@@ -106,7 +115,8 @@ module StageAgentsHelper
 
     MascotAgent.new(name: mascot.name,
                     avatar: mascot.display_sprite(shiny: task.mascot_shiny?),
-                    color: mascot.signature_color)
+                    color: mascot.signature_color,
+                    shiny: task.mascot_shiny?)
   end
 
   # Resolve a TaskEvent#actor — which may be an agent slug, a session id, or an
@@ -439,7 +449,8 @@ module StageAgentsHelper
 
     def snapshot_face(snap)
       MascotAgent.new(name: snap["name"].presence || snap["slug"],
-                      avatar: snap["avatar"].presence, color: snap["color"].presence)
+                      avatar: snap["avatar"].presence, color: snap["color"].presence,
+                      shiny: snap["shiny"] == true)
     end
   end
 

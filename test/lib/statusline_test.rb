@@ -132,6 +132,32 @@ class StatuslineTest < Minitest::Test
     assert_includes out, "Charizard"
   end
 
+  def test_shiny_mascot_adds_sparkle_after_type_emoji
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "dugtrio", "mascot_color" => "#E2BF65",
+      "mascot_emoji" => "🏔", "mascot_shiny" => true
+    })
+    assert_includes out, "🏔✨", "the shiny glyph rides next to the type emoji"
+    assert_includes out, "\e]0;🏔✨ Dugtrio\a", "the tab title gets the same shiny marker"
+  end
+
+  def test_shiny_mascot_normalizes_legacy_prefixed_sparkle
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "dugtrio", "mascot_color" => "#E2BF65", "mascot_emoji" => "✨🏔"
+    })
+    assert_includes out, "🏔✨", "legacy prefix form is normalized in the status line"
+    refute_includes out, "✨🏔 Dugtrio"
+  end
+
+  def test_explicit_non_shiny_marker_clears_legacy_sparkle
+    out = render_in(session: SESSION, extra: {
+      "mascot" => "dugtrio", "mascot_color" => "#E2BF65",
+      "mascot_emoji" => "🏔✨", "mascot_shiny" => false
+    })
+    assert_includes out, "🏔", "the type emoji still renders"
+    refute_includes out, "🏔✨", "explicit false clears a stale shiny marker"
+  end
+
   def test_mascot_without_an_emoji_renders_clean_name_not_pink_fallback
     # The reported bug: a board-served mascot with no color/emoji rendered the pink
     # "🛠 ⊙ <name>". Now it's just the name in the neutral tint — never the glyphs.

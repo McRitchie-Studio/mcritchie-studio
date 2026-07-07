@@ -19,8 +19,11 @@ class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
 
     get tasks_path
     assert_response :success
-    assert_select "#card-#{task.slug} img[src='https://img.test/shiny-sprite.png']"
-    assert_select "#card-#{task.slug} img[src='https://img.test/normal-sprite.png']", count: 0
+    assert_select "#card-#{task.slug}" do
+      assert_select "img[src='https://img.test/shiny-sprite.png']"
+      assert_select "img[src='https://img.test/normal-sprite.png']", count: 0
+      assert_select "[data-test='avatar-shiny-badge']", { minimum: 1, text: "✨" }
+    end
   end
 
   test "tasks board card keeps the normal sprite for an ordinary mascot" do
@@ -31,7 +34,10 @@ class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
 
     get tasks_path
     assert_response :success
-    assert_select "#card-#{task.slug} img[src='https://img.test/normal-sprite.png']"
-    assert_select "#card-#{task.slug} img[src='https://img.test/shiny-sprite.png']", count: 0
+    assert_select "#card-#{task.slug}" do
+      assert_select "img[src='https://img.test/normal-sprite.png']"
+      assert_select "img[src='https://img.test/shiny-sprite.png']", count: 0
+      assert_select "[data-test='avatar-shiny-badge']", count: 0
+    end
   end
 end

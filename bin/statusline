@@ -109,11 +109,11 @@ osc8_supported() {
   return 1
 }
 
-read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color mascot_emoji app_color
+read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_color mascot_emoji mascot_shiny app_color
   # Joined with the unit separator (U+001F), NOT a tab: a tab is IFS-whitespace,
   # so an empty middle field (e.g. a missing task_url) would collapse and shift
   # every later field left. US is non-whitespace, so empty fields are preserved.
-  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // ""), (.app_color // "")] | join("")' "$1" 2>/dev/null
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // ""), (if (.mascot_shiny == true or .mascot_shiny == "true" or .mascot_shiny == "1") then "true" elif (.mascot_shiny == false or .mascot_shiny == "false" or .mascot_shiny == "0") then "false" else "" end), (.app_color // "")] | join("")' "$1" 2>/dev/null
 }
 
 # Nearest xterm-256 cube index (16..231) for an r,g,b triple. We use 256-color,
@@ -147,8 +147,35 @@ tint() {  # hex fallback_escape -> ANSI escape (echoed)
   fi
 }
 
-render() {  # app feature task url stage mascot mascot_color mascot_emoji app_color
-  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" mascot_emoji="$8" app_color="$9" out="🛠 "
+mascot_display_emoji() {  # emoji shiny -> emoji, normalizing legacy sparkles to suffix form
+  local emoji="$1" shiny="$2" wants_shiny="" state=""
+  case "$shiny" in
+    true|1|yes|YES|on|ON) state="true" ;;
+    false|0|no|NO|off|OFF) state="false" ;;
+  esac
+  if [ "$state" = "true" ]; then
+    wants_shiny="1"
+  elif [ -z "$state" ]; then
+    case "$emoji" in *✨*) wants_shiny="1" ;; esac
+  fi
+  if [ "$state" = "false" ]; then
+    printf '%s' "$emoji" | sed 's/✨//g'
+    return 0
+  fi
+  if [ -n "$wants_shiny" ]; then
+    emoji=$(printf '%s' "$emoji" | sed 's/✨//g')
+    if [ -n "$emoji" ]; then
+      printf '%s✨' "$emoji"
+    else
+      printf '✨'
+    fi
+  else
+    printf '%s' "$emoji"
+  fi
+}
+
+render() {  # app feature task url stage mascot mascot_color mascot_emoji mascot_shiny app_color
+  local app="$1" feat="$2" task="$3" url="$4" stage="$5" mascot="$6" mascot_color="$7" mascot_emoji="$8" mascot_shiny="$9" app_color="${10}" out="🛠 "
   # Per-mascot tint overrides the default M when the context carries a color.
   local M="$M"
   [ -n "$mascot_color" ] && M=$(tint "$mascot_color" "$M")
@@ -170,9 +197,11 @@ render() {  # app feature task url stage mascot mascot_color mascot_emoji app_co
     # bare name in its tint — NOT the old pink "🛠 ⊙ <name>" fallback, which the
     # missing color+emoji produced and which read as a jarring revert. No emoji →
     # just the name; the "· app" separator already sets it apart from the app slug.
-    if [ -n "$mascot_emoji" ]; then
-      out="${mascot_emoji} ${M}${name}${X}"
-      title=$'\033]0;'"${mascot_emoji} ${name}"$'\007'   # tab: "🗿🏔 Golem" / "🧪 Jasper"
+    local display_emoji
+    display_emoji=$(mascot_display_emoji "$mascot_emoji" "$mascot_shiny")
+    if [ -n "$display_emoji" ]; then
+      out="${display_emoji} ${M}${name}${X}"
+      title=$'\033]0;'"${display_emoji} ${name}"$'\007'   # tab: "🗿🏔 Golem" / "🧪 Jasper"
     else
       out="${M}${name}${X}"
       title=$'\033]0;'"${name}"$'\007'
@@ -220,8 +249,8 @@ if [ -z "$src" ] && [ -n "$sid" ]; then
 fi
 
 if [ -n "$src" ]; then
-  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji app_color < <(read_ctx "$src")
-  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji" "$app_color"
+  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji mascot_shiny app_color < <(read_ctx "$src")
+  render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji" "$mascot_shiny" "$app_color"
   heartbeat_claim "$task" "$stage" "$src_is_desk"   # renew this terminal's build-claim lease (desk-aware)
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
