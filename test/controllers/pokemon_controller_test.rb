@@ -25,6 +25,12 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
       assert_select "a[href=?]", task_path(task.slug), "Build Pokedex View"
       assert_select "span", "Shiny"
     end
+    assert_select "[data-test=latest-shiny-card]" do
+      assert_select "img[src=?]", "https://example.test/pikachu-shiny.png"
+      assert_select "dd", "Pikachu"
+      assert_select "a[href=?]", task_path(task.slug), "Build Pokedex View"
+      assert_select "span", "Shiny"
+    end
     assert_select "[data-test=pokemon-stats-card]" do
       assert_select "p", "Total Pokémon"
       assert_select "p", "Summoned Pokémon"
@@ -50,6 +56,7 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-test=latest-pokemon-empty]", "No spawned Pokémon yet."
+    assert_select "[data-test=latest-shiny-empty]", "No shiny Pokémon yet."
     assert_select "[data-test=recent-pokemon-empty]", "No Pokémon actions yet."
   end
 end
