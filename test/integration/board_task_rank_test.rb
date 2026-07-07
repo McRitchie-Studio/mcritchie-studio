@@ -29,6 +29,30 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
                     "the same shared `ordered` scope drives the build board too"
   end
 
+  test "[integration] tasks waiting for approval rank above stage peers" do
+    normal = Task.create!(title: "normal building peer", stage: "building", position: 10_000)
+    waiting = Task.create!(
+      title: "approval waiting peer",
+      stage: "building",
+      position: 100,
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+
+    get tasks_path
+    assert_response :success
+
+    order = card_order_in("dropzone-building")
+    assert_operator order.index("card-#{waiting.slug}"), :<, order.index("card-#{normal.slug}"),
+                    "operator approval requests should float to the top of the stage list"
+    assert_select "#card-#{waiting.slug} [data-test='operator-approval-waiting']", text: "WAITING APPROVAL"
+    assert_select "#card-#{waiting.slug} [data-test='local-demo-button']", text: "Local Demo"
+  end
+
   test "[integration] deployments column puts freshly shipped tasks above older shipped cards" do
     older = nil
     fresh = nil

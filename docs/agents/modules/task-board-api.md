@@ -452,7 +452,8 @@ Send `devops` as a top-level key; it is normalized
 keys survive (`Task::DEVOPS_KEYS`):
 
 - **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
-  `production_url`, `release_slug`, `requires_release_conductor`
+  `production_url`, `release_slug`, `requires_release_conductor`,
+  `approval_status`, `approval_requested_at`, `approval_requested_by`
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
   `checks_run`
 
@@ -524,6 +525,9 @@ api PATCH /api/v1/tasks/task-XXXX '{
   }
 }'
 
+# Preferred CLI path for the pre-PR operator validation gate:
+bin/task update task-XXXX --local-url http://localhost:3001/admin/users --approval waiting
+
 # 4. Review/merge/QA progression uses the same update path:
 api PATCH /api/v1/tasks/task-XXXX '{"stage": "reviewed"}'
 api PATCH /api/v1/tasks/task-XXXX '{"stage": "assembled"}'   # devops preserved (no devops param)
@@ -567,7 +571,9 @@ bin/task list [--stage S] [--agent A]
 bin/task show <slug>
 bin/task create --title T [--kind K] [--repo R ...] [--risk R ...] \
                 [--accept "..." ...] [--test "..." ...] [--agent A]
-bin/task update <slug> --branch B --pr-url U   # merges into existing devops
+bin/task update <slug> --local-url U --approval waiting   # request operator validation
+bin/task update <slug> --approval approved                # clear the pre-PR approval wait
+bin/task update <slug> --branch B --pr-url U              # merges into existing devops
 bin/task move <slug> <stage>                   # bare Claude/Codex moves auto-capture usage
 bin/task move <slug> submitted \               # optional per-transition usage →
   --model M --tokens-in N --tokens-out N --cost D --actor A   #   recorded on the TaskEvent

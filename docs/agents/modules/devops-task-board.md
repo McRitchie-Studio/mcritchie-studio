@@ -83,16 +83,18 @@ Stage movement:
    to track.
 2. Move to `building` when an agent claims the task and creates or enters the
    worktree.
-3. Move to `submitted` only after the branch is pushed, the PR exists, the
+3. Before opening the PR, use the Operator Validation Gate when the work has a
+   local UI or inspectable workflow Mr. McRitchie should approve.
+4. Move to `submitted` only after the branch is pushed, the PR exists, the
    local URL is recorded when applicable, and `checks_run` records actual
    feature-agent verification.
-4. Move to `reviewed` only after the review gate approves the PR.
-5. Move to `assembled` when the PR is merged into `release` and deployed or
+5. Move to `reviewed` only after the review gate approves the PR.
+6. Move to `assembled` when the PR is merged into `release` and deployed or
    ready to deploy on the QA candidate. Record QA URL, deployed SHA, and QA
    checks when available.
-6. Move to `shipped` only after the final approved target is deployed or otherwise
+7. Move to `shipped` only after the final approved target is deployed or otherwise
    complete, post-deploy verification is recorded, and cleanup status is clear.
-7. Use `blocked` for a real blocker that needs new action, and `archived` for
+8. Use `blocked` for a real blocker that needs new action, and `archived` for
    historical or cleaned-up work.
 
 Handoff connections:
@@ -110,6 +112,36 @@ Handoff connections:
   metadata is missing.
 - Final handoff should name the task, PR, release slug when present, URLs,
   `checks_run`, deployment SHA/release, and cleanup decision.
+
+## Operator Validation Gate
+
+Use this gate when a feature agent has built enough for Mr. McRitchie to inspect
+locally, but before the PR is opened or moved to `submitted`.
+
+1. Start or verify the task worktree stack, and record the reviewable URL:
+
+   ```bash
+   bin/agent-worktree up <app> <task-slug>
+   bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
+   ```
+
+2. Add a `handoff` note describing what changed, what to inspect, and any known
+   caveats. The task remains in `building` while waiting for operator approval.
+3. In chat, put the local URL in a standard top-level line:
+
+   ```text
+   Task: https://mcritchie.studio/tasks/<task-slug>
+   Local Demo: http://localhost:<port>/<path>
+   Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
+   ```
+
+4. The board treats `devops.approval_status=waiting` as an attention state: the
+   card ranks above its stage peers, pulses, and renders the local URL as a
+   `Local Demo` button.
+5. If Mr. McRitchie approves, set `--approval approved`, finish DoR, commit,
+   push, open the PR, and move the task to `submitted`.
+6. If changes are requested, set `--approval changes_requested` and keep the task
+   in `building` until the next validation packet is ready.
 
 ## Task Conversation and QA Feedback
 
@@ -224,7 +256,10 @@ Supported fields:
 | `repositories` | Repos touched by this increment, such as `mcritchie-studio` or `turf-monster` |
 | `branch` | The feature branch (opened as a PR with base `release`). The shared integration branch is the persistent per-repo `release` (same name everywhere). |
 | `pr_url` | GitHub PR URL |
-| `local_url` | Worktree review URL |
+| `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
+| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`; `waiting` floats and pulses the card |
+| `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
+| `approval_requested_by` | Optional agent/session label that requested operator validation |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
 | `release_slug` | Optional shared tag for tasks promoted together |
@@ -296,6 +331,7 @@ During handoff, the agent updates:
 - branch
 - PR URL
 - local URL
+- approval status, if the work needed operator validation
 - checks actually run in `checks_run`
 - any changed acceptance criteria
 - release lane flag if the work needs production deploy, gem publish, provider

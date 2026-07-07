@@ -349,6 +349,19 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal positions.sort.reverse, positions, "ordered is position DESC"
   end
 
+  test "[unit] ordered scope prioritizes tasks waiting for operator approval" do
+    normal = Task.create!(title: "normal building peer", stage: "building", position: 10_000)
+    waiting = Task.create!(
+      title: "approval waiting peer",
+      stage: "building",
+      position: 100,
+      metadata: { "devops" => { "approval_status" => "waiting" } }
+    )
+
+    ordered = Task.where(slug: [normal.slug, waiting.slug]).ordered.to_a
+    assert_equal [waiting.slug, normal.slug], ordered.map(&:slug)
+  end
+
   test "[unit] building board column keeps reactivated work above blocked cards" do
     older_building = Task.create!(title: "older building card here", stage: "building")
     blocked = Task.create!(title: "stale blocked card here", stage: "blocked")
@@ -454,6 +467,20 @@ class TaskTest < ActiveSupport::TestCase
   test "block_kind normalizes through devops metadata" do
     metadata = Task.normalize_devops_metadata("block_kind" => "environment")
     assert_equal "environment", metadata["block_kind"]
+  end
+
+  test "[unit] approval status normalizes and stamps request time" do
+    metadata = Task.normalize_devops_metadata(
+      "approval_status" => " waiting ",
+      "approval_requested_by" => "scyther"
+    )
+
+    task = Task.create!(title: "approval helper task", metadata: { "devops" => metadata })
+
+    assert_equal "waiting", task.approval_status
+    assert task.waiting_for_operator_approval?
+    assert_equal "scyther", task.devops["approval_requested_by"]
+    assert task.devops["approval_requested_at"].present?
   end
 
   test "devops helpers expose stored release metadata" do

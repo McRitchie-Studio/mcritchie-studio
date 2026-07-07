@@ -47,3 +47,48 @@ test("reactivated blocked work renders above still-blocked cards in Building", a
   expect(blockedIndex).toBeGreaterThanOrEqual(0);
   expect(reactivatedIndex).toBeLessThan(blockedIndex);
 });
+
+test("approval waiting work pulses, ranks first, and exposes Local Demo", async ({ page }) => {
+  await page.goto("/tasks");
+
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const suffix = Date.now();
+  const waitingSlug = `e2e-approval-waiting-${suffix}`;
+  const normalSlug = `e2e-normal-building-${suffix}`;
+
+  await createTask(page, token, {
+    slug: waitingSlug,
+    title: "E2E approval waiting",
+    stage: "building",
+    priority: 1,
+    agent_slug: "carl",
+    devops: {
+      approval_status: "waiting",
+      local_url: "http://localhost:3001/demo",
+    },
+  });
+  await createTask(page, token, {
+    slug: normalSlug,
+    title: "E2E normal building",
+    stage: "building",
+    priority: 1,
+    agent_slug: "carl",
+  });
+
+  await page.reload();
+
+  const cardIds = await page.locator("#dropzone-building .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
+  const waitingIndex = cardIds.indexOf(`card-${waitingSlug}`);
+  const normalIndex = cardIds.indexOf(`card-${normalSlug}`);
+
+  expect(waitingIndex).toBeGreaterThanOrEqual(0);
+  expect(normalIndex).toBeGreaterThanOrEqual(0);
+  expect(waitingIndex).toBeLessThan(normalIndex);
+
+  const waitingCard = page.locator(`#card-${waitingSlug}`);
+  await expect(waitingCard).toHaveAttribute("data-stage-glow", "approval");
+  await expect(waitingCard.locator("[data-test='operator-approval-waiting']")).toHaveText("WAITING APPROVAL");
+  const localDemo = waitingCard.locator("[data-test='local-demo-button']");
+  await expect(localDemo).toHaveText("Local Demo");
+  await expect(localDemo).toHaveAttribute("href", "http://localhost:3001/demo");
+});

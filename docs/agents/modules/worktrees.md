@@ -45,14 +45,32 @@ When a new agent session starts actual implementation work:
 8. Run `bin/agent-worktree up <app> <task-slug>` when a browser or local URL is
    needed.
 9. Make edits only inside `/Users/alex/projects/<repo>/.worktrees/<task-slug>`.
-10. Commit coherent work on the feature branch.
-11. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
+10. When the local behavior is ready for Mr. McRitchie to inspect, keep the task
+   in `building` and mark it for operator validation:
+
+   ```bash
+   bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
+   ```
+
+   In chat, return the URL in this exact top-level format:
+
+   ```text
+   Task: https://mcritchie.studio/tasks/<task-slug>
+   Local Demo: http://localhost:<port>/<path>
+   Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
+   ```
+
+   Waiting approval cards float to the top of their stage and pulse on the board.
+   After approval, set `--approval approved`; after requested changes, set
+   `--approval changes_requested` and keep building.
+11. Commit coherent work on the feature branch.
+12. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
    packet.
-12. Update the task with branch, PR URL, local URL, `checks_run`, and any
+13. Update the task with branch, PR URL, local URL, `checks_run`, and any
    changed acceptance criteria. Add a task conversation `handoff` note with the
    change summary, verification, and review focus. Move it to `submitted` when
    the PR is ready for Avi.
-13. Return the task URL first, then the PR URL, branch, worktree path, local
+14. Return the task URL first, then the PR URL, branch, worktree path, local
    URL, tests, and PR/QA recommendation in the handoff. Do not merge to `main`
    unless assigned the QA/Release lane.
 
