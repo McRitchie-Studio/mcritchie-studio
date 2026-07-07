@@ -82,6 +82,32 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "--task-card-glow-color-b: #F95587"
   end
 
+  test "[component] waiting approval card pulses and renders local demo button" do
+    task = Task.create!(
+      title: "Approval waiting card",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "approval", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-approval"
+    assert_includes card["class"], "studio-border-glow"
+    assert_includes card["class"], "bg-amber-50"
+    assert_select "[data-test='operator-approval-waiting']", text: "WAITING APPROVAL"
+    badge_classes = css_select("[data-test='operator-approval-waiting']").first["class"].split
+    assert_includes badge_classes, "motion-safe:animate-pulse"
+    assert_not_includes badge_classes, "animate-pulse"
+    assert_select "a[data-test='local-demo-button'][href='http://localhost:3001/demo']", text: "Local Demo"
+  end
+
   test "reviewed card uses the larger steady glow" do
     task = Task.create!(title: "Reviewed glow task", stage: "reviewed",
                         metadata: { "devops" => { "mascot_color" => "#22d3ee" } })

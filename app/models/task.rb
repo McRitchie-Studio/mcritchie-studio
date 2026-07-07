@@ -131,11 +131,12 @@ class Task < ApplicationRecord
   }.freeze
   REVIEW_STATUSES = %w[started completed failed info].freeze
   MIGRATION_LANE = "backend_migration".freeze
+  OPERATOR_APPROVAL_WAITING = "waiting".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor block_kind agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
-    persona
+    persona approval_status approval_requested_at approval_requested_by
   ].freeze
   LEGACY_DEVOPS_KEY_ALIASES = { "release_train" => "release_slug" }.freeze
   # Provider → resume-command template (one %s, the session id).
@@ -210,6 +211,7 @@ class Task < ApplicationRecord
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
+  before_save :stamp_operator_approval_request
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -245,7 +247,12 @@ class Task < ApplicationRecord
   # set_initial_position / set_stage_timestamp). The 100-gaps leave room for a
   # drag-drop reorder to slot a card between two others without renumbering. This
   # mirrors the News/Content rank scheme (which Task previously inverted).
-  scope :ordered, -> { order(Arel.sql("position DESC NULLS LAST, created_at DESC")) }
+  scope :ordered, -> {
+    order(Arel.sql(
+      "CASE WHEN metadata -> 'devops' ->> 'approval_status' = '#{OPERATOR_APPROVAL_WAITING}' THEN 1 ELSE 0 END DESC, " \
+        "position DESC NULLS LAST, created_at DESC"
+    ))
+  }
   scope :requires_migration, -> { where(requires_migration: true) }
   # Tasks still in play — everything except the two terminal stages. A live task's
   # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
@@ -506,6 +513,14 @@ class Task < ApplicationRecord
 
   def devops_checks_run
     devops_list("checks_run")
+  end
+
+  def approval_status
+    devops.fetch("approval_status", "").presence
+  end
+
+  def waiting_for_operator_approval?
+    approval_status == OPERATOR_APPROVAL_WAITING
   end
 
   def unresolved_feedback_activity
@@ -1231,6 +1246,17 @@ class Task < ApplicationRecord
     # A new task lands at the TOP of its (designed) column: max + 100 under the
     # `position DESC` sort. 100-spacing mirrors News/Content and leaves drag gaps.
     self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
+  end
+
+  def stamp_operator_approval_request
+    return unless will_save_change_to_metadata?
+    return unless devops["approval_status"] == OPERATOR_APPROVAL_WAITING
+    return if (metadata_was || {}).dig("devops", "approval_status") == OPERATOR_APPROVAL_WAITING
+
+    merged = metadata.deep_dup
+    approval = (merged["devops"] ||= {})
+    approval["approval_requested_at"] ||= Time.current.iso8601
+    self.metadata = merged
   end
 
   # The slug is the readable, immutable handle set at creation — it drives the

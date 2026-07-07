@@ -128,9 +128,24 @@
     }
   }
 
+  @keyframes taskApprovalPulse {
+    0%,
+    100% {
+      transform: translateZ(0);
+    }
+
+    50% {
+      transform: translateY(-1px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .studio-border-glow::before,
     .studio-border-glow::after {
+      animation: none;
+    }
+
+    .task-card-stage-glow-approval {
       animation: none;
     }
   }
@@ -162,6 +177,23 @@
     --studio-border-glow-halo-blur: 12px;
     --studio-border-glow-animation: none;
     --studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), var(--task-card-glow-color, #22c55e), var(--task-card-glow-color, #22c55e));
+  }
+
+  .task-card-stage-glow-approval {
+    --studio-border-glow-opacity: 0.88;
+    --studio-border-glow-halo-opacity: 0.3;
+    --studio-border-glow-halo-blur: 18px;
+    --studio-border-glow-duration: 12s;
+    --studio-border-glow-gradient:
+      linear-gradient(
+        var(--studio-border-glow-angle, 45deg),
+        var(--task-card-glow-color, #f59e0b),
+        color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
+        var(--task-card-glow-color, #f59e0b),
+        color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
+        var(--task-card-glow-color, #f59e0b)
+      );
+    animation: taskApprovalPulse 1.8s ease-in-out infinite;
   }
 
   .task-card-stage-glow-reviewed {

@@ -30,7 +30,7 @@
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
-#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--release-slug T] \
+#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--approval waiting|approved|changes_requested|none] [--release-slug T] \
 #                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --no-claim files the task WITHOUT repointing this session's active-feature
@@ -294,6 +294,7 @@ SCALAR_FLAGS = {
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
   "--release-slug" => "release_slug", "--release-train" => "release_slug", "--block-kind" => "block_kind",
   "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd",
+  "--approval" => "approval_status", "--approval-status" => "approval_status",
   # "act as <soul>": the status-line mascot becomes that agent (name + glyph + tint)
   # in place of the session's Pokémon. The server stamps the identity (Task#sync_
   # persona_identity); a new task without --persona reverts to the Pokémon. Distinct
@@ -329,6 +330,13 @@ LEGACY_STAGE_HINTS = {
 }.freeze
 BLOCK_KINDS = %w[environment rework dependency].freeze
 PERSONA_CLEAR = %w[none clear off -].freeze
+APPROVAL_STATUS_ALIASES = {
+  "changes-requested" => "changes_requested",
+  "change_requested" => "changes_requested",
+  "clear" => "none",
+  "cleared" => "none"
+}.freeze
+APPROVAL_STATUSES = %w[waiting approved changes_requested none].freeze
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -354,6 +362,13 @@ def validate_size!(flag, value)
   return if SIZES.include?(value)
 
   die!("#{flag} must be one of: #{SIZES.join(", ")} (got #{value.inspect})")
+end
+
+def normalize_approval_status!(flag, value)
+  normalized = APPROVAL_STATUS_ALIASES.fetch(value.to_s.strip.downcase, value.to_s.strip.downcase)
+  return normalized if APPROVAL_STATUSES.include?(normalized)
+
+  die!("#{flag} must be one of: #{APPROVAL_STATUSES.join(", ")} (got #{value.inspect})")
 end
 
 def agent_secret
@@ -417,7 +432,10 @@ def parse_flags(argv)
   while i < argv.length
     arg = argv[i]
     if SCALAR_FLAGS.key?(arg)
-      scalars[SCALAR_FLAGS[arg]] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
+      key = SCALAR_FLAGS[arg]
+      value = argv[i + 1] || die!("#{arg} needs a value")
+      value = normalize_approval_status!(arg, value) if key == "approval_status"
+      scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
       lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
     elsif SIZE_FLAGS.key?(arg)
@@ -487,6 +505,7 @@ def print_task_verbose(task)
   print_bullets("test_plan", dv["test_plan"])
   print_bullets("checks_run", dv["checks_run"])
   puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
+  puts "  approval_status: #{dv["approval_status"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
   puts "  review_in_progress: #{task["review_in_progress"] ? "yes" : "no"}" if task.key?("review_in_progress")
   if task.key?("unresolved_feedback")

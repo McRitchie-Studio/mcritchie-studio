@@ -1254,6 +1254,24 @@ class TaskCliTest < Minitest::Test
     assert_equal "large", JSON.parse(patch[:body])["po_size"]
   end
 
+  def test_update_sends_operator_approval_status
+    requests, = run_task(
+      ["update", "demo-task", "--approval", "waiting", "--local-url", "http://localhost:3001/demo"]
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    devops = JSON.parse(patch[:body]).fetch("devops")
+    assert_equal "waiting", devops["approval_status"]
+    assert_equal "http://localhost:3001/demo", devops["local_url"]
+  end
+
+  def test_update_normalizes_dashed_approval_status
+    requests, = run_task(["update", "demo-task", "--approval-status", "changes-requested"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    assert_equal "changes_requested", JSON.parse(patch[:body]).dig("devops", "approval_status")
+  end
+
   # An invalid size is rejected client-side (exit 1, clear message) BEFORE any
   # request goes out — never reaching the API as a 422.
   def test_create_rejects_an_invalid_size
@@ -1262,6 +1280,14 @@ class TaskCliTest < Minitest::Test
     assert_match(/--po-size must be one of: small, medium, large, xl/, err)
     assert_nil requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" },
                "a rejected size must not POST the task"
+  end
+
+  def test_update_rejects_an_invalid_approval_status
+    requests, _out, err, status = run_task(["update", "demo-task", "--approval", "maybe"])
+    refute status.success?, "an invalid approval status must fail fast"
+    assert_match(/--approval must be one of: waiting, approved, changes_requested, none/, err)
+    assert_nil requests.find { |r| r[:method] == "PATCH" },
+               "a rejected approval status must not PATCH the task"
   end
 
   # AC #3: the builder Pokémon stamps its own dev_size as it claims the task at
