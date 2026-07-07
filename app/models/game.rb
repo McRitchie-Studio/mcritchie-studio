@@ -5,6 +5,8 @@ class Game < ApplicationRecord
   belongs_to :home_team, class_name: "Team", foreign_key: :home_team_slug, primary_key: :slug
   belongs_to :away_team, class_name: "Team", foreign_key: :away_team_slug, primary_key: :slug
 
+  has_many :team_total_projections, class_name: "NflTeamTotalProjection", foreign_key: :game_slug, primary_key: :slug, dependent: :destroy
+
   validates :slate_slug, presence: true
   validates :home_team_slug, presence: true
   validates :away_team_slug, presence: true
@@ -42,6 +44,20 @@ class Game < ApplicationRecord
   def display_time_short
     return "TBD" unless kickoff_at
     kickoff_at.in_time_zone("Eastern Time (US & Canada)").strftime("%-I:%M %p ET")
+  end
+
+  def expected_total_for(team_or_slug)
+    team_slug = team_or_slug.respond_to?(:slug) ? team_or_slug.slug : team_or_slug.to_s
+    team_total_projections.find { |projection| projection.team_slug == team_slug } ||
+      team_total_projections.find_by(team_slug: team_slug)
+  end
+
+  def home_expected_total
+    expected_total_for(home_team_slug)&.expected_points
+  end
+
+  def away_expected_total
+    expected_total_for(away_team_slug)&.expected_points
   end
 
   def name_slug

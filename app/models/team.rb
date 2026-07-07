@@ -9,6 +9,7 @@ class Team < ApplicationRecord
   has_one  :depth_chart, foreign_key: :team_slug, primary_key: :slug, dependent: :destroy
   has_many :home_games, class_name: "Game", foreign_key: :home_team_slug, primary_key: :slug
   has_many :away_games, class_name: "Game", foreign_key: :away_team_slug, primary_key: :slug
+  has_many :nfl_team_total_projections, foreign_key: :team_slug, primary_key: :slug
   has_many :pff_team_stats, foreign_key: :team_slug, primary_key: :slug
   has_many :coaches, foreign_key: :team_slug, primary_key: :slug
   has_many :team_rankings, foreign_key: :team_slug, primary_key: :slug

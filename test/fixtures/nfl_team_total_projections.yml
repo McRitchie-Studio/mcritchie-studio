@@ -1,0 +1,35 @@
+bills_at_dolphins_home:
+  season_slug: 2025-nfl
+  slate_slug: 2025-nfl-week-1
+  game_slug: buf-at-mia
+  week: 1
+  team_slug: miami-dolphins
+  opponent_team_slug: buffalo-bills
+  home: true
+  expected_points: 21.00
+  game_total: 44.50
+  home_spread: 2.50
+  favorite_team_slug: buffalo-bills
+  favorite_spread: -2.50
+  source: fixture
+  source_url: https://example.test/nfl-lines
+  source_published_on: 2026-05-26
+  cached_at: 2026-07-07 12:00:00
+
+bills_at_dolphins_away:
+  season_slug: 2025-nfl
+  slate_slug: 2025-nfl-week-1
+  game_slug: buf-at-mia
+  week: 1
+  team_slug: buffalo-bills
+  opponent_team_slug: miami-dolphins
+  home: false
+  expected_points: 23.50
+  game_total: 44.50
+  home_spread: 2.50
+  favorite_team_slug: buffalo-bills
+  favorite_spread: -2.50
+  source: fixture
+  source_url: https://example.test/nfl-lines
+  source_published_on: 2026-05-26
+  cached_at: 2026-07-07 12:00:00

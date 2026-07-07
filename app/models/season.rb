@@ -7,6 +7,7 @@ class Season < ApplicationRecord
   has_many :pff_stats, foreign_key: :season_slug, primary_key: :slug
   has_many :pff_team_stats, foreign_key: :season_slug, primary_key: :slug
   has_many :team_rankings, foreign_key: :season_slug, primary_key: :slug
+  has_many :nfl_team_total_projections, foreign_key: :season_slug, primary_key: :slug
 
   validates :year, presence: true
   validates :sport, presence: true

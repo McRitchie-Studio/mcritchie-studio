@@ -5,6 +5,7 @@ class Slate < ApplicationRecord
 
   has_many :rosters, foreign_key: :slate_slug, primary_key: :slug
   has_many :games, foreign_key: :slate_slug, primary_key: :slug
+  has_many :nfl_team_total_projections, foreign_key: :slate_slug, primary_key: :slug
 
   validates :season_slug, presence: true
   validates :sequence, presence: true, uniqueness: { scope: :season_slug }

@@ -46,3 +46,18 @@ Behaviors of note:
 ## Position Normalization
 
 `PositionConcern` (`app/models/concerns/position_concern.rb`) holds canonical position lists, per-source mapping tables (`ESPN_MAP`, `PFF_MAP`, `NFLVERSE_MAP`, `SPOTRAC_MAP`, `GENERAL_MAP`), AND the `FORMATION_GROUPS` / `GROUP_ATHLETE_POSITIONS` maps used by the defensive picker. Callers pass `source:` to dispatch: `PositionConcern.normalize_position("LDE", source: :espn) # => "EDGE"`. Falls back to `GENERAL_MAP` when source is omitted.
+
+## Expected Team Totals Baseline
+
+`Nfl::CacheExpectedTeamTotals` (`app/services/nfl/cache_expected_team_totals.rb`, rake `nfl:expected_team_totals_cache`) caches derived NFL team totals from a market game total plus spread. The service stores one `NflTeamTotalProjection` row per team per game, retaining `game_total`, `home_spread`, `favorite_team_slug`, source metadata, and the derived `expected_points`.
+
+Formula: `home = (game_total - home_spread) / 2`, `away = (game_total + home_spread) / 2`. When the favorite is the away team, `home_spread` is positive; when the favorite is the home team, `home_spread` is negative.
+
+Default 2026 workflow:
+
+```bash
+bin/rails nfl:schedule_seed YEAR=2026
+bin/rails nfl:expected_team_totals_cache YEAR=2026
+```
+
+The default source CSV is `db/seeds/data/nfl/2026_expected_team_totals.csv`. Pass `SOURCE=/path/to/file.csv` to import a refreshed line sheet, or `SEED_SCHEDULE=0` when the target season schedule is already present and should not be fetched.

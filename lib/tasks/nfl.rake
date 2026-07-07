@@ -376,6 +376,35 @@ namespace :nfl do
     stats[:slate_counts].each { |type, count| puts "    #{type.ljust(15)} #{count} games" }
   end
 
+  desc "Cache expected team totals from game total + spread lines. YEAR=2026 SOURCE=csv SEED_SCHEDULE=0 to skip schedule seed."
+  task expected_team_totals_cache: :environment do
+    year = (ENV["YEAR"] || 2026).to_i
+    source_path = ENV["SOURCE"].presence || Nfl::CacheExpectedTeamTotals::DEFAULT_SOURCE_PATH
+
+    unless ENV["SEED_SCHEDULE"] == "0"
+      regular_games = Game.joins(:slate).where(slates: { season_slug: "#{year}-nfl", slate_type: "regular_season" }).count
+      if regular_games < 272
+        puts "Seeding #{year} NFL schedule before team-total cache..."
+        Nflverse::SeedSchedule.new(year: year).call
+      end
+    end
+
+    stats = Nfl::CacheExpectedTeamTotals.new(
+      year: year,
+      source_path: source_path,
+      source: ENV["SOURCE_NAME"].presence || Nfl::CacheExpectedTeamTotals::DEFAULT_SOURCE,
+      strict: ENV["STRICT"] != "0"
+    ).call
+
+    puts "Expected team totals cached for #{stats[:season]}"
+    puts "  Source:       #{stats[:source]}"
+    puts "  Games seen:   #{stats[:games_seen]}"
+    puts "  Games cached: #{stats[:games_cached]}"
+    puts "  Projections:  #{stats[:projections_upserted]}"
+    puts "  Stale rows:   #{stats[:stale_deleted]}"
+    puts "  Weeks:        #{stats[:weeks].map { |week, count| "#{week}=#{count}" }.join(", ")}"
+  end
+
   desc "Compute TeamRanking rows for SEASON, scoring against GRADES_FROM (defaults to SEASON). Preseason use: SEASON=2026-nfl GRADES_FROM=2025-nfl."
   task rankings_compute: :environment do
     season_slug = ENV.fetch("SEASON", "2026-nfl")
