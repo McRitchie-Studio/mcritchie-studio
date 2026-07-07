@@ -133,6 +133,18 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_nil Release.current, "shipping clears the Next Release slot"
   end
 
+  test "[integration] advance_release steps an existing active release instead of opening a second one" do
+    rel = Release.open!(branch: "release/local-preview-active")
+
+    assert_no_difference -> { fixture_releases.count } do
+      post dev_board_advance_release_path
+    end
+
+    assert_response :no_content
+    assert_equal "testing", rel.reload.current_stage
+    assert_equal %i[active pending pending pending pending], tracker_states(rel)
+  end
+
   test "[integration] reset_release clears the fixture release and its members" do
     post dev_board_open_release_path
     post dev_board_advance_release_path # → testing
