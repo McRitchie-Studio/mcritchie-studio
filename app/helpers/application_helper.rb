@@ -487,7 +487,7 @@ module ApplicationHelper
 
   def release_member_highlights(members, limit: RELEASE_MEMBER_HIGHLIGHT_LIMIT)
     Array(members).each_with_index
-                  .sort_by { |task, index| [-release_member_expense_weight(task), index] }
+                  .sort_by { |task, index| release_member_expense_sort_key(task, index) }
                   .first(limit)
                   .map(&:first)
   end
@@ -508,6 +508,13 @@ module ApplicationHelper
   def release_member_expense_weight(task)
     size = release_member_size(task)
     TASK_SIZE_WEIGHTS.fetch(size.to_s, 0)
+  end
+
+  def release_member_expense_sort_key(task, index)
+    cost = task.total_cost
+    return [0, -cost.to_f, index] if cost.to_d.positive?
+
+    [1, -release_member_expense_weight(task), index]
   end
 
   def release_member_cost_label(task)

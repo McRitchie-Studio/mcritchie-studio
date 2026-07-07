@@ -117,18 +117,20 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[component] release member summary highlights largest tasks and counts the rest" do
-    medium = Task.create!(title: "Medium studio work", stage: "reviewed", dev_size: "medium",
-                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
-    large = Task.create!(title: "Large studio effort", stage: "reviewed", po_size: "large",
-                         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
-    small = Task.create!(title: "Small turf chore", stage: "reviewed", po_size: "small",
-                         metadata: { "devops" => { "repositories" => ["turf-monster"] } })
-    xl = Task.create!(title: "Expensive turf repair", stage: "reviewed", actual_size: "xl",
-                      metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+    measured_small = Task.create!(title: "Measured small work", stage: "reviewed", po_size: "small",
+                                  metadata: { "devops" => { "repositories" => ["turf-monster"] } })
+    measured_small.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("12.5"))
+    measured_medium = Task.create!(title: "Measured medium work", stage: "reviewed", dev_size: "medium",
+                                   metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    measured_medium.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("2.0"))
+    forecast_large = Task.create!(title: "Large studio effort", stage: "reviewed", po_size: "large",
+                                  metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    forecast_xl = Task.create!(title: "XL turf repair", stage: "reviewed", actual_size: "xl",
+                               metadata: { "devops" => { "repositories" => ["turf-monster"] } })
 
-    summary = release_member_condensed_summary([medium, large, small, xl])
+    summary = release_member_condensed_summary([measured_medium, forecast_large, measured_small, forecast_xl])
 
-    assert_equal [xl, large], summary[:highlights]
+    assert_equal [measured_small, measured_medium], summary[:highlights]
     assert_equal [
       { emoji: "🪎", count: 1, repositories: ["mcritchie-studio"] },
       { emoji: "🐊", count: 1, repositories: ["turf-monster"] }
