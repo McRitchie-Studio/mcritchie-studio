@@ -369,6 +369,69 @@ module HeartbeatHelper
     time.strftime("%b %-d, %H:%M")
   end
 
+  # The SECOND-precision timestamp ("Jul 6, 19:24:11") — the observability view wants
+  # the finish/start time down to the second, not the minute-truncated heartbeat_time.
+  # The underlying datetime columns store microsecond precision, so the seconds are
+  # already persisted; this is purely the render. Blank-safe.
+  def heartbeat_time_seconds(time)
+    return "—" if time.blank?
+
+    time.strftime("%b %-d, %H:%M:%S")
+  end
+
+  # The bare wall-clock ("19:28:22") — the END side of an action's created→completed
+  # span, where the full date already rode along on the "created at" start. Blank-safe.
+  def heartbeat_clock(time)
+    return "—" if time.blank?
+
+    time.strftime("%H:%M:%S")
+  end
+
+  # A live elapsed count formatted "H:MM:SS" (or "M:SS" under an hour) — the
+  # server-rendered initial value for an OPEN activity's ticking timer (hbElapsed
+  # then keeps it in sync client-side) AND the closed-activity fallback. Negative /
+  # nil degrades to "0:00" rather than raising.
+  def heartbeat_elapsed(total_seconds)
+    secs = total_seconds.to_i
+    secs = 0 if secs.negative?
+    hours = secs / 3600
+    minutes = (secs % 3600) / 60
+    seconds = secs % 60
+    if hours.positive?
+      format("%d:%02d:%02d", hours, minutes, seconds)
+    else
+      format("%d:%02d", minutes, seconds)
+    end
+  end
+
+  # An action's COMPLETED-at time, derived from its start plus how long it ran:
+  # occurred_at (the created/started stamp) + duration_ms. Returns nil when the
+  # action carries no positive duration — the live PostToolUse capture records a
+  # single instant (no elapsed), so most tool-calls have only a "created at" and no
+  # distinct completion. Blank/negative-safe.
+  def heartbeat_action_completed_at(action)
+    started = action.occurred_at
+    ms = action.duration_ms.to_i
+    return nil if started.blank? || ms <= 0
+
+    started + (ms / 1000.0).seconds
+  end
+
+  # The action row's created→completed SPAN in the exact operator-specified format:
+  #   "created at Jul 6, 19:24:11 - completed at 19:28:22"
+  # (full date+seconds on the start, bare wall-clock on the end). An action with no
+  # measured duration has no distinct completion, so it renders just the created
+  # side ("created at Jul 6, 19:24:11"). Blank-safe → "—".
+  def heartbeat_action_span(action)
+    started = action.occurred_at
+    return "—" if started.blank?
+
+    span = "created at #{heartbeat_time_seconds(started)}"
+    completed = heartbeat_action_completed_at(action)
+    span += " - completed at #{heartbeat_clock(completed)}" if completed
+    span
+  end
+
   # Compact preview of a raw tool-call's input for the drill-down ("kind/input"),
   # single-lined and clipped so a long bash command or file body stays one dense
   # row. Full value is surfaced via the cell title.

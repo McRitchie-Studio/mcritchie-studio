@@ -169,6 +169,50 @@ class AtomicCaptureHookTest < Minitest::Test
            "a work segment means the command is not PURE narration"
   end
 
+  # ── [unit] tool-result paging drop ───────────────────────────────────────
+  # Claude Code spills a too-large tool output to
+  # ~/.claude/projects/<session>/tool-results/<random>.txt; the agent Reads it
+  # back to page through the rest. That Read is the agent re-reading its OWN
+  # output = pure paging plumbing, DROPPED like nav/narration. Every OTHER read —
+  # a real source/doc file — is CAPTURED (keeping its #425 synthesized label), and
+  # a Bash call is untouched by this rule.
+
+  def test_unit_droppable_drops_reads_of_tool_result_paging_files
+    h = hook
+    [
+      "/Users/alex/.claude/projects/dcb98/tool-results/bahoohhc0.txt",
+      "/home/agent/.claude/projects/sess/tool-results/deadbeef.txt",
+      "tool-results/abc123.txt",                       # relative, dir at path start
+      "/x/tool-results/nested/page-2.txt"              # nested under the dir
+    ].each do |path|
+      event = { "tool_name" => "Read", "tool_input" => { "file_path" => path } }
+      assert h.tool_result_paging_read?(event), "#{path.inspect} is a paging read"
+      assert h.droppable?(event), "#{path.inspect} paging read → dropped"
+    end
+  end
+
+  def test_unit_real_reads_and_other_tools_survive_the_paging_rule
+    h = hook
+    [
+      "/Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook",
+      "/repo/app/models/task.rb",
+      "/repo/docs/tool-results.md",                    # a FILE named tool-results, not a dir
+      "/repo/my-tool-results/notes.txt"                # sibling dir, not a tool-results boundary
+    ].each do |path|
+      event = { "tool_name" => "Read", "tool_input" => { "file_path" => path } }
+      refute h.tool_result_paging_read?(event), "#{path.inspect} is a real read → kept"
+      refute h.droppable?(event), "#{path.inspect} real read → captured"
+    end
+    # A NON-Read tool pointed at a tool-results path is not a paging read (only Read
+    # pages), and Bash is entirely untouched by this rule.
+    refute h.tool_result_paging_read?({ "tool_name" => "Grep",
+                                        "tool_input" => { "file_path" => "/x/tool-results/a.txt" } })
+    refute h.tool_result_paging_read?({ "tool_name" => "Bash",
+                                        "tool_input" => { "command" => "cat /x/tool-results/a.txt" } })
+    refute h.tool_result_paging_read?({ "tool_name" => "Read", "tool_input" => {} })
+    refute h.tool_result_paging_read?({ "tool_name" => "Read" })
+  end
+
   # ── [unit] deterministic activity attribution (open-activity marker) ─────
   # build_payload stamps agent_activity_id from the local marker bin/agent-activity
   # writes, so the action pins to the activity open at tool-call time - not whatever the

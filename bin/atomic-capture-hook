@@ -76,6 +76,19 @@ class AtomicCaptureHook
     (?:\s|\z)         # a bare invocation, or followed by args/whitespace
   }x.freeze
 
+  # TOOL-RESULT PAGING — a THIRD overhead class, DROPPED like navigation/narration.
+  # When a tool's output is too large for the context window, Claude Code spills it
+  # to ~/.claude/projects/<session>/tool-results/<random>.txt and the agent Reads
+  # that file back to page through the rest — surfacing as a meaningless
+  # `Read bahoohhc0.txt` action. That Read is the agent re-reading its OWN spilled
+  # output = pure paging plumbing, never work (the PRODUCING action, e.g. the
+  # `gh pr diff` that overflowed, is already captured on its own row). Matched on
+  # the Read's file_path having a `tool-results/` DIRECTORY segment: the anchor
+  # `(?:\A|/)` pins `tool-results` to a path boundary so a sibling like
+  # `my-tool-results/` never matches, and the trailing `/` requires it to be a
+  # directory (something lives under it), never a file literally named that.
+  TOOL_RESULT_PAGING_PATH = %r{(?:\A|/)tool-results/}.freeze
+
   # Truncate input/output to ≈3KB (within the task's 2-4KB cap) so a giant file
   # read or command dump never bloats a row.
   MAX_FIELD_BYTES = 3000
@@ -244,20 +257,40 @@ class AtomicCaptureHook
     { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
   end
 
-  # DROPPABLE — a tool-call that is PURE overhead, never a row. True only when
-  # EVERY shell segment of the command is navigation (cd/pushd/popd/pwd) OR
-  # narration (a bin/agent-activity/bin/atomic-event invocation). A compound call
-  # that mixes overhead with real work — `cd X && git commit`,
-  # `bin/agent-activity next && bin/task update` — is NOT droppable, so the work
-  # droppable, so the work is CAPTURED. This is the deterministic guarantee: every
-  # substantive tool call becomes an action, never silently eaten by a leading `cd`.
-  # (The historical rule dropped on the FIRST token alone, so `cd X && <work>` was
-  # lost whole — the bug this fixes.) Non-Bash / empty commands are never droppable.
+  # DROPPABLE — a tool-call that is PURE overhead, never a row. True for a
+  # tool-result PAGING read (the agent re-reading its own spilled output — see
+  # tool_result_paging_read?), or a Bash call whose EVERY shell segment is
+  # navigation (cd/pushd/popd/pwd) OR narration (a bin/agent-activity/
+  # bin/atomic-event invocation). A compound call that mixes overhead with real
+  # work — `cd X && git commit`, `bin/agent-activity next && bin/task update` — is
+  # NOT droppable, so the work is CAPTURED. This is the deterministic guarantee:
+  # every substantive tool call becomes an action, never silently eaten by a
+  # leading `cd`. (The historical rule dropped on the FIRST token alone, so
+  # `cd X && <work>` was lost whole — the bug that fixed.) Non-Bash / empty
+  # commands are never droppable unless they are a paging read.
   def droppable?(event)
+    return true if tool_result_paging_read?(event)
+
     segments = command_segments(bash_command(event))
     return false if segments.empty?
 
     segments.all? { |segment| NAV_COMMAND.match?(segment) || NARRATION_COMMAND.match?(segment) }
+  end
+
+  # A Read whose file_path is UNDER a `tool-results/` directory — the agent paging
+  # back through its own spilled tool output (see TOOL_RESULT_PAGING_PATH). Only
+  # the Read tool qualifies (that's how Claude Code pages a large result); every
+  # OTHER tool, and any Read of a REAL file, returns false and is captured
+  # normally (keeping its #425 synthesized label). Best-effort/never raises.
+  def tool_result_paging_read?(event)
+    return false unless event["tool_name"].to_s == "Read"
+
+    path = file_path_of(event).to_s
+    return false if path.empty?
+
+    TOOL_RESULT_PAGING_PATH.match?(path)
+  rescue StandardError
+    false
   end
 
   # PURE-classification predicates (every segment matches the one pattern). Kept as

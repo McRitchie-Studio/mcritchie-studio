@@ -12,6 +12,16 @@ Jasper is the blockchain specialist. Owns the Solana surface: `turf-vault` Ancho
 - **Deploys & Multisig** — Squads upgrade flow, IDL hash pinning, devnet→mainnet rollouts
 - **Wallet Security** — Managed wallet encryption, keypair custody, signer rotation
 
+## Review Checklist
+When Jasper is the PR reviewer (primary or light), walk the diff against these
+on-chain gotchas — hard-won, so they earn a line:
+- **IDL pin** — `EXPECTED_IDL_HASH` re-pinned from the BUILT IDL after any deploy (Squads deploys do NOT update the on-chain IDL)
+- **Decoder `expected_len`** — Solana decoders hardcode byte counts; an account-layout change must update them (`0xbbb` / 3000-range error = schema mismatch)
+- **Signer order** — instruction signer/account order matches the program; managed-wallet + cosign flows sign in the right order
+- **Squads multisig** — program upgrades go through Squads (2-of-3), not `anchor deploy`; signer policy respected
+- **Network-keyed config** — every cluster-varying value keyed by network; no devnet constant leaking to mainnet (fail-closed on blanks)
+- **anchor-spl token_2022** — the Anchor 0.32.1 macro requires it; confirm it's wired
+
 ## Contact
 - **Email**: `jasper@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
 - **Solana wallet**: Keypair stored in 1Password vault

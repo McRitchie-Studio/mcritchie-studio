@@ -1108,6 +1108,28 @@ class TaskCliTest < Minitest::Test
     end
   end
 
+  def test_session_mascot_writes_shiny_marker_fields
+    Dir.mktmpdir do |projects|
+      FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
+      marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")
+
+      _req, _out, _err, status = run_task(
+        ["session-mascot"],
+        env: { "CLAUDE_CODE_SESSION_ID" => MARKER_SESSION,
+               "CLAUDE_PROJECTS_DIR" => projects, "TASK_SKIP_MARKER" => nil },
+        chdir: projects,
+        stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A",
+                               "mascot_emoji" => "🔶", "mascot_shiny" => true,
+                               "app" => "mcritchie-studio", "app_color" => "#B57EDC" }
+      )
+
+      assert status.success?
+      marker = JSON.parse(File.read(marker_path))
+      assert_equal true, marker["mascot_shiny"]
+      assert_equal "🔶✨", marker["mascot_emoji"]
+    end
+  end
+
   def test_session_mascot_writes_a_codex_session_marker_and_prints_it
     Dir.mktmpdir do |projects|
       marker_path = File.join(projects, ".agents", "sessions", "#{MARKER_SESSION}.json")

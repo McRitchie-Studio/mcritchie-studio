@@ -12,6 +12,7 @@ class Pokemon < ApplicationRecord
   # db/seeds/57_pokemon_type_colors.rb). Kept here so the "pokemon_type" key lives
   # with the model that owns types, not scattered across the controller and view.
   TYPE_ENUMERAL_CATEGORY = "pokemon_type".freeze
+  SHINY_EMOJI = "✨".freeze
 
   # How many times a three-stage line (base → evolves → evolves again) enters the
   # mascot draw bag relative to shorter lines. The 24 fully-evolving roots
@@ -235,8 +236,17 @@ class Pokemon < ApplicationRecord
     type_keys.filter_map { |type| by_key[type]&.emoji }.join
   end
 
-  # Shiny odds for ONE mascot draw — 1-in-N. Production runs the canonical
-  # 1-in-100; dev and QA run 1-in-10 so shinies actually show up while working.
+  def status_emoji(shiny: false, by_key: nil)
+    self.class.decorate_type_emoji(type_emoji(by_key), shiny: shiny)
+  end
+
+  def self.decorate_type_emoji(emoji, shiny:)
+    raw = emoji.to_s.delete(SHINY_EMOJI)
+    shiny ? "#{raw.presence}#{SHINY_EMOJI}" : raw.presence
+  end
+
+  # Shiny odds for ONE mascot draw — 1-in-N. Production runs 1-in-25; dev and QA
+  # run 1-in-2 so shinies actually show up while working.
   # QA runs the production Rails env, so it's told apart by QA_ENV=true (set by
   # bin/qa-server on every QA app — same signal as ApplicationHelper#qa_environment?).
   # SHINY_ODDS overrides everything for tuning/demo ("SHINY_ODDS=1" = always shiny).
@@ -248,7 +258,7 @@ class Pokemon < ApplicationRecord
     return 0 if Rails.env.test?
 
     qa = ENV["QA_ENV"].to_s.strip.downcase == "true"
-    Rails.env.production? && !qa ? 100 : 10
+    Rails.env.production? && !qa ? 25 : 2
   end
 
   # Roll ONE shiny check at the current odds. Called once per mascot draw — shiny

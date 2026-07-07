@@ -372,7 +372,7 @@ Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: ["dragon"
 # Shiny mascot demo: a building card whose session draw came up SHINY — drives
 # the shiny_mascot e2e (the board crew circle must paint the shiny sprite, a
 # GOLD 1x1 data URI distinct from the transparent normal one). Stamped directly
-# (update_columns) so the fixture is deterministic, not a 1-in-10 roll.
+# (update_columns) so the fixture is deterministic, not a 1-in-2 roll.
 shiny_sprite = "data:image/gif;base64,R0lGODlhAQABAPAAAP/XAAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="
 Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", types: ["electric"], generation: 1,
                 sprite_url: sprite, shiny_sprite_url: shiny_sprite)

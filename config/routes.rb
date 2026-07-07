@@ -30,8 +30,9 @@ Rails.application.routes.draw do
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
   # estimate-vs-actual). Public-read like the other board surfaces.
   get "intelligence", to: "intelligence#index", as: :intelligence
-  # Pokémon reference-data inspector — read-only grid of the seeded 151 (data
-  # shape + bundled sprites). Public-read like the board pages.
+  # Pokédex — read-only spawn/activity surface for session mascots. /pokemon
+  # stays as a compatibility alias for the earlier reference-data inspector URL.
+  get "pokedex", to: "pokemon#index", as: :pokedex
   get "pokemon", to: "pokemon#index", as: :pokemon
   # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
   # current-release module), /stages is the two-workflow stage guide. All three
