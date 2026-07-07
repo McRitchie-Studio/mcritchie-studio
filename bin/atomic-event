@@ -146,8 +146,13 @@ class AgentActivityCli
     task = flags["task"].to_s.strip
 
     marker = resolve_marker(session_id: sid)
-    prior_activity_id = read_open_activity(sid)
-    prior_usage = activity_usage_payload(sid, prior_activity_id)
+    # The prior activity THIS lane closes on open is the same-AGENT open activity
+    # (the server auto-closes per lane). Only for SEQUENTIAL narration does that
+    # equal the single open-activity marker; in a concurrent same-session fanout a
+    # DIFFERENT open lane must not be closed/cleared here — doing so clobbered its
+    # usage baseline and mis-attributed its tokens (the same-session fanout blocker).
+    same_lane_prior_id = lane_open_activity(sid, agent)
+    prior_usage = activity_usage_payload(sid, same_lane_prior_id)
     res = post("/api/v1/agent_activities", {
       "session_id"    => sid,
       "category"      => category,
@@ -167,9 +172,9 @@ class AgentActivityCli
     # DETERMINISTIC attribution: record the just-opened activity id in a local
     # marker so the capture hook pins subsequent actions to THIS activity.
     if res && res.code.to_i.between?(200, 299)
-      clear_activity_usage_baseline(sid, prior_activity_id)
+      clear_activity_usage_baseline(sid, same_lane_prior_id)
       opened_id = record_open_activity(sid, res)
-      seed_activity_usage_baseline(sid, opened_id)
+      seed_activity_usage_baseline(sid, opened_id, agent)
     end
 
     opened = "opened #{category} · #{reason}"
@@ -188,7 +193,9 @@ class AgentActivityCli
     agent = flags["agent"].to_s.strip
     agent = read_acting_agent(sid).to_s if agent.empty?
 
-    activity_id = read_open_activity(sid)
+    # Measure THIS lane's own activity (the server closes by agent lane too), so a
+    # reviewer's `end` diffs its own window — not whichever lane opened last.
+    activity_id = lane_open_activity(sid, agent)
     usage = activity_usage_payload(sid, activity_id)
     res = post("/api/v1/agent_activities/close", {
       "session_id" => sid,
@@ -677,14 +684,20 @@ class AgentActivityCli
     nil
   end
 
-  def seed_activity_usage_baseline(session_id, activity_id)
+  def seed_activity_usage_baseline(session_id, activity_id, agent = nil)
     return unless present?(activity_id)
 
     result = capture_session_usage(session_id)
     return unless result&.totals
 
     data = read_activity_usage_baselines(session_id)
-    data[activity_id.to_s] ||= result.totals
+    # Another lane is already open in this session → the session-level transcript
+    # can no longer be split per lane. Taint THIS activity and the ones already
+    # open so every overlapping close-diff reports blank (measured_usage? false)
+    # instead of a double-counted, wrong-but-real-looking value.
+    shared = data.any? { |id, _| id != activity_id.to_s }
+    data.transform_values! { |entry| taint_entry(entry) } if shared
+    data[activity_id.to_s] = { "totals" => result.totals, "agent" => agent.to_s, "shared" => shared }
     write_activity_usage_baselines(session_id, data)
   rescue StandardError
     nil
@@ -707,11 +720,55 @@ class AgentActivityCli
     nil
   end
 
+  # ── Lane-aware open-activity + baseline entry shape ────────────────────────
+  # The usage baseline map (.activity-usage.json) is the source of truth for which
+  # activities are open PER AGENT LANE — the single .open-activity marker only ever
+  # holds the most-recently-opened id (fine for action attribution, blind to lanes).
+  # These read the map by lane and tolerate both the legacy bare-totals entry and
+  # the wrapped {"totals","agent","shared"} entry a fresh open now writes.
+
+  # The id of THIS agent-lane's currently-open activity, from the baseline map.
+  # Falls back to the single marker ONLY when the map is empty (legacy sessions /
+  # no usage tracking), so a concurrent DIFFERENT lane is never mistaken for this
+  # one. nil when this lane has no open activity (a fresh concurrent lane).
+  def lane_open_activity(session_id, agent)
+    map = read_activity_usage_baselines(session_id)
+    return read_open_activity(session_id) if map.empty?
+
+    map.find { |_, entry| entry_agent(entry) == agent.to_s }&.first
+  end
+
+  # Baseline map entries are either a bare totals hash (legacy) or a wrapped
+  # {"totals" =>, "agent" =>, "shared" =>}. These readers accept either shape.
+  def entry_totals(entry)
+    return nil if entry.nil?
+
+    entry.is_a?(Hash) && entry.key?("totals") ? entry["totals"] : entry
+  end
+
+  def entry_agent(entry)
+    entry.is_a?(Hash) && entry.key?("agent") ? entry["agent"].to_s : ""
+  end
+
+  def entry_shared?(entry)
+    entry.is_a?(Hash) && entry["shared"] == true
+  end
+
+  # Re-wrap an entry as shared (concurrent-lane) so its close-diff is dropped.
+  def taint_entry(entry)
+    { "totals" => entry_totals(entry), "agent" => entry_agent(entry), "shared" => true }
+  end
+
   def activity_usage_payload(session_id, activity_id)
     return {} unless present?(activity_id)
 
-    baseline = read_activity_usage_baselines(session_id)[activity_id.to_s]
-    result = capture_session_usage(session_id, baseline: baseline)
+    entry = read_activity_usage_baselines(session_id)[activity_id.to_s]
+    # A shared (overlapping-lane) window can't be attributed to one lane, so report
+    # NOTHING rather than a wrong measured-looking value — an unmeasured activity is
+    # the honest state, exactly what measured_usage? is meant to gate on.
+    return {} if entry_shared?(entry)
+
+    result = capture_session_usage(session_id, baseline: entry_totals(entry))
     return {} unless result&.usage?
 
     delta = result.delta || {}

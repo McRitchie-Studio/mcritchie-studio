@@ -13,6 +13,7 @@
 #                 server, mints a token then POSTs the right open/close shape.
 
 require "minitest/autorun"
+require "minitest/mock"
 require "json"
 require "socket"
 require "open3"
@@ -319,6 +320,39 @@ class AgentActivityCliTest < Minitest::Test
       assert_equal 383, body["tokens_out"]
       assert_equal 304_000, body["cache_read_tokens"], "cache-read is kept only for cost"
       assert_in_delta 0.1928, body["cost"].to_f, 0.0001
+    end
+  end
+
+  # ── [unit] concurrent same-session lanes report BLANK usage, not double-counts ──
+  # The same-session reviewer-fanout blocker: usage is a per-session transcript
+  # diff, so two lanes open at once can't be split — a per-lane close-diff would
+  # double-count the other lane. Guard: opening a second lane taints EVERY
+  # overlapping window so it reports NOTHING (measured_usage? false) — the honest
+  # state — instead of a wrong-but-real-looking value. (Reviewers in SEPARATE
+  # subagent sessions each keep their own transcript, so they still measure; see
+  # the sole-lane measured-usage test above.)
+  def test_unit_concurrent_same_session_lanes_report_blank_usage
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      totals = { "input" => 5000, "output" => 100, "cache_creation" => 0, "cache_read" => 0 }
+      result = AgentSessionUsage::Result.new(model: "claude-opus-4-8", totals: totals, delta: nil)
+
+      # carl's lane opens first (sole → measurable), then shannon's opens while
+      # carl is still open → the shared transcript can no longer be split per lane.
+      c.stub(:capture_session_usage, result) do
+        c.send(:seed_activity_usage_baseline, SESSION, "1", "carl")
+        c.send(:seed_activity_usage_baseline, SESSION, "2", "shannon")
+      end
+
+      path = File.join(proj, ".agents", "sessions", "#{SESSION}.activity-usage.json")
+      baselines = JSON.parse(File.read(path))
+      assert_equal "carl", baselines["1"]["agent"], "the baseline map is now lane-aware"
+      assert baselines["1"]["shared"], "the already-open lane is tainted when a concurrent lane opens"
+      assert baselines["2"]["shared"], "the second lane opens into a shared window"
+
+      # Both overlapping lanes report NOTHING — never a double-counted value.
+      assert_empty c.send(:activity_usage_payload, SESSION, "1"), "carl's shared window reports no usage"
+      assert_empty c.send(:activity_usage_payload, SESSION, "2"), "shannon's shared window reports no usage"
     end
   end
 
