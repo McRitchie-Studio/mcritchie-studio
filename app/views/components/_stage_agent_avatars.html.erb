@@ -83,10 +83,17 @@
     <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
         on the roomier Build board; the stack overlap tracks the size to keep a small peek
         of each face — 8px on Build (sm = w-10 face, -space-x-8 = 32px) and 4px on Deploy
-        (xs = w-8 face, -space-x-7 = 28px). Hover growth is deliberately subtle so
-        a screenshot taken over the card does not push faces outside the card. %>
+        (xs = w-8 face, -space-x-7 = 28px). Hover/focus loosens that overlap and scales
+        the stack from a stable origin, revealing hidden faces without translating lanes
+        into the card margins. %>
     <% crew_size = board == :build ? "sm" : "xs" %>
     <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
+    <% crew_hover_overlap = if board == :build
+                              "group-hover:-space-x-6 group-focus-within:-space-x-6 hover:-space-x-6"
+                            else
+                              "group-hover:-space-x-5 group-focus-within:-space-x-5 hover:-space-x-5"
+                            end %>
+    <% crew_hover_reveal = "transition-all duration-200 ease-out group-hover:scale-110 group-focus-within:scale-110 hover:scale-110 motion-reduce:transition-none motion-reduce:transform-none" %>
     <%# A blocked card reads design · building · blocker; the blocker is the LAST
         filled compartment (slot 3), and its timer turns into a red ✕. %>
     <% blocked = task.stage == "blocked" %>
@@ -116,7 +123,7 @@
                             else
                               "origin-center"
                             end %>
-              <div class="flex items-center <%= crew_overlap %> <%= crew_pos %> transition-transform duration-150 group-hover:scale-105">
+              <div class="flex items-center <%= crew_overlap %> <%= crew_hover_overlap %> <%= crew_pos %> <%= crew_hover_reveal %>">
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
                   <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
                        title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(' ') %>">
