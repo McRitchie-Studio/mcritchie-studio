@@ -1,4 +1,4 @@
-<%# locals: (agent:, size: "md") %>
+<%# locals: (agent:, size: "md", shiny: nil) %>
 <%#
   Renders the agent's avatar as a circle. Pattern: the deterministic
   initial-bubble is always rendered underneath; the <img> (when avatar is
@@ -14,8 +14,10 @@
     "lg" => { container: "w-16 h-16", text: "text-2xl" },
   }
   s = sizes[size] || sizes["md"]
+  shiny_badge = shiny.nil? ? (agent.respond_to?(:shiny?) && agent.shiny?) : shiny
+  badge_size = %w[xxs xs].include?(size.to_s) ? "text-lg" : "text-xl"
 %>
-<span class="<%= s[:container] %> rounded-full flex items-center justify-center relative overflow-hidden flex-shrink-0"
+<span class="<%= s[:container] %> rounded-full flex items-center justify-center relative flex-shrink-0"
       style="background-color: <%= agent.avatar_color %>;">
   <span class="text-white font-bold <%= s[:text] %>"><%= agent.avatar_initials %></span>
   <% if agent.avatar.present? %>
@@ -24,5 +26,11 @@
          class="absolute inset-0 w-full h-full rounded-full object-cover"
          loading="lazy"
          onerror="this.remove()">
+  <% end %>
+  <% if shiny_badge %>
+    <span class="absolute -top-2 -right-2 z-10 <%= badge_size %> leading-none pointer-events-none"
+          data-test="avatar-shiny-badge"
+          style="text-shadow: 0 1px 2px rgba(0,0,0,0.55);"
+          aria-hidden="true">✨</span>
   <% end %>
 </span>

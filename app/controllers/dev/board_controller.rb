@@ -33,7 +33,7 @@ module Dev
         stage: "designed",
         metadata: {
           FIXTURE_MARK => true,
-          "devops" => { "repositories" => ["mcritchie-studio"], "mascot" => mascot&.slug }.compact
+          "devops" => fixture_devops(mascot)
         }
       )
       # The card animates in live via the shared LiveBoardFx (off the genesis
@@ -78,15 +78,17 @@ module Dev
       head :no_content
     end
 
-    # Advance the fixture release ONE stage by stamping the next blank stage in
-    # Release::STAGES — the exact time-and-boolean inputs the live tracker reads —
+    # Advance the visible active release ONE stage by stamping the next blank stage
+    # in Release::STAGES — the exact time-and-boolean inputs the live tracker reads —
     # so each click walks Testing → Assembling → … → Confirming → Deploying,
     # including the handoff gaps (a stamped `qa_deployed` leaves Confirming dark
     # until the next click stamps `confirming`, just like the real Avi handoff).
     # The terminal stage SHIPS (no separate confirmed-but-unshipped pause), so a
-    # Last Release appears immediately. Wraps from shipped back to a fresh release.
+    # Last Release appears immediately. If no active release exists, it opens a
+    # marked fixture; if a local preview release already exists, it steps that
+    # release instead of tripping the singleton active-release validation.
     def advance_release
-      release = current_fixture_release || open_fixture_release
+      release = release_for_dev_advance
       next_index = (release.current_stage_index || -1) + 1
       stage = Release::STAGE_NAMES[next_index]
       case stage
@@ -121,8 +123,9 @@ module Dev
     # mascot — only used when nothing is active, so the Ship toy still has something
     # to deploy.
     def open_fixture_release
+      mascot = Pokemon.draw
       Release.open!.tap do |release|
-        release.update!(metadata: { FIXTURE_MARK => true, "devops" => { "mascot" => Pokemon.draw&.slug }.compact })
+        release.update!(metadata: { FIXTURE_MARK => true, "devops" => fixture_devops(mascot) })
       end
     end
 
@@ -133,15 +136,33 @@ module Dev
              .order(created_at: :desc).first
     end
 
+    def release_for_dev_advance
+      current_fixture_release || Release.current || open_fixture_release
+    end
+
     # Attach a throwaway member task so the release card shows a member pill.
     def add_fixture_member(release)
+      mascot = Pokemon.draw
       Task.create!(
         title: SAMPLE_TITLES.sample,
         slug: "dev-fixture-rel-#{SecureRandom.hex(3)}",
         stage: "assembled",
         release_slug: release.slug,
-        metadata: { FIXTURE_MARK => true, "devops" => { "repositories" => ["mcritchie-studio"], "mascot" => Pokemon.draw&.slug }.compact }
+        metadata: { FIXTURE_MARK => true, "devops" => fixture_devops(mascot) }
       )
+    end
+
+    def fixture_devops(mascot)
+      devops = { "repositories" => ["mcritchie-studio"] }
+      return devops unless mascot
+
+      shiny = Pokemon.roll_shiny?
+      devops.merge(
+        "mascot" => mascot.slug,
+        "mascot_shiny" => shiny,
+        "mascot_color" => mascot.signature_color,
+        "mascot_emoji" => mascot.status_emoji(shiny: shiny)
+      ).compact
     end
 
     # Tear down every fixture release + its fixture member tasks. Scoped to the

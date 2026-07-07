@@ -2,9 +2,9 @@
 <% content_for(:full_width, true) %>
 
 <%# Alex learning heartbeat — the agent-narrated activity table. Each row is an
-    AgentActivity (category, reason -> result) that rolls up the raw tool-calls
-    attributed to it; expand an activity to drill into those actions read-only, or drop into
-    the trailing "Unlabeled" group for the tool-calls the agent never narrated. A
+    AgentActivity (category, reason -> result) with its measured span usage; expand an
+    activity to drill into attributed raw actions read-only, or drop into the trailing
+    "Unlabeled" group for the tool-calls the agent never narrated. A
     deliberate fixed-dark dashboard (like the launcher terminal, which stays dark on a
     light desktop) sitting on the theme-aware body. The palette mirrors the prototype;
     styles are scoped under the section id so they touch nothing else. The table is

@@ -711,7 +711,8 @@ Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 
 Use the parallel-agent protocol:
 - create or enter an isolated worktree with bin/agent-worktree
-- use the allocated port and give me the local URL
+- use the allocated port and return `Local Demo: http://localhost:<port>/<path>`
+- mark local validation with `bin/task update <task> --local-url ... --approval waiting`
 - record expected checks in task devops.test_plan
 - keep all edits inside the task worktree
 - update docs if behavior, workflow, env, ports, auth, email, or deploys change

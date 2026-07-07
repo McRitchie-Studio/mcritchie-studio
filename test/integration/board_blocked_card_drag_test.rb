@@ -7,7 +7,7 @@ require "test_helper"
 # CARD, so an in-place reorder of a blocked card computed oldStage="blocked" vs
 # newStage="building" and silently PATCHed the task un-blocked; a failed PATCH then
 # reverted to a non-existent dropzone-blocked and stranded the card. Blocked tasks
-# ride the Building lane, which collapses below ~1250px on the Deploy board — so a
+# ride the Building lane, which collapses below 1400px on the Deploy board — so a
 # needs-attention task is reachable via "All Stages" at narrow.
 #
 # The drag itself is SortableJS (mouse-driven, not native DnD) and is not exercised
@@ -69,12 +69,12 @@ class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
     designed_col = doc.at_css("#dropzone-designed").parent
     reviewed_col = doc.at_css("#dropzone-reviewed").parent
 
-    # Below ~1250px the upstream lanes collapse behind All Stages — and Building is
+    # Below 1400px the upstream lanes collapse behind All Stages — and Building is
     # no longer exempt. Blocked tasks ride Building, so a stalled task is reachable
     # via the toggle at narrow rather than pinned visible.
-    assert_includes designed_col[":class"].to_s, "max-[1250px]:hidden"
-    assert_includes building_col[":class"].to_s, "max-[1250px]:hidden"
+    assert_includes designed_col[":class"].to_s, "max-[1399px]:hidden"
+    assert_includes building_col[":class"].to_s, "max-[1399px]:hidden"
     # …while the last three lanes (reviewed · assembled · shipped) stay visible.
-    refute_includes reviewed_col[":class"].to_s, "max-[1250px]:hidden"
+    refute_includes reviewed_col[":class"].to_s, "max-[1399px]:hidden"
   end
 end

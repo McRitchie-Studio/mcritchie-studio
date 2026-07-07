@@ -14,4 +14,5 @@ test("shiny mascot card wears the shiny sprite on the board", async ({ page }) =
 
   const shinyAvatar = card.locator(`img[src="${SHINY_SPRITE}"]`).first();
   await expect(shinyAvatar).toBeVisible();
+  await expect(card.locator("[data-test='avatar-shiny-badge']").first()).toHaveText("✨");
 });

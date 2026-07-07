@@ -131,11 +131,12 @@ class Task < ApplicationRecord
   }.freeze
   REVIEW_STATUSES = %w[started completed failed info].freeze
   MIGRATION_LANE = "backend_migration".freeze
+  OPERATOR_APPROVAL_WAITING = "waiting".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor block_kind agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
-    persona
+    persona approval_status approval_requested_at approval_requested_by
   ].freeze
   LEGACY_DEVOPS_KEY_ALIASES = { "release_train" => "release_slug" }.freeze
   # Provider → resume-command template (one %s, the session id).
@@ -210,6 +211,7 @@ class Task < ApplicationRecord
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
+  before_save :stamp_operator_approval_request
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -245,7 +247,12 @@ class Task < ApplicationRecord
   # set_initial_position / set_stage_timestamp). The 100-gaps leave room for a
   # drag-drop reorder to slot a card between two others without renumbering. This
   # mirrors the News/Content rank scheme (which Task previously inverted).
-  scope :ordered, -> { order(Arel.sql("position DESC NULLS LAST, created_at DESC")) }
+  scope :ordered, -> {
+    order(Arel.sql(
+      "CASE WHEN metadata -> 'devops' ->> 'approval_status' = '#{OPERATOR_APPROVAL_WAITING}' THEN 1 ELSE 0 END DESC, " \
+        "position DESC NULLS LAST, created_at DESC"
+    ))
+  }
   scope :requires_migration, -> { where(requires_migration: true) }
   # Tasks still in play — everything except the two terminal stages. A live task's
   # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
@@ -279,6 +286,10 @@ class Task < ApplicationRecord
   # skips so two in-flight tasks never share a Pokémon.
   def self.active_mascots
     live.pluck(:metadata).filter_map { |m| m&.dig("devops", "mascot").presence }
+  end
+
+  def self.shiny_value?(value)
+    value == true || value.to_s.strip.downcase == "true" || value.to_s.strip == "1"
   end
 
   # Backfill: give a mascot to every LIVE task that lacks one — for tasks created
@@ -337,12 +348,12 @@ class Task < ApplicationRecord
       # key? (not ||=) because a legitimate `false` must cache too.
       unless shiny_by_session.key?(sid)
         session_mascot = SessionMascot.find_by(session_id: sid)
-        shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : !!task.metadata.dig("devops", "mascot_shiny")
+        shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : shiny_value?(task.metadata.dig("devops", "mascot_shiny"))
       end
       shiny = shiny_by_session[sid]
 
       dev = task.metadata["devops"] || {}
-      next if dev["mascot"] == slug && dev["mascot_session"] == sid && !!dev["mascot_shiny"] == shiny
+      next if dev["mascot"] == slug && dev["mascot_session"] == sid && shiny_value?(dev["mascot_shiny"]) == shiny
 
       merged = task.metadata.deep_dup
       d = (merged["devops"] ||= {})
@@ -351,7 +362,7 @@ class Task < ApplicationRecord
       d["mascot_shiny"] = shiny
       pokemon = Pokemon.find_by(slug: slug)
       d["mascot_color"] = pokemon&.signature_color
-      d["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
+      d["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
       task.update_columns(metadata: merged)
       restamped += 1
     rescue StandardError => e
@@ -375,7 +386,7 @@ class Task < ApplicationRecord
   # session's SessionMascot roll, adopted here) and stamped server-side as
   # devops.mascot_shiny alongside mascot_color/emoji.
   def mascot_shiny?
-    !!devops["mascot_shiny"]
+    self.class.shiny_value?(devops["mascot_shiny"])
   end
 
   def devops_kind
@@ -502,6 +513,14 @@ class Task < ApplicationRecord
 
   def devops_checks_run
     devops_list("checks_run")
+  end
+
+  def approval_status
+    devops.fetch("approval_status", "").presence
+  end
+
+  def waiting_for_operator_approval?
+    approval_status == OPERATOR_APPROVAL_WAITING
   end
 
   def unresolved_feedback_activity
@@ -1229,6 +1248,17 @@ class Task < ApplicationRecord
     self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
   end
 
+  def stamp_operator_approval_request
+    return unless will_save_change_to_metadata?
+    return unless devops["approval_status"] == OPERATOR_APPROVAL_WAITING
+    return if (metadata_was || {}).dig("devops", "approval_status") == OPERATOR_APPROVAL_WAITING
+
+    merged = metadata.deep_dup
+    approval = (merged["devops"] ||= {})
+    approval["approval_requested_at"] ||= Time.current.iso8601
+    self.metadata = merged
+  end
+
   # The slug is the readable, immutable handle set at creation — it drives the
   # URL (/tasks/<slug>) and seeds the worktree + branch. Precedence: an explicit
   # --slug (parameterized), else the (now-terse) title (parameterized +
@@ -1303,7 +1333,7 @@ class Task < ApplicationRecord
     pokemon = Pokemon.find_by(slug: slug)
     devops["mascot_shiny"] = shiny
     devops["mascot_color"] = pokemon&.signature_color
-    devops["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
+    devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
     # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
     devops.delete("mascot_stage")
   end
@@ -1338,7 +1368,7 @@ class Task < ApplicationRecord
 
     devops["mascot"] = evolved.slug
     devops["mascot_color"] = evolved.signature_color
-    devops["mascot_emoji"] = [("✨" if mascot_shiny?), evolved.type_emoji.presence].compact.join.presence
+    devops["mascot_emoji"] = evolved.status_emoji(shiny: mascot_shiny?)
   rescue StandardError => e
     Rails.logger.warn("[mascot-evolution] skipped (non-fatal): #{e.class}: #{e.message}")
   end

@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [component] the event-grouped heartbeat table partial — the PRIMARY rows are
-# agent-narrated AgentActivity spans (category · reason -> outcome), each rolling up
+# agent-narrated AgentActivity spans (category · reason -> outcome), each framing
 # the raw AgentActions attributed to it as a read-only drill-down. Actions with a
 # null agent_activity_id render in the trailing "Unlabeled" group. Read-only: the
 # table has no inline grading controls (grading lives in the drawer).
@@ -118,19 +118,21 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_includes rendered, heartbeat_feedback_path(a1)
   end
 
-  test "[component] the span row rolls up its actions into Pokémon, model, tokens, and cost" do
-    ev = event(seq: 0, mascot: "snorlax", closed_at: Time.current, outcome_slug: "done")
+  test "[component] the span row renders measured usage and never action fallback usage" do
+    ev = event(seq: 0, mascot: "snorlax", closed_at: Time.current, outcome_slug: "done",
+               model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.2579)
     a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
     a2 = action(agent_activity_id: ev.id, seq: 1, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
 
     render partial: "heartbeat/activity_table",
            locals: { activity_rows: [[ev, [a1, a2]]], unlabeled: [], pokemon_by_slug: {} }
 
-    # aggregated across the span's actions, not per-action; model + tokens now stack
-    # inside one merged cell (each keeping its data-test hook)
-    assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
-    assert_select "[data-test=event-cost]", text: "$0.1400"
+    # measured on the span itself; action usage does not backfill the activity row
+    assert_select "[data-test=event-tokens]", text: "9.5k/610"
+    assert_select "[data-test=event-cost]", text: "$0.2579"
     assert_select "[data-test=event-model]", text: "opus-4-8"
+    refute_includes rendered, "16.2k/2.8k"
+    refute_includes rendered, "$0.1400"
     assert_select "td.hb-modeltok [data-test=event-model]"
     assert_select "td.hb-modeltok [data-test=event-tokens]"
     # the span mascot resolves to a name on its avatar title (slug titleized here — no

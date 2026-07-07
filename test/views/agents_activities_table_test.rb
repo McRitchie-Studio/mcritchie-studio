@@ -56,8 +56,9 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_no_match(/found the nil-guard/, rendered)
   end
 
-  test "[component] the cost column stacks cost, model, and tokens rolled up across actions" do
-    ev = activity(closed_at: Time.current, outcome_slug: "done")
+  test "[component] the cost column stacks measured activity cost, model, and tokens" do
+    ev = activity(closed_at: Time.current, outcome_slug: "done",
+                  model: "claude-opus-4-8", tokens_in: 16_200, tokens_out: 2_760, cost: 0.14)
     a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
     a2 = action(agent_activity_id: ev.id, seq: 1, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
 
@@ -66,6 +67,32 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "[data-test=aa-activity-cost]", text: "$0.1400"
     assert_select ".aa-cost-model", text: "opus-4-8"
     assert_select ".aa-cost-tok", text: "16.2k/2.8k"
+  end
+
+  test "[component] the activity cost column refuses repeated parent action fallback" do
+    ev = activity(closed_at: Time.current, outcome_slug: "done",
+                  model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.2579)
+    noisy = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8",
+                   tokens_in: 6200, tokens_out: 383, cost: 0.0705, source_turn_uuid: "parent-turn")
+
+    render_table [[ev, [noisy]]]
+
+    assert_select "tr.aa-arow [data-test=aa-activity-cost]", text: "$0.2579"
+    assert_select "tr.aa-arow .aa-cost-tok", text: "9.5k/610"
+    assert_select "tr.aa-arow [data-test=aa-activity-cost]", text: "$0.0705", count: 0
+    assert_select "tr.aa-arow .aa-cost-tok", text: "6.2k/383", count: 0
+  end
+
+  test "[component] an open activity with only parent action usage renders no activity usage" do
+    ev = activity(category: "Verify", reason_slug: "review still running", closed_at: nil, outcome_slug: nil)
+    noisy = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8",
+                   tokens_in: 6200, tokens_out: 383, cost: 0.0705, source_turn_uuid: "parent-turn")
+
+    render_table [[ev, [noisy]]]
+
+    assert_select "[data-test=aa-activity-cost]", text: "—"
+    assert_select ".aa-cost-model", text: "—"
+    assert_select ".aa-cost-tok", text: "—"
   end
 
   test "[component] the details column stacks time+status, task, and action count" do
@@ -152,6 +179,39 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "tr.aa-arow .aa-agent .w-10"
     assert_select "tr[data-test=aa-action] .aa-agent .w-6"
     assert_select "tr[data-test=aa-action] .aa-agent .w-10", false
+  end
+
+  test "[component] activity rows render session supervisor and expert avatar levels" do
+    carl = Agent.new(slug: "carl", name: "Carl", metadata: { "color" => "#38BDF8" })
+    avi = Agent.new(slug: "avi", name: "Avi", metadata: { "color" => "#FB7185" })
+    ev = activity(mascot: "snorlax", agent: "carl", supervisor_agent: "avi",
+                  closed_at: Time.current, outcome_slug: "done")
+
+    render_table [[ev, []]], agents_by_slug: { "carl" => carl, "avi" => avi }
+
+    assert_select "tr.aa-arow .aa-agent [data-test=agent-soul][data-soul=carl]"
+    assert_select "tr.aa-arow .aa-agent [data-test=agent-supervisor][data-supervisor=avi]"
+    assert_select "tr.aa-arow .aa-agent [data-test=aa-activity-mascot]"
+    assert_select "tr.aa-arow .aa-agent .hb-names span", text: "Carl"
+    assert_select "tr.aa-arow .aa-agent .hb-names span", text: "Avi"
+    assert_select "tr.aa-arow .aa-agent .hb-names span", text: "Snorlax"
+  end
+
+  test "[component] action rows keep the expert and supervisor but omit base mascot" do
+    carl = Agent.new(slug: "carl", name: "Carl", metadata: { "color" => "#38BDF8" })
+    avi = Agent.new(slug: "avi", name: "Avi", metadata: { "color" => "#FB7185" })
+    ev = activity(mascot: "snorlax", agent: "carl", supervisor_agent: "avi",
+                  closed_at: Time.current, outcome_slug: "done")
+    act = action(agent_activity_id: ev.id, seq: 0, mascot: "snorlax")
+
+    render_table [[ev, [act]]], agents_by_slug: { "carl" => carl, "avi" => avi }
+
+    assert_select "tr[data-test=aa-action] .aa-agent [data-test=agent-soul][data-soul=carl]"
+    assert_select "tr[data-test=aa-action] .aa-agent [data-test=agent-supervisor][data-supervisor=avi]"
+    assert_select "tr[data-test=aa-action] .aa-agent .hb-mascotava", false
+    assert_select "tr[data-test=aa-action] .aa-agent .hb-names span", text: "Carl"
+    assert_select "tr[data-test=aa-action] .aa-agent .hb-names span", text: "Avi"
+    assert_select "tr[data-test=aa-action] .aa-agent .hb-names span", text: "Snorlax", count: 0
   end
 
   test "[component] the action row carries its grade hydration data and no model cell" do

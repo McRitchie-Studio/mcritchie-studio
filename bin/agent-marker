@@ -14,6 +14,7 @@ require "open3"
 require "optparse"
 
 ROOT = File.expand_path("..", __dir__)
+SHINY_EMOJI = "✨"
 
 def default_projects_dir
   candidate = File.expand_path("../..", __dir__)
@@ -45,9 +46,31 @@ def titleize(value)
   raw[0].upcase + raw[1..].to_s
 end
 
+def truthy?(value)
+  value == true || %w[true 1 yes on].include?(compact(value).downcase)
+end
+
+def shiny_state(value)
+  return true if truthy?(value)
+  return false if value == false || %w[false 0 no off].include?(compact(value).downcase)
+
+  nil
+end
+
+def mascot_display_emoji(data)
+  emoji = compact(data["mascot_emoji"])
+  state = shiny_state(data["mascot_shiny"])
+  shiny = state.nil? ? emoji.include?(SHINY_EMOJI) : state
+  return compact(emoji.delete(SHINY_EMOJI)) if state == false
+  return emoji unless shiny
+
+  base = emoji.delete(SHINY_EMOJI)
+  base.empty? ? SHINY_EMOJI : "#{base}#{SHINY_EMOJI}"
+end
+
 def marker_from_data(data)
   mascot = titleize(data["mascot"])
-  head = [data["mascot_emoji"], mascot].map { |value| compact(value) }.reject(&:empty?).join(" ")
+  head = [mascot_display_emoji(data), mascot].map { |value| compact(value) }.reject(&:empty?).join(" ")
   parts = [head, data["app"], data["worktree_slug"] || data["feature"]].map { |value| compact(value) }.reject(&:empty?)
   parts.join(" · ")
 end

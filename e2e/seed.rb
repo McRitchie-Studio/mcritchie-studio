@@ -372,7 +372,7 @@ Pokemon.create!(dex: 149, name: "Dragonite", slug: "dragonite", types: ["dragon"
 # Shiny mascot demo: a building card whose session draw came up SHINY — drives
 # the shiny_mascot e2e (the board crew circle must paint the shiny sprite, a
 # GOLD 1x1 data URI distinct from the transparent normal one). Stamped directly
-# (update_columns) so the fixture is deterministic, not a 1-in-10 roll.
+# (update_columns) so the fixture is deterministic, not a 1-in-2 roll.
 shiny_sprite = "data:image/gif;base64,R0lGODlhAQABAPAAAP/XAAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="
 Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", types: ["electric"], generation: 1,
                 sprite_url: sprite, shiny_sprite_url: shiny_sprite)
@@ -393,7 +393,42 @@ def release_member!(release, slug:, title:)
   release.add(task)
 end
 
+def stamp_tracker_stage_history!(release, shipped_at:, assembling_seconds: 10.minutes)
+  testing_seconds = 1.minute
+  qa_seconds = 3.minutes
+  confirming_seconds = 2.minutes
+  prod_seconds = 2.minutes
+  total_seconds = testing_seconds + assembling_seconds + qa_seconds + confirming_seconds + prod_seconds
+  testing_started_at = shipped_at - total_seconds
+  assembling_started_at = testing_started_at + testing_seconds
+  assembled_at = assembling_started_at + assembling_seconds
+  qa_deploy_started_at = assembled_at
+  qa_deployed_at = qa_deploy_started_at + qa_seconds
+  confirming_started_at = qa_deployed_at
+  confirmed_at = confirming_started_at + confirming_seconds
+  prod_deploy_started_at = confirmed_at
+
+  release.update_columns( # rubocop:disable Rails/SkipsModelValidations
+    created_at: testing_started_at,
+    updated_at: shipped_at,
+    testing_started_at: testing_started_at,
+    assembling_started_at: assembling_started_at,
+    assembled_at: assembled_at,
+    qa_deploy_started_at: qa_deploy_started_at,
+    qa_deployed_at: qa_deployed_at,
+    confirming_started_at: confirming_started_at,
+    confirmed_at: confirmed_at,
+    prod_deploy_started_at: prod_deploy_started_at,
+    shipped_at: shipped_at
+  )
+end
+
 # Shipped first (terminal) so the active release below satisfies the singleton.
+2.times do |index|
+  history = Release.create!(slug: "rel-e2e-countdown-#{index + 1}", branch: "release", state: "shipped")
+  stamp_tracker_stage_history!(history, shipped_at: (3 - index).hours.ago)
+end
+
 shipped_release = Release.open!
 shipped_release.update!(metadata: { "devops" => { "mascot" => "dragonite", "mascot_session" => "sess-ship" } })
 [
@@ -402,7 +437,7 @@ shipped_release.update!(metadata: { "devops" => { "mascot" => "dragonite", "masc
   ["release-stack-last-c", "Auto-record deploy lane intents"]
 ].each { |slug, title| release_member!(shipped_release, slug: slug, title: title) }
 shipped_release.ship!
-shipped_release.update_columns(created_at: 18.minutes.ago, shipped_at: Time.current)
+stamp_tracker_stage_history!(shipped_release, shipped_at: Time.current)
 # A 🟢 post-ship production smoke seal on the Last Release, so the deployments e2e
 # can assert the seal badge renders (the @qa-readonly suite passed against prod).
 shipped_release.record_smoke_seal!(
@@ -418,8 +453,9 @@ active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_
 ].each { |slug, title| release_member!(active_release, slug: slug, title: title) }
 # Mid-assembly stage stamps (the tracker's time-and-boolean inputs): Tested ✓,
 # Assembling live — so the deployments e2e sees an active node with its ticking
-# per-stage duration.
-active_release.stamp_stage!("testing", at: 10.minutes.ago)
+# countdown against the last-three-release average.
+active_release.update_columns(created_at: 10.minutes.ago, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+active_release.stamp_stage!("testing", at: 9.minutes.ago)
 active_release.stamp_stage!("assembling", at: 8.minutes.ago)
 
 # /intelligence demo: two SHIPPED tasks that each walked the full lifecycle with

@@ -13,7 +13,7 @@
 <% stage_transitions ||= {} %>
 <% shared_turn_ids ||= Set.new %>
 <% cat = heartbeat_category_meta(activity.category) %>
-<% totals = heartbeat_activity_totals(actions) %>
+<% totals = heartbeat_activity_totals(activity, actions) %>
 <% status = heartbeat_activity_status_meta(activity, stage_transitions) %>
 <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
 <% pokemon = pokemon_by_slug[mascot_slug] %>
@@ -39,6 +39,8 @@
     </td>
     <td class="aa-agent"><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
                                  agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                 supervisor_slug: activity.supervisor_agent,
+                                 supervisor: agents_by_slug[activity.supervisor_agent],
                                  mascot_test: "aa-activity-mascot", size: "sm") %></td>
 
     <td class="aa-activity">

@@ -143,7 +143,8 @@
           <% cat = heartbeat_category_meta(activity.category) %>
           <% alex_grade = @activity_grades.dig(activity.id, "alex") %>
           <% is_not = alex_grade&.not_good? %>
-          <% cost = heartbeat_usage_totals(actions)[:cost] %>
+          <% totals = heartbeat_activity_totals(activity, actions) %>
+          <% cost = totals[:cost] %>
           <div class="pl-row <%= "is-not" if is_not %>" data-test="pl-activity" data-activity-id="<%= activity.id %>">
             <div class="pl-rowtop">
               <div class="pl-main">
@@ -153,7 +154,9 @@
               </div>
               <div class="pl-agent">
                 <%= heartbeat_agent_cell(mascot_slug: activity.mascot, pokemon: @pokemon_by_slug[activity.mascot],
-                                         agent_slug: activity.agent, agent: @agents_by_slug[activity.agent]) %>
+                                         agent_slug: activity.agent, agent: @agents_by_slug[activity.agent],
+                                         supervisor_slug: activity.supervisor_agent,
+                                         supervisor: @agents_by_slug[activity.supervisor_agent]) %>
               </div>
             </div>
             <div class="pl-meta">

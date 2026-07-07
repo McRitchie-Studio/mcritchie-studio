@@ -47,6 +47,7 @@ HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
 CONTEXT_FILE = ".agent-context.json"
 TASK_BASE_URL = ENV.fetch("AGENT_TASK_BASE_URL", "https://mcritchie.studio/tasks")
+SHINY_EMOJI = "✨"
 AGENT_CONTEXT_EXPORTS = %w[
   AGENT_CONTEXT_APP
   AGENT_CONTEXT_TASK
@@ -1080,6 +1081,28 @@ def compact_value(value)
   value.empty? ? nil : value
 end
 
+def truthy_value?(value)
+  value == true || %w[true 1 yes on].include?(compact_value(value).to_s.downcase)
+end
+
+def shiny_state(value)
+  return true if truthy_value?(value)
+  return false if value == false || %w[false 0 no off].include?(compact_value(value).to_s.downcase)
+
+  nil
+end
+
+def mascot_display_emoji(emoji, shiny)
+  raw = compact_value(emoji).to_s
+  state = shiny_state(shiny)
+  wants_shiny = state.nil? ? raw.include?(SHINY_EMOJI) : state
+  return compact_value(raw.delete(SHINY_EMOJI)) if state == false
+  return compact_value(raw) unless wants_shiny
+
+  base = raw.delete(SHINY_EMOJI)
+  compact_value("#{base}#{SHINY_EMOJI}")
+end
+
 def task_slug_from_url(value)
   compact_value(value)&.match(%r{/tasks/([^/?#]+)})&.captures&.first
 end
@@ -1248,13 +1271,32 @@ def resolve_mascot_color(values, dir, task, mascot)
 end
 
 def resolve_mascot_emoji(values, dir, task, mascot)
-  existing_context_attr(dir, mascot, "mascot_emoji") ||
-    record_mascot_field(task_record_slug(values) || task, "mascot_emoji")
+  shiny = resolve_mascot_shiny(values, dir, task, mascot)
+  emoji = existing_context_attr(dir, mascot, "mascot_emoji") ||
+          record_mascot_field(task_record_slug(values) || task, "mascot_emoji")
+  mascot_display_emoji(emoji, shiny)
+end
+
+def resolve_mascot_shiny(values, dir, task, mascot)
+  [
+    values["TASK_MASCOT_SHINY"],
+    existing_context_raw_attr(dir, mascot, "mascot_shiny"),
+    record_mascot_field(task_record_slug(values) || task, "mascot_shiny")
+  ].each do |value|
+    state = shiny_state(value)
+    return state unless state.nil?
+  end
+
+  nil
 end
 
 # The on-disk context's <key>, but only when its mascot matches `mascot`, so an
 # attribute can never be stale-paired to a changed mascot.
 def existing_context_attr(dir, mascot, key)
+  compact_value(existing_context_raw_attr(dir, mascot, key))
+end
+
+def existing_context_raw_attr(dir, mascot, key)
   return nil unless compact_value(mascot)
 
   path = context_path(dir)
@@ -1263,7 +1305,7 @@ def existing_context_attr(dir, mascot, key)
   data = JSON.parse(File.read(path))
   return nil unless compact_value(data["mascot"]) == mascot
 
-  compact_value(data[key])
+  data[key]
 rescue JSON::ParserError
   nil
 end
@@ -1315,6 +1357,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
   badge = prompt_badge(app, task, port, stage, task_record)
   # Resolve the mascot once so its color can ride with it (same name → same tint).
   mascot = resolve_mascot(values, dir, task)
+  mascot_shiny = resolve_mascot_shiny(values, dir, task, mascot)
 
   {
     "schema_version" => 1,
@@ -1329,6 +1372,7 @@ def context_payload(app, task, values, dir, record: nil, stage: nil)
     "mascot" => mascot,
     "mascot_color" => resolve_mascot_color(values, dir, task, mascot),
     "mascot_emoji" => resolve_mascot_emoji(values, dir, task, mascot),
+    "mascot_shiny" => (true if mascot_shiny),
     "branch" => branch,
     "head" => head,
     "repo" => app.fetch("repo"),
@@ -1440,6 +1484,13 @@ def run_bind_task(app, task, reference)
   if record_slug =~ /\A[\w.-]+\z/
     mascot = `#{__dir__}/task field #{record_slug} mascot 2>/dev/null`.to_s.strip
     values["TASK_MASCOT"] = mascot unless mascot.empty?
+    shiny = `#{__dir__}/task field #{record_slug} mascot_shiny 2>/dev/null`.to_s.strip
+    case shiny_state(shiny)
+    when true
+      values["TASK_MASCOT_SHINY"] = "true"
+    when false
+      values["TASK_MASCOT_SHINY"] = "false"
+    end
   end
   write_stack_env(app, task, values)
 

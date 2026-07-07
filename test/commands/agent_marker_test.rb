@@ -84,6 +84,46 @@ class AgentMarkerTest < Minitest::Test
     assert_empty calls
   end
 
+  def test_current_adds_shiny_sparkle_to_marker_title
+    write_session("thread-123",
+      "mascot" => "rattata",
+      "mascot_emoji" => "🔶",
+      "mascot_shiny" => true,
+      "app" => "mcritchie-studio",
+      "worktree_slug" => "tasks-button-deployments")
+
+    out, err, status = run_marker("current")
+
+    assert status.success?, err
+    assert_equal "🔶✨ Rattata · mcritchie-studio · tasks-button-deployments", out.strip
+    assert_empty calls
+  end
+
+  def test_current_normalizes_legacy_prefixed_shiny_marker
+    write_session("thread-123",
+      "mascot" => "rattata",
+      "mascot_emoji" => "✨🔶",
+      "app" => "mcritchie-studio")
+
+    out, err, status = run_marker("current")
+
+    assert status.success?, err
+    assert_equal "🔶✨ Rattata · mcritchie-studio", out.strip
+  end
+
+  def test_current_explicit_false_clears_legacy_shiny_marker
+    write_session("thread-123",
+      "mascot" => "rattata",
+      "mascot_emoji" => "🔶✨",
+      "mascot_shiny" => false,
+      "app" => "mcritchie-studio")
+
+    out, err, status = run_marker("current")
+
+    assert status.success?, err
+    assert_equal "🔶 Rattata · mcritchie-studio", out.strip
+  end
+
   def test_current_falls_back_to_session_kickoff
     out, err, status = run_marker("current", "--session-id", "fresh-thread", env: { "CODEX_THREAD_ID" => nil })
 

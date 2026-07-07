@@ -265,8 +265,13 @@ launch flow is:
 7. Use the managed port ranges: McRitchie Studio `3000-3099`, Turf Monster
    `3100-3199`, Tax Studio planned at `3200-3299`, Rolio reserved at
    `3300-3399`, and Chain Ops planned at `3400-3499`.
-8. Build the feature, run the meaningful tests/checks, and give Mr. McRitchie a
-   local URL to react to.
+8. Build the feature and, before opening the PR, mark any inspectable local UI
+   or workflow as waiting on Mr. McRitchie's approval:
+   `bin/task update <task-slug> --local-url http://localhost:<port>/<path>
+   --approval waiting`. In chat, return `Local Demo:
+   http://localhost:<port>/<path>` as a top-level line. For email/auth flows,
+   also return `Local Inbox: http://localhost:<port>/_studio/local_emails`.
+   Waiting-approval tasks float to the top of their stage and pulse on the board.
 9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
 10. Run `bin/dor-check <task-slug>` and resolve anything it flags. Then commit
@@ -289,11 +294,14 @@ affected repos, risk tags, and expected checks in devops["test_plan"]. Use an
 isolated worktree and allocated port before editing. Run bin/session-preflight
 <task> from the worktree and fix any blockers it reports before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
-tier-tagged in devops["checks_run"]. Give me a local URL to review and update
-docs if behavior changes. Before handoff run bin/dor-check <task> and fix what
-it flags, then commit, push the branch, open a PR led by the task URL, and move
-the task to submitted for Avi QA. Do not merge or deploy unless I explicitly
-assigned that lane.
+tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
+with `bin/task update <task> --local-url http://localhost:<port>/<path>
+--approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
+chat, and wait for approval or requested changes. Update docs if behavior
+changes. Before handoff run bin/dor-check <task> and fix what it flags, then
+commit, push the branch, open a PR led by the task URL, and move the task to
+submitted for Avi QA. Do not merge or deploy unless I explicitly assigned that
+lane.
 ```
 
 ## Start Here
@@ -435,19 +443,28 @@ from it — the readable task URL — and seeds `metadata["devops"]["worktree_sl
 URL to the worktree.
 Use `metadata["devops"]` to record affected repos, branch, PR URL, local URL,
 QA URL, production URL when deployed, release slug, risk tags, acceptance
-criteria, test plan, and checks run in `devops["checks_run"]`. `bin/qa-intake`
-helps Avi discover PR/worktree state, but it does not replace the task-board
-record.
+criteria, test plan, checks run in `devops["checks_run"]`, and
+`approval_status` when waiting for Mr. McRitchie's local validation.
+`bin/qa-intake` helps Avi discover PR/worktree state, but it does not replace
+the task-board record.
 
 Primary checkouts are for reading, status checks, integration, and deployment.
 Do not commit task work from a primary checkout unless you are explicitly acting
 as the deploy owner. If a primary checkout becomes dirty or moves while you are
 working, report the changed floor and continue from your worktree.
 
+For local validation chat, use exact top-level labels so Mr. McRitchie never has
+to hunt through prose:
+
+```text
+Task: https://mcritchie.studio/tasks/<task-slug>
+Local Demo: http://localhost:<port>/<path>
+```
+
 For email or auth flows, also return the printed local inbox:
 
 ```text
-http://localhost:<port>/_studio/local_emails
+Local Inbox: http://localhost:<port>/_studio/local_emails
 ```
 
 Worktree stacks default to `LOCAL_EMAIL_CAPTURE=1`, so magic links and other emails are recorded there instead of sent to real inboxes.

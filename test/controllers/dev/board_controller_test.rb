@@ -9,12 +9,37 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     Task.where("metadata ->> 'dev_fixture' = 'true'").order(created_at: :desc)
   end
 
+  def fixture_pokemon
+    enumeral = Studio::Enumeral.find_or_initialize_by(category: "pokemon_type", key: "electric")
+    enumeral.update!(color: "#F7D02C", metadata: { "emoji" => "⚡" })
+    Pokemon.create!(dex: 998, name: "Sparkster", slug: "fixture-sparkster",
+                    types: %w[electric], generation: 1,
+                    sprite_url: "normal-sprite.png", shiny_sprite_url: "shiny-sprite.png")
+  end
+
   test "[integration] generate spawns a marked fixture in designed" do
     assert_difference -> { fixtures.count }, 1 do
       post dev_board_generate_path
     end
     assert_response :success
     assert_equal "designed", fixtures.first.stage
+  end
+
+  test "[integration] generate stamps shiny metadata on fixture mascots" do
+    pokemon = fixture_pokemon
+
+    Pokemon.stub(:draw, pokemon) do
+      Pokemon.stub(:roll_shiny?, true) do
+        post dev_board_generate_path
+      end
+    end
+
+    assert_response :success
+    task = fixtures.first
+    assert_equal pokemon.slug, task.devops["mascot"]
+    assert_predicate task, :mascot_shiny?
+    assert_equal "#F7D02C", task.devops["mascot_color"]
+    assert_equal "⚡✨", task.devops["mascot_emoji"]
   end
 
   test "[integration] move advances the latest fixture one deploy stage" do
@@ -96,6 +121,22 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_equal %i[pending pending pending pending pending], tracker_states(rel)
   end
 
+  test "[integration] open_release stamps shiny metadata on fixture releases" do
+    pokemon = fixture_pokemon
+
+    Pokemon.stub(:draw, pokemon) do
+      Pokemon.stub(:roll_shiny?, true) do
+        post dev_board_open_release_path
+      end
+    end
+
+    assert_response :no_content
+    devops = fixture_release.metadata.fetch("devops")
+    assert_equal pokemon.slug, devops["mascot"]
+    assert_equal true, devops["mascot_shiny"]
+    assert_equal "⚡✨", devops["mascot_emoji"]
+  end
+
   test "[integration] advance_release stamps stage by stage, shipping on the terminal one" do
     post dev_board_open_release_path
     rel = fixture_release
@@ -131,6 +172,37 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_equal %i[complete complete complete complete complete], tracker_states(rel)
     assert_equal rel, Release.last_shipped, "shipping the fixture creates the Last Release"
     assert_nil Release.current, "shipping clears the Next Release slot"
+  end
+
+  test "[integration] advance_release steps an existing active release instead of opening a second one" do
+    rel = Release.open!(branch: "release/local-preview-active")
+
+    assert_no_difference -> { fixture_releases.count } do
+      post dev_board_advance_release_path
+    end
+
+    assert_response :no_content
+    assert_equal "testing", rel.reload.current_stage
+    assert_equal %i[active pending pending pending pending], tracker_states(rel)
+  end
+
+  test "[integration] fixture release members stamp shiny metadata" do
+    pokemon = fixture_pokemon
+    post dev_board_open_release_path
+
+    Pokemon.stub(:draw, pokemon) do
+      Pokemon.stub(:roll_shiny?, true) do
+        post dev_board_advance_release_path # → testing
+        post dev_board_advance_release_path # → assembling: adopts a member
+      end
+    end
+
+    assert_response :success
+    member = Task.where("metadata ->> 'dev_fixture' = 'true'").where.not(release_slug: nil).first
+    assert_not_nil member
+    assert_equal pokemon.slug, member.devops["mascot"]
+    assert_predicate member, :mascot_shiny?
+    assert_equal "⚡✨", member.devops["mascot_emoji"]
   end
 
   test "[integration] reset_release clears the fixture release and its members" do
