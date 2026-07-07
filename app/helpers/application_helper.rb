@@ -443,6 +443,12 @@ module ApplicationHelper
     "large"  => 3,
     "xl"     => 4
   }.freeze
+  TASK_SIZE_LABELS = {
+    "small"  => "S",
+    "medium" => "M",
+    "large"  => "L",
+    "xl"     => "XL"
+  }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
   def app_emoji(repo)
@@ -500,8 +506,34 @@ module ApplicationHelper
   end
 
   def release_member_expense_weight(task)
-    size = [task.actual_size, task.dev_size, task.po_size].find(&:present?)
+    size = release_member_size(task)
     TASK_SIZE_WEIGHTS.fetch(size.to_s, 0)
+  end
+
+  def release_member_cost_label(task)
+    cost = task.total_cost
+    return release_member_money_label(cost) if cost.to_d.positive?
+
+    TASK_SIZE_LABELS[release_member_size(task).to_s]
+  end
+
+  def release_member_cost_title(task)
+    cost = task.total_cost
+    return "Measured task cost: #{release_member_money_label(cost)}" if cost.to_d.positive?
+
+    size = release_member_size(task)
+    size.present? ? "Estimated task size: #{size.upcase}" : "Task cost not measured"
+  end
+
+  def release_member_size(task)
+    [task.actual_size, task.dev_size, task.po_size].find(&:present?)
+  end
+
+  def release_member_money_label(cost)
+    value = cost.to_f
+    return "$0.00" if value < 0.001
+
+    value < 1 ? format("$%.4f", value) : format("$%.2f", value)
   end
 
   # Single source for the right-edge fade mask used on the task card's single-line

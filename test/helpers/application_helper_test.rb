@@ -135,6 +135,20 @@ class ApplicationHelperTest < ActionView::TestCase
     ], summary[:repo_counts]
   end
 
+  test "[component] release member cost label prefers measured spend then size" do
+    measured = Task.create!(title: "Measured studio work", stage: "reviewed", actual_size: "xl")
+    measured.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("12.5"))
+    estimated = Task.create!(title: "Estimated studio work", stage: "reviewed", po_size: "large")
+    unsized = Task.create!(title: "Unsized studio work", stage: "reviewed")
+
+    assert_equal "$12.50", release_member_cost_label(measured)
+    assert_equal "Measured task cost: $12.50", release_member_cost_title(measured)
+    assert_equal "L", release_member_cost_label(estimated)
+    assert_equal "Estimated task size: LARGE", release_member_cost_title(estimated)
+    assert_nil release_member_cost_label(unsized)
+    assert_equal "Task cost not measured", release_member_cost_title(unsized)
+  end
+
   # Component-tier: render the board card's slug-row markup (mirrors
   # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
   # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.
@@ -211,6 +225,7 @@ class ApplicationHelperTest < ActionView::TestCase
       task = Task.create!(
         title: "Current release member task #{index}",
         stage: "reviewed",
+        po_size: "small",
         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }
       )
       rel.add(task)
@@ -230,6 +245,7 @@ class ApplicationHelperTest < ActionView::TestCase
       assert_not_includes pill["style"].to_s, "box-shadow"
       assert_includes pill.to_html, "mask-image: linear-gradient(to right"
     end
+    assert_select "[data-test='release-member-cost']", 2
     assert_select "[data-test='release-member-repo-count']", text: /· 🪎 1/
   end
 

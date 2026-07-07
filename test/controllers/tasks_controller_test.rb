@@ -68,6 +68,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     small_studio = release_member_task("Small studio polish", po_size: "small", repo: "mcritchie-studio", position: 10)
     large_studio = release_member_task("Large studio effort", po_size: "large", repo: "mcritchie-studio", position: 20)
     xl_turf = release_member_task("Expensive turf repair", actual_size: "xl", repo: "turf-monster", position: 30)
+    xl_turf.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("12.5"))
     medium_studio = release_member_task("Medium studio work", dev_size: "medium", repo: "mcritchie-studio", position: 40)
     small_turf = release_member_task("Small turf chore", po_size: "small", repo: "turf-monster", position: 50)
 
@@ -85,6 +86,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
         assert_includes link.to_html, "mask-image: linear-gradient(to right"
       end
     end
+    assert_select "#current-release a[href=?][data-release-member='highlight'] [data-test='release-member-cost']",
+                  task_path(xl_turf.slug), text: "$12.50"
+    assert_select "#current-release a[href=?][data-release-member='highlight'] [data-test='release-member-cost']",
+                  task_path(large_studio.slug), text: "L"
     assert_select "#current-release [data-test='release-member-repo-count']", text: /· 🪎 2/
     assert_select "#current-release [data-test='release-member-repo-count']", text: /· 🐊 1/
     assert_select "#current-release", { text: /Small studio polish/, count: 0 }

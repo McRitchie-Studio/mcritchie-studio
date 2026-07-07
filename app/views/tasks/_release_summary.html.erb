@@ -84,12 +84,16 @@
           <% summary = release_member_condensed_summary(members) %>
           <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0" data-test="release-member-list">
             <% summary[:highlights].each do |t| %>
+              <% cost_label = release_member_cost_label(t) %>
               <%= link_to task_path(t.slug),
                           class: [pill_class, "w-56 shrink-0 overflow-hidden"].join(" "),
                           data: { test: "release-member-pill", release_member: "highlight" },
                           title: t.title do %>
                 <%= app_emoji_badge(t.devops_repositories) %>
                 <span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap" style="<%= right_fade_style(stop: 76) %>"><%= t.title %></span>
+                <% if cost_label.present? %>
+                  <span class="ml-auto shrink-0 rounded-sm border border-subtle bg-surface/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted tabular-nums" data-test="release-member-cost" title="<%= release_member_cost_title(t) %>"><%= cost_label %></span>
+                <% end %>
               <% end %>
             <% end %>
             <% summary[:repo_counts].each do |entry| %>
