@@ -33,6 +33,19 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "card.classList.remove(\"lbfx-glow\", \"lbfx-glow-stage\")"
   end
 
+  test "fresh deployments use an eight second rainbow glow that preserves phase" do
+    render partial: "tasks/deployments_live_fx"
+
+    assert_includes rendered, ".lbfx-fresh-deploy"
+    assert_includes rendered, "@keyframes lbfxFreshDeployGlow"
+    assert_includes rendered, "0%, 50%"
+    assert_includes rendered, "const FRESH_DEPLOY_MS = 8000"
+    assert_includes rendered, "card.dataset.freshDeploy !== \"true\""
+    assert_includes rendered, "card.dataset.shippedAtMs"
+    assert_includes rendered, "\"--lbfx-fresh-delay\""
+    assert_includes rendered, "freshDeployGlow(fresh)"
+  end
+
   test "reviewed arrivals use a distinct behind-card gust" do
     render partial: "tasks/deployments_live_fx"
 

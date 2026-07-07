@@ -705,6 +705,31 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "#last-release", text: /none yet/
   end
 
+  test "[component] the Last Release card marks a freshly shipped deploy for live glow" do
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 0) do
+      rel = Release.open!
+      rel.ship!
+
+      render partial: "tasks/last_release", locals: { release: rel }
+
+      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms]"
+    end
+  end
+
+  test "[component] the Last Release card stops marking stale deploys as fresh" do
+    rel = nil
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 0) do
+      rel = Release.open!
+      rel.ship!
+    end
+
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 9) do
+      render partial: "tasks/last_release", locals: { release: rel.reload }
+
+      assert_select "#last-release[data-fresh-deploy='false']"
+    end
+  end
+
   test "[component] _current_release no longer carries the heartbeat cluster (moved to the DevOps card)" do
     rel = Release.open!
     render partial: "tasks/current_release", locals: { release: rel }

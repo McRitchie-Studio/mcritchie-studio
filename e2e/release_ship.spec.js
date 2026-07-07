@@ -3,7 +3,7 @@ const { test, expect } = require("@playwright/test");
 // A deploy, live. Seeded (e2e/seed.rb): an ACTIVE Next Release (Snorlax, in
 // progress) and a prior SHIPPED Last Release (Dragonite). Shipping the active
 // release via the local-only dev trigger fires a real DeploymentsBroadcaster
-// Turbo Stream — the OPEN board (never reloaded) bursts the just-shipped release
+// Turbo Stream — the OPEN board (never reloaded) glows the just-shipped release
 // into the Last Release slot and resets Next Release to its "none active" card.
 // Plus: the in-progress timer ticks the seconds up while a release is active.
 test("a deploy animates Last Release in, resets Next Release, and the timer ticks", async ({ page }) => {
@@ -28,10 +28,8 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
 
   const stageTiming = page.locator("#current-release [data-test='release-tracker-duration'][data-release-ticker]").first();
   await expect(stageTiming).toBeVisible();
-  const stageBefore = await stageTiming.textContent();
-  await page.waitForTimeout(1200);
-  const stageAfter = await stageTiming.textContent();
-  expect(stageAfter).not.toEqual(stageBefore);
+  await expect(stageTiming).toHaveAttribute("data-mode", "ago");
+  await expect(stageTiming).toContainText(/ago/);
 
   // Ship the active release (local-only dev trigger → real in-process broadcast).
   const res = await page.request.post("/dev/board/ship_release");
@@ -42,6 +40,8 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   // …and the just-shipped release (Snorlax) takes over the Last Release slot, frozen.
   await expect(page.locator("#last-release [data-test='release-mascot']")).toContainText("Snorlax", { timeout: 10_000 });
   await expect(page.locator("#last-release [data-test='release-timing']")).toContainText("took");
+  await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "true");
+  await expect(page.locator("#last-release")).toHaveClass(/lbfx-fresh-deploy/);
 
   await expect(page.locator("#dropzone-shipped #card-release-stack-current-c")).toBeVisible({ timeout: 10_000 });
   let shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));

@@ -398,42 +398,43 @@ class Release
       end
     end
 
-    # Stamp the deployed commit + flip the RC (and its member tasks) to shipped.
+    # Stamp the deployed commit + flip the RC to shipped first, then flip member
+    # tasks to shipped one at a time. The release-state commit is intentionally
+    # first so the live /deployments board shows the fresh Last Release as soon
+    # as prod is deployed; the member cadence is controlled by +member_pause+.
     # `usage_by_slug` is the optional best-effort per-member usage (model/tokens/
     # cost), captured by `bin/release ship` from the conductor's LOCAL session
     # transcript and keyed by task slug. It rides onto each member's shipped
     # TaskEvent (Release#ship! sets Current.with_task_event_usage per task). A
     # missing/blank entry → that member's shipped event records the spine only.
-    def ship!(release:, deployed_sha:, by: nil, production_url: nil, usage_by_slug: {})
-      Release.transaction do
-        release.update!(
-          deployed_sha: deployed_sha,
-          production_url: production_url.presence || release.production_url
-        )
-        release.ship!(by: by, usage_by_slug: usage_by_slug)
-        unless release.event_started?("deploy_prod")
-          record_event!(
-            release: release,
-            step: "deploy_prod",
-            status: "started",
-            source: "conductor",
-            actor: by,
-            sha: deployed_sha,
-            url: production_url.presence || release.production_url,
-            idempotency_key: "#{release.slug}:deploy_prod:started"
-          )
-        end
+    def ship!(release:, deployed_sha:, by: nil, production_url: nil, usage_by_slug: {}, member_pause: 0)
+      release.update!(
+        deployed_sha: deployed_sha,
+        production_url: production_url.presence || release.production_url
+      )
+      unless release.event_started?("deploy_prod")
         record_event!(
           release: release,
           step: "deploy_prod",
-          status: "completed",
+          status: "started",
           source: "conductor",
           actor: by,
           sha: deployed_sha,
           url: production_url.presence || release.production_url,
-          idempotency_key: "#{release.slug}:deploy_prod:completed"
+          idempotency_key: "#{release.slug}:deploy_prod:started"
         )
       end
+      record_event!(
+        release: release,
+        step: "deploy_prod",
+        status: "completed",
+        source: "conductor",
+        actor: by,
+        sha: deployed_sha,
+        url: production_url.presence || release.production_url,
+        idempotency_key: "#{release.slug}:deploy_prod:completed"
+      )
+      release.ship!(by: by, usage_by_slug: usage_by_slug, member_pause: member_pause)
       # Re-stamp AFTER the ship commits so the read-only "Last Release" wears the
       # mascot of whoever actually ran the deploy (a handoff swaps it). Defensive
       # by design (see stamp_session_mascot) — a mascot stamp must never undo a

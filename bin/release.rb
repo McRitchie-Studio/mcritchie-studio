@@ -2169,7 +2169,7 @@ end
 # @qa-readonly spec is the hub's; turf owns its own bin/post_deploy_smoke).
 #
 # Runs BEFORE step 6's post_release_notes so the notes/Discord/board all read the
-# SAME verdict (the seal write commits here; step 6 reloads Release.current). The
+# SAME verdict (the seal write commits here; step 6 reloads the release by slug). The
 # WRITE is best-effort: a prod-board blip on the seal record warns + continues —
 # the red alert still prints from the LOCAL verdict, independent of the write.
 def production_smoke_seal(app_groups, ship_sha, rel_slug)
@@ -2187,7 +2187,7 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
     return
   end
   if DRY
-    say("  [dry-run] bin/prod-smoke #{APP} → record 🟢/🔴 seal on Release.current (non-blocking)")
+    say("  [dry-run] bin/prod-smoke #{APP} → record 🟢/🔴 seal on #{rel_slug} (non-blocking)")
     return
   end
 
@@ -2223,14 +2223,14 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   # write must NOT abort the ship. The verdict + rollback below stand regardless.
   begin
     conductor(
-      "r = Release.current; abort('no active release to seal') unless r; " \
+      "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
       "r.record_smoke_seal!(Release::SmokeSeal.from_result(" \
       "passed: #{ok ? 'true' : 'false'}, summary: #{summary.inspect}, checked_at: Time.current)); " \
       "Release::Conductor.record_event!(release: r, step: 'prod_smoke', status: #{smoke_status.inspect}, " \
       "source: 'conductor', message: #{summary.inspect}, idempotency_key: \"\#{r.slug}:prod_smoke:#{smoke_status}\"); " \
       "puts({ sealed: r.smoke_seal&.status }.to_json)"
     )
-    say("  seal recorded on Release.current: #{seal.badge} #{seal.status}")
+    say("  seal recorded on #{rel_slug}: #{seal.badge} #{seal.status}")
   rescue SystemExit, StandardError => e
     say("  ⚠ seal not recorded — board write failed (#{e.message}); the verdict below still stands")
   end
@@ -2258,11 +2258,16 @@ def ship
   warn_local!
 
   # 1. Read the active release + its per-repo deploy plan + the QA-frozen SHAs.
-  #    A READ (read_only:) so a dry-run previews the real plan without mutating.
+  #    If the prior run already promoted the release card but did not finish
+  #    member flips, resume that shipped release by slug. A READ (read_only:) so
+  #    a dry-run previews the real plan without mutating.
   step("record (read-only): release + repo_plan + qa_shas")
   result = conductor(
-    "r = Release.current; abort('no active release to ship') unless r; " \
+    "r = Release.current || Release.last_shipped; " \
+    "unfinished = r ? r.tasks.where.not(stage: 'shipped').count : 0; " \
+    "abort('no active release to ship') unless r && (r.active? || unfinished.positive?); " \
     "puts({slug: r.slug, state: r.state, branch: r.branch, " \
+    "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
     "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {})}.to_json)",
     read_only: true
   )
@@ -2271,13 +2276,19 @@ def ship
   state    = result["state"]
   repos    = result["repos"] || []
   qa_shas  = result["qa_shas"] || {}
+  resuming_member_ship = !!result["resuming_member_ship"]
   # Don't ship a candidate that hasn't been assembled + QA'd (the model would
-  # otherwise allow assembling→shipped, bypassing the QA gate).
-  abort!("release is '#{state}', not assembled — `bin/release prepare` + QA it first") if !DRY && state != "assembled"
+  # otherwise allow assembling→shipped, bypassing the QA gate). The only
+  # exception is retrying the final member flips for a release already marked
+  # shipped by a prior production deploy record step.
+  if !DRY && state != "assembled" && !resuming_member_ship
+    abort!("release is '#{state}', not assembled — `bin/release prepare` + QA it first")
+  end
 
   gem_groups = repos.select { |g| g["kind"] == "gem" } # already producer-first
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
   say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
+  say("  resuming final member flips: #{result['unfinished_members']} unfinished") if resuming_member_ship
   say("  partial-ship: abort on first failure; re-run resumes (gems skip, ff no-ops, re-pins idempotent)")
 
   # PREFLIGHT — BEFORE any ff (avi_ship_gate is the first): assert every app
@@ -2363,9 +2374,11 @@ def ship
   #     so post_release_notes reads the SAME verdict. See production_smoke_seal.
   production_smoke_seal(app_groups, ship_sha, rel_slug)
 
-  # 6. Record LAST — only after EVERY repo deployed, so a partial ship leaves the
-  #    record `assembled` (recoverable). Stamp the hub's shipped SHA + ship! +
-  #    post release notes in one runner call (Release.current is nil post-ship).
+  # 6. Record LAST — only after EVERY repo deployed. Stamp the hub's shipped SHA,
+  #    promote the release card to Last Release immediately, then flip member
+  #    tasks to `shipped` one second apart so live viewers see the deployment land
+  #    before the task cards walk across the board. Address the release by slug:
+  #    Release.current becomes nil as soon as the release is marked shipped.
   deployed_sha = ship_sha[APP].to_s
   deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "HEAD").first.strip if deployed_sha.empty? && !DRY
   # Best-effort per-member usage for the assembled→shipped flips, captured from
@@ -2373,8 +2386,8 @@ def ship
   ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
   step("record: Release::Conductor.ship! + post_release_notes")
   shipped = conductor(
-    "r = Release.current; " \
-    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}); " \
+    "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: 1); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
     "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
@@ -2412,7 +2425,7 @@ rescue SystemExit => e
 
   if @ship_live&.any?
     warn("")
-    warn("✗ Ship ABORTED partway — the release is still 'assembled' (recoverable).")
+    warn("✗ Ship ABORTED partway — the release record is recoverable; re-run finishes unfinished deploy/member steps.")
     warn("  Already live this run:")
     @ship_live.each { |line| warn("    ✓ #{line}") }
     warn("  Re-run `bin/release ship` to resume: published gems skip, fast-forwards no-op, re-pins are idempotent.")
