@@ -29,6 +29,25 @@ class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "stacked shiny crew shows only the top shiny badge" do
+    gyarados = Pokemon.find_by!(slug: "gyarados")
+    task = Task.create!(title: "Stacked shiny mascot board card", stage: "submitted",
+                        metadata: { "devops" => { "mascot" => gyarados.slug, "mascot_shiny" => true } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600)
+
+    get deployments_path
+    assert_response :success
+    assert_select "#card-#{task.slug} [data-test='crew-cluster'][data-lane='build']" do
+      assert_select "img[src='https://img.test/shiny-sprite.png']", count: 3
+      assert_select "[data-test='avatar-shiny-badge']", count: 1, text: "✨"
+    end
+  end
+
   test "tasks board card keeps the normal sprite for an ordinary mascot" do
     gyarados = Pokemon.find_by!(slug: "gyarados")
     task = Pokemon.stub(:draw, gyarados) do
