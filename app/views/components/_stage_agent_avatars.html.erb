@@ -112,7 +112,7 @@
                   (z-30) so its glow sits on top; the next gets a subtler ring; deeper avatars
                   blend and peek out to the right. The stack spacing stays fixed on
                   hover/focus; the lead face is the only avatar that scales, with the
-                  row edges nudged outward by 8px. %>
+                  row edges nudged outward by 12px. %>
               <%# Alignment map: 3 slots = left / center / right; 4 slots = left /
                   center / center / right. These are transform origins; filled clusters
                   still start from the left edge of their grid cell. %>
@@ -128,9 +128,9 @@
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
                   <% stack_position = i.zero? ? "top" : "under" %>
                   <% edge_reveal = if ci.zero?
-                                     "origin-left group-hover:-translate-x-2 group-focus-within:-translate-x-2 hover:-translate-x-2"
+                                     "origin-left group-hover:-translate-x-3 group-focus-within:-translate-x-3 hover:-translate-x-3"
                                    elsif ci == last_filled_idx
-                                     "origin-right group-hover:translate-x-2 group-focus-within:translate-x-2 hover:translate-x-2"
+                                     "origin-right group-hover:translate-x-3 group-focus-within:translate-x-3 hover:translate-x-3"
                                    else
                                      "origin-center"
                                    end %>
