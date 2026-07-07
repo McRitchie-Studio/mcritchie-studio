@@ -6,7 +6,7 @@
     (TasksController#load_board); /stages runs no board load, so counts read zero.
     On /deployments at full width the six-lane board already shows the whole Build
     lane (designed · building · submitted), so the Tasks link is redundant and is
-    hidden above 1250px — the complement of the board's max-[1250px] lane collapse.
+    hidden above 1400px — the complement of the board's lane collapse.
     Below that the upstream lanes fold away, so the link reappears (the only way
     back to them). /stages has no board, so its Tasks link is never hidden.
     Local: current ("tasks" | "deployments" | "stages"). %>
@@ -19,8 +19,8 @@
 <% badge = "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none" %>
 <% muted = "bg-surface-alt text-muted" %>
 <%# On /deployments the full-width board already shows the Build lane, so hide the
-    Tasks link above 1250px (mirrors the board's max-[1250px] collapse). %>
-<% tasks_btn = current == "deployments" ? "#{btn} min-[1251px]:hidden" : btn %>
+    Tasks link at 1400px+ (mirrors the board's max-[1399px] collapse). %>
+<% tasks_btn = current == "deployments" ? "#{btn} min-[1400px]:hidden" : btn %>
 <nav class="flex items-center gap-1.5" aria-label="Board views">
   <% unless current == "tasks" %>
     <%= link_to tasks_path, class: tasks_btn do %>

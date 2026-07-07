@@ -398,6 +398,9 @@ class ApplicationHelperTest < ActionView::TestCase
       assert_select "[data-test='release-tracker-step'][data-stage='assembling'][data-state='active'] " \
                     "[data-test='release-tracker-duration'][data-mode='countdown'][data-overrun='true']",
                     text: "-2m 00s"
+      overrun_timer = css_select("[data-test='release-tracker-duration'][data-mode='countdown'][data-overrun='true']").first
+      assert_includes overrun_timer["class"], "data-[overrun=true]:text-red-600"
+      assert_includes overrun_timer["class"], "dark:data-[overrun=true]:text-red-300"
     end
   end
 
@@ -672,18 +675,19 @@ class ApplicationHelperTest < ActionView::TestCase
     refute_match(/merge/i, launchers[0][:title], "Avi's tooltip must not claim review + merge")
   end
 
-  test "[component] _heartbeats_card renders the three soul heartbeat launchers in a 3-up grid" do
+  test "[component] _heartbeats_card renders the three soul heartbeat launchers in a responsive grid" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
 
     render partial: "tasks/heartbeats_card"
 
-    # The heartbeats live in their own card, one launcher per soul, 3-up grid.
+    # The heartbeats live in their own card, one launcher per soul, stacked on
+    # narrow screens and 3-up once there is room.
     assert_select "[data-test='heartbeats-card']", count: 1
     assert_select "[data-test='heartbeats-card'][data-compact-limit='3']", count: 1
     assert_select "[data-test='heartbeats-card'][x-data*='heartbeatsExpanded']", count: 1
-    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-1.sm\\:grid-cols-3 [data-test='heartbeat-launcher']", count: 3
     assert_select "[data-test='heartbeat-compact-toggle']", text: /Show All/
     assert_select "[data-test='heartbeat-compact-toggle'] span[x-show='heartbeatsExpanded']", text: "Compact"
     # The tracker does NOT live here — it stays in the Current Release card.

@@ -389,16 +389,16 @@ function kanbanBoard(live) {
           New Task / Archived are pushed to the far right with ml-auto. %>
       <%= render "page_nav", current: current_page %>
       <% if columns.size > 4 %>
-        <%# Below ~1250px the upstream lanes collapse (Building stays — it carries
+        <%# Below 1400px the upstream lanes collapse (Building stays — it carries
             blocked, needs-attention tasks); this reveals all six (x-scroll).
             Hidden at wider widths where all six already fit. %>
         <button type="button" @click="showAllCols = !showAllCols"
-                class="hidden max-[1250px]:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
+                class="hidden max-[1399px]:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
                 :class="showAllCols ? 'bg-primary text-white border-primary' : ''">
           <span>All Stages</span>
         </button>
       <% end %>
-      <div class="ml-auto flex items-center gap-2 flex-wrap" data-test="board-header-actions">
+      <div class="flex w-full items-center gap-2 flex-wrap sm:ml-auto sm:w-auto sm:justify-end" data-test="board-header-actions">
         <% if archived %>
           <button @click="showArchived = !showArchived"
                   :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
@@ -418,11 +418,11 @@ function kanbanBoard(live) {
 
   <% if show_release_modules %>
     <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top row, Heartbeats + DevOps (release durations) on the bottom row. -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-stretch" data-test="release-dashboard-grid">
-      <%= render "current_release", release: current_release, card_class: "h-full" %>
-      <%= render "last_release", release: last_release, card_class: "h-full" %>
-      <%= render "heartbeats_card", card_class: "h-full" %>
-      <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full" %>
+    <div class="grid min-w-0 grid-cols-1 gap-4 mb-6 items-stretch xl:grid-cols-2" data-test="release-dashboard-grid">
+      <%= render "current_release", release: current_release, card_class: "h-full min-w-0" %>
+      <%= render "last_release", release: last_release, card_class: "h-full min-w-0" %>
+      <%= render "heartbeats_card", card_class: "h-full min-w-0" %>
+      <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full min-w-0" %>
     </div>
   <% end %>
 
@@ -448,7 +448,7 @@ function kanbanBoard(live) {
       <% if Rails.env.local? %>
         <%# Local-only board toys sit with the app filters, keeping demo controls
             close to the board they affect instead of floating over release cards. %>
-        <div class="ml-auto flex flex-wrap items-center gap-2">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end">
           <%= render "dev_board_tools" %>
           <%= render "dev_deploy_tools" %>
         </div>
@@ -457,19 +457,19 @@ function kanbanBoard(live) {
   <% end %>
 
   <!-- Kanban Board -->
-  <div class="flex gap-4 overflow-x-auto pb-4">
+  <div class="flex flex-col gap-4 overflow-x-visible pb-4 sm:flex-row sm:overflow-x-auto">
     <% columns.each_with_index do |stage, idx| %>
       <%# Blocked tasks ride Building, but active building work stays first so a
           re-claimed blocked task becomes topical again. %>
       <% column_tasks = Task.board_column_tasks(@tasks_by_stage, stage) %>
-      <%# On a six-lane board (Deployments) the upstream lanes collapse below ~1250px
+      <%# On a six-lane board (Deployments) the upstream lanes collapse below 1400px
           unless "All Stages" is on, leaving just the last three (reviewed · assembled
           · shipped). Building collapses with them; blocked/needs-attention tasks ride
           the Building lane, so a stalled task stays reachable via "All Stages" at narrow. %>
       <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
-      <div class="flex-1 min-w-[190px]"
+      <div class="w-full flex-none sm:flex-1 <%= columns.size > 4 ? "sm:min-w-[13.5rem]" : "sm:min-w-[190px]" %>"
            <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>
-           <% if collapsible %>:class="showAllCols ? '' : 'max-[1250px]:hidden'"<% end %>>
+           <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
         <!-- Column Header -->
         <div class="mb-3 px-1">
           <div class="flex items-center gap-2">
@@ -502,7 +502,7 @@ function kanbanBoard(live) {
         <!-- Drop Zone -->
         <div id="dropzone-<%= stage %>"
              data-stage="<%= stage %>"
-             class="kanban-dropzone rounded-xl border-2 border-dashed min-h-[calc(100vh-220px)] p-2 space-y-2 transition-colors duration-150 border-subtle">
+             class="kanban-dropzone rounded-xl border-2 border-dashed min-h-40 p-2 space-y-2 transition-colors duration-150 border-subtle sm:min-h-[calc(100vh-220px)]">
 
           <% column_tasks.each do |task| %>
             <%= render "tasks/task_card", task: task, agents: @agents, crew_board: crew_board,
