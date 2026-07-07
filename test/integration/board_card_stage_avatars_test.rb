@@ -67,12 +67,12 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='crew-stack'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack'][class*='group-hover:-space-x-']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-150']", count: 3
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:-translate-x-1']", count: 1
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:translate-x-1']", count: 1
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:-translate-x-2']", count: 1
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:translate-x-2']", count: 1
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-125']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-150']", count: 0
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='translate-x-1']", count: 0
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='translate-x-2']", count: 0
     end
   end
 
@@ -287,12 +287,12 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='crew-stack'][class*='group-hover:-space-x-']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-150']", count: 4
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-focus-within:scale-150']", count: 4
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:-translate-x-1']", count: 1
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:translate-x-1']", count: 1
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:-translate-x-2']", count: 1
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:translate-x-2']", count: 1
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-125']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-150']", count: 0
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='translate-x-1']", count: 0
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='translate-x-2']", count: 0
       assert_select "[class*='group-hover:-translate-x-3']", count: 0
       assert_select "[class*='group-hover:translate-x-3']",  count: 0
     end
