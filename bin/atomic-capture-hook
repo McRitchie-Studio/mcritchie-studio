@@ -1,17 +1,19 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/atomic-capture-hook — Claude Code PostToolUse hook that streams every tool
-# call into the atomic-capture endpoint (Phase B live-capture). A FRESH Claude
-# Code session, with this wired as a PostToolUse hook, populates the per-action
-# trajectory at /alex/heartbeat LIVE — one AgentAction row per tool call.
+# bin/atomic-capture-hook — provider-neutral PostToolUse hook that streams every
+# tool call into the atomic-capture endpoint (Phase B live-capture). A FRESH
+# Claude Code or Codex session, with this wired as a PostToolUse hook, populates
+# the per-action trajectory at /alex/heartbeat LIVE — one AgentAction row per
+# tool call.
 #
 # Claude Code invokes a PostToolUse hook with the event JSON on STDIN:
 #   { session_id, transcript_path, cwd, hook_event_name,
 #     tool_name, tool_input, tool_response }
-# We map that to the AgentAction.capture contract (owned by the parallel task
-# atomic-capture-api-endpoint) and POST it to
-#   ${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/agent_actions
+# Codex hook payloads and transcripts use different tool names/shapes, so the
+# hook first normalizes provider-specific input into the same canonical event,
+# then maps that to the AgentAction.capture contract and POSTs it to
+#   ${ATOMIC_CAPTURE_URL:-https://mcritchie.studio}/api/v1/agent_actions
 # using the SAME agent token bin/task mints (POST /api/v1/auth { secret }).
 #
 # ── Telemetry must never break the work it observes ────────────────────────
@@ -51,6 +53,20 @@ class AtomicCaptureHook
     "Bash" => "bash",
     "Task" => "delegate", "Agent" => "delegate",
     "WebFetch" => "research", "WebSearch" => "research"
+  }.freeze
+
+  # Codex function-call names → the canonical tool vocabulary the capture payload
+  # already understands. Anything unmapped stays as its original function name and
+  # still captures under that downcased kind.
+  CODEX_TOOL_MAP = {
+    "exec_command" => "Bash",
+    "write_stdin" => "Bash",
+    "apply_patch" => "Edit",
+    "view_image" => "Read",
+    "read_mcp_resource" => "Read",
+    "list_mcp_resources" => "Read",
+    "list_mcp_resource_templates" => "Read",
+    "tool_search_tool" => "WebSearch"
   }.freeze
 
   # NAVIGATION — matched PER SEGMENT (see command_segments): a segment is navigation
@@ -100,6 +116,7 @@ class AtomicCaptureHook
   # always) the assistant turn that issued the tool call, so a bounded tail read
   # off the END reliably finds the model without reading a multi-MB file per call.
   TRANSCRIPT_TAIL_BYTES = 131_072
+  CODEX_TRANSCRIPT_TAIL_BYTES = 262_144
 
   # Short timeouts — an unreachable endpoint must fail fast, never stall a tool.
   # These are the TIGHTEST in the stack (this hook fires on EVERY tool call);
@@ -113,6 +130,214 @@ class AtomicCaptureHook
   end
 
   # ── Pure builders (unit-tested directly) ─────────────────────────────────
+
+  # Provider adapters normalize Claude/Codex hook JSON into this script's stable
+  # internal event shape: session_id, transcript_path, cwd, tool_name,
+  # tool_input, tool_response. Everything after this point stays provider-agnostic.
+  def normalize_event(raw_event)
+    event = raw_event.is_a?(Hash) ? raw_event.dup : {}
+    payload = event["payload"].is_a?(Hash) ? event["payload"] : {}
+    provider = provider_for(event)
+
+    normalized = event.dup
+    normalized["llm_provider"] = provider
+    normalized["session_id"] = resolve_event_session_id(event, payload)
+    normalized["transcript_path"] = resolve_event_transcript_path(event, payload, provider, normalized["session_id"])
+
+    if provider == "codex"
+      codex_tool = normalize_codex_tool_event(event, payload, normalized["transcript_path"])
+      normalized.merge!(codex_tool) if codex_tool
+    end
+
+    normalized
+  rescue StandardError
+    raw_event.is_a?(Hash) ? raw_event : {}
+  end
+
+  def provider_for(event)
+    payload = event["payload"].is_a?(Hash) ? event["payload"] : {}
+    name = first_present(event, "tool_name", "toolName", "name") || payload["name"]
+    path = first_present(event, "transcript_path", "transcriptPath", "agent_transcript_path") || payload["transcript_path"]
+    return "codex" if present?(event["thread_id"]) || present?(payload["thread_id"])
+    return "codex" if path.to_s.include?("/.codex/")
+    return "codex" if codex_tool_name?(name)
+    return "codex" if present?(@env["CODEX_THREAD_ID"]) && !present?(@env["CLAUDE_CODE_SESSION_ID"])
+
+    "claude"
+  rescue StandardError
+    "claude"
+  end
+
+  def resolve_event_session_id(event, payload)
+    [
+      event["session_id"], event["thread_id"], event["id"],
+      event.dig("session", "id"), event.dig("thread", "id"),
+      payload["session_id"], payload["thread_id"], payload["id"],
+      payload.dig("session", "id"), payload.dig("thread", "id"),
+      @env["CODEX_THREAD_ID"], @env["CLAUDE_CODE_SESSION_ID"]
+    ].find { |value| present?(value) }.to_s
+  rescue StandardError
+    ""
+  end
+
+  def resolve_event_transcript_path(event, payload, provider, session_id)
+    direct = [
+      event["transcript_path"], event["transcriptPath"], event["agent_transcript_path"],
+      payload["transcript_path"], payload["transcriptPath"], payload["agent_transcript_path"]
+    ].find { |value| present?(value) }
+    return direct.to_s if present?(direct)
+    return codex_transcript_path(session_id) if provider == "codex"
+
+    nil
+  rescue StandardError
+    nil
+  end
+
+  def normalize_codex_tool_event(event, payload, transcript_path)
+    direct = codex_direct_tool_event(event, payload)
+    transcript = codex_tool_from_transcript(transcript_path, direct && direct["call_id"])
+    tool =
+      if direct && transcript
+        direct.merge(transcript) { |_key, direct_value, transcript_value| present?(direct_value) ? direct_value : transcript_value }
+      else
+        direct || transcript
+      end
+    return nil unless tool
+
+    original_name = tool["original_tool_name"] || tool["tool_name"]
+    tool["tool_name"] = normalize_codex_tool_name(original_name)
+    tool["tool_input"] = normalize_codex_tool_input(original_name, tool["tool_input"])
+    tool.delete("original_tool_name")
+    tool
+  rescue StandardError
+    nil
+  end
+
+  def codex_direct_tool_event(event, payload)
+    name = first_present(event, "tool_name", "toolName", "name") || payload["name"]
+    return nil unless present?(name)
+
+    input = event.key?("tool_input") ? event["tool_input"] : event["toolInput"]
+    input = event["arguments"] unless present?(input) || input.is_a?(Hash)
+    input = payload["arguments"] unless present?(input) || input.is_a?(Hash)
+    input = payload["tool_input"] unless present?(input) || input.is_a?(Hash)
+
+    output =
+      if event.key?("tool_response") then event["tool_response"]
+      elsif event.key?("toolResponse") then event["toolResponse"]
+      elsif event.key?("output") then event["output"]
+      elsif payload.key?("output") then payload["output"]
+      elsif payload.key?("tool_response") then payload["tool_response"]
+      end
+
+    parsed_input = input.nil? ? nil : parse_jsonish(input)
+    {
+      "original_tool_name" => name.to_s,
+      "tool_name" => name.to_s,
+      "tool_input" => parsed_input,
+      "tool_response" => output,
+      "call_id" => first_present(event, "call_id", "tool_call_id") || payload["call_id"],
+      "source_turn_uuid" => codex_turn_id(event) || codex_turn_id(payload)
+    }
+  rescue StandardError
+    nil
+  end
+
+  def codex_tool_from_transcript(path, preferred_call_id = nil)
+    records = transcript_tail_records(path, CODEX_TRANSCRIPT_TAIL_BYTES)
+    return nil if records.empty?
+
+    output_record = records.reverse.find do |record|
+      payload = record["payload"].is_a?(Hash) ? record["payload"] : {}
+      next false unless payload["type"].to_s == "function_call_output"
+      next true unless present?(preferred_call_id)
+
+      payload["call_id"].to_s == preferred_call_id.to_s
+    end
+    return nil unless output_record
+
+    output_payload = output_record["payload"].is_a?(Hash) ? output_record["payload"] : {}
+    call_id = output_payload["call_id"]
+    call_record = records.reverse.find do |record|
+      payload = record["payload"].is_a?(Hash) ? record["payload"] : {}
+      payload["type"].to_s == "function_call" && payload["call_id"].to_s == call_id.to_s
+    end
+    return nil unless call_record
+
+    call_payload = call_record["payload"].is_a?(Hash) ? call_record["payload"] : {}
+    name = call_payload["name"].to_s
+    {
+      "original_tool_name" => name,
+      "tool_name" => name,
+      "tool_input" => parse_jsonish(call_payload["arguments"]),
+      "tool_response" => output_payload["output"],
+      "call_id" => call_id,
+      "source_turn_uuid" => codex_turn_id(output_payload) || codex_turn_id(call_payload)
+    }
+  rescue StandardError
+    nil
+  end
+
+  def normalize_codex_tool_name(name)
+    raw = name.to_s
+    base = codex_tool_base_name(raw)
+    CODEX_TOOL_MAP[base] || raw
+  end
+
+  def normalize_codex_tool_input(name, input)
+    base = codex_tool_base_name(name)
+    parsed = parse_jsonish(input)
+    hash = parsed.is_a?(Hash) ? parsed : {}
+
+    case base
+    when "exec_command"
+      command = hash["cmd"] || hash["command"]
+      { "command" => command.to_s, "description" => hash["description"].to_s }.reject { |_, v| v.to_s.empty? }
+    when "write_stdin"
+      chars = hash["chars"].to_s
+      summary = hash["session_id"] ? "write_stdin #{hash['session_id']}" : "write_stdin"
+      { "command" => summary, "description" => chars.empty? ? nil : "Write stdin" }.reject { |_, v| v.to_s.empty? }
+    when "view_image"
+      { "file_path" => hash["path"].to_s }.reject { |_, v| v.to_s.empty? }
+    when "tool_search_tool"
+      { "query" => hash["query"].to_s }.reject { |_, v| v.to_s.empty? }
+    else
+      parsed
+    end
+  rescue StandardError
+    input
+  end
+
+  def codex_tool_name?(name)
+    CODEX_TOOL_MAP.key?(codex_tool_base_name(name))
+  end
+
+  def codex_tool_base_name(name)
+    name.to_s.split(".").last.to_s
+  end
+
+  def codex_turn_id(payload)
+    return nil unless payload.is_a?(Hash)
+
+    payload.dig("internal_chat_message_metadata_passthrough", "turn_id") ||
+      payload.dig("metadata", "turn_id") ||
+      payload["turn_id"] ||
+      payload["source_turn_uuid"]
+  rescue StandardError
+    nil
+  end
+
+  def parse_jsonish(value)
+    return {} if value.nil?
+    return value unless value.is_a?(String)
+
+    stripped = value.strip
+    return value if stripped.empty?
+
+    JSON.parse(stripped)
+  rescue StandardError
+    value
+  end
 
   # Map a PostToolUse event hash → the flat AgentAction.capture payload.
   # task_slug / stage / mascot come from the active-feature marker; model + token
@@ -140,7 +365,7 @@ class AtomicCaptureHook
       "tokens_in" => usage[:tokens_in],
       "tokens_out" => usage[:tokens_out],
       "cache_read_tokens" => usage[:cache_read_tokens],
-      "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : nil,
+      "source_turn_uuid" => present?(turn["uuid"]) ? turn["uuid"] : blank_to_nil(event["source_turn_uuid"]),
       "summary" => action_summary(event),
       "key_method" => key_method,
       "key_method_lang" => key_method ? "bash" : nil,
@@ -179,7 +404,11 @@ class AtomicCaptureHook
   # or {} — the single source of both the model and the token usage a payload
   # stamps. Best-effort and never raises.
   def resolve_assistant_turn(event)
-    read_assistant_turn_from_transcript(event["transcript_path"]) || {}
+    if event["llm_provider"].to_s == "codex"
+      read_codex_turn_from_transcript(event["transcript_path"], event["source_turn_uuid"]) || {}
+    else
+      read_assistant_turn_from_transcript(event["transcript_path"]) || {}
+    end
   rescue StandardError
     {}
   end
@@ -188,6 +417,70 @@ class AtomicCaptureHook
   def read_model_from_transcript(path)
     turn = read_assistant_turn_from_transcript(path)
     turn && turn["model"]
+  end
+
+  def read_codex_turn_from_transcript(path, preferred_uuid = nil)
+    records = transcript_tail_records(path, CODEX_TRANSCRIPT_TAIL_BYTES)
+    return nil if records.empty?
+
+    token_record = records.reverse.find do |record|
+      payload = record["payload"].is_a?(Hash) ? record["payload"] : {}
+      record["type"].to_s == "event_msg" && payload["type"].to_s == "token_count"
+    end
+    return nil unless token_record
+
+    token_payload = token_record["payload"].is_a?(Hash) ? token_record["payload"] : {}
+    model = codex_model_from_records(records)
+    uuid = preferred_uuid || codex_latest_turn_id(records)
+    usage = token_payload.dig("info", "last_token_usage") ||
+            token_payload.dig("info", "total_token_usage") ||
+            token_payload["last_token_usage"] ||
+            token_payload["total_token_usage"]
+
+    {
+      "model" => model,
+      "usage" => normalize_codex_usage(usage),
+      "uuid" => uuid
+    }
+  rescue StandardError
+    nil
+  end
+
+  def codex_model_from_records(records)
+    records.reverse_each do |record|
+      payload = record["payload"].is_a?(Hash) ? record["payload"] : {}
+      model = payload["model"] || payload.dig("collaboration_mode", "settings", "model") ||
+              record["model"] || record.dig("collaboration_mode", "settings", "model")
+      return model if present?(model)
+    end
+    nil
+  end
+
+  def codex_latest_turn_id(records)
+    records.reverse_each do |record|
+      payload = record["payload"].is_a?(Hash) ? record["payload"] : {}
+      turn_id = codex_turn_id(payload)
+      return turn_id if present?(turn_id)
+    end
+    nil
+  end
+
+  def normalize_codex_usage(usage)
+    usage = usage.is_a?(Hash) ? usage : {}
+    cache_read = usage["cache_read_input_tokens"] || usage["cached_input_tokens"]
+    input = usage["input_tokens"].to_i
+    if usage.key?("cached_input_tokens") && !usage.key?("cache_read_input_tokens")
+      input = [input - cache_read.to_i, 0].max
+    end
+
+    {
+      "input_tokens" => input,
+      "cache_creation_input_tokens" => usage["cache_creation_input_tokens"].to_i,
+      "cache_read_input_tokens" => cache_read.to_i,
+      "output_tokens" => usage["output_tokens"].to_i
+    }
+  rescue StandardError
+    {}
   end
 
   # Scan the TAIL of the transcript JSONL for the newest assistant line carrying a
@@ -199,26 +492,7 @@ class AtomicCaptureHook
   # huge or missing transcript never stalls or breaks the hook. nil when no
   # model-bearing line is found.
   def read_assistant_turn_from_transcript(path)
-    return nil unless present?(path) && File.file?(path)
-
-    size = File.size(path)
-    if size > TRANSCRIPT_TAIL_BYTES
-      content = IO.read(path, TRANSCRIPT_TAIL_BYTES, size - TRANSCRIPT_TAIL_BYTES, mode: "rb")
-      partial = true
-    else
-      content = IO.read(path, mode: "rb")
-      partial = false
-    end
-    return nil unless content
-
-    lines = content.to_s.split("\n")
-    lines.shift if partial && lines.length > 1 # a mid-line start is not valid JSON
-    lines.reverse_each do |line|
-      next if line.strip.empty?
-
-      parsed = (JSON.parse(line) rescue nil)
-      next unless parsed.is_a?(Hash)
-
+    transcript_tail_records(path, TRANSCRIPT_TAIL_BYTES).reverse_each do |parsed|
       model = parsed.dig("message", "model")
       next unless present?(model)
 
@@ -247,11 +521,16 @@ class AtomicCaptureHook
   # non-hash usage yields all-zero. Never raises.
   def turn_usage(usage)
     usage = usage.is_a?(Hash) ? usage : {}
-    tokens_in = usage["input_tokens"].to_i + usage["cache_creation_input_tokens"].to_i
+    cache_read = usage["cache_read_input_tokens"] || usage["cached_input_tokens"]
+    fresh_input = usage["input_tokens"].to_i
+    if usage.key?("cached_input_tokens") && !usage.key?("cache_read_input_tokens")
+      fresh_input = [fresh_input - cache_read.to_i, 0].max
+    end
+    tokens_in = fresh_input + usage["cache_creation_input_tokens"].to_i
     {
       tokens_in: tokens_in,
       tokens_out: usage["output_tokens"].to_i,
-      cache_read_tokens: usage["cache_read_input_tokens"].to_i
+      cache_read_tokens: cache_read.to_i
     }
   rescue StandardError
     { tokens_in: 0, tokens_out: 0, cache_read_tokens: 0 }
@@ -560,8 +839,15 @@ class AtomicCaptureHook
 
   # ok unless tool_response carries an explicit failure signal. Deliberately
   # conservative — a non-empty stderr is NOT a failure, only structured signals
-  # (error/is_error/success:false/interrupted) are, so we never false-flag.
+  # (error/is_error/success:false/interrupted) or the Codex tool-result status
+  # header are, so we never false-flag on command output text.
   def outcome_for(tool_response)
+    if tool_response.is_a?(String)
+      code = codex_process_exit_code(tool_response)
+      return ERROR if code && code != 0
+
+      return OK
+    end
     return OK unless tool_response.is_a?(Hash)
 
     return ERROR if present?(fetch_either(tool_response, "error"))
@@ -570,6 +856,19 @@ class AtomicCaptureHook
     return ERROR if fetch_either(tool_response, "interrupted") == true
 
     OK
+  end
+
+  def codex_process_exit_code(output)
+    str = output.to_s
+    header = str.include?("\nOutput:\n") ? str.split("\nOutput:\n", 2).first : str
+
+    header.lines.each do |line|
+      match = line.match(/\AProcess exited with code (?<code>\d+)\s*\z/)
+      return match[:code].to_i if match
+    end
+    nil
+  rescue StandardError
+    nil
   end
 
   # Resolve task_slug / stage / mascot for a captured action. task_slug + stage
@@ -605,7 +904,7 @@ class AtomicCaptureHook
   # escape — the process always exits 0.
   def run(stdin: $stdin)
     raw = stdin.read
-    event = JSON.parse(raw)
+    event = normalize_event(JSON.parse(raw))
     return unless present?(event["session_id"]) # nothing to attribute → skip
     return if droppable?(event)                 # navigation/narration overhead — never a row
 
@@ -719,6 +1018,45 @@ class AtomicCaptureHook
 
   def projects_dir
     @api.projects_dir
+  end
+
+  def codex_transcript_path(session_id)
+    sid = session_id.to_s.strip
+    return nil if sid.empty?
+
+    safe = sid.gsub(/[^A-Za-z0-9._-]/, "")
+    home = @env["HOME"].to_s.strip
+    home = Dir.home if home.empty?
+    paths = Dir.glob(File.join(home, ".codex", "sessions", "**", "*#{safe}*.jsonl"))
+    newest = paths.select { |path| File.file?(path) }.max_by { |path| File.mtime(path) rescue Time.at(0) }
+    newest
+  rescue StandardError
+    nil
+  end
+
+  def transcript_tail_records(path, max_bytes)
+    return [] unless present?(path) && File.file?(path)
+
+    size = File.size(path)
+    if size > max_bytes
+      content = IO.read(path, max_bytes, size - max_bytes, mode: "rb")
+      partial = true
+    else
+      content = IO.read(path, mode: "rb")
+      partial = false
+    end
+    return [] unless content
+
+    lines = content.to_s.split("\n")
+    lines.shift if partial && lines.length > 1 # a mid-line start is not valid JSON
+    lines.filter_map do |line|
+      next if line.strip.empty?
+
+      parsed = JSON.parse(line) rescue nil
+      parsed if parsed.is_a?(Hash)
+    end
+  rescue StandardError
+    []
   end
 
   # ── Tiny helpers ─────────────────────────────────────────────────────────

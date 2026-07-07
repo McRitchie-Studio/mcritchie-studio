@@ -217,6 +217,10 @@ class InstallAgentSkillsTest < Minitest::Test
     src = File.read(SCRIPT)
     assert_includes src, "bin/session-insights",
       "installer must wire the session-insights feed-forward hook"
+    assert_includes src, "bin/atomic-capture-hook",
+      "installer must wire the shared action capture hook"
+    assert_includes src, "bin/agent-activity close-open",
+      "installer must wire the activity teardown hook"
     assert_match(/AGENT_INSIGHTS_BOARD_URL:-https:\/\/mcritchie\.studio/, src,
       "installer must default the insights board to prod (overridable via AGENT_INSIGHTS_BOARD_URL)")
     assert_includes src, "ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL",
@@ -341,6 +345,8 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes out, "ok: installed agent docs and skills match tracked sources"
     assert_includes out, "ok: Codex config includes thread-title status item"
     assert_match(/ok: Codex (managed requirements|user hooks) include McRitchie .*hook/, out)
+    assert_match(/ok: Codex (managed requirements|user hooks) include action capture/, out)
+    assert_match(/ok: Codex (managed requirements|user hooks) include activity close-open/, out)
   end
 
   def test_integration_global_hooks_use_runtime_root_override
@@ -368,9 +374,22 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_equal 15, insights_hook["timeout"]
     assert_equal "Loading insights…", insights_hook["statusMessage"]
 
+    post_tool_commands = settings.fetch("hooks").fetch("PostToolUse")
+      .flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
+    assert_includes post_tool_commands,
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/atomic-capture-hook"
+    session_end_commands = settings.fetch("hooks").fetch("SessionEnd")
+      .flat_map { |entry| entry.fetch("hooks").map { |hook| hook.fetch("command") } }
+    assert_includes session_end_commands,
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/agent-activity close-open"
+
     codex_requirements = File.read(installed_codex_requirements)
     assert_includes codex_requirements,
       %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights")
+    assert_includes codex_requirements,
+      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/atomic-capture-hook")
+    assert_includes codex_requirements,
+      %(command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/agent-activity close-open")
     assert_includes codex_requirements, 'statusMessage = "Loading insights…"'
 
     config = File.read(installed_codex_config)
@@ -385,14 +404,16 @@ class InstallAgentSkillsTest < Minitest::Test
       "Codex mascot startup must be managed, not a user hook that requires /hooks review"
 
     requirements = File.read(installed_codex_requirements)
-    assert_includes requirements, "# BEGIN McRitchie Codex mascot managed hook"
+    assert_includes requirements, "# BEGIN McRitchie Codex telemetry managed hook"
     assert_includes requirements, %(managed_dir = "#{runtime_root}")
     assert_includes requirements, "[[hooks.SessionStart]]"
     assert_includes requirements, 'matcher = "startup|resume"'
     assert_includes requirements, "[[hooks.PostToolUse]]"
+    assert_includes requirements, "[[hooks.Stop]]"
     assert_includes requirements, 'matcher = "Bash"'
     assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
     assert_includes requirements, 'statusMessage = "Setting session mascot"'
+    assert_includes requirements, 'statusMessage = "Capturing action"'
   end
 
   def test_integration_install_allows_runtime_ruby_path_override
@@ -439,7 +460,8 @@ class InstallAgentSkillsTest < Minitest::Test
       _out, err, status = run_installer("install", env)
       assert status.success?, "install failed: #{err}"
 
-      out, shell_err, shell_status = capture_login_shell(<<~'ZSH', env)
+      shell_env = env.merge("PATH" => "/usr/bin:#{ruby_dir}:#{ENV.fetch('PATH', '')}")
+      out, shell_err, shell_status = capture_login_shell(<<~'ZSH', shell_env)
         printf "ruby=%s\n" "$(command -v ruby)"
         printf "version="
         ruby -e 'print RUBY_VERSION'
@@ -520,7 +542,10 @@ class InstallAgentSkillsTest < Minitest::Test
     requirements = File.read(installed_codex_requirements)
     assert_includes requirements, "[[hooks.SessionStart]]"
     assert_includes requirements, "[[hooks.PostToolUse]]"
+    assert_includes requirements, "[[hooks.Stop]]"
     assert_includes requirements, %(command = "#{runtime_root}/bin/codex-session-title")
+    assert_includes requirements, "/bin/atomic-capture-hook"
+    assert_includes requirements, "/bin/agent-activity close-open"
   end
 
   def test_integration_stages_admin_requirements_when_etc_unwritable
@@ -550,21 +575,28 @@ class InstallAgentSkillsTest < Minitest::Test
       "CODEX_REQUIREMENTS_PATH" => File.join(blocked_parent, "requirements.toml"))
 
     assert status.success?, "install should not fail when admin requirements need root: #{err}"
-    assert_includes out, "admin install required for organic Codex mascot"
-    assert_includes out, "installed user-level Codex SessionStart/PostToolUse fallback"
+    assert_includes out, "admin install required for organic Codex telemetry"
+    assert_includes out, "installed user-level Codex SessionStart/PostToolUse/Stop fallback"
     assert_includes out, "Staged managed requirements:"
     refute_includes out, "Review once inside Codex with /hooks"
 
     assert_includes out, "/bin/session-insights",
       "the fallback echo should report the wired insights command"
+    assert_includes out, "/bin/atomic-capture-hook",
+      "the fallback echo should report the wired action capture command"
+    assert_includes out, "/bin/agent-activity close-open",
+      "the fallback echo should report the wired close-open command"
 
     staged = File.join(@home, ".codex", "mcritchie-requirements.toml")
     assert File.file?(staged), "installer should stage the managed requirements for admin install"
     staged_requirements = File.read(staged)
     assert_includes staged_requirements, "/bin/codex-session-title"
     assert_includes staged_requirements, "/bin/session-insights"
+    assert_includes staged_requirements, "/bin/atomic-capture-hook"
+    assert_includes staged_requirements, "/bin/agent-activity close-open"
     assert_includes staged_requirements, "[[hooks.SessionStart]]"
     assert_includes staged_requirements, "[[hooks.PostToolUse]]"
+    assert_includes staged_requirements, "[[hooks.Stop]]"
 
     codex_hooks = JSON.parse(File.read(installed_codex_hooks))
     runtime_root = ROOT.sub(%r{/\.worktrees/.*\z}, "")
@@ -574,15 +606,22 @@ class InstallAgentSkillsTest < Minitest::Test
     post_tool_commands = (codex_hooks.dig("hooks", "PostToolUse") || []).flat_map do |entry|
       entry.fetch("hooks", []).map { |hook| hook["command"] }
     end
+    stop_commands = (codex_hooks.dig("hooks", "Stop") || []).flat_map do |entry|
+      entry.fetch("hooks", []).map { |hook| hook["command"] }
+    end
 
     # The fallback wires BOTH the mascot and the feed-forward insights hook under
-    # SessionStart (insights as its own entry so each stays independently prunable);
-    # PostToolUse stays mascot-only.
+    # SessionStart (insights as its own entry so each stays independently prunable),
+    # then captures every tool call and closes open activities on Stop.
     assert_equal [
       "#{runtime_root}/bin/codex-session-title",
       "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/session-insights"
     ], session_commands
-    assert_equal ["#{runtime_root}/bin/codex-session-title"], post_tool_commands
+    assert_equal [
+      "#{runtime_root}/bin/codex-session-title",
+      "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/atomic-capture-hook"
+    ], post_tool_commands
+    assert_equal ["ATOMIC_CAPTURE_URL=https://mcritchie.studio #{runtime_root}/bin/agent-activity close-open"], stop_commands
   end
 
   # ── integration: the feed-forward insights SessionStart hook ────────────────

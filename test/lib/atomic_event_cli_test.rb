@@ -694,6 +694,17 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_integration_close_open_accepts_codex_thread_id_from_stdin
+    Dir.mktmpdir do |proj|
+      requests = run_cli(%w[close-open], proj: proj, with_session_env: false,
+                         stdin: JSON.generate("thread_id" => SESSION, "reason" => "stop"))
+
+      close_all = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close_all" }
+      refute_nil close_all, "Codex Stop stdin should close open activities"
+      assert_equal SESSION, JSON.parse(close_all[:body])["session_id"]
+    end
+  end
+
   def test_integration_close_open_respects_explicit_outcome_and_session_flag
     Dir.mktmpdir do |proj|
       requests = run_cli(%W[close-open --session #{SESSION} --outcome wrapped-it-up], proj: proj)

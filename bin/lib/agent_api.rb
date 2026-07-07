@@ -13,7 +13,7 @@ require "fileutils"
 # <projects>/.agents/atomic-capture/token.json (ONE cache shared across the
 # whole stack, so `op read` runs at most ~once/day, never per call), source the
 # secret (AGENT_API_SECRET env → 1Password `op read` → the repo .env), and speak
-# bearer-authed JSON to ATOMIC_CAPTURE_URL (default http://localhost:3000).
+# bearer-authed JSON to ATOMIC_CAPTURE_URL (default https://mcritchie.studio).
 # This class is that boilerplate, extracted verbatim.
 #
 # PARAMETERIZED only where the scripts genuinely diverge: the HTTP timeouts (the
@@ -53,7 +53,7 @@ class AgentApi
   # ATOMIC_CAPTURE_URL resolution.
   def base_url
     url = @env["ATOMIC_CAPTURE_URL"].to_s.strip
-    url.empty? ? "http://localhost:3000" : url
+    url.empty? ? "https://mcritchie.studio" : url
   end
 
   # ── Token: mint once, cache to disk under the 24h expiry ──────────────────

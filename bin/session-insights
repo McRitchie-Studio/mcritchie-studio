@@ -13,8 +13,7 @@
 # stop being write-only and become context the next agent starts with.
 #
 # Targets the SAME board as the narration stack (ATOMIC_CAPTURE_URL, default
-# http://localhost:3000 — the settings.json wiring points it at prod, like the
-# capture hook) via the shared AgentApi client (bin/lib/agent_api.rb), which
+# https://mcritchie.studio) via the shared AgentApi client (bin/lib/agent_api.rb), which
 # mints/caches the SAME agent token as bin/atomic-event / bin/atomic-capture-hook
 # (AGENT_API_SECRET → 1Password → repo .env).
 #

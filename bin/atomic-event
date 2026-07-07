@@ -42,7 +42,7 @@
 # outcomes are the coarse, meaningful layer over the raw stream.
 #
 # Targets the SAME endpoint as bin/atomic-capture-hook (ATOMIC_CAPTURE_URL,
-# default http://localhost:3000) — events and actions MUST land on the same
+# default https://mcritchie.studio) — events and actions MUST land on the same
 # server for the server-side activity attribution to work. Token + HTTP live on the
 # shared AgentApi client (bin/lib/agent_api.rb): the agent secret sources the
 # same way bin/task does (AGENT_API_SECRET → 1Password → repo .env) and the
@@ -449,7 +449,11 @@ class AgentActivityCli
     raw = @in.read
     return nil if raw.to_s.strip.empty?
 
-    JSON.parse(raw)["session_id"].to_s.strip
+    parsed = JSON.parse(raw)
+    [
+      parsed["session_id"], parsed["thread_id"], parsed["id"],
+      parsed.dig("session", "id"), parsed.dig("thread", "id")
+    ].find { |value| present?(value) }.to_s.strip
   rescue StandardError
     nil
   end
