@@ -713,6 +713,16 @@ class ApplicationHelperTest < ActionView::TestCase
       render partial: "tasks/last_release", locals: { release: rel }
 
       assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms]"
+      card = css_select("#last-release").first
+      assert_includes card["class"], "studio-border-glow"
+      assert_includes card["class"], "release-fresh-glow"
+      assert_includes card["class"], "lbfx-fresh-deploy"
+      assert_not_includes card["class"], "opacity-75"
+      assert_includes card["style"], "--lbfx-fresh-delay: -0ms"
+      assert_includes card["style"], "--task-card-glow-color-a: #fb0094"
+      assert_includes card["style"], "--task-card-glow-color-b: #00c4ff"
+      assert_includes card["style"], "border-color: var(--task-card-glow-border-color)"
+      assert_includes card["style"], "box-shadow: var(--task-card-glow-shadow)"
     end
   end
 
@@ -727,6 +737,12 @@ class ApplicationHelperTest < ActionView::TestCase
       render partial: "tasks/last_release", locals: { release: rel.reload }
 
       assert_select "#last-release[data-fresh-deploy='false']"
+      card = css_select("#last-release").first
+      assert_includes card["class"], "opacity-75"
+      assert_not_includes card["class"], "studio-border-glow"
+      assert_not_includes card["class"], "release-fresh-glow"
+      assert_not_includes card["class"], "lbfx-fresh-deploy"
+      assert_nil card["style"]
     end
   end
 

@@ -44,16 +44,34 @@
     animation: lbfxFreshDeployGlow 8s linear both;
     animation-delay: var(--lbfx-fresh-delay, 0ms);
   }
+  .release-fresh-glow.lbfx-fresh-deploy::before {
+    animation-name: studioBorderGlowSteam, lbfxFreshDeployRingFade;
+    animation-duration: var(--studio-border-glow-duration, 20s), 8s;
+    animation-timing-function: linear, linear;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, both;
+    animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
+  }
+  .release-fresh-glow.lbfx-fresh-deploy::after {
+    animation-name: studioBorderGlowSteam, lbfxFreshDeployHaloFade;
+    animation-duration: var(--studio-border-glow-duration, 20s), 8s;
+    animation-timing-function: linear, linear;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, both;
+    animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
+  }
   @keyframes lbfxFreshDeployGlow {
     0%, 50% {
-      box-shadow:
+      box-shadow: var(
+        --task-card-glow-shadow,
         0 0 0 1px rgba(255,255,255,.72) inset,
         0 0 18px 4px rgba(248,113,113,.9),
         0 0 32px 10px rgba(250,204,21,.68),
         0 0 48px 16px rgba(52,211,153,.58),
         0 0 64px 22px rgba(96,165,250,.52),
-        0 0 82px 28px rgba(192,132,252,.48);
-      border-color: rgba(255,255,255,.82);
+        0 0 82px 28px rgba(192,132,252,.48)
+      );
+      border-color: var(--task-card-glow-border-color, rgba(255,255,255,.82));
     }
     100% {
       box-shadow:
@@ -63,6 +81,24 @@
         0 0 0 0 rgba(96,165,250,0),
         0 0 0 0 rgba(192,132,252,0);
       border-color: rgb(var(--lbfx-glow, 249 115 22) / 0);
+    }
+  }
+  @keyframes lbfxFreshDeployRingFade {
+    0%, 50% { opacity: var(--studio-border-glow-opacity, .9); }
+    100% { opacity: 0; }
+  }
+  @keyframes lbfxFreshDeployHaloFade {
+    0%, 50% { opacity: var(--studio-border-glow-halo-opacity, .34); }
+    100% { opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .release-fresh-glow.lbfx-fresh-deploy::before {
+      animation: lbfxFreshDeployRingFade 8s linear both;
+      animation-delay: var(--lbfx-fresh-delay, 0ms);
+    }
+    .release-fresh-glow.lbfx-fresh-deploy::after {
+      animation: lbfxFreshDeployHaloFade 8s linear both;
+      animation-delay: var(--lbfx-fresh-delay, 0ms);
     }
   }
 
@@ -142,17 +178,26 @@
       if (!card || card.dataset.freshDeploy !== "true") return false;
       const shippedAt = Number(card.dataset.shippedAtMs || 0);
       const elapsed = shippedAt > 0 ? Math.max(0, Date.now() - shippedAt) : 0;
-      if (elapsed >= FRESH_DEPLOY_MS) return false;
+      if (elapsed >= FRESH_DEPLOY_MS) {
+        clearFreshDeployGlow(card);
+        return false;
+      }
 
       card.style.setProperty("--lbfx-fresh-delay", "-" + elapsed + "ms");
+      card.classList.remove("opacity-75");
+      card.classList.add("studio-border-glow", "release-fresh-glow");
       card.classList.remove("lbfx-fresh-deploy");
       void card.offsetWidth;
       card.classList.add("lbfx-fresh-deploy");
-      setTimeout(() => {
-        card.classList.remove("lbfx-fresh-deploy");
-        card.style.removeProperty("--lbfx-fresh-delay");
-      }, FRESH_DEPLOY_MS - elapsed + 150);
+      setTimeout(() => clearFreshDeployGlow(card), FRESH_DEPLOY_MS - elapsed + 150);
       return true;
+    }
+
+    function clearFreshDeployGlow(card) {
+      if (!card) return;
+      card.classList.remove("lbfx-fresh-deploy", "studio-border-glow", "release-fresh-glow");
+      card.classList.add("opacity-75");
+      card.style.removeProperty("--lbfx-fresh-delay");
     }
 
     function reviewedGlow(card) {

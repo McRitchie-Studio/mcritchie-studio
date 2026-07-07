@@ -42,6 +42,8 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   await expect(page.locator("#last-release [data-test='release-timing']")).toContainText("took");
   await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "true");
   await expect(page.locator("#last-release")).toHaveClass(/lbfx-fresh-deploy/);
+  await expect(page.locator("#last-release")).toHaveClass(/studio-border-glow/);
+  await expect(page.locator("#last-release")).toHaveClass(/release-fresh-glow/);
 
   await expect(page.locator("#dropzone-shipped #card-release-stack-current-c")).toBeVisible({ timeout: 10_000 });
   let shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));

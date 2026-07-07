@@ -8,13 +8,37 @@
 <% base_card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% if rel %>
   <% fresh_deploy = rel.shipped_at.present? && rel.shipped_at >= 8.seconds.ago %>
+  <% fresh_deploy_elapsed_ms = fresh_deploy ? ((Time.current - rel.shipped_at) * 1000).clamp(0, 8_000).round : nil %>
+  <% fresh_glow_seed = rel.slug.to_s.each_byte.reduce(0) { |memo, byte| ((memo * 33) + byte) % 10_000 } %>
+  <% fresh_glow_style = if fresh_deploy
+       "--studio-border-glow-offset: #{fresh_glow_seed % 400}%; " \
+         "--studio-border-glow-duration: #{18 + (fresh_glow_seed % 9)}s; " \
+         "--studio-border-glow-angle: #{38 + (fresh_glow_seed % 18)}deg; " \
+         "--lbfx-fresh-delay: -#{fresh_deploy_elapsed_ms}ms; " \
+         "--task-card-glow-color: #a78bfa; " \
+         "--task-card-glow-color-a: #fb0094; " \
+         "--task-card-glow-color-b: #00c4ff; " \
+         "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent); " \
+         "--task-card-glow-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
+         "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
+         "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
+         "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent); " \
+         "border-color: var(--task-card-glow-border-color); " \
+         "box-shadow: var(--task-card-glow-shadow);"
+     end %>
+  <% release_card_class = [
+       base_card_class,
+       ("opacity-75" unless fresh_deploy),
+       ("studio-border-glow release-fresh-glow lbfx-fresh-deploy" if fresh_deploy)
+     ].compact.join(" ") %>
   <%# LiveBoardFx reads data-fresh-deploy + data-shipped-at-ms for the 8s freshness
       glow. data-glow remains the fallback burst tint for non-fresh replacements. %>
   <div id="last-release"
        data-glow="<%= rel.mascot&.signature_color %>"
        data-fresh-deploy="<%= fresh_deploy ? "true" : "false" %>"
        data-shipped-at-ms="<%= (rel.shipped_at.to_f * 1000).round if rel.shipped_at.present? %>"
-       class="<%= base_card_class %> opacity-75">
+       <% if fresh_glow_style %>style="<%= fresh_glow_style %>"<% end %>
+       class="<%= release_card_class %>">
     <%# The shipped-stage kickoff chip ("Archive completed tasks") rides inline with the
         task pills, mirroring the Next Release card's release workflow chips. %>
     <% archive_chip = render "tasks/kickoff_chip", command: devops_kickoffs["shipped"] %>

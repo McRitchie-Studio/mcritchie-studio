@@ -197,7 +197,8 @@
       );
   }
 
-  .release-confirming-glow {
+  .release-confirming-glow,
+  .release-fresh-glow {
     --studio-border-glow-opacity: 0.9;
     --studio-border-glow-halo-opacity: 0.34;
     --studio-border-glow-halo-blur: 24px;

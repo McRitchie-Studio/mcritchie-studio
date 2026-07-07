@@ -37,13 +37,24 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     render partial: "tasks/deployments_live_fx"
 
     assert_includes rendered, ".lbfx-fresh-deploy"
+    assert_includes rendered, ".release-fresh-glow.lbfx-fresh-deploy::before"
+    assert_includes rendered, ".release-fresh-glow.lbfx-fresh-deploy::after"
     assert_includes rendered, "@keyframes lbfxFreshDeployGlow"
+    assert_includes rendered, "@keyframes lbfxFreshDeployRingFade"
+    assert_includes rendered, "@keyframes lbfxFreshDeployHaloFade"
     assert_includes rendered, "0%, 50%"
+    assert_includes rendered, "--task-card-glow-shadow"
+    assert_includes rendered, "--task-card-glow-border-color"
     assert_includes rendered, "const FRESH_DEPLOY_MS = 8000"
     assert_includes rendered, "card.dataset.freshDeploy !== \"true\""
     assert_includes rendered, "card.dataset.shippedAtMs"
     assert_includes rendered, "\"--lbfx-fresh-delay\""
+    assert_includes rendered, "card.classList.remove(\"opacity-75\")"
+    assert_includes rendered, "card.classList.add(\"studio-border-glow\", \"release-fresh-glow\")"
     assert_includes rendered, "freshDeployGlow(fresh)"
+    assert_includes rendered, "clearFreshDeployGlow(card)"
+    assert_includes rendered, "card.classList.remove(\"lbfx-fresh-deploy\", \"studio-border-glow\", \"release-fresh-glow\")"
+    assert_includes rendered, "card.classList.add(\"opacity-75\")"
   end
 
   test "reviewed arrivals use a distinct behind-card gust" do
