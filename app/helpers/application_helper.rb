@@ -159,7 +159,9 @@ module ApplicationHelper
 
   # Pizza-tracker progress for the active release card, read straight off the
   # release's stage stamps (time-and-boolean columns — see Release::STAGES).
-  def release_tracker_steps(release, now: Time.current)
+  def release_tracker_steps(release, now: Time.current, average_seconds_by_stage: nil)
+    average_seconds_by_stage ||= release_tracker_average_seconds_by_stage
+
     RELEASE_TRACKER_STAGES.each_with_index.map do |stage, index|
       state = release_tracker_state(release, stage)
       stage.merge(
@@ -168,7 +170,13 @@ module ApplicationHelper
         state: state,
         connector_state: release_tracker_connector_state(release, index)
       ).merge(
-        release_tracker_duration(release, stage, state, now: now)
+        release_tracker_duration(
+          release,
+          stage,
+          state,
+          now: now,
+          average: average_seconds_by_stage[stage[:key]]
+        )
       )
     end
   end
@@ -202,22 +210,91 @@ module ApplicationHelper
   # stage's own span (started → completed) survives as duration_seconds for the
   # tooltip's "took Xm", present only once the stage has finished. A pending node
   # returns {} and renders no timing.
-  def release_tracker_duration(release, stage, state, now: Time.current)
+  def release_tracker_duration(release, stage, state, now: Time.current, average: nil)
     return {} if state.to_sym == :pending
 
     started_at = release.stage_started_at_or_before(stage[:starts])
     own_started_at = release.stage_stamp(stage[:starts])
     completed_at = release.stage_stamp(stage[:completes])
+    ago_seconds = elapsed_seconds(started_at, now)
+    average_seconds = release_tracker_average_value(average, :average_seconds)
+    average_sample_count = release_tracker_average_value(average, :sample_count).to_i
 
-    {
+    duration = {
       started_at: started_at,
-      ago_seconds: elapsed_seconds(started_at, now),
+      ago_seconds: ago_seconds,
       duration_live: state.to_sym == :active,
       completed_at: completed_at,
       # "took" is only real when the stage's OWN start stamp is known — never off
       # the fallback anchor, which would overstate the span from release-open.
       duration_seconds: own_started_at && completed_at ? elapsed_seconds(own_started_at, completed_at) : nil
     }
+
+    if state.to_sym == :active && started_at && average_seconds.to_i.positive?
+      duration.merge!(
+        average_seconds: average_seconds.to_i,
+        average_sample_count: average_sample_count,
+        countdown_seconds: average_seconds.to_i - ago_seconds.to_i,
+        countdown_label: release_countdown_label(average_seconds: average_seconds, elapsed_seconds: ago_seconds)
+      )
+    end
+
+    duration
+  end
+
+  def release_tracker_average_seconds_by_stage(limit: 3)
+    releases = Release.where(state: "shipped")
+                      .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+                      .limit(limit)
+                      .to_a
+
+    RELEASE_TRACKER_STAGES.to_h do |stage|
+      values = releases.filter_map { |release| release_tracker_stage_span_seconds(release, stage) }
+      row = if values.any?
+        {
+          average_seconds: (values.sum.to_f / values.size).round,
+          sample_count: values.size
+        }
+      end
+      [stage[:key], row]
+    end
+  end
+
+  def release_tracker_stage_span_seconds(release, stage)
+    started_at = release.stage_stamp(stage[:starts])
+    completed_at = release.stage_stamp(stage[:completes])
+    elapsed_seconds(started_at, completed_at) if started_at && completed_at
+  end
+
+  def release_tracker_average_value(row, key)
+    return nil unless row.is_a?(Hash)
+
+    row[key] || row[key.to_s]
+  end
+
+  def release_countdown_label(average_seconds:, elapsed_seconds:)
+    remaining = average_seconds.to_i - elapsed_seconds.to_i
+    prefix = remaining.negative? ? "-" : ""
+    "#{prefix}#{format_elapsed_clock(remaining.abs)}"
+  end
+
+  def release_tracker_average_source_label(sample_count)
+    count = sample_count.to_i
+    return "Historical average" unless count.positive?
+
+    "Last #{count} deployment#{'s' unless count == 1} avg"
+  end
+
+  def release_tracker_countdown_title(step)
+    remaining = step[:countdown_seconds].to_i
+    status = if remaining.negative?
+      "over by #{format_elapsed_clock(remaining.abs)}"
+    else
+      "#{format_elapsed_clock(remaining)} left"
+    end
+
+    "#{release_tracker_average_source_label(step[:average_sample_count])}: " \
+      "#{format_elapsed_clock(step[:average_seconds])} · elapsed #{format_elapsed_clock(step[:ago_seconds])} · #{status}"
   end
 
   def release_static_duration_label(seconds)

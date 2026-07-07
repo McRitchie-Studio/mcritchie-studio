@@ -78,15 +78,17 @@ module Dev
       head :no_content
     end
 
-    # Advance the fixture release ONE stage by stamping the next blank stage in
-    # Release::STAGES — the exact time-and-boolean inputs the live tracker reads —
+    # Advance the visible active release ONE stage by stamping the next blank stage
+    # in Release::STAGES — the exact time-and-boolean inputs the live tracker reads —
     # so each click walks Testing → Assembling → … → Confirming → Deploying,
     # including the handoff gaps (a stamped `qa_deployed` leaves Confirming dark
     # until the next click stamps `confirming`, just like the real Avi handoff).
     # The terminal stage SHIPS (no separate confirmed-but-unshipped pause), so a
-    # Last Release appears immediately. Wraps from shipped back to a fresh release.
+    # Last Release appears immediately. If no active release exists, it opens a
+    # marked fixture; if a local preview release already exists, it steps that
+    # release instead of tripping the singleton active-release validation.
     def advance_release
-      release = current_fixture_release || open_fixture_release
+      release = release_for_dev_advance
       next_index = (release.current_stage_index || -1) + 1
       stage = Release::STAGE_NAMES[next_index]
       case stage
@@ -132,6 +134,10 @@ module Dev
       Release.where("metadata ->> ? = 'true'", FIXTURE_MARK)
              .where(state: Release::ACTIVE_STATES)
              .order(created_at: :desc).first
+    end
+
+    def release_for_dev_advance
+      current_fixture_release || Release.current || open_fixture_release
     end
 
     # Attach a throwaway member task so the release card shows a member pill.
