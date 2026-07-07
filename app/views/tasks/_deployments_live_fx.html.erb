@@ -195,6 +195,7 @@
         clearFreshDeployGlow(card);
         return false;
       }
+      if (card.dataset.freshDeployCleanup === "true") return true;
 
       card.style.setProperty("--lbfx-fresh-delay", "-" + elapsed + "ms");
       card.classList.remove("opacity-75");
@@ -202,6 +203,7 @@
       card.classList.remove("lbfx-fresh-deploy");
       void card.offsetWidth;
       card.classList.add("lbfx-fresh-deploy");
+      card.dataset.freshDeployCleanup = "true";
       setTimeout(() => clearFreshDeployGlow(card), FRESH_DEPLOY_MS - elapsed + 150);
       return true;
     }
@@ -211,8 +213,18 @@
       card.classList.remove("lbfx-fresh-deploy", "studio-border-glow", "release-fresh-glow");
       card.classList.add("opacity-75");
       card.dataset.freshDeploy = "false";
+      delete card.dataset.freshDeployCleanup;
       FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop));
       if (!card.getAttribute("style")) card.removeAttribute("style");
+    }
+
+    function initializeFreshDeployGlows(root) {
+      const scope = root && root.querySelectorAll ? root : document;
+      scope.querySelectorAll("#last-release[data-fresh-deploy='true']").forEach((card) => freshDeployGlow(card));
+    }
+
+    function scheduleFreshDeployGlowInitialization() {
+      requestAnimationFrame(() => initializeFreshDeployGlows(document));
     }
 
     function reviewedGlow(card) {
@@ -541,6 +553,13 @@
         setTimeout(() => pendingAction.delete(target), 1200);
       }
     });
+
+    document.addEventListener("turbo:load", scheduleFreshDeployGlowInitialization);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", scheduleFreshDeployGlowInitialization, { once: true });
+    } else {
+      scheduleFreshDeployGlowInitialization();
+    }
 
     return { onAdd };
   })();

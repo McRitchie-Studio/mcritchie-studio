@@ -7,6 +7,7 @@ const { test, expect } = require("@playwright/test");
 // into the Last Release slot and resets Next Release to its "none active" card.
 // Plus: the in-progress timer ticks the seconds up while a release is active.
 test("a deploy animates Last Release in, resets Next Release, and the timer ticks", async ({ page }) => {
+  test.setTimeout(45_000);
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -50,13 +51,16 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
   expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
 
+  await page.reload();
+  await expect(page.locator("#last-release [data-test='release-mascot']")).toContainText("Snorlax", { timeout: 10_000 });
+  await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "true");
+  await expect(page.locator("#last-release")).toHaveClass(/release-fresh-glow/);
   await expect(page.locator("#last-release")).not.toHaveClass(/lbfx-fresh-deploy/, { timeout: 9_500 });
   await expect(page.locator("#last-release")).not.toHaveClass(/release-fresh-glow/);
   await expect(page.locator("#last-release")).toHaveClass(/opacity-75/);
   await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "false");
   expect(await page.locator("#last-release").getAttribute("style")).toBeNull();
 
-  await page.reload();
   shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
   expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
   expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
