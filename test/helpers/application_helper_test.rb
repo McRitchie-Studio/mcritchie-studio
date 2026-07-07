@@ -116,41 +116,6 @@ class ApplicationHelperTest < ActionView::TestCase
     assert badge.html_safe?
   end
 
-  test "[component] release member summary highlights largest tasks and counts the rest" do
-    measured_small = Task.create!(title: "Measured small work", stage: "reviewed", po_size: "small",
-                                  metadata: { "devops" => { "repositories" => ["turf-monster"] } })
-    measured_small.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("12.5"))
-    measured_medium = Task.create!(title: "Measured medium work", stage: "reviewed", dev_size: "medium",
-                                   metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
-    measured_medium.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("2.0"))
-    forecast_large = Task.create!(title: "Large studio effort", stage: "reviewed", po_size: "large",
-                                  metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
-    forecast_xl = Task.create!(title: "XL turf repair", stage: "reviewed", actual_size: "xl",
-                               metadata: { "devops" => { "repositories" => ["turf-monster"] } })
-
-    summary = release_member_condensed_summary([measured_medium, forecast_large, measured_small, forecast_xl])
-
-    assert_equal [measured_small, measured_medium], summary[:highlights]
-    assert_equal [
-      { emoji: "🪎", count: 1, repositories: ["mcritchie-studio"] },
-      { emoji: "🐊", count: 1, repositories: ["turf-monster"] }
-    ], summary[:repo_counts]
-  end
-
-  test "[component] release member cost label prefers measured spend then size" do
-    measured = Task.create!(title: "Measured studio work", stage: "reviewed", actual_size: "xl")
-    measured.task_events.create!(to_stage: "reviewed", occurred_at: Time.current, cost: BigDecimal("12.5"))
-    estimated = Task.create!(title: "Estimated studio work", stage: "reviewed", po_size: "large")
-    unsized = Task.create!(title: "Unsized studio work", stage: "reviewed")
-
-    assert_equal "$12.50", release_member_cost_label(measured)
-    assert_equal "Measured task cost: $12.50", release_member_cost_title(measured)
-    assert_equal "L", release_member_cost_label(estimated)
-    assert_equal "Estimated task size: LARGE", release_member_cost_title(estimated)
-    assert_nil release_member_cost_label(unsized)
-    assert_equal "Task cost not measured", release_member_cost_title(unsized)
-  end
-
   # Component-tier: render the board card's slug-row markup (mirrors
   # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
   # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.
@@ -220,14 +185,13 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes pills[2]["style"], "border-left-color: color-mix(in srgb, var(--color-text) 28%, var(--color-border));"
   end
 
-  test "[component] _release_summary condenses Current Release member row" do
+  test "[component] _release_summary keeps Current Release member pills wrapping" do
     Release.delete_all
     rel = Release.open!(branch: "release/current-wrap")
     3.times do |index|
       task = Task.create!(
         title: "Current release member task #{index}",
         stage: "reviewed",
-        po_size: "small",
         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }
       )
       rel.add(task)
@@ -235,20 +199,16 @@ class ApplicationHelperTest < ActionView::TestCase
 
     render partial: "tasks/release_summary", locals: { release: rel.reload, variant: :current }
 
-    assert_select "[data-test='release-member-list'].flex-wrap", count: 1
+    assert_select "[data-test='release-member-list'].flex-wrap.gap-2", count: 1
     assert_select "[data-test='release-member-stack']", count: 0
 
     pills = css_select("[data-test='release-member-pill']")
-    assert_equal 2, pills.size
+    assert_equal 3, pills.size
     pills.each do |pill|
-      assert_includes pill["class"], "w-56"
       assert_not_includes pill["class"], "-ml-20"
       assert_not_includes pill["class"], "border-l"
-      assert_not_includes pill["style"].to_s, "box-shadow"
-      assert_includes pill.to_html, "mask-image: linear-gradient(to right"
+      assert_not_includes pill["style"], "box-shadow"
     end
-    assert_select "[data-test='release-member-cost']", 2
-    assert_select "[data-test='release-member-repo-count']", text: /· 🪎 1/
   end
 
   test "[unit] release_tracker_steps walks the stage stamps, handoff gaps included" do

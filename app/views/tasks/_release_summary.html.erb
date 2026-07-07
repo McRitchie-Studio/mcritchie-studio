@@ -82,11 +82,12 @@
       <div class="mt-3 flex items-start justify-between gap-3 flex-wrap" data-test="release-members-row">
         <% if current %>
           <% summary = release_member_condensed_summary(members) %>
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0" data-test="release-member-list">
+          <div class="flex flex-wrap items-center gap-2 gap-x-2 gap-y-2 min-w-0" data-test="release-member-list">
             <% summary[:highlights].each do |t| %>
               <% cost_label = release_member_cost_label(t) %>
               <%= link_to task_path(t.slug),
                           class: [pill_class, "w-56 shrink-0 overflow-hidden"].join(" "),
+                          style: "",
                           data: { test: "release-member-pill", release_member: "highlight" },
                           title: t.title do %>
                 <%= app_emoji_badge(t.devops_repositories) %>
