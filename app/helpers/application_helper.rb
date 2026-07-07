@@ -358,6 +358,23 @@ module ApplicationHelper
     format("%dh %02dm ago", hours, mins)
   end
 
+  # Compact single-unit "time ago" for the session filter — the smallest legible
+  # unit (s/m/h/d/w) so a dense session list still reads recency at a glance. Unlike
+  # release_ago_label this keeps climbing past hours (d/w) since a session can be idle
+  # for days. A blank time (a session with no timestamped signal) → nil so the caller
+  # renders nothing; a future time clamps to "just now" (never a negative label).
+  def compact_time_ago(time, now: Time.current)
+    return nil if time.blank?
+
+    seconds = [(now - time).to_i, 0].max
+    return "just now" if seconds < 45
+    return "#{seconds / 60}m ago" if seconds < 3_600
+    return "#{seconds / 3_600}h ago" if seconds < 86_400
+    return "#{seconds / 86_400}d ago" if seconds < 604_800
+
+    "#{seconds / 604_800}w ago"
+  end
+
   # Tooltip for a node's started-ago label: the absolute start time, plus the
   # stage's own span once it has finished ("took Xm") so a completed stage's
   # duration is one hover away. An in-flight stage has no span yet, so the

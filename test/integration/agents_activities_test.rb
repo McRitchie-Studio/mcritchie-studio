@@ -179,6 +179,33 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test=aa-filter-session]", text: /Snorlax/
   end
 
+  test "orders the filter sidebar newest-active first with each session's last-active time" do
+    activity(session: "sess-stale", reason_slug: "old activity", at: 3.hours.ago)
+    activity(session: "sess-fresh", reason_slug: "recent activity", at: 2.minutes.ago)
+
+    get activities_agents_path
+
+    assert_response :success
+    body = response.body
+    # the freshly-active session is listed above the stale one in the sidebar
+    assert_operator body.index('data-session-id="sess-fresh"'),
+                    :<, body.index('data-session-id="sess-stale"')
+    # and each row surfaces a compact recency label so the order reads at a glance
+    assert_select "a[data-test=aa-filter-session][data-session-id=?] [data-test=aa-fs-ago]",
+                  "sess-fresh", text: "2m ago"
+  end
+
+  test "keeps an activity-only session (no captured actions) in the filter sidebar" do
+    activity(session: "activity-only-sess", reason_slug: "narrated but no tool calls", at: 1.minute.ago)
+
+    get activities_agents_path
+
+    assert_response :success
+    # a session that narrated an activity but captured zero AgentActions must not be
+    # dropped — the sidebar keys on the UNION of action + activity time, not actions alone.
+    assert_select "a[data-test=aa-filter-session][data-session-id=?]", "activity-only-sess"
+  end
+
   test "renders a friendly empty state when nothing is captured, and a filtered empty state" do
     get activities_agents_path
     assert_response :success
