@@ -83,21 +83,17 @@
     <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
         on the roomier Build board; the stack overlap tracks the size to keep a small peek
         of each face — 8px on Build (sm = w-10 face, -space-x-8 = 32px) and 4px on Deploy
-        (xs = w-8 face, -space-x-7 = 28px). Hover/focus loosens that overlap and scales
-        the stack from a stable origin, revealing hidden faces without translating lanes
-        into the card margins. %>
+        (xs = w-8 face, -space-x-7 = 28px). Hover/focus keeps the under-stack fixed,
+        scales only the lead face, and nudges the first/last filled lead faces outward
+        so the visible motion is intentional, not a spacing jump. %>
     <% crew_size = board == :build ? "sm" : "xs" %>
     <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
-    <% crew_hover_overlap = if board == :build
-                              "group-hover:-space-x-6 group-focus-within:-space-x-6 hover:-space-x-6"
-                            else
-                              "group-hover:-space-x-5 group-focus-within:-space-x-5 hover:-space-x-5"
-                            end %>
-    <% crew_hover_reveal = "transition-all duration-200 ease-out group-hover:scale-110 group-focus-within:scale-110 hover:scale-110 motion-reduce:transition-none motion-reduce:transform-none" %>
+    <% crew_top_reveal = "transition-transform duration-200 ease-out group-hover:scale-150 group-focus-within:scale-150 hover:scale-150 motion-reduce:transition-none motion-reduce:transform-none" %>
     <%# A blocked card reads design · building · blocker; the blocker is the LAST
         filled compartment (slot 3), and its timer turns into a red ✕. %>
     <% blocked = task.stage == "blocked" %>
     <% block_idx = (columns.rindex { |c| c.stacked.any? } if blocked) %>
+    <% last_filled_idx = columns.rindex { |c| c.stacked.any? } %>
     <%# Fixed grid (3 columns, or 4 on the assembled + shipped columns) so the crew is
         one solid row; each compartment centered in its column, an unreached stage left
         blank. On an assembled card the fourth slot is reserved (empty placeholder, or
@@ -114,8 +110,12 @@
             <div class="relative" data-test="crew-cluster" data-lane="<%= cluster.lane %>">
               <%# Stack runs lead-FIRST (highest on the LEFT): the lead is leftmost and lifted
                   (z-30) so its glow sits on top; the next gets a subtler ring; deeper avatars
-                  blend and peek out to the right. The stack gets only a small hover lift so
-                  it stays inside the fixed column compartment. %>
+                  blend and peek out to the right. The stack spacing stays fixed on
+                  hover/focus; the lead face is the only avatar that scales, with the
+                  row edges nudged outward by 12px. %>
+              <%# Alignment map: 3 slots = left / center / right; 4 slots = left /
+                  center / center / right. These are transform origins; filled clusters
+                  still start from the left edge of their grid cell. %>
               <% crew_pos = if ci.zero?
                               "origin-left"
                             elsif ci == columns.size - 1
@@ -123,10 +123,21 @@
                             else
                               "origin-center"
                             end %>
-              <div class="flex items-center <%= crew_overlap %> <%= crew_hover_overlap %> <%= crew_pos %> <%= crew_hover_reveal %>">
+              <div class="flex items-center <%= crew_overlap %> <%= crew_pos %>"
+                   data-test="crew-stack">
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
-                  <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
-                       title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(' ') %>">
+                  <% stack_position = i.zero? ? "top" : "under" %>
+                  <% edge_reveal = if ci.zero?
+                                     "origin-left group-hover:-translate-x-3 group-focus-within:-translate-x-3 hover:-translate-x-3"
+                                   elsif ci == last_filled_idx
+                                     "origin-right group-hover:translate-x-3 group-focus-within:translate-x-3 hover:translate-x-3"
+                                   else
+                                     "origin-center"
+                                   end %>
+                  <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70 #{crew_top_reveal} #{edge_reveal}" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
+                       title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(' ') %>"
+                       data-test="crew-stack-avatar"
+                       data-stack-position="<%= stack_position %>">
                     <%= render "components/agent_avatar", agent: entry, size: crew_size,
                           shiny: (false unless i.zero?) %>
                   </div>
