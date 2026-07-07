@@ -55,6 +55,11 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "clearFreshDeployGlow(card)"
     assert_includes rendered, "card.classList.remove(\"lbfx-fresh-deploy\", \"studio-border-glow\", \"release-fresh-glow\")"
     assert_includes rendered, "card.classList.add(\"opacity-75\")"
+    assert_includes rendered, "card.dataset.freshDeploy = \"false\""
+    assert_includes rendered, "card.style.removeProperty(\"--task-card-glow-shadow\")"
+    assert_includes rendered, "card.style.removeProperty(\"border-color\")"
+    assert_includes rendered, "card.style.removeProperty(\"box-shadow\")"
+    assert_includes rendered, "card.removeAttribute(\"style\")"
   end
 
   test "reviewed arrivals use a distinct behind-card gust" do

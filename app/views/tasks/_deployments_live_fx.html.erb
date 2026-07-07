@@ -197,7 +197,19 @@
       if (!card) return;
       card.classList.remove("lbfx-fresh-deploy", "studio-border-glow", "release-fresh-glow");
       card.classList.add("opacity-75");
+      card.dataset.freshDeploy = "false";
       card.style.removeProperty("--lbfx-fresh-delay");
+      card.style.removeProperty("--studio-border-glow-offset");
+      card.style.removeProperty("--studio-border-glow-duration");
+      card.style.removeProperty("--studio-border-glow-angle");
+      card.style.removeProperty("--task-card-glow-color");
+      card.style.removeProperty("--task-card-glow-color-a");
+      card.style.removeProperty("--task-card-glow-color-b");
+      card.style.removeProperty("--task-card-glow-border-color");
+      card.style.removeProperty("--task-card-glow-shadow");
+      card.style.removeProperty("border-color");
+      card.style.removeProperty("box-shadow");
+      if (!card.getAttribute("style")) card.removeAttribute("style");
     }
 
     function reviewedGlow(card) {

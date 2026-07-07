@@ -50,6 +50,12 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
   expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
 
+  await expect(page.locator("#last-release")).not.toHaveClass(/lbfx-fresh-deploy/, { timeout: 9_500 });
+  await expect(page.locator("#last-release")).not.toHaveClass(/release-fresh-glow/);
+  await expect(page.locator("#last-release")).toHaveClass(/opacity-75/);
+  await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "false");
+  expect(await page.locator("#last-release").getAttribute("style")).toBeNull();
+
   await page.reload();
   shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
   expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
