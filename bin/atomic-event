@@ -53,6 +53,7 @@
 
 require "json"
 require "fileutils"
+require_relative "../lib/agent_session_usage"
 require_relative "lib/agent_api"
 
 class AgentActivityCli
@@ -145,6 +146,8 @@ class AgentActivityCli
     task = flags["task"].to_s.strip
 
     marker = resolve_marker(session_id: sid)
+    prior_activity_id = read_open_activity(sid)
+    prior_usage = activity_usage_payload(sid, prior_activity_id)
     res = post("/api/v1/agent_activities", {
       "session_id"    => sid,
       "category"      => category,
@@ -157,12 +160,17 @@ class AgentActivityCli
       "task_slug"     => present?(task) ? task : marker["task_slug"],
       "mascot"        => marker["mascot"],
       "stage"         => marker["stage"],
-      "agent"         => agent
-    }.reject { |_, v| v.to_s.empty? })
+      "agent"         => agent,
+      "supervisor"    => flags["supervisor"].to_s.strip
+    }.merge(prefix_keys(prior_usage, "prior_")).reject { |_, v| v.to_s.empty? })
 
     # DETERMINISTIC attribution: record the just-opened activity id in a local
     # marker so the capture hook pins subsequent actions to THIS activity.
-    record_open_activity(sid, res)
+    if res && res.code.to_i.between?(200, 299)
+      clear_activity_usage_baseline(sid, prior_activity_id)
+      opened_id = record_open_activity(sid, res)
+      seed_activity_usage_baseline(sid, opened_id)
+    end
 
     opened = "opened #{category} · #{reason}"
     report(res, prior_outcome.empty? ? opened : "#{prior_outcome} → #{opened}")
@@ -180,6 +188,8 @@ class AgentActivityCli
     agent = flags["agent"].to_s.strip
     agent = read_acting_agent(sid).to_s if agent.empty?
 
+    activity_id = read_open_activity(sid)
+    usage = activity_usage_payload(sid, activity_id)
     res = post("/api/v1/agent_activities/close", {
       "session_id" => sid,
       "agent"      => agent,
@@ -188,11 +198,12 @@ class AgentActivityCli
       # (e.g. `User.find_by(email: ...)`); --key-lang overrides the inferred badge.
       "key_method"      => flags["key-method"].to_s.strip,
       "key_method_lang" => flags["key-lang"].to_s.strip
-    }.reject { |_, v| v.to_s.empty? })
+    }.merge(usage).reject { |_, v| v.to_s.empty? })
 
     # Activity closed — clear the marker so actions after it attribute to nothing
     # until the next activity opens.
     clear_open_activity(sid)
+    clear_activity_usage_baseline(sid, activity_id)
 
     report(res, outcome.empty? ? "closed activity" : "closed · #{outcome}")
   end
@@ -218,6 +229,7 @@ class AgentActivityCli
     # neither can leak into a later run that happens to reuse this session id.
     clear_acting_agent(sid)
     clear_open_activity(sid)
+    clear_activity_usage_baselines(sid)
 
     report(res, "closed open activities · #{outcome}")
   end
@@ -600,7 +612,9 @@ class AgentActivityCli
   def record_open_activity(session_id, res)
     return unless res && res.code.to_i.between?(200, 299)
 
-    write_open_activity(session_id, parse_data(res)["id"])
+    id = parse_data(res)["id"]
+    write_open_activity(session_id, id)
+    id
   end
 
   def write_open_activity(session_id, id)
@@ -633,6 +647,98 @@ class AgentActivityCli
     end
   rescue StandardError
     nil
+  end
+
+  # ── Per-activity usage baseline (session transcript close-diff) ───────────
+  # AgentAction usage is per tool-call and belongs to the parent assistant turn; a
+  # delegated reviewer may run in its OWN session, so the parent action rollup is
+  # not an activity measurement. The activity close path therefore diffs the
+  # owning session transcript from the baseline captured at activity open and
+  # stamps that measured delta directly on AgentActivity.
+  def activity_usage_path(session_id)
+    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+    File.join(projects_dir, ".agents", "sessions", "#{safe}.activity-usage.json")
+  end
+
+  def read_activity_usage_baselines(session_id)
+    path = activity_usage_path(session_id)
+    return {} unless File.file?(path)
+
+    JSON.parse(File.read(path)) || {}
+  rescue StandardError
+    {}
+  end
+
+  def write_activity_usage_baselines(session_id, baselines)
+    path = activity_usage_path(session_id)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{JSON.generate(baselines)}\n")
+  rescue StandardError
+    nil
+  end
+
+  def seed_activity_usage_baseline(session_id, activity_id)
+    return unless present?(activity_id)
+
+    result = capture_session_usage(session_id)
+    return unless result&.totals
+
+    data = read_activity_usage_baselines(session_id)
+    data[activity_id.to_s] ||= result.totals
+    write_activity_usage_baselines(session_id, data)
+  rescue StandardError
+    nil
+  end
+
+  def clear_activity_usage_baseline(session_id, activity_id)
+    return unless present?(activity_id)
+
+    data = read_activity_usage_baselines(session_id)
+    data.delete(activity_id.to_s)
+    data.empty? ? clear_activity_usage_baselines(session_id) : write_activity_usage_baselines(session_id, data)
+  rescue StandardError
+    nil
+  end
+
+  def clear_activity_usage_baselines(session_id)
+    path = activity_usage_path(session_id)
+    File.delete(path) if File.file?(path)
+  rescue StandardError
+    nil
+  end
+
+  def activity_usage_payload(session_id, activity_id)
+    return {} unless present?(activity_id)
+
+    baseline = read_activity_usage_baselines(session_id)[activity_id.to_s]
+    result = capture_session_usage(session_id, baseline: baseline)
+    return {} unless result&.usage?
+
+    delta = result.delta || {}
+    tokens_in = delta["input"].to_i + delta["cache_creation"].to_i
+    {
+      "model" => result.model,
+      "tokens_in" => tokens_in,
+      "tokens_out" => delta["output"].to_i,
+      "cache_read_tokens" => delta["cache_read"].to_i,
+      "cost" => result.cost
+    }.reject { |_, v| v.nil? || v.to_s.empty? }
+  rescue StandardError
+    {}
+  end
+
+  def capture_session_usage(session_id, baseline: nil)
+    usage_providers(session_id).each do |provider|
+      result = AgentSessionUsage.capture(session_id: session_id, provider: provider, baseline: baseline)
+      return result if result
+    end
+    nil
+  end
+
+  def usage_providers(session_id)
+    sid = session_id.to_s.strip
+    primary = @env["CODEX_THREAD_ID"].to_s.strip == sid ? "codex" : "claude"
+    [primary, (primary == "codex" ? "claude" : "codex")]
   end
 
   # ── Task-from-branch inference (marker fallback) ───────────────────────────
@@ -687,6 +793,10 @@ class AgentActivityCli
 
   def present?(value)
     @api.present?(value)
+  end
+
+  def prefix_keys(hash, prefix)
+    hash.transform_keys { |key| "#{prefix}#{key}" }
   end
 
   def warn_note(message)

@@ -214,6 +214,43 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "snorlax", totals[:mascot]
   end
 
+  test "[unit] event totals prefer measured activity usage over fallback action usage" do
+    activity = AgentActivity.new(model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610,
+                                 cache_read_tokens: 120_000, cost: "0.2579")
+    noisy_parent_actions = [
+      AgentAction.new(tokens_in: 6200, tokens_out: 383, cost: 0.0705, model: "claude-opus-4-8",
+                      mascot: "snorlax", source_turn_uuid: "parent-turn"),
+      AgentAction.new(tokens_in: 6200, tokens_out: 383, cost: 0.0705, model: "claude-opus-4-8",
+                      mascot: "snorlax", source_turn_uuid: "parent-turn")
+    ]
+
+    totals = heartbeat_activity_totals(activity, noisy_parent_actions)
+
+    assert_equal 9500, totals[:tokens_in]
+    assert_equal 610, totals[:tokens_out]
+    assert_equal 10_110, totals[:tokens_total]
+    assert_in_delta 0.2579, totals[:cost], 0.0001
+    assert_equal "claude-opus-4-8", totals[:model]
+    assert_equal "snorlax", totals[:mascot], "mascot may still fall back to actions for the avatar"
+  end
+
+  test "[unit] event totals without measured usage do not inherit parent action fallback" do
+    open_activity = AgentActivity.new(closed_at: nil)
+    noisy_parent_actions = [
+      AgentAction.new(tokens_in: 6200, tokens_out: 383, cost: 0.0705, model: "claude-opus-4-8",
+                      mascot: "snorlax", source_turn_uuid: "parent-turn")
+    ]
+
+    totals = heartbeat_activity_totals(open_activity, noisy_parent_actions)
+
+    assert_equal 0, totals[:tokens_in]
+    assert_equal 0, totals[:tokens_out]
+    assert_equal 0, totals[:tokens_total]
+    assert_equal 0.0, totals[:cost]
+    assert_nil totals[:model]
+    assert_equal "snorlax", totals[:mascot], "avatar fallback stays independent from usage fallback"
+  end
+
   test "[unit] event totals over no actions are all zero / nil (a span that framed nothing)" do
     totals = heartbeat_activity_totals([])
 
@@ -380,6 +417,36 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal "Shellder", frag.at_css(".hb-names .hb-namesub").text, "the base mascot name stacks beneath as the sub name"
     # the soul avatar is emitted BEFORE the mascot avatar in the DOM (on top of the overlap)
     assert_operator html.index("agent-soul"), :<, html.index("hb-mascotava")
+  end
+
+  test "[unit] agent cell renders expert, supervisor, and base mascot as a triple stack" do
+    carl = Agent.new(slug: "carl", name: "Carl", metadata: { "color" => "#38BDF8" })
+    avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "color" => "#FB7185" })
+    poke = Pokemon.new(slug: "shellder", name: "Shellder")
+    html = heartbeat_agent_cell(mascot_slug: "shellder", pokemon: poke,
+                                agent_slug: "carl", agent: carl,
+                                supervisor_slug: "avi", supervisor: avi)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+
+    assert frag.at_css(".hb-soulava[data-soul=carl]"), "expert soul avatar renders first"
+    assert frag.at_css(".hb-supervisorava[data-supervisor=avi]"), "Avi supervisor avatar renders as its own level"
+    assert frag.at_css(".hb-mascotava"), "base session mascot remains visible"
+    assert_equal %w[Carl Avi Shellder], frag.css(".hb-names span").map(&:text)
+    assert_operator html.index("data-soul=\"carl\""), :<, html.index("data-supervisor=\"avi\"")
+    assert_operator html.index("data-supervisor=\"avi\""), :<, html.index("hb-mascotava")
+  end
+
+  test "[unit] agent cell can render only the top two attribution levels for actions" do
+    carl = Agent.new(slug: "carl", name: "Carl", metadata: { "color" => "#38BDF8" })
+    avi  = Agent.new(slug: "avi", name: "Avi", metadata: { "color" => "#FB7185" })
+    html = heartbeat_agent_cell(mascot_slug: "shellder", agent_slug: "carl", agent: carl,
+                                supervisor_slug: "avi", supervisor: avi, show_mascot: false)
+    frag = Nokogiri::HTML::DocumentFragment.parse(html)
+
+    assert frag.at_css(".hb-soulava[data-soul=carl]")
+    assert frag.at_css(".hb-supervisorava[data-supervisor=avi]")
+    assert_nil frag.at_css(".hb-mascotava"), "action rows omit the base mascot when supervisor exists"
+    assert_equal %w[Carl Avi], frag.css(".hb-names span").map(&:text)
   end
 
   test "[unit] agent cell renders the base mascot as a SOLO stack (no soul, no sub name) when there is no acting soul" do

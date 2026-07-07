@@ -1,8 +1,8 @@
 require "test_helper"
 
 # [component] the per-SPAN grading drawer body (heartbeat/activity_drawer) — the span-level
-# mirror of the per-action drawer. It shows the span summary (status + rolled-up
-# token/cost/model of its actions) and two grade editors (Alex + the McRitchie audit)
+# mirror of the per-action drawer. It shows the span summary (status + measured
+# token/cost/model of the activity) and two grade editors (Alex + the McRitchie audit)
 # that POST to E2's grade_event endpoint. No inline radios — the editors use the same
 # disposition TOGGLE buttons as the per-action drawer.
 class HeartbeatEventDrawerTest < ActionView::TestCase
@@ -17,7 +17,8 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
   end
 
   test "[component] the span drawer renders Alex + McRitchie editors posting to the E2 endpoint" do
-    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "found the seam")
+    ev = event(seq: 0, closed_at: Time.current, outcome_slug: "found the seam",
+               model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.2579)
     a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
 
     render partial: "heartbeat/activity_drawer",
@@ -33,9 +34,11 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
     assert_select "form[data-grader=mcr] input[name=grader][value=mcr]"
     # disposition is a toggle, never an inline radio
     assert_select "input[type=radio]", false
-    # the rolled-up span summary surfaces
-    assert_includes rendered, "9.4k/360"
+    # the measured span summary surfaces; action fallback usage does not backfill it
+    assert_includes rendered, "9.5k/610"
     assert_includes rendered, "opus-4-8"
+    assert_includes rendered, "$0.2579"
+    refute_includes rendered, "9.4k/360"
   end
 
   test "[component] only Alex's span editor carries the bank/discard controls" do

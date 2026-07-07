@@ -3,8 +3,9 @@
     (agents/_activity_row) whose expand reveals its raw actions as drill-down rows. On
     mobile the four aa-collapsible columns hide behind a per-row detail panel. The thead
     carries an id so a live broadcast can insert a new activity right after it (top of the
-    feed). All rolled-up numbers come from the controller-loaded activity_rows array (no
-    per-row query). Locals: activity_rows (Array of [AgentActivity, [AgentAction,...]]),
+    feed). Activity usage comes from measured AgentActivity fields when present; raw
+    actions remain controller-loaded for drill-downs (no per-row query). Locals:
+    activity_rows (Array of [AgentActivity, [AgentAction,...]]),
     pokemon_by_slug, agents_by_slug, activity_grades, action_grades, shared_turn_ids,
     stage_transitions. %>
 <% pokemon_by_slug ||= {} %>

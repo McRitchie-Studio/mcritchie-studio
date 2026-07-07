@@ -1,7 +1,7 @@
 <%# The per-activity grading drawer body, lazy-loaded into the shared turbo-frame when the
     operator clicks an activity's grade button. The activity-level mirror of _drawer: a header,
-    a key/value summary (category, status, opened, the rolled-up token/cost/model of the
-    actions it framed), then Alex's activity grade editor and the McRitchie audit editor.
+    a key/value summary (category, status, opened, the measured token/cost/model of the
+    activity span), then Alex's activity grade editor and the McRitchie audit editor.
     The editors POST to the activity grade endpoint via fetch (heartbeatActivityEditor),
     so the drawer stays a read-only GET. Locals: activity, actions (its attributed
     AgentActions), alex (ActionGrade | nil), mcr (ActionGrade | nil). %>
@@ -10,7 +10,7 @@
   <% stage_transitions ||= {} %>
   <% cat = heartbeat_category_meta(activity.category) %>
   <% status = heartbeat_activity_status_meta(activity, stage_transitions) %>
-  <% totals = heartbeat_activity_totals(actions) %>
+  <% totals = heartbeat_activity_totals(activity, actions) %>
   <div class="hb-dh">
     <button type="button" class="hb-dclose" @click="closeDrawer()" aria-label="Close drawer">&times;</button>
     <h2>

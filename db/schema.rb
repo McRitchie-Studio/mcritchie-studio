@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_06_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_07_031000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -118,19 +118,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_120000) do
 
   create_table "agent_activities", force: :cascade do |t|
     t.string "agent"
+    t.integer "cache_read_tokens"
     t.string "category", null: false
     t.datetime "closed_at"
+    t.decimal "cost", precision: 10, scale: 4
     t.datetime "created_at", null: false
     t.text "key_method"
     t.string "key_method_lang"
     t.string "mascot"
+    t.string "model"
     t.datetime "opened_at", null: false
     t.string "outcome_slug"
     t.string "reason_slug", null: false
     t.integer "seq", default: 0, null: false
     t.string "session_id", null: false
     t.string "stage"
+    t.string "supervisor_agent"
     t.string "task_slug"
+    t.integer "tokens_in"
+    t.integer "tokens_out"
     t.datetime "updated_at", null: false
     t.index ["opened_at"], name: "index_agent_activities_on_opened_at"
     t.index ["session_id", "closed_at"], name: "index_agent_activities_on_session_id_and_closed_at"

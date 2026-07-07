@@ -296,6 +296,32 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
+  def test_integration_end_sends_measured_usage_from_the_open_activity_baseline
+    Dir.mktmpdir do |proj|
+      seed_open_activity_marker(proj, SESSION, 1)
+      seed_activity_usage_baseline(proj, SESSION, 1,
+                                   "input" => 1000, "output" => 0,
+                                   "cache_creation" => 0, "cache_read" => 0)
+      write_claude_transcript(
+        proj, SESSION,
+        "input_tokens" => 7000,
+        "output_tokens" => 383,
+        "cache_creation_input_tokens" => 200,
+        "cache_read_input_tokens" => 304_000
+      )
+
+      requests = run_cli(%W[end --session #{SESSION} --outcome approved], proj: proj)
+
+      close = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities/close" }
+      body = JSON.parse(close[:body])
+      assert_equal "claude-opus-4-8", body["model"]
+      assert_equal 6200, body["tokens_in"], "activity display tokens exclude cache-read fallback"
+      assert_equal 383, body["tokens_out"]
+      assert_equal 304_000, body["cache_read_tokens"], "cache-read is kept only for cost"
+      assert_in_delta 0.1928, body["cost"].to_f, 0.0001
+    end
+  end
+
   # ── [integration] action self-reports an off-box row to the open activity ──
   # bin/release's deploy steps run as subprocesses the PostToolUse hook can't see;
   # `action` pins each to the open span (the marker) so the span shows real rows.
@@ -421,6 +447,19 @@ class AgentActivityCliTest < Minitest::Test
       body = JSON.parse(open[:body])
       assert_equal "avi", body["agent"], "--agent rides the open-activity POST"
       assert_equal "shellder", body["mascot"], "the base session mascot rides alongside, unchanged"
+    end
+  end
+
+  def test_integration_start_stamps_supervisor_on_the_open_activity
+    Dir.mktmpdir do |proj|
+      write_session_marker(proj, SESSION, "mascot" => "shellder")
+      requests = run_cli(%W[start --session #{SESSION} --category Verify --reason review --agent carl --supervisor avi],
+                         proj: proj)
+
+      open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
+      body = JSON.parse(open[:body])
+      assert_equal "carl", body["agent"]
+      assert_equal "avi", body["supervisor"], "supervisor attribution is explicit, not prose"
     end
   end
 
@@ -681,6 +720,30 @@ class AgentActivityCliTest < Minitest::Test
     path
   end
 
+  def seed_activity_usage_baseline(projects_dir, session_id, activity_id, totals)
+    sessions = File.join(projects_dir, ".agents", "sessions")
+    FileUtils.mkdir_p(sessions)
+    path = File.join(sessions, "#{session_id}.activity-usage.json")
+    File.write(path, JSON.generate(activity_id.to_s => totals))
+    path
+  end
+
+  def write_claude_transcript(home_dir, session_id, usage)
+    dir = File.join(home_dir, ".claude", "projects", "test-project")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "#{session_id}.jsonl")
+    line = {
+      "type" => "assistant",
+      "uuid" => "turn-activity-usage",
+      "message" => {
+        "model" => "claude-opus-4-8",
+        "usage" => usage
+      }
+    }
+    File.write(path, "#{JSON.generate(line)}\n")
+    path
+  end
+
   # The worktree DESK marker (.agent-context.json) — carries the BOUND task's
   # context (task slug + its builder mascot). resolve_marker walks up from cwd to
   # find it, so tests write it at the proj dir they chdir into.
@@ -692,6 +755,7 @@ class AgentActivityCliTest < Minitest::Test
     {
       "AGENT_API_SECRET" => "test-secret",
       "CLAUDE_PROJECTS_DIR" => projects_dir,
+      "HOME" => projects_dir,
       "CLAUDE_CODE_SESSION_ID" => nil,
       "CODEX_THREAD_ID" => nil
     }

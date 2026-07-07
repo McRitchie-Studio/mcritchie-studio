@@ -2,8 +2,8 @@
     AgentActivity: its category badge, the narrated reason -> result (stacked two
     lines to save horizontal width; an OPEN activity shows the in-progress placeholder plus a distinct "open" status badge), the
     stacked-avatar Agent cell, and a MERGED Model / Tokens column (model on top, the
-    rolled-up in/out tokens beneath) plus Cost — all rolled up from the raw tool-calls
-    attributed to the activity (summed in the controller-loaded @activity_rows array — no
+    measured in/out tokens beneath) plus Cost. Activity usage comes from measured
+    AgentActivity fields; attributed actions are controller-loaded for drill-downs (no
     per-row query). Each activity is a collapsible tbody (Alpine, default collapsed);
     expanding it drills into those raw agent_actions read-only. Each activity carries
     inline good/not quick-grade radios (Alex + McRitchie, POSTing to the activity grade
@@ -45,7 +45,7 @@
 
     <% activity_rows.each do |activity, actions| %>
       <% cat = heartbeat_category_meta(activity.category) %>
-      <% totals = heartbeat_activity_totals(actions) %>
+      <% totals = heartbeat_activity_totals(activity, actions) %>
       <% status = heartbeat_activity_status_meta(activity, stage_transitions) %>
       <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
       <% pokemon = pokemon_by_slug[mascot_slug] %>
@@ -104,6 +104,8 @@
           </td>
           <td><%= heartbeat_agent_cell(mascot_slug: mascot_slug, pokemon: pokemon,
                                        agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                       supervisor_slug: activity.supervisor_agent,
+                                       supervisor: agents_by_slug[activity.supervisor_agent],
                                        mascot_test: "event-mascot") %></td>
           <td class="hb-meta hb-mono hb-modeltok">
             <span class="hb-mt-model" data-test="event-model" title="<%= totals[:model].presence || "no model (board / harness steps only)" %>"><%= heartbeat_model_short(totals[:model]) %></span>
@@ -151,6 +153,9 @@
               </td>
               <td><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon,
                                            agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                           supervisor_slug: activity.supervisor_agent,
+                                           supervisor: agents_by_slug[activity.supervisor_agent],
+                                           show_mascot: activity.supervisor_agent.blank?,
                                            submascot: true) %></td>
               <%= tag.td class: class_names("hb-meta", "hb-mono", "hb-modeltok", "hb-turn-shared" => turn_shared), title: (heartbeat_shared_turn_title if turn_shared) do %>
                 <span class="hb-mt-model" title="<%= action.model.presence || "no model (board / harness step)" %>"><%= heartbeat_model_short(action.model) %></span>

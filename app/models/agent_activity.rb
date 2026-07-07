@@ -68,7 +68,7 @@ class AgentActivity < ApplicationRecord
   # Coerce the acting soul to a known roster slug (down-cased), else nil. This is
   # deliberately NON-FATAL — an unknown/typo'd `agent` becomes nil rather than an
   # invalid record, so a bad --agent value never sinks a best-effort narration.
-  before_validation :normalize_agent
+  before_validation :normalize_agent, :normalize_supervisor_agent
 
   # Live-update the /agents/activities feed. Guarded inside ActivitiesBroadcaster's
   # safe_broadcast, so a dead cable never breaks a narration write. Note: the prior
@@ -104,7 +104,8 @@ class AgentActivity < ApplicationRecord
   # the grader judges the narrated activity, not the tool stream. nil fields dropped.
   def to_grading_row
     { "id" => id, "category" => category, "reason" => reason_slug, "outcome" => outcome_slug,
-      "task_slug" => task_slug, "session_id" => session_id, "agent" => agent }.compact
+      "task_slug" => task_slug, "session_id" => session_id, "agent" => agent,
+      "supervisor_agent" => supervisor_agent }.compact
   end
 
   # Open a new activity for the session, auto-closing any prior OPEN activity first.
@@ -132,8 +133,11 @@ class AgentActivity < ApplicationRecord
   #                           agent: nil, prior_outcome_slug: nil,
   #                           opened_at: Time.current) => AgentActivity
   def self.open_activity!(session_id:, category:, reason_slug:, task_slug: nil,
-                          mascot: nil, stage: nil, agent: nil, prior_outcome_slug: nil,
+                          mascot: nil, stage: nil, agent: nil, supervisor_agent: nil,
+                          prior_outcome_slug: nil,
                           prior_key_method: nil, prior_key_method_lang: nil,
+                          prior_model: nil, prior_tokens_in: nil, prior_tokens_out: nil,
+                          prior_cache_read_tokens: nil, prior_cost: nil,
                           opened_at: Time.current)
     activity = new(
       session_id:  session_id,
@@ -143,6 +147,7 @@ class AgentActivity < ApplicationRecord
       mascot:      mascot,
       stage:       stage,
       agent:       agent,
+      supervisor_agent: supervisor_agent,
       seq:         next_seq_for(session_id),
       opened_at:   opened_at
     )
@@ -157,6 +162,10 @@ class AgentActivity < ApplicationRecord
       # Same for the completed activity's key method (`next --key-method`). update_all
       # skips callbacks, so normalize the pair here.
       close_attrs.merge!(HasKeyMethod.normalize_pair(prior_key_method, prior_key_method_lang)) if prior_key_method.present?
+      close_attrs.merge!(usage_attrs(model: prior_model, tokens_in: prior_tokens_in,
+                                     tokens_out: prior_tokens_out,
+                                     cache_read_tokens: prior_cache_read_tokens,
+                                     cost: prior_cost))
       # Per-agent lanes: auto-close only THIS agent's open activity (activity.agent is the
       # already-normalized lane key — a known soul or nil), so a parallel soul
       # narration in the same session never closes another soul's in-flight activity.
@@ -181,7 +190,10 @@ class AgentActivity < ApplicationRecord
   # resolves ITS OWN activity, not whichever soul opened last. Returns the closed
   # activity, or nil when that lane has no open activity.
   def self.close_activity!(session_id:, agent: nil, outcome_slug: nil,
-                           key_method: nil, key_method_lang: nil, closed_at: Time.current)
+                           key_method: nil, key_method_lang: nil,
+                           model: nil, tokens_in: nil, tokens_out: nil,
+                           cache_read_tokens: nil, cost: nil,
+                           closed_at: Time.current)
     activity = for_session(session_id).where(agent: normalize_agent_value(agent)).open.order(:seq).last
     return nil unless activity
 
@@ -192,6 +204,8 @@ class AgentActivity < ApplicationRecord
       attrs[:key_method]      = key_method
       attrs[:key_method_lang] = key_method_lang
     end
+    attrs.merge!(usage_attrs(model: model, tokens_in: tokens_in, tokens_out: tokens_out,
+                             cache_read_tokens: cache_read_tokens, cost: cost))
     activity.update!(attrs)
     activity
   end
@@ -227,6 +241,11 @@ class AgentActivity < ApplicationRecord
     !open?
   end
 
+  def measured_usage?
+    model.present? || tokens_in.present? || tokens_out.present? ||
+      cache_read_tokens.present? || cost.present?
+  end
+
   private
 
   # Normalize `agent` to a known soul slug (down-cased + stripped) or nil. An
@@ -236,6 +255,10 @@ class AgentActivity < ApplicationRecord
     self.agent = self.class.normalize_agent_value(agent)
   end
 
+  def normalize_supervisor_agent
+    self.supervisor_agent = self.class.normalize_agent_value(supervisor_agent)
+  end
+
   # The lane key for an agent value: a known SOULS slug (down-cased + stripped),
   # else nil (the orchestrator's un-agented lane). Shared by #normalize_agent (the
   # record) and the per-lane close scopes (open_activity!/close_activity!) so a WHERE on
@@ -243,6 +266,35 @@ class AgentActivity < ApplicationRecord
   def self.normalize_agent_value(value)
     slug = value.to_s.strip.downcase
     SOULS.include?(slug) ? slug : nil
+  end
+
+  def self.usage_attrs(model: nil, tokens_in: nil, tokens_out: nil, cache_read_tokens: nil, cost: nil)
+    values = {
+      model: model.to_s.strip.presence,
+      tokens_in: integer_or_nil(tokens_in),
+      tokens_out: integer_or_nil(tokens_out),
+      cache_read_tokens: integer_or_nil(cache_read_tokens),
+      cost: decimal_or_nil(cost)
+    }.compact
+    return {} unless values[:model].present? ||
+                     values[:tokens_in].to_i.positive? ||
+                     values[:tokens_out].to_i.positive? ||
+                     values[:cache_read_tokens].to_i.positive? ||
+                     values[:cost].to_f.positive?
+
+    values
+  end
+
+  def self.integer_or_nil(value)
+    return nil if value.nil? || value.to_s.strip.empty?
+
+    value.to_i
+  end
+
+  def self.decimal_or_nil(value)
+    return nil if value.nil? || value.to_s.strip.empty?
+
+    value.to_d
   end
 
   class << self
