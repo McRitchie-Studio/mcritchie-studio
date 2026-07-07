@@ -72,6 +72,18 @@ module Api
         assert_equal "carl", AgentActivity.for_session("sess-agent").order(:seq).last.agent
       end
 
+      test "[integration] create permits supervisor and stamps structured supervisor attribution" do
+        post api_v1_agent_activities_path,
+             params: { session_id: "sess-supervisor", category: "Verify", reason: "review",
+                       agent: "carl", supervisor: "avi" },
+             headers: @headers, as: :json
+
+        assert_response :created
+        activity = AgentActivity.for_session("sess-supervisor").order(:seq).last
+        assert_equal "carl", activity.agent
+        assert_equal "avi", activity.supervisor_agent
+      end
+
       test "[integration] create coerces an unknown agent to nil and still returns 201" do
         assert_difference -> { AgentActivity.count }, 1 do
           post api_v1_agent_activities_path,
@@ -107,6 +119,29 @@ module Api
         opened = AgentActivity.for_session("sess-boundary").order(:seq).last
         assert_equal "add the guard", opened.reason_slug
         assert opened.open?
+      end
+
+      test "[integration] create with prior usage stamps the auto-closed prior span" do
+        post api_v1_agent_activities_path,
+             params: { session_id: "sess-boundary-usage", category: "Explore", reason: "find issue with api" },
+             headers: @headers, as: :json
+        first = AgentActivity.order(:created_at).last
+
+        post api_v1_agent_activities_path,
+             params: { session_id: "sess-boundary-usage", category: "Edit", reason: "add the guard",
+                       prior_outcome: "located the bug", prior_model: "claude-opus-4-8",
+                       prior_tokens_in: 9400, prior_tokens_out: 360,
+                       prior_cache_read_tokens: 42_000, prior_cost: "0.2579" },
+             headers: @headers, as: :json
+
+        assert_response :created
+        first.reload
+        assert first.measured_usage?
+        assert_equal "claude-opus-4-8", first.model
+        assert_equal 9400, first.tokens_in
+        assert_equal 360, first.tokens_out
+        assert_equal 42_000, first.cache_read_tokens
+        assert_equal BigDecimal("0.2579"), first.cost
       end
 
       # ---- [integration] session-end teardown: close_all ----------------------
@@ -157,6 +192,27 @@ module Api
         event = AgentActivity.for_session("sess-close").order(:seq).last
         assert event.closed?
         assert_equal "green suite", event.outcome_slug
+      end
+
+      test "[integration] close permits measured usage from the owning session" do
+        post api_v1_agent_activities_path,
+             params: { session_id: "sess-close-usage", category: "Verify", reason: "review diff", agent: "carl" },
+             headers: @headers, as: :json
+
+        post close_api_v1_agent_activities_path,
+             params: { session_id: "sess-close-usage", agent: "carl", outcome: "approved",
+                       model: "claude-opus-4-8", tokens_in: 6200, tokens_out: 383,
+                       cache_read_tokens: 304_000, cost: "0.0705" },
+             headers: @headers, as: :json
+
+        assert_response :ok
+        event = AgentActivity.for_session("sess-close-usage").order(:seq).last
+        assert event.measured_usage?
+        assert_equal "claude-opus-4-8", event.model
+        assert_equal 6200, event.tokens_in
+        assert_equal 383, event.tokens_out
+        assert_equal 304_000, event.cache_read_tokens
+        assert_equal BigDecimal("0.0705"), event.cost
       end
 
       test "[integration] close stamps the span's key method with an inferred lang" do

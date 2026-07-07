@@ -50,7 +50,7 @@
 
   /* Activity table — activities are the primary rows; expanding one drills into its
      attributed raw actions (read-only). Wider now: the activity rows carry the
-     rolled-up Pokemon / Model / Tokens / Cost columns plus an activity-grade affordance. */
+     mascot / measured Model / Tokens / Cost columns plus an activity-grade affordance. */
   /* Narrower now: merging Model+Tokens into one column and stacking the narration /
      avatars trims the table's minimum width the operator asked to reclaim. */
   #alex-heartbeat table.hb-evt-tbl { min-width:980px; }
@@ -83,11 +83,13 @@
   #alex-heartbeat .hb-agentstack { display:flex; align-items:center; gap:8px; }
   #alex-heartbeat .hb-avatars { display:flex; flex-direction:column; align-items:center; }
   #alex-heartbeat .hb-ava { position:relative; display:inline-flex; }
-  #alex-heartbeat .hb-avatars .hb-soulava { z-index:2; }
+  #alex-heartbeat .hb-avatars .hb-soulava { z-index:3; }
+  #alex-heartbeat .hb-avatars .hb-supervisorava { z-index:2; }
   #alex-heartbeat .hb-avatars .hb-mascotava { z-index:1; }
-  /* Overlap ONLY when a soul sits on top — a solo mascot keeps normal alignment. */
-  #alex-heartbeat .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-14px; }
+  /* Overlap ONLY when stacked attribution exists — a solo mascot keeps normal alignment. */
+  #alex-heartbeat .hb-avatars .hb-ava + .hb-ava { margin-top:-14px; }
   #alex-heartbeat .hb-soulava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
+  #alex-heartbeat .hb-supervisorava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
   #alex-heartbeat .hb-mascotava > .rounded-full { box-shadow:0 0 0 1px var(--hb-line); border-radius:9999px; }
   #alex-heartbeat .hb-names { display:flex; flex-direction:column; line-height:1.15; }
   #alex-heartbeat .hb-nameprimary { font-weight:700; color:var(--hb-txt); font-size:12px; white-space:nowrap; }

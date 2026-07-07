@@ -95,13 +95,15 @@ module ActivityFeed
     Pokemon.where(slug: slugs).index_by(&:slug)
   end
 
-  # One query for every acting SOUL on the page so the stacked Agent column reuses
+  # One query for every acting/supervising SOUL on the page so the stacked Agent column reuses
   # the seeded Agent identity (name/emoji/status_color) instead of N+1 lookups. A
   # activity's `agent` is the soul that acted (avi/carl/…); the drill-down actions
-  # inherit their activity's agent, so this single lookup covers both. Most activities carry
-  # a nil agent (the base session mascot did it), so the set is usually tiny/empty.
+  # inherit their activity's agent/supervisor, so this single lookup covers both.
+  # Most activities carry a nil agent (the base session mascot did it), so the set
+  # is usually tiny/empty.
   def agent_soul_lookup(activities)
-    slugs = activities.filter_map { |activity| activity.agent.presence }.uniq
+    slugs = activities.flat_map { |activity| [activity.agent.presence, activity.supervisor_agent.presence] }
+                      .compact.uniq
     return {} if slugs.empty?
 
     Agent.where(slug: slugs).index_by(&:slug)

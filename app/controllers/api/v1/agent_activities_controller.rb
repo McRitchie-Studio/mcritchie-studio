@@ -27,9 +27,15 @@ module Api
           mascot:             open_params[:mascot],
           stage:              open_params[:stage],
           agent:              open_params[:agent],
+          supervisor_agent:   open_params[:supervisor].presence || open_params[:supervisor_agent],
           prior_outcome_slug: open_params[:prior_outcome],
           prior_key_method:      open_params[:prior_key_method],
-          prior_key_method_lang: open_params[:prior_key_method_lang]
+          prior_key_method_lang: open_params[:prior_key_method_lang],
+          prior_model:           open_params[:prior_model],
+          prior_tokens_in:       open_params[:prior_tokens_in],
+          prior_tokens_out:      open_params[:prior_tokens_out],
+          prior_cache_read_tokens: open_params[:prior_cache_read_tokens],
+          prior_cost:            open_params[:prior_cost]
         )
         render_data(activity, status: :created)
       end
@@ -46,7 +52,12 @@ module Api
           agent:           close_params[:agent],
           outcome_slug:    close_params[:outcome],
           key_method:      close_params[:key_method],
-          key_method_lang: close_params[:key_method_lang]
+          key_method_lang: close_params[:key_method_lang],
+          model:           close_params[:model],
+          tokens_in:       close_params[:tokens_in],
+          tokens_out:      close_params[:tokens_out],
+          cache_read_tokens: close_params[:cache_read_tokens],
+          cost:            close_params[:cost]
         )
         return head :no_content if activity.nil?
 
@@ -81,9 +92,16 @@ module Api
           :mascot,         # optional STABLE base session Pokémon slug
           :stage,          # optional coarse task stage at open time
           :agent,          # optional acting soul (AgentActivity::SOULS); unknown → nil
+          :supervisor,      # optional supervisor soul (Avi for pr-review)
+          :supervisor_agent, # optional canonical supervisor field name
           :prior_outcome,  # optional — "what happened" on the auto-closed prior activity
           :prior_key_method,      # optional — the completed activity's load-bearing call
-          :prior_key_method_lang  # optional badge language; inferred when blank
+          :prior_key_method_lang, # optional badge language; inferred when blank
+          :prior_model,           # optional measured model for the auto-closed prior activity
+          :prior_tokens_in,       # optional fresh input tokens for the auto-closed prior activity
+          :prior_tokens_out,      # optional output tokens for the auto-closed prior activity
+          :prior_cache_read_tokens, # optional cache-read tokens for cost only
+          :prior_cost             # optional computed cost for the auto-closed prior activity
         )
       end
 
@@ -93,7 +111,12 @@ module Api
           :agent,      # optional acting soul — selects the LANE to close (unknown → nil lane)
           :outcome,    # optional — "what happened" (stored as outcome_slug)
           :key_method,      # optional — the activity's load-bearing call
-          :key_method_lang  # optional badge language; inferred when blank
+          :key_method_lang, # optional badge language; inferred when blank
+          :model,           # optional measured model for this activity
+          :tokens_in,       # optional fresh input tokens for this activity
+          :tokens_out,      # optional output tokens for this activity
+          :cache_read_tokens, # optional cache-read tokens for cost only
+          :cost             # optional computed cost for this activity
         )
       end
 

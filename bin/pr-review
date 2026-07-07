@@ -300,7 +300,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
     Narrate your review as your own soul so the heartbeat attributes it to you.
     Open your activity BEFORE any review work:
-    bin/agent-activity start --category Verify --agent #{reviewer_slug} --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
+    bin/agent-activity start --category Verify --agent #{reviewer_slug} --supervisor avi --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
 
     Close it with your verdict when the review is done:
     bin/agent-activity end --outcome "<verdict>: <one-line reason>"

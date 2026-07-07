@@ -95,3 +95,39 @@ test("a new action streams into its activity's drill-down live", async ({ page }
 
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
+
+test("activity rows render measured close-diff usage instead of parent action fallback", async ({ page }) => {
+  await page.goto("/agents/activities");
+  const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
+  const session = `e2e-activity-usage-${Date.now()}`;
+  const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+  const created = await page.request.post("/api/v1/agent_activities", {
+    headers: auth,
+    data: { session_id: session, category: "Verify", reason: "review with measured usage", agent: "shannon" },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  const noisyParentAction = await page.request.post("/api/v1/agent_actions", {
+    headers: auth,
+    data: { session_id: session, kind: "delegate", outcome: "ok", actor: "agent",
+            summary: "summon primary review: shannon", model: "claude-opus-4-8",
+            tokens_in: 6200, tokens_out: 383, source_turn_uuid: "parent-turn" },
+  });
+  expect(noisyParentAction.ok()).toBeTruthy();
+
+  const closed = await page.request.post("/api/v1/agent_activities/close", {
+    headers: auth,
+    data: { session_id: session, agent: "shannon", outcome: "approved with own usage",
+            model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610,
+            cache_read_tokens: 120000, cost: "0.2579" },
+  });
+  expect(closed.ok()).toBeTruthy();
+
+  await page.goto(`/agents/activities?sessions=${session}`);
+  const activityRow = page.locator("tr.aa-arow", { hasText: "review with measured usage" }).first();
+  await expect(activityRow.locator("[data-test='aa-activity-cost']")).toHaveText("$0.2579");
+  await expect(activityRow.locator(".aa-cost-tok")).toHaveText("9.5k/610");
+  await expect(activityRow.locator("[data-test='aa-activity-cost']")).not.toHaveText("$0.0705");
+  await expect(activityRow.locator(".aa-cost-tok")).not.toHaveText("6.2k/383");
+});

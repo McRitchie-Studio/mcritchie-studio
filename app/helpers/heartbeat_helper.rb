@@ -234,23 +234,40 @@ module HeartbeatHelper
     end
   end
 
-  # Roll an activity's attributed actions up into the totals the activity row shows: summed
-  # in/out tokens, summed cost (all DEDUPED by source_turn_uuid, see above), and the
-  # activity's dominant model (the model most of its actions ran on). Pure aggregation
-  # over the in-memory array the controller already loaded under each activity
-  # (@activity_rows), so the activity table adds NO query per row — the N+1 the task
-  # explicitly forbids. `mascot` is the most common action mascot, a fallback the
+  # Activity-row totals. New activity spans report their own measured close-diff
+  # model/tokens/cost; those numbers are authoritative and deliberately do NOT fall
+  # back to parent action usage. The legacy one-arg form still aggregates actions for
+  # raw-action contexts. `mascot` is the most common action mascot, a fallback the
   # view uses only when the activity carries no mascot of its own.
-  def heartbeat_activity_totals(actions)
-    actions = Array(actions)
-    totals  = heartbeat_usage_totals(actions)
+  def heartbeat_activity_totals(activity_or_actions, actions = nil)
+    activity = actions.nil? ? nil : activity_or_actions
+    actions = Array(actions.nil? ? activity_or_actions : actions)
+    mascot = heartbeat_dominant(actions.map(&:mascot))
+
+    if activity&.respond_to?(:measured_usage?) && activity.measured_usage?
+      tokens_in = activity.tokens_in.to_i
+      tokens_out = activity.tokens_out.to_i
+      return {
+        tokens_in: tokens_in,
+        tokens_out: tokens_out,
+        tokens_total: tokens_in + tokens_out,
+        cost: activity.cost.to_f,
+        model: activity.model,
+        mascot: mascot
+      }
+    end
+
+    return { tokens_in: 0, tokens_out: 0, tokens_total: 0, cost: 0.0,
+             model: nil, mascot: mascot } if activity
+
+    totals = heartbeat_usage_totals(actions)
     {
       tokens_in:    totals[:tokens_in],
       tokens_out:   totals[:tokens_out],
       tokens_total: totals[:tokens_total],
       cost:         totals[:cost],
       model:        heartbeat_dominant(actions.map(&:model)),
-      mascot:       heartbeat_dominant(actions.map(&:mascot))
+      mascot:       mascot
     }
   end
 
@@ -458,43 +475,56 @@ module HeartbeatHelper
   # signature_color is never hit per row). `submascot` dims the mascot on the
   # drill-down rows; `mascot_test` stamps the base mascot's data-test hook (e.g.
   # "event-mascot"). Faces are the compact agent_avatar "xxs" (24px) size.
-  def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil, submascot: false, mascot_test: nil, size: "xxs")
+  def heartbeat_agent_cell(mascot_slug: nil, pokemon: nil, agent_slug: nil, agent: nil,
+                           supervisor_slug: nil, supervisor: nil, show_mascot: true,
+                           submascot: false, mascot_test: nil, size: "xxs")
     mascot_slug = mascot_slug.presence
     agent_slug  = agent_slug.presence
+    supervisor_slug = supervisor_slug.presence
     mascot_name = pokemon&.name.presence || mascot_slug&.titleize
     soul = (agent || Agent.new(slug: agent_slug, name: agent_slug.titleize)) if agent_slug
+    supervisor_soul = (supervisor || Agent.new(slug: supervisor_slug, name: supervisor_slug.titleize)) if supervisor_slug
 
-    # Avatar faces — the acting SOUL rides ON TOP of the base mascot in a tight
-    # overlapping vertical cluster (the soul keeps its own per-soul ring tint). `size`
-    # sizes both faces via components/agent_avatar (default "xxs"); a caller can bump it
-    # (e.g. the /agents/activities primary rows use "xs") to distinguish altitudes.
-    soul_face =
-      if agent_slug
-        tag.span(render(partial: "components/agent_avatar", locals: { agent: soul, size: size }),
-                 class: "hb-ava hb-soulava", style: "color: #{soul.status_color}",
-                 title: soul.name, data: { test: "agent-soul", soul: agent_slug })
-      end
-    mascot_face =
-      if mascot_slug
-        face = StageAgentsHelper::MascotAgent.new(name: mascot_name, avatar: pokemon&.sprite_url, color: nil)
-        tag.span(render(partial: "components/agent_avatar", locals: { agent: face, size: size }),
-                 class: class_names("hb-ava", "hb-mascotava", "hb-submascot" => submascot || agent_slug.present?),
-                 title: mascot_name, data: mascot_test ? { test: mascot_test } : {})
-      end
+    entries = []
+    if agent_slug
+      entries << {
+        name: soul.name,
+        face: tag.span(render(partial: "components/agent_avatar", locals: { agent: soul, size: size }),
+                       class: "hb-ava hb-soulava", style: "color: #{soul.status_color}",
+                       title: soul.name, data: { test: "agent-soul", soul: agent_slug })
+      }
+    end
+    if supervisor_slug
+      entries << {
+        name: supervisor_soul.name,
+        face: tag.span(render(partial: "components/agent_avatar", locals: { agent: supervisor_soul, size: size }),
+                       class: "hb-ava hb-supervisorava", style: "color: #{supervisor_soul.status_color}",
+                       title: supervisor_soul.name,
+                       data: { test: "agent-supervisor", supervisor: supervisor_slug })
+      }
+    end
+    if show_mascot && mascot_slug
+      face = StageAgentsHelper::MascotAgent.new(name: mascot_name, avatar: pokemon&.sprite_url, color: nil)
+      entries << {
+        name: mascot_name,
+        face: tag.span(render(partial: "components/agent_avatar", locals: { agent: face, size: size }),
+                       class: class_names("hb-ava", "hb-mascotava",
+                                          "hb-submascot" => submascot || agent_slug.present? || supervisor_slug.present?),
+                       title: mascot_name, data: mascot_test ? { test: mascot_test } : {})
+      }
+    end
 
-    return tag.span("—", class: "hb-meta") unless soul_face || mascot_face
+    return tag.span("—", class: "hb-meta") if entries.empty?
 
-    avatars = tag.div(safe_join([soul_face, mascot_face].compact), class: "hb-avatars")
+    avatars = tag.div(safe_join(entries.map { |entry| entry[:face] }), class: "hb-avatars")
 
-    # Name column — PRIMARY (the acting soul, else the solo mascot) is bold in one
-    # shared primary color; the subordinate mascot name stacks directly BENEATH it in
-    # the lighter/less-bold SUB color (not aligned to its avatar, per design).
-    names = [tag.span(agent_slug ? soul.name : mascot_name, class: "hb-nameprimary")]
-    names << tag.span(mascot_name, class: "hb-namesub") if agent_slug && mascot_slug
+    names = entries.each_with_index.map do |entry, index|
+      tag.span(entry[:name], class: index.zero? ? "hb-nameprimary" : "hb-namesub")
+    end
     name_col = tag.div(safe_join(names), class: "hb-names")
 
     tag.div(safe_join([avatars, name_col]),
-            class: class_names("hb-agentstack", "hb-solo" => agent_slug.nil?),
+            class: class_names("hb-agentstack", "hb-solo" => agent_slug.nil? && supervisor_slug.nil?),
             data: { test: "agent-stack" })
   end
 

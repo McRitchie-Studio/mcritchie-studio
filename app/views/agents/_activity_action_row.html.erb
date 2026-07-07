@@ -28,6 +28,9 @@
   <td class="aa-chev" aria-hidden="true"></td>
   <td class="aa-agent"><%= heartbeat_agent_cell(mascot_slug: action.mascot, pokemon: action_pokemon,
                                                  agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                                 supervisor_slug: activity.supervisor_agent,
+                                                 supervisor: agents_by_slug[activity.supervisor_agent],
+                                                 show_mascot: activity.supervisor_agent.blank?,
                                                  submascot: true) %></td>
   <td class="aa-activity">
     <div class="aa-stack">

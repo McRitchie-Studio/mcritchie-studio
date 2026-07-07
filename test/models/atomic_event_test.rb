@@ -8,6 +8,11 @@ class AgentActivityTest < ActiveSupport::TestCase
 
     assert_equal 0, event.seq
     assert_nil event.closed_at
+    assert_nil event.model
+    assert_nil event.tokens_in
+    assert_nil event.tokens_out
+    assert_nil event.cost
+    refute event.measured_usage?, "a new/open activity has no measured close-diff usage"
     assert event.open?, "a fresh span with no closed_at is open"
   end
 
@@ -91,12 +96,30 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert_equal "avi", event.agent
   end
 
+  test "[unit] a known supervisor soul is stored, down-cased" do
+    event = AgentActivity.new(session_id: "sess-1", category: "Verify", reason_slug: "review",
+                              opened_at: Time.current, agent: "Carl", supervisor_agent: "Avi")
+
+    assert event.valid?, event.errors.full_messages.to_sentence
+    assert_equal "carl", event.agent
+    assert_equal "avi", event.supervisor_agent
+  end
+
   test "[unit] an unknown acting soul is coerced to nil, never invalid" do
     event = AgentActivity.new(session_id: "sess-1", category: "Explore", reason_slug: "x",
                             opened_at: Time.current, agent: "gary-oak")
 
     assert event.valid?, "an unknown soul must NOT fail validation (non-fatal coercion)"
     assert_nil event.agent, "an unknown soul is coerced to nil, not stored"
+  end
+
+  test "[unit] an unknown supervisor soul is coerced to nil, never invalid" do
+    event = AgentActivity.new(session_id: "sess-1", category: "Verify", reason_slug: "review",
+                              opened_at: Time.current, agent: "Carl", supervisor_agent: "not-a-soul")
+
+    assert event.valid?, "an unknown supervisor must NOT fail validation"
+    assert_equal "carl", event.agent
+    assert_nil event.supervisor_agent
   end
 
   test "[unit] a blank acting soul normalizes to nil" do
@@ -169,6 +192,14 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert_equal "carl", event.reload.agent, "the acting soul rides the span, down-cased"
   end
 
+  test "[integration] open_event! stamps the supervisor soul on the span" do
+    event = AgentActivity.open_event!(session_id: "supervisor-sess", category: "Verify",
+                                      reason_slug: "review", agent: "Carl", supervisor_agent: "Avi")
+
+    assert_equal "carl", event.reload.agent
+    assert_equal "avi", event.supervisor_agent, "Avi is structured supervisor attribution, not prose"
+  end
+
   test "[integration] open_event! coerces an unknown acting soul to nil and still opens" do
     event = AgentActivity.open_event!(session_id: "agent-sess-2", category: "Edit",
                                     reason_slug: "add guard", agent: "team-rocket")
@@ -219,6 +250,30 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert second.open?
     assert_nil second.outcome_slug, "the newly opened span carries no outcome yet"
     assert_equal 1, AgentActivity.for_session("boundary-sess").open.count
+  end
+
+  test "[unit] open_event! stamps measured usage on the auto-closed prior span" do
+    AgentActivity.open_event!(session_id: "boundary-usage", category: "Explore", reason_slug: "look")
+
+    AgentActivity.open_event!(
+      session_id: "boundary-usage",
+      category: "Edit",
+      reason_slug: "change",
+      prior_outcome_slug: "found it",
+      prior_model: "claude-opus-4-8",
+      prior_tokens_in: 6000,
+      prior_tokens_out: 840,
+      prior_cache_read_tokens: 42_000,
+      prior_cost: "0.2943"
+    )
+
+    prior = AgentActivity.for_session("boundary-usage").order(:seq).first
+    assert prior.measured_usage?
+    assert_equal "claude-opus-4-8", prior.model
+    assert_equal 6000, prior.tokens_in
+    assert_equal 840, prior.tokens_out
+    assert_equal 42_000, prior.cache_read_tokens
+    assert_equal BigDecimal("0.2943"), prior.cost
   end
 
   test "[unit] open_event! without a prior_outcome auto-closes prior with a NULL outcome" do
@@ -322,6 +377,28 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert_equal "green suite", closed.outcome_slug
     assert closed.closed_at.present?
     assert_equal 0, AgentActivity.for_session("close-sess").open.count
+  end
+
+  test "[integration] close_event! stamps the activity's own measured usage" do
+    AgentActivity.open_event!(session_id: "usage-close", category: "Verify", reason_slug: "review diff", agent: "shannon")
+
+    closed = AgentActivity.close_event!(
+      session_id: "usage-close",
+      agent: "shannon",
+      outcome_slug: "approved",
+      model: "claude-opus-4-8",
+      tokens_in: 9500,
+      tokens_out: 610,
+      cache_read_tokens: 120_000,
+      cost: "0.2579"
+    )
+
+    assert closed.measured_usage?
+    assert_equal "claude-opus-4-8", closed.model
+    assert_equal 9500, closed.tokens_in
+    assert_equal 610, closed.tokens_out
+    assert_equal 120_000, closed.cache_read_tokens
+    assert_equal BigDecimal("0.2579"), closed.cost
   end
 
   test "[integration] close_event! closes the LATEST open span" do
