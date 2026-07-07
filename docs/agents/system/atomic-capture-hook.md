@@ -1,9 +1,9 @@
 # Atomic-capture PostToolUse hook
 
 `bin/atomic-capture-hook` is the **Phase B live-capture** producer: a Claude Code
-`PostToolUse` hook that streams every tool call into the atomic-capture endpoint,
-so a fresh Claude Code session populates the per-action trajectory at
-`/alex/heartbeat` **live** - one `AgentAction` row per tool call.
+or Codex `PostToolUse` hook that streams every tool call into the
+atomic-capture endpoint, so a fresh agent session populates the per-action
+trajectory at `/alex/heartbeat` **live** - one `AgentAction` row per tool call.
 
 It is the half-2 producer for the consumer half (the `/api/v1/agent_actions`
 endpoint and `AgentAction` model). The hook only writes; the endpoint persists.
@@ -22,11 +22,26 @@ On a `PostToolUse` event, Claude Code passes JSON on stdin:
 
 The hook maps that to the `AgentAction.capture` contract and POSTs it (flat JSON,
 matching the `/api/v1` convention) to
-`${ATOMIC_CAPTURE_URL:-http://localhost:3000}/api/v1/agent_actions`:
+`${ATOMIC_CAPTURE_URL:-https://mcritchie.studio}/api/v1/agent_actions`.
+
+Codex uses a different shape (`thread_id` plus function-call transcript rows
+under `~/.codex/sessions/**/<thread>.jsonl`). The hook normalizes that provider
+shape first:
+
+- `thread_id`/`id`/`CODEX_THREAD_ID` become the canonical `session_id`.
+- `exec_command` and `write_stdin` become `Bash`; `apply_patch` becomes `Edit`;
+  read-like MCP/resource tools become `Read`; `tool_search_tool` becomes
+  `WebSearch`; unmapped function names still capture under their own kind.
+- If the hook payload does not include the tool input/output, the newest paired
+  `function_call` + `function_call_output` is recovered from the Codex transcript.
+- Codex `last_token_usage` is stamped as fresh `tokens_in`/`tokens_out` with
+  `cached_input_tokens` carried separately as `cache_read_tokens`.
+
+The canonical capture fields are:
 
 | Capture field | Source |
 |---------------|--------|
-| `session_id`  | event `session_id` (required — no id ⇒ no POST) |
+| `session_id`  | Claude `session_id`, Codex `thread_id`/`CODEX_THREAD_ID` (required — no id ⇒ no POST) |
 | `kind`        | `tool_name` mapped: Read/Glob/Grep→`read`, Edit/Write/NotebookEdit→`edit`, Bash→`bash`, Task/Agent→`delegate`, WebFetch/WebSearch→`research`; **unknown→tool name downcased** |
 | `input`       | `tool_input` serialized, **secret-redacted**, then truncated (~3 KB) |
 | `output`      | `tool_response` serialized, **secret-redacted**, then truncated (~3 KB) |
@@ -132,6 +147,12 @@ lines each carry `message.model` (e.g. `claude-opus-4-8`). So the hook:
 3. else leaves it nil — the capture endpoint drops the key and the column stays
    null. We only ever stamp a **real** model; nothing is fabricated.
 
+Codex model/usage comes from the newest transcript `event_msg` token-count row.
+The hook prefers `last_token_usage` for per-action spend and falls back to
+`total_token_usage` only when needed. `cached_input_tokens` is not counted as
+fresh input; it is stored as `cache_read_tokens` so server-side cost can price it
+at the cache-read tier.
+
 ### Marker derivation
 
 `task_slug` / `stage` / `mascot` come from the same active-feature marker
@@ -159,7 +180,7 @@ model allows a null `task_slug`).
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `ATOMIC_CAPTURE_URL` | `http://localhost:3000` | capture endpoint base URL |
+| `ATOMIC_CAPTURE_URL` | `https://mcritchie.studio` | capture endpoint base URL |
 | `AGENT_API_SECRET` | — | agent secret; the hook mints a 24h token via `POST /api/v1/auth { secret }` |
 | `CLAUDE_PROJECTS_DIR` | `~/projects` | where the session marker + token cache live |
 | `ATOMIC_CAPTURE_FOREGROUND` | unset | `1` runs delivery inline (tests/debug) |
@@ -169,7 +190,7 @@ the environment, else 1Password (`op://agents/Agent API Secret/AGENT_API_SECRET`
 else the repo `.env`. The minted bearer token is then sent as
 `Authorization: Bearer <token>` to `/api/v1/agent_actions`.
 
-## Install — `settings.json` snippet
+## Install — hook snippets
 
 The hook command must point at the **primary checkout** (`bin/atomic-capture-hook`),
 not a worktree, so it survives worktree cleanup. Add to `~/.claude/settings.json`:
@@ -182,7 +203,7 @@ not a worktree, so it survives worktree cleanup. Add to `~/.claude/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook",
+            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook",
             "timeout": 5
           }
         ]
@@ -197,9 +218,22 @@ would scope it.)
 
 > **Do not hand-edit the operator's global `~/.claude/settings.json` from a build
 > session.** `bin/install-agent-docs` wires this hook idempotently (pointing at
-> `$RUNTIME_ROOT/bin/atomic-capture-hook`, pruning stale worktree entries) the
+> `$RUNTIME_ROOT/bin/atomic-capture-hook`, pruning stale entries) the
 > same way it wires the status line and SessionStart mascot hook. The orchestrator
 > runs `bin/install-agent-docs` **after** this change is reviewed and merged.
+
+Codex gets the same producer in `/etc/codex/requirements.toml` when writable, or
+in `~/.codex/hooks.json` as a user fallback:
+
+```toml
+[[hooks.PostToolUse]]
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook"
+timeout = 5
+statusMessage = "Capturing action"
+```
 
 ## SessionEnd hook — close the last open activity
 
@@ -223,7 +257,7 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/alex/projects/mcritchie-studio/bin/agent-activity close-open",
+            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/agent-activity close-open",
             "timeout": 5
           }
         ]
@@ -235,9 +269,20 @@ survives worktree cleanup; **no `matcher`** ⇒ it fires for every end reason �
 
 > **Same rule — do not hand-edit the operator's global settings from a build
 > session.** `bin/install-agent-docs` wires this SessionEnd hook idempotently
-> (pointing at `$RUNTIME_ROOT/bin/agent-activity close-open`, pruning stale worktree
+> (pointing at `$RUNTIME_ROOT/bin/agent-activity close-open`, pruning stale
 > entries) the same way it wires the PostToolUse capture hook. The orchestrator
 > runs it **after** this change is reviewed and merged.
+
+Codex uses `Stop` for the same teardown:
+
+```toml
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/agent-activity close-open"
+timeout = 5
+```
 
 ## Tests
 

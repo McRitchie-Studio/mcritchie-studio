@@ -37,9 +37,9 @@ class AgentApiTest < Minitest::Test
 
   # ── [unit] base_url ─────────────────────────────────────────────────────────
 
-  def test_unit_base_url_defaults_to_localhost_3000
-    assert_equal "http://localhost:3000", client.base_url
-    assert_equal "http://localhost:3000", client("ATOMIC_CAPTURE_URL" => "  ").base_url
+  def test_unit_base_url_defaults_to_production_board
+    assert_equal "https://mcritchie.studio", client.base_url
+    assert_equal "https://mcritchie.studio", client("ATOMIC_CAPTURE_URL" => "  ").base_url
   end
 
   def test_unit_base_url_honors_atomic_capture_url

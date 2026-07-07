@@ -41,10 +41,11 @@ RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
 CODEX_REQUIREMENTS_PATH="${CODEX_REQUIREMENTS_PATH:-/etc/codex/requirements.toml}"
 RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin}"
 ZPROFILE_PATH="${AGENT_RUNTIME_ZPROFILE:-$HOME/.zprofile}"
-# The board the SessionStart insights hook reads (GET /api/v1/insights). Baked
-# into the wired command as ATOMIC_CAPTURE_URL so a fresh session hatches with the
-# curated PROD bank, exactly like the capture hook. Overridable for tests.
-INSIGHTS_BOARD_URL="${AGENT_INSIGHTS_BOARD_URL:-https://mcritchie.studio}"
+# The board the activity/action/insights hooks target. Baked into wired commands
+# as ATOMIC_CAPTURE_URL so a fresh session hatches with the curated PROD bank and
+# its actions land on the same PROD board. Overridable for tests.
+ACTIVITY_BOARD_URL="${AGENT_ACTIVITY_BOARD_URL:-${AGENT_INSIGHTS_BOARD_URL:-https://mcritchie.studio}}"
+INSIGHTS_BOARD_URL="$ACTIVITY_BOARD_URL"
 MODE="${1:-install}"
 
 # "source:target" pairs (paths use /, so : is a safe delimiter).
@@ -270,11 +271,18 @@ block = <<~ZSH
   #{begin_marker}
   # Homebrew Ruby for Codex/agent non-interactive zsh login shells.
   mcritchie_ruby_path_prefix=#{quoted_path}
-  case ":${PATH:-}:" in
-    *":$mcritchie_ruby_path_prefix:"*) ;;
-    *) export PATH="$mcritchie_ruby_path_prefix${PATH:+:$PATH}" ;;
-  esac
-  unset mcritchie_ruby_path_prefix
+  mcritchie_ruby_new_path="$mcritchie_ruby_path_prefix"
+  mcritchie_ruby_old_ifs="$IFS"
+  IFS=:
+  for mcritchie_ruby_dir in ${PATH:-}; do
+    case ":$mcritchie_ruby_path_prefix:" in
+      *":$mcritchie_ruby_dir:"*) ;;
+      *) mcritchie_ruby_new_path="$mcritchie_ruby_new_path:$mcritchie_ruby_dir" ;;
+    esac
+  done
+  IFS="$mcritchie_ruby_old_ifs"
+  export PATH="$mcritchie_ruby_new_path"
+  unset mcritchie_ruby_path_prefix mcritchie_ruby_new_path mcritchie_ruby_old_ifs mcritchie_ruby_dir
   #{end_marker}
 ZSH
 
@@ -291,20 +299,23 @@ RUBY
 }
 
 render_codex_managed_requirements() {
-  local cmd="$1" managed_dir="$2" insights_cmd="$3"
-  ruby - "$cmd" "$managed_dir" "$insights_cmd" <<'RUBY'
+  local cmd="$1" managed_dir="$2" insights_cmd="$3" capture_cmd="$4" close_open_cmd="$5"
+  ruby - "$cmd" "$managed_dir" "$insights_cmd" "$capture_cmd" "$close_open_cmd" <<'RUBY'
 cmd = ARGV.fetch(0)
 managed_dir = ARGV.fetch(1)
 insights_cmd = ARGV.fetch(2)
+capture_cmd = ARGV.fetch(3)
+close_open_cmd = ARGV.fetch(4)
 
 def toml_string(value)
   %("#{value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').gsub("\n", "\\n")}")
 end
 
 puts <<~TOML
-  # BEGIN McRitchie Codex mascot managed hook
-  # Mirrors the session Pokemon/app marker into Codex's thread-title footer, and
-  # feeds the curated Insight Bank forward into a fresh session (SessionStart).
+  # BEGIN McRitchie Codex telemetry managed hook
+  # Mirrors the session Pokemon/app marker into Codex's thread-title footer,
+  # feeds the curated Insight Bank forward into a fresh session (SessionStart),
+  # captures every tool call as an AgentAction, and closes open activities on Stop.
   [hooks]
   managed_dir = #{toml_string(managed_dir)}
 
@@ -330,25 +341,44 @@ puts <<~TOML
   type = "command"
   command = #{toml_string(cmd)}
   timeout = 2
-  # END McRitchie Codex mascot managed hook
+
+  [[hooks.PostToolUse]]
+
+  [[hooks.PostToolUse.hooks]]
+  type = "command"
+  command = #{toml_string(capture_cmd)}
+  timeout = 5
+  statusMessage = "Capturing action"
+
+  [[hooks.Stop]]
+
+  [[hooks.Stop.hooks]]
+  type = "command"
+  command = #{toml_string(close_open_cmd)}
+  timeout = 5
+  # END McRitchie Codex telemetry managed hook
 TOML
 RUBY
 }
 
 install_codex_managed_requirements() {
-  local requirements="$1" cmd="$2" managed_dir="$3" staged="$4" insights_cmd="$5"
+  local requirements="$1" cmd="$2" managed_dir="$3" staged="$4" insights_cmd="$5" capture_cmd="$6" close_open_cmd="$7"
   mkdir -p "$(dirname "$staged")"
-  render_codex_managed_requirements "$cmd" "$managed_dir" "$insights_cmd" > "$staged"
+  render_codex_managed_requirements "$cmd" "$managed_dir" "$insights_cmd" "$capture_cmd" "$close_open_cmd" > "$staged"
 
-  ruby - "$requirements" "$cmd" "$managed_dir" "$insights_cmd" <<'RUBY'
+  ruby - "$requirements" "$cmd" "$managed_dir" "$insights_cmd" "$capture_cmd" "$close_open_cmd" <<'RUBY'
 require "fileutils"
 
 path = ARGV.fetch(0)
 cmd = ARGV.fetch(1)
 managed_dir = ARGV.fetch(2)
 insights_cmd = ARGV.fetch(3)
-begin_marker = "# BEGIN McRitchie Codex mascot managed hook"
-end_marker = "# END McRitchie Codex mascot managed hook"
+capture_cmd = ARGV.fetch(4)
+close_open_cmd = ARGV.fetch(5)
+begin_marker = "# BEGIN McRitchie Codex telemetry managed hook"
+end_marker = "# END McRitchie Codex telemetry managed hook"
+legacy_begin_marker = "# BEGIN McRitchie Codex mascot managed hook"
+legacy_end_marker = "# END McRitchie Codex mascot managed hook"
 
 def toml_string(value)
   %("#{value.to_s.gsub("\\", "\\\\\\").gsub('"', '\"').gsub("\n", "\\n")}")
@@ -356,8 +386,9 @@ end
 
 block = <<~TOML
   #{begin_marker}
-  # Mirrors the session Pokemon/app marker into Codex's thread-title footer, and
-  # feeds the curated Insight Bank forward into a fresh session (SessionStart).
+  # Mirrors the session Pokemon/app marker into Codex's thread-title footer,
+  # feeds the curated Insight Bank forward into a fresh session (SessionStart),
+  # captures every tool call as an AgentAction, and closes open activities on Stop.
   [hooks]
   managed_dir = #{toml_string(managed_dir)}
 
@@ -383,6 +414,21 @@ block = <<~TOML
   type = "command"
   command = #{toml_string(cmd)}
   timeout = 2
+
+  [[hooks.PostToolUse]]
+
+  [[hooks.PostToolUse.hooks]]
+  type = "command"
+  command = #{toml_string(capture_cmd)}
+  timeout = 5
+  statusMessage = "Capturing action"
+
+  [[hooks.Stop]]
+
+  [[hooks.Stop.hooks]]
+  type = "command"
+  command = #{toml_string(close_open_cmd)}
+  timeout = 5
   #{end_marker}
 TOML
 
@@ -392,6 +438,8 @@ begin
   updated =
     if text.include?(begin_marker) && text.include?(end_marker)
       text.sub(/#{Regexp.escape(begin_marker)}.*?#{Regexp.escape(end_marker)}\n?/m, block)
+    elsif text.include?(legacy_begin_marker) && text.include?(legacy_end_marker)
+      text.sub(/#{Regexp.escape(legacy_begin_marker)}.*?#{Regexp.escape(legacy_end_marker)}\n?/m, block)
     elsif text.match?(/^\s*\[hooks\]\s*$/) || text.match?(/^\s*\[\[hooks\./)
       exit 2
     else
@@ -414,7 +462,12 @@ prune_codex_user_hook() {
   local tmp
   tmp="$(mktemp)"
   if jq '
-      def is_managed($c): ($c | contains("/bin/codex-session-title")) or ($c | contains("/bin/session-insights"));
+      def is_managed($c):
+        ($c | contains("/bin/codex-session-title")) or
+        ($c | contains("/bin/session-insights")) or
+        ($c | contains("/bin/atomic-capture-hook")) or
+        ($c | contains("/bin/agent-activity close-open")) or
+        ($c | contains("/bin/atomic-event close-open"));
       def prune_event($event):
         if .hooks[$event] then
           .hooks[$event] |= (
@@ -423,7 +476,7 @@ prune_codex_user_hook() {
           )
           | if (.hooks[$event] | length) == 0 then del(.hooks[$event]) else . end
         else . end;
-      prune_event("SessionStart") | prune_event("PostToolUse")
+      prune_event("SessionStart") | prune_event("PostToolUse") | prune_event("Stop")
     ' "$hooks" > "$tmp"; then
     if ! cmp -s "$hooks" "$tmp"; then
       mv "$tmp" "$hooks"
@@ -437,7 +490,7 @@ prune_codex_user_hook() {
 }
 
 install_codex_user_hook() {
-  local hooks="$1" cmd="$2" insights_cmd="$3"
+  local hooks="$1" cmd="$2" insights_cmd="$3" capture_cmd="$4" close_open_cmd="$5"
   command -v jq >/dev/null 2>&1 || return 0
 
   mkdir -p "$(dirname "$hooks")"
@@ -448,8 +501,13 @@ install_codex_user_hook() {
   # Remove any prior managed entries (mascot AND insights) before re-appending, so
   # the fallback is idempotent for both. The insights hook is a SECOND SessionStart
   # entry (never merged into the mascot entry) so each stays independently prunable.
-  if jq --arg cmd "$cmd" --arg insights_cmd "$insights_cmd" '
-      def is_managed($c): ($c | contains("/bin/codex-session-title")) or ($c | contains("/bin/session-insights"));
+  if jq --arg cmd "$cmd" --arg insights_cmd "$insights_cmd" --arg capture_cmd "$capture_cmd" --arg close_open_cmd "$close_open_cmd" '
+      def is_managed($c):
+        ($c | contains("/bin/codex-session-title")) or
+        ($c | contains("/bin/session-insights")) or
+        ($c | contains("/bin/atomic-capture-hook")) or
+        ($c | contains("/bin/agent-activity close-open")) or
+        ($c | contains("/bin/atomic-event close-open"));
       .hooks //= {}
       | .hooks.SessionStart = (
           (.hooks.SessionStart // [])
@@ -458,6 +516,11 @@ install_codex_user_hook() {
         )
       | .hooks.PostToolUse = (
           (.hooks.PostToolUse // [])
+          | map(.hooks = ((.hooks // []) | map(select((is_managed(.command // "")) | not))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      | .hooks.Stop = (
+          (.hooks.Stop // [])
           | map(.hooks = ((.hooks // []) | map(select((is_managed(.command // "")) | not))))
           | map(select(((.hooks // []) | length) > 0))
         )
@@ -495,12 +558,33 @@ install_codex_user_hook() {
                 timeout: 2
               }
             ]
+          },
+          {
+            hooks: [
+              {
+                type: "command",
+                command: $capture_cmd,
+                timeout: 5,
+                statusMessage: "Capturing action"
+              }
+            ]
+          }
+        ]
+      | .hooks.Stop += [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: $close_open_cmd,
+                timeout: 5
+              }
+            ]
           }
         ]
     ' "$hooks" > "$tmp"; then
     if ! cmp -s "$hooks" "$tmp"; then
       mv "$tmp" "$hooks"
-      echo "  $hooks (installed user-level Codex SessionStart/PostToolUse fallback -> $cmd + $insights_cmd)"
+      echo "  $hooks (installed user-level Codex SessionStart/PostToolUse/Stop fallback -> $cmd + $insights_cmd + $capture_cmd + $close_open_cmd)"
     else
       rm -f "$tmp"
     fi
@@ -578,13 +662,13 @@ if command -v jq >/dev/null 2>&1; then
   tmp="$(mktemp)"
   if jq 'if .hooks.PostToolUse then
         .hooks.PostToolUse |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/atomic-capture-hook") | not)))))
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/atomic-capture-hook") | not)))))
           | map(select(((.hooks // []) | length) > 0))
         )
       else . end' "$settings" > "$tmp"; then
     if ! cmp -s "$settings" "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (removed stale worktree PostToolUse hooks)"
+      echo "  $settings (removed old PostToolUse capture hooks)"
     else
       rm -f "$tmp"
     fi
@@ -592,8 +676,9 @@ if command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  capture_cmd="$RUNTIME_ROOT/bin/atomic-capture-hook"
-  if ! jq -e --arg cmd "$capture_cmd" '[(.hooks.PostToolUse // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$settings" >/dev/null 2>&1; then
+  capture_path="$RUNTIME_ROOT/bin/atomic-capture-hook"
+  capture_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $capture_path"
+  if ! jq -e --arg path "$capture_path" '[(.hooks.PostToolUse // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     if jq --arg cmd "$capture_cmd" '.hooks //= {} | .hooks.PostToolUse = ((.hooks.PostToolUse // []) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}])' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"
@@ -613,13 +698,13 @@ if command -v jq >/dev/null 2>&1; then
   tmp="$(mktemp)"
   if jq 'if .hooks.SessionEnd then
         .hooks.SessionEnd |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/(atomic-event|agent-activity) close-open") | not)))))
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/bin/(atomic-event|agent-activity) close-open") | not)))))
           | map(select(((.hooks // []) | length) > 0))
         )
       else . end' "$settings" > "$tmp"; then
     if ! cmp -s "$settings" "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (removed stale worktree SessionEnd hooks)"
+      echo "  $settings (removed old SessionEnd close-open hooks)"
     else
       rm -f "$tmp"
     fi
@@ -627,8 +712,9 @@ if command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  close_open_cmd="$RUNTIME_ROOT/bin/agent-activity close-open"
-  if ! jq -e --arg cmd "$close_open_cmd" '[(.hooks.SessionEnd // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$settings" >/dev/null 2>&1; then
+  close_open_path="$RUNTIME_ROOT/bin/agent-activity close-open"
+  close_open_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $close_open_path"
+  if ! jq -e --arg path "$close_open_path" '[(.hooks.SessionEnd // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     if jq --arg cmd "$close_open_cmd" '.hooks //= {} | .hooks.SessionEnd = ((.hooks.SessionEnd // []) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}])' "$settings" > "$tmp"; then
       mv "$tmp" "$settings"
@@ -697,22 +783,24 @@ codex_hook_cmd="$RUNTIME_ROOT/bin/codex-session-title"
 # ATOMIC_CAPTURE_URL), same non-fatal bin/session-insights, wired as a second
 # SessionStart hook alongside the mascot.
 codex_insights_cmd="ATOMIC_CAPTURE_URL=$INSIGHTS_BOARD_URL $RUNTIME_ROOT/bin/session-insights"
+codex_capture_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $RUNTIME_ROOT/bin/atomic-capture-hook"
+codex_close_open_cmd="ATOMIC_CAPTURE_URL=$ACTIVITY_BOARD_URL $RUNTIME_ROOT/bin/agent-activity close-open"
 codex_requirements_staged="$HOME/.codex/mcritchie-requirements.toml"
-if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged" "$codex_insights_cmd"; then
-  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart/PostToolUse hooks -> $codex_hook_cmd + $codex_insights_cmd)"
+if install_codex_managed_requirements "$CODEX_REQUIREMENTS_PATH" "$codex_hook_cmd" "$RUNTIME_ROOT" "$codex_requirements_staged" "$codex_insights_cmd" "$codex_capture_cmd" "$codex_close_open_cmd"; then
+  echo "  $CODEX_REQUIREMENTS_PATH (installed Codex managed SessionStart/PostToolUse/Stop hooks -> $codex_hook_cmd + $codex_insights_cmd + $codex_capture_cmd + $codex_close_open_cmd)"
   prune_codex_user_hook "$codex_hooks"
 else
   requirements_status="$?"
   case "$requirements_status" in
     2)
-      echo "  $CODEX_REQUIREMENTS_PATH (already has Codex hooks; merge managed mascot hook manually)"
+      echo "  $CODEX_REQUIREMENTS_PATH (already has Codex hooks; merge managed telemetry hook manually)"
       ;;
     13)
-      echo "  $CODEX_REQUIREMENTS_PATH (admin install required for organic Codex mascot)"
-      install_codex_user_hook "$codex_hooks" "$codex_hook_cmd" "$codex_insights_cmd"
+      echo "  $CODEX_REQUIREMENTS_PATH (admin install required for organic Codex telemetry)"
+      install_codex_user_hook "$codex_hooks" "$codex_hook_cmd" "$codex_insights_cmd" "$codex_capture_cmd" "$codex_close_open_cmd"
       ;;
     *)
-      echo "  $CODEX_REQUIREMENTS_PATH (could not install Codex managed mascot hook)"
+      echo "  $CODEX_REQUIREMENTS_PATH (could not install Codex managed telemetry hook)"
       ;;
   esac
   echo "  Staged managed requirements: $codex_requirements_staged"

@@ -58,6 +58,16 @@ contains_codex_adapter() {
   [ -f "$file" ] && grep -q '/bin/codex-session-title' "$file"
 }
 
+contains_atomic_capture_hook() {
+  local file="$1"
+  [ -f "$file" ] && grep -q '/bin/atomic-capture-hook' "$file"
+}
+
+contains_close_open_hook() {
+  local file="$1"
+  [ -f "$file" ] && grep -Eq '/bin/(agent-activity|atomic-event) close-open' "$file"
+}
+
 contains_ruby_path_prefix() {
   local file="$1"
   [ -f "$file" ] && grep -Fq "$RUBY_PATH_PREFIX" "$file"
@@ -161,6 +171,26 @@ doctor() {
     warn_line "managed Codex requirements are staged but not installed: $staged"
   else
     fail_line "Codex hooks do not reference $CODEX_ADAPTER"
+  fi
+
+  if contains_atomic_capture_hook "$requirements"; then
+    ok "Codex managed requirements include action capture hook"
+  elif contains_atomic_capture_hook "$codex_hooks"; then
+    ok "Codex user hooks include action capture fallback hook"
+  elif contains_atomic_capture_hook "$staged"; then
+    warn_line "managed Codex action capture requirements are staged but not installed: $staged"
+  else
+    fail_line "Codex hooks do not reference $ROOT/bin/atomic-capture-hook"
+  fi
+
+  if contains_close_open_hook "$requirements"; then
+    ok "Codex managed requirements include activity close-open hook"
+  elif contains_close_open_hook "$codex_hooks"; then
+    ok "Codex user hooks include activity close-open fallback hook"
+  elif contains_close_open_hook "$staged"; then
+    warn_line "managed Codex close-open requirements are staged but not installed: $staged"
+  else
+    fail_line "Codex hooks do not reference bin/agent-activity close-open"
   fi
 
   sentinel="$HOME/.codex/mcritchie-live-thread-title.enabled"

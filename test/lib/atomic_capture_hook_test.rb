@@ -499,6 +499,54 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  # ── [unit] Codex normalization (provider adapter) ────────────────────────
+
+  def test_unit_codex_direct_event_normalizes_to_the_canonical_payload_shape
+    event = {
+      "thread_id" => SESSION,
+      "cwd" => "/nope",
+      "tool_name" => "exec_command",
+      "tool_input" => { "cmd" => "git status --short" },
+      "tool_response" => "Process exited with code 0\n M bin/atomic-capture-hook\n"
+    }
+
+    normalized = hook("CODEX_THREAD_ID" => SESSION).normalize_event(event)
+    assert_equal SESSION, normalized["session_id"]
+    assert_equal "codex", normalized["llm_provider"]
+    assert_equal "Bash", normalized["tool_name"]
+    assert_equal "git status --short", normalized.dig("tool_input", "command")
+
+    payload = hook.build_payload(normalized, now: Time.utc(2026, 7, 7, 12, 0, 0))
+    assert_equal "bash", payload["kind"]
+    assert_equal "git status --short", payload["key_method"]
+    assert_equal "ok", payload["outcome"]
+    assert_includes payload["output"], "Process exited with code 0"
+  end
+
+  def test_unit_codex_transcript_fallback_extracts_tool_and_last_turn_usage
+    Dir.mktmpdir do |home|
+      path = write_codex_transcript(home, SESSION,
+                                    command: "bin/rails test test/lib/atomic_capture_hook_test.rb",
+                                    output: "Process exited with code 1\n1 failure\n")
+      event = { "thread_id" => SESSION, "cwd" => "/nope" }
+
+      normalized = hook("HOME" => home, "CODEX_THREAD_ID" => SESSION).normalize_event(event)
+      assert_equal path, normalized["transcript_path"]
+      assert_equal "Bash", normalized["tool_name"]
+      assert_equal "bin/rails test test/lib/atomic_capture_hook_test.rb", normalized.dig("tool_input", "command")
+      assert_equal "turn-codex-1", normalized["source_turn_uuid"]
+
+      payload = hook("HOME" => home, "CODEX_THREAD_ID" => SESSION)
+        .build_payload(normalized, now: Time.utc(2026, 7, 7, 12, 0, 0))
+      assert_equal "gpt-5-codex", payload["model"]
+      assert_equal 500, payload["tokens_in"], "Codex input_tokens excludes cached_input_tokens for fresh spend"
+      assert_equal 42, payload["tokens_out"]
+      assert_equal 1000, payload["cache_read_tokens"]
+      assert_equal "turn-codex-1", payload["source_turn_uuid"]
+      assert_equal "error", payload["outcome"], "non-zero Codex exec output is an error"
+    end
+  end
+
   # ── [integration] real script POSTs to the endpoint ──────────────────────
 
   def test_integration_hook_mints_token_and_posts_action
@@ -532,6 +580,32 @@ class AtomicCaptureHookTest < Minitest::Test
       assert_includes body["input"], "ls -la"
       assert_includes body["output"], "total 0"
       refute_nil body["occurred_at"]
+    end
+  end
+
+  def test_integration_codex_transcript_event_posts_action_with_usage
+    Dir.mktmpdir do |proj|
+      Dir.mktmpdir do |home|
+        write_session_marker(proj, SESSION,
+                              "task_slug" => "standardize-llm-logging", "stage" => "building", "mascot" => "caterpie")
+        write_codex_transcript(home, SESSION,
+                               command: "bin/rails test test/lib/atomic_capture_hook_test.rb",
+                               output: "Process exited with code 0\n56 runs, 0 failures\n")
+        event = { "thread_id" => SESSION, "cwd" => "/nope" }
+        requests = run_hook(event, env: { "CLAUDE_PROJECTS_DIR" => proj, "HOME" => home, "CODEX_THREAD_ID" => SESSION })
+
+        post = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_actions" }
+        refute_nil post, "expected Codex transcript fallback to POST /api/v1/agent_actions"
+        body = JSON.parse(post[:body])
+        assert_equal SESSION, body["session_id"]
+        assert_equal "bash", body["kind"]
+        assert_equal "standardize-llm-logging", body["task_slug"]
+        assert_equal "gpt-5-codex", body["model"]
+        assert_equal 500, body["tokens_in"]
+        assert_equal 1000, body["cache_read_tokens"]
+        assert_equal "turn-codex-1", body["source_turn_uuid"]
+        assert_includes body["input"], "bin/rails test"
+      end
     end
   end
 
@@ -755,6 +829,53 @@ class AtomicCaptureHookTest < Minitest::Test
     suffix = legacy ? "open-span" : "open-activity"
     path = File.join(sessions, "#{session_id}.#{suffix}")
     File.write(path, "#{id}\n")
+    path
+  end
+
+  def write_codex_transcript(home, session_id, command:, output:)
+    dir = File.join(home, ".codex", "sessions", "2026", "07", "07")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "codex-#{session_id}.jsonl")
+    lines = [
+      {
+        "type" => "session_meta",
+        "payload" => { "session_id" => session_id, "model" => "gpt-5-codex" }
+      },
+      {
+        "type" => "response_item",
+        "payload" => {
+          "type" => "function_call",
+          "call_id" => "call-codex-1",
+          "name" => "exec_command",
+          "arguments" => JSON.generate("cmd" => command),
+          "internal_chat_message_metadata_passthrough" => { "turn_id" => "turn-codex-1" }
+        }
+      },
+      {
+        "type" => "response_item",
+        "payload" => {
+          "type" => "function_call_output",
+          "call_id" => "call-codex-1",
+          "output" => output,
+          "internal_chat_message_metadata_passthrough" => { "turn_id" => "turn-codex-1" }
+        }
+      },
+      {
+        "type" => "event_msg",
+        "payload" => {
+          "type" => "token_count",
+          "model" => "gpt-5-codex",
+          "info" => {
+            "last_token_usage" => {
+              "input_tokens" => 1500,
+              "cached_input_tokens" => 1000,
+              "output_tokens" => 42
+            }
+          }
+        }
+      }
+    ]
+    File.write(path, lines.map { |line| JSON.generate(line) }.join("\n") + "\n")
     path
   end
 
