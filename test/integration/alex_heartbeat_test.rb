@@ -180,18 +180,21 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "select.hb-sel option[value=?]", b, text: b
   end
 
-  test "the event row rolls up its actions' tokens, cost, model, and mascot" do
+  test "the event row renders measured activity tokens, cost, model, and mascot" do
     ev = event(seq: 0, category: "Explore", reason_slug: "find the capture seam",
-               mascot: "snorlax", outcome_slug: "found it", closed_at: 1.minute.ago, at: 3.minutes.ago)
+               mascot: "snorlax", outcome_slug: "found it", closed_at: 1.minute.ago, at: 3.minutes.ago,
+               model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.2579)
     action(event: ev, seq: 0, at: 3.minutes.ago, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
     action(event: ev, seq: 1, at: 2.minutes.ago, model: "claude-opus-4-8", tokens_in: 6800, tokens_out: 2400, cost: 0.09)
 
     get alex_heartbeat_path(session_id: "sess-A")
 
     assert_response :success
-    assert_select "[data-test=event-tokens]", text: "16.2k/2.8k"
-    assert_select "[data-test=event-cost]", text: "$0.1400"
+    assert_select "[data-test=event-tokens]", text: "9.5k/610"
+    assert_select "[data-test=event-cost]", text: "$0.2579"
     assert_select "[data-test=event-model]", text: "opus-4-8"
+    assert_select "[data-test=event-tokens]", text: "16.2k/2.8k", count: 0
+    assert_select "[data-test=event-cost]", text: "$0.1400", count: 0
     assert_select "[data-test=event-mascot][title=?]", "Snorlax"
     assert_select "[data-test=event-status]", text: "done"
   end
@@ -201,7 +204,8 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     # renders IDENTICAL tokens/cost. The controller flags it session-wide and the view
     # fades that row's tokens+cost cells while the first (primary) keeps full color.
     ev = event(seq: 0, category: "Edit", reason_slug: "edit the view code",
-               outcome_slug: "done", closed_at: 1.minute.ago, at: 3.minutes.ago)
+               outcome_slug: "done", closed_at: 1.minute.ago, at: 3.minutes.ago,
+               model: "claude-opus-4-8", tokens_in: 2400, tokens_out: 320, cost: 0.0444)
     action(event: ev, seq: 0, at: 3.minutes.ago, source_turn_uuid: "turn-A",
            tokens_in: 9400, tokens_out: 360, cost: 0.05)
     action(event: ev, seq: 1, at: 2.minutes.ago, source_turn_uuid: "turn-A",
@@ -214,9 +218,9 @@ class AlexHeartbeatTest < ActionDispatch::IntegrationTest
     assert_select "tr[data-seq='1'] td.hb-turn-shared", 2
     # the faded cells carry the inherit tooltip (assert_select decodes the entity)
     assert_select "td.hb-turn-shared[title=?]", "shared with this turn's first action", 2
-    # totals stay DEDUPED + unchanged — the span still rolls the turn up once
-    assert_select "[data-test=event-tokens]", text: "9.4k/360"
-    assert_select "[data-test=event-cost]", text: "$0.0500"
+    # the activity row uses its own measured span usage; raw action duplicates stay faded
+    assert_select "[data-test=event-tokens]", text: "2.4k/320"
+    assert_select "[data-test=event-cost]", text: "$0.0444"
   end
 
   test "each span row expands raw actions on row click" do

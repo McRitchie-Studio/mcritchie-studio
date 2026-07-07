@@ -138,7 +138,8 @@
                        title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(' ') %>"
                        data-test="crew-stack-avatar"
                        data-stack-position="<%= stack_position %>">
-                    <%= render "components/agent_avatar", agent: entry, size: crew_size %>
+                    <%= render "components/agent_avatar", agent: entry, size: crew_size,
+                          shiny: (false unless i.zero?) %>
                   </div>
                 <% end %>
               </div>

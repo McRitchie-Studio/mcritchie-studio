@@ -204,7 +204,7 @@ class PrReviewCommandTest < Minitest::Test
   def assert_narration_instructions(prompt, reviewer_slug, task_slug)
     assert_includes prompt,
                     "bin/agent-activity start --category Verify --agent #{reviewer_slug} " \
-                    "--task #{task_slug} --reason \"review: #{task_slug}\"",
+                    "--supervisor avi --task #{task_slug} --reason \"review: #{task_slug}\"",
                     "#{reviewer_slug} prompt must open a soul-attributed Verify activity"
     assert_includes prompt, "bin/agent-activity end --outcome",
                     "#{reviewer_slug} prompt must close the activity with the verdict"
@@ -410,6 +410,7 @@ class PrReviewCommandTest < Minitest::Test
       assert end_line, "#{reviewer_slug} stdin prompt missing bin/agent-activity end"
       assert_includes start_line, "--category Verify"
       assert_includes start_line, "--agent #{reviewer_slug}"
+      assert_includes start_line, "--supervisor avi"
       assert_includes start_line, "--task narrated-run"
       assert_includes end_line, "--outcome"
     end
@@ -529,6 +530,7 @@ class PrReviewCommandTest < Minitest::Test
       start_line = lines.find { |line| line.include?("agent-activity start") }
       assert start_line, "#{soul} must open a soul-attributed activity"
       assert_includes start_line, "--agent #{soul}"
+      assert_includes start_line, "--supervisor avi"
       assert_includes start_line, "--task attr-pr"
     end
 

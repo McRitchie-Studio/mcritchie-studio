@@ -15,7 +15,7 @@
   }
   s = sizes[size] || sizes["md"]
   shiny_badge = shiny.nil? ? (agent.respond_to?(:shiny?) && agent.shiny?) : shiny
-  badge_size = %w[xxs xs].include?(size.to_s) ? "h-3 w-3 text-[8px]" : "h-4 w-4 text-[10px]"
+  badge_size = %w[xxs xs].include?(size.to_s) ? "text-lg" : "text-xl"
 %>
 <span class="<%= s[:container] %> rounded-full flex items-center justify-center relative flex-shrink-0"
       style="background-color: <%= agent.avatar_color %>;">
@@ -28,8 +28,9 @@
          onerror="this.remove()">
   <% end %>
   <% if shiny_badge %>
-    <span class="absolute -top-1 -right-1 z-10 <%= badge_size %> flex items-center justify-center rounded-full bg-amber-100 text-amber-800 border border-white/80 shadow-sm leading-none pointer-events-none"
+    <span class="absolute -top-2 -right-2 z-10 <%= badge_size %> leading-none pointer-events-none"
           data-test="avatar-shiny-badge"
+          style="text-shadow: 0 1px 2px rgba(0,0,0,0.55);"
           aria-hidden="true">✨</span>
   <% end %>
 </span>
