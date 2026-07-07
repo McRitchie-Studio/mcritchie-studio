@@ -23,6 +23,17 @@ module Api
         assert_equal "🔶", data["mascot_emoji"]
       end
 
+      test "POST mascot marks shiny draws with sparkle after type emoji" do
+        Pokemon.stub(:roll_shiny?, true) do
+          post "/api/v1/sessions/sess-shiny/mascot", headers: @headers
+        end
+
+        assert_response :success
+        data = JSON.parse(response.body)["data"]
+        assert_equal true, data["mascot_shiny"]
+        assert_equal "🔶✨", data["mascot_emoji"]
+      end
+
       test "POST mascot also returns the default app so a fresh session shows it" do
         post "/api/v1/sessions/sess-1/mascot", headers: @headers
 

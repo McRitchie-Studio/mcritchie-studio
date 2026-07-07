@@ -58,7 +58,7 @@ class SessionMascot < ApplicationRecord
     slug = draw_for(sid, parent_session_id: parent_session_id, parent_mascot_slug: parent_mascot_slug)
     return nil unless slug
 
-    # The shiny roll happens HERE, once per session draw (1-in-100 prod, 1-in-10
+    # The shiny roll happens HERE, once per session draw (1-in-50 prod, 1-in-5
     # dev/QA) — the session's tasks then adopt the flag as devops.mascot_shiny.
     create!(session_id: sid, parent_session_id: parent_session_id.presence,
             mascot_slug: slug, shiny: Pokemon.roll_shiny?)

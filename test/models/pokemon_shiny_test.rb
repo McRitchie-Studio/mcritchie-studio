@@ -19,10 +19,10 @@ class PokemonShinyTest < ActiveSupport::TestCase
 
   # --- Odds ---
 
-  test "shiny odds are 1-in-10 on development" do
+  test "shiny odds are 1-in-5 on development" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => nil) do
       Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("development")) do
-        assert_equal 10, Pokemon.shiny_odds
+        assert_equal 5, Pokemon.shiny_odds
       end
     end
   end
@@ -34,18 +34,18 @@ class PokemonShinyTest < ActiveSupport::TestCase
     end
   end
 
-  test "shiny odds are 1-in-100 on production" do
+  test "shiny odds are 1-in-50 on production" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => nil) do
       Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("production")) do
-        assert_equal 100, Pokemon.shiny_odds
+        assert_equal 50, Pokemon.shiny_odds
       end
     end
   end
 
-  test "QA (production Rails env plus QA_ENV) keeps the 1-in-10 odds" do
+  test "QA (production Rails env plus QA_ENV) keeps the 1-in-5 odds" do
     with_env("SHINY_ODDS" => nil, "QA_ENV" => "true") do
       Rails.stub(:env, ActiveSupport::EnvironmentInquirer.new("production")) do
-        assert_equal 10, Pokemon.shiny_odds
+        assert_equal 5, Pokemon.shiny_odds
       end
     end
   end
@@ -60,6 +60,16 @@ class PokemonShinyTest < ActiveSupport::TestCase
     with_env("SHINY_ODDS" => "1") do
       20.times { assert Pokemon.roll_shiny? }
     end
+  end
+
+  test "status_emoji adds the shiny glyph after type emojis" do
+    Studio::Enumeral.create!(category: "pokemon_type", key: "fire", metadata: { "emoji" => "🔥" })
+    Studio::Enumeral.create!(category: "pokemon_type", key: "flying", metadata: { "emoji" => "💨" })
+    pokemon = make(6, "charizard", types: %w[fire flying])
+
+    assert_equal "🔥💨", pokemon.status_emoji
+    assert_equal "🔥💨✨", pokemon.status_emoji(shiny: true)
+    assert_equal "🔥💨✨", Pokemon.decorate_type_emoji("✨🔥💨", shiny: true)
   end
 
   # --- Display chains ---

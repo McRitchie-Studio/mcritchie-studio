@@ -281,6 +281,10 @@ class Task < ApplicationRecord
     live.pluck(:metadata).filter_map { |m| m&.dig("devops", "mascot").presence }
   end
 
+  def self.shiny_value?(value)
+    value == true || value.to_s.strip.downcase == "true" || value.to_s.strip == "1"
+  end
+
   # Backfill: give a mascot to every LIVE task that lacks one — for tasks created
   # before the mascot feature (assign_mascot is create-only) so the existing board
   # lights up. Idempotent (skips tasks that already have one), unique among live
@@ -337,12 +341,12 @@ class Task < ApplicationRecord
       # key? (not ||=) because a legitimate `false` must cache too.
       unless shiny_by_session.key?(sid)
         session_mascot = SessionMascot.find_by(session_id: sid)
-        shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : !!task.metadata.dig("devops", "mascot_shiny")
+        shiny_by_session[sid] = session_mascot ? session_mascot.shiny? : shiny_value?(task.metadata.dig("devops", "mascot_shiny"))
       end
       shiny = shiny_by_session[sid]
 
       dev = task.metadata["devops"] || {}
-      next if dev["mascot"] == slug && dev["mascot_session"] == sid && !!dev["mascot_shiny"] == shiny
+      next if dev["mascot"] == slug && dev["mascot_session"] == sid && shiny_value?(dev["mascot_shiny"]) == shiny
 
       merged = task.metadata.deep_dup
       d = (merged["devops"] ||= {})
@@ -351,7 +355,7 @@ class Task < ApplicationRecord
       d["mascot_shiny"] = shiny
       pokemon = Pokemon.find_by(slug: slug)
       d["mascot_color"] = pokemon&.signature_color
-      d["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
+      d["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
       task.update_columns(metadata: merged)
       restamped += 1
     rescue StandardError => e
@@ -375,7 +379,7 @@ class Task < ApplicationRecord
   # session's SessionMascot roll, adopted here) and stamped server-side as
   # devops.mascot_shiny alongside mascot_color/emoji.
   def mascot_shiny?
-    !!devops["mascot_shiny"]
+    self.class.shiny_value?(devops["mascot_shiny"])
   end
 
   def devops_kind
@@ -1303,7 +1307,7 @@ class Task < ApplicationRecord
     pokemon = Pokemon.find_by(slug: slug)
     devops["mascot_shiny"] = shiny
     devops["mascot_color"] = pokemon&.signature_color
-    devops["mascot_emoji"] = [("✨" if shiny), pokemon&.type_emoji.presence].compact.join.presence
+    devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
     # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
     devops.delete("mascot_stage")
   end
@@ -1338,7 +1342,7 @@ class Task < ApplicationRecord
 
     devops["mascot"] = evolved.slug
     devops["mascot_color"] = evolved.signature_color
-    devops["mascot_emoji"] = [("✨" if mascot_shiny?), evolved.type_emoji.presence].compact.join.presence
+    devops["mascot_emoji"] = evolved.status_emoji(shiny: mascot_shiny?)
   rescue StandardError => e
     Rails.logger.warn("[mascot-evolution] skipped (non-fatal): #{e.class}: #{e.message}")
   end

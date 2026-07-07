@@ -87,6 +87,28 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       "and its type emoji rides with the name — not blanked to the 🛠 ⊙ glyphs"
   end
 
+  test "context regeneration preserves a known shiny mascot flag" do
+    agent_worktree!("bind-task", "mcritchie-studio", @task, "task-mascot-shiny")
+
+    env_path = File.join(@worktree_dir, ".env.agent-stack")
+    env = File.read(env_path)
+    env = env.lines.reject { |line| line.start_with?("TASK_MASCOT_SHINY=") }.join
+    File.write(env_path, env)
+
+    ctx_path = File.join(@worktree_dir, ".agent-context.json")
+    context = JSON.parse(File.read(ctx_path))
+    context["mascot"] = "dugtrio"
+    context["mascot_emoji"] = "🏔"
+    context["mascot_shiny"] = true
+    File.write(ctx_path, "#{JSON.pretty_generate(context)}\n")
+
+    agent_worktree!("whereami", "mcritchie-studio", @task)
+
+    regenerated = JSON.parse(File.read(ctx_path))
+    assert_equal true, regenerated["mascot_shiny"], "the shiny flag rides with the mascot"
+    assert_equal "🏔✨", regenerated["mascot_emoji"], "the context emoji carries the sparkle"
+  end
+
   test "whereami shell output ignores tampered shell content from context file" do
     agent_worktree!("bind-task", "mcritchie-studio", @task, "task-shell")
     path = File.join(@worktree_dir, ".agent-context.json")

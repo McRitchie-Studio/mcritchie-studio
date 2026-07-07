@@ -1,7 +1,7 @@
 require "test_helper"
 
 # Unit tier: a task adopts its session's shiny roll as server-owned
-# devops.mascot_shiny (with a ✨ prefix on the emoji glyphs), and stage-event
+# devops.mascot_shiny (with a ✨ next to the emoji glyphs), and stage-event
 # snapshots bake the shiny avatar URL so history keeps the shiny face after the
 # mascot recycles to another task.
 class TaskMascotShinyTest < ActiveSupport::TestCase
@@ -9,6 +9,8 @@ class TaskMascotShinyTest < ActiveSupport::TestCase
     Pokemon.create!(dex: 301, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
                     avatar_url: "normal-crop.png", sprite_url: "normal-sprite.png",
                     shiny_avatar_url: "shiny-crop.png", shiny_sprite_url: "shiny-sprite.png")
+    Studio::Enumeral.create!(category: "pokemon_type", key: "normal",
+                             color: "#A8A77A", metadata: { "emoji" => "🔶" })
   end
 
   test "a task adopts its session's shiny roll" do
@@ -17,7 +19,7 @@ class TaskMascotShinyTest < ActiveSupport::TestCase
                         metadata: { "devops" => { "session_id" => "sess-shiny-adopt" } })
 
     assert_predicate task, :mascot_shiny?
-    assert task.devops["mascot_emoji"].to_s.start_with?("✨")
+    assert_equal "🔶✨", task.devops["mascot_emoji"]
   end
 
   test "an ordinary session stays non-shiny with no sparkle" do
