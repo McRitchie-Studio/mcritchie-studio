@@ -60,15 +60,19 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "div[title^='Avi']", count: 1
       assert_select "[data-test='crew-blocked']", count: 1
       # three slots align left / center / right
-      assert_select ".origin-left", count: 1
-      assert_select ".origin-center", count: 1
-      assert_select ".origin-right", count: 1
-      # the stack spacing stays fixed; only the top avatar grows
+      assert_select "[data-test='crew-stack'].origin-left", count: 1
+      assert_select "[data-test='crew-stack'].origin-center", count: 1
+      assert_select "[data-test='crew-stack'].origin-right", count: 1
+      # the stack spacing stays fixed; only top edge avatars grow and nudge outward
       assert_select "[data-test='crew-stack'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack'][class*='group-hover:-space-x-']", count: 0
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-125']", count: 3
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-150']", count: 3
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:-translate-x-1']", count: 1
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:translate-x-1']", count: 1
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-125']", count: 0
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-150']", count: 0
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='translate-x-1']", count: 0
     end
   end
 
@@ -275,16 +279,20 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
 
     assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
       # four filled lanes → leftmost anchors left, the two middles center, the last anchors right
-      assert_select ".origin-left",   count: 1
-      assert_select ".origin-center", count: 2
-      assert_select ".origin-right",  count: 1
-      # every lane keeps fixed stack spacing; only the top avatar grows
+      assert_select "[data-test='crew-stack'].origin-left",   count: 1
+      assert_select "[data-test='crew-stack'].origin-center", count: 2
+      assert_select "[data-test='crew-stack'].origin-right",  count: 1
+      # every lane keeps fixed stack spacing; only top edge avatars grow and nudge outward
       assert_select "[data-test='crew-stack'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack'][class*='group-hover:-space-x-']", count: 0
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-125']", count: 4
-      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-focus-within:scale-125']", count: 4
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-150']", count: 4
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-focus-within:scale-150']", count: 4
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:-translate-x-1']", count: 1
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:translate-x-1']", count: 1
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-110']", count: 0
       assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-125']", count: 0
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-150']", count: 0
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='translate-x-1']", count: 0
       assert_select "[class*='group-hover:-translate-x-3']", count: 0
       assert_select "[class*='group-hover:translate-x-3']",  count: 0
     end
