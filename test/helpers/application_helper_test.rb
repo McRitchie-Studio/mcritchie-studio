@@ -116,6 +116,31 @@ class ApplicationHelperTest < ActionView::TestCase
     assert badge.html_safe?
   end
 
+  test "release rainbow glow style centralizes the shared release glow recipe" do
+    style = release_rainbow_glow_style
+
+    assert_includes style, "--task-card-glow-color: #a78bfa"
+    assert_includes style, "--task-card-glow-color-a: #fb0094"
+    assert_includes style, "--task-card-glow-color-b: #00c4ff"
+    assert_includes style, "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent)"
+    assert_includes style, "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+    assert_includes style, "border-color: var(--task-card-glow-border-color)"
+    assert_includes style, "box-shadow: var(--task-card-glow-shadow)"
+    assert_not_includes style, "--lbfx-fresh-delay"
+  end
+
+  test "release fresh glow style adds deterministic motion and freshness phase" do
+    rel = Release.new(slug: "rel-test-glow")
+    style = release_fresh_glow_style(rel, elapsed_ms: 2_500)
+
+    assert_includes style, "--studio-border-glow-offset:"
+    assert_includes style, "--studio-border-glow-duration:"
+    assert_includes style, "--studio-border-glow-angle:"
+    assert_includes style, "--lbfx-fresh-delay: -2500ms"
+    assert_includes style, "--task-card-glow-color-a: #fb0094"
+    assert_includes style, "--task-card-glow-color-b: #00c4ff"
+  end
+
   # Component-tier: render the board card's slug-row markup (mirrors
   # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
   # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.
@@ -769,6 +794,47 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "#last-release", count: 1
     assert_select "#last-release", text: /Last Release/
     assert_select "#last-release", text: /none yet/
+  end
+
+  test "[component] the Last Release card marks a freshly shipped deploy for live glow" do
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 0) do
+      rel = Release.open!
+      rel.ship!
+
+      render partial: "tasks/last_release", locals: { release: rel }
+
+      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms]"
+      card = css_select("#last-release").first
+      assert_includes card["class"], "studio-border-glow"
+      assert_includes card["class"], "release-fresh-glow"
+      assert_includes card["class"], "lbfx-fresh-deploy"
+      assert_not_includes card["class"], "opacity-75"
+      assert_includes card["style"], "--lbfx-fresh-delay: -0ms"
+      assert_includes card["style"], "--task-card-glow-color-a: #fb0094"
+      assert_includes card["style"], "--task-card-glow-color-b: #00c4ff"
+      assert_includes card["style"], "border-color: var(--task-card-glow-border-color)"
+      assert_includes card["style"], "box-shadow: var(--task-card-glow-shadow)"
+    end
+  end
+
+  test "[component] the Last Release card stops marking stale deploys as fresh" do
+    rel = nil
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 0) do
+      rel = Release.open!
+      rel.ship!
+    end
+
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 9) do
+      render partial: "tasks/last_release", locals: { release: rel.reload }
+
+      assert_select "#last-release[data-fresh-deploy='false']"
+      card = css_select("#last-release").first
+      assert_includes card["class"], "opacity-75"
+      assert_not_includes card["class"], "studio-border-glow"
+      assert_not_includes card["class"], "release-fresh-glow"
+      assert_not_includes card["class"], "lbfx-fresh-deploy"
+      assert_nil card["style"]
+    end
   end
 
   test "[component] _current_release no longer carries the heartbeat cluster (moved to the DevOps card)" do

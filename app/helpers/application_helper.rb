@@ -62,6 +62,45 @@ module ApplicationHelper
     Release::DurationCache::STAGE_DEFINITIONS.dig(key.to_s, "label") || key.to_s.humanize
   end
 
+  RELEASE_RAINBOW_GLOW = {
+    color: "#a78bfa",
+    color_a: "#fb0094",
+    color_b: "#00c4ff",
+    border_mix: 58,
+    shadow: "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
+            "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
+            "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
+            "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
+  }.freeze
+
+  def release_rainbow_glow_color
+    RELEASE_RAINBOW_GLOW[:color]
+  end
+
+  def release_rainbow_glow_style(seed: nil, fresh_delay_ms: nil)
+    glow = RELEASE_RAINBOW_GLOW
+    style = []
+    if seed
+      style << "--studio-border-glow-offset: #{seed % 400}%;"
+      style << "--studio-border-glow-duration: #{18 + (seed % 9)}s;"
+      style << "--studio-border-glow-angle: #{38 + (seed % 18)}deg;"
+    end
+    style << "--lbfx-fresh-delay: -#{fresh_delay_ms.to_i}ms;" unless fresh_delay_ms.nil?
+    style << "--task-card-glow-color: #{glow[:color]};"
+    style << "--task-card-glow-color-a: #{glow[:color_a]};"
+    style << "--task-card-glow-color-b: #{glow[:color_b]};"
+    style << "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) #{glow[:border_mix]}%, transparent);"
+    style << "--task-card-glow-shadow: #{glow[:shadow]};"
+    style << "border-color: var(--task-card-glow-border-color);"
+    style << "box-shadow: var(--task-card-glow-shadow);"
+    style.join(" ")
+  end
+
+  def release_fresh_glow_style(release, elapsed_ms:)
+    seed = release.to_param.to_s.each_byte.reduce(0) { |memo, byte| ((memo * 33) + byte) % 10_000 }
+    release_rainbow_glow_style(seed: seed, fresh_delay_ms: elapsed_ms)
+  end
+
   def task_stage_count_classes(stage)
     case stage.to_s
     when "designed"  then "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/50"

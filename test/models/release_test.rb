@@ -139,6 +139,40 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_not_nil task.completed_at # Task#ship! callback ran (not update_all)
   end
 
+  test "[unit] ship! broadcasts the release as shipped before member task flips" do
+    rel = Release.open!
+    task = reviewed_task
+    rel.add(task)
+    rel.assemble!
+
+    events = []
+    DeploymentsBroadcaster.stub(:release_modules, -> { events << "release" }) do
+      DeploymentsBroadcaster.stub(:task_event, ->(event) { events << "task:#{event.to_stage}" }) do
+        rel.ship!(by: "avi")
+      end
+    end
+
+    assert_equal "release", events.first
+    assert_includes events, "task:shipped"
+  end
+
+  test "[unit] ship! pauses between member flips when a cadence is provided" do
+    rel = Release.open!
+    older = Task.create!(title: "older cadence release member", stage: "reviewed", created_at: 20.minutes.ago)
+    newer = Task.create!(title: "newer cadence release member", stage: "reviewed", created_at: 5.minutes.ago)
+    rel.add(older)
+    rel.add(newer)
+    rel.assemble!
+
+    pauses = []
+    rel.stub(:pause_between_member_shipments, ->(seconds) { pauses << seconds }) do
+      rel.ship!(member_pause: 1)
+    end
+
+    assert_equal [1.0], pauses
+    assert_equal %w[shipped shipped], [older.reload.stage, newer.reload.stage]
+  end
+
   test "[unit] ship! ranks newer members above older members" do
     rel = Release.open!
     older = Task.create!(title: "older rank release member", stage: "reviewed", created_at: 20.minutes.ago)

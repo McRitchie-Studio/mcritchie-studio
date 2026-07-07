@@ -23,7 +23,9 @@ class ReviewEventsTest < ApplicationSystemTestCase
     )
 
     visit task_path(task.slug)
-    click_link "Review Activity"
+    review_link = find("[data-test='timeline-review-events-link']")
+    assert_equal review_events_task_path(task.slug), URI.parse(review_link[:href]).path
+    execute_script("arguments[0].click()", review_link.native)
 
     assert_current_path review_events_task_path(task.slug)
     assert_text "HEAVY SWIMLANE"

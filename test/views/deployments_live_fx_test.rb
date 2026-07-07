@@ -33,6 +33,44 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "card.classList.remove(\"lbfx-glow\", \"lbfx-glow-stage\")"
   end
 
+  test "fresh deployments use an eight second rainbow glow that preserves phase" do
+    render partial: "tasks/deployments_live_fx"
+
+    assert_includes rendered, ".lbfx-fresh-deploy"
+    assert_includes rendered, ".release-fresh-glow.lbfx-fresh-deploy::before"
+    assert_includes rendered, ".release-fresh-glow.lbfx-fresh-deploy::after"
+    assert_includes rendered, "@keyframes lbfxFreshDeployGlow"
+    assert_includes rendered, "@keyframes lbfxFreshDeployRingFade"
+    assert_includes rendered, "@keyframes lbfxFreshDeployHaloFade"
+    assert_includes rendered, "0%, 50%"
+    assert_includes rendered, "--task-card-glow-shadow"
+    assert_includes rendered, "--task-card-glow-border-color"
+    assert_includes rendered, "const FRESH_DEPLOY_MS = 8000"
+    assert_includes rendered, "card.dataset.freshDeploy !== \"true\""
+    assert_includes rendered, "card.dataset.shippedAtMs"
+    assert_includes rendered, "\"--lbfx-fresh-delay\""
+    assert_includes rendered, "card.dataset.freshDeployCleanup === \"true\""
+    assert_includes rendered, "card.classList.remove(\"opacity-75\")"
+    assert_includes rendered, "card.classList.add(\"studio-border-glow\", \"release-fresh-glow\")"
+    assert_includes rendered, "card.dataset.freshDeployCleanup = \"true\""
+    assert_includes rendered, "freshDeployGlow(fresh)"
+    assert_includes rendered, "clearFreshDeployGlow(card)"
+    assert_includes rendered, "card.classList.remove(\"lbfx-fresh-deploy\", \"studio-border-glow\", \"release-fresh-glow\")"
+    assert_includes rendered, "card.classList.add(\"opacity-75\")"
+    assert_includes rendered, "card.dataset.freshDeploy = \"false\""
+    assert_includes rendered, "delete card.dataset.freshDeployCleanup"
+    assert_includes rendered, "const FRESH_DEPLOY_STYLE_PROPS = ["
+    assert_includes rendered, "\"--task-card-glow-shadow\""
+    assert_includes rendered, "\"border-color\""
+    assert_includes rendered, "\"box-shadow\""
+    assert_includes rendered, "FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop))"
+    assert_includes rendered, "card.removeAttribute(\"style\")"
+    assert_includes rendered, "function initializeFreshDeployGlows(root)"
+    assert_includes rendered, "#last-release[data-fresh-deploy='true']"
+    assert_includes rendered, "document.addEventListener(\"turbo:load\", scheduleFreshDeployGlowInitialization)"
+    assert_includes rendered, "document.addEventListener(\"DOMContentLoaded\", scheduleFreshDeployGlowInitialization, { once: true })"
+  end
+
   test "reviewed arrivals use a distinct behind-card gust" do
     render partial: "tasks/deployments_live_fx"
 

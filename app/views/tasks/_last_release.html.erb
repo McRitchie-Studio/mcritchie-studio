@@ -7,9 +7,22 @@
 <% rel = local_assigns.fetch(:release, nil) %>
 <% base_card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% if rel %>
-  <%# data-glow tints the deploy burst (LiveBoardFx) with the just-shipped release's
-      conductor mascot colour; blank → the default warm-orange flash. %>
-  <div id="last-release" data-glow="<%= rel.mascot&.signature_color %>" class="<%= base_card_class %> opacity-75">
+  <% fresh_deploy = rel.shipped_at.present? && rel.shipped_at >= 8.seconds.ago %>
+  <% fresh_deploy_elapsed_ms = fresh_deploy ? ((Time.current - rel.shipped_at) * 1000).clamp(0, 8_000).round : nil %>
+  <% fresh_glow_style = release_fresh_glow_style(rel, elapsed_ms: fresh_deploy_elapsed_ms) if fresh_deploy %>
+  <% release_card_class = [
+       base_card_class,
+       ("opacity-75" unless fresh_deploy),
+       ("studio-border-glow release-fresh-glow lbfx-fresh-deploy" if fresh_deploy)
+     ].compact.join(" ") %>
+  <%# LiveBoardFx reads data-fresh-deploy + data-shipped-at-ms for the 8s freshness
+      glow. data-glow remains the fallback burst tint for non-fresh replacements. %>
+  <div id="last-release"
+       data-glow="<%= rel.mascot&.signature_color %>"
+       data-fresh-deploy="<%= fresh_deploy ? "true" : "false" %>"
+       data-shipped-at-ms="<%= (rel.shipped_at.to_f * 1000).round if rel.shipped_at.present? %>"
+       <% if fresh_glow_style %>style="<%= fresh_glow_style %>"<% end %>
+       class="<%= release_card_class %>">
     <%# The shipped-stage kickoff chip ("Archive completed tasks") rides inline with the
         task pills, mirroring the Next Release card's release workflow chips. %>
     <% archive_chip = render "tasks/kickoff_chip", command: devops_kickoffs["shipped"] %>

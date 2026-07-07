@@ -116,6 +116,14 @@ Deployed green) — no extra posts on the happy path. After an interrupted run,
 backfill the missed boundary via the release events API; stamps are
 first-write-wins, so re-posts are safe no-ops.
 
+The final production record step is intentionally release-first. After all
+production deploys and smoke checks have passed, `bin/release ship` marks the
+release itself deployed before it begins moving member tasks to `shipped`. That
+release update is what turns the board's Next Release into Last Release and
+fires the live Last Release freshness glow. Do not hand-run a bulk
+`bin/task move ... shipped` batch: let `bin/release ship` move the member tasks
+so each task transition lands one second after the prior one.
+
 Post-ship, `bin/release ship` auto-runs the hub primary's
 `bin/install-agent-docs` (non-fatal — it never aborts a completed ship;
 Steffon owns the step and its mechanism) so the installed agent docs

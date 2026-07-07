@@ -398,7 +398,10 @@ class Release < ApplicationRecord
   end
 
   # The operator "Makes the release" → ship to prod; members flip to `shipped`.
-  # Allowed from an active release (assembling or assembled); never from terminal.
+  # Allowed from an active release (assembling or assembled). A shipped release
+  # with unfinished members is also accepted so an interrupted production record
+  # step can resume the member flips after the release itself has already become
+  # the board's Last Release.
   #
   # `usage_by_slug` is the optional { slug => {model, tokens_in, tokens_out, cost} }
   # best-effort per-member usage for the assembled→shipped transition (captured by
@@ -406,21 +409,36 @@ class Release < ApplicationRecord
   # inside Current.with_task_event_usage, which stamps that member's shipped
   # TaskEvent and clears the fields afterward so the next member isn't
   # mis-attributed. A member with no entry records the deterministic spine only.
-  def ship!(by: nil, usage_by_slug: {})
-    raise ArgumentError, "release #{slug} is already terminal (state: #{state})" unless active?
+  def ship!(by: nil, usage_by_slug: {}, member_pause: 0)
+    resumable_member_ship = shipped? && tasks.where.not(stage: "shipped").exists?
+    unless active? || resumable_member_ship
+      raise ArgumentError, "release #{slug} is already terminal (state: #{state})"
+    end
 
     usage_by_slug ||= {}
-    transaction do
-      # confirmed_at is a stage stamp (first-write-wins): when Avi already posted
-      # his confirming completion via the events API, ship keeps that earlier,
-      # truer boundary instead of re-dating it to the ship moment.
+    member_pause = member_pause.to_f
+
+    # confirmed_at is a stage stamp (first-write-wins): when Avi already posted
+    # his confirming completion via the events API, ship keeps that earlier,
+    # truer boundary instead of re-dating it to the ship moment. Commit this
+    # before member flips so /deployments swaps the candidate into Last Release
+    # immediately, then each task moves to Shipped in its own after_commit.
+    if active?
       update!(state: "shipped", confirmed_by: by, confirmed_at: confirmed_at || Time.current)
-      # Each Task#ship! stamps position = target-column max + 100. Ship members in
-      # stable oldest-first order so the newest task in a deployment batch receives
-      # the freshest board rank, regardless of how the association was preloaded.
-      tasks.order(:created_at, :id).to_a.each do |task|
-        Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }
-      end
+    elsif by.present? && confirmed_by.blank?
+      update!(confirmed_by: by, confirmed_at: confirmed_at || Time.current)
+    end
+
+    shipped_count = 0
+    # Each Task#ship! stamps position = target-column max + 100. Ship members in
+    # stable oldest-first order so the newest task in a deployment batch receives
+    # the freshest board rank, regardless of how the association was preloaded.
+    tasks.order(:created_at, :id).to_a.each do |task|
+      next if task.stage == "shipped"
+
+      pause_between_member_shipments(member_pause) if member_pause.positive? && shipped_count.positive?
+      Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }
+      shipped_count += 1
     end
   end
 
@@ -496,6 +514,10 @@ class Release < ApplicationRecord
     when "shipped"   then self.shipped_at ||= Time.current
     when "abandoned" then self.abandoned_at ||= Time.current
     end
+  end
+
+  def pause_between_member_shipments(seconds)
+    sleep(seconds)
   end
 
   def generate_slug

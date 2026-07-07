@@ -9,21 +9,8 @@
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% if rel %>
   <% release_confirming_glow = rel.stage_reached?("confirming") && !rel.stage_reached?("shipped") %>
-  <% release_glow_color = release_confirming_glow ? "#a78bfa" : rel.mascot&.signature_color.presence %>
-  <% release_glow_color_a = "#fb0094" %>
-  <% release_glow_color_b = "#00c4ff" %>
-  <% release_glow_style = if release_confirming_glow
-       "--task-card-glow-color: #{release_glow_color}; " \
-         "--task-card-glow-color-a: #{release_glow_color_a}; " \
-         "--task-card-glow-color-b: #{release_glow_color_b}; " \
-         "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 58%, transparent); " \
-         "--task-card-glow-shadow: 0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 44%, transparent), " \
-         "0 0 34px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
-         "0 0 82px color-mix(in srgb, var(--task-card-glow-color) 22%, transparent), " \
-         "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent); " \
-         "border-color: var(--task-card-glow-border-color); " \
-         "box-shadow: var(--task-card-glow-shadow);"
-     end %>
+  <% release_glow_color = release_confirming_glow ? release_rainbow_glow_color : rel.mascot&.signature_color.presence %>
+  <% release_glow_style = release_rainbow_glow_style if release_confirming_glow %>
   <% release_card_class = [card_class, ("studio-border-glow release-confirming-glow" if release_confirming_glow)].compact.join(" ") %>
   <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
       type colour; blank → the fx falls back to its default warm-orange pulse. %>

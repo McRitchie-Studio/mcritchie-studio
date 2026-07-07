@@ -37,6 +37,71 @@
            border-color: var(--task-card-glow-border-color); }
   }
 
+  /* Last Release deploy freshness: 4s of steady rainbow glow, then 4s fade.
+     JS sets a negative animation delay from data-shipped-at-ms so replacement
+     streams keep the same phase instead of restarting the glow. */
+  .lbfx-fresh-deploy {
+    animation: lbfxFreshDeployGlow 8s linear both;
+    animation-delay: var(--lbfx-fresh-delay, 0ms);
+  }
+  .release-fresh-glow.lbfx-fresh-deploy::before {
+    animation-name: studioBorderGlowSteam, lbfxFreshDeployRingFade;
+    animation-duration: var(--studio-border-glow-duration, 20s), 8s;
+    animation-timing-function: linear, linear;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, both;
+    animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
+  }
+  .release-fresh-glow.lbfx-fresh-deploy::after {
+    animation-name: studioBorderGlowSteam, lbfxFreshDeployHaloFade;
+    animation-duration: var(--studio-border-glow-duration, 20s), 8s;
+    animation-timing-function: linear, linear;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, both;
+    animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
+  }
+  @keyframes lbfxFreshDeployGlow {
+    0%, 50% {
+      box-shadow: var(
+        --task-card-glow-shadow,
+        0 0 0 1px rgba(255,255,255,.72) inset,
+        0 0 18px 4px rgba(248,113,113,.9),
+        0 0 32px 10px rgba(250,204,21,.68),
+        0 0 48px 16px rgba(52,211,153,.58),
+        0 0 64px 22px rgba(96,165,250,.52),
+        0 0 82px 28px rgba(192,132,252,.48)
+      );
+      border-color: var(--task-card-glow-border-color, rgba(255,255,255,.82));
+    }
+    100% {
+      box-shadow:
+        0 0 0 0 rgba(248,113,113,0),
+        0 0 0 0 rgba(250,204,21,0),
+        0 0 0 0 rgba(52,211,153,0),
+        0 0 0 0 rgba(96,165,250,0),
+        0 0 0 0 rgba(192,132,252,0);
+      border-color: rgb(var(--lbfx-glow, 249 115 22) / 0);
+    }
+  }
+  @keyframes lbfxFreshDeployRingFade {
+    0%, 50% { opacity: var(--studio-border-glow-opacity, .9); }
+    100% { opacity: 0; }
+  }
+  @keyframes lbfxFreshDeployHaloFade {
+    0%, 50% { opacity: var(--studio-border-glow-halo-opacity, .34); }
+    100% { opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .release-fresh-glow.lbfx-fresh-deploy::before {
+      animation: lbfxFreshDeployRingFade 8s linear both;
+      animation-delay: var(--lbfx-fresh-delay, 0ms);
+    }
+    .release-fresh-glow.lbfx-fresh-deploy::after {
+      animation: lbfxFreshDeployHaloFade 8s linear both;
+      animation-delay: var(--lbfx-fresh-delay, 0ms);
+    }
+  }
+
   .lbfx-reviewed-swell { animation: lbfxReviewedSwell .95s ease-out; }
   @keyframes lbfxReviewedSwell {
     0%   { box-shadow: 0 0 20px 5px rgb(45 212 191 / .95), 0 0 54px 16px rgb(125 211 252 / .45);
@@ -58,12 +123,26 @@
     const CONFETTI_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
     const REVIEWED_GUST_COLORS = ["#67e8f9", "#5eead4", "#fef3c7", "#ffffff", "#22d3ee"];
     const MIST_COLORS = ["rgba(226,232,240,.64)", "rgba(191,219,254,.5)", "rgba(203,213,225,.56)", "rgba(255,255,255,.52)"];
+    const FRESH_DEPLOY_MS = 8000;
+    const FRESH_DEPLOY_STYLE_PROPS = [
+      "--lbfx-fresh-delay",
+      "--studio-border-glow-offset",
+      "--studio-border-glow-duration",
+      "--studio-border-glow-angle",
+      "--task-card-glow-color",
+      "--task-card-glow-color-a",
+      "--task-card-glow-color-b",
+      "--task-card-glow-border-color",
+      "--task-card-glow-shadow",
+      "border-color",
+      "box-shadow"
+    ];
 
     // The release modules above the board (replaced on a release state change) —
     // the dropzone observer never sees them, so they're flashed straight from the
-    // stream handler: a celebratory burst on the just-shipped Last Release, a subtle
-    // glow on the Next Release reset.
-    const RELEASE_FX = { "last-release": "burst", "current-release": "glow" };
+    // stream handler: an 8s fresh-deploy glow on the just-shipped Last Release, a
+    // subtle glow on the Next Release reset.
+    const RELEASE_FX = { "last-release": "fresh-deploy", "current-release": "glow" };
 
     // Per-card coordination between the `remove` stream (intercepted) and the
     // `prepend` that follows it on a MOVE.
@@ -106,6 +185,46 @@
         card.classList.remove("lbfx-glow", "lbfx-glow-stage");
         card.style.removeProperty("--lbfx-glow");
       }, 850);
+    }
+
+    function freshDeployGlow(card) {
+      if (!card || card.dataset.freshDeploy !== "true") return false;
+      const shippedAt = Number(card.dataset.shippedAtMs || 0);
+      const elapsed = shippedAt > 0 ? Math.max(0, Date.now() - shippedAt) : 0;
+      if (elapsed >= FRESH_DEPLOY_MS) {
+        clearFreshDeployGlow(card);
+        return false;
+      }
+      if (card.dataset.freshDeployCleanup === "true") return true;
+
+      card.style.setProperty("--lbfx-fresh-delay", "-" + elapsed + "ms");
+      card.classList.remove("opacity-75");
+      card.classList.add("studio-border-glow", "release-fresh-glow");
+      card.classList.remove("lbfx-fresh-deploy");
+      void card.offsetWidth;
+      card.classList.add("lbfx-fresh-deploy");
+      card.dataset.freshDeployCleanup = "true";
+      setTimeout(() => clearFreshDeployGlow(card), FRESH_DEPLOY_MS - elapsed + 150);
+      return true;
+    }
+
+    function clearFreshDeployGlow(card) {
+      if (!card) return;
+      card.classList.remove("lbfx-fresh-deploy", "studio-border-glow", "release-fresh-glow");
+      card.classList.add("opacity-75");
+      card.dataset.freshDeploy = "false";
+      delete card.dataset.freshDeployCleanup;
+      FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop));
+      if (!card.getAttribute("style")) card.removeAttribute("style");
+    }
+
+    function initializeFreshDeployGlows(root) {
+      const scope = root && root.querySelectorAll ? root : document;
+      scope.querySelectorAll("#last-release[data-fresh-deploy='true']").forEach((card) => freshDeployGlow(card));
+    }
+
+    function scheduleFreshDeployGlowInitialization() {
+      requestAnimationFrame(() => initializeFreshDeployGlows(document));
     }
 
     function reviewedGlow(card) {
@@ -399,7 +518,15 @@
         event.detail.render = (el) => {
           renderNow(el);
           const fresh = document.getElementById(target);
-          if (fresh) requestAnimationFrame(() => (RELEASE_FX[target] === "burst" ? burst(fresh, true) : glow(fresh)));
+          if (fresh) {
+            requestAnimationFrame(() => {
+              if (RELEASE_FX[target] === "fresh-deploy") {
+                if (!freshDeployGlow(fresh)) burst(fresh, true);
+              } else {
+                glow(fresh);
+              }
+            });
+          }
         };
         return;
       }
@@ -426,6 +553,13 @@
         setTimeout(() => pendingAction.delete(target), 1200);
       }
     });
+
+    document.addEventListener("turbo:load", scheduleFreshDeployGlowInitialization);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", scheduleFreshDeployGlowInitialization, { once: true });
+    } else {
+      scheduleFreshDeployGlowInitialization();
+    }
 
     return { onAdd };
   })();

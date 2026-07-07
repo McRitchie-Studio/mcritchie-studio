@@ -3,11 +3,12 @@ const { test, expect } = require("@playwright/test");
 // A deploy, live. Seeded (e2e/seed.rb): an ACTIVE Next Release (Snorlax, in
 // progress) and a prior SHIPPED Last Release (Dragonite). Shipping the active
 // release via the local-only dev trigger fires a real DeploymentsBroadcaster
-// Turbo Stream — the OPEN board (never reloaded) bursts the just-shipped release
+// Turbo Stream — the OPEN board (never reloaded) glows the just-shipped release
 // into the Last Release slot and resets Next Release to its "none active" card.
 // Plus: the in-progress timer ticks while a release is active, and the active
 // tracker stage counts down from the last-three-deployment average.
 test("a deploy animates Last Release in, resets Next Release, and the timer ticks", async ({ page }) => {
+  test.setTimeout(45_000);
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -49,6 +50,10 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   // …and the just-shipped release (Snorlax) takes over the Last Release slot, frozen.
   await expect(page.locator("#last-release [data-test='release-mascot']")).toContainText("Snorlax", { timeout: 10_000 });
   await expect(page.locator("#last-release [data-test='release-timing']")).toContainText("took");
+  await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "true");
+  await expect(page.locator("#last-release")).toHaveClass(/lbfx-fresh-deploy/);
+  await expect(page.locator("#last-release")).toHaveClass(/studio-border-glow/);
+  await expect(page.locator("#last-release")).toHaveClass(/release-fresh-glow/);
 
   await expect(page.locator("#dropzone-shipped #card-release-stack-current-c")).toBeVisible({ timeout: 10_000 });
   let shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
@@ -56,6 +61,15 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
 
   await page.reload();
+  await expect(page.locator("#last-release [data-test='release-mascot']")).toContainText("Snorlax", { timeout: 10_000 });
+  await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "true");
+  await expect(page.locator("#last-release")).toHaveClass(/release-fresh-glow/);
+  await expect(page.locator("#last-release")).not.toHaveClass(/lbfx-fresh-deploy/, { timeout: 9_500 });
+  await expect(page.locator("#last-release")).not.toHaveClass(/release-fresh-glow/);
+  await expect(page.locator("#last-release")).toHaveClass(/opacity-75/);
+  await expect(page.locator("#last-release")).toHaveAttribute("data-fresh-deploy", "false");
+  expect(await page.locator("#last-release").getAttribute("style")).toBeNull();
+
   shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
   expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
   expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
