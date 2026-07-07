@@ -423,3 +423,36 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-06 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/test-telemetry-from-ci` | worktree | Hidden worktree; branch `feat/test-telemetry-from-ci` is clean and HEAD d342414b is contained in origin/release; health down, Redis DB 29, database mcritchie_studio_development_test_telemetry_from_ci:missing. | Removed with `bin/agent-worktree remove mcritchie-studio test-telemetry-from-ci --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/activity-action-timestamp-rendering` | worktree | Hidden worktree; branch `feat/activity-action-timestamp-rendering` is clean and HEAD 8687cdc0 is contained in origin/release; health down, Redis DB 24, database mcritchie_studio_development_activity_action_timestamp_25d089fb:missing. | Removed with `bin/agent-worktree remove mcritchie-studio activity-action-timestamp-rendering --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/build-pokemon-pokedex` | worktree | Hidden worktree; branch `feat/build-pokemon-pokedex` is clean and HEAD 2a34d76b is contained in origin/release; health up, Redis DB 26, database mcritchie_studio_development_build_pokemon_pokedex:ok. | Removed with `bin/agent-worktree remove mcritchie-studio build-pokemon-pokedex --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/deployment-crew-hover` | worktree | Hidden worktree; branch `feat/deployment-crew-hover` is clean and HEAD 12bb572d is contained in origin/release; health up, Redis DB 9, database mcritchie_studio_development_deployment_crew_hover:ok. | Removed with `bin/agent-worktree remove mcritchie-studio deployment-crew-hover --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-review-activity-attribution` | worktree | Hidden worktree; branch `feat/fix-review-activity-attribution` is clean and HEAD db03b31f is contained in origin/release; health up, Redis DB 29, database mcritchie_studio_development_fix_review_activity_attribution:ok. | Removed with `bin/agent-worktree remove mcritchie-studio fix-review-activity-attribution --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/flexible-activity-column-width` | worktree | Hidden worktree; branch `feat/flexible-activity-column-width` is clean and HEAD d7435f1c is contained in origin/release; health down, Redis DB 15, database mcritchie_studio_development_flexible_activity_column_width:ok. | Removed with `bin/agent-worktree remove mcritchie-studio flexible-activity-column-width --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/harden-review-lane-roles` | worktree | Hidden worktree; branch `feat/harden-review-lane-roles` is clean and HEAD 6539d581 is contained in origin/release; health down, Redis DB 18, database mcritchie_studio_development_harden_review_lane_roles:missing. | Removed with `bin/agent-worktree remove mcritchie-studio harden-review-lane-roles --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/pin-chromedriver-to-chrome` | worktree | Hidden worktree; branch `feat/pin-chromedriver-to-chrome` is clean and HEAD c16a740f is contained in origin/release; health down, Redis DB 23, database mcritchie_studio_development_pin_chromedriver_to_chrome:missing. | Removed with `bin/agent-worktree remove mcritchie-studio pin-chromedriver-to-chrome --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/result-distillation-policy` | worktree | Hidden worktree; branch `feat/result-distillation-policy` is clean and HEAD 8f7124f3 is contained in origin/release; health down, Redis DB 20, database mcritchie_studio_development_result_distillation_policy:missing. | Removed with `bin/agent-worktree remove mcritchie-studio result-distillation-policy --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/shiny-badge-polish` | worktree | Hidden worktree; branch `feat/shiny-badge-polish` is clean and HEAD 6d49951b is contained in origin/release; health up, Redis DB 28, database mcritchie_studio_development_shiny_badge_polish:ok. | Removed with `bin/agent-worktree remove mcritchie-studio shiny-badge-polish --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/shiny-status-indicators` | worktree | Hidden worktree; branch `feat/shiny-status-indicators` is clean and HEAD ee2bdd74 is contained in origin/release; health up, Redis DB 11, database mcritchie_studio_development_shiny_status_indicators:ok. | Removed with `bin/agent-worktree remove mcritchie-studio shiny-status-indicators --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-06 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/suppress-tool-result-paging-reads` | worktree | Hidden worktree; branch `feat/suppress-tool-result-paging-reads` is clean and HEAD d243e051 is contained in origin/release; health down, Redis DB 22, database mcritchie_studio_development_suppress_tool_result_paging_reads:missing. | Removed with `bin/agent-worktree remove mcritchie-studio suppress-tool-result-paging-reads --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
