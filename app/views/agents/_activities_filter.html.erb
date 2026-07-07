@@ -35,7 +35,7 @@
             <% end %>
             <span class="aa-fs-body">
               <span class="aa-fs-name"><%= session[:name] %><% if session[:shiny] %><span class="aa-fs-shiny" title="shiny">★</span><% end %></span>
-              <span class="aa-fs-meta"><%= session[:short] %> · <%= pluralize(session[:count], "activity") %></span>
+              <span class="aa-fs-meta"><%= session[:short] %> · <%= pluralize(session[:count], "activity") %><% if (ago = compact_time_ago(session[:last_at])).present? %> · <span class="aa-fs-ago" data-test="aa-fs-ago"><%= ago %></span><% end %></span>
             </span>
           <% end %>
         <% end %>

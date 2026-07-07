@@ -1,6 +1,18 @@
 require "test_helper"
 
 class ApplicationHelperTest < ActionView::TestCase
+  test "compact_time_ago renders the smallest legible unit and guards blank/future times" do
+    now = Time.utc(2026, 7, 7, 12, 0, 0)
+
+    assert_nil compact_time_ago(nil, now: now), "a blank time renders nothing"
+    assert_equal "just now", compact_time_ago(now - 10, now: now)
+    assert_equal "just now", compact_time_ago(now + 30, now: now), "a future time clamps, never negative"
+    assert_equal "5m ago", compact_time_ago(now - (5 * 60), now: now)
+    assert_equal "3h ago", compact_time_ago(now - (3 * 3_600), now: now)
+    assert_equal "2d ago", compact_time_ago(now - (2 * 86_400), now: now)
+    assert_equal "3w ago", compact_time_ago(now - (21 * 86_400), now: now)
+  end
+
   test "right_fade_style emits both mask-image properties with the given stop" do
     style = right_fade_style
     assert_includes style, "mask-image: linear-gradient(to right, #000 88%, transparent)"
