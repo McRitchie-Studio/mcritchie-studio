@@ -59,9 +59,15 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select "img[src='https://example.test/meowth-sprite.png']", count: 2
       assert_select "div[title^='Avi']", count: 1
       assert_select "[data-test='crew-blocked']", count: 1
-      assert_select "[class*='group-hover:scale-110']", count: 3
-      assert_select "[class*='group-hover:-space-x-6']", count: 3
-      assert_select "[class*='group-focus-within:scale-110']", count: 3
+      # three slots align left / center / right
+      assert_select ".origin-left", count: 1
+      assert_select ".origin-center", count: 1
+      assert_select ".origin-right", count: 1
+      # the stack reveals by loosening overlap, but only the top avatar grows
+      assert_select "[data-test='crew-stack'][class*='group-hover:scale-110']", count: 0
+      assert_select "[data-test='crew-stack'][class*='group-hover:-space-x-6']", count: 3
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-110']", count: 3
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-110']", count: 0
     end
   end
 
@@ -271,10 +277,12 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
       assert_select ".origin-left",   count: 1
       assert_select ".origin-center", count: 2
       assert_select ".origin-right",  count: 1
-      # every lane gets a stronger reveal without sliding outside the card
-      assert_select "[class*='group-hover:scale-110']", count: 4
-      assert_select "[class*='group-hover:-space-x-5']", count: 4
-      assert_select "[class*='group-focus-within:scale-110']", count: 4
+      # every lane reveals without scaling the full stack; only the top avatar grows
+      assert_select "[data-test='crew-stack'][class*='group-hover:scale-110']", count: 0
+      assert_select "[data-test='crew-stack'][class*='group-hover:-space-x-5']", count: 4
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-hover:scale-110']", count: 4
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='top'][class*='group-focus-within:scale-110']", count: 4
+      assert_select "[data-test='crew-stack-avatar'][data-stack-position='under'][class*='group-hover:scale-110']", count: 0
       assert_select "[class*='group-hover:-translate-x-3']", count: 0
       assert_select "[class*='group-hover:translate-x-3']",  count: 0
     end
