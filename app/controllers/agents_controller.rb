@@ -21,6 +21,7 @@ class AgentsController < ApplicationController
     scope  = AgentActivity.order(opened_at: :desc, seq: :desc, id: :desc)
     scope  = scope.where(session_id: @session_ids) if @session_ids.any?
     @total = scope.count
+    @activity_cost_total = scope.sum(:cost) if @total.positive? && @total < 100
     @activities = scope.offset((@page - 1) * ACTIVITIES_PER_PAGE).limit(ACTIVITIES_PER_PAGE).to_a
 
     # Drill-down actions, DISPLAYED newest-first under each activity (the operator's

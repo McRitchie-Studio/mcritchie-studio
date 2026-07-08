@@ -45,8 +45,11 @@
       </div>
       <div class="aa-headactions">
         <div class="hb-stats">
-          <div class="hb-stat"><b><%= @total %></b><span>activities</span></div>
-          <div class="hb-stat"><b><%= @page %></b><span>page</span></div>
+          <% if @activity_cost_total %>
+            <div class="hb-stat" data-test="aa-filtered-cost"><b><%= heartbeat_cost(@activity_cost_total) %></b><span>cost</span></div>
+          <% end %>
+          <div class="hb-stat" data-test="aa-activity-total"><b><%= @total %></b><span>activities</span></div>
+          <div class="hb-stat" data-test="aa-page-total"><b><%= @page %></b><span>page</span></div>
         </div>
         <button type="button" class="hb-btn" data-test="aa-filter-toggle" @click="openFilter()">
           &#9776; Filter<% if active_sessions.any? %> <span class="aa-filtercount" data-test="aa-filter-count"><%= active_sessions.size %></span><% end %>
