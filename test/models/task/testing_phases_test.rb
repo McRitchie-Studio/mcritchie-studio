@@ -82,6 +82,45 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
     assert task.reload.devops["approval_approved_at"].present?, "approved_at stamped on the flip"
   end
 
+  # Fix (review): the after_commit refresh must NOT fire on metadata churn that
+  # can't move a phase window — e.g. the statusline heartbeat rewriting claim_*.
+  test "[unit] a heartbeat-style metadata change does not rebuild the projection" do
+    task = probe_task
+    task.update_columns(testing_phases: { "sentinel" => true }, testing_phases_version: 99)
+
+    task.update!(metadata: task.metadata.deep_merge("devops" => {
+      "claim_nonce" => "beef", "claim_expires_at" => 5.minutes.from_now.iso8601
+    }))
+
+    task.reload
+    assert_equal 99, task.testing_phases_version, "heartbeat/claim churn must NOT rebuild"
+    assert_equal({ "sentinel" => true }, task.testing_phases)
+  end
+
+  test "[unit] an approval metadata change DOES rebuild the projection" do
+    task = probe_task
+    task.update_columns(testing_phases: { "sentinel" => true }, testing_phases_version: 99)
+
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "approval_status" => "approved" }))
+
+    task.reload
+    assert_equal Task::TestingPhases::VERSION, task.testing_phases_version, "approval change rebuilds"
+    refute_equal({ "sentinel" => true }, task.testing_phases)
+  end
+
+  # Fix (review): cached_or_built must never re-raise into a render — a failed
+  # build returns a safe all-missing projection, not the same failing call.
+  test "[unit] cached_or_built returns a safe empty projection when build fails" do
+    task = probe_task
+    task.update_columns(testing_phases_version: 0) # force the build path
+
+    Task::TestingPhases.stub(:build, ->(*) { raise "boom" }) do
+      result = Task::TestingPhases.cached_or_built(task.reload)
+      assert_equal Task::TestingPhases::VERSION, result["cache_version"]
+      assert_equal "missing", result.dig("phases", "build", "status"), "degrades to all-missing, no raise"
+    end
+  end
+
   # Drive the REAL write paths a producer uses — stage transitions, cert checkpoints
   # (record_checkpoint_event, what the API + bin/full-suite-check call), and the
   # approval stamps — and confirm they flow through build + the persisted projection.

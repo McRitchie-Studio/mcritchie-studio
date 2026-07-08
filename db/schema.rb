@@ -677,31 +677,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_073358) do
     t.index ["stage"], name: "index_news_on_stage"
   end
 
-  create_table "nfl_team_total_projections", force: :cascade do |t|
-    t.datetime "cached_at", null: false
-    t.datetime "created_at", null: false
-    t.decimal "expected_points", precision: 5, scale: 2, null: false
-    t.decimal "favorite_spread", precision: 5, scale: 2, null: false
-    t.string "favorite_team_slug", null: false
-    t.string "game_slug", null: false
-    t.decimal "game_total", precision: 5, scale: 2, null: false
-    t.boolean "home", null: false
-    t.decimal "home_spread", precision: 5, scale: 2, null: false
-    t.string "opponent_team_slug", null: false
-    t.string "season_slug", null: false
-    t.string "slate_slug", null: false
-    t.string "source", null: false
-    t.date "source_published_on"
-    t.string "source_url"
-    t.string "team_slug", null: false
-    t.datetime "updated_at", null: false
-    t.integer "week", null: false
-    t.index ["game_slug", "team_slug"], name: "idx_nfl_team_totals_on_game_team", unique: true
-    t.index ["season_slug", "week", "team_slug"], name: "idx_nfl_team_totals_on_season_week_team"
-    t.index ["slate_slug", "team_slug"], name: "idx_nfl_team_totals_on_slate_team"
-    t.index ["source"], name: "index_nfl_team_total_projections_on_source"
-  end
-
   create_table "people", force: :cascade do |t|
     t.jsonb "aliases", default: []
     t.boolean "athlete", default: false

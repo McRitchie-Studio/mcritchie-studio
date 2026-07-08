@@ -70,8 +70,21 @@ class Task
         build(task)
       end
     rescue StandardError => e
-      Rails.logger.warn("[task-testing-phases] fallback build failed for #{task.slug}: #{e.class}: #{e.message}")
-      build(task)
+      Rails.logger.warn("[task-testing-phases] projection unavailable for #{task.slug}: #{e.class}: #{e.message}")
+      empty_projection
+    end
+
+    # A safe, phases-all-missing projection — returned when a live read genuinely
+    # can't build (so cached_or_built NEVER re-raises into a render, honoring its
+    # contract). The card partial + aggregate already tolerate "missing" windows.
+    def empty_projection
+      {
+        "cache_version" => VERSION,
+        "cached_at" => nil,
+        "phases" => PHASE_KEYS.index_with do
+          { "status" => "missing", "seconds" => nil, "started_at" => nil, "completed_at" => nil, "source" => nil }
+        end
+      }
     end
 
     def refresh_recent!(limit: 100, now: Time.current)

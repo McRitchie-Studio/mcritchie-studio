@@ -1008,12 +1008,27 @@ class Task < ApplicationRecord
 
   private
 
-  # Refresh the testing-phase projection after a stage transition or an approval
-  # (metadata) change — the two edits that move a task-owned phase window.
+  # Refresh the testing-phase projection after a stage transition or an APPROVAL
+  # change — the two edits that move a task-owned phase window. Metadata churn that
+  # can't move a window (the statusline heartbeat's claim_expires_at/claim_nonce,
+  # agent_context, etc.) must NOT trigger a rebuild, so we check the approval keys
+  # specifically rather than saved_change_to_metadata? wholesale.
   def refresh_testing_phases_after_change
-    return unless saved_change_to_stage? || saved_change_to_metadata?
+    return unless saved_change_to_stage? || testing_phase_approval_changed?
 
     refresh_testing_phases_safely
+  end
+
+  # Did an approval field (which drives the acceptance phase) actually change?
+  def testing_phase_approval_changed?
+    return false unless saved_change_to_metadata?
+
+    before, after = saved_change_to_metadata
+    before_devops = (before || {})["devops"] || {}
+    after_devops = (after || {})["devops"] || {}
+    %w[approval_status approval_requested_at approval_approved_at].any? do |key|
+      before_devops[key] != after_devops[key]
+    end
   end
 
   def refresh_duration_metrics_for_release_changes

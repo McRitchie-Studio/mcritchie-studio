@@ -230,7 +230,8 @@ rescue JSON::ParserError, SystemCallError
 end
 
 # Open the Local Certification testing phase (durable checkpoint on the task).
-emit_cert_checkpoint(slug, "started")
+# Skip on --print (a dry run must not write to the durable record).
+emit_cert_checkpoint(slug, "started") unless options[:print]
 
 unless skip_test_db_reset
   reset_ok = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" })
@@ -245,7 +246,7 @@ rubocop_ok = run_lane("rubocop", rubocop_cmd, root)
 
 # Close the Local Certification testing phase (fires whether the cert passed or
 # failed — the pass/fail lives in checks_run; this only bounds the phase window).
-emit_cert_checkpoint(slug, "completed")
+emit_cert_checkpoint(slug, "completed") unless options[:print]
 
 fingerprint = FullSuiteGate.fingerprint(root)
 if fingerprint.nil?
