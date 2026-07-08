@@ -138,6 +138,12 @@ class Task < ApplicationRecord
   MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
   OPERATOR_APPROVAL_APPROVED = "approved".freeze
+  OPERATOR_APPROVAL_CHANGES_REQUESTED = "changes_requested".freeze
+  OPERATOR_APPROVAL_OPEN_STATUSES = [
+    OPERATOR_APPROVAL_WAITING,
+    OPERATOR_APPROVAL_CHANGES_REQUESTED
+  ].freeze
+  OPERATOR_APPROVAL_HOLD_STAGES = %w[building blocked].freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor block_kind agent_context session_id session_provider mascot
@@ -221,6 +227,7 @@ class Task < ApplicationRecord
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
+  before_save :confirm_operator_approval_after_build_exit, if: -> { will_save_change_to_stage? }
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
   # One TaskEvent per save that lands a stage: the genesis on create (the default
@@ -1299,6 +1306,21 @@ class Task < ApplicationRecord
     # A new task lands at the TOP of its (designed) column: max + 100 under the
     # `position DESC` sort. 100-spacing mirrors News/Content and leaves drag gaps.
     self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
+  end
+
+  def confirm_operator_approval_after_build_exit
+    return unless operator_approval_exit_transition?
+    return unless OPERATOR_APPROVAL_OPEN_STATUSES.include?(approval_status)
+
+    merged = metadata.deep_dup
+    approval = (merged["devops"] ||= {})
+    approval["approval_status"] = OPERATOR_APPROVAL_APPROVED
+    self.metadata = merged
+  end
+
+  def operator_approval_exit_transition?
+    OPERATOR_APPROVAL_HOLD_STAGES.include?(stage_was) &&
+      !OPERATOR_APPROVAL_HOLD_STAGES.include?(stage)
   end
 
   def stamp_operator_approval_request

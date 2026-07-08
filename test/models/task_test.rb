@@ -17,6 +17,70 @@ class TaskTest < ActiveSupport::TestCase
     assert_not_nil task.submitted_at
   end
 
+  test "[unit] submitting from building auto-confirms waiting approval" do
+    task = Task.create!(
+      title: "Approval Exit Build",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3021/tasks"
+        }
+      }
+    )
+    requested_at = task.devops["approval_requested_at"]
+
+    task.submit!
+
+    task.reload
+    assert_equal "submitted", task.stage
+    assert_equal "approved", task.approval_status
+    assert_not task.waiting_for_operator_approval?
+    assert_equal requested_at, task.devops["approval_requested_at"]
+    assert task.devops["approval_approved_at"].present?
+  end
+
+  test "[unit] resubmitting from blocked auto-confirms requested changes" do
+    task = Task.create!(
+      title: "Approval Exit Blocked",
+      stage: "blocked",
+      metadata: {
+        "devops" => {
+          "approval_status" => "changes_requested",
+          "local_url" => "http://localhost:3021/tasks"
+        }
+      }
+    )
+
+    task.submit!
+
+    task.reload
+    assert_equal "submitted", task.stage
+    assert_equal "approved", task.approval_status
+    assert task.devops["approval_approved_at"].present?
+  end
+
+  test "[unit] moving between building and blocked keeps approval open" do
+    task = Task.create!(
+      title: "Approval Still Blocked",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3021/tasks"
+        }
+      }
+    )
+
+    task.block!(kind: "environment")
+
+    task.reload
+    assert_equal "blocked", task.stage
+    assert_equal "waiting", task.approval_status
+    assert task.waiting_for_operator_approval?
+    assert_nil task.devops["approval_approved_at"]
+  end
+
   test "submitted task can be reviewed" do
     task = tasks(:new_task)
     task.update!(stage: "submitted")
