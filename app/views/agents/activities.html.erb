@@ -15,9 +15,6 @@
 <%= render "agents/activities_scripts" %>
 <%= render "agents/activities_live_fx" %>
 
-<%# Live websocket feed: AgentActivity/AgentAction create+update broadcasts (via
-    ActivitiesBroadcaster) stream into the table below — additive, newest-first. %>
-<%= turbo_stream_from "agents_activities" %>
 <%# TEST-ONLY: the e2e spec reads this to POST a real activity/action and assert the
     live update — never rendered outside test (it is a valid api_auth token). %>
 <% if Rails.env.test? %>
@@ -34,6 +31,9 @@
       frame, so the sidebar stays open across swaps; data-turbo-action="advance" keeps the
       URL (and back button) in sync. Links inside the frame auto-target it. %>
   <turbo-frame id="aa-activities-frame" data-turbo-action="advance">
+  <%# Live websocket feed: AgentActivity/AgentAction create+update broadcasts (via
+      ActivitiesBroadcaster) stream into the table below — additive, newest-first. %>
+  <%= render "agents/activities_live_streams", session_ids: @session_ids %>
   <div class="hb-head">
     <header class="aa-topbar">
       <div class="hb-title">

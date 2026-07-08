@@ -27,6 +27,26 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     assert_includes after.to_html, "aa-activity-#{created.id}"
   end
 
+  test "activity create also broadcasts to its session-scoped stream" do
+    created = nil
+    streams = capture_turbo_stream_broadcasts("agents_activities:session:sess-filtered") do
+      created = activity(session_id: "sess-filtered")
+    end
+
+    after = streams.find { |s| s["action"] == "after" }
+    assert after, "expected an 'after' insert broadcast on the matching session stream"
+    assert_equal "aa-activities-head", after["target"]
+    assert_includes after.to_html, "aa-activity-#{created.id}"
+  end
+
+  test "activity create does not broadcast to other session-scoped streams" do
+    streams = capture_turbo_stream_broadcasts("agents_activities:session:sess-filtered") do
+      activity(session_id: "sess-other")
+    end
+
+    assert_empty streams
+  end
+
   test "activity update broadcasts a replace of its tbody" do
     a = activity
     streams = capture_turbo_stream_broadcasts(ActivitiesBroadcaster::STREAM) do
@@ -56,6 +76,22 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     assert_equal "aa-mobile-detail-#{a.id}", after["target"]
     assert_includes after.to_html, "aa-action-#{created.id}"
     assert_nil streams.find { |s| s["action"] == "append" }, "must not append to the bottom"
+  end
+
+  test "action create also broadcasts to the parent activity session-scoped stream" do
+    a = activity(session_id: "sess-filtered")
+    created = nil
+    streams = capture_turbo_stream_broadcasts("agents_activities:session:sess-filtered") do
+      created = action(a, session_id: "sess-filtered", event_slug: "grep the filtered row")
+    end
+
+    remove = streams.find { |s| s["action"] == "remove" }
+    after  = streams.find { |s| s["action"] == "after" }
+    assert remove, "expected a remove of the empty placeholder"
+    assert_equal "aa-empty-#{a.id}", remove["target"]
+    assert after, "expected an 'after' insert on the matching session stream"
+    assert_equal "aa-mobile-detail-#{a.id}", after["target"]
+    assert_includes after.to_html, "aa-action-#{created.id}"
   end
 
   test "action update broadcasts a replace of its row" do
