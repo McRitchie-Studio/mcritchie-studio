@@ -607,10 +607,13 @@ end
 def record_gate_close(release_slug, key, success, metadata: {})
   sops = $gate_sops || []
   $gate_sops = nil
+  # bin/release runs Rails-FREE, so no ActiveSupport .presence here — normalize
+  # the metadata by hand (a non-Hash or nil becomes {}).
+  meta = metadata.is_a?(Hash) ? metadata : {}
   conductor(
     "run = GateRun.close!(subject_type: 'release', subject_slug: #{release_slug.inspect}, " \
     "key: #{key.inspect}, success: #{success ? 'true' : 'false'}, sops: #{sops.inspect}, " \
-    "source: 'conductor', metadata: #{(metadata.presence || {}).inspect}); " \
+    "source: 'conductor', metadata: #{meta.inspect}); " \
     "puts({ gate: run.key, attempt: run.attempt, success: run.success }.to_json)"
   )
 rescue SystemExit, StandardError => e
