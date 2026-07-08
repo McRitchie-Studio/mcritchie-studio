@@ -530,6 +530,27 @@ end
 # Build + Review windows; the demo above yields all four durable phases).
 Task::TestingPhases.backfill!
 
+# Testing-gates demo, on the same task: attempt-aware GATE verdicts so
+# /tasks/testing-phases-demo also renders the "Testing gates" card — a G1 Cert
+# that failed once and passed on attempt 2 (exercising the retry count), a
+# passed primary review lane, and a light lane still in flight.
+GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", success: false,
+               sops: [{ "sop" => "full-suite", "cmd" => "bin/rails test", "result" => "fail", "duration_ms" => 412_000 }],
+               now: tp_anchor + 8.minutes)
+GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", now: tp_anchor + 10.minutes)
+GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", success: true,
+               sops: [{ "sop" => "full-suite", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 405_000 },
+                      { "sop" => "rubocop", "cmd" => "bin/rubocop", "result" => "pass", "duration_ms" => 21_000 },
+                      { "sop" => "dor-check", "cmd" => "bin/dor-check #{tp.slug}", "result" => "pass" },
+                      { "sop" => "ci", "result" => "pass" }],
+               now: tp_anchor + 15.minutes)
+GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2a_primary", actor: "carl",
+              now: tp_anchor + 22.minutes)
+GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g2a_primary", success: true, actor: "carl",
+               sops: [{ "sop" => "scout-report", "result" => "pass" }], now: tp_anchor + 33.minutes)
+GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2b_light", actor: "shannon",
+              now: tp_anchor + 22.minutes)
+
 # /alex/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
 # is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of

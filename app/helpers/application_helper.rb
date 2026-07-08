@@ -66,6 +66,26 @@ module ApplicationHelper
     end
   end
 
+  # A gate run (GateRun) → the status chip text-color. Verdict-bearing, unlike
+  # the phase chip above: passed/failed are terminal colors, in-flight ticks amber.
+  def gate_status_class(run)
+    case run&.status
+    when "passed"    then "text-emerald-400"
+    when "failed"    then "text-rose-400"
+    when "in_flight" then "text-amber-400"
+    else "text-muted"
+    end
+  end
+
+  # "attempt 2 · 4m 12s" (in-flight runs read "… so far"); nil when no run yet.
+  def gate_attempt_label(run)
+    return nil if run.nil?
+
+    duration = humanize_stage_duration(run.duration_seconds) || "under a minute"
+    duration = "#{duration} so far" if run.in_flight?
+    run.attempt.to_i > 1 ? "attempt #{run.attempt} · #{duration}" : duration
+  end
+
   # Compact 12-hour clock for a board footer stamp: "3:32p" — no leading zero
   # on the hour, a single am/pm letter. Expects an already-zoned time.
   def clock_12h(time)

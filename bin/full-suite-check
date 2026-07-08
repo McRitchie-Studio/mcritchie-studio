@@ -58,6 +58,7 @@ require_relative "lib/repo_root"
 # CODE we run + fingerprint, though, roots at the agent's worktree (below).
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = File.expand_path("task", __dir__)
+GATE_BIN = File.expand_path("gate", __dir__)
 
 # The narration CLI — the SAME emit seam bin/release.rb's run_test_scope
 # self-reports through (its agent_action shells this exact `action` verb). We fire
@@ -206,13 +207,35 @@ rescue StandardError
   nil
 end
 
-def run_lane(label, cmd, root, env: {})
+# Best-effort G1 Cert gate-run markers (bin/gate → GateRun) — the branded-gate
+# mirror of the cert checkpoint: OPEN the g1_cert attempt when the cert starts,
+# append one executed-SOP entry per lane, and CLOSE it success=false the moment
+# a lane goes red (the green path stays open — bin/dor-check's merge-gate
+# verdict is what closes G1). Skips when there's no task slug; fire-and-forget
+# like every other telemetry seam — a gate write never breaks a cert.
+def emit_gate(slug, *args)
+  return if slug.to_s.strip.empty?
+
+  system(GATE_BIN, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+def emit_gate_sop(slug, label, cmd, ok, duration_ms)
+  emit_gate(slug, "sop", "task", slug, "g1_cert",
+            "--sop", label, "--cmd", cmd.to_s,
+            "--result", ok ? "pass" : "fail",
+            "--duration-ms", duration_ms.to_s)
+end
+
+def run_lane(label, cmd, root, env: {}, gate_slug: nil)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   ok = system(env, cmd, chdir: root)
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   emit_test_scope(LANE_SCOPES[label], ok, duration_ms, cmd)
+  emit_gate_sop(gate_slug, label, cmd, ok, duration_ms) if gate_slug
   ok
 end
 
@@ -229,20 +252,24 @@ rescue JSON::ParserError, SystemCallError
   nil
 end
 
-# Open the Local Certification testing phase (durable checkpoint on the task).
+# Open the Local Certification testing phase (durable checkpoint on the task)
+# and the G1 Cert gate attempt (durable GateRun; sops accrue per lane below).
 # Skip on --print (a dry run must not write to the durable record).
+gate_slug = options[:print] ? nil : slug
 emit_cert_checkpoint(slug, "started") unless options[:print]
+emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
 
 unless skip_test_db_reset
-  reset_ok = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" })
+  reset_ok = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" }, gate_slug: gate_slug)
   unless reset_ok
     warn "full-suite-check: test database reset failed; not certifying a possibly polluted Rails suite."
+    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
 end
 
-test_ok = run_lane("full-suite", test_cmd, root)
-rubocop_ok = run_lane("rubocop", rubocop_cmd, root)
+test_ok = run_lane("full-suite", test_cmd, root, gate_slug: gate_slug)
+rubocop_ok = run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
 
 # Close the Local Certification testing phase (fires whether the cert passed or
 # failed — the pass/fail lives in checks_run; this only bounds the phase window).
@@ -270,6 +297,8 @@ passed_lines.each { |line| puts line }
 unless lanes.values.all?
   failed = lanes.reject { |_, ok| ok }.keys.join(", ")
   warn "full-suite-check: lane(s) RED: #{failed}. Fix, then re-run — no evidence recorded for the red lane(s)."
+  # A red lane is a G1 verdict: close the attempt failed (the re-run opens n+1).
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
 

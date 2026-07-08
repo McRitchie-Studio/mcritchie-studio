@@ -55,6 +55,35 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "p.label-upper", text: "Operator Acceptance"
   end
 
+  test "[component] show renders the testing-gates card from the latest gate attempts" do
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: false)
+    GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert")
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: true,
+                   sops: [{ "sop" => "full-suite", "result" => "pass", "duration_ms" => 8000 },
+                          { "sop" => "dor-check", "result" => "pass" }])
+    GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "g2a_primary", actor: "carl")
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select "h3", text: "Testing gates"
+    assert_select "p.label-upper", text: "G1 Cert"
+    assert_select "p.label-upper", text: "G2a Primary"
+    assert_select "p.label-upper", text: "G2b Light"
+    assert_includes response.body, "attempt 2" # the failed first attempt stays visible as a retry count
+    assert_select "p", text: "Passed"     # g1 verdict chip
+    assert_select "p", text: "In flight"  # g2a open lane
+    assert_select "p", text: "Not run"    # g2b untouched
+    assert_select "summary", text: /2 SOPs/
+  end
+
+  test "[component] show omits the testing-gates card when no gate has run" do
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select "h3", text: "Testing gates", count: 0
+  end
+
   test "[integration] json patch archives through the shared task update path" do
     log_in_as(@admin)
 

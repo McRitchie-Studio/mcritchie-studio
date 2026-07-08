@@ -49,6 +49,9 @@ end
 DEVOPS_CYCLE_BIN = bin_for("DEVOPS_CYCLE_BIN", "devops-cycle")
 REVIEWER_SELECT_BIN = bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
 TASK_BIN = bin_for("TASK_BIN", "task")
+GATE_BIN = bin_for("GATE_BIN", "gate")
+# start_review → gate key per launch role (the G2 review lanes, GateRun::GATES).
+G2_LANE_KEYS = { "primary" => "g2a_primary", "light" => "g2b_light" }.freeze
 CODEX_BIN = ENV["CODEX_BIN"].to_s.strip.empty? ? "codex" : ENV["CODEX_BIN"].strip
 
 OPTIONS = {
@@ -428,6 +431,43 @@ def task_write(args, input: nil)
   status&.success?
 end
 
+# Best-effort G2 gate-run markers (bin/gate → GateRun). The SUPERVISOR owns the
+# G2 lanes — it is the one place that knows role assignment deterministically:
+# start_review OPENs g2a_primary + g2b_light as the pair launches, and
+# close_review_gates CLOSEs each lane from its OWN reviewer's scout-report
+# outcome. Fire-and-forget: a gate write never breaks the review loop.
+def gate_write(*args)
+  cmd = managed_command(GATE_BIN, *args)
+  unless OPTIONS.fetch(:run)
+    puts "  dry-run: would run #{shell_join(cmd)}"
+    return true
+  end
+
+  system(*cmd, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+# Per-lane verdicts: merge-ready → passed; request-changes / wait-for-ci /
+# conductor-review → failed (the outcome rides in metadata; an uncleared attempt
+# is still an attempt — the next wave opens n+1). A reviewer with NO report
+# leaves its lane IN FLIGHT so the next wave's open reuses the same attempt.
+def close_review_gates(slug, reviewers, reports)
+  reviewers.each_with_index do |reviewer, index|
+    key = G2_LANE_KEYS[%w[primary light][index]] or next
+    reviewer_slug = reviewer.fetch("slug")
+    report = reports.find { |r| r["agent_slug"].to_s == reviewer_slug }
+    next unless report
+
+    outcome = report["outcome"].to_s
+    success = outcome == "merge-ready"
+    gate_write("close", "task", slug, key, success ? "--success" : "--failed",
+               "--actor", reviewer_slug,
+               "--sop-json", JSON.generate({ "sop" => "scout-report", "result" => success ? "pass" : "fail" }),
+               "--meta", "outcome=#{outcome}")
+  end
+end
+
 def move_reviewed(slug, reviewers, reports)
   ok = task_write(["move", slug, "reviewed", "--actor", "avi"])
   note = "pr-review moved #{slug} to reviewed after #{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Steffon QA.\n\n" \
@@ -474,6 +514,13 @@ def start_review(task, review_number)
   # are launched non-blocking here and both waited on later in finish_review, so
   # they run concurrently; the supervisor never performs a review itself.
   roles = %w[primary light]
+  # Open the G2 gate lanes as the pair launches (attempt-aware: a re-review of a
+  # resubmitted task opens attempt n+1; a still-open lane from a deferred wave is
+  # reused). Closed per-lane from the scout reports in finish_review.
+  reviewers.each_with_index do |reviewer, index|
+    key = G2_LANE_KEYS[roles[index]] or next
+    gate_write("open", "task", slug, key, "--actor", reviewer.fetch("slug"))
+  end
   launches = reviewers.each_with_index.map do |reviewer, index|
     launch_reviewer(task, reviewer, roles.fetch(index), reviewers)
   end
@@ -521,6 +568,10 @@ def finish_review(review, events, handled, deferred_until)
   reports_text = reports.map { |r| report_summary(r) }.join(" | ")
   puts "  reports=#{reports_text.empty? ? "none" : reports_text}"
   puts "  decision=#{decision&.fetch("recommendation", nil) || "none"} outcome=#{outcome}"
+
+  # Close each G2 lane from its OWN reviewer's report (a reportless lane stays
+  # in flight for the next wave) — before the task-level outcome dispatch.
+  close_review_gates(slug, reviewers, reports)
 
   case outcome
   when "merge-ready"

@@ -71,15 +71,40 @@ class DeploymentsBroadcaster
     end
   end
 
-  def initialize(event)
+  # A gate run opened or closed (GateRun) — refresh the gate-bearing surfaces.
+  # Release-grain runs re-render the release modules; task-grain runs replace the
+  # task's board card in place (parity with checkpoint events — no stage move
+  # implied). The ONE broadcast that also fires on UPDATE (GateRun.close! updates
+  # the open row, unlike the append-only spines). Guarded like every other entry.
+  def self.gate_run(run)
+    if run.subject_type == "release"
+      release_modules
+    else
+      Studio::Cable.safe_broadcast do
+        task = Task.find_by(slug: run.subject_slug)
+        new(nil, task: task).deliver_replace if task
+      end
+    end
+  end
+
+  # `task:` covers event-less broadcasts (gate runs): the card render only needs
+  # the task, so those callers pass it directly and use #deliver_replace.
+  def initialize(event, task: nil)
     @event = event
-    @task = event.task
+    @task = task || event&.task
   end
 
   def deliver
     return nil if @task.nil?
 
     broadcast
+  end
+
+  # In-place card refresh with no event to dispatch on (see .gate_run).
+  def deliver_replace
+    return nil if @task.nil?
+
+    replace_card
   end
 
   private

@@ -99,6 +99,10 @@ class Release < ApplicationRecord
 
   has_many :tasks, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release
   has_many :release_events, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release, dependent: :destroy
+  # Attempt-aware runs of the release-owned testing gates (G3 Candidate, G4
+  # Ship) — slug-FK like release_events, scoped to release-grain subjects.
+  has_many :gate_runs, -> { where(subject_type: "release") },
+           foreign_key: :subject_slug, primary_key: :slug, dependent: :delete_all
 
   validates :slug, presence: true, uniqueness: true
   validates :state, inclusion: { in: STATES }

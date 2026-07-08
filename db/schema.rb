@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_073358) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_08_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -522,6 +522,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_073358) do
     t.index ["home_team_slug"], name: "index_games_on_home_team_slug"
     t.index ["slate_slug"], name: "index_games_on_slate_slug"
     t.index ["slug"], name: "index_games_on_slug", unique: true
+  end
+
+  create_table "gate_runs", force: :cascade do |t|
+    t.string "actor"
+    t.integer "attempt", null: false
+    t.datetime "created_at", null: false
+    t.datetime "finished_at"
+    t.string "key", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.jsonb "sops", default: [], null: false
+    t.string "source"
+    t.datetime "started_at", null: false
+    t.string "subject_slug", null: false
+    t.string "subject_type", null: false
+    t.boolean "success"
+    t.datetime "updated_at", null: false
+    t.index ["subject_slug", "started_at"], name: "index_gate_runs_on_subject_slug_and_started_at"
+    t.index ["subject_type", "subject_slug", "key", "attempt"], name: "index_gate_runs_on_subject_key_attempt", unique: true
+    t.index ["subject_type", "subject_slug", "key"], name: "index_gate_runs_one_open_per_gate", unique: true, where: "(finished_at IS NULL)"
   end
 
   create_table "github_builder_commit_range_caches", force: :cascade do |t|

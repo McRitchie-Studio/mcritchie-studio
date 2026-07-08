@@ -230,6 +230,7 @@
 
     <!-- Testing phases (durable per-phase durations) -->
     <%= render "tasks/testing_phases", testing_phases: @testing_phases %>
+    <%= render "tasks/gates", task_gate_runs: @task_gate_runs %>
 
     <!-- Consolidated stage timeline (crew + timeline merged into one visual) -->
     <%= render "tasks/consolidated_timeline", task: @task, agents: @agents, events: @task_events %>

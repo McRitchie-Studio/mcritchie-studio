@@ -52,6 +52,7 @@ class TasksController < ApplicationController
     @agents = Agent.order(:position)
     @active_review_intent = @task.open_intent_for("reviewed")
     @testing_phases = Task::TestingPhases.cached_or_built(@task)
+    @task_gate_runs = GateRun.latest_by_key(subject_type: "task", subject_slug: @task.slug)
   end
 
   def review_events
