@@ -436,7 +436,7 @@ class TaskCliTest < Minitest::Test
       assert_equal "claude-opus-4-8", event["model"]
       assert_equal 6150, event["tokens_in"]   # 100 + 50 + 6000
       assert_equal 4000, event["tokens_out"]
-      assert_equal "0.1038", event["cost"]     # (100*5 + 4000*25 + 50*5*1.25 + 6000*5*0.1)/1e6
+      assert_equal "0.1040", event["cost"]     # (100*5 + 4000*25 + 50*5*2.0 + 6000*5*0.1)/1e6
       assert_equal SESSION, event["actor"]
     end
   end
