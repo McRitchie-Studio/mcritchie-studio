@@ -113,12 +113,25 @@ class AgentWorktreeTest < Minitest::Test
   #     the merge, and allocate_port honours it end-to-end ----------------------
 
   def test_mcritchie_config_reserves_3020_through_the_real_merge
+    # This is the only test that resolves the REAL mcritchie-studio config via
+    # app_for, which validates the repo dir exists (`abort "repo missing"`). When
+    # this suite runs somewhere that checkout isn't at PROJECTS_DIR/mcritchie-studio
+    # — e.g. studio-engine's consumer CI, where mcritchie-studio is cloned to a
+    # different path — that abort otherwise false-fails an unrelated run. Guard it:
+    # the subprocess reads the config directly (apps[...] doesn't abort; only
+    # app_for does) and signals SKIP when the repo dir is absent.
     out = run_in_script(<<~RUBY)
       def allocated_ports(_a); (3001..3019).to_a; end
       def port_listening?(_p); false; end
-      app = app_for("mcritchie-studio") # real APP_OVERRIDES -> merge -> config
-      print [app["reserved_ports"], allocate_port(app)].inspect
+      config = apps[ALIASES.fetch("mcritchie-studio", "mcritchie-studio")]
+      if config.nil? || !Dir.exist?(config.fetch("repo"))
+        print "SKIP"
+      else
+        app = app_for("mcritchie-studio") # real APP_OVERRIDES -> merge -> config
+        print [app["reserved_ports"], allocate_port(app)].inspect
+      end
     RUBY
+    skip "mcritchie-studio checkout not present at PROJECTS_DIR/mcritchie-studio" if out == "SKIP"
     assert_equal "[[3020], 3021]", out, "rolio's 3020 is reserved in the real config and skipped"
   end
 
