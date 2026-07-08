@@ -30,6 +30,7 @@ class Release < ApplicationRecord
   # deploy_qa completed) can never wind the tracker backwards.
   STAGES = [
     ["testing",        :testing_started_at],
+    ["tested",         :tested_at],
     ["assembling",     :assembling_started_at],
     ["assembled",      :assembled_at],
     ["qa_deploying",   :qa_deploy_started_at],
@@ -47,6 +48,21 @@ class Release < ApplicationRecord
   # requires an already-active release — a late post must never open a ghost RC.
   STAGES_THAT_MAY_OPEN = %w[testing assembling].freeze
 
+  # The stages surfaced as columns on the /deployments table + summary cards. Each
+  # is the stage's OWN start→end stamp pair (a span of Release::STAGES), so the
+  # cell can show both timestamps and the duration between them. "Deployed" is the
+  # production rollout (prod_deploy_started_at → shipped_at); the end-to-end
+  # "Total" (created_at → shipped_at) is handled by #deployment_total_span.
+  DEPLOYMENT_STAGES = [
+    { key: "tested",    label: "Tested",    starts: :testing_started_at,    ends: :tested_at },
+    { key: "assembled", label: "Assembled", starts: :assembling_started_at, ends: :assembled_at },
+    { key: "confirmed", label: "Confirmed", starts: :confirming_started_at,  ends: :confirmed_at },
+    { key: "deployed",  label: "Deployed",  starts: :prod_deploy_started_at, ends: :shipped_at }
+  ].freeze
+
+  # How many recently-shipped releases the /deployments summary cards average.
+  DEPLOYMENT_DASHBOARD_SAMPLE = 10
+
   # (release-event step, status) → the stage that boundary stamps. Every write
   # path funnels through record_event! (conductor CLI + the release events API),
   # so posting an event IS the stage notification. `failed` events stamp nothing.
@@ -54,6 +70,7 @@ class Release < ApplicationRecord
   # by ship!'s state flip, so a stray API post can't mark a live release shipped.
   EVENT_STAGE_STAMPS = {
     %w[review_tests started]       => "testing",
+    %w[review_tests completed]     => "tested",
     %w[assemble_release started]   => "assembling",
     %w[assemble_release completed] => "assembled",
     %w[deploy_qa started]          => "qa_deploying",
@@ -142,6 +159,61 @@ class Release < ApplicationRecord
 
   def active?
     ACTIVE_STATES.include?(state)
+  end
+
+  # --- deployment table spans -------------------------------------------------
+  # One /deployments cell: a stage's own start→end span read straight off the
+  # stamp columns. status is "completed" (both stamps), "in_progress" (started,
+  # not finished, release still active → the cell ticks a live count-up), or
+  # "missing" (no start stamp → the cell reads "—"). Pure column arithmetic, so
+  # it is always current (no cache) and the live anchor is real.
+  def deployment_stage_span(stage)
+    stage = DEPLOYMENT_STAGES.find { |candidate| candidate[:key] == stage.to_s } if stage.is_a?(String) || stage.is_a?(Symbol)
+    started_at = self[stage.fetch(:starts)]
+    ended_at = self[stage.fetch(:ends)]
+    deployment_span(stage.fetch(:key), stage.fetch(:label), started_at, ended_at)
+  end
+
+  def deployment_stage_spans
+    DEPLOYMENT_STAGES.map { |stage| deployment_stage_span(stage) }
+  end
+
+  # The end-to-end Total cell: created_at → shipped_at, or created_at → now (live)
+  # while the release is still active. Same contract as a stage span.
+  def deployment_total_span
+    deployment_span("total", "Total", created_at, shipped_at)
+  end
+
+  # Averages each deployment stage (+ Total) over the last N shipped releases —
+  # the summary cards. Same span math as the per-row cells, so cards and columns
+  # can never disagree.
+  def self.deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
+    releases = where(state: "shipped")
+               .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+               .limit(limit).to_a
+    keys = DEPLOYMENT_STAGES.map { |stage| stage[:key] } + ["total"]
+    stage_rows = keys.map do |key|
+      spans = releases.map { |release| key == "total" ? release.deployment_total_span : release.deployment_stage_span(key) }
+      label = key == "total" ? "Total" : DEPLOYMENT_STAGES.find { |stage| stage[:key] == key }.fetch(:label)
+      [key, deployment_average_row(label, spans.filter_map { |span| span[:seconds] })]
+    end
+    { "stages" => stage_rows.to_h, "sample_count" => releases.size }
+  end
+
+  def self.deployment_average_row(label, values)
+    { "label" => label,
+      "average_seconds" => (values.any? ? (values.sum.to_f / values.size).round : nil),
+      "sample_count" => values.size }
+  end
+
+  # Shared span builder for #deployment_stage_span / #deployment_total_span.
+  def deployment_span(key, label, started_at, ended_at)
+    status = if started_at && ended_at then "completed"
+             elsif started_at && active? then "in_progress"
+             else "missing"
+             end
+    seconds = started_at && ended_at ? [(ended_at - started_at).to_i, 0].max : nil
+    { key: key, label: label, started_at: started_at, ended_at: ended_at, seconds: seconds, status: status }
   end
 
   # --- conductor mascot (the agent working this deployment) -------------------

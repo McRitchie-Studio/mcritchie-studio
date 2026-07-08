@@ -1,0 +1,47 @@
+<%# Re-stamps every /deployments stage-cell timestamp line to the VIEWER's local
+    clock: the light date ("Jul 7, 2026") and the 12-hour times ("3:32p → 4:01p").
+    Only touches textContent, so the server-rendered Tailwind classes survive. Runs
+    on load and after Turbo navigations; the server output is an app-TZ fallback for
+    the no-JS / pre-hydration case. %>
+<script>
+  (function () {
+    if (window.__deploymentRangeFmt) return;
+    window.__deploymentRangeFmt = true;
+
+    function clock(d) {
+      var h = d.getHours(), m = d.getMinutes(), ap = h < 12 ? "a" : "p";
+      h = h % 12; if (h === 0) h = 12;
+      return h + ":" + String(m).padStart(2, "0") + ap;
+    }
+
+    function dateLabel(d) {
+      return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+    }
+
+    function fmt() {
+      document.querySelectorAll("[data-deployment-range]").forEach(function (el) {
+        var start = parseInt(el.dataset.start || "0", 10);
+        if (!start) return;
+        var sd = new Date(start * 1000);
+
+        var dateEl = el.querySelector("[data-range-date]");
+        if (dateEl) dateEl.textContent = dateLabel(sd);
+
+        var timeEl = el.querySelector("[data-range-time]");
+        if (!timeEl) return;
+
+        var endRaw = el.dataset.end;
+        if (!endRaw) {
+          timeEl.textContent = clock(sd) + " → …";
+          return;
+        }
+        var ed = new Date(parseInt(endRaw, 10) * 1000);
+        var sameDay = sd.toDateString() === ed.toDateString();
+        timeEl.textContent = clock(sd) + " → " + (sameDay ? "" : dateLabel(ed) + " ") + clock(ed);
+      });
+    }
+
+    fmt();
+    document.addEventListener("turbo:load", fmt);
+  })();
+</script>

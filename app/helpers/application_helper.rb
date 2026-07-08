@@ -70,8 +70,57 @@ module ApplicationHelper
     clock_12h(time.in_time_zone)
   end
 
+  # Two-unit humanizer for the deployment dashboards, where compact_stage_duration's
+  # single-unit truncation ("1h" for 90 minutes) hides real differences between
+  # deployments. Sub-minute and minute forms stay compact; the hour and day ranges
+  # compound ("1h 30m", "2d 3h") so a longer phase never reads the same as a shorter
+  # one. Shares the nil contract (nil → render the empty placeholder).
+  def precise_stage_duration(seconds)
+    return nil if seconds.nil?
+    return "<1m" if seconds < 60
+    return "#{seconds / 60}m" if seconds < 3600
+
+    if seconds < 86_400
+      hours = seconds / 3600
+      minutes = (seconds % 3600) / 60
+      return minutes.zero? ? "#{hours}h" : "#{hours}h #{minutes}m"
+    end
+
+    days = seconds / 86_400
+    hours = (seconds % 86_400) / 3600
+    hours.zero? ? "#{days}d" : "#{days}d #{hours}h"
+  end
+
   def release_duration_label(seconds, empty: "—")
-    compact_stage_duration(seconds) || empty
+    precise_stage_duration(seconds) || empty
+  end
+
+  # The (light) date for a /deployments stage cell's timestamp line, e.g.
+  # "Jul 7, 2026". Rendered server-side in the app TZ as a fallback; the
+  # deployment_range_script re-stamps it to the viewer's local date on load.
+  def deployment_range_date(span)
+    span[:started_at]&.in_time_zone&.strftime("%b %-d, %Y")
+  end
+
+  # The start→end time line for a stage cell, e.g. "3:32p → 4:01p" (drops the end
+  # date when same-day, "→ …" while still running). App-TZ fallback; the
+  # deployment_range_script overwrites it with the viewer's local clock.
+  def deployment_range_times(span)
+    started = span[:started_at]
+    return nil unless started
+
+    ended = span[:ended_at]
+    return "#{deployment_clock(started)} → …" unless ended
+
+    same_day = started.in_time_zone.to_date == ended.in_time_zone.to_date
+    end_label = same_day ? deployment_clock(ended) : "#{ended.in_time_zone.strftime('%b %-d')} #{deployment_clock(ended)}"
+    "#{deployment_clock(started)} → #{end_label}"
+  end
+
+  # 12-hour clock with a single-letter meridiem, no space — "3:32p" / "11:07a".
+  def deployment_clock(time)
+    time = time.in_time_zone
+    "#{time.strftime('%-I:%M')}#{time.hour < 12 ? 'a' : 'p'}"
   end
 
   def release_duration_time(value)

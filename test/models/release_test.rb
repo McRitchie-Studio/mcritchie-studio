@@ -569,4 +569,75 @@ class ReleaseTest < ActiveSupport::TestCase
     rel.assemble!
     assert rel.reload.assembled_at.present?, "the re-assembly stamps fresh"
   end
+
+  # --- deployment table spans -------------------------------------------------
+
+  test "review_tests events stamp the testing/tested stage timeline" do
+    rel = Release.open!
+    # Mirror bin/release's record_release_event: source "conductor" (no usage required).
+    rel.record_event!(step: "review_tests", status: "started", source: "conductor")
+    assert rel.reload.testing_started_at.present?, "review_tests started stamps testing_started_at"
+    assert_nil rel.tested_at
+
+    rel.record_event!(step: "review_tests", status: "completed", source: "conductor")
+    assert rel.reload.tested_at.present?, "review_tests completed stamps tested_at"
+  end
+
+  test "deployment_stage_span reports completed/in_progress/missing off the stamp pair" do
+    now = Time.zone.parse("2026-07-07 18:00:00")
+    rel = Release.create!(slug: "rel-span-shipped", branch: "release", state: "shipped")
+    rel.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      created_at: now - 60.minutes,
+      assembling_started_at: now - 40.minutes, assembled_at: now - 25.minutes,
+      shipped_at: now
+    )
+
+    assembled = rel.deployment_stage_span("assembled")
+    assert_equal "completed", assembled[:status]
+    assert_equal 15.minutes.to_i, assembled[:seconds]
+    assert_equal rel.assembling_started_at, assembled[:started_at]
+
+    # Never-started stage → missing (renders "—"), even on a shipped release.
+    assert_equal "missing", rel.deployment_stage_span("tested")[:status]
+    assert_nil rel.deployment_stage_span("tested")[:seconds]
+
+    # An active release mid-stage → in_progress (the cell ticks a live count-up).
+    active = Release.create!(slug: "rel-span-active", branch: "release", state: "assembling")
+    active.update_columns(assembling_started_at: now - 10.minutes) # rubocop:disable Rails/SkipsModelValidations
+    span = active.deployment_stage_span("assembled")
+    assert_equal "in_progress", span[:status]
+    assert_nil span[:seconds], "an in-progress span has no fixed duration — it counts up client-side"
+  end
+
+  test "deployment_total_span is created -> shipped, in_progress while active" do
+    now = Time.zone.parse("2026-07-07 18:00:00")
+    shipped = Release.create!(slug: "rel-total-shipped", branch: "release", state: "shipped")
+    shipped.update_columns(created_at: now - 90.minutes, shipped_at: now) # rubocop:disable Rails/SkipsModelValidations
+    total = shipped.deployment_total_span
+    assert_equal "completed", total[:status]
+    assert_equal 90.minutes.to_i, total[:seconds]
+
+    active = Release.create!(slug: "rel-total-active", branch: "release", state: "assembling")
+    assert_equal "in_progress", active.deployment_total_span[:status]
+  end
+
+  test "deployment_stage_averages averages each stage + total over recent shipped releases" do
+    now = Time.zone.parse("2026-07-07 18:00:00")
+    [10, 30].each_with_index do |assembled_minutes, index|
+      shipped_at = now - (index * 5).minutes # distinct ship times → deterministic order
+      rel = Release.create!(slug: "rel-avg-#{index}", branch: "release", state: "shipped")
+      rel.update_columns( # rubocop:disable Rails/SkipsModelValidations
+        created_at: shipped_at - 2.hours, # anchored to ship so Total is exactly 2h for both
+        assembling_started_at: shipped_at - 90.minutes,
+        assembled_at: shipped_at - (90 - assembled_minutes).minutes,
+        shipped_at: shipped_at
+      )
+    end
+
+    averages = Release.deployment_stage_averages(limit: 10)
+    assert_equal 2, averages["sample_count"]
+    assert_equal "Assembled", averages.dig("stages", "assembled", "label")
+    assert_equal 20.minutes.to_i, averages.dig("stages", "assembled", "average_seconds") # (10 + 30) / 2
+    assert_equal 2.hours.to_i, averages.dig("stages", "total", "average_seconds")
+  end
 end

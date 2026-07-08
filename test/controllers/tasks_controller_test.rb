@@ -427,7 +427,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#release-duration-card"
     assert_select "#release-duration-card a[href=?]", all_deployments_path, text: /All Deployments/
-    assert_select "#release-duration-card", text: /Building/
+    # Release-centric phases now (Deploy + Total), not the per-task Building span.
+    assert_select "#release-duration-card", text: /Deploy/
+    assert_select "#release-duration-card", text: /Total/
+    assert_select "#release-duration-card", { text: /Building/, count: 0 }
     assert_select "#release-duration-card h3", text: /DevOps/
     assert_select "#release-duration-card", text: /Release Times/, count: 0
     assert_select "#release-duration-card", text: /shipped releases/, count: 0

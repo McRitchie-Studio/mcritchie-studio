@@ -526,6 +526,42 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "5d", compact_stage_duration(5 * 86_400)
   end
 
+  test "precise_stage_duration compounds hours and days so it never truncates like the pill" do
+    assert_nil precise_stage_duration(nil)
+    assert_equal "<1m", precise_stage_duration(30)
+    assert_equal "12m", precise_stage_duration(12 * 60)
+    assert_equal "3h", precise_stage_duration(3 * 3600)                       # exact hour stays compact
+    assert_equal "1h 30m", precise_stage_duration((90 * 60))                  # not "1h"
+    assert_equal "2d 3h", precise_stage_duration((2 * 86_400) + (3 * 3600))   # not "2d"
+    assert_equal "5d", precise_stage_duration(5 * 86_400)                     # exact day stays compact
+  end
+
+  test "release_duration_label uses the precise humanizer and its empty placeholder" do
+    assert_equal "1h 30m", release_duration_label(90 * 60)
+    assert_equal "—", release_duration_label(nil)
+    assert_equal "n/a", release_duration_label(nil, empty: "n/a")
+  end
+
+  test "deployment_clock renders a 12-hour single-letter meridiem, noon/midnight safe" do
+    assert_equal "3:32p", deployment_clock(Time.zone.local(2026, 7, 7, 15, 32))
+    assert_equal "9:07a", deployment_clock(Time.zone.local(2026, 7, 7, 9, 7))
+    assert_equal "12:00p", deployment_clock(Time.zone.local(2026, 7, 7, 12, 0))
+    assert_equal "12:05a", deployment_clock(Time.zone.local(2026, 7, 7, 0, 5))
+  end
+
+  test "deployment_range_times bookends a stage, same-day drops the end date, running shows an ellipsis" do
+    start = Time.zone.local(2026, 7, 7, 15, 32)
+    assert_equal "3:32p → 4:01p", deployment_range_times(started_at: start, ended_at: Time.zone.local(2026, 7, 7, 16, 1))
+    assert_equal "3:32p → …", deployment_range_times(started_at: start, ended_at: nil)
+    assert_equal "3:32p → Jul 8 1:15a", deployment_range_times(started_at: start, ended_at: Time.zone.local(2026, 7, 8, 1, 15))
+    assert_nil deployment_range_times(started_at: nil, ended_at: nil)
+  end
+
+  test "deployment_range_date is the light day label, nil when unstarted" do
+    assert_equal "Jul 7, 2026", deployment_range_date(started_at: Time.zone.local(2026, 7, 7, 15, 32))
+    assert_nil deployment_range_date(started_at: nil)
+  end
+
   test "devops_stage_guide Deploy steps carry tests-run + gate; Build steps do not" do
     guide = devops_stage_guide
 
@@ -802,18 +838,91 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
     assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
-    assert_select "#release-duration-card [data-test='release-duration-stage']", count: 4
+    # Five tiles render even with no data (canonical stage list, values as "—").
+    assert_select "#release-duration-card [data-test='release-duration-stage']", count: 5
   end
 
-  test "[component] the DevOps card lays the four stage tiles in a single row (grid-cols-4 on sm+)" do
+  test "[component] the DevOps card lays the five deployment-stage tiles in a single row (grid-cols-5 on sm+)" do
     render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
-    # All four per-stage tiles (Building/Reviewing/Assembling/Shipping) line up in one
-    # row on sm+ (grid-cols-4), wrapping to 2×2 on mobile (grid-cols-2 base).
-    assert_select "[data-test='release-duration-stage-grid'].grid.grid-cols-2.sm\\:grid-cols-4"
-    assert_select "[data-test='release-duration-stage-grid'] [data-test='release-duration-stage']", count: 4
-    # The wider Deployment summary tile stays its own full-width row below.
-    assert_select "#release-duration-card [data-test='release-duration-deployment']", count: 1
+    # Tested / Assembled / Confirmed / Deployed / Total line up in one row on sm+
+    # (grid-cols-5), wrapping on mobile (grid-cols-2 base).
+    assert_select "[data-test='release-duration-stage-grid'].grid.grid-cols-2.sm\\:grid-cols-5"
+    assert_select "[data-test='release-duration-stage-grid'] [data-test='release-duration-stage']", count: 5
+    # The five tiles ARE the five duration columns.
+    (Release::DEPLOYMENT_STAGES.map { |stage| stage[:key] } + ["total"]).each do |key|
+      assert_select "[data-test='release-duration-stage'][data-stage='#{key}']", count: 1
+    end
+    # No separate wide Deployment tile — Total is one of the five.
+    assert_select "#release-duration-card [data-test='release-duration-deployment']", count: 0
+  end
+
+  test "[component] deployment_stage_cell renders a completed span as a timestamp range + duration" do
+    now = Time.zone.parse("2026-07-07 15:32:00")
+    render partial: "releases/deployment_stage_cell",
+           locals: { span: { key: "assembled", label: "Assembled", started_at: now,
+                             ended_at: now + 29.minutes, seconds: 29.minutes.to_i, status: "completed" } }
+
+    assert_select "[data-deployment-range][data-start='#{now.to_i}'][data-end='#{(now + 29.minutes).to_i}']"
+    assert_select "[data-range-date]"
+    assert_select "[data-range-time]"
+    assert_includes rendered, "29m"
+    assert_select "[data-release-ticker]", count: 0
+  end
+
+  test "[component] deployment_stage_cell ticks a live count-up for an in-progress span" do
+    now = Time.zone.parse("2026-07-07 15:32:00")
+    render partial: "releases/deployment_stage_cell",
+           locals: { span: { key: "assembled", label: "Assembled", started_at: now,
+                             ended_at: nil, seconds: nil, status: "in_progress" } }
+
+    assert_select "[data-test='deployment-stage-live'][data-release-ticker][data-since='#{now.to_i}']"
+    assert_select "[data-deployment-range] [data-range-time]", text: /→ …/
+  end
+
+  test "[component] deployment_stage_cell renders a missing span as an em dash" do
+    render partial: "releases/deployment_stage_cell",
+           locals: { span: { key: "tested", label: "Tested", started_at: nil,
+                             ended_at: nil, seconds: nil, status: "missing" } }
+
+    assert_select "[data-deployment-range]", count: 0
+    assert_includes rendered, "—"
+  end
+
+  AVG_FIXTURE = {
+    "sample_count" => 3,
+    "stages" => {
+      "tested" => { "label" => "Tested", "average_seconds" => 180 },
+      "assembled" => { "label" => "Assembled", "average_seconds" => 1320 },
+      "confirmed" => { "label" => "Confirmed", "average_seconds" => 120 },
+      "deployed" => { "label" => "Deployed", "average_seconds" => 120 },
+      "total" => { "label" => "Total", "average_seconds" => 3180 }
+    }
+  }.freeze
+
+  test "[component] deployment_average_row renders per-stage means with no timestamp range" do
+    # A bare <tr> partial is hoisted out of table context by the HTML parser, so
+    # assert on the rendered string rather than assert_select "tr".
+    render partial: "releases/deployment_average_row", locals: { averages: AVG_FIXTURE, label: "3-release avg" }
+
+    assert_includes rendered, "deployment-average-row"
+    assert_includes rendered, "3-release avg"
+    assert_not_includes rendered, "data-deployment-range" # no per-timestamp ranges on the mean row
+    assert_includes rendered, "22m" # assembled mean
+    assert_includes rendered, "53m" # total mean
+  end
+
+  test "[component] deployment_average_chart draws one labelled coloured bar per stage on a shared scale" do
+    render partial: "releases/deployment_average_chart",
+           locals: { averages: AVG_FIXTURE, label: "3-release avg", max_seconds: 1320 }
+
+    assert_select "figure figcaption", text: /3-release avg/
+    assert_select "figure figcaption", text: /Total/
+    assert_select "figure [role='img'] > div", count: Release::DEPLOYMENT_STAGES.size
+    Release::DEPLOYMENT_STAGES.each { |stage| assert_includes rendered, stage[:label] }
+    assert_includes rendered, "background-color: #199e70" # assembled = aqua
+    assert_includes rendered, "width: 100%"               # assembled at the shared max
+    assert_includes rendered, "22m"
   end
 
   test "[component] the Last Release card shows a muted empty state when nothing has shipped" do

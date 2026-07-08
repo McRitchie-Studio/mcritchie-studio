@@ -91,6 +91,9 @@ module Dev
       release = release_for_dev_advance
       next_index = (release.current_stage_index || -1) + 1
       stage = Release::STAGE_NAMES[next_index]
+      # `tested` is a /deployments table stamp, not one of the 5 tracker nodes —
+      # the toy skips it so a click still advances the visible pizza-tracker.
+      stage = Release::STAGE_NAMES[next_index += 1] if stage == "tested"
       case stage
       when nil
         reset_release_fixtures

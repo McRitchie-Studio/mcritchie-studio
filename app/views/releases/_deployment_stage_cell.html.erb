@@ -1,0 +1,43 @@
+<%# One /deployments stage cell — the operator's two-column layout: the DURATION
+    on the left, vertically centered (spanning the cell's full height), and on the
+    right a stack of the light date over the local start→end times. The timestamp
+    line renders an app-TZ fallback server-side and carries data-deployment-range
+    (+ epoch data-start/data-end); releases/_deployment_range_script re-stamps it to
+    the viewer's LOCAL clock. While the stage is the release's current one (status
+    "in_progress") the duration is a live ⏱ count-up ticking off the shared
+    [data-release-ticker] loop (tasks/_release_ticker). Locals:
+      span   a Release#deployment_stage_span / #deployment_total_span hash (required)
+      range  show the date/time stack (default true; Total passes false → duration only) %>
+<% span = local_assigns.fetch(:span) %>
+<% show_range = local_assigns.fetch(:range, true) %>
+<% if span[:status] == "missing" %>
+  <span class="font-mono text-heading tabular-nums">—</span>
+<% else %>
+  <% duration = capture do %>
+    <% if span[:status] == "in_progress" %>
+      <% elapsed = [(Time.current - span[:started_at]).to_i, 0].max %>
+      <span class="font-mono tabular-nums leading-none <%= show_range ? "text-heading" : "text-muted italic" %>"
+            data-test="deployment-stage-live"
+            data-release-ticker
+            data-prefix="⏱ "
+            data-since="<%= span[:started_at].to_i %>"
+            title="In progress — counting up since this stage started">⏱ <%= format_elapsed_clock(elapsed) %></span>
+    <% else %>
+      <span class="font-mono text-heading tabular-nums leading-none"><%= release_duration_label(span[:seconds]) %></span>
+    <% end %>
+  <% end %>
+  <% if show_range && span[:started_at] %>
+    <div class="flex items-center justify-between gap-3">
+      <div class="shrink-0 tabular-nums"><%= duration %></div>
+      <div class="flex flex-col items-start leading-tight font-mono whitespace-nowrap"
+           data-deployment-range
+           data-start="<%= span[:started_at].to_i %>"
+           <% if span[:ended_at] %>data-end="<%= span[:ended_at].to_i %>"<% end %>>
+        <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(span) %></span>
+        <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(span) %></span>
+      </div>
+    </div>
+  <% else %>
+    <%= duration %>
+  <% end %>
+<% end %>

@@ -32,7 +32,7 @@ class TasksController < ApplicationController
     load_board
     @current_release = Release.current
     @last_release = Release.last_shipped
-    @release_duration_dashboard = Release::DurationCache.dashboard(limit: 3)
+    @release_duration_dashboard = Release.deployment_stage_averages
   end
 
   # /stages — the two-workflow stage guide (vertical swimlanes, side by side).

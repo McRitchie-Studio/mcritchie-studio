@@ -219,7 +219,8 @@ rewrite history), and broadcasts the live tracker to every viewer.
 
 | You post | Stage stamped | Tracker effect |
 |---|---|---|
-| `testing/start` | `testing` | node 1 Testing yellow |
+| `testing/start` (alias of `review_tests/start`) | `testing` | node 1 Testing yellow |
+| `testing/complete` (alias of `review_tests/complete`) | `tested` | (no tracker node) — ends the /deployments **Tested** column |
 | `assembling/start` | `assembling` | node 1 green, node 2 Assembling yellow |
 | `assembling/complete` | `assembled` | node 2 green (node 3 stays dark) |
 | `qa_deploying/start` | `qa_deploying` | node 3 Deploying QA yellow |
