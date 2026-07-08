@@ -82,7 +82,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "--task-card-glow-color-b: #F95587"
   end
 
-  test "[component] waiting approval card pulses and renders local demo button" do
+  test "[component] waiting approval card pulses and merges the local demo into one full-length link" do
     task = Task.create!(
       title: "Approval waiting card",
       stage: "building",
@@ -105,7 +105,27 @@ class TaskCardTest < ActionView::TestCase
     badge_classes = css_select("[data-test='operator-approval-waiting']").first["class"].split
     assert_includes badge_classes, "motion-safe:animate-pulse"
     assert_not_includes badge_classes, "animate-pulse"
-    assert_select "a[data-test='local-demo-button'][href='http://localhost:3001/demo']", text: "Local Demo"
+    # the Local Demo link is merged INTO the waiting bar — the whole flashing bar IS the demo link
+    assert_select "a[data-test='operator-approval-waiting'][href='http://localhost:3001/demo']"
+  end
+
+  test "[component] footer shows created + updated stamps, not the local demo or PR links" do
+    task = Task.create!(title: "Footer stamp card", stage: "building",
+                        metadata: { "devops" => {
+                          "pr_url" => "https://github.com/x/y/pull/1",
+                          "local_url" => "http://localhost:3001/demo",
+                        } })
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+
+    # created (🌱, left) + updated (✏️, right) absolute stamps live in the footer row
+    assert_select "[data-test='task-card-updated-row'] [data-test='task-card-created']", count: 1
+    assert_select "[data-test='task-card-updated-row'] [data-test='task-card-updated']", count: 1
+    assert_match "🌱", rendered
+    assert_match "✏️", rendered
+    # the Local Demo + PR links are gone from this row (demo lives in the status bar now)
+    assert_select "[data-test='task-card-updated-row'] a[data-test='local-demo-button']", count: 0
+    assert_select "[data-test='task-card-updated-row'] a", text: "PR", count: 0
   end
 
   test "reviewed card uses the larger steady glow" do

@@ -1,0 +1,28 @@
+<%# locals: (scheme:, label:, action_label: nil, href: nil, new_tab: true, flashing: false, test_id: nil, title: nil, icon: nil) %>
+<%#
+  Full-length card status bar — one reusable, card-width notice/CTA used on the
+  board task card. When `href` is present the whole bar is a link (@click.stop so
+  it doesn't ALSO fire the card-open click); otherwise it renders a static notice
+  div. `action_label` appends "· <verb> →" to signal the click destination.
+
+  `flashing` adds a seeded pulse: it reads the card-level --task-pulse-delay /
+  --task-pulse-duration custom properties (set per-card in _task_card from a slug
+  hash) so many flashing bars across the board pulse OUT of phase — irregular,
+  not a synchronized strobe.
+%>
+<% schemes = {
+     amber:  "bg-amber-500 text-black border-amber-300 shadow-sm shadow-amber-400/40 hover:bg-amber-400",
+     red:    "bg-red-500 text-white border-red-400 shadow-sm shadow-red-500/40 hover:bg-red-400",
+     violet: "bg-violet-500/90 text-white border-violet-400/70 shadow-sm shadow-violet-500/30 hover:bg-violet-500",
+   } %>
+<% tone = schemes.fetch(scheme.to_sym, schemes[:amber]) %>
+<% bar_class = "w-full flex items-center justify-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold leading-tight border #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
+<% pulse_style = ("animation-delay: var(--task-pulse-delay, 0s); animation-duration: var(--task-pulse-duration, 2s);" if flashing) %>
+<% bar_body = capture do %><% if icon %><span aria-hidden="true"><%= icon %></span><% end %><span><%= label %></span><% if action_label %><span class="opacity-60">·</span><span class="font-semibold"><%= action_label %></span><span aria-hidden="true">→</span><% end %><% end %>
+<% if href %>
+  <%= link_to href, class: "#{bar_class} transition cursor-pointer",
+        target: (new_tab ? "_blank" : nil), rel: (new_tab ? "noopener" : nil),
+        "@click.stop": true, title: title, data: { test: test_id }, style: pulse_style do %><%= bar_body %><% end %>
+<% else %>
+  <div class="<%= bar_class %>" title="<%= title %>" data-test="<%= test_id %>" style="<%= pulse_style %>"><%= bar_body %></div>
+<% end %>

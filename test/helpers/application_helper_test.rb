@@ -13,6 +13,23 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "3w ago", compact_time_ago(now - (21 * 86_400), now: now)
   end
 
+  test "[unit] compact created/updated stamps render tight 12-hour board footer times" do
+    t = Time.utc(2026, 7, 7, 15, 32, 0) # 3:32pm, app runs in UTC (config.time_zone unset)
+
+    assert_equal "3:32p", clock_12h(t), "single am/pm letter, no leading zero on the hour"
+    assert_equal "Jul 7 3:32p", compact_created_stamp(t), "created carries the date + clock"
+    assert_equal "3:32p", compact_updated_stamp(t), "updated is clock-only"
+
+    # midnight/noon + single-digit-minute padding boundaries
+    assert_equal "12:05a", clock_12h(Time.utc(2026, 7, 7, 0, 5, 0))
+    assert_equal "12:00p", clock_12h(Time.utc(2026, 7, 7, 12, 0, 0))
+    assert_equal "4:09p", compact_updated_stamp(Time.utc(2026, 7, 7, 16, 9, 0))
+
+    assert_nil clock_12h(nil), "nil-safe"
+    assert_nil compact_created_stamp(nil)
+    assert_nil compact_updated_stamp(nil)
+  end
+
   test "right_fade_style emits both mask-image properties with the given stop" do
     style = right_fade_style
     assert_includes style, "mask-image: linear-gradient(to right, #000 88%, transparent)"
