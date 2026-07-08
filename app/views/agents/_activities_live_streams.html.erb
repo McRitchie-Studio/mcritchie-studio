@@ -1,0 +1,7 @@
+<%# Live websocket subscriptions for /agents/activities. With no session filters the
+    page listens to the global feed. Once filters are active, it listens only to the
+    selected session stream(s), so unrelated broadcasts still persist normally but do
+    not get patched into the visible filtered table. Locals: session_ids. %>
+<% ActivitiesBroadcaster.streams_for_filters(local_assigns[:session_ids]).each do |stream| %>
+  <%= turbo_stream_from stream %>
+<% end %>

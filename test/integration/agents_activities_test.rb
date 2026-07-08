@@ -52,6 +52,17 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "thead#aa-activities-head"
   end
 
+  test "filtered pages subscribe to session-scoped streams instead of the global stream" do
+    activity(session: "sess-A", reason_slug: "visible activity")
+    activity(session: "sess-B", reason_slug: "hidden activity")
+
+    get activities_agents_path(sessions: "sess-A")
+
+    assert_response :success
+    assert_includes response.body, Turbo::StreamsChannel.signed_stream_name("agents_activities:session:sess-A")
+    refute_includes response.body, Turbo::StreamsChannel.signed_stream_name("agents_activities")
+  end
+
   test "wraps the feed in a turbo-frame so filter/pager clicks refresh in the background" do
     ev = activity(reason_slug: "a framed activity")
 
@@ -64,6 +75,7 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#aa-activities-frame table[data-test=agents-activities-table]"
     assert_select "turbo-frame#aa-activities-frame [data-test=aa-filter]"
     assert_select "turbo-frame#aa-activities-frame tbody#aa-activity-#{ev.id}"
+    assert_select "turbo-frame#aa-activities-frame turbo-cable-stream-source"
     # the in-frame nav links no longer opt out of turbo (they navigate the frame)
     assert_select "a[data-test=aa-filter-session][data-turbo=false]", false
     assert_select "nav[data-test=aa-pager] a[data-turbo=false]", false
