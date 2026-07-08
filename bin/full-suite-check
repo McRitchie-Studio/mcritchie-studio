@@ -52,6 +52,7 @@ require "optparse"
 require "json"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
+require_relative "lib/cert_concurrency"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
@@ -225,7 +226,19 @@ unless skip_test_db_reset
   end
 end
 
-test_ok = run_lane("full-suite", test_cmd, root)
+# Cap the Rails parallel test workers so several local certs at once (one per
+# worktree) don't over-subscribe the CPU and crash the workers (SIGSEGV). Each
+# running cert takes an even share of the usable cores; an explicit
+# PARALLEL_WORKERS (e.g. CI's own) is respected and left untouched.
+if ENV.key?("PARALLEL_WORKERS")
+  test_env = {}
+else
+  peers = CertConcurrency.active_peer_certs
+  workers = CertConcurrency.worker_cap(cores: CertConcurrency.processor_count, peers: peers)
+  test_env = { "PARALLEL_WORKERS" => workers.to_s }
+  warn "   full-suite: PARALLEL_WORKERS=#{workers} (#{peers} concurrent cert(s), #{CertConcurrency.processor_count} cores)"
+end
+test_ok = run_lane("full-suite", test_cmd, root, env: test_env)
 rubocop_ok = run_lane("rubocop", rubocop_cmd, root)
 
 fingerprint = FullSuiteGate.fingerprint(root)
