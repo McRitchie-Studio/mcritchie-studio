@@ -175,6 +175,10 @@ class Task < ApplicationRecord
   # the narrated history survives a task teardown as orphaned activities.
   has_many :agent_activities, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :nullify
   has_many :atomic_events, class_name: "AgentActivity", foreign_key: :task_slug, primary_key: :slug
+  # Attempt-aware runs of the task-owned testing gates (G1 Cert, G2a/G2b review
+  # lanes) — slug-FK like the spines above, scoped to task-grain subjects.
+  has_many :gate_runs, -> { where(subject_type: "task") },
+           foreign_key: :subject_slug, primary_key: :slug, dependent: :delete_all
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true

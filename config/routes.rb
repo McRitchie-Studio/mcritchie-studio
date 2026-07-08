@@ -292,6 +292,15 @@ Rails.application.routes.draw do
           post "events/:step/fail", to: "release_events#fail", as: :event_fail
         end
       end
+      # Gate-run markers — the branded testing gates (GateRun::GATES, G1 Cert …
+      # G4 Ship). open/sops/close is the whole write surface; deterministic
+      # markers, so NO usage gate here (see Api::V1::GateRunsController).
+      scope "gates/:subject_type/:subject_slug", constraints: { subject_type: /task|release/ } do
+        get  "",           to: "gate_runs#index",      as: :gate_runs
+        post ":key/open",  to: "gate_runs#open",       as: :gate_run_open
+        post ":key/sops",  to: "gate_runs#append_sop", as: :gate_run_sops
+        post ":key/close", to: "gate_runs#close",      as: :gate_run_close
+      end
       resources :activities, only: [:index, :create]
       resources :usages, only: [:index, :create]
       # Live-capture sink for the forward-only action log — the live-capture

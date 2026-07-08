@@ -115,6 +115,9 @@ BARE_SEED_TASK = %r{(?<![\w:/])db:seed(?::\w+)?(?![\w:/])}i
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 OP = "/opt/homebrew/bin/op"
 SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
+# The gate-run CLI (GateRun markers). A merge-gate verdict is what CLOSES the
+# task's G1 Cert attempt — see the emit at the bottom; fire-and-forget.
+GATE_BIN = File.expand_path("gate", __dir__)
 
 def warn!(msg)
   $stderr.puts(msg)
@@ -125,11 +128,14 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, file: nil, gate: "merge", diff_base: false, suite_fingerprint: false }
+options = { json: false, file: nil, gate: "merge", gate_role: "builder", diff_base: false, suite_fingerprint: false }
 GATES = %w[merge build].freeze
+GATE_ROLES = %w[builder review].freeze
 OptionParser.new do |o|
-  o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--json] | bin/dor-check --file task.json"
+  o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--gate-role builder|review] [--json] | bin/dor-check --file task.json"
   o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
+  o.on("--gate-role ROLE", "Who is running the gate: builder (default; the verdict CLOSES the task's G1 Cert attempt) " \
+                           "or review (the primary reviewer's gate-zero; the verdict appends as a sop on G2a instead)") { |v| options[:gate_role] = v }
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
   o.on("--diff-base", "Resolve and print the committed-diff base for this repo, then exit (debug/resolver seam)") { options[:diff_base] = true }
   o.on("--suite-fingerprint", "Print the code fingerprint the full-suite gate would validate against, then exit (debug/resolver seam)") { options[:suite_fingerprint] = true }
@@ -140,6 +146,7 @@ OptionParser.new do |o|
   end
 end.parse!
 die!("--gate must be one of: #{GATES.join(", ")}") unless GATES.include?(options[:gate])
+die!("--gate-role must be one of: #{GATE_ROLES.join(", ")}") unless GATE_ROLES.include?(options[:gate_role])
 
 # --- task board auth + fetch (mirrors bin/task) ---------------------------
 
@@ -622,6 +629,52 @@ when :none
 when :unverified
   suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
     "manually before the handoff."
+end
+
+# --- G1/G2 gate-run emit (durable GateRun markers) --------------------------
+# A REAL merge-gate verdict is a gate event: the builder's run CLOSES the task's
+# G1 Cert attempt (success = ready, with the verdict evidence as sops); the
+# primary reviewer's gate-zero (--gate-role review) APPENDS its verdict to the
+# open G2a attempt instead (the review supervisor owns G2a's close). Skipped for
+# --json (the heartbeat monitor polls read-only), --file (offline/test
+# evaluation), and the build gate (no cert exists yet). Fire-and-forget: a board
+# blip never changes the verdict or the exit code.
+def emit_gate_verdict(slug, ready, role, sops)
+  args =
+    if role == "review"
+      ["sop", "task", slug, "g2a_primary",
+       "--sop", "dor-check", "--cmd", "bin/dor-check #{slug} --gate-role review",
+       "--result", ready ? "pass" : "fail"]
+    else
+      close = ["close", "task", slug, "g1_cert", ready ? "--success" : "--failed"]
+      sops.each { |entry| close += ["--sop-json", JSON.generate(entry)] }
+      close
+    end
+  system(GATE_BIN, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty?
+  gate_sops = [{ "sop" => "dor-check", "cmd" => "bin/dor-check #{slug} --gate #{gate}", "result" => ready ? "pass" : "fail" }]
+  unless dor_tiers.empty?
+    gate_sops << { "sop" => "tiers", "tier" => dor_tiers.join("+"), "result" => missing_tiers.empty? ? "pass" : "fail" }
+  end
+  if suite_eval
+    entry = { "sop" => "full-suite-evidence", "result" => suite_eval[:ok] ? "pass" : "fail" }
+    entry["cmd"] = "certified@#{suite_eval[:fingerprint][0, 12]}" if suite_eval[:fingerprint]
+    gate_sops << entry
+  end
+  if ci
+    ci_result =
+      case ci[:state]
+      when :green then "pass"
+      when :red, :pending, :closed, :merged then "fail"
+      else "unverified"
+      end
+    gate_sops << { "sop" => "ci", "result" => ci_result }
+  end
+  emit_gate_verdict(slug, ready, options[:gate_role], gate_sops)
 end
 
 # --- output ---------------------------------------------------------------

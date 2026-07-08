@@ -1,0 +1,149 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/gate — record gate-run markers for the branded testing gates (G1 Cert …
+# G4 Ship; see docs/agents/modules/gates/). The thin CLI over the board's
+# /api/v1/gates surface: producers (bin/full-suite-check, bin/dor-check,
+# bin/pr-review) shell it FIRE-AND-FORGET so a gate write never breaks the work
+# it observes; humans use `show` to read a subject's attempts.
+#
+# Usage:
+#   bin/gate open  <task|release> <slug> <key> [--actor A] [--source S]
+#   bin/gate sop   <task|release> <slug> <key> --sop NAME [--cmd C] [--tier T]
+#                  [--result pass|fail] [--duration-ms N] [--actor A] [--source S]
+#   bin/gate close <task|release> <slug> <key> (--success | --failed)
+#                  [--sop-json JSON]... [--meta k=v]... [--actor A] [--source S]
+#   bin/gate show  <task|release> <slug> [--json]
+#
+# Keys: g1_cert g2a_primary g2b_light (task) · g3_candidate g4_ship (release).
+# Semantics live server-side in GateRun: `open` finds the in-flight attempt or
+# starts attempt n+1; `sop` appends one executed-SOP entry (implicitly opening);
+# `close` records the verdict — closing with NO open attempt records a
+# self-contained one (a lone verdict is still a real attempt). Source defaults
+# to "system" (deterministic marker semantics — no usage payload, ever).
+#
+# Exit code: 0 on success, 1 on any API failure (producers discard it).
+
+require "json"
+require_relative "lib/agent_api"
+
+KEYS = %w[g1_cert g2a_primary g2b_light g3_candidate g4_ship].freeze
+SUBJECTS = %w[task release].freeze
+
+def die!(msg)
+  warn "bin/gate: #{msg}"
+  exit 1
+end
+
+def usage!
+  die!("usage: bin/gate open|sop|close|show <task|release> <slug> [<key>] [flags] (see header)")
+end
+
+verb = ARGV.shift or usage!
+subject_type = ARGV.shift or usage!
+slug = ARGV.shift or usage!
+die!("subject must be one of: #{SUBJECTS.join(', ')}") unless SUBJECTS.include?(subject_type)
+
+key = nil
+unless verb == "show"
+  key = ARGV.shift or usage!
+  die!("key must be one of: #{KEYS.join(', ')}") unless KEYS.include?(key)
+end
+
+flags = { "meta" => {}, "sops" => [] }
+i = 0
+while i < ARGV.length
+  case ARGV[i]
+  when "--actor"       then flags["actor"] = ARGV[i + 1] || die!("--actor needs a value"); i += 2
+  when "--source"      then flags["source"] = ARGV[i + 1] || die!("--source needs a value"); i += 2
+  when "--sop"         then flags["sop"] = ARGV[i + 1] || die!("--sop needs a value"); i += 2
+  when "--cmd"         then flags["cmd"] = ARGV[i + 1] || die!("--cmd needs a value"); i += 2
+  when "--tier"        then flags["tier"] = ARGV[i + 1] || die!("--tier needs a value"); i += 2
+  when "--result"      then flags["result"] = ARGV[i + 1] || die!("--result needs a value"); i += 2
+  when "--duration-ms" then flags["duration_ms"] = ARGV[i + 1] || die!("--duration-ms needs a value"); i += 2
+  when "--success"     then flags["success"] = true; i += 1
+  when "--failed"      then flags["success"] = false; i += 1
+  when "--json"        then flags["json"] = true; i += 1
+  when "--sop-json"
+    raw = ARGV[i + 1] || die!("--sop-json needs a JSON value")
+    entry = JSON.parse(raw) rescue die!("--sop-json is not valid JSON: #{raw.inspect}")
+    flags["sops"] << entry
+    i += 2
+  when "--meta"
+    pair = ARGV[i + 1] || die!("--meta needs k=v")
+    k, v = pair.split("=", 2)
+    die!("--meta needs k=v") if k.to_s.empty? || v.nil?
+    flags["meta"][k] = v
+    i += 2
+  else
+    die!("unknown flag #{ARGV[i].inspect}")
+  end
+end
+
+# Modest timeouts — a producer shells this mid-cert/mid-review; it must fail fast.
+# Base-URL parity with the board CLIs (bin/task, bin/dor-check): TASK_API_BASE
+# wins when set, so a locally-pointed board redirects gate writes too; AgentApi's
+# own ATOMIC_CAPTURE_URL remains the fallback (both default to the prod board).
+env = ENV.to_h
+env["ATOMIC_CAPTURE_URL"] = ENV["TASK_API_BASE"] unless ENV["TASK_API_BASE"].to_s.strip.empty?
+API = AgentApi.new(open_timeout: 2, read_timeout: 10, env: env)
+
+def request(method, path, body = nil)
+  bearer = API.token or die!("could not mint an agent API token")
+  res = API.http_json(method, path, body, bearer: bearer)
+  die!("#{method.to_s.upcase} #{path} → no response (network?)") if res.nil?
+  parsed = res.body.to_s.empty? ? {} : (JSON.parse(res.body) rescue {})
+  unless res.code.to_i.between?(200, 299)
+    die!("#{method.to_s.upcase} #{path} → #{res.code}: #{parsed['error'] || res.body}")
+  end
+  parsed
+end
+
+base = "/api/v1/gates/#{subject_type}/#{slug}"
+
+def duration_label(run)
+  finished = run["finished_at"]
+  started = run["started_at"]
+  return "-" unless started
+
+  seconds = ((finished ? Time.parse(finished) : Time.now) - Time.parse(started)).to_i
+  seconds.negative? ? "-" : "#{seconds / 60}m #{format('%02d', seconds % 60)}s"
+end
+
+case verb
+when "open"
+  body = { "gate" => { "actor" => flags["actor"], "source" => flags["source"] }.compact }
+  run = request(:post, "#{base}/#{key}/open", body)["data"]
+  puts "#{key} attempt #{run['attempt']} open (started #{run['started_at']})"
+when "sop"
+  die!("sop needs --sop NAME") if flags["sop"].to_s.empty?
+  entry = flags.slice("sop", "cmd", "tier", "result", "duration_ms").compact
+  body = { "gate" => { "sop" => entry, "actor" => flags["actor"], "source" => flags["source"] }.compact }
+  run = request(:post, "#{base}/#{key}/sops", body)["data"]
+  puts "#{key} attempt #{run['attempt']} +sop #{flags['sop']} (#{Array(run['sops']).size} total)"
+when "close"
+  die!("close needs --success or --failed") unless flags.key?("success")
+  gate = { "actor" => flags["actor"], "source" => flags["source"] }.compact
+  gate["sops"] = flags["sops"] if flags["sops"].any?
+  gate["metadata"] = flags["meta"] if flags["meta"].any?
+  body = { "success" => flags["success"], "gate" => gate }
+  run = request(:post, "#{base}/#{key}/close", body)["data"]
+  puts "#{key} attempt #{run['attempt']} closed #{flags['success'] ? 'PASSED' : 'FAILED'} (#{duration_label(run)})"
+when "show"
+  runs = Array(request(:get, base)["data"])
+  if flags["json"]
+    puts JSON.pretty_generate(runs)
+  elsif runs.empty?
+    puts "no gate runs for #{subject_type} #{slug}"
+  else
+    runs.each do |run|
+      status = run["finished_at"].nil? ? "in flight" : (run["success"] ? "passed" : "FAILED")
+      sops = Array(run["sops"]).map { |s| "#{s['sop']}:#{s['result'] || '-'}" }.join(", ")
+      puts "#{run['key']} ##{run['attempt']}  #{status}  #{duration_label(run)}  " \
+           "#{run['started_at']}#{run['finished_at'] ? " → #{run['finished_at']}" : ' → …'}" \
+           "#{sops.empty? ? '' : "  [#{sops}]"}"
+    end
+  end
+else
+  usage!
+end
