@@ -5,8 +5,8 @@ class PokemonController < ApplicationController
 
   def index
     @pokedex = PokemonPokedex.new
-    @latest_spawn = @pokedex.latest_spawn
-    @latest_shiny_spawn = @pokedex.latest_shiny_spawn
+    @newest_unique = @pokedex.newest_unique
+    @newest_unique_shiny = @pokedex.newest_unique_shiny
     @recent_actions = @pokedex.recent_actions
   end
 end

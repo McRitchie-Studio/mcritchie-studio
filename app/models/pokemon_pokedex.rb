@@ -1,9 +1,25 @@
 # Read model for the public Pokédex page. It keeps the controller/view focused on
 # presentation while this object owns the cross-table shape: spawned session
 # mascots, shiny counts, and recent mascot-bearing actions.
+#
+# The two feature cards show the newest UNIQUE Pokémon, not the raw latest spawn:
+# the species whose FIRST sighting is most recent. A sighting is either a spawn
+# (a SessionMascot row) or an evolution (a TaskEvent mascot snapshot — how a
+# task's mascot climbs its line at the submitted/reviewed gates, the only place
+# evolved forms are recorded). Re-spawning or re-evolving a species already seen
+# never re-bumps a card; only a genuinely new species does.
 class PokemonPokedex
   RecentAction = Struct.new(:action, :pokemon, keyword_init: true)
-  Spawn = Struct.new(:pokemon, :created_at, :task, :shiny, keyword_init: true)
+
+  # One species' FIRST sighting. first_seen_at is the earliest moment it was seen;
+  # task + shiny describe that first sighting (the task it was spawned/evolved in,
+  # and whether that first appearance came up shiny).
+  Sighting = Struct.new(:pokemon, :first_seen_at, :task, :shiny, keyword_init: true)
+
+  # One raw appearance of a mascot, before we reduce to the earliest per species.
+  # task_slug (evolutions) / session_id (spawns) let us resolve the task lazily,
+  # only for the single winning sighting.
+  Appearance = Struct.new(:slug, :at, :shiny, :session_id, :task_slug, keyword_init: true)
 
   attr_reader :recent_limit
 
@@ -27,12 +43,16 @@ class PokemonPokedex
     SessionMascot.where(mascot_slug: pokemon_slugs, shiny: true).count
   end
 
-  def latest_spawn
-    @latest_spawn ||= latest_session_spawn || latest_task_spawn
+  # The newest UNIQUE Pokémon — the species whose earliest sighting is the most
+  # recent, across spawns and evolutions.
+  def newest_unique
+    @newest_unique ||= newest_first_sighting(first_sightings)
   end
 
-  def latest_shiny_spawn
-    @latest_shiny_spawn ||= latest_session_spawn(shiny: true) || latest_task_spawn(shiny: true)
+  # Same, restricted to shiny sightings — the species whose first SHINY appearance
+  # is the most recent.
+  def newest_unique_shiny
+    @newest_unique_shiny ||= newest_first_sighting(first_sightings(shiny: true))
   end
 
   def recent_actions
@@ -48,38 +68,65 @@ class PokemonPokedex
 
   private
 
-  def latest_session_spawn(shiny: nil)
-    mascots = SessionMascot.where(mascot_slug: pokemon_slugs)
-    mascots = mascots.where(shiny: shiny) unless shiny.nil?
-    mascot = mascots.order(created_at: :desc, id: :desc).first
-    return nil unless mascot
+  # Build the featured Sighting from the earliest-per-species map: pick the species
+  # whose first sighting is the most recent, then resolve its Pokémon + task.
+  def newest_first_sighting(earliest_by_slug)
+    chosen = earliest_by_slug.values.max_by(&:at)
+    return nil unless chosen
 
-    pokemon = pokemon_by_slug[mascot.mascot_slug]
+    pokemon = pokemon_by_slug[chosen.slug]
     return nil unless pokemon
 
-    Spawn.new(
+    Sighting.new(
       pokemon: pokemon,
-      created_at: mascot.created_at,
-      task: task_for_session(mascot.session_id),
-      shiny: mascot.shiny?
+      first_seen_at: chosen.at,
+      task: sighting_task(chosen),
+      shiny: chosen.shiny
     )
   end
 
-  def latest_task_spawn(shiny: nil)
-    tasks = Task.where("NULLIF(metadata->'devops'->>'mascot', '') IS NOT NULL")
-    tasks = tasks.where("metadata->'devops'->>'mascot_shiny' = 'true'") if shiny
-    task = tasks.order(created_at: :desc, id: :desc).first
-    return nil unless task
+  # slug => the EARLIEST Appearance of that species. shiny:true keeps only shiny
+  # appearances (a species' first shiny moment). Only seeded Pokémon count, so a
+  # persona/agent mascot on a TaskEvent is dropped.
+  def first_sightings(shiny: false)
+    earliest = {}
+    (spawn_appearances(shiny: shiny) + evolution_appearances(shiny: shiny)).each do |appearance|
+      next unless pokemon_by_slug.key?(appearance.slug)
 
-    pokemon = pokemon_by_slug[task.devops_field("mascot")]
-    return nil unless pokemon
+      current = earliest[appearance.slug]
+      earliest[appearance.slug] = appearance if current.nil? || appearance.at < current.at
+    end
+    earliest
+  end
 
-    Spawn.new(
-      pokemon: pokemon,
-      created_at: task.created_at,
-      task: task,
-      shiny: task.mascot_shiny?
-    )
+  # Spawn sightings: every session mascot draw.
+  def spawn_appearances(shiny:)
+    scope = SessionMascot.where(mascot_slug: pokemon_slugs)
+    scope = scope.where(shiny: true) if shiny
+    scope.pluck(:mascot_slug, :created_at, :shiny, :session_id).map do |slug, at, shiny_flag, session_id|
+      Appearance.new(slug: slug, at: at, shiny: shiny_flag, session_id: session_id, task_slug: nil)
+    end
+  end
+
+  # Evolution sightings (and every other build-lane transition): TaskEvents snapshot
+  # the mascot that owned the event, so evolved forms — which never land in
+  # SessionMascot — surface here. metadata.mascot.shiny is stored only when true.
+  def evolution_appearances(shiny:)
+    scope = TaskEvent.where("metadata->'mascot'->>'slug' IS NOT NULL")
+    scope = scope.where("metadata->'mascot'->>'shiny' = 'true'") if shiny
+    slug_sql  = Arel.sql("metadata->'mascot'->>'slug'")
+    shiny_sql = Arel.sql("metadata->'mascot'->>'shiny'")
+    scope.pluck(slug_sql, :occurred_at, shiny_sql, :task_slug).map do |slug, at, shiny_flag, task_slug|
+      Appearance.new(slug: slug, at: at, shiny: shiny_flag == "true", session_id: nil, task_slug: task_slug)
+    end
+  end
+
+  def sighting_task(appearance)
+    if appearance.task_slug.present?
+      Task.find_by(slug: appearance.task_slug)
+    elsif appearance.session_id.present?
+      task_for_session(appearance.session_id)
+    end
   end
 
   def task_for_session(session_id)
