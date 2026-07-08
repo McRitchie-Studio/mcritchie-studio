@@ -500,6 +500,36 @@ end
 
 Release::DurationCache.refresh_recent!(limit: 3)
 
+# Testing-phases demo: one task that walked the full testing-phase lifecycle with
+# durable cert checkpoints + operator-approval stamps, so /tasks/testing-phases-demo
+# renders each of the five phase chips (Build → Local Certification → CI → Review →
+# Operator Acceptance) with a measured duration, and the /intelligence "Testing
+# phase speed" chart has signal beyond the two shipped demos.
+tp_anchor = 3.hours.ago
+tp = Task.create!(
+  title: "Testing phases demo", slug: "testing-phases-demo", stage: "reviewed", priority: 1,
+  metadata: { "devops" => {
+    "kind" => "feature", "shape" => "ui+db", "repositories" => ["mcritchie-studio"],
+    "approval_requested_at" => (tp_anchor + 40.minutes).iso8601,
+    "approval_approved_at" => (tp_anchor + 70.minutes).iso8601
+  } }
+)
+tp.task_events.delete_all
+[
+  { kind: TaskEvent::TRANSITION, from: "designed",  to: "building",  at: tp_anchor,              meta: {} },
+  { kind: TaskEvent::CHECKPOINT, from: "building",  to: "cert",      at: tp_anchor + 10.minutes, meta: { "status" => "started" } },
+  { kind: TaskEvent::CHECKPOINT, from: "building",  to: "cert",      at: tp_anchor + 15.minutes, meta: { "status" => "completed" } },
+  { kind: TaskEvent::TRANSITION, from: "building",  to: "submitted", at: tp_anchor + 20.minutes, meta: {} },
+  { kind: TaskEvent::TRANSITION, from: "submitted", to: "reviewed",  at: tp_anchor + 35.minutes, meta: {} }
+].each do |e|
+  tp.task_events.create!(kind: e[:kind], from_stage: e[:from], to_stage: e[:to],
+                         occurred_at: e[:at], seconds_in_from: nil, source: "system", metadata: e[:meta])
+end
+
+# Materialize every task's testing-phase projection (intel-shipped demos yield
+# Build + Review windows; the demo above yields all four durable phases).
+Task::TestingPhases.backfill!
+
 # /alex/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
 # is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of

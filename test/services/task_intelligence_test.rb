@@ -51,6 +51,32 @@ class TaskIntelligenceTest < ActiveSupport::TestCase
     assert_in_delta 2.5, median["Building"], 0.001
   end
 
+  test "testing_phase_speed_series buckets completed phase minutes (avg + median)" do
+    TaskEvent.delete_all
+    Task.delete_all
+    [120, 120, 600].each_with_index do |cert_secs, i|
+      task = Task.create!(title: "Phase probe #{i}", slug: "tp-#{i}")
+      task.update_columns( # rubocop:disable Rails/SkipsModelValidations
+        testing_phases_version: Task::TestingPhases::VERSION,
+        testing_phases: { "phases" => {
+          "build" => { "status" => "missing" },
+          "local_certification" => { "status" => "completed", "seconds" => cert_secs },
+          "ci" => { "status" => "missing" },
+          "review" => { "status" => "missing" },
+          "acceptance" => { "status" => "missing" }
+        } }
+      )
+    end
+
+    series = TaskIntelligence.new.testing_phase_speed_series
+    avg = Hash[series.find { |sr| sr[:name] == "Average" }[:data]]
+    median = Hash[series.find { |sr| sr[:name] == "Median" }[:data]]
+
+    assert_in_delta 4.7, avg["Local Certification"], 0.05   # (120+120+600)/3 = 280s → 4.67 min, round(1)
+    assert_in_delta 2.0, median["Local Certification"], 0.01 # median([120,120,600]) = 120s
+    refute avg.key?("Build"), "phases with no completed windows drop out"
+  end
+
   test "cycle time per task and weekly trend" do
     per_task = Hash[@intel.cycle_time_per_task]
     assert_in_delta 10.0, per_task["Estimate over by one"], 0.001

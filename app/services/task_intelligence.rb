@@ -61,6 +61,19 @@ class TaskIntelligence
     ]
   end
 
+  # Median/average duration per TESTING phase across tasks, in MINUTES (testing
+  # phases run far shorter than lifecycle stages). Reads each task's materialized
+  # Task::TestingPhases projection. The fat bar here is the mandate to move that
+  # phase's work off the builder's critical path.
+  def testing_phase_speed_series
+    buckets = testing_phase_seconds
+    keys = Task::TestingPhases::PHASE_KEYS.select { |key| buckets[key].present? }
+    [
+      { name: "Average", data: keys.map { |key| [testing_phase_label(key), minutes(average(buckets[key]))] } },
+      { name: "Median",  data: keys.map { |key| [testing_phase_label(key), minutes(median(buckets[key]))] } }
+    ]
+  end
+
   # ── 2. Task cycle time — created_at → completed_at per shipped task ──────────
   def cycle_time_per_task
     cycle_hours_by_task
@@ -301,5 +314,30 @@ class TaskIntelligence
   # Seconds → hours, rounded for display.
   def hours(seconds)
     (seconds.to_f / 3600.0).round(2)
+  end
+
+  # Seconds → minutes, for the shorter testing-phase durations.
+  def minutes(seconds)
+    (seconds.to_f / 60.0).round(1)
+  end
+
+  def testing_phase_label(key)
+    Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") || key.to_s.humanize
+  end
+
+  # {phase_key => [completed seconds, ...]} across @tasks, read from each task's
+  # materialized Task::TestingPhases projection (cached jsonb after backfill, so no
+  # per-task query). Only completed windows count — in-progress/missing don't skew.
+  def testing_phase_seconds
+    Task::TestingPhases::PHASE_KEYS.index_with { [] }.tap do |acc|
+      @tasks.each do |task|
+        phases = Task::TestingPhases.cached_or_built(task)["phases"] || {}
+        phases.each do |key, span|
+          next unless acc.key?(key)
+
+          acc[key] << span["seconds"] if span["status"] == "completed" && span["seconds"]
+        end
+      end
+    end
   end
 end

@@ -51,6 +51,7 @@ class TasksController < ApplicationController
     @task_events = @task.task_events.chronological.to_a
     @agents = Agent.order(:position)
     @active_review_intent = @task.open_intent_for("reviewed")
+    @testing_phases = Task::TestingPhases.cached_or_built(@task)
   end
 
   def review_events

@@ -34,6 +34,27 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "/tasks/' + slug + '/archive.json"
   end
 
+  test "[component] show renders the testing-phases card with per-phase durations" do
+    task = Task.create!(title: "Phase Card Probe", slug: "phase-card-probe")
+    task.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      testing_phases_version: Task::TestingPhases::VERSION,
+      testing_phases: { "phases" => {
+        "build" => { "status" => "completed", "seconds" => 600 },
+        "local_certification" => { "status" => "completed", "seconds" => 300 },
+        "ci" => { "status" => "missing" },
+        "review" => { "status" => "missing" },
+        "acceptance" => { "status" => "in_progress", "seconds" => 120 }
+      } }
+    )
+
+    get task_path(task.slug)
+
+    assert_response :success
+    assert_select "h3", text: "Testing phases"
+    assert_select "p.label-upper", text: "Local Certification"
+    assert_select "p.label-upper", text: "Operator Acceptance"
+  end
+
   test "[integration] json patch archives through the shared task update path" do
     log_in_as(@admin)
 

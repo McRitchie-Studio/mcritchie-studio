@@ -22,9 +22,9 @@ class IntelligenceControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='intelligence-dashboard']"
     assert_select "h1", text: "Task Intelligence"
     # every chart container is present (Chartkick renders into these divs)
-    %w[chart-stage-speed chart-cycle-time chart-cycle-trend chart-tokens-task
-       chart-tokens-stage chart-tokens-trend chart-cost-task chart-cost-trend
-       chart-estimate-accuracy chart-model-mix].each do |id|
+    %w[chart-stage-speed chart-cycle-time chart-cycle-trend chart-testing-phase-speed
+       chart-tokens-task chart-tokens-stage chart-tokens-trend chart-cost-task
+       chart-cost-trend chart-estimate-accuracy chart-model-mix].each do |id|
       assert_select "##{id}"
     end
     # the per-chart Chartkick init scripts are emitted

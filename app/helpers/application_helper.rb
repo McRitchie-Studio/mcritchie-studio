@@ -45,6 +45,27 @@ module ApplicationHelper
     "#{seconds / 86_400}d"
   end
 
+  # A testing-phase span (Task::TestingPhases) → the duration cell text.
+  # "completed" shows the measured length; "in_progress" the elapsed-so-far;
+  # "missing" a dash (the phase never ran / isn't reached yet).
+  def testing_phase_duration_label(span)
+    case span["status"]
+    when "completed"   then humanize_stage_duration(span["seconds"]) || "—"
+    when "in_progress" then "#{humanize_stage_duration(span["seconds"]) || "under a minute"} so far"
+    else "—"
+    end
+  end
+
+  # Text-color utility for a testing-phase status chip. Theme-safe Tailwind palette
+  # utilities already used elsewhere in the task views.
+  def testing_phase_status_class(status)
+    case status
+    when "completed"   then "text-emerald-400"
+    when "in_progress" then "text-amber-400"
+    else "text-muted"
+    end
+  end
+
   # Compact 12-hour clock for a board footer stamp: "3:32p" — no leading zero
   # on the hour, a single am/pm letter. Expects an already-zoned time.
   def clock_12h(time)
