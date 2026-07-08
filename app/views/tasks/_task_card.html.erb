@@ -16,6 +16,12 @@
 <% ever_blocked = local_assigns.key?(:ever_blocked) ? local_assigns[:ever_blocked] : nil %>
 <% block_state = task.block_state(unresolved: unresolved_feedback.present?, ever_blocked: ever_blocked) %>
 <% waiting_for_approval = task.waiting_for_operator_approval? %>
+<% local_url = task.devops? ? task.devops_url("local") : nil %>
+<%# Per-card pulse seed (slug hash): feeds --task-pulse-delay/--task-pulse-duration
+    so every flashing status bar AND the approval glow pulse OUT of phase across
+    the board — irregular breathing, not one synchronized strobe. %>
+<% pulse_seed = task.slug.to_s.each_byte.reduce(7) { |memo, byte| ((memo * 31) + byte) % 100_000 } %>
+<% card_pulse_style = "--task-pulse-delay: -#{pulse_seed % 1800}ms; --task-pulse-duration: #{1500 + (pulse_seed % 1000)}ms;" %>
 <% mascot_signature_color = mascot&.signature_color(type_enumerals).presence || task.devops["mascot_color"].presence %>
 <% mascot_signature_color = nil unless mascot_signature_color.to_s.match?(/\A#[0-9a-f]{6}\z/i) %>
 <% card_tone = case block_state
@@ -111,9 +117,14 @@
      x-show="matchesFilter('<%= task.agent_slug %>') && appVisible('<%= task.devops_repositories.join(",") %>')"
      @mouseenter="hovered = true"
      @mouseleave="hovered = false"
+     <%# Clicking a card link/button (esp. a new-tab one like Local Demo) never
+         fires @mouseleave — the new tab steals focus while the cursor sits still —
+         so the card would stay lifted/scrolled with the crew locked open. Reset
+         hovered and drop focus (releases group-focus-within) on any inner click. %>
+     @click.capture="if ($event.target.closest('a, button')) { hovered = false; document.activeElement && document.activeElement.blur && document.activeElement.blur() }"
      @mousedown="mx = $event.clientX; my = $event.clientY"
      @click="if (Math.abs($event.clientX - mx) < 6 && Math.abs($event.clientY - my) < 6 && !$event.target.closest('a, button')) window.location = $el.dataset.href"
-     <% if card_glow_style %>style="<%= card_glow_style %>"<% end %>
+     style="<%= [card_glow_style, card_pulse_style].compact.join(" ") %>"
      class="kanban-card relative <%= card_tone %> <%= card_glow_classes %> rounded-lg border p-3 cursor-pointer transition group">
 
   <%# Title — single-line overflow-fade: long names never wrap or break. They fade
@@ -164,28 +175,44 @@
     </div>
   <% end %>
 
+  <%# Status flags — each a full-length bar (components/card_status_bar). The
+      operator-approval bar merges the old WAITING APPROVAL pill with the Local
+      Demo link into one flashing, card-width CTA that opens the local demo; the
+      same component carries the QA/review flags for a consistent glance. %>
   <% if waiting_for_approval || review_in_progress || unresolved_feedback || block_state == :cleared %>
-    <div class="flex flex-wrap items-center gap-1 mb-1.5">
+    <div class="flex flex-col gap-1 mb-1.5">
       <% if waiting_for_approval %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-black border border-amber-300 shadow-sm shadow-amber-400/40 motion-safe:animate-pulse"
-              data-test="operator-approval-waiting"
-              title="Waiting for Mr. McRitchie's local demo approval before PR handoff.">WAITING APPROVAL</span>
+        <%# Thin, label-only bar — the whole bar is the Local Demo link (no action
+            text) so it stays one line. %>
+        <%= render "components/card_status_bar",
+              scheme: :amber, flashing: true,
+              label: "WAITING APPROVAL",
+              href: local_url, new_tab: true,
+              test_id: "operator-approval-waiting",
+              title: "Waiting for Mr. McRitchie's local demo approval — click to open it." %>
       <% end %>
       <% if review_in_progress %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-200 border border-violet-700/50"
-              data-test="review-in-progress"
-              title="Review has started; use a follow-up task for new changes.">REVIEW STARTED</span>
+        <%= render "components/card_status_bar",
+              scheme: :violet,
+              label: "REVIEW STARTED",
+              test_id: "review-in-progress",
+              title: "Review has started; use a follow-up task for new changes." %>
       <% end %>
       <% if unresolved_feedback %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-200 border border-red-700/60"
-              data-test="unresolved-feedback"
-              title="<%= unresolved_feedback.description %>">UNRESOLVED QA</span>
+        <%= render "components/card_status_bar",
+              scheme: :red, flashing: true,
+              label: "UNRESOLVED QA",
+              href: task_path(task.slug), new_tab: false,
+              test_id: "unresolved-feedback",
+              title: unresolved_feedback.description %>
       <% elsif block_state == :cleared %>
         <%# A prior QA block was resolved and the task is resubmitted — flag it so
             the reviewer knows to look again (pairs with the amber card tone). %>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-900/50 text-amber-200 border border-amber-700/50"
-              data-test="cleared-feedback"
-              title="A QA block was resolved — ready for another review.">RE-REVIEW</span>
+        <%= render "components/card_status_bar",
+              scheme: :amber,
+              label: "RE-REVIEW",
+              test_id: "cleared-feedback",
+              title: "A QA block was resolved — ready for another review." %>
       <% end %>
     </div>
   <% end %>
@@ -210,38 +237,30 @@
     <p class="text-xs text-red-700 dark:text-red-300 truncate mt-1"><%= task.error_message %></p>
   <% end %>
 
-  <%# Footer meta line: Local Demo button + PR link + relative time. The Local
-      Demo button stays outside the overflow fade so the operator always gets a
-      stable, clickable review action. %>
-  <% local_url = task.devops? ? task.devops_url("local") : nil %>
-  <% pr_url = task.devops? ? task.devops_url("pr") : nil %>
-  <div class="flex items-center gap-2 mt-1 text-[10px]">
-    <% if local_url %>
-      <%= link_to "Local Demo", local_url,
-            class: "shrink-0 inline-flex items-center justify-center rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-semibold text-primary hover:bg-primary/15 hover:border-primary/70 transition",
-            target: "_blank", rel: "noopener", "@click.stop": true,
-            title: "Open the local demo for this task",
-            data: { test: "local-demo-button" } %>
-    <% end %>
-    <div class="flex items-center gap-2 min-w-0 flex-1 whitespace-nowrap overflow-hidden"
-         data-test="task-card-updated-row"
-         style="<%= right_fade_style %>">
-      <% if pr_url %>
-        <%= link_to "PR", pr_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+  <%# Footer timestamp row: created-at (🌱, floats left) and updated-at (✏️,
+      floats right) as absolute stamps — an at-a-glance read of a card's age and
+      its last touch. The Local Demo action moved up into the full-length status
+      bar and the PR link lives on the task detail view, so both are gone from
+      here. Gem/kind emoji ride on the right, just before the updated stamp. %>
+  <div class="flex items-center justify-between gap-2 mt-1 text-[10px] text-muted whitespace-nowrap overflow-hidden"
+       data-test="task-card-updated-row">
+    <span class="flex items-center gap-1 whitespace-nowrap"
+          data-test="task-card-created"
+          title="Created <%= task.created_at.in_time_zone.strftime("%b %-d, %Y %-l:%M%P") %>">
+      <span aria-hidden="true">🌱</span><span><%= compact_created_stamp(task.created_at) %></span>
+    </span>
+    <span class="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+      <% if task.gem_release? %>
+        <span title="Gem release — published to RubyGems producer-first (before consuming apps)">💎</span>
       <% end %>
-      <span class="text-muted"><%= time_ago_in_words(task.created_at) %> ago</span>
-    </div>
-    <% kind_emoji = { "bug" => "🐛", "docs" => "📚" }[task.devops_kind] %>
-    <% if task.gem_release? || kind_emoji %>
-      <span class="flex items-center gap-1.5 leading-none shrink-0">
-        <% if task.gem_release? %>
-          <span title="Gem release — published to RubyGems producer-first (before consuming apps)">💎</span>
-        <% end %>
-        <% if kind_emoji %>
-          <span title="<%= task.devops_kind %> task"><%= kind_emoji %></span>
-        <% end %>
+      <% if (kind_emoji = { "bug" => "🐛", "docs" => "📚" }[task.devops_kind]) %>
+        <span title="<%= task.devops_kind %> task"><%= kind_emoji %></span>
+      <% end %>
+      <span class="flex items-center gap-1" data-test="task-card-updated"
+            title="Updated <%= task.updated_at.in_time_zone.strftime("%b %-d, %Y %-l:%M%P") %>">
+        <span aria-hidden="true">✏️</span><span><%= compact_updated_stamp(task.updated_at) %></span>
       </span>
-    <% end %>
+    </span>
   </div>
 
   <% if latest_activity %>

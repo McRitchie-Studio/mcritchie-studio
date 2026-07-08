@@ -49,8 +49,10 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     order = card_order_in("dropzone-building")
     assert_operator order.index("card-#{waiting.slug}"), :<, order.index("card-#{normal.slug}"),
                     "operator approval requests should float to the top of the stage list"
-    assert_select "#card-#{waiting.slug} [data-test='operator-approval-waiting']", text: "WAITING APPROVAL"
-    assert_select "#card-#{waiting.slug} [data-test='local-demo-button']", text: "Local Demo"
+    # WAITING APPROVAL + Local Demo are now ONE full-length bar — the whole flashing
+    # bar links to the local demo.
+    assert_select "#card-#{waiting.slug} a[data-test='operator-approval-waiting'][href='http://localhost:3001/demo']",
+                  text: "WAITING APPROVAL"
   end
 
   test "[integration] deployments column puts freshly shipped tasks above older shipped cards" do

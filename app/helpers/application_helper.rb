@@ -45,6 +45,31 @@ module ApplicationHelper
     "#{seconds / 86_400}d"
   end
 
+  # Compact 12-hour clock for a board footer stamp: "3:32p" — no leading zero
+  # on the hour, a single am/pm letter. Expects an already-zoned time.
+  def clock_12h(time)
+    return nil if time.blank?
+
+    time.strftime("%-l:%M%P").sub(/m\z/, "")
+  end
+
+  # "Jul 7 3:32p" — a task's created-at stamp (the footer's left side, paired
+  # with a 🌱 in the view). Rendered in the app's zone. nil-safe.
+  def compact_created_stamp(time)
+    return nil if time.blank?
+
+    local = time.in_time_zone
+    "#{local.strftime('%b %-d')} #{clock_12h(local)}"
+  end
+
+  # "4:09p" — a task's updated-at stamp (the footer's right side, paired with a
+  # ✏️ in the view). Time only; the created stamp carries the date. nil-safe.
+  def compact_updated_stamp(time)
+    return nil if time.blank?
+
+    clock_12h(time.in_time_zone)
+  end
+
   def release_duration_label(seconds, empty: "—")
     compact_stage_duration(seconds) || empty
   end

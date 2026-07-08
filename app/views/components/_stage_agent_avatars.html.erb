@@ -80,27 +80,44 @@
       (:detailed) still shows every stage per-usual.
     %>
     <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events) %>
-    <%# Crew avatars shrink on the dense Deploy board (six narrow lanes) and stay larger
-        on the roomier Build board; the stack overlap tracks the size to keep a small peek
-        of each face — 8px on Build (sm = w-10 face, -space-x-8 = 32px) and 4px on Deploy
-        (xs = w-8 face, -space-x-7 = 28px). Hover/focus keeps the under-stack fixed,
-        scales only the lead face, and nudges the first/last filled lead faces outward
-        so the visible motion is intentional, not a spacing jump. %>
-    <% crew_size = board == :build ? "sm" : "xs" %>
-    <% crew_overlap = board == :build ? "-space-x-8" : "-space-x-7" %>
+    <%# Crew avatars are one large size on both boards (md = w-14 face, -space-x-10 =
+        40px overlap → 16px peek) so they fill the 3-slot grid instead of floating in
+        empty space. Uniform size means a 3-slot and a 4-slot card keep the same avatar
+        height and their rows line up across lanes. Hover/focus keeps the under-stack
+        fixed, scales only the lead face, and nudges the first/last filled lead faces
+        outward so the motion is intentional. %>
+    <%# 4-slot cards (assembled/shipped) pack more faces, so they run a size smaller
+        than the roomier 3-slot cards. The crew band below is a fixed h-14 with the
+        stacks vertically centered, so shrinking the 4-slot faces never breaks the row
+        alignment across lanes — the smaller faces just center in the same band. %>
+    <% four_slot = columns.size == 4 %>
+    <% crew_size = four_slot ? "sm" : "md" %>
+    <%# Under-stack faces drop one more size and the overlap tightens to match — a
+        smaller face under a wide overlap would vanish behind the lead — leaving each a
+        small ~8px peek so the back stack tucks tightly to the left. %>
+    <% crew_under_size = four_slot ? "xs" : "sm" %>
+    <% crew_overlap = four_slot ? "-space-x-6" : "-space-x-8" %>
+    <% crew_empty_dims = four_slot ? "w-10 h-10" : "w-14 h-14" %>
     <% crew_top_reveal = "transition-transform duration-200 ease-out group-hover:scale-150 group-focus-within:scale-150 hover:scale-150 motion-reduce:transition-none motion-reduce:transform-none" %>
     <%# A blocked card reads design · building · blocker; the blocker is the LAST
         filled compartment (slot 3), and its timer turns into a red ✕. %>
     <% blocked = task.stage == "blocked" %>
     <% block_idx = (columns.rindex { |c| c.stacked.any? } if blocked) %>
     <% last_filled_idx = columns.rindex { |c| c.stacked.any? } %>
+    <%# EXPERIMENTAL hover reveal (see the promote render in the empty-slot branch):
+        active ONLY for the exact shape — 3 slots, an empty 3rd slot, and a 2nd slot
+        holding a pair. On card hover, slot 2's under-face ("2.2") jumps into the empty
+        slot 3. promote_entry is that under-face (stacked.first, since the lead renders
+        last); nil disables the whole feature for every other layout. %>
+    <% promote_entry = (columns.size == 3 && columns[2] && !columns[2].stacked.any? &&
+                        columns[1] && columns[1].stacked.size == 2) ? columns[1].stacked.first : nil %>
     <%# Fixed grid (3 columns, or 4 on the assembled + shipped columns) so the crew is
         one solid row; each compartment centered in its column, an unreached stage left
         blank. On an assembled card the fourth slot is reserved (empty placeholder, or
         Avi's live deploy intent) so the card never reflows when it ships. The Build
         board (/tasks) splits the build steps; Deploy collapses them — except a blocked
         card, which splits back to design · building · blocker on both boards. %>
-    <div class="grid <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-2 mb-1"
+    <div class="grid grid-rows-1 items-center h-14 <%= columns.size == 4 ? 'grid-cols-4' : 'grid-cols-3' %> gap-1 mt-3 mb-1"
          data-test="stage-agent-avatars" title="Stage crew">
       <% columns.each_with_index do |cluster, ci| %>
         <%# Filled compartments hug the left (the real crew); an empty slot centers in
@@ -123,7 +140,10 @@
                             else
                               "origin-center"
                             end %>
-              <div class="flex items-center <%= crew_overlap %> <%= crew_pos %>"
+              <%# Bottom-align the stack so the smaller under-faces sit LOW (their base
+                  on the lead's base) and peek from the bottom-right, not floating at
+                  the lead's vertical center. %>
+              <div class="flex items-end <%= crew_overlap %> <%= crew_pos %>"
                    data-test="crew-stack">
                 <% cluster.stacked.reverse.each_with_index do |entry, i| %>
                   <% stack_position = i.zero? ? "top" : "under" %>
@@ -134,11 +154,15 @@
                                    else
                                      "origin-center"
                                    end %>
-                  <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70 #{crew_top_reveal} #{edge_reveal}" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %>"
+                  <%# When this cluster is the promote source (slot 2's pair), its under-face
+                      slides right and fades out on hover — it "leaves" for slot 3. %>
+                  <% promote_out = (promote_entry && ci == 1 && i == 1) ? " transition-all duration-200 group-hover:opacity-0 group-hover:translate-x-4" : "" %>
+                  <div class="rounded-full relative ring-2 <%= i == 0 ? "z-30 ring-primary/70 #{crew_top_reveal} #{edge_reveal}" : (i == 1 ? "z-20 ring-primary/50" : "z-10 ring-surface") %><%= promote_out %>"
                        title="<%= [entry.name, (entry.role_label.presence && "(#{entry.role_label})")].compact.join(' ') %>"
                        data-test="crew-stack-avatar"
                        data-stack-position="<%= stack_position %>">
-                    <%= render "components/agent_avatar", agent: entry, size: crew_size,
+                    <%= render "components/agent_avatar", agent: entry,
+                          size: (i.zero? ? crew_size : crew_under_size),
                           shiny: (false unless i.zero?) %>
                   </div>
                 <% end %>
@@ -162,9 +186,27 @@
                       data-test="crew-duration"><%= compact_stage_duration(cluster.seconds) %></span>
               <% end %>
             </div>
+          <% elsif promote_entry && ci == 2 %>
+            <%# Promote target: the empty 3rd slot. The dashed placeholder fades out and
+                the promoted "2.2" face slides in from slot 2's side and fades in — so on
+                hover the pair in slot 2 splits into three across the row. %>
+            <div class="relative <%= crew_empty_dims %>" data-test="crew-promote-slot">
+              <div class="absolute inset-0 rounded-full border-2 border-dashed border-white/15 transition-opacity duration-200 group-hover:opacity-0"
+                   data-test="crew-empty" data-lane="<%= cluster.lane %>"></div>
+              <div class="absolute inset-0 flex items-center justify-center origin-right opacity-0 -translate-x-3 scale-75 transition-all duration-200 ease-out group-hover:opacity-100 group-hover:translate-x-0 group-hover:scale-150"
+                   data-test="crew-promoted" aria-hidden="true">
+                <%# Rendered at the LEAD size (md) and scaled up from ~the under-size it
+                    left as, all the way to the lead's 150% hover reveal, so it grows into
+                    a full third crew member that matches the enlarged leads on hover.
+                    origin-right keeps the grow on-card at the right edge. %>
+                <div class="rounded-full ring-2 ring-primary/70">
+                  <%= render "components/agent_avatar", agent: promote_entry, size: crew_size %>
+                </div>
+              </div>
+            </div>
           <% else %>
             <%# Unreached pipeline stage — a dashed placeholder circle marks the slot. %>
-            <div class="rounded-full border-2 border-dashed border-white/15 <%= crew_size == "sm" ? "w-10 h-10" : "w-8 h-8" %>"
+            <div class="rounded-full border-2 border-dashed border-white/15 <%= crew_empty_dims %>"
                  data-test="crew-empty" data-lane="<%= cluster.lane %>"></div>
           <% end %>
         </div>
