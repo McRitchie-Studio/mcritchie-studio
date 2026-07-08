@@ -30,14 +30,14 @@
 
     <%= render "spawn_card",
           title: "Newest Pokémon",
-          spawn: @latest_spawn,
+          sighting: @newest_unique,
           data_test: "latest-pokemon-card",
           empty_test: "latest-pokemon-empty",
           empty_text: "No spawned Pokémon yet." %>
 
     <%= render "spawn_card",
           title: "Newest Shiny",
-          spawn: @latest_shiny_spawn,
+          sighting: @newest_unique_shiny,
           data_test: "latest-shiny-card",
           empty_test: "latest-shiny-empty",
           empty_text: "No shiny Pokémon yet." %>
