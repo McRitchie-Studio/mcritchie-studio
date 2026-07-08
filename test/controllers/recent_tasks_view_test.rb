@@ -8,14 +8,19 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
     @in_progress_task = tasks(:in_progress_task)
   end
 
-  test "[component] recent lists tasks newest-updated first with compact phase duration cells" do
+  test "[component] recent lists tasks newest-updated first with stamped phase duration cells" do
+    build_start = Time.zone.parse("2026-07-08 10:05:00")
+    build_end = build_start + 7440
+    cert_start = Time.zone.parse("2026-07-08 12:30:00")
     @new_task.update_columns(updated_at: 1.minute.ago) # rubocop:disable Rails/SkipsModelValidations
     @in_progress_task.update_columns( # rubocop:disable Rails/SkipsModelValidations
       updated_at: 2.hours.ago,
       testing_phases_version: Task::TestingPhases::VERSION,
       testing_phases: { "phases" => {
-        "build" => { "status" => "completed", "seconds" => 7440 },
-        "local_certification" => { "status" => "in_progress", "seconds" => 300 },
+        "build" => { "status" => "completed", "seconds" => 7440,
+                     "started_at" => build_start.iso8601, "completed_at" => build_end.iso8601 },
+        "local_certification" => { "status" => "in_progress", "seconds" => 300,
+                                   "started_at" => cert_start.iso8601 },
         "ci" => { "status" => "missing" },
         "review" => { "status" => "missing" },
         "acceptance" => { "status" => "missing" }
@@ -37,11 +42,27 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
                     "a completed phase renders the compact two-unit duration"
     assert_includes response.body, "5m+",
                     "an in-progress phase ticks with a trailing plus"
+
+    # The releases-table stamp treatment: epoch-carrying range stacks under the
+    # duration — a closed span has data-start AND data-end, an in-progress span
+    # renders the open "start → …" clock line.
+    assert_select "li[data-task-slug=?]", @in_progress_task.slug do
+      assert_select "[data-deployment-range][data-start=?][data-end=?]",
+                    build_start.to_i.to_s, build_end.to_i.to_s
+      assert_select "[data-deployment-range][data-start=?]:not([data-end])", cert_start.to_i.to_s
+      assert_select "[data-range-date]", { text: "Jul 8, 2026", minimum: 1 }
+      assert_select "[data-range-time]", text: "10:05a → 12:09p"
+      assert_select "[data-range-time]", text: "12:30p → …"
+    end
+    assert_includes response.body, "deploymentRangeFmt",
+                    "the client-TZ re-stamp script rides the page"
   end
 
-  test "[component] recent renders gate verdict chips including the failed-then-passed retry story" do
-    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: false)
-    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: true)
+  test "[component] recent renders stamped gate cells including the failed-then-passed retry story" do
+    opened = Time.zone.parse("2026-07-08 09:00:00")
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: false, now: opened)
+    GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", now: opened + 10.minutes)
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "g1_cert", success: true, now: opened + 17.minutes)
     GateRun.open!(subject_type: "task", subject_slug: @new_task.slug, key: "g2a_primary")
 
     get recent_tasks_path
@@ -49,9 +70,15 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "li[data-task-slug=?]", @new_task.slug do
       assert_select "[data-test=?]", "recent-gate-chip", count: 2
+      assert_select "[data-test=?]", "recent-gate-attempts", text: "×2"
+      # Each gate cell carries the same stamp stack as the phase cells; the
+      # in-flight review renders the open clock line.
+      assert_select "[data-test='recent-gate-chip'] [data-deployment-range]", count: 2
+      assert_select "[data-range-time]", text: "9:10a → 9:17a"
+      assert_select "[data-range-time]", text: /→ …/
     end
     assert_includes response.body, "attempt 2",
-                    "the failed first attempt stays visible as a retry count"
+                    "the retry story stays one hover away on the cell title"
     assert_includes response.body, "G1 Cert"
     assert_includes response.body, "G2a Primary"
   end
@@ -63,6 +90,7 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
     assert_select "li[data-task-slug=?]", @new_task.slug do
       assert_select "[data-test=?]", "recent-task-phases", count: 1
       assert_select "[data-test=?]", "recent-gate-chip", count: 0
+      assert_select "[data-deployment-range]", count: 0
     end
     assert_includes response.body, "—", "never-run phases render dashes, not blanks"
   end

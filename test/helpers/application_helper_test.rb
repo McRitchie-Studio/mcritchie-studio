@@ -41,6 +41,19 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "—", testing_phase_compact_label({ "status" => "missing" })
   end
 
+  test "[unit] testing_phase_range parses span stamps into the range hash" do
+    range = testing_phase_range({ "started_at" => "2026-07-08T10:05:00Z", "completed_at" => "2026-07-08T10:34:00Z" })
+    assert_equal Time.zone.parse("2026-07-08T10:05:00Z"), range[:started_at]
+    assert_equal Time.zone.parse("2026-07-08T10:34:00Z"), range[:ended_at]
+
+    open_range = testing_phase_range({ "started_at" => "2026-07-08T10:05:00Z" })
+    assert_equal Time.zone.parse("2026-07-08T10:05:00Z"), open_range[:started_at]
+    assert_nil open_range[:ended_at], "an in-progress span has no end stamp"
+
+    assert_nil testing_phase_range({ "status" => "missing" }), "no start means no stamp stack"
+    assert_nil testing_phase_range({ "started_at" => "not-a-time" }), "garbage parses to nil, never raises"
+  end
+
   test "[unit] gate_verdict_glyph maps each verdict to its chip glyph" do
     now = Time.current
 

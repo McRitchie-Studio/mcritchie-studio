@@ -1,9 +1,12 @@
 <%# /tasks/recent — flat recency list (updated_at desc), the scanning surface for
     the testing-timestamps work: each row carries the five Task::TestingPhases
-    duration cells (fixed 5-column strip so durations align vertically across
-    rows) plus compact GateRun verdict chips. Read-only and public like the
-    board; the kanban at /tasks is untouched. Sparse data is first-class — a
-    task with no gate runs renders no chips, a phase that never ran is a dash. %>
+    duration cells (fixed 5-column strip on desktop so durations align vertically
+    across rows) plus GateRun verdict cells. Every started cell gets the releases
+    table stamp treatment — bold duration over the muted date line and the local
+    start-to-end clocks (data-deployment-range, re-stamped to the viewer's zone by
+    releases/_deployment_range_script). Read-only and public like the board; the
+    kanban at /tasks is untouched. Sparse data is first-class — a task with no
+    gate runs renders no gate strip, a phase that never ran is a dash. %>
 <% content_for(:title, "Recent Tasks") %>
 <%
   # Short cell captions — the full PHASE_DEFINITIONS labels ("Local Certification",
@@ -26,7 +29,7 @@
     <p class="text-muted text-sm max-w-2xl">
       Every task by last update, with how long it spent in each testing phase —
       Build → Local Certification → CI → Review → Operator Acceptance — and the
-      latest verdict on each testing gate.
+      latest verdict on each testing gate, each with its local start → end stamps.
     </p>
     <p class="text-[11px] text-muted uppercase tracking-wide">
       <%= @tasks.size %> most recently updated · archived excluded
@@ -38,9 +41,9 @@
       <% @tasks.each do |task| %>
         <% phases = (Task::TestingPhases.cached_or_built(task) || {})["phases"] || {} %>
         <% gate_runs = @gate_runs_by_task[task.slug] || {} %>
-        <li class="card p-4" data-test="recent-task-row" data-task-slug="<%= task.slug %>">
+        <li class="card p-4 space-y-3" data-test="recent-task-row" data-task-slug="<%= task.slug %>">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
-            <%# Identity cluster: title, stage, apps, slug + recency, gate chips. %>
+            <%# Identity cluster: title, stage, apps, slug + recency. %>
             <div class="min-w-0 lg:flex-1 space-y-1.5">
               <div class="flex items-center gap-2 min-w-0">
                 <%= link_to task.title, task_path(task.slug),
@@ -55,38 +58,69 @@
                   ✏️ <%= compact_time_ago(task.updated_at) %>
                 </span>
               </div>
-              <% if gate_runs.any? %>
-                <div class="flex flex-wrap items-center gap-1.5 pt-0.5" data-test="recent-task-gates">
-                  <% GateRun::TASK_KEYS.each do |key| %>
-                    <% run = gate_runs[key] %>
-                    <% next unless run %>
-                    <span class="inline-flex items-center gap-1 rounded-full border border-subtle bg-surface-alt px-2 py-0.5 text-[10px]"
-                          data-test="recent-gate-chip"
-                          title="<%= run.label %> — <%= run.status.humanize %> · <%= gate_attempt_label(run) %>">
-                      <span class="font-bold <%= gate_status_class(run) %>"><%= gate_verdict_glyph(run) %></span>
-                      <span class="font-semibold text-body"><%= run.label %></span>
-                      <span class="text-muted"><%= gate_attempt_label(run) %></span>
-                    </span>
+            </div>
+            <%# Phase strip: five fixed cells on desktop so the same phase lines up
+                down the page. Bold duration (status-colored) over the stamp stack —
+                the muted date line + local start-to-end clocks, exactly the
+                releases-table cell treatment. %>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 lg:w-[34rem] lg:shrink-0" data-test="recent-task-phases">
+              <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
+                <% span = phases[key] || { "status" => "missing" } %>
+                <% range = testing_phase_range(span) %>
+                <div class="rounded-lg bg-surface-alt px-1.5 py-1.5 text-center min-w-0"
+                     title="<%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %>: <%= testing_phase_duration_label(span) %>">
+                  <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
+                  <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
+                    <%= testing_phase_compact_label(span) %>
+                  </p>
+                  <% if range %>
+                    <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
+                         data-deployment-range
+                         data-start="<%= range[:started_at].to_i %>"
+                         <% if range[:ended_at] %>data-end="<%= range[:ended_at].to_i %>"<% end %>>
+                      <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(range) %></span>
+                      <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(range) %></span>
+                    </div>
                   <% end %>
                 </div>
               <% end %>
             </div>
-            <%# Phase strip: five fixed cells so the same phase lines up down the page.
-                Duration text carries the status color (emerald done, amber ticking,
-                muted dash for a phase that never ran). %>
-            <div class="grid grid-cols-5 gap-1.5 lg:w-[26rem] lg:shrink-0" data-test="recent-task-phases">
-              <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
-                <% span = phases[key] || { "status" => "missing" } %>
-                <div class="rounded-lg bg-surface-alt px-1.5 py-1.5 text-center min-w-0"
-                     title="<%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %>: <%= testing_phase_duration_label(span) %>">
-                  <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
-                  <p class="text-[11px] font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
-                    <%= testing_phase_compact_label(span) %>
+          </div>
+          <% if gate_runs.any? %>
+            <%# Gate strip: one stamped cell per gate that has actually run —
+                verdict glyph + label (+ a first-class retry badge), bold duration,
+                then the same date + clocks stack as the phase cells. %>
+            <div class="flex flex-wrap gap-1.5" data-test="recent-task-gates">
+              <% GateRun::TASK_KEYS.each do |key| %>
+                <% run = gate_runs[key] %>
+                <% next unless run %>
+                <% gate_range = { started_at: run.started_at, ended_at: run.finished_at } %>
+                <div class="rounded-lg bg-surface-alt px-2.5 py-1.5 min-w-0 text-center"
+                     data-test="recent-gate-chip"
+                     title="<%= run.label %> — <%= run.status.humanize %> · <%= gate_attempt_label(run) %>">
+                  <p class="text-[9px] uppercase tracking-wide text-muted truncate">
+                    <span class="font-bold <%= gate_status_class(run) %>"><%= gate_verdict_glyph(run) %></span>
+                    <%= run.label %>
+                    <% if run.attempt.to_i > 1 %>
+                      <span class="ml-0.5 rounded bg-inset border border-subtle px-1 text-[9px] font-bold <%= run.status == "failed" ? "text-rose-400" : "text-muted" %>"
+                            data-test="recent-gate-attempts"
+                            title="<%= run.attempt %> attempts — retried gate runs are first-class signal">×<%= run.attempt %></span>
+                    <% end %>
                   </p>
+                  <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
+                    <%= release_duration_label(run.duration_seconds) %><%= "+" if run.in_flight? %>
+                  </p>
+                  <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
+                       data-deployment-range
+                       data-start="<%= run.started_at.to_i %>"
+                       <% if run.finished_at %>data-end="<%= run.finished_at.to_i %>"<% end %>>
+                    <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(gate_range) %></span>
+                    <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(gate_range) %></span>
+                  </div>
                 </div>
               <% end %>
             </div>
-          </div>
+          <% end %>
         </li>
       <% end %>
     </ol>
@@ -96,3 +130,5 @@
     </div>
   <% end %>
 </section>
+<%# Re-stamps every date + clocks line above to the viewer's local timezone. %>
+<%= render "releases/deployment_range_script" %>

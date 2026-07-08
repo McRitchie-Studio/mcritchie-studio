@@ -80,6 +80,21 @@ module ApplicationHelper
     end
   end
 
+  # A testing-phase span's iso8601 stamps → the {started_at:, ended_at:} Time
+  # hash the deployment_range_date/_times helpers and the data-deployment-range
+  # client re-stamp expect. nil when the phase never started (a missing span
+  # renders no stamp stack) or when a stamp fails to parse (never raises into
+  # a render).
+  def testing_phase_range(span)
+    started = span["started_at"].presence && Time.zone.parse(span["started_at"])
+    return nil unless started
+
+    ended = span["completed_at"].presence && Time.zone.parse(span["completed_at"])
+    { started_at: started, ended_at: ended }
+  rescue ArgumentError, TypeError
+    nil
+  end
+
   # Verdict glyph for a compact gate chip (/tasks/recent): ✓ passed, ✗ failed,
   # ● in flight (pairs with gate_status_class's amber). nil-safe → middot.
   def gate_verdict_glyph(run)
