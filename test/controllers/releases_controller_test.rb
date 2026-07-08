@@ -30,20 +30,44 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", "All Deployments"
     assert_select "a[href=?]", deployment_path(release), text: release.slug
-    # Per-stage columns replace the old Assemble/Confirm/Ship/Deploy set.
-    assert_select "table", text: /Tested/
+    # Gate-backed columns replace the co-opted Tested/Confirmed stamp pair.
     assert_select "table", text: /Assembled/
-    assert_select "table", text: /Confirmed/
+    assert_select "table", text: /G3 Candidate/
+    assert_select "table", text: /G4 Ship/
     assert_select "table", text: /Deployed/
     assert_select "table", text: /Total/
-    assert_select "table thead", text: /Ship/, count: 0
-    # Each stage cell carries a timestamp range (start→end) + the duration underneath.
+    assert_select "table thead th", text: /Tested/, count: 0
+    assert_select "table thead th", text: /Confirmed/, count: 0
+    # Each stamp-backed cell carries a timestamp range (start→end) + the duration.
     assert_select "tbody td [data-deployment-range] [data-range-time]"
     assert_select "tbody td", text: /25m/   # Assembled: assembling_started → assembled
     assert_select "tbody td", text: /55m/   # Total: created → shipped
     # Summary cards use the stage labels, not the per-task Building/Reviewing spans.
-    assert_match "Tested", response.body
+    assert_match "G3 Candidate", response.body
     assert_no_match(/Building/, response.body)
+  end
+
+  test "[integration] all deployments renders the G3/G4 cells from seeded gate runs" do
+    release = release_with_member
+    # G3: failed attempt 1, passed attempt 2 (13 minutes) — the retry badge case.
+    GateRun.close!(subject_type: "release", subject_slug: release.slug, key: "g3_candidate",
+                   success: false, now: 28.minutes.ago)
+    GateRun.open!(subject_type: "release", subject_slug: release.slug, key: "g3_candidate",
+                  now: 25.minutes.ago)
+    GateRun.close!(subject_type: "release", subject_slug: release.slug, key: "g3_candidate",
+                   success: true, now: 12.minutes.ago)
+    # G4: a single failed attempt — the fail-tint case.
+    GateRun.close!(subject_type: "release", subject_slug: release.slug, key: "g4_ship",
+                   success: false, metadata: { "aborted" => true }, now: 6.minutes.ago)
+
+    get all_deployments_path
+
+    assert_response :success
+    # G3 cell: the LATEST attempt (passed, 13m) with the ×2 retry badge.
+    assert_select "tbody td [data-test='deployment-stage-attempts']", text: "×2"
+    assert_select "tbody td", text: /13m/
+    # G4 cell: the failed attempt tints red with a ✗.
+    assert_select "tbody td [data-test='deployment-stage-failed']", text: /✗/
   end
 
   test "[integration] all deployments paginates releases twenty five per page" do

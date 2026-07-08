@@ -263,7 +263,9 @@ def reviewer_prompt(task, reviewer, role, reviewers)
   role_responsibility =
     if role == "primary"
       "As the PRIMARY you are the review OWNER: you run the gates (dor-check / cert / CI / acceptance match) " \
-        "and you DRIVE the verdict (merge-ready or request-changes). Your deep review is the driving recommendation."
+        "and you DRIVE the verdict (merge-ready or request-changes). Your deep review is the driving recommendation. " \
+        "Run the DoR gate as `bin/dor-check #{task.fetch("slug")} --gate-role review` so your gate-zero verdict " \
+        "lands as a SOP on the task's G2a Primary gate run instead of closing the builder's G1 Cert."
     else
       "As the LIGHT you are a focused second read through your domain lens. You do NOT run the gates and do NOT " \
         "drive the verdict — report your findings up to the primary/supervisor (any reviewer can still block on a defect)."

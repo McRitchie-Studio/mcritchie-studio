@@ -5,11 +5,19 @@
     (+ epoch data-start/data-end); releases/_deployment_range_script re-stamps it to
     the viewer's LOCAL clock. While the stage is the release's current one (status
     "in_progress") the duration is a live ⏱ count-up ticking off the shared
-    [data-release-ticker] loop (tasks/_release_ticker). Locals:
+    [data-release-ticker] loop (tasks/_release_ticker).
+
+    GATE-BACKED spans (Release#deployment_gate_span — the G3/G4 columns) also
+    carry :success and :attempt: a failed attempt tints the duration red with a
+    ✗, and attempt > 1 renders a ×n retry badge (retries are first-class signal,
+    not noise). Stamp-backed spans omit both keys, so nothing changes for them.
+    Locals:
       span   a Release#deployment_stage_span / #deployment_total_span hash (required)
       range  show the date/time stack (default true; Total passes false → duration only) %>
 <% span = local_assigns.fetch(:span) %>
 <% show_range = local_assigns.fetch(:range, true) %>
+<% failed = span[:success] == false %>
+<% attempts = span[:attempt].to_i %>
 <% if span[:status] == "missing" %>
   <span class="font-mono text-heading tabular-nums">—</span>
 <% else %>
@@ -22,8 +30,17 @@
             data-prefix="⏱ "
             data-since="<%= span[:started_at].to_i %>"
             title="In progress — counting up since this stage started">⏱ <%= format_elapsed_clock(elapsed) %></span>
+    <% elsif failed %>
+      <span class="font-mono text-rose-400 tabular-nums leading-none"
+            data-test="deployment-stage-failed"
+            title="Gate attempt failed">✗ <%= release_duration_label(span[:seconds]) %></span>
     <% else %>
       <span class="font-mono text-heading tabular-nums leading-none"><%= release_duration_label(span[:seconds]) %></span>
+    <% end %>
+    <% if attempts > 1 %>
+      <span class="ml-1 rounded bg-inset border border-subtle px-1 text-[10px] font-bold align-middle <%= failed ? "text-rose-400" : "text-muted" %>"
+            data-test="deployment-stage-attempts"
+            title="<%= attempts %> attempts — retried gate runs are first-class signal">×<%= attempts %></span>
     <% end %>
   <% end %>
   <% if show_range && span[:started_at] %>

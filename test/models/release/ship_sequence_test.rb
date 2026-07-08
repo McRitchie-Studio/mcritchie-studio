@@ -284,4 +284,39 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     msg = S.preflight_message(S.preflight_offenders([state("x", dirty_files: files)]))
     assert_match(/\(\+4 more\)/, msg, "only the first 5 files are listed, then a +N more")
   end
+
+  # --- ship_gate_skip?: G4 self-gating against the G3 batch certification ----
+
+  test "[unit] ship_gate_skip? skips only when the same command already ran on the same SHA" do
+    assert S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
+                             frozen_sha: "abc123", qa_sha: "abc123"),
+           "same command + same SHA = G3 already certified this exact gate"
+  end
+
+  test "[unit] ship_gate_skip? re-triggers on SHA drift (straggler / re-pin)" do
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
+                                 frozen_sha: "abc123", qa_sha: "def456"),
+               "a drifted frozen SHA was never certified — the gate must run"
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
+                                 frozen_sha: "abc123", qa_sha: nil),
+               "no qa_sha recorded (un-prepared repo) — the gate must run"
+  end
+
+  test "[unit] ship_gate_skip? re-triggers when G3 ran a narrower command" do
+    # A satellite whose G3 ran only the integration subset still gets its full
+    # suite at ship — a subset run certifies nothing about the full test_cmd.
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test",
+                                 qa_test_cmd: "bin/rails test test/integration",
+                                 frozen_sha: "abc123", qa_sha: "abc123")
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "",
+                                 frozen_sha: "abc123", qa_sha: "abc123"),
+               "no qa_test_cmd registered — G3 never ran anything for this repo"
+  end
+
+  test "[unit] ship_gate_skip? never skips on blank inputs (fail open: run the gate)" do
+    assert_not S.ship_gate_skip?(test_cmd: "", qa_test_cmd: "", frozen_sha: "abc", qa_sha: "abc")
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
+                                 frozen_sha: "", qa_sha: "")
+    assert_not S.ship_gate_skip?(test_cmd: nil, qa_test_cmd: nil, frozen_sha: nil, qa_sha: nil)
+  end
 end

@@ -86,6 +86,16 @@ module ApplicationHelper
     run.attempt.to_i > 1 ? "attempt #{run.attempt} · #{duration}" : duration
   end
 
+  # A gate SOP entry's duration_ms → a compact human clock ("6m 52s", "41s",
+  # "412ms" — the gates card was rendering raw seconds like "412.0s"). nil for
+  # blank/zero so the view can skip the span entirely.
+  def gate_sop_duration_label(duration_ms)
+    ms = duration_ms.to_i
+    return nil if ms <= 0
+
+    ms < 1000 ? "#{ms}ms" : format_elapsed_clock(ms / 1000)
+  end
+
   # Compact 12-hour clock for a board footer stamp: "3:32p" — no leading zero
   # on the hour, a single am/pm letter. Expects an already-zoned time.
   def clock_12h(time)
