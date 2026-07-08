@@ -456,3 +456,36 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-06 -->
 | `/Users/alex/projects/mcritchie-studio/.worktrees/suppress-tool-result-paging-reads` | worktree | Hidden worktree; branch `feat/suppress-tool-result-paging-reads` is clean and HEAD d243e051 is contained in origin/release; health down, Redis DB 22, database mcritchie_studio_development_suppress_tool_result_paging_reads:missing. | Removed with `bin/agent-worktree remove mcritchie-studio suppress-tool-result-paging-reads --yes` during approved lifecycle cleanup. | removed 2026-07-06 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/approval-ready-tasks` | worktree | Hidden worktree; branch `feat/approval-ready-tasks` is clean and HEAD 0e678a24 is contained in origin/release; health up, Redis DB 9, database mcritchie_studio_development_approval_ready_tasks:ok. | Removed with `bin/agent-worktree remove mcritchie-studio approval-ready-tasks --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/condense-release-tasks` | worktree | Hidden worktree; branch `feat/condense-release-tasks` is clean and HEAD 21afea8b is contained in origin/release; health up, Redis DB 33, database mcritchie_studio_development_condense_release_tasks:ok. | Removed with `bin/agent-worktree remove mcritchie-studio condense-release-tasks --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/order-session-filter-recency` | worktree | Hidden worktree; branch `feat/order-session-filter-recency` is clean and HEAD e3dacce0 is contained in origin/release; health up, Redis DB 15, database mcritchie_studio_development_order_session_filter_recency:ok. | Removed with `bin/agent-worktree remove mcritchie-studio order-session-filter-recency --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/pokedex-newest-unique-cards` | worktree | Hidden worktree; branch `feat/pokedex-newest-unique-cards` is clean and HEAD e78e43d4 is contained in origin/release; health up, Redis DB 18, database mcritchie_studio_development_pokedex_newest_unique_cards:ok. | Removed with `bin/agent-worktree remove mcritchie-studio pokedex-newest-unique-cards --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/refine-crew-hover` | worktree | Hidden worktree; branch `feat/refine-crew-hover` is clean and HEAD b7f6144f is contained in origin/release; health up, Redis DB 34, database mcritchie_studio_development_refine_crew_hover:ok. | Removed with `bin/agent-worktree remove mcritchie-studio refine-crew-hover --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/release-stage-countdown` | worktree | Hidden worktree; branch `feat/release-stage-countdown` is clean and HEAD b0c9e699 is contained in origin/release; health up, Redis DB 25, database mcritchie_studio_development_release_stage_countdown:ok. | Removed with `bin/agent-worktree remove mcritchie-studio release-stage-countdown --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/session-filter-search-box` | worktree | Hidden worktree; branch `feat/session-filter-search-box` is clean and HEAD 9254d743 is contained in origin/release; health up, Redis DB 26, database mcritchie_studio_development_session_filter_search_box:ok. | Removed with `bin/agent-worktree remove mcritchie-studio session-filter-search-box --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/split-pokedex-cards` | worktree | Hidden worktree; branch `feat/split-pokedex-cards` is clean and HEAD c0a7e400 is contained in origin/release; health up, Redis DB 36, database mcritchie_studio_development_split_pokedex_cards:ok. | Removed with `bin/agent-worktree remove mcritchie-studio split-pokedex-cards --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/stagger-shipped-updates` | worktree | Hidden worktree; branch `feat/stagger-shipped-updates` is clean and HEAD 6c5ca966 is contained in origin/release; health port-busy, Redis DB 12, database mcritchie_studio_development_stagger_shipped_updates:ok. | Removed with `bin/agent-worktree remove mcritchie-studio stagger-shipped-updates --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/standardize-llm-logging` | worktree | Hidden worktree; branch `feat/standardize-llm-logging` is clean and HEAD 68f1c3ea is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_standardize_llm_logging:missing. | Removed with `bin/agent-worktree remove mcritchie-studio standardize-llm-logging --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/turf-monster/.worktrees/team-totals-ui` | worktree | Hidden worktree; branch `feat/team-totals-ui` is clean and HEAD 2590bfc is contained in origin/release; health up, Redis DB 31, database turf_monster_development_team_totals_ui:ok. | Removed with `bin/agent-worktree remove turf-monster team-totals-ui --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
