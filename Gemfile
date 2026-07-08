@@ -87,4 +87,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.11" # 0.11.0 widens the Rails bound to < 8.2 (enables Rails 8.1)
+gem "studio-engine", "~> 0.12" # 0.12 adds the model-page protocol (Studio::ModelPage); 0.11 widened Rails to < 8.2

@@ -5,6 +5,9 @@ class ReleasesController < ApplicationController
 
   def index
     releases_scope = Release.order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+    # Newest release overall — the target of the admin-only "Model" link in the
+    # header (model-page protocol). Independent of the paginated slice below.
+    @latest_release = releases_scope.first
     @release_page = requested_page
     @release_count = releases_scope.count
     @release_total_pages = [(@release_count / RELEASES_PER_PAGE.to_f).ceil, 1].max
