@@ -548,6 +548,51 @@ class InstallAgentSkillsTest < Minitest::Test
     assert_includes requirements, "/bin/agent-activity close-open"
   end
 
+  def test_integration_install_prunes_legacy_claude_session_mascot_wrapper
+    skip "jq is required for settings hook install" unless jq_available?
+
+    runtime_root = "/stable/mcritchie-studio"
+    legacy_cmd = [
+      %(id="${CLAUDE_CODE_SESSION_ID:-$(jq -r '.session_id // empty')}";),
+      %(CLAUDE_CODE_SESSION_ID="$id" #{runtime_root}/bin/task session-mascot >/dev/null 2>&1 || true)
+    ].join(" ")
+    current_cmd = "#{runtime_root}/bin/task session-mascot"
+
+    FileUtils.mkdir_p(File.dirname(installed_settings))
+    File.write(installed_settings, JSON.pretty_generate(
+      "hooks" => {
+        "SessionStart" => [
+          {
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => legacy_cmd
+              }
+            ]
+          },
+          {
+            "hooks" => [
+              {
+                "type" => "command",
+                "command" => current_cmd
+              }
+            ]
+          }
+        ]
+      }
+    ))
+
+    _out, err, status = run_installer("install", "AGENT_DOCS_RUNTIME_ROOT" => runtime_root)
+
+    assert status.success?, "install failed: #{err}"
+    commands = JSON.parse(File.read(installed_settings)).fetch("hooks").fetch("SessionStart").flat_map do |entry|
+      entry.fetch("hooks").map { |hook| hook.fetch("command") }
+    end
+    assert_equal 1, commands.count { |command| command == current_cmd }
+    refute commands.any? { |command| command != current_cmd && command.include?("/bin/task session-mascot") },
+      "legacy shell-wrapped mascot hooks must be pruned"
+  end
+
   def test_integration_stages_admin_requirements_when_etc_unwritable
     skip "jq is required for settings hook install" unless jq_available?
 
