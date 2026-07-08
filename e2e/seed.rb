@@ -534,6 +534,11 @@ Task::TestingPhases.backfill!
 # /tasks/testing-phases-demo also renders the "Testing gates" card — a G1 Cert
 # that failed once and passed on attempt 2 (exercising the retry count), a
 # passed primary review lane, and a light lane still in flight.
+# Idempotent reseed: gate runs are slug-keyed and Task.delete_all skips destroy
+# callbacks, so prior runs survive a wipe and would inflate the attempt numbers
+# below (the spec hard-asserts "attempt 2") — clear them first, mirroring the
+# task_events.delete_all above.
+tp.gate_runs.delete_all
 GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g1_cert", success: false,
                sops: [{ "sop" => "full-suite", "cmd" => "bin/rails test", "result" => "fail", "duration_ms" => 412_000 }],
                now: tp_anchor + 8.minutes)
