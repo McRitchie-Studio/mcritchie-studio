@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_021926) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_08_073358) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1151,6 +1151,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_021926) do
     t.string "stage", default: "designed"
     t.datetime "started_at"
     t.datetime "submitted_at"
+    t.jsonb "testing_phases", default: {}, null: false
+    t.datetime "testing_phases_cached_at"
+    t.integer "testing_phases_version", default: 0, null: false
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_slug"], name: "index_tasks_on_agent_slug"

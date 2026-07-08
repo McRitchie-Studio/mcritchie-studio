@@ -941,6 +941,31 @@ when "intent"
   crew = [actor, *reviewers.map { |r| "#{r["slug"]}/#{r["weight"]}" }].compact.join(" · ")
   puts "intent recorded on #{slug}: → #{to_stage}#{crew.empty? ? "" : " · #{crew}"}"
   print_task(task) if task
+when "checkpoint"
+  # Emit a CHECKPOINT event — a named moment WITHIN the current stage that does not
+  # move it. bin/full-suite-check bookends the local-certification testing phase with
+  # `checkpoint <slug> cert --status started` then `--status completed`. POSTs to the
+  # same events/<name>/{start,complete} endpoints the API checkpoint path uses;
+  # source defaults to "system" so it skips the usage gate (a marker, not agent work).
+  slug = ARGV.shift || die!("usage: bin/task checkpoint <slug> <name> --status started|completed [--source S] [--message M]")
+  name = ARGV.shift || die!("checkpoint needs a <name>: bin/task checkpoint <slug> <name> --status started|completed")
+  status = nil
+  source = "system"
+  message = nil
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--status"  then status = ARGV.shift || die!("--status needs started or completed")
+    when "--source"  then source = ARGV.shift || die!("--source needs a value")
+    when "--message" then message = ARGV.shift || die!("--message needs a value")
+    else die!("unknown flag #{flag.inspect} for checkpoint (usage flags: --status, --source, --message)")
+    end
+  end
+  status = status.to_s
+  die!("--status must be started or completed") unless %w[started completed].include?(status)
+  event = { "source" => source }
+  event["message"] = message if message
+  api(:post, "/api/v1/tasks/#{slug}/events/#{name}/#{status == "started" ? "start" : "complete"}", { "event" => event })
+  puts "checkpoint #{name} #{status} on #{slug}"
 when "heartbeat"
   # The live-terminal lease renewal — bin/statusline calls this each render
   # (throttled) so a crashed/closed session's claim lapses after the TTL and the

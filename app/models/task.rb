@@ -132,11 +132,12 @@ class Task < ApplicationRecord
   REVIEW_STATUSES = %w[started completed failed info].freeze
   MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
+  OPERATOR_APPROVAL_APPROVED = "approved".freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor block_kind agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
-    persona approval_status approval_requested_at approval_requested_by
+    persona approval_status approval_requested_at approval_requested_by approval_approved_at
   ].freeze
   LEGACY_DEVOPS_KEY_ALIASES = { "release_train" => "release_slug" }.freeze
   # Provider → resume-command template (one %s, the session id).
@@ -212,6 +213,7 @@ class Task < ApplicationRecord
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
   before_save :stamp_operator_approval_request
+  before_save :stamp_operator_approval_approved
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -224,6 +226,7 @@ class Task < ApplicationRecord
   # manual size) and never unwinds the ship if derivation fails.
   after_update :autoderive_actual_size, if: :saved_change_to_stage?
   after_commit :refresh_duration_metrics_for_release_changes, on: %i[create update destroy]
+  after_commit :refresh_testing_phases_after_change, on: %i[create update]
   # Avi auto shirt-sizes a task the instant it enters `designed` WITHOUT a po_size
   # — on create (the stage a task is BORN in, so the typical trigger is a
   # `bin/task create` with no --po-size) or a later move INTO designed with the
@@ -988,7 +991,45 @@ class Task < ApplicationRecord
     update!(stage: "archived")
   end
 
+  # Recompute this task's testing-phase projection (Task::TestingPhases) — PUBLIC so
+  # the TaskEvent after_create_commit hook can call it on the parent task, mirroring
+  # release.refresh_duration_metrics_safely. update_columns inside refresh! skips
+  # callbacks, so this never re-enters.
+  def refresh_testing_phases!
+    Task::TestingPhases.refresh!(self)
+  end
+
+  def refresh_testing_phases_safely
+    refresh_testing_phases!
+  rescue StandardError => e
+    Rails.logger.warn("[task-testing-phases] refresh failed for #{slug}: #{e.class}: #{e.message}")
+    nil
+  end
+
   private
+
+  # Refresh the testing-phase projection after a stage transition or an APPROVAL
+  # change — the two edits that move a task-owned phase window. Metadata churn that
+  # can't move a window (the statusline heartbeat's claim_expires_at/claim_nonce,
+  # agent_context, etc.) must NOT trigger a rebuild, so we check the approval keys
+  # specifically rather than saved_change_to_metadata? wholesale.
+  def refresh_testing_phases_after_change
+    return unless saved_change_to_stage? || testing_phase_approval_changed?
+
+    refresh_testing_phases_safely
+  end
+
+  # Did an approval field (which drives the acceptance phase) actually change?
+  def testing_phase_approval_changed?
+    return false unless saved_change_to_metadata?
+
+    before, after = saved_change_to_metadata
+    before_devops = (before || {})["devops"] || {}
+    after_devops = (after || {})["devops"] || {}
+    %w[approval_status approval_requested_at approval_approved_at].any? do |key|
+      before_devops[key] != after_devops[key]
+    end
+  end
 
   def refresh_duration_metrics_for_release_changes
     release_slugs = [release_slug]
@@ -1256,6 +1297,20 @@ class Task < ApplicationRecord
     merged = metadata.deep_dup
     approval = (merged["devops"] ||= {})
     approval["approval_requested_at"] ||= Time.current.iso8601
+    self.metadata = merged
+  end
+
+  # The durable close of the Operator Acceptance testing phase — stamped the moment
+  # approval flips to "approved", mirroring stamp_operator_approval_request's open.
+  # Runs in before_save so it survives the controller's wholesale devops replace.
+  def stamp_operator_approval_approved
+    return unless will_save_change_to_metadata?
+    return unless devops["approval_status"] == OPERATOR_APPROVAL_APPROVED
+    return if (metadata_was || {}).dig("devops", "approval_status") == OPERATOR_APPROVAL_APPROVED
+
+    merged = metadata.deep_dup
+    approval = (merged["devops"] ||= {})
+    approval["approval_approved_at"] ||= Time.current.iso8601
     self.metadata = merged
   end
 

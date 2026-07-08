@@ -78,6 +78,13 @@
           colors: [c_mint], suffix: "h", round: 1, discrete: true %>
   </div>
 
+  <div class="card p-5">
+    <h2 class="text-heading font-bold text-base">Testing phase speed</h2>
+    <p class="text-muted text-xs mb-4">Average vs median minutes each testing phase takes, from the durable per-task record. The fat bar is the phase to move off the builder's critical path.</p>
+    <%= column_chart intel.testing_phase_speed_series, id: "chart-testing-phase-speed",
+          colors: [c_violet, c_mint], suffix: "m", round: 1 %>
+  </div>
+
   <%# ── Tokens ─────────────────────────────────────────────────────────────── %>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="card p-5">

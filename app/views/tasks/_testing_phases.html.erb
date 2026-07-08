@@ -1,0 +1,27 @@
+<%# Testing phases — the five task-owned phase durations, materialized per task by
+    Task::TestingPhases and recomputed from the durable TaskEvents + approval stamps.
+    Rendered only once at least one phase has actually started. %>
+<% phases = (testing_phases || {})["phases"] || {} %>
+<% if phases.any? { |_key, span| span["status"] != "missing" } %>
+  <div class="card p-6 mb-6">
+    <div class="flex items-baseline justify-between mb-1">
+      <h3 class="text-lg font-bold text-heading">Testing phases</h3>
+      <span class="text-[10px] text-muted uppercase tracking-wide">durable timing</span>
+    </div>
+    <p class="text-muted text-xs mb-4">
+      How long this task spent in each testing phase — Build → Local Certification → CI → Review → Operator Acceptance.
+    </p>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
+        <% span = phases[key] || { "status" => "missing" } %>
+        <div class="bg-surface-alt rounded-lg p-3">
+          <p class="label-upper"><%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %></p>
+          <p class="text-heading text-sm font-semibold"><%= testing_phase_duration_label(span) %></p>
+          <p class="text-[10px] uppercase tracking-wide <%= testing_phase_status_class(span["status"]) %>">
+            <%= (span["status"] || "missing").humanize %>
+          </p>
+        </div>
+      <% end %>
+    </div>
+  </div>
+<% end %>
