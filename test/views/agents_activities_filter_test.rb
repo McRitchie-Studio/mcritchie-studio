@@ -37,4 +37,37 @@ class AgentsActivitiesFilterTest < ActionView::TestCase
     assert_operator body.index("sess-newer"), :<, body.index("sess-older")
     assert_operator body.index("1m ago"), :<, body.index("1h ago")
   end
+
+  # ── [component] the live session-name search box (people/teams idiom) ─────
+
+  test "[component] the panel renders a debounced session-name search input" do
+    render_filter [session(id: "sess-a", name: "Pikachu", last_at: 1.minute.ago)]
+
+    assert_select "input[type=search][data-test=aa-fs-search]"
+    assert_includes rendered, 'x-model.debounce.300ms="sessionQuery"'
+  end
+
+  test "[component] the search input is omitted when there are no sessions" do
+    render_filter []
+
+    assert_select "[data-test=aa-fs-search]", false
+    assert_select ".aa-filter-empty", text: /No sessions captured yet/
+  end
+
+  test "[component] each session row carries a lowercased data-name for the client filter" do
+    render_filter [session(id: "sess-a", name: "PikaChu", last_at: 1.minute.ago)]
+
+    # the filteredSessions getter matches the typed query against this lowercased name
+    assert_select "a[data-test=aa-filter-session][data-name=pikachu]"
+  end
+
+  test "[component] the header count binds to the reactive filteredSessions getter" do
+    render_filter [
+      session(id: "sess-a", name: "Pikachu", last_at: 1.minute.ago),
+      session(id: "sess-b", name: "Ditto", last_at: 1.hour.ago)
+    ]
+
+    # server-rendered fallback is the total; Alpine swaps in the live filtered count
+    assert_select "[x-text=filteredSessions]", text: "2"
+  end
 end
