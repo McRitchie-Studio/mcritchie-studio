@@ -114,6 +114,25 @@ class GateRunTest < ActiveSupport::TestCase
     assert_nil latest["g2a_primary"]
   end
 
+  test "[unit] latest_by_key_for_subjects batches newest attempts per slug" do
+    other = tasks(:queued_task)
+    open_gate
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+    GateRun.open!(subject_type: "task", subject_slug: other.slug, key: "g2a_primary")
+
+    by_slug = GateRun.latest_by_key_for_subjects(
+      subject_type: "task",
+      subject_slugs: [@task.slug, other.slug, "slug-with-no-runs"]
+    )
+
+    assert_equal 2, by_slug[@task.slug]["g1_cert"].attempt, "newest attempt wins per key"
+    assert_equal "passed", by_slug[@task.slug]["g1_cert"].status
+    assert_equal "in_flight", by_slug[other.slug]["g2a_primary"].status
+    assert_nil by_slug[@task.slug]["g2b_light"]
+    assert_nil by_slug["slug-with-no-runs"], "a subject with no runs has no entry"
+  end
+
   test "duration_seconds measures a closed attempt and ticks an open one" do
     run = open_gate
     run.update!(started_at: 90.seconds.ago)

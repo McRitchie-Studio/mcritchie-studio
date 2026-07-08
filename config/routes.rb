@@ -160,6 +160,10 @@ Rails.application.routes.draw do
   resources :tasks, param: :slug do
     collection do
       post :reorder
+      # /tasks/recent — flat recency list surfacing testing-phase durations +
+      # gate verdicts per task. Public-read like the board; declared on the
+      # collection so "recent" is never swallowed as a :slug by #show.
+      get :recent
     end
     member do
       # Stages move through PATCH update (one path shared by the board drag-drop,

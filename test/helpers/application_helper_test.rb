@@ -31,6 +31,25 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_nil compact_updated_stamp(nil)
   end
 
+  test "[unit] testing_phase_compact_label renders the tight duration cell" do
+    assert_equal "2h 4m", testing_phase_compact_label({ "status" => "completed", "seconds" => 7440 })
+    assert_equal "12m", testing_phase_compact_label({ "status" => "completed", "seconds" => 720 })
+    assert_equal "—", testing_phase_compact_label({ "status" => "completed", "seconds" => nil }),
+                 "completed without a measured span stays a dash"
+    assert_equal "12m+", testing_phase_compact_label({ "status" => "in_progress", "seconds" => 720 })
+    assert_equal "<1m+", testing_phase_compact_label({ "status" => "in_progress", "seconds" => 30 })
+    assert_equal "—", testing_phase_compact_label({ "status" => "missing" })
+  end
+
+  test "[unit] gate_verdict_glyph maps each verdict to its chip glyph" do
+    now = Time.current
+
+    assert_equal "✓", gate_verdict_glyph(GateRun.new(started_at: now, finished_at: now, success: true))
+    assert_equal "✗", gate_verdict_glyph(GateRun.new(started_at: now, finished_at: now, success: false))
+    assert_equal "●", gate_verdict_glyph(GateRun.new(started_at: now))
+    assert_equal "·", gate_verdict_glyph(nil), "nil-safe for a gate that never ran"
+  end
+
   test "right_fade_style emits both mask-image properties with the given stop" do
     style = right_fade_style
     assert_includes style, "mask-image: linear-gradient(to right, #000 88%, transparent)"

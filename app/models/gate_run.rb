@@ -127,6 +127,16 @@ class GateRun < ApplicationRecord
       .transform_values(&:last)
   end
 
+  # Batched latest_by_key for a LIST surface (/tasks/recent): one query for many
+  # subjects -> { slug => { key => newest attempt } }. Same newest-attempt-wins
+  # semantics as latest_by_key; a subject with no runs simply has no entry.
+  def self.latest_by_key_for_subjects(subject_type:, subject_slugs:)
+    where(subject_type: subject_type, subject_slug: subject_slugs)
+      .order(:attempt, :id)
+      .group_by(&:subject_slug)
+      .transform_values { |runs| runs.group_by(&:key).transform_values(&:last) }
+  end
+
   def in_flight?
     finished_at.nil?
   end
