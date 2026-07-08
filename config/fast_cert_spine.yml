@@ -1,0 +1,22 @@
+# config/fast_cert_spine.yml — the always-run core of the G1 fast cert.
+#
+# bin/fast-check runs the tests mapped from the branch diff PLUS this curated
+# spine, so a diff that maps to nothing (docs-adjacent code, a config tweak, a
+# bin script with no harness test yet) still exercises the money paths: the
+# task/release/gate-run models and the board's controller + API surface.
+#
+# Budget discipline: the whole spine must stay ~10-20 seconds of `bin/rails
+# test` wall time (calibrated 2026-07-08: 418 runs in ~10s). If an entry makes
+# the fast cert crawl, trim it here — the FULL suite still runs on CI for every
+# PR push and via bin/full-suite-check at release verification; the spine buys
+# early signal, not coverage.
+#
+# Entries are files or directories relative to the repo root. Paths that don't
+# exist in the checkout are skipped (a satellite worktree runs the hub's
+# bin/fast-check but not the hub's spine).
+spine:
+  - test/models/task_test.rb
+  - test/models/release_test.rb
+  - test/models/gate_run_test.rb
+  - test/controllers/tasks_controller_test.rb
+  - test/controllers/api/v1

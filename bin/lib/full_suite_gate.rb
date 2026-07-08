@@ -1,9 +1,13 @@
 # frozen_string_literal: true
 
-# bin/lib/full_suite_gate.rb — the FULL-suite + FULL-rubocop evidence contract.
+# bin/lib/full_suite_gate.rb — the fingerprint-bound certification evidence contract.
 #
-# Shared by the two halves of the gate so the format lives in ONE place:
-#   * bin/full-suite-check WRITES evidence (runs the lanes, records the tags).
+# Shared by the writers and the reader so the format lives in ONE place:
+#   * bin/full-suite-check WRITES full-cert evidence (FULL suite + FULL rubocop).
+#   * bin/fast-check       WRITES fast-cert evidence (diff-mapped tests + core
+#                          spine + rubocop on changed files — the G1 fast cert;
+#                          bin/dor-check accepts it only alongside a GREEN GitHub
+#                          CI, which runs the full suite as the net).
 #   * bin/dor-check        VALIDATES evidence (refuses a stale/partial/lint-red PR).
 #
 # Why this exists (devops retro, lines 54 + 58): dor-check used to TRUST a
@@ -28,9 +32,10 @@
 #     so the evidence (carried on the task's devops.checks_run) validates there
 #     too. tmp/ files don't travel between checkouts; a tree hash does.
 #
-# Evidence is recorded as two checks_run lines the runner stamps:
-#   [full-suite@<fp>] bin/rails test (NNN runs, 0 failures)
-#   [rubocop@<fp>]    bin/rubocop (clean)
+# Evidence is recorded as fingerprint-tagged checks_run lines the runners stamp:
+#   [full-suite@<fp>] bin/rails test (NNN runs, 0 failures)   (bin/full-suite-check)
+#   [rubocop@<fp>]    bin/rubocop (clean)                     (bin/full-suite-check)
+#   [fast-cert@<fp>]  mapped+spine tests + scoped rubocop     (bin/fast-check)
 # dor-check credits a lane only when a line is tagged for it AND the embedded
 # fingerprint equals the local recomputed one. Hand-writing a green tag is not
 # defended against (honor system — "Trust over guardrails"); the point is to make
@@ -41,8 +46,15 @@ require "tmpdir"
 module FullSuiteGate
   TEST_LANE = "full-suite"
   RUBOCOP_LANE = "rubocop"
+  FAST_LANE = "fast-cert"
   BYPASS_TAG = "full-suite-bypass"
+  # The FULL-cert lanes — what evaluate's `ok` means (full suite + full rubocop
+  # both fresh). The fast lane is deliberately NOT part of `ok`: fast-cert
+  # evidence only satisfies the merge gate when dor-check ALSO sees a green
+  # GitHub CI, and that pairing is dor-check's call, not this module's.
   LANES = [TEST_LANE, RUBOCOP_LANE].freeze
+  # Every fingerprint-bound evidence lane (for merge/replace + grading).
+  EVIDENCE_LANES = (LANES + [FAST_LANE]).freeze
 
   module_function
 
@@ -74,17 +86,26 @@ module FullSuiteGate
     "[#{lane}@#{fingerprint}] #{detail}"
   end
 
-  # Pattern for a recorded evidence line of EITHER lane ("[full-suite@..]" /
-  # "[rubocop@..]"), at the start of a checks_run line.
-  EVIDENCE_RE = /\A\s*\[\s*(?:#{LANES.map { |l| Regexp.escape(l) }.join("|")})\s*@/i
+  # Pattern for a recorded evidence line of the given lanes (e.g.
+  # "[full-suite@..]" / "[rubocop@..]" / "[fast-cert@..]"), at the start of a
+  # checks_run line.
+  def evidence_re(lanes)
+    /\A\s*\[\s*(?:#{lanes.map { |l| Regexp.escape(l) }.join("|")})\s*@/i
+  end
+
+  EVIDENCE_RE = evidence_re(EVIDENCE_LANES)
 
   # Merge fresh evidence lines into an existing checks_run, REPLACING any prior
-  # full-suite/rubocop evidence (so re-runs don't accumulate stale lines) while
+  # evidence for `lanes` (so re-runs don't accumulate stale lines) while
   # PRESERVING tier tags ("[unit] ..."), bypass records, and everything else. The
-  # writer (bin/full-suite-check) needs this because `bin/task update --checks`
-  # REPLACES the whole list — a naive write would wipe the agent's tier tags.
-  def merge_evidence(existing, fresh_lines)
-    Array(existing).reject { |line| line.to_s.match?(EVIDENCE_RE) } + Array(fresh_lines)
+  # writers need this because `bin/task update --checks` REPLACES the whole list —
+  # a naive write would wipe the agent's tier tags. Defaults to replacing EVERY
+  # evidence lane (bin/full-suite-check: a fresh full cert supersedes any prior
+  # fast cert too); bin/fast-check passes lanes: [FAST_LANE] so it never drops
+  # still-valid full-suite/rubocop evidence.
+  def merge_evidence(existing, fresh_lines, lanes: EVIDENCE_LANES)
+    re = evidence_re(lanes)
+    Array(existing).reject { |line| line.to_s.match?(re) } + Array(fresh_lines)
   end
 
   # Freshness of one lane against `fingerprint`: :fresh (a tag matches the current
@@ -124,8 +145,11 @@ module FullSuiteGate
   #   1. a recorded bypass wins (ok, but loudly flagged);
   #   2. an injected status (tests only — DOR_CHECK_SUITE_EVIDENCE) short-circuits
   #      the git+tag work so the gate logic can be exercised without a real run;
-  #   3. otherwise recompute the fingerprint and grade both lanes.
+  #   3. otherwise recompute the fingerprint and grade every evidence lane.
   # Returns a Hash: { ok:, bypass:, verifiable:, fingerprint:, lanes: { ... } }.
+  # `ok` means the FULL cert is satisfied (LANES fresh). lanes[FAST_LANE] carries
+  # the fast-cert lane's freshness so dor-check can pair a fresh fast cert with a
+  # green GitHub CI — this module grades evidence; it never reads CI.
   def evaluate(checks:, root:, injected: nil)
     reason = bypass_reason(checks)
     return verdict(ok: true, bypass: reason) if reason
@@ -135,27 +159,30 @@ module FullSuiteGate
     fp = fingerprint(root)
     return verdict(ok: false, verifiable: false) if fp.nil?
 
-    lanes = LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
-    verdict(ok: lanes.values.all?(:fresh), fingerprint: fp, lanes: lanes)
+    lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
+    verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes)
   end
 
   # --- internals -----------------------------------------------------------
 
   def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil)
-    lanes ||= LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
+    lanes ||= EVIDENCE_LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
     { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes }
   end
 
   # Map a DOR_CHECK_SUITE_EVIDENCE token to a verdict (test seam only). Tokens:
-  # ok | missing | stale | tests_stale | rubocop_stale | unverifiable.
+  # ok | missing | stale | tests_stale | rubocop_stale | unverifiable |
+  # fast_fresh | fast_stale (fast-cert evidence with NO full-cert evidence).
   def injected_verdict(token)
     case token
     when "ok"            then verdict(ok: true)
     when "unverifiable"  then verdict(ok: false, verifiable: false)
-    when "stale"         then verdict(ok: false, lanes: { TEST_LANE => :stale, RUBOCOP_LANE => :stale })
-    when "tests_stale"   then verdict(ok: false, lanes: { TEST_LANE => :stale, RUBOCOP_LANE => :fresh })
-    when "rubocop_stale" then verdict(ok: false, lanes: { TEST_LANE => :fresh, RUBOCOP_LANE => :stale })
-    else verdict(ok: false) # "missing" and any unknown token → both missing
+    when "stale"         then verdict(ok: false, lanes: { TEST_LANE => :stale, RUBOCOP_LANE => :stale, FAST_LANE => :missing })
+    when "tests_stale"   then verdict(ok: false, lanes: { TEST_LANE => :stale, RUBOCOP_LANE => :fresh, FAST_LANE => :missing })
+    when "rubocop_stale" then verdict(ok: false, lanes: { TEST_LANE => :fresh, RUBOCOP_LANE => :stale, FAST_LANE => :missing })
+    when "fast_fresh"    then verdict(ok: false, lanes: { TEST_LANE => :missing, RUBOCOP_LANE => :missing, FAST_LANE => :fresh })
+    when "fast_stale"    then verdict(ok: false, lanes: { TEST_LANE => :missing, RUBOCOP_LANE => :missing, FAST_LANE => :stale })
+    else verdict(ok: false) # "missing" and any unknown token → all lanes missing
     end
   end
 

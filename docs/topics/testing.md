@@ -2,6 +2,12 @@
 
 > **When to read this:** Writing new tests, debugging failures, or setting up Playwright/CI.
 
+## Certification gates (before `submitted`)
+
+- `bin/fast-check <task>` — the **builder default** (~1 min): runs the tests the branch diff maps to (path convention + class-name grep fallback) + the curated core spine (`config/fast_cert_spine.yml`) + `rubocop` on the **changed files only**, and records a fingerprint-bound `[fast-cert@<fp>]` checks_run line. `bin/dor-check` credits it **only once the PR's GitHub CI is green** (CI runs the full suite + `test:system` per push — it is the full net). `--list` prints the selection without running.
+- `bin/full-suite-check <task>` — the CI-independent local cert and release-verification tool: FULL `bin/rails test` + FULL `bin/rubocop` (~6 min), fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]` evidence, accepted with or without CI.
+- Never run two local suites concurrently on this machine (parallel certs SIGSEGV Ruby) — serialize via the `/tmp/mcr-full-suite.lock` mkdir convention when sessions overlap.
+
 ## Rails Tests
 
 - `bin/rails test` — 596 runs, 1642 assertions, 4 skips

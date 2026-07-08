@@ -1,0 +1,280 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/fast-check — the G1 FAST cert: run the tests the branch diff maps to plus
+# the curated core spine, and rubocop on the CHANGED files only, then record
+# fingerprint-bound "[fast-cert@<tree-hash>]" evidence on the task.
+#
+# Why (the 90/10 rethink): GitHub CI already runs the FULL suite + test:system on
+# every PR push, and bin/dor-check blocks on CI green — so a ~6-minute local
+# `bin/full-suite-check` before handoff bought EARLINESS, not coverage. This is
+# the earliness at ~1/6 the cost: catch the obvious break in about a minute and
+# let CI be the full net. bin/dor-check accepts FRESH fast-cert evidence as the
+# suite gate ONLY when the PR's GitHub CI is green; full-suite evidence and the
+# "[full-suite-bypass] <reason>" hatch keep working unchanged. bin/full-suite-check
+# itself is UNTOUCHED — it remains release verification and the heavyweight cert.
+#
+# Test selection (bin/lib/fast_cert.rb, unit-tested there):
+#   mapped : each changed file → its test by path convention (app/models/x.rb →
+#            test/models/x_test.rb, views → their controller test, bin/tool →
+#            test/lib/tool_test.rb, a changed *_test.rb runs itself); a .rb file
+#            with no existing convention target falls back to a word-boundary
+#            grep of its class name across test/**/*_test.rb.
+#   spine  : config/fast_cert_spine.yml — the always-run critical core (~10-20s),
+#            so a diff that maps to nothing still exercises the money paths.
+#            Mapped files already covered by a spine entry run only once.
+#   rubocop: the changed files rubocop can lint (never the whole repo).
+#
+# Lanes run from the repo root (the agent's worktree via RepoRoot, so a satellite
+# task certifies the satellite):
+#   test-db-prepare : bin/rails db:test:prepare   (abort on red — no polluted cert)
+#   mapped-tests    : bin/rails test <mapped files>      (skipped when none map)
+#   spine           : bin/rails test <spine entries>
+#   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
+# All lanes green → ONE evidence line is merged into the task's checks_run
+# (bin/task update --checks REPLACES, so existing lines are read and preserved;
+# only a PRIOR fast-cert line is replaced — full-suite/rubocop evidence is kept):
+#   [fast-cert@<fp>] <summary of what ran>
+# A red lane records nothing and exits non-zero.
+#
+# G1 gate-run markers mirror bin/full-suite-check's: OPEN the task's g1_cert
+# attempt at start, append one executed-SOP entry per lane, CLOSE it --failed the
+# moment the cert goes red. The GREEN path stays open — bin/dor-check's merge-gate
+# verdict is what closes G1. All emits are fire-and-forget (a board blip never
+# breaks a cert) and are SKIPPED under --print (a dry run must not write to the
+# durable record).
+#
+# Usage:
+#   bin/fast-check <task-slug>            # run all lanes; record evidence on the task
+#   bin/fast-check <task-slug> --print    # run + print the evidence line, don't record
+#   bin/fast-check --print                # standalone (no task), just print
+#   bin/fast-check [<task-slug>] --list   # print the selected test files and exit (no run)
+#
+# Test/CI seams (so the orchestration is exercisable without a real Rails run):
+#   FAST_CHECK_CHANGED_FILES       inject the changed-file list (newline/comma
+#                                  separated; empty string = no diff)
+#   FAST_CHECK_DIFF_BASE           committed-diff base (default: origin/release
+#                                  when present, else origin/main)
+#   FAST_CHECK_ROOT                repo dir to run + fingerprint in (default: the
+#                                  cwd's git toplevel, else this repo)
+#   FAST_CHECK_SPINE               spine config path (default: config/fast_cert_spine.yml)
+#   FAST_CHECK_TEST_DB_RESET_CMD   override the test-db lane (default: bin/rails db:test:prepare)
+#   FAST_CHECK_SKIP_TEST_DB_RESET  set to 1 only for non-Rails harness tests
+#   FAST_CHECK_TEST_CMD            test runner prefix (default: bin/rails test)
+#   FAST_CHECK_RUBOCOP_CMD         rubocop prefix (default: bin/rubocop)
+#   FAST_CHECK_TASK_BIN            board CLI (default: bin/task; tests stub it)
+#   FAST_CHECK_GATE_BIN            gate CLI (default: bin/gate; tests stub it)
+#
+# Exit code: 0 = all lanes green (evidence recorded/printed), 1 = a lane failed,
+# no fingerprint, or the evidence couldn't be recorded.
+
+require "optparse"
+require "json"
+require "shellwords"
+require_relative "lib/full_suite_gate"
+require_relative "lib/repo_root"
+require_relative "lib/fast_cert"
+
+# ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
+# anchor here. The CODE we run + fingerprint roots at the agent's worktree.
+ROOT = File.expand_path("..", __dir__)
+TASK_BIN = ENV.fetch("FAST_CHECK_TASK_BIN", File.expand_path("task", __dir__))
+GATE_BIN = ENV.fetch("FAST_CHECK_GATE_BIN", File.expand_path("gate", __dir__))
+SPINE_CONFIG = ENV.fetch("FAST_CHECK_SPINE", File.join(ROOT, "config", "fast_cert_spine.yml"))
+
+options = { print: false, list: false }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/fast-check <task-slug> [--print] [--list]"
+  o.on("--print", "Print the evidence line instead of recording it on the task") { options[:print] = true }
+  o.on("--list", "Print the selected test files (mapped + spine) and exit without running") { options[:list] = true }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+slug = ARGV.shift
+root = RepoRoot.code_root(ENV["FAST_CHECK_ROOT"], ROOT)
+
+# --- selection ---------------------------------------------------------------
+
+changed =
+  if ENV.key?("FAST_CHECK_CHANGED_FILES")
+    ENV["FAST_CHECK_CHANGED_FILES"].to_s.split(/[\n,]/).map(&:strip).reject(&:empty?)
+  else
+    base = ENV.fetch("FAST_CHECK_DIFF_BASE") { FastCert.default_diff_base(root) }
+    FastCert.changed_files(root, base)
+  end
+
+mapped = FastCert.select_tests(root, changed)
+spine = FastCert.spine(root, SPINE_CONFIG)
+mapped_only = mapped.reject { |t| FastCert.covered_by_spine?(t, spine) }
+lintable = FastCert.lintable_files(root, changed)
+
+if options[:list]
+  warn "fast-check: #{changed.size} changed file(s) → #{mapped.size} mapped test path(s), " \
+       "#{spine.size} spine entr#{spine.size == 1 ? 'y' : 'ies'}, #{lintable.size} lintable file(s)"
+  mapped_only.each { |t| puts "mapped  #{t}" }
+  spine.each { |t| puts "spine   #{t}" }
+  lintable.each { |f| puts "lint    #{f}" }
+  exit 0
+end
+
+# --- lane plumbing (mirrors bin/full-suite-check) ------------------------------
+
+test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD", "bin/rails test")
+rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
+test_db_reset_cmd = ENV.fetch("FAST_CHECK_TEST_DB_RESET_CMD", "bin/rails db:test:prepare")
+skip_test_db_reset = ENV.fetch("FAST_CHECK_SKIP_TEST_DB_RESET", "") == "1"
+
+# Best-effort G1 Cert gate-run markers (bin/gate → GateRun): OPEN the attempt at
+# start, one executed-SOP entry per lane, CLOSE --failed on red. Fire-and-forget —
+# a gate write never breaks a cert. Skipped when there's no task slug (--print).
+def emit_gate(slug, *args)
+  return if slug.to_s.strip.empty?
+
+  system(GATE_BIN, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+def emit_gate_sop(slug, label, cmd, ok, duration_ms)
+  emit_gate(slug, "sop", "task", slug, "g1_cert",
+            "--sop", label, "--cmd", cmd.to_s,
+            "--result", ok ? "pass" : "fail",
+            "--duration-ms", duration_ms.to_s)
+end
+
+# Best-effort "cert" checkpoint TaskEvent (started/completed) so the task's Local
+# Certification testing phase gets its start→finish window from a fast cert too.
+def emit_cert_checkpoint(slug, status)
+  return if slug.to_s.strip.empty?
+
+  system(TASK_BIN, "checkpoint", slug, "cert", "--status", status,
+         out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
+def run_lane(label, cmd, root, env: {}, gate_slug: nil)
+  warn "== #{label}: #{cmd} =="
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  ok = system(env, cmd, chdir: root)
+  duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+  warn(ok ? "   #{label}: PASS (#{format('%.1fs', duration_ms / 1000.0)})" : "   #{label}: FAIL")
+  emit_gate_sop(gate_slug, label, cmd, ok, duration_ms) if gate_slug
+  ok
+end
+
+# A lane with nothing to run passes vacuously — recorded on G1 as a pass with a
+# "nothing to run" cmd so the attempt shows the lane was CONSIDERED, not lost.
+def skip_lane(label, why, gate_slug: nil)
+  warn "== #{label}: skipped (#{why}) =="
+  emit_gate_sop(gate_slug, label, "skipped: #{why}", true, 0) if gate_slug
+  true
+end
+
+# The task's current checks_run (Array), or nil if it can't be read — so the
+# caller can MERGE new evidence into it (bin/task update --checks REPLACES). nil
+# is the "don't risk wiping it" signal, distinct from [] (a task with none yet).
+def fetch_checks(task_bin, slug)
+  out = IO.popen([task_bin, "show", slug, "--json"], err: File::NULL, &:read)
+  return nil unless $?.success?
+
+  record = JSON.parse(out)
+  Array(record.dig("metadata", "devops", "checks_run"))
+rescue JSON::ParserError, SystemCallError
+  nil
+end
+
+# --- run ------------------------------------------------------------------------
+
+overall_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+gate_slug = options[:print] ? nil : slug
+emit_cert_checkpoint(slug, "started") unless options[:print]
+emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
+
+unless skip_test_db_reset
+  reset_ok = run_lane("test-db-prepare", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" }, gate_slug: gate_slug)
+  unless reset_ok
+    warn "fast-check: test database prepare failed; not certifying against a broken test DB."
+    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+    exit 1
+  end
+end
+
+mapped_ok =
+  if mapped_only.empty?
+    skip_lane("mapped-tests", mapped.empty? ? "no tests map from the diff" : "all mapped tests covered by the spine",
+              gate_slug: gate_slug)
+  else
+    run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
+  end
+
+spine_ok =
+  if spine.empty?
+    skip_lane("spine", "no spine entries exist in this checkout", gate_slug: gate_slug)
+  else
+    run_lane("spine", "#{test_cmd} #{spine.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
+  end
+
+rubocop_ok =
+  if lintable.empty?
+    skip_lane("rubocop-changed", "no lintable files in the diff", gate_slug: gate_slug)
+  else
+    run_lane("rubocop-changed", "#{rubocop_cmd} #{lintable.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
+  end
+
+emit_cert_checkpoint(slug, "completed") unless options[:print]
+
+total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started
+
+unless mapped_ok && spine_ok && rubocop_ok
+  failed = { "mapped-tests" => mapped_ok, "spine" => spine_ok, "rubocop-changed" => rubocop_ok }
+           .reject { |_, ok| ok }.keys.join(", ")
+  warn "fast-check: lane(s) RED: #{failed}. Fix, then re-run — nothing certified. (#{format('%.1fs', total)})"
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+  exit 1
+end
+
+fingerprint = FullSuiteGate.fingerprint(root)
+if fingerprint.nil?
+  warn "fast-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
+  exit 1
+end
+
+detail = "fast cert green: #{mapped_only.size} mapped + #{spine.size} spine test path(s), " \
+         "rubocop on #{lintable.size} changed file(s) (#{format('%.1fs', total)}; full suite runs on CI)"
+line = FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, fingerprint, detail)
+
+# Print the evidence line on stdout (parseable; the narration is on stderr).
+puts line
+
+if options[:print] || slug.nil?
+  warn "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)}." \
+       "#{slug.nil? ? " (no task slug — evidence printed, not recorded)" : " (--print: not recorded)"}"
+  exit 0
+end
+
+# Record the evidence on the task, merging into the existing checks_run: replace
+# only a PRIOR fast-cert line; tier tags, bypass records, and any still-valid
+# full-suite/rubocop evidence are preserved. If the current list can't be read,
+# ABORT rather than risk wiping checks_run.
+existing = fetch_checks(TASK_BIN, slug)
+if existing.nil?
+  warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task show). " \
+       "Not writing (a blind --checks would wipe your tier tags). Re-run, or record by hand alongside your " \
+       "existing checks: bin/task update #{slug} --checks #{line.inspect}"
+  exit 1
+end
+
+final = FullSuiteGate.merge_evidence(existing, [line], lanes: [FullSuiteGate::FAST_LANE])
+record_args = final.flat_map { |l| ["--checks", l] }
+unless system(TASK_BIN, "update", slug, *record_args)
+  warn "fast-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
+  exit 1
+end
+
+warn "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence recorded on " \
+     "#{slug} (tier tags preserved). dor-check accepts it once the PR's GitHub CI is green."
+exit 0

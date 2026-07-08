@@ -31,6 +31,10 @@
 # commit boundary), so a STALE (post-edit) or PARTIAL (one-lane / touched-files)
 # record is REFUSED. Escape hatch = a RECORD, like the post_deploy "none" hatch: a
 # "[full-suite-bypass] <reason>" checks_run line is honored but flagged loudly.
+# FAST route: a FRESH "[fast-cert@<fp>]" line (bin/fast-check — diff-mapped tests
+# + core spine + rubocop on changed files, ~1 min) satisfies this gate too, but
+# ONLY alongside a GREEN GitHub CI — CI runs the full suite + test:system on every
+# PR push, so the full net still runs; the fast cert buys local earliness.
 # Format + fingerprint live in bin/lib/full_suite_gate.rb.
 #
 # dor-check still does NOT run the suite itself — it stays a fast, deterministic
@@ -366,26 +370,44 @@ def bare_full_suite_seed?(cmd)
   BARE_SEED_TASK.match?(cmd.to_s)
 end
 
-# Human-readable refusal for the full-suite gate, from FullSuiteGate.evaluate's
+# Human-readable refusal for the suite gate, from FullSuiteGate.evaluate's
 # verdict. Spells out which lane is stale/missing and how to fix it — and that the
-# fix REFUSES a touched-files subset or a lint-red tree, the whole point.
-def suite_evidence_error(eval, slug)
+# fix REFUSES a touched-files subset or a lint-red tree, the whole point. `ci` is
+# the CI-status verdict: a FRESH fast cert refused here is refused for its CI
+# PAIRING (fast evidence only counts alongside a green GitHub CI), and the message
+# must say that instead of pretending the evidence is bad.
+def suite_evidence_error(eval, slug, ci)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
-      "Run bin/full-suite-check from inside the repo so the FULL suite + rubocop are certified."
+      "Run bin/full-suite-check (or bin/fast-check) from inside the repo so the evidence is fingerprint-bound."
   end
+
+  lanes = eval[:lanes] || {}
+  if lanes[FullSuiteGate::FAST_LANE] == :fresh
+    state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
+    return "fast-cert evidence is FRESH for this exact code, but a fast cert only satisfies the suite gate " \
+      "alongside a GREEN GitHub CI — CI carries the FULL suite + test:system as the net, and it is currently " \
+      "#{state}. Push the branch / open the PR and wait for CI green, then re-run dor-check; or certify locally " \
+      "in full: bin/full-suite-check #{slug}."
+  end
+
   parts = []
-  eval[:lanes].each do |lane, state|
-    case state
+  FullSuiteGate::LANES.each do |lane|
+    case lanes[lane]
     when :stale
       parts << "#{lane}: STALE (certified for older code — re-run after your latest edits)"
     when :missing
       parts << "#{lane}: MISSING (never certified for this exact code)"
     end
   end
+  if lanes[FullSuiteGate::FAST_LANE] == :stale
+    parts << "fast-cert: STALE (certified for older code — re-run bin/fast-check after your latest edits)"
+  end
   "the FULL suite + FULL rubocop are not certified green for this code — #{parts.join("; ")}. " \
     "Run `bin/full-suite-check #{slug}` (runs `bin/rails test` + `bin/rubocop` IN FULL and records " \
-    "fingerprint-bound evidence) — it REFUSES a touched-files subset or a lint-red tree. " \
+    "fingerprint-bound evidence) — it REFUSES a touched-files subset or a lint-red tree. Or take the FAST " \
+    "route: `bin/fast-check #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
+    "accepted once the PR's GitHub CI is green. " \
     "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."
 end
 
@@ -557,31 +579,13 @@ if present?(post_deploy_cmd) && bare_full_suite_seed?(post_deploy_cmd)
     "rake task (e.g. bin/rails pokemon:seed)"
 end
 
-# FULL-suite gate (merge gate, shaped code feature only). The dor_tiers tags above
-# prove the agent WROTE the right tiers; this proves the WHOLE suite + a FULL
-# rubocop went green against the EXACT code being shipped — the retro gap where a
-# touched-FILES subset passed but the full suite/lint broke post-merge (lines 54 +
-# 58). Evidence is recorded by bin/full-suite-check as fingerprint-bound checks_run
-# lines; FullSuiteGate.evaluate re-grades them against the local code fingerprint,
-# so a stale (post-edit) or partial (one-lane / touched-files) record is REFUSED.
-# Skips the build gate (no code yet) and unshaped tasks (already errored above).
-# DOR_CHECK_SUITE_EVIDENCE injects the verdict for tests (see the script header).
-suite_eval = nil
-if gate != "build" && shape_def && !dor_tiers.empty?
-  suite_eval = FullSuiteGate.evaluate(
-    checks: checks,
-    root: diff_root,
-    injected: ENV["DOR_CHECK_SUITE_EVIDENCE"]
-  )
-  errors << suite_evidence_error(suite_eval, task["slug"] || slug) unless suite_eval[:ok]
-end
-
 # CI-status gate (merge gate only). Local certification proves the code is green on
 # THIS machine; this proves it's green on GITHUB — closing the gap where a PR passes
 # `bin/rails test` locally but fails the browser `test:system` lane CI also runs, so
 # a red PR reaches review and eats the round-trip (the report's #1 blocker class).
 # BLOCKS on a failing or still-running PR; a missing PR / no checks / gh error is a
 # non-blocking note added with the suggestions below (the gate re-runs after push).
+# Evaluated BEFORE the suite gate because the suite gate's fast route depends on it.
 ci = nil
 if gate != "build"
   ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
@@ -597,6 +601,38 @@ if gate != "build"
     errors << "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
       "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
       "devops.pr_url (a stale or already-merged PR?) before advancing to review."
+  end
+end
+
+# Suite gate (merge gate, shaped code feature only). The dor_tiers tags above
+# prove the agent WROTE the right tiers; this proves the code being shipped is
+# CERTIFIED — the retro gap where a touched-FILES subset passed but the full
+# suite/lint broke post-merge (lines 54 + 58). Two evidence routes, both
+# fingerprint-bound so a stale (post-edit) or partial record is REFUSED:
+#   * FULL  — bin/full-suite-check's "[full-suite@<fp>]" + "[rubocop@<fp>]" lines
+#     (the whole suite + full rubocop ran locally). Accepted on its own.
+#   * FAST  — bin/fast-check's "[fast-cert@<fp>]" line (diff-mapped tests + core
+#     spine + rubocop on changed files, ~1 min). Accepted ONLY alongside a GREEN
+#     GitHub CI — CI runs the full suite + test:system on every PR push, so the
+#     full net still runs; the fast cert buys the local earliness. A red, pending,
+#     missing, or unverified CI does NOT credit a fast cert.
+# The "[full-suite-bypass] <reason>" hatch keeps working (loudly flagged).
+# Skips the build gate (no code yet) and unshaped tasks (already errored above).
+# DOR_CHECK_SUITE_EVIDENCE injects the verdict for tests (see the script header).
+suite_eval = nil
+suite_route = nil # "full" | "fast" | "bypass" when the gate is satisfied
+if gate != "build" && shape_def && !dor_tiers.empty?
+  suite_eval = FullSuiteGate.evaluate(
+    checks: checks,
+    root: diff_root,
+    injected: ENV["DOR_CHECK_SUITE_EVIDENCE"]
+  )
+  if suite_eval[:ok]
+    suite_route = suite_eval[:bypass] ? "bypass" : "full"
+  elsif suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh && ci && ci[:state] == :green
+    suite_route = "fast"
+  else
+    errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci)
   end
 end
 
@@ -661,8 +697,11 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
     gate_sops << { "sop" => "tiers", "tier" => dor_tiers.join("+"), "result" => missing_tiers.empty? ? "pass" : "fail" }
   end
   if suite_eval
-    entry = { "sop" => "full-suite-evidence", "result" => suite_eval[:ok] ? "pass" : "fail" }
-    entry["cmd"] = "certified@#{suite_eval[:fingerprint][0, 12]}" if suite_eval[:fingerprint]
+    entry = { "sop" => "full-suite-evidence", "result" => suite_route ? "pass" : "fail" }
+    if suite_eval[:fingerprint]
+      fp12 = suite_eval[:fingerprint][0, 12]
+      entry["cmd"] = suite_route == "fast" ? "fast-cert@#{fp12}+ci-green" : "certified@#{fp12}"
+    end
     gate_sops << entry
   end
   if ci
@@ -692,6 +731,7 @@ if options[:json]
     ci: ci && { state: ci[:state], failing: ci[:failing], pending: ci[:pending], count: ci[:count] }.compact,
     full_suite: suite_eval && {
       ok: suite_eval[:ok],
+      route: suite_route,
       bypass: suite_eval[:bypass],
       verifiable: suite_eval[:verifiable],
       fingerprint: suite_eval[:fingerprint],
@@ -708,6 +748,9 @@ if ready
   puts "  tiers green in checks_run: #{dor_tiers.join(", ")}" unless dor_tiers.empty?
   if suite_eval && suite_eval[:bypass]
     puts "  ⚠ FULL-SUITE GATE BYPASSED: #{suite_eval[:bypass]}"
+  elsif suite_route == "fast"
+    fp = suite_eval[:fingerprint]
+    puts "  fast cert accepted#{fp ? " at #{fp[0, 12]}" : ""} (GitHub CI green carries the full suite)"
   elsif suite_eval && suite_eval[:fingerprint]
     puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
   end

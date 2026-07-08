@@ -360,7 +360,7 @@ don't fear sweeping there.
 
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
-| **→ submitted** (task, entry) | Feature agent | Feature agent | `bin/full-suite-check` (certify FULL suite + rubocop) → pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
+| **→ submitted** (task, entry) | Feature agent | Feature agent | certify — `bin/fast-check` (~1 min; credited once the PR's GitHub CI is green) or `bin/full-suite-check` (CI-independent) → pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate |
 | **submitted** (task) — REVIEW | **Avi** (SUPERVISOR) + PRIMARY/LIGHT experts | Avi (SUPERVISOR, never reviews) → spawns **PRIMARY** + **LIGHT** in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 PRIMARY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a PRIMARY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + primary/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Avi then **spawns both the PRIMARY and LIGHT in parallel** as sibling children; the PRIMARY runs the deep review, the LIGHT a focused second read; each confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker on either → the **supervisor** drives the task to `reviewed` ✅ and STOPS — review-only; the sweep (next row) is Steffon's; a blocker → `blocked` (rework, with `qa_feedback`) | **2 senior approvals** (PRIMARY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — SWEEP (task) | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and SWEEPS each: `gh pr merge` its PR into `release` (SKIPPED when `merged: release/main` — interrupted-run recovery), record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
 | **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* (`qa-release`, same run) | After the sweep, the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
@@ -1011,7 +1011,20 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
   routine use). Escape hatch — a *record*, exactly like `post_deploy_cmd: none`: a
   reasoned `[full-suite-bypass] <why>` `checks_run` line passes the gate but is
   flagged **loudly** in the verdict (use it for a pre-existing, unrelated red
-  tracked elsewhere — never to wave through your own break);
+  tracked elsewhere — never to wave through your own break).
+  **Fast route (the builder default — the 90/10 rethink):** GitHub CI already
+  runs the FULL suite + `test:system` on every PR push and the merge gate blocks
+  on CI green anyway, so a ~6-minute local full suite bought *earliness*, not
+  coverage. `bin/fast-check <task>` keeps the earliness at ~1/6 the cost: it runs
+  the tests the branch diff **maps to** (path convention — `app/models/x.rb` →
+  `test/models/x_test.rb`, views → their controller test, `bin/tool` →
+  `test/lib/tool_test.rb` — with a class-name grep fallback) **plus** the curated
+  core spine (`config/fast_cert_spine.yml`) and `rubocop` on the **changed files
+  only**, stamping a fingerprint-bound `[fast-cert@<fp>]` line. `bin/dor-check`
+  credits a FRESH fast cert **only alongside a green GitHub CI** — a red,
+  pending, missing, or unverified CI does not credit it. `bin/full-suite-check`
+  stays unchanged as the CI-independent local cert and the release-verification
+  tool;
 - required `metadata["devops"]` fields are populated (existing contract);
 - a local proof URL exists when the shape touches UI;
 - if the branch diff touches a **seed or data-migration** (`db/seeds`,
@@ -1079,7 +1092,8 @@ where a local hook artifact would not.
 | Component | Feature agent | Before `submitted` |
 | Integration | Feature agent | Before `submitted` (mandatory for any `migration`/`solana`/`payment`/`auth` risk tag) |
 | E2E (happy path) | Feature agent | Before `submitted` for ui+db / vertical shapes |
-| **Full suite + rubocop** | Feature agent | Before `submitted` — `bin/full-suite-check <task>` certifies the WHOLE suite + lint (not the touched-file subset); records fingerprint-bound evidence `bin/dor-check` re-grades |
+| **Fast cert (builder default)** | Feature agent | Before `submitted` — `bin/fast-check <task>` runs diff-mapped tests + the core spine + rubocop on changed files (~1 min); its fingerprint-bound evidence is credited by `bin/dor-check` once the PR's GitHub CI (the full net) is green |
+| **Full suite + rubocop** | Feature agent | Before `submitted` when CI can't vouch (or for release verification) — `bin/full-suite-check <task>` certifies the WHOLE suite + lint (not the touched-file subset); records fingerprint-bound evidence `bin/dor-check` re-grades |
 | E2E (edge/regression) | QA lane (Avi/Steffon) | May add during review; becomes a follow-up task if large |
 | Manual | **Mr. McRitchie** | At the release QA stop (this *is* the manual tier) |
 
