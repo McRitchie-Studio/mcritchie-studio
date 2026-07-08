@@ -66,6 +66,46 @@ module ApplicationHelper
     end
   end
 
+  # Tight one-cell form of testing_phase_duration_label for the /tasks/recent
+  # scanning rows — precise_stage_duration's compact clock ("2h 4m") instead of
+  # the wide "about 2 hours" prose, so 5 phase cells fit one row and columns
+  # align for vertical scanning. In-progress cells get a trailing "+" (still
+  # growing); missing renders the dash. The verbose label rides along as the
+  # cell's title so nothing is lost.
+  def testing_phase_compact_label(span)
+    case span["status"]
+    when "completed"   then precise_stage_duration(span["seconds"]) || "—"
+    when "in_progress" then "#{precise_stage_duration(span['seconds']) || '<1m'}+"
+    else "—"
+    end
+  end
+
+  # A testing-phase span's iso8601 stamps → the {started_at:, ended_at:} Time
+  # hash the deployment_range_date/_times helpers and the data-deployment-range
+  # client re-stamp expect. nil when the phase never started (a missing span
+  # renders no stamp stack) or when a stamp fails to parse (never raises into
+  # a render).
+  def testing_phase_range(span)
+    started = span["started_at"].presence && Time.zone.parse(span["started_at"])
+    return nil unless started
+
+    ended = span["completed_at"].presence && Time.zone.parse(span["completed_at"])
+    { started_at: started, ended_at: ended }
+  rescue ArgumentError, TypeError
+    nil
+  end
+
+  # Verdict glyph for a compact gate chip (/tasks/recent): ✓ passed, ✗ failed,
+  # ● in flight (pairs with gate_status_class's amber). nil-safe → middot.
+  def gate_verdict_glyph(run)
+    case run&.status
+    when "passed"    then "✓"
+    when "failed"    then "✗"
+    when "in_flight" then "●"
+    else "·"
+    end
+  end
+
   # A gate run (GateRun) → the status chip text-color. Verdict-bearing, unlike
   # the phase chip above: passed/failed are terminal colors, in-flight ticks amber.
   def gate_status_class(run)

@@ -1,7 +1,7 @@
 class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show, :review_events, :review_events_hub, :deployments, :stages, :sop]
-  before_action :require_admin, except: [:index, :show, :review_events, :review_events_hub, :deployments, :stages, :sop]
+  skip_before_action :require_authentication, only: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
+  before_action :require_admin, except: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
   before_action :set_task, only: [:show, :review_events, :edit, :update, :destroy, :comment]
 
   def reorder
@@ -33,6 +33,25 @@ class TasksController < ApplicationController
     @current_release = Release.current
     @last_release = Release.last_shipped
     @release_duration_dashboard = Release.deployment_stage_averages
+  end
+
+  # Row budget for /tasks/recent — enough to cover the active pipeline plus the
+  # last few shipped cycles without turning the scan into a scroll marathon.
+  RECENT_TASKS_LIMIT = 50
+
+  # /tasks/recent — a flat recency list (updated_at desc), the scanning surface
+  # for per-task testing-phase durations (Task::TestingPhases) + gate verdicts
+  # (GateRun). Read-only and public like the board; archived tasks are terminal
+  # noise here, so they're excluded (the board hides them behind a toggle too).
+  def recent
+    @tasks = Task.where.not(stage: "archived")
+                 .order(updated_at: :desc, id: :desc)
+                 .limit(RECENT_TASKS_LIMIT)
+                 .to_a
+    @gate_runs_by_task = GateRun.latest_by_key_for_subjects(
+      subject_type: "task",
+      subject_slugs: @tasks.map(&:slug)
+    )
   end
 
   # /stages — the two-workflow stage guide (vertical swimlanes, side by side).
