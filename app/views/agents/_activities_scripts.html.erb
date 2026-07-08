@@ -90,6 +90,22 @@
   window.agentsActivities = function () {
     return {
       filterOpen: false,
+      sessionQuery: "",
+      // Live find-as-you-type over the session rows — the same idiom /people and
+      // /teams use: a getter that toggles each row's display by its lowercased
+      // data-name and returns the visible count. It's referenced by the header
+      // x-text, so it re-runs reactively on every debounced keystroke (including
+      // clear, which resets every row to visible).
+      get filteredSessions() {
+        const q = this.sessionQuery.toLowerCase().trim();
+        let count = 0;
+        document.querySelectorAll('[data-test="aa-filter-session"]').forEach(function (row) {
+          const visible = !q || (row.dataset.name || "").includes(q);
+          row.style.display = visible ? "" : "none";
+          if (visible) count++;
+        });
+        return count;
+      },
       openFilter() { this.filterOpen = true; },
       closeFilter() {
         this.filterOpen = false;

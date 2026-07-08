@@ -6,6 +6,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
     assert_nil compact_time_ago(nil, now: now), "a blank time renders nothing"
     assert_equal "just now", compact_time_ago(now - 10, now: now)
+    assert_equal "just now", compact_time_ago(now - 50, now: now), "sub-minute reads 'just now', never '0m ago'"
     assert_equal "just now", compact_time_ago(now + 30, now: now), "a future time clamps, never negative"
     assert_equal "5m ago", compact_time_ago(now - (5 * 60), now: now)
     assert_equal "3h ago", compact_time_ago(now - (3 * 3_600), now: now)
