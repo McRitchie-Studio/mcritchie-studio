@@ -326,11 +326,11 @@ module Api
         assert_equal "building", task.stage
         assert_equal "large", task.dev_size
 
-        # Measured usage accumulates across the build (recorded on TaskEvents).
+        # Measured $cost accumulates across the build (recorded on TaskEvents).
         task.task_events.create!(to_stage: "building", occurred_at: Time.current,
-                                 tokens_in: 3_000_000, tokens_out: 3_000_000) # 6M total → large
+                                 cost: BigDecimal("75")) # $75 → large ($50-$200)
 
-        # 3) Ship → actual_size auto-derives from the measured token total.
+        # 3) Ship → actual_size auto-derives from the measured cost total.
         patch api_v1_task_path(slug), params: { stage: "shipped" }, headers: @headers, as: :json
         assert_response :success
         task.reload

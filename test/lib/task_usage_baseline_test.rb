@@ -73,7 +73,7 @@ class TaskUsageBaselineTest < Minitest::Test
         result = b.capture_delta(SLUG)
 
         assert result.usage?
-        assert_equal 6150, result.tokens_in   # turn 2 only: 100 + 50 + 6000
+        assert_equal 150, result.tokens_in   # turn 2 only: 100 + 50 (cache_read 6000 excluded)
         assert_equal 4000, result.tokens_out
         # The baseline ADVANCES to the new cumulative totals, so the next move
         # measures from here (not from the seed).
@@ -106,7 +106,7 @@ class TaskUsageBaselineTest < Minitest::Test
 
         assert_equal "claude-opus-4-8", result.model, "the card's MODEL"
         assert result.usage?, "a real design-phase delta, not the model-only chip"
-        assert_equal 6150, result.tokens_in
+        assert_equal 150, result.tokens_in   # 100 + 50 (cache_read 6000 excluded from the count)
         assert_equal 4000, result.tokens_out
         refute_nil result.cost, "a priced model yields a real design-phase COST"
         assert_operator result.cost, :>, 0, "the COST chip is non-zero"

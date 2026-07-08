@@ -434,7 +434,7 @@ class TaskCliTest < Minitest::Test
       event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
 
       assert_equal "claude-opus-4-8", event["model"]
-      assert_equal 6150, event["tokens_in"]   # 100 + 50 + 6000
+      assert_equal 150, event["tokens_in"]   # 100 + 50 (cache_read 6000 excluded)
       assert_equal 4000, event["tokens_out"]
       assert_equal "0.1040", event["cost"]     # (100*5 + 4000*25 + 50*5*2.0 + 6000*5*0.1)/1e6
       assert_equal SESSION, event["actor"]
@@ -456,7 +456,7 @@ class TaskCliTest < Minitest::Test
       event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
 
       assert_equal "gpt-5.5", event["model"]
-      assert_equal 500, event["tokens_in"]
+      assert_equal 300, event["tokens_in"]   # cache_read excluded from the count (cost unchanged)
       assert_equal 80, event["tokens_out"]
       assert_equal "0.0040", event["cost"]
       assert_equal SESSION, event["actor"]
@@ -555,7 +555,7 @@ class TaskCliTest < Minitest::Test
 
       event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
       assert_equal "claude-opus-4-8", event["model"]
-      assert_equal 6150, event["tokens_in"], "delta is turn 2 only — the review work since the intent"
+      assert_equal 150, event["tokens_in"], "delta is turn 2 only — the review work since the intent (cache_read excluded)"
       assert_equal 4000, event["tokens_out"]
       assert event.key?("cost"), "a real delta records cost too"
     end
@@ -591,7 +591,7 @@ class TaskCliTest < Minitest::Test
 
       event = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).fetch("event")
       assert_equal "claude-opus-4-8", event["model"]
-      assert_equal 6150, event["tokens_in"], "delta is turn 2 only — the design work since create"
+      assert_equal 150, event["tokens_in"], "delta is turn 2 only — the design work since create (cache_read excluded)"
       assert_equal 4000, event["tokens_out"]
       assert event.key?("cost"), "a real design-phase delta records cost too"
     end
