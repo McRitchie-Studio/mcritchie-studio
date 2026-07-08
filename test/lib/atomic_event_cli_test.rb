@@ -319,7 +319,8 @@ class AgentActivityCliTest < Minitest::Test
       assert_equal 6200, body["tokens_in"], "activity display tokens exclude cache-read fallback"
       assert_equal 383, body["tokens_out"]
       assert_equal 304_000, body["cache_read_tokens"], "cache-read is kept only for cost"
-      assert_in_delta 0.1928, body["cost"].to_f, 0.0001
+      # (6000*5 + 383*25 + 200*5*2.0 + 304000*5*0.10)/1e6 = 0.193575; cache-write = 1h list rate.
+      assert_in_delta 0.1936, body["cost"].to_f, 0.0001
     end
   end
 

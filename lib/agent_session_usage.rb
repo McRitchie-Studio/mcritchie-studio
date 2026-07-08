@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "usage_pricing"
 
 # Reads a Claude Code or Codex session transcript and turns it into per-transition usage
 # for the task-board event trail — so `bin/task move` can auto-stamp the model,
@@ -16,20 +17,9 @@ require "json"
 # design: a missing/unreadable transcript yields nil, and the caller falls back
 # to recording only the deterministic spine.
 class AgentSessionUsage
-  # Per-million-token rates (input, output). Source: claude-api skill reference
-  # (cached 2026-06-04). Cache-write (5m TTL) is 1.25x input and cache-read is
-  # 0.10x input, so we store only input/output and derive the cache rates.
-  PRICING = {
-    "claude-opus-4-8"   => { input: 5.0,  output: 25.0 },
-    "claude-opus-4-7"   => { input: 5.0,  output: 25.0 },
-    "claude-opus-4-6"   => { input: 5.0,  output: 25.0 },
-    "claude-sonnet-4-6" => { input: 3.0,  output: 15.0 },
-    "claude-haiku-4-5"  => { input: 1.0,  output: 5.0 },
-    "claude-fable-5"    => { input: 10.0, output: 50.0 },
-    "gpt-5.5"           => { input: 5.0,  output: 30.0, cache_read: 0.5 }
-  }.freeze
-  CACHE_WRITE_MULTIPLIER = 1.25 # 5-minute TTL
-  CACHE_READ_MULTIPLIER  = 0.10
+  # The four usage tiers each transcript delta carries. Pricing now lives in the
+  # shared UsagePricing module (list price, one roster shared with AgentAction) —
+  # see .price.
   BUCKETS = %w[input output cache_creation cache_read].freeze
 
   # The capture result. `totals` is the session's cumulative usage now (becomes
@@ -168,23 +158,12 @@ class AgentSessionUsage
     BUCKETS.to_h { |b| [b, [totals[b].to_i - baseline[b].to_i, 0].max] }
   end
 
-  # Dollar cost of a usage bucket hash for a model, or nil if buckets/model are
-  # missing or the model isn't priced.
+  # Dollar cost (Float) of a usage bucket hash for a model, or nil when buckets/model
+  # are missing or the model isn't priced. Delegates to the shared UsagePricing SoT
+  # and returns a Float — this lib's long-standing contract (the module computes in
+  # BigDecimal for the 4 decimals the cost column stores).
   def self.price(buckets, model)
-    return nil if buckets.nil?
-
-    rates = PRICING[normalize_model(model)]
-    return nil unless rates
-
-    cache_creation_rate = rates.fetch(:cache_creation, rates[:input] * CACHE_WRITE_MULTIPLIER)
-    cache_read_rate = rates.fetch(:cache_read, rates[:input] * CACHE_READ_MULTIPLIER)
-
-    per_mtok =
-      buckets["input"].to_i          * rates[:input] +
-      buckets["output"].to_i         * rates[:output] +
-      buckets["cache_creation"].to_i * cache_creation_rate +
-      buckets["cache_read"].to_i     * cache_read_rate
-    (per_mtok / 1_000_000.0).round(4)
+    UsagePricing.price(buckets, model)&.to_f
   end
 
   def self.normalize_provider(provider)

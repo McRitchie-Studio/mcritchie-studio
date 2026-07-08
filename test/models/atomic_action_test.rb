@@ -149,6 +149,33 @@ class AgentActionTest < ActiveSupport::TestCase
                "no rate means no price, even for pure cache_read"
   end
 
+  # ---- [integration] one usage, priced identically by both surfaces ----------
+
+  test "[integration] the per-action and per-session paths price a usage identically" do
+    # Both AgentAction.cost_for and AgentSessionUsage.price route through the shared
+    # UsagePricing SoT, so the SAME (input, output, cache_read) usage yields the same
+    # dollars regardless of which surface prices it. (The action path folds
+    # cache_creation into tokens_in, so this parity is asserted with cache_creation=0,
+    # the shared surface both paths agree on.)
+    input = 120_000
+    output = 45_000
+    cache_read = 900_000
+
+    action_cost  = AgentAction.cost_for("claude-opus-4-8", input, output, cache_read)
+    session_cost = AgentSessionUsage.price(
+      { "input" => input, "output" => output, "cache_creation" => 0, "cache_read" => cache_read },
+      "claude-opus-4-8"
+    )
+
+    refute_nil action_cost
+    assert_equal action_cost, session_cost.to_d,
+                 "both usage surfaces must agree once they share one pricing table"
+    assert_equal UsagePricing.price(
+      { "input" => input, "output" => output, "cache_creation" => 0, "cache_read" => cache_read },
+      "claude-opus-4-8"
+    ), action_cost
+  end
+
   test "[unit] outcome predicates reflect the stored value" do
     assert AgentAction.new(outcome: "ok").ok?
     assert AgentAction.new(outcome: "error").error?

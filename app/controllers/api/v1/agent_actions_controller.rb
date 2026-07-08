@@ -27,7 +27,8 @@ module Api
       private
 
       # The live-capture request contract. The caller does NOT set cost (capture
-      # DERIVES it from model + tokens + cache_read via MODEL_RATES). The generic
+      # DERIVES it from model + tokens + cache_read via the shared UsagePricing SoT).
+      # The generic
       # tool-call hook also leaves the event/result slugs null; the test-scope
       # telemetry path (bin/release run_test_scope → bin/atomic-event action) DOES
       # send :event_slug (the scope key) + :result_slug (pass|fail) on the verdict

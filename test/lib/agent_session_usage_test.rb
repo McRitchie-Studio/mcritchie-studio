@@ -87,7 +87,8 @@ class AgentSessionUsageTest < Minitest::Test
       # delta = second assistant turn only: input 50, output 80, cc 5, cr 2000
       assert_equal 2055, result.tokens_in   # 50 + 5 + 2000
       assert_equal 80, result.tokens_out
-      # (50*5 + 80*25 + 5*5*1.25 + 2000*5*0.10) / 1e6 = 3281.25 / 1e6
+      # (50*5 + 80*25 + 5*5*2.0 + 2000*5*0.10) / 1e6 = 3300 / 1e6
+      # cache-write now = 1h list rate (2.0x input), via the shared UsagePricing SoT.
       assert_in_delta 0.0033, result.cost, 0.00005
     end
   end

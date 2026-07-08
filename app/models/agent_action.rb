@@ -26,7 +26,7 @@
 #
 # COST is DERIVED, not stored blindly: when no explicit cost is given (the live-
 # capture hook path — it carries model + tokens but can't price them), capture
-# computes cost from MODEL_RATES per tier — fresh tokens at the model rate, plus
+# computes cost via the shared UsagePricing module — fresh tokens at the model rate, plus
 # cache_read at the cache tier (10% of input). A model with no known rate leaves
 # cost NULL — we never fabricate a price. source_turn_uuid records the assistant
 # turn a row's usage came from; because ONE turn can fire N parallel tool calls (N
@@ -63,24 +63,9 @@ class AgentAction < ApplicationRecord
   HUMAN   = "human"   # the operator
   ACTORS  = [HARNESS, AGENT, BOARD, HUMAN].freeze
 
-  # Per-model token pricing, in US dollars per 1,000,000 tokens (input, output).
-  # Sourced from the authoritative Anthropic pricing table (the claude-api skill,
-  # 2026-07). Keyed by the canonical model id; a `[tier]` suffix on a transcript
-  # model id (e.g. "claude-opus-4-8[1m]") is stripped before lookup, since the 1M
-  # context tier bills at standard rates for these models. A model with no entry
-  # yields a NULL cost — we NEVER fabricate a price. An operator can extend the
-  # map via the ATOMIC_ACTION_MODEL_RATES env (JSON: {"model": {"in": n, "out": n}}).
-  MODEL_RATES = {
-    "claude-fable-5"    => { in: 10.0, out: 50.0 },
-    "claude-mythos-5"   => { in: 10.0, out: 50.0 },
-    "claude-opus-4-8"   => { in: 5.0,  out: 25.0 },
-    "claude-opus-4-7"   => { in: 5.0,  out: 25.0 },
-    "claude-opus-4-6"   => { in: 5.0,  out: 25.0 },
-    "claude-sonnet-4-6" => { in: 3.0,  out: 15.0 },
-    "claude-haiku-4-5"  => { in: 1.0,  out: 5.0 }
-  }.freeze
-
-  PER_MILLION = 1_000_000
+  # Per-model token pricing now lives in the shared UsagePricing module (list price,
+  # one roster shared with the per-activity/per-task path), so every usage surface
+  # prices identically. See .cost_for and lib/usage_pricing.rb.
 
   # Slug FK to tasks (the ecosystem convention). Optional: PRE-task actions (boot,
   # intake) carry a null task_slug, and capture must never fail on a task lookup.
@@ -156,7 +141,7 @@ class AgentAction < ApplicationRecord
 
     # Cost priority: an EXPLICIT cost (in-process caller or the Current.task_event_*
     # seam a `bin/task move` sets) always wins; otherwise DERIVE it from the model +
-    # tokens via MODEL_RATES — the FRESH tokens at the model rate plus cache_read at
+    # tokens via UsagePricing — the FRESH tokens at the model rate plus cache_read at
     # the cache tier (10% of input). When the model has no known rate the derivation
     # returns nil and cost stays NULL — never a fabricated $0. The live-capture hook
     # carries model + tokens but no cost, so it lands on the derived path.
@@ -243,66 +228,25 @@ class AgentAction < ApplicationRecord
     attrs.key?(:agent_activity_id) ? attrs[:agent_activity_id] : attrs[:atomic_event_id]
   end
 
-  # The cache-read (prompt-cache HIT) rate as a fraction of the base input rate.
-  # Anthropic prices a cache read at 10% of the input rate; cache_creation (a cache
-  # WRITE) is 1.25x, but the hook folds that into tokens_in at 1x as an accepted
-  # best-effort, so only the cache-read tier is modelled here.
-  CACHE_READ_RATE_FACTOR = 0.10
-
-  # Dollar cost for a model's token usage, or nil when the model has no known rate
-  # (never fabricate a price). Prices per tier: the FRESH tokens_in and tokens_out
-  # at the model's input/output rate, plus cache_read_tokens at the cache-read tier
-  # (10% of input) — re-used context is cheap, so lumping it into tokens_in at the
-  # full rate overstated cost ~10x on long sessions. Best-effort + total: any bad
-  # input degrades to nil rather than raising into capture. Returns dollars (BigDecimal).
+  # Dollar cost (BigDecimal, 4dp) for a model's token usage, or nil when the model
+  # has no known rate (never fabricate a price). Delegates to the shared UsagePricing
+  # source of truth so every usage surface prices identically. The action path
+  # carries FRESH tokens_in (input + cache_creation folded at 1x) and tokens_out,
+  # plus cache_read costed at the cache tier (10% of input) — re-used context is
+  # cheap, so lumping it into tokens_in at the full rate overstated cost ~10x on long
+  # sessions. It has no separate cache_creation bucket, so tokens_in maps to the
+  # input bucket (splitting the write premium out is a later phase). Best-effort:
+  # UsagePricing.price returns nil rather than raising on bad input.
   def self.cost_for(model, tokens_in, tokens_out, cache_read_tokens = 0)
-    rate = rate_for(model)
-    return nil unless rate
-
-    ti = tokens_in.to_i
-    to = tokens_out.to_i
-    cr = cache_read_tokens.to_i
-    in_rate = rate[:in].to_d
-    ((ti * in_rate) +
-     (cr * in_rate * CACHE_READ_RATE_FACTOR.to_d) +
-     (to * rate[:out].to_d)) / PER_MILLION.to_d
-  rescue StandardError
-    nil
-  end
-
-  # The {in:, out:} per-million rate for a model, or nil. Tolerates a trailing
-  # tier suffix ("[1m]") and a blank model, and returns nil unless BOTH sides
-  # of the rate are present (a half-defined rate must not fabricate a $0).
-  def self.rate_for(model)
-    key = model.to_s.strip
-    return nil if key.empty?
-
-    base = model_rates[key] || model_rates[key.sub(/\[[^\]]*\]\z/, "")]
-    return nil unless base.is_a?(Hash)
-
-    in_rate  = base[:in]  || base["in"]
-    out_rate = base[:out] || base["out"]
-    return nil if in_rate.nil? || out_rate.nil?
-
-    { in: in_rate, out: out_rate }
-  rescue StandardError
-    nil
-  end
-
-  # MODEL_RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override
-  # (JSON: {"model-id": {"in": n, "out": n}}). Memoized; a malformed env is
-  # ignored so a bad value can never break costing.
-  def self.model_rates
-    @model_rates ||= MODEL_RATES.merge(env_model_rates)
-  end
-
-  def self.env_model_rates
-    raw = ENV["ATOMIC_ACTION_MODEL_RATES"].to_s.strip
-    return {} if raw.empty?
-
-    JSON.parse(raw).transform_values { |v| { in: v["in"], out: v["out"] } }
-  rescue StandardError
-    {}
+    UsagePricing.price(
+      {
+        "input"          => tokens_in.to_i,
+        "output"         => tokens_out.to_i,
+        "cache_creation" => 0,
+        "cache_read"     => cache_read_tokens.to_i
+      },
+      model
+    )
   end
 
   def ok?
