@@ -55,6 +55,26 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
                   text: "WAITING APPROVAL"
   end
 
+  test "[integration] submitted approval-exit card no longer waits for approval" do
+    task = Task.create!(
+      title: "approval exit peer",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+    task.submit!
+
+    get tasks_path
+    assert_response :success
+
+    assert_includes card_order_in("dropzone-submitted"), "card-#{task.slug}"
+    assert_select "#card-#{task.slug} [data-test='operator-approval-waiting']", count: 0
+  end
+
   test "[integration] deployments column puts freshly shipped tasks above older shipped cards" do
     older = nil
     fresh = nil

@@ -109,6 +109,28 @@ class TaskCardTest < ActionView::TestCase
     assert_select "a[data-test='operator-approval-waiting'][href='http://localhost:3001/demo']"
   end
 
+  test "[component] submitted approval-exit card drops the waiting bar" do
+    task = Task.create!(
+      title: "Approval exit card",
+      stage: "building",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3001/demo"
+        }
+      }
+    )
+    task.submit!
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_includes card["class"], "task-card-stage-glow-submitted"
+    assert_not_includes card["class"], "task-card-stage-glow-approval"
+    assert_select "[data-test='operator-approval-waiting']", count: 0
+  end
+
   test "[component] footer shows created + updated stamps, not the local demo or PR links" do
     task = Task.create!(title: "Footer stamp card", stage: "building",
                         metadata: { "devops" => {

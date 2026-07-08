@@ -137,11 +137,13 @@ locally, but before the PR is opened or moved to `submitted`.
 
 4. The board treats `devops.approval_status=waiting` as an attention state: the
    card ranks above its stage peers, pulses, and renders the local URL as a
-   `Local Demo` button.
-5. If Mr. McRitchie approves, set `--approval approved`, finish DoR, commit,
-   push, open the PR, and move the task to `submitted`.
+   `Local Demo` button while the task is still in `building` or `blocked`.
+5. If Mr. McRitchie approves, finish DoR, commit, push, open the PR, and move
+   the task out of `building`/`blocked`; that stage move auto-confirms an open
+   approval as `approved`.
 6. If changes are requested, set `--approval changes_requested` and keep the task
-   in `building` until the next validation packet is ready.
+   in `building` until the next validation packet is ready. If the task later
+   exits `building`/`blocked`, that open approval is auto-confirmed too.
 
 ## Task Conversation and QA Feedback
 
@@ -257,9 +259,10 @@ Supported fields:
 | `branch` | The feature branch (opened as a PR with base `release`). The shared integration branch is the persistent per-repo `release` (same name everywhere). |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
-| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`; `waiting` floats and pulses the card |
+| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`; `waiting` floats and pulses the card while the task is in `building` or `blocked`; exiting those stages auto-confirms open approval as `approved` |
 | `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
 | `approval_requested_by` | Optional agent/session label that requested operator validation |
+| `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved`, including auto-confirmation on build/blocked exit |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
 | `release_slug` | Optional shared tag for tasks promoted together |
