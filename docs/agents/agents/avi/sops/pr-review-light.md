@@ -26,6 +26,12 @@ on a defect** you spot. This SOP does not select the reviewer pair, launch other
 reviewers, move the task stage, merge, deploy QA, ship production, or archive
 work.
 
+Your read is the task's **G2b Light** gate lane
+([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md)):
+the supervisor opened it as you launched and closes it from your scout report
+(`merge-ready` = passed). You post no gate markers yourself — and you do NOT
+run `bin/dor-check` in any role: the gate-zero belongs to the primary.
+
 ## Entry
 
 Work from the projects root as your own soul:
@@ -101,3 +107,5 @@ supervisor owns the final move to `reviewed` or `blocked`.
   SOP your sibling runs.
 - [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md) —
   single-PR review primitive.
+- [`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md) —
+  the G2 Review gate your lane (G2b) records into.

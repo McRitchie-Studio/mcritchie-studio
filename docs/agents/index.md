@@ -183,8 +183,13 @@ While building:
 
 Before handoff:
 
-5. Run **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
-   under-tested PR.
+5. Certify, then verdict — the task's **G1 Cert** gate
+   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): run
+   `bin/fast-check <task>` (the builder default — diff-mapped tests + core
+   spine + rubocop on changed files, ~1 min; credited once the PR's GitHub CI
+   is green) or `bin/full-suite-check <task>` (CI-independent), then run
+   **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
+   under-tested PR and its verdict closes the gate.
 6. Commit on the feature branch, push, open a PR **into `release`** (base
    `release`, not `main`) whose body **leads with the task URL**, then
    `bin/task move <task> submitted`.
@@ -205,6 +210,16 @@ The task lifecycle is two workflows (full spec:
   each repo's `release → main` (stamping `merged: "main"`) → `shipped`.
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
+
+**The branded testing gates (G1–G4).** The pipeline's test verdicts are
+recorded as four attempt-aware gates: **G1 Cert** (the builder's
+certification — fast/full cert + the dor-check verdict) → **G2 Review** (the
+primary + light review lanes; the primary's gate-zero is `bin/dor-check <task>
+--gate-role review`) → **G3 Candidate** (Steffon's pre-QA suite + QA deploy,
+release-grain) → **G4 Ship** (Avi's frozen-SHA gate + prod deploy,
+release-grain, self-gated against G3). Task gates render on the task's gates
+card; release gates as the /deployments G3/G4 columns. Each gate's standalone
+SOP lives in `mcritchie-studio/docs/agents/modules/gates/`.
 
 **Sizing the work — the po/dev/actual trio.** Avi is the default sizer: he sets
 `po_size` when he creates and grooms the task (`bin/task create … --po-size
@@ -343,6 +358,10 @@ lane.
 | Codex runtime updates | `mcritchie-studio/docs/agents/modules/codex-updates.md` |
 | Backend discipline | `mcritchie-studio/docs/agents/modules/backend-discipline.md` |
 | Tests | `mcritchie-studio/docs/agents/modules/testing.md` |
+| G1 Cert gate (builder certification) | `mcritchie-studio/docs/agents/modules/gates/g1-cert.md` |
+| G2 Review gate (primary + light lanes) | `mcritchie-studio/docs/agents/modules/gates/g2-review.md` |
+| G3 Candidate gate (pre-QA + QA deploy) | `mcritchie-studio/docs/agents/modules/gates/g3-candidate.md` |
+| G4 Ship gate (frozen-SHA + prod deploy) | `mcritchie-studio/docs/agents/modules/gates/g4-ship.md` |
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |

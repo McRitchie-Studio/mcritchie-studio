@@ -20,14 +20,20 @@ checks to `checks_run` as each stage completes.
 
 ## Test Lanes
 
-| Lane | Target | Mutates data | Blocks merge | When to run |
-|---|---|---:|---:|---|
-| PR review gate | Local repo or CI | Usually no | Yes | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
-| Local proof | Worktree URL | Local DB only | Usually yes | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
-| QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | After every QA deploy; runs task acceptance criteria against the merged result |
-| Production smoke | Production URL | No by default | N/A | After approved production deploy; verifies health and key read-only routes |
-| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | Full Playwright suite, devnet/on-chain, browser matrix, longer seeded workflows |
-| Quarantine | Any | Varies | No until fixed | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+| Lane | Target | Mutates data | Blocks merge | Gate | When to run |
+|---|---|---:|---:|---|---|
+| PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
+| Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
+| QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
+| Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
+| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | Full Playwright suite, devnet/on-chain, browser matrix, longer seeded workflows |
+| Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+
+The Gate column names the branded testing gate whose attempt records that
+lane's verdicts — attempt-aware GateRun rows with per-SOP results, rendered on
+the task gates card (G1/G2) and the /deployments columns (G3/G4). The four
+standalone gate docs live in [`gates/`](gates/g1-cert.md): `g1-cert.md`,
+`g2-review.md`, `g3-candidate.md`, `g4-ship.md`.
 
 If a lane fails, record the classification in task `qa_feedback`:
 

@@ -97,6 +97,10 @@ Base path `/api/v1`. From `config/routes.rb`:
 | `POST` | `/releases/:slug/events/:step/start` | Record a release checkpoint start (stamps the stage timeline; `:slug` accepts `current`) |
 | `POST` | `/releases/:slug/events/:step/complete` | Complete a release checkpoint (stamps the stage timeline; `:slug` accepts `current`) |
 | `POST` | `/releases/:slug/events/:step/fail` | Fail a release checkpoint (never stamps a stage) |
+| `GET` | `/gates/:subject_type/:subject_slug` | List a task's/release's gate-run attempts (chronological) |
+| `POST` | `/gates/:subject_type/:subject_slug/:key/open` | Open (or re-enter) a gate attempt |
+| `POST` | `/gates/:subject_type/:subject_slug/:key/sops` | Append one executed-SOP entry to the in-flight attempt |
+| `POST` | `/gates/:subject_type/:subject_slug/:key/close` | Close the in-flight attempt with its verdict |
 
 `GET /tasks` accepts `?stage=<stage>` and `?agent_slug=<slug>` filters (plus
 `?page` / `?per_page`) and returns `{ "data": [...], "meta": { page, per_page,
@@ -234,6 +238,14 @@ The gaps are deliberate: a completed stage does NOT light the next node. The
 Steffon→Avi seam is the load-bearing case — Steffon's `qa_deploying/complete`
 ("Live on QA") leaves Confirming dark until Avi posts `confirming/start`.
 
+Tracker stamps and **gate runs** (next section) are two surfaces, never merged:
+stamps record stages, gates record test verdicts. The node↔gate mapping:
+**node 1 (Testing) ≈ the G2 review wave** (the supervisor's `testing/start`
+post), and **node 4 (Confirming) ≈ the G4 Ship opening beat** (the
+`ship_gate`/`ship_authorized` stamps land as `bin/release ship` opens
+`g4_ship`). G3/G4 verdicts render as their own gate-backed `/deployments`
+columns, not as tracker nodes.
+
 `:slug` accepts the literal `current` to target the singleton active release
 without a lookup. When nothing is active, `current` 404s — except the cycle
 kick-off starts (`testing/start`, `assembling/start`), which may OPEN the next
@@ -282,6 +294,63 @@ row. Do not put model/tokens/cost on `start` or intent calls. Agent/API/CLI
 `complete` and `fail` calls must report `model`, `tokens_in`, `tokens_out`, and
 `cost`; deterministic `source: conductor|system` completions may stay
 spine-only.
+
+### Gate Runs API (the branded testing gates)
+
+Gate runs record the **branded testing gates** — attempt-aware pass/fail
+records with the test SOPs each attempt executed (`GateRun`; the standalone
+gate docs live in `docs/agents/modules/gates/`). Keys and grains:
+
+| Key | Gate | Grain (`:subject_type`) |
+|---|---|---|
+| `g1_cert` | G1 Cert (builder certification) | `task` |
+| `g2a_primary` | G2a Primary (deep review lane) | `task` |
+| `g2b_light` | G2b Light (second-read lane) | `task` |
+| `g3_candidate` | G3 Candidate (pre-QA + QA deploy) | `release` |
+| `g4_ship` | G4 Ship (frozen-SHA + prod deploy) | `release` |
+
+```bash
+GET  /api/v1/gates/:subject_type/:subject_slug
+POST /api/v1/gates/:subject_type/:subject_slug/:key/open
+POST /api/v1/gates/:subject_type/:subject_slug/:key/sops
+POST /api/v1/gates/:subject_type/:subject_slug/:key/close
+```
+
+Same bearer auth as every endpoint. Semantics live server-side in the model's
+one write funnel: `open` finds the in-flight attempt or starts attempt n+1
+(a partial unique index converges racing openers onto one row); `sops` appends
+one executed-SOP entry, implicitly opening (appending IS evidence the gate is
+running); `close` records the verdict — closing with NO open attempt records a
+self-contained attempt (a lone verdict is still a real attempt).
+
+Payloads ride under a `gate` key (top-level also accepted); `close` takes a
+top-level `success`:
+
+```bash
+api POST /api/v1/gates/task/<task-slug>/g1_cert/open \
+  '{"gate": {"actor": "carl"}}'
+api POST /api/v1/gates/task/<task-slug>/g1_cert/sops \
+  '{"gate": {"sop": {"sop": "spine", "cmd": "bin/rails test test/models", "result": "pass", "duration_ms": 9800}}}'
+api POST /api/v1/gates/task/<task-slug>/g1_cert/close \
+  '{"success": true, "gate": {"sops": [{"sop": "dor-check", "result": "pass"}], "metadata": {"route": "fast"}}}'
+```
+
+A SOP entry keeps `{sop, cmd, tier, result, duration_ms, at}` (`at` is stamped
+server-side when absent). `source` defaults to `"system"`. Errors: an unknown
+key → `INVALID_GATE_KEY`; a task-grain key on a release (or vice versa) →
+`GATE_GRAIN_MISMATCH`; an unknown subject → `404 NOT_FOUND`; `close` without
+`success` → `MISSING_SUCCESS`.
+
+**Deliberately NO usage gate** — gate markers are deterministic pipeline
+boundaries, not usage-bearing work events (the same rationale as `bin/task
+checkpoint`'s `source=system` default). Do not re-add a
+`MISSING_EVENT_USAGE`-style requirement; producers (`bin/fast-check`,
+`bin/full-suite-check`, `bin/dor-check`, `bin/pr-review`, `bin/release`) post
+fire-and-forget — a gate write must never break the work it observes.
+
+Prefer the CLI over raw curl: `bin/gate open|sop|close|show` wraps this
+surface with the same flags the producers use (`bin/gate show task <slug>` /
+`bin/gate show release <slug>` to read).
 
 ### Review Check-In API
 

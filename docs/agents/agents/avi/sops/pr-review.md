@@ -105,6 +105,16 @@ the reviewer-select step, label it **"select primary+light reviewers"** — neve
 "summon Avi" (Avi is the supervisor doing the selecting, not a reviewer being
 summoned).
 
+The wave IS the task's **G2 Review gate**
+([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md)):
+`bin/pr-review` opens the two lanes (`g2a_primary` + `g2b_light`) as the pair
+launches, the primary's gate-zero (`bin/dor-check <task> --gate-role review`)
+lands as a SOP on G2a, and each lane closes from its own reviewer's scout
+report (`merge-ready` = passed; a reportless lane stays in flight for the next
+wave). The chips render on the task's gates card. Automatic on the supervisor
+path — record the markers with `bin/gate` only on a hand-run review
+(the manual commands are in the gate doc).
+
 Manual fallback:
 
 ```bash
@@ -155,3 +165,5 @@ with a reason. Report the result per task.
   role SOP this supervisor spawns.
 - [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md) -
   single-PR review primitive.
+- [`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md) -
+  the G2 Review gate this supervisor's waves produce.

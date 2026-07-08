@@ -61,8 +61,18 @@ is missing, note it as a finding — do not guess.
    `migration` / `payment` / `solana` / `auth` risk tags):
    - **diff vs. acceptance** — the change does what the task's acceptance criteria say.
    - **checks / tests (you own this gate)** — the shape's Definition-of-Ready
-     **base** tiers are green in `checks_run`; run `bin/dor-check <task-slug>` and
-     confirm it passes. This gate is yours, not the light's.
+     **base** tiers are green in `checks_run`; run the review gate-zero
+
+     ```bash
+     bin/dor-check <task-slug> --gate-role review
+     ```
+
+     and confirm it passes. This gate is yours, not the light's. The
+     `--gate-role review` flag matters: your verdict lands as a SOP on the
+     task's **G2a Primary** gate attempt
+     ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md))
+     instead of closing the builder's **G1 Cert** — a bare `bin/dor-check
+     <task-slug>` would stamp the builder's gate as if the builder ran it.
    - **your domain checklist** — walk your soul's REVIEW CHECKLIST (in your
      `role.md`) against the diff for the hard-won gotchas in your domain.
    - **code standards + code smell + scalability** — read the diff and the changed
@@ -112,3 +122,5 @@ supervisor owns the final move to `reviewed` or `blocked`.
   your sibling runs.
 - [`../../../modules/pr-review-sop.md`](../../../modules/pr-review-sop.md) —
   single-PR review primitive.
+- [`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md) —
+  the G2 Review gate your lane (G2a) records into.
