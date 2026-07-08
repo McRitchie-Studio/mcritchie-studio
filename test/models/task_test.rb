@@ -1077,29 +1077,35 @@ class TaskTest < ActiveSupport::TestCase
                              tokens_in: count / 2, tokens_out: count - (count / 2))
   end
 
-  test "derive_actual_size maps total tokens through the threshold map" do
+  # Stamp `dollars` measured cost onto a task as a single TaskEvent — the size
+  # signal behind #derive_actual_size (which now buckets on $cost, not tokens).
+  def stamp_cost(task, dollars)
+    task.task_events.create!(to_stage: task.stage, occurred_at: Time.current, cost: dollars)
+  end
+
+  test "derive_actual_size maps total cost through the threshold map" do
     cases = {
-      500_000     => "small",   # < 1M
-      999_999     => "small",   # just under the small ceiling
-      1_000_000   => "medium",  # the small ceiling is EXCLUSIVE → medium
-      4_999_999   => "medium",  # just under the medium ceiling
-      5_000_000   => "large",   # the medium ceiling is EXCLUSIVE → large
-      14_999_999  => "large",   # just under the large ceiling
-      15_000_000  => "xl",      # the large ceiling is EXCLUSIVE → xl
-      40_000_000  => "xl"       # well into xl
+      BigDecimal("5")      => "small",  # < $10
+      BigDecimal("9.99")   => "small",  # just under the small ceiling
+      BigDecimal("10")     => "medium", # the small ceiling is EXCLUSIVE → medium
+      BigDecimal("49.99")  => "medium", # just under the medium ceiling
+      BigDecimal("50")     => "large",  # the medium ceiling is EXCLUSIVE → large
+      BigDecimal("199.99") => "large",  # just under the large ceiling
+      BigDecimal("200")    => "xl",     # the large ceiling is EXCLUSIVE → xl
+      BigDecimal("491")    => "xl"      # well into xl
     }
-    cases.each do |tokens, expected|
-      task = Task.create!(title: "size boundary task #{tokens}", stage: "building")
-      stamp_tokens(task, tokens)
-      assert_equal expected, task.derive_actual_size, "#{tokens} tokens → #{expected}"
+    cases.each do |cost, expected|
+      task = Task.create!(title: "size boundary task #{cost}", stage: "building")
+      stamp_cost(task, cost)
+      assert_equal expected, task.derive_actual_size, "$#{cost} → #{expected}"
     end
   end
 
-  test "derive_actual_size is nil with no measured usage (honest, not small)" do
+  test "derive_actual_size is nil with no measured cost (honest, not small)" do
     task = Task.create!(title: "no usage size task", stage: "building")
-    # The genesis event carries no tokens, so the measured total is zero.
-    assert_equal 0, task.measured_tokens_total
-    assert_nil task.derive_actual_size, "zero measured tokens can't be sized → nil, never a false 'small'"
+    # The genesis event carries no cost, so the measured total is zero.
+    assert task.total_cost.zero?
+    assert_nil task.derive_actual_size, "zero measured cost can't be sized → nil, never a false 'small'"
   end
 
   test "measured_tokens_total sums tokens_total across all events" do
@@ -1126,9 +1132,9 @@ class TaskTest < ActiveSupport::TestCase
     assert task.total_cost.zero?, "an unpriced task totals zero, not nil"
   end
 
-  test "shipping auto-derives actual_size from measured usage when blank" do
+  test "shipping auto-derives actual_size from measured cost when blank" do
     task = Task.create!(title: "ship derives size task", stage: "assembled")
-    stamp_tokens(task, 6_000_000) # → large (≥5M, <15M)
+    stamp_cost(task, BigDecimal("75")) # → large ($50-$200)
     assert_nil task.actual_size
 
     task.ship!
@@ -1138,11 +1144,26 @@ class TaskTest < ActiveSupport::TestCase
 
   test "shipping never clobbers a manually set actual_size" do
     task = Task.create!(title: "manual size wins task", stage: "assembled", actual_size: "small")
-    stamp_tokens(task, 40_000_000) # would derive xl
+    stamp_cost(task, BigDecimal("491")) # would derive xl
 
     task.ship!
 
     assert_equal "small", task.reload.actual_size, "a manual size is never overwritten by the auto-derivation"
+  end
+
+  test "[integration] ship persists a cost-derived actual_size that round-trips through the DB" do
+    task = Task.create!(title: "e2e cost sizing task", stage: "assembled")
+    # Real ingestion writes cost onto TaskEvents; three stage moves total $120 → large.
+    stamp_cost(task, BigDecimal("40"))
+    stamp_cost(task, BigDecimal("55"))
+    stamp_cost(task, BigDecimal("25"))
+    assert_nil task.actual_size
+
+    task.ship!
+
+    reloaded = Task.find(task.id)
+    assert_equal BigDecimal("120"), reloaded.total_cost, "total_cost sums the TaskEvent costs in SQL"
+    assert_equal "large", reloaded.actual_size, "actual_size = cost bucket ($120 → large), persisted"
   end
 
   test "shipping with no measured usage leaves actual_size blank" do

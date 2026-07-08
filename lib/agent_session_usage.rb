@@ -31,9 +31,14 @@ class AgentSessionUsage
       !delta.nil? && BUCKETS.any? { |b| delta[b].to_i.positive? }
     end
 
-    # Input-side tokens of the delta (new input + cache writes + cache reads).
+    # Fresh input tokens of the delta (new input + cache writes). EXCLUDES
+    # cache_read: reads are ~96-98% of all tokens and would swamp the count and
+    # every downstream size signal (they inflated TaskEvent.tokens_in ~30-50x vs
+    # the activity path, which never counted them). cache_read stays in `delta` so
+    # #cost still prices it at the discounted cache tier — this trims only the
+    # token COUNT, never the bill.
     def tokens_in
-      delta["input"].to_i + delta["cache_creation"].to_i + delta["cache_read"].to_i
+      delta["input"].to_i + delta["cache_creation"].to_i
     end
 
     def tokens_out

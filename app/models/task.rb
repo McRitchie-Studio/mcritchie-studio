@@ -22,11 +22,16 @@ class Task < ApplicationRecord
   # measured token usage yet, so they can't be fit to data; they're meant to be
   # re-tuned once real shipped tasks accumulate a token distribution. Kept in one
   # constant map so that re-tuning is a one-line edit.
-  ACTUAL_SIZE_THRESHOLDS = {
-    "small"  => 1_000_000,   # < 1M tokens  — a quick, contained change
-    "medium" => 5_000_000,   # < 5M tokens  — a normal feature
-    "large"  => 15_000_000,  # < 15M tokens — a heavy, multi-stage build
-    "xl"     => Float::INFINITY # ≥ 15M tokens — an epic
+  # actual_size buckets on measured $COST, not token count: cost is ground-truth
+  # correct (priced through UsagePricing), while the token total is dominated
+  # ~98% by cache_read and pinned nearly every task to XL. Ceilings are USD and
+  # TUNABLE — a one-line edit once shipped tasks accumulate a cost distribution
+  # (early prod data: quick fixes < $10, epics $250-500).
+  ACTUAL_SIZE_COST_THRESHOLDS = {
+    "small"  => 10.0,   # < $10  — a quick, contained change
+    "medium" => 50.0,   # < $50  — a normal feature
+    "large"  => 200.0,  # < $200 — a heavy, multi-stage build
+    "xl"     => Float::INFINITY # ≥ $200 — an epic
   }.freeze
 
   # Two-workflow status model. See docs/agents/system/devops-cycle-design.md.
@@ -827,9 +832,10 @@ class Task < ApplicationRecord
   end
 
   # The MEASURED total tokens for this task — the sum of tokens_total across every
-  # TaskEvent on its spine (a missing token field counts as 0). The size signal
-  # behind #derive_actual_size. Computed in SQL off a fresh relation so it never
-  # reads a stale loaded-association cache mid-transaction.
+  # TaskEvent on its spine (a missing token field counts as 0). Feeds the
+  # /intelligence token charts; actual_size now sizes on $cost (see
+  # #derive_actual_size), NOT this. Computed in SQL off a fresh relation so it
+  # never reads a stale loaded-association cache mid-transaction.
   def measured_tokens_total
     TaskEvent.where(task_slug: slug)
              .sum(Arel.sql("COALESCE(tokens_in, 0) + COALESCE(tokens_out, 0)"))
@@ -844,15 +850,17 @@ class Task < ApplicationRecord
     TaskEvent.where(task_slug: slug).sum(:cost)
   end
 
-  # The actual_size this task's measured usage maps to via ACTUAL_SIZE_THRESHOLDS,
-  # or nil when there's NO measured usage (zero tokens) — an honest "can't size it"
-  # rather than a misleading "small" for a task whose usage was simply never
-  # captured. Pure (no writes): callers decide whether to persist it.
+  # The actual_size this task's measured $COST maps to via ACTUAL_SIZE_COST_THRESHOLDS,
+  # or nil when there's NO measured cost (zero) — an honest "can't size it" rather
+  # than a misleading "small" for a task whose usage was never captured/priced.
+  # Sizes on cost, not tokens: cost is ground-truth priced, while the token total
+  # is ~98% cache_read and pinned everything to XL. Pure (no writes): callers
+  # decide whether to persist it.
   def derive_actual_size
-    tokens = measured_tokens_total
-    return nil if tokens.zero?
+    cost = total_cost
+    return nil if cost.nil? || cost.zero?
 
-    ACTUAL_SIZE_THRESHOLDS.find { |_size, ceiling| tokens < ceiling }&.first
+    ACTUAL_SIZE_COST_THRESHOLDS.find { |_size, ceiling| cost < ceiling }&.first
   end
 
   def self.normalize_devops_metadata(raw)

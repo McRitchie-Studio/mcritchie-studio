@@ -85,12 +85,24 @@ class AgentSessionUsageTest < Minitest::Test
 
       assert result.usage?
       # delta = second assistant turn only: input 50, output 80, cc 5, cr 2000
-      assert_equal 2055, result.tokens_in   # 50 + 5 + 2000
+      assert_equal 55, result.tokens_in   # 50 + 5 — cache_read (2000) EXCLUDED from the count
       assert_equal 80, result.tokens_out
       # (50*5 + 80*25 + 5*5*2.0 + 2000*5*0.10) / 1e6 = 3300 / 1e6
       # cache-write now = 1h list rate (2.0x input), via the shared UsagePricing SoT.
       assert_in_delta 0.0033, result.cost, 0.00005
     end
+  end
+
+  # Regression: cache_read is priced (discounted tier) but must NOT inflate the
+  # token COUNT — it is ~96-98% of tokens and pinned every task's actual_size to XL.
+  def test_tokens_in_excludes_cache_read
+    result = AgentSessionUsage::Result.new(
+      model: "claude-opus-4-8", totals: nil,
+      delta: { "input" => 100, "output" => 40, "cache_creation" => 10, "cache_read" => 9_999_999 }
+    )
+    assert_equal 110, result.tokens_in, "tokens_in = input + cache_creation, NOT cache_read"
+    assert_equal 40, result.tokens_out
+    assert result.cost.positive?, "cache_read still priced into cost (discounted), just not counted"
   end
 
   def test_baseline_above_totals_floors_delta_at_zero
@@ -141,7 +153,7 @@ class AgentSessionUsageTest < Minitest::Test
       assert result.usage?
       assert_equal "gpt-5.5", result.model
       assert_equal({ "input" => 1000, "output" => 280, "cache_creation" => 0, "cache_read" => 500 }, result.totals)
-      assert_equal 500, result.tokens_in
+      assert_equal 300, result.tokens_in   # input 300 + cache_creation 0 — cache_read (200) EXCLUDED
       assert_equal 80, result.tokens_out
       assert_equal 0.004, result.cost
     end
