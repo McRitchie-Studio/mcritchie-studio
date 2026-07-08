@@ -177,6 +177,7 @@ stamped one (monotonic — a late upstream write never winds the tracker back):
 | Stage | Stamp | Tracker reads |
 |---|---|---|
 | `testing` | `testing_started_at` | node 1 Testing yellow |
+| `tested` | `tested_at` | (not a tracker node) — the /deployments **Tested** column's end stamp |
 | `assembling` | `assembling_started_at` | node 1 green · node 2 Assembling yellow |
 | `assembled` | `assembled_at` | node 2 green |
 | `qa_deploying` | `qa_deploy_started_at` | node 3 Deploying QA yellow |
@@ -189,7 +190,12 @@ stamped one (monotonic — a late upstream write never winds the tracker back):
 Stamps flow from the release **event trail**: every `record_event!` write — the
 conductor's `bin/release prepare`/`ship` checkpoints AND the agent-facing
 `POST /api/v1/releases/:slug|current/events/:step/(start|complete)` API — maps
-`(step, status)` to its stage stamp (`Release::EVENT_STAGE_STAMPS`). A node
+`(step, status)` to its stage stamp (`Release::EVENT_STAGE_STAMPS`). `prepare`
+brackets its `pre_qa_gate` (the integration/e2e-smoke test run) with
+`review_tests started`/`completed`, which stamp `testing_started_at` /
+`tested_at` — the /deployments **Tested** column (`testing_started_at → tested_at`).
+`tested` is a duration stamp only, NOT a sixth tracker node (node 1 still greens
+on `assembling`). A node
 lights yellow ONLY on its own start stamp, so a finished stage leaves the next
 node **dark until its owner posts their start**. That gap is the explicit
 **Steffon → Avi handoff**: Steffon's qa-release finishes at `qa_deployed` (three

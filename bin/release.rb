@@ -1353,8 +1353,13 @@ def prepare
   # 5. PRE-QA GATE — the prepare-owned test tier (integration + e2e-smoke) on
   #    origin/release, BEFORE any QA deploy. A regression aborts with eject
   #    guidance while every member is still `reviewed`; the rest of the RC rides
-  #    on the re-run.
+  #    on the re-run. Bracket it with review_tests events so the release's
+  #    testing_started_at / tested_at stamps land off the actual prepare test run
+  #    (the "Tested" /deployments column). Best-effort like the other posts; if the
+  #    gate aborts, `completed` never posts and Tested reads in-progress.
+  record_release_event(rel_slug, "review_tests", "started")
   pre_qa_gate(app_groups)
+  record_release_event(rel_slug, "review_tests", "completed")
 
   # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror

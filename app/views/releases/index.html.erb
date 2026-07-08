@@ -11,18 +11,22 @@
     <%= link_to "Back to Dashboard", deployments_path, class: "btn btn-neutral btn-sm" %>
   </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
-    <% (@duration_dashboard.dig("averages", "stages") || {}).each do |key, row| %>
+  <% stage_averages = @deployment_dashboard["stages"] || {} %>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+    <% stage_averages.each do |_key, row| %>
       <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold"><%= release_duration_stage_name(key) %></p>
-        <p class="mt-1 font-mono text-xl font-bold text-heading"><%= release_duration_label(row["average_seconds"]) %></p>
+        <p class="text-[10px] uppercase tracking-wide text-muted font-semibold"><%= row["label"] %></p>
+        <p class="mt-1 font-mono text-xl font-bold text-heading tabular-nums"><%= release_duration_label(row["average_seconds"]) %></p>
+        <p class="mt-1 text-[11px] text-muted"><%= row["sample_count"].to_i %> release<%= "s" unless row["sample_count"].to_i == 1 %></p>
       </div>
     <% end %>
-    <% deployment = @duration_dashboard.dig("averages", "deployment") || {} %>
-    <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
-      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">Deployment</p>
-      <p class="mt-1 font-mono text-xl font-bold text-heading"><%= release_duration_label(deployment["average_seconds"]) %></p>
-    </div>
+  </div>
+
+  <% chart_max = @deployment_average_rows.flat_map { |avg| Release::DEPLOYMENT_STAGES.map { |stage| avg[:averages].dig("stages", stage[:key], "average_seconds").to_i } }.max.to_i %>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <% @deployment_average_rows.each do |avg| %>
+      <%= render "releases/deployment_average_chart", averages: avg[:averages], label: avg[:label], max_seconds: chart_max %>
+    <% end %>
   </div>
 
   <div class="overflow-x-auto rounded-lg border border-subtle bg-surface">
@@ -31,34 +35,40 @@
         <tr>
           <th class="px-4 py-3 font-semibold">Release</th>
           <th class="px-4 py-3 font-semibold">State</th>
-          <th class="px-4 py-3 font-semibold text-right">Assemble</th>
-          <th class="px-4 py-3 font-semibold text-right">Confirm</th>
-          <th class="px-4 py-3 font-semibold text-right">Ship</th>
-          <th class="px-4 py-3 font-semibold text-right">Deploy</th>
+          <% Release::DEPLOYMENT_STAGES.each do |stage| %>
+            <th class="px-4 py-3 font-semibold text-left"><%= stage[:label] %></th>
+          <% end %>
+          <th class="px-4 py-3 font-semibold text-right">Total</th>
           <th class="px-4 py-3 font-semibold text-right">Tasks</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-subtle">
-        <% @releases.each do |release| %>
-          <% metrics = release.duration_metrics.presence || Release::DurationCache.build(release) %>
-          <% deployment = metrics["release"] || {} %>
+        <% @releases.each_with_index do |release, index| %>
           <tr class="hover:bg-surface-alt/70">
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-top">
               <%= link_to release.slug, deployment_path(release), class: "font-mono text-primary hover:underline" %>
             </td>
-            <td class="px-4 py-3">
+            <td class="px-4 py-3 align-top">
               <span class="rounded px-2 py-0.5 text-xs font-bold <%= release_state_classes(release.state) %>"><%= release.state %></span>
             </td>
-            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["assembly_seconds"]) %></td>
-            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["confirmation_seconds"]) %></td>
-            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["shipping_seconds"]) %></td>
-            <td class="px-4 py-3 text-right font-mono text-heading tabular-nums"><%= release_duration_label(deployment["deployment_seconds"] || deployment["live_seconds"]) %></td>
-            <td class="px-4 py-3 text-right text-secondary"><%= release.tasks.size %></td>
+            <% release.deployment_stage_spans.each do |span| %>
+              <td class="px-4 py-3 text-left align-top"><%= render "releases/deployment_stage_cell", span: span %></td>
+            <% end %>
+            <td class="px-4 py-3 text-right align-top"><%= render "releases/deployment_stage_cell", span: release.deployment_total_span, range: false %></td>
+            <td class="px-4 py-3 text-right align-top text-secondary"><%= release.tasks.size %></td>
           </tr>
+          <% if @release_page == 1 %>
+            <% @deployment_average_rows.select { |avg| avg[:after_index] == index }.each do |avg| %>
+              <%= render "releases/deployment_average_row", averages: avg[:averages], label: avg[:label] %>
+            <% end %>
+          <% end %>
         <% end %>
       </tbody>
     </table>
   </div>
+
+  <%= render "tasks/release_ticker" %>
+  <%= render "releases/deployment_range_script" %>
 
   <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-muted">
     <p>

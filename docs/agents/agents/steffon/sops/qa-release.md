@@ -77,10 +77,14 @@ bin/release prepare --yes
 6. Flip members from `reviewed` to `assembled` only after QA is green.
 
 `prepare` also narrates the release's **stage timeline** as it goes — its
-conductor checkpoints (`assemble_release started/completed`, `deploy_qa
+conductor checkpoints (`review_tests started/completed` bracketing the pre-QA
+test gate, then `assemble_release started/completed`, `deploy_qa
 started/completed`) stamp the release's stage timestamps, which drive the
-/deployments tracker live: Assembling yellow → Assembled green → Deploying QA
-yellow → **Live on QA** green. You post nothing extra on the happy path.
+/deployments tracker live: Testing → Tested → Assembling yellow → Assembled green
+→ Deploying QA yellow → **Live on QA** green. The `review_tests` bracket stamps
+`testing_started_at` / `tested_at` — the /deployments **Tested** column
+(`Tested` is a duration stamp, not a sixth tracker node). You post nothing extra
+on the happy path.
 
 Smoke QA after prepare reports success:
 

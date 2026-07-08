@@ -12,7 +12,16 @@ class ReleasesController < ApplicationController
     @release_per_page = RELEASES_PER_PAGE
     @release_offset = (@release_page - 1) * @release_per_page
     @releases = releases_scope.includes(:tasks).offset(@release_offset).limit(@release_per_page)
-    @duration_dashboard = Release::DurationCache.dashboard(limit: 3)
+    # Running-average rows sit AFTER the Nth release (the boundary of their window):
+    # 3-avg between rows 3 and 4, 10-avg between rows 10 and 11. Clamped to the page
+    # size and shown only on page 1, where the newest N releases actually live.
+    rows_on_page = @releases.size
+    @deployment_average_rows = [3, 10].map do |window|
+      { label: "#{window}-release avg",
+        averages: Release.deployment_stage_averages(limit: window),
+        after_index: [window, rows_on_page].min - 1 }
+    end
+    @deployment_dashboard = @deployment_average_rows.last[:averages]
   end
 
   def show

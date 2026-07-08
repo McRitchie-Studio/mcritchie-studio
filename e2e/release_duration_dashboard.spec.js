@@ -26,13 +26,20 @@ test("deployments analytics card navigates to release history and detail", async
 
   const card = page.locator("#release-duration-card");
   await expect(card).toBeVisible();
-  await expect(card.locator("[data-test='release-duration-stage']")).toHaveCount(4);
-  await expect(card.locator("[data-test='release-duration-deployment']")).toContainText("Deployment");
+  await expect(card.locator("[data-test='release-duration-stage']")).toHaveCount(5);
+  await expect(
+    card.locator("[data-test='release-duration-stage'][data-stage='deployed']"),
+  ).toContainText("Deployed");
+  await expect(
+    card.locator("[data-test='release-duration-stage'][data-stage='total']"),
+  ).toContainText("Total");
 
   await card.getByRole("link", { name: "All Deployments" }).click();
   await expect(page).toHaveURL(/\/deployments\/all$/);
   await expect(page.getByRole("heading", { name: "All Deployments" })).toBeVisible();
-  await expect(page.locator("table tbody tr")).toHaveCount(25);
+  // 25 release rows + the 2 pinned running-average rows (3-release / 10-release).
+  await expect(page.locator("table tbody tr")).toHaveCount(27);
+  await expect(page.locator("tbody tr[data-test='deployment-average-row']")).toHaveCount(2);
   await expect(page.getByText(/Page 1 \//)).toBeVisible();
 
   await page.getByRole("link", { name: "Next" }).click();
@@ -48,7 +55,7 @@ test("deployments analytics card navigates to release history and detail", async
   await expect(page.getByRole("heading", { name: releaseSlug })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Stage Averages" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Member Tasks" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Release Events" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Release Steps" })).toBeVisible();
 
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });

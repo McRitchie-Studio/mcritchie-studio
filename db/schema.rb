@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_07_031000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_08_021926) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -808,6 +808,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_07_031000) do
     t.string "slug", null: false
     t.jsonb "smoke_seal", default: {}, null: false
     t.string "state", default: "assembling", null: false
+    t.datetime "tested_at"
     t.datetime "testing_started_at"
     t.datetime "updated_at", null: false
     t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"

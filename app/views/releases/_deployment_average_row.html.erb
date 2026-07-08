@@ -1,0 +1,26 @@
+<%# A pinned running-average sub-row for the All Deployments table: the mean of
+    each stage duration (+ Total) over the last N shipped releases, so the column
+    averages read at a glance right above the per-release rows. Durations only (no
+    timestamp range) and left-aligned so each sits under its column's release
+    durations. Locals: averages (a Release.deployment_stage_averages hash), label. %>
+<% averages = local_assigns.fetch(:averages) %>
+<% label = local_assigns.fetch(:label) %>
+<% stages = averages["stages"] || {} %>
+<tr class="bg-surface-alt" data-test="deployment-average-row">
+  <td class="px-4 py-2.5">
+    <span class="text-[11px] font-bold uppercase tracking-wide text-primary"><%= label %></span>
+  </td>
+  <td class="px-4 py-2.5">
+    <span class="text-[10px] text-muted"><%= averages["sample_count"].to_i %> release<%= "s" unless averages["sample_count"].to_i == 1 %></span>
+  </td>
+  <% Release::DEPLOYMENT_STAGES.each do |stage| %>
+    <% row = stages[stage[:key]] || {} %>
+    <td class="px-4 py-2.5 text-left">
+      <span class="font-mono font-bold text-heading tabular-nums"><%= release_duration_label(row["average_seconds"]) %></span>
+    </td>
+  <% end %>
+  <td class="px-4 py-2.5 text-right">
+    <span class="font-mono font-bold text-heading tabular-nums"><%= release_duration_label(stages.dig("total", "average_seconds")) %></span>
+  </td>
+  <td class="px-4 py-2.5"></td>
+</tr>
