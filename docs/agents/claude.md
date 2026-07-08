@@ -69,7 +69,7 @@ creation (`bin/task create … --po-size small|medium|large|xl`), a forecast, no
 gate (backfill later with `bin/task update --po-size`). The per-task Pokémon
 stamps its `dev_size` as it claims the task (`bin/task move <task> building
 --dev-size <size>`; optional). At ship, `actual_size` auto-derives from MEASURED
-usage (total tokens across the task's TaskEvents) when blank — powering the sizing
+$cost (sum of `cost` across the task's TaskEvents) when blank — powering the sizing
 intelligence dashboard.
 
 **Never** push to `main`, merge, deploy, or publish gems unless Mr. McRitchie
