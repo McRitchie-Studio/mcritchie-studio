@@ -143,6 +143,30 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=aa-active-filters]"
   end
 
+  test "shows the filtered cost total before the activity count when under 100 activities" do
+    activity(session: "sess-A", reason_slug: "priced activity one", cost: 0.10)
+    activity(session: "sess-A", reason_slug: "priced activity two", cost: 0.025)
+    activity(session: "sess-B", reason_slug: "hidden priced activity", cost: 0.50)
+
+    get activities_agents_path(sessions: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=aa-filtered-cost] b", text: "$0.1250"
+    assert_select "[data-test=aa-activity-total] b", text: "2"
+    assert_operator response.body.index('data-test="aa-filtered-cost"'),
+                    :<, response.body.index('data-test="aa-activity-total"')
+  end
+
+  test "hides the filtered cost total when the activity count reaches 100" do
+    100.times { |i| activity(session: "sess-A", reason_slug: "activity number #{i}", seq: i, cost: 0.01) }
+
+    get activities_agents_path(sessions: "sess-A")
+
+    assert_response :success
+    assert_select "[data-test=aa-filtered-cost]", false
+    assert_select "[data-test=aa-activity-total] b", text: "100"
+  end
+
   test "the active-filters row always renders (reserves space) even with no filter" do
     activity(session: "sess-A", reason_slug: "some activity here")
 
