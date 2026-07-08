@@ -22,19 +22,23 @@
   </figcaption>
   <div class="space-y-1.5" role="img" aria-label="<%= label %> per-stage average durations">
     <% Release::DEPLOYMENT_STAGES.each do |stage| %>
-      <% seconds = stages.dig(stage[:key], "average_seconds").to_i %>
-      <% pct = max_seconds.positive? ? [(seconds / max_seconds * 100).round, 2].max : 0 %>
+      <%# A nil average = the stage has no completed samples (e.g. Tested on
+          pre-migration releases). Keep it nil — do NOT coerce to 0, which would hit
+          the 2%-floor and draw a bar reading "<1m" for a stage with no data.
+          nil → zero-width bar (no fill) + a "—" value. %>
+      <% average_seconds = stages.dig(stage[:key], "average_seconds") %>
+      <% pct = average_seconds && max_seconds.positive? ? [(average_seconds.to_i / max_seconds * 100).round, 2].max : 0 %>
       <div class="flex items-center gap-3">
         <%# Bars all start at the same left edge; the stage label is overlaid inside
             the bar's start (spilling onto the surface for short bars, still legible). %>
         <div class="relative h-5 min-w-0 flex-1">
           <div class="absolute inset-y-0 left-0 rounded-[4px]"
                style="width: <%= pct %>%; background-color: <%= colors[stage[:key]] %>;"
-               title="<%= stage[:label] %>: <%= release_duration_label(seconds) %> average over <%= averages["sample_count"].to_i %>"></div>
+               title="<%= stage[:label] %>: <%= release_duration_label(average_seconds) %> average over <%= averages["sample_count"].to_i %>"></div>
           <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-[11px] font-medium text-white"
                 style="text-shadow: 0 1px 2px rgba(0,0,0,0.45);"><%= stage[:label] %></span>
         </div>
-        <span class="w-12 shrink-0 text-right font-mono text-xs font-semibold text-heading tabular-nums"><%= release_duration_label(seconds) %></span>
+        <span class="w-12 shrink-0 text-right font-mono text-xs font-semibold text-heading tabular-nums"><%= release_duration_label(average_seconds) %></span>
       </div>
     <% end %>
   </div>

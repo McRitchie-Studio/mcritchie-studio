@@ -925,6 +925,29 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes rendered, "22m"
   end
 
+  test "[component] deployment_average_chart shows a no-data stage as an em dash with a zero-width bar" do
+    # Regression: a nil average (a stage with no completed samples, e.g. Tested on
+    # pre-migration releases) must NOT coerce to 0 and draw the 2%-floor bar reading
+    # "<1m" — it should render "—" with no fill.
+    averages = {
+      "sample_count" => 3,
+      "stages" => {
+        "tested" => { "label" => "Tested", "average_seconds" => nil },
+        "assembled" => { "label" => "Assembled", "average_seconds" => 1320 },
+        "confirmed" => { "label" => "Confirmed", "average_seconds" => 120 },
+        "deployed" => { "label" => "Deployed", "average_seconds" => 120 },
+        "total" => { "label" => "Total", "average_seconds" => 3180 }
+      }
+    }
+    render partial: "releases/deployment_average_chart",
+           locals: { averages: averages, label: "3-release avg", max_seconds: 1320 }
+
+    assert_includes rendered, "width: 0%; background-color: #3987e5"   # Tested: no bar
+    assert_no_match(/width: 2%; background-color: #3987e5/, rendered)  # never the false 2% floor
+    assert_includes rendered, "—"                                      # Tested value is a dash, not "<1m"
+    assert_includes rendered, "width: 100%; background-color: #199e70" # a real stage still draws its bar
+  end
+
   test "[component] the Last Release card shows a muted empty state when nothing has shipped" do
     render partial: "tasks/last_release", locals: { release: nil }
 
