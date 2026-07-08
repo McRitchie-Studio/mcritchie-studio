@@ -1222,4 +1222,146 @@ class DorCheckTest < Minitest::Test
     assert_equal "red", j.dig("ci", "state")
     assert(j["errors"].any? { |e| e.match?(/RED/) }, out)
   end
+
+  # --- FAST-cert route: fresh [fast-cert@<fp>] evidence + GREEN GitHub CI --------
+  # The 90/10 rethink: CI already runs the FULL suite + test:system per PR push and
+  # this gate blocks on CI green anyway, so a fresh bin/fast-check cert (diff-mapped
+  # tests + core spine + scoped rubocop) is accepted as the suite gate WHEN CI is
+  # green. Red/pending CI still blocks; a missing/unverified CI does NOT credit the
+  # fast cert (the full net hasn't provably run); full-suite evidence and the
+  # [full-suite-bypass] hatch keep working. Driven by the DOR_CHECK_SUITE_EVIDENCE
+  # fast_fresh/fast_stale tokens + DOR_CHECK_CI_STATUS (unit) and the REAL
+  # fingerprint path (integration).
+
+  def fast_check_ci(evidence, ci_state, devops = CI_PR, *args)
+    with_changed_files("app/models/agent.rb") do
+      with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence, "DOR_CHECK_CI_STATUS" => ci_state) do
+        check(devops, *args)
+      end
+    end
+  end
+
+  def test_fresh_fast_cert_with_green_ci_passes_merge_gate
+    out, code = fast_check_ci("fast_fresh", "green")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/fast cert accepted/, out)
+    assert_match(/GitHub CI green/, out)
+  end
+
+  def test_fresh_fast_cert_without_a_verified_ci_is_refused
+    # CI :none (a PR with no checks yet) never blocks on its own, but it cannot
+    # CREDIT a fast cert either — the full net hasn't provably run.
+    out, code = fast_check_ci("fast_fresh", "none")
+    assert_equal 1, code, out
+    assert_match(/fast-cert evidence is FRESH/, out)
+    assert_match(/GREEN GitHub CI/, out)
+    assert_match(%r{bin/full-suite-check}, out, "offers the full local route as the alternative")
+  end
+
+  def test_fresh_fast_cert_with_red_ci_is_refused
+    out, code = fast_check_ci("fast_fresh", "red")
+    assert_equal 1, code, out
+    assert_match(/GitHub CI is RED/, out)
+    assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses too — fast needs CI green")
+  end
+
+  def test_fresh_fast_cert_with_pending_ci_is_refused
+    out, code = fast_check_ci("fast_fresh", "pending")
+    assert_equal 1, code, out
+    assert_match(/still RUNNING/, out)
+    assert_match(/fast-cert evidence is FRESH/, out)
+  end
+
+  def test_fresh_fast_cert_without_a_pr_is_refused
+    # No pr_url + no injection → the real :no_pr path: CI is silent, but silent ≠
+    # green — the fast cert stays uncredited until the PR exists and CI passes.
+    out, code = with_changed_files("app/models/agent.rb") do
+      with_env("DOR_CHECK_SUITE_EVIDENCE" => "fast_fresh", "DOR_CHECK_CI_STATUS" => nil) do
+        check(BACKEND_CONTRACT)
+      end
+    end
+    assert_equal 1, code, out
+    assert_match(/fast-cert evidence is FRESH/, out)
+  end
+
+  def test_stale_fast_cert_is_refused_even_with_green_ci
+    out, code = fast_check_ci("fast_stale", "green")
+    assert_equal 1, code, out
+    assert_match(/fast-cert: STALE/, out)
+    refute_match(/DoR-to-Merge met/, out)
+  end
+
+  def test_full_evidence_still_passes_without_any_ci_pairing
+    # The FULL route is unchanged: full-suite + rubocop evidence needs no CI green
+    # (the CI gate itself still blocks red/pending independently — "none" doesn't).
+    out, code = fast_check_ci("ok", "none")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    refute_match(/fast cert accepted/, out)
+  end
+
+  def test_missing_evidence_refusal_offers_the_fast_route
+    out, code = fast_check_ci("missing", "green")
+    assert_equal 1, code, out
+    assert_match(%r{bin/fast-check}, out, "the refusal teaches both certification routes")
+    assert_match(%r{bin/full-suite-check}, out)
+  end
+
+  def test_fast_route_surfaces_in_the_json_verdict
+    out, code = fast_check_ci("fast_fresh", "green", CI_PR, "--json")
+    assert_equal 0, code, out
+    j = JSON.parse(out)
+    assert j["ready"]
+    assert_equal "fast", j.dig("full_suite", "route")
+    assert_equal "fresh", j.dig("full_suite", "lanes", "fast-cert")
+    refute j.dig("full_suite", "ok"), "ok stays the FULL-cert verdict; fast is a distinct route"
+  end
+
+  def test_full_route_surfaces_in_the_json_verdict
+    out, code = fast_check_ci("ok", "green", CI_PR, "--json")
+    assert_equal 0, code, out
+    j = JSON.parse(out)
+    assert_equal "full", j.dig("full_suite", "route")
+  end
+
+  def test_bypass_route_surfaces_in_the_json_verdict
+    devops = CI_PR.merge(
+      "checks_run" => CI_PR["checks_run"] + ["[full-suite-bypass] env blocker, tracked in task-x"]
+    )
+    out, code = fast_check_ci("missing", "green", devops, "--json")
+    assert_equal 0, code, out
+    j = JSON.parse(out)
+    assert_equal "bypass", j.dig("full_suite", "route")
+  end
+
+  # --- [integration] fast route over the REAL git fingerprint --------------------
+
+  def test_e2e_fresh_fast_cert_evidence_with_green_ci_passes
+    with_suite_repo do |dir, fp|
+      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
+      out, code = with_env("DOR_CHECK_CI_STATUS" => "green") { check_real_suite(dir, devops) }
+      assert_equal 0, code, out
+      assert_match(/fast cert accepted at #{fp[0, 12]}/, out)
+    end
+  end
+
+  def test_e2e_fast_cert_evidence_goes_stale_after_an_edit
+    with_suite_repo do |dir, fp|
+      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
+      File.write(File.join(dir, "app.rb"), "base\nedited\n")
+      out, code = with_env("DOR_CHECK_CI_STATUS" => "green") { check_real_suite(dir, devops) }
+      assert_equal 1, code, out
+      assert_match(/fast-cert: STALE/, out)
+    end
+  end
+
+  def test_e2e_fast_cert_evidence_without_green_ci_is_refused
+    with_suite_repo do |dir, fp|
+      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
+      out, code = with_env("DOR_CHECK_CI_STATUS" => "none") { check_real_suite(dir, devops) }
+      assert_equal 1, code, out
+      assert_match(/fast-cert evidence is FRESH/, out)
+    end
+  end
 end
