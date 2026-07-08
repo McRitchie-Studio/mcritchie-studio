@@ -120,8 +120,8 @@ Then re-run `bin/release prepare --yes` so the rest of the candidate can ride.
 
 The release candidate is `assembled` and live on QA; members are `assembled` with
 `merged: release`, and the release's latest **G3 Candidate** attempt is closed
-`passed`. On the /deployments tracker the release reads **three greens
-(Testing · Assembled · Live on QA) with Confirming deliberately DARK** — that gap
+with `success`. On the /deployments tracker the release reads **three greens
+(Tested · Assembled · Live on QA) with Confirming deliberately DARK** — that gap
 is the handoff itself. Do NOT start or stamp `confirming`; stage 4 lights only
 when Avi posts `confirming/start` as he picks the release up
 (`production-deploy`). Report:

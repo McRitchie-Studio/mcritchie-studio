@@ -105,8 +105,11 @@ window.
 - `bin/fast-check` / `bin/full-suite-check` **OPEN** the task's `g1_cert`
   attempt at start and append one SOP entry per lane
   (`{sop, cmd, result, duration_ms}`).
-- A **red lane closes the attempt `failed` immediately** (the re-run opens
-  attempt n+1). Nothing is certified; no evidence line is written.
+- A **red lane closes the attempt `failed`** (the re-run opens attempt n+1) —
+  a red test-DB lane short-circuits the cert on the spot; a red mapped / spine
+  / rubocop lane still lets the remaining lanes run, and the `failed` close
+  lands once the lanes finish. Either way nothing is certified; no evidence
+  line is written.
 - A **green cert leaves the attempt OPEN** — the cert alone is not the verdict.
 - `bin/dor-check`'s merge-gate run (builder role) **CLOSES the open attempt**
   with `success = ready`, attaching its verdict evidence as SOPs: `dor-check`,
