@@ -145,12 +145,17 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.test_cmd("not-a-real-repo")
   end
 
-  # --- qa_test_cmd: Steffon's pre-QA gate (prepare's integration tier) ---
+  # --- qa_test_cmd: Steffon's pre-QA gate (G3 Candidate) ---
 
-  test "qa_test_cmd registers the integration subset for every live app" do
-    # The prepare-owned tier — the integration SUBSET, never the full suite
-    # (review owns base; ship's test_cmd / the repo's deploy owns the full run).
-    %w[mcritchie-studio turf-monster rolio].each do |repo|
+  test "qa_test_cmd registers the G3 tier per app: hub full suite, satellites integration subset" do
+    # The prepare-owned tier. SATELLITES gate on the integration SUBSET (review
+    # owns base; their ship test_cmd / own deploy owns the full run). The HUB
+    # gates on its FULL suite — the G3 batch certification (90/10): ship's
+    # test_gate then self-gates when the frozen SHA matches this certified run,
+    # so the full suite still runs once per release batch.
+    assert_equal "bin/rails test", Release::Repos.qa_test_cmd("mcritchie-studio"),
+                 "the hub certifies its full suite at G3"
+    %w[turf-monster rolio].each do |repo|
       assert_equal "bin/rails test test/integration", Release::Repos.qa_test_cmd(repo),
                    "#{repo} must gate QA on its integration tier"
     end

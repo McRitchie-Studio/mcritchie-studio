@@ -299,10 +299,12 @@ class ReleaseTest < ActiveSupport::TestCase
 
   # --- per-step test-tier ownership (devops-cycle-design §1.2) ---
 
-  test "the tier→step map matches the redesign: base@review, integration+e2e-smoke@prepare, full-e2e@ship" do
+  test "the tier→step map matches the redesign: base@review, integration+e2e-smoke@prepare, full-suite@ship" do
     assert_equal %w[base], Release.test_tiers_for("review")
     assert_equal %w[integration e2e-smoke], Release.test_tiers_for("prepare")
-    assert_equal %w[e2e-full], Release.test_tiers_for("ship")
+    # The honest relabel: ship's gate runs the registry test_cmd — the repo's
+    # full LOCAL suite, never a browser e2e run (that's the prod smoke seal).
+    assert_equal %w[full-suite], Release.test_tiers_for("ship")
     assert_equal [], Release.test_tiers_for("nope"), "an unknown step owns no tiers"
   end
 
@@ -313,7 +315,8 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal "review", Release.step_owning_tier("base")
     assert_equal "prepare", Release.step_owning_tier("e2e-smoke")
     assert_equal "prepare", Release.step_owning_tier("integration")
-    assert_equal "ship", Release.step_owning_tier("e2e-full")
+    assert_equal "ship", Release.step_owning_tier("full-suite")
+    assert_nil Release.step_owning_tier("e2e-full"), "the pre-relabel ship tier name is retired"
     assert_nil Release.step_owning_tier("base-not-real")
   end
 
@@ -598,8 +601,8 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal rel.assembling_started_at, assembled[:started_at]
 
     # Never-started stage → missing (renders "—"), even on a shipped release.
-    assert_equal "missing", rel.deployment_stage_span("tested")[:status]
-    assert_nil rel.deployment_stage_span("tested")[:seconds]
+    assert_equal "missing", rel.deployment_stage_span("deployed")[:status]
+    assert_nil rel.deployment_stage_span("deployed")[:seconds]
 
     # An active release mid-stage → in_progress (the cell ticks a live count-up).
     active = Release.create!(slug: "rel-span-active", branch: "release", state: "assembling")
@@ -607,6 +610,56 @@ class ReleaseTest < ActiveSupport::TestCase
     span = active.deployment_stage_span("assembled")
     assert_equal "in_progress", span[:status]
     assert_nil span[:seconds], "an in-progress span has no fixed duration — it counts up client-side"
+  end
+
+  # --- gate-backed deployment spans (G3 Candidate / G4 Ship) ------------------
+
+  test "[unit] a gate-backed span reads the LATEST GateRun attempt with success + attempt keys" do
+    now = Time.zone.parse("2026-07-07 18:00:00")
+    rel = Release.create!(slug: "rel-gate-span", branch: "release", state: "shipped")
+    rel.update_columns(shipped_at: now) # rubocop:disable Rails/SkipsModelValidations
+
+    # Attempt 1 failed, attempt 2 passed — the cell shows the NEWEST attempt.
+    GateRun.close!(subject_type: "release", subject_slug: rel.slug, key: "g3_candidate",
+                   success: false, now: now - 27.minutes)
+    GateRun.open!(subject_type: "release", subject_slug: rel.slug, key: "g3_candidate", now: now - 26.minutes)
+    GateRun.close!(subject_type: "release", subject_slug: rel.slug, key: "g3_candidate",
+                   success: true, now: now - 9.minutes)
+
+    span = rel.reload.deployment_stage_span("g3_candidate")
+    assert_equal "completed", span[:status]
+    assert_equal true, span[:success], "the latest (passed) attempt wins"
+    assert_equal 2, span[:attempt], "attempt rides the span for the ×n retry badge"
+    assert_equal 17.minutes.to_i, span[:seconds]
+    assert_equal now - 26.minutes, span[:started_at]
+  end
+
+  test "[unit] a failed latest gate attempt keeps success false; no runs reads missing" do
+    now = Time.zone.parse("2026-07-07 18:00:00")
+    rel = Release.create!(slug: "rel-gate-fail", branch: "release", state: "shipped")
+    rel.update_columns(shipped_at: now) # rubocop:disable Rails/SkipsModelValidations
+    GateRun.close!(subject_type: "release", subject_slug: rel.slug, key: "g4_ship",
+                   success: false, metadata: { "aborted" => true }, now: now)
+
+    span = rel.reload.deployment_stage_span("g4_ship")
+    assert_equal "completed", span[:status]
+    assert_equal false, span[:success], "a failed attempt tints the cell red"
+
+    # The other gate never ran → the plain missing dash, like an unstamped column.
+    g3 = rel.deployment_stage_span("g3_candidate")
+    assert_equal "missing", g3[:status]
+    assert_nil g3[:success]
+    assert_nil g3[:attempt]
+  end
+
+  test "[unit] an in-flight gate attempt on an active release ticks in_progress" do
+    rel = Release.open!
+    GateRun.open!(subject_type: "release", subject_slug: rel.slug, key: "g3_candidate")
+
+    span = rel.reload.deployment_stage_span("g3_candidate")
+    assert_equal "in_progress", span[:status]
+    assert_nil span[:success], "no verdict while in flight"
+    assert_equal 1, span[:attempt]
   end
 
   test "deployment_total_span is created -> shipped, in_progress while active" do
@@ -639,5 +692,21 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal "Assembled", averages.dig("stages", "assembled", "label")
     assert_equal 20.minutes.to_i, averages.dig("stages", "assembled", "average_seconds") # (10 + 30) / 2
     assert_equal 2.hours.to_i, averages.dig("stages", "total", "average_seconds")
+  end
+
+  test "[unit] deployment_stage_averages averages the gate-backed columns off closed gate runs" do
+    now = Time.zone.parse("2026-07-07 18:00:00")
+    rel = Release.create!(slug: "rel-avg-gates", branch: "release", state: "shipped")
+    rel.update_columns(created_at: now - 1.hour, shipped_at: now) # rubocop:disable Rails/SkipsModelValidations
+    GateRun.open!(subject_type: "release", subject_slug: rel.slug, key: "g3_candidate", now: now - 30.minutes)
+    GateRun.close!(subject_type: "release", subject_slug: rel.slug, key: "g3_candidate",
+                   success: true, now: now - 18.minutes)
+
+    averages = Release.deployment_stage_averages(limit: 10)
+    assert_equal "G3 Candidate", averages.dig("stages", "g3_candidate", "label")
+    assert_equal 12.minutes.to_i, averages.dig("stages", "g3_candidate", "average_seconds")
+    # No G4 run anywhere → nil average (no fabricated zero), zero samples.
+    assert_nil averages.dig("stages", "g4_ship", "average_seconds")
+    assert_equal 0, averages.dig("stages", "g4_ship", "sample_count")
   end
 end

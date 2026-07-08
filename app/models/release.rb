@@ -30,6 +30,10 @@ class Release < ApplicationRecord
   # deploy_qa completed) can never wind the tracker backwards.
   STAGES = [
     ["testing",        :testing_started_at],
+    # tested_at is VESTIGIAL: the conductor no longer posts review_tests
+    # completed (the G3 Candidate gate_runs own prepare's test verdicts), so
+    # nothing stamps it anymore. Kept for historical rows + API replay
+    # (EVENT_STAGE_STAMPS still maps it); drop in a later cleanup.
     ["tested",         :tested_at],
     ["assembling",     :assembling_started_at],
     ["assembled",      :assembled_at],
@@ -48,16 +52,22 @@ class Release < ApplicationRecord
   # requires an already-active release — a late post must never open a ghost RC.
   STAGES_THAT_MAY_OPEN = %w[testing assembling].freeze
 
-  # The stages surfaced as columns on the /deployments table + summary cards. Each
-  # is the stage's OWN start→end stamp pair (a span of Release::STAGES), so the
-  # cell can show both timestamps and the duration between them. "Deployed" is the
-  # production rollout (prod_deploy_started_at → shipped_at); the end-to-end
-  # "Total" (created_at → shipped_at) is handled by #deployment_total_span.
+  # The stages surfaced as columns on the /deployments table + summary cards. Two
+  # shapes:
+  #   * stamp-backed — the stage's OWN start→end stamp pair (a span of
+  #     Release::STAGES), so the cell shows both timestamps and the duration.
+  #   * gate-backed (`gate:`) — the LATEST GateRun attempt of a release-grain
+  #     testing gate (G3 Candidate / G4 Ship). Attempt-aware: the span carries
+  #     `:success` (fail tint) and `:attempt` (the ×n retry badge), fixing the
+  #     old overlap where prepare co-opted the review_tests bracket and "Tested"
+  #     started AFTER "Assembled".
+  # "Deployed" is the production rollout (prod_deploy_started_at → shipped_at);
+  # the end-to-end "Total" (created_at → shipped_at) is #deployment_total_span.
   DEPLOYMENT_STAGES = [
-    { key: "tested",    label: "Tested",    starts: :testing_started_at,    ends: :tested_at },
-    { key: "assembled", label: "Assembled", starts: :assembling_started_at, ends: :assembled_at },
-    { key: "confirmed", label: "Confirmed", starts: :confirming_started_at,  ends: :confirmed_at },
-    { key: "deployed",  label: "Deployed",  starts: :prod_deploy_started_at, ends: :shipped_at }
+    { key: "assembled",    label: "Assembled",    starts: :assembling_started_at, ends: :assembled_at },
+    { key: "g3_candidate", label: "G3 Candidate", gate: "g3_candidate" },
+    { key: "g4_ship",      label: "G4 Ship",      gate: "g4_ship" },
+    { key: "deployed",     label: "Deployed",     starts: :prod_deploy_started_at, ends: :shipped_at }
   ].freeze
 
   # How many recently-shipped releases the /deployments summary cards average.
@@ -68,6 +78,10 @@ class Release < ApplicationRecord
   # so posting an event IS the stage notification. `failed` events stamp nothing.
   # deploy_prod completion is deliberately absent: `shipped` is only ever stamped
   # by ship!'s state flip, so a stray API post can't mark a live release shipped.
+  # The review_tests rows are API-posted only since the G3 gate cutover — the
+  # conductor's prepare no longer posts them (its verdicts live in gate_runs);
+  # the review wave's `testing started` post (pr-review SOP) legitimately still
+  # lights tracker node 1. Kept intact for back-compat + event replay.
   EVENT_STAGE_STAMPS = {
     %w[review_tests started]       => "testing",
     %w[review_tests completed]     => "tested",
@@ -88,13 +102,21 @@ class Release < ApplicationRecord
   # no step re-runs a lower tier a previous step already proved green:
   #   review  → base (unit/component), by the two senior reviewers
   #   prepare → integration + e2e-smoke, by Steffon on origin/release at QA
-  #   ship    → full e2e (highest tier), by Avi on the FROZEN ship SHA
+  #             (the hub registers its FULL suite as qa_test_cmd — the G3 batch
+  #             certification that lets G4 self-gate an unchanged SHA)
+  #   ship    → full-suite (the registry test_cmd — the repo's highest LOCAL
+  #             tier; it was never a browser e2e run, hence the honest relabel
+  #             from "e2e-full"), by Avi on the FROZEN ship SHA. SELF-GATED:
+  #             skipped when G3 already certified that exact SHA with that
+  #             exact command this run (bin/release test_gate), so the full
+  #             suite runs once per release batch; a drifted/straggler SHA
+  #             re-triggers it.
   # The ownership is disjoint by construction (a tier maps to exactly one step),
   # which is what makes "runs once" enforceable — see step_owning_tier.
   STEP_TEST_TIERS = {
     "review"  => %w[base],
     "prepare" => %w[integration e2e-smoke],
-    "ship"    => %w[e2e-full]
+    "ship"    => %w[full-suite]
   }.freeze
 
   has_many :tasks, foreign_key: :release_slug, primary_key: :slug, inverse_of: :release
@@ -167,15 +189,40 @@ class Release < ApplicationRecord
 
   # --- deployment table spans -------------------------------------------------
   # One /deployments cell: a stage's own start→end span read straight off the
-  # stamp columns. status is "completed" (both stamps), "in_progress" (started,
-  # not finished, release still active → the cell ticks a live count-up), or
-  # "missing" (no start stamp → the cell reads "—"). Pure column arithmetic, so
+  # stamp columns — or, for a gate-backed stage, off the latest GateRun attempt.
+  # status is "completed" (both boundaries), "in_progress" (started, not
+  # finished, release still active → the cell ticks a live count-up), or
+  # "missing" (never started → the cell reads "—"). Pure column arithmetic, so
   # it is always current (no cache) and the live anchor is real.
   def deployment_stage_span(stage)
     stage = DEPLOYMENT_STAGES.find { |candidate| candidate[:key] == stage.to_s } if stage.is_a?(String) || stage.is_a?(Symbol)
+    return deployment_gate_span(stage) if stage[:gate]
+
     started_at = self[stage.fetch(:starts)]
     ended_at = self[stage.fetch(:ends)]
     deployment_span(stage.fetch(:key), stage.fetch(:label), started_at, ended_at)
+  end
+
+  # A gate-backed /deployments cell: the LATEST GateRun attempt of the stage's
+  # release-grain gate (retries are first-class — the newest attempt IS the
+  # cell). Same span contract as a stamp-backed stage, plus two gate keys:
+  #   :success — the attempt's verdict (false → the cell tints red with a ✗;
+  #              nil while in flight)
+  #   :attempt — the attempt number (> 1 → the ×n retry badge)
+  # No run yet → a "missing" dash, like an unstamped column.
+  def deployment_gate_span(stage)
+    run = latest_gate_run(stage.fetch(:gate))
+    span = deployment_span(stage.fetch(:key), stage.fetch(:label), run&.started_at, run&.finished_at)
+    span[:success] = run&.success
+    span[:attempt] = run&.attempt
+    span
+  end
+
+  # The newest attempt of a release-grain gate, filtered in Ruby off the
+  # gate_runs association so releases#index can `.includes(:gate_runs)` and
+  # render every row's G3/G4 cells with no per-release query.
+  def latest_gate_run(key)
+    gate_runs.select { |run| run.key == key.to_s }.max_by { |run| [run.attempt, run.id] }
   end
 
   def deployment_stage_spans
@@ -194,6 +241,7 @@ class Release < ApplicationRecord
   def self.deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
     releases = where(state: "shipped")
                .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+               .includes(:gate_runs) # the gate-backed spans read the association
                .limit(limit).to_a
     keys = DEPLOYMENT_STAGES.map { |stage| stage[:key] } + ["total"]
     stage_rows = keys.map do |key|

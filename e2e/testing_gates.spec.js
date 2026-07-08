@@ -27,3 +27,25 @@ test("a task page shows the testing-gates card with attempt-aware verdicts", asy
   await expect(g1Sops.getByText("full-suite", { exact: true })).toBeVisible();
   await expect(g1Sops.getByText("dor-check", { exact: true })).toBeVisible();
 });
+
+// [e2e] Release gates on /deployments/all — the gate-backed G3/G4 columns
+// (replacing Tested/Confirmed, whose bracket prepare used to co-opt so Tested
+// started AFTER Assembled). The seeded Last Release carries a G3 that failed
+// attempt 1 and passed attempt 2 (the ×2 retry badge is load-bearing) and a
+// passed G4 with the prod-smoke seal as its closing SOP.
+test("the all-deployments table renders gate-backed G3/G4 columns with the retry badge", async ({ page }) => {
+  await page.goto("/deployments/all");
+
+  const table = page.locator("table").first();
+  await expect(table.locator("th", { hasText: "G3 Candidate" })).toBeVisible();
+  await expect(table.locator("th", { hasText: "G4 Ship" })).toBeVisible();
+  await expect(table.locator("th", { hasText: "Assembled" })).toBeVisible();
+  // The co-opted stamp columns are gone from the header row.
+  await expect(table.locator("th", { hasText: "Tested" })).toHaveCount(0);
+  await expect(table.locator("th", { hasText: "Confirmed" })).toHaveCount(0);
+
+  // G3 passed on attempt 2 → the ×2 retry badge renders in its cell.
+  await expect(
+    table.locator("[data-test='deployment-stage-attempts']", { hasText: "×2" }).first()
+  ).toBeVisible();
+});

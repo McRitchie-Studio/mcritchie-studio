@@ -1,5 +1,5 @@
 <%# A small horizontal bar chart of a running-average window's per-stage mean
-    durations (Tested/Assembled/Confirmed/Deployed). One fixed hue per stage —
+    durations (Assembled/G3 Candidate/G4 Ship/Deployed). One fixed hue per stage —
     consistent across both charts — so the same stage compares by colour; each bar
     is direct-labelled with its value (the CVD-floor mitigation, dataviz skill).
     Bars share max_seconds with the sibling chart so the two windows are visually
@@ -11,7 +11,7 @@
 <% label = local_assigns.fetch(:label) %>
 <% max_seconds = local_assigns.fetch(:max_seconds).to_f %>
 <% stages = averages["stages"] || {} %>
-<% colors = { "tested" => "#3987e5", "assembled" => "#199e70", "confirmed" => "#c98500", "deployed" => "#008300" } %>
+<% colors = { "assembled" => "#199e70", "g3_candidate" => "#3987e5", "g4_ship" => "#c98500", "deployed" => "#008300" } %>
 <figure class="rounded-xl border border-subtle bg-surface p-4">
   <figcaption class="mb-3 flex items-baseline justify-between gap-3">
     <span class="text-sm font-semibold text-heading"><%= label %></span>

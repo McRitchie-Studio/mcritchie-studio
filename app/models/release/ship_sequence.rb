@@ -83,6 +83,29 @@ class Release
       sha.empty? ? nil : sha
     end
 
+    # --- G4 self-gating: skip a ship test gate G3 already certified ------------
+    #
+    # The 90/10 policy runs the full suite ONCE per release batch: the hub
+    # registers its FULL suite as `qa_test_cmd`, so the G3 pre-QA gate certifies
+    # the batch on origin/release BEFORE anything deploys. Re-running the ship
+    # test gate then proves nothing new — SKIP it iff BOTH hold:
+    #   * the ship `test_cmd` is EXACTLY the `qa_test_cmd` G3 ran (a satellite
+    #     whose G3 ran only the integration subset still gets its full suite
+    #     at ship), and
+    #   * the FROZEN ship SHA is EXACTLY the SHA G3 certified this run
+    #     (release.metadata["qa_shas"]) — a straggler, re-pin, or any drift
+    #     re-triggers the gate.
+    # Blank commands/SHAs never skip (fail open: run the gate). The caller
+    # (bin/release test_gate) records the skip as a visible gate SOP, never a
+    # silent omission.
+    def ship_gate_skip?(test_cmd:, qa_test_cmd:, frozen_sha:, qa_sha:)
+      cmd    = test_cmd.to_s.strip
+      qa_cmd = qa_test_cmd.to_s.strip
+      sha    = frozen_sha.to_s.strip
+      qa     = qa_sha.to_s.strip
+      !cmd.empty? && cmd == qa_cmd && !sha.empty? && sha == qa
+    end
+
     # --- ship preflight: every app checkout on a clean `main` before any ff ----
     #
     # `bin/release ship` fast-forwards each app repo's `main` up to the QA-frozen

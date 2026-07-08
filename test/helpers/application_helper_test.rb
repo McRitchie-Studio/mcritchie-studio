@@ -892,9 +892,9 @@ class ApplicationHelperTest < ActionView::TestCase
   AVG_FIXTURE = {
     "sample_count" => 3,
     "stages" => {
-      "tested" => { "label" => "Tested", "average_seconds" => 180 },
       "assembled" => { "label" => "Assembled", "average_seconds" => 1320 },
-      "confirmed" => { "label" => "Confirmed", "average_seconds" => 120 },
+      "g3_candidate" => { "label" => "G3 Candidate", "average_seconds" => 180 },
+      "g4_ship" => { "label" => "G4 Ship", "average_seconds" => 120 },
       "deployed" => { "label" => "Deployed", "average_seconds" => 120 },
       "total" => { "label" => "Total", "average_seconds" => 3180 }
     }
@@ -926,15 +926,15 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[component] deployment_average_chart shows a no-data stage as an em dash with a zero-width bar" do
-    # Regression: a nil average (a stage with no completed samples, e.g. Tested on
-    # pre-migration releases) must NOT coerce to 0 and draw the 2%-floor bar reading
-    # "<1m" — it should render "—" with no fill.
+    # Regression: a nil average (a stage with no completed samples, e.g. the
+    # gate columns on pre-gate releases with no backfill) must NOT coerce to 0
+    # and draw the 2%-floor bar reading "<1m" — it should render "—" with no fill.
     averages = {
       "sample_count" => 3,
       "stages" => {
-        "tested" => { "label" => "Tested", "average_seconds" => nil },
         "assembled" => { "label" => "Assembled", "average_seconds" => 1320 },
-        "confirmed" => { "label" => "Confirmed", "average_seconds" => 120 },
+        "g3_candidate" => { "label" => "G3 Candidate", "average_seconds" => nil },
+        "g4_ship" => { "label" => "G4 Ship", "average_seconds" => 120 },
         "deployed" => { "label" => "Deployed", "average_seconds" => 120 },
         "total" => { "label" => "Total", "average_seconds" => 3180 }
       }
@@ -942,10 +942,54 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "releases/deployment_average_chart",
            locals: { averages: averages, label: "3-release avg", max_seconds: 1320 }
 
-    assert_includes rendered, "width: 0%; background-color: #3987e5"   # Tested: no bar
+    assert_includes rendered, "width: 0%; background-color: #3987e5"   # G3: no data, no bar
     assert_no_match(/width: 2%; background-color: #3987e5/, rendered)  # never the false 2% floor
-    assert_includes rendered, "—"                                      # Tested value is a dash, not "<1m"
+    assert_includes rendered, "—"                                      # G3 value is a dash, not "<1m"
     assert_includes rendered, "width: 100%; background-color: #199e70" # a real stage still draws its bar
+  end
+
+  test "[component] deployment_stage_cell tints a failed gate attempt red with a ✗" do
+    now = Time.zone.parse("2026-07-07 15:32:00")
+    render partial: "releases/deployment_stage_cell",
+           locals: { span: { key: "g3_candidate", label: "G3 Candidate", started_at: now,
+                             ended_at: now + 3.minutes, seconds: 3.minutes.to_i, status: "completed",
+                             success: false, attempt: 1 } }
+
+    assert_select "[data-test='deployment-stage-failed'].text-rose-400", text: /✗ 3m/
+    assert_select "[data-test='deployment-stage-attempts']", count: 0 # no retry badge on attempt 1
+    # The timestamp range still renders — a failed attempt keeps its window.
+    assert_select "[data-deployment-range][data-start='#{now.to_i}']"
+  end
+
+  test "[component] deployment_stage_cell renders the ×n retry badge when attempt > 1" do
+    now = Time.zone.parse("2026-07-07 15:32:00")
+    render partial: "releases/deployment_stage_cell",
+           locals: { span: { key: "g3_candidate", label: "G3 Candidate", started_at: now,
+                             ended_at: now + 17.minutes, seconds: 17.minutes.to_i, status: "completed",
+                             success: true, attempt: 2 } }
+
+    assert_select "[data-test='deployment-stage-attempts']", text: "×2"
+    # A passed retry is NOT tinted red — the badge alone carries the history.
+    assert_select "[data-test='deployment-stage-failed']", count: 0
+  end
+
+  test "[component] deployment_stage_cell is unchanged for stamp-backed spans (no gate keys)" do
+    now = Time.zone.parse("2026-07-07 15:32:00")
+    render partial: "releases/deployment_stage_cell",
+           locals: { span: { key: "assembled", label: "Assembled", started_at: now,
+                             ended_at: now + 29.minutes, seconds: 29.minutes.to_i, status: "completed" } }
+
+    assert_select "[data-test='deployment-stage-failed']", count: 0
+    assert_select "[data-test='deployment-stage-attempts']", count: 0
+    assert_includes rendered, "29m"
+  end
+
+  test "[unit] gate_sop_duration_label humanizes millisecond durations" do
+    assert_equal "6m 52s", gate_sop_duration_label(412_000)
+    assert_equal "41s", gate_sop_duration_label(41_000)
+    assert_equal "900ms", gate_sop_duration_label(900)
+    assert_nil gate_sop_duration_label(0)
+    assert_nil gate_sop_duration_label(nil)
   end
 
   test "[component] the Last Release card shows a muted empty state when nothing has shipped" do

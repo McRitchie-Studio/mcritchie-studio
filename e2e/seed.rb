@@ -21,6 +21,7 @@ CoachRanking.delete_all
 Coach.delete_all
 Team.delete_all
 Person.delete_all
+GateRun.delete_all # slug-keyed, no FK — delete_all wipes above skip callbacks, so stale runs would otherwise survive reseeds and inflate attempt counts
 Release.delete_all
 SessionMascot.delete_all
 Pokemon.delete_all
@@ -443,6 +444,39 @@ stamp_tracker_stage_history!(shipped_release, shipped_at: Time.current)
 shipped_release.record_smoke_seal!(
   Release::SmokeSeal.from_result(passed: true, summary: "@qa-readonly green vs https://app.mcritchie.studio")
 )
+
+# Release-grain testing gates on the Last Release, so /deployments/all renders
+# the gate-backed G3/G4 columns: a G3 Candidate that failed attempt 1 (a QA app
+# never booted) and passed attempt 2 — exercising the ×2 retry badge — and a
+# passed G4 Ship carrying the prod-smoke seal as its closing SOP + metadata.
+# Windows sit inside the tracker stamps above (assembling → shipped ≈ the last
+# 31 minutes). Idempotent: GateRun.delete_all at the top clears prior seeds
+# (delete_all wipes skip dependent callbacks — the Task A round-1 lesson).
+gate_now = Time.current
+GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
+               success: false, source: "seed", actor: "steffon",
+               metadata: { "reason" => "1 app(s) never returned /up 200" },
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 412_000 },
+                      { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "fail", "duration_ms" => 120_000 }],
+               now: gate_now - 27.minutes)
+GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
+              source: "seed", actor: "steffon", now: gate_now - 26.minutes)
+GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g3_candidate",
+               success: true, source: "seed", actor: "steffon",
+               sops: [{ "sop" => "pre_qa_gate", "cmd" => "bin/rails test", "result" => "pass", "duration_ms" => 405_000 },
+                      { "sop" => "qa_up_smoke", "cmd" => "curl /up", "result" => "pass", "duration_ms" => 8_000 },
+                      { "sop" => "qa_post_deploy", "cmd" => "bin/rails db:seed:pokemon", "result" => "pass", "duration_ms" => 14_000 }],
+               now: gate_now - 9.minutes)
+GateRun.open!(subject_type: "release", subject_slug: shipped_release.slug, key: "g4_ship",
+              source: "seed", actor: "avi", now: gate_now - 4.minutes)
+GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key: "g4_ship",
+               success: true, source: "seed", actor: "avi",
+               metadata: { "seal" => "green" },
+               sops: [{ "sop" => "ship_test_gate", "cmd" => "skipped — bin/rails test already green @ e2edemo at G3 (pre-QA gate, same SHA + command)", "result" => "pass" },
+                      { "sop" => "deploy:mcritchie-studio", "cmd" => "git push heroku main", "result" => "pass", "duration_ms" => 95_000 },
+                      { "sop" => "prod_up_smoke", "cmd" => "curl https://mcritchie.studio/up", "result" => "pass", "duration_ms" => 900 },
+                      { "sop" => "prod_smoke_seal", "cmd" => "bin/prod-smoke mcritchie-studio", "result" => "pass", "duration_ms" => 41_000 }],
+               now: gate_now)
 
 active_release = Release.open!
 active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-active" } })

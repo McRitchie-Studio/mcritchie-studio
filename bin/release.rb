@@ -499,6 +499,7 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     out, ok = block ? block.call : sh(*cmd, capture: capture, chdir: chdir)
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    gate_sop(key, printable, false, (elapsed * 1000).round)
     scope_action("test scope #{key} FAILED · #{where} · fail · #{e.class}: #{e.message} · " \
                  "#{format('%.1fs', elapsed)} · #{printable}", key_method: printable,
                  kind: "test_scope", event_slug: key.to_s, result_slug: "fail",
@@ -506,6 +507,7 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     raise
   end
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  gate_sop(key, printable, ok, (elapsed * 1000).round)
   begin
     parts = ["test scope #{key} #{ok ? 'COMPLETED' : 'FAILED'}", where, ok ? "pass" : "fail"]
     counts = parse_test_counts(out)
@@ -558,6 +560,64 @@ def record_deploy_intent(label, ruby)
   conductor(ruby)
 rescue SystemExit, StandardError => e
   say("  ⚠ #{label} not recorded — crew-ticker board write failed (#{e.message}); deploy continues (cosmetic only)")
+end
+
+# --- release-grain gate runs (G3 Candidate / G4 Ship) -----------------------
+# Attempt-aware GateRun records for the two release-owned testing gates, written
+# through the model's open!/close! funnel via conductor snippets. The window is
+# bracketed by record_gate_open/record_gate_close; every test SOP run inside it
+# is COLLECTED by the one-line gate_sop hook in run_test_scope (zero extra
+# round-trips — the sops ride the close payload). ALL gate writes are
+# BEST-EFFORT: a board blip must never abort a prepare/ship (mirrors
+# record_release_event), and --dry-run suppresses them via conductor's own gate
+# (the plan still prints). $gate_sops is nil outside a gate window, so ordinary
+# test scopes (e.g. a straggler run) collect nothing.
+$gate_sops = nil
+
+# Push one executed-SOP entry onto the open gate window (no-op outside one).
+# String keys + scalar values only, so the buffer embeds .inspect-safe in the
+# Base64 conductor payload. Never raises — collection must not break the run.
+def gate_sop(sop, cmd, ok, duration_ms = nil)
+  return unless $gate_sops
+
+  entry = { "sop" => sop.to_s, "cmd" => cmd.to_s, "result" => ok ? "pass" : "fail" }
+  entry["duration_ms"] = duration_ms.to_i if duration_ms
+  $gate_sops << entry
+rescue StandardError
+  nil
+end
+
+# Open (or re-enter — GateRun.open! reuses the in-flight attempt) the release's
+# gate attempt and start collecting SOPs. Best-effort + dry-run-suppressed.
+def record_gate_open(release_slug, key, actor: nil)
+  $gate_sops = []
+  actor_ruby = actor.to_s.empty? ? "nil" : actor.to_s.inspect
+  conductor(
+    "run = GateRun.open!(subject_type: 'release', subject_slug: #{release_slug.inspect}, " \
+    "key: #{key.inspect}, actor: #{actor_ruby}, source: 'conductor'); " \
+    "puts({ gate: run.key, attempt: run.attempt }.to_json)"
+  )
+rescue SystemExit, StandardError => e
+  say("  ⚠ gate #{key} not opened — board write failed (#{e.message}); deploy continues")
+end
+
+# Close the gate attempt with its verdict + the collected SOPs, and stop
+# collecting. Best-effort + dry-run-suppressed: callers in a SystemExit rescue
+# MUST still re-raise after this — the close never masks an abort.
+def record_gate_close(release_slug, key, success, metadata: {})
+  sops = $gate_sops || []
+  $gate_sops = nil
+  # bin/release runs Rails-FREE, so no ActiveSupport .presence here — normalize
+  # the metadata by hand (a non-Hash or nil becomes {}).
+  meta = metadata.is_a?(Hash) ? metadata : {}
+  conductor(
+    "run = GateRun.close!(subject_type: 'release', subject_slug: #{release_slug.inspect}, " \
+    "key: #{key.inspect}, success: #{success ? 'true' : 'false'}, sops: #{sops.inspect}, " \
+    "source: 'conductor', metadata: #{meta.inspect}); " \
+    "puts({ gate: run.key, attempt: run.attempt, success: run.success }.to_json)"
+  )
+rescue SystemExit, StandardError => e
+  say("  ⚠ gate #{key} not closed — board write failed (#{e.message}); deploy continues")
 end
 
 def record_release_event(release_slug, step_name, status, attrs = {})
@@ -1127,10 +1187,11 @@ def batch_sweep_with_plan_ruby(slugs, release_slug = nil)
 end
 
 # The pre-QA gate command an app registers in config/release_repos.yml
-# (`qa_test_cmd`) — the integration + e2e-smoke tier prepare owns
-# (Release::STEP_TEST_TIERS["prepare"]). "" = not registered → the repo
-# self-gates (its suite runs at ship's test_cmd / its own deploy) and the gate
-# skips it.
+# (`qa_test_cmd`) — the tier prepare owns (Release::STEP_TEST_TIERS["prepare"]):
+# satellites register their integration subset; the HUB registers its FULL
+# suite (the G3 batch certification that lets ship's test_gate self-gate an
+# unchanged SHA). "" = not registered → the repo self-gates (its suite runs at
+# ship's test_cmd / its own deploy) and the gate skips it.
 def qa_gate_cmd(repo) = app_meta_for(repo)["qa_test_cmd"].to_s
 
 # Parse a registry test command (`test_cmd` / `qa_test_cmd`) into the argv `sh`
@@ -1156,7 +1217,10 @@ end
 # of the RC rides on. Apps with no qa_test_cmd are skipped (self-gating).
 def pre_qa_gate(app_groups)
   say("")
-  step("pre-QA gate: integration + e2e-smoke on origin/#{RELEASE_BRANCH} (before any QA deploy)")
+  # The banner names what THIS step actually runs — each app's registered
+  # qa_test_cmd. (The old "integration + e2e-smoke" overstated it: the e2e-smoke
+  # half of prepare's tier is the deploy loop's own /up boot wait, not this gate.)
+  step("pre-QA gate: each app's registered qa_test_cmd on origin/#{RELEASE_BRANCH} (before any QA deploy)")
   app_groups.each do |group|
     repo = group["repo"]
     cmd  = qa_gate_cmd(repo)
@@ -1350,16 +1414,20 @@ def prepare
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
   record_release_event(rel_slug, "assemble_release", "started")
 
-  # 5. PRE-QA GATE — the prepare-owned test tier (integration + e2e-smoke) on
-  #    origin/release, BEFORE any QA deploy. A regression aborts with eject
-  #    guidance while every member is still `reviewed`; the rest of the RC rides
-  #    on the re-run. Bracket it with review_tests events so the release's
-  #    testing_started_at / tested_at stamps land off the actual prepare test run
-  #    (the "Tested" /deployments column). Best-effort like the other posts; if the
-  #    gate aborts, `completed` never posts and Tested reads in-progress.
-  record_release_event(rel_slug, "review_tests", "started")
+  # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
+  #    QA deploy. A regression aborts with eject guidance while every member is
+  #    still `reviewed`; the rest of the RC rides on the re-run.
+  #
+  #    G3 CANDIDATE opens HERE (replacing the old review_tests started/completed
+  #    bracket — prepare co-opting that stage bracket is what made the Tested
+  #    column start AFTER Assembled on /deployments). The gate window spans the
+  #    pre-QA suite, the QA deploys + boot smokes, and the post-deploy hooks;
+  #    every test SOP inside it rides the close via the run_test_scope collector.
+  #    Closed success beside qa_green!, failed at the boot-failure branch, and
+  #    failed by the SystemExit wrapper below when anything in the window aborts.
+  record_gate_open(rel_slug, "g3_candidate", actor: "steffon")
+  g3_gate = :open
   pre_qa_gate(app_groups)
-  record_release_event(rel_slug, "review_tests", "completed")
 
   # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
@@ -1526,6 +1594,12 @@ def prepare
   if boot_failures.any?
     record_release_event(rel_slug, "qa_smoke", "failed",
                          message: "#{boot_failures.size} app(s) never returned /up 200") if qa_smoke_started
+    # G3 verdict: the candidate FAILED this attempt (a QA app never booted).
+    # Attempt-aware — the re-run opens attempt n+1, so repeated QA failures
+    # become visible signal instead of collapsing into one silent window.
+    record_gate_close(rel_slug, "g3_candidate", false,
+                      metadata: { "reason" => "#{boot_failures.size} app(s) never returned /up 200" })
+    g3_gate = :closed
     say("")
     say("  ⚠ #{boot_failures.size} app(s) never returned /up 200 — QA is NOT green: leaving the release `assembling`,")
     say("    swept members stay `reviewed` (merged: release). Re-run `bin/release prepare` once they boot")
@@ -1560,6 +1634,13 @@ def prepare
         "puts({ state: r&.reload&.state }.to_json)"
       )
     end
+
+    # G3 verdict: the candidate PASSED — every app booted (/up 200), the
+    # blocking post-deploy hooks ran green, and the QA-green flip landed.
+    # Close the attempt with the collected SOPs (pre_qa_gate / qa_up_smoke /
+    # qa_post_deploy). Best-effort, like every gate write.
+    record_gate_close(rel_slug, "g3_candidate", true)
+    g3_gate = :closed
   end
 
   # 9. Per-repo summary of what was swept + QA'd.
@@ -1586,6 +1667,12 @@ def prepare
   end
   close_role_span(qa_green ? "assembled #{rel_slug} → QA" : "prepared #{rel_slug} — QA not green, members stay reviewed")
 rescue SystemExit
+  # G3 close-fail wrapper: an abort INSIDE the gate window (a red pre_qa_gate,
+  # a QA-deploy/checkout abort, a post-deploy hook failure) IS the gate failing —
+  # close the attempt `failed` with whatever SOPs were collected. record_gate_close
+  # is itself best-effort (it can never raise), and the `raise` below ALWAYS
+  # re-raises: the gate write must never mask the abort.
+  record_gate_close(rel_slug, "g3_candidate", false, metadata: { "aborted" => true }) if g3_gate == :open
   # An abort mid-prepare closes the Steffon activity with the abort outcome
   # (best-effort) before re-raising, so the heartbeat activity resolves instead of
   # hanging open.
@@ -1848,10 +1935,26 @@ end
 # The conductor's pre-prod test gate: run the registry `test_cmd` at the repo's
 # frozen SHA before the irreversible deploy; scoped-abort on red. repo_script
 # apps SELF-GATE (their own deploy runs tests) → no test_cmd → skipped.
-def test_gate(repo)
+#
+# G4 SELF-GATING (the 90/10 policy): when the frozen ship SHA is EXACTLY the
+# SHA the G3 pre-QA gate certified this run (release.metadata["qa_shas"]) AND
+# the registered qa_test_cmd is the SAME command, re-running it here proves
+# nothing new — the full suite runs ONCE per release batch, at G3. The skip is
+# recorded as a visible SOP on the g4_ship gate run, never a silent omission.
+# A straggler / re-pinned / drifted SHA re-triggers the gate (the pure decision
+# lives in Release::ShipSequence.ship_gate_skip?, unit-tested).
+def test_gate(repo, frozen_sha: nil, qa_sha: nil)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
     step("test gate: #{repo} self-gates (no conductor test_cmd; its deploy runs tests) — skip")
+    return
+  end
+
+  if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, qa_test_cmd: qa_gate_cmd(repo),
+                                           frozen_sha: frozen_sha, qa_sha: qa_sha)
+    step("test gate: #{repo} self-gates — `#{cmd}` already green on frozen #{short(frozen_sha)} " \
+         "at the G3 pre-QA gate this run; skip (a drifted SHA re-triggers)")
+    gate_sop("ship_test_gate", "skipped — #{cmd} already green @ #{short(frozen_sha)} at G3 (pre-QA gate, same SHA + command)", true)
     return
   end
 
@@ -2058,19 +2161,22 @@ def whats_live(repos, qa_shas)
   end
 end
 
-# Avi's ship gate: run each app's highest-tier suite (registry `test_cmd`) on the
-# FROZEN ship SHA — the exact code that ships — BEFORE the ship-authority gate,
-# so approval can never authorize untested code (§1.2 "fixes shipped ≠ tested").
-# ff main → frozen LOCALLY (no push) so the suite runs on the frozen tree; a red
-# gate scoped-aborts before the confirm, leaving origin untouched. Satellites
-# self-gate (their own deploy runs their suite) → no `test_cmd` → skipped.
-def avi_ship_gate(app_groups, ship_sha)
+# Avi's ship gate: run each app's full local suite (registry `test_cmd` — the
+# full-suite tier, Release::STEP_TEST_TIERS["ship"]) on the FROZEN ship SHA —
+# the exact code that ships — BEFORE the ship-authority gate, so approval can
+# never authorize untested code (§1.2 "fixes shipped ≠ tested"). ff main →
+# frozen LOCALLY (no push) so the suite runs on the frozen tree; a red gate
+# scoped-aborts before the confirm, leaving origin untouched. Satellites
+# self-gate (their own deploy runs their suite) → no `test_cmd` → skipped; a
+# repo whose frozen SHA the G3 gate already certified with the same command
+# self-gates too (see test_gate), recording the skip as a gate SOP.
+def avi_ship_gate(app_groups, ship_sha, qa_shas)
   say("")
-  step("Avi ship gate: full e2e + highest tier on the FROZEN ship SHA (before ship authority)")
+  step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA (before ship authority)")
   app_groups.each do |group|
     repo = group["repo"]
     ff_main_local(repo, ship_sha[repo]) # local only — run the suite on the frozen tree
-    test_gate(repo)
+    test_gate(repo, frozen_sha: ship_sha[repo], qa_sha: Release::ShipSequence.frozen_sha(qa_shas, repo))
   end
 end
 
@@ -2102,7 +2208,12 @@ def deploy_app(group, frozen)
     remote = adapter["remote"] || HEROKU_REMOTE
     branch = adapter["branch"] || "main"
     step("deploy: git -C #{repo} push #{remote} #{branch}")
+    deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     _, ok = sh("git", "-C", path, "push", remote, branch, capture: false)
+    # The G4 gate's per-app deploy SOP — recorded BEFORE the abort so a failed
+    # push still shows on the gate run the SystemExit wrapper closes.
+    gate_sop("deploy:#{repo}", "git push #{remote} #{branch}", ok || DRY,
+             ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
     abort!("Heroku deploy failed for #{repo}") unless ok || DRY
 
     smoke = adapter["smoke_url"].to_s
@@ -2124,7 +2235,11 @@ def deploy_app(group, frozen)
     args    = Array(adapter["args"])
     abort!("repo_script adapter for #{repo} has no `command`") if command.empty? && !DRY
     step("deploy: (cd #{repo}) #{command} #{args.join(' ')} — repo owns its smoke + rollback")
+    deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     _, ok = sh(command, *args, chdir: path)
+    # The G4 gate's per-app deploy SOP (see the git_push_heroku twin above).
+    gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, ok || DRY,
+             ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
     abort!("#{repo} deploy script failed (#{command}) — its own rollback applies; fix + re-run `bin/release ship`") unless ok || DRY
   end
   @ship_live << "app #{repo} deployed to production"
@@ -2177,6 +2292,11 @@ end
 # SAME verdict (the seal write commits here; step 6 reloads the release by slug). The
 # WRITE is best-effort: a prod-board blip on the seal record warns + continues —
 # the red alert still prints from the LOCAL verdict, independent of the write.
+#
+# Returns the seal status ("passed"/"failed"), or nil when there was nothing to
+# seal — the G4 gate close records it as metadata.seal (the seal is G4's
+# NON-blocking closing beat: a red seal rides in sops + metadata but never
+# flips the gate's success, exactly as it never aborts the ship).
 def production_smoke_seal(app_groups, ship_sha, rel_slug)
   step("production smoke seal: bin/prod-smoke #{APP} (@qa-readonly vs prod) — post-ship SEAL, non-blocking")
 
@@ -2185,15 +2305,15 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   # changes nothing on the hub, so there is nothing to seal.
   unless app_groups.any? { |g| g["repo"] == APP }
     say("  (#{APP} not deployed in this ship — nothing to seal; skipped)")
-    return
+    return nil
   end
   unless PROD
     say("  (local ship — the seal smokes the LIVE prod host only; skipped)")
-    return
+    return nil
   end
   if DRY
     say("  [dry-run] bin/prod-smoke #{APP} → record 🟢/🔴 seal on #{rel_slug} (non-blocking)")
-    return
+    return nil
   end
 
   record_release_event(rel_slug, "prod_smoke", "started")
@@ -2240,7 +2360,7 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
     say("  ⚠ seal not recorded — board write failed (#{e.message}); the verdict below still stands")
   end
 
-  return if ok
+  return seal.status if ok
 
   # RED SEAL — alert + the EXACT rollback. NON-BLOCKING: no abort, no auto-rollback.
   # Release.current is still `assembled` here (step 6 ships it next), so
@@ -2251,6 +2371,7 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   say("   Roll back ONLY if you decide to (the seal never auto-rolls-back):")
   seal.rollback_commands(repo: APP, heroku_app: APP, deployed_sha: ship_sha[APP]).each { |c| say("     #{c}") }
   say("")
+  seal.status
 end
 
 # --- ship -------------------------------------------------------------------
@@ -2258,6 +2379,7 @@ def ship
   by = opt_value("--by") || ENV["USER"] || "operator"
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
   avi_span = false # set once the Avi deploy-lane activity opens (gates its close)
+  g4_gate = nil    # :open once the G4 Ship gate opens; :closed once a verdict lands
 
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
@@ -2309,17 +2431,27 @@ def ship
   #    ship authority — turf included (its bin/deploy keeps its own smoke + rollback).
   whats_live(repos, qa_shas)
 
-  # 2a. Avi's ship gate (§1.2): run the FULL e2e + highest tier on the FROZEN ship
-  #     SHA — the exact prod code — BEFORE ship authority, so "shipped" can
-  #     never mean "untested". A red gate scoped-aborts here, before the confirm
-  #     and before any push, leaving origin untouched.
+  # 2a. Avi's ship gate (§1.2): run the FULL local suite (registry test_cmd) on
+  #     the FROZEN ship SHA — the exact prod code — BEFORE ship authority, so
+  #     "shipped" can never mean "untested". A red gate scoped-aborts here,
+  #     before the confirm and before any push, leaving origin untouched.
+  #     (Browser-level verification is the post-deploy prod smoke SEAL — the old
+  #     "full e2e" wording here overstated what test_cmd runs.)
+  #
+  #     G4 SHIP opens HERE, spanning the frozen-SHA gate, the prod deploys,
+  #     /up smokes, post-deploy hooks, and the smoke seal; the ship_gate
+  #     ReleaseEvents STAY (they light the pizza tracker's stage stamps — gates
+  #     record verdicts, never replace stamps). Closed success after the seal
+  #     records, failed by the SystemExit wrapper below on any abort.
   record_release_event(rel_slug, "ship_gate", "started", actor: by)
-  avi_ship_gate(app_groups, ship_sha)
+  record_gate_open(rel_slug, "g4_ship", actor: by)
+  g4_gate = :open
+  avi_ship_gate(app_groups, ship_sha, qa_shas)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
   # 2b. The ship-authority gate — explicit, AFTER Avi's test confirmation and
   #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
-  step("ship authority: Avi's full e2e passed on the frozen SHA — confirming production deploy")
+  step("ship authority: Avi's ship gate passed on the frozen SHA — confirming production deploy")
   record_release_event(rel_slug, "ship_authorized", "started", actor: by)
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
   record_release_event(rel_slug, "ship_authorized", "completed", actor: by)
@@ -2377,7 +2509,15 @@ def ship
   #     against PROD and record a 🟢/🔴 seal on the release. NON-BLOCKING (a red
   #     seal alerts + prints the rollback but never aborts the ship). BEFORE step 6
   #     so post_release_notes reads the SAME verdict. See production_smoke_seal.
-  production_smoke_seal(app_groups, ship_sha, rel_slug)
+  seal_status = production_smoke_seal(app_groups, ship_sha, rel_slug)
+
+  # G4 verdict: every repo deployed, /up green, post-deploy hooks green — the
+  # gate PASSED. The seal is G4's non-blocking closing beat: its result already
+  # rides the sops (run_test_scope collector) and lands in metadata.seal here,
+  # but a red seal does NOT flip success (the deploy landed; the operator stays
+  # the gate on rollback, exactly as the seal never aborts the ship).
+  record_gate_close(rel_slug, "g4_ship", true, metadata: seal_status ? { "seal" => seal_status } : {})
+  g4_gate = :closed
 
   # 6. Record LAST — only after EVERY repo deployed. Stamp the hub's shipped SHA,
   #    promote the release card to Last Release immediately, then flip member
@@ -2419,6 +2559,12 @@ def ship
   sync_agent_docs
   close_role_span("shipped #{rel_slug} → prod")
 rescue SystemExit => e
+  # G4 close-fail wrapper: an abort inside the gate window (a red frozen-SHA
+  # gate, a failed deploy//up smoke, a post-deploy hook failure) IS the gate
+  # failing — close the attempt `failed` with the collected SOPs. Best-effort
+  # (record_gate_close can never raise) and the abort ALWAYS proceeds below
+  # (raise in dry-run, exit(status) otherwise) — the close never masks it.
+  record_gate_close(rel_slug, "g4_ship", false, metadata: { "aborted" => true }) if g4_gate == :open
   # Close the Avi activity on a partial-ship abort too (best-effort) so the
   # heartbeat activity resolves instead of hanging open. Gated by avi_span so an
   # abort BEFORE the activity opened (e.g. no active release) never emits a stray

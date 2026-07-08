@@ -35,28 +35,37 @@
 # Optional per-app `qa_deploy: { app: <qa-server-key> }` overrides the qa-server
 # target; absent, `Release::Repos.qa_app` defaults the key to the repo slug.
 #
-# Optional per-app `test_cmd` is the conductor's pre-prod gate: `bin/release ship`
-# runs it (cwd = the repo, at its QA-frozen SHA) right before the irreversible
-# prod deploy and scoped-aborts on red. DOUBLE-TEST CAVEAT: only set it where the
-# repo's own deploy does NOT already run the suite. The hub deploys via
-# git_push_heroku (no test step), so it carries `test_cmd: bin/rails test`. The
-# `repo_script` satellites SELF-GATE — their bin/deploy runs their own tests — so
-# they leave `test_cmd` UNSET to avoid running the whole suite twice per ship.
+# Optional per-app `test_cmd` is the conductor's pre-prod gate (G4 Ship):
+# `bin/release ship` runs it (cwd = the repo, at its QA-frozen SHA) right before
+# the irreversible prod deploy and scoped-aborts on red. DOUBLE-TEST CAVEAT:
+# only set it where the repo's own deploy does NOT already run the suite. The
+# hub deploys via git_push_heroku (no test step), so it carries
+# `test_cmd: bin/rails test`. The `repo_script` satellites SELF-GATE — their
+# bin/deploy runs their own tests — so they leave `test_cmd` UNSET to avoid
+# running the whole suite twice per ship. G4 ALSO self-gates against G3: when
+# the frozen ship SHA is exactly the SHA the pre-QA gate certified this run
+# with the SAME command, the ship gate records a skip SOP instead of re-running
+# (bin/release test_gate / Release::ShipSequence.ship_gate_skip?).
 #
-# Optional per-app `qa_test_cmd` is Steffon's PRE-QA gate: `bin/release prepare`
-# runs it (cwd = the repo, brought onto origin/release) BEFORE any QA deploy —
-# the integration + e2e-smoke tier prepare owns (Release::STEP_TEST_TIERS). A red
+# Optional per-app `qa_test_cmd` is Steffon's PRE-QA gate (G3 Candidate):
+# `bin/release prepare` runs it (cwd = the repo, brought onto origin/release)
+# BEFORE any QA deploy — the tier prepare owns (Release::STEP_TEST_TIERS). A red
 # gate aborts prepare with eject guidance while every swept member is still
 # `reviewed` (nothing flipped, nothing deployed). UNSET = the repo self-gates at
-# ship/its own deploy and the gate skips it. Same double-test caveat as test_cmd:
-# don't point it at the same full suite ship already runs.
+# ship/its own deploy and the gate skips it.
 #
-# WHAT to register as qa_test_cmd: the integration SUBSET
-# (`bin/rails test test/integration`), never the full unit suite — review owns
-# the base tier, and ship's test_cmd / the repo's own deploy owns the full
-# pre-prod run. The e2e-smoke half of prepare's tier is prepare's own built-in
-# post-deploy `/up` boot wait against QA — no browser suite belongs here (a
-# Playwright run needs a booted server; the QA deploy IS that smoke).
+# WHAT to register as qa_test_cmd:
+#   * satellites — the integration SUBSET (`bin/rails test test/integration`):
+#     review owns the base tier, and their ship test_cmd / own deploy owns the
+#     full pre-prod run (registering the same full suite twice would re-run it
+#     every ship, since their SHAs routinely drift via re-pins).
+#   * the HUB — its FULL suite (`bin/rails test`): the 90/10 policy certifies
+#     the whole release batch ONCE at G3, and ship's test_gate self-gates when
+#     the frozen SHA matches that certified run, so the suite still runs once
+#     per batch; a drifted/straggler SHA re-triggers it at ship.
+# The e2e-smoke half of prepare's tier is prepare's own built-in post-deploy
+# `/up` boot wait against QA — no browser suite belongs here (a Playwright run
+# needs a booted server; the QA deploy IS that smoke).
 #
 # PARSING: both test_cmd and qa_test_cmd are Shellwords-parsed into an argv
 # (bin/release's test_cmd_argv — no shell interpolation), so quoted/spaced args
@@ -93,9 +102,11 @@ gems:
 apps:
   mcritchie-studio:
     # Hub: git_push_heroku has no test step, so gate prod on the suite here.
+    # (Ship's gate SELF-GATES when the frozen SHA is exactly what the G3 pre-QA
+    # gate below already certified this run — full suite runs once per batch.)
     test_cmd: bin/rails test
-    # Pre-QA gate: the prepare-owned integration tier on origin/release.
-    qa_test_cmd: bin/rails test test/integration
+    # Pre-QA gate (G3): the hub certifies its FULL suite on the release batch.
+    qa_test_cmd: bin/rails test
     prod_deploy:
       strategy: git_push_heroku
       remote: heroku

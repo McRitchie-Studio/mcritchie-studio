@@ -93,7 +93,7 @@ lanes:
         gate: "review gate (only reviewed/assembled sweep); a conflict surfaces here — block-and-move, the rest ride"
       - type: test
         label: Pre-QA Gate
-        expectation: "Pre-QA gate: run the next tier (integration + an e2e-smoke, registry qa_test_cmd) on origin/release BEFORE deploying."
+        expectation: "Pre-QA gate (G3): run each app's registered qa_test_cmd (satellites: integration subset; hub: FULL suite — the batch certification) on origin/release BEFORE deploying."
         gate: "regression ejects the offender (bin/release eject) — the rest of the RC rides the re-run"
       - type: merge
         label: Main Branch
@@ -105,7 +105,7 @@ lanes:
         gate: wait_for_boot returns 200
       - type: test
         label: QA Acceptance
-        expectation: "The QA tier (integration + e2e-smoke) is green on the deployed candidate."
+        expectation: "The QA tier (each app's registered qa_test_cmd + the /up boot smoke) is green on the deployed candidate."
         gate: deterministic suite
       - type: stage_update
         label: Assembled
@@ -116,7 +116,7 @@ lanes:
   - owner: Avi
     lane: Ship
     end_stage: shipped
-    owner_note: "Owns the ship: runs the full e2e on the frozen ship SHA, then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
+    owner_note: "Owns the ship: runs the full suite on the frozen ship SHA (self-gated when G3 already certified that exact SHA), then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
     steps:
       - type: pulse
         label: Avi on it
@@ -124,7 +124,7 @@ lanes:
         gate: "—"
       - type: test
         label: QA Acceptance
-        expectation: "Avi runs the full e2e + highest tier on the FROZEN ship SHA (the exact prod commit)."
+        expectation: "Avi runs the full suite (registry test_cmd) on the FROZEN ship SHA (the exact prod commit) — skipped with a recorded gate SOP when G3 already certified that exact SHA + command."
         gate: avi_ship_gate aborts on any failure
       - type: review
         label: Visual

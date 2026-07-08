@@ -511,7 +511,9 @@ class ReleaseCliTest < Minitest::Test
     setup = STUB_CONDUCTOR + %(\ndef qa_gate_cmd(repo) = repo == "mcritchie-studio" ? "bin/rails test:integration" : "")
     out = run_cli(["--dry-run"], call: "prepare", setup: setup)
 
-    assert_includes out, "pre-QA gate: integration + e2e-smoke on origin/release (before any QA deploy)"
+    # The banner names what the step actually runs — each app's registered
+    # qa_test_cmd (the old "integration + e2e-smoke" overstated this gate).
+    assert_includes out, "pre-QA gate: each app's registered qa_test_cmd on origin/release (before any QA deploy)"
     assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: (cd mcritchie-studio) bin/rails test:integration @ origin/release"
     assert_includes out, "turf-monster: no qa_test_cmd registered", "an unregistered app self-gates (skip)"
   end
@@ -549,14 +551,18 @@ class ReleaseCliTest < Minitest::Test
 
   # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
 
-  def test_qa_gate_cmd_reads_the_registered_integration_tier_from_the_real_registry
+  def test_qa_gate_cmd_reads_the_registered_g3_tier_from_the_real_registry
     # ONE subprocess reads all five apps through the REAL config/release_repos.yml
-    # — the exact seam pre_qa_gate reads at run time.
+    # — the exact seam pre_qa_gate reads at run time. The HUB registers its FULL
+    # suite (the G3 batch certification — ship's test_gate self-gates an
+    # unchanged SHA); satellites keep the integration subset.
     out = eval_helper(%(%w[mcritchie-studio turf-monster rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
-    live = Array.new(3, "bin/rails test test/integration")
-    assert_equal (live + ["", ""]).inspect, out,
-                 "live apps gate QA on their integration tier; planned apps (tax-studio, chain-ops) self-gate"
+    expected = ["bin/rails test",
+                "bin/rails test test/integration", "bin/rails test test/integration",
+                "", ""]
+    assert_equal expected.inspect, out,
+                 "hub certifies the full suite at G3; satellites gate on integration; planned apps self-gate"
   end
 
   def test_test_cmd_argv_matches_plain_split_for_flag_style_commands

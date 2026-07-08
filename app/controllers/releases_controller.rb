@@ -14,7 +14,9 @@ class ReleasesController < ApplicationController
     @release_page = @release_total_pages if @release_page > @release_total_pages
     @release_per_page = RELEASES_PER_PAGE
     @release_offset = (@release_page - 1) * @release_per_page
-    @releases = releases_scope.includes(:tasks).offset(@release_offset).limit(@release_per_page)
+    # :gate_runs feeds the gate-backed G3/G4 stage cells (Release#latest_gate_run
+    # filters the loaded association in Ruby — no per-row query).
+    @releases = releases_scope.includes(:tasks, :gate_runs).offset(@release_offset).limit(@release_per_page)
     # Running-average rows sit AFTER the Nth release (the boundary of their window):
     # 3-avg between rows 3 and 4, 10-avg between rows 10 and 11. Clamped to the page
     # size and shown only on page 1, where the newest N releases actually live.
