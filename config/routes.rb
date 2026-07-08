@@ -44,6 +44,9 @@ Rails.application.routes.draw do
   get "stages", to: "tasks#stages", as: :stages
   # /stages/sop — the operator's DevOps SOP as an accountability-swimlane infographic.
   get "stages/sop", to: "tasks#sop", as: :sop
+  # Model-page protocol routes (/models/:model/:id, /models/:model/random) are
+  # drawn by studio-engine's Studio.routes — see config/initializers/model_pages.rb
+  # for the per-model registry (Release enabled).
 
   # Local-only (development + test, NEVER production) board toys for demoing the
   # live /deployments board: generate / move / delete a throwaway fixture task.

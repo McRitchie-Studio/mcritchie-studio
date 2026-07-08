@@ -8,7 +8,13 @@
       </div>
       <h2 class="text-3xl font-extrabold text-heading tracking-tight">All Deployments</h2>
     </div>
-    <%= link_to "Back to Dashboard", deployments_path, class: "btn btn-neutral btn-sm" %>
+    <div class="flex items-center gap-2">
+      <%# Model-page protocol (studio-engine): admin-only jump to the newest release's model page. %>
+      <% if admin? && @latest_release %>
+        <%= link_to "Model", studio_model_path("release", @latest_release.slug), class: "btn btn-neutral btn-sm" %>
+      <% end %>
+      <%= link_to "Back to Dashboard", deployments_path, class: "btn btn-neutral btn-sm" %>
+    </div>
   </div>
 
   <% stage_averages = @deployment_dashboard["stages"] || {} %>
