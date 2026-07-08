@@ -55,6 +55,7 @@ class TaskEvent < ApplicationRecord
   # failure never breaks the move. Bulk historical backfill rows don't broadcast.
   after_create_commit :broadcast_to_deployments_board
   after_create_commit :refresh_release_duration_metrics
+  after_create_commit :refresh_task_testing_phases
 
   def transition?
     kind == TRANSITION
@@ -140,5 +141,11 @@ class TaskEvent < ApplicationRecord
 
   def refresh_release_duration_metrics
     task&.release&.refresh_duration_metrics_safely
+  end
+
+  # A new checkpoint/transition can move a task-owned testing-phase window (e.g. a
+  # cert-started/finished checkpoint) — recompute the parent task's projection.
+  def refresh_task_testing_phases
+    task&.refresh_testing_phases_safely
   end
 end

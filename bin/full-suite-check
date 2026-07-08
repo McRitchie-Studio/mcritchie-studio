@@ -194,6 +194,18 @@ rescue StandardError
   nil # telemetry never breaks a cert — the lane result the caller returns is what matters
 end
 
+# Best-effort emit of a "cert" checkpoint TaskEvent (started/completed) so the task's
+# Local Certification testing phase gets a durable start→finish window. Skips when
+# there's no task slug (--print / hook-install runs); never breaks the cert.
+def emit_cert_checkpoint(slug, status)
+  return if slug.to_s.strip.empty?
+
+  system(TASK_BIN, "checkpoint", slug, "cert", "--status", status,
+         out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
 def run_lane(label, cmd, root, env: {})
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -217,6 +229,9 @@ rescue JSON::ParserError, SystemCallError
   nil
 end
 
+# Open the Local Certification testing phase (durable checkpoint on the task).
+emit_cert_checkpoint(slug, "started")
+
 unless skip_test_db_reset
   reset_ok = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" })
   unless reset_ok
@@ -227,6 +242,10 @@ end
 
 test_ok = run_lane("full-suite", test_cmd, root)
 rubocop_ok = run_lane("rubocop", rubocop_cmd, root)
+
+# Close the Local Certification testing phase (fires whether the cert passed or
+# failed — the pass/fail lives in checks_run; this only bounds the phase window).
+emit_cert_checkpoint(slug, "completed")
 
 fingerprint = FullSuiteGate.fingerprint(root)
 if fingerprint.nil?
