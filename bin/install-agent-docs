@@ -624,17 +624,24 @@ if command -v jq >/dev/null 2>&1; then
   # bin/task session-mascot seeds the per-session marker before any task exists.
   # Idempotent — appended only when our command isn't already a SessionStart hook,
   # so it never duplicates our entry or clobbers the user's other hooks. Stale
-  # worktree hooks are pruned because they break after cleanup.
+  # worktree hooks are pruned because they break after cleanup, and legacy
+  # shell-wrapped mascot commands are pruned so the session only seeds once.
+  hook_cmd="$RUNTIME_ROOT/bin/task session-mascot"
   tmp="$(mktemp)"
-  if jq 'if .hooks.SessionStart then
+  if jq --arg hook_cmd "$hook_cmd" 'if .hooks.SessionStart then
         .hooks.SessionStart |= (
-          map(.hooks = ((.hooks // []) | map(select(((.command // "") | test("/\\.worktrees/.*/bin/task session-mascot") | not)))))
+          map(.hooks = ((.hooks // []) | map(select(
+            (
+              ((.command // "") | test("/\\.worktrees/.*/bin/task session-mascot")) or
+              (((.command // "") | contains("/bin/task session-mascot")) and ((.command // "") != $hook_cmd))
+            ) | not
+          ))))
           | map(select(((.hooks // []) | length) > 0))
         )
       else . end' "$settings" > "$tmp"; then
     if ! cmp -s "$settings" "$tmp"; then
       mv "$tmp" "$settings"
-      echo "  $settings (removed stale worktree SessionStart hooks)"
+      echo "  $settings (removed stale/legacy SessionStart mascot hooks)"
     else
       rm -f "$tmp"
     fi
@@ -642,7 +649,6 @@ if command -v jq >/dev/null 2>&1; then
     rm -f "$tmp"
   fi
 
-  hook_cmd="$RUNTIME_ROOT/bin/task session-mascot"
   if ! jq -e --arg cmd "$hook_cmd" '[(.hooks.SessionStart // [])[]?.hooks[]?.command // empty | select(. == $cmd or contains($cmd))] | length > 0' "$settings" >/dev/null 2>&1; then
     tmp="$(mktemp)"
     if jq --arg cmd "$hook_cmd" '.hooks //= {} | .hooks.SessionStart = ((.hooks.SessionStart // []) + [{hooks: [{type: "command", command: $cmd}]}])' "$settings" > "$tmp"; then
