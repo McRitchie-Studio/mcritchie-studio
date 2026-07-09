@@ -46,6 +46,69 @@ module Api
         assert @task.requires_release_conductor?
       end
 
+      # --- Operator approval lane (regression: a builder PATCHed
+      # approval_status=approved right after submitting — self-approving its own
+      # demo). Approving belongs to the admin-gated board UI; API bearer writes
+      # may only request approval. ---
+
+      test "[integration] api update cannot self-approve operator approval" do
+        task = Task.create!(
+          title: "Approval Api Guard",
+          stage: "submitted",
+          metadata: { "devops" => { "approval_status" => "waiting" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { devops: { approval_status: "approved" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :unprocessable_entity
+        body = JSON.parse(response.body)
+        assert_match(/operator/i, body["error"])
+        task.reload
+        assert_equal "waiting", task.approval_status
+        assert_nil task.devops["approval_approved_at"]
+      end
+
+      test "[integration] api update keeps approval waiting writable" do
+        task = Task.create!(
+          title: "Approval Api Waiting",
+          stage: "building",
+          metadata: { "devops" => { "local_url" => "http://localhost:3021/tasks" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { devops: { approval_status: "waiting", local_url: "http://localhost:3021/tasks" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        task.reload
+        assert_equal "waiting", task.approval_status
+        assert task.devops["approval_requested_at"].present?
+      end
+
+      test "[integration] api update echoing prior approval stays accepted" do
+        task = Task.create!(
+          title: "Approval Api Echo",
+          stage: "submitted",
+          metadata: { "devops" => { "approval_status" => "approved" } }
+        )
+
+        # bin/task update replaces the whole devops hash, echoing the operator's
+        # earlier approval alongside the new field — a non-flip must pass.
+        patch api_v1_task_path(task.slug),
+              params: { devops: { approval_status: "approved", pr_url: "https://github.com/x/y/pull/2" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        task.reload
+        assert_equal "approved", task.approval_status
+        assert_equal "https://github.com/x/y/pull/2", task.devops["pr_url"]
+      end
+
       test "create preserves commas inside array acceptance items" do
         post api_v1_tasks_path,
              params: {
