@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_09_060000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1153,6 +1153,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_120000) do
     t.string "dev_size"
     t.text "error_message"
     t.datetime "failed_at"
+    t.jsonb "gates", default: {}, null: false
+    t.datetime "gates_cached_at"
+    t.integer "gates_version", default: 0, null: false
     t.string "merged"
     t.jsonb "metadata", default: {}
     t.string "pm_size"

@@ -115,6 +115,16 @@ returns only the 20 most recent tasks. `meta.total` is the real count; a client
 that ignores `meta` sees no truncation signal. To enumerate a stage in full,
 filter with `?stage=` (an actionable stage holds far fewer than 20 rows). A `GET
 /tasks/:slug` for an unknown slug returns `404 { "error": "task not found" }`.
+
+Task JSON (show and index) carries a cached `gates` projection — the LATEST
+attempt per task-grain gate, keyed under `gates.gates`:
+`{ "cache_version": 1, "cached_at": "…", "gates": { "g1_cert": { "attempt",
+"started_at", "finished_at", "success", "sops" }, "g2a_primary": …,
+"g2b_light": … } }`. `success` is `null` while the attempt is in flight; a
+never-attempted gate carries the all-nil row. `gate_runs` stays the source of
+truth (`GET /gates/...` above for the full attempt history); show self-heals a
+stale cache, index serves the raw column. Release-grain gates (G3/G4) are not
+projected — read them via `GET /gates/release/<slug>`.
 (There are also `agents`, `activities`, and `usages` resources; out of scope
 here.)
 
