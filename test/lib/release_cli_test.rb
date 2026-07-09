@@ -699,14 +699,47 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # [unit] suite_bundle_cmd prefers the repo's bin/bundle binstub (same
-  # env-resolved ruby as bin/rails) and falls back to bare `bundle` when a repo
-  # carries no binstub.
-  def test_suite_bundle_cmd_prefers_the_binstub_and_falls_back
+  # [unit] suite_bundle_argv prefers the repo's bin/bundle binstub (same
+  # env-resolved ruby as bin/rails) and falls back to `ruby -S bundle` — NEVER
+  # bare `bundle` — when a repo carries no binstub, so the fallback still runs
+  # under the mise-pinned ruby (carl + shannon's PR #480 request-changes).
+  def test_suite_bundle_argv_prefers_the_binstub_and_falls_back_to_ruby_dash_s
     Dir.mktmpdir do |dir|
       fix = build_binstub_fixture(dir)
-      out = eval_helper(%([suite_bundle_cmd(#{fix.inspect}), suite_bundle_cmd(#{dir.inspect})].inspect))
-      assert_equal %(["bin/bundle", "bundle"]), out
+      out = eval_helper(%([suite_bundle_argv(#{fix.inspect}), suite_bundle_argv(#{dir.inspect})].inspect))
+      assert_equal %([["bin/bundle"], ["ruby", "-S", "bundle"]]), out
+    end
+  end
+
+  # [unit] REGRESSION (carl + shannon request-changes on PR #480): a
+  # qa-REGISTERED app that ships NO bin/bundle binstub must STILL bundle-check
+  # under the suite ruby — via `ruby -S bundle` run from the repo dir (the mise
+  # shim resolves the SAME directory-pinned ruby the suite's #!/usr/bin/env ruby
+  # binstubs do), NEVER bare `bundle` (a shell PATH lookup that re-picks the
+  # conductor ruby — the exact divergence the guard exists to close).
+  def test_pre_qa_gate_bundle_checks_a_registered_app_without_a_binstub_under_the_suite_ruby
+    Dir.mktmpdir do |dir|
+      fix = File.join(dir, "repo") # a Gemfile but deliberately NO bin/bundle
+      FileUtils.mkdir_p(fix)
+      File.write(File.join(fix, "Gemfile"), "source \"https://rubygems.org\"\n")
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test"
+        def sh(*a, **_k)
+          $stdout.puts("BUNDLE-ARGV #{a[0..3].inspect}") if a[0] == "ruby" && a[1] == "-S"
+          $stdout.puts("BARE-BUNDLE") if a[0] == "bundle"
+          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      argv_line = out.lines.find { |l| l.start_with?("BUNDLE-ARGV") }
+      assert argv_line, "a no-binstub registered app must STILL bundle-check under the suite ruby: #{out}"
+      assert_includes argv_line, %(["ruby", "-S", "bundle", "check"]),
+                      "the check runs `ruby -S bundle` (suite ruby), closing the coverage gap"
+      refute_includes out, "BARE-BUNDLE", "it must NEVER fall back to bare `bundle` (shell-ruby PATH lookup)"
+      assert_includes out, "PASSED"
     end
   end
 

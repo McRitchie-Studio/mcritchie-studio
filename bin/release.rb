@@ -1273,10 +1273,21 @@ end
 # the SAME env-resolved ruby that boots the suite — and a still-broken bundle
 # aborts NAMING the toolchain divergence (env diagnosis), never the eject path.
 
-# The bundle command that resolves ruby EXACTLY like the suite's own binstubs:
-# the repo's bin/bundle when it exists (Rails apps), bare `bundle` otherwise.
-def suite_bundle_cmd(path)
-  File.exist?(File.join(path, "bin", "bundle")) ? "bin/bundle" : "bundle"
+# The bundle ARGV that resolves ruby EXACTLY like the suite's own binstubs — so
+# the check reads the SAME gem home the suite boots against, for EVERY
+# qa-registered app, not only ones carrying a checked-in bin/bundle. Two forms:
+#   * ["bin/bundle"]        — the repo's binstub (`#!/usr/bin/env ruby` → the
+#     env-resolved ruby, i.e. mise's directory pin); every Rails app checkout
+#     ships one.
+#   * ["ruby", "-S", "bundle"] — the fallback when a registered repo has NO
+#     bin/bundle binstub. Run with chdir: path, the bare `ruby` ALSO resolves
+#     through the mise shim's directory pin, so `-S bundle` runs the bundler
+#     that ruby's OWN gem home ships. This is the fix carl + shannon flagged on
+#     PR #480: the old bare-`bundle` fallback did a shell PATH lookup that
+#     re-picked the conductor's ruby — the exact brew-vs-mise divergence the
+#     guard exists to close, so no-binstub apps had NO real same-ruby coverage.
+def suite_bundle_argv(path)
+  File.exist?(File.join(path, "bin", "bundle")) ? ["bin/bundle"] : ["ruby", "-S", "bundle"]
 end
 
 # The ruby the suite will boot with — probed FROM the repo dir, where mise's
@@ -1296,12 +1307,13 @@ def ensure_suite_bundle!(repo, path)
   # (self-gating, like an app with no qa_test_cmd).
   return unless File.exist?(File.join(path, "Gemfile"))
 
-  bundle = suite_bundle_cmd(path)
-  _, ok = sh(bundle, "check", chdir: path, capture: true)
+  bundle = suite_bundle_argv(path)
+  label  = bundle.join(" ")
+  _, ok = sh(*bundle, "check", chdir: path, capture: true)
   return if ok
 
-  say("  #{repo}: bundle unsatisfied under the suite ruby — #{bundle} install")
-  _, ok = sh(bundle, "install", chdir: path)
+  say("  #{repo}: bundle unsatisfied under the suite ruby — #{label} install")
+  _, ok = sh(*bundle, "install", chdir: path)
   return if ok
 
   boot_ruby = suite_ruby(path)
@@ -1314,8 +1326,8 @@ def ensure_suite_bundle!(repo, path)
       "divergent gem homes (brew-vs-mise), so a shell-side `bundle check` can lie about the suite's env."
     end
   abort!("pre-QA gate #{repo}: the bundle is unsatisfied under the SUITE ruby (#{boot_ruby}) and " \
-         "`#{bundle} install` failed.#{divergence} This is an ENV/toolchain issue, NOT a release " \
-         "regression — nothing to eject or revert. Fix the bundle (cd #{path} && #{bundle} install), " \
+         "`#{label} install` failed.#{divergence} This is an ENV/toolchain issue, NOT a release " \
+         "regression — nothing to eject or revert. Fix the bundle (cd #{path} && #{label} install), " \
          "then re-run `bin/release prepare`.")
 end
 
@@ -1379,7 +1391,7 @@ def pre_qa_gate(app_groups)
            "merge commit on `#{RELEASE_BRANCH}` (git revert -m 1 <merge-sha>; push), then re-run " \
            "`bin/release prepare` — the sweep self-heals and the REST of the RC rides on. " \
            "(Exception: a boot-time Bundler::GemNotFound in the output is a bundle/toolchain ENV issue " \
-           "— fix with `#{suite_bundle_cmd(repo_path(repo))} install` in the repo, not by ejecting.)")
+           "— fix with `#{suite_bundle_argv(repo_path(repo)).join(' ')} install` in the repo, not by ejecting.)")
   end
 end
 
