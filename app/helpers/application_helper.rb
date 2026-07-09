@@ -136,6 +136,85 @@ module ApplicationHelper
     ms < 1000 ? "#{ms}ms" : format_elapsed_clock(ms / 1000)
   end
 
+  # ---- Phase-strip lane tiles + tile avatars (feature: phase-strip-lane-avatars)
+  #
+  # Two enrichments to the four-cell testing-phase strip (recent.html.erb + the
+  # _testing_phases card): the two review LANES that break the overall Review
+  # duration into its primary/light seats, and a small avatar per tile so the
+  # operator sees WHO drove each phase at a glance. Sparse-first throughout — a
+  # lane with no GateRun and an owner that doesn't resolve simply render nothing.
+
+  # The review lanes riding beneath the overall Review tile: the primary (G2a)
+  # and light (G2b) senior reviews. `gate_runs` is the {key => latest GateRun}
+  # map both surfaces already load; returns [[key, label, run], …] in seat order
+  # for only the lanes that have actually run (sparse-first, like the gate strip).
+  REVIEW_LANE_TILES = [["g2a_primary", "Primary"], ["g2b_light", "Light"]].freeze
+
+  def review_lane_tiles(gate_runs)
+    runs = gate_runs || {}
+    REVIEW_LANE_TILES.filter_map do |key, label|
+      run = runs[key]
+      [key, label, run] if run
+    end
+  end
+
+  # The face a phase tile wears so the operator sees who drove it: the task's
+  # Pokémon mascot owns the machine phases its session ran (Build, Local
+  # Certification, CI); Avi — the review supervisor — owns Review. `mascot_face`
+  # is a MascotAgent (StageAgentsHelper#task_mascot_face) and `avi` is Avi's
+  # Agent; both quack for #phase_face_avatar_tag. Returns the face, or nil when
+  # the phase has no owner or the owner didn't resolve (the tile shows no face).
+  PHASE_MASCOT_TILE_KEYS = %w[build local_certification ci].freeze
+
+  def phase_tile_face(phase_key, mascot_face:, avi:)
+    case phase_key.to_s
+    when *PHASE_MASCOT_TILE_KEYS then mascot_face
+    when "review"                then avi
+    end
+  end
+
+  # The reviewer soul who ran a review lane, resolved from the GateRun's actor
+  # slug. `lookup` is an optional preloaded {slug => Agent} map (batched on the
+  # /tasks/recent list to avoid an N+1); nil when the run has no actor, or none
+  # resolves.
+  def gate_run_reviewer(run, lookup: nil)
+    slug = run&.actor.presence
+    return nil if slug.blank?
+
+    lookup ? lookup[slug] : Agent.find_by(slug: slug)
+  end
+
+  # A compact circular avatar for a phase/lane tile corner. Mirrors the proven
+  # components/agent_avatar pattern — a deterministic initial bubble underneath,
+  # the face image over it, onerror drops a 404 back to the bubble (no
+  # broken-image icon, no flicker) — but sized to `px` (the primitive floors at
+  # 24px; the dense recency tiles want ~20px) and without the shiny badge (a
+  # mascot's shiny already reads from its sprite). Any Agent-like `face` works
+  # (an Agent or a MascotAgent). "" when face is nil (sparse-first).
+  def phase_face_avatar_tag(face, px: 20, title: nil)
+    return "".html_safe unless face
+
+    dim = "#{px}px"
+    tag.span(
+      class: "relative inline-flex items-center justify-center rounded-full overflow-hidden shrink-0",
+      style: "width:#{dim};height:#{dim};background-color:#{face.avatar_color};",
+      title: title || face.name,
+      data: { test: "phase-tile-avatar" }
+    ) do
+      initials = tag.span(face.avatar_initials,
+                          class: "font-bold text-white leading-none",
+                          style: "font-size:#{[(px * 0.42).round, 8].max}px;")
+      image =
+        if face.avatar.present?
+          tag.img(src: face.avatar, alt: face.name, loading: "lazy",
+                  class: "absolute inset-0 h-full w-full object-cover", onerror: "this.remove()")
+        else
+          "".html_safe
+        end
+      safe_join([initials, image])
+    end
+  end
+
   # Compact 12-hour clock for a board footer stamp: "3:32p" — no leading zero
   # on the hour, a single am/pm letter. Expects an already-zoned time.
   def clock_12h(time)
