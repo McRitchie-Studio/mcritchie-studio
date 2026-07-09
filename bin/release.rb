@@ -148,6 +148,12 @@ require_relative "../app/models/release/clean_check"
 require_relative "../app/models/release/smoke_seal"
 # ProdSmoke resolves the prod base URL for the seal smoke (bin/prod-smoke shares it).
 require_relative "../app/models/release/prod_smoke"
+# GateRuby pins the LOCAL pre-QA / ship test gates to CI's ruby (mise 3.3.11) so a
+# gate host whose shell `ruby` is brew's ruby@3.3 doesn't diverge from CI — the
+# gate suite (and the bin/release / bin/dor-check subprocesses its meta-tests
+# spawn) runs with mise's ruby bin dir leading PATH, so `env ruby` == CI's ruby.
+# Rails-free → unit + integration tested.
+require_relative "../app/models/release/gate_ruby"
 # Deploy-side usage capture: read the conductor's LOCAL session transcript and
 # diff it against the per-(session, slug) baseline (shared verbatim with bin/task
 # + bin/reviewer-select) so reviewed→assembled / assembled→shipped flips carry
@@ -286,19 +292,25 @@ def warn_local!
 end
 
 # Run a shell command. In dry-run, print it and skip. `chdir:` runs it in
-# another directory (used for gem-repo builds/tags). Returns [stdout, ok?].
-def sh(*cmd, capture: false, chdir: nil)
+# another directory (used for gem-repo builds/tags). `env:` is an optional
+# environment overlay merged into the child (the gate ruby pin passes it so the
+# spawned suite/bundle/probe resolve `env ruby` to mise — see gate_ruby_env); a
+# blank/nil overlay leaves the argv exactly as-is. Returns [stdout, ok?].
+def sh(*cmd, capture: false, chdir: nil, env: nil)
   printable = "#{chdir ? "(cd #{chdir}) " : ''}#{cmd.join(' ')}"
   if DRY
     puts "  [dry-run] #{printable}"
     return ["", true]
   end
   opts = chdir ? { chdir: chdir } : {}
+  # A leading env Hash sets the child's environment WITHOUT touching argv, so a
+  # command stub keying on argv[0] still matches (env lands in the trailing opts).
+  argv = env && !env.empty? ? [env, *cmd] : cmd
   if capture
-    out, status = Open3.capture2e(*cmd, opts)
+    out, status = Open3.capture2e(*argv, opts)
     [out, status.success?]
   else
-    ok = system(*cmd, opts)
+    ok = system(*argv, opts)
     ["", ok]
   end
 end
@@ -490,14 +502,19 @@ end
 # scope key, result_slug=pass|fail, duration_ms=the wall-clock. These ride the same
 # best-effort self-report path; a bare START stays untagged so the pipeline's
 # `kind:"test_scope" AND result_slug present` filter never surfaces it.
-def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, &block)
+def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, env: nil, &block)
   meta  = scope_meta(key)
   where = repo.to_s.empty? ? meta["host"].to_s : repo.to_s
   printable = (label || cmd.join(" ")).to_s
   scope_action("test scope #{key} START · #{where} · #{printable}")
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   begin
-    out, ok = block ? block.call : sh(*cmd, capture: capture, chdir: chdir)
+    # Pass `env:` to sh ONLY when the caller set an overlay (the gate ruby pin) —
+    # non-gate scopes call sh with the exact original keywords, so a strict sh
+    # stub (or any caller that predates env:) is untouched.
+    kw = { capture: capture, chdir: chdir }
+    kw[:env] = env if env && !env.empty?
+    out, ok = block ? block.call : sh(*cmd, **kw)
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
     gate_sop(key, printable, false, (elapsed * 1000).round)
@@ -1260,6 +1277,37 @@ def with_primary_checkout(repo, wait: true)
   end
 end
 
+# --- gate suite ruby pin: run the gate suite under CI's ruby -----------------
+# The gates spawn `bin/rails test`; that suite's deploy-tooling meta-tests spawn
+# bin/release / bin/dor-check subprocesses (`#!/usr/bin/env ruby`) that resolve
+# `ruby` off PATH. On this gate host PATH's ruby is brew's (the app ruby, by
+# design), whose gem home DIVERGES from mise's → a `Gem::Platform::JAVA already
+# initialized` collision at subprocess boot → FALSE gate failures (CI, on mise
+# 3.3.11, is green). So we run every gate subprocess — the suite, plus the bundle
+# check/install + suite-ruby probe below — with mise's ruby bin dir leading PATH
+# (an env overlay via `env:`, NOT an argv wrap, so command stubs keying on argv[0]
+# still match): mise's `env ruby` wins the shebang lookup for the command AND its
+# children, so local == CI. Degrades to the shell ruby (empty overlay) + a loud
+# note, ONCE, when the pinned ruby isn't installed. See Release::GateRuby.
+#
+# Memoized so the note prints once per run, not once per repo. The empty-Hash
+# overlay ({}) is a valid memo — an mise-less host still short-circuits after one note.
+def gate_ruby_env
+  return @gate_ruby_env if defined?(@gate_ruby_env)
+
+  bin_dir = Release::GateRuby.resolve_ruby_bin_dir
+  @gate_ruby_env = Release::GateRuby.env(ruby_bin_dir: bin_dir.to_s)
+  if bin_dir
+    say("  gate ruby: mise #{Release::GateRuby::RUBY_PIN} (#{bin_dir}) leads PATH — matches CI")
+  else
+    say("  ⚠ gate ruby: mise #{Release::GateRuby::RUBY_PIN} not installed (#{Release::GateRuby.install_dir}) — " \
+        "the gate suite runs under the shell ruby (#{RbConfig.ruby}). On a host whose `ruby` isn't mise this can " \
+        "diverge from CI (deploy-tooling meta-tests hit a brew/mise gem-home split). Install it: " \
+        "mise install ruby@#{Release::GateRuby::RUBY_PIN}")
+  end
+  @gate_ruby_env
+end
+
 # --- suite-toolchain guard: bundle check/install under the SUITE ruby --------
 # The gate boots its suite via the repo's binstubs (`#!/usr/bin/env ruby`), so
 # the ruby that matters is the one `ruby` resolves to FROM THE REPO DIR — on
@@ -1291,11 +1339,13 @@ def suite_bundle_argv(path)
   File.exist?(File.join(path, "bin", "bundle")) ? ["bin/bundle"] : ["ruby", "-S", "bundle"]
 end
 
-# The ruby the suite will boot with — probed FROM the repo dir, where mise's
-# per-directory pin applies. Degrades to "unknown" (never aborts) on a failed
-# probe: this string only enriches the mismatch diagnosis below.
+# The ruby the suite will boot with — probed under the SAME gate-ruby env pin the
+# suite runs through (mise's pinned 3.3.11 when available; see gate_ruby_env), so
+# the diagnosis below names the ruby the suite ACTUALLY boots, not the conductor
+# shell's. Degrades to "unknown" (never aborts) on a failed probe: this string
+# only enriches the mismatch diagnosis below.
 def suite_ruby(path)
-  out, ok = sh("ruby", "-e", "print RbConfig.ruby", chdir: path, capture: true)
+  out, ok = sh("ruby", "-e", "print RbConfig.ruby", chdir: path, capture: true, env: gate_ruby_env)
   ok && !out.strip.empty? ? out.strip : "unknown (ruby probe failed)"
 end
 
@@ -1308,13 +1358,19 @@ def ensure_suite_bundle!(repo, path)
   # (self-gating, like an app with no qa_test_cmd).
   return unless File.exist?(File.join(path, "Gemfile"))
 
+  # Verify under the gate-ruby env pin so the bundle is checked against the SAME
+  # ruby the suite now boots (mise's pin) — otherwise a brew-satisfied /
+  # mise-missing gem (the exact rel-20260708-32701b failure) would slip past the
+  # check and only blow up mid-suite as a raw GemNotFound. argv is unchanged; the
+  # pin rides as the env overlay (gate_ruby_env), so bin/bundle's shebang resolves
+  # to mise.
   bundle = suite_bundle_argv(path)
   label  = bundle.join(" ")
-  _, ok = sh(*bundle, "check", chdir: path, capture: true)
+  _, ok = sh(*bundle, "check", chdir: path, capture: true, env: gate_ruby_env)
   return if ok
 
   say("  #{repo}: bundle unsatisfied under the suite ruby — #{label} install")
-  _, ok = sh(*bundle, "install", chdir: path)
+  _, ok = sh(*bundle, "install", chdir: path, env: gate_ruby_env)
   return if ok
 
   boot_ruby = suite_ruby(path)
@@ -1381,7 +1437,7 @@ def pre_qa_gate(app_groups)
       # BEFORE the multi-minute suite run (see the suite-toolchain guard above).
       ensure_suite_bundle!(repo, path)
       step("pre-QA gate #{repo}: #{cmd}")
-      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: path, repo: repo)
+      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: path, repo: repo, env: gate_ruby_env)
     ensure
       sh("git", "-C", path, "checkout", "main", capture: true)
     end
@@ -2114,7 +2170,7 @@ def test_gate(repo, frozen_sha: nil, qa_sha: nil)
   step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · before prod]")
   return if DRY
 
-  _, ok = run_test_scope("ship_test_gate", *argv, chdir: repo_path(repo), repo: repo, label: cmd)
+  _, ok = run_test_scope("ship_test_gate", *argv, chdir: repo_path(repo), repo: repo, label: cmd, env: gate_ruby_env)
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
 end
 
