@@ -573,8 +573,162 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
       assert_includes out, "git revert -m 1", "…and the merge-commit revert"
       assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
+      assert_includes out, "Bundler::GemNotFound",
+                      "the abort distinguishes a boot-time GemNotFound (env) from a real regression"
       refute_includes out, "PASSED"
       assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+    end
+  end
+
+  # --- suite-toolchain guard: bundle check/install under the SUITE ruby -------
+  #
+  # REGRESSION (rel-20260708-32701b): the gate boots the suite via the repo's
+  # binstubs (`#!/usr/bin/env ruby` → mise's pinned ruby on this machine), but
+  # the conductor/operator shell's `bundle` resolved HOMEBREW ruby — DIVERGENT
+  # gem homes. PR #456's engine bump was "satisfied" in brew's gem home while
+  # missing from mise's (the one the suite boots) → Bundler::GemNotFound at
+  # suite boot → the gate aborted TWICE with "a regression is riding
+  # origin/release" (eject/revert guidance) for a pure env problem. The gate
+  # must bundle-check/install through the SAME env-resolved ruby that boots the
+  # suite (the repo's bin/bundle binstub), and a still-broken bundle must abort
+  # as an ENV/toolchain diagnosis — never the eject path.
+
+  # A minimal repo fixture with a Gemfile (the guard self-gates without one)
+  # and a bin/bundle binstub (suite_bundle_cmd's probe) — the git/suite/bundle
+  # commands themselves are stubbed via sh.
+  def build_binstub_fixture(dir)
+    fix = File.join(dir, "repo")
+    FileUtils.mkdir_p(File.join(fix, "bin"))
+    File.write(File.join(fix, "Gemfile"), "source \"https://rubygems.org\"\n")
+    File.write(File.join(fix, "bin", "bundle"), "#!/usr/bin/env ruby\n")
+    fix
+  end
+
+  # [unit] The gate bundle-checks via the repo's bin/bundle binstub — the same
+  # env-resolved ruby that boots the suite — AFTER the release checkout (so it
+  # reads the RELEASE tree's Gemfile.lock) and BEFORE the suite burns minutes.
+  def test_pre_qa_gate_bundle_checks_under_the_suite_ruby_before_the_suite
+    Dir.mktmpdir do |dir|
+      fix = build_binstub_fixture(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test"
+        def sh(*a, **_k)
+          $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
+          $stdout.puts("BUNDLE #{a[1]}") if a[0] == "bin/bundle"
+          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      lines = out.lines.map(&:strip)
+      co    = lines.index("GIT-OP checkout") # first checkout = release
+      check = lines.index("BUNDLE check")
+      suite = lines.index("SUITE")
+      assert check, "the gate must bundle-check via bin/bundle (the suite ruby): #{out}"
+      assert co && suite, "the release checkout and the suite must both run: #{out}"
+      assert_operator co, :<, check, "the bundle check reads the RELEASE tree (after checkout)"
+      assert_operator check, :<, suite, "…and runs BEFORE the suite boots"
+      refute_includes lines, "BUNDLE install", "a satisfied bundle must not install"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] An unsatisfied bundle self-heals: bin/bundle install (same suite
+  # ruby → same gem home) runs before the suite, and a green install lets the
+  # gate ride on.
+  def test_pre_qa_gate_installs_the_bundle_when_the_check_fails
+    Dir.mktmpdir do |dir|
+      fix = build_binstub_fixture(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test"
+        def sh(*a, **_k)
+          $stdout.puts("BUNDLE #{a[1]}") if a[0] == "bin/bundle"
+          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          return ["", false] if a[0] == "bin/bundle" && a[1] == "check"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      lines   = out.lines.map(&:strip)
+      check   = lines.index("BUNDLE check")
+      install = lines.index("BUNDLE install")
+      suite   = lines.index("SUITE")
+      assert check && install && suite, "check, install, and suite must all run: #{out}"
+      assert_operator check, :<, install, "the failed check triggers the install"
+      assert_operator install, :<, suite, "…which completes BEFORE the suite boots"
+      assert_includes out, "PASSED", "a healed bundle lets the gate ride on"
+    end
+  end
+
+  # [unit] When the bundle can't be healed, the abort is an ENV/toolchain
+  # diagnosis: it names the suite ruby vs the conductor ruby (the brew-vs-mise
+  # divergence) and NEVER routes to the eject/revert regression path — that
+  # guidance burned two gate runs on rel-20260708-32701b.
+  def test_pre_qa_gate_aborts_as_env_when_the_suite_bundle_cannot_be_fixed
+    Dir.mktmpdir do |dir|
+      fix = build_binstub_fixture(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test"
+        def sh(*a, **_k)
+          $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
+          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          return ["/opt/mise/rubies/3.3.11/bin/ruby", true] if a[0] == "ruby"
+          return ["", false] if a[0] == "bin/bundle" # check AND install both fail
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "an unfixable bundle aborts the gate"
+      assert_includes out, "NOT a release regression", "the abort frames the failure as env, not regression"
+      assert_includes out, "/opt/mise/rubies/3.3.11/bin/ruby", "…naming the SUITE ruby"
+      assert_includes out, "divergent gem homes", "…and the brew-vs-mise divergence"
+      refute_includes out, "bin/release eject", "an env abort must NEVER route to the eject path"
+      refute_includes out, "git revert", "…nor the merge-revert guidance"
+      refute_includes out, "PASSED"
+      lines = out.lines.map(&:strip)
+      refute_includes lines, "SUITE", "the suite must not burn minutes on a broken bundle"
+      assert_operator lines.count("GIT-OP checkout"), :>=, 2,
+                      "the sibling checkout is restored to main (ensure) even on the env abort"
+    end
+  end
+
+  # [unit] suite_bundle_cmd prefers the repo's bin/bundle binstub (same
+  # env-resolved ruby as bin/rails) and falls back to bare `bundle` when a repo
+  # carries no binstub.
+  def test_suite_bundle_cmd_prefers_the_binstub_and_falls_back
+    Dir.mktmpdir do |dir|
+      fix = build_binstub_fixture(dir)
+      out = eval_helper(%([suite_bundle_cmd(#{fix.inspect}), suite_bundle_cmd(#{dir.inspect})].inspect))
+      assert_equal %(["bin/bundle", "bundle"]), out
+    end
+  end
+
+  # [unit] A repo with NO Gemfile has nothing bundler-managed to verify — the
+  # guard self-gates (this also keeps the real-git fixtures in this file, which
+  # carry no Gemfile, out of the guard's way).
+  def test_pre_qa_gate_skips_the_bundle_guard_without_a_gemfile
+    Dir.mktmpdir do |dir|
+      fix = File.join(dir, "repo")
+      FileUtils.mkdir_p(fix)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test"
+        def sh(*a, **_k)
+          $stdout.puts("BUNDLE #{a[1]}") if a[0].end_with?("bundle")
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      refute_includes out, "BUNDLE", "no Gemfile → no bundle check/install"
+      assert_includes out, "PASSED"
     end
   end
 
