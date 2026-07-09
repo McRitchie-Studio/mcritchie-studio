@@ -43,7 +43,10 @@ After the task is created and the isolated worktree is bound, run
 counterpart to `bin/dor-check`: it reads latest task feedback, branch drift
 against `origin/release`, PR merge/check state, same-file overlap with open or
 recent PRs, installed docs/skills drift, stale terminology, and the required
-test tiers from `config/feature_shapes.yml`.
+test tiers from `config/feature_shapes.yml`. Non-code kinds (`chore`,
+`cleanup`, `docs`) skip the shape/required-metadata gate exactly as
+`bin/dor-check` does — unless the branch ships code under
+`app/ lib/ bin/ config/ db/`, which forfeits the exemption.
 
 Feature agents should first identify the feature and accumulate acceptance
 criteria until the agent and Mr. McRitchie are aligned on the goal. The task is
