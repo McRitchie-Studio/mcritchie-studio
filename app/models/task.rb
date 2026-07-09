@@ -1349,22 +1349,50 @@ class Task < ApplicationRecord
 
   # Regression guard (2026-07-09): a builder flipped devops.approval_status to
   # "approved" one second after moving submitted — self-approving its own demo.
-  # A FLIP to "approved" requires operator attribution: the admin-gated board UI
-  # (source "web") or an internal/console write (blank source). Agent bearer
-  # writes always arrive source-stamped by Api::V1::TasksController, so they are
-  # rejected here. Non-flips pass: "waiting"/"changes_requested"/"none" stay
-  # agent-writable, and a wholesale devops replace that ECHOES an existing
-  # "approved" (bin/task update rewrites the full hash) isn't a flip. The
-  # build-exit auto-confirm (confirm_operator_approval_after_build_exit) runs in
-  # before_save, AFTER validation, so this guard never blocks it.
+  # GRANTING approval requires operator attribution: an admin-gated web session
+  # (source "web", stamped server-side at TasksController#update behind
+  # require_admin — never from the request body) or an internal/console write
+  # (blank source). Every bearer API write is source-stamped by
+  # Api::V1::TasksController ("api"/"cli"), and that controller now CLAMPS a
+  # caller-supplied operator source out of the grant set, so a bearer PATCH can
+  # never claim "web" — the model guard and the controller clamp are the two
+  # halves of the same rule.
+  #
+  # "Granting" is BOTH ways the Operator Acceptance phase (Task::TestingPhases
+  # #acceptance_phase) can be closed: flipping approval_status → "approved" OR
+  # stamping the approval_approved_at timestamp (both are agent-writable devops
+  # scalars). A non-operator write that CHANGES either from its prior value is
+  # rejected. Non-changes pass: "waiting"/"changes_requested"/"none" stay
+  # agent-writable, and a wholesale devops replace that ECHOES the existing
+  # approval (bin/task update rewrites the full hash) isn't a change. The
+  # build-exit auto-confirm (confirm_operator_approval_after_build_exit) and the
+  # timestamp stamp both run in before_save, AFTER validation, so this guard
+  # never blocks them.
   def approval_flip_requires_operator
-    return unless devops["approval_status"] == OPERATOR_APPROVAL_APPROVED
-    return if (metadata_was || {}).dig("devops", "approval_status") == OPERATOR_APPROVAL_APPROVED
     return if operator_attributed_write?
+    return unless agent_granting_operator_approval?
 
-    errors.add(:base, "approval_status \"approved\" is the operator's lane " \
-                      "(board UI / admin session) — agents request approval with " \
-                      "approval_status \"waiting\"")
+    errors.add(:base, "operator approval is the operator's lane (board UI / admin " \
+                      "session) — agents request approval with approval_status " \
+                      "\"waiting\" and never set \"approved\" or approval_approved_at")
+  end
+
+  # An agent-sourced write closes the acceptance phase iff it CHANGES the status
+  # to "approved" or stamps/changes the approval_approved_at timestamp. Echoes of
+  # the operator's earlier grant (unchanged values) are not a grant.
+  def agent_granting_operator_approval?
+    approval_status_flipped_to_approved? || approval_timestamp_changed?
+  end
+
+  def approval_status_flipped_to_approved?
+    devops["approval_status"] == OPERATOR_APPROVAL_APPROVED &&
+      (metadata_was || {}).dig("devops", "approval_status") != OPERATOR_APPROVAL_APPROVED
+  end
+
+  def approval_timestamp_changed?
+    now = devops["approval_approved_at"].presence
+    was = (metadata_was || {}).dig("devops", "approval_approved_at").presence
+    now.present? && now != was
   end
 
   def operator_attributed_write?

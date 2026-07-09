@@ -183,6 +183,41 @@ class TaskTest < ActiveSupport::TestCase
     Current.reset
   end
 
+  test "[unit] agent write cannot stamp approval_approved_at directly" do
+    task = Task.create!(
+      title: "Approval Timestamp Guard",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "waiting" } }
+    )
+
+    Current.task_event_source = "api"
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      task.update!(metadata: { "devops" => task.devops.merge("approval_approved_at" => Time.current.iso8601) })
+    end
+    assert_match(/operator/i, error.message)
+    assert_nil task.reload.devops["approval_approved_at"]
+  ensure
+    Current.reset
+  end
+
+  test "[unit] agent echo of existing approval_approved_at stays valid" do
+    stamped = Time.current.iso8601
+    task = Task.create!(
+      title: "Approval Timestamp Echo",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "approved", "approval_approved_at" => stamped } }
+    )
+
+    Current.task_event_source = "cli"
+    task.update!(metadata: { "devops" => task.devops.merge("qa_url" => "https://qa.example.com/x") })
+
+    task.reload
+    assert_equal stamped, task.devops["approval_approved_at"]
+    assert_equal "https://qa.example.com/x", task.devops["qa_url"]
+  ensure
+    Current.reset
+  end
+
   test "submitted task can be reviewed" do
     task = tasks(:new_task)
     task.update!(stage: "submitted")
