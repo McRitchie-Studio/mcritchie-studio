@@ -81,6 +81,23 @@ module FullSuiteGate
     File.delete(index) if index && File.exist?(index)
   end
 
+  # Tree hash of a COMMITTED git ref (e.g. origin/feat/<slug>) within `root`, or
+  # nil when the ref can't be resolved (unfetched branch / bad ref). A git tree
+  # hash is purely content-addressed, so a branch's committed `^{tree}` equals the
+  # working-tree fingerprint the builder certified before committing + pushing
+  # (commit → cert is stable across the boundary — the whole anti-stale design).
+  # That lets the REVIEW gate-zero grade the builder's cert from a checkout that
+  # ISN'T on the branch — the primary checkout the reviewer runs from is on
+  # release/main, so `fingerprint(root)` there reads a DIFFERENT tree and the cert
+  # false-reads STALE; this reads the branch tree instead. `--verify --quiet`
+  # emits nothing on stdout and exits non-zero on a bad ref, so capture → "".
+  def fingerprint_of_ref(root, ref)
+    return nil if ref.to_s.strip.empty?
+
+    tree = capture(["git", "-C", root.to_s, "rev-parse", "--verify", "--quiet", "#{ref}^{tree}"]).strip
+    tree.empty? ? nil : tree
+  end
+
   # The checks_run line a passing lane records, embedding the fingerprint.
   def evidence_line(lane, fingerprint, detail)
     "[#{lane}@#{fingerprint}] #{detail}"
@@ -150,13 +167,21 @@ module FullSuiteGate
   # `ok` means the FULL cert is satisfied (LANES fresh). lanes[FAST_LANE] carries
   # the fast-cert lane's freshness so dor-check can pair a fresh fast cert with a
   # green GitHub CI — this module grades evidence; it never reads CI.
-  def evaluate(checks:, root:, injected: nil)
+  #
+  # `fingerprint_override` (the review gate-zero seam): grade against THIS tree
+  # hash instead of recomputing `fingerprint(root)`. The reviewer runs from a
+  # primary checkout that isn't on the task branch, so the working-tree hash there
+  # is the wrong tree — dor-check passes the branch's committed tree (via
+  # fingerprint_of_ref) so the cert grades against the code the builder certified.
+  # nil (the default / a branch that couldn't be resolved) → recompute from root,
+  # the builder-side behavior.
+  def evaluate(checks:, root:, injected: nil, fingerprint_override: nil)
     reason = bypass_reason(checks)
     return verdict(ok: true, bypass: reason) if reason
 
     return injected_verdict(injected) if injected && !injected.empty?
 
-    fp = fingerprint(root)
+    fp = fingerprint_override || fingerprint(root)
     return verdict(ok: false, verifiable: false) if fp.nil?
 
     lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }

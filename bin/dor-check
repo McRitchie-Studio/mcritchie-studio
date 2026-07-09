@@ -45,6 +45,14 @@
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
 # keeps the strict semantics (red AND pending both block; fast evidence needs
 # the settled green). Format + fingerprint live in bin/lib/full_suite_gate.rb.
+# Review-role fingerprint ROOTING: reviewers run --gate-role review from the
+# PRIMARY checkout (on release/main), not the task's worktree, so fingerprinting
+# the cwd working tree grades the cert against the WRONG tree → a false STALE. So
+# --gate-role review roots the suite fingerprint at the TASK BRANCH's committed
+# tree (origin/feat/<slug>'s ^{tree}, content-addressed == what the builder
+# certified) via review_fingerprint/FullSuiteGate.fingerprint_of_ref, falling back
+# to the cwd working tree (DOR_CHECK_DIFF_ROOT-honoring) only when the branch isn't
+# fetched. Builder-side is unchanged (working tree of diff_root).
 #
 # dor-check still does NOT run the suite itself — it stays a fast, deterministic
 # verdict; bin/full-suite-check is the (slower) runner that produces the evidence.
@@ -323,6 +331,39 @@ rescue SystemCallError
   "origin/main"
 end
 
+# The task's feature branch — devops.branch when set, else feat/<worktree_slug or
+# slug>. Feeds the review-role suite fingerprint below so the reviewer grades the
+# builder's cert against the branch tree, not the primary checkout's tree. `devops`
+# is {} in the --suite-fingerprint debug seam (no task fetched there); it then
+# derives feat/<slug> from the positional arg — a fine offline approximation, since
+# a task branch is feat/<slug> unless explicitly overridden.
+def review_branch(devops, slug)
+  branch = devops["branch"].to_s.strip
+  return branch unless branch.empty?
+
+  base = devops["worktree_slug"].to_s.strip
+  base = slug.to_s.strip if base.empty?
+  base.empty? ? nil : "feat/#{base}"
+end
+
+# The fingerprint the REVIEW gate-zero must grade the suite cert against — the
+# TASK's tree, not the reviewer's cwd working tree. Reviewers run --gate-role
+# review from the PRIMARY checkout (on release/main by SOP), so fingerprinting the
+# working tree there reads a totally different tree and the cert false-reads STALE
+# (the bug both the guard-conductor-gate-checkout and resolve-flag-handoff-guard
+# reviewers hit tonight). A git tree hash is content-addressed, so the branch's
+# committed ^{tree} equals the working-tree fingerprint the builder certified
+# before pushing. Prefer origin/<branch> (what CI/QA graded), fall back to a local
+# <branch>. Returns the tree hash, or nil when the branch isn't resolvable locally
+# (unfetched) — the caller then falls back to the working-tree fingerprint of
+# diff_root (still honoring DOR_CHECK_DIFF_ROOT, the manual reviewer workaround).
+def review_fingerprint(root, branch)
+  return nil if branch.to_s.strip.empty?
+
+  FullSuiteGate.fingerprint_of_ref(root, "origin/#{branch}") ||
+    FullSuiteGate.fingerprint_of_ref(root, branch)
+end
+
 # The subset of changed files that ship testable code (under CODE_PATH_PREFIXES).
 def code_changed_files
   changed_files.select { |f| CODE_PATH_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
@@ -463,8 +504,17 @@ end
 
 # Resolver/debug seam: print the code fingerprint the full-suite gate validates
 # against (a git tree hash), then exit. Honors DOR_CHECK_DIFF_ROOT like the gate.
+# --gate-role review prints the TASK BRANCH tree (feat/<slug> derived from the
+# positional slug offline), the same tree the review gate-zero grades against —
+# so a reviewer can eyeball it against a "[fast-cert@<fp>]" line. Falls back to the
+# working tree when the branch isn't resolvable locally.
 if options[:suite_fingerprint]
-  puts FullSuiteGate.fingerprint(diff_root)
+  if options[:gate_role] == "review"
+    branch = review_branch({}, ARGV.first)
+    puts(review_fingerprint(diff_root, branch) || FullSuiteGate.fingerprint(diff_root))
+  else
+    puts FullSuiteGate.fingerprint(diff_root)
+  end
   exit 0
 end
 
@@ -658,11 +708,26 @@ end
 suite_eval = nil
 suite_route = nil # "full" | "fast" | "fast-provisional" | "bypass" when satisfied
 if gate != "build" && shape_def && !dor_tiers.empty?
+  # Review gate-zero: root the suite fingerprint at the TASK BRANCH tree, not the
+  # reviewer's cwd (the primary checkout, on release/main) — else the cert
+  # false-reads STALE. Builder-side (default) review_fp stays nil → the working-
+  # tree fingerprint of diff_root, unchanged. A branch that can't be resolved
+  # locally (unfetched) also yields nil → the same working-tree fallback, with the
+  # loud suggestion below so the reviewer fetches the branch / sets the override.
+  review_branch_ref = review_role ? review_branch(devops, task["slug"] || slug) : nil
+  review_fp = review_branch_ref ? review_fingerprint(diff_root, review_branch_ref) : nil
   suite_eval = FullSuiteGate.evaluate(
     checks: checks,
     root: diff_root,
-    injected: ENV["DOR_CHECK_SUITE_EVIDENCE"]
+    injected: ENV["DOR_CHECK_SUITE_EVIDENCE"],
+    fingerprint_override: review_fp
   )
+  if review_role && review_branch_ref && review_fp.nil? && ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.empty?
+    suggestions << "review gate-zero: couldn't resolve branch #{review_branch_ref.inspect} locally to root the " \
+      "suite fingerprint at the PR tree, so it fell back to the cwd working tree — which reads STALE from a " \
+      "primary checkout. Fetch the branch (git fetch origin #{review_branch_ref}) or set " \
+      "DOR_CHECK_DIFF_ROOT=<task worktree>, then re-run."
+  end
   fast_fresh = suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
   if suite_eval[:ok]
     suite_route = suite_eval[:bypass] ? "bypass" : "full"
