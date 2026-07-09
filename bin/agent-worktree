@@ -2426,6 +2426,59 @@ def run_restore_primary(app, dry: false)
   true
 end
 
+# The created PR's URL, parsed from `gh pr create` output (gh prints it on
+# stdout, warnings and all). Nil when no PR URL is present.
+def pr_url_from_output(output)
+  output.to_s[%r{https://github\.com/\S+/pull/\d+}]
+end
+
+# The task CLI the handoff board writes go through. A seam so tests can point
+# the stamp at a fake executable without hitting the board.
+def task_cli_path
+  File.join(__dir__, "task")
+end
+
+# Best-effort devops.pr_url stamp on the bound task — the same `bin/task`
+# board-write path the handoff already uses (bind-task, mascot reads). A board
+# blip must NEVER fail the finish: failures warn with the manual command and
+# return false.
+def stamp_task_pr_url(record_slug, pr_url)
+  slug = compact_value(record_slug)
+  url = compact_value(pr_url)
+  return false unless slug && url
+
+  ok = system(task_cli_path, "update", slug, "--pr-url", url, out: File::NULL, err: File::NULL)
+  warn "warning: could not stamp pr_url on task #{slug}; run: bin/task update #{slug} --pr-url #{url}" unless ok
+  !!ok
+end
+
+# Open the graduation draft PR and stamp its URL onto the bound task record
+# (devops.pr_url) in the same handoff. Regression guard: finish --pr used to
+# open the PR without stamping, so bin/dor-check's CI gate reported NO_PR until
+# someone ran `bin/task update --pr-url` by hand. Returns the PR URL (nil when
+# it could not be parsed).
+def open_draft_pr(record, dir, task)
+  title = human_title(task)
+  body = pr_body(record)
+  # Feature PRs target the persistent `release` branch (else `main` for repos
+  # without one) so `bin/release merge` can adopt them; never base on `main`.
+  ok, out, err = capture_status("gh", "pr", "create", "--draft", "--base", record[:base_branch],
+                                "--head", record[:branch], "--title", title, "--body", body, chdir: dir)
+  $stderr.print err unless err.to_s.empty?
+  print out
+  abort "command failed in #{dir}: gh pr create" unless ok
+
+  puts "opened PR base: #{record[:base_branch]}"
+  pr_url = pr_url_from_output(out)
+  slug = task_record_slug(record[:env])
+  if pr_url.nil?
+    warn "warning: could not parse the PR URL from gh output; stamp it manually: bin/task update #{slug || task} --pr-url <url>"
+  elsif stamp_task_pr_url(slug, pr_url)
+    puts "stamped:  pr_url -> #{pr_url}"
+  end
+  pr_url
+end
+
 def run_finish(app, task, push: false, pr: false)
   dir = worktree_dir(app, task)
   abort "missing worktree: #{dir}\nRun: bin/agent-worktree new #{app.fetch("slug")} #{task}" unless Dir.exist?(dir)
@@ -2467,13 +2520,7 @@ def run_finish(app, task, push: false, pr: false)
   if pr
     abort "gh CLI is not available; pushed branch, then open #{compare_url}" unless command_available?("gh")
 
-    title = human_title(task)
-    body = pr_body(record)
-    # Feature PRs target the persistent `release` branch (else `main` for repos
-    # without one) so `bin/release merge` can adopt them; never base on `main`.
-    sh("gh", "pr", "create", "--draft", "--base", record[:base_branch], "--head", record[:branch],
-       "--title", title, "--body", body, chdir: dir)
-    puts "opened PR base: #{record[:base_branch]}"
+    open_draft_pr(record, dir, task)
   else
     puts "ready for QA. Open a draft PR with this body:"
     puts
