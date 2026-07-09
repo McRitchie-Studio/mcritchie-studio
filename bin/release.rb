@@ -1259,78 +1259,6 @@ def with_primary_checkout(repo, wait: true)
   end
 end
 
-# --- suite-toolchain guard: bundle check/install under the SUITE ruby --------
-# The gate boots its suite via the repo's binstubs (`#!/usr/bin/env ruby`), so
-# the ruby that matters is the one `ruby` resolves to FROM THE REPO DIR — on
-# this machine mise's pinned 3.3.11 (mise shims are directory-sensitive). The
-# conductor/operator shell's own `bundle` can resolve a DIFFERENT ruby (brew's
-# ruby@3.3) with a DIVERGENT gem home, so a shell-side `bundle check` LIES
-# about the suite's env. ROOT CAUSE (rel-20260708-32701b): PR #456's
-# studio-engine 0.11→0.12 bump was "satisfied" in brew's gem home but missing
-# from mise's (the one the suite boots) → Bundler::GemNotFound at suite boot →
-# the gate aborted TWICE with eject/revert regression guidance for a pure env
-# problem. So the check/install run through the repo's `bin/bundle` binstub —
-# the SAME env-resolved ruby that boots the suite — and a still-broken bundle
-# aborts NAMING the toolchain divergence (env diagnosis), never the eject path.
-
-# The bundle ARGV that resolves ruby EXACTLY like the suite's own binstubs — so
-# the check reads the SAME gem home the suite boots against, for EVERY
-# qa-registered app, not only ones carrying a checked-in bin/bundle. Two forms:
-#   * ["bin/bundle"]        — the repo's binstub (`#!/usr/bin/env ruby` → the
-#     env-resolved ruby, i.e. mise's directory pin); every Rails app checkout
-#     ships one.
-#   * ["ruby", "-S", "bundle"] — the fallback when a registered repo has NO
-#     bin/bundle binstub. Run with chdir: path, the bare `ruby` ALSO resolves
-#     through the mise shim's directory pin, so `-S bundle` runs the bundler
-#     that ruby's OWN gem home ships. This is the fix carl + shannon flagged on
-#     PR #480: the old bare-`bundle` fallback did a shell PATH lookup that
-#     re-picked the conductor's ruby — the exact brew-vs-mise divergence the
-#     guard exists to close, so no-binstub apps had NO real same-ruby coverage.
-def suite_bundle_argv(path)
-  File.exist?(File.join(path, "bin", "bundle")) ? ["bin/bundle"] : ["ruby", "-S", "bundle"]
-end
-
-# The ruby the suite will boot with — probed FROM the repo dir, where mise's
-# per-directory pin applies. Degrades to "unknown" (never aborts) on a failed
-# probe: this string only enriches the mismatch diagnosis below.
-def suite_ruby(path)
-  out, ok = sh("ruby", "-e", "print RbConfig.ruby", chdir: path, capture: true)
-  ok && !out.strip.empty? ? out.strip : "unknown (ruby probe failed)"
-end
-
-# Verify the RELEASE tree's bundle under the suite ruby BEFORE burning a
-# multi-minute suite run: check → self-heal with install → abort as ENV.
-# Runs INSIDE the gate's primary-checkout lock, after the release ff, so it
-# reads the exact Gemfile.lock the suite will load.
-def ensure_suite_bundle!(repo, path)
-  # No Gemfile in the release tree → nothing bundler-managed to verify
-  # (self-gating, like an app with no qa_test_cmd).
-  return unless File.exist?(File.join(path, "Gemfile"))
-
-  bundle = suite_bundle_argv(path)
-  label  = bundle.join(" ")
-  _, ok = sh(*bundle, "check", chdir: path, capture: true)
-  return if ok
-
-  say("  #{repo}: bundle unsatisfied under the suite ruby — #{label} install")
-  _, ok = sh(*bundle, "install", chdir: path)
-  return if ok
-
-  boot_ruby = suite_ruby(path)
-  here_ruby = RbConfig.ruby
-  divergence =
-    if boot_ruby == here_ruby
-      ""
-    else
-      " Toolchain mismatch: the suite boots #{boot_ruby} but this conductor runs #{here_ruby} — " \
-      "divergent gem homes (brew-vs-mise), so a shell-side `bundle check` can lie about the suite's env."
-    end
-  abort!("pre-QA gate #{repo}: the bundle is unsatisfied under the SUITE ruby (#{boot_ruby}) and " \
-         "`#{label} install` failed.#{divergence} This is an ENV/toolchain issue, NOT a release " \
-         "regression — nothing to eject or revert. Fix the bundle (cd #{path} && #{label} install), " \
-         "then re-run `bin/release prepare`.")
-end
-
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
 # origin/release BEFORE anything deploys to QA, so a regression riding the
 # release branch is caught while the members are still `reviewed` (nothing
@@ -1376,9 +1304,6 @@ def pre_qa_gate(app_groups)
       abort!("could not checkout #{RELEASE_BRANCH} in #{repo} for the pre-QA gate (dirty tree?) — clean it, then re-run") unless co
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
       abort!("could not ff #{repo} #{RELEASE_BRANCH} to origin/#{RELEASE_BRANCH} (local divergence) — resolve, then re-run") unless ff
-      # Bundle-verify the release tree under the SAME ruby the suite boots —
-      # BEFORE the multi-minute suite run (see the suite-toolchain guard above).
-      ensure_suite_bundle!(repo, path)
       step("pre-QA gate #{repo}: #{cmd}")
       _, ok = run_test_scope("pre_qa_gate", *argv, chdir: path, repo: repo)
     ensure
@@ -1389,9 +1314,7 @@ def pre_qa_gate(app_groups)
     abort!("pre-QA gate failed for #{repo} (#{cmd}) — a regression is riding origin/#{RELEASE_BRANCH}. " \
            "Identify the offending task, eject it (`bin/release eject <task> --feedback \"…\"`), revert its " \
            "merge commit on `#{RELEASE_BRANCH}` (git revert -m 1 <merge-sha>; push), then re-run " \
-           "`bin/release prepare` — the sweep self-heals and the REST of the RC rides on. " \
-           "(Exception: a boot-time Bundler::GemNotFound in the output is a bundle/toolchain ENV issue " \
-           "— fix with `#{suite_bundle_argv(repo_path(repo)).join(' ')} install` in the repo, not by ejecting.)")
+           "`bin/release prepare` — the sweep self-heals and the REST of the RC rides on.")
   end
 end
 
