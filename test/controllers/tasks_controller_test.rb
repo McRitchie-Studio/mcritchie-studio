@@ -336,6 +336,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select %(nav[aria-label="Board views"] span[title="#{building} building"]), text: building.to_s
   end
 
+  test "[component] deployments links to /tasks/recent in the board sections nav" do
+    # The Recent link surfaces the /tasks/recent recency list and rides in the
+    # Deploy lane's board-sections nav beside Pipeline + Insights. It is scoped
+    # to /deployments only — the Build board (/tasks) must not render it.
+    get deployments_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board sections"] a[href="#{recent_tasks_path}"]),
+      { minimum: 1 }, "deployments should link to /tasks/recent in the board sections nav"
+
+    get tasks_path
+    assert_response :success
+    assert_select %(nav[aria-label="Board sections"] a[href="#{recent_tasks_path}"]),
+      { count: 0 }, "the Recent link is scoped to the deployments lane only"
+  end
+
   test "deployments hides the redundant Tasks link above the full-width breakpoint" do
     # At full width the six-lane Deploy board already shows the whole Build lane
     # (designed · building · submitted), so the Tasks link is redundant and is
