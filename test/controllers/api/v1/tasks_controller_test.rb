@@ -46,6 +46,132 @@ module Api
         assert @task.requires_release_conductor?
       end
 
+      # --- Operator approval lane (regression: a builder PATCHed
+      # approval_status=approved right after submitting — self-approving its own
+      # demo). Approving belongs to the admin-gated board UI; API bearer writes
+      # may only request approval. ---
+
+      test "[integration] api update cannot self-approve operator approval" do
+        task = Task.create!(
+          title: "Approval Api Guard",
+          stage: "submitted",
+          metadata: { "devops" => { "approval_status" => "waiting" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { devops: { approval_status: "approved" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :unprocessable_entity
+        body = JSON.parse(response.body)
+        assert_match(/operator/i, body["error"])
+        task.reload
+        assert_equal "waiting", task.approval_status
+        assert_nil task.devops["approval_approved_at"]
+      end
+
+      test "[integration] api update keeps approval waiting writable" do
+        task = Task.create!(
+          title: "Approval Api Waiting",
+          stage: "building",
+          metadata: { "devops" => { "local_url" => "http://localhost:3021/tasks" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { devops: { approval_status: "waiting", local_url: "http://localhost:3021/tasks" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        task.reload
+        assert_equal "waiting", task.approval_status
+        assert task.devops["approval_requested_at"].present?
+      end
+
+      test "[integration] api update echoing prior approval stays accepted" do
+        task = Task.create!(
+          title: "Approval Api Echo",
+          stage: "submitted",
+          metadata: { "devops" => { "approval_status" => "approved" } }
+        )
+
+        # bin/task update replaces the whole devops hash, echoing the operator's
+        # earlier approval alongside the new field — a non-flip must pass.
+        patch api_v1_task_path(task.slug),
+              params: { devops: { approval_status: "approved", pr_url: "https://github.com/x/y/pull/2" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        task.reload
+        assert_equal "approved", task.approval_status
+        assert_equal "https://github.com/x/y/pull/2", task.devops["pr_url"]
+      end
+
+      # Rework regression (Carl primary request-changes): the bearer API sets
+      # Current.task_event_source from the request body, so a forged
+      # event.source="web" would let an agent claim the operator lane and
+      # self-approve in one PATCH. The controller now clamps a forged operator
+      # source back to "api", so the model guard still rejects the flip.
+      test "[integration] api bearer cannot forge operator source to self-approve" do
+        task = Task.create!(
+          title: "Approval Source Forge",
+          stage: "submitted",
+          metadata: { "devops" => { "approval_status" => "waiting" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { event: { source: "web" }, devops: { approval_status: "approved" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/operator/i, JSON.parse(response.body)["error"])
+        task.reload
+        assert_equal "waiting", task.approval_status
+        assert_nil task.devops["approval_approved_at"]
+      end
+
+      # Second bypass vector: approval_approved_at is an agent-writable devops
+      # scalar and TestingPhases#acceptance_phase trusts it, so stamping it
+      # directly would close the acceptance phase without ever touching
+      # approval_status. A forged operator source must not enable that either.
+      test "[integration] api bearer cannot stamp approval timestamp to close acceptance" do
+        task = Task.create!(
+          title: "Approval Timestamp Forge",
+          stage: "submitted",
+          metadata: { "devops" => { "approval_status" => "waiting" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { event: { source: "web" }, devops: { approval_approved_at: Time.current.iso8601 } },
+              headers: @headers,
+              as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/operator/i, JSON.parse(response.body)["error"])
+        assert_nil task.reload.devops["approval_approved_at"]
+      end
+
+      # The clamp targets ONLY the operator claim — a forged source with a benign
+      # agent-writable status must still succeed (source normalized to "api").
+      test "[integration] forged operator source still allows waiting request" do
+        task = Task.create!(
+          title: "Approval Forge Waiting",
+          stage: "building",
+          metadata: { "devops" => { "local_url" => "http://localhost:3021/tasks" } }
+        )
+
+        patch api_v1_task_path(task.slug),
+              params: { event: { source: "web" }, devops: { approval_status: "waiting", local_url: "http://localhost:3021/tasks" } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        assert_equal "waiting", task.reload.approval_status
+      end
+
       test "create preserves commas inside array acceptance items" do
         post api_v1_tasks_path,
              params: {

@@ -144,6 +144,14 @@ class Task < ApplicationRecord
     OPERATOR_APPROVAL_CHANGES_REQUESTED
   ].freeze
   OPERATOR_APPROVAL_HOLD_STAGES = %w[building blocked].freeze
+  # Request-layer sources allowed to GRANT approval (flip approval_status to
+  # "approved"). "web" is stamped only by the admin-gated TasksController#update
+  # — the board UI operator lane. A BLANK source is an internal/console write
+  # (conductor, rails runner, model callbacks). Every API bearer write stamps a
+  # source via Api::V1::TasksController#capture_task_event_context ("api"
+  # default, "cli" from bin/task) — that's the agent lane, which may set
+  # "waiting"/"changes_requested"/"none" but never "approved".
+  OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor block_kind agent_context session_id session_provider mascot
@@ -198,6 +206,11 @@ class Task < ApplicationRecord
   # existing tasks that don't touch these fields stay grandfathered.
   validate :title_within_word_range, if: :title_changed?
   validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
+  # GRANTING operator approval is the operator's lane — agent bearer writes may
+  # request it ("waiting") but never flip it to "approved". See
+  # #approval_flip_requires_operator (next to the stamp_operator_approval_*
+  # callbacks) for the source-attribution rule.
+  validate :approval_flip_requires_operator, if: :will_save_change_to_metadata?
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -1332,6 +1345,59 @@ class Task < ApplicationRecord
     approval = (merged["devops"] ||= {})
     approval["approval_requested_at"] ||= Time.current.iso8601
     self.metadata = merged
+  end
+
+  # Regression guard (2026-07-09): a builder flipped devops.approval_status to
+  # "approved" one second after moving submitted — self-approving its own demo.
+  # GRANTING approval requires operator attribution: an admin-gated web session
+  # (source "web", stamped server-side at TasksController#update behind
+  # require_admin — never from the request body) or an internal/console write
+  # (blank source). Every bearer API write is source-stamped by
+  # Api::V1::TasksController ("api"/"cli"), and that controller now CLAMPS a
+  # caller-supplied operator source out of the grant set, so a bearer PATCH can
+  # never claim "web" — the model guard and the controller clamp are the two
+  # halves of the same rule.
+  #
+  # "Granting" is BOTH ways the Operator Acceptance phase (Task::TestingPhases
+  # #acceptance_phase) can be closed: flipping approval_status → "approved" OR
+  # stamping the approval_approved_at timestamp (both are agent-writable devops
+  # scalars). A non-operator write that CHANGES either from its prior value is
+  # rejected. Non-changes pass: "waiting"/"changes_requested"/"none" stay
+  # agent-writable, and a wholesale devops replace that ECHOES the existing
+  # approval (bin/task update rewrites the full hash) isn't a change. The
+  # build-exit auto-confirm (confirm_operator_approval_after_build_exit) and the
+  # timestamp stamp both run in before_save, AFTER validation, so this guard
+  # never blocks them.
+  def approval_flip_requires_operator
+    return if operator_attributed_write?
+    return unless agent_granting_operator_approval?
+
+    errors.add(:base, "operator approval is the operator's lane (board UI / admin " \
+                      "session) — agents request approval with approval_status " \
+                      "\"waiting\" and never set \"approved\" or approval_approved_at")
+  end
+
+  # An agent-sourced write closes the acceptance phase iff it CHANGES the status
+  # to "approved" or stamps/changes the approval_approved_at timestamp. Echoes of
+  # the operator's earlier grant (unchanged values) are not a grant.
+  def agent_granting_operator_approval?
+    approval_status_flipped_to_approved? || approval_timestamp_changed?
+  end
+
+  def approval_status_flipped_to_approved?
+    devops["approval_status"] == OPERATOR_APPROVAL_APPROVED &&
+      (metadata_was || {}).dig("devops", "approval_status") != OPERATOR_APPROVAL_APPROVED
+  end
+
+  def approval_timestamp_changed?
+    now = devops["approval_approved_at"].presence
+    was = (metadata_was || {}).dig("devops", "approval_approved_at").presence
+    now.present? && now != was
+  end
+
+  def operator_attributed_write?
+    source = Current.task_event_source.to_s
+    source.blank? || OPERATOR_APPROVAL_GRANT_SOURCES.include?(source)
   end
 
   # The durable close of the Operator Acceptance testing phase — stamped the moment

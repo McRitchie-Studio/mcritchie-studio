@@ -134,7 +134,7 @@ module Api
         # through as String/Array — symbol-indexing those raises TypeError in the
         # before_action — so treat anything that isn't Parameters as "no payload".
         event = nil unless event.is_a?(ActionController::Parameters)
-        Current.task_event_source = (event && event[:source].presence) || "api"
+        Current.task_event_source = sanitized_task_event_source(event)
         return if event.blank?
 
         Current.task_event_actor      = event[:actor].presence
@@ -142,6 +142,23 @@ module Api
         Current.task_event_tokens_in  = event[:tokens_in].presence&.to_i
         Current.task_event_tokens_out = event[:tokens_out].presence&.to_i
         Current.task_event_cost       = event[:cost].presence&.to_d
+      end
+
+      # The bearer API is definitionally the AGENT lane: its writes are "api"
+      # (default) or "cli" (bin/task). It must NEVER claim an OPERATOR source
+      # (Task::OPERATOR_APPROVAL_GRANT_SOURCES, e.g. "web") via the request body —
+      # "web" is stamped only server-side by the admin-gated TasksController#update,
+      # behind require_admin. Without this clamp a bearer PATCH carrying
+      # {"event":{"source":"web"},"devops":{"approval_status":"approved"}} would
+      # FORGE operator attribution and self-approve, since Task's approval guard
+      # trusts Current.task_event_source. Clamp a forged operator source back to
+      # "api" so the operator lane is derived from the AUTHENTICATED channel, not
+      # from caller-supplied data. Legitimate agent sources pass through.
+      def sanitized_task_event_source(event)
+        source = (event && event[:source].presence) || "api"
+        return "api" if Task::OPERATOR_APPROVAL_GRANT_SOURCES.include?(source)
+
+        source
       end
 
       def task_params

@@ -548,6 +548,15 @@ keys survive (`Task::DEVOPS_KEYS`):
    under `metadata` directly instead of `devops`.
 4. **`slug` is auto-generated**, not settable — don't expect a human-readable
    task slug from the API.
+5. **Granting operator approval is NOT an agent lane — it returns `422`.** A
+   bearer-API write (any `event.source`, including a forged `"web"`, which the
+   controller clamps back to `"api"`) that flips `approval_status` to `"approved"`
+   **or** stamps/changes `approval_approved_at` is rejected
+   `422 VALIDATION_FAILED` with a message naming the operator lane. Agents
+   **request** approval with `approval_status: "waiting"` (and may set
+   `changes_requested`/`none`); the operator grants it via the admin-gated board
+   UI. Echoing an already-granted approval unchanged in a wholesale devops replace
+   is fine (it's not a change).
 
 ## Worked example
 

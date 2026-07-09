@@ -81,6 +81,143 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil task.devops["approval_approved_at"]
   end
 
+  # --- Operator approval lane (regression: a builder self-approved its own demo
+  # via `bin/task update --approval approved` one second after moving submitted).
+  # Approving is the operator's lane: the admin-gated board UI (source "web") or
+  # an internal/console write (no request source). Agent bearer writes (source
+  # "api"/"cli"/anything else the API stamps) may request approval but never
+  # grant it. ---
+
+  test "[unit] agent api write cannot flip approval to approved" do
+    task = Task.create!(
+      title: "Approval Agent Flip",
+      stage: "submitted",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3021/tasks"
+        }
+      }
+    )
+
+    %w[api cli].each do |source|
+      Current.task_event_source = source
+      error = assert_raises(ActiveRecord::RecordInvalid, "source #{source} must not approve") do
+        task.update!(metadata: { "devops" => task.devops.merge("approval_status" => "approved") })
+      end
+      assert_match(/operator/i, error.message)
+      task.reload
+      assert_equal "waiting", task.approval_status
+      assert_nil task.devops["approval_approved_at"]
+    end
+  ensure
+    Current.reset
+  end
+
+  test "[unit] operator web session can flip approval to approved" do
+    task = Task.create!(
+      title: "Approval Operator Flip",
+      stage: "submitted",
+      metadata: {
+        "devops" => {
+          "approval_status" => "waiting",
+          "local_url" => "http://localhost:3021/tasks"
+        }
+      }
+    )
+
+    Current.task_event_source = "web"
+    task.update!(metadata: { "devops" => task.devops.merge("approval_status" => "approved") })
+
+    task.reload
+    assert_equal "approved", task.approval_status
+    assert task.devops["approval_approved_at"].present?
+  ensure
+    Current.reset
+  end
+
+  test "[unit] internal write without request source can approve" do
+    task = Task.create!(
+      title: "Approval Console Flip",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "waiting" } }
+    )
+
+    task.update!(metadata: { "devops" => task.devops.merge("approval_status" => "approved") })
+
+    assert_equal "approved", task.reload.approval_status
+  end
+
+  test "[unit] agent api write keeps non-approved statuses writable" do
+    task = Task.create!(
+      title: "Approval Agent Statuses",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    Current.task_event_source = "api"
+    %w[waiting changes_requested none].each do |status|
+      task.update!(metadata: { "devops" => task.devops.merge("approval_status" => status) })
+      assert_equal status, task.reload.approval_status, "agents must keep #{status} writable"
+    end
+  ensure
+    Current.reset
+  end
+
+  test "[unit] agent api echo of already-approved metadata stays valid" do
+    task = Task.create!(
+      title: "Approval Echo Update",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "approved" } }
+    )
+
+    # bin/task update REPLACES the whole devops hash, echoing the operator's
+    # earlier approval back — a non-flip echo must not 422 the agent's update.
+    Current.task_event_source = "cli"
+    task.update!(metadata: { "devops" => task.devops.merge("pr_url" => "https://github.com/x/y/pull/1") })
+
+    task.reload
+    assert_equal "approved", task.approval_status
+    assert_equal "https://github.com/x/y/pull/1", task.devops["pr_url"]
+  ensure
+    Current.reset
+  end
+
+  test "[unit] agent write cannot stamp approval_approved_at directly" do
+    task = Task.create!(
+      title: "Approval Timestamp Guard",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "waiting" } }
+    )
+
+    Current.task_event_source = "api"
+    error = assert_raises(ActiveRecord::RecordInvalid) do
+      task.update!(metadata: { "devops" => task.devops.merge("approval_approved_at" => Time.current.iso8601) })
+    end
+    assert_match(/operator/i, error.message)
+    assert_nil task.reload.devops["approval_approved_at"]
+  ensure
+    Current.reset
+  end
+
+  test "[unit] agent echo of existing approval_approved_at stays valid" do
+    stamped = Time.current.iso8601
+    task = Task.create!(
+      title: "Approval Timestamp Echo",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "approved", "approval_approved_at" => stamped } }
+    )
+
+    Current.task_event_source = "cli"
+    task.update!(metadata: { "devops" => task.devops.merge("qa_url" => "https://qa.example.com/x") })
+
+    task.reload
+    assert_equal stamped, task.devops["approval_approved_at"]
+    assert_equal "https://qa.example.com/x", task.devops["qa_url"]
+  ensure
+    Current.reset
+  end
+
   test "submitted task can be reviewed" do
     task = tasks(:new_task)
     task.update!(stage: "submitted")
