@@ -1,8 +1,22 @@
 <%# Testing phases — the four task-owned phase durations, materialized per task by
     Task::TestingPhases and recomputed from the durable TaskEvents + G2 gate runs +
-    CI actions. Rendered only once at least one phase has actually started. %>
+    CI actions. Rendered only once at least one phase has actually started.
+
+    Two enrichments (feature: phase-strip-lane-avatars): a small owner avatar per
+    tile (the task's Pokémon mascot on Build/Cert/CI, Avi on Review), and the two
+    review LANES (primary + light) that break the overall Review duration into its
+    seats, each with its reviewer soul + stamps. Both are sparse-first — they only
+    appear when the data exists. `task` / `task_gate_runs` prefer explicit locals,
+    falling back to the show action's ivars. %>
 <% phases = (testing_phases || {})["phases"] || {} %>
+<% task = local_assigns.fetch(:task) { @task } %>
+<% gate_runs = (local_assigns.fetch(:task_gate_runs) { @task_gate_runs }) || {} %>
 <% if phases.any? { |_key, span| span["status"] != "missing" } %>
+  <% mascot_slug = task&.devops_field("mascot") %>
+  <% mascot = mascot_slug.present? ? Pokemon.find_by(slug: mascot_slug) : nil %>
+  <% mascot_face = task && task_mascot_face(task, mascot) %>
+  <% review_avi = Agent.find_by(slug: "avi") %>
+  <% review_lanes = review_lane_tiles(gate_runs) %>
   <div class="card p-6 mb-6">
     <div class="flex items-baseline justify-between mb-1">
       <h3 class="text-lg font-bold text-heading">Testing phases</h3>
@@ -14,7 +28,11 @@
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
         <% span = phases[key] || { "status" => "missing" } %>
-        <div class="bg-surface-alt rounded-lg p-3">
+        <% face = phase_tile_face(key, mascot_face: mascot_face, avi: review_avi) %>
+        <div class="relative bg-surface-alt rounded-lg p-3">
+          <% if face %>
+            <span class="absolute top-2 right-2"><%= phase_face_avatar_tag(face, px: 24, title: "#{Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label")}: #{face.name}") %></span>
+          <% end %>
           <p class="label-upper"><%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %></p>
           <p class="text-heading text-sm font-semibold"><%= testing_phase_duration_label(span) %></p>
           <p class="text-[10px] uppercase tracking-wide <%= testing_phase_status_class(span["status"]) %>">
@@ -23,5 +41,33 @@
         </div>
       <% end %>
     </div>
+    <%# Review lanes — the primary (G2a) + light (G2b) seats behind the overall
+        Review duration, each with the soul who ran it + its start→end stamps.
+        Only the lanes that actually ran render. %>
+    <% if review_lanes.any? %>
+      <div class="mt-4" data-test="testing-review-lanes">
+        <p class="label-upper mb-2">Review lanes</p>
+        <div class="grid grid-cols-2 gap-3">
+          <% review_lanes.each do |_lane_key, lane_label, run| %>
+            <% soul = gate_run_reviewer(run) %>
+            <% lane_range = { started_at: run.started_at, ended_at: run.finished_at } %>
+            <div class="relative bg-surface-alt rounded-lg p-3" data-test="testing-review-lane"
+                 title="<%= lane_label %> review<%= " — #{soul.name}" if soul %>">
+              <% if soul %>
+                <span class="absolute top-2 right-2"><%= phase_face_avatar_tag(soul, px: 24, title: "#{lane_label} review: #{soul.name}") %></span>
+              <% end %>
+              <p class="label-upper"><%= lane_label %></p>
+              <p class="text-heading text-sm font-semibold">
+                <%= release_duration_label(run.duration_seconds) %><%= " so far" if run.in_flight? %>
+              </p>
+              <p class="text-[10px] uppercase tracking-wide <%= gate_status_class(run) %>"><%= run.status.humanize %></p>
+              <% if run.started_at %>
+                <p class="text-[10px] text-muted mt-0.5 font-mono whitespace-nowrap"><%= deployment_range_times(lane_range) %></p>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
   </div>
 <% end %>

@@ -63,6 +63,73 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "·", gate_verdict_glyph(nil), "nil-safe for a gate that never ran"
   end
 
+  # ---- phase-strip lane tiles + tile avatars --------------------------------
+
+  test "[unit] review_lane_tiles keeps only the seats that actually ran, in order" do
+    primary = GateRun.new(key: "g2a_primary")
+    light   = GateRun.new(key: "g2b_light")
+
+    both = review_lane_tiles("g2a_primary" => primary, "g2b_light" => light)
+    assert_equal [["g2a_primary", "Primary", primary], ["g2b_light", "Light", light]], both,
+                 "both lanes render in primary-then-light seat order"
+
+    assert_equal [["g2b_light", "Light", light]], review_lane_tiles("g2b_light" => light),
+                 "a lane with no run drops out (sparse-first)"
+    assert_equal [], review_lane_tiles({}), "no review runs means no lanes"
+    assert_equal [], review_lane_tiles(nil), "nil-safe when a task carries no gate map"
+  end
+
+  test "[unit] phase_tile_face resolves each phase to its owning avatar" do
+    mascot = Object.new
+    avi = Object.new
+
+    # BUILD / CERT / CI are the machine phases the mascot's session drove.
+    assert_same mascot, phase_tile_face("build", mascot_face: mascot, avi: avi)
+    assert_same mascot, phase_tile_face("local_certification", mascot_face: mascot, avi: avi)
+    assert_same mascot, phase_tile_face("ci", mascot_face: mascot, avi: avi)
+    # REVIEW belongs to Avi, the review supervisor.
+    assert_same avi, phase_tile_face("review", mascot_face: mascot, avi: avi)
+
+    assert_nil phase_tile_face("build", mascot_face: nil, avi: avi),
+               "an unresolved mascot leaves the tile faceless (sparse-first)"
+    assert_nil phase_tile_face("review", mascot_face: mascot, avi: nil),
+               "an unresolved Avi leaves Review faceless"
+    assert_nil phase_tile_face("acceptance", mascot_face: mascot, avi: avi),
+               "a phase with no defined owner has no face"
+  end
+
+  test "[unit] gate_run_reviewer resolves a lane's soul from the run actor" do
+    agent = agents(:alex_agent)
+
+    # Preloaded-map path (the /tasks/recent batch that avoids an N+1).
+    assert_same agent, gate_run_reviewer(GateRun.new(actor: "alex"), lookup: { "alex" => agent })
+    # Single-lookup path when no map is supplied.
+    assert_equal agent, gate_run_reviewer(GateRun.new(actor: "alex"))
+
+    assert_nil gate_run_reviewer(GateRun.new(actor: nil), lookup: { "alex" => agent }),
+               "a run with no actor resolves to no soul"
+    assert_nil gate_run_reviewer(nil), "nil-safe for a lane that never ran"
+    assert_nil gate_run_reviewer(GateRun.new(actor: "ghost"), lookup: { "alex" => agent }),
+               "an unresolved actor slug stays faceless, never raises"
+  end
+
+  test "[unit] phase_face_avatar_tag renders a sized circle with an image, sparse-safe" do
+    assert_equal "", phase_face_avatar_tag(nil), "no face renders nothing"
+
+    faced = Agent.new(name: "Avi", slug: "avi", avatar: "/agents/avi.png")
+    html = phase_face_avatar_tag(faced, px: 24)
+    assert_includes html, "width:24px;height:24px", "sizes the circle to the requested px"
+    assert_includes html, "rounded-full"
+    assert_includes html, 'src="/agents/avi.png"', "layers the face image over the initial bubble"
+    assert_includes html, "onerror", "a 404 falls back to the bubble, no broken-image icon"
+    assert_includes html, 'data-test="phase-tile-avatar"'
+
+    faceless = Agent.new(name: "Mystery", slug: "mystery")
+    bubble = phase_face_avatar_tag(faceless)
+    assert_not_includes bubble, "<img", "no avatar file means initials-only, no empty img"
+    assert_includes bubble, Agent.initials_for("Mystery")
+  end
+
   test "right_fade_style emits both mask-image properties with the given stop" do
     style = right_fade_style
     assert_includes style, "mask-image: linear-gradient(to right, #000 88%, transparent)"

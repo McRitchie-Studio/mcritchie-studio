@@ -18,6 +18,17 @@
     "review"              => "Review"
   }
 %>
+<%
+  # Batched avatar lookups so the per-tile faces resolve without an N+1 across
+  # the 50 rows: the task mascots (devops.mascot -> Pokémon) and the review souls
+  # (each review GateRun's actor slug -> Agent) plus Avi, the review supervisor.
+  mascot_slugs = @tasks.filter_map { |t| t.devops_field("mascot") }.uniq
+  pokemon_by_slug = mascot_slugs.any? ? Pokemon.where(slug: mascot_slugs).index_by(&:slug) : {}
+  reviewer_slugs = @gate_runs_by_task.values.flat_map do |runs|
+    ApplicationHelper::REVIEW_LANE_TILES.filter_map { |key, _label| runs[key]&.actor }
+  end.uniq
+  agents_by_slug = Agent.where(slug: (reviewer_slugs + ["avi"]).uniq).index_by(&:slug)
+%>
 <section data-test="recent-tasks" class="space-y-6">
   <header class="space-y-1">
     <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Boards">
@@ -40,6 +51,10 @@
       <% @tasks.each do |task| %>
         <% phases = (Task::TestingPhases.cached_or_built(task) || {})["phases"] || {} %>
         <% gate_runs = @gate_runs_by_task[task.slug] || {} %>
+        <% mascot = pokemon_by_slug[task.devops_field("mascot")] %>
+        <% mascot_face = task_mascot_face(task, mascot) %>
+        <% review_avi = agents_by_slug["avi"] %>
+        <% review_lanes = review_lane_tiles(gate_runs) %>
         <li class="card p-4 space-y-3" data-test="recent-task-row" data-task-slug="<%= task.slug %>">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
             <%# Identity cluster: title, stage, apps, slug + recency. %>
@@ -62,25 +77,63 @@
                 down the page. Bold duration (status-colored) over the stamp stack —
                 the muted date line + local start-to-end clocks, exactly the
                 releases-table cell treatment. %>
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-1.5 lg:w-[34rem] lg:shrink-0" data-test="recent-task-phases">
-              <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
-                <% span = phases[key] || { "status" => "missing" } %>
-                <% range = testing_phase_range(span) %>
-                <div class="rounded-lg bg-surface-alt px-1.5 py-1.5 text-center min-w-0"
-                     title="<%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %>: <%= testing_phase_duration_label(span) %>">
-                  <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
-                  <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
-                    <%= testing_phase_compact_label(span) %>
-                  </p>
-                  <% if range %>
-                    <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
-                         data-deployment-range
-                         data-start="<%= range[:started_at].to_i %>"
-                         <% if range[:ended_at] %>data-end="<%= range[:ended_at].to_i %>"<% end %>>
-                      <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(range) %></span>
-                      <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(range) %></span>
-                    </div>
-                  <% end %>
+            <div class="lg:w-[34rem] lg:shrink-0 space-y-1.5">
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-1.5" data-test="recent-task-phases">
+                <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
+                  <% span = phases[key] || { "status" => "missing" } %>
+                  <% range = testing_phase_range(span) %>
+                  <% face = phase_tile_face(key, mascot_face: mascot_face, avi: review_avi) %>
+                  <div class="relative rounded-lg bg-surface-alt px-1.5 py-1.5 text-center min-w-0"
+                       title="<%= Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label") %>: <%= testing_phase_duration_label(span) %>">
+                    <% if face %>
+                      <span class="absolute top-1 right-1"><%= phase_face_avatar_tag(face, px: 20, title: "#{Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label")}: #{face.name}") %></span>
+                    <% end %>
+                    <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
+                    <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
+                      <%= testing_phase_compact_label(span) %>
+                    </p>
+                    <% if range %>
+                      <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
+                           data-deployment-range
+                           data-start="<%= range[:started_at].to_i %>"
+                           <% if range[:ended_at] %>data-end="<%= range[:ended_at].to_i %>"<% end %>>
+                        <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(range) %></span>
+                        <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(range) %></span>
+                      </div>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+              <%# Review lanes: the primary (G2a) + light (G2b) seats that make up
+                  the overall Review duration, each with its reviewer soul + stamps.
+                  Right-nested under the CI/Review columns on desktop; a full-width
+                  second row on mobile. Only the lanes that actually ran render. %>
+              <% if review_lanes.any? %>
+                <div class="lg:flex lg:justify-end" data-test="recent-review-lanes">
+                  <div class="grid grid-cols-2 gap-1.5 lg:w-[17rem]">
+                    <% review_lanes.each do |_lane_key, lane_label, run| %>
+                      <% soul = gate_run_reviewer(run, lookup: agents_by_slug) %>
+                      <% lane_range = { started_at: run.started_at, ended_at: run.finished_at } %>
+                      <div class="relative rounded-lg bg-surface-alt px-1.5 py-1.5 text-center min-w-0"
+                           data-test="recent-review-lane"
+                           title="<%= lane_label %> review<%= " — #{soul.name}" if soul %>">
+                        <% if soul %>
+                          <span class="absolute top-1 right-1"><%= phase_face_avatar_tag(soul, px: 20, title: "#{lane_label} review: #{soul.name}") %></span>
+                        <% end %>
+                        <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= lane_label %></p>
+                        <p class="text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
+                          <%= release_duration_label(run.duration_seconds) %><%= "+" if run.in_flight? %>
+                        </p>
+                        <div class="flex flex-col items-center leading-tight font-mono mt-0.5"
+                             data-deployment-range
+                             data-start="<%= run.started_at.to_i %>"
+                             <% if run.finished_at %>data-end="<%= run.finished_at.to_i %>"<% end %>>
+                          <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(lane_range) %></span>
+                          <span class="text-secondary text-[10px] leading-tight" data-range-time><%= deployment_range_times(lane_range) %></span>
+                        </div>
+                      </div>
+                    <% end %>
+                  </div>
                 </div>
               <% end %>
             </div>

@@ -82,6 +82,52 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "G2a Primary"
   end
 
+  test "[component] phase tiles wear owner avatars and the review lanes break out primary + light" do
+    pikachu = Pokemon.create!(dex: 9001, name: "Pikachu", slug: "pikachu", sprite_url: "/pokemon/pikachu.png")
+    Agent.create!(name: "Avi", slug: "avi", avatar: "/agents/avi.png")
+    Agent.create!(name: "Shannon", slug: "shannon", avatar: "/agents/shannon.png")
+    Agent.create!(name: "Carl", slug: "carl", avatar: "/agents/carl.png")
+
+    @in_progress_task.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      updated_at: 1.minute.ago,
+      metadata: { "devops" => { "mascot" => pikachu.slug } }
+    )
+
+    primary_start = Time.zone.parse("2026-07-08 14:00:00")
+    GateRun.open!(subject_type: "task", subject_slug: @in_progress_task.slug, key: "g2a_primary",
+                  actor: "shannon", now: primary_start)
+    GateRun.close!(subject_type: "task", subject_slug: @in_progress_task.slug, key: "g2a_primary",
+                   success: true, actor: "shannon", now: primary_start + 12.minutes)
+    light_start = Time.zone.parse("2026-07-08 14:05:00")
+    GateRun.open!(subject_type: "task", subject_slug: @in_progress_task.slug, key: "g2b_light",
+                  actor: "carl", now: light_start)
+    GateRun.close!(subject_type: "task", subject_slug: @in_progress_task.slug, key: "g2b_light",
+                   success: true, actor: "carl", now: light_start + 6.minutes)
+
+    get recent_tasks_path
+
+    assert_response :success
+    assert_select "li[data-task-slug=?]", @in_progress_task.slug do
+      # Every phase tile wears its owner: mascot on Build/Cert/CI, Avi on Review.
+      assert_select "[data-test='recent-task-phases'] [data-test='phase-tile-avatar']", count: 4
+      assert_select "[data-test='recent-task-phases'] img[src=?]", "/pokemon/pikachu.png",
+                    { minimum: 3 }, "the mascot sprite fronts the three machine phases"
+      assert_select "[data-test='recent-task-phases'] img[src=?]", "/agents/avi.png",
+                    { count: 1 }, "Avi fronts the Review tile"
+
+      # The review lanes break the overall Review duration into its two seats,
+      # each with its reviewer soul + duration.
+      assert_select "[data-test=?]", "recent-review-lanes", count: 1
+      assert_select "[data-test=?]", "recent-review-lane", count: 2
+      assert_select "[data-test='recent-review-lane'] img[src=?]", "/agents/shannon.png", count: 1
+      assert_select "[data-test='recent-review-lane'] img[src=?]", "/agents/carl.png", count: 1
+      assert_select "[data-test='recent-review-lane']", text: /Primary/
+      assert_select "[data-test='recent-review-lane']", text: /Light/
+      assert_select "[data-test='recent-review-lane']", text: /12m/
+      assert_select "[data-test='recent-review-lane']", text: /6m/
+    end
+  end
+
   test "[component] a task with no phases and no gate runs reads as a clean sparse row" do
     get recent_tasks_path
 
