@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-# Standalone test for bin/agent-worktree's pure port-allocation helpers. Mirrors
+# Standalone test for bin/agent-worktree's pure helpers — port allocation and
+# the finish --pr handoff (PR-URL parse + task stamp). Mirrors
 # test/lib/release_cli_test.rb: it `load`s the script in a clean subprocess so the
 # guarded dispatch (`if $PROGRAM_NAME == __FILE__`) never fires, redefines the
 # I/O-bound helpers (allocated_ports / port_listening? / port_pid / process_cwd)
@@ -162,5 +163,85 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/forced-subprocess-failure/, error.message,
                  "the swallowed subprocess stderr must surface in the failure message")
     assert_match(/no usable output/, error.message)
+  end
+
+  # --- regression: finish --pr must stamp the created PR's URL on the task ------
+  #
+  # finish --pr opened the PR (gh prints the URL) but never wrote devops.pr_url,
+  # so bin/dor-check's CI gate reported NO_PR until someone ran
+  # `bin/task update --pr-url` by hand. The fix parses the URL from `gh pr create`
+  # output and stamps it through the same best-effort `bin/task` board-write path
+  # the handoff already uses — a board blip must never fail the finish.
+
+  def test_pr_url_from_output_extracts_the_created_pr_url
+    out = run_in_script(<<~RUBY)
+      noisy = "Warning: 1 uncommitted change\\nhttps://github.com/amcritchie/mcritchie-studio/pull/999\\n"
+      print [pr_url_from_output(noisy), pr_url_from_output("no url here")].inspect
+    RUBY
+    assert_equal '["https://github.com/amcritchie/mcritchie-studio/pull/999", nil]', out
+  end
+
+  def test_open_draft_pr_stamps_the_created_pr_url_on_the_bound_task
+    out = run_in_script(<<~RUBY)
+      def capture_status(*_cmd, chdir: nil, env: {})
+        [true, "https://github.com/amcritchie/mcritchie-studio/pull/999\\n", ""]
+      end
+      def human_title(_task); "Finish stamps PR url"; end
+      def pr_body(_record); "body"; end
+      STAMPS = []
+      def stamp_task_pr_url(slug, url); STAMPS << [slug, url]; true; end
+      record = { env: { "TASK_RECORD_SLUG" => "finish-stamps-pr-url" },
+                 base_branch: "release", branch: "feat/finish-stamps-pr-url" }
+      open_draft_pr(record, "/tmp/wt", "finish-stamps-pr-url")
+      print "STAMPED=" + STAMPS.inspect
+    RUBY
+    assert_match(
+      'STAMPED=[["finish-stamps-pr-url", "https://github.com/amcritchie/mcritchie-studio/pull/999"]]',
+      out,
+      "the created PR URL must be stamped on the bound task record"
+    )
+  end
+
+  def test_open_draft_pr_survives_a_failed_board_stamp
+    # Best-effort guarantee: a failed stamp warns; the finish still completes and
+    # the URL is still returned (the operator can stamp manually).
+    out = run_in_script(<<~RUBY)
+      def capture_status(*_cmd, chdir: nil, env: {})
+        [true, "https://github.com/x/y/pull/1\\n", ""]
+      end
+      def human_title(_task); "t"; end
+      def pr_body(_record); "b"; end
+      def stamp_task_pr_url(_slug, _url); false; end
+      url = open_draft_pr({ env: {}, base_branch: "release", branch: "b" }, "/tmp/wt", "t")
+      print "RETURNED=" + url.to_s
+    RUBY
+    assert_match "RETURNED=https://github.com/x/y/pull/1", out
+  end
+
+  def test_stamp_task_pr_url_returns_false_on_a_board_blip_instead_of_raising
+    out = run_in_script(<<~RUBY)
+      def system(*_argv, **_opts); false; end
+      $stderr.reopen(File::NULL) # the warn is expected; keep the child's stderr clean
+      print stamp_task_pr_url("some-task", "https://github.com/x/y/pull/1").inspect
+    RUBY
+    assert_equal "false", out
+  end
+
+  # Integration: the stamp crosses the real process boundary through the task CLI
+  # seam (`task_cli_path`), with the board mocked at the executable edge — a fake
+  # `task` script records the argv it was invoked with.
+  def test_stamp_task_pr_url_writes_through_the_task_cli_boundary
+    out = run_in_script(<<~RUBY)
+      require "tmpdir"
+      DIR = Dir.mktmpdir
+      ARGV_FILE = File.join(DIR, "argv")
+      FAKE = File.join(DIR, "task")
+      File.write(FAKE, "#!/bin/sh\\necho \\"$@\\" > \#{ARGV_FILE.inspect}\\n")
+      File.chmod(0o755, FAKE)
+      def task_cli_path; FAKE; end
+      ok = stamp_task_pr_url("finish-stamps-pr-url", "https://github.com/x/y/pull/9")
+      print [ok, File.read(ARGV_FILE).strip].inspect
+    RUBY
+    assert_equal '[true, "update finish-stamps-pr-url --pr-url https://github.com/x/y/pull/9"]', out
   end
 end

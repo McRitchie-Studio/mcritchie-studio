@@ -67,8 +67,8 @@ When a new agent session starts actual implementation work:
 11. Commit coherent work on the feature branch.
 12. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
    packet.
-13. Update the task with branch, PR URL, local URL, `checks_run`, and any
-   changed acceptance criteria. Add a task conversation `handoff` note with the
+13. Update the task with branch, PR URL (`finish --push --pr` stamps it for
+   you; verify), local URL, `checks_run`, and any changed acceptance criteria. Add a task conversation `handoff` note with the
    change summary, verification, and review focus. Move it to `submitted` when
    the PR is ready for Avi.
 14. Return the task URL first, then the PR URL, branch, worktree path, local
@@ -146,7 +146,10 @@ bin/agent-worktree scale status
   behind the base ref, and already-merged branches. Add `--push` to push the
   branch. `--push --pr` additionally requires a bound production task record
   from `bind-task`, then creates a draft PR **based on the base branch
-  (`release`, else `main`)** through `gh` when available.
+  (`release`, else `main`)** through `gh` when available, and stamps the
+  created PR's URL onto the bound task (`devops.pr_url`) in the same handoff
+  (best-effort: a board blip warns with the manual `bin/task update --pr-url`
+  command instead of failing the finish).
 - `doctor` reports lifecycle drift such as missing stack env files, reused ports, reused Redis DBs, stale pidfiles, dirty worktrees, disabled local email capture, and clean branches already merged to the base ref. It also reconciles `git worktree list` against the managed registry per repo and flags any **orphan** — a git worktree that is neither the primary checkout nor a managed `.worktrees/*` dir — with its path, branch, and merge/clean state. An orphan whose directory was deleted on disk but is still tracked by git is reported distinctly as **prunable** (clear it with `git -C <repo> worktree prune`); `doctor` and `snapshot --write` both tolerate it and still exit 0. Orphans are detect-and-report only; removal stays approval-gated (`bin/agent-worktree remove`).
 - `snapshot` prints a non-secret JSON registry of every generated worktree,
   including health, local URLs, branch state, Redis DB, database name, cleanup
