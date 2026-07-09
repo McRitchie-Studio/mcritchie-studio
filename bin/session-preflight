@@ -38,6 +38,18 @@ CHECK_STATES = {
   "SKIPPED" => "skipped"
 }.freeze
 BAD_MERGE_STATES = %w[DIRTY BEHIND BLOCKED].freeze
+# Kinds that carry no shippable code surface, so the shape/required-metadata
+# gate does not apply — mirrored from bin/dor-check (the canonical source; keep
+# the two gates in lock-step so a task that passes one never surprise-fails the
+# other). UNLESS the branch actually ships code under CODE_PATH_PREFIXES:
+# "there is no size exemption" (CLAUDE.md/AGENTS.md), so an exempt kind with a
+# real code diff is gated exactly like a feature, matching dor-check.
+EXEMPT_KINDS = %w[chore cleanup docs].freeze
+# Prefixes that mean a change ships real, testable code. A change confined to
+# anything else (docs/, *.md, READMEs) is doc-only and keeps the exemption.
+# Same deliberate gaps as dor-check: root-level files (Gemfile, Rakefile) and
+# test/-only changes are NOT counted as a code diff.
+CODE_PATH_PREFIXES = %w[app/ lib/ bin/ config/ db/].freeze
 STALE_PATTERNS = [
   ["legacy queued stage query", /stage=queued/],
   ["legacy task transition endpoint", %r{tasks/:slug/(?:start|complete|fail_task)}],
@@ -472,12 +484,16 @@ def print_human(report)
   end
 
   shape = report["shape"]
-  puts "Required tiers: #{shape["shape"] || "none"} => #{shape["dor_tiers"].join(", ")}"
-  unless shape["required_metadata"].empty?
-    puts "Required metadata: #{shape["required_metadata"].join(", ")}"
-  end
-  unless shape["missing_metadata"].empty?
-    puts "Missing metadata: #{shape["missing_metadata"].join(", ")}"
+  if shape["exempt"]
+    puts "Shape gate: n/a — non-code task (kind: #{shape["kind"]}); skipped, matching bin/dor-check"
+  else
+    puts "Required tiers: #{shape["shape"] || "none"} => #{shape["dor_tiers"].join(", ")}"
+    unless shape["required_metadata"].empty?
+      puts "Required metadata: #{shape["required_metadata"].join(", ")}"
+    end
+    unless shape["missing_metadata"].empty?
+      puts "Missing metadata: #{shape["missing_metadata"].join(", ")}"
+    end
   end
 
   unless report["warnings"].empty?
@@ -604,12 +620,27 @@ stale_hits = stale_scan(options[:root], scan_files).first(40)
 errors << "stale terminology found in #{stale_hits.size} location(s)" unless stale_hits.empty?
 
 shape = shape_report(options[:root], task, warnings)
-if shape["shape"].nil?
-  errors << "devops.shape is missing; required tiers cannot be selected"
+# Non-code kinds (EXEMPT_KINDS) skip the shape/required-metadata gate, exactly
+# as bin/dor-check does — unless the branch ships code under CODE_PATH_PREFIXES,
+# in which case the exemption is lost and the full gate applies.
+kind = devops["kind"].to_s.strip.downcase
+code_files = changed.select { |file| CODE_PATH_PREFIXES.any? { |prefix| file.start_with?(prefix) } }
+shape["kind"] = kind.empty? ? nil : kind
+shape["exempt"] = EXEMPT_KINDS.include?(kind) && code_files.empty?
+if shape["exempt"]
+  # Nothing to gate: chore/cleanup/docs with a doc-only (or empty) diff.
+elsif shape["shape"].nil?
+  message = "devops.shape is missing; required tiers cannot be selected"
+  if EXEMPT_KINDS.include?(kind)
+    message += " (kind #{kind} ships code — #{code_files.first(3).join(", ")} — so there is no size exemption)"
+  end
+  errors << message
 elsif shape["description"].nil?
   errors << "unknown devops.shape #{shape["shape"].inspect}"
 end
-errors << "required metadata missing: #{shape["missing_metadata"].join(", ")}" unless shape["missing_metadata"].empty?
+unless shape["exempt"] || shape["missing_metadata"].empty?
+  errors << "required metadata missing: #{shape["missing_metadata"].join(", ")}"
+end
 
 task_url = task["task_url"] || task.dig("devops", "task_url")
 task_url ||= "https://mcritchie.studio/tasks/#{task["slug"]}" if task["slug"]
