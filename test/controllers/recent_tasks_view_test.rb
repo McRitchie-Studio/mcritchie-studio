@@ -152,9 +152,17 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
         assert_select "p", text: "Review"
         assert_select "p", text: "Accept", count: 0
       end
+      # The v1 acceptance phase — "Operator Acceptance" only ever renders on this
+      # surface as a phase-cell PHASE_DEFINITIONS title (tile + avatar, see
+      # recent.html.erb) — is gone from THIS task's strip. SCOPED to @new_task's
+      # phase cells on purpose: the old body-wide `assert_not_includes
+      # response.body, "Operator Acceptance"` false-failed when a *different* task
+      # leaked into the shared recency list from an out-of-transaction CLI-meta
+      # subprocess (or a contended full-suite run). The strip-scoped check verifies
+      # the v2 layout for the task under test and stays immune to that pollution.
+      assert_select "[data-test='recent-task-phases'] [title*='Operator Acceptance']", false,
+                    "the v1 acceptance phase left this task's recency phase strip"
     end
-    assert_not_includes response.body, "Operator Acceptance",
-                        "the v1 acceptance phase left the public recency surface"
   end
 
   test "[component] recent excludes archived tasks" do
