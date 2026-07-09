@@ -286,6 +286,13 @@ class AgentActivityCli
       # ci:<pr>:<sha>:<job> so re-reading a PR's checks never doubles a row. Blank
       # on every other action, dropped below.
       "idempotency_key"   => flags["idempotency-key"].to_s.strip,
+      # Real GitHub workflow-run window — bin/ci-scope-capture reads each job's
+      # startedAt/completedAt from `gh pr checks`. AgentAction has no metadata column,
+      # so the real bounds ride on the durable input (startedAt) + output (completedAt)
+      # text fields; Task::TestingPhases#ci_phase reads them to build the REAL "ci"
+      # window instead of the ingest-time approximation. Blank on every other action.
+      "input"             => flags["started-at"].to_s.strip,
+      "output"            => flags["completed-at"].to_s.strip,
       "outcome"           => "ok",
       "actor"             => "agent",
       "task_slug"         => marker["task_slug"],
