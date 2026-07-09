@@ -1208,12 +1208,13 @@ rescue ArgumentError => e
 end
 
 # --- primary-checkout lock ---------------------------------------------------
-# Serializes the three highest-risk primary-HEAD flip sites against each other:
+# Serializes the highest-risk primary-HEAD flip sites against each other:
 # the pre-QA gate's release checkout + suite run (below), the artifact-commit
-# dance (commit_artifact_to_release), and ship's local ff (ff_main_local).
+# dance (commit_artifact_to_release), ship's local ff (ff_main_local), and the
+# ship gate's ff+suite window (avi_ship_gate — ONE lock spanning both; the
+# helper is NOT re-entrant, so the inner ff runs lock: false).
 # NOT yet lock-guarded (groomed as follow-up scope, per the round-2 review):
-# the merge-forward guard, checkout_detached / checkout_branch, repin_consumers,
-# and ship's test_gate window after avi_ship_gate's ff.
+# the merge-forward guard, checkout_detached / checkout_branch, repin_consumers.
 #
 # ROOT CAUSE it guards against (rel-20260708-496cd8): the pre-QA gate ran its
 # full suite in the primary hub checkout on `release` (~6-min critical section)
@@ -2026,7 +2027,13 @@ end
 # Fast-forward a repo's main up to a SHA, LOCALLY (no push). Split from the push
 # so an app's test gate can run on a frozen main and a red gate leaves origin
 # untouched. Aborts on a failed checkout or a non-fast-forward.
-def ff_main_local(repo, sha)
+#
+# lock: — by default the flip queues behind any in-flight gate/artifact dance on
+# this repo (see with_primary_checkout). Pass lock: false ONLY when the caller
+# ALREADY HOLDS the repo's lock (avi_ship_gate's ff+suite window): the flock is
+# NOT re-entrant — a second FD on the same lockfile blocks even in-process — so
+# a nested acquisition would self-deadlock, not stack.
+def ff_main_local(repo, sha, lock: true)
   path = repo_path(repo)
   abort!("repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
   if DRY
@@ -2035,15 +2042,18 @@ def ff_main_local(repo, sha)
   end
 
   sh("git", "-C", path, "fetch", "origin", "--quiet")
-  # A HEAD flip — queue behind any in-flight gate/artifact dance on this repo
-  # (see with_primary_checkout) so the ff never interleaves with a running suite.
-  with_primary_checkout(repo) do
+  flip = lambda do
     _, co = sh("git", "-C", path, "checkout", "main", capture: true)
     abort!("could not checkout main in #{repo} (dirty tree / wrong branch?) — clean it, then re-run `bin/release ship`") unless co
     sh("git", "-C", path, "pull", "origin", "main", "--quiet")
     _, ff = sh("git", "-C", path, "merge", "--ff-only", sha, capture: true)
     abort!("#{repo} main can't fast-forward to #{short(sha)} (it diverged) — rebase/re-prepare, then re-run") unless ff
   end
+  return flip.call unless lock
+
+  # A HEAD flip — queue behind any in-flight gate/artifact dance on this repo
+  # (see with_primary_checkout) so the ff never interleaves with a running suite.
+  with_primary_checkout(repo) { flip.call }
 end
 
 def push_origin_main(repo)
@@ -2322,13 +2332,26 @@ end
 # self-gate (their own deploy runs their suite) → no `test_cmd` → skipped; a
 # repo whose frozen SHA the G3 gate already certified with the same command
 # self-gates too (see test_gate), recording the skip as a gate SOP.
+#
+# The ff AND the suite share ONE primary-checkout lock window per repo — the
+# G4 twin of the pre-QA gate's critical section. Releasing between them (the
+# pre-#480 shape) left the suite running lock-free, so a concurrent
+# archive/retro artifact dance could flip the primary main↔release mid-suite →
+# wrong-branch lazy loads → a false-red abort right before ship authority.
+# ff_main_local's own acquisition is SKIPPED (lock: false): the flock is NOT
+# re-entrant, so nesting it inside this window would self-deadlock.
 def avi_ship_gate(app_groups, ship_sha, qa_shas)
   say("")
   step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA (before ship authority)")
   app_groups.each do |group|
     repo = group["repo"]
-    ff_main_local(repo, ship_sha[repo]) # local only — run the suite on the frozen tree
-    test_gate(repo, frozen_sha: ship_sha[repo], qa_sha: Release::ShipSequence.frozen_sha(qa_shas, repo))
+    window = lambda do
+      ff_main_local(repo, ship_sha[repo], lock: false) # local only — run the suite on the frozen tree
+      test_gate(repo, frozen_sha: ship_sha[repo], qa_sha: Release::ShipSequence.frozen_sha(qa_shas, repo))
+    end
+    # DRY previews plan-only (both callees print + return early) — never touch
+    # the real lock file, and never queue a preview behind a live gate's suite.
+    DRY ? window.call : with_primary_checkout(repo) { window.call }
   end
 end
 
