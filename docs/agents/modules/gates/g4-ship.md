@@ -1,0 +1,125 @@
+# G4 Ship — the frozen-SHA production gate
+
+## Status: Active
+
+G4 Ship is the fourth and final branded testing gate: the **release-grain**
+record (GateRun key `g4_ship`, subject = the release slug) that the **frozen
+ship SHA was certified and deployed to production**. It is produced by Avi's
+`production-deploy` act — `bin/release ship` opens it at the ship gate and
+closes it after the post-ship smoke seal.
+
+The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
+[G3 Candidate](g3-candidate.md) → **G4 Ship** (this doc).
+
+## What this gate verifies
+
+The gate window spans the whole irreversible half of the ship:
+
+- **The frozen-SHA test gate** (`ship_test_gate` SOPs) — each app's registry
+  `test_cmd` (`config/release_repos.yml`) runs at the repo's QA-frozen SHA
+  BEFORE ship authority and before any push, so "shipped" can never mean
+  "untested". This is the tier ship owns (`Release::STEP_TEST_TIERS`:
+  `ship → full-suite` — the registry `test_cmd`, the repo's highest LOCAL
+  tier; it was never a browser e2e run, hence the honest label).
+- **Ship authority** — the explicit production confirm, after the gate and
+  before any deploy.
+- **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
+  or the repo's own `bin/deploy`, each with its `/up` hard-gate.
+- **Post-deploy hooks** — each member's `devops.post_deploy_cmd` against
+  PRODUCTION; a non-zero exit aborts before the ship record.
+- **The smoke seal** (`prod_smoke_seal` SOP) — the read-only `@qa-readonly`
+  suite against prod. A SEAL, not a blocker: its verdict rides the gate
+  (`metadata.seal: passed|failed`) but a red seal never flips the gate's
+  success and never aborts the ship — the deploy already landed; the operator
+  stays the gate on rollback.
+
+## G4 self-gating (the 90/10 policy)
+
+The full suite runs **once per release batch, at G3**. The ship test gate
+SKIPS a repo iff BOTH hold (`Release::ShipSequence.ship_gate_skip?`,
+unit-tested):
+
+- the ship `test_cmd` is EXACTLY the `qa_test_cmd` G3 ran, **and**
+- the frozen ship SHA is EXACTLY the SHA G3 certified this run
+  (`release.metadata["qa_shas"]`).
+
+The skip is recorded as a **visible `ship_test_gate` SOP** on the gate run
+("skipped — `<cmd>` already green @ `<sha>` at G3"), never a silent omission.
+A straggler, re-pin, or any SHA drift re-triggers the gate; blank commands or
+SHAs never skip (fail open: run the gate). A repo with **no registry
+`test_cmd` self-gates** at its own deploy and is skipped with its own step
+note. In practice: the hub (same full suite registered at G3 and G4) skips on
+an unchanged SHA; satellites (integration subset at G3, full suite at their
+own deploy) always run their full pre-prod check.
+
+## Who runs it
+
+**Avi**, via the `production-deploy` SOP
+([`../../agents/avi/sops/production-deploy.md`](../../agents/avi/sops/production-deploy.md))
+— ship authority is granted per session by Mr. McRitchie. The gate writes are
+conductor-owned (actor = the ship's `--by`, defaulting to the operator's
+`$USER`; source `conductor`); you never post G4 markers by hand on the happy
+path.
+
+## Procedure
+
+From the McRitchie Studio primary checkout (never a worktree), with a
+QA-green `assembled` release:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/release ship --yes
+```
+
+The conductor records the gate for you:
+
+1. **Open** — `g4_ship` opens as the ship gate starts (right after the
+   `ship_gate started` release event; those `ship_gate` /
+   `ship_authorized` ReleaseEvents STAY — they stamp the tracker's
+   `confirming`/`confirmed` beats. Gates record verdicts; they never replace
+   stamps).
+2. **Collect** — every test scope inside the window appends an executed-SOP
+   entry: `ship_test_gate` per app (run or visible skip), `deploy:<repo>` per
+   deploy, `prod_post_deploy` per hook, `prod_smoke_seal`.
+3. **Close** —
+   - **`success`** after every repo deployed, `/up` came back green, the
+     post-deploy hooks passed, and the seal recorded — with
+     `metadata.seal: passed|failed` (a red seal alerts + prints the exact
+     rollback but does not flip success).
+   - **`failed` with `metadata.aborted: true`** on any abort inside the
+     window — a red frozen-SHA gate, a failed deploy or `/up` smoke, a
+     post-deploy hook failure. The close never masks the abort; the
+     partial-ship report still prints, and the idempotent re-run resumes
+     (gems skip, ffs no-op) on attempt n+1.
+
+## Success, failure, and attempt semantics
+
+- One GateRun attempt per ship run that enters the window; a re-run after an
+  abort opens **attempt n+1** (visible `×n` badge), a still-open attempt is
+  re-entered.
+- The seal is G4's **non-blocking closing beat**: seal result ∈ metadata +
+  SOPs; gate success reflects the deploy train, not the seal.
+- All gate writes are **best-effort** — a board blip warns and the deploy
+  continues; `--dry-run` suppresses every gate write (the plan still prints).
+
+## UI surfaces
+
+- **/deployments table** — the **G4 Ship** column
+  (`Release::DEPLOYMENT_STAGES`: Assembled | G3 Candidate | G4 Ship |
+  Deployed) is **gate-backed**: latest attempt's duration, fail tint, `×n`
+  retry badge.
+- **Pizza tracker** — node 4 (Confirming/Confirmed) is the G4 confirm beat:
+  lit by the `ship_gate` / `ship_authorized` stage stamps, not by the gate
+  record. Node 1 ≈ the [G2 wave](g2-review.md); node 4 ≈ this gate's opening
+  beat.
+- **CLI read:** `bin/gate show release <release-slug>`.
+
+## Related
+
+- [`../../agents/avi/sops/production-deploy.md`](../../agents/avi/sops/production-deploy.md)
+  — the owning SOP; run that end-to-end, this doc explains the gate it
+  produces.
+- [`g3-candidate.md`](g3-candidate.md) — the gate whose certified SHA +
+  command enable this gate's self-gating skip.
+- [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
+  surface.

@@ -77,14 +77,23 @@ bin/release prepare --yes
 6. Flip members from `reviewed` to `assembled` only after QA is green.
 
 `prepare` also narrates the release's **stage timeline** as it goes — its
-conductor checkpoints (`review_tests started/completed` bracketing the pre-QA
-test gate, then `assemble_release started/completed`, `deploy_qa
-started/completed`) stamp the release's stage timestamps, which drive the
-/deployments tracker live: Testing → Tested → Assembling yellow → Assembled green
-→ Deploying QA yellow → **Live on QA** green. The `review_tests` bracket stamps
-`testing_started_at` / `tested_at` — the /deployments **Tested** column
-(`Tested` is a duration stamp, not a sixth tracker node). You post nothing extra
-on the happy path.
+conductor checkpoints (`assemble_release started/completed`, `deploy_qa
+started/completed`, `qa_smoke started/completed`) stamp the release's stage
+timestamps, which drive the /deployments tracker live: Assembling yellow →
+Assembled green → Deploying QA yellow → **Live on QA** green. (Node 1 Testing
+is lit by the review wave's `testing/start`, not by prepare.) You post nothing
+extra on the happy path.
+
+`prepare` records its test verdicts as the **G3 Candidate gate**
+([`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md)):
+it opens the release's `g3_candidate` attempt (actor `steffon`) before the
+pre-QA gate, collects every test SOP in the window (`pre_qa_gate` per app,
+`qa_up_smoke` boot polls, `qa_post_deploy` hooks), and closes it `success`
+beside the QA-green flip — or `failed` on a boot failure or any in-window
+abort. Attempt-aware: a re-run opens attempt n+1, so repeated QA failures show
+as a `×n` badge on the /deployments **G3 Candidate** column (which replaced
+the old `review_tests`-bracketed "Tested" column). All gate writes are
+best-effort and automatic — post nothing by hand.
 
 Smoke QA after prepare reports success:
 
@@ -110,7 +119,8 @@ Then re-run `bin/release prepare --yes` so the rest of the candidate can ride.
 ## Exit Seam
 
 The release candidate is `assembled` and live on QA; members are `assembled` with
-`merged: release`. On the /deployments tracker the release reads **three greens
+`merged: release`, and the release's latest **G3 Candidate** attempt is closed
+with `success`. On the /deployments tracker the release reads **three greens
 (Tested · Assembled · Live on QA) with Confirming deliberately DARK** — that gap
 is the handoff itself. Do NOT start or stamp `confirming`; stage 4 lights only
 when Avi posts `confirming/start` as he picks the release up
@@ -127,3 +137,5 @@ On a clean no-op, report "nothing to prepare."
 ## Related
 
 - [`archive-shipped.md`](archive-shipped.md) - prior Steffon closeout act.
+- [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md)
+  - the G3 Candidate gate this act produces.

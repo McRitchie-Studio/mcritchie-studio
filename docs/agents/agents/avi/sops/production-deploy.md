@@ -110,9 +110,29 @@ non-interactive confirmation. It does not skip clean-main preflight, frozen-SHA
 tests, gem publish ordering, deploy smoke, release notes, or partial-ship
 recovery.
 
+The frozen-SHA test gate is each app's registry `test_cmd` — the **full local
+suite** (`Release::STEP_TEST_TIERS`: `ship → full-suite`; it is not a browser
+e2e run — browser-level verification is the post-deploy smoke seal). It
+**self-gates against G3**: when the frozen ship SHA is exactly the SHA the
+pre-QA gate certified this run with the same command, the gate records a
+visible skip SOP instead of re-running (the full suite runs once per release
+batch); a straggler, re-pin, or any SHA drift re-triggers it.
+
+`ship` records its verdicts as the **G4 Ship gate**
+([`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md)):
+it opens the release's `g4_ship` attempt at the ship gate and closes it
+`success` after the deploys, `/up` smokes, post-deploy hooks, and the smoke
+seal (the seal's verdict rides in the gate's `metadata.seal`; a red seal never
+flips the gate's success, exactly as it never aborts the ship) — or `failed`
+on any in-window abort, with the re-run opening attempt n+1. The verdict
+renders as the /deployments **G4 Ship** column. All gate writes are automatic
+and best-effort — post nothing by hand.
+
 `ship` narrates the rest of the stage timeline itself (`ship_gate` →
 Confirmed green, `deploy_prod started` → Deploying yellow, the ship flip →
-Deployed green) — no extra posts on the happy path. After an interrupted run,
+Deployed green) — no extra posts on the happy path. The `ship_gate` /
+`ship_authorized` stamps stay the tracker's node-4 confirm beat; the gate
+records the verdicts, never replaces the stamps. After an interrupted run,
 backfill the missed boundary via the release events API; stamps are
 first-write-wins, so re-posts are safe no-ops.
 
@@ -145,6 +165,11 @@ act reports a clean no-op because nothing was ready. Report:
 - smoke result
 
 On a clean no-op, report "nothing to ship."
+
+## Related
+
+- [`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md) -
+  the G4 Ship gate this act produces.
 
 ## Background — not needed to execute
 
