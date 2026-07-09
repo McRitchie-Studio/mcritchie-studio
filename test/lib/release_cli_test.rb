@@ -668,6 +668,157 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- primary-checkout lock: gate suite vs. concurrent artifact dance --------
+  #
+  # REGRESSION (rel-20260708-496cd8): the pre-QA gate runs its full suite in the
+  # PRIMARY checkout on a `release` checkout (~6-min critical section). A
+  # concurrent `bin/release archive`/`retro` artifact dance
+  # (commit_artifact_to_release) checkout-flipped that same primary main↔release
+  # five times mid-suite — lazily loaded routes/views then resolved against
+  # PRE-merge code → 7 false failures → a false-negative G3. Every primary-HEAD
+  # flip site must hold the per-repo flock (with_primary_checkout).
+
+  # A real git sibling fixture — bare origin + a clone with main/release
+  # branches — so the lock tests exercise the REAL `sh` and REAL flock
+  # contention across process boundaries. Returns the clone path.
+  def build_sibling_fixture(dir)
+    origin = File.join(dir, "origin.git")
+    clone  = File.join(dir, "repo")
+    git = lambda do |*a|
+      ok = system("git", "-C", clone, "-c", "user.email=t@t.t", "-c", "user.name=t", *a,
+                  out: File::NULL, err: File::NULL)
+      flunk("git #{a.join(' ')} failed") unless ok
+    end
+    system("git", "init", "--bare", "-q", origin, out: File::NULL, err: File::NULL) || flunk("git init --bare failed")
+    system("git", "clone", "-q", origin, clone, out: File::NULL, err: File::NULL) || flunk("git clone failed")
+    git.call("symbolic-ref", "HEAD", "refs/heads/main")
+    File.write(File.join(clone, "README"), "lock fixture")
+    git.call("add", ".")
+    git.call("commit", "-q", "-m", "init")
+    git.call("branch", "release")
+    git.call("push", "-q", "origin", "main", "release")
+    clone
+  end
+
+  # [unit] The gate must hold the repo's primary-checkout lock for its ENTIRE
+  # checkout→suite→restore critical section. The registered "suite" here is a
+  # probe that tries to take that same lock from a separate process — exactly
+  # what a concurrent artifact dance does — and must find it HELD.
+  def test_pre_qa_gate_holds_the_primary_checkout_lock_while_the_suite_runs
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      probe = File.join(dir, "probe.rb")
+      File.write(probe, <<~'PROBE')
+        path = File.join(ENV.fetch("MCR_PRIMARY_LOCK_DIR"), "mcr-primary-checkout-sibling.lock")
+        free = File.open(path, File::RDWR | File::CREAT, 0o644) { |f| f.flock(File::LOCK_EX | File::LOCK_NB) }
+        puts(free ? "SUITE-SEES-LOCK-FREE" : "SUITE-SEES-LOCK-HELD")
+      PROBE
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect}\n) +
+              %(def qa_gate_cmd(_repo) = %q{ruby #{probe}})
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      assert_includes out, "SUITE-SEES-LOCK-HELD",
+                      "a concurrent process must see the primary-checkout lock HELD while the gate suite runs"
+      assert_includes out, "PASSED", "a green gate lets prepare continue"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "the sibling checkout is restored to main (ensure)"
+      File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
+        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the gate must RELEASE the lock after restoring main"
+      end
+    end
+  end
+
+  # [unit] While another invocation holds the checkout (the gate's suite run),
+  # the artifact dance must SKIP — best-effort, non-fatal, HEAD untouched — not
+  # queue behind a ~6-min suite and never flip main↔release under it. The test
+  # process holds the flock exactly as the gate does.
+  def test_commit_artifact_to_release_skips_without_flipping_while_the_checkout_is_locked
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      doc = File.join(clone, "retro.md")
+      File.write(doc, "retro fixture") # the SOLE uncommitted change → safe_to_commit? passes
+
+      lock = File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::CREAT | File::RDWR, 0o644)
+      assert lock.flock(File::LOCK_EX | File::LOCK_NB), "test setup: the lock must start free"
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+
+      assert_includes out, "left retro.md uncommitted", "the dance must skip while the checkout is locked"
+      assert_includes out, "primary checkout busy", "…naming the concurrent holder as the reason"
+      refute_includes out, "committed retro.md", "…never committing mid-gate"
+      assert_includes out, "DONE", "the skip stays NON-FATAL (archive/retro ride on)"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "HEAD must never leave main while the lock is held elsewhere"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "release")
+      assert_equal "1", count.strip, "no commit lands on release while the checkout is locked"
+    ensure
+      lock&.close
+    end
+  end
+
+  # [unit] Uncontended, the dance still works end-to-end: takes the lock,
+  # commits the doc onto release, pushes, restores main, releases the lock.
+  def test_commit_artifact_to_release_commits_and_restores_main_when_uncontended
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      doc = File.join(clone, "retro.md")
+      File.write(doc, "retro fixture")
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+
+      assert_includes out, "committed retro.md to release", "a free checkout commits the artifact"
+      assert_includes out, "DONE"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "the checkout is restored to main (ensure)"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "origin/release")
+      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/release"
+      File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
+        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the dance must RELEASE the lock afterwards"
+      end
+    end
+  end
+
+  # [unit] Ship's local ff (checkout main → pull → ff to frozen) is the third
+  # primary-HEAD flip site — its git dance must run INSIDE with_primary_checkout
+  # so it can never interleave with a running gate suite or artifact dance.
+  def test_ff_main_local_flips_inside_the_primary_checkout_lock
+    setup = <<~'RUBY'
+      def repo_path(_repo) = Dir.pwd
+      def with_primary_checkout(repo, wait: true)
+        $stdout.puts("LOCK-ACQUIRED #{repo}")
+        result = yield
+        $stdout.puts("LOCK-RELEASED #{repo}")
+        result
+      end
+      def sh(*a, **_k)
+        # Print the git SUBCOMMAND only (a = git -C <path> <subcommand> …) — the
+        # repo path itself may contain "checkout" (this worktree's does).
+        $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: %{ff_main_local("mcritchie-studio", "abc1234"); puts("PASSED")})
+
+    lines    = out.lines.map(&:strip)
+    acquired = lines.index("LOCK-ACQUIRED mcritchie-studio")
+    released = lines.index("LOCK-RELEASED mcritchie-studio")
+    assert acquired, "ff_main_local must take the primary-checkout lock: #{out}"
+    assert released, "…and release it: #{out}"
+    flips = lines.each_index.select { |i| lines[i].match?(/\AGIT-OP (checkout|pull|merge)\z/) }
+    refute_empty flips, "the ff must actually flip the checkout"
+    assert flips.all? { |i| i > acquired && i < released },
+           "every checkout/pull/ff must happen INSIDE the lock (acquired=#{acquired} released=#{released} flips=#{flips})"
+    assert_includes out, "PASSED"
+  end
+
   # --- eject: block-on-regression (detach + block ONE offender, keep the rest) ---
 
   def test_eject_records_the_conductor_eject_and_prints_the_revert_guidance
