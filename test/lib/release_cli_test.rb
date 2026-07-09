@@ -692,6 +692,13 @@ class ReleaseCliTest < Minitest::Test
     system("git", "init", "--bare", "-q", origin, out: File::NULL, err: File::NULL) || flunk("git init --bare failed")
     system("git", "clone", "-q", origin, clone, out: File::NULL, err: File::NULL) || flunk("git clone failed")
     git.call("symbolic-ref", "HEAD", "refs/heads/main")
+    # Self-contained identity IN the repo config (not just the lambda's -c
+    # flags): the code under test runs its own bare `git commit`, which has no
+    # identity on CI runners ("Please tell me who you are") — green-local /
+    # red-CI without these. gpgsign off so a signing global can't break it.
+    git.call("config", "user.email", "t@t.t")
+    git.call("config", "user.name", "t")
+    git.call("config", "commit.gpgsign", "false")
     File.write(File.join(clone, "README"), "lock fixture")
     git.call("add", ".")
     git.call("commit", "-q", "-m", "init")
