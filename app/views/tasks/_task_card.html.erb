@@ -17,6 +17,8 @@
 <% block_state = task.block_state(unresolved: unresolved_feedback.present?, ever_blocked: ever_blocked) %>
 <% waiting_for_approval = task.waiting_for_operator_approval? %>
 <% local_url = task.devops? ? task.devops_url("local") : nil %>
+<% pr_url = task.devops? ? task.devops_url("pr") : nil %>
+<% waiting_for_review = task.stage == "submitted" && pr_url.present? && !review_in_progress && unresolved_feedback.blank? && block_state != :cleared %>
 <%# Per-card pulse seed (slug hash): feeds --task-pulse-delay/--task-pulse-duration
     so every flashing status bar AND the approval glow pulse OUT of phase across
     the board — irregular breathing, not one synchronized strobe. %>
@@ -179,7 +181,7 @@
       operator-approval bar merges the old WAITING APPROVAL pill with the Local
       Demo link into one flashing, card-width CTA that opens the local demo; the
       same component carries the QA/review flags for a consistent glance. %>
-  <% if waiting_for_approval || review_in_progress || unresolved_feedback || block_state == :cleared %>
+  <% if waiting_for_approval || waiting_for_review || review_in_progress || unresolved_feedback || block_state == :cleared %>
     <div class="flex flex-col gap-1 mb-1.5">
       <% if waiting_for_approval %>
         <%# Thin, label-only bar — the whole bar is the Local Demo link (no action
@@ -190,6 +192,14 @@
               href: local_url, new_tab: true,
               test_id: "operator-approval-waiting",
               title: "Waiting for Mr. McRitchie's local demo approval — click to open it." %>
+      <% end %>
+      <% if waiting_for_review %>
+        <%= render "components/card_status_bar",
+              scheme: :amber, flashing: true,
+              label: "WAITING REVIEW",
+              href: pr_url, new_tab: true,
+              test_id: "review-waiting",
+              title: "Waiting for Avi's PR review — click to open the PR." %>
       <% end %>
       <% if review_in_progress %>
         <%= render "components/card_status_bar",
