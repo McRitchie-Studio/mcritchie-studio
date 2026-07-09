@@ -32,10 +32,19 @@
 # record is REFUSED. Escape hatch = a RECORD, like the post_deploy "none" hatch: a
 # "[full-suite-bypass] <reason>" checks_run line is honored but flagged loudly.
 # FAST route: a FRESH "[fast-cert@<fp>]" line (bin/fast-check — diff-mapped tests
-# + core spine + rubocop on changed files, ~1 min) satisfies this gate too, but
-# ONLY alongside a GREEN GitHub CI — CI runs the full suite + test:system on every
+# + core spine + rubocop on changed files, ~1 min) satisfies this gate too,
+# alongside a GREEN GitHub CI — CI runs the full suite + test:system on every
 # PR push, so the full net still runs; the fast cert buys local earliness.
-# Format + fingerprint live in bin/lib/full_suite_gate.rb.
+# CI seam (ci-gate-review-handoff): the CI WAIT lives on the REVIEW side, not the
+# builder's wall-clock. The builder's submit-side run (--gate-role builder, the
+# default) treats a still-running CI as a LOUD suggestion — and credits a fresh
+# fast cert PROVISIONALLY while CI is pending (or not yet reported) on an OPEN PR
+# — so the builder certs, opens the PR, and moves submitted immediately. RED CI
+# (and a closed/merged pr_url) still blocks both roles. The AUTHORITATIVE CI
+# verdict is the review side: bin/pr-review's supervisor checks the live CI
+# before spawning reviewers, and the primary's gate-zero (--gate-role review)
+# keeps the strict semantics (red AND pending both block; fast evidence needs
+# the settled green). Format + fingerprint live in bin/lib/full_suite_gate.rb.
 #
 # dor-check still does NOT run the suite itself — it stays a fast, deterministic
 # verdict; bin/full-suite-check is the (slower) runner that produces the evidence.
@@ -374,9 +383,11 @@ end
 # verdict. Spells out which lane is stale/missing and how to fix it — and that the
 # fix REFUSES a touched-files subset or a lint-red tree, the whole point. `ci` is
 # the CI-status verdict: a FRESH fast cert refused here is refused for its CI
-# PAIRING (fast evidence only counts alongside a green GitHub CI), and the message
-# must say that instead of pretending the evidence is bad.
-def suite_evidence_error(eval, slug, ci)
+# PAIRING (fast evidence only counts alongside a green GitHub CI — or, submit-side,
+# a pending one on an OPEN PR), and the message must say that instead of
+# pretending the evidence is bad. `review_role` picks the guidance: the review
+# gate-zero says "defer until CI settles"; the builder says "open the PR".
+def suite_evidence_error(eval, slug, ci, review_role)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
       "Run bin/full-suite-check (or bin/fast-check) from inside the repo so the evidence is fingerprint-bound."
@@ -385,9 +396,16 @@ def suite_evidence_error(eval, slug, ci)
   lanes = eval[:lanes] || {}
   if lanes[FullSuiteGate::FAST_LANE] == :fresh
     state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
+    guidance =
+      if review_role
+        "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
+      else
+        "Submit-side, a fresh fast cert is credited PROVISIONALLY once an OPEN PR exists with CI pending — " \
+          "push the branch and open the PR, then re-run dor-check"
+      end
     return "fast-cert evidence is FRESH for this exact code, but a fast cert only satisfies the suite gate " \
       "alongside a GREEN GitHub CI — CI carries the FULL suite + test:system as the net, and it is currently " \
-      "#{state}. Push the branch / open the PR and wait for CI green, then re-run dor-check; or certify locally " \
+      "#{state}. #{guidance}; or certify locally " \
       "in full: bin/full-suite-check #{slug}."
   end
 
@@ -581,11 +599,18 @@ end
 
 # CI-status gate (merge gate only). Local certification proves the code is green on
 # THIS machine; this proves it's green on GITHUB — closing the gap where a PR passes
-# `bin/rails test` locally but fails the browser `test:system` lane CI also runs, so
-# a red PR reaches review and eats the round-trip (the report's #1 blocker class).
-# BLOCKS on a failing or still-running PR; a missing PR / no checks / gh error is a
-# non-blocking note added with the suggestions below (the gate re-runs after push).
+# `bin/rails test` locally but fails the browser `test:system` lane CI also runs
+# (the report's #1 blocker class). BLOCKS on a failing PR in both roles; a
+# STILL-RUNNING CI is role-split (ci-gate-review-handoff): the builder's submit-side
+# run downgrades it to a LOUD suggestion — the CI wait moved to the review handoff,
+# where bin/pr-review's supervisor checks the live verdict before spawning reviewers
+# — while the review gate-zero (--gate-role review) keeps the strict block (it IS
+# the authoritative CI verdict). A missing PR / no checks / gh error stays a
+# non-blocking note (the gate re-runs at review).
 # Evaluated BEFORE the suite gate because the suite gate's fast route depends on it.
+# Non-blocking SUGGESTIONS collect here too (never affect `ready`); more join below.
+suggestions = []
+review_role = options[:gate_role] == "review"
 ci = nil
 if gate != "build"
   ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
@@ -595,8 +620,16 @@ if gate != "build"
       "#1 blocker class (the local cert doesn't run the browser test:system lane CI does). Fix, push, and re-run " \
       "dor-check once CI is green."
   when :pending
-    errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. Wait for it " \
-      "to finish and re-run dor-check; don't hand a not-yet-green PR to review."
+    if review_role
+      errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
+        "review gate-zero is the authoritative CI verdict, so defer this review until CI settles (the supervisor's " \
+        "defer machinery re-queries); a red finish bounces the task back."
+    else
+      suggestions << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET, " \
+        "but submit-side this NO LONGER blocks: hand off now. The review gate-zero (bin/pr-review's supervisor + " \
+        "the primary's dor-check --gate-role review) holds the authoritative verdict — a red CI bounces the task " \
+        "back with the failing checks named, so expect that round-trip if CI fails."
+    end
   when :closed, :merged
     errors << "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
       "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
@@ -612,38 +645,46 @@ end
 #   * FULL  — bin/full-suite-check's "[full-suite@<fp>]" + "[rubocop@<fp>]" lines
 #     (the whole suite + full rubocop ran locally). Accepted on its own.
 #   * FAST  — bin/fast-check's "[fast-cert@<fp>]" line (diff-mapped tests + core
-#     spine + rubocop on changed files, ~1 min). Accepted ONLY alongside a GREEN
+#     spine + rubocop on changed files, ~1 min). Accepted alongside a GREEN
 #     GitHub CI — CI runs the full suite + test:system on every PR push, so the
-#     full net still runs; the fast cert buys the local earliness. A red, pending,
-#     missing, or unverified CI does NOT credit a fast cert.
+#     full net still runs; the fast cert buys the local earliness. Submit-side
+#     (builder role) it is ALSO credited PROVISIONALLY while an OPEN PR's CI is
+#     still pending / not yet reported — the review gate-zero enforces the
+#     settled green (strict), so the net still closes before merge. A red,
+#     closed/merged, unverified, or missing-PR CI never credits a fast cert.
 # The "[full-suite-bypass] <reason>" hatch keeps working (loudly flagged).
 # Skips the build gate (no code yet) and unshaped tasks (already errored above).
 # DOR_CHECK_SUITE_EVIDENCE injects the verdict for tests (see the script header).
 suite_eval = nil
-suite_route = nil # "full" | "fast" | "bypass" when the gate is satisfied
+suite_route = nil # "full" | "fast" | "fast-provisional" | "bypass" when satisfied
 if gate != "build" && shape_def && !dor_tiers.empty?
   suite_eval = FullSuiteGate.evaluate(
     checks: checks,
     root: diff_root,
     injected: ENV["DOR_CHECK_SUITE_EVIDENCE"]
   )
+  fast_fresh = suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
   if suite_eval[:ok]
     suite_route = suite_eval[:bypass] ? "bypass" : "full"
-  elsif suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh && ci && ci[:state] == :green
+  elsif fast_fresh && ci && ci[:state] == :green
     suite_route = "fast"
+  elsif fast_fresh && !review_role && ci && %i[pending none].include?(ci[:state])
+    # ci-gate-review-handoff: the builder submits without the CI wait. The PR is
+    # OPEN and its CI will settle; review's gate-zero holds the strict verdict.
+    suite_route = "fast-provisional"
   else
-    errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci)
+    errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role)
   end
 end
 
 ready = errors.empty? && missing_meta.empty? && missing_tiers.empty?
 
-# Non-blocking SUGGESTIONS (never affect `ready`). The canonical post_deploy_cmd
-# form is the paren-free `bin/rails runner <path>` — `rails runner` accepts a
-# file path directly. A valid-but-fragile `runner "load Rails.root.join(...)"`
-# command is the shape that made the seed-54 ship brittle through `heroku run`,
-# so we nudge toward the canonical form WITHOUT rejecting the (working) command.
-suggestions = []
+# More non-blocking SUGGESTIONS (the list starts at the CI gate above). The
+# canonical post_deploy_cmd form is the paren-free `bin/rails runner <path>` —
+# `rails runner` accepts a file path directly. A valid-but-fragile
+# `runner "load Rails.root.join(...)"` command is the shape that made the
+# seed-54 ship brittle through `heroku run`, so we nudge toward the canonical
+# form WITHOUT rejecting the (working) command.
 if present?(post_deploy_cmd) && fragile_runner_load?(post_deploy_cmd)
   path = canonical_runner_path(post_deploy_cmd)
   canonical = path ? "bin/rails runner #{path}" : "bin/rails runner <path>"
@@ -700,15 +741,25 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
     entry = { "sop" => "full-suite-evidence", "result" => suite_route ? "pass" : "fail" }
     if suite_eval[:fingerprint]
       fp12 = suite_eval[:fingerprint][0, 12]
-      entry["cmd"] = suite_route == "fast" ? "fast-cert@#{fp12}+ci-green" : "certified@#{fp12}"
+      entry["cmd"] =
+        case suite_route
+        when "fast" then "fast-cert@#{fp12}+ci-green"
+        when "fast-provisional" then "fast-cert@#{fp12}+ci-pending"
+        else "certified@#{fp12}"
+        end
     end
     gate_sops << entry
   end
   if ci
+    # G1-close semantics (ci-gate-review-handoff): the builder's verdict still
+    # CLOSES G1 at submit — a not-yet-settled CI records as "pending" (provisional,
+    # never a fail), and the AUTHORITATIVE ci verdict lands on G2a via the review
+    # gate-zero. One verdict per gate; no G1 row lingers in flight waiting on CI.
     ci_result =
       case ci[:state]
       when :green then "pass"
-      when :red, :pending, :closed, :merged then "fail"
+      when :pending then review_role ? "fail" : "pending"
+      when :red, :closed, :merged then "fail"
       else "unverified"
       end
     gate_sops << { "sop" => "ci", "result" => ci_result }
@@ -751,11 +802,17 @@ if ready
   elsif suite_route == "fast"
     fp = suite_eval[:fingerprint]
     puts "  fast cert accepted#{fp ? " at #{fp[0, 12]}" : ""} (GitHub CI green carries the full suite)"
+  elsif suite_route == "fast-provisional"
+    fp = suite_eval[:fingerprint]
+    puts "  ⚠ fast cert accepted PROVISIONALLY#{fp ? " at #{fp[0, 12]}" : ""} — CI hasn't settled; " \
+         "the review gate-zero enforces the green"
   elsif suite_eval && suite_eval[:fingerprint]
     puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
   end
   if ci && ci[:state] == :green
     puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
+  elsif ci && ci[:state] == :pending
+    puts "  ⚠ GitHub CI still RUNNING — handoff is provisional; see the suggestion below"
   elsif ci && %i[none unverified].include?(ci[:state])
     puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
   end

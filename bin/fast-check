@@ -6,13 +6,15 @@
 # fingerprint-bound "[fast-cert@<tree-hash>]" evidence on the task.
 #
 # Why (the 90/10 rethink): GitHub CI already runs the FULL suite + test:system on
-# every PR push, and bin/dor-check blocks on CI green — so a ~6-minute local
-# `bin/full-suite-check` before handoff bought EARLINESS, not coverage. This is
-# the earliness at ~1/6 the cost: catch the obvious break in about a minute and
-# let CI be the full net. bin/dor-check accepts FRESH fast-cert evidence as the
-# suite gate ONLY when the PR's GitHub CI is green; full-suite evidence and the
-# "[full-suite-bypass] <reason>" hatch keep working unchanged. bin/full-suite-check
-# itself is UNTOUCHED — it remains release verification and the heavyweight cert.
+# every PR push — so a ~6-minute local `bin/full-suite-check` before handoff
+# bought EARLINESS, not coverage. This is the earliness at ~1/6 the cost: catch
+# the obvious break in about a minute and let CI be the full net. bin/dor-check
+# accepts FRESH fast-cert evidence as the suite gate alongside a green GitHub CI
+# — and, submit-side, PROVISIONALLY while the open PR's CI is still pending (no
+# CI wait at submit; review's gate-zero enforces the settled green). Full-suite
+# evidence and the "[full-suite-bypass] <reason>" hatch keep working unchanged.
+# bin/full-suite-check itself is UNTOUCHED — it remains release verification and
+# the heavyweight cert.
 #
 # Test selection (bin/lib/fast_cert.rb, unit-tested there):
 #   mapped : each changed file → its test by path convention (app/models/x.rb →
@@ -276,5 +278,6 @@ unless system(TASK_BIN, "update", slug, *record_args)
 end
 
 warn "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence recorded on " \
-     "#{slug} (tier tags preserved). dor-check accepts it once the PR's GitHub CI is green."
+     "#{slug} (tier tags preserved). dor-check accepts it provisionally once the PR is open (no CI wait at " \
+     "submit); review's gate-zero enforces the settled CI green."
 exit 0

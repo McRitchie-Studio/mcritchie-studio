@@ -72,9 +72,14 @@ The conductor **spawns Avi** (Agent tool, `subagent_type: avi`) as the **review
 SUPERVISOR** — a thin gate + orchestration that **never reviews the code
 itself**. Avi:
 
-1. Confirms **product-acceptance** — does the open PR (base `release`) meet the
+1. Checks the PR's **live GitHub CI first** (builders submit without waiting
+   for CI, so this pre-spawn check is the authoritative verdict): **red** →
+   `bin/task block <task> --kind rework` naming the failing checks — stop, no
+   reviewer spawns; **pending / no checks yet** → defer this task to a later
+   pass; **green** → continue.
+2. Confirms **product-acceptance** — does the open PR (base `release`) meet the
    task's acceptance criteria?
-2. Determines the **primary + light** pair by change surface (the table above),
+3. Determines the **primary + light** pair by change surface (the table above),
    running **`bin/reviewer-select <task>`**. It scores the pool by domain fit with
    a logged, seeded-per-task tiebreak and **excludes** the QA owner (Steffon, who
    QAs the assembled RC — no self-gating), **the builder** (a soul never reviews

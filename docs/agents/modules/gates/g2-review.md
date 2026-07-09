@@ -13,10 +13,15 @@ The four gates in order: [G1 Cert](g1-cert.md) → **G2 Review** (this doc) →
 
 ## What this gate verifies
 
+- **The live GitHub CI** — G2 owns the **authoritative CI verdict**
+  (`ci-gate-review-handoff`: builders submit without waiting for CI). The
+  supervisor checks the PR's CI **before spawning the pair**: red bounces the
+  task back naming the failing checks (no reviewer tokens burned), pending
+  defers to a later wave, green proceeds.
 - **G2a Primary** — the deep review: diff vs. acceptance, the shape's DoR
-  tiers + suite evidence + CI (the **gate-zero** re-run of dor-check), domain
-  checklist, code standards, merge safety, docs. The primary drives the
-  verdict.
+  tiers + suite evidence + CI (the **gate-zero** re-run of dor-check, which
+  keeps the strict red/pending-both-block semantics), domain checklist, code
+  standards, merge safety, docs. The primary drives the verdict.
 - **G2b Light** — a focused second read through the light reviewer's domain
   lens. No gates, no verdict-drive — but any reviewer can block on a defect.
 
@@ -45,6 +50,15 @@ bin/pr-review --run --fast --max-idle-cycles 1 \
 
 What the supervisor records, per reviewed task:
 
+0. **Pre-spawn CI check** — before selecting or spawning anyone, the
+   supervisor reads the PR's live CI (`bin/lib/ci_status.rb`):
+   - **red** → `bin/task block <slug> --kind rework` with the failing checks
+     named, and the bounce recorded as a **failed G2a attempt** with a `ci`
+     SOP (`--meta outcome=ci-red`, actor `avi`). No reviewer tokens burned.
+   - **pending / no checks yet** → the task defers to a later wave (the
+     defer machinery); no lane opens.
+   - **green** → proceed. (An unverified gh read, or a missing/closed PR,
+     also proceeds — the primary's strict gate-zero is the backstop.)
 1. **Open** — as the primary+light pair launches, it opens both lanes
    (attempt-aware; a still-open lane from a deferred wave is reused):
    `bin/gate open task <slug> g2a_primary --actor <primary-soul>` and
@@ -101,6 +115,10 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   other outcome; the specific outcome rides in `metadata.outcome`.
 - An **uncleared attempt is still an attempt**: a lane closed `failed` stays
   on the record; the re-review opens the next attempt.
+- A **pre-spawn CI bounce** records as a failed G2a attempt (a `ci` SOP,
+  `outcome=ci-red`, actor `avi`) — the round-trip is visible on the gates card
+  even though no reviewer ran. A pre-spawn **defer** (CI pending) records
+  nothing; nothing started.
 - A **reportless lane stays in flight** (no verdict yet) and is reused by the
   next wave rather than double-opened — `GateRun.open!` converges racing
   openers onto one row.

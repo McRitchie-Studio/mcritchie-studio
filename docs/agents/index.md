@@ -183,16 +183,19 @@ While building:
 
 Before handoff:
 
-5. Certify, then verdict — the task's **G1 Cert** gate
-   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): run
+5. Certify — the task's **G1 Cert** gate
+   (`mcritchie-studio/docs/agents/modules/gates/g1-cert.md`): commit, then run
    `bin/fast-check <task>` (the builder default — diff-mapped tests + core
-   spine + rubocop on changed files, ~1 min; credited once the PR's GitHub CI
-   is green) or `bin/full-suite-check <task>` (CI-independent), then run
-   **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
-   under-tested PR and its verdict closes the gate.
-6. Commit on the feature branch, push, open a PR **into `release`** (base
-   `release`, not `main`) whose body **leads with the task URL**, then
-   `bin/task move <task> submitted`.
+   spine + rubocop on changed files, ~1 min) or `bin/full-suite-check <task>`
+   (CI-independent).
+6. Push, open a PR **into `release`** (base `release`, not `main`) whose body
+   **leads with the task URL**, then verdict: run **`bin/dor-check <task>`**
+   and fix whatever it flags — it refuses an under-tested PR and its verdict
+   closes the gate. Then `bin/task move <task> submitted` **without waiting
+   for CI**: a pending CI is a loud suggestion (the fast cert is credited
+   provisionally), a red CI still blocks, and the authoritative CI verdict is
+   review's gate-zero — `pr-review`'s supervisor bounces a red-CI task back
+   with the failing checks named before any reviewer spawns.
 
 The task lifecycle is two workflows (full spec:
 `docs/agents/system/devops-cycle-design.md`):
@@ -213,9 +216,11 @@ The task lifecycle is two workflows (full spec:
 
 **The branded testing gates (G1–G4).** The pipeline's test verdicts are
 recorded as four attempt-aware gates: **G1 Cert** (the builder's
-certification — fast/full cert + the dor-check verdict) → **G2 Review** (the
-primary + light review lanes; the primary's gate-zero is `bin/dor-check <task>
---gate-role review`) → **G3 Candidate** (Steffon's pre-QA suite + QA deploy,
+certification — fast/full cert + the dor-check verdict, closed at submit even
+with CI still pending) → **G2 Review** (the authoritative CI verdict — the
+supervisor's pre-spawn CI check plus the primary + light review lanes; the
+primary's gate-zero is `bin/dor-check <task> --gate-role review`, strict on
+red/pending CI) → **G3 Candidate** (Steffon's pre-QA suite + QA deploy,
 release-grain) → **G4 Ship** (Avi's frozen-SHA gate + prod deploy,
 release-grain, self-gated against G3). Task gates render on the task's gates
 card; release gates as the /deployments G3/G4 columns. Each gate's standalone
@@ -290,14 +295,15 @@ launch flow is:
    Waiting-approval tasks float to the top of their stage and pulse on the board.
 9. If behavior, workflow, env vars, ports, auth, email, deploys, or agent
    operations change, update the owning active docs in the same pass.
-10. Run `bin/dor-check <task-slug>` and resolve anything it flags. Then commit
-   and push the feature branch, and run `bin/agent-worktree finish <app>
-   <task-slug>` to prepare PR/QA handoff. Update the task with branch, PR URL,
-   local URL, tier-tagged `devops["checks_run"]` (e.g. `[unit] ...`,
-   `[integration] ...`), and any changed acceptance criteria, then move it to
-   `submitted`. Handoffs should include the task URL before the PR URL. Deploy
-   or merge only when Mr. McRitchie assigned that lane or the task explicitly
-   includes production rollout.
+10. Commit and push the feature branch, and run `bin/agent-worktree finish
+   <app> <task-slug>` to prepare PR/QA handoff. With the PR open, run
+   `bin/dor-check <task-slug>` and resolve anything it flags. Update the task
+   with branch, PR URL, local URL, tier-tagged `devops["checks_run"]` (e.g.
+   `[unit] ...`, `[integration] ...`), and any changed acceptance criteria,
+   then move it to `submitted` — do not wait for CI (review's gate-zero owns
+   the CI verdict; a red CI bounces the task back). Handoffs should include
+   the task URL before the PR URL. Deploy or merge only when Mr. McRitchie
+   assigned that lane or the task explicitly includes production rollout.
 
 For a new feature session, Mr. McRitchie should only need to say the target app
 and the feature. A good prompt is:
@@ -314,10 +320,10 @@ tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
 chat, and wait for approval or requested changes. Update docs if behavior
-changes. Before handoff run bin/dor-check <task> and fix what it flags, then
-commit, push the branch, open a PR led by the task URL, and move the task to
-submitted for Avi QA. Do not merge or deploy unless I explicitly assigned that
-lane.
+changes. Before handoff commit, push the branch, and open a PR led by the task
+URL; then run bin/dor-check <task>, fix what it flags, and move the task to
+submitted for Avi QA without waiting for CI (review's gate-zero owns the CI
+verdict). Do not merge or deploy unless I explicitly assigned that lane.
 ```
 
 ## Start Here

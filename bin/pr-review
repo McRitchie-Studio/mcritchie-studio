@@ -16,6 +16,20 @@
 # both verdicts and gates. It NEVER performs a review itself (Avi is a thin gate,
 # not a reviewer).
 #
+# CI gate-zero (ci-gate-review-handoff): the builder submits WITHOUT waiting for
+# CI, so the CI check is this supervisor's OPENING ACT. Before selecting or
+# spawning a reviewer pair it reads the PR's live GitHub CI (bin/lib/ci_status.rb):
+#   red      → block the task back (bin/task block --kind rework) with the failing
+#              checks named — no reviewer tokens burned; the bounce records as a
+#              failed G2a attempt with a ci SOP.
+#   pending  → defer the task to a later wave (the existing defer machinery);
+#   :none    → same defer (an open PR whose checks haven't reported yet);
+#   green    → proceed to spawn the pair.
+#   unverified / no_pr / closed / merged → proceed; the primary's strict gate-zero
+#              (bin/dor-check --gate-role review) holds the authoritative verdict.
+# PR_REVIEW_CI_STATUS injects the verdict for tests — a bare CiStatus token, a
+# JSON object mapping slug → token, or a raw `gh pr checks --json` array.
+#
 # Slow mode reviews one submitted PR at a time and always re-queries the board
 # after a review before choosing the next PR. Fast mode starts bounded waves of
 # primary + light review pairs for stacked queues, then resolves each reviewed
@@ -28,6 +42,7 @@ require "open3"
 require "optparse"
 require "shellwords"
 require "time"
+require_relative "lib/ci_status"
 
 ROOT = File.expand_path("..", __dir__)
 PROJECTS_ROOT =
@@ -221,6 +236,23 @@ end
 
 def task_by_slug(snapshot, slug)
   Array(snapshot["tasks"]).find { |task| task["slug"] == slug }
+end
+
+# The supervisor's pre-spawn CI read. PR_REVIEW_CI_STATUS is the injection seam
+# (mirrors DOR_CHECK_CI_STATUS): a bare CiStatus token applies to every task; a
+# JSON object ({"slug": "token"}) drives a mixed wave per slug; a raw
+# `gh pr checks --json` array exercises the named-failing-checks path. Empty /
+# unmatched → the live gh read.
+def injected_ci_state(slug)
+  raw = ENV["PR_REVIEW_CI_STATUS"].to_s.strip
+  return nil if raw.empty?
+  return (JSON.parse(raw)[slug] rescue nil) if raw.start_with?("{")
+
+  raw
+end
+
+def supervisor_ci_check(task)
+  CiStatus.evaluate(task.dig("devops", "pr_url"), injected_ci_state(task["slug"]))
 end
 
 def select_reviewers(slug)
@@ -504,6 +536,29 @@ def start_review(task, review_number)
   puts "  submitted_at=#{task["submitted_at"] || "-"} created_at=#{task["created_at"]} task=#{task["task_url"]}"
   puts "  pr=#{task.dig("devops", "pr_url") || "missing"}"
 
+  # CI gate-zero — the supervisor's opening act (ci-gate-review-handoff): the
+  # builder submitted without waiting for CI, so check the PR's LIVE CI before
+  # burning any reviewer tokens. Red → bounce back; pending/none → defer the wave;
+  # green → spawn. Unverified/no_pr/closed/merged proceed — the primary's strict
+  # gate-zero (dor-check --gate-role review) is the authoritative verdict.
+  ci = supervisor_ci_check(task)
+  base = { task: task, slug: slug, reviewers: [], reviewer_slugs: [], launches: [] }
+  case ci[:state]
+  when :red
+    puts "  ci=RED (#{Array(ci[:failing]).join(", ")}) — blocking back without spawning reviewers"
+    return base.merge(ci_red: ci)
+  when :pending
+    puts "  ci=PENDING (#{Array(ci[:pending]).join(", ")}) — deferring until CI settles"
+    return base.merge(ci_wait: ci)
+  when :none
+    puts "  ci=NONE (no checks reported yet) — deferring until CI reports"
+    return base.merge(ci_wait: ci)
+  when :green
+    puts "  ci=green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
+  else
+    puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero verifies CI"
+  end
+
   # Supervisor step: Avi (thin gate) SELECTS the primary+light pair — he never
   # reviews code himself, so this narrates as "select primary+light reviewers"
   # (NOT "summon Avi").
@@ -540,6 +595,32 @@ def finish_review(review, events, handled, deferred_until)
     events << { slug: slug, status: :tool_failure, category: "heartbeat-error", reason: review[:error], reviewers: reviewer_slugs }
     handled[slug] = true
     puts "  error: #{review[:error]}"
+    return false
+  end
+
+  # CI gate-zero resolutions (no reviewers were spawned for these).
+  if (ci = review[:ci_red])
+    failing = Array(ci[:failing]).join(", ")
+    # The CI bounce IS review's verdict this round — record it as a failed G2a
+    # attempt with a ci SOP (actor avi, the supervisor), so the round-trip shows
+    # on the task's gates card even though no reviewer ran.
+    gate_write("open", "task", slug, "g2a_primary", "--actor", "avi")
+    gate_write("close", "task", slug, "g2a_primary", "--failed", "--actor", "avi",
+               "--sop-json", JSON.generate({ "sop" => "ci", "result" => "fail" }),
+               "--meta", "outcome=ci-red")
+    feedback = "pr-review CI gate: GitHub CI is RED for the PR (#{failing}) — blocked back before spawning " \
+               "reviewers. Fix the failing checks, push, and resubmit; the supervisor re-checks CI at the next wave."
+    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
+    events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-red",
+                reason: "GitHub CI red: #{failing}", reviewers: [] }
+    handled[slug] = true
+    return ok
+  end
+  if (ci = review[:ci_wait])
+    reason = ci[:state] == :none ? "PR reports no CI checks yet" : "GitHub CI still running: #{Array(ci[:pending]).join(", ")}"
+    events << { slug: slug, status: :deferred, category: "wait-for-ci", reason: reason, reviewers: [] }
+    deferred_until[slug] = Time.now + OPTIONS.fetch(:defer_seconds)
+    puts "  deferred: #{reason}"
     return false
   end
 
@@ -656,6 +737,7 @@ def print_retrospective(started_at, events, idle_cycles)
   suggestions << "tighten reviewer prompts or report validation" if counts["missing-scout-report"].to_i.positive?
   suggestions << "improve PR/task/worktree readiness before submission" if counts["request-changes"].to_i.positive?
   suggestions << "separate CI-waiting cards from review-ready intake" if counts["wait-for-ci"].to_i.positive?
+  suggestions << "red-CI submits reached review — check builders see dor-check's submit-side CI suggestion" if counts["ci-red"].to_i.positive?
   suggestions << "add clearer high-risk escalation rules" if counts["conductor-review"].to_i.positive?
   suggestions << "no systemic refactor surfaced in this heartbeat" if suggestions.empty?
   suggestions.each { |suggestion| puts "  - #{suggestion}" }

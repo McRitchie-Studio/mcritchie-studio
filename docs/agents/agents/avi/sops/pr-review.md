@@ -98,22 +98,28 @@ bin/pr-review --run --fast --max-idle-cycles 1 \
 ```
 
 Use `--fast` for bounded waves under the five-agent cap. The script picks newest
-submitted tasks first, records `bin/reviewer-select` intent, spawns the selected
-PRIMARY + LIGHT reviewers **in parallel**, re-queries the board before each final
-decision, writes the task handoff, and prints a retrospective. When you narrate
-the reviewer-select step, label it **"select primary+light reviewers"** — never
-"summon Avi" (Avi is the supervisor doing the selecting, not a reviewer being
-summoned).
+submitted tasks first, **checks the PR's live GitHub CI before anything else**
+(builders submit without waiting for CI, so this pre-spawn check is the
+authoritative CI verdict: **red** → the task is blocked back with the failing
+checks named, no reviewers spawned; **pending or no checks yet** → the task
+defers to a later wave; **green** → proceed), records `bin/reviewer-select`
+intent, spawns the selected PRIMARY + LIGHT reviewers **in parallel**,
+re-queries the board before each final decision, writes the task handoff, and
+prints a retrospective. When you narrate the reviewer-select step, label it
+**"select primary+light reviewers"** — never "summon Avi" (Avi is the
+supervisor doing the selecting, not a reviewer being summoned).
 
 The wave IS the task's **G2 Review gate**
 ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md)):
-`bin/pr-review` opens the two lanes (`g2a_primary` + `g2b_light`) as the pair
-launches, the primary's gate-zero (`bin/dor-check <task> --gate-role review`)
-lands as a SOP on G2a, and each lane closes from its own reviewer's scout
-report (`merge-ready` = passed; a reportless lane stays in flight for the next
-wave). The chips render on the task's gates card. Automatic on the supervisor
-path — record the markers with `bin/gate` only on a hand-run review
-(the manual commands are in the gate doc).
+`bin/pr-review` checks the PR's live CI pre-spawn (a red bounce records as a
+failed G2a attempt with a `ci` SOP — no reviewer ran, but the round-trip shows
+on the gates card), opens the two lanes (`g2a_primary` + `g2b_light`) as the
+pair launches, the primary's gate-zero (`bin/dor-check <task> --gate-role
+review`, strict: red AND pending both block there) lands as a SOP on G2a, and
+each lane closes from its own reviewer's scout report (`merge-ready` = passed;
+a reportless lane stays in flight for the next wave). The chips render on the
+task's gates card. Automatic on the supervisor path — record the markers with
+`bin/gate` only on a hand-run review (the manual commands are in the gate doc).
 
 Manual fallback:
 
@@ -146,7 +152,11 @@ Verdicts:
   bin/task block <task> --kind rework --feedback "<one complete send-back>" --agent avi
   ```
 
+  (A red CI is normally caught by the supervisor's pre-spawn check and blocked
+  back automatically, with the failing checks named in the feedback.)
+
 - Wait-for-CI or conductor-review: defer and re-query after the defer window.
+  A still-running CI defers at the pre-spawn check, before any reviewer spawns.
 
 Approved tasks stop at `reviewed` with `merged: nil`. Steffon's next
 `qa-release` sweep moves them forward.

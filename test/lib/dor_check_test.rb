@@ -1156,10 +1156,31 @@ class DorCheckTest < Minitest::Test
     assert_match(/not ready to advance/, out)
   end
 
-  def test_merge_gate_holds_while_ci_is_still_running
+  def test_pending_ci_is_a_loud_suggestion_not_a_block_at_submit
+    # ci-gate-review-handoff: the builder submits WITHOUT waiting for CI — the CI
+    # wait moved from the builder's wall-clock to the review handoff. Submit-side
+    # (--gate-role builder, the default), a still-running CI is a LOUD suggestion,
+    # never a block; pr-review's supervisor holds the authoritative verdict.
     out, code = ci_check("pending")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/still RUNNING/, out)
+    assert_match(/gate-zero/, out, "the suggestion names where the authoritative CI verdict now lives")
+  end
+
+  def test_review_gate_zero_still_blocks_pending_ci
+    # The review-side run keeps today's strict semantics: the primary's gate-zero
+    # is the authoritative CI verdict, so pending still blocks there.
+    out, code = ci_check("pending", CI_PR, "--gate-role", "review")
     assert_equal 1, code, out
     assert_match(/still RUNNING/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_review_gate_zero_still_blocks_red_ci
+    out, code = ci_check("red", CI_PR, "--gate-role", "review")
+    assert_equal 1, code, out
+    assert_match(/GitHub CI is RED/, out)
   end
 
   def test_merge_gate_passes_when_ci_is_green
@@ -1249,14 +1270,13 @@ class DorCheckTest < Minitest::Test
     assert_match(/GitHub CI green/, out)
   end
 
-  def test_fresh_fast_cert_without_a_verified_ci_is_refused
-    # CI :none (a PR with no checks yet) never blocks on its own, but it cannot
-    # CREDIT a fast cert either — the full net hasn't provably run.
+  def test_fresh_fast_cert_with_unreported_ci_is_credited_provisionally_at_submit
+    # ci-gate-review-handoff: CI :none (an open PR whose checks haven't reported
+    # yet — the seconds after `gh pr ready`) gets the same PROVISIONAL credit as
+    # pending. The review gate-zero still demands the settled green.
     out, code = fast_check_ci("fast_fresh", "none")
-    assert_equal 1, code, out
-    assert_match(/fast-cert evidence is FRESH/, out)
-    assert_match(/GREEN GitHub CI/, out)
-    assert_match(%r{bin/full-suite-check}, out, "offers the full local route as the alternative")
+    assert_equal 0, code, out
+    assert_match(/PROVISIONALLY/, out)
   end
 
   def test_fresh_fast_cert_with_red_ci_is_refused
@@ -1266,11 +1286,24 @@ class DorCheckTest < Minitest::Test
     assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses too — fast needs CI green")
   end
 
-  def test_fresh_fast_cert_with_pending_ci_is_refused
+  def test_fresh_fast_cert_with_pending_ci_is_credited_provisionally_at_submit
+    # ci-gate-review-handoff: submit-side, a fresh fast cert with CI still running
+    # is credited PROVISIONALLY — the builder hands off now, and the review-side
+    # gate-zero (strict) holds the authoritative CI verdict.
     out, code = fast_check_ci("fast_fresh", "pending")
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+    assert_match(/fast cert accepted PROVISIONALLY/, out)
+    assert_match(/gate-zero/, out, "the provisional credit names the authoritative verdict's home")
+  end
+
+  def test_review_gate_zero_refuses_a_fast_cert_until_ci_is_green
+    # The strict pairing survives on the review side: fresh fast evidence +
+    # pending CI is NOT credited at gate-zero — red/pending both block there.
+    out, code = fast_check_ci("fast_fresh", "pending", CI_PR, "--gate-role", "review")
     assert_equal 1, code, out
-    assert_match(/still RUNNING/, out)
     assert_match(/fast-cert evidence is FRESH/, out)
+    assert_match(/still RUNNING/, out)
   end
 
   def test_fresh_fast_cert_without_a_pr_is_refused
@@ -1325,6 +1358,15 @@ class DorCheckTest < Minitest::Test
     assert_equal "full", j.dig("full_suite", "route")
   end
 
+  def test_provisional_fast_route_surfaces_in_the_json_verdict
+    out, code = fast_check_ci("fast_fresh", "pending", CI_PR, "--json")
+    assert_equal 0, code, out
+    j = JSON.parse(out)
+    assert j["ready"]
+    assert_equal "fast-provisional", j.dig("full_suite", "route")
+    assert_equal "pending", j.dig("ci", "state")
+  end
+
   def test_bypass_route_surfaces_in_the_json_verdict
     devops = CI_PR.merge(
       "checks_run" => CI_PR["checks_run"] + ["[full-suite-bypass] env blocker, tracked in task-x"]
@@ -1356,10 +1398,19 @@ class DorCheckTest < Minitest::Test
     end
   end
 
-  def test_e2e_fast_cert_evidence_without_green_ci_is_refused
+  def test_e2e_fast_cert_evidence_with_unsettled_ci_is_provisional_at_submit
     with_suite_repo do |dir, fp|
       devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
-      out, code = with_env("DOR_CHECK_CI_STATUS" => "none") { check_real_suite(dir, devops) }
+      out, code = with_env("DOR_CHECK_CI_STATUS" => "pending") { check_real_suite(dir, devops) }
+      assert_equal 0, code, out
+      assert_match(/fast cert accepted PROVISIONALLY at #{fp[0, 12]}/, out)
+    end
+  end
+
+  def test_e2e_fast_cert_evidence_without_green_ci_is_refused_at_review_gate_zero
+    with_suite_repo do |dir, fp|
+      devops = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[fast-cert@#{fp}] fast cert green"])
+      out, code = with_env("DOR_CHECK_CI_STATUS" => "none") { check_real_suite(dir, devops, "--gate-role", "review") }
       assert_equal 1, code, out
       assert_match(/fast-cert evidence is FRESH/, out)
     end

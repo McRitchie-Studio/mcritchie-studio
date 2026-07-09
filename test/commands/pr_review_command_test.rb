@@ -21,6 +21,7 @@ class PrReviewCommandTest < Minitest::Test
     @reviewer_log = File.join(@dir, "reviewer-select.log")
     @codex_log = File.join(@dir, "codex.log")
     @task_log = File.join(@dir, "task.log")
+    @gate_log = File.join(@dir, "gate.log")
     @sequence_log = File.join(@dir, "sequence.log")
     @narration_log = File.join(@dir, "narration.log")
     write_fakes
@@ -76,6 +77,14 @@ class PrReviewCommandTest < Minitest::Test
       File.open(ENV.fetch("TASK_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
       File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["task", *ARGV]) }
       puts "task fake: \#{ARGV.join(" ")}"
+    RUBY
+
+    # bin/gate fake — captures the supervisor's fire-and-forget G2 gate markers
+    # deterministically (the real bin/gate would try the live board from a test).
+    write_exec("gate", <<~RUBY)
+      #!#{RbConfig.ruby}
+      require "json"
+      File.open(ENV.fetch("GATE_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
     RUBY
   end
 
@@ -165,14 +174,21 @@ class PrReviewCommandTest < Minitest::Test
       "REVIEWER_SELECT_BIN" => File.join(@dir, "reviewer-select"),
       "TASK_BIN" => File.join(@dir, "task"),
       "CODEX_BIN" => File.join(@dir, "codex"),
+      "GATE_BIN" => File.join(@dir, "gate"),
       "SNAPSHOT_DIR" => @snapshots,
       "SNAPSHOT_COUNTER" => @counter,
       "DEVOPS_LOG" => @devops_log,
       "REVIEWER_LOG" => @reviewer_log,
       "CODEX_LOG" => @codex_log,
       "TASK_LOG" => @task_log,
+      "GATE_LOG" => @gate_log,
       "SEQUENCE_LOG" => @sequence_log,
-      "NARRATION_LOG" => @narration_log
+      "NARRATION_LOG" => @narration_log,
+      # The supervisor checks the PR's live CI before spawning reviewers
+      # (ci-gate-review-handoff). Default the injection seam to green so the
+      # existing review-flow tests stay focused on THEIR subject; a CI-gate test
+      # overrides with its own token / per-slug map.
+      "PR_REVIEW_CI_STATUS" => "green"
     }.merge(env)
 
     Open3.capture3(
@@ -592,5 +608,117 @@ class PrReviewCommandTest < Minitest::Test
     assert_match(/do NOT\s+.*drive the verdict/im, light)
     # The light never claims to own/drive the verdict.
     refute_match(/you DRIVE the verdict/i, light)
+  end
+
+  # --- supervisor CI gate-zero (ci-gate-review-handoff) -------------------------
+  # The builder now submits WITHOUT waiting for CI, so the CI check is pr-review's
+  # opening act: BEFORE selecting/spawning the reviewer pair the supervisor reads
+  # the PR's live CI (bin/lib/ci_status.rb; PR_REVIEW_CI_STATUS injects — a bare
+  # token, a per-slug JSON map, or a raw `gh pr checks --json` array). Red blocks
+  # the task back naming the failing checks WITHOUT burning reviewer tokens;
+  # pending/none defers to a later wave; green proceeds to spawn.
+
+  # [unit] Red CI: the task is blocked back with the failing checks named, no
+  # reviewer is selected or spawned, and the bounce lands as a failed G2a attempt.
+  def test_red_ci_blocks_the_task_back_before_spawning_reviewers
+    red = task("red-pr", created_at: "2026-06-29T12:00:00Z")
+    write_snapshots(snapshot([red]))
+
+    out, err, status = run_heartbeat(
+      "--run", "--limit", "1",
+      env: { "PR_REVIEW_CI_STATUS" => JSON.generate([
+        { "name" => "CI / test:system", "state" => "FAILURE", "bucket" => "fail" }
+      ]) }
+    )
+
+    assert status.success?, err
+    assert_includes out, "blocked=1"
+    assert_match(/ci=RED/i, out)
+
+    # No reviewer tokens burned: neither selection nor codex spawn happened.
+    assert_empty json_lines(@reviewer_log), "red CI must not reach reviewer-select"
+    assert_empty json_lines(@codex_log), "red CI must not spawn reviewers"
+
+    # The block names the failing checks.
+    block_call = json_lines(@task_log).find { |args| args.first == "block" }
+    assert block_call, "expected a task block"
+    assert_equal "red-pr", block_call[1]
+    assert_includes block_call, "rework"
+    feedback = block_call[block_call.index("--feedback") + 1]
+    assert_includes feedback, "CI / test:system", "the feedback names the failing checks"
+
+    # The CI bounce is review's verdict this round: a failed G2a attempt records it.
+    gate_calls = json_lines(@gate_log)
+    close = gate_calls.find { |args| args.first == "close" && args.include?("g2a_primary") }
+    assert close, "expected a failed g2a_primary close for the CI bounce"
+    assert_includes close, "--failed"
+    assert_includes close, "outcome=ci-red"
+  end
+
+  # [unit] Pending CI: the task defers to a later wave (existing defer machinery)
+  # without spawning reviewers and without blocking the task.
+  def test_pending_ci_defers_the_task_without_spawning_reviewers
+    waiting = task("waiting-pr", created_at: "2026-06-29T12:00:00Z")
+    write_snapshots(snapshot([waiting]))
+
+    out, err, status = run_heartbeat("--once", "--run", env: { "PR_REVIEW_CI_STATUS" => "pending" })
+
+    assert status.success?, err
+    assert_includes out, "deferred"
+    assert_match(/ci=PENDING/i, out)
+    assert_empty json_lines(@codex_log), "pending CI must not spawn reviewers"
+    task_verbs = json_lines(@task_log).map(&:first)
+    refute_includes task_verbs, "block", "pending CI is a defer, not a bounce"
+    refute_includes task_verbs, "move"
+  end
+
+  # [integration] Mixed wave via the per-slug map: the green PR gets the normal
+  # review pair; the red PR is bounced without a single reviewer spawn.
+  def test_mixed_wave_reviews_green_and_bounces_red_by_slug
+    red = task("red-pr", created_at: "2026-06-29T12:30:00Z")
+    green = task("green-pr", created_at: "2026-06-29T12:20:00Z")
+    green_reviewed = task("green-pr", created_at: "2026-06-29T12:20:00Z",
+                                      reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(
+      snapshot([red, green]),
+      snapshot([green_reviewed])
+    )
+
+    out, err, status = run_heartbeat(
+      "--run", "--fast", "--limit", "2",
+      env: { "PR_REVIEW_CI_STATUS" => JSON.generate("red-pr" => "red", "green-pr" => "green"),
+             "CODEX_SLEEP" => "0.05" }
+    )
+
+    assert status.success?, err
+    assert_includes out, "completed_reviews=2 approved=1 blocked=1"
+
+    assert_equal ["green-pr"], json_lines(@reviewer_log).map(&:first),
+                 "only the green PR reaches reviewer selection"
+    assert_equal 2, json_lines(@codex_log).size, "one review pair total — none for the red PR"
+
+    task_calls = json_lines(@task_log)
+    block_call = task_calls.find { |args| args.first == "block" }
+    assert_equal "red-pr", block_call[1]
+    moves = task_calls.select { |args| args.first == "move" }
+    assert_equal [["move", "green-pr", "reviewed", "--actor", "avi"]], moves
+  end
+
+  # [unit] An UNVERIFIED CI read (gh/network error) proceeds to spawn — the gate
+  # never trades a flaky CI lane for a flaky review loop; the primary's strict
+  # gate-zero still holds the authoritative verdict downstream.
+  def test_unverified_ci_still_spawns_the_review_pair
+    fuzzy = task("fuzzy-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("fuzzy-pr", created_at: "2026-06-29T12:00:00Z",
+                                reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([fuzzy]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "PR_REVIEW_CI_STATUS" => "unverified" })
+
+    assert status.success?, err
+    assert_equal 2, json_lines(@codex_log).size, "unverified CI proceeds to the review pair"
+    moves = json_lines(@task_log).select { |args| args.first == "move" }
+    assert_equal [["move", "fuzzy-pr", "reviewed", "--actor", "avi"]], moves
+    assert_match(/ci=unverified/i, out)
   end
 end
