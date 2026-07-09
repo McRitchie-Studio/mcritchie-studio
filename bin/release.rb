@@ -118,6 +118,7 @@ require "open3"
 require "yaml"
 require "tmpdir"
 require "shellwords"
+require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 
 # Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
 # publish/repin) lives in the unit-tested Release::ShipSequence +
@@ -1206,6 +1207,58 @@ rescue ArgumentError => e
   abort!("unparseable test command #{cmd.inspect} (#{e.message}) — fix it in config/release_repos.yml")
 end
 
+# --- primary-checkout lock ---------------------------------------------------
+# Serializes the three highest-risk primary-HEAD flip sites against each other:
+# the pre-QA gate's release checkout + suite run (below), the artifact-commit
+# dance (commit_artifact_to_release), and ship's local ff (ff_main_local).
+# NOT yet lock-guarded (groomed as follow-up scope, per the round-2 review):
+# the merge-forward guard, checkout_detached / checkout_branch, repin_consumers,
+# and ship's test_gate window after avi_ship_gate's ff.
+#
+# ROOT CAUSE it guards against (rel-20260708-496cd8): the pre-QA gate ran its
+# full suite in the primary hub checkout on `release` (~6-min critical section)
+# while a concurrent `bin/release archive`/`retro` artifact dance flipped that
+# same checkout main↔release five times — the suite's lazily-loaded routes/views
+# then resolved against PRE-merge code → 7 false failures → a false-negative G3.
+#
+# flock, not a mkdir lock: the OS releases it when the holder dies, so a killed
+# gate can never wedge the next conductor run. Per-repo (keyed by repo name) so
+# a hub gate never blocks a satellite's artifact commit.
+#
+# The lock dir is FIXED at <projects_root>/.agents/locks (the dir that already
+# anchors cross-checkout state like the worktree registry) — NOT Dir.tmpdir:
+# two conductors launched with different TMPDIR values must still contend on
+# the SAME file. MCR_PRIMARY_LOCK_DIR overrides it; every test that exercises
+# this lock MUST point it at a per-test tmpdir — the real dir belongs to the
+# live conductor, and a test flocking it while a G3 gate (which holds it for
+# its whole suite run) executes that test would deadlock the gate against
+# itself.
+def primary_checkout_lock_path(repo)
+  dir = ENV["MCR_PRIMARY_LOCK_DIR"].to_s
+  dir = File.join(projects_root, ".agents", "locks") if dir.empty?
+  FileUtils.mkdir_p(dir)
+  File.join(dir, "mcr-primary-checkout-#{repo}.lock")
+end
+
+# Run the block holding `repo`'s primary-checkout lock.
+#   wait: true  — queue behind the current holder (flips are seconds; the one
+#                 long holder is the gate suite, and callers that MUST proceed
+#                 — the gate itself, ship's ff — are correct to wait).
+#   wait: false — best-effort: return :busy WITHOUT yielding when another
+#                 invocation holds the checkout (the artifact dance skips
+#                 rather than stall an archive/retro behind a ~6-min suite).
+def with_primary_checkout(repo, wait: true)
+  File.open(primary_checkout_lock_path(repo), File::RDWR | File::CREAT, 0o644) do |f|
+    unless f.flock(File::LOCK_EX | File::LOCK_NB)
+      return :busy unless wait
+
+      say("  waiting on the #{repo} primary-checkout lock (another bin/release invocation is flipping it)…")
+      f.flock(File::LOCK_EX)
+    end
+    yield
+  end
+end
+
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
 # origin/release BEFORE anything deploys to QA, so a regression riding the
 # release branch is caught while the members are still `reviewed` (nothing
@@ -1215,6 +1268,8 @@ end
 # eject guidance: block the offender OUT of the RC (`bin/release eject`), revert
 # its merge commit on `release`, then re-run — the sweep self-heals and the REST
 # of the RC rides on. Apps with no qa_test_cmd are skipped (self-gating).
+# The whole checkout→suite→restore section holds the repo's primary-checkout
+# lock (with_primary_checkout) so no concurrent invocation flips HEAD mid-suite.
 def pre_qa_gate(app_groups)
   say("")
   # The banner names what THIS step actually runs — each app's registered
@@ -1240,7 +1295,11 @@ def pre_qa_gate(app_groups)
     abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
     sh("git", "-C", path, "fetch", "origin", "--quiet")
     ok = false
-    begin
+    # HOLD the primary-checkout lock for the WHOLE checkout→suite→restore
+    # critical section: the suite lazy-loads code off disk for minutes, so a
+    # concurrent HEAD flip (the artifact dance) mid-run poisons it with
+    # wrong-branch files → false failures → a false-negative G3.
+    with_primary_checkout(repo) do
       _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
       abort!("could not checkout #{RELEASE_BRANCH} in #{repo} for the pre-QA gate (dirty tree?) — clean it, then re-run") unless co
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
@@ -1899,11 +1958,15 @@ def ff_main_local(repo, sha)
   end
 
   sh("git", "-C", path, "fetch", "origin", "--quiet")
-  _, co = sh("git", "-C", path, "checkout", "main", capture: true)
-  abort!("could not checkout main in #{repo} (dirty tree / wrong branch?) — clean it, then re-run `bin/release ship`") unless co
-  sh("git", "-C", path, "pull", "origin", "main", "--quiet")
-  _, ff = sh("git", "-C", path, "merge", "--ff-only", sha, capture: true)
-  abort!("#{repo} main can't fast-forward to #{short(sha)} (it diverged) — rebase/re-prepare, then re-run") unless ff
+  # A HEAD flip — queue behind any in-flight gate/artifact dance on this repo
+  # (see with_primary_checkout) so the ff never interleaves with a running suite.
+  with_primary_checkout(repo) do
+    _, co = sh("git", "-C", path, "checkout", "main", capture: true)
+    abort!("could not checkout main in #{repo} (dirty tree / wrong branch?) — clean it, then re-run `bin/release ship`") unless co
+    sh("git", "-C", path, "pull", "origin", "main", "--quiet")
+    _, ff = sh("git", "-C", path, "merge", "--ff-only", sha, capture: true)
+    abort!("#{repo} main can't fast-forward to #{short(sha)} (it diverged) — rebase/re-prepare, then re-run") unless ff
+  end
 end
 
 def push_origin_main(repo)
@@ -1998,7 +2061,10 @@ end
 #   - commit ONLY when the doc is the SOLE uncommitted change (never sweep up dirt),
 #   - build on origin/release's tip (ff-only) so the push fast-forwards and the NEXT
 #     ship ff's main up to it — no main/release divergence,
-#   - ALWAYS restore the checkout to `main` (ensure), even on failure.
+#   - ALWAYS restore the checkout to `main` (ensure), even on failure,
+#   - SKIP (doc stays uncommitted) when another invocation holds the primary
+#     checkout — never flip HEAD under a running pre-QA gate suite
+#     (with_primary_checkout, wait: false).
 def commit_artifact_to_release(repo, abs_path, message)
   return if DRY
 
@@ -2013,8 +2079,13 @@ def commit_artifact_to_release(repo, abs_path, message)
 
   sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, "--quiet", capture: true)
 
+  # BEST-EFFORT lock (wait: false): if another invocation holds the primary
+  # checkout — the pre-QA gate's ~6-min suite run, or a ship's ff — SKIP rather
+  # than stall archive/retro behind it, and NEVER flip HEAD under a running
+  # suite (the rel-20260708-496cd8 false-negative G3). The doc simply stays
+  # uncommitted — today's non-fatal fallback (the ship preflight stashes it).
   done = false
-  begin
+  res = with_primary_checkout(repo, wait: false) do
     _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
     if co
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
@@ -2026,6 +2097,10 @@ def commit_artifact_to_release(repo, abs_path, message)
     end
   ensure
     sh("git", "-C", path, "checkout", "main", capture: true)
+  end
+  if res == :busy
+    step("left #{rel} uncommitted (primary checkout busy — a concurrent bin/release gate/ship holds #{repo}) — commit it via a docs PR")
+    return
   end
 
   step(done ? "committed #{rel} to #{RELEASE_BRANCH} (ships on the next release)" \

@@ -22,6 +22,7 @@ require "tmpdir"
 # json-requiring test errored with `uninitialized constant JSON`.
 require "json"
 require "base64"
+require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 
 class ReleaseCliTest < Minitest::Test
   WRAPPER = File.expand_path("../../bin/release", __dir__)
@@ -70,10 +71,33 @@ class ReleaseCliTest < Minitest::Test
   # inline via ENV[...] (see the with_conductor_session tests).
   NEUTRALIZED_ENV = { "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }.freeze
 
+  # ISOLATE the primary-checkout lock dir for EVERY release subprocess. The
+  # real <projects_root>/.agents/locks dir belongs to the live conductor: a G3
+  # pre-QA gate HOLDS the hub lock there for its WHOLE suite run — which
+  # includes THIS file — so any child that touched the real dir would either
+  # deadlock the gate against its own suite (pre_qa_gate / ff_main_local wait
+  # on the lock the gate holds; run_ruby has no timeout) or flake on contention
+  # (the artifact dance's busy-skip changes its output). Reproduced as a wedge
+  # in activity-1307. Lazy + memoized so forked test workers each get their own
+  # dir; tests that assert lock SEMANTICS still override it per-test inside the
+  # child (ENV["MCR_PRIMARY_LOCK_DIR"] in their setup).
+  def self.lock_dir
+    @lock_dir ||= begin
+      dir = Dir.mktmpdir("release-cli-locks")
+      Minitest.after_run do
+        FileUtils.remove_entry(dir)
+      rescue StandardError
+        nil
+      end
+      dir
+    end
+  end
+
   def run_ruby(script)
+    env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
     last = nil
     SUBPROCESS_ATTEMPTS.times do
-      out, err, status = Open3.capture3(NEUTRALIZED_ENV, "ruby", "-e", script)
+      out, err, status = Open3.capture3(env, "ruby", "-e", script)
       return out if status.success?
 
       last = { out: out, err: err, status: status }
@@ -529,24 +553,29 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_red_aborts_with_eject_guidance_and_restores_main
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def qa_gate_cmd(_repo) = "bin/failing-suite"
-      def sh(*a, **_k)
-        $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
-        return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+    # Per-test lock dir — NEVER the real one: a live G3 gate HOLDS the real
+    # mcritchie-studio lock while its suite runs this very file, so a test
+    # flocking it would deadlock the gate against itself (activity-1307).
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + <<~'RUBY'
+        def repo_path(_repo) = Dir.pwd
+        def qa_gate_cmd(_repo) = "bin/failing-suite"
+        def sh(*a, **_k)
+          $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
+          return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-    assert_includes out, "ABORTED", "a red pre-QA gate aborts prepare"
-    assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
-    assert_includes out, "git revert -m 1", "…and the merge-commit revert"
-    assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
-    refute_includes out, "PASSED"
-    assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+      assert_includes out, "ABORTED", "a red pre-QA gate aborts prepare"
+      assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
+      assert_includes out, "git revert -m 1", "…and the merge-commit revert"
+      assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
+      refute_includes out, "PASSED"
+      assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+    end
   end
 
   # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
@@ -588,21 +617,25 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_passes_a_quoted_spaced_arg_as_one_argv_element
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
-      def sh(*a, **_k)
-        $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED")})
+    # Per-test lock dir — see the red-abort test: flocking the REAL lock here
+    # deadlocks a live G3 gate against its own suite (activity-1307).
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + <<~'RUBY'
+        def repo_path(_repo) = Dir.pwd
+        def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
+        def sh(*a, **_k)
+          $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED")})
 
-    argv_line = out.lines.find { |l| l.start_with?("GATE-ARGV") }
-    assert argv_line, "the gate must exec the registered command"
-    assert argv_line.start_with?("GATE-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
-    assert_includes argv_line, %("test/integration/a b_test.rb"), "the quoted spaced arg survives as ONE element"
-    assert_includes out, "PASSED"
+      argv_line = out.lines.find { |l| l.start_with?("GATE-ARGV") }
+      assert argv_line, "the gate must exec the registered command"
+      assert argv_line.start_with?("GATE-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
+      assert_includes argv_line, %("test/integration/a b_test.rb"), "the quoted spaced arg survives as ONE element"
+      assert_includes out, "PASSED"
+    end
   end
 
   def test_ship_test_gate_passes_a_quoted_spaced_arg_as_one_argv_element
@@ -657,7 +690,11 @@ class ReleaseCliTest < Minitest::Test
       git.call("branch", "release")
       git.call("push", "-q", "origin", "main", "release")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect}\n) +
+      # Per-test lock dir for concurrent-suite hygiene (activity-1307) — the
+      # "sibling" lock can't deadlock the hub gate, but two suite runs of this
+      # file must not contend on a shared real lock file either.
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect}\n) +
               %(def qa_gate_cmd(_repo) = %q{ruby -e "puts [:GATE_OK, ARGV].inspect" -- "a b"})
       out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
 
@@ -666,6 +703,185 @@ class ReleaseCliTest < Minitest::Test
       head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
       assert_equal "main", head.strip, "the sibling checkout is restored to main (ensure)"
     end
+  end
+
+  # --- primary-checkout lock: gate suite vs. concurrent artifact dance --------
+  #
+  # REGRESSION (rel-20260708-496cd8): the pre-QA gate runs its full suite in the
+  # PRIMARY checkout on a `release` checkout (~6-min critical section). A
+  # concurrent `bin/release archive`/`retro` artifact dance
+  # (commit_artifact_to_release) checkout-flipped that same primary main↔release
+  # five times mid-suite — lazily loaded routes/views then resolved against
+  # PRE-merge code → 7 false failures → a false-negative G3. Every primary-HEAD
+  # flip site must hold the per-repo flock (with_primary_checkout).
+
+  # A real git sibling fixture — bare origin + a clone with main/release
+  # branches — so the lock tests exercise the REAL `sh` and REAL flock
+  # contention across process boundaries. Returns the clone path.
+  def build_sibling_fixture(dir)
+    origin = File.join(dir, "origin.git")
+    clone  = File.join(dir, "repo")
+    git = lambda do |*a|
+      ok = system("git", "-C", clone, "-c", "user.email=t@t.t", "-c", "user.name=t", *a,
+                  out: File::NULL, err: File::NULL)
+      flunk("git #{a.join(' ')} failed") unless ok
+    end
+    system("git", "init", "--bare", "-q", origin, out: File::NULL, err: File::NULL) || flunk("git init --bare failed")
+    system("git", "clone", "-q", origin, clone, out: File::NULL, err: File::NULL) || flunk("git clone failed")
+    git.call("symbolic-ref", "HEAD", "refs/heads/main")
+    # Self-contained identity IN the repo config (not just the lambda's -c
+    # flags): the code under test runs its own bare `git commit`, which has no
+    # identity on CI runners ("Please tell me who you are") — green-local /
+    # red-CI without these. gpgsign off so a signing global can't break it.
+    git.call("config", "user.email", "t@t.t")
+    git.call("config", "user.name", "t")
+    git.call("config", "commit.gpgsign", "false")
+    File.write(File.join(clone, "README"), "lock fixture")
+    git.call("add", ".")
+    git.call("commit", "-q", "-m", "init")
+    git.call("branch", "release")
+    git.call("push", "-q", "origin", "main", "release")
+    clone
+  end
+
+  # [unit] REGRESSION (activity-1307): every subprocess this file spawns must
+  # resolve the primary-checkout lock INSIDE the per-run isolated dir — never
+  # the real conductor dir. A live G3 gate holds the real hub lock while its
+  # suite runs THIS file; one child flocking the real path wedges `bin/release
+  # prepare` against its own suite, indefinitely and silently. This pins the
+  # run_ruby seam every helper (run_cli / eval_helper) rides through.
+  def test_release_subprocesses_resolve_the_lock_inside_the_isolated_dir
+    out = eval_helper(%(primary_checkout_lock_path("mcritchie-studio").start_with?(#{self.class.lock_dir.inspect}).inspect))
+    assert_equal "true", out,
+                 "children must inherit the isolated MCR_PRIMARY_LOCK_DIR, not the live conductor's lock dir"
+  end
+
+  # [unit] The DEFAULT lock dir (no override) anchors to <projects_root>/
+  # .agents/locks — TMPDIR-independent, so two conductors launched with
+  # different TMPDIR values contend on the SAME file (round-2 review nit).
+  def test_primary_checkout_lock_path_defaults_to_projects_root_agents_locks
+    out = run_cli(["--yes"], setup: %(ENV.delete("MCR_PRIMARY_LOCK_DIR")),
+                  call: %{print((primary_checkout_lock_path("x") == File.join(projects_root, ".agents", "locks", "mcr-primary-checkout-x.lock")).inspect)})
+    assert_equal "true", out
+  end
+
+  # [unit] The gate must hold the repo's primary-checkout lock for its ENTIRE
+  # checkout→suite→restore critical section. The registered "suite" here is a
+  # probe that tries to take that same lock from a separate process — exactly
+  # what a concurrent artifact dance does — and must find it HELD.
+  def test_pre_qa_gate_holds_the_primary_checkout_lock_while_the_suite_runs
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      probe = File.join(dir, "probe.rb")
+      File.write(probe, <<~'PROBE')
+        path = File.join(ENV.fetch("MCR_PRIMARY_LOCK_DIR"), "mcr-primary-checkout-sibling.lock")
+        free = File.open(path, File::RDWR | File::CREAT, 0o644) { |f| f.flock(File::LOCK_EX | File::LOCK_NB) }
+        puts(free ? "SUITE-SEES-LOCK-FREE" : "SUITE-SEES-LOCK-HELD")
+      PROBE
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect}\n) +
+              %(def qa_gate_cmd(_repo) = %q{ruby #{probe}})
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      assert_includes out, "SUITE-SEES-LOCK-HELD",
+                      "a concurrent process must see the primary-checkout lock HELD while the gate suite runs"
+      assert_includes out, "PASSED", "a green gate lets prepare continue"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "the sibling checkout is restored to main (ensure)"
+      File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
+        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the gate must RELEASE the lock after restoring main"
+      end
+    end
+  end
+
+  # [unit] While another invocation holds the checkout (the gate's suite run),
+  # the artifact dance must SKIP — best-effort, non-fatal, HEAD untouched — not
+  # queue behind a ~6-min suite and never flip main↔release under it. The test
+  # process holds the flock exactly as the gate does.
+  def test_commit_artifact_to_release_skips_without_flipping_while_the_checkout_is_locked
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      doc = File.join(clone, "retro.md")
+      File.write(doc, "retro fixture") # the SOLE uncommitted change → safe_to_commit? passes
+
+      lock = File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::CREAT | File::RDWR, 0o644)
+      assert lock.flock(File::LOCK_EX | File::LOCK_NB), "test setup: the lock must start free"
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+
+      assert_includes out, "left retro.md uncommitted", "the dance must skip while the checkout is locked"
+      assert_includes out, "primary checkout busy", "…naming the concurrent holder as the reason"
+      refute_includes out, "committed retro.md", "…never committing mid-gate"
+      assert_includes out, "DONE", "the skip stays NON-FATAL (archive/retro ride on)"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "HEAD must never leave main while the lock is held elsewhere"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "release")
+      assert_equal "1", count.strip, "no commit lands on release while the checkout is locked"
+    ensure
+      lock&.close
+    end
+  end
+
+  # [unit] Uncontended, the dance still works end-to-end: takes the lock,
+  # commits the doc onto release, pushes, restores main, releases the lock.
+  def test_commit_artifact_to_release_commits_and_restores_main_when_uncontended
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      doc = File.join(clone, "retro.md")
+      File.write(doc, "retro fixture")
+
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{commit_artifact_to_release("sibling", #{doc.inspect}, "retro: fixture"); puts("DONE")})
+
+      assert_includes out, "committed retro.md to release", "a free checkout commits the artifact"
+      assert_includes out, "DONE"
+      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "main", head.strip, "the checkout is restored to main (ensure)"
+      count, = Open3.capture2("git", "-C", clone, "rev-list", "--count", "origin/release")
+      assert_equal "2", count.strip, "the artifact commit is pushed onto origin/release"
+      File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
+        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the dance must RELEASE the lock afterwards"
+      end
+    end
+  end
+
+  # [unit] Ship's local ff (checkout main → pull → ff to frozen) is the third
+  # primary-HEAD flip site — its git dance must run INSIDE with_primary_checkout
+  # so it can never interleave with a running gate suite or artifact dance.
+  def test_ff_main_local_flips_inside_the_primary_checkout_lock
+    setup = <<~'RUBY'
+      def repo_path(_repo) = Dir.pwd
+      def with_primary_checkout(repo, wait: true)
+        $stdout.puts("LOCK-ACQUIRED #{repo}")
+        result = yield
+        $stdout.puts("LOCK-RELEASED #{repo}")
+        result
+      end
+      def sh(*a, **_k)
+        # Print the git SUBCOMMAND only (a = git -C <path> <subcommand> …) — the
+        # repo path itself may contain "checkout" (this worktree's does).
+        $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: %{ff_main_local("mcritchie-studio", "abc1234"); puts("PASSED")})
+
+    lines    = out.lines.map(&:strip)
+    acquired = lines.index("LOCK-ACQUIRED mcritchie-studio")
+    released = lines.index("LOCK-RELEASED mcritchie-studio")
+    assert acquired, "ff_main_local must take the primary-checkout lock: #{out}"
+    assert released, "…and release it: #{out}"
+    flips = lines.each_index.select { |i| lines[i].match?(/\AGIT-OP (checkout|pull|merge)\z/) }
+    refute_empty flips, "the ff must actually flip the checkout"
+    assert flips.all? { |i| i > acquired && i < released },
+           "every checkout/pull/ff must happen INSIDE the lock (acquired=#{acquired} released=#{released} flips=#{flips})"
+    assert_includes out, "PASSED"
   end
 
   # --- eject: block-on-regression (detach + block ONE offender, keep the rest) ---
