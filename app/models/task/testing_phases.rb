@@ -132,17 +132,28 @@ class Task
     end
 
     # CI = the submission handoff window: START = the last transition to `submitted`
-    # (the builder hands the branch to CI at PR handoff), END = CI settle. The end
-    # stays BEST-EFFORT AgentAction-derived for now — the persisted test-scope
-    # actions keep only duration_ms + ingest occurred_at (bin/ci-scope-capture drops
-    # the real startedAt/completedAt), hence the honest "ci_approx" source; the
-    # ci-phase-real-timestamps follow-up (sequenced after this file) upgrades the
-    # bounds. A task that already LEFT `submitted` with no captured CI evidence has
-    # no measurable window (missing) — so legacy projections recompute cleanly on
-    # the version bump instead of ticking in_progress forever.
+    # (the builder hands the branch to CI at PR handoff), END = CI settle.
+    #
+    # END prefers the REAL GitHub workflow-run bounds: bin/ci-scope-capture stamps
+    # each captured test-scope action with its actual startedAt (input) + completedAt
+    # (output) read from `gh pr checks`, so `finish` = the real max completedAt (the
+    # true settle end) with source "ci". LEGACY actions predating that capture keep
+    # only duration_ms + ingest occurred_at, so we fall back to the occurred_at
+    # approximation with the honest "ci_approx" source. Either way the window is
+    # anchored to the submitted handoff; the real completedAt just sharpens its end.
+    # A task that already LEFT `submitted` with no captured CI evidence has no
+    # measurable window (missing) — so legacy projections recompute cleanly on the
+    # version bump instead of ticking in_progress forever.
     def ci_phase(task, events, now:)
       submitted = last_transition_to(events, "submitted")
       actions = ci_actions(task)
+      real = ci_real_windows(actions)
+      if real.any?
+        start = submitted&.occurred_at || real.map(&:first).min
+        finish = real.map(&:last).max # real completedAt = the settle end
+        return span(start, finish, now: now, source: "ci")
+      end
+
       start = submitted&.occurred_at || approx_ci_start(actions)
       finish = actions.map(&:occurred_at).max
       return span(nil, nil, now: now, source: "ci_approx") if start && finish.nil? && task.stage != "submitted"
@@ -183,6 +194,27 @@ class Task
     # (backfilled histories): earliest (occurred_at − duration) across the jobs.
     def approx_ci_start(actions)
       actions.map { |a| a.occurred_at - (a.duration_ms.to_i / 1000.0) }.min
+    end
+
+    # The REAL GitHub workflow-run windows carried on the CI test-scope actions —
+    # bin/ci-scope-capture stamps each job's actual startedAt (durable `input`) +
+    # completedAt (durable `output`) from `gh pr checks` (AgentAction has no metadata
+    # column). Returns [[started, completed], …] for the actions carrying BOTH real
+    # bounds — their presence is the real-vs-approx marker. An empty array means only
+    # legacy ingest-time actions exist, so ci_phase falls back to the occurred_at
+    # approximation. Best-effort: an unparseable stamp drops that action, never raises.
+    def ci_real_windows(actions)
+      actions.filter_map do |action|
+        started = safe_iso8601(action.input)
+        completed = safe_iso8601(action.output)
+        [started, completed] if started && completed
+      end
+    end
+
+    def safe_iso8601(value)
+      value.present? ? Time.zone.parse(value.to_s) : nil
+    rescue ArgumentError, TypeError
+      nil
     end
 
     # The first G2 review-gate attempt for the task — retries and the second lane

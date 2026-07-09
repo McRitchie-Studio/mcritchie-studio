@@ -195,4 +195,31 @@ class CiScopeCaptureTest < Minitest::Test
       assert(emits.all? { |e| e["idempotency-key"].start_with?("ci:123:abc:") })
     end
   end
+
+  # --- [unit] the real GitHub workflow-run window rides on each emit -----------
+
+  def test_forwards_the_real_workflow_run_start_and_completed_bounds
+    Dir.mktmpdir do |dir|
+      json = checks(["test", "pass", "2026-07-06T10:00:00Z", "2026-07-06T10:05:30Z"])
+      _out, _code, emits = run_capture(dir, checks_json: json, session: "fake-sess")
+      emit = emits.first
+      assert_equal "2026-07-06T10:00:00Z", emit["started-at"],
+                   "the job's real GitHub startedAt rides on the emit (ci_phase's real window start)"
+      assert_equal "2026-07-06T10:05:30Z", emit["completed-at"],
+                   "the job's real GitHub completedAt rides on the emit (the settle end)"
+    end
+  end
+
+  def test_omits_the_real_bounds_when_a_stamp_is_missing
+    Dir.mktmpdir do |dir|
+      # A pass verdict with no start/complete stamps still self-reports its verdict,
+      # but forwards NEITHER real bound — ci_phase then falls back to the approximation.
+      json = checks(["test", "pass", "", ""])
+      _out, _code, emits = run_capture(dir, checks_json: json, session: "fake-sess")
+      emit = emits.first
+      assert_equal "ci_test", emit["event-slug"], "the verdict still emits"
+      refute emit.key?("started-at"), "a missing stamp forwards no partial real bound"
+      refute emit.key?("completed-at"), "a missing stamp forwards no partial real bound"
+    end
+  end
 end

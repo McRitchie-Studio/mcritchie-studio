@@ -19,6 +19,9 @@
 #   event_slug  = ci_<normalized job name>   (ci_test, ci_lint, ci_scan_ruby, ci_scan_js)
 #   result_slug = pass | fail
 #   duration_ms = completedAt - startedAt, in ms
+#   started_at/completed_at = the job's REAL GitHub startedAt/completedAt — carried
+#     on the action (input/output) so Task::TestingPhases#ci_phase spans the CI phase
+#     on the real settle end (completedAt) instead of the ingest-time approximation.
 #   idempotency_key = ci:<pr>:<headSha>:<jobName>   (so a re-read never doubles a row)
 # The ci_<key>s are registered under `ci_scopes:` in config/devops_test_suites.yml,
 # which supplies each row's phase/tier/host chips on the pipeline's Test-runs band.
@@ -157,10 +160,13 @@ end
 # Best-effort test-scope telemetry for ONE CI job — the CI-ingestion MIRROR of
 # bin/full-suite-check's emit_test_scope. Emits ONE kind=test_scope AgentAction
 # through the SAME `bin/agent-activity action` verb, tagged event_slug=<ci scope>,
-# result_slug=pass|fail, duration_ms, plus the stable idempotency_key. Guards match
-# emit_test_scope EXACTLY: session gate, output discarded, errors swallowed. When
-# --dry-run, prints the argv instead of shelling.
-def emit_ci_scope(scope, verdict, ms, job_name, idem_key, dry_run:)
+# result_slug=pass|fail, duration_ms, plus the stable idempotency_key. It ALSO
+# carries the job's REAL GitHub window (--started-at/--completed-at, the raw
+# startedAt/completedAt) so Task::TestingPhases#ci_phase can span the CI phase on
+# the real settle end instead of the ingest-time approximation; the pair is only
+# forwarded when BOTH stamps are present. Guards match emit_test_scope EXACTLY:
+# session gate, output discarded, errors swallowed. When --dry-run, prints the argv.
+def emit_ci_scope(scope, verdict, ms, job_name, idem_key, started_at, completed_at, dry_run:)
   return if scope.nil?
   return if agent_session_id.empty?
 
@@ -174,6 +180,9 @@ def emit_ci_scope(scope, verdict, ms, job_name, idem_key, dry_run:)
           "--duration-ms", ms.to_s,
           "--key-method", "gh pr checks"]
   argv += ["--idempotency-key", idem_key] unless idem_key.to_s.empty?
+  unless started_at.to_s.strip.empty? || completed_at.to_s.strip.empty?
+    argv += ["--started-at", started_at, "--completed-at", completed_at]
+  end
 
   if dry_run
     warn "would emit: #{argv.drop(2).join(' ')}"
@@ -218,7 +227,8 @@ def main(argv)
     scope = normalize_job_name(check["name"])
     ms = duration_ms(check["started_at"], check["completed_at"])
     idem_key = head_sha.empty? ? "" : "ci:#{pr}:#{head_sha}:#{check['name']}"
-    emit_ci_scope(scope, verdict, ms, check["name"], idem_key, dry_run: dry_run)
+    emit_ci_scope(scope, verdict, ms, check["name"], idem_key,
+                  check["started_at"], check["completed_at"], dry_run: dry_run)
     emitted += 1
   end
 

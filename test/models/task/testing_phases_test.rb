@@ -28,6 +28,17 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
                         duration_ms: duration_ms)
   end
 
+  # A CI action carrying the REAL GitHub workflow-run window bin/ci-scope-capture
+  # stamps: the actual startedAt (input) + completedAt (output). `occurred_at` (the
+  # INGEST time) is deliberately set LATE so a test can prove ci_phase spans on the
+  # real completedAt, never the ingest occurred_at.
+  def add_real_ci_action(task, event_slug:, started_at:, completed_at:, occurred_at:)
+    AgentAction.create!(session_id: "sess-ci-probe", kind: "test_scope", event_slug: event_slug,
+                        result_slug: "pass", task_slug: task.slug, occurred_at: occurred_at,
+                        duration_ms: ((completed_at - started_at) * 1000).to_i,
+                        input: started_at.iso8601, output: completed_at.iso8601)
+  end
+
   def open_review_gate(task, key: "g2a_primary", at:)
     GateRun.open!(subject_type: "task", subject_slug: task.slug, key: key, actor: "carl", now: at)
   end
@@ -97,6 +108,40 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
     assert_equal "ci_approx", ci["source"]
     assert_equal (@anchor + 20.minutes).iso8601, ci["started_at"], "CI starts at the submitted handoff"
     assert_equal 420, ci["seconds"], "handoff (+20m) -> latest CI action (+27m)"
+  end
+
+  test "[unit] ci prefers the real GitHub workflow-run window over the ingest approximation" do
+    task = probe_task # submitted at @anchor + 20m
+    # Two CI jobs whose REAL completedAt is +26m/+28m, but whose INGEST occurred_at is
+    # a late +50m — proving ci_phase spans on the real completedAt, not the ingest time.
+    add_real_ci_action(task, event_slug: "ci_lint", started_at: @anchor + 22.minutes,
+                       completed_at: @anchor + 26.minutes, occurred_at: @anchor + 50.minutes)
+    add_real_ci_action(task, event_slug: "ci_test", started_at: @anchor + 22.minutes,
+                       completed_at: @anchor + 28.minutes, occurred_at: @anchor + 50.minutes)
+
+    ci = Task::TestingPhases.build(task).dig("phases", "ci")
+    assert_equal "ci", ci["source"], "real GitHub bounds present -> real source, not ci_approx"
+    assert_equal "completed", ci["status"]
+    assert_equal (@anchor + 20.minutes).iso8601, ci["started_at"], "still the submitted handoff (v2 window start)"
+    assert_equal (@anchor + 28.minutes).iso8601, ci["completed_at"],
+                 "real completedAt = settle end, NOT the +50m ingest occurred_at"
+    assert_in_delta 480, ci["seconds"], 1, "submitted (+20m) -> real settle (+28m)"
+  end
+
+  test "[unit] ci real window falls back to the earliest workflow start when no submitted transition" do
+    task = Task.create!(title: "Backfilled CI Probe")
+    @anchor = 60.minutes.ago
+    add_event(task, kind: "transition", to_stage: "building", at: @anchor)
+    # No submitted transition (a backfilled history), but real CI bounds exist.
+    add_real_ci_action(task, event_slug: "ci_test", started_at: @anchor + 30.minutes,
+                       completed_at: @anchor + 35.minutes, occurred_at: @anchor + 50.minutes)
+    task.update_columns(stage: "reviewed") # rubocop:disable Rails/SkipsModelValidations
+
+    ci = Task::TestingPhases.build(task).dig("phases", "ci")
+    assert_equal "ci", ci["source"]
+    assert_equal (@anchor + 30.minutes).iso8601, ci["started_at"], "no submitted -> earliest real workflow start"
+    assert_equal (@anchor + 35.minutes).iso8601, ci["completed_at"]
+    assert_equal 300, ci["seconds"], "earliest real start -> latest real settle"
   end
 
   test "[unit] a task sitting in submitted with no CI evidence ticks in_progress" do
