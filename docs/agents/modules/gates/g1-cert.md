@@ -19,14 +19,18 @@ The four gates in order: **G1 Cert** (this doc) → [G2 Review](g2-review.md) �
   three routes (all fingerprint-bound to a git TREE hash, so a stale or partial
   record is refused):
   - **fast** (the builder default) — a fresh `[fast-cert@<fp>]` line from
-    `bin/fast-check`, credited **only alongside a GREEN GitHub CI** (CI runs the
+    `bin/fast-check`, credited alongside a **GREEN GitHub CI** (CI runs the
     full suite + `test:system` on every PR push, so the full net still runs).
+    Submit-side it is also credited **PROVISIONALLY** while the open PR's CI is
+    still pending / not yet reported — see "The CI seam" below.
   - **full** — fresh `[full-suite@<fp>]` + `[rubocop@<fp>]` lines from
     `bin/full-suite-check`. Accepted on its own, CI-independent.
   - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Honored but
     flagged loudly; a conscious, justified skip only.
 - The task's **required metadata** is populated and, on the merge gate, the PR's
-  **GitHub CI** is green (a red, still-running, or closed/merged PR is refused).
+  **GitHub CI** is not failing (a red or closed/merged PR is refused; a
+  still-running CI is a **loud suggestion** on the builder's run — the
+  authoritative CI verdict lives at review's gate-zero).
 
 ## Who runs it
 
@@ -38,8 +42,10 @@ closing this gate — see "Gate roles" below.
 ## Procedure
 
 Run everything from the task worktree. Order matters: **final commit → cert →
-dor-check → push** (the cert fingerprint is a tree hash; committing after the
-cert makes it stale).
+push → open the PR → dor-check → submit** (the cert fingerprint is a tree
+hash; committing after the cert makes it stale — and the fast route's
+provisional credit needs the PR open, so the verdict runs last, with **no CI
+wait** before `submitted`).
 
 1. **Certify — fast route (default):**
 
@@ -92,8 +98,10 @@ cert makes it stale).
 
    Deterministic, no judgment: shape tiers, required metadata, suite evidence
    (fast/full/bypass), post-deploy nudges, and the PR's real GitHub CI. Exit 0
-   = ready to advance `submitted → reviewed`. A fresh fast cert with CI still
-   pending/red is refused with the exact wait-or-certify-in-full guidance.
+   = ready to advance `submitted → reviewed` — **without waiting for CI**: a
+   fresh fast cert with CI still pending on the open PR is credited
+   provisionally (a red CI still refuses; a fast cert with NO open PR is
+   refused — push and open the PR first, then run the verdict).
 
 ## Success, failure, and attempt semantics
 
@@ -114,8 +122,12 @@ window.
 - `bin/dor-check`'s merge-gate run (builder role) **CLOSES the open attempt**
   with `success = ready`, attaching its verdict evidence as SOPs: `dor-check`,
   `tiers` (the shape's tier list), `full-suite-evidence`
-  (`certified@<fp12>` or `fast-cert@<fp12>+ci-green`), and `ci`
-  (pass / fail / unverified).
+  (`certified@<fp12>`, `fast-cert@<fp12>+ci-green`, or the provisional
+  `fast-cert@<fp12>+ci-pending`), and `ci` (pass / fail / **pending** /
+  unverified). **G1 closes at submit even when CI hasn't settled** — the `ci`
+  SOP records `pending`, and the authoritative CI verdict lands on
+  [G2a](g2-review.md) (one verdict per gate; no G1 row lingers in flight
+  waiting on CI).
 - A dor-check verdict with **no open attempt** still records a real,
   self-contained attempt (`started_at == finished_at`) — a lone verdict is an
   attempt too.
@@ -123,6 +135,29 @@ window.
   (read-only monitors), `--file` (offline evaluation), or `--gate build` (no
   cert exists yet). All gate writes are fire-and-forget — a board blip never
   changes a verdict or an exit code.
+
+## The CI seam — submit before CI settles
+
+The CI **wait** belongs to the review handoff, not the builder's wall-clock
+(`ci-gate-review-handoff`, 2026-07-09). The builder certs, opens the PR, runs
+the dor-check verdict, and moves the task `submitted` **immediately**:
+
+- **Submit-side (builder role, the default):** a still-running CI is a **loud
+  suggestion**, never a block; a fresh fast cert is credited **provisionally**
+  while the open PR's CI is pending or not yet reported. A **red** CI (or a
+  closed/merged `pr_url`) still refuses, and a fast cert with **no PR at all**
+  is refused — the provisional credit is anchored to an open PR whose CI will
+  run.
+- **Review-side (the authoritative verdict):** `bin/pr-review`'s supervisor
+  checks the PR's live CI **before spawning reviewers** — red bounces the task
+  back naming the failing checks (recorded as a failed G2a attempt), pending
+  defers the wave — and the primary's gate-zero
+  (`bin/dor-check <slug> --gate-role review`) keeps the strict semantics: red
+  AND pending both block, and fast evidence needs the settled green.
+
+Net effect: nothing reaches a reviewer (or a merge) without a green CI, but the
+builder never idles watching checks. Expect the bounce round-trip if you hand
+off a PR whose CI then fails — that is the trade, priced in.
 
 ## Gate roles (`--gate-role`)
 

@@ -68,11 +68,15 @@ is missing, note it as a finding — do not guess.
      ```
 
      and confirm it passes. This gate is yours, not the light's. The
-     `--gate-role review` flag matters: your verdict lands as a SOP on the
-     task's **G2a Primary** gate attempt
+     `--gate-role review` flag matters twice: your verdict lands as a SOP on
+     the task's **G2a Primary** gate attempt
      ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md))
      instead of closing the builder's **G1 Cert** — a bare `bin/dor-check
-     <task-slug>` would stamp the builder's gate as if the builder ran it.
+     <task-slug>` would stamp the builder's gate as if the builder ran it —
+     and it keeps the **strict CI semantics**: builders submit without waiting
+     for CI (their submit-side run credits a fast cert provisionally while CI
+     is pending), so YOUR run is the authoritative CI verdict — red and
+     still-running both block, and fast-cert evidence needs the settled green.
    - **your domain checklist** — walk your soul's REVIEW CHECKLIST (in your
      `role.md`) against the diff for the hard-won gotchas in your domain.
    - **code standards + code smell + scalability** — read the diff and the changed

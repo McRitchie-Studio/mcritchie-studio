@@ -46,16 +46,18 @@ While building:
 
 Before handoff:
 
-4. Certify, then verdict — the task's **G1 Cert** gate: run `bin/fast-check
-   <task>` (the builder default, ~1 min; credited once the PR's GitHub CI is
-   green) or `bin/full-suite-check <task>` (CI-independent), then run
-   **`bin/dor-check <task>`** and fix whatever it flags — it refuses an
-   under-tested PR and its verdict closes the gate. The pipeline's gates run
+4. Certify — the task's **G1 Cert** gate: commit, then run `bin/fast-check
+   <task>` (the builder default, ~1 min) or `bin/full-suite-check <task>`
+   (CI-independent). The pipeline's gates run
    **G1 Cert → G2 Review → G3 Candidate → G4 Ship**; standalone SOPs:
    `mcritchie-studio/docs/agents/modules/gates/`.
-5. Commit on the feature branch, push, open a PR **into `release`** (base
-   `release`, not `main`) whose body **leads with the task URL**, then
-   `bin/task move <task> submitted`.
+5. Push, open a PR **into `release`** (base `release`, not `main`) whose body
+   **leads with the task URL**; then verdict: run **`bin/dor-check <task>`**
+   and fix whatever it flags — it refuses an under-tested PR and its verdict
+   closes the gate. Then `bin/task move <task> submitted` **without waiting
+   for CI** — pending CI is a loud suggestion (the fast cert is credited
+   provisionally); red CI blocks; review's gate-zero holds the authoritative
+   CI verdict and bounces a red-CI task back before any reviewer spawns.
 
 Task lifecycle is two workflows meeting at the `submitted` seam — **Build**
 (feature agent) `designed → building → submitted` (you own through `submitted`)
