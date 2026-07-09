@@ -1,6 +1,6 @@
 <%# /tasks/recent — flat recency list (updated_at desc), the scanning surface for
-    the testing-timestamps work: each row carries the five Task::TestingPhases
-    duration cells (fixed 5-column strip on desktop so durations align vertically
+    the testing-timestamps work: each row carries the four Task::TestingPhases
+    duration cells (fixed 4-column strip on desktop so durations align vertically
     across rows) plus GateRun verdict cells. Every started cell gets the releases
     table stamp treatment — bold duration over the muted date line and the local
     start-to-end clocks (data-deployment-range, re-stamped to the viewer's zone by
@@ -9,14 +9,13 @@
     gate runs renders no gate strip, a phase that never ran is a dash. %>
 <% content_for(:title, "Recent Tasks") %>
 <%
-  # Short cell captions — the full PHASE_DEFINITIONS labels ("Local Certification",
-  # "Operator Acceptance") ride along as cell titles.
+  # Short cell captions — the full PHASE_DEFINITIONS labels ("Local
+  # Certification") ride along as cell titles. Keyed by the v2 PHASE_KEYS.
   phase_short_labels = {
     "build"               => "Build",
     "local_certification" => "Cert",
     "ci"                  => "CI",
-    "review"              => "Review",
-    "acceptance"          => "Accept"
+    "review"              => "Review"
   }
 %>
 <section data-test="recent-tasks" class="space-y-6">
@@ -28,8 +27,8 @@
     <h1 class="text-2xl md:text-3xl font-bold text-heading">Recent Tasks</h1>
     <p class="text-muted text-sm max-w-2xl">
       Every task by last update, with how long it spent in each testing phase —
-      Build → Local Certification → CI → Review → Operator Acceptance — and the
-      latest verdict on each testing gate, each with its local start → end stamps.
+      Build → Local Certification → CI → Review — and the latest verdict on
+      each testing gate, each with its local start → end stamps.
     </p>
     <p class="text-[11px] text-muted uppercase tracking-wide">
       <%= @tasks.size %> most recently updated · archived excluded
@@ -59,11 +58,11 @@
                 </span>
               </div>
             </div>
-            <%# Phase strip: five fixed cells on desktop so the same phase lines up
+            <%# Phase strip: four fixed cells on desktop so the same phase lines up
                 down the page. Bold duration (status-colored) over the stamp stack —
                 the muted date line + local start-to-end clocks, exactly the
                 releases-table cell treatment. %>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 lg:w-[34rem] lg:shrink-0" data-test="recent-task-phases">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-1.5 lg:w-[34rem] lg:shrink-0" data-test="recent-task-phases">
               <% Task::TestingPhases::PHASE_KEYS.each do |key| %>
                 <% span = phases[key] || { "status" => "missing" } %>
                 <% range = testing_phase_range(span) %>

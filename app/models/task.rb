@@ -1027,27 +1027,17 @@ class Task < ApplicationRecord
 
   private
 
-  # Refresh the testing-phase projection after a stage transition or an APPROVAL
-  # change — the two edits that move a task-owned phase window. Metadata churn that
-  # can't move a window (the statusline heartbeat's claim_expires_at/claim_nonce,
-  # agent_context, etc.) must NOT trigger a rebuild, so we check the approval keys
-  # specifically rather than saved_change_to_metadata? wholesale.
+  # Refresh the testing-phase projection after a stage transition — the only edit
+  # ON THIS ROW that moves a v2 task-owned phase window (build/ci/review bounds).
+  # The other movers are their own append-only spines and trigger the refresh
+  # themselves: cert checkpoints + review intents via TaskEvent#after_create_commit.
+  # Metadata churn (approval stamps, statusline claim_*, agent_context) moves no v2
+  # window — approval was only a mover for the v1 Operator Acceptance phase, dropped
+  # in VERSION 2 — so it must NOT trigger a rebuild.
   def refresh_testing_phases_after_change
-    return unless saved_change_to_stage? || testing_phase_approval_changed?
+    return unless saved_change_to_stage?
 
     refresh_testing_phases_safely
-  end
-
-  # Did an approval field (which drives the acceptance phase) actually change?
-  def testing_phase_approval_changed?
-    return false unless saved_change_to_metadata?
-
-    before, after = saved_change_to_metadata
-    before_devops = (before || {})["devops"] || {}
-    after_devops = (after || {})["devops"] || {}
-    %w[approval_status approval_requested_at approval_approved_at].any? do |key|
-      before_devops[key] != after_devops[key]
-    end
   end
 
   def refresh_duration_metrics_for_release_changes
@@ -1334,8 +1324,10 @@ class Task < ApplicationRecord
     self.metadata = merged
   end
 
-  # The durable close of the Operator Acceptance testing phase — stamped the moment
-  # approval flips to "approved", mirroring stamp_operator_approval_request's open.
+  # The durable close of the operator-acceptance approval window — stamped the
+  # moment approval flips to "approved", mirroring stamp_operator_approval_request's
+  # open. Still a real release/operator metric (the /deployments approval chip reads
+  # it); it just no longer projects as a task testing phase since VERSION 2.
   # Runs in before_save so it survives the controller's wholesale devops replace.
   def stamp_operator_approval_approved
     return unless will_save_change_to_metadata?

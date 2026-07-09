@@ -29,3 +29,23 @@ test("intelligence dashboard renders the testing-phase-speed chart", async ({ pa
   await expect(page.getByRole("heading", { name: "Testing phase speed" })).toBeVisible();
   await expect(page.locator("#chart-testing-phase-speed canvas")).toBeVisible();
 });
+
+// [e2e] /tasks/recent — the public recency scanning surface. The phase strip is a
+// fixed grid keyed by PHASE_KEYS, so v2 (acceptance dropped) must render exactly
+// four cells — Build · Cert · CI · Review — with NO "Accept" track. This is the
+// public render the reviewers flagged as v1-stale (no e2e covered it before).
+test("the recent-tasks phase strip shows four v2 cells and no Accept track", async ({ page }) => {
+  await page.goto("/tasks/recent");
+
+  const row = page.locator('[data-test="recent-task-row"][data-task-slug="testing-phases-demo"]');
+  await expect(row).toBeVisible();
+
+  const strip = row.locator('[data-test="recent-task-phases"]');
+  for (const label of ["Build", "Cert", "CI", "Review"]) {
+    await expect(strip.getByText(label, { exact: true })).toBeVisible();
+  }
+  // The dropped Operator Acceptance phase leaves no "Accept" cell — the whole
+  // page must not ship the vestigial fifth track.
+  await expect(strip.getByText("Accept", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Accept", { exact: true })).toHaveCount(0);
+});
