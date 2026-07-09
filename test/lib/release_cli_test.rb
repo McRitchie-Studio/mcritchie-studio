@@ -22,6 +22,7 @@ require "tmpdir"
 # json-requiring test errored with `uninitialized constant JSON`.
 require "json"
 require "base64"
+require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 
 class ReleaseCliTest < Minitest::Test
   WRAPPER = File.expand_path("../../bin/release", __dir__)
@@ -70,10 +71,33 @@ class ReleaseCliTest < Minitest::Test
   # inline via ENV[...] (see the with_conductor_session tests).
   NEUTRALIZED_ENV = { "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }.freeze
 
+  # ISOLATE the primary-checkout lock dir for EVERY release subprocess. The
+  # real <projects_root>/.agents/locks dir belongs to the live conductor: a G3
+  # pre-QA gate HOLDS the hub lock there for its WHOLE suite run — which
+  # includes THIS file — so any child that touched the real dir would either
+  # deadlock the gate against its own suite (pre_qa_gate / ff_main_local wait
+  # on the lock the gate holds; run_ruby has no timeout) or flake on contention
+  # (the artifact dance's busy-skip changes its output). Reproduced as a wedge
+  # in activity-1307. Lazy + memoized so forked test workers each get their own
+  # dir; tests that assert lock SEMANTICS still override it per-test inside the
+  # child (ENV["MCR_PRIMARY_LOCK_DIR"] in their setup).
+  def self.lock_dir
+    @lock_dir ||= begin
+      dir = Dir.mktmpdir("release-cli-locks")
+      Minitest.after_run do
+        FileUtils.remove_entry(dir)
+      rescue StandardError
+        nil
+      end
+      dir
+    end
+  end
+
   def run_ruby(script)
+    env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
     last = nil
     SUBPROCESS_ATTEMPTS.times do
-      out, err, status = Open3.capture3(NEUTRALIZED_ENV, "ruby", "-e", script)
+      out, err, status = Open3.capture3(env, "ruby", "-e", script)
       return out if status.success?
 
       last = { out: out, err: err, status: status }
@@ -529,24 +553,29 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_red_aborts_with_eject_guidance_and_restores_main
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def qa_gate_cmd(_repo) = "bin/failing-suite"
-      def sh(*a, **_k)
-        $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
-        return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+    # Per-test lock dir — NEVER the real one: a live G3 gate HOLDS the real
+    # mcritchie-studio lock while its suite runs this very file, so a test
+    # flocking it would deadlock the gate against itself (activity-1307).
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + <<~'RUBY'
+        def repo_path(_repo) = Dir.pwd
+        def qa_gate_cmd(_repo) = "bin/failing-suite"
+        def sh(*a, **_k)
+          $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
+          return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-    assert_includes out, "ABORTED", "a red pre-QA gate aborts prepare"
-    assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
-    assert_includes out, "git revert -m 1", "…and the merge-commit revert"
-    assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
-    refute_includes out, "PASSED"
-    assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+      assert_includes out, "ABORTED", "a red pre-QA gate aborts prepare"
+      assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
+      assert_includes out, "git revert -m 1", "…and the merge-commit revert"
+      assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
+      refute_includes out, "PASSED"
+      assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+    end
   end
 
   # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
@@ -588,21 +617,25 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_passes_a_quoted_spaced_arg_as_one_argv_element
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
-      def sh(*a, **_k)
-        $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED")})
+    # Per-test lock dir — see the red-abort test: flocking the REAL lock here
+    # deadlocks a live G3 gate against its own suite (activity-1307).
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + <<~'RUBY'
+        def repo_path(_repo) = Dir.pwd
+        def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
+        def sh(*a, **_k)
+          $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED")})
 
-    argv_line = out.lines.find { |l| l.start_with?("GATE-ARGV") }
-    assert argv_line, "the gate must exec the registered command"
-    assert argv_line.start_with?("GATE-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
-    assert_includes argv_line, %("test/integration/a b_test.rb"), "the quoted spaced arg survives as ONE element"
-    assert_includes out, "PASSED"
+      argv_line = out.lines.find { |l| l.start_with?("GATE-ARGV") }
+      assert argv_line, "the gate must exec the registered command"
+      assert argv_line.start_with?("GATE-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
+      assert_includes argv_line, %("test/integration/a b_test.rb"), "the quoted spaced arg survives as ONE element"
+      assert_includes out, "PASSED"
+    end
   end
 
   def test_ship_test_gate_passes_a_quoted_spaced_arg_as_one_argv_element
@@ -657,7 +690,11 @@ class ReleaseCliTest < Minitest::Test
       git.call("branch", "release")
       git.call("push", "-q", "origin", "main", "release")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect}\n) +
+      # Per-test lock dir for concurrent-suite hygiene (activity-1307) — the
+      # "sibling" lock can't deadlock the hub gate, but two suite runs of this
+      # file must not contend on a shared real lock file either.
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{clone.inspect}\n) +
               %(def qa_gate_cmd(_repo) = %q{ruby -e "puts [:GATE_OK, ARGV].inspect" -- "a b"})
       out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
 
@@ -705,6 +742,27 @@ class ReleaseCliTest < Minitest::Test
     git.call("branch", "release")
     git.call("push", "-q", "origin", "main", "release")
     clone
+  end
+
+  # [unit] REGRESSION (activity-1307): every subprocess this file spawns must
+  # resolve the primary-checkout lock INSIDE the per-run isolated dir — never
+  # the real conductor dir. A live G3 gate holds the real hub lock while its
+  # suite runs THIS file; one child flocking the real path wedges `bin/release
+  # prepare` against its own suite, indefinitely and silently. This pins the
+  # run_ruby seam every helper (run_cli / eval_helper) rides through.
+  def test_release_subprocesses_resolve_the_lock_inside_the_isolated_dir
+    out = eval_helper(%(primary_checkout_lock_path("mcritchie-studio").start_with?(#{self.class.lock_dir.inspect}).inspect))
+    assert_equal "true", out,
+                 "children must inherit the isolated MCR_PRIMARY_LOCK_DIR, not the live conductor's lock dir"
+  end
+
+  # [unit] The DEFAULT lock dir (no override) anchors to <projects_root>/
+  # .agents/locks — TMPDIR-independent, so two conductors launched with
+  # different TMPDIR values contend on the SAME file (round-2 review nit).
+  def test_primary_checkout_lock_path_defaults_to_projects_root_agents_locks
+    out = run_cli(["--yes"], setup: %(ENV.delete("MCR_PRIMARY_LOCK_DIR")),
+                  call: %{print((primary_checkout_lock_path("x") == File.join(projects_root, ".agents", "locks", "mcr-primary-checkout-x.lock")).inspect)})
+    assert_equal "true", out
   end
 
   # [unit] The gate must hold the repo's primary-checkout lock for its ENTIRE

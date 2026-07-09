@@ -118,6 +118,7 @@ require "open3"
 require "yaml"
 require "tmpdir"
 require "shellwords"
+require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 
 # Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
 # publish/repin) lives in the unit-tested Release::ShipSequence +
@@ -1207,9 +1208,12 @@ rescue ArgumentError => e
 end
 
 # --- primary-checkout lock ---------------------------------------------------
-# Every step that flips a PRIMARY checkout's HEAD must hold this per-repo lock:
+# Serializes the three highest-risk primary-HEAD flip sites against each other:
 # the pre-QA gate's release checkout + suite run (below), the artifact-commit
 # dance (commit_artifact_to_release), and ship's local ff (ff_main_local).
+# NOT yet lock-guarded (groomed as follow-up scope, per the round-2 review):
+# the merge-forward guard, checkout_detached / checkout_branch, repin_consumers,
+# and ship's test_gate window after avi_ship_gate's ff.
 #
 # ROOT CAUSE it guards against (rel-20260708-496cd8): the pre-QA gate ran its
 # full suite in the primary hub checkout on `release` (~6-min critical section)
@@ -1219,10 +1223,21 @@ end
 #
 # flock, not a mkdir lock: the OS releases it when the holder dies, so a killed
 # gate can never wedge the next conductor run. Per-repo (keyed by repo name) so
-# a hub gate never blocks a satellite's artifact commit. MCR_PRIMARY_LOCK_DIR
-# overrides the directory (tests point it at a tmpdir).
+# a hub gate never blocks a satellite's artifact commit.
+#
+# The lock dir is FIXED at <projects_root>/.agents/locks (the dir that already
+# anchors cross-checkout state like the worktree registry) — NOT Dir.tmpdir:
+# two conductors launched with different TMPDIR values must still contend on
+# the SAME file. MCR_PRIMARY_LOCK_DIR overrides it; every test that exercises
+# this lock MUST point it at a per-test tmpdir — the real dir belongs to the
+# live conductor, and a test flocking it while a G3 gate (which holds it for
+# its whole suite run) executes that test would deadlock the gate against
+# itself.
 def primary_checkout_lock_path(repo)
-  File.join(ENV.fetch("MCR_PRIMARY_LOCK_DIR", Dir.tmpdir), "mcr-primary-checkout-#{repo}.lock")
+  dir = ENV["MCR_PRIMARY_LOCK_DIR"].to_s
+  dir = File.join(projects_root, ".agents", "locks") if dir.empty?
+  FileUtils.mkdir_p(dir)
+  File.join(dir, "mcr-primary-checkout-#{repo}.lock")
 end
 
 # Run the block holding `repo`'s primary-checkout lock.
