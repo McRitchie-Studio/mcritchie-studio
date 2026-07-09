@@ -131,6 +131,35 @@ class TaskCardTest < ActionView::TestCase
     assert_select "[data-test='operator-approval-waiting']", count: 0
   end
 
+  test "[component] submitted PR card shows a waiting review bar linked to the PR" do
+    task = Task.create!(
+      title: "Waiting review card",
+      stage: "submitted",
+      metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/42" } }
+    )
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "submitted", card["data-stage-glow"]
+    assert_select "[data-test='review-waiting']", text: "WAITING REVIEW"
+    badge_classes = css_select("[data-test='review-waiting']").first["class"].split
+    assert_includes badge_classes, "motion-safe:animate-pulse"
+    assert_select "a[data-test='review-waiting'][href='https://github.com/acme/app/pull/42']"
+  end
+
+  test "[component] waiting review bar clears after the task leaves submitted" do
+    task = Task.create!(
+      title: "Reviewed no waiting",
+      stage: "reviewed",
+      metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/42" } }
+    )
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    assert_select "[data-test='review-waiting']", false
+  end
+
   test "[component] footer shows created + updated stamps, not the local demo or PR links" do
     task = Task.create!(title: "Footer stamp card", stage: "building",
                         metadata: { "devops" => {

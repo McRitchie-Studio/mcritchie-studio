@@ -75,6 +75,20 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='operator-approval-waiting']", count: 0
   end
 
+  test "[integration] submitted PR cards show the waiting review bar" do
+    task = Task.create!(
+      title: "submitted review peer",
+      stage: "submitted",
+      metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/42" } }
+    )
+
+    get tasks_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} a[data-test='review-waiting'][href='https://github.com/acme/app/pull/42']",
+                  text: "WAITING REVIEW"
+  end
+
   test "[integration] deployments column puts freshly shipped tasks above older shipped cards" do
     older = nil
     fresh = nil
