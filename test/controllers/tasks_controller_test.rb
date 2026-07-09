@@ -42,8 +42,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
         "build" => { "status" => "completed", "seconds" => 600 },
         "local_certification" => { "status" => "completed", "seconds" => 300 },
         "ci" => { "status" => "missing" },
-        "review" => { "status" => "missing" },
-        "acceptance" => { "status" => "in_progress", "seconds" => 120 }
+        "review" => { "status" => "in_progress", "seconds" => 120 }
       } }
     )
 
@@ -52,7 +51,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h3", text: "Testing phases"
     assert_select "p.label-upper", text: "Local Certification"
-    assert_select "p.label-upper", text: "Operator Acceptance"
+    assert_select "p.label-upper", text: "Review"
+    # Operator Acceptance left the task projection in v2 — no fifth tile.
+    assert_select "p.label-upper", text: "Operator Acceptance", count: 0
   end
 
   test "[component] show renders the testing-gates card from the latest gate attempts" do

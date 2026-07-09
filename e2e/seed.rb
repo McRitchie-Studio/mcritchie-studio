@@ -535,10 +535,12 @@ end
 Release::DurationCache.refresh_recent!(limit: 3)
 
 # Testing-phases demo: one task that walked the full testing-phase lifecycle with
-# durable cert checkpoints + operator-approval stamps, so /tasks/testing-phases-demo
-# renders each of the five phase chips (Build → Local Certification → CI → Review →
-# Operator Acceptance) with a measured duration, and the /intelligence "Testing
-# phase speed" chart has signal beyond the two shipped demos.
+# durable cert checkpoints, CI test-scope evidence and a G2 review gate run, so
+# /tasks/testing-phases-demo renders each of the four v2 phase chips (Build →
+# Local Certification → CI → Review) with a measured duration, and the
+# /intelligence "Testing phase speed" chart has signal beyond the two shipped
+# demos. The operator-approval stamps stay on the task (they are real devops
+# data) but no longer project as a phase — v2 dropped Operator Acceptance.
 tp_anchor = 3.hours.ago
 tp = Task.create!(
   title: "Testing phases demo", slug: "testing-phases-demo", stage: "reviewed", priority: 1,
@@ -560,9 +562,18 @@ tp.task_events.delete_all
                          occurred_at: e[:at], seconds_in_from: nil, source: "system", metadata: e[:meta])
 end
 
-# Materialize every task's testing-phase projection (intel-shipped demos yield
-# Build + Review windows; the demo above yields all four durable phases).
-Task::TestingPhases.backfill!
+# CI evidence for the v2 CI phase (submitted handoff → checks settle): two
+# test-scope AgentActions like bin/ci-scope-capture ingests, so the demo's CI
+# window closes at +24m (a 4-minute handoff after the +20m submission). The
+# global AtomicAction.delete_all wipe above keeps this reseed idempotent.
+AgentAction.create!(session_id: "sess-tp-ci", kind: "test_scope", event_slug: "ci_lint",
+                    result_slug: "pass", task_slug: tp.slug, occurred_at: tp_anchor + 23.minutes,
+                    duration_ms: 90_000,
+                    summary: "test scope ci_lint COMPLETED · ci · pass · bin/rubocop -f github · 1.5m")
+AgentAction.create!(session_id: "sess-tp-ci", kind: "test_scope", event_slug: "ci_test",
+                    result_slug: "pass", task_slug: tp.slug, occurred_at: tp_anchor + 24.minutes,
+                    duration_ms: 300_000,
+                    summary: "test scope ci_test COMPLETED · ci · pass · bin/rails test test:system · 5m")
 
 # Testing-gates demo, on the same task: attempt-aware GATE verdicts so
 # /tasks/testing-phases-demo also renders the "Testing gates" card — a G1 Cert
@@ -589,6 +600,13 @@ GateRun.close!(subject_type: "task", subject_slug: tp.slug, key: "g2a_primary", 
                sops: [{ "sop" => "scout-report", "result" => "pass" }], now: tp_anchor + 33.minutes)
 GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2b_light", actor: "shannon",
               now: tp_anchor + 22.minutes)
+
+# Materialize every task's testing-phase projection (intel-shipped demos yield
+# Build + legacy-fallback Review windows; the demo above yields all four v2
+# phases). AFTER the gate runs + CI actions above — the v2 review phase anchors
+# to the first G2 gate run and the CI phase settles on the captured CI actions,
+# so materializing earlier would cache pre-evidence windows.
+Task::TestingPhases.backfill!
 
 # /alex/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
