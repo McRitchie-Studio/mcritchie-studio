@@ -489,3 +489,60 @@ This ledger tracks files and directories that look removable once replacement do
 
 <!-- agent-worktree remove 2026-07-08 -->
 | `/Users/alex/projects/turf-monster/.worktrees/team-totals-ui` | worktree | Hidden worktree; branch `feat/team-totals-ui` is clean and HEAD 2590bfc is contained in origin/release; health up, Redis DB 31, database turf_monster_development_team_totals_ui:ok. | Removed with `bin/agent-worktree remove turf-monster team-totals-ui --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/activity-cost-summary` | worktree | Hidden worktree; branch `feat/activity-cost-summary` is clean and HEAD ab6c010c is contained in origin/release; health down, Redis DB 33, database mcritchie_studio_development_activity_cost_summary:ok. | Removed with `bin/agent-worktree remove mcritchie-studio activity-cost-summary --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/board-card-layout-polish` | worktree | Hidden worktree; branch `feat/board-card-layout-polish` is clean and HEAD b84ba0e8 is contained in origin/release; health down, Redis DB 23, database mcritchie_studio_development_board_card_layout_polish:ok. | Removed with `bin/agent-worktree remove mcritchie-studio board-card-layout-polish --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/branded-gate-sop-docs` | worktree | Hidden worktree; branch `feat/branded-gate-sop-docs` is clean and HEAD 4d470c73 is contained in origin/release; health down, Redis DB 37, database mcritchie_studio_development_branded_gate_sop_docs:missing. | Removed with `bin/agent-worktree remove mcritchie-studio branded-gate-sop-docs --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/clean-runtime-hooks` | worktree | Hidden worktree; branch `feat/clean-runtime-hooks` is clean and HEAD 9c6c3b3c is contained in origin/release; health down, Redis DB 31, database mcritchie_studio_development_clean_runtime_hooks:missing. | Removed with `bin/agent-worktree remove mcritchie-studio clean-runtime-hooks --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/confirm-approval-on-exit` | worktree | Hidden worktree; branch `feat/confirm-approval-on-exit` is clean and HEAD 676e1d72 is contained in origin/release; health down, Redis DB 34, database mcritchie_studio_development_confirm_approval_on_exit:ok. | Removed with `bin/agent-worktree remove mcritchie-studio confirm-approval-on-exit --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fast-cert-builder-gate` | worktree | Hidden worktree; branch `feat/fast-cert-builder-gate` is clean and HEAD a3862ebc is contained in origin/release; health down, Redis DB 29, database mcritchie_studio_development_fast_cert_builder_gate:missing. | Removed with `bin/agent-worktree remove mcritchie-studio fast-cert-builder-gate --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/filter-live-activities` | worktree | Hidden worktree; branch `feat/filter-live-activities` is clean and HEAD 909b9485 is contained in origin/release; health down, Redis DB 24, database mcritchie_studio_development_filter_live_activities:ok. | Removed with `bin/agent-worktree remove mcritchie-studio filter-live-activities --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-deployment-duration-metrics` | worktree | Hidden worktree; branch `feat/fix-deployment-duration-metrics` is clean and HEAD d3e74257 is contained in origin/release; health down, Redis DB 20, database mcritchie_studio_development_fix_deployment_duration_metrics:ok. | Removed with `bin/agent-worktree remove mcritchie-studio fix-deployment-duration-metrics --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-fan-out-usage-double-count` | worktree | Hidden worktree; branch `feat/fix-fan-out-usage-double-count` is clean and HEAD 68f163b2 is contained in origin/release; health down, Redis DB 18, database mcritchie_studio_development_fix_fan_out_usage_double_count:missing. | Removed with `bin/agent-worktree remove mcritchie-studio fix-fan-out-usage-double-count --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/guard-worktree-port-test` | worktree | Hidden worktree; branch `feat/guard-worktree-port-test` is clean and HEAD 377c26a1 is contained in origin/release; health down, Redis DB 12, database mcritchie_studio_development_guard_worktree_port_test:missing. | Removed with `bin/agent-worktree remove mcritchie-studio guard-worktree-port-test --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/model-page-protocol` | worktree | Hidden worktree; branch `feat/model-page-protocol` is clean and HEAD 03aaa7e8 is contained in origin/release; health down, Redis DB 22, database mcritchie_studio_development_model_page_protocol:ok. | Removed with `bin/agent-worktree remove mcritchie-studio model-page-protocol --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/preflight-docs-kind-exemption` | worktree | Hidden worktree; branch `feat/preflight-docs-kind-exemption` is clean and HEAD ee73fdc5 is contained in origin/release; health down, Redis DB 42, database mcritchie_studio_development_preflight_docs_kind_exemption:missing. | Removed with `bin/agent-worktree remove mcritchie-studio preflight-docs-kind-exemption --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/quarantine-deployment-menu-flake` | worktree | Hidden worktree; branch `feat/quarantine-deployment-menu-flake` is clean and HEAD 5b32318a is contained in origin/release; health down, Redis DB 40, database mcritchie_studio_development_quarantine_deployment_menu_flake:missing. | Removed with `bin/agent-worktree remove mcritchie-studio quarantine-deployment-menu-flake --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/recent-tasks-duration-view` | worktree | Hidden worktree; branch `feat/recent-tasks-duration-view` is clean and HEAD 6b26dd69 is contained in origin/release; health down, Redis DB 38, database mcritchie_studio_development_recent_tasks_duration_view:ok. | Removed with `bin/agent-worktree remove mcritchie-studio recent-tasks-duration-view --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/release-gates-overlap-fix` | worktree | Hidden worktree; branch `feat/release-gates-overlap-fix` is clean and HEAD fe087309 is contained in origin/release; health down, Redis DB 26, database mcritchie_studio_development_release_gates_overlap_fix:ok. | Removed with `bin/agent-worktree remove mcritchie-studio release-gates-overlap-fix --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/testing-gate-runs-core` | worktree | Hidden worktree; branch `feat/testing-gate-runs-core` is clean and HEAD d9214235 is contained in origin/release; health down, Redis DB 25, database mcritchie_studio_development_testing_gate_runs_core:ok. | Removed with `bin/agent-worktree remove mcritchie-studio testing-gate-runs-core --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/testing-phase-timestamps` | worktree | Hidden worktree; branch `feat/testing-phase-timestamps` is clean and HEAD 977c77d5 is contained in origin/release; health down, Redis DB 11, database mcritchie_studio_development_testing_phase_timestamps:missing. | Removed with `bin/agent-worktree remove mcritchie-studio testing-phase-timestamps --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/unified-usage-pricing-module` | worktree | Hidden worktree; branch `feat/unified-usage-pricing-module` is clean and HEAD 7100a867 is contained in origin/release; health down, Redis DB 28, database mcritchie_studio_development_unified_usage_pricing_module:missing. | Removed with `bin/agent-worktree remove mcritchie-studio unified-usage-pricing-module --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
+
+<!-- agent-worktree remove 2026-07-08 -->
+| `/Users/alex/projects/turf-monster/.worktrees/turf-model-page-adoption` | worktree | Hidden worktree; branch `feat/turf-model-page-adoption` is clean and HEAD bbdee53 is contained in origin/release; health down, Redis DB 15, database turf_monster_development_turf_model_page_adoption:ok. | Removed with `bin/agent-worktree remove turf-monster turf-model-page-adoption --yes` during approved lifecycle cleanup. | removed 2026-07-08 |
