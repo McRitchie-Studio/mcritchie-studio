@@ -73,7 +73,9 @@
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
 #       combinable — one activity is posted per flag given. --resolves-feedback
-#       marks handoff notes as explicitly addressing open QA feedback. )
+#       marks handoff notes as explicitly addressing open QA feedback; it
+#       requires a --handoff note (on other note types it would silently
+#       no-op, so the CLI dies instead of dropping the flag). )
 
 require "net/http"
 require "json"
@@ -1119,6 +1121,10 @@ when "note"
     end
   end
   die!("note needs one of: #{NOTE_FLAGS.keys.join(", ")}") if notes.empty?
+  if resolves_feedback && notes.none? { |activity_type, _| activity_type == "handoff" }
+    die!("--resolves-feedback marks handoff notes as explicitly addressing open QA feedback; " \
+         "use: bin/task note <slug> --handoff \"...\" --resolves-feedback")
+  end
   notes.each do |activity_type, description|
     body = { "task_slug" => slug, "activity_type" => activity_type, "description" => description }
     body["agent_slug"] = agent if agent
