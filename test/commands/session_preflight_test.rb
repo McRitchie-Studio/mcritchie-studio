@@ -113,6 +113,42 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+  def test_docs_kind_without_shape_is_exempt_from_shape_gate
+    task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal true, report.fetch("ok")
+    assert_empty report.fetch("errors")
+    assert_equal true, report.dig("shape", "exempt")
+    assert_equal "docs", report.dig("shape", "kind")
+  end
+
+  def test_docs_kind_shipping_code_loses_the_exemption
+    task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
+    write_file("lib/shipped_code.rb", "# real code under CODE_PATH_PREFIXES\n")
+
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?
+
+    report = JSON.parse(out)
+    assert_equal false, report.dig("shape", "exempt")
+    assert report.fetch("errors").any? { |error| error.include?("devops.shape is missing") }, report.fetch("errors").inspect
+  end
+
+  def test_chore_kind_doc_only_diff_keeps_the_exemption
+    task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
+    write_file("docs/agents/modules/clean-note.md", "Doc-only change keeps the exemption.\n")
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal true, report.dig("shape", "exempt")
+  end
+
   def test_live_task_show_contract_reports_latest_feedback
     write_fake_task_cli(latest_activity: {
       "activity_type" => "qa_feedback",
