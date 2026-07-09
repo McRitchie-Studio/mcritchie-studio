@@ -211,6 +211,32 @@ module Api
         assert_equal "Needs rework before release.", feedback.fetch("description")
       end
 
+      test "[integration] show JSON includes the gates projection with the latest attempt" do
+        GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true,
+                       sops: [{ "sop" => "full-suite", "result" => "pass" }])
+
+        get api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+        assert_response :success
+        gates = response.parsed_body.dig("data", "gates", "gates")
+        assert_equal 1, gates.dig("g1_cert", "attempt")
+        assert_equal true, gates.dig("g1_cert", "success")
+        assert_equal ["full-suite"], gates.dig("g1_cert", "sops").map { |s| s["sop"] }
+        assert_nil gates.dig("g2a_primary", "attempt"), "never-attempted gate carries the all-nil row"
+      end
+
+      test "[integration] show self-heals a stale gates cache from gate_runs" do
+        GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g2b_light", success: false)
+        # Simulate a pre-backfill / version-bumped row: raw column is stale.
+        @task.update_columns(gates: {}, gates_version: 0)
+
+        get api_v1_task_path(@task.slug), headers: @headers, as: :json
+
+        assert_response :success
+        gates = response.parsed_body.dig("data", "gates", "gates")
+        assert_equal false, gates.dig("g2b_light", "success"), "stale cache rebuilds live from gate_runs"
+      end
+
       test "update returns 404 for an unknown slug" do
         patch api_v1_task_path("nope-not-here"),
               params: { title: "renamed task title here" }, headers: @headers, as: :json

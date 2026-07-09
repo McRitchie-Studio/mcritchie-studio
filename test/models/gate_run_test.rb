@@ -54,6 +54,21 @@ class GateRunTest < ActiveSupport::TestCase
     assert run.in_flight?
   end
 
+  # Regression: after_create_commit + after_update_commit with the SAME method
+  # name dedupe to the last registration (Rails callback-chain behavior), which
+  # silently dropped the create hook — a gate OPEN never broadcast. The single
+  # after_save_commit must fire on BOTH the open (create) and the close (update).
+  test "[unit] open and close both broadcast the gate run" do
+    calls = []
+    DeploymentsBroadcaster.stub(:gate_run, ->(run) { calls << run.status }) do
+      open_gate
+      GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+    end
+
+    assert_includes calls, "in_flight", "the OPEN (create commit) must broadcast"
+    assert_includes calls, "passed", "the CLOSE (update commit) must broadcast"
+  end
+
   test "close! with no open attempt records a self-contained attempt" do
     run = GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
 

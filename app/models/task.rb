@@ -1025,6 +1025,21 @@ class Task < ApplicationRecord
     nil
   end
 
+  # Recompute this task's latest-attempt-per-gate projection (Task::GatesProjection)
+  # — PUBLIC so the GateRun commit hooks can call it on the parent task, mirroring
+  # refresh_testing_phases!. update_columns inside refresh! skips callbacks, so this
+  # never re-enters.
+  def refresh_gates!
+    Task::GatesProjection.refresh!(self)
+  end
+
+  def refresh_gates_safely
+    refresh_gates!
+  rescue StandardError => e
+    Rails.logger.warn("[task-gates] refresh failed for #{slug}: #{e.class}: #{e.message}")
+    nil
+  end
+
   private
 
   # Refresh the testing-phase projection after a stage transition or an APPROVAL

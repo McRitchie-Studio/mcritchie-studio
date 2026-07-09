@@ -88,6 +88,10 @@ module Api
 
       def task_json(task)
         task.as_json.merge(
+          # Override the raw gates column with the self-healing read — a stale
+          # version (or a pre-backfill row) rebuilds live from gate_runs instead
+          # of serving `{}`. Index keeps the raw column (no per-row rebuild cost).
+          "gates" => Task::GatesProjection.cached_or_built(task),
           "latest_activity" => latest_activity_json(task),
           "unresolved_feedback" => activity_json(task.unresolved_feedback_activity),
           "review_in_progress" => task.review_in_progress?

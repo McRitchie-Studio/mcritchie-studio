@@ -52,8 +52,17 @@ class GateRun < ApplicationRecord
   # Gate chips update live: open (create) and close (UPDATE — unlike the
   # append-only spines) both refresh the boards. Best-effort inside the
   # broadcaster so a transport failure never breaks the gate write.
-  after_create_commit :broadcast_gate_run
-  after_update_commit :broadcast_gate_run
+  #
+  # after_save_commit (= on: [:create, :update]) is LOAD-BEARING: registering
+  # after_create_commit + after_update_commit with the SAME method name dedupes
+  # to the last registration only (documented Rails callback-chain behavior), so
+  # the pair silently dropped the create hook — gate OPENS never broadcast.
+  after_save_commit :broadcast_gate_run
+  # Keep the parent task's cached latest-attempt snapshot (Task::GatesProjection)
+  # in step with every attempt write — open, append_sop, and close all land here.
+  # Best-effort like the broadcaster: a projection failure never breaks the gate
+  # write (refresh_gates_safely rescues + logs).
+  after_save_commit :refresh_task_gates_projection
 
   # ---- write funnel (the ONLY writers) --------------------------------------
 
@@ -182,5 +191,13 @@ class GateRun < ApplicationRecord
 
   def broadcast_gate_run
     DeploymentsBroadcaster.gate_run(self)
+  end
+
+  # Release-grain runs are intentionally NOT projected onto anything — release
+  # surfaces read gate_runs directly (see Task::GatesProjection).
+  def refresh_task_gates_projection
+    return unless subject_type == "task"
+
+    Task.find_by(slug: subject_slug)&.refresh_gates_safely
   end
 end
