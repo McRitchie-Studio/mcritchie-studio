@@ -22,8 +22,7 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
         "local_certification" => { "status" => "in_progress", "seconds" => 300,
                                    "started_at" => cert_start.iso8601 },
         "ci" => { "status" => "missing" },
-        "review" => { "status" => "missing" },
-        "acceptance" => { "status" => "missing" }
+        "review" => { "status" => "missing" }
       } }
     )
 
@@ -93,6 +92,23 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
       assert_select "[data-deployment-range]", count: 0
     end
     assert_includes response.body, "—", "never-run phases render dashes, not blanks"
+  end
+
+  test "[component] the phase strip renders exactly the four v2 cells, no Accept track" do
+    get recent_tasks_path
+
+    assert_response :success
+    assert_select "li[data-task-slug=?]", @new_task.slug do
+      # PHASE_KEYS now yields four phases — one cell each, no vestigial fifth track.
+      assert_select "[data-test='recent-task-phases'] > div", count: 4
+      assert_select "[data-test='recent-task-phases']" do
+        assert_select "p", text: "Build"
+        assert_select "p", text: "Review"
+        assert_select "p", text: "Accept", count: 0
+      end
+    end
+    assert_not_includes response.body, "Operator Acceptance",
+                        "the v1 acceptance phase left the public recency surface"
   end
 
   test "[component] recent excludes archived tasks" do

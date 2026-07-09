@@ -4,21 +4,30 @@ class Task
   # Materialized per-task TESTING-PHASE durations — a start→complete window for each
   # phase, denormalized onto the task row (testing_phases jsonb) exactly like
   # Release::DurationCache denormalizes onto releases. A PURE function of the task's
-  # append-only TaskEvents + approval devops stamps + CI test-scope AgentActions, so
+  # append-only TaskEvents + G2 review GateRuns + CI test-scope AgentActions, so
   # recompute is idempotent and self-heals on a VERSION bump (see #cached_or_built).
   #
-  # The five phases are TASK-OWNED (individual to the branch, all done by `reviewed`).
+  # The four phases are TASK-OWNED (individual to the branch, all done by `reviewed`).
   # Release-owned phases (QA, production) are release-grain and inherited by membership
-  # — intentionally OUT of this per-task projection.
+  # — intentionally OUT of this per-task projection. Operator Acceptance left in
+  # VERSION 2: it is a release/operator metric, not a testing phase the task owns
+  # (the devops approval_requested_at/approval_approved_at stamps remain — they just
+  # no longer project as a phase window here).
+  #
+  # VERSION 2 (operator design session 2026-07-09): submitted != review-started — PR
+  # submission and PR review are different nodes. Review now starts when review work
+  # actually begins (G2 gate run, else review intent), and CI owns the submission
+  # handoff window review used to swallow. The queue time between CI settling and a
+  # reviewer picking the task up is deliberately VISIBLE as the gap between the two
+  # windows — that gap is the insight, not a bookkeeping hole.
   module TestingPhases
-    VERSION = 1
+    VERSION = 2
 
     PHASE_DEFINITIONS = {
       "build"               => { "label" => "Build" },
       "local_certification" => { "label" => "Local Certification" },
       "ci"                  => { "label" => "CI" },
-      "review"              => { "label" => "Review" },
-      "acceptance"          => { "label" => "Operator Acceptance" }
+      "review"              => { "label" => "Review" }
     }.freeze
     PHASE_KEYS = PHASE_DEFINITIONS.keys.freeze
 
@@ -28,6 +37,8 @@ class Task
     CERT_FINISHED = %w[completed finished failed].freeze
     # CI test-scope AgentAction slugs (config/devops_test_suites.yml ci_scopes).
     CI_SCOPES = %w[ci_test ci_lint ci_scan_ruby ci_scan_js].freeze
+    # The task-grain review gates whose first attempt marks actual review start.
+    REVIEW_GATE_KEYS = %w[g2a_primary g2b_light].freeze
 
     module_function
 
@@ -41,9 +52,8 @@ class Task
         "phases" => {
           "build"               => build_phase(events, now: now),
           "local_certification" => certification_phase(events, now: now),
-          "ci"                  => ci_phase(task, now: now),
-          "review"              => review_phase(events, now: now),
-          "acceptance"          => acceptance_phase(task.devops || {}, now: now)
+          "ci"                  => ci_phase(task, events, now: now),
+          "review"              => review_phase(task, events, now: now)
         }
       }
     end
@@ -62,7 +72,8 @@ class Task
     end
 
     # Serve the cached projection when it matches the current VERSION, else recompute
-    # on the fly (self-healing on a version bump). Never raises into a render.
+    # on the fly (self-healing on a version bump — v1 rows rebuild with v2 boundaries
+    # the first time they are read, no backfill required). Never raises into a render.
     def cached_or_built(task)
       if task.testing_phases_version == VERSION && task.testing_phases.present?
         task.testing_phases
@@ -120,31 +131,46 @@ class Task
       span(start&.occurred_at, finish&.occurred_at, now: now, source: "checkpoint")
     end
 
-    # Review = the `submitted` transition → the `reviewed` transition.
-    def review_phase(events, now:)
-      start = last_transition_to(events, "submitted")
-      finish = last_transition_to(events, "reviewed")
-      span(start&.occurred_at, finish&.occurred_at, now: now, source: "transition")
-    end
-
-    # Operator Acceptance = approval_requested_at → approval_approved_at (devops stamps).
-    def acceptance_phase(devops, now:)
-      start = parse_time(devops["approval_requested_at"])
-      finish = parse_time(devops["approval_approved_at"])
-      span(start, finish, now: now, source: "approval")
-    end
-
-    # CI = earliest job start → latest job completion. BEST-EFFORT: the persisted
-    # test-scope AgentActions keep only duration_ms + ingest occurred_at (the real CI
-    # startedAt/completedAt are dropped by bin/ci-scope-capture today), so the window
-    # is approximated as (occurred_at − duration) … occurred_at across the CI jobs.
-    def ci_phase(task, now:)
+    # CI = the submission handoff window: START = the last transition to `submitted`
+    # (the builder hands the branch to CI at PR handoff), END = CI settle. The end
+    # stays BEST-EFFORT AgentAction-derived for now — the persisted test-scope
+    # actions keep only duration_ms + ingest occurred_at (bin/ci-scope-capture drops
+    # the real startedAt/completedAt), hence the honest "ci_approx" source; the
+    # ci-phase-real-timestamps follow-up (sequenced after this file) upgrades the
+    # bounds. A task that already LEFT `submitted` with no captured CI evidence has
+    # no measurable window (missing) — so legacy projections recompute cleanly on
+    # the version bump instead of ticking in_progress forever.
+    def ci_phase(task, events, now:)
+      submitted = last_transition_to(events, "submitted")
       actions = ci_actions(task)
-      return span(nil, nil, now: now, source: "ci") if actions.empty?
-
+      start = submitted&.occurred_at || approx_ci_start(actions)
       finish = actions.map(&:occurred_at).max
-      start = actions.map { |a| a.occurred_at - (a.duration_ms.to_i / 1000.0) }.min
+      return span(nil, nil, now: now, source: "ci_approx") if start && finish.nil? && task.stage != "submitted"
+
       span(start, finish, now: now, source: "ci_approx")
+    end
+
+    # Review = when review work ACTUALLY begins → the `reviewed` transition.
+    # Submission is not review. START resolves most-durable-evidence first:
+    #   1. the first G2 review GateRun (g2a_primary/g2b_light) started_at,
+    #   2. else the first review INTENT event (kind=intent toward `reviewed`,
+    #      recorded by bin/reviewer-select before any gate run opens),
+    #   3. else — LEGACY tasks predating gate runs + intents — the `submitted`
+    #      transition, but only once `reviewed` has landed (v1 semantics, so old
+    #      completed reviews keep a measured window on the version bump).
+    # A submitted task with no review evidence is genuinely MISSING: the queue
+    # time shows as the gap after CI, which is exactly the operator's insight.
+    def review_phase(task, events, now:)
+      finish = last_transition_to(events, "reviewed")
+      if (gate = first_review_gate_run(task))
+        span(gate.started_at, finish&.occurred_at, now: now, source: "gate_run")
+      elsif (intent = first_intent_to(events, "reviewed"))
+        span(intent.occurred_at, finish&.occurred_at, now: now, source: "intent")
+      elsif finish && (legacy_start = last_transition_to(events, "submitted"))
+        span(legacy_start.occurred_at, finish.occurred_at, now: now, source: "transition")
+      else
+        span(nil, finish&.occurred_at, now: now, source: "gate_run")
+      end
     end
 
     def ci_actions(task)
@@ -153,10 +179,30 @@ class Task
       []
     end
 
+    # Fallback CI start when no `submitted` transition exists but CI evidence does
+    # (backfilled histories): earliest (occurred_at − duration) across the jobs.
+    def approx_ci_start(actions)
+      actions.map { |a| a.occurred_at - (a.duration_ms.to_i / 1000.0) }.min
+    end
+
+    # The first G2 review-gate attempt for the task — retries and the second lane
+    # come later by definition, so the first started_at IS review start. Best-effort:
+    # a gate-run read must never break the projection.
+    def first_review_gate_run(task)
+      GateRun.for_subject("task", task.slug).where(key: REVIEW_GATE_KEYS)
+             .order(:started_at, :id).first
+    rescue StandardError
+      nil
+    end
+
     # ---- event finders --------------------------------------------------------
 
     def last_transition_to(events, stage)
       events.select { |e| e.transition? && e.to_stage == stage }.last
+    end
+
+    def first_intent_to(events, stage)
+      events.find { |e| e.intent? && e.to_stage == stage }
     end
 
     def first_cert(events, status)
@@ -202,14 +248,6 @@ class Task
 
     def timestamp(value)
       value&.iso8601
-    end
-
-    def parse_time(value)
-      return nil if value.blank?
-
-      Time.zone.parse(value.to_s)
-    rescue ArgumentError, TypeError
-      nil
     end
   end
 end
