@@ -342,6 +342,15 @@ class TaskCliTest < Minitest::Test
     assert_equal true, parsed.dig("metadata", "resolves_feedback")
   end
 
+  def test_note_comment_with_resolves_feedback_dies_naming_the_handoff_form
+    requests, _out, err, status = run_task(["note", "demo-task", "--comment", "Addressed the blocker.", "--resolves-feedback"])
+
+    refute status.success?, "--resolves-feedback on a non-handoff note must die, not silently no-op"
+    assert_empty requests, "the guard should fail before auth or POST"
+    assert_match(/--resolves-feedback/, err)
+    assert_match(/--handoff/, err, "the error should name the correct form")
+  end
+
   def test_move_with_legacy_stage_name_suggests_the_live_stage
     requests, _out, err, status = run_task(["move", "demo-task", "pr_review"])
 
