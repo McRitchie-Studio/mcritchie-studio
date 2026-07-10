@@ -499,10 +499,25 @@ class AtomicCaptureHook
       return {
         "model" => model,
         "usage" => parsed.dig("message", "usage"),
-        "uuid"  => parsed["uuid"]
+        "uuid"  => parsed["uuid"],
+        "text"  => assistant_preamble(parsed)
       }
     end
     nil
+  rescue StandardError
+    nil
+  end
+
+  # The assistant turn's PREAMBLE — the text blocks of message.content joined: the
+  # prose the model wrote BEFORE its tool calls. This is the DERIVED reason/outcome
+  # source the PreToolUse span-open splits. nil when the turn carries no text block.
+  def assistant_preamble(parsed)
+    content = parsed.dig("message", "content")
+    return nil unless content.is_a?(Array)
+
+    text = content.select { |block| block.is_a?(Hash) && block["type"] == "text" }
+                  .map { |block| block["text"] }.join(" ").strip
+    present?(text) ? text : nil
   rescue StandardError
     nil
   end
@@ -906,6 +921,15 @@ class AtomicCaptureHook
     raw = stdin.read
     event = normalize_event(JSON.parse(raw))
     return unless present?(event["session_id"]) # nothing to attribute → skip
+
+    # PreToolUse lane: open (or continue) the span for THIS assistant turn BEFORE the
+    # tool runs, so a hung action shows an open-unsealed span. Idempotent server-side
+    # on (session, turn_uuid) — a turn's parallel calls share one span.
+    if pre_tool?(event)
+      dispatch(build_turn_open_payload(event), path: "/api/v1/agent_activities/turn_open")
+      return
+    end
+
     return if droppable?(event)                 # navigation/narration overhead — never a row
 
     payload = build_payload(event)
@@ -914,18 +938,41 @@ class AtomicCaptureHook
     # swallow — telemetry never breaks the session
   end
 
+  # True on a PreToolUse event (the span-open lane); PostToolUse (and anything else)
+  # falls through to action capture.
+  def pre_tool?(event)
+    event["hook_event_name"].to_s == "PreToolUse"
+  end
+
+  # The PreToolUse payload: open/continue the span for this assistant turn. turn_uuid
+  # is the idempotency key; preamble carries the derived reason + prior outcome; the
+  # marker supplies task/stage/mascot (mascot seeds the genesis "A wild … appeared").
+  def build_turn_open_payload(event)
+    marker = resolve_marker(cwd: event["cwd"], session_id: event["session_id"])
+    turn   = resolve_assistant_turn(event)
+    {
+      "session_id" => event["session_id"],
+      "turn_uuid"  => present?(turn["uuid"]) ? turn["uuid"] : blank_to_nil(event["source_turn_uuid"]),
+      "preamble"   => turn["text"],
+      "task_slug"  => marker["task_slug"],
+      "stage"      => marker["stage"],
+      "mascot"     => marker["mascot"],
+      "transcript_path" => event["transcript_path"]
+    }
+  end
+
   # Run the network leg detached by default so the parent returns instantly;
   # inline when ATOMIC_CAPTURE_FOREGROUND=1 (tests) or fork is unavailable.
-  def dispatch(payload)
+  def dispatch(payload, path: "/api/v1/agent_actions")
     if foreground?
-      deliver(payload)
+      deliver(payload, path: path)
       return
     end
 
     pid = fork do
       begin
         Process.setsid
-        deliver(payload)
+        deliver(payload, path: path)
       rescue StandardError
         # swallow in the child too
       ensure
@@ -934,17 +981,17 @@ class AtomicCaptureHook
     end
     Process.detach(pid) if pid
   rescue NotImplementedError, StandardError
-    deliver(payload) # fork unsupported → inline with short timeouts
+    deliver(payload, path: path) # fork unsupported → inline with short timeouts
   end
 
   # Auth (cached token via the shared AgentApi client) then POST the action.
   # Best-effort; swallows everything. A 401 drops the shared token cache so the
   # next call re-mints.
-  def deliver(payload)
+  def deliver(payload, path: "/api/v1/agent_actions")
     tok = @api.token
     return unless tok
 
-    res = @api.http_json(:post, "/api/v1/agent_actions", payload, bearer: tok)
+    res = @api.http_json(:post, path, payload, bearer: tok)
     @api.invalidate_token! if res && res.code.to_i == 401
   rescue StandardError
     # swallow

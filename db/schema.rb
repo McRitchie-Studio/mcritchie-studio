@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_09_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_09_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -129,6 +129,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_09_060000) do
     t.string "model"
     t.datetime "opened_at", null: false
     t.string "outcome_slug"
+    t.bigint "parent_span_id"
     t.string "reason_slug", null: false
     t.integer "seq", default: 0, null: false
     t.string "session_id", null: false
@@ -137,10 +138,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_09_060000) do
     t.string "task_slug"
     t.integer "tokens_in"
     t.integer "tokens_out"
+    t.string "transcript_path"
+    t.string "turn_uuid"
     t.datetime "updated_at", null: false
     t.index ["opened_at"], name: "index_agent_activities_on_opened_at"
+    t.index ["parent_span_id"], name: "index_agent_activities_on_parent_span_id"
     t.index ["session_id", "closed_at"], name: "index_agent_activities_on_session_id_and_closed_at"
     t.index ["session_id", "seq"], name: "index_agent_activities_on_session_id_and_seq"
+    t.index ["session_id", "transcript_path"], name: "index_agent_activities_on_session_and_transcript"
+    t.index ["session_id", "turn_uuid"], name: "index_agent_activities_on_session_and_turn", unique: true, where: "(turn_uuid IS NOT NULL)"
     t.index ["task_slug", "seq"], name: "index_agent_activities_on_task_slug_and_seq"
   end
 

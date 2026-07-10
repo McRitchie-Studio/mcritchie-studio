@@ -319,6 +319,7 @@ Rails.application.routes.draw do
         collection do
           post :close
           post :close_all
+          post :turn_open # the DERIVED lifecycle sink — PreToolUse opens a turn-keyed span
         end
       end
       # Compatibility path for existing capture/narration hooks.

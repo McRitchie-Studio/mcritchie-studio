@@ -110,6 +110,13 @@ class AgentActivityCli
   # ── Commands ──────────────────────────────────────────────────────────────
 
   def start(flags)
+    # ── SUPERSEDED by turn-driven auto-open (bin/atomic-capture-hook PreToolUse) ──
+    # Spans now open AUTOMATICALLY per assistant turn (reason live at PreToolUse,
+    # outcome sealed at the next boundary), so `start`/`next` are OVERRIDE-ONLY —
+    # kept for merging/splitting/annotating a derived span by hand. To fully NULLIFY
+    # manual narration while the auto lane beds in, UNCOMMENT the next line (start &
+    # next become no-ops); re-comment to revert:
+    # return warn_note("atomic-event: manual narration superseded by turn-driven auto-open")
     sid = resolve_session_id(flags)
     return warn_note("atomic-event: no session id — nothing to narrate") unless present?(sid)
 

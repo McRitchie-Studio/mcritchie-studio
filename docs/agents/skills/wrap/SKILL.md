@@ -113,7 +113,12 @@ Close with an inspectable summary:
 - Any operator-gated next step (QA review, merge, deploy) — named, not taken.
 
 ## 8. Clear to close
-Make the call — this is the last word, and it's yours to offer. If you're at a
+**Seal the trajectory first:** close the session's final open activity span so it never
+hangs half-narrated — the turn-driven lifecycle opens a span per assistant turn, and
+the last one is sealed here: `bin/agent-activity close-open --outcome "session wrapped"`.
+Best-effort + idempotent (the SessionEnd hook runs it too, so a double call no-ops).
+
+Then make the call — this is the last word, and it's yours to offer. If you're at a
 genuinely clean seam — work committed or safely parked, the board honest, nothing
 half-done that a cold session would fumble — say it plainly: **"Clean seam — you're
 clear to close."** If you're *not* there yet, name the single thing that would get

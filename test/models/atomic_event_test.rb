@@ -594,4 +594,144 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert_nil AgentActivity.for_session("km-next").open.order(:seq).last.key_method,
                "the NEW span opens without the prior's key method"
   end
+
+  # ---- open_for_turn! — the derived, turn-keyed lifecycle -------------------
+  # The PreToolUse hook calls this on every tool call, keyed to the assistant turn.
+
+  test "[unit] open_for_turn! opens a GENESIS span for the session's first turn" do
+    span = AgentActivity.open_for_turn!(session_id: "turn-sess", turn_uuid: "t-1",
+                                        mascot: "charmander",
+                                        reason_slug: "ignored on genesis")
+
+    assert span.persisted?
+    assert span.open?
+    assert_equal "A wild Charmander appeared", span.reason_slug,
+                 "a session's first span is the canned genesis, not a derived reason"
+    assert_equal "t-1", span.turn_uuid
+    assert_nil span.parent_span_id
+  end
+
+  test "[unit] open_for_turn! genesis falls back to a challenger with no mascot" do
+    span = AgentActivity.open_for_turn!(session_id: "turn-nomask", turn_uuid: "t-1")
+
+    assert_equal "A wild challenger appeared", span.reason_slug
+  end
+
+  test "[unit] open_for_turn! is IDEMPOTENT on (session, turn_uuid) — parallel calls share ONE span" do
+    first  = AgentActivity.open_for_turn!(session_id: "turn-idem", turn_uuid: "t-1", mascot: "pikachu")
+    second = AgentActivity.open_for_turn!(session_id: "turn-idem", turn_uuid: "t-1",
+                                          reason_slug: "sibling tool call in the same turn")
+
+    assert_equal first.id, second.id, "a second call in the SAME turn returns the first span"
+    assert_equal 1, AgentActivity.for_session("turn-idem").count,
+                 "no duplicate span for a shared turn_uuid"
+  end
+
+  test "[unit] open_for_turn! SEALS the prior turn's span at a new-turn boundary" do
+    AgentActivity.open_for_turn!(session_id: "turn-bnd", turn_uuid: "t-1", mascot: "bulbasaur") # genesis
+    second = AgentActivity.open_for_turn!(session_id: "turn-bnd", turn_uuid: "t-2",
+                                          reason_slug: "check how pokemon store images",
+                                          prior_outcome_slug: "only User#avatar is attached")
+
+    prior = AgentActivity.for_session("turn-bnd").order(:seq).first
+    assert prior.closed?, "the prior turn's span seals at the boundary"
+    assert_equal "only User#avatar is attached", prior.outcome_slug
+    assert_equal "check how pokemon store images", second.reason_slug,
+                 "the new turn carries the derived reason (not genesis)"
+    assert_equal "t-2", second.turn_uuid
+    assert_equal 1, AgentActivity.for_session("turn-bnd").open.count
+  end
+
+  test "[unit] open_for_turn! records parent_span_id for a nested subagent span" do
+    parent = AgentActivity.open_for_turn!(session_id: "turn-nest", turn_uuid: "p-1", mascot: "eevee")
+    child  = AgentActivity.open_for_turn!(session_id: "turn-nest", turn_uuid: "c-1",
+                                          reason_slug: "subagent work", parent_span_id: parent.id)
+
+    assert_equal parent.id, child.parent_span_id, "the subagent span links to the delegating span"
+  end
+
+  test "[unit] open_for_turn! is a no-op returning nil on a blank session or turn_uuid" do
+    assert_nil AgentActivity.open_for_turn!(session_id: "", turn_uuid: "t-1")
+    assert_nil AgentActivity.open_for_turn!(session_id: "s", turn_uuid: "")
+  end
+
+  test "[unit] genesis_reason title-cases the mascot and falls back to challenger" do
+    assert_equal "A wild Tyrogue appeared", AgentActivity.genesis_reason("tyrogue")
+    assert_equal "A wild challenger appeared", AgentActivity.genesis_reason(nil)
+    assert_equal "A wild challenger appeared", AgentActivity.genesis_reason("   ")
+  end
+
+  # ---- split_preamble — outcome-at-seam / reason-live derivation -------------
+
+  test "[unit] split_preamble maps the lead sentence to prior_outcome and the rest to reason" do
+    parts = AgentActivity.split_preamble(
+      "Found it — only User#avatar is attached. Now let me check the pokemon table."
+    )
+
+    assert_equal "Found it — only User#avatar is attached.", parts[:prior_outcome]
+    assert_equal "Now let me check the pokemon table.", parts[:reason]
+  end
+
+  test "[unit] split_preamble treats a single sentence as ALL reason, no prior outcome" do
+    parts = AgentActivity.split_preamble("Let me confirm nothing attaches an avatar.")
+
+    assert_nil parts[:prior_outcome]
+    assert_equal "Let me confirm nothing attaches an avatar.", parts[:reason]
+  end
+
+  test "[unit] split_preamble is blank-safe" do
+    assert_equal({ prior_outcome: nil, reason: nil }, AgentActivity.split_preamble(""))
+    assert_equal({ prior_outcome: nil, reason: nil }, AgentActivity.split_preamble(nil))
+  end
+
+  test "[unit] split_preamble caps a long derived field to one truncated line" do
+    parts = AgentActivity.split_preamble("#{'x' * 400}. and the intent here.")
+
+    assert_operator parts[:prior_outcome].length, :<=, AgentActivity::DERIVED_REASON_MAX
+    assert parts[:prior_outcome].end_with?("…"), "an over-long field is elided"
+  end
+
+  # ---- nesting: a subagent's turns (other transcript) nest under the parent --
+
+  test "[unit] a subagent turn nests under the parent WITHOUT sealing its open span" do
+    root = AgentActivity.open_for_turn!(session_id: "nest", turn_uuid: "p-1", mascot: "eevee",
+                                        transcript_path: "/main.jsonl") # genesis Delegate span, stays open
+    sub1 = AgentActivity.open_for_turn!(session_id: "nest", turn_uuid: "s-1",
+                                        reason_slug: "subagent reads", transcript_path: "/sub.jsonl")
+
+    assert root.reload.open?, "the parent's Delegate span stays open while the subagent runs"
+    assert_equal root.id, sub1.parent_span_id, "the subagent span nests under the delegating span"
+    assert_equal 2, AgentActivity.for_session("nest").open.count, "parent + subagent both open"
+  end
+
+  test "[unit] subagent turns seal each OTHER but never the parent" do
+    root = AgentActivity.open_for_turn!(session_id: "nest2", turn_uuid: "p-1", mascot: "eevee",
+                                        transcript_path: "/main.jsonl")
+    sub1 = AgentActivity.open_for_turn!(session_id: "nest2", turn_uuid: "s-1",
+                                        reason_slug: "sub reads", transcript_path: "/sub.jsonl")
+    sub2 = AgentActivity.open_for_turn!(session_id: "nest2", turn_uuid: "s-2",
+                                        reason_slug: "sub edits", prior_outcome_slug: "found it",
+                                        transcript_path: "/sub.jsonl")
+
+    assert sub1.reload.closed?, "the subagent's own prior turn seals"
+    assert_equal "found it", sub1.outcome_slug
+    assert root.reload.open?, "the parent stays open across the whole delegation"
+    assert_equal root.id, sub2.parent_span_id
+  end
+
+  test "[unit] the parent's next turn seals its Delegate span once delegation ends" do
+    root = AgentActivity.open_for_turn!(session_id: "nest3", turn_uuid: "p-1", mascot: "eevee",
+                                        transcript_path: "/main.jsonl")
+    AgentActivity.open_for_turn!(session_id: "nest3", turn_uuid: "s-1", reason_slug: "sub work",
+                                 transcript_path: "/sub.jsonl")
+    parent2 = AgentActivity.open_for_turn!(session_id: "nest3", turn_uuid: "p-2",
+                                           reason_slug: "back in the parent",
+                                           prior_outcome_slug: "delegation done",
+                                           transcript_path: "/main.jsonl")
+
+    assert root.reload.closed?, "the parent resumes and seals its own Delegate span"
+    assert_equal "delegation done", root.outcome_slug
+    assert parent2.open?
+    assert_nil parent2.parent_span_id, "a same-lineage parent turn does not nest"
+  end
 end

@@ -520,4 +520,25 @@ class AgentActionTest < ActiveSupport::TestCase
     assert_nil AgentAction.capture(session_id: "km-sess", kind: "read").summary,
                "fields stay optional — a plain capture carries neither"
   end
+
+  # ---- [unit] turn-keyed activity attribution (the derived lifecycle) --------
+
+  test "[unit] activity_for_turn_id finds the span stamped with a matching turn_uuid" do
+    span = AgentActivity.open_for_turn!(session_id: "attr-sess", turn_uuid: "t-9", mascot: "snorlax")
+
+    assert_equal span.id, AgentAction.activity_for_turn_id("attr-sess", "t-9")
+    assert_nil AgentAction.activity_for_turn_id("attr-sess", "no-such-turn")
+    assert_nil AgentAction.activity_for_turn_id("", "t-9")
+  end
+
+  test "[unit] capture attributes an action by turn_uuid, not merely the last-open span" do
+    first  = AgentActivity.open_for_turn!(session_id: "attr-2", turn_uuid: "t-1", mascot: "gengar") # genesis
+    second = AgentActivity.open_for_turn!(session_id: "attr-2", turn_uuid: "t-2", reason_slug: "later turn")
+
+    # a late-arriving action from turn t-1 must join t-1's span, not the now-open t-2
+    action = AgentAction.capture(session_id: "attr-2", kind: "grep", source_turn_uuid: "t-1")
+
+    assert_equal first.id, action.agent_activity_id, "the action joins its OWN turn's span"
+    refute_equal second.id, action.agent_activity_id, "not merely whatever is open last"
+  end
 end

@@ -1,4 +1,4 @@
-# Atomic-capture PostToolUse hook
+# Atomic-capture hooks (PreToolUse + PostToolUse)
 
 `bin/atomic-capture-hook` is the **Phase B live-capture** producer: a Claude Code
 or Codex `PostToolUse` hook that streams every tool call into the
@@ -215,6 +215,49 @@ not a worktree, so it survives worktree cleanup. Add to `~/.claude/settings.json
 
 No `matcher` ⇒ it fires for every tool. (A `"matcher": "Read|Edit|Write|Bash"`
 would scope it.)
+
+## PreToolUse hook — the turn-driven span lifecycle
+
+The **PreToolUse** hook is the companion producer that OPENS activity spans
+automatically, so agents no longer hand-narrate every boundary. On each tool call it
+reads the assistant turn (uuid + preamble text) and POSTs to
+`/api/v1/agent_activities/turn_open`, which opens — or continues — the span for that
+turn:
+
+- **Reason live, before the tool runs** — the span opens at PreToolUse (not Post), so
+  a hung / long-running action shows as an open, unsealed span ("I can see it started").
+- **Idempotent per turn** — a turn's parallel tool calls share ONE span (the
+  `(session_id, turn_uuid)` partial-unique index); the 2nd..Nth calls are no-ops.
+- **Outcome at the seam** — the next turn's preamble lead sentence seals the prior
+  span's outcome (`AgentActivity.split_preamble`); the rest is the new span's reason.
+- **Genesis** — a session's first span opens as "A wild &lt;mascot&gt; appeared".
+- **Nesting** — a subagent turn (same session, different transcript) nests under the
+  delegating span via `parent_span_id`, and its transcript-scoped lane keeps it from
+  sealing the parent's open Delegate span.
+
+This SUPERSEDES manual narration: `bin/agent-activity start/next` become OVERRIDE-ONLY
+(merge/split/annotate a derived span by hand). **To revert to fully-manual narration,
+remove this PreToolUse block** — the whole auto-lifecycle is that one wiring switch.
+
+Add to `~/.claude/settings.json` (command points at the **primary checkout**):
+
+```jsonc
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcritchie-studio/bin/atomic-capture-hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 > **Do not hand-edit the operator's global `~/.claude/settings.json` from a build
 > session.** `bin/install-agent-docs` wires this hook idempotently (pointing at

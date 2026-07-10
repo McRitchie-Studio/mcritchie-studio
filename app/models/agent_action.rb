@@ -157,7 +157,9 @@ class AgentAction < ApplicationRecord
       task_slug:        attrs[:task_slug],
       mascot:           attrs[:mascot],
       seq:              attrs[:seq] || next_seq_for(attrs[:session_id]),
-      agent_activity_id:  activity_id_from(attrs) || current_activity_id_for(attrs[:session_id]),
+      agent_activity_id:  activity_id_from(attrs) ||
+                          activity_for_turn_id(attrs[:session_id], attrs[:source_turn_uuid]) ||
+                          current_activity_id_for(attrs[:session_id]),
       kind:             attrs[:kind],
       event_slug:       attrs[:event_slug],
       result_slug:      attrs[:result_slug],
@@ -222,6 +224,20 @@ class AgentAction < ApplicationRecord
 
   def self.current_event_id_for(session_id)
     current_activity_id_for(session_id)
+  end
+
+  # The id of the span opened for THIS action's assistant turn — the deterministic
+  # join the DERIVED (turn-keyed) lifecycle attributes on. The PreToolUse hook opens a
+  # span stamped with the turn_uuid; every action from that turn carries the SAME
+  # source_turn_uuid, so they attribute to it WITHOUT a local open-activity marker.
+  # Preferred over current_activity_id_for (last-open) because it is turn-exact. nil
+  # when no turn span exists yet (the manual/legacy narration flow). Best-effort.
+  def self.activity_for_turn_id(session_id, turn_uuid)
+    return nil if session_id.blank? || turn_uuid.blank?
+
+    AgentActivity.for_session(session_id).where(turn_uuid: turn_uuid).order(:seq).last&.id
+  rescue StandardError
+    nil
   end
 
   def self.activity_id_from(attrs)

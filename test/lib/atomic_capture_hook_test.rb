@@ -480,6 +480,60 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  # ── [unit] PreToolUse lane — the derived, turn-keyed span open ────────────
+
+  def test_unit_assistant_preamble_joins_the_turns_text_blocks
+    parsed = { "message" => { "content" => [
+      { "type" => "text", "text" => "Found it. Now let me check the table." },
+      { "type" => "tool_use", "name" => "Bash", "input" => {} }
+    ] } }
+    assert_equal "Found it. Now let me check the table.", hook.assistant_preamble(parsed)
+    assert_nil hook.assistant_preamble("message" => { "content" => [] })
+    assert_nil hook.assistant_preamble({})
+  end
+
+  def test_unit_read_assistant_turn_includes_the_preamble_text
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, JSON.generate(
+        "type" => "assistant", "uuid" => "turn-7",
+        "message" => { "model" => "claude-opus-4-8",
+                       "content" => [{ "type" => "text", "text" => "Checking the schema now." }],
+                       "usage" => { "input_tokens" => 1 } }
+      ) + "\n")
+      turn = hook.read_assistant_turn_from_transcript(path)
+      assert_equal "turn-7", turn["uuid"]
+      assert_equal "Checking the schema now.", turn["text"]
+    end
+  end
+
+  def test_unit_pre_tool_detects_the_pretooluse_lane
+    assert hook.pre_tool?("hook_event_name" => "PreToolUse")
+    refute hook.pre_tool?("hook_event_name" => "PostToolUse")
+    refute hook.pre_tool?({})
+  end
+
+  def test_unit_build_turn_open_payload_carries_turn_uuid_and_preamble
+    Dir.mktmpdir do |proj|
+      path = File.join(proj, "transcript.jsonl")
+      File.write(path, JSON.generate(
+        "type" => "assistant", "uuid" => "turn-99",
+        "message" => { "model" => "claude-opus-4-8",
+                       "content" => [{ "type" => "text", "text" => "A recap. Now the real intent." }],
+                       "usage" => {} }
+      ) + "\n")
+      event = {
+        "session_id" => SESSION, "cwd" => "/nope", "transcript_path" => path,
+        "hook_event_name" => "PreToolUse", "tool_name" => "Read", "tool_input" => {}
+      }
+      payload = hook("CLAUDE_PROJECTS_DIR" => proj).build_turn_open_payload(event)
+      assert_equal SESSION, payload["session_id"]
+      assert_equal "turn-99", payload["turn_uuid"]
+      assert_equal "A recap. Now the real intent.", payload["preamble"]
+      assert_nil payload["task_slug"], "no marker → nil task"
+    end
+  end
+
   def test_unit_build_payload_stamps_tokens_and_source_turn_uuid
     Dir.mktmpdir do |proj|
       path = File.join(proj, "transcript.jsonl")

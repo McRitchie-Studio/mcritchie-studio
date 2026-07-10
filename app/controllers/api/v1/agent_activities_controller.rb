@@ -81,7 +81,52 @@ module Api
         render_data({ closed: count }, status: :ok)
       end
 
+      # POST /api/v1/agent_activities/turn_open
+      #
+      # The DERIVED lifecycle sink (the PreToolUse capture hook). Open — or continue —
+      # the span for THIS assistant turn, keyed by turn_uuid. Idempotent: a turn's
+      # parallel tool calls all POST here and share ONE span (2nd..Nth are no-ops that
+      # return the same span). The `preamble` (the turn's assistant text) splits into
+      # the PRIOR span's outcome (its lead sentence) + THIS span's reason. Returns 200
+      # with the span, or a best-effort 204 no-op on a blank session/turn.
+      def turn_open
+        parts = AgentActivity.split_preamble(turn_open_params[:preamble])
+        span = AgentActivity.open_for_turn!(
+          session_id:         turn_open_params[:session_id],
+          turn_uuid:          turn_open_params[:turn_uuid],
+          reason_slug:        turn_open_params[:reason].presence || parts[:reason],
+          prior_outcome_slug: turn_open_params[:prior_outcome].presence || parts[:prior_outcome],
+          category:           turn_open_params[:category].presence || "Explore",
+          mascot:             turn_open_params[:mascot],
+          task_slug:          turn_open_params[:task_slug],
+          stage:              turn_open_params[:stage],
+          agent:              turn_open_params[:agent],
+          parent_span_id:     turn_open_params[:parent_span_id],
+          transcript_path:    turn_open_params[:transcript_path]
+        )
+        return head :no_content if span.nil?
+
+        render_data(span, status: :ok)
+      end
+
       private
+
+      def turn_open_params
+        params.permit(
+          :session_id,    # required — the session this turn belongs to
+          :turn_uuid,     # required — the assistant turn id (the idempotency key)
+          :preamble,      # the turn's assistant text; split into prior outcome + reason
+          :reason,        # optional explicit reason (wins over the preamble split)
+          :prior_outcome, # optional explicit prior outcome (wins over the split)
+          :category,      # optional category; defaults to Explore
+          :mascot,        # optional STABLE base session Pokémon slug (the genesis reason)
+          :task_slug,     # optional slug FK
+          :stage,         # optional coarse task stage
+          :agent,          # optional acting soul (the lane)
+          :parent_span_id, # optional — the delegating span, for a nested subagent
+          :transcript_path # the turn's transcript — the subagent-lineage key
+        )
+      end
 
       def open_params
         params.permit(
