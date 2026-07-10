@@ -90,23 +90,15 @@ module Api
       # the PRIOR span's outcome (its lead sentence) + THIS span's reason. Returns 200
       # with the span, or a best-effort 204 no-op on a blank session/turn.
       def turn_open
-        parts = AgentActivity.split_preamble(turn_open_params[:preamble])
-        span = AgentActivity.open_for_turn!(
-          session_id:         turn_open_params[:session_id],
-          turn_uuid:          turn_open_params[:turn_uuid],
-          reason_slug:        turn_open_params[:reason].presence || parts[:reason],
-          prior_outcome_slug: turn_open_params[:prior_outcome].presence || parts[:prior_outcome],
-          category:           turn_open_params[:category].presence || "Explore",
-          mascot:             turn_open_params[:mascot],
-          task_slug:          turn_open_params[:task_slug],
-          stage:              turn_open_params[:stage],
-          agent:              turn_open_params[:agent],
-          parent_span_id:     turn_open_params[:parent_span_id],
-          transcript_path:    turn_open_params[:transcript_path]
-        )
-        return head :no_content if span.nil?
-
-        render_data(span, status: :ok)
+        # NEUTRALIZED (retire-turn-auto-open-spans): agent-AUTHORED narration is the
+        # primary path; auto-scraped preambles produced only noise ("(working)", chat
+        # filler, 0 actions — see prod session 39736e86). This endpoint no longer OPENS
+        # a span. The PreToolUse hook stays wired, and AgentActivity.open_for_turn! +
+        # turn_open_params are left intact, so the follow-up MEASURE-ONLY compliance
+        # meter can repurpose this seam to DETECT orphans (tool calls with no open
+        # AUTHORED unit) instead of creating spans. Revert: restore the open_for_turn!
+        # call (see git history).
+        head :no_content
       end
 
       private
