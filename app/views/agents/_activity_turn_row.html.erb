@@ -1,0 +1,72 @@
+<%# One assistant TURN as a collapsed drill-down row under its activity — the
+    reconciling view. Usage is metered per turn, so a turn's fan-out of N tool-calls
+    is ONE row whose tokens count once (vs the old per-action rows that repeated the
+    turn's spend and never summed to the span). Mirrors the activity row's 7 columns:
+    the turn's tool KINDS are tagged inline, the load-bearing key_method leads, and the
+    primary (first) action of the turn carries the outcome, input, and the (merged)
+    action-level grade cells. Locals: turn_row, activity, agents_by_slug,
+    pokemon_by_slug, action_grades. %>
+<% primary = turn_row[:primary] %>
+<% outcome = heartbeat_outcome_meta(primary.outcome) %>
+<% turn_pokemon = pokemon_by_slug[primary.mascot] %>
+<% grades_for = action_grades[primary.id] || {} %>
+<% alex_g = grades_for[ActionGrade::ALEX] %>
+<% mcr_g  = grades_for[ActionGrade::MCR] %>
+<tr class="aa-subrow" id="aa-turn-<%= turn_row[:key] %>" data-test="aa-turn"
+    data-row-id="<%= primary.id %>" data-id-field="agent_action_id"
+    data-alex-disp="<%= alex_g&.disposition %>" data-alex-slug="<%= alex_g&.slug %>"
+    data-alex-long="<%= alex_g&.long_form %>" data-alex-graded="<%= alex_g.present? %>"
+    data-alex-banked="<%= !!alex_g&.banked %>"
+    data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
+    data-mcr-long="<%= mcr_g&.long_form %>" data-mcr-graded="<%= mcr_g.present? %>"
+    data-mcr-banked="<%= !!mcr_g&.banked %>"
+    x-show="open" x-data="agentsActionRow()" x-init="hydrateGrades($el)"
+    @aa:graded.window="onGraded($event.detail)"
+    style="--hb-edge: <%= outcome[:color] %>">
+  <td class="aa-chev" aria-hidden="true"></td>
+  <td class="aa-agent"><%= heartbeat_agent_cell(mascot_slug: primary.mascot, pokemon: turn_pokemon,
+                                                 agent_slug: activity.agent, agent: agents_by_slug[activity.agent],
+                                                 supervisor_slug: activity.supervisor_agent,
+                                                 supervisor: agents_by_slug[activity.supervisor_agent],
+                                                 show_mascot: activity.supervisor_agent.blank?,
+                                                 submascot: true) %></td>
+  <td class="aa-activity">
+    <div class="aa-stack">
+      <div class="aa-r aa-r-wrap aa-actionhead">
+        <% turn_row[:actions].each do |a| %><span class="aa-seqbadge">#<%= a.seq %></span><% end %>
+        <% turn_row[:kinds].each do |k| %><span class="aa-kindbadge"><%= k %></span><% end %>
+        <span class="aa-action-summary" data-test="aa-turn-summary"><%= turn_row[:summary].presence || "—" %></span>
+      </div>
+      <div class="aa-r aa-keycmd" data-test="aa-turn-keymethod">
+        <% if turn_row[:key_action].key_method.present? %>
+          <%= render "heartbeat/key_method_chip", code: turn_row[:key_action].key_method, lang: turn_row[:key_action].key_method_lang %>
+        <% else %>
+          <span class="aa-empty-sub">—</span>
+        <% end %>
+      </div>
+    </div>
+  </td>
+  <td class="aa-cost aa-collapsible">
+    <div class="aa-stack">
+      <div class="aa-r aa-cost-amt" data-test="aa-turn-cost"><%= heartbeat_cost(primary.cost) %></div>
+      <div class="aa-r aa-cost-tok"><%= heartbeat_tokens_pair(turn_row[:tokens_in], turn_row[:tokens_out]) %></div>
+    </div>
+  </td>
+  <td class="aa-details aa-collapsible">
+    <div class="aa-stack">
+      <div class="aa-r aa-detailhead">
+        <% turn_row[:kinds].each do |k| %><span class="aa-kindbadge"><%= k %></span><% end %>
+        <span class="aa-outcome" data-test="aa-turn-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
+      </div>
+      <div class="aa-r">
+        <% if primary.input.present? %>
+          <span class="aa-json" data-test="aa-turn-input" title="<%= primary.input %>"><%= heartbeat_input_preview(primary.input) %></span>
+        <% else %>
+          <span class="aa-empty-sub">—</span>
+        <% end %>
+      </div>
+    </div>
+  </td>
+  <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "alex", grade: alex_g %>
+  <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "mcr", grade: mcr_g %>
+</tr>

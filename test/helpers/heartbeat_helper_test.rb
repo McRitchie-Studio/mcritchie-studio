@@ -99,6 +99,63 @@ class HeartbeatHelperTest < ActionView::TestCase
     assert_equal 8350, totals[:tokens_total]
   end
 
+  # ---- [unit] turn-grouped drill-down (reconciling token attribution) --------
+
+  test "[unit] turn_rows collapses a fan-out to one row, counting the turn's tokens once" do
+    actions = [
+      AgentAction.new(id: 1, tokens_in: 4262, tokens_out: 418, source_turn_uuid: "t1", kind: "bash", summary: "session-preflight"),
+      AgentAction.new(id: 2, tokens_in: 4262, tokens_out: 418, source_turn_uuid: "t1", kind: "read", summary: "read helper"),
+      AgentAction.new(id: 3, tokens_in: 526,  tokens_out: 326, source_turn_uuid: "t2", kind: "read", summary: "read helper test")
+    ]
+    rows = heartbeat_turn_rows(actions)
+
+    assert_equal 2, rows.size, "2 turns from 3 actions (t1 is a fan-out)"
+    fan = rows.first
+    assert_equal 4262, fan[:tokens_in], "the turn's tokens counted ONCE, not doubled"
+    assert_equal 418, fan[:tokens_out]
+    assert_equal %w[bash read], fan[:kinds], "both tool kinds tagged inline"
+    assert_equal "session-preflight · read helper", fan[:summary]
+    assert_equal 2, fan[:actions].size
+    assert_equal 526, rows.last[:tokens_in], "the single-tool turn is untouched"
+  end
+
+  test "[unit] turn_rows gives a blank source_turn_uuid its own row (nothing to dedup on)" do
+    actions = [
+      AgentAction.new(id: 1, tokens_in: 100, tokens_out: 10, source_turn_uuid: nil, kind: "bash", summary: "a"),
+      AgentAction.new(id: 2, tokens_in: 200, tokens_out: 20, source_turn_uuid: nil, kind: "bash", summary: "b")
+    ]
+
+    assert_equal 2, heartbeat_turn_rows(actions).size, "blank-turn actions never collapse together"
+  end
+
+  test "[unit] turn_rows leads with the load-bearing key_action" do
+    actions = [
+      AgentAction.new(id: 1, tokens_in: 100, tokens_out: 10, source_turn_uuid: "t1", kind: "read", summary: "a"),
+      AgentAction.new(id: 2, tokens_in: 100, tokens_out: 10, source_turn_uuid: "t1", kind: "bash", summary: "b", key_method: "bin/rails test")
+    ]
+
+    assert_equal 2, heartbeat_turn_rows(actions).first[:key_action].id, "the action carrying a key_method leads"
+  end
+
+  test "[unit] reasoning_remainder is the activity's tokens minus the tool-turns (reconciles to the span)" do
+    activity  = AgentActivity.new(tokens_in: 45_062, tokens_out: 10_161, model: "claude-opus-4-8")
+    turn_rows = [{ tokens_in: 14_823, tokens_out: 3_059 }]
+    rem = heartbeat_reasoning_remainder(activity, turn_rows)
+
+    assert_equal 30_239, rem[:tokens_in],  "45,062 - 14,823 = 30,239"
+    assert_equal 7_102,  rem[:tokens_out], "10,161 - 3,059 = 7,102"
+    assert_equal activity.tokens_in,  turn_rows.sum { |g| g[:tokens_in] } + rem[:tokens_in],  "parts reconcile to the span (in)"
+    assert_equal activity.tokens_out, turn_rows.sum { |g| g[:tokens_out] } + rem[:tokens_out], "parts reconcile to the span (out)"
+  end
+
+  test "[unit] reasoning_remainder clamps negative to zero and zeroes an unmeasured activity" do
+    over = AgentActivity.new(tokens_in: 100, tokens_out: 10, model: "claude-opus-4-8")
+    assert_equal({ tokens_in: 0, tokens_out: 0 }, heartbeat_reasoning_remainder(over, [{ tokens_in: 999, tokens_out: 999 }]))
+
+    bare = AgentActivity.new
+    assert_equal({ tokens_in: 0, tokens_out: 0 }, heartbeat_reasoning_remainder(bare, [{ tokens_in: 5, tokens_out: 5 }]))
+  end
+
   test "cost formats by magnitude and dashes a zero cost" do
     assert_equal "—", heartbeat_cost(0)
     assert_equal "$0.00", heartbeat_cost(0.0005)

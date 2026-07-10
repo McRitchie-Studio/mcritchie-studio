@@ -234,6 +234,55 @@ module HeartbeatHelper
     end
   end
 
+  # Collapse an activity's actions to ONE row per assistant TURN for the reconciling
+  # drill-down. Usage is metered per turn, so a fan-out of N tool-calls shares one
+  # usage block — grouping counts those tokens ONCE (vs the old per-action rows, which
+  # repeated the turn's spend N times and never summed to the span). Each group keeps
+  # its actions in the order given (the controller's newest-first display order) and
+  # carries: the turn's tokens (from the primary/first action — they're identical
+  # across the turn), the distinct tool KINDS, a joined summary, and the load-bearing
+  # action (the one whose key_method the row shows). A blank source_turn_uuid can't be
+  # deduped, so each such action is its own group.
+  def heartbeat_turn_rows(actions)
+    groups = []
+    by_key = {}
+    Array(actions).each do |action|
+      key = action.source_turn_uuid.presence || "solo-#{action.id}"
+      if (g = by_key[key])
+        g[:actions] << action
+      else
+        g = { key: key, turn: action.source_turn_uuid, actions: [action] }
+        by_key[key] = g
+        groups << g
+      end
+    end
+    groups.each do |g|
+      primary        = g[:actions].first
+      g[:tokens_in]  = primary.tokens_in.to_i
+      g[:tokens_out] = primary.tokens_out.to_i
+      g[:kinds]      = g[:actions].map(&:kind).compact.uniq
+      g[:summary]    = g[:actions].filter_map { |a| a.summary.presence || a.event_slug.presence }.uniq.join(" · ").presence
+      g[:key_action] = g[:actions].find { |a| a.key_method.present? } || primary
+      g[:primary]    = primary
+    end
+    groups
+  end
+
+  # The non-tool-turn spend of an activity — its reasoning + prose (the model's
+  # thinking and the narration it wrote in turns that fired no tool). It's the
+  # activity's authoritative close-diff usage MINUS the tool-turns' deduped tokens, so
+  # the drill-down's parts (tool-turns + this) reconcile exactly to the span total.
+  # Clamped at 0. Returns { tokens_in:, tokens_out: }; zeroes when the activity carries
+  # no measured usage (pure board/harness spans).
+  def heartbeat_reasoning_remainder(activity, turn_rows)
+    return { tokens_in: 0, tokens_out: 0 } unless activity.respond_to?(:measured_usage?) && activity.measured_usage?
+
+    tool_in  = turn_rows.sum { |g| g[:tokens_in].to_i }
+    tool_out = turn_rows.sum { |g| g[:tokens_out].to_i }
+    { tokens_in:  [activity.tokens_in.to_i  - tool_in,  0].max,
+      tokens_out: [activity.tokens_out.to_i - tool_out, 0].max }
+  end
+
   # Activity-row totals. New activity spans report their own measured close-diff
   # model/tokens/cost; those numbers are authoritative and deliberately do NOT fall
   # back to parent action usage. The legacy one-arg form still aggregates actions for
