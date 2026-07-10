@@ -83,12 +83,10 @@ module Api
 
       # POST /api/v1/agent_activities/turn_open
       #
-      # The DERIVED lifecycle sink (the PreToolUse capture hook). Open — or continue —
-      # the span for THIS assistant turn, keyed by turn_uuid. Idempotent: a turn's
-      # parallel tool calls all POST here and share ONE span (2nd..Nth are no-ops that
-      # return the same span). The `preamble` (the turn's assistant text) splits into
-      # the PRIOR span's outcome (its lead sentence) + THIS span's reason. Returns 200
-      # with the span, or a best-effort 204 no-op on a blank session/turn.
+      # NEUTRALIZED (retire-turn-auto-open-spans) — always 204, opens NO span. The
+      # PreToolUse auto-open produced only noise, so agent-authored narration is the
+      # primary path now; the hook + open_for_turn! + turn_open_params seam is kept
+      # intact for the follow-up measure-only meter. Full why/revert in the body.
       def turn_open
         # NEUTRALIZED (retire-turn-auto-open-spans): agent-AUTHORED narration is the
         # primary path; auto-scraped preambles produced only noise ("(working)", chat
