@@ -43,6 +43,20 @@ class AgentActivity < ApplicationRecord
   # a typo'd soul never fails a narration.
   SOULS = %w[avi carl shannon jasper steffon alex].freeze
 
+  # The playful genesis reason for a session's very FIRST span — a self-contained
+  # opener that needs no derived preamble (sidestepping the first-turn "assistant
+  # line not yet flushed" race) and no prior span to seal. "%s" is the base session
+  # mascot, title-cased; a mascot-less session falls back to a generic challenger.
+  GENESIS_REASON = "A wild %s appeared"
+
+  # The fallback reason when a derived (non-genesis) open arrives with a blank
+  # preamble — a span must never sink on an empty reason_slug (the seam can backfill).
+  DEFAULT_DERIVED_REASON = "(working)"
+
+  # Cap on a derived reason/outcome length — a preamble can be a paragraph, but a
+  # span's reason should stay a glanceable line on the heartbeat.
+  DERIVED_REASON_MAX = 160
+
   # Slug FK to tasks (the ecosystem convention). Optional: PRE-task activities (boot,
   # intake) carry a null task_slug and must never fail a task lookup.
   belongs_to :task, foreign_key: :task_slug, primary_key: :slug,
@@ -138,6 +152,7 @@ class AgentActivity < ApplicationRecord
                           prior_key_method: nil, prior_key_method_lang: nil,
                           prior_model: nil, prior_tokens_in: nil, prior_tokens_out: nil,
                           prior_cache_read_tokens: nil, prior_cost: nil,
+                          turn_uuid: nil, parent_span_id: nil, transcript_path: nil,
                           opened_at: Time.current)
     activity = new(
       session_id:  session_id,
@@ -148,6 +163,9 @@ class AgentActivity < ApplicationRecord
       stage:       stage,
       agent:       agent,
       supervisor_agent: supervisor_agent,
+      turn_uuid:   turn_uuid,
+      parent_span_id: parent_span_id,
+      transcript_path: transcript_path,
       seq:         next_seq_for(session_id),
       opened_at:   opened_at
     )
@@ -166,10 +184,13 @@ class AgentActivity < ApplicationRecord
                                      tokens_out: prior_tokens_out,
                                      cache_read_tokens: prior_cache_read_tokens,
                                      cost: prior_cost))
-      # Per-agent lanes: auto-close only THIS agent's open activity (activity.agent is the
-      # already-normalized lane key — a known soul or nil), so a parallel soul
-      # narration in the same session never closes another soul's in-flight activity.
-      lane = for_session(session_id).where(agent: activity.agent).open
+      # Per-agent, per-transcript lanes: auto-close only THIS agent's open activity in
+      # THIS transcript lineage (activity.agent is the normalized lane key — a known
+      # soul or nil; transcript_path isolates a subagent's turns from the parent's), so
+      # neither a parallel soul nor a running subagent ever closes another lane's
+      # in-flight activity. A subagent turn (different transcript) therefore never
+      # seals the parent's open Delegate span.
+      lane = for_session(session_id).where(agent: activity.agent, transcript_path: activity.transcript_path).open
       closed_prior_ids = lane.pluck(:id)
       lane.update_all(close_attrs)
       activity.save!
@@ -182,6 +203,116 @@ class AgentActivity < ApplicationRecord
       where(id: closed_prior_ids).find_each { |prior| ActivitiesBroadcaster.activity_updated(prior) }
     end
     activity
+  end
+
+  # The DERIVED lifecycle's single entry point — an idempotent, TURN-KEYED span open
+  # the PreToolUse capture hook calls on EVERY tool call, passing the assistant turn's
+  # uuid. Because parallel tool calls in one turn share a turn_uuid:
+  #   * the FIRST call for a (session, turn_uuid) opens the span — a BOUNDARY that
+  #     seals the lane's prior span (prior_outcome_slug + prior usage) as it opens the
+  #     new one (see open_activity!), and
+  #   * the 2nd..Nth calls are NO-OPS returning the span the first opened, so the
+  #     sibling actions attribute to ONE span instead of spawning duplicates.
+  # The (session_id, turn_uuid) partial-unique index makes the create race-safe: a
+  # concurrent open that loses rescues RecordNotUnique and returns the winner.
+  #
+  # GENESIS: a session's very first span skips the derived reason and opens with the
+  # canned "A wild <mascot> appeared" — self-contained, with nothing before it to seal
+  # (this also sidesteps the first-turn preamble-not-yet-flushed race).
+  #
+  # NESTING: parent_span_id links a subagent's span to the delegating span — subagents
+  # inherit the parent session_id, so the child rides the same lane and the feed can
+  # render it nested under the Delegate span. Returns the span, or nil on blank input.
+  def self.open_for_turn!(session_id:, turn_uuid:, reason_slug: nil, category: "Explore",
+                          mascot: nil, task_slug: nil, stage: nil, agent: nil,
+                          supervisor_agent: nil, parent_span_id: nil, transcript_path: nil,
+                          prior_outcome_slug: nil, prior_key_method: nil,
+                          prior_key_method_lang: nil, prior_model: nil,
+                          prior_tokens_in: nil, prior_tokens_out: nil,
+                          prior_cache_read_tokens: nil, prior_cost: nil,
+                          opened_at: Time.current)
+    return nil if session_id.blank? || turn_uuid.blank?
+
+    # Same turn (e.g. a parallel tool-call sibling) → the span already exists; no new
+    # boundary, no re-seal. Return it so the action attributes to the open span.
+    existing = for_session(session_id).find_by(turn_uuid: turn_uuid)
+    return existing if existing
+
+    # A session's FIRST span is the genesis: canned reason, no prior to seal.
+    genesis = !for_session(session_id).exists?
+    reason  = genesis ? genesis_reason(mascot) : reason_slug.to_s.strip.presence
+    reason  = DEFAULT_DERIVED_REASON if reason.blank?
+
+    # NESTING: a turn arriving on a DIFFERENT transcript than the session's root
+    # lineage is a subagent turn — link it to the delegating span. (The transcript-
+    # scoped lane in open_activity! keeps it from sealing that parent.)
+    parent_span_id ||= parent_span_for(session_id, transcript_path) unless genesis
+
+    open_activity!(
+      session_id: session_id, category: category, reason_slug: reason,
+      task_slug: task_slug, mascot: mascot, stage: stage, agent: agent,
+      supervisor_agent: supervisor_agent, turn_uuid: turn_uuid,
+      parent_span_id: parent_span_id, transcript_path: transcript_path, opened_at: opened_at,
+      prior_outcome_slug:      (genesis ? nil : prior_outcome_slug),
+      prior_key_method:        (genesis ? nil : prior_key_method),
+      prior_key_method_lang:   prior_key_method_lang,
+      prior_model:             prior_model,
+      prior_tokens_in:         prior_tokens_in,
+      prior_tokens_out:        prior_tokens_out,
+      prior_cache_read_tokens: prior_cache_read_tokens,
+      prior_cost:              prior_cost
+    )
+  rescue ActiveRecord::RecordNotUnique
+    # A concurrent opener won the (session, turn_uuid) race — return the winner so
+    # this call still attributes its action to the single shared span.
+    for_session(session_id).find_by(turn_uuid: turn_uuid)
+  end
+
+  # The delegating span for a SUBAGENT turn, or nil. Subagents share the session but
+  # arrive on a DIFFERENT transcript than the ROOT lineage (the genesis span's
+  # transcript); such a turn nests under the root lineage's currently-open span — the
+  # Delegate span still running the Agent tool. A same-lineage (or unknown) turn → nil.
+  # Best-effort: any lookup hiccup degrades to no nesting rather than sinking the open.
+  def self.parent_span_for(session_id, transcript_path)
+    return nil if transcript_path.blank?
+
+    root = for_session(session_id).order(:seq).first
+    return nil if root.nil? || root.transcript_path.blank? || root.transcript_path == transcript_path
+
+    for_session(session_id)
+      .where(transcript_path: root.transcript_path, agent: nil).open.order(:seq).last&.id
+  rescue StandardError
+    nil
+  end
+
+  # "A wild Charmander appeared" — the base session mascot, title-cased, or a generic
+  # challenger when the session has no mascot yet. The genesis span's reason.
+  def self.genesis_reason(mascot)
+    name = mascot.to_s.strip.presence
+    format(GENESIS_REASON, name ? name.titleize : "challenger")
+  end
+
+  # Split a turn's assistant PREAMBLE into { prior_outcome:, reason: } — the lead
+  # sentence is the PRIOR span's result ("Found it — only User#avatar…"), the rest is
+  # THIS span's reason ("Now let me check how Pokémon store images"). Splits ONLY when
+  # there are >= 2 sentences; a single-sentence preamble is all reason (nothing
+  # confidently attributable as the prior outcome). Both fields collapse to one line
+  # and truncate to DERIVED_REASON_MAX. A blank preamble yields both nil.
+  def self.split_preamble(text)
+    clean = text.to_s.strip.gsub(/\s+/, " ")
+    return { prior_outcome: nil, reason: nil } if clean.empty?
+
+    sentences = clean.split(/(?<=[.!?])\s+/)
+    prior, reason = sentences.length >= 2 ? [sentences.first, sentences[1..].join(" ")] : [nil, clean]
+    { prior_outcome: truncate_derived(prior), reason: truncate_derived(reason) }
+  end
+
+  # One-line, length-capped form of a derived field (nil stays nil).
+  def self.truncate_derived(text)
+    slug = text.to_s.strip.presence
+    return nil unless slug
+
+    slug.length > DERIVED_REASON_MAX ? "#{slug[0, DERIVED_REASON_MAX - 1]}…" : slug
   end
 
   # Close the current OPEN activity for (session, agent), stamping the narrated
