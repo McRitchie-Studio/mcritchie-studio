@@ -20,7 +20,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Site", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Dashboard", "Theme", "Schema", "Email images"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal ["Dashboard", "Deployments", "Theme", "Schema", "Email images"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
@@ -41,6 +41,24 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
 
     refute links.any? { |link| link[:label] == "Activities" }
+  end
+
+  test "admin sidebar links Deployments to the deploy lane board" do
+    self.admin_enabled = true
+
+    links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
+    deployments = links.find { |link| link[:label] == "Deployments" }
+
+    assert deployments, "expected an admin Deployments link"
+    assert_equal deployments_path, deployments.fetch(:href)
+  end
+
+  test "public sidebar omits the admin Deployments link" do
+    self.admin_enabled = false
+
+    labels = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
+
+    refute_includes labels, "Deployments"
   end
 
   private
@@ -66,6 +84,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def people_path = "/people"
   def docs_path = "/docs"
   def admin_signing_requests_path = "/admin/signing_requests"
+  def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"
   def admin_schema_path = "/admin/schema"
