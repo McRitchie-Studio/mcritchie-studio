@@ -29,7 +29,7 @@ class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "stacked shiny crew shows only the top shiny badge" do
+  test "stacked shiny crew shows one badge and every shiny face" do
     gyarados = Pokemon.find_by!(slug: "gyarados")
     task = Task.create!(title: "Stacked shiny mascot board card", stage: "submitted",
                         metadata: { "devops" => { "mascot" => gyarados.slug, "mascot_shiny" => true } })
@@ -45,6 +45,27 @@ class BoardCardShinyMascotTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='crew-cluster'][data-lane='build']" do
       assert_select "img[src='https://img.test/shiny-sprite.png']", count: 3
       assert_select "[data-test='avatar-shiny-badge']", count: 1, text: "✨"
+    end
+  end
+
+  test "build board shiny crew keeps badges on stack leads only" do
+    gyarados = Pokemon.find_by!(slug: "gyarados")
+    task = Task.create!(title: "Split shiny mascot card", stage: "submitted",
+                        metadata: { "devops" => { "mascot" => gyarados.slug, "mascot_shiny" => true } })
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
+                      occurred_at: 2.hours.ago, seconds_in_from: 1800)
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 1.hour.ago, seconds_in_from: 3600)
+
+    get tasks_path
+    assert_response :success
+    assert_select "#card-#{task.slug} [data-test='stage-agent-avatars']" do
+      assert_select "[data-test='crew-cluster']", count: 3
+      assert_select "img[src='https://img.test/shiny-sprite.png']", count: 3
+      assert_select "[data-test='avatar-shiny-badge']", count: 3, text: "✨"
+      assert_select "[data-stack-position='under'] [data-test='avatar-shiny-badge']", count: 0
     end
   end
 
