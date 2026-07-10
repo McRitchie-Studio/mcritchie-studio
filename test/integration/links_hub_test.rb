@@ -19,6 +19,17 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar a[href=?]", admin_signing_requests_path, count: 0
   end
 
+  test "link sidebar panel renders the slide-in transition markup" do
+    get links_path
+    assert_response :success
+    # The panel must slide in from off-screen right (translate-x-full -> translate-x-0),
+    # not pop into place. Guards against a re-removal of the transition (see #33,
+    # which stripped it to fix a browser-back snapshot bug).
+    assert_match 'x-transition:enter-start="translate-x-full"', response.body
+    assert_match 'x-transition:enter-end="translate-x-0"', response.body
+    assert_match 'x-transition:leave-end="translate-x-full"', response.body
+  end
+
   test "anonymous visitor cannot reach /admin/links" do
     get admin_links_path
     assert_response :redirect # require_authentication bounces anon

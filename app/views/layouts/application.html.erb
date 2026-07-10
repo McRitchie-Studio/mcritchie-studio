@@ -10,8 +10,6 @@
     <%= render "layouts/studio/flash" %>
     <script>
       (function () {
-        var linkSidebarSyncVersion = 0;
-
         function ensureLinkSidebarStore() {
           if (!window.Alpine) return null;
 
@@ -28,37 +26,21 @@
           return sidebars;
         }
 
-        function closeLinkSidebar() {
+        // The panel's open/closed state is driven ENTIRELY by the Alpine store flag
+        // via x-show + x-transition (the slide) on _sidebar_panel.html.erb. This
+        // bridge only flips the flag — it never touches `display` directly, because
+        // imperatively forcing display:none bakes an inline style that makes Alpine
+        // skip its enter transition (the panel pops instead of sliding). The old
+        // browser-back fix (#33) force-hid on cache; here we just drop the flag on
+        // turbo:before-cache / bfcache so the restored page is closed, and let
+        // Alpine own display so the slide is preserved.
+        function setLinkSidebarOpen(open) {
           var sidebars = ensureLinkSidebarStore();
-          if (sidebars) sidebars.linkTreeOpen = false;
-          syncLinkSidebarPanels(false);
+          if (sidebars) sidebars.linkTreeOpen = open;
         }
 
-        function linkSidebarPanels() {
-          return document.querySelectorAll('#studio-link-sidebar, #studio-link-sidebar-mobile');
-        }
-
-        function applyLinkSidebarPanelState(open) {
-          linkSidebarPanels().forEach(function (panel) {
-            if (open) {
-              panel.style.removeProperty('display');
-              panel.removeAttribute('aria-hidden');
-            } else {
-              panel.style.display = 'none';
-              panel.setAttribute('aria-hidden', 'true');
-            }
-          });
-        }
-
-        function syncLinkSidebarPanels(open) {
-          var version = ++linkSidebarSyncVersion;
-          applyLinkSidebarPanelState(open);
-          requestAnimationFrame(function () {
-            if (version === linkSidebarSyncVersion) applyLinkSidebarPanelState(open);
-          });
-          setTimeout(function () {
-            if (version === linkSidebarSyncVersion) applyLinkSidebarPanelState(open);
-          }, 0);
+        function closeLinkSidebar() {
+          setLinkSidebarOpen(false);
         }
 
         function handleLinkSidebarClick(event) {
@@ -80,7 +62,6 @@
             event.stopPropagation();
             event.stopImmediatePropagation();
             sidebars.linkTreeOpen = !sidebars.linkTreeOpen;
-            syncLinkSidebarPanels(sidebars.linkTreeOpen);
             return;
           }
 
@@ -97,14 +78,8 @@
 
         if (!window.__mcritchieLinkSidebarTriggerBridge) {
           window.__mcritchieLinkSidebarTriggerBridge = true;
-          document.addEventListener('alpine:init', function () {
-            var sidebars = ensureLinkSidebarStore();
-            syncLinkSidebarPanels(!!(sidebars && sidebars.linkTreeOpen));
-          });
-          document.addEventListener('turbo:load', function () {
-            var sidebars = ensureLinkSidebarStore();
-            syncLinkSidebarPanels(!!(sidebars && sidebars.linkTreeOpen));
-          });
+          document.addEventListener('alpine:init', ensureLinkSidebarStore);
+          document.addEventListener('turbo:load', ensureLinkSidebarStore);
           document.addEventListener('turbo:before-cache', closeLinkSidebar);
           window.addEventListener('pageshow', function (event) {
             if (event.persisted) closeLinkSidebar();
@@ -113,7 +88,7 @@
           document.addEventListener('keydown', handleLinkSidebarKeydown, true);
         }
 
-        syncLinkSidebarPanels(!!(ensureLinkSidebarStore() || {}).linkTreeOpen);
+        ensureLinkSidebarStore();
       })();
     </script>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
