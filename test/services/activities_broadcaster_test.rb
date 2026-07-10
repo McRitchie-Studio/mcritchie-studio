@@ -59,42 +59,37 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     assert_includes replace.to_html, "found the nil-guard"
   end
 
-  test "action create broadcasts remove-empty then inserts the row at the top of the drill-down" do
+  # A new action re-renders the WHOLE activity tbody (the turn-grouped drill-down must
+  # recompute — the action can start a new turn or join a fan-out, and it shifts the
+  # reasoning/TOTAL reconciliation), not append a lone action row.
+  test "action create replaces the activity tbody with the recomputed turn-grouped drill-down" do
     a = activity
     created = nil
     streams = capture_turbo_stream_broadcasts(ActivitiesBroadcaster::STREAM) do
       created = action(a, event_slug: "grep the seam")
     end
 
-    remove = streams.find { |s| s["action"] == "remove" }
-    after  = streams.find { |s| s["action"] == "after" }
-    assert remove, "expected a remove of the empty placeholder"
-    assert_equal "aa-empty-#{a.id}", remove["target"]
-    # inserted AFTER the mobile-detail row → first among the action rows (newest-first),
-    # not appended to the bottom of the tbody
-    assert after, "expected an 'after' insert of the new action row at the top"
-    assert_equal "aa-mobile-detail-#{a.id}", after["target"]
-    assert_includes after.to_html, "aa-action-#{created.id}"
-    assert_nil streams.find { |s| s["action"] == "append" }, "must not append to the bottom"
+    replace = streams.find { |s| s["action"] == "replace" }
+    assert replace, "expected a replace of the activity tbody on a new action"
+    assert_equal "aa-activity-#{a.id}", replace["target"]
+    assert_includes replace.to_html, "aa-turn-solo-#{created.id}", "the new action renders as a turn row"
+    assert_nil streams.find { |s| s["action"] == "after" }, "no more per-action 'after' inserts"
   end
 
-  test "action create also broadcasts to the parent activity session-scoped stream" do
+  test "action create also replaces the tbody on the parent activity session-scoped stream" do
     a = activity(session_id: "sess-filtered")
     created = nil
     streams = capture_turbo_stream_broadcasts("agents_activities:session:sess-filtered") do
       created = action(a, session_id: "sess-filtered", event_slug: "grep the filtered row")
     end
 
-    remove = streams.find { |s| s["action"] == "remove" }
-    after  = streams.find { |s| s["action"] == "after" }
-    assert remove, "expected a remove of the empty placeholder"
-    assert_equal "aa-empty-#{a.id}", remove["target"]
-    assert after, "expected an 'after' insert on the matching session stream"
-    assert_equal "aa-mobile-detail-#{a.id}", after["target"]
-    assert_includes after.to_html, "aa-action-#{created.id}"
+    replace = streams.find { |s| s["action"] == "replace" }
+    assert replace, "expected a tbody replace on the matching session stream"
+    assert_equal "aa-activity-#{a.id}", replace["target"]
+    assert_includes replace.to_html, "aa-turn-solo-#{created.id}"
   end
 
-  test "action update broadcasts a replace of its row" do
+  test "action update re-renders the activity tbody" do
     a = activity
     act = action(a)
     streams = capture_turbo_stream_broadcasts(ActivitiesBroadcaster::STREAM) do
@@ -102,8 +97,8 @@ class ActivitiesBroadcasterTest < ActiveSupport::TestCase
     end
 
     replace = streams.find { |s| s["action"] == "replace" }
-    assert replace, "expected a replace broadcast on action update"
-    assert_equal "aa-action-#{act.id}", replace["target"]
+    assert replace, "expected a tbody replace on action update"
+    assert_equal "aa-activity-#{a.id}", replace["target"]
     assert_includes replace.to_html, "it blew up on the edge case"
   end
 

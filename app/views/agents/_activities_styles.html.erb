@@ -217,4 +217,12 @@
     #alex-heartbeat .aa-goal { max-width:54vw; }
     #alex-heartbeat .aa-resultfade { max-width:50vw; }
   }
+  /* Turn-grouped drill-down tail: the reasoning/prose line (non-tool turns) + the
+     reconciling TOTAL, so a span's parts (tool-turns + reasoning) visibly add up to
+     the span's own tokens. */
+  #alex-heartbeat .aa-reasoning-label { font-size:11px; font-style:italic; color:var(--hb-muted); }
+  #alex-heartbeat .aa-reasoning-row .aa-cost-tok { font-style:italic; color:var(--hb-muted); }
+  #alex-heartbeat .aa-total-row td { border-top:1px solid var(--hb-line); }
+  #alex-heartbeat .aa-total-label { font-size:11px; font-weight:700; letter-spacing:.4px; color:var(--hb-txt); }
+  #alex-heartbeat .aa-total-tok { font-weight:700; color:var(--hb-txt); }
 </style>

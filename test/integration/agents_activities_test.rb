@@ -45,9 +45,10 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_response :success
     # the turbo-cable stream source the browser subscribes through for live updates
     assert_select "turbo-cable-stream-source"
-    # stable ids so ActivitiesBroadcaster can target the tbody + action row
+    # stable ids so ActivitiesBroadcaster can target the tbody (it re-renders the whole
+    # tbody on activity/action updates); each turn row also carries its own stable id
     assert_select "tbody#aa-activity-#{ev.id}"
-    assert_select "tr#aa-action-#{act.id}"
+    assert_select "tr#aa-turn-solo-#{act.id}"
     # the thead insert-after target for new activities
     assert_select "thead#aa-activities-head"
   end
@@ -91,7 +92,7 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     get activities_agents_path
 
     assert_response :success
-    assert_select "tr[data-test=aa-action]", 2
+    assert_select "tr[data-test=aa-turn]", 2, "two solo turns (no shared source_turn_uuid) → two turn rows"
     body = response.body
     assert_operator body.index("the newer action"), :<, body.index("the older action")
   end
@@ -287,5 +288,26 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal 0, ActionGrade.for_action(act).by_grader("alex").count
     assert JSON.parse(response.body)["cleared"]
+  end
+
+  test "[integration] the drill-down collapses fan-out to turn rows with a reconciling total" do
+    act = activity(session: "turn-grp", reason_slug: "build the thing",
+                   tokens_in: 45_062, tokens_out: 10_161, model: "claude-opus-4-8", cost: 1.29)
+    # a fan-out turn (t1: 2 tools, one source_turn_uuid) + a solo turn (t2)
+    action(act, session: "turn-grp", seq: 0, kind: "bash", source_turn_uuid: "t1", tokens_in: 4262, tokens_out: 418, summary: "preflight")
+    action(act, session: "turn-grp", seq: 1, kind: "read", source_turn_uuid: "t1", tokens_in: 4262, tokens_out: 418, summary: "read helper")
+    action(act, session: "turn-grp", seq: 2, kind: "read", source_turn_uuid: "t2", tokens_in: 526,  tokens_out: 326, summary: "read test")
+
+    get activities_agents_path
+    assert_response :success
+
+    # the fan-out (t1's 2 tools) collapses to ONE turn row with the summaries joined
+    # (newest-first display order within the turn: seq 1 "read helper" before seq 0 "preflight")
+    assert_select "[data-test=aa-turn-summary]", text: /read helper · preflight/
+    # the OLD per-action rows are gone (replaced by turn rows)
+    assert_select "[data-test=aa-action]", 0
+    # the reasoning + prose line and the reconciling TOTAL render for this span
+    assert_select "tr#aa-reasoning-#{act.id} [data-test=aa-reasoning-label]", text: /reasoning \+ prose/
+    assert_select "tr#aa-total-#{act.id} [data-test=aa-total-label]", text: "TOTAL"
   end
 end

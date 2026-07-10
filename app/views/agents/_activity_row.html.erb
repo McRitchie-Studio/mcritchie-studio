@@ -127,9 +127,49 @@
   </tr>
 
   <% if actions.any? %>
-    <%= render partial: "agents/activity_action_row", collection: actions, as: :action,
+    <% turn_rows = heartbeat_turn_rows(actions) %>
+    <%= render partial: "agents/activity_turn_row", collection: turn_rows, as: :turn_row,
           locals: { activity: activity, agents_by_slug: agents_by_slug, pokemon_by_slug: pokemon_by_slug,
-                    action_grades: action_grades, shared_turn_ids: shared_turn_ids } %>
+                    action_grades: action_grades } %>
+    <%# reasoning + prose — the non-tool turns (thinking + narration) so the parts reconcile to the span %>
+    <% remainder = heartbeat_reasoning_remainder(activity, turn_rows) %>
+    <% if remainder[:tokens_in].positive? || remainder[:tokens_out].positive? %>
+      <tr class="aa-subrow aa-reasoning-row" id="aa-reasoning-<%= activity.id %>" data-test="aa-reasoning" x-show="open">
+        <td class="aa-chev" aria-hidden="true"></td>
+        <td class="aa-agent"></td>
+        <td class="aa-activity">
+          <div class="aa-r aa-actionhead">
+            <span class="aa-reasoning-label" data-test="aa-reasoning-label">reasoning + prose</span>
+            <span class="aa-empty-sub">non-tool turns · thinking + narration</span>
+          </div>
+        </td>
+        <td class="aa-cost aa-collapsible">
+          <div class="aa-r aa-cost-tok" data-test="aa-reasoning-tok"><%= heartbeat_tokens_pair(remainder[:tokens_in], remainder[:tokens_out]) %></div>
+        </td>
+        <td class="aa-details aa-collapsible"></td>
+        <td class="aa-grade" aria-hidden="true"></td>
+        <td class="aa-grade" aria-hidden="true"></td>
+      </tr>
+    <% end %>
+    <%# TOTAL — the turn-rows + reasoning add up to the span's own measured tokens %>
+    <% if activity.measured_usage? %>
+      <tr class="aa-subrow aa-total-row" id="aa-total-<%= activity.id %>" data-test="aa-total" x-show="open">
+        <td class="aa-chev" aria-hidden="true"></td>
+        <td class="aa-agent"></td>
+        <td class="aa-activity">
+          <div class="aa-r aa-actionhead">
+            <span class="aa-total-label" data-test="aa-total-label">TOTAL</span>
+            <span class="aa-empty-sub">= span ✓</span>
+          </div>
+        </td>
+        <td class="aa-cost aa-collapsible">
+          <div class="aa-r aa-cost-tok aa-total-tok" data-test="aa-total-tok"><%= heartbeat_tokens_pair(activity.tokens_in, activity.tokens_out) %></div>
+        </td>
+        <td class="aa-details aa-collapsible"></td>
+        <td class="aa-grade" aria-hidden="true"></td>
+        <td class="aa-grade" aria-hidden="true"></td>
+      </tr>
+    <% end %>
   <% end %>
   <tr class="aa-subrow aa-emptyrow" id="aa-empty-<%= activity.id %>" x-show="open && <%= actions.empty? %>" <%= raw(actions.any? ? 'style="display:none"' : "") %>>
     <td class="aa-chev" aria-hidden="true"></td>

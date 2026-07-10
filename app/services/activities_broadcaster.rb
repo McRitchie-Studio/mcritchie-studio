@@ -2,8 +2,8 @@
 # of DeploymentsBroadcaster. Called from AgentActivity/AgentAction after_*_commit
 # callbacks; every send is wrapped in Studio::Cable.safe_broadcast so a dead cable / a
 # render or lookup error can NEVER escape into (and break) the DB write on the capture
-# hot path. Renders the SAME agents/_activity_row + agents/_activity_action_row partials
-# the page renders, with locals built by the shared ActivityFeed concern (dual render
+# hot path. Renders the SAME agents/_activity_row partial the page renders (turn-grouped
+# drill-down included), with locals built by the shared ActivityFeed concern (dual render
 # paths kept identical). The feed is newest-first, so a new activity inserts right after
 # the thead; the websocket is purely ADDITIVE — it never re-paginates or re-counts.
 class ActivitiesBroadcaster
@@ -13,7 +13,6 @@ class ActivitiesBroadcaster
   SESSION_PREFIX = "#{STREAM}:session:"
   HEAD_TARGET    = "aa-activities-head"          # thead id — new activities insert after it
   ACTIVITY_ROW   = "agents/activity_row"
-  ACTION_ROW     = "agents/activity_action_row"
 
   class << self
     def stream_for_session(session_id)
@@ -56,35 +55,24 @@ class ActivitiesBroadcaster
     )
   end
 
-  # A new raw action → insert its row at the TOP of its activity's drill-down (the feed
-  # is newest-first). It goes right AFTER the mobile-detail row — so it lands first among
-  # the action rows on desktop, and after the detail panel (not before it) on mobile.
-  # Additive; the per-activity action count is intentionally not re-synced. Also clears
-  # the "no raw actions" placeholder (a no-op once actions already exist).
+  # A new raw action → the turn-grouped drill-down must RECOMPUTE (a new action can start
+  # a new turn or join a fan-out, and it shifts the reasoning/TOTAL reconciliation), so
+  # re-render the activity's WHOLE tbody rather than append a lone action row. The tbody
+  # re-render also drops the "no raw actions" placeholder for free.
   def deliver_action_created(action)
     activity = action.agent_activity
     return unless activity # unlabeled actions never appear on this feed
 
-    locals = action_row_locals(action)
-    activity_streams(activity).each do |stream|
-      Turbo::StreamsChannel.broadcast_remove_to(stream, target: "aa-empty-#{activity.id}")
-      Turbo::StreamsChannel.broadcast_after_to(
-        stream, target: "aa-mobile-detail-#{activity.id}", partial: ACTION_ROW, locals: locals
-      )
-    end
+    deliver_activity_updated(activity)
   end
 
-  # An updated action (outcome/tokens/cost/summary) → replace its row + flash.
+  # An updated action (outcome/tokens/cost/summary) → same: re-render the tbody so the
+  # turn row and the reconciliation reflect the change.
   def deliver_action_updated(action)
     activity = action.agent_activity
     return unless activity
 
-    locals = action_row_locals(action)
-    activity_streams(activity).each do |stream|
-      Turbo::StreamsChannel.broadcast_replace_to(
-        stream, target: "aa-action-#{action.id}", partial: ACTION_ROW, locals: locals
-      )
-    end
+    deliver_activity_updated(activity)
   end
 
   private

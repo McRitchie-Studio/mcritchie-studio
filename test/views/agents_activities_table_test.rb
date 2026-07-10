@@ -149,13 +149,13 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     render_table [[ev, [act]]]
 
-    row = "tr[data-test=aa-action]"
+    row = "tr[data-test=aa-turn]"
     assert_select "#{row} .aa-seqbadge", text: "#3"
-    assert_select "#{row} [data-test=aa-action-summary]", text: "search deployments view for wrap classes"
-    assert_select "#{row} [data-test=aa-action-keymethod] [data-test=key-method-chip][data-lang=bash]"
-    assert_select "#{row} [data-test=aa-action-cost]", text: "$0.0630"
-    assert_select "#{row} [data-test=aa-action-outcome]", text: "ok"
-    assert_select "#{row} [data-test=aa-action-input]"
+    assert_select "#{row} [data-test=aa-turn-summary]", text: "search deployments view for wrap classes"
+    assert_select "#{row} [data-test=aa-turn-keymethod] [data-test=key-method-chip][data-lang=bash]"
+    assert_select "#{row} [data-test=aa-turn-cost]", text: "$0.0630"
+    assert_select "#{row} [data-test=aa-turn-outcome]", text: "ok"
+    assert_select "#{row} [data-test=aa-turn-input]"
     assert_includes rendered, "grep -rniE wrap app/views"
   end
 
@@ -165,8 +165,8 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     render_table [[ev, [act]]]
 
-    assert_select "tr[data-test=aa-action] td[data-test=aa-action-grade-alex] form[action=?]", heartbeat_grade_path(act)
-    assert_select "tr[data-test=aa-action] td[data-test=aa-action-grade-mcr] form[action=?]", heartbeat_grade_path(act)
+    assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-alex] form[action=?]", heartbeat_grade_path(act)
+    assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-mcr] form[action=?]", heartbeat_grade_path(act)
   end
 
   test "[component] the activity agent avatar is bigger (sm) than the action avatar (xxs)" do
@@ -177,8 +177,8 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     # the primary activity row wears the sm (w-10) face; the drill-down action keeps xxs (w-6)
     assert_select "tr.aa-arow .aa-agent .w-10"
-    assert_select "tr[data-test=aa-action] .aa-agent .w-6"
-    assert_select "tr[data-test=aa-action] .aa-agent .w-10", false
+    assert_select "tr[data-test=aa-turn] .aa-agent .w-6"
+    assert_select "tr[data-test=aa-turn] .aa-agent .w-10", false
   end
 
   test "[component] activity rows render session supervisor and expert avatar levels" do
@@ -206,12 +206,12 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     render_table [[ev, [act]]], agents_by_slug: { "carl" => carl, "avi" => avi }
 
-    assert_select "tr[data-test=aa-action] .aa-agent [data-test=agent-soul][data-soul=carl]"
-    assert_select "tr[data-test=aa-action] .aa-agent [data-test=agent-supervisor][data-supervisor=avi]"
-    assert_select "tr[data-test=aa-action] .aa-agent .hb-mascotava", false
-    assert_select "tr[data-test=aa-action] .aa-agent .hb-names span", text: "Carl"
-    assert_select "tr[data-test=aa-action] .aa-agent .hb-names span", text: "Avi"
-    assert_select "tr[data-test=aa-action] .aa-agent .hb-names span", text: "Snorlax", count: 0
+    assert_select "tr[data-test=aa-turn] .aa-agent [data-test=agent-soul][data-soul=carl]"
+    assert_select "tr[data-test=aa-turn] .aa-agent [data-test=agent-supervisor][data-supervisor=avi]"
+    assert_select "tr[data-test=aa-turn] .aa-agent .hb-mascotava", false
+    assert_select "tr[data-test=aa-turn] .aa-agent .hb-names span", text: "Carl"
+    assert_select "tr[data-test=aa-turn] .aa-agent .hb-names span", text: "Avi"
+    assert_select "tr[data-test=aa-turn] .aa-agent .hb-names span", text: "Snorlax", count: 0
   end
 
   test "[component] the action row carries its grade hydration data and no model cell" do
@@ -220,8 +220,8 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     render_table [[ev, [act]]]
 
-    assert_select "tr[data-test=aa-action][data-id-field=agent_action_id][data-row-id=?]", act.id.to_s
+    assert_select "tr[data-test=aa-turn][data-id-field=agent_action_id][data-row-id=?]", act.id.to_s
     # cost column at action altitude drops the model sub-row (only cost + tokens)
-    assert_select "tr[data-test=aa-action] .aa-cost-model", false
+    assert_select "tr[data-test=aa-turn] .aa-cost-model", false
   end
 end
