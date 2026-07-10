@@ -694,6 +694,38 @@ if command -v jq >/dev/null 2>&1; then
     fi
   fi
 
+  # Wire the PreToolUse hook with the SAME atomic-capture-hook command — the hook
+  # branches on hook_event_name: PreToolUse OPENS the turn's activity span (reason
+  # live, BEFORE the tool runs) via /api/v1/agent_activities/turn_open; PostToolUse
+  # streams the action. Same discipline: prune stale copies, append once, never
+  # clobber the user's other PreToolUse hooks. See docs/agents/system/atomic-capture-hook.md.
+  tmp="$(mktemp)"
+  if jq 'if .hooks.PreToolUse then
+        .hooks.PreToolUse |= (
+          map(.hooks = ((.hooks // []) | map(select(((.command // "") | contains("/bin/atomic-capture-hook") | not)))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      else . end' "$settings" > "$tmp"; then
+    if ! cmp -s "$settings" "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (removed old PreToolUse capture hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+
+  if ! jq -e --arg path "$capture_path" '[(.hooks.PreToolUse // [])[]?.hooks[]?.command // empty | select(contains($path))] | length > 0' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$capture_cmd" '.hooks //= {} | .hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}])' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (added PreToolUse hook -> $capture_cmd)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
+
   # Wire the SessionEnd hook so a session's last narrated activity never hangs open
   # forever: `bin/agent-activity close-open` closes any still-open activity (reading the
   # session id off the SessionEnd stdin payload) with a generic "session ended"

@@ -229,6 +229,19 @@ class InstallAgentSkillsTest < Minitest::Test
       "the insights hook must be registered under SessionStart")
   end
 
+  # The installer SOURCE must wire the PreToolUse capture hook — the SAME
+  # atomic-capture-hook command as PostToolUse, registered under PreToolUse, so the
+  # turn-driven span lifecycle opens a span BEFORE each tool runs (reason live).
+  def test_unit_installer_source_wires_pretooluse_capture_hook
+    src = File.read(SCRIPT)
+    assert_match(/hooks\.PreToolUse\s*=/, src,
+      "installer must register the capture hook under PreToolUse")
+    assert_includes src, "added PreToolUse hook",
+      "installer must announce the added PreToolUse hook"
+    assert_includes src, "removed old PreToolUse capture hooks",
+      "installer must prune stale PreToolUse capture hooks before adding (idempotent)"
+  end
+
   # ── integration ───────────────────────────────────────────────────────────
 
   def test_integration_install_lands_skill_in_home_agent_skills
@@ -261,6 +274,32 @@ class InstallAgentSkillsTest < Minitest::Test
       assert_equal body, File.read(path),
         "re-running install must be a no-op on an already-current skill"
     end
+  end
+
+  def test_integration_install_wires_the_pretooluse_capture_hook
+    skip "jq required" unless jq_available?
+
+    _out, err, status = run_installer("install")
+    assert status.success?, "install failed: #{err}"
+
+    cmds = pretooluse_capture_commands
+    assert(cmds.any? { |c| c.include?("/bin/atomic-capture-hook") },
+      "install must wire a PreToolUse hook running bin/atomic-capture-hook; got #{cmds.inspect}")
+
+    # idempotent — a second install must keep exactly ONE PreToolUse capture hook
+    _out2, err2, status2 = run_installer("install")
+    assert status2.success?, "second install failed: #{err2}"
+    assert_equal 1, pretooluse_capture_commands.length,
+      "re-running install must keep exactly ONE PreToolUse capture hook, not duplicate it"
+  end
+
+  # The PreToolUse hook commands in the sandbox settings.json running our capture hook.
+  def pretooluse_capture_commands
+    settings = JSON.parse(File.read(installed_settings))
+    (settings.dig("hooks", "PreToolUse") || [])
+      .flat_map { |block| (block["hooks"] || []).map { |h| h["command"] } }
+      .compact
+      .select { |c| c.include?("/bin/atomic-capture-hook") }
   end
 
   def test_integration_check_passes_after_install
