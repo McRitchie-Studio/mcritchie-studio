@@ -201,7 +201,9 @@ end
 # bin/fast-check (CertEmission), parameterized on this script's TASK_BIN/
 # GATE_BIN. Skips when there's no task slug (--print / hook-install runs);
 # fire-and-forget — a gate write never breaks a cert. The GREEN path leaves the
-# g1_cert attempt open: bin/dor-check's merge-gate verdict is what closes G1.
+# g1_cert window: this cert OWNS it now — opens at start, one sop per lane, and
+# closes it itself (--success on green / --failed on red). dor-check no longer
+# touches g1_cert; its DoR verdict is the separate dor/dor_review gates.
 def emit_cert_checkpoint(slug, status)
   CertEmission.emit_cert_checkpoint(TASK_BIN, slug, status)
 end
@@ -270,6 +272,10 @@ unless lanes.values.all?
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
+
+# Both lanes green — cert self-closes the g1_cert attempt success (dor-check no
+# longer owns G1's close; its DoR verdict is the separate dor/dor_review gates).
+emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
 
 if options[:print] || slug.nil?
   warn "full-suite-check: both lanes green at #{fingerprint[0, 12]}." \

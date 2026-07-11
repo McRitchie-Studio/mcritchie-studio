@@ -619,7 +619,8 @@ class PrReviewCommandTest < Minitest::Test
   # pending/none defers to a later wave; green proceeds to spawn.
 
   # [unit] Red CI: the task is blocked back with the failing checks named, no
-  # reviewer is selected or spawned, and the bounce lands as a failed G2a attempt.
+  # reviewer is selected or spawned, and the bounce lands as a failed dor_review
+  # (gate-zero) attempt.
   def test_red_ci_blocks_the_task_back_before_spawning_reviewers
     red = task("red-pr", created_at: "2026-06-29T12:00:00Z")
     write_snapshots(snapshot([red]))
@@ -647,12 +648,15 @@ class PrReviewCommandTest < Minitest::Test
     feedback = block_call[block_call.index("--feedback") + 1]
     assert_includes feedback, "CI / test:system", "the feedback names the failing checks"
 
-    # The CI bounce is review's verdict this round: a failed G2a attempt records it.
+    # The CI bounce is review's gate-zero verdict this round: a failed dor_review
+    # attempt records it (the gate-zero home, not a G2 review lane).
     gate_calls = json_lines(@gate_log)
-    close = gate_calls.find { |args| args.first == "close" && args.include?("g2a_primary") }
-    assert close, "expected a failed g2a_primary close for the CI bounce"
+    close = gate_calls.find { |args| args.first == "close" && args.include?("dor_review") }
+    assert close, "expected a failed dor_review close for the CI bounce"
     assert_includes close, "--failed"
     assert_includes close, "outcome=ci-red"
+    assert_empty gate_calls.select { |args| args.include?("g2a_primary") },
+                 "no G2 review-lane gate is written when no reviewer runs"
   end
 
   # [unit] Pending CI: the task defers to a later wave (existing defer machinery)

@@ -1161,6 +1161,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_130000) do
     t.string "dev_size"
     t.text "error_message"
     t.datetime "failed_at"
+    t.datetime "g1_failed_at"
+    t.datetime "g1_testing_finished_at"
+    t.datetime "g1_testing_started_at"
     t.jsonb "gates", default: {}, null: false
     t.datetime "gates_cached_at"
     t.integer "gates_version", default: 0, null: false

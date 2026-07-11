@@ -128,8 +128,9 @@ the primary spawned the light, and the light drove the verdict (role inversion).
 ([`gates/g2-review.md`](gates/g2-review.md)): two task-grain lanes,
 `g2a_primary` + `g2b_light`, opened as the pair launches and each closed from
 its own reviewer's scout report (`merge-ready` = passed). The primary's
-gate-zero runs with `--gate-role review` so its verdict lands as a SOP on G2a
-instead of closing the builder's G1 Cert. `bin/pr-review` posts all of this
+gate-zero runs with `--gate-role review` so its verdict opens+closes its own
+`dor_review` gate instead of touching the builder's G1 Cert or a G2 lane.
+`bin/pr-review` posts all of this
 automatically; on a hand-run review the supervisor posts the same markers with
 `bin/gate` (the exact commands are in the gate doc).
 
@@ -153,7 +154,8 @@ Each reviewer goes through the review cycle and **responds with concise notes**:
 - **diff vs. acceptance** — the change does what the task's acceptance criteria say.
 - **checks / tests** — the shape's DoR **base** tiers are green in `checks_run`;
   `bin/dor-check <task> --gate-role review` passes (the PRIMARY's gate-zero —
-  its verdict records onto the G2a gate lane, never the builder's G1).
+  its verdict opens+closes its own `dor_review` gate, never the builder's G1 or
+  a G2 lane).
 - **code standards + code smell + scalability** — the PRIMARY goes deep here
   (Opus on `migration` / `payment` / `solana` / `auth`); the LIGHT gives a focused
   second read.
@@ -205,8 +207,8 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 
 | # | Actor | Agent (`subagent_type`) | Does | Records |
 |---|---|---|---|---|
-| 1 | **Avi** (SUPERVISOR — never reviews) | `avi` | product-acceptance + `bin/reviewer-select`; **spawns both reviewers in parallel** via two labeled delegates — `summon primary review: <soul>` + `summon light review: <soul>` | review intent (pair) on the task; opens the G2a + G2b gate lanes |
-| 2 | **PRIMARY** (review OWNER) | domain soul | deep review + **owns the gates** (dor `--gate-role review`/cert/CI/acceptance) + **drives the verdict** (runs `pr-review-primary.md`) | `Verify --agent <soul>` activity + notes; gate-zero SOP on G2a |
+| 1 | **Avi** (SUPERVISOR — never reviews) | `avi` | product-acceptance + `bin/reviewer-select`; **spawns both reviewers in parallel** via two labeled delegates — `summon primary review: <soul>` + `summon light review: <soul>` | review intent (pair) on the task; opens the `dor_review` gate-zero + the G2a + G2b gate lanes |
+| 2 | **PRIMARY** (review OWNER) | domain soul | deep review + **owns the gates** (dor `--gate-role review`/cert/CI/acceptance) + **drives the verdict** (runs `pr-review-primary.md`) | `Verify --agent <soul>` activity + notes; gate-zero verdict on the `dor_review` gate |
 | 2 | **LIGHT** | domain soul | focused second read through its domain lens; **reports up to the primary**; no gates, no verdict-drive (runs `pr-review-light.md`); **sibling** of the primary | `Verify --agent <soul>` activity + notes |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
 | 4 | **Avi** (SUPERVISOR) | `avi` | collects **both** verdicts → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed`; closes each G2 lane from its reviewer's scout report |

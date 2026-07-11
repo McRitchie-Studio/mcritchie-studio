@@ -3,11 +3,19 @@
 # One ATTEMPT at a named testing GATE — the branded checkpoints of the devops
 # pipeline (docs/agents/modules/gates/):
 #
-#   G1 Cert       (task)    shape tiers + full-suite + rubocop + dor-check + CI
-#   G2a Primary   (task)    the primary senior review (owns the dor gate-zero)
+#   G1 Cert       (task)    shape tiers + full-suite + rubocop (self-closing cert)
+#   DoR (builder) (task)    the builder's dor-check verdict at submit (own gate)
+#   DoR (review)  (task)    the primary reviewer's gate-zero dor-check (own gate)
+#   G2a Primary   (task)    the primary senior review
 #   G2b Light     (task)    the light senior review
 #   G3 Candidate  (release) pre-QA gate + QA deploy + boot smoke + post_deploy
 #   G4 Ship       (release) frozen-SHA gate + prod deploy + /up + smoke seal
+#
+# The two DoR gates are the OPTION-B split: cert (full-suite-check) owns g1_cert
+# open+close on its own; the Definition-of-Ready verdict is its OWN gate, with a
+# separate attempt for the builder (`dor`, dor-check at submit) and the reviewer's
+# gate-zero (`dor_review`, dor-check --gate-role review). CI stays a handoff, not
+# a gate.
 #
 # Each row is one attempt: started_at → finished_at, success (nil while in
 # flight), and a `sops` jsonb list of the test SOPs executed inside the window
@@ -22,8 +30,12 @@
 # racing openers converge on one row. This is deliberately NOT an event spine —
 # close! UPDATES the open row (the one write path that broadcasts on update).
 class GateRun < ApplicationRecord
+  # Order in this literal defines flow order (KEYS = GATES.keys): the two DoR
+  # gates sit between g1_cert and the G2 review lanes.
   GATES = {
     "g1_cert"      => { "label" => "G1 Cert",      "grain" => "task" },
+    "dor"          => { "label" => "DoR (builder)", "grain" => "task" },
+    "dor_review"   => { "label" => "DoR (review)",  "grain" => "task" },
     "g2a_primary"  => { "label" => "G2a Primary",  "grain" => "task" },
     "g2b_light"    => { "label" => "G2b Light",    "grain" => "task" },
     "g3_candidate" => { "label" => "G3 Candidate", "grain" => "release" },
@@ -77,7 +89,7 @@ class GateRun < ApplicationRecord
       run = scope.in_flight.first
       return run if run
 
-      create!(
+      run = create!(
         subject_type: subject_type,
         subject_slug: subject_slug,
         key: key,
@@ -87,6 +99,8 @@ class GateRun < ApplicationRecord
         source: source,
         metadata: metadata.presence || {}
       )
+      run.send(:stamp_g1_testing_window, :open)
+      run
     rescue ActiveRecord::RecordNotUnique
       retries += 1
       retry if retries <= 2
@@ -123,6 +137,7 @@ class GateRun < ApplicationRecord
         metadata: run.metadata.merge(metadata.presence || {})
       )
     end
+    run.send(:stamp_g1_testing_window, :close)
     run
   end
 
@@ -199,5 +214,30 @@ class GateRun < ApplicationRecord
     return unless subject_type == "task"
 
     Task.find_by(slug: subject_slug)&.refresh_gates_safely
+  end
+
+  # Mirror the g1_cert testing WINDOW onto three flat tasks columns
+  # (g1_testing_started_at / g1_testing_finished_at / g1_failed_at) so a task row
+  # carries its cert window without walking gate_runs. ONLY the g1_cert task gate
+  # moves them — every other gate (dor, dor_review, the G2 lanes) leaves them
+  # untouched. Called from the write funnel (open!/close!): open stamps the
+  # latest attempt's start; close stamps finished_at and toggles g1_failed_at
+  # (set on a red close, cleared on a green retry). update_columns skips callbacks
+  # (no re-entrancy, mirrors GatesProjection.refresh!) and the whole thing is
+  # best-effort — a stamp failure never breaks the gate write.
+  def stamp_g1_testing_window(phase)
+    return unless subject_type == "task" && key == "g1_cert"
+
+    columns =
+      case phase
+      when :open  then { g1_testing_started_at: started_at }
+      when :close then { g1_testing_finished_at: finished_at, g1_failed_at: success ? nil : finished_at }
+      end
+    return if columns.blank?
+
+    Task.find_by(slug: subject_slug)&.update_columns(columns) # rubocop:disable Rails/SkipsModelValidations
+  rescue StandardError => e
+    Rails.logger.warn("[gate-g1-stamp] #{subject_slug} #{phase}: #{e.class}: #{e.message}")
+    nil
   end
 end
