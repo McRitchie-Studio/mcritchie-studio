@@ -30,6 +30,14 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     end
   end
 
+  test "[component] the table opts into the shared sticky-header enhancer" do
+    render_table []
+    # Regression: the table used to carry data-sticky-table-header="false" and
+    # self-pin via position:sticky top:0, which slides the header under the
+    # navbar on viewport scroll. The engine enhancer owns pinning now.
+    assert_select "table[data-test=agents-activities-table][data-sticky-table-header=false]", count: 0
+  end
+
   test "[component] the activity column stacks category+goal, faded result, and key command" do
     ev = activity(category: "Explore", reason_slug: "find the capture seam",
                   outcome_slug: "found the nil-guard", closed_at: Time.current,
