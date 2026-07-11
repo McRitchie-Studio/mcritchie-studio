@@ -42,6 +42,28 @@ class Task::GatesProjectionTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] VERSION is bumped to 2 so cached 3-key projections self-heal" do
+    assert_equal 2, Task::GatesProjection::VERSION
+  end
+
+  test "[unit] the two DoR gates project as all-nil rows when unrun and carry attempts when run" do
+    gates = Task::GatesProjection.build(@task).fetch("gates")
+    %w[dor dor_review].each do |key|
+      assert gates.key?(key), "#{key} is a projected task-grain gate"
+      assert_nil gates.dig(key, "attempt"), "#{key} unrun -> all-nil row"
+    end
+
+    open_gate(key: "dor")
+    close_gate(key: "dor", success: true, sops: [{ "sop" => "dor-check", "result" => "pass" }])
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor_review", success: false)
+
+    gates = Task::GatesProjection.build(@task).fetch("gates")
+    assert_equal 1, gates.dig("dor", "attempt")
+    assert_equal true, gates.dig("dor", "success")
+    assert_equal ["dor-check"], gates.dig("dor", "sops").map { |s| s["sop"] }
+    assert_equal false, gates.dig("dor_review", "success")
+  end
+
   test "[unit] release-grain gates are excluded from the projection" do
     GateRun.close!(subject_type: "release", subject_slug: "rel-probe", key: "g3_candidate", success: true)
 

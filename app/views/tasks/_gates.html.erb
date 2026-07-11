@@ -1,7 +1,8 @@
-<%# Testing gates — the task-owned gate VERDICTS (GateRun: G1 Cert, G2a Primary,
-    G2b Light), the sibling of the testing-phases card above: phases are duration
-    telemetry, gates are attempt-aware pass/fail records with the test SOPs each
-    attempt executed. Rendered only once at least one gate has a run. %>
+<%# Testing gates — the task-owned gate VERDICTS (GateRun: G1 Cert, DoR builder,
+    DoR review, G2a Primary, G2b Light), the sibling of the testing-phases card
+    above: phases are duration telemetry, gates are attempt-aware pass/fail records
+    with the test SOPs each attempt executed. Rendered only once at least one gate
+    has a run. %>
 <% gate_runs = (task_gate_runs || {}) %>
 <% if gate_runs.any? %>
   <div class="card p-6 mb-6">
@@ -10,7 +11,7 @@
       <span class="text-[10px] text-muted uppercase tracking-wide">gate verdicts</span>
     </div>
     <p class="text-muted text-xs mb-4">
-      The task-owned gates and their latest attempt — G1 Cert (full suite + lint + DoR + CI) → G2 Review (primary + light).
+      The task-owned gates and their latest attempt — G1 Cert (full suite + lint) → DoR (builder + review gate-zero) → G2 Review (primary + light).
     </p>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <% GateRun::TASK_KEYS.each do |key| %>

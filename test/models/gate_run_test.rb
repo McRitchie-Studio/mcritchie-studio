@@ -95,6 +95,59 @@ class GateRunTest < ActiveSupport::TestCase
     assert_not entry.key?("sneaky")
   end
 
+  test "[unit] GATES include the two DoR gates in flow order between g1_cert and g2a" do
+    assert_equal %w[g1_cert dor dor_review g2a_primary g2b_light g3_candidate g4_ship], GateRun::KEYS
+    assert_equal %w[g1_cert dor dor_review g2a_primary g2b_light], GateRun::TASK_KEYS
+
+    %w[dor dor_review].each do |key|
+      assert_equal "task", GateRun::GATES.dig(key, "grain")
+      run = GateRun.new(subject_type: "task", subject_slug: @task.slug, key: key,
+                        attempt: 1, started_at: Time.current)
+      assert run.valid?, "#{key} is a valid task-grain gate: #{run.errors.full_messages}"
+    end
+  end
+
+  test "[unit] opening a g1_cert task gate stamps tasks.g1_testing_started_at" do
+    assert_nil @task.g1_testing_started_at
+
+    freeze_time do
+      open_gate
+      assert_equal Time.current, @task.reload.g1_testing_started_at
+      assert_nil @task.g1_testing_finished_at
+      assert_nil @task.g1_failed_at
+    end
+  end
+
+  test "[unit] closing g1_cert --success stamps finished_at and leaves g1_failed_at nil" do
+    open_gate
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+
+    @task.reload
+    assert @task.g1_testing_started_at.present?
+    assert @task.g1_testing_finished_at.present?
+    assert_nil @task.g1_failed_at, "a green close clears g1_failed_at"
+  end
+
+  test "[unit] closing g1_cert --failed stamps g1_failed_at, a green retry clears it" do
+    open_gate
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: false)
+    assert @task.reload.g1_failed_at.present?, "a red close sets g1_failed_at"
+
+    open_gate # attempt 2
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "g1_cert", success: true)
+    assert_nil @task.reload.g1_failed_at, "a green retry clears g1_failed_at"
+  end
+
+  test "[unit] a non-g1_cert gate does not stamp the g1 testing window columns" do
+    open_gate(key: "dor")
+    GateRun.close!(subject_type: "task", subject_slug: @task.slug, key: "dor", success: false)
+
+    @task.reload
+    assert_nil @task.g1_testing_started_at
+    assert_nil @task.g1_testing_finished_at
+    assert_nil @task.g1_failed_at, "a red DoR close must NOT touch g1_failed_at"
+  end
+
   test "a task-grain key rejects a release subject and vice versa" do
     release_grain = GateRun.new(subject_type: "release", subject_slug: "rel-x", key: "g1_cert",
                                 attempt: 1, started_at: Time.current)

@@ -5,11 +5,15 @@
 G1 Cert is the first branded testing gate of the devops pipeline: the
 **builder's certification that the exact code being handed off is green**. It is
 a **task-grain** gate (GateRun key `g1_cert`) owned by the feature agent, run
-from the task's worktree, and it spans local certification (`bin/fast-check` or
-`bin/full-suite-check`) through the merge-gate verdict (`bin/dor-check`).
+from the task's worktree. It is a **self-closing cert**: `bin/fast-check` or
+`bin/full-suite-check` OPEN and CLOSE the `g1_cert` attempt themselves (green →
+success, red → failed). The Definition-of-Ready verdict (`bin/dor-check`) is a
+**separate** gate now — see [`dor.md`](dor.md) — so G1 Cert is exactly the local
+test/lint cert, nothing else.
 
-The four gates in order: **G1 Cert** (this doc) → [G2 Review](g2-review.md) →
-[G3 Candidate](g3-candidate.md) → [G4 Ship](g4-ship.md).
+The gate flow order: **G1 Cert** (this doc) → [DoR](dor.md) →
+[G2 Review](g2-review.md) → [G3 Candidate](g3-candidate.md) →
+[G4 Ship](g4-ship.md).
 
 ## What this gate verifies
 
@@ -27,17 +31,17 @@ The four gates in order: **G1 Cert** (this doc) → [G2 Review](g2-review.md) �
     `bin/full-suite-check`. Accepted on its own, CI-independent.
   - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Honored but
     flagged loudly; a conscious, justified skip only.
-- The task's **required metadata** is populated and, on the merge gate, the PR's
-  **GitHub CI** is not failing (a red or closed/merged PR is refused; a
-  still-running CI is a **loud suggestion** on the builder's run — the
-  authoritative CI verdict lives at review's gate-zero).
+
+The suite evidence, required metadata, and the PR's GitHub CI are checked by the
+`dor-check` **verdict** — but that verdict now closes the separate **DoR** gate
+([`dor.md`](dor.md)), not this one. G1 Cert is purely the local cert lanes.
 
 ## Who runs it
 
-The **feature (builder) agent**, from the task worktree. The primary reviewer
-re-runs the same dor-check as review's gate-zero, but with
-`--gate-role review` so the verdict lands on [G2a](g2-review.md) instead of
-closing this gate — see "Gate roles" below.
+The **feature (builder) agent**, from the task worktree. The cert opens AND
+closes `g1_cert` on its own — no reviewer ever touches this gate. (The primary
+reviewer's gate-zero re-runs `dor-check --gate-role review`, but that lands on
+the [DoR review](dor.md) gate `dor_review`, not here.)
 
 ## Procedure
 
@@ -90,7 +94,7 @@ wait** before `submitted`).
    bin/task update <task-slug> --checks "[unit] ..." --checks "[integration] ..."
    ```
 
-4. **Verdict — the merge gate:**
+4. **Verdict — the DoR gate** (its own gate; closes `dor`, not `g1_cert`):
 
    ```bash
    bin/dor-check <task-slug>
@@ -101,7 +105,8 @@ wait** before `submitted`).
    = ready to advance `submitted → reviewed` — **without waiting for CI**: a
    fresh fast cert with CI still pending on the open PR is credited
    provisionally (a red CI still refuses; a fast cert with NO open PR is
-   refused — push and open the PR first, then run the verdict).
+   refused — push and open the PR first, then run the verdict). Full mechanics:
+   [`dor.md`](dor.md).
 
 ## Success, failure, and attempt semantics
 
@@ -118,59 +123,25 @@ window.
   / rubocop lane still lets the remaining lanes run, and the `failed` close
   lands once the lanes finish. Either way nothing is certified; no evidence
   line is written.
-- A **green cert leaves the attempt OPEN** — the cert alone is not the verdict.
-- `bin/dor-check`'s merge-gate run (builder role) **CLOSES the open attempt**
-  with `success = ready`, attaching its verdict evidence as SOPs: `dor-check`,
-  `tiers` (the shape's tier list), `full-suite-evidence`
-  (`certified@<fp12>`, `fast-cert@<fp12>+ci-green`, or the provisional
-  `fast-cert@<fp12>+ci-pending`), and `ci` (pass / fail / **pending** /
-  unverified). **G1 closes at submit even when CI hasn't settled** — the `ci`
-  SOP records `pending`, and the authoritative CI verdict lands on
-  [G2a](g2-review.md) (one verdict per gate; no G1 row lingers in flight
-  waiting on CI).
-- A dor-check verdict with **no open attempt** still records a real,
-  self-contained attempt (`started_at == finished_at`) — a lone verdict is an
-  attempt too.
-- **Never emitted:** `--print` cert runs, and dor-check with `--json`
-  (read-only monitors), `--file` (offline evaluation), or `--gate build` (no
-  cert exists yet). All gate writes are fire-and-forget — a board blip never
-  changes a verdict or an exit code.
+- A **green cert CLOSES the attempt `success`** ITSELF — the cert owns the whole
+  `g1_cert` window (open + close). `dor-check` no longer touches `g1_cert`; its
+  verdict is the separate [DoR](dor.md) gate.
+- **Never emitted:** `--print` cert runs. All gate writes are fire-and-forget —
+  a board blip never changes a verdict or an exit code.
+
+The Definition-of-Ready verdict semantics — the `dor` / `dor_review` attempts,
+their `dor-check` / `tiers` / `full-suite-evidence` / `ci` SOPs, the
+submit-before-CI-settles credit, and the `--gate-role` split — now live in
+their own gate doc: [`dor.md`](dor.md).
 
 ## The CI seam — submit before CI settles
 
-The CI **wait** belongs to the review handoff, not the builder's wall-clock
-(`ci-gate-review-handoff`, 2026-07-09). The builder certs, opens the PR, runs
-the dor-check verdict, and moves the task `submitted` **immediately**:
-
-- **Submit-side (builder role, the default):** a still-running CI is a **loud
-  suggestion**, never a block; a fresh fast cert is credited **provisionally**
-  while the open PR's CI is pending or not yet reported. A **red** CI (or a
-  closed/merged `pr_url`) still refuses, and a fast cert with **no PR at all**
-  is refused — the provisional credit is anchored to an open PR whose CI will
-  run.
-- **Review-side (the authoritative verdict):** `bin/pr-review`'s supervisor
-  checks the PR's live CI **before spawning reviewers** — red bounces the task
-  back naming the failing checks (recorded as a failed G2a attempt), pending
-  defers the wave — and the primary's gate-zero
-  (`bin/dor-check <slug> --gate-role review`) keeps the strict semantics: red
-  AND pending both block, and fast evidence needs the settled green.
-
-Net effect: nothing reaches a reviewer (or a merge) without a green CI, but the
-builder never idles watching checks. Expect the bounce round-trip if you hand
-off a PR whose CI then fails — that is the trade, priced in.
-
-## Gate roles (`--gate-role`)
-
-`bin/dor-check <slug>` defaults to `--gate-role builder`: the verdict closes
-G1. The **primary reviewer's gate-zero** re-run must not close the builder's
-gate, so it runs:
-
-```bash
-bin/dor-check <task-slug> --gate-role review
-```
-
-That appends the verdict as a `dor-check` SOP on the task's **open G2a Primary
-attempt** instead ([g2-review.md](g2-review.md) owns that gate's close).
+The CI **wait** belongs to the review handoff, not the builder's wall-clock — but
+that is the **DoR gate's** concern (the cert itself is CI-independent). The
+builder certs (this gate), opens the PR, runs the dor-check verdict (the DoR
+gate), and moves the task `submitted` **immediately** without waiting for CI.
+Full CI-seam mechanics — provisional fast-cert credit, the review-side gate-zero,
+and the bounce round-trip — are in [`dor.md`](dor.md).
 
 ## UI surfaces
 
@@ -190,7 +161,9 @@ attempt** instead ([g2-review.md](g2-review.md) owns that gate's close).
 
 ## Related
 
-- [`g2-review.md`](g2-review.md) — the next gate; its primary re-runs this
-  gate's dor-check as gate-zero (`--gate-role review`).
+- [`dor.md`](dor.md) — the next gate; the DoR verdict (`bin/dor-check`) the
+  builder runs at submit (`dor`) and the primary reviewer re-runs as gate-zero
+  (`dor_review`, `--gate-role review`).
+- [`g2-review.md`](g2-review.md) — the senior-review lanes that follow DoR.
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
   surface `bin/gate` posts through.

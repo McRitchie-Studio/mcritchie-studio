@@ -15,7 +15,8 @@
 #                  [--sop-json JSON]... [--meta k=v]... [--actor A] [--source S]
 #   bin/gate show  <task|release> <slug> [--json]
 #
-# Keys: g1_cert g2a_primary g2b_light (task) · g3_candidate g4_ship (release).
+# Keys: g1_cert dor dor_review g2a_primary g2b_light (task) · g3_candidate
+#       g4_ship (release).
 # Semantics live server-side in GateRun: `open` finds the in-flight attempt or
 # starts attempt n+1; `sop` appends one executed-SOP entry (implicitly opening);
 # `close` records the verdict — closing with NO open attempt records a
@@ -27,7 +28,7 @@
 require "json"
 require_relative "lib/agent_api"
 
-KEYS = %w[g1_cert g2a_primary g2b_light g3_candidate g4_ship].freeze
+KEYS = %w[g1_cert dor dor_review g2a_primary g2b_light g3_candidate g4_ship].freeze
 SUBJECTS = %w[task release].freeze
 
 def die!(msg)

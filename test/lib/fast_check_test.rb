@@ -266,15 +266,18 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  def test_green_run_opens_g1_and_appends_one_sop_per_lane_without_closing
+  def test_green_run_opens_g1_appends_one_sop_per_lane_and_self_closes_success
     with_repo do |dir, _|
       _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code
       gate = lines.select { |l| l[0] == "GATE" }
-      assert_equal %w[open sop sop sop sop], gate.map { |l| l[1] },
-                   "open + one sop per lane, no close on green (dor-check closes G1): #{gate.inspect}"
+      assert_equal %w[open sop sop sop sop close], gate.map { |l| l[1] },
+                   "open + one sop per lane + a self-close on green (cert owns g1_cert now, " \
+                   "not dor-check): #{gate.inspect}"
       sop_names = gate.select { |l| l[1] == "sop" }.map { |l| l[l.index("--sop") + 1] }
       assert_equal %w[test-db-prepare mapped-tests spine rubocop-changed], sop_names
+      close = gate.find { |l| l[1] == "close" }
+      assert_includes close, "--success", "the green cert closes g1_cert success itself"
       assert(gate.all? { |l| l[2] == "task" && l[3] == "task-x" && l[4] == "g1_cert" })
     end
   end
