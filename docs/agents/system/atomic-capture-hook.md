@@ -327,6 +327,53 @@ command = "ATOMIC_CAPTURE_URL=https://mcritchie.studio /Users/alex/projects/mcri
 timeout = 5
 ```
 
+## Fan-out token reconciliation — attributing child subagent spend
+
+An activity's tokens/cost are normally a **transcript-delta** measured LIVE at its
+close against the **parent** `~/.claude/projects/*/<sid>.jsonl` only. That is correct
+for a solo session, but in a **supervisor + subagents** session (e.g. `pr-review`,
+where Avi spawns reviewers) it breaks: after the first delegation the parent
+transcript goes **quiet**, and the real spend moves into **child** transcripts at
+`~/.claude/projects/<proj>/<sid>/subagents/agent-<id>.jsonl` (each with a sibling
+`.meta.json` naming its `agentType`/soul + spawn tree). Nothing read those, so every
+post-delegation activity measured a **zero** parent delta and rendered `—` — the
+"token attribution stops after fan-out" bug (proven on prod session `84293426`:
+parent 147k in vs. seven children ~1.9M in).
+
+`bin/agent-activity reconcile [--session <id>]` fixes it. It:
+
+1. `GET /api/v1/agent_activities/windows?session_id=<sid>` — the session's activity
+   windows (id, agent lane, `opened_at`/`closed_at`), which the board knows and the
+   local reconciler needs.
+2. reads the local child `subagents/*.jsonl` transcripts (which the board can't see)
+   via `lib/agent_fanout_usage.rb`, and
+3. `POST /api/v1/agent_activities/reconcile` — the computed per-activity usage, which
+   the board stamps (session-scoped: a token can never patch another session's rows).
+
+**Attribution model — per-AUTHOR partition.** Each activity is measured against the
+transcript of the agent that AUTHORED it: the parent for the root session's own
+turns, each subagent's child transcript for the activities it narrated (a reviewer's
+own review; the supervisor's nil-lane orchestration, which falls back to the nil lane
+because its soul has no soul-lane activity). Every **distinct** assistant turn (deduped
+by `message.id` — one API turn is serialized once per content block, all copies
+carrying the same usage, so a naive sum multiplies it) is assigned to exactly ONE
+activity: the one open in the turn's lane at the turn's timestamp. Summing per
+activity therefore **partitions** the whole trajectory's spend (parent + every child)
+across the rows — no double-count. Turns after the last lane-activity closed are
+unnarrated orphans, dropped (the "Unlabeled" analog).
+
+**Wiring.** `bin/agent-activity close-open` (the SessionEnd/Stop hook above) runs
+`reconcile` **after** the teardown close, so a slow child-transcript read can never
+leave an activity hanging open; any session can be backfilled by hand with
+`bin/agent-activity reconcile --session <id>`. A plain (non-fan-out) session has no
+child transcripts, so reconcile is a no-op and never disturbs its live measurements.
+
+> **Known limitation.** When ONE soul runs multiple CONCURRENT subagents mapped to
+> multiple concurrent same-lane activities, the lane+timestamp partition splits their
+> spend by wall-clock window rather than per-subagent — still an exact partition (no
+> double-count), just not per-review-precise. A `toolUseId`/span-overlap child→activity
+> match is a documented follow-up.
+
 ## Tests
 
 `test/lib/atomic_capture_hook_test.rb`:
