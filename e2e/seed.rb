@@ -733,4 +733,20 @@ AgentAction.create!(
 ActionGrade.create!(agent_action: test_run_pass, grader: "alex", disposition: "good",
                     slug: "ship gate stayed green").bank!
 
+# Model-pricing demo: a session that used claude-opus-4-8, so /admin/model_pricing
+# renders a real last-session summary and the rate sliders move a non-zero total.
+# (AgentActivity rows are cleared by AtomicEvent.delete_all above — AtomicEvent is
+# the AgentActivity alias — so this reseeds cleanly.)
+mp_session = "sess-model-pricing-demo"
+[
+  { seq: 0, tin: 1_000_000, tout: 200_000, cost: "7.50", at: 30.minutes.ago },
+  { seq: 1, tin: 500_000,   tout: 100_000, cost: "5.00", at: 25.minutes.ago }
+].each do |a|
+  AgentActivity.create!(
+    session_id: mp_session, category: "Edit", reason_slug: "model pricing demo",
+    model: "claude-opus-4-8", tokens_in: a[:tin], tokens_out: a[:tout], cost: a[:cost],
+    opened_at: a[:at], closed_at: a[:at] + 1.minute, seq: a[:seq]
+  )
+end
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events"

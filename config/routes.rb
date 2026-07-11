@@ -127,6 +127,13 @@ Rails.application.routes.draw do
     get "models", to: "models#index", as: :models
     get "models/:key", to: "models#show", as: :model
 
+    # Model Pricing — per-model $/1M rate roster + last-session cost summary, with
+    # a slider UI to persist rate overrides. Glob `*model` + format:false so a
+    # dotted canonical id (e.g. "gpt-5.5") is captured whole, not split as a format.
+    get   "model_pricing", to: "model_pricing#index", as: :model_pricing
+    get   "model_pricing/*model", to: "model_pricing#show", as: :model_pricing_model, format: false
+    patch "model_pricing/*model", to: "model_pricing#update", format: false
+
     # Admin link hub — gathers every admin/operator destination (incl. the
     # on-chain Signing Console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links

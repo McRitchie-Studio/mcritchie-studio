@@ -96,11 +96,26 @@ module UsagePricing
     key.empty? ? nil : key
   end
 
-  # RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override. NOT
-  # memoized so a test (or a hot-reloaded operator config) never reads a stale
-  # roster; the merge is trivial.
+  # RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override, then
+  # with the persisted DB overrides (operator-tuned, highest precedence). NOT
+  # memoized so a test (or a freshly-saved rate) never reads a stale roster; the
+  # merge is trivial and db_rates is a single tiny-table read.
   def self.rates
-    RATES.merge(env_rates)
+    RATES.merge(env_rates).merge(db_rates)
+  end
+
+  # Persisted per-model overrides from the model_rate_overrides table (the admin
+  # Model Pricing page writes these). AR-GUARDED and best-effort: the plain-Ruby
+  # require_relative callers (bin/task, bin/atomic-event) have no ActiveRecord, and
+  # a pre-migration app has no table — both degrade to the static roster instead
+  # of raising into a cost capture. Highest precedence, so a saved rate wins.
+  def self.db_rates
+    return {} unless defined?(ActiveRecord::Base)
+    return {} unless ModelRateOverride.table_exists?
+
+    ModelRateOverride.rates_hash
+  rescue StandardError
+    {}
   end
 
   # Parse ATOMIC_ACTION_MODEL_RATES — JSON {"model-id": {"input"|"in": n,
@@ -136,5 +151,5 @@ module UsagePricing
     BigDecimal(value.to_s)
   end
 
-  private_class_method :env_rates, :bucket, :to_d
+  private_class_method :env_rates, :db_rates, :bucket, :to_d
 end
