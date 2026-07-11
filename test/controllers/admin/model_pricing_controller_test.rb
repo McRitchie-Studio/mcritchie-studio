@@ -57,6 +57,17 @@ class Admin::ModelPricingControllerTest < ActionDispatch::IntegrationTest
     assert_equal BigDecimal("7.5"), UsagePricing.price({ "input" => 1_000_000 }, "claude-opus-4-8")
   end
 
+  test "a failed rate write logs an ErrorLog carrying the override breadcrumb" do
+    log_in_as(@admin)
+    assert_difference "ErrorLog.count", 1 do
+      patch admin_model_pricing_model_path("claude-opus-4-8"),
+            params: { model_rate_override: { input_rate: "-5", output_rate: "25" } }
+    end
+    assert_response :unprocessable_entity
+    assert_equal "claude-opus-4-8", ErrorLog.order(:created_at).last.target_name
+    assert_nil ModelRateOverride.find_by(model: "claude-opus-4-8")
+  end
+
   test "a non-admin update is blocked and persists nothing" do
     log_in_as(@viewer)
     patch admin_model_pricing_model_path("claude-opus-4-8"),

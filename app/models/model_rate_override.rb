@@ -9,6 +9,10 @@ class ModelRateOverride < ApplicationRecord
   validates :cache_read_rate, :cache_creation_rate,
             numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
 
+  # The canonical model id doubles as the record's stable slug — one row per
+  # model. Lets rescue_and_log(target: …) stamp a meaningful breadcrumb.
+  def slug = model
+
   # { "claude-opus-4-8" => { input: 4.5, output: 22.5 }, ... } in the shape
   # UsagePricing.rates merges. Optional absolute cache rates are included only
   # when set, mirroring the RATES / env override contract.

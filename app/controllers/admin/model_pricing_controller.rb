@@ -22,13 +22,13 @@ module Admin
 
     def update
       @override = ModelRateOverride.find_or_initialize_by(model: @model)
-      @override.assign_attributes(rate_params)
-      if @override.save
+      rescue_and_log(target: @override) do
+        @override.update!(rate_params)
         redirect_to admin_model_pricing_model_path(@model), notice: "Rates updated for #{@model}."
-      else
-        show
-        render :show, status: :unprocessable_entity
       end
+    rescue StandardError
+      show
+      render :show, status: :unprocessable_entity
     end
 
     private
