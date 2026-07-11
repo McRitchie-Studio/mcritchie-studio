@@ -68,7 +68,8 @@
 #       repeat --reviewer for the senior pair (the review pair is normally recorded
 #       automatically by bin/reviewer-select, which records by default). )
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
-#     ( shortcut: stage→blocked + records devops.block_kind + posts a qa_feedback activity )
+#     ( marks a `building` ATTRIBUTE: stamps blocked_at/blocked_from/blocked_by/
+#       block_kind (no →blocked stage) + posts a qa_feedback activity )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A] [--resolves-feedback]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
@@ -281,7 +282,7 @@ SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
-  "--release-slug" => "release_slug", "--release-train" => "release_slug", "--block-kind" => "block_kind",
+  "--release-slug" => "release_slug", "--release-train" => "release_slug",
   "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd",
   "--approval" => "approval_status", "--approval-status" => "approval_status",
   # "act as <soul>": the status-line mascot becomes that agent (name + glyph + tint)
@@ -306,7 +307,9 @@ SIZES = %w[small medium large xl].freeze
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
-STAGES = %w[designed building submitted reviewed assembled shipped blocked archived].freeze
+STAGES = %w[designed building submitted reviewed assembled shipped archived].freeze
+# `blocked`/`failed` are no longer stages — a block is a `building` attribute set
+# via `bin/task block`, so nudge the legacy names toward it.
 LEGACY_STAGE_HINTS = {
   "new" => "designed",
   "queued" => "designed",
@@ -314,8 +317,7 @@ LEGACY_STAGE_HINTS = {
   "pr_review" => "submitted",
   "qa_review" => "assembled",
   "prod_ready" => "assembled",
-  "done" => "shipped",
-  "failed" => "blocked"
+  "done" => "shipped"
 }.freeze
 BLOCK_KINDS = %w[environment rework dependency].freeze
 PERSONA_CLEAR = %w[none clear off -].freeze
@@ -1042,15 +1044,18 @@ when "block"
   end
   die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
-  devops = (current.dig("metadata", "devops") || {}).dup
-  devops["block_kind"] = kind if kind
   event = { "source" => "cli" }
   blocker = resolved_block_actor(agent, current, kind: kind)
   event["actor"] = blocker unless blocker.empty?
   autofill_move_usage(event, slug) unless %w[model tokens_in tokens_out cost].any? { |k| event.key?(k) }
-  body = { "stage" => "blocked", "event" => event }
-  body["devops"] = devops unless devops.empty?
-  task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
+  # Block is a `building` ATTRIBUTE now (not a stage) — PATCH the dedicated block
+  # endpoint so the server stamps blocked_at/blocked_from/blocked_by/block_kind via
+  # Task#block! and lands the task on building. The feedback rides as a qa_feedback
+  # activity below (the durable prose marker retros/insights mine).
+  body = { "event" => event }
+  body["by"] = blocker unless blocker.empty?
+  body["kind"] = kind if kind
+  task = api(:patch, "/api/v1/tasks/#{slug}/block", body)["data"]
   if feedback
     note = { "task_slug" => slug, "activity_type" => "qa_feedback", "description" => feedback }
     note["agent_slug"] = blocker unless blocker.empty?

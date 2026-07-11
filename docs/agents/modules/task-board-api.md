@@ -201,8 +201,13 @@ checkpoints such as `heavy_review`, `light_review`, `design`, and
 next workflow stage; otherwise it records a checkpoint. `complete` moves the
 task when the stage is a real workflow stage; named review/design checkpoints
 record an append-only `TaskEvent(kind: checkpoint)` without moving the task.
-`fail` records the named failed checkpoint, then moves the task to `blocked`
-with `kind` defaulting to `rework`.
+`fail` records the named failed checkpoint, then BLOCKS the task with `kind`
+defaulting to `rework`. A block is a `building` ATTRIBUTE now (not a stage):
+`Task#block!` lands the task on `building` and stamps `blocked_at` / `blocked_from`
+/ `blocked_by` / `block_kind`. Agents can also block directly via `PATCH
+/api/v1/tasks/:slug/block` with `{ "kind": "...", "by": "<agent>" }` (the CLI
+shortcut is `bin/task block`), posting a `qa_feedback` Activity alongside for the
+prose feedback.
 
 Release checkpoint endpoints:
 

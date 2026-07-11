@@ -21,7 +21,8 @@ class TaskCardTest < ActionView::TestCase
   end
 
   test "blocked card tone is readable in light and dark themes" do
-    task = Task.create!(title: "Blocked tone task", stage: "blocked")
+    task = Task.create!(title: "Blocked tone task", stage: "building")
+    task.block!(by: "avi", kind: "rework") # a block is a building attribute now
 
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 

@@ -73,11 +73,11 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[data-test='timeline-transition']", text: /Designed.*Building/m
   end
 
-  test "renders the blocking agent on a blocked transition card" do
-    task = Task.create!(title: "blocked actor timeline task", stage: "blocked")
-    task.task_events.delete_all
-    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "blocked",
-                      occurred_at: 1.hour.ago, seconds_in_from: 3600, source: "cli", actor: "shannon")
+  test "renders the blocking agent on a live blocked card" do
+    # A block is a `building` attribute now (blocked_by column), so the timeline
+    # SYNTHESIZES a live blocked segment from the columns — no →blocked event.
+    task = Task.create!(title: "blocked actor timeline task", stage: "building")
+    task.block!(by: "shannon", kind: "rework")
 
     render partial: "tasks/consolidated_timeline", locals: { task: task.reload, agents: @agents, events: task.task_events.to_a }
 

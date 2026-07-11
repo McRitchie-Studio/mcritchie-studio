@@ -2,7 +2,7 @@ class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
   before_action :require_admin, except: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
-  before_action :set_task, only: [:show, :review_events, :edit, :update, :destroy, :comment]
+  before_action :set_task, only: [:show, :review_events, :edit, :update, :destroy, :comment, :block, :unblock]
 
   def reorder
     slugs = params[:slugs]
@@ -21,7 +21,8 @@ class TasksController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
-  # /tasks — Workflow 1 (Build, feature agent): designed → building → blocked → submitted.
+  # /tasks — Workflow 1 (Build, feature agent): designed → building → submitted
+  # (a block is a `building` attribute, not a lane).
   def index
     load_board
   end
@@ -139,6 +140,33 @@ class TasksController < ApplicationController
       format.html { redirect_to tasks_path, alert: e.message }
       format.json { render json: { error: e.message }, status: :unprocessable_entity }
     end
+  end
+
+  # Block is a `building` attribute (blocked_at + block_kind + blocked_by), not a
+  # stage move — the show-page "Block" control. Server-enforced via Task#block!.
+  def block
+    rescue_and_log(target: @task) do
+      Current.task_event_source = "web"
+      blocker = current_activity_agent_slug
+      Current.task_event_actor = blocker || current_user&.email
+      @task.block!(by: blocker, kind: params[:kind].presence || "rework")
+      redirect_to task_path(@task.slug), notice: "Task blocked."
+    end
+  rescue StandardError => e
+    redirect_to task_path(@task.slug), alert: e.message
+  end
+
+  # Clear a live block, leaving the task on `building` — the show-page "Resume"
+  # control (Task#unblock!).
+  def unblock
+    rescue_and_log(target: @task) do
+      Current.task_event_source = "web"
+      Current.task_event_actor = current_activity_agent_slug || current_user&.email
+      @task.unblock!
+      redirect_to task_path(@task.slug), notice: "Task unblocked."
+    end
+  rescue StandardError => e
+    redirect_to task_path(@task.slug), alert: e.message
   end
 
   def comment

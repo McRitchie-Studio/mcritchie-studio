@@ -32,12 +32,16 @@ done_task:
   completed_at: 2026-04-01 12:00:00
   position: 0
 
+# A blocked task: `blocked` is a `building` ATTRIBUTE now (blocked_at set), not a
+# stage. #blocked? re-derives it from blocked_at + the building stage.
 failed_task:
   title: Failed Task
   slug: task-eee555
-  stage: blocked
+  stage: building
   priority: 0
   blocked_at: 2026-04-01 13:00:00
-  blocked_from: building
+  blocked_from: submitted
+  blocked_by: avi
+  block_kind: rework
   error_message: Something went wrong
   position: 0

@@ -47,13 +47,13 @@ class ConductorTest < Minitest::Test
   # submitted: feat-a (pipeline, mcritchie-studio) + rolio-x (pipeline) + client-x (non-pipeline)
   # reviewed:  feat-b (pipeline) + rolio-r (pipeline) + client-r (non-pipeline)
   # assembled: feat-c (pipeline, turf-monster, release_slug rel-2026-06-25-x)
-  # building:  feat-d ; blocked: feat-e
+  # building:  feat-d (clean) + feat-e (a LIVE block — blocked_at set; the derived
+  #            needs-attention list, since blocked is a building attribute now)
   def write_board
     list("submitted", [["feat-a", "Feature A"], ["rolio-x", "Rolio thing"], ["client-x", "Client thing"]])
     list("reviewed",  [["feat-b", "Feature B"], ["rolio-r", "Rolio review"], ["client-r", "Client review"]])
     list("assembled", [["feat-c", "Feature C"]])
-    list("building",  [["feat-d", "Feature D"]])
-    list("blocked",   [["feat-e", "Feature E"]])
+    list("building",  [["feat-d", "Feature D"], ["feat-e", "Feature E"]])
 
     show("feat-a", stage: "submitted", title: "Feature A", repos: ["mcritchie-studio"])
     show("rolio-x", stage: "submitted", title: "Rolio thing", repos: ["rolio"])
@@ -63,6 +63,10 @@ class ConductorTest < Minitest::Test
     show("client-r", stage: "reviewed", title: "Client review", repos: ["client-app"])
     show("feat-c", stage: "assembled", title: "Feature C", repos: ["turf-monster"],
                    release_slug: "rel-2026-06-25-x")
+    show("feat-d", stage: "building", title: "Feature D", repos: ["mcritchie-studio"])
+    # feat-e is a `building` task carrying a live block (blocked_at set).
+    show("feat-e", stage: "building", title: "Feature E", repos: ["mcritchie-studio"],
+                   blocked_at: "2026-07-11T12:00:00Z")
   end
 
   def list(stage, rows)
@@ -70,9 +74,10 @@ class ConductorTest < Minitest::Test
     File.write(File.join(@fix, "list-#{stage}.txt"), "#{body}\n(#{rows.size} task(s))\n")
   end
 
-  def show(slug, stage:, title:, repos:, release_slug: nil)
+  def show(slug, stage:, title:, repos:, release_slug: nil, blocked_at: nil)
     File.write(File.join(@fix, "show-#{slug}.json"), JSON.generate(
       "slug" => slug, "stage" => stage, "title" => title, "release_slug" => release_slug,
+      "blocked_at" => blocked_at,
       "metadata" => { "devops" => { "repositories" => repos } }
     ))
   end

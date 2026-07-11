@@ -118,10 +118,16 @@ designed → building → submitted ─────────► submitted →
                  (rework / env / dep)                              QA-deployed)  → prod)    §1.4)
 ```
 
-`blocked` is the single "not in the pipeline's court" state — an agent hit a
-wall, QA bounced the PR, or a dependency isn't ready. It records `blocked_from`
-(captured automatically) + `block_kind` (environment / rework / dependency) so a
-heartbeat agent routes it without re-reading the thread. `archived` is terminal.
+`blocked` is the "not in the pipeline's court" signal — an agent hit a wall, QA
+bounced the PR, or a dependency isn't ready. It is **NOT a stage**: it's an
+ATTRIBUTE of a `building` task (a block means "more building to do"). `Task#block!`
+lands the task on `building` and stamps `blocked_at` (when) + `blocked_from` (the
+stage it stalled in) + `blocked_by` (the agent) + `block_kind` (environment /
+rework / dependency); `#blocked?` re-derives a live block from those columns, and
+the card glows red in the Building column until it's resumed (`Task#unblock!`) or
+advances. The durable block markers retros/insights key on are `blocked_at` + the
+`qa_feedback` Activity a caller posts alongside — never a `→blocked` transition
+(there is none). `archived` is terminal.
 
 The RC is a **`Release` singleton** (only one assembles at a time). Member tasks
 carry its `release_slug`; it carries them through QA→prod and flips them to

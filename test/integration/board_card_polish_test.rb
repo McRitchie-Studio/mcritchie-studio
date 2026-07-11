@@ -73,7 +73,7 @@ class BoardCardPolishTest < ActionDispatch::IntegrationTest
 
   test "long card title and activity preview each marquee on one line" do
     task = Task.create!(title: "Suite Consistency Cleanup Review Card",
-                        stage: "blocked")
+                        stage: "building")
     note = "QA review found one remaining generated-doc blocker that needs action before merge."
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
                      description: note)

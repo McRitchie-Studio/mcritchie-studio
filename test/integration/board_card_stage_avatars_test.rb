@@ -40,20 +40,19 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
   test "tasks board blocked card shows designer builder and blocker slots" do
     Pokemon.create!(dex: 52, name: "Meowth", slug: "meowth", generation: 1,
                     sprite_url: "https://example.test/meowth-sprite.png")
-    task = Task.create!(title: "blocked build crew card", stage: "blocked",
+    task = Task.create!(title: "blocked build crew card", stage: "building",
                         metadata: { "devops" => { "mascot" => "meowth" } })
+    task.block!(by: "avi", kind: "rework") # a building attribute; blocker = blocked_by column
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed",
                       occurred_at: 3.hours.ago, actor: "carl")
     TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
                       occurred_at: 2.hours.ago, seconds_in_from: 3600, actor: "shannon")
-    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "blocked",
-                      occurred_at: 1.hour.ago, seconds_in_from: 3600, actor: "avi")
 
     get tasks_path
     assert_response :success
 
-    assert_select "#dropzone-building #card-#{task.slug}[data-stage='blocked']" do
+    assert_select "#dropzone-building #card-#{task.slug}[data-stage='building']" do
       assert_select "[data-test='stage-agent-avatars'].grid-cols-3", count: 1
       assert_select "[data-test='crew-cluster']", count: 3
       assert_select "img[src='https://example.test/meowth-sprite.png']", count: 2
@@ -396,13 +395,14 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
   test "a blocked card keeps a build crew face and blocked marker" do
     Pokemon.create!(dex: 52, name: "Meowth", slug: "meowth", generation: 1,
                     sprite_url: "https://example.test/meowth-sprite.png")
-    task = Task.create!(title: "blocked crew marker", stage: "blocked",
+    task = Task.create!(title: "blocked crew marker", stage: "building",
                         metadata: { "devops" => { "mascot" => "meowth" } })
+    task.block!(by: "avi", kind: "rework")
 
     get deployments_path
     assert_response :success
 
-    assert_select "#dropzone-building #card-#{task.slug}[data-stage='blocked']" do
+    assert_select "#dropzone-building #card-#{task.slug}[data-stage='building']" do
       assert_select "[data-test='stage-agent-avatars'].grid-cols-3", count: 1
       assert_select "img[src='https://example.test/meowth-sprite.png']"
       assert_select "[data-test='crew-blocked']", count: 1

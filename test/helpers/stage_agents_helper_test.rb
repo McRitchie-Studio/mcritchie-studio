@@ -42,16 +42,17 @@ class StageAgentsHelperTest < ActionView::TestCase
   # mascot, with the block landing from `blocker`. Deterministic per-stage durations so
   # the design (420s) and build (2160s) slots carry stable corner pills.
   def blocked_journey_task(slug:, blocker:)
-    task = Task.create!(title: "blocked journey #{slug} task", stage: "blocked",
+    # A block is a `building` attribute now — the blocker is the blocked_by column,
+    # not a →blocked TaskEvent. The design/build/submit spine stays for slots 1/2.
+    task = Task.create!(title: "blocked journey #{slug} task", stage: "building",
                         metadata: { "devops" => { "mascot" => slug } })
+    task.block!(by: blocker, kind: "rework")
     task.task_events.delete_all
     TaskEvent.create!(task_slug: task.slug, to_stage: "designed", occurred_at: 3.hours.ago)
     TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
                       occurred_at: 2.hours.ago, seconds_in_from: 420)
     TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
                       occurred_at: 90.minutes.ago, seconds_in_from: 2160)
-    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "blocked",
-                      occurred_at: 1.hour.ago, actor: blocker)
     task.reload
   end
 

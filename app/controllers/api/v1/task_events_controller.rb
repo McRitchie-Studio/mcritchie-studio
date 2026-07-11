@@ -71,7 +71,7 @@ module Api
             metadata: checkpoint_metadata
           )
           with_task_event_context do
-            @task.block!(kind: params[:kind].presence || "rework")
+            @task.block!(by: event_attributes[:actor], kind: params[:kind].presence || "rework")
           end
           checkpoint
         end

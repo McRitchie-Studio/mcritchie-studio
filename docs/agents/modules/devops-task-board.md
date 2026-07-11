@@ -239,8 +239,12 @@ The board stages should mirror the release path, not generic activity buckets:
 | `reviewed` | Review approved the PR for merge into `release` |
 | `assembled` | PR is merged into `release` and included in the QA candidate |
 | `shipped` | Production or final approved target is shipped and verified |
-| `blocked` | Work is blocked by a real failure that needs new action |
 | `archived` | Historical or cleaned-up work that should not appear on the active board |
+
+`blocked` is **not a stage** — it's an ATTRIBUTE of a `building` task (`blocked_at`
++ `blocked_from` + `blocked_by` + `block_kind`, set via `bin/task block` / `PATCH
+/api/v1/tasks/:slug/block`). A blocked task rides the Building column with a red
+glow until it's resumed or advances.
 
 Do not skip `assembled` for user-facing app changes. Do not move a task to
 `shipped` for production work until production has actually deployed and the

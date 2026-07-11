@@ -8,7 +8,7 @@
 # Turbo Stream action chosen by the event:
 #   intent                               → REPLACE the card in place
 #   cross-column stage move              → REMOVE + PREPEND in one ordered payload
-#   building↔blocked stage move          → REMOVE + PREPEND into Building
+#   block/unblock (a building attribute) → REPLACE the card in place (same column)
 #   brand-new task (genesis)             → PREPEND to the Designed column
 #   leaves the active board (→ archived) → REMOVE
 # Subscribers run `turbo_stream_from "deployments"`; Turbo patches the DOM and a
@@ -22,8 +22,9 @@ class DeploymentsBroadcaster
 
   STREAM = "deployments"
   PARTIAL = "tasks/task_card"
-  # The stages the deploy board shows as columns. `blocked` rides the Building
-  # column; `archived` (or anything off this list) means the card left the board.
+  # The stages the deploy board shows as columns. Blocked tasks are `building`
+  # tasks (a block is an attribute); `archived` (or anything off this list) means
+  # the card left the board.
   BOARD_ZONES = Task::DEPLOYMENTS_BOARD_STAGES
 
   # Wrap the WHOLE operation (resolve + render + broadcast) in the engine's
@@ -160,9 +161,10 @@ class DeploymentsBroadcaster
     "dropzone-#{zone(@task.stage)}"
   end
 
-  # The on-board column a stage lives in (blocked → the Building column).
+  # The on-board column a stage lives in. Blocked tasks are `building` tasks now
+  # (a block is a building attribute), so no stage remap is needed.
   def zone(stage)
-    stage == "blocked" ? "building" : stage
+    stage
   end
 
   def left_board?

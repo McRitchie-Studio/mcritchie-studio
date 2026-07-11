@@ -7,8 +7,8 @@ module Api
       # `stage`, not `status`). `page`/`per_page` are read by Api::Paginatable.
       INDEX_PARAMS = %w[stage agent_slug page per_page].freeze
 
-      before_action :capture_task_event_context, only: [:create, :update, :intent]
-      before_action :set_task, only: [:show, :update, :destroy, :intent]
+      before_action :capture_task_event_context, only: [:create, :update, :intent, :block]
+      before_action :set_task, only: [:show, :update, :destroy, :intent, :block]
 
       def index
         return if reject_unsupported_index_params!
@@ -68,6 +68,22 @@ module Api
         reviewers = Array(params[:reviewers]).map { |r| r.respond_to?(:to_unsafe_h) ? r.to_unsafe_h : r }
         rescue_and_log(target: @task) do
           @task.record_intent_event(to_stage: to_stage, actor: params[:actor].presence, reviewers: reviewers)
+          render_data(@task)
+        end
+      rescue StandardError => e
+        render_error(e.message)
+      end
+
+      # Mark the task blocked WITHOUT leaving the pipeline — a `building` attribute
+      # (blocked_at + blocked_from + blocked_by + block_kind), server-enforced via
+      # Task#block! so blocked_from is derived, not caller-supplied. `by` names the
+      # blocking agent (defaults to the event actor); `kind` is the block_kind.
+      # This is the CLI/agent path (bin/task block). The prose feedback rides as a
+      # separate qa_feedback Activity the caller posts alongside.
+      def block
+        rescue_and_log(target: @task) do
+          @task.block!(by: params[:by].presence || Current.task_event_actor.presence,
+                       kind: params[:kind].presence)
           render_data(@task)
         end
       rescue StandardError => e

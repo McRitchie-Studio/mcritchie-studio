@@ -82,13 +82,12 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal "archive", streams.first["data-exit-action"]
   end
 
-  test "a building→blocked transition REMOVES then PREPENDS into the Building column" do
-    task = Task.create!(title: "Blocked column re-tint task", stage: "designed")
-    Current.task_event_actor = "carl"
-    task.update!(stage: "building")
-    Current.reset
-    task.update!(stage: "blocked")
-    event = task.task_events.transitions.last # building → blocked
+  test "a block (submitted→building) REMOVES then PREPENDS into the Building column" do
+    # A block is a `building` attribute now — block! moves submitted→building,
+    # which the board treats as a cross-column move into Building.
+    task = Task.create!(title: "Blocked column re-tint task", stage: "submitted")
+    task.block!(by: "avi", kind: "rework")
+    event = task.task_events.transitions.last # submitted → building
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.task_event(event) }
 
@@ -97,13 +96,10 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert(streams.any? { |s| s["action"] == "prepend" && s["target"] == "dropzone-building" }, "prepends blocked cards into Building")
   end
 
-  test "a building→blocked transition sends one ordered websocket payload" do
-    task = Task.create!(title: "Blocked websocket race task", stage: "designed")
-    Current.task_event_actor = "carl"
-    task.update!(stage: "building")
-    Current.reset
-    task.update!(stage: "blocked")
-    event = task.task_events.transitions.last # building → blocked
+  test "a block (submitted→building) sends one ordered websocket payload" do
+    task = Task.create!(title: "Blocked websocket race task", stage: "submitted")
+    task.block!(by: "avi", kind: "rework")
+    event = task.task_events.transitions.last # submitted → building
     broadcasts = []
 
     Turbo::StreamsChannel.stub(:broadcast_stream_to, ->(*streamables, content:) {

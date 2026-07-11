@@ -872,11 +872,8 @@ module ApplicationHelper
           what: "Spec complete — acceptance criteria, change shape, test plan, and affected repos are all set. No code yet.",
           who: "Author / operator", nxt: "An agent claims it (passes dor-check --gate build) → building" },
         { stage: "building",
-          what: "An agent owns the task in an isolated worktree, writing the code and its tests together as the work takes shape.",
-          who: "Feature agent", nxt: "Open a PR, pass dor-check --gate merge → submitted" },
-        { stage: "blocked",
-          what: "Off the pipeline — waiting on an environment fix, QA rework, or a dependency. Records where it stalled (blocked_from) and why (block_kind).",
-          who: "Whoever can unblock it (agent for rework, operator for environment)", nxt: "Once cleared, it resumes → back to building or submitted" },
+          what: "An agent owns the task in an isolated worktree, writing the code and its tests together. A BLOCK is a building attribute (not a stage): a blocked task glows red in this column, recording where it stalled (blocked_from), who raised it (blocked_by), and why (block_kind) until it's resumed.",
+          who: "Feature agent (whoever can unblock it — agent for rework, operator for environment)", nxt: "Open a PR, pass dor-check --gate merge → submitted" },
         { stage: "submitted",
           what: "The PR is open and the feature agent's part is done — the seam where Build hands off to DevOps.",
           who: "Feature agent → DevOps", nxt: "DevOps picks it up for review → reviewed" }

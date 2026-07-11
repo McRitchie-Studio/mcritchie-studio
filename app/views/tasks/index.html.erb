@@ -1,4 +1,5 @@
-<%# Workflow 1 · Build (feature agent) — designed → building → blocked → submitted (+ archived toggle). %>
+<%# Workflow 1 · Build (feature agent) — designed → building → submitted (+ archived toggle).
+    A block is a `building` attribute (red-glowing card in the Building column), not a lane. %>
 <%= render "board",
       stages: Task::TASKS_BOARD_STAGES,
       title: "Tasks",

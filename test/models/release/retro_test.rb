@@ -25,9 +25,12 @@ class Release::RetroTest < ActiveSupport::TestCase
     task.task_events.create!(from_stage: "submitted", to_stage: "reviewed",
                              occurred_at: submitted_at + 30.minutes,
                              metadata: reviewers ? { "reviewers" => reviewers } : {})
+    # A block is a `building` attribute now (no →blocked TaskEvent). The durable
+    # per-round marker is the qa_feedback Activity, which is what rework_rounds
+    # counts — one per bounce.
     blocked.times do |i|
-      task.task_events.create!(from_stage: "reviewed", to_stage: "blocked",
-                               occurred_at: submitted_at + (40 + i).minutes)
+      Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                       description: "rework round #{i}", created_at: submitted_at + (40 + i).minutes)
     end
     task.task_events.create!(from_stage: "assembled", to_stage: "shipped", occurred_at: shipped_at) if shipped_at
     task

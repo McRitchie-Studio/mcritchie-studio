@@ -148,12 +148,13 @@ class Release
     # remediation (revert the member's merge commit on `release`, never a
     # force-push): after the revert its PR is genuinely off the branch, so the
     # next sweep of the reworked task correctly re-merges. Returns the task.
-    def eject!(task, feedback: nil)
+    def eject!(task, feedback: nil, by: "steffon")
       Task.transaction do
         task.update!(release_slug: nil, merged: nil)
-        task.block!(kind: "rework")
+        task.block!(by: by, kind: "rework")
         if feedback.present?
-          Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: feedback)
+          Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                           agent_slug: by.presence, description: feedback)
         end
       end
       task
