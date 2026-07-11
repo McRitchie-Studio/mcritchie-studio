@@ -733,19 +733,56 @@ AgentAction.create!(
 ActionGrade.create!(agent_action: test_run_pass, grader: "alex", disposition: "good",
                     slug: "ship gate stayed green").bank!
 
-# Model-pricing demo: a session that used claude-opus-4-8, so /admin/model_pricing
-# renders a real last-session summary and the rate sliders move a non-zero total.
-# (AgentActivity rows are cleared by AtomicEvent.delete_all above — AtomicEvent is
-# the AgentActivity alias — so this reseeds cleanly.)
-mp_session = "sess-model-pricing-demo"
-[
-  { seq: 0, tin: 1_000_000, tout: 200_000, cost: "7.50", at: 30.minutes.ago },
-  { seq: 1, tin: 500_000,   tout: 100_000, cost: "5.00", at: 25.minutes.ago }
-].each do |a|
+# Model-pricing demo: two REAL production sessions replayed verbatim (a pokedex
+# feature run on claude-opus-4-8, a testing-gates run on claude-fable-5) so
+# /admin/model_pricing shows a genuine last-session summary + activity feed per
+# model, and the rate sliders move real, non-zero totals. Rows captured from prod
+# agent_activities (model + tokens + cache + cost); opened_at re-anchored to now
+# so each is the most recent session for its model. AgentActivity is cleared by
+# AtomicEvent.delete_all above (the alias), so this reseeds cleanly.
+require "csv"
+model_pricing_bases = {
+  "4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c" => 90.minutes.ago, # opus-4-8 · pokedex feature
+  "ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca" => 40.minutes.ago  # fable-5 · testing gates
+}
+model_pricing_rows = <<~CSV
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,0,Explore,scope newest-unique pokedex feature,claude-opus-4-8,276425,61573,2478225,4.4769
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,1,Workflow,create task + worktree for pokedex feature,claude-opus-4-8,12077,6277,1065869,0.7653
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,2,Edit,implement newest first-seen read model,claude-opus-4-8,111512,99085,5437665,5.8910
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,3,Verify,run focused pokedex tests,claude-opus-4-8,54601,46034,8006367,5.4942
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,4,Clarify,await operator visual approval,claude-opus-4-8,8751,3603,1036550,0.6630
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,5,Version,"commit, certify, dor-check, PR",claude-opus-4-8,541668,67639,6219598,8.1855
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,6,Verify,re-cert in clean env,claude-opus-4-8,4098,673,606215,0.3425
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,7,Version,push branch + open PR into release,claude-opus-4-8,47282,37387,6743170,4.6007
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,8,Explore,map token/cost capture pipeline for accuracy fix,claude-opus-4-8,56359,90638,5597535,5.4169
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,9,Plan,align fix scope with operator,claude-opus-4-8,92169,51313,7013146,5.3649
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,10,Edit,build UsagePricing module + delegate both paths,claude-opus-4-8,250613,194509,43323316,28.0886
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,11,Version,"commit, cert, dor-check, PR",claude-opus-4-8,76005,64122,30216226,17.1849
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,12,Explore,enumerate all devops testing stages from config,claude-opus-4-8,74769,26227,5882463,4.0640
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,14,Edit,cap parallel test workers in full-suite-check,claude-opus-4-8,305786,298467,77261117,49.1313
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,15,Explore,diagnose pg fork-crash blocking all local certs,claude-opus-4-8,62361,60450,7706496,5.9861
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,16,Workflow,pivot to Task B observability off clean release,claude-opus-4-8,24009,22614,10524504,6.0663
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,17,Explore,map projection + TaskEvent + approval + timeline for phase observability,claude-opus-4-8,2419915,542652,126943108,100.8621
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,18,Workflow,deploy-with-task: ship Task B to prod,claude-opus-4-8,6957,8172,683925,0.6158
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,19,Explore,orient on PR #457 diff,claude-opus-4-8,12976,13952,921168,0.9391
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,20,Verify,verify fix commit 977c77d5,claude-opus-4-8,21426,8554,2308808,1.5824
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,21,Workflow,sweep Task B onto release + QA,claude-opus-4-8,8595,7773,889500,0.7231
+  4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c,22,Explore,Read qa-release SOP before sweep,claude-opus-4-8,6124,840,598468,0.3815
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,0,Plan,orient: testing gates redesign,claude-fable-5,418195,104127,2347180,15.6379
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,1,Workflow,create gate-runs production task,claude-fable-5,44876,17460,2240863,4.0053
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,2,Explore,read producer + model idioms,claude-fable-5,124652,36217,2991705,7.2901
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,3,Edit,gate_runs migration + GateRun model,claude-fable-5,33764,24141,3886264,5.7656
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,4,Edit,wire G1 producers into cert + dor scripts,claude-fable-5,115525,75949,24898710,30.9782
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,5,Verify,rubocop + record checks + cert,claude-fable-5,36046,28538,13077242,15.2177
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,6,Workflow,"full-cycle: read SOP, run cycle",claude-fable-5,40695,16131,4898077,6.4374
+  ebb5f0a0-76ce-484c-b8c7-443b9b8bd9ca,7,Explore,orient: read pr-review SOP,claude-fable-5,1740,267,294534,0.3427
+CSV
+CSV.parse(model_pricing_rows.strip, headers: false).each do |session_id, seq, category, reason, model, tin, tout, cread, cost|
+  opened = model_pricing_bases.fetch(session_id) + (seq.to_i * 30).seconds
   AgentActivity.create!(
-    session_id: mp_session, category: "Edit", reason_slug: "model pricing demo",
-    model: "claude-opus-4-8", tokens_in: a[:tin], tokens_out: a[:tout], cost: a[:cost],
-    opened_at: a[:at], closed_at: a[:at] + 1.minute, seq: a[:seq]
+    session_id: session_id, seq: seq.to_i, category: category, reason_slug: reason, model: model,
+    tokens_in: tin.to_i, tokens_out: tout.to_i, cache_read_tokens: cread.to_i, cost: cost.to_d,
+    opened_at: opened, closed_at: opened + 20.seconds
   )
 end
 
