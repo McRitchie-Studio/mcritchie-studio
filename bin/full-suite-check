@@ -52,6 +52,8 @@ require "optparse"
 require "json"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
+require_relative "lib/session_identity"
+require_relative "lib/cert_emission"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
@@ -158,8 +160,7 @@ skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"
 # session gate. Blank means "no session to attribute to": skip the emit entirely,
 # exactly as bin/release.rb's agent_activity does (`return unless session`).
 def agent_session_id
-  id = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
-  id.empty? ? ENV["CODEX_THREAD_ID"].to_s.strip : id
+  SessionIdentity.id
 end
 
 # Best-effort test-scope telemetry — the local-cert MIRROR of bin/release.rb's
@@ -195,37 +196,18 @@ rescue StandardError
   nil # telemetry never breaks a cert — the lane result the caller returns is what matters
 end
 
-# Best-effort emit of a "cert" checkpoint TaskEvent (started/completed) so the task's
-# Local Certification testing phase gets a durable start→finish window. Skips when
-# there's no task slug (--print / hook-install runs); never breaks the cert.
+# Best-effort G1 gate-run markers (open / per-lane sop / close --failed), the
+# "cert" checkpoint TaskEvent, and the checks_run read: shared with
+# bin/fast-check (CertEmission), parameterized on this script's TASK_BIN/
+# GATE_BIN. Skips when there's no task slug (--print / hook-install runs);
+# fire-and-forget — a gate write never breaks a cert. The GREEN path leaves the
+# g1_cert attempt open: bin/dor-check's merge-gate verdict is what closes G1.
 def emit_cert_checkpoint(slug, status)
-  return if slug.to_s.strip.empty?
-
-  system(TASK_BIN, "checkpoint", slug, "cert", "--status", status,
-         out: File::NULL, err: File::NULL)
-rescue StandardError
-  nil
+  CertEmission.emit_cert_checkpoint(TASK_BIN, slug, status)
 end
 
-# Best-effort G1 Cert gate-run markers (bin/gate → GateRun) — the branded-gate
-# mirror of the cert checkpoint: OPEN the g1_cert attempt when the cert starts,
-# append one executed-SOP entry per lane, and CLOSE it success=false the moment
-# a lane goes red (the green path stays open — bin/dor-check's merge-gate
-# verdict is what closes G1). Skips when there's no task slug; fire-and-forget
-# like every other telemetry seam — a gate write never breaks a cert.
 def emit_gate(slug, *args)
-  return if slug.to_s.strip.empty?
-
-  system(GATE_BIN, *args, out: File::NULL, err: File::NULL)
-rescue StandardError
-  nil
-end
-
-def emit_gate_sop(slug, label, cmd, ok, duration_ms)
-  emit_gate(slug, "sop", "task", slug, "g1_cert",
-            "--sop", label, "--cmd", cmd.to_s,
-            "--result", ok ? "pass" : "fail",
-            "--duration-ms", duration_ms.to_s)
+  CertEmission.emit_gate(GATE_BIN, slug, *args)
 end
 
 def run_lane(label, cmd, root, env: {}, gate_slug: nil)
@@ -235,21 +217,8 @@ def run_lane(label, cmd, root, env: {}, gate_slug: nil)
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   emit_test_scope(LANE_SCOPES[label], ok, duration_ms, cmd)
-  emit_gate_sop(gate_slug, label, cmd, ok, duration_ms) if gate_slug
+  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
   ok
-end
-
-# The task's current checks_run (Array), or nil if it can't be read — so the
-# caller can MERGE new evidence into it (bin/task update --checks REPLACES). nil
-# is the "don't risk wiping it" signal, distinct from [] (a task with none yet).
-def fetch_checks(task_bin, slug)
-  out = IO.popen([task_bin, "show", slug, "--json"], err: File::NULL, &:read)
-  return nil unless $?.success?
-
-  record = JSON.parse(out)
-  Array(record.dig("metadata", "devops", "checks_run"))
-rescue JSON::ParserError, SystemCallError
-  nil
 end
 
 # Open the Local Certification testing phase (durable checkpoint on the task)
@@ -313,7 +282,7 @@ end
 # the agent's tier tags / bypass records and dropping only PRIOR full-suite/rubocop
 # evidence (so re-runs replace stale lines, never accumulate). If the current list
 # can't be read, ABORT rather than risk wiping checks_run.
-existing = fetch_checks(TASK_BIN, slug)
+existing = CertEmission.fetch_checks(TASK_BIN, slug)
 if existing.nil?
   warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task " \
        "show). Not writing (a blind --checks would wipe your tier tags). Re-run, or record by hand alongside your " \

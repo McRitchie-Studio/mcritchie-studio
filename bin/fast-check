@@ -76,6 +76,7 @@ require "shellwords"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
+require_relative "lib/cert_emission"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
 # anchor here. The CODE we run + fingerprint roots at the agent's worktree.
@@ -129,33 +130,15 @@ rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FAST_CHECK_TEST_DB_RESET_CMD", "bin/rails db:test:prepare")
 skip_test_db_reset = ENV.fetch("FAST_CHECK_SKIP_TEST_DB_RESET", "") == "1"
 
-# Best-effort G1 Cert gate-run markers (bin/gate → GateRun): OPEN the attempt at
-# start, one executed-SOP entry per lane, CLOSE --failed on red. Fire-and-forget —
-# a gate write never breaks a cert. Skipped when there's no task slug (--print).
+# Best-effort G1 gate-run markers + cert checkpoint + checks_run read: shared
+# with bin/full-suite-check (CertEmission), parameterized on this script's
+# TASK_BIN/GATE_BIN seams. Skipped when there's no task slug (--print).
 def emit_gate(slug, *args)
-  return if slug.to_s.strip.empty?
-
-  system(GATE_BIN, *args, out: File::NULL, err: File::NULL)
-rescue StandardError
-  nil
+  CertEmission.emit_gate(GATE_BIN, slug, *args)
 end
 
-def emit_gate_sop(slug, label, cmd, ok, duration_ms)
-  emit_gate(slug, "sop", "task", slug, "g1_cert",
-            "--sop", label, "--cmd", cmd.to_s,
-            "--result", ok ? "pass" : "fail",
-            "--duration-ms", duration_ms.to_s)
-end
-
-# Best-effort "cert" checkpoint TaskEvent (started/completed) so the task's Local
-# Certification testing phase gets its start→finish window from a fast cert too.
 def emit_cert_checkpoint(slug, status)
-  return if slug.to_s.strip.empty?
-
-  system(TASK_BIN, "checkpoint", slug, "cert", "--status", status,
-         out: File::NULL, err: File::NULL)
-rescue StandardError
-  nil
+  CertEmission.emit_cert_checkpoint(TASK_BIN, slug, status)
 end
 
 def run_lane(label, cmd, root, env: {}, gate_slug: nil)
@@ -164,7 +147,7 @@ def run_lane(label, cmd, root, env: {}, gate_slug: nil)
   ok = system(env, cmd, chdir: root)
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS (#{format('%.1fs', duration_ms / 1000.0)})" : "   #{label}: FAIL")
-  emit_gate_sop(gate_slug, label, cmd, ok, duration_ms) if gate_slug
+  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
   ok
 end
 
@@ -172,21 +155,8 @@ end
 # "nothing to run" cmd so the attempt shows the lane was CONSIDERED, not lost.
 def skip_lane(label, why, gate_slug: nil)
   warn "== #{label}: skipped (#{why}) =="
-  emit_gate_sop(gate_slug, label, "skipped: #{why}", true, 0) if gate_slug
+  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, "skipped: #{why}", true, 0) if gate_slug
   true
-end
-
-# The task's current checks_run (Array), or nil if it can't be read — so the
-# caller can MERGE new evidence into it (bin/task update --checks REPLACES). nil
-# is the "don't risk wiping it" signal, distinct from [] (a task with none yet).
-def fetch_checks(task_bin, slug)
-  out = IO.popen([task_bin, "show", slug, "--json"], err: File::NULL, &:read)
-  return nil unless $?.success?
-
-  record = JSON.parse(out)
-  Array(record.dig("metadata", "devops", "checks_run"))
-rescue JSON::ParserError, SystemCallError
-  nil
 end
 
 # --- run ------------------------------------------------------------------------
@@ -262,7 +232,7 @@ end
 # only a PRIOR fast-cert line; tier tags, bypass records, and any still-valid
 # full-suite/rubocop evidence are preserved. If the current list can't be read,
 # ABORT rather than risk wiping checks_run.
-existing = fetch_checks(TASK_BIN, slug)
+existing = CertEmission.fetch_checks(TASK_BIN, slug)
 if existing.nil?
   warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task show). " \
        "Not writing (a blind --checks would wipe your tier tags). Re-run, or record by hand alongside your " \

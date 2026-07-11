@@ -88,24 +88,17 @@ require_relative "../lib/task_usage_baseline"
 require_relative "../lib/claim_lease"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
+require_relative "lib/task_board"
+require_relative "lib/session_identity"
+require_relative "lib/projects_root"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
-OP = "/opt/homebrew/bin/op"
-SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 SHINY_EMOJI = "✨"
-def default_projects_dir
-  candidate = File.expand_path("../..", __dir__)
-  if File.basename(candidate) == ".worktrees"
-    File.expand_path("../..", candidate)
-  else
-    candidate
-  end
-end
 
 # Honors CLAUDE_PROJECTS_DIR (as bin/statusline does) so a session and its status
 # line agree on the marker location — and so tests can isolate it; defaults to the
 # projects root even when this script runs from an isolated worktree.
-PROJECTS_DIR = (dir = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? default_projects_dir : File.expand_path(dir)
+PROJECTS_DIR = (dir = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? ProjectsRoot.default_projects_dir : File.expand_path(dir)
 
 # Per-session active-feature marker path, keyed by Claude/Codex session id so each
 # session shows its OWN feature (no cross-session leak). nil when there's no
@@ -123,13 +116,7 @@ end
 # CLAUDE_CODE_SESSION_ID; Codex exposes CODEX_THREAD_ID. Returns [id, provider],
 # or [nil, nil] for a plain shell / CI run (stamp nothing — graceful).
 def session_identity
-  claude = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
-  return [claude, "claude"] unless claude.empty?
-
-  codex = ENV["CODEX_THREAD_ID"].to_s.strip
-  return [codex, "codex"] unless codex.empty?
-
-  [nil, nil]
+  SessionIdentity.identity
 end
 
 def parent_session_identity
@@ -374,24 +361,9 @@ def normalize_approval_status!(flag, value)
 end
 
 def agent_secret
-  env = ENV["AGENT_API_SECRET"]
-  return env if env && !env.empty?
-
-  if File.executable?(OP)
-    op = begin
-      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-    rescue SystemCallError
-      ""
-    end
-    return op unless op.empty?
-  end
-
   dotenv = File.join(__dir__, "..", ".env")
-  if File.exist?(dotenv)
-    line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-    return line.split("=", 2)[1].to_s.strip if line
-  end
-  die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+  TaskBoard.agent_secret(dotenv) ||
+    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
 end
 
 def token
@@ -405,19 +377,8 @@ end
 # across every Ruby the agents might run this under.
 def api(method, path, body = nil, opts = {})
   auth = opts.fetch(:auth, true)
-  uri = URI.join(BASE_URL, path)
-  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch }.fetch(method)
-  req = klass.new(uri)
-  req["Authorization"] = "Bearer #{token}" if auth
-  if body
-    req["Content-Type"] = "application/json"
-    req.body = JSON.generate(body)
-  end
-  http = Net::HTTP.new(uri.host, uri.port)
-  http.use_ssl = (uri.scheme == "https")
-  http.read_timeout = 30
-  res = http.request(req)
-  parsed = res.body.to_s.empty? ? {} : (JSON.parse(res.body) rescue {})
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
+  parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
     die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
   end

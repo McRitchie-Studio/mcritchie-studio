@@ -5,6 +5,7 @@ require "net/http"
 require "uri"
 require "time"
 require "fileutils"
+require_relative "projects_root"
 
 # AgentApi — the ONE agent-API client behind the narration/insights bin stack
 # (bin/agent-activity, bin/atomic-capture-hook, bin/session-insights). Each of
@@ -27,6 +28,34 @@ require "fileutils"
 # Same error posture as the scripts it serves: BEST-EFFORT, never raises —
 # every failure degrades to nil, so telemetry can never break the session.
 class AgentApi
+  # Presence — the tiny nil/false/blank helpers every AgentApi-consuming script
+  # (bin/atomic-event, bin/atomic-capture-hook, bin/session-insights) used to
+  # repeat as private methods delegating to @api.present?. Include in the
+  # script's class; AgentApi itself includes it too (re-exposing present? as its
+  # public helper), so the logic lives exactly once.
+  module Presence
+    private
+
+    def present?(value)
+      !value.nil? && value != false && !value.to_s.strip.empty?
+    end
+
+    def blank_to_nil(value)
+      present?(value) ? value : nil
+    end
+
+    def first_present(hash, *keys)
+      keys.each do |key|
+        value = hash[key]
+        return value if present?(value)
+      end
+      nil
+    end
+  end
+
+  include Presence
+  public :present?
+
   OP = "/opt/homebrew/bin/op"
   SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
   # Reuse a cached token until this margin (seconds) before its 24h expiry.
@@ -103,10 +132,6 @@ class AgentApi
     dir.empty? ? default_projects_dir : File.expand_path(dir)
   end
 
-  def present?(value)
-    !value.nil? && value != false && !value.to_s.strip.empty?
-  end
-
   private
 
   def token_cache_path
@@ -178,15 +203,8 @@ class AgentApi
     nil
   end
 
-  # The projects root when CLAUDE_PROJECTS_DIR is unset: the repo's parent, or —
-  # when the repo is a worktree under <primary>/.worktrees/ — the primary's
-  # parent, so a worktree run still shares the primary's .agents/ state.
+  # The projects root when CLAUDE_PROJECTS_DIR is unset — see ProjectsRoot.
   def default_projects_dir
-    candidate = File.dirname(REPO_ROOT)
-    if File.basename(candidate) == ".worktrees"
-      File.expand_path("../..", candidate)
-    else
-      candidate
-    end
+    ProjectsRoot.default_projects_dir(REPO_ROOT)
   end
 end

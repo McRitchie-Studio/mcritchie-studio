@@ -50,6 +50,7 @@
 
 require "json"
 require "time"
+require_relative "lib/session_identity"
 
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = File.expand_path("task", __dir__)
@@ -66,8 +67,7 @@ VERDICT_BUCKETS = { "pass" => "pass", "fail" => "fail" }.freeze
 # session gate. Blank means "no session to attribute to": skip the emit entirely,
 # exactly as bin/full-suite-check's emit_test_scope does.
 def agent_session_id
-  id = ENV["CLAUDE_CODE_SESSION_ID"].to_s.strip
-  id.empty? ? ENV["CODEX_THREAD_ID"].to_s.strip : id
+  SessionIdentity.id
 end
 
 # Run a command, return its STDOUT (String), swallowing every failure to "". Used

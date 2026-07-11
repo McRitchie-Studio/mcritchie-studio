@@ -25,6 +25,8 @@ require "json"
 require_relative "lib/agent_api"
 
 class SessionInsights
+  include AgentApi::Presence
+
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 4
   DEFAULT_LIMIT = 12
@@ -105,10 +107,6 @@ class SessionInsights
   def limit
     raw = @env["SESSION_INSIGHTS_LIMIT"].to_s.strip
     raw.empty? ? DEFAULT_LIMIT : raw.to_i
-  end
-
-  def present?(value)
-    @api.present?(value)
   end
 end
 
