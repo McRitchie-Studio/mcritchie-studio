@@ -233,7 +233,7 @@ rewrite history), and broadcasts the live tracker to every viewer.
 
 | You post | Stage stamped | Tracker effect |
 |---|---|---|
-| `testing/start` (alias of `review_tests/start`) | `testing` | node 1 Testing yellow |
+| `testing/start` (alias of `review_tests/start`) | `testing` | stamps `testing` on an **already-active** release only — it no longer OPENS one, and node 1 greens from `assembling` regardless, so this no longer lights node 1 yellow (rarely posted now) |
 | `testing/complete` (alias of `review_tests/complete`) | `tested` | (no tracker node) — ends the /deployments **Tested** column |
 | `assembling/start` | `assembling` | node 1 green, node 2 Assembling yellow |
 | `assembling/complete` | `assembled` | node 2 green (node 3 stays dark) |
@@ -250,16 +250,20 @@ Steffon→Avi seam is the load-bearing case — Steffon's `qa_deploying/complete
 
 Tracker stamps and **gate runs** (next section) are two surfaces, never merged:
 stamps record stages, gates record test verdicts. The node↔gate mapping:
-**node 1 (Testing) ≈ the G2 review wave** (the supervisor's `testing/start`
-post), and **node 4 (Confirming) ≈ the G4 Ship opening beat** (the
+**node 1 (Testing) ≈ the pre-assembly state** — it greens automatically the
+instant qa-release's first sweep stamps `assembling` (the review wave no longer
+posts `testing/start`; the candidate doesn't exist during review), and **node 4
+(Confirming) ≈ the G4 Ship opening beat** (the
 `ship_gate`/`ship_authorized` stamps land as `bin/release ship` opens
 `g4_ship`). G3/G4 verdicts render as their own gate-backed `/deployments`
 columns, not as tracker nodes.
 
 `:slug` accepts the literal `current` to target the singleton active release
-without a lookup. When nothing is active, `current` 404s — except the cycle
-kick-off starts (`testing/start`, `assembling/start`), which may OPEN the next
-candidate; a late-stage post never spawns a ghost release.
+without a lookup. When nothing is active, `current` 404s — except `assembling/start`
+(assembly-start, the qa-release sweep's kick-off), which may OPEN the next
+candidate. A review-wave `testing/start` (or any later stage) with no active
+release 404s too: the candidate is born at assembly, never during review, so a
+pre-assembly post never spawns a ghost release.
 
 Every response carries the moved timeline so the poster can verify:
 
@@ -271,9 +275,8 @@ Every response carries the moved timeline so the poster can verify:
 
 `bin/release` (prepare/ship) records these same checkpoints server-side, so
 CLI-driven stages stamp themselves — the API posts matter at the seams the CLI
-cannot see: Avi beginning his QA confirmation (`confirming/start`), a review
-wave kicking off the next cycle (`testing/start`), or manual recovery after an
-interrupted run.
+cannot see: Avi beginning his QA confirmation (`confirming/start`), or manual
+recovery after an interrupted run.
 
 For `complete` and `fail` calls from agent/API/CLI sources, usage is mandatory:
 

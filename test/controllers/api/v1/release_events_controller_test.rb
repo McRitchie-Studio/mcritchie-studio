@@ -126,20 +126,31 @@ module Api
         assert_response :not_found
       end
 
-      test "[integration] slug `current` may OPEN the next candidate for a review kick-off" do
+      test "[integration] slug `current` testing/start never opens a candidate — only assembly-start may" do
         @release.abandon!
 
-        assert_difference -> { Release.count }, 1 do
+        # The review wave runs BEFORE any release exists. A testing/start post with
+        # no active candidate must be a clean 404, never a ghost RC — the empty
+        # `assembling` release that used to surface on /deployments before qa-release.
+        assert_no_difference -> { Release.count } do
           post "/api/v1/releases/current/events/testing/start",
                params: { event: { actor: "avi" } },
                headers: @headers,
                as: :json
         end
+        assert_response :not_found
 
+        # Assembly-start (the qa-release sweep's kick-off) is the sole API opener.
+        assert_difference -> { Release.count }, 1 do
+          post "/api/v1/releases/current/events/assembling/start",
+               params: { event: { actor: "steffon" } },
+               headers: @headers,
+               as: :json
+        end
         assert_response :created
         fresh = Release.current
-        assert fresh.testing_started_at.present?
-        assert_equal "testing", fresh.current_stage
+        assert fresh.assembling_started_at.present?
+        assert_equal "assembling", fresh.current_stage
       end
     end
   end

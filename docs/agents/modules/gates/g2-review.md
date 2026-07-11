@@ -133,10 +133,12 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   `https://mcritchie.studio/tasks/<slug>` renders the G2a Primary and G2b
   Light chips beside G1 Cert: latest attempt (`×n` badge), status, and the
   expandable SOP list (gate-zero dor-check, scout-report).
-- **Deployments tracker note** — the review wave is also what kicks the NEXT
-  release's timeline: the supervisor's `testing/start` release event lights
-  pizza-tracker **node 1 (Testing)**. Node 1 ≈ the G2 wave; the gate chips
-  record the verdicts, the tracker stamps record the stages — two surfaces,
+- **Deployments tracker note** — the review wave does NOT touch the release
+  timeline: the next candidate doesn't exist until qa-release starts assembling,
+  so the wave no longer posts `testing/start` (it would 404 / mint an empty
+  ghost). Pizza-tracker **node 1 (Testing)** greens on its own once qa-release's
+  first sweep stamps `assembling`. Node 1 ≈ the G2 wave conceptually; the gate
+  chips record the verdicts, the tracker stamps record the stages — two surfaces,
   never merged.
 - **CLI read:** `bin/gate show task <task-slug>`.
 

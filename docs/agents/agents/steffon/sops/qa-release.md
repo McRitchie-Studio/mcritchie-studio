@@ -81,8 +81,9 @@ conductor checkpoints (`assemble_release started/completed`, `deploy_qa
 started/completed`, `qa_smoke started/completed`) stamp the release's stage
 timestamps, which drive the /deployments tracker live: Assembling yellow →
 Assembled green → Deploying QA yellow → **Live on QA** green. (Node 1 Testing
-is lit by the review wave's `testing/start`, not by prepare.) You post nothing
-extra on the happy path.
+greens on its own the instant your first sweep stamps `assembling` — the
+candidate doesn't exist before qa-release opens it, so nothing lights it
+earlier.) You post nothing extra on the happy path.
 
 `prepare` records its test verdicts as the **G3 Candidate gate**
 ([`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md)):

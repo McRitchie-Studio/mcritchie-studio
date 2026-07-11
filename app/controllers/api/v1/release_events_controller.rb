@@ -26,10 +26,11 @@ module Api
       private
 
       # `current` targets the singleton active release, so an operating agent can
-      # post a stage update without knowing the slug. The review/sweep kick-off
-      # starts (Release::STAGES_THAT_MAY_OPEN) may OPEN a fresh candidate when
-      # none is active — that is the true beginning of the next cycle. Any later
-      # stage against a missing/inactive release is a 404, never a ghost candidate.
+      # post a stage update without knowing the slug. Only an ASSEMBLY-START
+      # kick-off (Release::STAGES_THAT_MAY_OPEN) may OPEN a fresh candidate when
+      # none is active — that is the true beginning of the next cycle (qa-release).
+      # A review-wave testing/start (or any other stage) against a missing/inactive
+      # release is a 404, never a ghost candidate born before assembly.
       def set_release
         @release =
           if params[:slug].to_s == "current"

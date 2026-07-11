@@ -47,10 +47,14 @@ class Release < ApplicationRecord
   STAGE_NAMES = STAGES.map(&:first).freeze
   STAGE_STAMP_COLUMNS = STAGES.to_h { |name, column| [name.to_s, column] }.freeze
 
-  # Stages an agent may stamp on the slug-less `current` release BEFORE one is
-  # active (opening a fresh RC): the review/sweep kick-offs. Anything later
-  # requires an already-active release — a late post must never open a ghost RC.
-  STAGES_THAT_MAY_OPEN = %w[testing assembling].freeze
+  # The one stage an event post may OPEN the slug-less `current` release from:
+  # ASSEMBLY START. A candidate is born when qa-release begins assembling (the
+  # sweep's current_or_open! / an `assembling` kick-off) — never during the review
+  # wave, which runs before any release exists. `testing` used to open here too,
+  # which surfaced an empty (0-task) `assembling` release on /deployments minutes
+  # before qa-release ran; so a testing/start with no active RC is now a clean 404.
+  # Any other (later) stage also requires an already-active release.
+  STAGES_THAT_MAY_OPEN = %w[assembling].freeze
 
   # The stages surfaced as columns on the /deployments table + summary cards. Two
   # shapes:
@@ -78,10 +82,11 @@ class Release < ApplicationRecord
   # so posting an event IS the stage notification. `failed` events stamp nothing.
   # deploy_prod completion is deliberately absent: `shipped` is only ever stamped
   # by ship!'s state flip, so a stray API post can't mark a live release shipped.
-  # The review_tests rows are API-posted only since the G3 gate cutover — the
-  # conductor's prepare no longer posts them (its verdicts live in gate_runs);
-  # the review wave's `testing started` post (pr-review SOP) legitimately still
-  # lights tracker node 1. Kept intact for back-compat + event replay.
+  # The review_tests → testing/tested mapping stays for event replay + a
+  # testing/start posted against an ALREADY-active release (a first-write-wins
+  # no-op once assembling has stamped). It no longer OPENS a candidate
+  # (STAGES_THAT_MAY_OPEN): node 1 Testing greens on its own the instant the first
+  # sweep stamps `assembling` (which is ≥ testing), so no pre-assembly post needed.
   EVENT_STAGE_STAMPS = {
     %w[review_tests started]       => "testing",
     %w[review_tests completed]     => "tested",
