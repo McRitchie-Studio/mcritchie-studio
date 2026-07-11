@@ -26,6 +26,28 @@ cd /Users/alex/projects/mcritchie-studio
 
 Use the production board by default. Do not add `--local`.
 
+## Shift lease — acquire the `avi` shift FIRST, or stand down
+
+Before confirming or shipping, take the DevOps shift lease so two `avi` sessions
+can't ship the same release (or a ship and a `pr-review` collide on Avi's lane):
+
+```bash
+bin/devops-shift acquire avi
+```
+
+- **Exit 0 (acquired)** — you're on shift; continue. (If this session already ran
+  `pr-review` and holds `avi`, re-acquiring is a no-op renew — same live instance.)
+- **Exit 10 ("🛑 … STAND DOWN")** — another live `avi` session holds the shift. **Do
+  NOT confirm or ship.** Announce the holder it names and STOP; its lease lapses
+  ~120s after it stops if it truly died.
+
+The status line renews it automatically. Release it once the ship completes (or you
+stop early):
+
+```bash
+bin/devops-shift release avi
+```
+
 ## Preconditions
 
 - Steffon's `qa-release` has produced a QA-green release.

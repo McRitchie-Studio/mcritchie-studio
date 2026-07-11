@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_11_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_11_155050) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -479,6 +479,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_130000) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_depth_charts_on_slug", unique: true
     t.index ["team_slug"], name: "index_depth_charts_on_team_slug", unique: true
+  end
+
+  create_table "devops_shifts", force: :cascade do |t|
+    t.datetime "acquired_at"
+    t.datetime "claim_expires_at"
+    t.string "claim_nonce"
+    t.string "claimed_session"
+    t.datetime "created_at", null: false
+    t.string "holder_label"
+    t.string "lane", null: false
+    t.datetime "updated_at", null: false
+    t.index ["lane"], name: "index_devops_shifts_on_lane", unique: true
   end
 
   create_table "durable_nonces", force: :cascade do |t|

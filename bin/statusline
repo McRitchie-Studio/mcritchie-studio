@@ -98,6 +98,39 @@ heartbeat_claim() {  # slug stage is_desk
   fi
 }
 
+# --- DevOps SHIFT heartbeat (best-effort lease renewal) --------------------
+# A session that holds a devops SHIFT (bin/devops-shift acquire wrote a
+# <sid>.devops-shift marker naming the lane) renews it each render, exactly like the
+# build claim above — so a crashed/closed conductor stops renewing and its shift
+# lapses (TTL), freeing the lane for the next launch. Same throttle + detach posture,
+# on its OWN throttle marker so it never contends with the build-claim heartbeat.
+SHIFT_BIN="${SHIFT_BIN:-$(dirname "$0")/devops-shift}"
+heartbeat_shift() {
+  local sid lane
+  sid=$(agent_session_id)
+  [ -z "$sid" ] && return 0
+  [ -x "$SHIFT_BIN" ] || return 0
+  local marker="$PROJECTS/.agents/sessions/${sid}.devops-shift"
+  [ -f "$marker" ] || return 0
+  lane=$(head -n1 "$marker" 2>/dev/null | tr -d '[:space:]')
+  [ -z "$lane" ] && return 0
+  local throttle_marker="$PROJECTS/.agents/sessions/${sid}.shift-heartbeat"
+  local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
+  if [ -f "$throttle_marker" ]; then
+    local mtime age
+    mtime=$(stat -f %m "$throttle_marker" 2>/dev/null || echo 0)
+    age=$(( $(date +%s) - mtime ))
+    [ "$age" -lt "$throttle" ] && return 0
+  fi
+  mkdir -p "$PROJECTS/.agents/sessions" 2>/dev/null
+  : > "$throttle_marker"
+  if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
+    "$SHIFT_BIN" renew "$lane" >/dev/null 2>&1
+  else
+    ( "$SHIFT_BIN" renew "$lane" >/dev/null 2>&1 & ) >/dev/null 2>&1
+  fi
+}
+
 # OSC 8 clickable-text support. Terminal.app does NOT support it (it only
 # auto-links plain https URLs); iTerm2/WezTerm/Kitty/Ghostty do.
 osc8_supported() {
@@ -252,6 +285,7 @@ if [ -n "$src" ]; then
   IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji mascot_shiny app_color < <(read_ctx "$src")
   render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji" "$mascot_shiny" "$app_color"
   heartbeat_claim "$task" "$stage" "$src_is_desk"   # renew this terminal's build-claim lease (desk-aware)
+  heartbeat_shift                                    # renew this terminal's devops SHIFT lease (if one is held)
 else
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
   top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
