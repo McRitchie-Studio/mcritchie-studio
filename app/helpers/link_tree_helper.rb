@@ -49,6 +49,7 @@ module LinkTreeHelper
         { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },
         { label: "Toast test", href: toast_test_path, emoji: "🔔", hover_emoji: "✨", desc: "Notification harness" },
         { label: "TikTok connect", href: admin_tiktok_connect_path, emoji: "🎵", hover_emoji: "🔐", desc: "OAuth handshake" },
+        { label: "Activities", href: activities_agents_path, emoji: "🎭", hover_emoji: "🎬", desc: "Cross-session agent activity feed" },
       ] },
       { title: "On-chain", links: [
         { label: "Signing Console", href: admin_signing_requests_path, emoji: "⛓️", hover_emoji: "✍️", featured: true,
