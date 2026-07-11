@@ -420,12 +420,6 @@ module HeartbeatHelper
     end
   end
 
-  alias_method :heartbeat_event_totals, :heartbeat_activity_totals
-  alias_method :heartbeat_event_outcome, :heartbeat_activity_result
-  alias_method :heartbeat_span_status_meta, :heartbeat_activity_status_meta
-  alias_method :heartbeat_span_stage_change, :heartbeat_activity_stage_change
-  alias_method :heartbeat_span_status_badge, :heartbeat_activity_status_badge
-
   # Short, dense timestamp for the "Opened" cell ("Jun 30, 14:07"); the full
   # timestamp rides along in the cell's title. Blank-safe so an activity missing an
   # opened_at still renders a dash rather than raising.
