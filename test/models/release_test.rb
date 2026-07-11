@@ -25,6 +25,16 @@ class ReleaseTest < ActiveSupport::TestCase
     assert_equal 1, Release.count
   end
 
+  test "[unit] only assembly-start may open a candidate — a review/testing post never mints a ghost RC" do
+    # A release is created only when qa-release STARTS ASSEMBLING (the sweep's
+    # current_or_open! / an assembling kick-off). The review wave runs before any
+    # release exists, so `testing` must NOT be an opener — that coupling showed an
+    # empty (0-task) `assembling` release on /deployments minutes before qa-release.
+    assert_equal %w[assembling], Release::STAGES_THAT_MAY_OPEN
+    refute_includes Release::STAGES_THAT_MAY_OPEN, "testing",
+                    "a pr-review testing/start must never open a ghost release candidate"
+  end
+
   test "only one active release at a time (singleton)" do
     Release.open!
     assert_raises(ActiveRecord::RecordInvalid) { Release.open! }
