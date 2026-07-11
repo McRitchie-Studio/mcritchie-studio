@@ -193,7 +193,7 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_no_match(/activity in session C/, response.body)
   end
 
-  test "the filter sidebar lists every session with its Pokémon name" do
+  test "the main feed carries the lazy filter shell but not the heavy session list" do
     a = "aaaaaaaa-1111-2222-3333-444444444444"
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1)
     SessionMascot.create!(session_id: a, mascot_slug: "snorlax")
@@ -202,15 +202,33 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     get activities_agents_path
 
     assert_response :success
+    # the panel shell + its lazy frame render, but the session list itself does NOT ride
+    # the main feed render (it lazy-loads via activities_filter) — keeping the heavy
+    # cross-session scan off this hot path.
     assert_select "[data-test=aa-filter]"
-    assert_select "a[data-test=aa-filter-session][data-session-id=?]", a, text: /Snorlax/
+    assert_select "turbo-frame#aa-filter-frame[src][loading=lazy]"
+    assert_select "a[data-test=aa-filter-session]", false
+  end
+
+  test "the lazy filter endpoint lists every session with its Pokémon name inside the frame" do
+    a = "aaaaaaaa-1111-2222-3333-444444444444"
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1)
+    SessionMascot.create!(session_id: a, mascot_slug: "snorlax")
+    activity(session: a, reason_slug: "activity here", at: 1.minute.ago)
+
+    get activities_filter_agents_path
+
+    assert_response :success
+    assert_select "turbo-frame#aa-filter-frame a[data-test=aa-filter-session][data-session-id=?]", a, text: /Snorlax/
+    # the session toggle link targets the FEED frame so a click filters the whole feed
+    assert_select "a[data-test=aa-filter-session][data-turbo-frame=aa-activities-frame]"
   end
 
   test "falls back to the activity mascot when a session has no SessionMascot row" do
     Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1)
     activity(session: "no-mascot-sess", reason_slug: "activity here", mascot: "snorlax", at: 1.minute.ago)
 
-    get activities_agents_path
+    get activities_filter_agents_path
 
     assert_response :success
     assert_select "a[data-test=aa-filter-session]", text: /Snorlax/
@@ -220,7 +238,7 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     activity(session: "sess-stale", reason_slug: "old activity", at: 3.hours.ago)
     activity(session: "sess-fresh", reason_slug: "recent activity", at: 2.minutes.ago)
 
-    get activities_agents_path
+    get activities_filter_agents_path
 
     assert_response :success
     body = response.body
@@ -235,12 +253,39 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
   test "keeps an activity-only session (no captured actions) in the filter sidebar" do
     activity(session: "activity-only-sess", reason_slug: "narrated but no tool calls", at: 1.minute.ago)
 
-    get activities_agents_path
+    get activities_filter_agents_path
 
     assert_response :success
     # a session that narrated an activity but captured zero AgentActions must not be
     # dropped — the sidebar keys on the UNION of action + activity time, not actions alone.
     assert_select "a[data-test=aa-filter-session][data-session-id=?]", "activity-only-sess"
+  end
+
+  test "the active-filter chip names the selected session server-side (no full scan)" do
+    a = "bbbbbbbb-1111-2222-3333-444444444444"
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1)
+    SessionMascot.create!(session_id: a, mascot_slug: "snorlax")
+    activity(session: a, reason_slug: "activity in the selected session", at: 1.minute.ago)
+
+    get activities_agents_path(sessions: a)
+
+    assert_response :success
+    # the top active-filter chip resolves the SELECTED session's Pokémon name via the
+    # cheap id-scoped selected_session_chips — no lazy sidebar needed for the chip.
+    assert_select "[data-test=aa-active-filter]", text: /Snorlax/
+  end
+
+  test "the live feed defines the action-count pulse and hooks it on a real count change" do
+    activity(reason_slug: "a live activity")
+
+    get activities_agents_path
+
+    assert_response :success
+    # the CSS keyframe that holds the count bright ~4s then fades ~4s over an 8s run
+    assert_includes response.body, "@keyframes aa-count-pulse"
+    assert_includes response.body, "aa-count-pulse 8s"
+    # the live-fx hook only pulses .aa-count when its text actually changed (a new action)
+    assert_includes response.body, ".aa-count-pulse"
   end
 
   test "renders a friendly empty state when nothing is captured, and a filtered empty state" do

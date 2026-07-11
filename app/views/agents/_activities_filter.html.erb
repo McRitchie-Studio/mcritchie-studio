@@ -1,57 +1,55 @@
-<%# The slide-in Pokémon-session filter. Each session is a server-rendered toggle LINK
-    — clicking adds or removes it from the ?sessions= list and reloads the filtered feed,
-    so the filter is URL-persisted, shareable, back-button-correct, and works with no JS
-    (Alpine only slides the panel open/closed). Multi-select is OR: the feed shows
+<%# The body of the slide-in Pokémon-session filter — head + session list + foot. The
+    backdrop and <aside> shell (plus the lazy aa-filter-frame this fills) live in
+    activities.html.erb; this partial is what that frame lazy-loads, so its heavy session
+    list never rides the main feed render. Each session is a server-rendered toggle LINK
+    that targets the FEED frame (data-turbo-frame="aa-activities-frame") — clicking adds or
+    removes it from the ?sessions= list and reloads the filtered feed, so the filter is
+    URL-persisted, shareable, and back-button-correct. Multi-select is OR: the feed shows
     activities from ANY selected session; empty = every session. Locals: sessions (the
     session_filter_options list), active_ids (the currently-filtered session ids). %>
-<div class="aa-filter-backdrop" x-show="filterOpen" x-cloak @click="closeFilter()" x-transition.opacity></div>
-<aside class="aa-filter" data-test="aa-filter" role="dialog" aria-modal="true" aria-label="Filter by session"
-       x-show="filterOpen" x-cloak x-transition
-       x-effect="filterOpen && $nextTick(() => $refs.aaClose && $refs.aaClose.focus())">
-      <div class="aa-filter-head">
-        <div>
-          <h2>Filter by session</h2>
-          <p><span x-text="filteredSessions"><%= sessions.size %></span> of <%= pluralize(sessions.size, "session") %><%= " · #{active_ids.size} selected" if active_ids.any? %></p>
-        </div>
-        <button type="button" class="aa-filter-close" x-ref="aaClose" @click="closeFilter()" aria-label="Close filter">&times;</button>
-      </div>
+<div class="aa-filter-head">
+  <div>
+    <h2>Filter by session</h2>
+    <p><span x-text="filteredSessions"><%= sessions.size %></span> of <%= pluralize(sessions.size, "session") %><%= " · #{active_ids.size} selected" if active_ids.any? %></p>
+  </div>
+  <button type="button" class="aa-filter-close" x-ref="aaClose" @click="closeFilter()" aria-label="Close filter">&times;</button>
+</div>
 
-      <div class="aa-filter-list">
-        <% if sessions.any? %>
-          <input type="search" class="aa-fs-search" data-test="aa-fs-search"
-                 placeholder="Filter sessions…" aria-label="Filter sessions by name"
-                 x-model.debounce.300ms="sessionQuery" @keydown.escape.stop="sessionQuery = ''">
-        <% end %>
-        <% if sessions.empty? %>
-          <div class="aa-filter-empty">No sessions captured yet.</div>
-        <% end %>
-        <% sessions.each do |session| %>
-          <% rest = active_ids - [session[:id]] %>
-          <% toggle_ids = session[:selected] ? rest : (active_ids + [session[:id]]) %>
-          <% toggle_url = toggle_ids.any? ? activities_agents_path(sessions: toggle_ids.join(",")) : activities_agents_path %>
-          <%= link_to toggle_url, class: class_names("aa-filter-session", "is-selected" => session[:selected]),
-                style: ("--aa-type: #{session[:type_color]}" if session[:type_color].present?),
-                data: { test: "aa-filter-session", session_id: session[:id], selected: session[:selected], name: session[:name].to_s.downcase } do %>
-            <span class="aa-fs-check"><%= "✓" if session[:selected] %></span>
-            <% if session[:sprite_url].present? %>
-              <img class="aa-fs-sprite" src="<%= session[:sprite_url] %>" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
-            <% else %>
-              <span class="aa-fs-sprite" style="display:inline-flex;align-items:center;justify-content:center;color:var(--hb-mascot);font-weight:700;"><%= session[:name].to_s.first %></span>
-            <% end %>
-            <span class="aa-fs-body">
-              <span class="aa-fs-name"><%= session[:name] %><% if session[:shiny] %><span class="aa-fs-shiny" title="shiny">★</span><% end %></span>
-              <span class="aa-fs-meta"><%= session[:short] %> · <%= pluralize(session[:count], "activity") %><% if (ago = compact_time_ago(session[:last_at])).present? %> · <span class="aa-fs-ago" data-test="aa-fs-ago"><%= ago %></span><% end %></span>
-            </span>
-          <% end %>
-        <% end %>
-      </div>
+<div class="aa-filter-list">
+  <% if sessions.any? %>
+    <input type="search" class="aa-fs-search" data-test="aa-fs-search"
+           placeholder="Filter sessions…" aria-label="Filter sessions by name"
+           x-model.debounce.300ms="sessionQuery" @keydown.escape.stop="sessionQuery = ''">
+  <% end %>
+  <% if sessions.empty? %>
+    <div class="aa-filter-empty">No sessions captured yet.</div>
+  <% end %>
+  <% sessions.each do |session| %>
+    <% rest = active_ids - [session[:id]] %>
+    <% toggle_ids = session[:selected] ? rest : (active_ids + [session[:id]]) %>
+    <% toggle_url = toggle_ids.any? ? activities_agents_path(sessions: toggle_ids.join(",")) : activities_agents_path %>
+    <%= link_to toggle_url, class: class_names("aa-filter-session", "is-selected" => session[:selected]),
+          style: ("--aa-type: #{session[:type_color]}" if session[:type_color].present?),
+          data: { turbo_frame: "aa-activities-frame", test: "aa-filter-session", session_id: session[:id], selected: session[:selected], name: session[:name].to_s.downcase } do %>
+      <span class="aa-fs-check"><%= "✓" if session[:selected] %></span>
+      <% if session[:sprite_url].present? %>
+        <img class="aa-fs-sprite" src="<%= session[:sprite_url] %>" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <% else %>
+        <span class="aa-fs-sprite" style="display:inline-flex;align-items:center;justify-content:center;color:var(--hb-mascot);font-weight:700;"><%= session[:name].to_s.first %></span>
+      <% end %>
+      <span class="aa-fs-body">
+        <span class="aa-fs-name"><%= session[:name] %><% if session[:shiny] %><span class="aa-fs-shiny" title="shiny">★</span><% end %></span>
+        <span class="aa-fs-meta"><%= session[:short] %> · <%= pluralize(session[:count], "activity") %><% if (ago = compact_time_ago(session[:last_at])).present? %> · <span class="aa-fs-ago" data-test="aa-fs-ago"><%= ago %></span><% end %></span>
+      </span>
+    <% end %>
+  <% end %>
+</div>
 
-      <div class="aa-filter-foot">
-        <% if active_ids.any? %>
-          <%= link_to "Clear all", activities_agents_path, class: "hb-btn", data: { test: "aa-filter-clear" } %>
-        <% else %>
-          <span class="aa-rfaint">No filters applied</span>
-        <% end %>
-        <button type="button" class="hb-btn primary" @click="closeFilter()">Done</button>
-      </div>
-    </aside>
+<div class="aa-filter-foot">
+  <% if active_ids.any? %>
+    <%= link_to "Clear all", activities_agents_path, class: "hb-btn", data: { turbo_frame: "aa-activities-frame", test: "aa-filter-clear" } %>
+  <% else %>
+    <span class="aa-rfaint">No filters applied</span>
+  <% end %>
+  <button type="button" class="hb-btn primary" @click="closeFilter()">Done</button>
+</div>

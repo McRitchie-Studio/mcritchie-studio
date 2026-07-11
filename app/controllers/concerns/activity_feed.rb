@@ -69,6 +69,31 @@ module ActivityFeed
     end
   end
 
+  # The active-filter CHIPS at the top of the feed — one { id, name, type_color } per
+  # currently-selected session. Every query is scoped to the small, explicitly-filtered
+  # id set (no cross-session GROUP BY / full-table pluck), so the main #activities render
+  # stays cheap; the full all-sessions list the sidebar shows is built separately by
+  # #session_filter_options behind the lazy aa-filter-frame.
+  def selected_session_chips(ids)
+    ids = Array(ids).map(&:to_s).reject(&:blank?).uniq
+    return [] if ids.empty?
+
+    mascots  = SessionMascot.where(session_id: ids).index_by(&:session_id)
+    # Fallback mascot for a selected session with no SessionMascot row: its own newest
+    # activity mascot (scoped to the selected ids, so this never scans other sessions).
+    fallback = AgentActivity.where(session_id: ids).where.not(mascot: [nil, ""])
+                            .order(opened_at: :desc).pluck(:session_id, :mascot).reverse.to_h
+    slug_for = ->(id) { mascots[id]&.mascot_slug.presence || fallback[id] }
+    pokemon  = Pokemon.where(slug: (mascots.values.map(&:mascot_slug) + fallback.values).compact.uniq).index_by(&:slug)
+    type_colors = Pokemon.type_colors
+
+    ids.map do |id|
+      mon  = pokemon[slug_for.call(id)]
+      type = mon && (mon.primary_type.presence || mon.types&.first)
+      { id: id, name: mon&.name || id.first(8), type_color: type && type_colors[type] }
+    end
+  end
+
   # { session_id => "Pokémon · shortid" } for the sessions whose mascot resolves to
   # a seeded Pokémon. Two bulk queries — mascots by session_id, then Pokémon by
   # slug — so the switcher never N+1s, mirroring #pokemon_lookup.

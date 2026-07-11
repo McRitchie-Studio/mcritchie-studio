@@ -21,7 +21,7 @@
   <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth) %>">
 <% end %>
 
-<% active_sessions = @session_filters.select { |session| session[:selected] } %>
+<% active_sessions = @active_session_chips %>
 
 <section id="alex-heartbeat" class="aa-page" data-test="agents-activities"
          x-data="agentsActivities()" @keydown.escape.window="closeFilter()">
@@ -113,6 +113,18 @@
     </div>
   <% end %>
 
-  <%= render "agents/activities_filter", sessions: @session_filters, active_ids: @session_ids %>
+  <%# The filter sidebar. The shell (backdrop + panel) renders eagerly so the slide-in is
+      instant, but the heavy session list lazy-loads into aa-filter-frame the first time the
+      panel is shown (loading=lazy + it starts hidden), keeping session_filter_options OFF
+      this render. The shell re-renders with the feed frame on every filter/pager click, so
+      the frame reloads its list fresh (with the new ?sessions=) whenever it is visible. %>
+  <div class="aa-filter-backdrop" x-show="filterOpen" x-cloak @click="closeFilter()" x-transition.opacity></div>
+  <aside class="aa-filter" data-test="aa-filter" role="dialog" aria-modal="true" aria-label="Filter by session"
+         x-show="filterOpen" x-cloak x-transition
+         x-effect="filterOpen && $nextTick(() => $refs.aaClose && $refs.aaClose.focus())">
+    <%= turbo_frame_tag "aa-filter-frame", src: activities_filter_agents_path(sessions: @session_ids.presence&.join(",")), loading: "lazy" do %>
+      <div class="aa-filter-list"><div class="aa-filter-empty" data-test="aa-filter-loading">Loading sessions…</div></div>
+    <% end %>
+  </aside>
   </turbo-frame>
 </section>

@@ -45,9 +45,9 @@
 
     <td class="aa-activity">
       <div class="aa-stack">
-        <div class="aa-r aa-r-wrap">
+        <div class="aa-r aa-goalline">
           <span class="hb-chip hb-catchip" style="color: <%= cat[:accent] %>" title="<%= cat[:description] %>" data-test="aa-activity-category"><%= activity.category %></span>
-          <span class="aa-goal" data-test="aa-activity-goal"><%= activity.reason_slug.presence || "—" %></span>
+          <span class="aa-goal" data-test="aa-activity-goal"><%= render "components/overflow_fade", text: activity.reason_slug.presence || "—" %></span>
         </div>
         <div class="aa-r aa-resultline">
           <span class="aa-arrow" aria-hidden="true">&rarr;</span>

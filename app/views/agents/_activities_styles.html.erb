@@ -77,7 +77,12 @@
      fixed-px caps) so more shows when the window is wide; they ellipsize/fade at the
      real cell edge, and fixed layout clips them to the column so nothing overflows. */
   #alex-heartbeat .aa-activity { min-width:290px; }
-  #alex-heartbeat .aa-goal { font-weight:600; color:var(--hb-txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  /* Goal line — the category chip holds its size while the goal fills the rest of the row
+     and fades at its overflowing edge (the same overflow_fade the result line uses), kept
+     to ONE line instead of wrapping under the chip. */
+  #alex-heartbeat .aa-goalline { flex-wrap:nowrap; }
+  #alex-heartbeat .aa-goalline .hb-chip { flex:0 0 auto; }
+  #alex-heartbeat .aa-goal { flex:1 1 auto; min-width:0; font-weight:600; color:var(--hb-txt); }
   #alex-heartbeat .aa-resultline { color:var(--hb-muted); min-width:0; }
   #alex-heartbeat .aa-resultline .aa-arrow { color:var(--hb-faint); flex:0 0 auto; }
   #alex-heartbeat .aa-resultfade { flex:1 1 auto; min-width:0; }
@@ -107,6 +112,15 @@
   #alex-heartbeat .aa-elapsed { color:var(--hb-accent); }
   #alex-heartbeat .aa-task { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
   #alex-heartbeat .aa-count { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
+  /* Action-count pulse — when a live update lands a NEW action, agents/_activities_live_fx
+     toggles .aa-count-pulse on the count: it snaps bold+bright (accent + glow), holds ~4s,
+     then eases back to its faint resting state over the next ~4s. Only colour/text-shadow
+     animate (paint-only), so the count never reflows and nudges the spinner beside it. */
+  #alex-heartbeat .aa-count.aa-count-pulse { animation:aa-count-pulse 8s ease-out; }
+  @keyframes aa-count-pulse {
+    0%, 50% { color:var(--hb-accent); text-shadow:0 0 1px var(--hb-accent), 0 0 8px rgba(88,166,255,.55); }
+    100%    { color:var(--hb-faint); text-shadow:0 0 0 rgba(88,166,255,0); }
+  }
   #alex-heartbeat .aa-spinner { display:inline-block; width:11px; height:11px; border:2px solid var(--hb-line); border-top-color:var(--hb-accent); border-radius:50%; animation:aa-spin .8s linear infinite; }
   @keyframes aa-spin { to { transform:rotate(360deg); } }
   /* Flash-on-update — a brief accent wash over the cells of a live-replaced activity
@@ -162,6 +176,9 @@
   /* ---- The slide-in Pokémon filter sidebar ------------------------------- */
   #alex-heartbeat .aa-filter-backdrop { position:fixed; inset:0; background:rgba(1,4,9,.55); z-index:60; }
   #alex-heartbeat .aa-filter { position:fixed; top:0; right:0; bottom:0; width:340px; max-width:88vw; background:var(--hb-panel); border-left:1px solid var(--hb-line); z-index:61; display:flex; flex-direction:column; box-shadow:-12px 0 32px rgba(1,4,9,.5); }
+  /* The session list lazy-loads into this frame; it becomes the panel's flex column so the
+     head / list / foot lay out and the list scrolls exactly as before the frame existed. */
+  #alex-heartbeat #aa-filter-frame { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
   #alex-heartbeat .aa-filter-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 16px 12px; border-bottom:1px solid var(--hb-line); }
   #alex-heartbeat .aa-filter-head h2 { margin:0; font-size:14px; font-weight:700; }
   #alex-heartbeat .aa-filter-head p { margin:2px 0 0; font-size:11px; color:var(--hb-muted); }

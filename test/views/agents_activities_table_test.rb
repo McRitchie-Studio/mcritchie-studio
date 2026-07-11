@@ -38,7 +38,11 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     render_table [[ev, []]]
 
     assert_select "[data-test=aa-activity-category]", text: "Explore"
-    assert_select "[data-test=aa-activity-goal]", text: "find the capture seam"
+    # the goal shares ONE non-wrapping line with the category chip and fades at its
+    # overflowing edge (same overflow_fade the result line uses) instead of wrapping under it
+    assert_select ".aa-goalline [data-test=aa-activity-category]"
+    assert_select ".aa-goalline [data-test=aa-activity-goal] .relative.overflow-hidden"
+    assert_includes rendered, "find the capture seam"
     # the result is wrapped in the overflow_fade component (the fading edge)
     assert_select "[data-test=aa-activity-result] .relative.overflow-hidden"
     assert_includes rendered, "found the nil-guard"

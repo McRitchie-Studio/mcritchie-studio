@@ -155,7 +155,14 @@ Rails.application.routes.draw do
   # `collection` so /agents/activities routes to #activities instead of #show
   # (param :slug would otherwise swallow "activities" as an agent slug).
   resources :agents, only: [:index, :show], param: :slug do
-    collection { get :activities }
+    collection do
+      get :activities
+      # The activity feed's session-filter list is its OWN endpoint so the heavy
+      # cross-session scan (session_filter_options) lazy-loads into the sidebar's
+      # aa-filter-frame the first time the panel opens, instead of riding every
+      # #activities render.
+      get :activities_filter
+    end
   end
   resources :tasks, param: :slug do
     collection do
