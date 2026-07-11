@@ -114,4 +114,87 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     assert_equal pikachu, pokedex.newest_unique.pokemon
     assert_equal pikachu, pokedex.newest_unique_shiny.pokemon
   end
+
+  test "[unit] seen counts distinct species, not raw draws" do
+    snorlax = Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1)
+    pikachu = Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1)
+    SessionMascot.create!(session_id: "a", mascot_slug: snorlax.slug, created_at: 2.days.ago, updated_at: 2.days.ago)
+    # A REPEAT Snorlax draw must not double-count the species.
+    SessionMascot.create!(session_id: "b", mascot_slug: snorlax.slug, created_at: 1.day.ago, updated_at: 1.day.ago)
+    SessionMascot.create!(session_id: "c", mascot_slug: pikachu.slug, shiny: true, created_at: 1.hour.ago, updated_at: 1.hour.ago)
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal 2, pokedex.seen_pokemon
+    assert_equal 1, pokedex.seen_pokemon(shiny: true) # only Pikachu came up shiny
+  end
+
+  test "[unit] catching counts a shipped mascot plus all its pre-evolutions" do
+    Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander", generation: 1,
+                    base: "charmander", evolution: ["charmeleon"])
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon", generation: 1,
+                    base: "charmander", evolution: ["charizard"])
+    charizard = Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", generation: 1,
+                                base: "charmander", evolution: [])
+    Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1) # never shipped
+
+    task = Task.create!(title: "Ship The Charizard Line",
+                        metadata: { "devops" => { "mascot" => charizard.slug } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 10.minutes.ago, metadata: { "mascot" => { "slug" => charizard.slug } })
+
+    pokedex = PokemonPokedex.new
+
+    # Final form + both pre-evolutions; Pikachu is not caught.
+    assert_equal 3, pokedex.caught_pokemon
+    assert_equal charizard, pokedex.newest_caught.pokemon
+    assert_equal task, pokedex.newest_caught.task
+    assert_in_delta 10.minutes.ago.to_f, pokedex.newest_caught.first_seen_at.to_f, 5
+  end
+
+  test "[unit] only a shipped transition catches — a submitted mascot is not caught" do
+    bulbasaur = Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", generation: 1,
+                                base: "bulbasaur", evolution: [])
+    task = Task.create!(title: "Not Shipped Yet",
+                        metadata: { "devops" => { "mascot" => bulbasaur.slug } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
+                      occurred_at: 5.minutes.ago, metadata: { "mascot" => { "slug" => bulbasaur.slug } })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal 0, pokedex.caught_pokemon
+    assert_nil pokedex.newest_caught
+  end
+
+  test "[unit] shiny caught is scoped to shiny ships and still propagates to the line" do
+    Pokemon.create!(dex: 7, name: "Squirtle", slug: "squirtle", generation: 1,
+                    base: "squirtle", evolution: ["wartortle"])
+    Pokemon.create!(dex: 8, name: "Wartortle", slug: "wartortle", generation: 1,
+                    base: "squirtle", evolution: ["blastoise"])
+    blastoise = Pokemon.create!(dex: 9, name: "Blastoise", slug: "blastoise", generation: 1,
+                                base: "squirtle", evolution: [])
+    Pokemon.create!(dex: 92, name: "Gastly", slug: "gastly", generation: 1,
+                    base: "gastly", evolution: ["haunter"])
+    Pokemon.create!(dex: 93, name: "Haunter", slug: "haunter", generation: 1,
+                    base: "gastly", evolution: ["gengar"])
+    gengar = Pokemon.create!(dex: 94, name: "Gengar", slug: "gengar", generation: 1,
+                             base: "gastly", evolution: [])
+
+    shiny_ship = Task.create!(title: "Ship Shiny Blastoise",
+                              metadata: { "devops" => { "mascot" => blastoise.slug, "mascot_shiny" => true } })
+    TaskEvent.create!(task_slug: shiny_ship.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 20.minutes.ago, metadata: { "mascot" => { "slug" => blastoise.slug, "shiny" => true } })
+    plain_ship = Task.create!(title: "Ship Plain Gengar",
+                              metadata: { "devops" => { "mascot" => gengar.slug } })
+    TaskEvent.create!(task_slug: plain_ship.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 10.minutes.ago, metadata: { "mascot" => { "slug" => gengar.slug } })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal 6, pokedex.caught_pokemon               # both lines caught
+    assert_equal 3, pokedex.caught_pokemon(shiny: true)  # only the Squirtle line, shiny
+    assert_equal blastoise, pokedex.newest_caught_shiny.pokemon
+    assert pokedex.newest_caught_shiny.shiny
+    assert_equal gengar, pokedex.newest_caught.pokemon, "newest overall catch is the later plain ship"
+  end
 end

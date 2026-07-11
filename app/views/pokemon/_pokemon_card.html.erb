@@ -1,0 +1,31 @@
+<%# Combined Pokédex card: Seen/Caught distinct-species counts plus the newest seen
+    and newest caught species. The shiny card passes shiny-scoped numbers; each
+    sprite sparkle is driven per-sighting by sighting.shiny, so the shiny card reads
+    as shiny through its sparkles rather than a separate badge. %>
+<article class="card p-5" data-test="<%= "#{key}-card" %>">
+  <h2 class="text-lg font-semibold text-heading mb-5"><%= title %></h2>
+
+  <div class="grid grid-cols-2 gap-3 mb-6">
+    <div class="rounded-lg border border-subtle bg-surface p-4">
+      <p class="text-xs text-muted">Seen</p>
+      <p class="mt-2 text-3xl font-bold text-heading tabular-nums" data-test="<%= "#{key}-seen" %>"><%= number_with_delimiter(seen) %></p>
+    </div>
+    <div class="rounded-lg border border-subtle bg-surface p-4">
+      <p class="text-xs text-muted">Caught</p>
+      <p class="mt-2 text-3xl font-bold text-heading tabular-nums" data-test="<%= "#{key}-caught" %>"><%= number_with_delimiter(caught) %></p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <%= render "newest_mini",
+          label: "Newest Seen",
+          sighting: newest_seen,
+          empty_text: "None seen yet.",
+          data_test: "#{key}-newest-seen" %>
+    <%= render "newest_mini",
+          label: "Newest Caught",
+          sighting: newest_caught,
+          empty_text: "None caught yet.",
+          data_test: "#{key}-newest-caught" %>
+  </div>
+</article>

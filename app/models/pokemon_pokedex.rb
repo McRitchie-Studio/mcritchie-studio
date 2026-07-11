@@ -43,6 +43,18 @@ class PokemonPokedex
     SessionMascot.where(mascot_slug: pokemon_slugs, shiny: true).count
   end
 
+  # How many DISTINCT species have been SEEN — spawned or evolved into — no matter
+  # how many times. shiny:true counts only species whose sighting came up shiny.
+  def seen_pokemon(shiny: false)
+    first_sightings(shiny: shiny).size
+  end
+
+  # How many DISTINCT species have been CAUGHT: every shipped task's mascot plus its
+  # pre-evolutions. shiny:true counts only species caught via a shiny ship.
+  def caught_pokemon(shiny: false)
+    caught_slugs(shiny: shiny).size
+  end
+
   # The newest UNIQUE Pokémon — the species whose earliest sighting is the most
   # recent, across spawns and evolutions.
   def newest_unique
@@ -53,6 +65,16 @@ class PokemonPokedex
   # is the most recent.
   def newest_unique_shiny
     @newest_unique_shiny ||= newest_first_sighting(first_sightings(shiny: true))
+  end
+
+  # The newest CAUGHT Pokémon — the mascot of the most recently shipped task (the
+  # final evolution the task climbed to). shiny:true tracks the newest shiny ship.
+  def newest_caught
+    @newest_caught ||= newest_catch_sighting(catch_appearances)
+  end
+
+  def newest_caught_shiny
+    @newest_caught_shiny ||= newest_catch_sighting(catch_appearances(shiny: true))
   end
 
   def recent_actions
@@ -85,18 +107,71 @@ class PokemonPokedex
     )
   end
 
+  # Build the featured CATCH Sighting: the most recent shipped-task mascot, resolved
+  # to its Pokémon + task. first_seen_at carries the ship (catch) time.
+  def newest_catch_sighting(appearances)
+    chosen = appearances.max_by(&:at)
+    return nil unless chosen
+
+    pokemon = pokemon_by_slug[chosen.slug]
+    return nil unless pokemon
+
+    Sighting.new(pokemon: pokemon, first_seen_at: chosen.at, task: sighting_task(chosen), shiny: chosen.shiny)
+  end
+
   # slug => the EARLIEST Appearance of that species. shiny:true keeps only shiny
   # appearances (a species' first shiny moment). Only seeded Pokémon count, so a
-  # persona/agent mascot on a TaskEvent is dropped.
+  # persona/agent mascot on a TaskEvent is dropped. Memoized per shiny flag — the
+  # seen count and the newest-unique card both read it.
   def first_sightings(shiny: false)
-    earliest = {}
-    (spawn_appearances(shiny: shiny) + evolution_appearances(shiny: shiny)).each do |appearance|
-      next unless pokemon_by_slug.key?(appearance.slug)
+    (@first_sightings ||= {})[shiny] ||= begin
+      earliest = {}
+      (spawn_appearances(shiny: shiny) + evolution_appearances(shiny: shiny)).each do |appearance|
+        next unless pokemon_by_slug.key?(appearance.slug)
 
-      current = earliest[appearance.slug]
-      earliest[appearance.slug] = appearance if current.nil? || appearance.at < current.at
+        current = earliest[appearance.slug]
+        earliest[appearance.slug] = appearance if current.nil? || appearance.at < current.at
+      end
+      earliest
     end
-    earliest
+  end
+
+  # A catch is a task reaching `shipped`: write_stage_event snapshots the mascot
+  # (by then evolved to its final form) onto the shipped TRANSITION event, so the
+  # spine is the durable source of truth even after the task later archives.
+  # shiny:true keeps only ships whose mascot came up shiny.
+  def catch_appearances(shiny: false)
+    (@catch_appearances ||= {})[shiny] ||= begin
+      scope = TaskEvent.transitions
+                       .where(to_stage: "shipped")
+                       .where("metadata->'mascot'->>'slug' IS NOT NULL")
+      scope = scope.where("metadata->'mascot'->>'shiny' = 'true'") if shiny
+      slug_sql  = Arel.sql("metadata->'mascot'->>'slug'")
+      shiny_sql = Arel.sql("metadata->'mascot'->>'shiny'")
+      scope.pluck(slug_sql, :occurred_at, shiny_sql, :task_slug).map do |slug, at, shiny_flag, task_slug|
+        Appearance.new(slug: slug, at: at, shiny: shiny_flag == "true", session_id: nil, task_slug: task_slug)
+      end
+    end
+  end
+
+  # The set of caught species: each shipped mascot PLUS its pre-evolutions. A task
+  # ships its FINAL form, so catching it also catches everything earlier in the
+  # line. Only seeded Pokémon count.
+  def caught_slugs(shiny: false)
+    (@caught_slugs ||= {})[shiny] ||= catch_appearances(shiny: shiny).each_with_object(Set.new) do |appearance, set|
+      lineage_up_to(appearance.slug).each { |slug| set << slug if pokemon_by_slug.key?(slug) }
+    end
+  end
+
+  # A caught slug plus its pre-evolutions: the family in walk order (base first),
+  # sliced up to and including the caught slug. Normally the whole line (the shipped
+  # mascot is the final form), but the slice stays correct if a mascot ships mid-line.
+  def lineage_up_to(slug)
+    (@lineage ||= {})[slug] ||= begin
+      family = PokemonEvolutionTree.for(slug)
+      idx = family.index(slug)
+      idx ? family[0..idx] : [slug]
+    end
   end
 
   # Spawn sightings: every session mascot draw.
