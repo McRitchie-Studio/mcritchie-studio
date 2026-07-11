@@ -445,8 +445,10 @@ class Release::ConductorTest < ActiveSupport::TestCase
     Release::Conductor.eject!(bad, feedback: "integration regression on origin/release")
 
     bad.reload
-    assert_equal "blocked", bad.stage
-    assert_equal "rework", bad.devops_field("block_kind")
+    assert_equal "building", bad.stage, "a block is a building attribute now"
+    assert bad.blocked?
+    assert_equal "rework", bad.block_kind
+    assert_equal "steffon", bad.blocked_by
     assert_nil bad.release_slug, "the offender is OFF the candidate"
     assert_nil bad.merged, "cleared — pairs with the documented merge-commit revert"
     note = Activity.for_task(bad).by_type("qa_feedback").last
@@ -466,7 +468,8 @@ class Release::ConductorTest < ActiveSupport::TestCase
 
     Release::Conductor.eject!(bad)
 
-    assert_equal "blocked", bad.reload.stage
+    assert_equal "building", bad.reload.stage
+    assert bad.blocked?
     assert_equal before, Activity.for_task(bad).by_type("qa_feedback").count
   end
 
@@ -1104,9 +1107,12 @@ class Release::ConductorTest < ActiveSupport::TestCase
       "building"  => Task.create!(title: "building demo task here", stage: "building"),
       "submitted" => Task.create!(title: "submitted demo task here", stage: "submitted"),
       "reviewed"  => Task.create!(title: "reviewed demo task here", stage: "reviewed"),
-      "assembled" => Task.create!(title: "assembled demo task here", stage: "assembled"),
-      "blocked"   => Task.create!(title: "blocked demo task here", stage: "blocked")
+      "assembled" => Task.create!(title: "assembled demo task here", stage: "assembled")
     }
+    # A blocked task is a `building` task with a live block — still active, so
+    # archive must leave it alone too.
+    blocked = Task.create!(title: "blocked demo task here", stage: "building")
+    blocked.block!(by: "avi", kind: "rework")
     loose = loose_shipped_task
 
     result = Release::Conductor.archive_completed!
@@ -1116,6 +1122,9 @@ class Release::ConductorTest < ActiveSupport::TestCase
       assert_equal stage, task.reload.stage, "a #{stage} task must be untouched"
       refute_includes result[:archived], task.slug
     end
+    assert_equal "building", blocked.reload.stage, "a blocked (building) task is untouched"
+    assert blocked.blocked?
+    refute_includes result[:archived], blocked.slug
   end
 
   test "archive_completed! with no shipped release archives every shipped task" do

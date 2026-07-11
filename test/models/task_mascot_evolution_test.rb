@@ -159,11 +159,14 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     task.submit!
     assert_equal "charmeleon", task.devops["mascot"]
 
-    task.block!(kind: "rework")
-    # A different agent picks it up: the session id changes, the mascot swaps to
-    # the new session's Pokémon, and the consumed gate resets with the new line.
-    task.update!(stage: "building",
-                 metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-two" }))
+    task.block!(by: "avi", kind: "rework")
+    # A different agent picks it up: a block is a building attribute now, so the
+    # handoff resubmits (clearing the block), swaps the session id, then re-claims
+    # building — that fresh build transition swaps the mascot to the new session's
+    # Pokémon and resets the consumed gate with the new line.
+    task.update!(stage: "submitted")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-two" }))
+    task.build!
     assert_equal "totodile", task.devops["mascot"]
     assert_nil task.devops["mascot_stage"]
 

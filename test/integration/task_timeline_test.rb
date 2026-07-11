@@ -45,23 +45,26 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
     assert_match "claude-opus-4-8", response.body
   end
 
-  test "api block move with actor records and shows the blocking agent" do
+  test "api block records the blocking agent and shows it on the timeline" do
     Agent.create!(name: "Shannon", slug: "shannon")
     task = Task.create!(title: "Timeline block actor task", stage: "submitted")
     token = Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
 
-    patch "/api/v1/tasks/#{task.slug}",
-          params: { stage: "blocked", event: { source: "cli", actor: "shannon" } },
+    # A block is a `building` attribute now — PATCH the dedicated block endpoint.
+    patch "/api/v1/tasks/#{task.slug}/block",
+          params: { kind: "rework", by: "shannon", event: { source: "cli", actor: "shannon" } },
           headers: { "Authorization" => "Bearer #{token}" },
           as: :json
     assert_response :success
 
-    event = task.reload.task_events.chronological.last
-    assert_equal "blocked", event.to_stage
-    assert_equal "shannon", event.actor
+    task.reload
+    assert task.blocked?, "the task carries a live block"
+    assert_equal "building", task.stage, "no →blocked stage transition"
+    assert_equal "shannon", task.blocked_by
 
     get task_path(task.slug)
     assert_response :success
+    # The blocked-lane timeline segment surfaces the blocker (blocked_by column).
     assert_select "[data-test='timeline-block'][data-stage='blocked']" do
       assert_select "[data-test='timeline-crew-member'][title^='Shannon']", count: 1
     end
@@ -80,9 +83,13 @@ class TaskTimelineTest < ActionDispatch::IntegrationTest
                         metadata: { "devops" => { "session_id" => "sess-design" } })
     task.build!
     task.submit!
-    task.block!
-    task.update!(stage: "building",
-                 metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+    # Rework: a reviewer blocks (submitted→building), the fix is resubmitted, then
+    # a NEW session re-claims and rebuilds — that fresh building transition is what
+    # swaps the current mascot to grimer. Historical cards keep dewgong.
+    task.block!(by: "avi", kind: "rework")
+    task.update!(stage: "submitted")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+    task.build!
 
     get task_path(task.slug)
 

@@ -547,7 +547,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       stage: "assembled",
       metadata: { "devops" => { "mascot_color" => "#a78bfa", "repositories" => ["mcritchie-studio"] } }
     )
-    blocked = Task.create!(title: "Blocked glow board task", stage: "blocked")
+    blocked = Task.create!(title: "Blocked glow board task", stage: "building")
+    blocked.block!(by: "avi", kind: "rework")
 
     get deployments_path
     assert_response :success
@@ -781,7 +782,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "blocked tasks ride the Building column (red hue) on both boards" do
-    blocked = Task.create!(title: "blocked rides building", stage: "blocked")
+    blocked = Task.create!(title: "blocked rides building", stage: "building")
+    blocked.block!(by: "avi", kind: "rework")
     [tasks_path, deployments_path].each do |path|
       get path
       assert_response :success
@@ -822,9 +824,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[component] reactivated building tasks render above blocked cards" do
-    blocked = Task.create!(title: "stale blocked sort task", stage: "blocked")
-    reactivated = Task.create!(title: "reactivated sort task now", stage: "blocked")
-    reactivated.update!(stage: "building")
+    blocked = Task.create!(title: "stale blocked sort task", stage: "building")
+    blocked.block!(by: "avi", kind: "rework")
+    # A freshly claimed building task ranks above an older blocked one (position DESC).
+    reactivated = Task.create!(title: "reactivated sort task now", stage: "building")
 
     get tasks_path
     assert_response :success
@@ -838,11 +841,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_operator reactivated_index, :<, blocked_index
   end
 
-  test "[integration] JSON blocked-to-building move renders reactivated task first" do
+  test "[integration] JSON move into building renders the reactivated task first" do
     log_in_as(@admin)
-    blocked = Task.create!(title: "stale blocked api task", stage: "blocked")
-    reactivated = Task.create!(title: "reactivated api task now", stage: "blocked")
+    blocked = Task.create!(title: "stale blocked api task", stage: "building")
+    blocked.block!(by: "avi", kind: "rework")
+    reactivated = Task.create!(title: "reactivated api task now", stage: "submitted")
 
+    # A JSON stage move into building re-ranks the card to the top of the column.
     patch task_path(reactivated.slug, format: :json),
           params: { task: { stage: "building" } }, as: :json
     assert_response :success
@@ -1383,15 +1388,30 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil @new_task.completed_at
   end
 
-  test "move task to blocked sets blocked_at and captures blocked_from" do
+  test "block action stamps the block columns and lands the task on building" do
     log_in_as(@admin)
-    patch task_path(@in_progress_task.slug, format: :json),
-          params: { task: { stage: "blocked" } }, as: :json
-    assert_response :success
+    patch block_task_path(@in_progress_task.slug), params: { kind: "rework" }
+    assert_redirected_to task_path(@in_progress_task.slug)
     @in_progress_task.reload
-    assert_equal "blocked", @in_progress_task.stage
+    assert_equal "building", @in_progress_task.stage, "a block is a building attribute, not a stage"
+    assert @in_progress_task.blocked?
     assert_not_nil @in_progress_task.blocked_at
     assert_equal "building", @in_progress_task.blocked_from
+    assert_equal "rework", @in_progress_task.block_kind
+  end
+
+  test "unblock action clears the block columns, staying on building" do
+    log_in_as(@admin)
+    @in_progress_task.block!(by: "avi", kind: "rework")
+    assert @in_progress_task.blocked?
+
+    patch unblock_task_path(@in_progress_task.slug)
+    assert_redirected_to task_path(@in_progress_task.slug)
+    @in_progress_task.reload
+    assert_equal "building", @in_progress_task.stage
+    assert_not @in_progress_task.blocked?
+    assert_nil @in_progress_task.blocked_at
+    assert_nil @in_progress_task.block_kind
   end
 
   test "move task to archived sets archived_at" do

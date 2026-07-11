@@ -99,13 +99,18 @@ module Api
 
         assert_response :created
         @task.reload
-        assert_equal "blocked", @task.stage
+        # A failed review no longer moves the task to a `blocked` STAGE — it lands
+        # on `building` with the block attributes set (blocked-as-building-attribute).
+        assert_equal "building", @task.stage
+        assert @task.blocked?, "a failed review leaves the task blocked (building + blocked_at)"
         assert_equal "rework", @task.block_kind
+        assert_equal "shannon", @task.blocked_by
         checkpoint = @task.task_events.checkpoints.last
         assert_equal "light_review", checkpoint.to_stage
         assert_equal "failed", checkpoint.metadata["status"]
+        # The block is the submitted→building transition; it carries the fail usage.
         blocked = @task.task_events.transitions.last
-        assert_equal "blocked", blocked.to_stage
+        assert_equal "building", blocked.to_stage
         assert_equal 1300, blocked.tokens_total
       end
     end

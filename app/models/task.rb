@@ -39,7 +39,10 @@ class Task < ApplicationRecord
   #   Workflow 1 — Build (feature agent):  designed → building → submitted
   #   Workflow 2 — Deploy (DevOps):        submitted → reviewed → assembled → shipped
   #   `submitted` is the shared seam — the feature agent hands off to DevOps there.
-  #   blocked  — side state: agent hit a wall, QA bounced a PR, or a dep isn't ready.
+  #   blocked  — NOT a stage: it's an ATTRIBUTE of a `building` task (blocked_at +
+  #              blocked_from + blocked_by + block_kind). A block means "more
+  #              building to do", so a blocked task sits in `building`; #blocked?
+  #              re-derives the live block from those columns.
   #   archived — terminal resting state: abandoned tickets AND shipped/completed
   #              work filed away (Archive completed tasks) to close the loop.
   STAGE_LABELS = {
@@ -49,7 +52,6 @@ class Task < ApplicationRecord
     "reviewed"  => "Reviewed",
     "assembled" => "Assembled",
     "shipped"   => "Shipped",
-    "blocked"   => "Blocked",
     "archived"  => "Archived"
   }.freeze
   # The ACTIVE (gerund) form of each stage — "what's happening right now" — for UI
@@ -64,7 +66,6 @@ class Task < ApplicationRecord
     "reviewed"  => "Reviewing",
     "assembled" => "Assembling",
     "shipped"   => "Shipping",
-    "blocked"   => "Blocking",
     "archived"  => "Archiving"
   }.freeze
   STAGES = STAGE_LABELS.keys.freeze
@@ -91,14 +92,16 @@ class Task < ApplicationRecord
   MERGED_RELEASE = "release"
   MERGED_MAIN    = "main"
   MERGED_STATES  = [MERGED_RELEASE, MERGED_MAIN].freeze
-  # Board columns per page. /tasks is the feature-agent lane (Build + the blocked
-  # side state). /deployments shows the full pipeline as swim lanes — the Deploy
-  # workflow plus the upstream designed/building lanes (drag-and-drop; more later).
+  # Board columns per page. /tasks is the feature-agent lane (the Build workflow;
+  # blocked tasks ride the Building column as a red-glowing attribute, not a
+  # separate lane). /deployments shows the full pipeline as swim lanes — the
+  # Deploy workflow plus the upstream designed/building lanes (drag-and-drop).
   # The Deploy *workflow* itself (the /stages guide + per-stage kickoffs) stays
   # DEPLOY_STAGES — the board carrying extra lanes doesn't widen the workflow.
-  TASKS_BOARD_STAGES       = %w[designed building blocked submitted].freeze
+  TASKS_BOARD_STAGES       = %w[designed building submitted].freeze
   DEPLOYMENTS_BOARD_STAGES = %w[designed building submitted reviewed assembled shipped].freeze
-  # Why a task sits in `blocked` — lets a heartbeat agent route it correctly.
+  # Why a task is blocked (stored in the block_kind column) — lets a heartbeat
+  # agent route it correctly.
   BLOCK_KINDS = %w[environment rework dependency].freeze
   REVIEW_ROLES = %w[primary light].freeze
   REVIEW_ROLE_ALIASES = {
@@ -143,7 +146,10 @@ class Task < ApplicationRecord
     OPERATOR_APPROVAL_WAITING,
     OPERATOR_APPROVAL_CHANGES_REQUESTED
   ].freeze
-  OPERATOR_APPROVAL_HOLD_STAGES = %w[building blocked].freeze
+  # A task holds an open operator-approval request while it's still in the feature
+  # agent's hands (building — which is also where a blocked task sits). It
+  # auto-confirms on the exit to submitted.
+  OPERATOR_APPROVAL_HOLD_STAGES = %w[building].freeze
   # Request-layer sources allowed to GRANT approval (flip approval_status to
   # "approved"). "web" is stamped only by the admin-gated TasksController#update
   # — the board UI operator lane. A BLANK source is an internal/console write
@@ -152,9 +158,11 @@ class Task < ApplicationRecord
   # default, "cli" from bin/task) — that's the agent lane, which may set
   # "waiting"/"changes_requested"/"none" but never "approved".
   OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
+  # block_kind is NOT here anymore — it's promoted to the tasks.block_kind column
+  # (a block is a `building` attribute, not devops metadata). See #block_kind.
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
-    requires_release_conductor block_kind agent_context session_id session_provider mascot
+    requires_release_conductor agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
     persona approval_status approval_requested_at approval_requested_by approval_approved_at
   ].freeze
@@ -230,6 +238,11 @@ class Task < ApplicationRecord
   before_validation :sync_app_identity, on: :create
   before_create :set_initial_position
   before_save :set_stage_timestamp, if: :stage_changed?
+  # A block is a `building` attribute: advancing OUT of building (to submitted or
+  # beyond) resolves it, so clear the block columns on that forward move. This
+  # keeps blocked_at meaning "currently blocked" — without it, a later return to
+  # building would false-positive as blocked off a stale timestamp.
+  before_save :clear_block_on_forward_move, if: -> { will_save_change_to_stage? && stage != "building" }
   # Per-session mascot: re-derive on each build-phase transition (designed/building/
   # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
   before_save :sync_persona_identity
@@ -271,7 +284,10 @@ class Task < ApplicationRecord
   end
 
   scope :by_stage, ->(stage) { where(stage: stage) }
-  scope :blocked, -> { where(stage: "blocked") }
+  # A LIVE block is a `building` task carrying an unresolved block marker
+  # (blocked_at set). blocked_at persists as history after the task advances, so
+  # the `building` guard is what keeps the scope to CURRENTLY-blocked tasks.
+  scope :blocked, -> { where(stage: "building").where.not(blocked_at: nil) }
   scope :recent, -> { order(created_at: :desc) }
   # Board order: highest `position` first, so the freshest task in a column sits
   # on top. `position` is an event-driven RANK — a create or a stage move stamps
@@ -290,13 +306,11 @@ class Task < ApplicationRecord
   # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
   scope :live, -> { where.not(stage: %w[shipped archived]) }
 
+  # The tasks that render in a board column. Blocked tasks ARE building tasks now
+  # (a block is a building attribute), so the building column no longer folds in a
+  # separate "blocked" bucket — the stage grouping already carries them.
   def self.board_column_tasks(tasks_by_stage, stage)
-    tasks_by_stage ||= {}
-    stage = stage.to_s
-    tasks = Array(tasks_by_stage[stage])
-    return tasks unless stage == "building"
-
-    tasks + Array(tasks_by_stage["blocked"])
+    Array((tasks_by_stage || {})[stage.to_s])
   end
 
   def self.unresolved_feedback_by_slug(task_slugs)
@@ -565,15 +579,15 @@ class Task < ApplicationRecord
 
   # Has this task ever carried a blocking qa_feedback (a QA block), resolved or
   # not? The "was it ever blocked" half of #block_state — distinct from
-  # #unresolved_feedback? (an OPEN block) and #blocked? (the blocked stage).
+  # #unresolved_feedback? (an OPEN qa_feedback) and #blocked? (a LIVE block, from
+  # the blocked_at column).
   def ever_blocked?
     Activity.for_task(self).by_type("qa_feedback").exists?
   end
 
-  # The card's block lifecycle as a tri-state, derived entirely from the
-  # qa_feedback ledger (no stored column — it can't drift from the activities that
-  # already drive the red "UNRESOLVED QA" badge):
-  #   :blocked — the blocked stage OR an unresolved qa_feedback is open (red card)
+  # The card's block lifecycle as a tri-state:
+  #   :blocked — a LIVE block (#blocked?, off the blocked_at column) OR an
+  #              unresolved qa_feedback is open (red card)
   #   :cleared — was blocked, the block is resolved, and it is back in `submitted`
   #              awaiting a re-review (the light-yellow "look again" card)
   #   :never   — no live block: never blocked, already re-reviewed past submitted
@@ -834,16 +848,17 @@ class Task < ApplicationRecord
     Release::Repos.kind(release_repo)
   end
 
+  # A LIVE block: the task carries an unresolved block marker (blocked_at set)
+  # while it sits in `building`. blocked_at persists as history after the task
+  # advances (release notes read it), so the `building` gate is what distinguishes
+  # "currently blocked" from "was blocked". #block! sets it; #unblock! clears it.
   def blocked?
-    stage == "blocked"
+    blocked_at.present? && stage == "building"
   end
 
-  # Why the task is blocked (environment / rework / dependency), carried in
-  # devops so a heartbeat agent can route it without re-reading the thread.
-  def block_kind
-    devops.fetch("block_kind", "").presence
-  end
-
+  # Why the task is blocked (environment / rework / dependency) — a real column
+  # now (promoted out of devops), stamped by #block!. `block_kind` is provided by
+  # ActiveRecord; a blank column reads as nil.
   def stage_label
     STAGE_LABELS.fetch(stage, stage.to_s.humanize)
   end
@@ -1005,18 +1020,30 @@ class Task < ApplicationRecord
     update!(stage: "shipped", merged: MERGED_MAIN, result: result_data)
   end
 
-  # --- Side / terminal -----------------------------------------------------
-  # block! moves the task off the autonomous pipeline. `kind` (environment /
-  # rework / dependency) is stored in devops; `blocked_from` is captured
-  # automatically from the stage it left. Feedback rides along as a
-  # qa_feedback Activity, not on the task itself.
-  def block!(kind: nil)
-    merged = metadata.deep_dup
-    if kind.present?
-      merged["devops"] ||= {}
-      merged["devops"]["block_kind"] = kind.to_s
-    end
-    update!(stage: "blocked", metadata: merged)
+  # --- Block: a `building` attribute, no longer a stage ---------------------
+  # block! marks the task blocked WITHOUT leaving the pipeline: it lands on
+  # `building` (a block means "more building to do") and stamps the block columns
+  # — blocked_at (when), blocked_from (the stage it stalled in), blocked_by (the
+  # agent that raised it), block_kind (why). There is NO →blocked transition, so
+  # the DURABLE block markers are these columns plus the qa_feedback Activity a
+  # caller posts alongside (bin/task block, eject!) — retros/insights/rework-counts
+  # key on those markers, never a vanished stage transition. set_stage_timestamp
+  # skips the build-claim stamp on a block (the blocker isn't the builder).
+  def block!(by: nil, kind: nil)
+    update!(
+      stage: "building",
+      blocked_from: stage.presence, # evaluated BEFORE the stage assignment: where it stalled
+      blocked_at: Time.current,
+      blocked_by: by.to_s.strip.presence,
+      block_kind: kind.to_s.strip.presence
+    )
+  end
+
+  # Clear a live block, leaving the task on `building` (the "Resume" action). The
+  # block columns are wiped so #blocked? / the red card / the scope all drop it;
+  # the qa_feedback ledger (ever_blocked? / block mining) is untouched.
+  def unblock!
+    update!(blocked_at: nil, blocked_by: nil, block_kind: nil, blocked_from: nil)
   end
 
   def archive!
@@ -1258,21 +1285,34 @@ class Task < ApplicationRecord
   def set_stage_timestamp
     case stage
     when "building"
-      self.started_at = Time.current
-      stamp_builder
+      # A block! lands the task on `building` too, but it's NOT a fresh build
+      # claim — the blocker isn't the builder, so skip the started_at re-stamp and
+      # stamp_builder (which would mis-record the blocker as built_by). A block is
+      # detected by blocked_at being set in this same save.
+      unless will_save_change_to_blocked_at? && blocked_at.present?
+        self.started_at = Time.current
+        stamp_builder
+      end
     when "submitted" then self.submitted_at = Time.current
     when "reviewed"  then self.reviewed_at  = Time.current
     when "assembled" then self.assembled_at = Time.current
     when "shipped"   then self.completed_at = Time.current
-    when "blocked"
-      self.blocked_at = Time.current
-      self.blocked_from = stage_was.presence
     when "archived"  then self.archived_at = Time.current
     end
     # Re-rank to the TOP of the new column on every stage move: max + 100 wins the
     # `position DESC` sort. The 100-gap keeps room for later drag inserts. (Skip on
     # create — set_initial_position seeds the genesis rank.)
     self.position = (Task.where(stage: stage).maximum(:position) || 0) + 100 unless new_record?
+  end
+
+  # Clear the live-block columns when the task advances out of `building` — the
+  # block resolved (the fix moved forward). The qa_feedback ledger (ever_blocked?)
+  # is untouched, so the "was blocked" history survives on the durable marker.
+  def clear_block_on_forward_move
+    self.blocked_at = nil
+    self.blocked_by = nil
+    self.block_kind = nil
+    self.blocked_from = nil
   end
 
   # A soul SLUG is a short human handle (carl, shannon) — lowercase letters with

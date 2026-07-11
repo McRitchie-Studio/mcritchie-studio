@@ -74,11 +74,12 @@ REVIEWER_BIN = BinHelpers.bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
 CURL_BIN     = ENV["CURL_BIN"].to_s.strip.empty? ? "curl" : ENV["CURL_BIN"].strip
 
 # The Deploy-queue stages, in cycle order. The first three ARE the Deploy queue
-# (review intake → merge queue → current RC); building + blocked are surfaced so
-# nothing actionable is invisible (building = Build half in-flight; blocked = the
-# side state that needs attention, not in the pipeline's court).
+# (review intake → merge queue → current RC); building is surfaced so nothing
+# actionable is invisible (building = Build half in-flight). `blocked` is NOT a
+# stage — it's a `building` attribute (blocked_at set) derived separately (see
+# #survey) as the needs-attention list, not in the pipeline's court.
 DEPLOY_STAGES = %w[submitted reviewed assembled].freeze
-CONTEXT_STAGES = %w[building blocked].freeze
+CONTEXT_STAGES = %w[building].freeze
 ALL_STAGES = (DEPLOY_STAGES + CONTEXT_STAGES).freeze
 
 STAGE_BLURB = {
@@ -86,6 +87,8 @@ STAGE_BLURB = {
   "reviewed"  => "sweep queue — approved; Steffon's qa-deploy sweeps + merges them",
   "assembled" => "QA-green release candidate (RC) members awaiting Avi",
   "building"  => "Build half — in-flight builds",
+  # `blocked` is a derived view (building tasks carrying a live block), printed as
+  # a section even though it is no longer a fetched stage.
   "blocked"   => "needs attention — not in the pipeline's court"
 }.freeze
 
@@ -159,6 +162,13 @@ def show_task(slug)
   end
 end
 
+# A LIVE block is a `building` task carrying blocked_at (the stage collapsed into
+# an attribute) — read off the full show record (the list line has no columns).
+def task_blocked?(slug)
+  rec = show_task(slug)
+  rec["blocked_at"].to_s.strip != "" && rec["stage"].to_s == "building"
+end
+
 def task_repos(task)
   Array(task.dig("metadata", "devops", "repositories")).map(&:to_s).reject(&:empty?)
 end
@@ -221,6 +231,9 @@ end
 
 def survey(health: true)
   lists = ALL_STAGES.to_h { |s| [s, list_stage(s)] }
+  # `blocked` is a `building` attribute now (blocked_at set), not a stage — derive
+  # the needs-attention list from the building tasks that carry a live block.
+  lists["blocked"] = lists.fetch("building", []).select { |t| task_blocked?(t["slug"]) }
 
   puts "== conductor — Build-and-Deploy survey (PROD board) =="
   puts "generated: #{now_iso}"
@@ -242,6 +255,8 @@ def survey(health: true)
 
   puts "Build half + side state:"
   CONTEXT_STAGES.each { |s| print_stage_block(s, lists[s]) }
+  # `blocked` is a derived view (building tasks with a live block), not a stage.
+  print_stage_block("blocked", lists["blocked"])
   puts
 
   if health

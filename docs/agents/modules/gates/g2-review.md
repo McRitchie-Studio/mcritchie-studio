@@ -84,8 +84,10 @@ What the supervisor records, per reviewed task:
 
 The task-level outcome is separate from the lanes: two `merge-ready` reports →
 the supervisor moves the task `reviewed`; any `request-changes` → the task is
-blocked for rework; `wait-for-ci` / `conductor-review` / a missing report →
-deferred and re-queried. See Avi's
+blocked for rework (a `building` attribute — `bin/task block` stamps
+`blocked_at`/`block_kind` and lands it on `building`, not a `blocked` stage);
+`wait-for-ci` / `conductor-review` / a missing report → deferred and re-queried.
+See Avi's
 [`pr-review.md`](../../agents/avi/sops/pr-review.md) for the full verdict
 handling.
 

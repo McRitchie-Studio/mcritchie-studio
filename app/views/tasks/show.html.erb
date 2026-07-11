@@ -339,16 +339,18 @@
         "building"  => ["Submit",             "submitted", "btn btn-warning"],
         "submitted" => ["Approve → Reviewed", "reviewed",  "btn btn-success"],
         "reviewed"  => ["Assemble",           "assembled", "btn btn-secondary"],
-        "assembled" => ["Ship",               "shipped",   "btn btn-success"],
-        "blocked"   => ["Resume",             "building",  "btn btn-secondary"]
+        "assembled" => ["Ship",               "shipped",   "btn btn-success"]
       }
     %>
     <div class="flex flex-wrap gap-2">
       <% if (step = advance[@task.stage]) %>
         <%= button_to step[0], task_path(@task.slug), method: :patch, params: { task: { stage: step[1] } }, class: step[2] %>
       <% end %>
-      <% unless %w[blocked archived].include?(@task.stage) %>
-        <%= button_to "Block", task_path(@task.slug), method: :patch, params: { task: { stage: "blocked" } }, class: "btn btn-danger" %>
+      <%# Block is a building ATTRIBUTE now — Resume clears it, Block sets it. %>
+      <% if @task.blocked? %>
+        <%= button_to "Resume", unblock_task_path(@task.slug), method: :patch, class: "btn btn-secondary" %>
+      <% elsif @task.stage != "archived" %>
+        <%= button_to "Block", block_task_path(@task.slug), method: :patch, params: { kind: "rework" }, class: "btn btn-danger" %>
       <% end %>
       <% unless @task.stage == "archived" %>
         <%= button_to "Archive", task_path(@task.slug), method: :patch, params: { task: { stage: "archived" } }, class: "btn bg-surface-alt text-body hover:bg-inset" %>

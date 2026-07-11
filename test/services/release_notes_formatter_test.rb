@@ -215,7 +215,11 @@ module ReleaseNotes
       refute_includes clear_line1, "✅", "the old check glyph is gone"
       refute_includes clear_line1, "❌", "the old cross glyph is gone"
 
-      blocked = tasks(:failed_task) # fixture carries blocked_at
+      # A block is a `building` attribute now, cleared on advance — so the durable
+      # "was ever blocked" signal for a shipped/release task is the qa_feedback
+      # marker (#ever_blocked?), not the (now-transient) blocked_at column.
+      blocked = tasks(:failed_task)
+      Activity.create!(task_slug: blocked.slug, activity_type: "qa_feedback", description: "hit a block")
       blocked_line1 = formatter_for(blocked).embeds.first[:description].split("\n").first
       assert blocked_line1.end_with?("   ·   ⚠️"), "a blocked task appends the warning: #{blocked_line1.inspect}"
     end

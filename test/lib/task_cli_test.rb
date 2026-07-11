@@ -243,14 +243,14 @@ class TaskCliTest < Minitest::Test
 
   def test_block_agent_flag_stamps_the_block_transition_actor
     requests, = run_task(["block", "demo-task", "--kind", "rework", "--feedback", "Needs rework.", "--agent", "shannon"])
-    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
-    refute_nil patch, "expected a PATCH for the block"
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task/block" }
+    refute_nil patch, "expected a PATCH to the block endpoint"
 
     parsed = JSON.parse(patch[:body])
-    assert_equal "blocked", parsed["stage"]
-    assert_equal "rework", parsed.dig("devops", "block_kind")
+    assert_equal "rework", parsed["kind"], "block_kind rides the block endpoint (a column now)"
+    assert_equal "shannon", parsed["by"], "--agent is the blocker (blocked_by)"
     assert_equal "cli", parsed.dig("event", "source")
-    assert_equal "shannon", parsed.dig("event", "actor"), "--agent should persist on the blocked TaskEvent"
+    assert_equal "shannon", parsed.dig("event", "actor"), "--agent stamps the →building transition actor"
 
     note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
     refute_nil note, "expected a qa_feedback activity"
@@ -262,7 +262,7 @@ class TaskCliTest < Minitest::Test
       ["block", "demo-task", "--kind", "dependency"],
       env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
     )
-    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task/block" }
     event = JSON.parse(patch[:body]).fetch("event")
     assert_equal "cli", event["source"]
     refute event.key?("actor"), "block should not persist an opaque session id as the blocker"
@@ -275,9 +275,9 @@ class TaskCliTest < Minitest::Test
       stub_stage: "submitted"
     )
 
-    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task/block" }
     parsed = JSON.parse(patch[:body])
-    assert_equal "blocked", parsed["stage"]
+    assert_equal "avi", parsed["by"], "submitted rework blocks default to Avi as the blocker"
     assert_equal "avi", parsed.dig("event", "actor"), "submitted rework blocks default to Avi, not a session id"
 
     note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
@@ -311,7 +311,7 @@ class TaskCliTest < Minitest::Test
         env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "CLAUDE_PROJECTS_DIR" => projects }
       )
 
-      patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+      patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task/block" }
       event = JSON.parse(patch[:body]).fetch("event")
       assert_equal "cli", event["source"]
       assert_equal "shannon", event["actor"], "block should prefer the session persona over the raw session id"
@@ -325,7 +325,7 @@ class TaskCliTest < Minitest::Test
       stub_devops: { "kind" => "bug", "persona" => "carl" }
     )
 
-    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task/block" }
     event = JSON.parse(patch[:body]).fetch("event")
     assert_equal "cli", event["source"]
     assert_equal "carl", event["actor"], "task persona should beat the opaque session id"

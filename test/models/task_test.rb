@@ -40,10 +40,10 @@ class TaskTest < ActiveSupport::TestCase
     assert task.devops["approval_approved_at"].present?
   end
 
-  test "[unit] resubmitting from blocked auto-confirms requested changes" do
+  test "[unit] resubmitting from a blocked build auto-confirms requested changes" do
     task = Task.create!(
       title: "Approval Exit Blocked",
-      stage: "blocked",
+      stage: "building",
       metadata: {
         "devops" => {
           "approval_status" => "changes_requested",
@@ -51,6 +51,7 @@ class TaskTest < ActiveSupport::TestCase
         }
       }
     )
+    task.block!(by: "avi", kind: "rework") # a block is a building attribute now
 
     task.submit!
 
@@ -60,7 +61,7 @@ class TaskTest < ActiveSupport::TestCase
     assert task.devops["approval_approved_at"].present?
   end
 
-  test "[unit] moving between building and blocked keeps approval open" do
+  test "[unit] blocking a building task keeps approval open" do
     task = Task.create!(
       title: "Approval Still Blocked",
       stage: "building",
@@ -72,10 +73,11 @@ class TaskTest < ActiveSupport::TestCase
       }
     )
 
-    task.block!(kind: "environment")
+    task.block!(by: "steffon", kind: "environment")
 
     task.reload
-    assert_equal "blocked", task.stage
+    assert_equal "building", task.stage, "a block is a building attribute, not a stage"
+    assert task.blocked?
     assert_equal "waiting", task.approval_status
     assert task.waiting_for_operator_approval?
     assert_nil task.devops["approval_approved_at"]
@@ -255,8 +257,9 @@ class TaskTest < ActiveSupport::TestCase
     task.build!
     assert_equal "shannon", task.reload.devops_built_by
 
-    # Bounced back, then re-claimed by a different soul — built_by follows.
-    task.update!(stage: "blocked")
+    # Bounced back (to submitted), then re-claimed by a different soul — built_by
+    # follows on the fresh building transition.
+    task.update!(stage: "submitted")
     Current.task_event_actor = "carl"
     task.update!(stage: "building")
 
@@ -302,16 +305,16 @@ class TaskTest < ActiveSupport::TestCase
   end
 
   test "a no-actor re-move to building preserves the existing built_by" do
-    # Set a builder, bounce to blocked, then re-move to building with NO actor
-    # (Current cleared) — stamp_builder must leave the prior builder untouched,
-    # never clobber it to nil.
+    # Set a builder, bounce back to submitted, then re-move to building with NO
+    # actor (Current cleared) — stamp_builder must leave the prior builder
+    # untouched, never clobber it to nil.
     Current.task_event_actor = "shannon"
     task = tasks(:new_task)
     task.build!
     assert_equal "shannon", task.reload.devops_built_by
     Current.reset # the re-claim below carries no actor
 
-    task.update!(stage: "blocked")
+    task.update!(stage: "submitted")
     task.update!(stage: "building")
 
     assert_equal "shannon", task.reload.devops_built_by,
@@ -371,7 +374,7 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "shannon", task.reload.devops_built_by
     Current.reset
 
-    task.update!(stage: "blocked")
+    task.update!(stage: "submitted")
     task.update!(stage: "building") # no actor; agent_slug is carl
 
     assert_equal "shannon", task.reload.devops_built_by,
@@ -412,22 +415,50 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal({ "output" => "done" }, task.result)
   end
 
-  # --- blocked side state ---
+  # --- blocked: a `building` attribute, no longer a stage ---
 
-  test "a task can be blocked, capturing where it came from and why" do
+  test "a task can be blocked, capturing where it came from, who, and why" do
     task = tasks(:in_progress_task) # building
-    task.block!(kind: "rework")
+    task.block!(by: "avi", kind: "rework")
     assert task.blocked?
-    assert_equal "blocked", task.stage
+    assert_equal "building", task.stage, "a block lands on building, not a blocked stage"
     assert_not_nil task.blocked_at
     assert_equal "building", task.blocked_from
+    assert_equal "avi", task.blocked_by
     assert_equal "rework", task.block_kind
   end
 
-  test "a blocked task can resume building" do
-    task = tasks(:failed_task) # blocked
-    task.build!
+  test "blocking a submitted task lands it on building with blocked_from submitted" do
+    task = tasks(:new_task)
+    task.update!(stage: "submitted")
+    task.block!(by: "avi", kind: "rework")
     assert_equal "building", task.stage
+    assert_equal "submitted", task.blocked_from, "captures the stage it stalled in"
+    assert task.blocked?
+  end
+
+  test "a blocked task resumes (unblocks) and clears its block columns" do
+    task = tasks(:failed_task) # building + a live block
+    assert task.blocked?, "the fixture carries a live block"
+    task.unblock!
+    assert_equal "building", task.stage
+    assert_not task.blocked?
+    assert_nil task.blocked_at
+    assert_nil task.blocked_by
+    assert_nil task.block_kind
+  end
+
+  test "block! still posts the qa_feedback marker via its caller (retro regression)" do
+    # The GOTCHA: with no →blocked transition, retros/insights must still SEE the
+    # block. The durable marker is blocked_at (the column) + the qa_feedback
+    # Activity a caller posts alongside — proven here so a future refactor can't
+    # silently zero out the block signal.
+    task = tasks(:in_progress_task)
+    task.block!(by: "avi", kind: "rework")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix")
+    assert task.blocked_at.present?, "blocked_at is the durable column marker"
+    assert task.ever_blocked?, "the qa_feedback Activity marker survives"
+    assert_equal 1, Release::Retro.rework_rounds(task), "retro counts the block off the marker"
   end
 
   # --- terminal ---
@@ -462,7 +493,7 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "Reviewed", Task::STAGE_LABELS.fetch("reviewed")
     assert_equal "Assembled", Task::STAGE_LABELS.fetch("assembled")
     assert_equal "Shipped", Task::STAGE_LABELS.fetch("shipped")
-    assert_equal "Blocked", Task::STAGE_LABELS.fetch("blocked")
+    assert_not Task::STAGE_LABELS.key?("blocked"), "blocked is no longer a stage"
   end
 
   test "active_stage_label gives the gerund form for a stage still underway" do
@@ -563,19 +594,20 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal [waiting.slug, normal.slug], ordered.map(&:slug)
   end
 
-  test "[unit] building board column keeps reactivated work above blocked cards" do
+  test "[unit] the building board column carries blocked cards, ordered by position" do
     older_building = Task.create!(title: "older building card here", stage: "building")
-    blocked = Task.create!(title: "stale blocked card here", stage: "blocked")
-    reactivated = Task.create!(title: "reactivated blocked card here", stage: "blocked")
-
-    reactivated.update!(stage: "building")
+    blocked = Task.create!(title: "stale blocked card here", stage: "building")
+    blocked.block!(by: "avi", kind: "rework") # a block is a building attribute now
+    reactivated = Task.create!(title: "reactivated building card here", stage: "building")
 
     grouped = Task.where(slug: [older_building.slug, blocked.slug, reactivated.slug])
                   .ordered
                   .group_by(&:stage)
+    column = Task.board_column_tasks(grouped, "building").map(&:slug)
 
-    assert_equal [reactivated.slug, older_building.slug, blocked.slug],
-                 Task.board_column_tasks(grouped, "building").map(&:slug)
+    assert_includes column, blocked.slug, "a blocked task rides the building column"
+    assert_equal Array(grouped["building"]).map(&:slug), column,
+                 "the building column is just the building stage group now"
   end
 
   test "tasks default to the designed stage" do
@@ -665,9 +697,9 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["auth", "deploy"], metadata["risk_tags"]
   end
 
-  test "block_kind normalizes through devops metadata" do
+  test "block_kind is dropped from devops metadata (it is a column now)" do
     metadata = Task.normalize_devops_metadata("block_kind" => "environment")
-    assert_equal "environment", metadata["block_kind"]
+    assert_nil metadata["block_kind"], "block_kind was promoted to the tasks.block_kind column"
   end
 
   test "[unit] approval status normalizes and stamps request time" do
@@ -1412,8 +1444,11 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal :blocked, task.block_state
   end
 
-  test "block_state is :blocked for the blocked stage even with no open feedback" do
-    assert_equal :blocked, block_state_task(stage: "blocked").block_state
+  test "block_state is :blocked for a live block even with no open feedback" do
+    task = block_state_task(stage: "building")
+    task.block!(by: "avi", kind: "rework")
+    assert task.blocked?
+    assert_equal :blocked, task.block_state
   end
 
   test "block_state is :cleared once a block is resolved and it is back in submitted" do

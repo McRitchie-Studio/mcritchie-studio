@@ -11,9 +11,9 @@
 <% release_duration_dashboard = local_assigns.fetch(:release_duration_dashboard, nil) %>
 <% current_page = local_assigns[:current_page] %>
 <% show_release_modules = current_page == "deployments" || current_release || last_release || release_duration_dashboard %>
-<%# Blocked tasks live in the Building column (a block means more building to do), so the
-    board never renders a standalone Blocked column on either page. %>
-<% columns = (archived ? (stages + ["archived"]) : stages).reject { |s| s == "blocked" } %>
+<%# Blocked tasks are `building` tasks now (a block is a building attribute, not a
+    stage), so there is never a standalone Blocked column on either page. %>
+<% columns = archived ? (stages + ["archived"]) : stages %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
 <%# Type-colour map built once, so each card's data-glow (mascot type colour, used by
@@ -185,11 +185,10 @@ function kanbanBoard(live) {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
       // A same-zone drop is an in-place reorder — it must NEVER change the task's
-      // stage. This is what guards a blocked card: it rides the Building dropzone
-      // (data-stage="building") yet is tagged data-stage="blocked", so reordering
-      // it would otherwise read oldStage="blocked" vs newStage="building" and
-      // silently PATCH it un-blocked. Source the stage from the DROPZONES, not the
-      // card, and only PATCH on a real cross-column move (fromZone !== toZone).
+      // stage. Source the stage from the DROPZONES, not the card, and only PATCH on
+      // a real cross-column move (fromZone !== toZone). A blocked card is just a
+      // building card wearing a red glow, so it rides the Building dropzone and this
+      // guard keeps an in-place reorder from PATCHing its stage.
       if (fromZone !== toZone) {
         const newStage = toZone.dataset.stage;
         try {
@@ -206,8 +205,7 @@ function kanbanBoard(live) {
           this.showToast('Task moved to ' + this.stageLabels[newStage], 'success');
         } catch (err) {
           // Revert: drop the card back into its SOURCE zone, which always exists
-          // (a blocked card's source zone is dropzone-building — there is no
-          // dropzone-blocked to look up).
+          // (the zone is sourced from evt.from, never a card's stage).
           fromZone.insertBefore(card, fromZone.querySelector('.kanban-empty'));
           card.classList.add('ring-2', 'ring-red-500');
           setTimeout(() => card.classList.remove('ring-2', 'ring-red-500'), 1500);
@@ -232,10 +230,10 @@ function kanbanBoard(live) {
       this.updateCounts();
     },
 
-    // A blocked task has no Blocked column — it lives in the Building dropzone, so
-    // map blocked → building when resolving a stage back to its on-board dropzone.
+    // Resolve a stage to its on-board dropzone. Blocked tasks are `building` tasks
+    // now (a block is an attribute), so there is no blocked→building special case.
     zoneForStage(stage) {
-      return document.getElementById('dropzone-' + (stage === 'blocked' ? 'building' : stage));
+      return document.getElementById('dropzone-' + stage);
     },
 
     updateCounts() {

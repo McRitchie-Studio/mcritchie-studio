@@ -515,7 +515,9 @@ devops = task_devops(task)
 errors = []
 warnings = []
 
-if task["stage"].to_s == "blocked"
+# A block is a `building` attribute now (blocked_at set while building), not a
+# stage — re-derive the "currently blocked" warning from the marker column.
+if task["blocked_at"].to_s.strip != "" && task["stage"].to_s == "building"
   errors << "task is blocked; read latest feedback before editing"
 end
 

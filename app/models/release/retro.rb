@@ -53,7 +53,7 @@ class Release
           "shape" => task.devops_shape,
           "repo" => task.release_repo.to_s.presence,
           "cycle_seconds" => cycle_seconds(events),
-          "rework_rounds" => rework_rounds(events),
+          "rework_rounds" => rework_rounds(task),
           "reviewers" => reviewers_for(task, events),
           "checks_run" => task.devops_checks_run
         }
@@ -70,10 +70,13 @@ class Release
         (shipped - started).round
       end
 
-      # Rework rounds = how many times the task bounced into `blocked` (a QA
-      # rework or env block sends it there). Counted off the append-only spine.
-      def rework_rounds(events)
-        events.count { |e| e.to_stage == "blocked" }
+      # Rework rounds = how many times the task was blocked. Since `blocked` is no
+      # longer a stage (no →blocked TaskEvent to count), this reads the DURABLE
+      # block marker: the qa_feedback Activities on the task, one per block round
+      # (QA rework, review bounce, env block with feedback). Keying on the marker
+      # instead of the vanished stage transition is the retros/insights fix.
+      def rework_rounds(task)
+        Activity.for_task(task).by_type("qa_feedback").count
       end
 
       # The reviewers, if discoverable. Canonical write is the submitted→reviewed

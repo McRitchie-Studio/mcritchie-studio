@@ -10,7 +10,7 @@ All agents communicate with McRitchie Studio via the JSON API at `/api/v1/`.
 3. `POST /api/v1/tasks/:slug/intent` — Optionally record an intended next stage or reviewer assignment
 4. Do the work
 5. `PATCH /api/v1/tasks/:slug` with `{ "stage": "submitted" }` — Hand the task to review
-6. OR `PATCH /api/v1/tasks/:slug` with `{ "stage": "blocked" }` plus a `qa_feedback` activity — Report rework, dependency, or environment blockers
+6. OR `PATCH /api/v1/tasks/:slug/block` with `{ "kind": "rework|dependency|environment", "by": "<agent>" }` plus a `qa_feedback` activity — Report a blocker. A block is a `building` ATTRIBUTE (blocked_at/blocked_from/blocked_by/block_kind), not a stage: the task stays on `building` and glows red until resumed (`bin/task block` is the CLI shortcut).
 
 ### Logging Activity
 After significant actions, agents should log activity:

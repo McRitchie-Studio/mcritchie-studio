@@ -117,11 +117,14 @@ module ReleaseNotes
     end
 
     # Line 1: "{app_emojis}   ·   {cost}", with "   ·   ⚠️" appended ONLY when the
-    # task is blocked (a clean task ends after the cost — no glyph). Line 2 (when
-    # shipped): "shipped {time}". Joined with a newline.
+    # task hit a block during its life (a clean task ends after the cost — no
+    # glyph). A block is a `building` attribute now, cleared when the task advances
+    # — so a shipped task's blocked_at is gone; the durable "was ever blocked"
+    # signal is the qa_feedback marker (#ever_blocked?). Line 2 (when shipped):
+    # "shipped {time}". Joined with a newline.
     def task_description(task)
       line1 = [app_emojis(task), task_cost(task)].join(FIELD_SEPARATOR)
-      line1 += "#{FIELD_SEPARATOR}#{BLOCKED_GLYPH}" if task.blocked_at.present?
+      line1 += "#{FIELD_SEPARATOR}#{BLOCKED_GLYPH}" if task.ever_blocked?
       lines = [line1]
       shipped = shipped_line(task)
       lines << shipped if shipped

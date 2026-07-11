@@ -8,16 +8,13 @@ class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
     Agent.create!(name: "Shannon", slug: "shannon")
     task = Task.create!(title: "system blocked actor task", stage: "submitted")
 
-    Current.task_event_actor = "shannon"
-    task.block!
-    Current.reset
+    # A block is a `building` attribute now — the blocker is the blocked_by column.
+    task.block!(by: "shannon", kind: "rework")
 
     visit task_path(task.slug)
 
     assert_selector "[data-test='stage-timeline']"
     assert_selector "[data-test='timeline-block'][data-stage='blocked'] [data-test='timeline-crew-member'][title^='Shannon']"
-  ensure
-    Current.reset
   end
 
   test "task timeline preserves historical mascots after a rework handoff" do
@@ -30,9 +27,12 @@ class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
                         metadata: { "devops" => { "session_id" => "sess-design" } })
     task.build!
     task.submit!
-    task.block!
-    task.update!(stage: "building",
-                 metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+    # Rework: block (a building attribute), resubmit, then a NEW session rebuilds —
+    # that fresh building transition swaps the current mascot to grimer.
+    task.block!(by: "avi", kind: "rework")
+    task.update!(stage: "submitted")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+    task.build!
 
     visit task_path(task.slug)
 

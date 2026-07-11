@@ -353,9 +353,17 @@ module StageAgentsHelper
   end
 
   def blocked_stage_agent(task, fallback, agents)
+    by_slug = Array(agents).index_by(&:slug)
+    # The blocker is the blocked_by COLUMN now (a block is a building attribute,
+    # not a →blocked TaskEvent). Fall back to a historical →blocked event actor
+    # (pre-migration tasks keep theirs), then to the task's mascot face.
+    if (blocker = task.blocked_by.presence)
+      return StageAgent.new(stage: "blocked", label: blocker, weight: nil,
+                            agent: resolve_actor_agent(blocker, by_slug))
+    end
+
     evt = Array(task.task_events).select { |event| event.transition? && event.to_stage == "blocked" }
                                  .max_by { |event| [event.occurred_at, event.id.to_i] }
-    by_slug = Array(agents).index_by(&:slug)
     agent = evt && (event_stage_agents(evt, by_slug, fallback).first)
     return agent if agent
     return StageAgent.new(stage: "blocked", agent: fallback) if fallback
@@ -515,6 +523,22 @@ module StageAgentsHelper
                         seconds: evt.seconds_in_from, agents: agents_for, model: evt.model,
                         tokens: evt.tokens_total, cost: evt.cost, source: evt.source,
                         live_since: nil, in_progress: false, backfilled: evt.backfilled?)
+    end
+
+    # A LIVE block is a `building` attribute now (no →blocked transition), so
+    # synthesize its timeline card from the block columns — the blocker (blocked_by)
+    # in a red "blocked" segment — instead of a plain in-progress building card.
+    if task.blocked?
+      blocker = blocked_stage_agent(task, mascot_agent, agents)
+      blocks << TimelineBlock.new(
+        event: nil, from_label: Task.active_stage_label("building"), to_label: "Blocked",
+        from_stage: task.blocked_from.presence || "building", to_stage: "blocked",
+        occurred_at: task.blocked_at, seconds: nil,
+        agents: blocker ? [blocker] : [], model: nil, tokens: nil, cost: nil, source: nil,
+        live_since: task.blocked_at, in_progress: true, backfilled: false
+      )
+      insert_evolution_card!(blocks, final_evolution(task, events: events))
+      return blocks
     end
 
     if (work = in_progress_work(task, by_slug, mascot_agent, intents))

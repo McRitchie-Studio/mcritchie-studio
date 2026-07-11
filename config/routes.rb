@@ -170,6 +170,10 @@ Rails.application.routes.draw do
       # bin/task, and the API). `comment` posts task-conversation activities.
       get :review_events
       post :comment
+      # Block/unblock are `building` ATTRIBUTE toggles (not stage moves) — the
+      # show-page Block/Resume controls, routed through Task#block!/#unblock!.
+      patch :block
+      patch :unblock
     end
     resource :sizing, only: [:show, :update]
   end
@@ -283,6 +287,9 @@ Rails.application.routes.draw do
           # Steffon QA started, Avi ship e2e started) — so the board + task timeline
           # show who's on it with a live ticker before the transition lands.
           post :intent
+          # Block is a `building` ATTRIBUTE, not a stage move — Task#block! stamps
+          # the block columns and lands the task on building (no →blocked stage).
+          patch :block
           post "review_events", to: "review_events#create", as: :review_events
           post "events/:stage/start", to: "task_events#start", as: :event_start
           post "events/:stage/complete", to: "task_events#complete", as: :event_complete
