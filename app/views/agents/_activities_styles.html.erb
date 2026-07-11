@@ -31,14 +31,25 @@
      columns DON'T re-measure (and jump the whole table) when an activity expands and
      its actions bring differently-sized content. Activity is the one unsized column,
      so it absorbs all the slack. Mobile switches back to auto (see the media block). */
-  #alex-heartbeat table.aa-tbl { border-collapse:collapse; width:100%; min-width:1140px; font-size:12.5px; table-layout:fixed; }
-  #alex-heartbeat table.aa-tbl thead th { position:sticky; top:0; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 12px; border-bottom:1px solid var(--hb-line); white-space:nowrap; z-index:3; }
+  /* Header rules are declared for TWO contexts: the table inside #alex-heartbeat
+     AND the engine sticky-header clone (.sticky-table-header-clone), which is
+     appended to document.body OUTSIDE the section — ID-scoped rules and the
+     section's --hb-* vars don't reach it. The vars rule below mirrors the three
+     header tokens from heartbeat/_styles.html.erb's #alex-heartbeat block. */
+  .sticky-table-header-clone table.aa-tbl { --hb-panel2:#1c2330; --hb-line:#2a3240; --hb-muted:#8b949e; }
+  #alex-heartbeat table.aa-tbl, .sticky-table-header-clone table.aa-tbl { border-collapse:collapse; width:100%; min-width:1140px; font-size:12.5px; table-layout:fixed; }
+  /* Pinning is owned by the engine's sticky-table-header enhancer (it clones the
+     thead and offsets by --nav-h); a computed position:sticky here would make the
+     enhancer's already-sticky guard skip the table. position:static neutralizes
+     the shared heartbeat/_styles rule (#alex-heartbeat thead th) that still
+     applies on this page. */
+  #alex-heartbeat table.aa-tbl thead th, .sticky-table-header-clone table.aa-tbl thead th { position:static; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 12px; border-bottom:1px solid var(--hb-line); white-space:nowrap; }
   #alex-heartbeat table.aa-tbl tbody td { padding:9px 12px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
-  #alex-heartbeat .aa-th-chev { width:26px; padding-left:10px !important; padding-right:0 !important; }
-  #alex-heartbeat .aa-th-agent { width:212px; }
-  #alex-heartbeat .aa-th-cost { width:118px; }
-  #alex-heartbeat .aa-th-details { width:232px; }
-  #alex-heartbeat .aa-th-grade { width:150px; }
+  #alex-heartbeat .aa-th-chev, .sticky-table-header-clone .aa-th-chev { width:26px; padding-left:10px !important; padding-right:0 !important; }
+  #alex-heartbeat .aa-th-agent, .sticky-table-header-clone .aa-th-agent { width:212px; }
+  #alex-heartbeat .aa-th-cost, .sticky-table-header-clone .aa-th-cost { width:118px; }
+  #alex-heartbeat .aa-th-details, .sticky-table-header-clone .aa-th-details { width:232px; }
+  #alex-heartbeat .aa-th-grade, .sticky-table-header-clone .aa-th-grade { width:150px; }
 
   /* Activity (primary) rows sit on the panel; hover lifts to panel2; the category
      accent rides the left edge. */
@@ -203,10 +214,11 @@
     /* Auto layout on mobile: table-layout:fixed mis-reserves width for the display:none
        columns and over-squeezes Activity; capping the wide cell children to vw fractions
        keeps the auto table within the viewport (the goal ellipsizes) instead. */
-    #alex-heartbeat table.aa-tbl { min-width:0; width:100%; table-layout:auto; }
+    #alex-heartbeat table.aa-tbl, .sticky-table-header-clone table.aa-tbl { min-width:0; width:100%; table-layout:auto; }
     #alex-heartbeat .aa-keycmd .hb-keycode { max-width:42vw; }
-    /* Priority columns: keep Agent + Activity; collapse Cost/Details/grades. */
-    #alex-heartbeat .aa-collapsible { display:none !important; }
+    /* Priority columns: keep Agent + Activity; collapse Cost/Details/grades.
+       Mirrored to the engine sticky clone so its header matches on mobile. */
+    #alex-heartbeat .aa-collapsible, .sticky-table-header-clone .aa-collapsible { display:none !important; }
     /* The detail panel opens together with the raw actions on a row tap (x-show="open"),
        no separate toggle — the operator asked for a single tap-to-open. On mobile the
        row's shown display is table-row (x-show toggles the inline display:none). */
