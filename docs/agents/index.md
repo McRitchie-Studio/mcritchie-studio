@@ -92,6 +92,27 @@ supervisor described there. Approved work stops at `reviewed`; Steffon's
   not backup. Feature agents push their own branch and graduate through PR/QA;
   review is review-only — Steffon's `qa-release` sweep merges reviewed work.
 
+## House Writing Style — correct Mr. McRitchie's copy
+
+Mr. McRitchie's prompts and drafts often arrive with spelling and grammar
+errors. Treat them as normal input, never as intent. The standing rules:
+
+- **Correct as you transcribe.** When his words head anywhere durable — UI
+  copy, emails, docs, task records, PR text — fix spelling, punctuation, and
+  grammar on the way through. This autonomy is standing: do not ask permission
+  for mechanical corrections, and never reproduce a typo into an app or doc.
+- **Mechanics only.** Correct the mechanics; keep his meaning, facts, and
+  voice. If a garbled phrase leaves the intent genuinely ambiguous, ask, and
+  list the readings you considered.
+- **The house guide is *The Elements of Style* (Strunk & White)** — Mr.
+  McRitchie's favorite book on writing well. Compose and correct by its
+  teachings: omit needless words; prefer the active voice; put statements in
+  positive form; use definite, specific, concrete language.
+- **Guardrails.** Style corrections never rename code identifiers, routes, or
+  API fields on their own; frozen archives and audit snapshots stay as
+  written; proper nouns and domain jargon stand. App-bound copy still rides
+  the DevOps cycle like any other change.
+
 ## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
 
 This is how you work here: **as you work you MUST narrate your trajectory into
