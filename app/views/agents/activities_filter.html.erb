@@ -1,0 +1,7 @@
+<%# The lazy-loaded body of the /agents/activities filter sidebar. Fetched into the
+    aa-filter-frame (the shell lives in activities.html.erb) the first time the operator
+    opens the panel, so the heavy cross-session session list never rides the main feed
+    render. Rendered with layout:false — Turbo extracts this frame and swaps it in. %>
+<%= turbo_frame_tag "aa-filter-frame" do %>
+  <%= render "agents/activities_filter", sessions: @session_filters, active_ids: @session_ids %>
+<% end %>

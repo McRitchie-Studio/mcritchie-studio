@@ -70,4 +70,12 @@ class AgentsActivitiesFilterTest < ActionView::TestCase
     # server-rendered fallback is the total; Alpine swaps in the live filtered count
     assert_select "[x-text=filteredSessions]", text: "2"
   end
+
+  test "[component] each session row targets the feed frame so a click filters the whole feed" do
+    render_filter [session(id: "sess-a", name: "Pikachu", last_at: 1.minute.ago)]
+
+    # the sidebar body lives in the lazy aa-filter-frame; its toggle links must break out to
+    # the feed frame so a click reloads the whole filtered feed, not just the sidebar.
+    assert_select "a[data-test=aa-filter-session][data-turbo-frame=aa-activities-frame]"
+  end
 end

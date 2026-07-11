@@ -12,8 +12,9 @@ class AgentsController < ApplicationController
   # all sessions, newest-first, with its drilled-down raw actions (also newest-first)
   # and inline Alex/McRitchie grade cells on BOTH. An optional ?sessions= (comma list
   # or array) narrows to a multi-select of Pokémon sessions (blank = every session);
-  # @session_filters feeds the slide-in filter sidebar. Read-only — grading POSTs to
-  # the existing heartbeat grade endpoints.
+  # @active_session_chips feeds the top active-filter row (selected sessions only), while
+  # the full session list the sidebar shows lazy-loads via #activities_filter. Read-only —
+  # grading POSTs to the existing heartbeat grade endpoints.
   def activities
     @session_ids = parse_session_ids(params[:sessions])
     @page  = [params[:page].to_i, 1].max
@@ -38,7 +39,11 @@ class AgentsController < ApplicationController
     chronological = page_actions.sort_by { |a| [a.occurred_at || Time.at(0), a.seq.to_i, a.id] }
     @shared_turn_ids = helpers.heartbeat_shared_turn_ids(chronological)
 
-    @session_filters = session_filter_options(@session_ids)
+    # Only the SELECTED sessions' chip data (name + primary-type colour) — a cheap,
+    # id-scoped lookup for the active-filter row at the top. The full cross-session
+    # session list the sidebar shows lazy-loads via #activities_filter, so its heavy
+    # scan never rides this render.
+    @active_session_chips = @session_ids.any? ? selected_session_chips(@session_ids) : []
     @pokemon_by_slug = pokemon_lookup(page_actions, @activities)
     @agents_by_slug  = agent_soul_lookup(@activities)
     @activity_grades = activity_grade_lookup(@activities)
@@ -46,6 +51,16 @@ class AgentsController < ApplicationController
     @stage_transitions = stage_transitions_for(@activities)
     @has_prev = @page > 1
     @has_next = @page * ACTIVITIES_PER_PAGE < @total
+  end
+
+  # The heavy session list behind the /agents/activities filter sidebar — lazy-loaded
+  # into the aa-filter-frame the first time the operator opens the panel (and re-loaded
+  # when the feed re-renders under a new filter), so its full cross-session scan stays
+  # OFF the main #activities render. Renders just the frame, no page chrome.
+  def activities_filter
+    @session_ids = parse_session_ids(params[:sessions])
+    @session_filters = session_filter_options(@session_ids)
+    render layout: false
   end
 
   def index

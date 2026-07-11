@@ -8,6 +8,7 @@
     if (window.__aaLiveFx) return;
     window.__aaLiveFx = true;
     var FLASH_MS = 900;
+    var PULSE_MS = 8000; // count-pulse hold(4s)+fade(4s), matches @keyframes aa-count-pulse
     document.addEventListener("turbo:before-stream-render", function (event) {
       var stream = event.target;
       if (!stream || typeof stream.getAttribute !== "function") return;
@@ -17,6 +18,14 @@
       if (!target || !/^aa-(activity|action)-\d+$/.test(target)) return;
       var original = event.detail.render;
       event.detail.render = function (streamElement) {
+        // Capture the pre-render action count so the pulse fires ONLY on a real new action
+        // (an activity-only update — e.g. a close — leaves the count unchanged, stays quiet).
+        var prevCount = null;
+        var before = document.getElementById(target);
+        if (before) {
+          var pc = before.querySelector(".aa-count");
+          if (pc) prevCount = pc.textContent;
+        }
         original(streamElement);
         var el = document.getElementById(target);
         if (!el) return;
@@ -24,6 +33,21 @@
         void el.offsetWidth; // force reflow so the animation restarts on re-update
         el.classList.add("aa-flash");
         setTimeout(function () { el.classList.remove("aa-flash"); }, FLASH_MS);
+
+        // When the action count actually changed, pulse it bold+bright then fade — so the
+        // operator's eye catches the incremented "N actions", not just the row wash. Covers
+        // the desktop end-row count and the mobile detail count (both .aa-count).
+        var counts = el.querySelectorAll(".aa-count");
+        if (prevCount !== null && counts.length && counts[0].textContent !== prevCount) {
+          for (var i = 0; i < counts.length; i++) {
+            (function (node) {
+              node.classList.remove("aa-count-pulse");
+              void node.offsetWidth; // restart the animation on a rapid re-update
+              node.classList.add("aa-count-pulse");
+              setTimeout(function () { node.classList.remove("aa-count-pulse"); }, PULSE_MS);
+            })(counts[i]);
+          }
+        }
       };
     });
   })();

@@ -154,7 +154,14 @@
         });
         return count;
       },
-      openFilter() { this.filterOpen = true; },
+      openFilter() {
+        this.filterOpen = true;
+        // The session list lazy-loads into aa-filter-frame. loading="lazy" fires when the
+        // frame becomes visible, but nudge it to eager on open too so the panel is never
+        // empty regardless of IntersectionObserver timing (Turbo no-ops if already loaded).
+        var frame = document.getElementById("aa-filter-frame");
+        if (frame && frame.getAttribute("src")) frame.setAttribute("loading", "eager");
+      },
       closeFilter() {
         this.filterOpen = false;
         var toggle = document.querySelector('[data-test="aa-filter-toggle"]');
