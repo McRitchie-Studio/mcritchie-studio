@@ -46,7 +46,7 @@
   <% end %>
 
   <%# Proprietary Pass + Run letter grades — show the one matching the scheme,
-      both when no scheme is in play (e.g. team grades page) %>
+      or both when no scheme is in play (e.g. team grades page) %>
   <%
     mode_local = local_assigns.fetch(:mode, nil)
     scheme = case mode_local

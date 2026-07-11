@@ -34,7 +34,7 @@
         <div class="relative h-5 min-w-0 flex-1">
           <div class="absolute inset-y-0 left-0 rounded-[4px]"
                style="width: <%= pct %>%; background-color: <%= colors[stage[:key]] %>;"
-               title="<%= stage[:label] %>: <%= release_duration_label(average_seconds) %> average over <%= averages["sample_count"].to_i %>"></div>
+               title="<%= stage[:label] %>: <%= release_duration_label(average_seconds) %> average over <%= averages["sample_count"].to_i %> releases"></div>
           <span class="absolute inset-y-0 left-0 flex items-center pl-2 text-[11px] font-medium text-white"
                 style="text-shadow: 0 1px 2px rgba(0,0,0,0.45);"><%= stage[:label] %></span>
         </div>
