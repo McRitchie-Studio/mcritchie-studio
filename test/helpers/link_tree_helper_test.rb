@@ -24,6 +24,25 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
+  test "admin sidebar includes the Activities feed link" do
+    self.admin_enabled = true
+
+    links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
+    activities = links.find { |link| link[:label] == "Activities" }
+
+    assert activities, "expected an Activities link in the admin sidebar"
+    assert_equal "🎭", activities[:emoji]
+    assert_equal "/agents/activities", activities[:href]
+  end
+
+  test "public (non-admin) sidebar omits the Activities admin link" do
+    self.admin_enabled = false
+
+    links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
+
+    refute links.any? { |link| link[:label] == "Activities" }
+  end
+
   private
 
   attr_accessor :admin_enabled
@@ -53,6 +72,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_email_images_path = "/admin/email_images"
   def toast_test_path = "/toast_test"
   def admin_tiktok_connect_path = "/admin/tiktok/connect"
+  def activities_agents_path = "/agents/activities"
   def admin_ai_builder_multiple_path = "/admin/ai_builder_multiple"
   def workflow_news_index_path = "/news/workflow"
   def merge_people_path = "/people/merge"
