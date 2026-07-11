@@ -140,10 +140,6 @@ module ReviewEventsHelper
     reviewer&.name.presence || "Unassigned"
   end
 
-  def review_agent_avatar_record(reviewer)
-    reviewer&.agent || reviewer
-  end
-
   def latest_review_reviewer_records(task)
     Array(task.task_events.chronological.reverse).each do |event|
       reviewers = Task.normalize_reviewers(event.metadata["reviewers"])
