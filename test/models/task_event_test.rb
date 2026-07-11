@@ -111,20 +111,22 @@ class TaskEventTest < ActiveSupport::TestCase
                         metadata: { "devops" => { "session_id" => "sess-design" } })
     task.build!
     task.submit!
-    task.block!
-    task.update!(stage: "building",
-                 metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+    task.block!(by: "steffon", kind: "rework") # submitted → building (a block is a building attribute now)
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "session_id" => "sess-rework" }))
+    task.submit! # rework fixed under the new session: building → submitted
 
     transitions = task.task_events.transitions.chronological.to_a
-    designed, first_build, submitted, blocked, rework_build = transitions
+    designed, first_build, submitted, blocked, rework_submit = transitions
 
     assert_equal "dewgong", designed.metadata.dig("mascot", "slug")
     assert_equal "dewgong", first_build.metadata.dig("mascot", "slug")
     assert_equal "dewgong", submitted.metadata.dig("mascot", "slug")
-    # Deploy/side stages bake too now (the evolution gates need history to keep
-    # each card's form) — the block card keeps the mascot that hit the blocker.
+    # A block is now a submitted→building transition (no `blocked` stage); the
+    # block card keeps the mascot that hit the blocker.
+    assert_equal "building", blocked.to_stage
     assert_equal "dewgong", blocked.metadata.dig("mascot", "slug")
-    assert_equal "grimer", rework_build.metadata.dig("mascot", "slug")
+    # The rework resubmit under the new session bakes that session's mascot.
+    assert_equal "grimer", rework_submit.metadata.dig("mascot", "slug")
   end
 
   test "a transition does not inherit the claimant session as the actor" do
