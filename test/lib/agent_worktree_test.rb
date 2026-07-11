@@ -110,6 +110,40 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "false", out
   end
 
+  # --- reclaim guard: task_live_claimed? (devops-shift-lease follow-up) -------
+  # The pure liveness decision (ClaimLease) over the task's devops claim, with the
+  # board read (task_record_for_pr) stubbed. A LIVE claim protects the desk; a lapsed,
+  # missing, or unreadable claim fails open (reclaimable).
+
+  def live_claimed(devops_ruby)
+    run_in_script(<<~RUBY)
+      def task_record_for_pr(_r); { "metadata" => { "devops" => #{devops_ruby} } }; end
+      print task_live_claimed?({})
+    RUBY
+  end
+
+  def test_task_live_claimed_true_for_a_non_expired_claim
+    assert_equal "true",
+                 live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2099-01-01T00:00:00Z" })),
+                 "a builder actively renewing its claim protects the desk"
+  end
+
+  def test_task_live_claimed_false_for_a_lapsed_claim
+    assert_equal "false",
+                 live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2000-01-01T00:00:00Z" })),
+                 "a crashed/closed builder's lease has lapsed → reclaimable"
+  end
+
+  def test_task_live_claimed_false_for_an_unclaimed_or_unreadable_task
+    assert_equal "false", live_claimed("{}"), "no claim → reclaimable"
+    # a board read that returns nothing usable fails open too
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r); {}; end
+      print task_live_claimed?({})
+    RUBY
+    assert_equal "false", out, "an unbound task / unreachable board is not a live claim"
+  end
+
   # --- integration: the REAL mcritchie config carries the reservation through
   #     the merge, and allocate_port honours it end-to-end ----------------------
 

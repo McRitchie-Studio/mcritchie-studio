@@ -34,6 +34,7 @@ require "yaml"
 # to main). Pure Ruby with no Rails deps — the same `require_relative` shape
 # bin/release uses to pull in Release::ShipSequence (its detect-side complement).
 require_relative "../app/models/release/restore_primary"
+require_relative "../lib/claim_lease"
 require_relative "lib/projects_root"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
@@ -1950,7 +1951,13 @@ rescue Errno::EACCES, Errno::EPERM => e
 end
 
 def cleanup_candidates(app = nil)
-  stack_records(app).select { |record| cleanup_ready?(record) }
+  # A candidate must be git-eligible (clean + landed on base) AND not held by a live
+  # builder: cleanup_ready? is pure git state; task_live_claimed? is the external
+  # signal that a builder is actively on the desk (a fresh worktree looks git-identical
+  # to merged work — only the live claim tells them apart). The claim check runs ONLY
+  # for the few git-eligible candidates, so it costs a board read per candidate at most,
+  # never per worktree.
+  stack_records(app).select { |record| cleanup_ready?(record) && !task_live_claimed?(record) }
 end
 
 def ledger_path
@@ -2272,6 +2279,23 @@ def task_devops_for_pr(task_record)
   metadata = task_record.is_a?(Hash) ? task_record["metadata"] : nil
   devops = metadata.is_a?(Hash) ? metadata["devops"] : nil
   devops.is_a?(Hash) ? devops : {}
+end
+
+# True when this worktree's bound task holds a LIVE build-claim lease — a builder is
+# actively on it (its status line is renewing the claim under the ClaimLease TTL). Such
+# a desk must NEVER be reclaimed: a fresh worktree and a fast-forward-merged one are
+# git-identical (clean, HEAD==base, 0-ahead), so no git signal separates the builder who
+# just sat down from completed work — the live CLAIM is the signal that does. Reuses the
+# same board read as the PR autofill (task_record_for_pr): the AGENT_WORKTREE_TASK_JSON
+# override in tests, else `bin/task show --json`, and {} on any failure. FAIL-OPEN by
+# design — an unbound task, an unreachable board, or a lapsed claim all yield false
+# (reclaimable), so a telemetry hiccup never wedges cleanup; only a confirmed live claim
+# protects. Best-effort/never raises.
+def task_live_claimed?(record)
+  devops = task_devops_for_pr(task_record_for_pr(record))
+  ClaimLease.live?(devops)
+rescue StandardError
+  false
 end
 
 def list_from_task_devops(devops, key)

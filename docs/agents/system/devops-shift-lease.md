@@ -46,31 +46,35 @@ The lane is a role, not an act, so a single Avi session that runs `pr-review` th
 `production-deploy` holds `avi` across both (a re-`acquire` by the same instance is a
 no-op renew).
 
-## D — the reclaim guard (conductor ↔ builder), a FOLLOW-UP
+## D — the reclaim guard (conductor ↔ builder)
 
 A is conductor↔conductor. The builder half — `bin/agent-worktree cleanup --reclaim`
-reclaimed a builder's **fresh** worktree out from under them — is deferred to a
-follow-up task, because the obvious local heuristic does not actually work:
+reclaimed a builder's **fresh** worktree out from under them. The tempting local
+heuristic does **not** work:
 
 > A brand-new branch off `release` and a branch whose work was **fast-forward merged**
 > onto `release` are **git-identical**: both are clean, both have HEAD == base, both
-> are 0-ahead. A `HEAD == base` test (the tempting `git_head_at_base?`) can't tell a
-> fresh desk from a done-and-merged one — and the existing cleanup tests correctly
-> assert a merged-at-base worktree **is** reclaimable. So no git-state signal
-> distinguishes them.
+> are 0-ahead. A `HEAD == base` test (`git_head_at_base?`) can't tell a fresh desk from
+> a done-and-merged one — and the cleanup tests correctly assert a merged-at-base
+> worktree **is** reclaimable. So no git-state signal distinguishes them.
 
 The correct discriminator is **external**: the worktree's task carries a live
 build-claim lease (`ClaimLease.live?`) while a builder is on it, and is
-terminal/unclaimed once shipped. The proper guard reads that (a board lookup per
-candidate) and skips a worktree whose task is live-claimed. That is the same lease
-this feature already relies on — see **D (reclaim guard)** below in follow-ups.
+terminal/unclaimed once shipped — the **same lease** A uses. `cleanup_candidates` now
+excludes a git-eligible worktree whose bound task is live-claimed (`task_live_claimed?`,
+reading the task's `devops` claim via the same board seam as the PR autofill,
+`task_record_for_pr`). **Fail-open:** an unbound task, an unreachable board, or a lapsed
+claim all yield reclaimable, so cleanup never wedges; only a confirmed live claim
+protects. The claim check runs only for the few git-eligible candidates. Task
+`reclaim-guard-live-claim`.
+
+The **merge** half is a no-op by construction: `bin/release` merges only
+`reviewed`/`assembled` tasks, whose build claims have already lapsed (the status line
+renews only while `building`), so a live-building task never reaches the merge path —
+the stage gate already prevents it.
 
 ## Follow-ups (separate tasks)
 
-- **D (reclaim guard)** — `cleanup --reclaim` / merge skips a worktree whose task has
-  a live `ClaimLease` (a builder is on it). The `HEAD == base` heuristic can't tell a
-  fresh desk from a fast-forward-merged one; the live claim can. Board-lookup per
-  candidate, fail-open when the board is unreachable.
 - **C** — enforce the global concurrency budget (make the ≤5 / PG-20-conn cap real).
 - **Per-act lanes** — the lease is keyed by an arbitrary string; splitting `avi` into
   `review`/`ship` is a caller-side config flip, no model change.

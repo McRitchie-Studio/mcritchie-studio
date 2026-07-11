@@ -451,6 +451,52 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes ledger, "bin/agent-worktree remove mcritchie-studio terminal-context --yes"
   end
 
+  # --- reclaim guard: a live-claimed builder desk is never a candidate -------
+  # A fresh worktree and a fast-forward-merged one are git-identical (clean, HEAD==base,
+  # 0-ahead), so only the task's LIVE build-claim (ClaimLease) tells a builder-on-it desk
+  # from finished work. The claim is read from the same seam as the PR autofill —
+  # AGENT_WORKTREE_TASK_JSON here stands in for the board's task record.
+  LIVE_CLAIM_JSON = JSON.generate(
+    "metadata" => { "devops" => { "claimed_session" => "sess-live", "claim_expires_at" => "2099-01-01T00:00:00Z" } }
+  ).freeze
+  LAPSED_CLAIM_JSON = JSON.generate(
+    "metadata" => { "devops" => { "claimed_session" => "sess-old", "claim_expires_at" => "2000-01-01T00:00:00Z" } }
+  ).freeze
+
+  test "[integration] cleanup does NOT list a live-claimed worktree as a candidate" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: command_env("AGENT_WORKTREE_TASK_JSON" => LIVE_CLAIM_JSON))
+
+    assert status.success?, err
+    assert_includes out, "no clean merged or base-equivalent worktree candidates",
+                    "a desk a builder is live-claiming must never be a reclaim candidate"
+    refute_includes out, "cleanup candidates:"
+  end
+
+  test "[integration] reclaim skips a live-claimed worktree" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => LIVE_CLAIM_JSON))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "no clean merged or base-equivalent worktrees to release"
+    refute_includes out, "reclaim candidates:"
+  end
+
+  test "[integration] a LAPSED claim does not protect — the merged worktree stays a candidate" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: command_env("AGENT_WORKTREE_TASK_JSON" => LAPSED_CLAIM_JSON))
+
+    assert status.success?, err
+    assert_includes out, "cleanup candidates:",
+                    "fail-open: an expired claim (a closed/crashed builder) is not live, so cleanup proceeds"
+  end
+
   # --- remove --force (merge-verified) --------------------------------------
 
   # [unit] The pure decision force_clears_content_blocker? loaded as a library in
