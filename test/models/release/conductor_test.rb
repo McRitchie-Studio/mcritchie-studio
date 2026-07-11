@@ -174,6 +174,20 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "assembled", rel.reload.state
   end
 
+  test "[unit] qa_green! revives tested_at — stamped once, first-write-wins" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    assert_nil rel.reload.tested_at, "tested_at is blank until QA green"
+
+    Release::Conductor.qa_green!(rel)
+    stamped = rel.reload.tested_at
+    refute_nil stamped, "qa_green! stamps the release's QA-tested moment"
+
+    # First-write-wins like the other release stage stamps: a re-run never moves it.
+    Release::Conductor.qa_green!(rel.reload)
+    assert_equal stamped, rel.reload.tested_at, "tested_at is first-write-wins"
+  end
+
   test "[unit] a QA failure flips nothing — members stay reviewed for the next self-healing run" do
     t = reviewed_task
     rel = Release::Conductor.sweep!(t)

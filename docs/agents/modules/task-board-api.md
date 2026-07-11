@@ -460,9 +460,10 @@ terminal context and PR bodies can lead from the task record.
 
 ## Stages
 
-Eight stages (`Task::STAGES`):
+Seven stages (`Task::STAGES`):
 `designed` → `building` → `submitted` → `reviewed` → `assembled` → `shipped`,
-plus `blocked` and `archived`.
+plus `archived`. `blocked` is **no longer a stage** — it's an ATTRIBUTE of a
+`building` task (`blocked_at`/`blocked_from`/`blocked_by`/`block_kind`).
 
 There are no named transition endpoints. Move stages with a raw update:
 
@@ -473,6 +474,15 @@ PATCH /api/v1/tasks/:slug   { "stage": "submitted" }
 Stage is also directly settable on create/update; transitions are **not**
 guarded by a state machine, so any stage can be set to any value (only validated
 against `Task::STAGES`). Follow the documented stage policy by convention.
+
+## Timeline inspection views
+
+Two read-only Postgres views project the task/release timestamps in logical
+progress order (not the alphabetized physical column order) for `psql` / DB-browser
+inspection: **`task_timeline`** (per task) and **`release_timeline`** (per
+release). They're created by a plain `execute "CREATE VIEW …"` migration and —
+because a raw `CREATE VIEW` does NOT dump to the `:ruby` `schema.rb` — are absent
+from a fresh `db:schema:load` (test/CI); treat them as operator-inspection-only.
 
 ## Stage-change event trail
 

@@ -250,6 +250,30 @@ Do not skip `assembled` for user-facing app changes. Do not move a task to
 `shipped` for production work until production has actually deployed and the
 post-deploy check has passed.
 
+## Timeline Inspection Views
+
+Two read-only Postgres views project the pipeline timestamps in **logical
+progress order** (the physical column order is alphabetical — a past rebuild —
+and Postgres can't reorder in place), so `psql` / a DB browser reads a task or
+release lifecycle left-to-right instead of hunting alphabetized columns:
+
+- **`task_timeline`** — per task: `slug, title, stage, blocked_at, blocked_by →
+  created_at, updated_at → queued_at, sizes_revealed_at, started_at →
+  g1_testing_started_at, g1_testing_finished_at, g1_failed_at → submitted_at,
+  reviewed_at, assembled_at, completed_at, archived_at → gates_cached_at,
+  testing_phases_cached_at`.
+- **`release_timeline`** — per release: `slug, state → created_at, updated_at →
+  testing_started_at, tested_at → assembling_started_at, assembled_at →
+  qa_deploy_started_at, qa_deployed_at → confirming_started_at, confirmed_at →
+  prod_deploy_started_at, shipped_at → abandoned_at, release_notes_sent_at,
+  duration_metrics_cached_at`.
+
+Created by a plain `execute "CREATE VIEW …"` migration. **Caveat:** with the
+`:ruby` schema format a raw `CREATE VIEW` does NOT dump to `schema.rb`, so a fresh
+`db:schema:load` (test/CI databases) will NOT have them — they are
+operator-inspection-only; don't back a model or suite assertion on their
+existence in every environment.
+
 ## Task Metadata Contract
 
 Tasks carry DevOps metadata in `tasks.metadata["devops"]`. The UI exposes these

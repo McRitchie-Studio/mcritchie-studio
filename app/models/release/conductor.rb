@@ -116,6 +116,12 @@ class Release
           Current.with_task_event_usage(usage_by_slug[task.slug]) { task.assemble! }
         end
         assemble!(release)
+        # Revive `tested_at`: reaching qa_green! IS the QA-green verdict (the
+        # g3_candidate gate closes green right after this call), so stamp the
+        # release's "QA tested" moment — the `tested` node of the release timeline.
+        # First-write-wins like the other release stage stamps (a re-run of a
+        # green sweep never moves it).
+        release.update!(tested_at: Time.current) unless release.tested_at
         # Stamp Live-on-QA (deploy_qa:completed → `qa_deployed`) HERE — atomic
         # with the member flip — so the /deployments tracker only reaches "Live
         # on QA" green once the members are ACTUALLY `assembled`. bin/release used
