@@ -2,7 +2,7 @@
 
 > Generalize the one-off mainnet `initialize` signing page into a reusable
 > admin tool: **sign an arbitrary on-chain instruction with a human's Phantom
-> key, without ever exporting the key.** Home: mcritchie-studio (defacto admin
+> key, without ever exporting the key.** Home: mcritchie-studio (de facto admin
 > app). Proven pattern: the 2026-06-02 turf-vault mainnet initialize.
 
 ## Why this exists

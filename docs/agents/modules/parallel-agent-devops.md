@@ -98,7 +98,7 @@ Default feature sessions are Feature lane only.
    McRitchie Studio task slug/URL on the worktree. The command blocks unbound
    worktrees so PR review always leads back to the task board.
 
-10. **Handoff** the PR/QA packet by moving the task to `submitted`. The PR
+10. **Hand off** the PR/QA packet by moving the task to `submitted`. The PR
    body and final handoff should lead with the task URL, and the task should
    link back to the PR. Add a task conversation `handoff` note summarizing what
    changed, what was verified, and what Avi should inspect first. Do not merge
