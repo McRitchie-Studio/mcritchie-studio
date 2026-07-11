@@ -836,8 +836,12 @@ class ApplicationHelperTest < ActionView::TestCase
     assert html.html_safe?
 
     # both branches of an or-transition get badged
-    both = devops_next_html("→ reviewed, or sends it back blocked for rework")
+    both = devops_next_html("→ reviewed, or → assembled after that")
     assert_equal 2, both.scan("<span").size
+
+    # "blocked" is a building ATTRIBUTE now, not a stage, so it stays plain text
+    attr = devops_next_html("sends it back blocked for rework")
+    assert_not_includes attr, "<span"
 
     # false positives: "build" in a flag and "blocked_from" must stay plain text
     plain = devops_next_html("passes dor-check --gate build; records blocked_from")

@@ -7,7 +7,10 @@ tasks_data = [
   { title: "Prepare production release train",      stage: "assembled", priority: 2, agent_slug: "alex",         description: "Merged into the current release branch; riding the train to QA." },
   { title: "Deploy Turf Monster v2.1",             stage: "shipped",   priority: 2, agent_slug: "mason",        description: "Shipped with long-press button and cart improvements." },
   { title: "Archive stale Q1 tasks",               stage: "archived",  priority: 0, agent_slug: nil,            description: "Clean up completed tasks from Q1 2026." },
-  { title: "Fix mobile cart persistence bug",      stage: "blocked",   priority: 2, agent_slug: "turf-monster", description: "Cart picks disappear on mobile Safari after backgrounding the app.", error_message: "localStorage quota exceeded on iOS Safari private browsing", block_kind: "environment" }
+  # A block is a `building` ATTRIBUTE now (not a stage): this card rides the
+  # Building column with a red glow, carrying blocked_at/blocked_from/blocked_by/
+  # block_kind columns.
+  { title: "Fix mobile cart persistence bug",      stage: "building",  priority: 2, agent_slug: "turf-monster", description: "Cart picks disappear on mobile Safari after backgrounding the app.", error_message: "localStorage quota exceeded on iOS Safari private browsing", block_kind: "environment", blocked_by: "steffon" }
 ]
 
 tasks_data.each do |data|
@@ -17,7 +20,6 @@ tasks_data.each do |data|
     t.priority = data[:priority]
     t.agent_slug = data[:agent_slug]
     t.error_message = data[:error_message]
-    t.metadata = { "devops" => { "block_kind" => data[:block_kind] } } if data[:block_kind]
 
     case data[:stage]
     when "building"  then t.started_at = 3.hours.ago
@@ -25,11 +27,21 @@ tasks_data.each do |data|
     when "reviewed"  then t.started_at = 2.days.ago; t.submitted_at = 1.day.ago; t.reviewed_at = 4.hours.ago
     when "assembled" then t.started_at = 3.days.ago; t.submitted_at = 2.days.ago; t.reviewed_at = 1.day.ago; t.assembled_at = 2.hours.ago
     when "shipped"   then t.started_at = 4.days.ago; t.completed_at = 1.day.ago
-    when "blocked"   then t.started_at = 1.day.ago;  t.blocked_at = 6.hours.ago; t.blocked_from = "building"
     when "archived"  then t.archived_at = 1.week.ago
     end
+
+    # A LIVE block: a `building` task carrying the block columns. Setting blocked_at
+    # here makes set_stage_timestamp skip the build-claim stamp (it's not a fresh
+    # claim), so the seeded started_at is preserved.
+    if data[:block_kind]
+      t.block_kind = data[:block_kind]
+      t.blocked_by = data[:blocked_by]
+      t.started_at = 1.day.ago
+      t.blocked_at = 6.hours.ago
+      t.blocked_from = "submitted"
+    end
   end
-  puts "Task: #{task.title} (#{task.stage})"
+  puts "Task: #{task.title} (#{task.stage})#{task.blocked? ? " [blocked]" : ""}"
 end
 
 # --- Board visual-state enrichment ---------------------------------------------
