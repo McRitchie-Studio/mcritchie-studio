@@ -99,7 +99,43 @@ module Api
         head :no_content
       end
 
+      # GET /api/v1/agent_activities/windows?session_id=X
+      #
+      # The session's activity windows (id, agent lane, opened_at, closed_at, seq)
+      # in chronological order — the input the local fan-out reconciler needs to
+      # attribute each CHILD subagent transcript's spend to the activity that
+      # authored it. Read-only; empty list for an unknown session (never an error).
+      def windows
+        render_data(AgentActivity.usage_windows(windows_params[:session_id]))
+      end
+
+      # POST /api/v1/agent_activities/reconcile
+      #
+      # Stamp the fan-out reconciler's computed per-activity usage. Body:
+      #   { session_id, usages: [ { activity_id, model, tokens_in, tokens_out,
+      #                             cache_read_tokens, cost }, … ] }
+      # Each usage is applied to its activity ONLY within this session (a token can
+      # never patch another session's rows). Returns the count stamped; a 204 no-op
+      # when nothing matched (telemetry must not surface as a failure).
+      def reconcile
+        count = AgentActivity.apply_reconciled_usage!(
+          session_id: reconcile_params[:session_id],
+          usages:     reconcile_params[:usages] || []
+        )
+        return head :no_content if count.zero?
+
+        render_data({ reconciled: count }, status: :ok)
+      end
+
       private
+
+      def windows_params
+        params.permit(:session_id)
+      end
+
+      def reconcile_params
+        params.permit(:session_id, usages: %i[activity_id model tokens_in tokens_out cache_read_tokens cost])
+      end
 
       def turn_open_params
         params.permit(

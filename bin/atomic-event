@@ -54,6 +54,7 @@
 require "json"
 require "fileutils"
 require_relative "../lib/agent_session_usage"
+require_relative "../lib/agent_fanout_usage"
 require_relative "lib/agent_api"
 
 class AgentActivityCli
@@ -90,6 +91,7 @@ class AgentActivityCli
     when "start", "next" then start(flags) # `next` = boundary open (carries --outcome)
     when "end"           then finish(flags)
     when "close-open"    then close_open(flags)
+    when "reconcile"     then reconcile(flags) # attribute child subagent-transcript spend to activities
     when "action"        then action(flags) # self-report ONE off-box action to the open activity
     when "heartbeat"     then heartbeat(argv, flags) # sticky acting-agent for a soul run
     when "grade"         then grade_activity(argv, flags) # bearer AGENT grade of a resolved activity
@@ -98,6 +100,7 @@ class AgentActivityCli
       warn_note("usage: atomic-event start --category <C> --reason <text> [--outcome <text>] [--agent <soul>] [--task <slug>] | " \
                 "next --outcome <text> --category <C> --reason <text> [--key-method <code> [--key-lang <lang>]] [--agent <soul>] [--task <slug>] | " \
                 "end [--outcome <text>] [--key-method <code> [--key-lang <lang>]] | close-open [--outcome <text>] | " \
+                "reconcile [--session <id>] | " \
                 "action --summary <text> [--finding | --kind <k>] [--key-method <code> [--key-lang <lang>]] | " \
                 "heartbeat <soul> | heartbeat --clear | " \
                 "grade <activity-id> --disposition good|not [--slug <text>] [--long-form <text>] [--bank|--discard] | " \
@@ -246,6 +249,31 @@ class AgentActivityCli
     clear_activity_usage_baselines(sid)
 
     report(res, "closed open activities · #{outcome}")
+
+    # Fan-out reconciliation runs LAST — pure gravy AFTER the critical teardown, so a
+    # slow child-transcript read (or the SessionEnd hook's timeout) can never leave an
+    # activity hanging open. At session end every child subagents/*.jsonl is complete,
+    # so this stamps the real per-activity spend the live parent-transcript close-diff
+    # couldn't see (the blank rows after a delegation). A no-op for a plain session
+    # (no children); best-effort, never raises. Backfill any session with
+    # `bin/agent-activity reconcile --session <id>`.
+    reconcile_session(sid)
+  end
+
+  # `reconcile [--session X]` — attribute the session's CHILD subagent-transcript
+  # spend to the activities that authored it (the fan-out-token-attribution fix).
+  # The live close-diff measures only the PARENT ~/.claude/projects/*/<sid>.jsonl,
+  # which goes quiet after a delegation; the real spend lives in the child
+  # subagents/*.jsonl transcripts this reads. Runs automatically at session end
+  # (close-open) and can be invoked by hand to backfill a session. A plain (non-
+  # fan-out) session is a no-op. ALWAYS exits 0.
+  def reconcile(flags)
+    sid = resolve_session_id(flags)
+    sid = session_from_stdin unless present?(sid)
+    return warn_note("atomic-event: no session id — nothing to reconcile") unless present?(sid)
+
+    count = reconcile_session(sid)
+    @out.puts("atomic-event: reconciled #{count} #{count == 1 ? 'activity' : 'activities'} from child transcripts")
   end
 
   # Self-report ONE raw action to the session's currently-open activity. Two uses,
@@ -814,6 +842,39 @@ class AgentActivityCli
     sid = session_id.to_s.strip
     primary = @env["CODEX_THREAD_ID"].to_s.strip == sid ? "codex" : "claude"
     [primary, (primary == "codex" ? "claude" : "codex")]
+  end
+
+  # ── Fan-out reconciliation (child subagent-transcript attribution) ─────────
+  # The live per-activity close-diff (activity_usage_payload) reads only the PARENT
+  # transcript, which goes quiet after a delegation — so a supervisor+subagents
+  # session's activities blank out. This fetches the session's activity WINDOWS from
+  # the board, reads the local CHILD subagents/*.jsonl transcripts (which the board
+  # can't see), partitions their spend per authoring activity (AgentFanoutUsage), and
+  # stamps it back. Returns the count stamped; 0 (no-op) for a plain session or any
+  # hiccup — best-effort, never raises.
+  def reconcile_session(session_id)
+    windows = fetch_activity_windows(session_id)
+    return 0 if windows.empty?
+
+    usages = AgentFanoutUsage.reconcile(session_id: session_id, activities: windows)
+    return 0 if usages.empty?
+
+    res = post("/api/v1/agent_activities/reconcile", { "session_id" => session_id, "usages" => usages })
+    return 0 unless res && res.code.to_i.between?(200, 299)
+
+    parse_data(res)["reconciled"].to_i
+  rescue StandardError
+    0
+  end
+
+  def fetch_activity_windows(session_id)
+    res = get("/api/v1/agent_activities/windows?session_id=#{session_id}")
+    return [] unless res && res.code.to_i.between?(200, 299)
+
+    data = parse_data(res)
+    data.is_a?(Array) ? data : []
+  rescue StandardError
+    []
   end
 
   # ── Task-from-branch inference (marker fallback) ───────────────────────────

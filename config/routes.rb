@@ -320,6 +320,12 @@ Rails.application.routes.draw do
           post :close
           post :close_all
           post :turn_open # NEUTRALIZED (retire-turn-auto-open-spans) — 204 no-op; kept for the future meter
+          # Fan-out token reconciliation (fan-out-token-attribution): `windows`
+          # serves a session's activity windows to the local reconciler (which reads
+          # the child subagents/*.jsonl transcripts the board can't see); `reconcile`
+          # takes the computed per-activity usage back and stamps it.
+          get  :windows
+          post :reconcile
         end
       end
       # Compatibility path for existing capture/narration hooks.

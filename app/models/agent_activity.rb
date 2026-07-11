@@ -354,6 +354,50 @@ class AgentActivity < ApplicationRecord
     for_session(session_id).open.update_all(attrs)
   end
 
+  # The session's activity windows for the fan-out reconciler (id, agent lane,
+  # opened_at, closed_at, seq), chronological. The reconciler reads the CHILD
+  # subagents/*.jsonl transcripts the board can't see and needs these windows to
+  # attribute each child's spend to the activity that authored it. Times are ISO8601
+  # (UTC) so the plain-Ruby reconciler can Time.parse them.
+  def self.usage_windows(session_id)
+    return [] if session_id.blank?
+
+    for_session(session_id).chronological.pluck(:id, :agent, :opened_at, :closed_at, :seq).map do |id, agent, opened_at, closed_at, seq|
+      { "id" => id, "agent" => agent, "seq" => seq,
+        "opened_at" => opened_at&.utc&.iso8601, "closed_at" => closed_at&.utc&.iso8601 }
+    end
+  end
+
+  # Stamp the fan-out reconciler's per-activity usage. `usages` is an array of
+  # { activity_id/id, model, tokens_in, tokens_out, cache_read_tokens, cost } (string
+  # OR symbol keys). Each row is applied ONLY to an activity in THIS session (the
+  # session_id scope is the guard — a token can never patch another session's rows),
+  # reusing usage_attrs so a blank/zero usage is dropped rather than clobbering a
+  # real value with nils. Per-row update! fires the after_update_commit broadcaster,
+  # so the live feed refreshes. Returns the count of activities updated.
+  def self.apply_reconciled_usage!(session_id:, usages:)
+    return 0 if session_id.blank?
+
+    rows = Array(usages).filter_map do |u|
+      id = (u["activity_id"] || u[:activity_id] || u["id"] || u[:id]).presence
+      next nil unless id
+
+      attrs = usage_attrs(
+        model:             u["model"] || u[:model],
+        tokens_in:         u["tokens_in"] || u[:tokens_in],
+        tokens_out:        u["tokens_out"] || u[:tokens_out],
+        cache_read_tokens: u["cache_read_tokens"] || u[:cache_read_tokens],
+        cost:              u["cost"] || u[:cost]
+      )
+      attrs.empty? ? nil : [id.to_i, attrs]
+    end
+
+    by_id = for_session(session_id).where(id: rows.map(&:first)).index_by(&:id)
+    rows.count do |id, attrs|
+      (activity = by_id[id]) && activity.update!(attrs)
+    end
+  end
+
   # The next activity position for a session — max+1, 0-based.
   # Best-effort: a lookup hiccup falls back to 0 rather than sinking the open.
   def self.next_seq_for(session_id)
