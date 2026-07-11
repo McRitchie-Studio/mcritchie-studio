@@ -3,6 +3,10 @@ Studio.configure do |config|
   config.session_key = :studio_user_id
   config.welcome_message = ->(user) { "Welcome to McRitchie Studio, #{user.display_name}!" }
 
+  # Engine-owned sticky table headers (0.12.1 carries the already-sticky th
+  # guard upstreamed from this app's former local copy).
+  config.sticky_table_headers = true
+
   # Passwordless: magic-link email + Google + Solana wallet. No :password —
   # has_secure_password stays on the model only as a dormant fallback.
   config.auth_methods = %i[magic_link google wallet]
