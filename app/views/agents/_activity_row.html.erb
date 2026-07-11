@@ -77,16 +77,30 @@
 
     <td class="aa-details aa-collapsible">
       <div class="aa-stack">
+        <%# START — opened_at (clock first, "01:45, Jul 11") with the open/done status badge. %>
         <div class="aa-r aa-detailhead">
-          <span class="aa-time" data-test="aa-activity-time" title="<%= activity.opened_at&.iso8601 %>"><%= heartbeat_time(activity.opened_at) %></span>
+          <span class="aa-time" data-test="aa-activity-time" title="<%= activity.opened_at&.iso8601 %>"
+                x-init="aaLocalTime($el, '<%= activity.opened_at&.iso8601 %>', 'clockdate')"><%= heartbeat_clock_date(activity.opened_at) %></span>
           <%= heartbeat_activity_status_badge(status) %>
         </div>
-        <div class="aa-r">
-          <span class="aa-task" data-test="aa-activity-task"><%= activity.task_slug.presence || "—" %></span>
-        </div>
-        <div class="aa-r">
+        <%# END — closed_at as a bare clock (the date already rode along on START), or a
+            live counter ticking up from start while the activity is still open; carries
+            the raw-action count. %>
+        <div class="aa-r aa-detailend">
+          <% if activity.open? %>
+            <span class="aa-time aa-elapsed" data-test="aa-activity-elapsed" title="elapsed since start"
+                  x-data="aaElapsed(<%= activity.opened_at.to_i %>)" x-init="start()" x-text="label"><%= heartbeat_elapsed((Time.current - activity.opened_at).to_i) %></span>
+          <% else %>
+            <span class="aa-time" data-test="aa-activity-endtime" title="<%= activity.closed_at&.iso8601 %>"
+                  x-init="aaLocalTime($el, '<%= activity.closed_at&.iso8601 %>', 'clock')"><%= heartbeat_minute(activity.closed_at) %></span>
+          <% end %>
+          <span class="hb-bullet" aria-hidden="true">&middot;</span>
           <span class="aa-count" data-test="aa-activity-count"><%= pluralize(actions.size, "action") %></span>
           <% if activity.open? %><span class="aa-spinner" title="activity still open"></span><% end %>
+        </div>
+        <%# ISSUE — the task / issue slug this activity belongs to. %>
+        <div class="aa-r">
+          <span class="aa-task" data-test="aa-activity-task"><%= activity.task_slug.presence || "—" %></span>
         </div>
       </div>
     </td>
@@ -108,9 +122,14 @@
         </div>
         <div class="aa-md-block">
           <div class="aa-md-label">Details</div>
-          <div class="aa-time"><%= heartbeat_time(activity.opened_at) %></div>
-          <div class="aa-task"><%= activity.task_slug.presence || "—" %></div>
+          <div class="aa-time" x-init="aaLocalTime($el, '<%= activity.opened_at&.iso8601 %>', 'clockdate')"><%= heartbeat_clock_date(activity.opened_at) %></div>
+          <% if activity.open? %>
+            <div class="aa-time"><%= heartbeat_elapsed((Time.current - activity.opened_at).to_i) %></div>
+          <% else %>
+            <div class="aa-time" x-init="aaLocalTime($el, '<%= activity.closed_at&.iso8601 %>', 'clock')"><%= heartbeat_minute(activity.closed_at) %></div>
+          <% end %>
           <div class="aa-count"><%= pluralize(actions.size, "action") %></div>
+          <div class="aa-task"><%= activity.task_slug.presence || "—" %></div>
         </div>
         <div class="aa-md-block">
           <div class="aa-md-label">Alex</div>

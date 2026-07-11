@@ -447,6 +447,23 @@ module HeartbeatHelper
     time.strftime("%H:%M:%S")
   end
 
+  # Bare 12-hour am/pm clock ("2:42p") — minimal single-letter suffix, no space, matching
+  # the /deployments local-time convention. The /agents/activities END row's closed_at,
+  # date-free (the date already rode along on the START row above it). Blank-safe → "—".
+  def heartbeat_minute(time)
+    return "—" if time.blank?
+
+    time.strftime("%-l:%M%P").chomp("m")
+  end
+
+  # Clock-first dense stamp ("2:42p, Jul 11") — the /agents/activities START row leads with
+  # the am/pm clock and trails the date. Blank-safe → "—".
+  def heartbeat_clock_date(time)
+    return "—" if time.blank?
+
+    "#{heartbeat_minute(time)}, #{time.strftime('%b %-d')}"
+  end
+
   # A live elapsed count formatted "H:MM:SS" (or "M:SS" under an hour) — the
   # server-rendered initial value for an OPEN activity's ticking timer (hbElapsed
   # then keeps it in sync client-side) AND the closed-activity fallback. Negative /

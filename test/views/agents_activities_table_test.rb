@@ -3,7 +3,7 @@ require "test_helper"
 # [component] the /agents/activities table partial — the reimagined 7-column x 3-sub-row
 # feed. Each activity is a tbody: Agent (stacked soul-over-mascot), Activity (category +
 # goal / →result-with-fade / key command), Cost (cost / model / tokens), Details
-# (time+status / task / action-count+spinner), and the Alex + McRitchie inline grade
+# (start+status / end-or-live-counter+action-count / issue slug), and the Alex + McRitchie inline grade
 # cells. Expanding drills into the raw actions (2-sub-row: #seq KIND + summary / key
 # method; cost / tokens; #seq KIND + outcome + raw JSON) which carry their OWN inline
 # grade cells.
@@ -95,16 +95,41 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select ".aa-cost-tok", text: "—"
   end
 
-  test "[component] the details column stacks time+status, task, and action count" do
-    ev = activity(closed_at: Time.current, outcome_slug: "done", task_slug: "agents-activities-page-redesign")
+  test "[component] the details column stacks start+status, end+count, then the issue slug" do
+    opened = Time.utc(2026, 7, 11, 1, 45)
+    closed = Time.utc(2026, 7, 11, 1, 52)
+    ev = activity(opened_at: opened, closed_at: closed, outcome_slug: "done",
+                  task_slug: "agents-activities-page-redesign")
     a1 = action(agent_activity_id: ev.id, seq: 0)
 
     render_table [[ev, [a1]]]
 
-    assert_select "[data-test=aa-activity-time]"
-    assert_select "[data-test=event-status]", text: "done"
+    # Row 1 — start-at, am/pm clock-first ("1:45a, Jul 11"), carries the open/done badge. The
+    # server renders app-TZ as the fallback; x-init re-stamps it to the viewer's local clock.
+    assert_select ".aa-detailhead [data-test=aa-activity-time]", text: "1:45a, Jul 11"
+    assert_select ".aa-detailhead [data-test=aa-activity-time][x-init*=?]", "aaLocalTime"
+    assert_select ".aa-detailhead [data-test=event-status]", text: "done"
+    # Row 2 — the end-at (closed_at) am/pm clock, date-free, local-stamped, a bullet, then count.
+    assert_select ".aa-detailend [data-test=aa-activity-endtime]", text: "1:52a"
+    assert_select ".aa-detailend [data-test=aa-activity-endtime][x-init*=?]", "aaLocalTime"
+    assert_select ".aa-detailend .hb-bullet"
+    assert_select ".aa-detailend [data-test=aa-activity-count]", text: "1 action"
+    # Row 3 — the issue slug drops below both time rows.
     assert_select "[data-test=aa-activity-task]", text: "agents-activities-page-redesign"
-    assert_select "[data-test=aa-activity-count]", text: "1 action"
+  end
+
+  test "[component] an OPEN activity's end row shows a live counter ticking from start, no end time" do
+    ev = activity(category: "Workflow", reason_slug: "certify and open the PR",
+                  opened_at: 3.minutes.ago, outcome_slug: nil, closed_at: nil)
+
+    render_table [[ev, []]]
+
+    # The end row swaps the closed-at stamp for a live elapsed ticker bound to aaElapsed.
+    assert_select ".aa-detailend [data-test=aa-activity-elapsed][x-data^=?]", "aaElapsed("
+    assert_select "[data-test=aa-activity-endtime]", false
+    # The count + still-open spinner ride the same end row.
+    assert_select ".aa-detailend [data-test=aa-activity-count]", text: "0 actions"
+    assert_select ".aa-detailend .aa-spinner"
   end
 
   test "[component] each activity carries Alex + McRitchie inline grade cells posting to the activity endpoint" do

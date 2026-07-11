@@ -101,7 +101,10 @@
     -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent);
     mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent); }
   #alex-heartbeat .aa-detailhead > * { flex:0 0 auto; }
+  #alex-heartbeat .aa-detailend > * { flex:0 0 auto; }
   #alex-heartbeat .aa-time { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; white-space:nowrap; }
+  /* The OPEN activity's live counter ticks up from start — accent it so it reads as running. */
+  #alex-heartbeat .aa-elapsed { color:var(--hb-accent); }
   #alex-heartbeat .aa-task { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
   #alex-heartbeat .aa-count { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
   #alex-heartbeat .aa-spinner { display:inline-block; width:11px; height:11px; border:2px solid var(--hb-line); border-top-color:var(--hb-accent); border-radius:50%; animation:aa-spin .8s linear infinite; }
