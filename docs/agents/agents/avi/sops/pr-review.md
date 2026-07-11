@@ -20,6 +20,30 @@ cd /Users/alex/projects/mcritchie-studio
 
 Use the production board by default. Do not add `--local`.
 
+## Shift lease — acquire the `avi` shift FIRST, or stand down
+
+Before touching the queue, take the DevOps shift lease so two `avi` sessions (a
+second `pr-review`, or an Avi heartbeat launched alongside this one) can't review
+the same PRs and double the reviewer fan-out into the board's connection limit:
+
+```bash
+bin/devops-shift acquire avi
+```
+
+- **Exit 0 (acquired)** — you're on shift; continue.
+- **Exit 10 ("🛑 … STAND DOWN")** — another live `avi` session already holds the
+  shift. **Do NOT review, gate, or spawn reviewers.** Announce the holder it names
+  and STOP; that session is covering the queue. Its lease lapses ~120s after it
+  stops, so if it truly died, re-run this SOP in a minute.
+
+The lease is renewed automatically by this session's status line. When the wave is
+done (or you stop early), release it so the lane frees immediately instead of
+waiting out the TTL:
+
+```bash
+bin/devops-shift release avi
+```
+
 ## Preconditions
 
 At least one task is in `submitted`. If the queue is empty, report "no submitted

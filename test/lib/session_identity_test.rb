@@ -40,4 +40,19 @@ class SessionIdentityTest < Minitest::Test
     assert_equal "c-1", SessionIdentity.id("CLAUDE_CODE_SESSION_ID" => "c-1")
     assert_equal "", SessionIdentity.id({}), "the telemetry session gate keys off blank"
   end
+
+  # The per-instance nonce (extracted from bin/task, now shared with bin/devops-shift).
+  def test_unit_nonce_honors_the_explicit_override
+    assert_equal "abc123", SessionIdentity.nonce("TASK_CLAIM_NONCE" => "abc123"),
+                 "an injected nonce wins (tests + a future agent-exported token)"
+  end
+
+  def test_unit_nonce_resolves_deterministically_from_the_process_tree
+    # No override → walks the ancestry; in-process it degrades to a stable, non-raising
+    # value (an agent-hash, a tty-hash, or "" — never an exception).
+    a = SessionIdentity.nonce({})
+    b = SessionIdentity.nonce({})
+    assert_kind_of String, a
+    assert_equal a, b, "the same live instance resolves the SAME nonce across calls"
+  end
 end

@@ -1,0 +1,279 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/devops-shift — the DevOps SHIFT LEASE cli. It keeps two same-role conductor
+# sessions from colliding (two Avi heartbeats, or an Avi heartbeat + a standalone
+# pr-review), the mirror of bin/task's build-claim lease at the ROLE granularity.
+#
+#   bin/devops-shift acquire <lane> [--label <text>]   # take the shift, or stand down
+#   bin/devops-shift renew   <lane>                     # heartbeat (bin/statusline calls this)
+#   bin/devops-shift release <lane>                     # clean drop at session end
+#   bin/devops-shift status                             # who's on shift, per lane
+#
+# A LANE is a role/shift key — `avi`, `steffon`, `alex`. Two live instances of the
+# same lane contend; different lanes coexist (a review vs a qa-release). Identity is
+# the SAME live-instance identity the build claim uses (session id + per-process
+# nonce, SessionIdentity), so the heartbeat renews the right shift.
+#
+# EXIT CODES make the acquire gate scriptable (and the SOP branch on it):
+#   0  — acquired (you hold the shift; proceed)
+#   10 — stood down (a DIFFERENT live instance holds the lane; do NOT proceed)
+#   1  — could not run (no session id / no board / usage error) — fail OPEN so a
+#        telemetry hiccup never wedges a real shift.
+# Best-effort and never raises; renew/release/status always exit 0.
+
+require "json"
+require "fileutils"
+require_relative "lib/agent_api"
+require_relative "lib/session_identity"
+require_relative "lib/session_markers"
+
+class DevopsShiftCli
+  OPEN_TIMEOUT = 2
+  READ_TIMEOUT = 5
+
+  # Acquire exit codes (see header).
+  OK = 0
+  STOOD_DOWN = 10
+  CANT_RUN = 1
+
+  LANES = %w[avi steffon alex].freeze
+
+  def initialize(env: ENV, out: $stdout, err: $stderr)
+    @env = env
+    @out = out
+    @err = err
+    @api = AgentApi.new(env: env, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
+  end
+
+  # Entry point. Returns the process exit code.
+  def run(argv)
+    command = argv.shift
+    lane = argv.find { |a| !a.start_with?("--") }
+    flags = parse_flags(argv)
+
+    case command
+    when "acquire" then acquire(lane, flags)
+    when "renew"   then renew(lane)
+    when "release" then release(lane)
+    when "status"  then status
+    else
+      @err.puts("usage: devops-shift acquire <lane> [--label <text>] | renew <lane> | release <lane> | status " \
+                "(lanes: #{LANES.join(', ')})")
+      CANT_RUN
+    end
+  rescue StandardError => e
+    @err.puts("devops-shift failed (ignored): #{e.class}: #{e.message}")
+    CANT_RUN
+  end
+
+  # ── Commands ────────────────────────────────────────────────────────────────
+
+  def acquire(lane, flags)
+    return usage_lane("acquire") unless present?(lane)
+
+    sid = session_id
+    return cant_run("no session id — cannot identify this shift") unless present?(sid)
+
+    label = flags["label"].to_s.strip
+    label = session_mascot(sid) if label.empty?
+    res = post("/api/v1/devops_shifts/acquire",
+               { "lane" => lane, "session" => sid, "nonce" => nonce, "label" => label })
+    return cant_run("no response from the board — proceeding without a shift lease") unless ok?(res)
+
+    data = parse_data(res)
+    if data["acquired"]
+      write_marker(sid, lane)
+      @out.puts("devops-shift: ✅ #{lane} shift acquired — you're on shift.")
+      OK
+    else
+      report_stand_down(lane, data["holder"] || {})
+      STOOD_DOWN
+    end
+  end
+
+  def renew(lane)
+    return usage_lane("renew") unless present?(lane)
+
+    sid = session_id
+    return OK unless present?(sid) # best-effort heartbeat — never a failure
+
+    post("/api/v1/devops_shifts/renew", { "lane" => lane, "session" => sid, "nonce" => nonce })
+    OK
+  end
+
+  def release(lane)
+    return usage_lane("release") unless present?(lane)
+
+    sid = session_id
+    post("/api/v1/devops_shifts/release", { "lane" => lane, "session" => sid, "nonce" => nonce }) if present?(sid)
+    clear_marker(sid, lane)
+    @out.puts("devops-shift: #{lane} shift released.")
+    OK
+  end
+
+  def status
+    res = get("/api/v1/devops_shifts")
+    return cant_run("could not read shift status") unless ok?(res)
+
+    rows = parse_data(res)
+    rows = [] unless rows.is_a?(Array)
+    live = rows.select { |r| r["live"] }
+    if live.empty?
+      @out.puts("devops-shift: no shifts are currently held.")
+    else
+      @out.puts("devops-shift: on shift now:")
+      live.each { |r| @out.puts("  #{r['lane']} — #{holder_line(r)}") }
+    end
+    OK
+  end
+
+  # ── Rendering ────────────────────────────────────────────────────────────────
+
+  # The stand-down message: name the live holder so the operator/agent knows WHO is
+  # already on shift and can stop cleanly.
+  def report_stand_down(lane, holder)
+    @out.puts("devops-shift: 🛑 #{lane} shift already held — STAND DOWN.")
+    @out.puts("  #{holder_line(holder)}")
+    @out.puts("  Another #{lane} session is live. Do not review/merge/ship; let it finish " \
+              "(its lease lapses ~#{lease_ttl_seconds}s after it stops).")
+  end
+
+  def holder_line(holder)
+    label = holder["label"].to_s.strip
+    who = label.empty? ? "session #{short(holder['session'])}" : "#{label} · session #{short(holder['session'])}"
+    age = holder["heartbeat_age"]
+    since = holder["acquired_at"].to_s
+    age_txt = age.nil? ? "" : ", last heartbeat ~#{age}s ago"
+    since_txt = since.empty? ? "" : " since #{since}"
+    "#{who}#{since_txt}#{age_txt}"
+  end
+
+  # ── HTTP + helpers ───────────────────────────────────────────────────────────
+
+  def post(path, body)
+    tok = @api.token
+    return nil unless tok
+
+    res = @api.http_json(:post, path, body, bearer: tok)
+    @api.invalidate_token! if res && res.code.to_i == 401
+    res
+  rescue StandardError
+    nil
+  end
+
+  def get(path)
+    tok = @api.token
+    return nil unless tok
+
+    res = @api.http_json(:get, path, nil, bearer: tok)
+    @api.invalidate_token! if res && res.code.to_i == 401
+    res
+  rescue StandardError
+    nil
+  end
+
+  def ok?(res)
+    res && res.code.to_i.between?(200, 299)
+  end
+
+  def parse_data(res)
+    body = JSON.parse(res.body)
+    body.is_a?(Hash) ? (body["data"] || {}) : {}
+  rescue StandardError
+    {}
+  end
+
+  def parse_flags(argv)
+    flags = {}
+    i = 0
+    while i < argv.length
+      arg = argv[i]
+      if arg.start_with?("--")
+        nxt = argv[i + 1]
+        if nxt.nil? || nxt.start_with?("--")
+          flags[arg.delete_prefix("--")] = true
+          i += 1
+        else
+          flags[arg.delete_prefix("--")] = nxt
+          i += 2
+        end
+      else
+        i += 1
+      end
+    end
+    flags
+  end
+
+  def session_id
+    explicit = @env["DEVOPS_SHIFT_SESSION"].to_s.strip
+    return explicit unless explicit.empty?
+
+    SessionIdentity.id(@env)
+  end
+
+  def nonce
+    SessionIdentity.nonce(@env)
+  end
+
+  # The session's stable base mascot (for the step-down message), or "".
+  def session_mascot(sid)
+    marker = SessionMarkers.read_session_marker(sid, @api.projects_dir) || {}
+    marker["mascot"].to_s.strip
+  rescue StandardError
+    ""
+  end
+
+  # ── Local held-shift marker (so bin/statusline knows what to renew) ───────────
+  def marker_path(sid)
+    safe = sid.to_s.gsub(/[^A-Za-z0-9._-]/, "")
+    File.join(@api.projects_dir, ".agents", "sessions", "#{safe}.devops-shift")
+  end
+
+  def write_marker(sid, lane)
+    path = marker_path(sid)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{lane}\n")
+  rescue StandardError
+    nil
+  end
+
+  def clear_marker(sid, _lane)
+    path = marker_path(sid)
+    File.delete(path) if File.file?(path)
+  rescue StandardError
+    nil
+  end
+
+  def usage_lane(cmd)
+    @err.puts("devops-shift #{cmd} needs a lane (e.g. `devops-shift #{cmd} avi`)")
+    CANT_RUN
+  end
+
+  def cant_run(message)
+    @err.puts("devops-shift: #{message}")
+    CANT_RUN
+  end
+
+  def short(value)
+    s = value.to_s
+    s.length > 4 ? "…#{s[-4..]}" : s
+  end
+
+  def present?(value)
+    @api.present?(value)
+  end
+
+  # The lease TTL for the stand-down copy — read from ClaimLease when the app libs
+  # are loadable (they are in-repo), else the documented 120s default.
+  def lease_ttl_seconds
+    require_relative "../lib/claim_lease"
+    ClaimLease::DEFAULT_TTL_SECONDS
+  rescue StandardError
+    120
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  exit(DevopsShiftCli.new.run(ARGV))
+end

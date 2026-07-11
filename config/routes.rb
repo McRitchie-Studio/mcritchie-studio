@@ -349,6 +349,17 @@ Rails.application.routes.draw do
           post :close_all
         end
       end
+      # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
+      # lane (avi/steffon/alex), so two same-role sessions can't collide. `acquire` is
+      # the atomic take-or-stand-down, `renew` the heartbeat, `release` the clean
+      # session-end drop; `index` is the "who's on shift" read.
+      resources :devops_shifts, only: [:index] do
+        collection do
+          post :acquire
+          post :renew
+          post :release
+        end
+      end
       # Learning-loop grading — the bearer AGENT path for the Alex heartbeat
       # grade-events loop. `awaiting` lists resolved activities still ungraded by
       # Alex; `grade` upserts Alex's grade of one activity. The grader is FORCED to alex here

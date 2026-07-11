@@ -28,6 +28,31 @@ cd /Users/alex/projects/mcritchie-studio
 
 Use the production board by default. Do not add `--local`.
 
+## Shift lease — acquire the `steffon` shift FIRST, or stand down
+
+Before preparing anything, take the DevOps shift lease so two `qa-release` sessions
+can't both merge onto `release` and race the candidate N-behind (the parallel-
+conductor bug):
+
+```bash
+bin/devops-shift acquire steffon
+```
+
+- **Exit 0 (acquired)** — you're on shift; continue.
+- **Exit 10 ("🛑 … STAND DOWN")** — another live `steffon` session already holds the
+  shift. **Do NOT merge, deploy QA, or flip stages.** Announce the holder it names
+  and STOP; its lease lapses ~120s after it stops if it truly died.
+
+The status line renews the lease automatically. Release it when the sweep is done
+(or you stop early) so the lane frees immediately:
+
+```bash
+bin/devops-shift release steffon
+```
+
+(The `steffon` lane is independent of the `avi` review/ship lane, so a `qa-release`
+and a `pr-review` run side by side — only two of the SAME role collide.)
+
 ## Preconditions
 
 There is work to prepare:
