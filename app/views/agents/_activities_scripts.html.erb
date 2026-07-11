@@ -85,6 +85,54 @@
     return window.agentsGradeState();
   };
 
+  // An OPEN activity's live "end at" counter — mirrors the heartbeat surface's hbElapsed
+  // (which isn't loaded here). `startedAtEpoch` is opened_at as UNIX seconds (server-
+  // rendered); it ticks once a second, formatting now-minus-start as "H:MM:SS" (or "M:SS"
+  // under an hour) so the END row counts UP in real time until the activity closes and the
+  // row is replaced by the closed_at stamp. Plain window fn (not a module) because Alpine's
+  // defer evaluates x-data before importmap modules resolve; self-clears its interval on
+  // teardown so a re-rendered / removed row never leaks a timer.
+  window.aaElapsed = function (startedAtEpoch) {
+    return {
+      label: "",
+      timer: null,
+      pad(n) { return (n < 10 ? "0" : "") + n; },
+      tick() {
+        var secs = Math.max(0, Math.floor(Date.now() / 1000) - startedAtEpoch);
+        var h = Math.floor(secs / 3600);
+        var m = Math.floor((secs % 3600) / 60);
+        var s = secs % 60;
+        this.label = h > 0
+          ? h + ":" + this.pad(m) + ":" + this.pad(s)
+          : m + ":" + this.pad(s);
+      },
+      start() {
+        this.tick();
+        this.timer = setInterval(this.tick.bind(this), 1000);
+      },
+      stop() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
+    };
+  };
+
+  // Re-stamp an absolute timestamp into the VIEWER's local timezone (x-init on the span).
+  // `iso` is the server-emitted UTC ISO8601 (also on the span's title); `mode` picks the
+  // shape — "clockdate" => "2:42p, Jul 11" (the START row) or "clock" => "2:42p" (the END
+  // row), 12-hour am/pm to match the server helper + the /deployments convention. Rewrites
+  // only textContent, and only when the iso parses, so the server-rendered app-TZ text
+  // survives as the no-JS / pre-hydration fallback (and a malformed iso keeps it). Runs on
+  // Alpine init for the table loop AND an Alpine-hydrated Turbo-Stream broadcast row alike
+  // (same mechanism the aaElapsed ticker rides).
+  window.aaLocalTime = function (el, iso, mode) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return;
+    var h = d.getHours(), m = d.getMinutes(), ap = h < 12 ? "a" : "p";
+    h = h % 12; if (h === 0) h = 12;
+    var clock = h + ":" + (m < 10 ? "0" : "") + m + ap;
+    el.textContent = mode === "clock"
+      ? clock
+      : clock + ", " + d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
   // The page section: owns the slide-in filter sidebar, with focus returned to the
   // toggle button on close for keyboard users.
   window.agentsActivities = function () {
