@@ -95,6 +95,7 @@ require "optparse"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
+require_relative "lib/task_board"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (feature_shapes.yml) and the
 # token .env resolve from here and STAY here — the shape taxonomy is studio-owned.
@@ -134,8 +135,6 @@ DATA_CHANGE_PREFIXES = %w[db/migrate/ db/seeds].freeze
 # (slash) must NOT match, nor a dedicated task like `pokemon:seed`.
 BARE_SEED_TASK = %r{(?<![\w:/])db:seed(?::\w+)?(?![\w:/])}i
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
-OP = "/opt/homebrew/bin/op"
-SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 # The gate-run CLI (GateRun markers). A merge-gate verdict is what CLOSES the
 # task's G1 Cert attempt — see the emit at the bottom; fire-and-forget.
 GATE_BIN = File.expand_path("gate", __dir__)
@@ -172,24 +171,9 @@ die!("--gate-role must be one of: #{GATE_ROLES.join(", ")}") unless GATE_ROLES.i
 # --- task board auth + fetch (mirrors bin/task) ---------------------------
 
 def agent_secret
-  env = ENV["AGENT_API_SECRET"]
-  return env if env && !env.empty?
-
-  if File.executable?(OP)
-    op = begin
-      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-    rescue SystemCallError
-      ""
-    end
-    return op unless op.empty?
-  end
-
   dotenv = File.join(ROOT, ".env")
-  if File.exist?(dotenv)
-    line = File.readlines(dotenv).find { |l| l.start_with?("AGENT_API_SECRET=") }
-    return line.split("=", 2)[1].to_s.strip if line
-  end
-  die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+  TaskBoard.agent_secret(dotenv) ||
+    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
 end
 
 def token
@@ -197,19 +181,8 @@ def token
 end
 
 def api(method, path, body = nil, auth: true)
-  uri = URI.join(BASE_URL, path)
-  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
-  req = klass.new(uri)
-  req["Authorization"] = "Bearer #{token}" if auth
-  if body
-    req["Content-Type"] = "application/json"
-    req.body = JSON.generate(body)
-  end
-  http = Net::HTTP.new(uri.host, uri.port)
-  http.use_ssl = (uri.scheme == "https")
-  http.read_timeout = 30
-  res = http.request(req)
-  parsed = res.body.to_s.empty? ? {} : (JSON.parse(res.body) rescue {})
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
+  parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
     die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
   end

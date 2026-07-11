@@ -160,6 +160,7 @@ require_relative "../app/models/release/gate_ruby"
 # the model/token/cost the agent actually burned. Plain Ruby (no Rails).
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
+require_relative "lib/session_identity"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -345,11 +346,8 @@ def conductor_session_id
 end
 
 def conductor_session_identity
-  %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].each do |key|
-    value = ENV[key].to_s.strip
-    return [value, key == "CODEX_THREAD_ID" ? "codex" : "claude"] unless value.empty?
-  end
-  [nil, "claude"]
+  id, provider = SessionIdentity.identity
+  [id, provider || "claude"]
 end
 
 # Prefix a conductor snippet with the local session id so the prod `rails runner`

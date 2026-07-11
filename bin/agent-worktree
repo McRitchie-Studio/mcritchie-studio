@@ -34,15 +34,9 @@ require "yaml"
 # to main). Pure Ruby with no Rails deps — the same `require_relative` shape
 # bin/release uses to pull in Release::ShipSequence (its detect-side complement).
 require_relative "../app/models/release/restore_primary"
+require_relative "lib/projects_root"
 
-def default_projects_dir
-  candidate = File.expand_path("../..", __dir__)
-  return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
-
-  candidate
-end
-
-PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
 CONTEXT_FILE = ".agent-context.json"

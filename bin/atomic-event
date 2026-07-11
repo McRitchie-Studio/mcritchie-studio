@@ -56,8 +56,12 @@ require "fileutils"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/agent_fanout_usage"
 require_relative "lib/agent_api"
+require_relative "lib/session_markers"
+require_relative "lib/session_identity"
 
 class AgentActivityCli
+  include AgentApi::Presence
+
   CATEGORIES = %w[
     Explore Edit Verify Version Workflow Delegate Clarify Remote Research Plan
   ].freeze
@@ -476,10 +480,7 @@ class AgentActivityCli
     explicit = flags["session"].to_s.strip
     return explicit unless explicit.empty?
 
-    claude = @env["CLAUDE_CODE_SESSION_ID"].to_s.strip
-    return claude unless claude.empty?
-
-    @env["CODEX_THREAD_ID"].to_s.strip
+    SessionIdentity.id(@env)
   end
 
   # The Claude Code SessionEnd hook pipes its event JSON ({session_id, reason, …})
@@ -577,36 +578,14 @@ class AgentActivityCli
 
   private
 
-  # ── Marker files (mirror bin/atomic-capture-hook) ──────────────────────────
+  # ── Marker files (shared with bin/atomic-capture-hook) ─────────────────────
 
   def read_context_marker(cwd)
-    dir = present?(cwd) ? File.expand_path(cwd) : nil
-    return nil unless dir
-
-    loop do
-      path = File.join(dir, ".agent-context.json")
-      return JSON.parse(File.read(path)) if File.file?(path)
-
-      parent = File.dirname(dir)
-      return nil if parent == dir
-
-      dir = parent
-    end
-  rescue StandardError
-    nil
+    SessionMarkers.read_context_marker(cwd)
   end
 
   def read_session_marker(session_id)
-    sid = session_id.to_s.strip
-    return nil if sid.empty?
-
-    safe = sid.gsub(/[^A-Za-z0-9._-]/, "")
-    path = File.join(projects_dir, ".agents", "sessions", "#{safe}.json")
-    return nil unless File.file?(path)
-
-    JSON.parse(File.read(path))
-  rescue StandardError
-    nil
+    SessionMarkers.read_session_marker(session_id, projects_dir)
   end
 
   # ── Sticky heartbeat acting-agent (per-session, session-scoped) ────────────
@@ -913,22 +892,6 @@ class AgentActivityCli
 
   def projects_dir
     @api.projects_dir
-  end
-
-  def first_present(hash, *keys)
-    keys.each do |key|
-      value = hash[key]
-      return value if present?(value)
-    end
-    nil
-  end
-
-  def blank_to_nil(value)
-    present?(value) ? value : nil
-  end
-
-  def present?(value)
-    @api.present?(value)
   end
 
   def prefix_keys(hash, prefix)

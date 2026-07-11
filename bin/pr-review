@@ -43,28 +43,18 @@ require "optparse"
 require "shellwords"
 require "time"
 require_relative "lib/ci_status"
+require_relative "lib/bin_helpers"
+require_relative "lib/projects_root"
 
 ROOT = File.expand_path("..", __dir__)
-PROJECTS_ROOT =
-  if File.basename(File.dirname(ROOT)) == ".worktrees"
-    File.expand_path("../../..", ROOT)
-  else
-    File.expand_path("..", ROOT)
-  end
+PROJECTS_ROOT = ProjectsRoot.default_projects_dir(ROOT)
 DEFAULT_APPS = %w[mcritchie-studio turf-monster rolio].freeze
 SCOUT_OUTCOMES = %w[merge-ready wait-for-ci request-changes conductor-review].freeze
 
-def bin_for(env_key, default_name)
-  override = ENV[env_key].to_s.strip
-  return override unless override.empty?
-
-  File.join(ROOT, "bin", default_name)
-end
-
-DEVOPS_CYCLE_BIN = bin_for("DEVOPS_CYCLE_BIN", "devops-cycle")
-REVIEWER_SELECT_BIN = bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
-TASK_BIN = bin_for("TASK_BIN", "task")
-GATE_BIN = bin_for("GATE_BIN", "gate")
+DEVOPS_CYCLE_BIN = BinHelpers.bin_for("DEVOPS_CYCLE_BIN", "devops-cycle")
+REVIEWER_SELECT_BIN = BinHelpers.bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
+TASK_BIN = BinHelpers.bin_for("TASK_BIN", "task")
+GATE_BIN = BinHelpers.bin_for("GATE_BIN", "gate")
 # start_review → gate key per launch role (the G2 review lanes, GateRun::GATES).
 G2_LANE_KEYS = { "primary" => "g2a_primary", "light" => "g2b_light" }.freeze
 CODEX_BIN = ENV["CODEX_BIN"].to_s.strip.empty? ? "codex" : ENV["CODEX_BIN"].strip
@@ -359,7 +349,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 end
 
 def safe_filename(value)
-  value.to_s.gsub(/[^A-Za-z0-9._-]+/, "-").gsub(/\A-+|-+\z/, "")
+  BinHelpers.safe_filename(value)
 end
 
 # The intent-labeled delegate action the supervisor emits for each reviewer it

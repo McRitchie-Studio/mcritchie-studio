@@ -8,17 +8,11 @@ require "digest"
 require "json"
 require "net/http"
 require "uri"
+require_relative "lib/projects_root"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
 
-def default_projects_dir
-  candidate = File.expand_path("..", SCRIPT_ROOT)
-  return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
-
-  candidate
-end
-
-PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = SCRIPT_ROOT
 QA_CONFIG = File.join(HUB_DIR, "config", "qa_environments.yml")
 HEROKU_APP_INFO_CACHE = {}

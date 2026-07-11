@@ -64,21 +64,13 @@ require "json"
 require "open3"
 require "time"
 require "yaml"
+require_relative "lib/bin_helpers"
 
 SCRIPT_DIR = __dir__
 
-# Resolve a helper binary: an explicit env override (for tests) wins, else the
-# sibling script next to this one (the real tool in production).
-def bin_for(env_key, default_name)
-  override = ENV[env_key].to_s.strip
-  return override unless override.empty?
-
-  File.join(SCRIPT_DIR, default_name)
-end
-
-TASK_BIN     = bin_for("TASK_BIN", "task")
-RELEASE_BIN  = bin_for("RELEASE_BIN", "release")
-REVIEWER_BIN = bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
+TASK_BIN     = BinHelpers.bin_for("TASK_BIN", "task")
+RELEASE_BIN  = BinHelpers.bin_for("RELEASE_BIN", "release")
+REVIEWER_BIN = BinHelpers.bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
 CURL_BIN     = ENV["CURL_BIN"].to_s.strip.empty? ? "curl" : ENV["CURL_BIN"].strip
 
 # The Deploy-queue stages, in cycle order. The first three ARE the Deploy queue

@@ -23,11 +23,10 @@ require "pathname"
 require "time"
 require "uri"
 require "yaml"
+require_relative "lib/task_board"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
 TASK_API_BASE = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
-OP = "/opt/homebrew/bin/op"
-SECRET_REF = "op://agents/Agent API Secret/AGENT_API_SECRET"
 TASK_CONVERSATION_TYPES = %w[comment qa_feedback handoff clarification].freeze
 CHECK_STATES = {
   "SUCCESS" => "pass",
@@ -108,40 +107,14 @@ def normalize_task(raw)
   raw.fetch("data", raw)
 end
 
+# Degrades to "" when the secret is missing (the preflight renders a warning
+# instead of dying) — hence the .to_s over TaskBoard's nil.
 def agent_secret(root)
-  env = ENV["AGENT_API_SECRET"].to_s
-  return env unless env.empty?
-
-  if File.executable?(OP)
-    op = begin
-      IO.popen([OP, "read", SECRET_REF], err: File::NULL, &:read).to_s.strip
-    rescue SystemCallError
-      ""
-    end
-    return op unless op.empty?
-  end
-
-  dotenv = File.join(root, ".env")
-  return "" unless File.exist?(dotenv)
-
-  line = File.readlines(dotenv).find { |entry| entry.start_with?("AGENT_API_SECRET=") }
-  line.to_s.split("=", 2)[1].to_s.strip
+  TaskBoard.agent_secret(File.join(root, ".env")).to_s
 end
 
 def api_request(base_url, method, path, token: nil, body: nil)
-  uri = URI.join(base_url, path)
-  klass = { get: Net::HTTP::Get, post: Net::HTTP::Post }.fetch(method)
-  request = klass.new(uri)
-  request["Authorization"] = "Bearer #{token}" if token
-  if body
-    request["Content-Type"] = "application/json"
-    request.body = JSON.generate(body)
-  end
-
-  http = Net::HTTP.new(uri.host, uri.port)
-  http.use_ssl = (uri.scheme == "https")
-  http.read_timeout = 30
-  response = http.request(request)
+  response = TaskBoard.request(method, path, base_url: base_url, token: token, body: body)
   parsed = response.body.to_s.empty? ? {} : JSON.parse(response.body)
   unless response.code.to_i.between?(200, 299)
     raise "HTTP #{response.code}: #{parsed["error"] || response.body}"

@@ -15,17 +15,11 @@ require "optparse"
 require "shellwords"
 require "time"
 require "yaml"
+require_relative "lib/projects_root"
 
 SCRIPT_ROOT = File.expand_path("..", __dir__)
 
-def default_projects_dir
-  candidate = File.expand_path("..", SCRIPT_ROOT)
-  return File.expand_path("../..", candidate) if File.basename(candidate) == ".worktrees"
-
-  candidate
-end
-
-PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { default_projects_dir })
+PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 DEFAULT_REGISTRY = File.join(PROJECTS_DIR, ".agents", "worktree-registry.json")
 RELEASE_REPOS_CONFIG = File.join(SCRIPT_ROOT, "config", "release_repos.yml")
 QA_ENVIRONMENTS_CONFIG = File.join(SCRIPT_ROOT, "config", "qa_environments.yml")

@@ -36,10 +36,13 @@
 require "json"
 require "time"
 require_relative "lib/agent_api"
+require_relative "lib/session_markers"
 
 # All logic lives on this class so the unit test can `load` the file (the main
 # guard below keeps it from executing) and exercise the pure builders directly.
 class AtomicCaptureHook
+  include AgentApi::Presence
+
   # AgentAction outcomes / actors (mirror app/models/agent_action.rb).
   OK    = "ok"
   ERROR = "error"
@@ -1003,37 +1006,14 @@ class AtomicCaptureHook
     @env["ATOMIC_CAPTURE_FOREGROUND"].to_s == "1"
   end
 
-  # ── Marker file resolution (mirrors bin/agent-marker) ────────────────────
+  # ── Marker file resolution (shared with bin/atomic-event) ────────────────
 
-  # Walk up from the tool's cwd to the nearest .agent-context.json.
   def read_context_marker(cwd)
-    dir = present?(cwd) ? File.expand_path(cwd) : nil
-    return nil unless dir
-
-    loop do
-      path = File.join(dir, ".agent-context.json")
-      return JSON.parse(File.read(path)) if File.file?(path)
-
-      parent = File.dirname(dir)
-      return nil if parent == dir
-
-      dir = parent
-    end
-  rescue StandardError
-    nil
+    SessionMarkers.read_context_marker(cwd)
   end
 
   def read_session_marker(session_id)
-    sid = session_id.to_s.strip
-    return nil if sid.empty?
-
-    safe = sid.gsub(/[^A-Za-z0-9._-]/, "")
-    path = File.join(projects_dir, ".agents", "sessions", "#{safe}.json")
-    return nil unless File.file?(path)
-
-    JSON.parse(File.read(path))
-  rescue StandardError
-    nil
+    SessionMarkers.read_session_marker(session_id, projects_dir)
   end
 
   # The id of the session's currently open activity, read from the sibling marker
@@ -1108,24 +1088,8 @@ class AtomicCaptureHook
 
   # ── Tiny helpers ─────────────────────────────────────────────────────────
 
-  def first_present(hash, *keys)
-    keys.each do |key|
-      value = hash[key]
-      return value if present?(value)
-    end
-    nil
-  end
-
   def fetch_either(hash, key)
     hash.fetch(key) { hash[key.to_sym] }
-  end
-
-  def blank_to_nil(value)
-    present?(value) ? value : nil
-  end
-
-  def present?(value)
-    @api.present?(value)
   end
 end
 
