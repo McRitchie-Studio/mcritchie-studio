@@ -2,8 +2,9 @@
 
 class Task
   # Materialized LATEST-ATTEMPT-PER-GATE snapshot — the newest GateRun for each
-  # task-grain gate (G1 Cert, G2a Primary, G2b Light), denormalized onto the task
-  # row (gates jsonb) exactly like Task::TestingPhases. A PURE function of the
+  # task-grain gate (G1 Cert, DoR builder, DoR review, G2a Primary, G2b Light),
+  # denormalized onto the task row (gates jsonb) exactly like Task::TestingPhases.
+  # A PURE function of the
   # task's gate_runs (GateRun.latest_by_key computes the read), so recompute is
   # idempotent and self-heals on a VERSION bump (see #cached_or_built). gate_runs
   # stays the source of truth; this is a read-side convenience for the tasks API.
@@ -12,11 +13,14 @@ class Task
   # membership — intentionally OUT of this per-task projection (release surfaces
   # read gate_runs directly).
   module GatesProjection
-    VERSION = 1
+    # v2: the two DoR gates (dor, dor_review) joined the task-grain set. Bumping
+    # the version self-heals every cached 3-key projection on first access
+    # (cached_or_built rebuilds from gate_runs on a version mismatch — no backfill).
+    VERSION = 2
 
-    # The task-grain gate keys this projection snapshots (g1_cert, g2a_primary,
-    # g2b_light). Every key is always present in the map — a never-attempted gate
-    # carries the all-nil row — so consumers never key-check.
+    # The task-grain gate keys this projection snapshots (g1_cert, dor, dor_review,
+    # g2a_primary, g2b_light). Every key is always present in the map — a
+    # never-attempted gate carries the all-nil row — so consumers never key-check.
     GATE_KEYS = GateRun::TASK_KEYS
 
     # The per-gate row keys — the operator's flat shape: the attempt ordinal, its

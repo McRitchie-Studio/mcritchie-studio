@@ -40,11 +40,12 @@
 # A red lane records nothing and exits non-zero.
 #
 # G1 gate-run markers mirror bin/full-suite-check's: OPEN the task's g1_cert
-# attempt at start, append one executed-SOP entry per lane, CLOSE it --failed the
-# moment the cert goes red. The GREEN path stays open — bin/dor-check's merge-gate
-# verdict is what closes G1. All emits are fire-and-forget (a board blip never
-# breaks a cert) and are SKIPPED under --print (a dry run must not write to the
-# durable record).
+# attempt at start, append one executed-SOP entry per lane, CLOSE it --success on
+# the green path and --failed the moment the cert goes red. Cert OWNS the whole
+# g1_cert window now — dor-check no longer touches g1_cert (its DoR verdict is the
+# separate dor/dor_review gates). All emits are fire-and-forget (a board blip
+# never breaks a cert) and are SKIPPED under --print (a dry run must not write to
+# the durable record).
 #
 # Usage:
 #   bin/fast-check <task-slug>            # run all lanes; record evidence on the task
@@ -208,6 +209,10 @@ unless mapped_ok && spine_ok && rubocop_ok
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
+
+# All lanes green — cert self-closes the g1_cert attempt success (dor-check no
+# longer owns G1's close; its DoR verdict is the separate dor/dor_review gates).
+emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
 
 fingerprint = FullSuiteGate.fingerprint(root)
 if fingerprint.nil?

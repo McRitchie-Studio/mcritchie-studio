@@ -135,8 +135,9 @@ DATA_CHANGE_PREFIXES = %w[db/migrate/ db/seeds].freeze
 # (slash) must NOT match, nor a dedicated task like `pokemon:seed`.
 BARE_SEED_TASK = %r{(?<![\w:/])db:seed(?::\w+)?(?![\w:/])}i
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
-# The gate-run CLI (GateRun markers). A merge-gate verdict is what CLOSES the
-# task's G1 Cert attempt — see the emit at the bottom; fire-and-forget.
+# The gate-run CLI (GateRun markers). A merge-gate verdict opens+closes the
+# task's DoR gate — `dor` (builder) or `dor_review` (review gate-zero) — see the
+# emit at the bottom; fire-and-forget.
 GATE_BIN = File.expand_path("gate", __dir__)
 
 def warn!(msg)
@@ -154,8 +155,8 @@ GATE_ROLES = %w[builder review].freeze
 OptionParser.new do |o|
   o.banner = "Usage: bin/dor-check <task-slug> [--gate merge|build] [--gate-role builder|review] [--json] | bin/dor-check --file task.json"
   o.on("--gate GATE", "Boundary to check: merge (default, submitted→reviewed) or build (designed→building)") { |v| options[:gate] = v }
-  o.on("--gate-role ROLE", "Who is running the gate: builder (default; the verdict CLOSES the task's G1 Cert attempt) " \
-                           "or review (the primary reviewer's gate-zero; the verdict appends as a sop on G2a instead)") { |v| options[:gate_role] = v }
+  o.on("--gate-role ROLE", "Who is running the gate: builder (default; the verdict opens+closes the task's DoR " \
+                           "gate `dor`) or review (the primary reviewer's gate-zero; opens+closes `dor_review`)") { |v| options[:gate_role] = v }
   o.on("--json", "Emit a machine-readable verdict") { options[:json] = true }
   o.on("--diff-base", "Resolve and print the committed-diff base for this repo, then exit (debug/resolver seam)") { options[:diff_base] = true }
   o.on("--suite-fingerprint", "Print the code fingerprint the full-suite gate would validate against, then exit (debug/resolver seam)") { options[:suite_fingerprint] = true }
@@ -746,26 +747,21 @@ when :unverified
     "manually before the handoff."
 end
 
-# --- G1/G2 gate-run emit (durable GateRun markers) --------------------------
-# A REAL merge-gate verdict is a gate event: the builder's run CLOSES the task's
-# G1 Cert attempt (success = ready, with the verdict evidence as sops); the
-# primary reviewer's gate-zero (--gate-role review) APPENDS its verdict to the
-# open G2a attempt instead (the review supervisor owns G2a's close). Skipped for
-# --json (the heartbeat monitor polls read-only), --file (offline/test
-# evaluation), and the build gate (no cert exists yet). Fire-and-forget: a board
-# blip never changes the verdict or the exit code.
+# --- DoR gate-run emit (durable GateRun markers) ----------------------------
+# A REAL merge-gate verdict is the Definition-of-Ready gate — its OWN gate now,
+# distinct from G1 Cert (cert self-closes in full-suite-check). The builder's run
+# opens+closes the `dor` gate; the primary reviewer's gate-zero (--gate-role
+# review) opens+closes `dor_review` (was: a sop appended to G2a — the review
+# supervisor still owns the G2a/G2b review-lane closes). Both carry the verdict
+# evidence as sops. Skipped for --json (the heartbeat monitor polls read-only),
+# --file (offline/test evaluation), and the build gate (no DoR verdict yet).
+# Fire-and-forget: a board blip never changes the verdict or the exit code.
 def emit_gate_verdict(slug, ready, role, sops)
-  args =
-    if role == "review"
-      ["sop", "task", slug, "g2a_primary",
-       "--sop", "dor-check", "--cmd", "bin/dor-check #{slug} --gate-role review",
-       "--result", ready ? "pass" : "fail"]
-    else
-      close = ["close", "task", slug, "g1_cert", ready ? "--success" : "--failed"]
-      sops.each { |entry| close += ["--sop-json", JSON.generate(entry)] }
-      close
-    end
-  system(GATE_BIN, *args, out: File::NULL, err: File::NULL)
+  key = role == "review" ? "dor_review" : "dor"
+  system(GATE_BIN, "open", "task", slug, key, out: File::NULL, err: File::NULL)
+  close = ["close", "task", slug, key, ready ? "--success" : "--failed"]
+  sops.each { |entry| close += ["--sop-json", JSON.generate(entry)] }
+  system(GATE_BIN, *close, out: File::NULL, err: File::NULL)
 rescue StandardError
   nil
 end
@@ -789,10 +785,11 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
     gate_sops << entry
   end
   if ci
-    # G1-close semantics (ci-gate-review-handoff): the builder's verdict still
-    # CLOSES G1 at submit — a not-yet-settled CI records as "pending" (provisional,
-    # never a fail), and the AUTHORITATIVE ci verdict lands on G2a via the review
-    # gate-zero. One verdict per gate; no G1 row lingers in flight waiting on CI.
+    # DoR-close semantics (ci-gate-review-handoff): the builder's verdict closes
+    # the `dor` gate at submit — a not-yet-settled CI records as "pending"
+    # (provisional, never a fail), and the AUTHORITATIVE ci verdict lands on
+    # `dor_review` via the review gate-zero. One verdict per gate; no DoR row
+    # lingers in flight waiting on CI.
     ci_result =
       case ci[:state]
       when :green then "pass"

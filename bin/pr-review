@@ -21,7 +21,7 @@
 # spawning a reviewer pair it reads the PR's live GitHub CI (bin/lib/ci_status.rb):
 #   red      → block the task back (bin/task block --kind rework) with the failing
 #              checks named — no reviewer tokens burned; the bounce records as a
-#              failed G2a attempt with a ci SOP.
+#              failed dor_review (gate-zero) attempt with a ci SOP.
 #   pending  → defer the task to a later wave (the existing defer machinery);
 #   :none    → same defer (an open PR whose checks haven't reported yet);
 #   green    → proceed to spawn the pair.
@@ -455,11 +455,13 @@ def task_write(args, input: nil)
   status&.success?
 end
 
-# Best-effort G2 gate-run markers (bin/gate → GateRun). The SUPERVISOR owns the
-# G2 lanes — it is the one place that knows role assignment deterministically:
-# start_review OPENs g2a_primary + g2b_light as the pair launches, and
-# close_review_gates CLOSEs each lane from its OWN reviewer's scout-report
-# outcome. Fire-and-forget: a gate write never breaks the review loop.
+# Best-effort gate-run markers (bin/gate → GateRun). The SUPERVISOR owns the
+# review-side gates — it is the one place that knows role assignment
+# deterministically: start_review OPENs the gate-zero (dor_review, closed by the
+# primary's dor-check --gate-role review) plus g2a_primary + g2b_light as the
+# pair launches, and close_review_gates CLOSEs each G2 lane from its OWN
+# reviewer's scout-report outcome. A CI-red bounce closes dor_review failed with
+# no reviewer. Fire-and-forget: a gate write never breaks the review loop.
 def gate_write(*args)
   cmd = managed_command(GATE_BIN, *args)
   unless OPTIONS.fetch(:run)
@@ -549,6 +551,11 @@ def start_review(task, review_number)
     puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero verifies CI"
   end
 
+  # Gate-zero (dor_review) opens as the supervisor proceeds past CI — the primary
+  # reviewer's `bin/dor-check <slug> --gate-role review` closes it with the
+  # authoritative verdict (open! is idempotent, so its own open reuses this row).
+  gate_write("open", "task", slug, "dor_review", "--actor", "avi")
+
   # Supervisor step: Avi (thin gate) SELECTS the primary+light pair — he never
   # reviews code himself, so this narrates as "select primary+light reviewers"
   # (NOT "summon Avi").
@@ -591,11 +598,13 @@ def finish_review(review, events, handled, deferred_until)
   # CI gate-zero resolutions (no reviewers were spawned for these).
   if (ci = review[:ci_red])
     failing = Array(ci[:failing]).join(", ")
-    # The CI bounce IS review's verdict this round — record it as a failed G2a
-    # attempt with a ci SOP (actor avi, the supervisor), so the round-trip shows
-    # on the task's gates card even though no reviewer ran.
-    gate_write("open", "task", slug, "g2a_primary", "--actor", "avi")
-    gate_write("close", "task", slug, "g2a_primary", "--failed", "--actor", "avi",
+    # The CI bounce IS review's gate-zero verdict this round — record it as a
+    # failed dor_review attempt with a ci SOP (actor avi, the supervisor), so the
+    # round-trip shows on the task's gates card even though no reviewer ran. (The
+    # gate-zero lives on dor_review now, not G2a — the G2 lanes only close from an
+    # actual reviewer's scout report.)
+    gate_write("open", "task", slug, "dor_review", "--actor", "avi")
+    gate_write("close", "task", slug, "dor_review", "--failed", "--actor", "avi",
                "--sop-json", JSON.generate({ "sop" => "ci", "result" => "fail" }),
                "--meta", "outcome=ci-red")
     feedback = "pr-review CI gate: GitHub CI is RED for the PR (#{failing}) — blocked back before spawning " \

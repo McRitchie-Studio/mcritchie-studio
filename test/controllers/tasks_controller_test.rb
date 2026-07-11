@@ -85,6 +85,22 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "h3", text: "Testing gates", count: 0
   end
 
+  test "[integration] show renders the DoR gate chips when dor gate runs exist" do
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "dor", success: true,
+                   sops: [{ "sop" => "dor-check", "result" => "pass" }])
+    GateRun.close!(subject_type: "task", subject_slug: @new_task.slug, key: "dor_review", success: false,
+                   sops: [{ "sop" => "ci", "result" => "fail" }])
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select "h3", text: "Testing gates"
+    assert_select "p.label-upper", text: "DoR (builder)"
+    assert_select "p.label-upper", text: "DoR (review)"
+    assert_select "p", text: "Passed"  # dor builder verdict
+    assert_select "p", text: "Failed"  # dor_review verdict
+  end
+
   test "[integration] json patch archives through the shared task update path" do
     log_in_as(@admin)
 
