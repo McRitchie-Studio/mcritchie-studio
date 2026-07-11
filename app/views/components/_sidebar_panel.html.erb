@@ -23,6 +23,12 @@
   <%= %(#{outside_action.present? ? "@click.outside=\"#{outside_action}\"" : ""}).html_safe %>
   <%= %(#{escape_action.present? ? "@keydown.escape.window=\"#{escape_action}\"" : ""}).html_safe %>
   <%= %(#{close_action.present? ? "@turbo:before-cache.window=\"#{close_action}\"" : ""}).html_safe %>
+  x-transition:enter="transition ease-out duration-300"
+  x-transition:enter-start="translate-x-full"
+  x-transition:enter-end="translate-x-0"
+  x-transition:leave="transition ease-in duration-200"
+  x-transition:leave-start="translate-x-0"
+  x-transition:leave-end="translate-x-full"
   class="<%= display_class %> fixed right-0 <%= width_class %> bg-surface border-l border-subtle shadow-2xl <%= z_class %> flex-col <%= panel_class %>"
   style="top:var(--nav-h, 6rem);height:calc(100% - var(--nav-h, 6rem))"
   role="<%= role %>"
