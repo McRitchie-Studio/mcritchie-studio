@@ -97,7 +97,15 @@ bin/release prepare --yes
 2. Open or resume the release candidate.
 3. Merge each task's PR onto `release`, skipping work already stamped
    `merged: release` or `merged: main`.
-4. Run the pre-QA gate on `origin/release`.
+4. Run the pre-QA gate on `origin/release`. The suite runs in the repo's
+   **isolated gate workspace** — a private detached worktree at
+   `<repo>/.worktrees/_gate`, under its own lock, with a test DB the gate proves
+   is private. It does NOT touch the primary checkout, which stays on a clean
+   `main`. On green it RECORDS what it certified (SHA + command), which is the
+   only thing the G4 ship gate will accept as grounds to skip its own suite.
+   A red gate, and what to do about it (hint: **do not** blank the registry's
+   `qa_test_cmd` — that silently disarms the production gate):
+   [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
 5. Deploy QA and wait for boot.
 6. Flip members from `reviewed` to `assembled` only after QA is green.
 

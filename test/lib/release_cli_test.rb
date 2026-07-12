@@ -23,6 +23,7 @@ require "tmpdir"
 require "json"
 require "base64"
 require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
+require "English"   # $CHILD_STATUS — the gate-lock queue test reaps its own child
 
 class ReleaseCliTest < Minitest::Test
   WRAPPER = File.expand_path("../../bin/release", __dir__)
@@ -122,19 +123,50 @@ class ReleaseCliTest < Minitest::Test
   # a real pre_qa_gate/test_gate but is not asserting on the plumbing itself:
   #   * `git rev-parse origin/release` → the SHA under test (see GATE_SHA),
   #   * the workspace pin (`git worktree add|prune` / `reset` / `clean`) → ok,
+  #   * `bin/rails runner` — the PRIVATE-DB PROBE (assert_private_gate_db!) →
+  #     answered the way a COMPLIANT app would: it echoes back the DATABASE_URL the
+  #     gate overlaid (a postgres app: Rails merges that builtin into the test
+  #     config), or, when the gate overlaid NO url (a SQLite app — rolio), a file
+  #     INSIDE the gate workspace. Both satisfy GateWorkspace.private_db?, so the
+  #     plumbing rides on; the tests that OWN this probe answer it themselves.
   #   * `bin/rails db:test:prepare` (the gate DB, exactly what CI runs) → ok.
+  # BOTH `bin/rails` subcommands key on a[1] — `runner` and `db:test:prepare` share
+  # an argv[0].
   # It returns nil for everything else, so each stub's own `sh` keeps full control
-  # of the commands it asserts on (`g = gate_git(a); return g if g` first, then
-  # the test's own branches).
+  # of the commands it asserts on (`g = gate_git(a, k); return g if g` first, then
+  # the test's own branches). Every stub must take **k and pass it: the probe's
+  # answer depends on the env overlay + chdir the gate hands the command.
   GATE_GIT_STUB = <<~RUBY
     GATE_SHA = #{GATE_SHA.inspect}
-    def gate_git(a)
+    def gate_git(a, k)
       return [GATE_SHA, true] if a[0] == "git" && a.include?("rev-parse")
       return ["", true] if a[0] == "git" && %w[fetch worktree reset clean].include?(a[3].to_s)
+      if a[0] == "bin/rails" && a[1] == "runner"
+        url = k[:env].to_h["DATABASE_URL"].to_s
+        db  = url.empty? ? File.join(k[:chdir].to_s, "storage", "test.sqlite3") : url.split("/").last
+        return ["GATEDB=" + db, true]
+      end
       return ["", true] if a[0] == "bin/rails" && a[1] == "db:test:prepare"
       nil
     end
   RUBY
+
+  # A postgres `config/database.yml` for a fixture repo. Release::GateWorkspace
+  # reads the app's OWN file to decide whether the gate needs a DB url at all
+  # (postgres → the private gate DB; SQLite → none, its test DB is already a file
+  # inside the workspace), so a fixture that asserts on the DB overlay must carry
+  # one. Planted in the PRIMARY (that is the path database_url_for reads).
+  def plant_database_yml(repo_path, adapter: "postgresql")
+    FileUtils.mkdir_p(File.join(repo_path, "config"))
+    File.write(File.join(repo_path, "config", "database.yml"), <<~YML)
+      default: &default
+        adapter: #{adapter}
+      test:
+        <<: *default
+        database: fixture_test
+    YML
+    repo_path
+  end
 
   def run_ruby(script)
     env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
@@ -478,8 +510,8 @@ class ReleaseCliTest < Minitest::Test
         {}
       end
     end
-    def sh(*a, **_k)
-      g = gate_git(a)
+    def sh(*a, **k)
+      g = gate_git(a, k)
       return g if g
       return ["release", true] if a.include?("baseRefName")
       if a[0] == "gh" && a.include?("merge")
@@ -618,9 +650,9 @@ class ReleaseCliTest < Minitest::Test
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/failing-suite"
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
           ["", true]
@@ -671,7 +703,7 @@ class ReleaseCliTest < Minitest::Test
         def sh(*a, **k)
           $stdout.puts("GIT #{a[3]} #{a[4]}") if a[0] == "git"
           $stdout.puts("SUITE-CHDIR #{k[:chdir]}") if a[0] == "bin/suite"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -694,17 +726,25 @@ class ReleaseCliTest < Minitest::Test
 
   # [unit] The gate suite is spawned under the GATE ENV OVERLAY (Release::GateEnv):
   # the agent-session ids are UNSET (nil ⇒ unset in the child, so every grandchild
-  # the suite spawns is session-less exactly like CI) and TEST_DATABASE_URL points
-  # at the gate's PRIVATE test DB (never the primary's shared <app>_test, which a
-  # concurrent suite can pollute mid-run).
+  # the suite spawns is session-less exactly like CI), RAILS_ENV is pinned to test,
+  # and BOTH DB seams point at the gate's PRIVATE test DB (never the primary's
+  # shared <app>_test, which a concurrent suite can pollute mid-run).
+  #
+  # BOTH seams, because they are not equivalent: TEST_DATABASE_URL is HAND-ROLLED
+  # (only an app whose database.yml renders it honours it — the hub does,
+  # turf-monster does NOT), while DATABASE_URL is a Rails BUILTIN that every app
+  # merges. Dropping either one re-opens the hole this closed: with TEST_DATABASE_URL
+  # alone, turf's gate resolved the SHARED `turf_monster_test` and db:test:prepare
+  # would have PURGED it.
   def test_pre_qa_gate_spawns_the_suite_under_the_gate_env_overlay
     Dir.mktmpdir do |dir|
+      plant_database_yml(dir) # a postgres app → the gate overlays its private DB url
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/suite"
         def sh(*a, **k)
           $stdout.puts("SUITE-ENV #{k[:env].inspect}") if a[0] == "bin/suite"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -716,9 +756,184 @@ class ReleaseCliTest < Minitest::Test
       assert_includes env_line, %("CLAUDE_CODE_SESSION_ID"=>nil),
                       "the agent-session id is UNSET for the gate's whole process tree (CI names no session)"
       assert_includes env_line, %("CODEX_THREAD_ID"=>nil), "…the Codex twin too"
+      assert_includes env_line, %("RAILS_ENV"=>"test"),
+                      "every gate command is a TEST command — unpinned, db:test:prepare would merge the DB url " \
+                      "into DEVELOPMENT's config"
+      assert_includes env_line, %("DATABASE_URL"=>"postgres:///sibling_gate_test"),
+                      "the Rails BUILTIN seam — the one that actually holds for an app whose database.yml " \
+                      "never heard of TEST_DATABASE_URL (turf-monster)"
       assert_includes env_line, %("TEST_DATABASE_URL"=>"postgres:///sibling_gate_test"),
-                      "the suite boots against the gate's PRIVATE test DB, never the primary's shared one"
+                      "…and the hand-rolled seam the hub's database.yml renders, naming the SAME gate DB"
       assert_includes out, "PASSED"
+    end
+  end
+
+  # --- the PRIVATE-DB invariant: PROVE it, never assume it ---------------------
+  #
+  # BLOCKER (Avi, review of PR #511): the "private test DB" rested on an ENV overlay
+  # alone — and an env var only lands if the app's config/database.yml actually reads
+  # it. TEST_DATABASE_URL is a HAND-ROLLED seam: the hub renders it, turf-monster
+  # does NOT (a bare `database: turf_monster_test`). So for turf the overlay was
+  # INERT — the gate would have run its suite against the SHARED `turf_monster_test`,
+  # and `db:test:prepare` would have PURGED it under whatever concurrent suite was
+  # using it. The overlay now also carries DATABASE_URL (the Rails builtin EVERY app
+  # merges), but a guarantee resting on every future app's config being right is a
+  # CONVENTION, not an invariant.
+  #
+  # assert_private_gate_db! makes it an invariant: BOOT the app in the workspace, read
+  # back the database it ACTUALLY connected to (`bin/rails runner` → `GATEDB=…`), and
+  # REFUSE to run unless GateWorkspace.private_db? says it belongs to this gate. It
+  # runs BEFORE db:test:prepare — assert first, destroy second.
+
+  # A gate stub whose DB PROBE answers `resolved` (`%WORKSPACE%` ⇒ the workspace the
+  # gate is probing; "" ⇒ a probe that fails to BOOT), and which prints each step it
+  # is asked to run — PROBE / DB-PREPARE / SUITE — so a test can assert both the
+  # verdict AND the order. The repo's own config/database.yml (planted by the caller)
+  # still decides whether an overlay url reaches the probe at all.
+  def db_probe_stub(dir, resolved)
+    %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+      %(def repo_path(_repo) = #{dir.inspect}\n) +
+      %(RESOLVED = #{resolved.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def sh(*a, **k)
+          # The probe's ANSWER is the subject here, so it is served before the canned
+          # plumbing (GATE_GIT_STUB) gets a look at the command.
+          if a[0] == "bin/rails" && a[1] == "runner"
+            $stdout.puts("PROBE")
+            return ["could not connect", false] if RESOLVED.empty?
+            return ["GATEDB=" + RESOLVED.sub("%WORKSPACE%", k[:chdir].to_s), true]
+          end
+          $stdout.puts("DB-PREPARE") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+          if a[0] == "bin/suite"
+            $stdout.puts("SUITE")
+            $stdout.puts("SUITE-ENV #{k[:env].inspect}")
+          end
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+  end
+
+  # [unit] THE BLOCKER. The probe resolves the SHARED primary test DB (turf's
+  # database.yml ignoring the overlay — the measured, real failure) → the gate
+  # REFUSES, and it refuses BEFORE `db:test:prepare` ever runs. That ORDER is the
+  # whole point: db:test:prepare PURGES the database it is pointed at, so a check
+  # that ran after it would be an autopsy, not a guard — the concurrent suite's data
+  # would already be gone.
+  def test_pre_qa_gate_refuses_a_shared_test_db_before_db_test_prepare_can_purge_it
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir)
+      out = run_cli(["--yes"], setup: db_probe_stub(dir, "turf_monster_test"),
+                    call: %{begin; pre_qa_gate([{ "repo" => "turf-monster" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      lines = out.lines.map(&:strip)
+      assert_includes lines, "PROBE", "the guard BOOTS the app and reads the DB back — the name string proves nothing"
+      assert_includes out, "ABORTED", "a SHARED test database must abort the gate"
+      assert_includes out, "SHARED test database", "…naming what it refused"
+      assert_includes out, "turf_monster_test", "…the database the suite would have run against"
+      assert_includes out, "turf_monster_gate_test", "…and the gate's OWN database it expected"
+      assert_includes out, "REFUSING"
+      assert_includes out, "NOT a release regression", "an ENV/config abort never routes to the eject path"
+      refute_includes lines, "DB-PREPARE",
+                      "the refusal lands BEFORE db:test:prepare — that task PURGES the database it is pointed at, " \
+                      "so a check running after it would already have destroyed the concurrent suite's data this " \
+                      "guard exists to protect"
+      refute_includes lines, "SUITE", "and nothing runs against a database that isn't ours"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [unit] The green path: the probe resolves the gate's OWN postgres DB → the gate
+  # states the verdict and rides on, probe → prepare → suite, in that order.
+  def test_pre_qa_gate_runs_when_the_probe_resolves_the_gates_own_private_db
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir)
+      out = run_cli(["--yes"], setup: db_probe_stub(dir, "sibling_gate_test"),
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      lines = out.lines.map(&:strip)
+      probe = lines.index("PROBE")
+      db    = lines.index("DB-PREPARE")
+      suite = lines.index("SUITE")
+      assert probe && db && suite, "the probe, the DB prepare, and the suite must all run: #{out}"
+      assert_operator probe, :<, db, "assert first, destroy second"
+      assert_operator db, :<, suite, "…and both before the suite boots"
+      assert_includes out, "gate test DB sibling_gate_test (private to this gate)",
+                      "the verdict is STATED — a convention nobody checks is a comment"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] A SQLite app (rolio): its test DB is a FILE inside the gate workspace, so
+  # it is private by construction — the gate hands it NO postgres url (that would be
+  # a live trap the moment it took effect) and the probe's file path still satisfies
+  # the invariant.
+  def test_pre_qa_gate_runs_a_sqlite_app_whose_test_db_is_a_file_inside_the_workspace
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir, adapter: "sqlite3")
+      out = run_cli(["--yes"], setup: db_probe_stub(dir, "%WORKSPACE%/storage/test.sqlite3"),
+                    call: %{pre_qa_gate([{ "repo" => "rolio" }]); puts("PASSED")})
+
+      env_line = out.lines.find { |l| l.start_with?("SUITE-ENV") }
+      assert env_line, "the suite must run: #{out}"
+      refute_includes env_line, "DATABASE_URL",
+                      "a SQLite app is handed NEITHER db url — its test DB is a file INSIDE the workspace " \
+                      "(already private), and a postgres url would be a live trap"
+      assert_includes out, "(private to this gate)", "…and the file-backed DB still PASSES the invariant"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] The other half of file_backed?: a SQLite path OUTSIDE the workspace (the
+  # PRIMARY's storage/test.sqlite3) is NOT private — a workspace-relative resolve
+  # would have waved it through, and the gate would purge the checkout's own test DB.
+  def test_pre_qa_gate_refuses_a_sqlite_db_outside_the_gate_workspace
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir, adapter: "sqlite3")
+      primary_db = File.join(dir, "storage", "test.sqlite3") # the PRIMARY's file, not the workspace's
+      out = run_cli(["--yes"], setup: db_probe_stub(dir, primary_db),
+                    call: %{begin; pre_qa_gate([{ "repo" => "rolio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      lines = out.lines.map(&:strip)
+      assert_includes out, "ABORTED", "a DB file outside the workspace is SHARED — refuse it"
+      assert_includes out, "SHARED test database"
+      refute_includes lines, "DB-PREPARE", "…before db:test:prepare could purge the primary's own test DB"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [unit] A probe that cannot BOOT is an ENV abort, not a regression — and it stops
+  # the gate rather than assuming the DB is fine (fail CLOSED: an unverifiable DB is
+  # exactly the case where db:test:prepare must not fire).
+  def test_pre_qa_gate_aborts_as_env_when_the_db_probe_cannot_boot
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir)
+      out = run_cli(["--yes"], setup: db_probe_stub(dir, ""),
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      lines = out.lines.map(&:strip)
+      assert_includes out, "ABORTED"
+      assert_includes out, "could not resolve the test database", "the abort names what it could not prove"
+      assert_includes out, "NOT a release regression", "…as an ENV issue — nothing to eject or revert"
+      refute_includes lines, "DB-PREPARE", "an unverifiable DB is never purged"
+      refute_includes lines, "SUITE"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [unit] The url the overlay carries is read from the APP's OWN config/database.yml
+  # (not a registry column that can drift): a postgres app gets the gate's private DB;
+  # a SQLite app gets NOTHING.
+  def test_gate_database_url_is_private_for_a_pg_app_and_nil_for_a_sqlite_app
+    Dir.mktmpdir do |dir|
+      pg   = plant_database_yml(File.join(dir, "pg"))
+      lite = plant_database_yml(File.join(dir, "lite"), adapter: "sqlite3")
+      setup = %(def repo_path(repo) = repo == "turf-monster" ? #{pg.inspect} : #{lite.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{print([gate_database_url("turf-monster"), gate_database_url("rolio")].inspect)})
+
+      assert_equal %(["postgres:///turf_monster_gate_test", nil]), out
     end
   end
 
@@ -739,8 +954,8 @@ class ReleaseCliTest < Minitest::Test
           $stdout.puts("CERT-CALL " + ruby.gsub("\n", " "))
           {}
         end
-        def sh(*a, **_k)
-          g = gate_git(a)
+        def sh(*a, **k)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -771,8 +986,8 @@ class ReleaseCliTest < Minitest::Test
           $stdout.puts("CERT-CALL " + ruby.gsub("\n", " "))
           {}
         end
-        def sh(*a, **_k)
-          g = gate_git(a)
+        def sh(*a, **k)
+          g = gate_git(a, k)
           return g if g
           return ["", false] if a[0] == "bin/suite" # RED
           ["", true]
@@ -827,12 +1042,12 @@ class ReleaseCliTest < Minitest::Test
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
           $stdout.puts("BUNDLE #{a[1]}") if a[0] == "bin/bundle"
           $stdout.puts("DB-PREPARE") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
           $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -863,10 +1078,10 @@ class ReleaseCliTest < Minitest::Test
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("BUNDLE #{a[1]}") if a[0] == "bin/bundle"
           $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           return ["", false] if a[0] == "bin/bundle" && a[1] == "check"
           ["", true]
@@ -895,10 +1110,10 @@ class ReleaseCliTest < Minitest::Test
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
           $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           return ["/opt/mise/rubies/3.3.11/bin/ruby", true] if a[0] == "ruby"
           return ["", false] if a[0] == "bin/bundle" # check AND install both fail
@@ -956,7 +1171,7 @@ class ReleaseCliTest < Minitest::Test
           $stdout.puts("BUNDLE-ARGV #{a[0..3].inspect} #{k[:chdir]}") if a[0] == "ruby" && a[1] == "-S"
           $stdout.puts("BARE-BUNDLE") if a[0] == "bundle"
           $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -984,9 +1199,9 @@ class ReleaseCliTest < Minitest::Test
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{fix.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("BUNDLE #{a[1]}") if a[0].end_with?("bundle")
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -1043,11 +1258,11 @@ class ReleaseCliTest < Minitest::Test
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
-        def sh(*a, **_k)
+        def sh(*a, **k)
           # a[1] guards the gate's OWN `bin/rails db:test:prepare` out of the way —
           # only the registered suite command is the subject here.
           $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails" && a[1] == "test"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -1066,9 +1281,9 @@ class ReleaseCliTest < Minitest::Test
     Dir.mktmpdir do |dir|
       setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def app_meta_for(_repo) = { "test_cmd" => %q{bin/rails test "test/models/a b_test.rb"} }
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("SHIP-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails" && a[1] == "test"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -1172,12 +1387,25 @@ class ReleaseCliTest < Minitest::Test
     git.call("config", "user.name", "t")
     git.call("config", "commit.gpgsign", "false")
     File.write(File.join(clone, "README"), "lock fixture")
-    # A COMMITTED bin/rails, so it lands in the gate's detached workspace too: a
-    # real gate runs `bin/rails db:test:prepare` there (exactly what CI runs) before
-    # the suite, and aborts as an ENV issue if it fails. The fixture is not a Rails
-    # app, so answer green.
+    # A COMMITTED config/database.yml, so the gate resolves a REAL adapter off the
+    # fixture's own disk (postgres → the private gate DB url in the env overlay),
+    # exactly as it does for a real app.
+    plant_database_yml(clone)
+    # A COMMITTED bin/rails, so it lands in the gate's detached workspace too. A real
+    # gate runs TWO bin/rails commands there before the suite: the private-DB probe
+    # (`runner`, whose stdout it plucks `GATEDB=` out of) and `db:test:prepare`
+    # (exactly what CI runs) — and aborts as an ENV issue if either fails. The
+    # fixture is not a Rails app, so it answers the probe the way a COMPLIANT app
+    # does — echoing back the DATABASE_URL the gate overlaid (Rails merges that
+    # builtin into the test config) — and answers everything else green.
     FileUtils.mkdir_p(File.join(clone, "bin"))
-    File.write(File.join(clone, "bin", "rails"), "#!/usr/bin/env sh\nexit 0\n")
+    File.write(File.join(clone, "bin", "rails"), <<~SH)
+      #!/usr/bin/env sh
+      if [ "$1" = "runner" ]; then
+        printf 'GATEDB=%s' "${DATABASE_URL##*/}"
+      fi
+      exit 0
+    SH
     File.chmod(0o755, File.join(clone, "bin", "rails"))
     git.call("add", ".")
     git.call("commit", "-q", "-m", "init")
@@ -1240,6 +1468,170 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "PASSED", "a green gate lets prepare continue"
     end
   end
+
+  # --- the GATE-WORKSPACE lock: the workspace is private to the CONDUCTOR -------
+  #
+  # BLOCKER (Avi, review of PR #511): the first cut of this change asserted the gate
+  # workspace needed no lock ("nothing else touches this tree"). FALSE — another
+  # `bin/release` does. The workspace PATH (<repo>/.worktrees/_gate) and its DB
+  # (<repo>_gate_test) are FIXED, and two concurrent conductors are a DOCUMENTED
+  # occurrence here (two QA-release sessions have already raced). Unlocked, conductor
+  # B's `reset --hard` moves the tree and its `db:test:prepare` PURGES the DB under
+  # conductor A's live, lazily-autoloading suite — the exact two root causes this gate
+  # exists to close, relocated one directory over (plus the parallel-full-suite
+  # SIGSEGV class).
+  #
+  # So the gate holds its OWN flock across pin → prepare → suite. It is deliberately
+  # NOT the primary-checkout lock: the primary must stay FREE (feature sessions live
+  # there, and monopolising it for the length of a suite was half of what made the old
+  # gate hostile), and the two are never nested, so they cannot deadlock.
+
+  # A fresh fd on a lockfile sees exactly what a SECOND `bin/release` would: flock is
+  # per open-file-description, so a new fd contends with the conductor's own even
+  # in-process (with_primary_checkout documents the same non-re-entrancy). That makes
+  # the lock state observable from INSIDE the run, at each step of the gate.
+  GATE_LOCK_PROBE = <<~'RUBY'
+    def locked?(name)
+      File.open(File.join(ENV.fetch("MCR_PRIMARY_LOCK_DIR"), name), File::RDWR | File::CREAT, 0o644) do |f|
+        !f.flock(File::LOCK_EX | File::LOCK_NB)
+      end
+    end
+    def locks
+      "gate=#{locked?('mcr-gate-workspace-sibling.lock') ? 'HELD' : 'FREE'} " \
+        "primary=#{locked?('mcr-primary-checkout-sibling.lock') ? 'HELD' : 'FREE'}"
+    end
+  RUBY
+
+  # [unit] THE BLOCKER. The gate-workspace lock is HELD across the WHOLE window — the
+  # workspace pin, the DB prepare, and the suite — because every one of the three is a
+  # step a second conductor would corrupt (reset --hard the tree; purge the DB; tear
+  # the lazily-autoloaded snapshot). And the PRIMARY-checkout lock is FREE at each of
+  # those same moments: this is a NEW lock, not the old hold-the-primary-hostage shape
+  # wearing a different name.
+  def test_pre_qa_gate_holds_the_gate_workspace_lock_across_pin_prepare_and_suite
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + GATE_LOCK_PROBE + <<~'RUBY'
+                def qa_gate_cmd(_repo) = "bin/suite"
+                def sh(*a, **k)
+                  $stdout.puts("PIN #{locks}") if a[0] == "git" && a[3] == "worktree"
+                  $stdout.puts("DB-PREPARE #{locks}") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+                  $stdout.puts("SUITE #{locks}") if a[0] == "bin/suite"
+                  g = gate_git(a, k)
+                  return g if g
+                  ["", true]
+                end
+              RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      assert_includes out, "PIN gate=HELD primary=FREE",
+                      "the workspace pin (`git worktree add` / `reset --hard`) runs UNDER the gate lock — " \
+                      "a second conductor pinning a different SHA here is how the tree gets torn: #{out}"
+      assert_includes out, "DB-PREPARE gate=HELD primary=FREE",
+                      "…so does db:test:prepare, which PURGES the gate DB"
+      assert_includes out, "SUITE gate=HELD primary=FREE",
+                      "…and the suite itself — the multi-minute, lazily-autoloading window the whole gate exists " \
+                      "to protect. The PRIMARY meanwhile stays FREE: this is the gate's own lock, not the old " \
+                      "hold-the-shared-checkout-hostage shape renamed"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] Cross-process proof on a REAL flock: while conductor A holds the gate lock,
+  # conductor B's gate QUEUES — it SAYS so, and it touches NOTHING (no pin, no purge,
+  # no suite) until the lock is released. Queueing is the correct outcome: the
+  # alternative to a queued gate is not two gates, it is two gates destroying each
+  # other's tree and database.
+  def test_a_second_gate_queues_behind_the_conductor_holding_the_gate_workspace_lock
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir)
+      marks = File.join(dir, "marks.log")
+      log   = File.join(dir, "gate.log")
+      setup = %(MARKS = #{marks.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+                def qa_gate_cmd(_repo) = "bin/suite"
+                def sh(*a, **k)
+                  File.write(MARKS, "PIN\n", mode: "a") if a[0] == "git" && a[3] == "worktree"
+                  File.write(MARKS, "DB-PREPARE\n", mode: "a") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+                  File.write(MARKS, "SUITE\n", mode: "a") if a[0] == "bin/suite"
+                  g = gate_git(a, k)
+                  return g if g
+                  ["", true]
+                end
+              RUBY
+      # $stdout.sync so the "waiting…" line reaches the log FILE as it is printed
+      # (stdout to a file is block-buffered) — the queue is only observable live.
+      script = %(ARGV.replace(["--yes"]); $stdout.sync = true; load #{BIN.inspect}; #{setup}; ) +
+               %(pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED"))
+      env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => dir)
+
+      lock = File.open(File.join(dir, "mcr-gate-workspace-sibling.lock"), File::RDWR | File::CREAT, 0o644)
+      assert lock.flock(File::LOCK_EX | File::LOCK_NB), "test setup: conductor A takes the gate-workspace lock"
+
+      pid = Process.spawn(env, "ruby", "-e", script, out: log, err: File::NULL)
+      begin
+        wait_until(20, "conductor B to report that it is queued") do
+          file_text(log).include?("waiting on the sibling gate-workspace lock")
+        end
+        refute_mark marks, "PIN", "B must not reset --hard the tree A's suite is running from"
+        refute_mark marks, "DB-PREPARE", "…nor PURGE the database A's suite is using"
+        refute_mark marks, "SUITE", "…nor run its own suite in A's workspace"
+
+        lock.flock(File::LOCK_UN) # conductor A's gate finishes
+        wait_until(30, "conductor B to acquire the released lock and finish") { Process.wait(pid, Process::WNOHANG) }
+        status = $CHILD_STATUS
+        pid = nil
+
+        assert status.success?, "conductor B must ride on cleanly once the lock is free: #{file_text(log)}"
+        assert_includes file_text(log), "another bin/release is running its gate suite",
+                        "the wait is EXPLAINED, not a silent stall"
+        assert_includes file_text(log), "PASSED", "…and B rides on once the lock is free"
+        assert_mark marks, "SUITE", "B runs its suite only AFTER it owns the workspace"
+      ensure
+        if pid
+          Process.kill("KILL", pid)
+          Process.wait(pid)
+        end
+      end
+    ensure
+      lock&.close
+    end
+  end
+
+  # [unit] The gate lock is its OWN file, in the SAME shared lock dir (TMPDIR-
+  # independent, so two conductors contend on one file) — never the primary's. If
+  # these two ever resolved to the same path the gate would hold the primary hostage
+  # for its whole suite again, which is the shape this change exists to retire.
+  def test_gate_workspace_lock_path_is_a_separate_file_from_the_primary_checkout_lock
+    out = run_cli(["--yes"], setup: %(ENV.delete("MCR_PRIMARY_LOCK_DIR")),
+                  call: %{print([gate_workspace_lock_path("x") == File.join(projects_root, ".agents", "locks", "mcr-gate-workspace-x.lock"), gate_workspace_lock_path("x") != primary_checkout_lock_path("x")].inspect)})
+
+    assert_equal "[true, true]", out
+  end
+
+  # Poll until the block goes truthy, or flunk. The cross-process lock tests observe
+  # a QUEUE, which only exists over time.
+  def wait_until(timeout, what)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+    loop do
+      return true if yield
+      flunk("timed out after #{timeout}s waiting for #{what}") if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep 0.05
+    end
+  end
+
+  # A file the CHILD writes, read from the parent mid-run: it may not exist yet (the
+  # queued conductor has run nothing), and a MISSING marks file is the strongest
+  # possible "it did nothing".
+  def file_text(path) = File.exist?(path) ? File.read(path) : ""
+
+  def mark_lines(path) = file_text(path).lines.map(&:strip)
+
+  def refute_mark(path, mark, msg) = refute_includes(mark_lines(path), mark, msg)
+
+  def assert_mark(path, mark, msg) = assert_includes(mark_lines(path), mark, msg)
 
   # [unit] While another invocation holds the checkout (the gate's suite run),
   # the artifact dance must SKIP — best-effort, non-fatal, HEAD untouched — not
@@ -1383,10 +1775,10 @@ class ReleaseCliTest < Minitest::Test
           $stdout.puts("LOCK-RELEASED #{repo}")
           result
         end
-        def sh(*a, **_k)
+        def sh(*a, **k)
           $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
           $stdout.puts("SUITE") if a[0] == "bin/ship-suite"
-          g = gate_git(a)
+          g = gate_git(a, k)
           return g if g
           ["", true]
         end
@@ -1482,9 +1874,9 @@ class ReleaseCliTest < Minitest::Test
       SHIP_GATE_SKIP_CASES.each do |label, (record, expected)|
         setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
           def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
-          def sh(*a, **_k)
+          def sh(*a, **k)
             $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
-            g = gate_git(a)
+            g = gate_git(a, k)
             return g if g
             ["", true]
           end
@@ -1502,6 +1894,78 @@ class ReleaseCliTest < Minitest::Test
         end
         assert_includes out, "PASSED", "#{label}: the gate itself is green either way"
       end
+    end
+  end
+
+  # --- `ship --skip-test-gate`: the operator's FIRST-CLASS escape hatch ---------
+  #
+  # The old way to ship past a gate the operator believed was a false negative was to
+  # BLANK the registry's test_cmd — which SILENTLY DISARMED the gate and left a record
+  # reading "self-gates (no conductor test_cmd)". That trick is now closed (G4 skips
+  # only on G3's own recorded verdict), and closing it WITHOUT a replacement would
+  # wedge the operator: a G4 false negative with no clean override, and a config edit
+  # is not one (ship's preflight refuses a dirty primary). So the override is
+  # first-class — it DEMANDS a reason, it ASKS before it skips, and it records a RED
+  # gate SOP. A skipped gate is now visible in the release record forever.
+
+  # The ship-gate stub for the escape-hatch cases: the suite and the whole workspace
+  # dance are marked, so a test can prove the skip ran NOTHING.
+  SKIP_GATE_STUB = GATE_GIT_STUB + <<~'RUBY'
+    def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
+    def sh(*a, **k)
+      $stdout.puts("SUITE") if a[0] == "bin/suite"
+      $stdout.puts("WORKSPACE #{a[3]}") if a[0] == "git"
+      $stdout.puts("DB-PREPARE") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+      g = gate_git(a, k)
+      return g if g
+      ["", true]
+    end
+  RUBY
+
+  # [unit] No `--reason` → hard abort, and the suite is neither run NOR skipped. The
+  # reason is the whole record: it is what a reader of the release sees next to a gate
+  # that never ran, so an unexplained skip may not exist.
+  def test_skip_test_gate_demands_a_reason
+    Dir.mktmpdir do |dir|
+      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + SKIP_GATE_STUB
+      out = run_cli(["--yes", "--skip-test-gate"], setup: setup,
+                    call: %{begin; test_gate("x", frozen_sha: #{GATE_SHA.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "an unexplained skip must not ship"
+      assert_includes out, "--skip-test-gate requires --reason"
+      assert_includes out, "recorded on the release as a red gate", "…and says what the reason is FOR"
+      refute_includes out, "SUITE", "the abort runs nothing"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [unit] With a reason (and --yes standing in for the confirm), the gate SKIPS: it
+  # runs no suite, it does not even PIN the workspace — and it records a RED
+  # ship_test_gate SOP carrying the reason and naming the SHA that shipped
+  # uncertified. RED, not green: a gate that did not run is not a gate that passed,
+  # and the old registry-blanking trick left a record that read "already green".
+  def test_skip_test_gate_with_a_reason_records_a_red_gate_sop_and_runs_no_suite
+    Dir.mktmpdir do |dir|
+      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + SKIP_GATE_STUB
+      out = run_cli(["--yes", "--skip-test-gate", "--reason", "gate host postgres is down"], setup: setup,
+                    call: %{$gate_sops = []; test_gate("x", frozen_sha: #{GATE_SHA.inspect}); puts("SOPS " + $gate_sops.inspect); puts("PASSED")})
+
+      assert_includes out, "SKIPPED BY OPERATOR", "the skip is LOUD in the run's own output"
+      assert_includes out, "gate host postgres is down", "…carrying the operator's reason"
+
+      sops = out.lines.find { |l| l.start_with?("SOPS") }
+      assert sops, "the skip must record a gate SOP: #{out}"
+      assert_includes sops, %("sop"=>"ship_test_gate"), "recorded against the gate it skipped"
+      assert_includes sops, %("result"=>"fail"),
+                      "RED — a gate that did NOT run is not a green gate; this is the record the old " \
+                      "registry-blanking trick never left"
+      assert_includes sops, "SKIPPED BY OPERATOR (--skip-test-gate): gate host postgres is down"
+      assert_includes sops, %(did NOT run on #{GATE_SHA[0, 7]}), "…naming the SHA that ships uncertified"
+
+      refute_includes out, "SUITE", "the suite must NOT run — that is what was asked for"
+      refute_includes out, "DB-PREPARE", "…and nothing prepares a workspace that will never be used"
+      refute_includes out, "WORKSPACE", "…the gate returns before it even pins one"
+      assert_includes out, "PASSED", "the ship rides on (the operator owns this call)"
     end
   end
 
@@ -2151,8 +2615,8 @@ class ReleaseCliTest < Minitest::Test
         {}
       end
     end
-    def sh(*a, **_k)
-      g = gate_git(a)
+    def sh(*a, **k)
+      g = gate_git(a, k)
       return g if g
       a.join(" ").include?("curl") ? ["200", true] : ["", true]
     end

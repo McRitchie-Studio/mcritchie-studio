@@ -61,11 +61,13 @@
 # UNSET = the repo self-gates at ship/its own deploy and the gate skips it.
 #
 # WHERE it runs: the repo's ISOLATED GATE WORKSPACE (Release::GateWorkspace) — a
-# private detached worktree pinned at the origin/release SHA, with its own test
-# DB — NOT the shared primary checkout, which stays on a clean `main`. A suite
-# that lazily autoloads over minutes cannot be trusted against a tree a
-# concurrent session can `git checkout` out from under it; that is what made the
-# gate false-fail on green code. See docs/agents/modules/gates/g3-candidate.md.
+# private detached worktree pinned at the origin/release SHA, under a dedicated
+# gate lock, with a test DB the gate PROVES is private before it runs (it boots
+# the app and reads back the resolved connection, and REFUSES a shared DB) — NOT
+# the shared primary checkout, which stays on a clean `main`. A suite that lazily
+# autoloads over minutes cannot be trusted against a tree a concurrent session can
+# `git checkout` out from under it; that is what made the gate false-fail on green
+# code. See docs/agents/modules/gates/g3-candidate.md.
 #
 # WHAT to register as qa_test_cmd:
 #   * satellites — the integration SUBSET (`bin/rails test test/integration`):

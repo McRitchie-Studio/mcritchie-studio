@@ -1,3 +1,5 @@
+require "yaml"
+
 class Release
   # The PRIVATE checkout a local test gate (G3 pre-QA / G4 ship) runs its suite in.
   #
@@ -28,11 +30,26 @@ class Release
   # been a placebo that left the real cause live. Do not "fix" it here.)
   #
   # THE FIX: give the gate a working tree nobody else touches. A detached-HEAD git
-  # worktree pinned at the exact SHA under test, plus its OWN test database. The
-  # tree cannot be flipped (no other process knows it exists), the DB cannot be
-  # polluted (no other process connects to it), and the primary NEVER leaves
-  # `main` — which also retires the "a concurrent session's dirty primary aborted
-  # the ship" class of abort.
+  # worktree pinned at the exact SHA under test, plus its OWN test database. No
+  # agent session, hand-run command, or other tool knows the tree exists, so it
+  # cannot be flipped; and the primary NEVER leaves `main` — which also retires the
+  # "a concurrent session's dirty primary aborted the ship" class of abort.
+  #
+  # TWO CAVEATS, both of which bit the first cut of this model — read them before
+  # you trust the isolation:
+  #
+  #   1. The workspace is private to the CONDUCTOR, not to a PROCESS. Its path and
+  #      DB name are FIXED, so another `bin/release` CAN reach them — and two
+  #      concurrent conductors are a documented occurrence here. bin/release
+  #      therefore holds a dedicated GATE-WORKSPACE lock (never the primary's)
+  #      across pin → prepare → suite. Without it, conductor B resets this tree and
+  #      purges this DB under conductor A's live suite: the same bugs, one directory
+  #      over.
+  #   2. The private DB is delivered by an ENV OVERLAY, and an env var only lands if
+  #      the app's config/database.yml reads it. So it is ASSERTED, not assumed:
+  #      bin/release boots the app and checks what it ACTUALLY connected to
+  #      (private_db? below) before running — and refuses on a shared DB. See
+  #      private_db? for the turf-monster case that made this necessary.
   #
   # A worktree, not a clone: it shares the primary's object store, so it costs a
   # checkout rather than a fetch. It PERSISTS between runs (reset --hard to the
@@ -72,10 +89,76 @@ class Release
       "#{repo.to_s.tr('-', '_')}_gate_test"
     end
 
-    # PURE. The TEST_DATABASE_URL the gate suite boots against. A local-socket
-    # URL (no host/user) mirrors config/database.yml's default connection.
+    # PURE. The DB URL the gate suite boots against. A local-socket URL (no
+    # host/user) mirrors config/database.yml's default connection.
     def test_database_url(repo)
       "postgres:///#{test_database_name(repo)}"
+    end
+
+    # IO. The app's TEST adapter, read from its OWN config/database.yml (ERB
+    # stripped — the file interpolates ENV). Derived from the app's truth rather
+    # than a registry column, so a new app can't drift out of sync with a
+    # convention nobody updated.
+    def adapter(repo_path)
+      file = File.join(repo_path.to_s, "config", "database.yml")
+      return nil unless File.exist?(file)
+
+      raw = File.read(file).gsub(/<%.*?%>/m, "")
+      cfg = YAML.safe_load(raw, aliases: true)
+      return nil unless cfg.is_a?(Hash)
+
+      test = cfg["test"].is_a?(Hash) ? cfg["test"] : {}
+      value = test["adapter"] || cfg.dig("default", "adapter")
+      value.to_s.strip.empty? ? nil : value.to_s.strip
+    rescue StandardError
+      nil
+    end
+
+    # IO. The gate DB URL to overlay for THIS app, or nil when it needs none.
+    #
+    # nil for a FILE-BACKED test DB (SQLite — rolio's `storage/test.sqlite3`):
+    # that file lives INSIDE the gate worktree, so it is already private by
+    # construction, and handing a SQLite app a `postgres:///…` URL would be a live
+    # trap the moment it took effect. Postgres apps (hub, turf-monster) get the
+    # private gate DB.
+    def database_url_for(repo, repo_path)
+      name = adapter(repo_path).to_s
+      return nil if name.empty? || name.start_with?("sqlite")
+
+      test_database_url(repo)
+    end
+
+    # PURE. Is `resolved` — the database the app ACTUALLY connected to, read back
+    # from a booted Rails — private to this gate run? Two ways to qualify:
+    #   * it IS the gate's own DB (postgres), or
+    #   * it is a FILE inside the gate workspace (SQLite), which no other process
+    #     can reach because no other process knows the workspace exists.
+    # Anything else — most importantly a bare `<app>_test`, the SHARED primary
+    # test DB — is NOT private, and the caller aborts rather than run (and
+    # `db:test:prepare`-PURGE) a suite against a database someone else is using.
+    #
+    # This is what turns the private-DB claim from a convention into a checked
+    # invariant: `TEST_DATABASE_URL` is a hand-rolled seam that turf-monster's
+    # database.yml silently ignores, so asserting the DB NAME STRING (as the first
+    # cut of this model did) proved nothing about what the app actually connects to.
+    def private_db?(resolved:, repo:, workspace:)
+      db = resolved.to_s.strip
+      return false if db.empty?
+      return true if db == test_database_name(repo)
+      return false unless file_backed?(db)
+
+      root = File.absolute_path(workspace.to_s)
+      File.absolute_path(db, root).start_with?(root + File::SEPARATOR)
+    rescue StandardError
+      false
+    end
+
+    # PURE. A file-backed (SQLite) database name is a PATH; a postgres one is a
+    # bare identifier. Without this, `File.absolute_path("turf_monster_test",
+    # workspace)` would resolve INSIDE the workspace and wave a shared DB through.
+    def file_backed?(db)
+      name = db.to_s
+      name.include?(File::SEPARATOR) || name.end_with?(".sqlite3")
     end
   end
 end

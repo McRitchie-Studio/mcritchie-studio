@@ -214,13 +214,42 @@ left standing costs more than an open bug, because it gets *applied*.
 
 ---
 
+## Postscript — the review caught the fix making the same mistake twice
+
+The first cut of the fix was blocked by review, and both blockers are the *thesis
+of this document*, committed by the fix itself:
+
+* **The gate workspace had no lock**, and the comment justifying that said
+  *"nothing else touches this tree."* False: another `bin/release` does. The path
+  and DB are FIXED, so two concurrent conductors would `reset --hard` the tree and
+  purge the DB under each other's live suite. I had removed the lock that
+  serialized them and added nothing back — **the same root cause, relocated one
+  directory over.**
+* **The "private" test DB was not private for turf-monster.** `TEST_DATABASE_URL`
+  is a *hand-rolled* seam that only works where an app's `database.yml` renders
+  `url:`. The hub does; turf does not — so the overlay was inert there, and the
+  fix's new `db:test:prepare` would have **purged the shared `turf_monster_test`**.
+  I had read the hub's `database.yml` and generalized from one app.
+
+Both were shipped with **passing tests and green CI**, because the tests asserted
+what the code *intended* (the DB name string) rather than what the system *did*
+(the connection an app actually opens). That is the same failure mode as the
+bootsnap story: a plausible claim nobody tried to falsify.
+
+The fixes follow the same rule the rest of this document argues for — **make the
+guarantee checkable, not stated**: the gate takes its own lock, and it now *boots
+the app and reads back the resolved database*, refusing to run against a shared
+one. A convention that isn't checked is a comment.
+
 ## The through-line
 
 Every one of these is the same shape: **a check that shares mutable state with the
-thing it is checking is not a check.** The gate shared a working tree and a
-database with live sessions. G4 inferred its safety from a registry that could
-change under it. The release tip is certified by a local run and never by CI. Fix
-that shape and the false-negatives stop being a mystery.
+thing it is checking is not a check** — and **a guarantee that is asserted in prose
+rather than enforced in code is not a guarantee.** The gate shared a working tree
+and a database with live sessions. G4 inferred its safety from a registry that
+could change under it. The private DB was documented in three places and true in
+none of them for turf. The release tip is certified by a local run and never by CI.
+Fix that shape and the false-negatives stop being a mystery.
 
 An unreliable gate is worse than no gate — it punishes you for trusting it *and*
 for not trusting it. The measure of P0 is not that the gate went green; it is that

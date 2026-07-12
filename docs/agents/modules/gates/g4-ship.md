@@ -68,11 +68,31 @@ check.
 ## Where the suite runs
 
 In the repo's **isolated gate workspace** (`Release::GateWorkspace`) — a private
-detached worktree pinned at the frozen ship SHA, with its own test DB — **never**
-on the shared primary checkout. The primary-checkout lock now wraps only the
-local `main` fast-forward the deploy pushes from. See
-[`g3-candidate.md`](g3-candidate.md) for why: a suite that lazily autoloads over
-minutes against a tree other sessions can `git checkout` is not a check.
+detached worktree pinned at the frozen ship SHA, under the dedicated
+gate-workspace lock, with a test DB the gate **proves** is private before running
+— **never** on the shared primary checkout. The primary-checkout lock now wraps
+only the local `main` fast-forward the deploy pushes from, so the primary stays
+free. See [`g3-candidate.md`](g3-candidate.md) for why: a suite that lazily
+autoloads over minutes against a tree other sessions can `git checkout` is not a
+check.
+
+**Operator note — ship can now take LONGER than it used to.** G4 fails open: after
+a G3 that was skipped, red, or never recorded, the ship gate **runs the full
+suite** on the frozen SHA where it previously self-skipped. That is the point (an
+uncertified SHA must not reach production unchecked), but budget for it.
+
+## Overriding a ship gate you believe is a false negative
+
+`bin/release ship --skip-test-gate --reason "…"`
+
+It demands a reason, **confirms** before skipping, runs no suite, and records a
+**red** `ship_test_gate` gate SOP — so a skipped gate is visible in the release
+record forever. Use it only when the code is verified green elsewhere and the
+instrument is the thing that's broken; then **fix the instrument**.
+
+This replaces the old trick of blanking the registry's `test_cmd`/`qa_test_cmd`.
+Do not do that: it **silently disarmed** this gate while printing "already green"
+(see above), and it no longer works.
 
 ## Who runs it
 

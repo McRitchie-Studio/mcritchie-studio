@@ -43,18 +43,35 @@ class Release::GateEnvTest < ActiveSupport::TestCase
 
   # --- the private test DB ---------------------------------------------------
 
-  test "[unit] env points the suite at the gate's private test DB" do
+  test "[unit] env points the suite at the gate's private test DB via BOTH seams" do
     overlay = E.env(ruby_bin_dir: RUBY_BIN, test_database_url: "postgres:///x_gate_test")
 
+    # TEST_DATABASE_URL alone is NOT enough, and that was the shipped bug: it is a
+    # HAND-ROLLED seam that only works where config/database.yml renders
+    # `url: <%= ENV["TEST_DATABASE_URL"] %>`. The hub does; turf-monster does NOT
+    # (bare `database: turf_monster_test`), so for turf the overlay was INERT and
+    # the gate resolved — and would have db:test:prepare-PURGED — the SHARED DB.
+    # DATABASE_URL is the Rails BUILTIN that every app honours with no wiring.
     assert_equal "postgres:///x_gate_test", overlay["TEST_DATABASE_URL"]
+    assert_equal "postgres:///x_gate_test", overlay["DATABASE_URL"],
+                 "the Rails builtin is what makes the private-DB guarantee hold for EVERY app"
   end
 
-  test "[unit] env omits TEST_DATABASE_URL when none is given" do
-    # Blank must not export an empty TEST_DATABASE_URL: config/database.yml
-    # renders `url:` from it, and an empty url would override the `database:`
-    # fallback with nothing.
-    assert_not E.env(ruby_bin_dir: RUBY_BIN).key?("TEST_DATABASE_URL")
-    assert_not E.env(ruby_bin_dir: RUBY_BIN, test_database_url: "  ").key?("TEST_DATABASE_URL")
+  test "[unit] env pins RAILS_ENV=test so DATABASE_URL lands on the TEST config" do
+    # db:test:prepare would otherwise run in the DEVELOPMENT env, where Rails
+    # merges DATABASE_URL into the wrong configuration.
+    assert_equal "test", E.env(ruby_bin_dir: RUBY_BIN)["RAILS_ENV"]
+  end
+
+  test "[unit] env sets NO database url when the app needs none (SQLite)" do
+    # rolio's test DB is a FILE inside the gate worktree — already private. A
+    # postgres:/// URL would be a live trap, so the gate passes nil and the app
+    # keeps its own config.
+    overlay = E.env(ruby_bin_dir: RUBY_BIN)
+
+    assert_not overlay.key?("TEST_DATABASE_URL")
+    assert_not overlay.key?("DATABASE_URL")
+    assert_not E.env(ruby_bin_dir: RUBY_BIN, test_database_url: "  ").key?("DATABASE_URL")
   end
 
   # --- REGRESSION (end-to-end): the scrub actually reaches a spawned child ----
