@@ -75,4 +75,33 @@ class Admin::ModelPricingControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
     assert_nil ModelRateOverride.find_by(model: "claude-opus-4-8")
   end
+
+  test "[component] the detail page reuses the REAL activity feed row partial" do
+    log_in_as(@admin)
+    AgentActivity.open_activity!(session_id: "s-feed", category: "Edit", reason_slug: "write code")
+    AgentActivity.close_activity!(
+      session_id: "s-feed", outcome_slug: "shipped it",
+      model: "claude-opus-4-8", tokens_in: 1_000, tokens_out: 100,
+      cache_creation_tokens: 0, cache_read_tokens: 0
+    )
+
+    get admin_model_pricing_model_path("claude-opus-4-8")
+
+    assert_response :success
+    # The feed's own table + row partial (agents/_activities_table → agents/_activity_row),
+    # NOT a hand-rolled table — so this page can never drift from /agents/activities.
+    assert_select "[data-test=agents-activities-table]"
+    # Scoped under #alex-heartbeat so the hb-*/aa-* style layers actually apply.
+    assert_select "#alex-heartbeat.aa-page [data-test=agents-activities-table]"
+  end
+
+  test "[component] validation errors are visible on the page, not swallowed" do
+    log_in_as(@admin)
+
+    patch admin_model_pricing_model_path("claude-opus-4-8"),
+          params: { model_rate_override: { input_rate: "-5", output_rate: "25" } }
+
+    assert_response :unprocessable_entity
+    assert_select "[data-test=rate-errors]"
+  end
 end

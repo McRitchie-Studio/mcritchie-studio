@@ -1,5 +1,17 @@
 <% content_for(:title, "#{heartbeat_model_short(@row.model)} pricing — Admin") %>
 
+<%# The activity feed's own style + script layers, so the session activity below renders
+    through the REAL agents/_activity_row partial (scoped under #alex-heartbeat) rather
+    than a bespoke table that would drift from /agents/activities. %>
+<%= render "heartbeat/styles" %>
+<%= render "agents/activities_styles" %>
+<%= render "agents/activities_scripts" %>
+
+<%# The sliders' max must never sit BELOW a rate already saved, or re-saving would
+    silently CLAMP an existing higher override down. Floor them at the current value. %>
+<% input_max  = [100, @input_rate.ceil].max %>
+<% output_max = [200, @output_rate.ceil].max %>
+
 <div class="max-w-5xl mx-auto px-4 py-8 space-y-6"
      x-data="{
        tokensIn: <%= @row.tokens_in %>,
@@ -23,22 +35,37 @@
   <%# ── Rate sliders ─────────────────────────────────────────────────────── %>
   <section class="card p-5">
     <h2 class="text-heading font-semibold mb-4">Adjust rates</h2>
+
+    <% if @override&.errors&.any? %>
+      <div class="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3" data-test="rate-errors">
+        <ul class="text-sm text-red-400 list-disc list-inside">
+          <% @override.errors.full_messages.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
     <%= form_with url: admin_model_pricing_model_path(@row.model), method: :patch, data: { turbo: false } do %>
       <div class="space-y-6">
         <div>
           <div class="flex justify-between items-baseline text-sm mb-1">
-            <label class="text-secondary font-medium">Input rate ($/1M tokens)</label>
+            <label for="input-rate" class="text-secondary font-medium">Input rate ($/1M tokens)</label>
             <span class="tabular-nums text-heading font-semibold">$<span x-text="inRate.toFixed(4)"></span></span>
           </div>
-          <input type="range" name="model_rate_override[input_rate]" min="0" max="100" step="0.05"
+          <input type="range" id="input-rate" name="model_rate_override[input_rate]"
+                 min="0" max="<%= input_max %>" step="0.05"
+                 aria-label="Input rate in dollars per million tokens"
                  x-model.number="inRate" class="w-full accent-primary" data-testid="input-rate-slider">
         </div>
         <div>
           <div class="flex justify-between items-baseline text-sm mb-1">
-            <label class="text-secondary font-medium">Output rate ($/1M tokens)</label>
+            <label for="output-rate" class="text-secondary font-medium">Output rate ($/1M tokens)</label>
             <span class="tabular-nums text-heading font-semibold">$<span x-text="outRate.toFixed(4)"></span></span>
           </div>
-          <input type="range" name="model_rate_override[output_rate]" min="0" max="200" step="0.05"
+          <input type="range" id="output-rate" name="model_rate_override[output_rate]"
+                 min="0" max="<%= output_max %>" step="0.05"
+                 aria-label="Output rate in dollars per million tokens"
                  x-model.number="outRate" class="w-full accent-primary" data-testid="output-rate-slider">
         </div>
       </div>
@@ -49,7 +76,9 @@
     <% end %>
   </section>
 
-  <%# ── Last-session cost (recomputes live as the sliders move) ───────────── %>
+  <%# ── Last-session cost (a what-if calculator: recomputes live, persists nothing) ──
+      In + Out only — it deliberately does NOT price the cache tiers, so it is labelled
+      as such rather than posing as the session's true total. %>
   <section class="card p-5">
     <h2 class="text-heading font-semibold mb-1">Last session cost</h2>
     <p class="text-muted text-xs mb-4">
@@ -77,39 +106,20 @@
         <div class="text-heading font-semibold tabular-nums" data-testid="out-cost" x-text="money(outCost)"></div>
       </div>
       <div>
-        <div class="text-muted text-xs mb-0.5">Total cost</div>
+        <div class="text-muted text-xs mb-0.5">In + Out cost</div>
         <div class="text-primary font-bold tabular-nums" data-testid="total-cost" x-text="money(totalCost)"></div>
       </div>
     </div>
   </section>
 
-  <%# ── Session activity (scoped view of the /agents/activities feed) ─────── %>
-  <section class="card p-5">
+  <%# ── Session activity — the REAL feed table, reused (agents/_activity_row) ─────── %>
+  <section id="alex-heartbeat" class="aa-page card p-5">
     <h2 class="text-heading font-semibold mb-3">Session activity</h2>
-    <% if @session_activities.any? %>
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-left text-muted border-b border-subtle">
-            <th class="py-2 px-3">Activity</th>
-            <th class="py-2 px-3">Model</th>
-            <th class="py-2 px-3 text-right">In / Out</th>
-            <th class="py-2 px-3 text-right">Cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          <% @session_activities.each do |activity| %>
-            <tr class="border-b border-subtle/60">
-              <td class="py-2 px-3">
-                <span class="text-secondary font-medium"><%= activity.category %></span>
-                <span class="text-muted"><%= activity.reason_slug %></span>
-              </td>
-              <td class="py-2 px-3 text-muted"><%= heartbeat_model_short(activity.model) %></td>
-              <td class="py-2 px-3 text-right tabular-nums text-secondary"><%= heartbeat_tokens_pair(activity.tokens_in, activity.tokens_out) %></td>
-              <td class="py-2 px-3 text-right tabular-nums"><%= heartbeat_cost(activity.cost) %></td>
-            </tr>
-          <% end %>
-        </tbody>
-      </table>
+    <% if @activity_rows.any? %>
+      <%= render "agents/activities_table", activity_rows: @activity_rows,
+            pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+            activity_grades: @activity_grades, action_grades: @action_grades,
+            shared_turn_ids: @shared_turn_ids, stage_transitions: @stage_transitions %>
     <% else %>
       <p class="text-muted text-sm">No activities recorded for this model yet.</p>
     <% end %>

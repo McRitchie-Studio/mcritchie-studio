@@ -77,6 +77,31 @@ module UsagePricing
     nil
   end
 
+  # Cost derived from the STORED capture columns, or nil when we cannot derive
+  # faithfully. This is the server-side SoT: the capture CLIs mint their cost in a
+  # plain-Ruby process with no ActiveRecord, so they can NEVER see a DB rate
+  # override (db_rates returns {} there). Re-deriving on ingest is what makes an
+  # operator's saved rate actually apply.
+  #
+  # `tokens_in` is the FOLDED count the capture contract has always stored
+  # (input + cache_creation — cache_read is deliberately excluded from the COUNT;
+  # see AgentSessionUsage::Result#tokens_in), so the raw input bucket is
+  # tokens_in - cache_creation_tokens.
+  #
+  # Returns nil when cache_creation_tokens is ABSENT — without it we cannot split
+  # tokens_in, and would price cache WRITES at 1x input instead of 2x: a silent
+  # under-count of the bucket that dominates the bill. An older CLI (or a historical
+  # row) omits it, and the caller then keeps the cost the CLI computed — correct at
+  # LIST price, merely blind to an override. Never guess.
+  def self.cost_from_capture(model:, tokens_in:, tokens_out:, cache_creation_tokens:, cache_read_tokens:)
+    return nil if cache_creation_tokens.nil?
+
+    cache_creation = cache_creation_tokens.to_i
+    input = [tokens_in.to_i - cache_creation, 0].max
+    price({ "input" => input, "output" => tokens_out.to_i,
+            "cache_creation" => cache_creation, "cache_read" => cache_read_tokens.to_i }, model)
+  end
+
   # {input:, output:, cache_read?:, cache_creation?:} for a model, or nil. Strips a
   # trailing tier suffix ("[1m]" bills at standard rates for these models) and
   # merges the env override.
@@ -97,25 +122,62 @@ module UsagePricing
   end
 
   # RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override, then
-  # with the persisted DB overrides (operator-tuned, highest precedence). NOT
-  # memoized so a test (or a freshly-saved rate) never reads a stale roster; the
-  # merge is trivial and db_rates is a single tiny-table read.
+  # with the persisted DB overrides (operator-tuned, highest precedence). The Hash
+  # merge is trivial, but db_rates is a TABLE READ and price() sits on the hot
+  # capture path (a cost is derived for every action/activity, and once per model
+  # across the pricing roster) — so db_rates is memoized per REQUEST, not here.
   def self.rates
     RATES.merge(env_rates).merge(db_rates)
   end
 
   # Persisted per-model overrides from the model_rate_overrides table (the admin
-  # Model Pricing page writes these). AR-GUARDED and best-effort: the plain-Ruby
-  # require_relative callers (bin/task, bin/atomic-event) have no ActiveRecord, and
-  # a pre-migration app has no table — both degrade to the static roster instead
-  # of raising into a cost capture. Highest precedence, so a saved rate wins.
+  # Model Pricing page writes these). Highest precedence, so a saved rate wins.
+  #
+  # AR-GUARDED: the plain-Ruby require_relative callers (bin/task, bin/atomic-event)
+  # have no ActiveRecord, so this returns {} there. That is NOT a benign degradation
+  # to a "fallback" — in those CLIs the static roster is the ONLY roster, which is
+  # exactly why cost must be re-derived SERVER-side on ingest (cost_from_capture);
+  # otherwise an operator's override would never reach the dominant cost path.
+  #
+  # Memoized per REQUEST via Current, so price() stops re-SELECTing this table on every
+  # single call (it is on the hot capture path, and ran once per model across the
+  # pricing roster). CurrentAttributes resets per request/job, so a write in another
+  # process is picked up on the next request.
+  #
+  # The memo is STAMPED WITH A GENERATION that ModelRateOverride bumps on every commit.
+  # Current alone is not sufficient: a process that prices, saves, and prices again
+  # WITHOUT a request boundary between (a test, a job, a rake task, the console) would
+  # otherwise keep serving the roster it cached before the save — the exact staleness
+  # this module's "not memoized" comment used to guard against. The generation makes
+  # the memo self-invalidating, so a freshly-saved rate is never read stale.
   def self.db_rates
     return {} unless defined?(ActiveRecord::Base)
     return {} unless ModelRateOverride.table_exists?
+    return ModelRateOverride.rates_hash unless request_memo?
 
-    ModelRateOverride.rates_hash
-  rescue StandardError
+    generation = ModelRateOverride.rate_generation
+    cached = Current.model_rate_overrides
+    return cached.last if cached.is_a?(Array) && cached.first == generation
+
+    ModelRateOverride.rates_hash.tap do |rates|
+      Current.model_rate_overrides = [generation, rates]
+    end
+  rescue StandardError => e
+    warn_db_rates_failure(e)
     {}
+  end
+
+  def self.request_memo?
+    defined?(Current) && Current.respond_to?(:model_rate_overrides)
+  end
+
+  # The one rescue in this module that cannot reach ErrorLog (plain Ruby — Rails is
+  # not guaranteed loaded). Swallowing a real DB failure would price everything at
+  # LIST rate with ZERO visibility, so at least log it when Rails IS loaded.
+  def self.warn_db_rates_failure(error)
+    return unless defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+
+    Rails.logger.warn("[usage-pricing] db_rates failed — pricing at LIST rate: #{error.class}: #{error.message}")
   end
 
   # Parse ATOMIC_ACTION_MODEL_RATES — JSON {"model-id": {"input"|"in": n,
@@ -151,5 +213,5 @@ module UsagePricing
     BigDecimal(value.to_s)
   end
 
-  private_class_method :env_rates, :db_rates, :bucket, :to_d
+  private_class_method :env_rates, :db_rates, :request_memo?, :warn_db_rates_failure, :bucket, :to_d
 end

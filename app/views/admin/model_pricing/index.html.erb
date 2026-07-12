@@ -21,7 +21,9 @@
           <th class="py-2 px-3 text-right">In cost</th>
           <th class="py-2 px-3 text-right">Out tok</th>
           <th class="py-2 px-3 text-right">Out cost</th>
-          <th class="py-2 px-3 text-right">Total cost</th>
+          <%# NOT the session's true total — this column is in+out only and prices no
+              cache tier (see ModelPricing). On a page about money, say so. %>
+          <th class="py-2 px-3 text-right">In + Out cost</th>
         </tr>
       </thead>
       <tbody>

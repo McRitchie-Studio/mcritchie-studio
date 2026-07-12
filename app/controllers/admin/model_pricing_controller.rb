@@ -3,6 +3,11 @@ module Admin
   # the rate sliders + last-session cost (show), and the override save (update).
   # Admin-gated; a saved override flows into UsagePricing for future costing.
   class ModelPricingController < ApplicationController
+    # The same read layer /agents/activities uses, so this page renders the session's
+    # activities through the REAL feed row partial instead of a bespoke table — one
+    # bulk query per lookup, no N+1, and the two surfaces can never drift apart.
+    include ActivityFeed
+
     before_action :require_admin
     before_action :set_model, only: %i[show update]
 
@@ -18,20 +23,38 @@ module Admin
       # current (roster/env) rate.
       @input_rate  = (@override.input_rate  || @row.input_rate).to_f
       @output_rate = (@override.output_rate || @row.output_rate).to_f
+      load_activity_feed
     end
 
     def update
       @override = ModelRateOverride.find_or_initialize_by(model: @model)
-      rescue_and_log(target: @override) do
-        @override.update!(rate_params)
-        redirect_to admin_model_pricing_model_path(@model), notice: "Rates updated for #{@model}."
-      end
+      # Only the WRITE is wrapped: a redirect inside the block would make a
+      # double-render surface as a *pricing* failure in ErrorLog.
+      rescue_and_log(target: @override) { @override.update!(rate_params) }
+      redirect_to admin_model_pricing_model_path(@model), notice: "Rates updated for #{@model}."
     rescue StandardError
       show
       render :show, status: :unprocessable_entity
     end
 
     private
+
+    # Locals for agents/_activities_table — the bulk lookups from ActivityFeed, each
+    # ONE query, exactly as the feed page builds them.
+    def load_activity_feed
+      activities = @session_activities.includes(:agent_actions).to_a
+      @activity_rows = activities.map do |activity|
+        [activity, activity.agent_actions.sort_by { |a| [a.occurred_at, a.seq, a.id] }.reverse]
+      end
+      actions = @activity_rows.flat_map(&:last)
+
+      @pokemon_by_slug   = pokemon_lookup(actions, activities)
+      @agents_by_slug    = agent_soul_lookup(activities)
+      @activity_grades   = activity_grade_lookup(activities)
+      @action_grades     = action_grade_lookup(actions)
+      @shared_turn_ids   = feed_shared_turn_ids(actions)
+      @stage_transitions = stage_transitions_for(activities)
+    end
 
     # Only price roster models — an unknown id (or a probe) 404s rather than
     # letting anyone persist a rate for a model we don't recognize.

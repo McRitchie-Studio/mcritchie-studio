@@ -9,6 +9,13 @@ class ModelRateOverride < ApplicationRecord
   validates :cache_read_rate, :cache_creation_rate,
             numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
 
+  # Invalidate UsagePricing's request-scoped rate memo the moment a rate is written.
+  # The memo (Current.model_rate_overrides) is stamped with this generation, so any
+  # caller holding a roster cached BEFORE the save re-reads on its next price() —
+  # including a process with no request boundary to reset Current (a test, job, rake
+  # task, or console) which would otherwise price at the pre-save roster forever.
+  after_commit :bump_rate_generation
+
   # The canonical model id doubles as the record's stable slug — one row per
   # model. Lets rescue_and_log(target: …) stamp a meaningful breadcrumb.
   def slug = model
@@ -23,5 +30,23 @@ class ModelRateOverride < ApplicationRecord
       entry[:cache_creation] = override.cache_creation_rate.to_f if override.cache_creation_rate
       acc[override.model] = entry
     end
+  end
+
+  # Monotonic counter bumped on every commit to this table — the version stamp on
+  # UsagePricing's rate memo. Process-local by design: it only needs to invalidate the
+  # memo held IN THIS process, since another process re-reads on its next request when
+  # Rails resets Current.
+  def self.rate_generation
+    @rate_generation ||= 0
+  end
+
+  def self.bump_rate_generation!
+    @rate_generation = rate_generation + 1
+  end
+
+  private
+
+  def bump_rate_generation
+    self.class.bump_rate_generation!
   end
 end
