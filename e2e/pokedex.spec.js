@@ -13,8 +13,8 @@ test("pokedex is linked from the board nav and renders @qa-readonly", async ({ p
   await navLink.click();
   await expect(page).toHaveURL(/\/pokedex$/);
   await expect(page.locator("[data-test='pokedex']")).toBeVisible();
-  await expect(page.locator("[data-test='pokemon-stats-card']")).toBeVisible();
-  await expect(page.locator("[data-test='latest-pokemon-card']")).toBeVisible();
-  await expect(page.locator("[data-test='latest-shiny-card']")).toBeVisible();
+  await expect(page.locator("[data-test='pokedex-total']")).toBeVisible();
+  await expect(page.locator("[data-test='pokemon-card']")).toBeVisible();
+  await expect(page.locator("[data-test='shiny-card']")).toBeVisible();
   await expect(page.locator("[data-test='recent-pokemon-actions']")).toBeVisible();
 });

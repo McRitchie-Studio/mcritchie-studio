@@ -1,13 +1,17 @@
 # Read model for the public Pokédex page. It keeps the controller/view focused on
-# presentation while this object owns the cross-table shape: spawned session
-# mascots, shiny counts, and recent mascot-bearing actions.
+# presentation while this object owns the cross-table shape behind the two cards:
+# SEEN and CAUGHT, each as a count of DISTINCT species plus its newest member.
 #
-# The two feature cards show the newest UNIQUE Pokémon, not the raw latest spawn:
-# the species whose FIRST sighting is most recent. A sighting is either a spawn
-# (a SessionMascot row) or an evolution (a TaskEvent mascot snapshot — how a
-# task's mascot climbs its line at the submitted/reviewed gates, the only place
-# evolved forms are recorded). Re-spawning or re-evolving a species already seen
-# never re-bumps a card; only a genuinely new species does.
+# SEEN is a sighting: a spawn (a SessionMascot row) or an evolution (a TaskEvent
+# mascot snapshot — how a task's mascot climbs its line at the submitted/reviewed
+# gates, the only place evolved forms are recorded). The newest-seen card shows the
+# species whose FIRST sighting is most recent, so re-spawning or re-evolving a
+# species already seen never re-bumps it; only a genuinely new species does.
+#
+# CAUGHT is a ship: a task reaching `shipped`, which catches the mascot it shipped
+# (its final form) AND that form's pre-evolutions — never its siblings. The mascot
+# is read from the shipped event's snapshot, falling back to the task's own
+# devops.mascot for the older rows that carry no snapshot (see #all_catch_appearances).
 class PokemonPokedex
   RecentAction = Struct.new(:action, :pokemon, keyword_init: true)
 
@@ -29,18 +33,6 @@ class PokemonPokedex
 
   def total_pokemon
     Pokemon.count
-  end
-
-  def summoned_pokemon
-    return 0 if pokemon_slugs.empty?
-
-    SessionMascot.where(mascot_slug: pokemon_slugs).count
-  end
-
-  def shiny_pokemon
-    return 0 if pokemon_slugs.empty?
-
-    SessionMascot.where(mascot_slug: pokemon_slugs, shiny: true).count
   end
 
   # How many DISTINCT species have been SEEN — spawned or evolved into — no matter
@@ -139,22 +131,55 @@ class PokemonPokedex
     end
   end
 
-  # A catch is a task reaching `shipped`: write_stage_event snapshots the mascot
-  # (by then evolved to its final form) onto the shipped TRANSITION event, so the
-  # spine is the durable source of truth even after the task later archives.
-  # shiny:true keeps only ships whose mascot came up shiny.
+  # A catch is a task reaching `shipped`. shiny:true keeps only ships whose mascot
+  # came up shiny.
   def catch_appearances(shiny: false)
-    (@catch_appearances ||= {})[shiny] ||= begin
-      scope = TaskEvent.transitions
-                       .where(to_stage: "shipped")
-                       .where("metadata->'mascot'->>'slug' IS NOT NULL")
-      scope = scope.where("metadata->'mascot'->>'shiny' = 'true'") if shiny
-      slug_sql  = Arel.sql("metadata->'mascot'->>'slug'")
-      shiny_sql = Arel.sql("metadata->'mascot'->>'shiny'")
-      scope.pluck(slug_sql, :occurred_at, shiny_sql, :task_slug).map do |slug, at, shiny_flag, task_slug|
-        Appearance.new(slug: slug, at: at, shiny: shiny_flag == "true", session_id: nil, task_slug: task_slug)
+    (@catch_appearances ||= {})[shiny] ||= shiny ? all_catch_appearances.select(&:shiny) : all_catch_appearances
+  end
+
+  # Every shipped transition, resolved to the mascot it caught.
+  #
+  # write_stage_event snapshots the mascot onto the transition, and that snapshot
+  # WINS when present — it froze the form the task actually shipped. But older rows
+  # carry no snapshot (TaskEvent#mascot_snapshot documents exactly this: "readers
+  # should fall back to the task's current mascot when needed"), and most shipped
+  # rows on the board are older rows. The task keeps devops.mascot forever —
+  # archiving never clears it — so it is a sound fallback, and without it the Caught
+  # number would be derived from only the minority of ships that carry a snapshot.
+  #
+  # Rows the task_events:backfill task synthesized carry neither a snapshot nor, in
+  # some cases, a task mascot; those are genuinely unrecoverable and drop out.
+  def all_catch_appearances
+    @all_catch_appearances ||= begin
+      rows = TaskEvent.transitions.where(to_stage: "shipped").pluck(
+        Arel.sql("metadata->'mascot'->>'slug'"),
+        :occurred_at,
+        Arel.sql("metadata->'mascot'->>'shiny'"),
+        :task_slug
+      )
+      unsnapshotted = rows.filter_map { |slug, _at, _shiny, task_slug| task_slug if slug.blank? }
+      fallback = task_mascots(unsnapshotted)
+
+      rows.filter_map do |slug, at, shiny_flag, task_slug|
+        if slug.present?
+          Appearance.new(slug: slug, at: at, shiny: shiny_flag == "true", session_id: nil, task_slug: task_slug)
+        elsif (mascot = fallback[task_slug])
+          Appearance.new(slug: mascot.first, at: at, shiny: mascot.last, session_id: nil, task_slug: task_slug)
+        end
       end
     end
+  end
+
+  # task_slug => [mascot slug, shiny] for the shipped rows carrying no snapshot.
+  # One query for the whole fallback set, so it never becomes a per-row lookup.
+  def task_mascots(task_slugs)
+    return {} if task_slugs.empty?
+
+    Task.where(slug: task_slugs.uniq)
+        .pluck(:slug, Arel.sql("metadata->'devops'->>'mascot'"), Arel.sql("metadata->'devops'->>'mascot_shiny'"))
+        .each_with_object({}) do |(task_slug, mascot, shiny_flag), map|
+          map[task_slug] = [mascot, shiny_flag == "true"] if mascot.present?
+        end
   end
 
   # The set of caught species: each shipped mascot PLUS its pre-evolutions. A task
@@ -168,21 +193,20 @@ class PokemonPokedex
 
   # A caught slug plus its PRE-EVOLUTIONS: the ancestor path base -> slug.
   #
-  # This must walk the actual evolution links, NOT slice PokemonEvolutionTree.for —
-  # that returns the family FLATTENED across every branch, so a slice would sweep in
-  # SIBLINGS. Eevee branches five ways, so catching Umbreon must yield
-  # {eevee, umbreon}, never the other four Eeveelutions. We build each member's
-  # parent (the form whose `evolution` list names it) and walk backward from the
-  # caught slug to the base, which is exactly the pre-evolution chain.
+  # It walks the actual evolution links — it must NOT slice a flattened family walk,
+  # which sweeps in SIBLINGS: Eevee branches five ways, so catching Umbreon yields
+  # {eevee, umbreon}, never the other four Eeveelutions.
+  #
+  # The walk reads entirely off the in-memory dex (pokemon_by_slug already loads all
+  # 251 rows, `base` and `evolution` included), so a public pageview costs ZERO extra
+  # queries no matter how many species are caught.
   def lineage_up_to(slug)
     (@lineage ||= {})[slug] ||= begin
-      family = PokemonEvolutionTree.for(slug)
-      if family.include?(slug)
-        parent_of = parents_in_family(family)
+      if pokemon_by_slug.key?(slug)
         path = [slug]
         cursor = slug
-        # Guard the walk by family size so malformed data can never loop forever.
-        while (parent = parent_of[cursor]) && path.size <= family.size
+        # Guard the walk by dex size so malformed data can never loop forever.
+        while (parent = parent_slugs[cursor]) && path.size <= pokemon_by_slug.size
           path.unshift(parent)
           cursor = parent
         end
@@ -193,13 +217,12 @@ class PokemonPokedex
     end
   end
 
-  # child slug => the slug it evolves FROM, for one family. Only links inside the
-  # family count, so a stray evolution entry can't drag in an unrelated line.
-  def parents_in_family(family)
-    Pokemon.where(slug: family).each_with_object({}) do |member, map|
-      Array(member.evolution).each do |child|
-        map[child] = member.slug if family.include?(child)
-      end
+  # child slug => the slug it evolves FROM, built ONCE for the whole dex off the
+  # in-memory memo. Each Pokémon's `evolution` list names the forms it evolves into,
+  # so inverting those lists gives every form's single pre-evolution.
+  def parent_slugs
+    @parent_slugs ||= pokemon_by_slug.each_value.with_object({}) do |pokemon, map|
+      Array(pokemon.evolution).each { |child| map[child] = pokemon.slug }
     end
   end
 

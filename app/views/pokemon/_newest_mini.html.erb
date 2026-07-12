@@ -6,8 +6,10 @@
   <% if sighting %>
     <div class="flex items-center gap-3 min-w-0">
       <div class="relative w-16 h-16 rounded-lg border border-subtle bg-surface flex items-center justify-center shrink-0">
+        <%# The sparkle below is decorative (aria-hidden), so "shiny" has to ride the
+            alt text — otherwise it is the one signal assistive tech cannot reach. %>
         <img src="<%= sighting.pokemon.display_avatar(shiny: sighting.shiny) %>"
-             alt="<%= sighting.pokemon.name %>"
+             alt="<%= sighting.shiny ? "Shiny #{sighting.pokemon.name}" : sighting.pokemon.name %>"
              class="max-w-14 max-h-14 object-contain"
              loading="lazy"
              onerror="this.onerror=null; this.src='<%= sighting.pokemon.display_sprite(shiny: sighting.shiny) %>'">

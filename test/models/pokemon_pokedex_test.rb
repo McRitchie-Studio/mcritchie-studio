@@ -33,8 +33,6 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     pokedex = PokemonPokedex.new(recent_limit: 2)
 
     assert_equal 3, pokedex.total_pokemon
-    assert_equal 3, pokedex.summoned_pokemon
-    assert_equal 1, pokedex.shiny_pokemon
 
     assert_equal eevee, pokedex.newest_unique.pokemon
     assert_not pokedex.newest_unique.shiny
@@ -221,6 +219,64 @@ class PokemonPokedexTest < ActiveSupport::TestCase
                  "a branch tip catches only its ancestor line — never its sibling Eeveelutions"
     assert_equal 2, pokedex.caught_pokemon
     assert_equal umbreon, pokedex.newest_caught.pokemon
+  end
+
+  # Most shipped rows on the board predate the mascot snapshot. TaskEvent#mascot_snapshot
+  # documents the contract — "readers should fall back to the task's current mascot" —
+  # and the task keeps devops.mascot forever, so ignoring it would derive the headline
+  # Caught number from only the minority of ships that carry a snapshot.
+  test "[unit] a shipped event with no mascot snapshot falls back to the task's mascot" do
+    Pokemon.create!(dex: 1, name: "Bulbasaur", slug: "bulbasaur", generation: 1,
+                    base: "bulbasaur", evolution: ["ivysaur"])
+    Pokemon.create!(dex: 2, name: "Ivysaur", slug: "ivysaur", generation: 1,
+                    base: "bulbasaur", evolution: ["venusaur"])
+    venusaur = Pokemon.create!(dex: 3, name: "Venusaur", slug: "venusaur", generation: 1,
+                               base: "bulbasaur", evolution: [])
+
+    task = Task.create!(title: "Older Ship No Snapshot",
+                        metadata: { "devops" => { "mascot" => venusaur.slug } })
+    # An OLDER shipped row: no metadata.mascot on the event itself.
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 15.minutes.ago, metadata: {})
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal %w[bulbasaur ivysaur venusaur], pokedex.send(:caught_slugs).to_a.sort,
+                 "the task's own mascot backfills the missing snapshot, line and all"
+    assert_equal 3, pokedex.caught_pokemon
+    assert_equal venusaur, pokedex.newest_caught.pokemon
+  end
+
+  test "[unit] a snapshot on the shipped event wins over the task's current mascot" do
+    snapshotted = Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1,
+                                  base: "pikachu", evolution: [])
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1,
+                    base: "snorlax", evolution: [])
+    # The task's mascot has since recycled to Snorlax, but the event froze Pikachu —
+    # the snapshot is what the task actually shipped, so it must win.
+    task = Task.create!(title: "Shipped As Pikachu",
+                        metadata: { "devops" => { "mascot" => "snorlax" } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 5.minutes.ago, metadata: { "mascot" => { "slug" => snapshotted.slug } })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal ["pikachu"], pokedex.send(:caught_slugs).to_a
+    assert_equal snapshotted, pokedex.newest_caught.pokemon
+  end
+
+  # Every real task gets a mascot on create, so the fallback recovers nearly every
+  # older ship. The genuinely unrecoverable row is a backfill-synthesized one whose
+  # task no longer resolves — it must drop out silently, not raise on a public page.
+  test "[unit] a ship with neither a snapshot nor a resolvable task is skipped cleanly" do
+    Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1, base: "pikachu", evolution: [])
+    TaskEvent.create!(task_slug: "ghost-task", from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 5.minutes.ago, metadata: { "backfilled" => true })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal 0, pokedex.caught_pokemon
+    assert_nil pokedex.newest_caught
   end
 
   test "[unit] a newer ship with a non-Pokemon mascot never blanks the caught card" do

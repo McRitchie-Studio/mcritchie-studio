@@ -7,6 +7,7 @@
       <div class="flex items-center gap-3">
         <h1 class="text-2xl md:text-3xl font-bold text-heading">Pokémon</h1>
         <span class="text-sm font-semibold text-muted bg-surface border border-subtle rounded-full px-2.5 py-0.5 tabular-nums"
+              aria-label="<%= number_with_delimiter(@pokedex.total_pokemon) %> Pokémon in the Pokédex"
               data-test="pokedex-total"><%= number_with_delimiter(@pokedex.total_pokemon) %></span>
       </div>
     </div>
